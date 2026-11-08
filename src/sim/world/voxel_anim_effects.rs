@@ -33,7 +33,14 @@ use crate::sim::voxel_anim::VoxelAnimAiStep;
 #[derive(Clone, Copy)]
 pub(crate) enum BounceContactDamage {
     Anim(i32),
+    /// The shared Type field, written back by each receiver.
+    #[cfg_attr(feature = "ares", allow(dead_code))]
     VoxelType(VoxelAnimTypeId),
+    /// Ares 3.0 VoxelAnimClass_Update_Damage (1005D640, hook 0x74A884):
+    /// the Voxel walk with a copy of the type's Damage per object, each
+    /// object's successor read before its receiver.
+    #[cfg(feature = "ares")]
+    AresVoxel(i32),
 }
 
 impl Simulation {
@@ -194,14 +201,26 @@ impl Simulation {
                     }
                     if let Some(name) = kind.warhead.as_deref() {
                         let warhead = self.interner.intern(name);
-                        changed |= self.apply_bounce_contact_damage(
-                            body.position_leptons(),
-                            kind.damage_radius,
-                            BounceContactDamage::VoxelType(type_id),
-                            warhead,
-                            rules,
-                            effects,
-                        );
+                        // 1005D640: a negative DamageRadius or a Damage of
+                        // zero skips the walk.
+                        #[cfg(feature = "ares")]
+                        let source = {
+                            let damage = self.voxel_type_damage(type_id, rules);
+                            (kind.damage_radius >= 0 && damage != 0)
+                                .then_some(BounceContactDamage::AresVoxel(damage))
+                        };
+                        #[cfg(not(feature = "ares"))]
+                        let source = Some(BounceContactDamage::VoxelType(type_id));
+                        if let Some(source) = source {
+                            changed |= self.apply_bounce_contact_damage(
+                                body.position_leptons(),
+                                kind.damage_radius,
+                                source,
+                                warhead,
+                                rules,
+                                effects,
+                            );
+                        }
                     }
                 }
             }
@@ -455,11 +474,16 @@ impl Simulation {
         let mut current = self.cell_objects(cell, MovementLayer::Ground).next();
         let mut changed = false;
         while let Some(target) = current {
+            #[cfg(feature = "ares")]
+            let ares_next = matches!(source, BounceContactDamage::AresVoxel(_))
+                .then(|| self.next_cell_object(target));
             let center = match target {
                 CellObjectMember::Entity(id) => {
                     self.substrate.entities.get(id).map(|entity| match source {
                         BounceContactDamage::Anim(_) => object_center_xy(entity),
                         BounceContactDamage::VoxelType(_) => position_world_xy(&entity.position),
+                        #[cfg(feature = "ares")]
+                        BounceContactDamage::AresVoxel(_) => position_world_xy(&entity.position),
                     })
                 }
                 CellObjectMember::Terrain(id) => self.terrain_objects.get(id).map(|tree| {
@@ -481,6 +505,8 @@ impl Simulation {
                             self.voxel_type_damage(id, rules),
                             Some(DamageWriteback::VoxelType(id)),
                         ),
+                        #[cfg(feature = "ares")]
+                        BounceContactDamage::AresVoxel(value) => (value, None),
                     };
                     let receipt = match target {
                         CellObjectMember::Entity(id) => self.commit_direct_damage_receiver(
@@ -524,6 +550,11 @@ impl Simulation {
                     };
                     changed |= receipt.bridge_state_changed;
                 }
+            }
+            #[cfg(feature = "ares")]
+            if let Some(next) = ares_next {
+                current = next;
+                continue;
             }
             current = self.next_cell_object(target);
         }

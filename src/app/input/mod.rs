@@ -37,6 +37,8 @@ pub(crate) mod tooltips;
 pub(crate) mod transport_orders;
 
 pub(crate) mod abort;
+#[cfg(feature = "ares")]
+pub(crate) mod ares_cursor;
 pub(crate) mod surrender;
 #[cfg(test)]
 mod bridge_click_tests;

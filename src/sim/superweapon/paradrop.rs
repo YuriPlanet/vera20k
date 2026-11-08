@@ -87,6 +87,28 @@ pub enum ParaDropKind {
     American,
 }
 
+/// The paradrop plane type of `owner`. Ares `[Side] ParaDrop.Aircraft=`
+/// replaces the PDPLANE type for both paradrop cases and the Droppod
+/// reinforcement (`0x65DBB3`); an unset or `none` (-1) index falls back to
+/// PDPLANE. `HouseTypeExt::ExtData::GetParadropPlane @ 0x1001BCB0` puts the
+/// country's own aircraft in front of that, and its `-1` index defers to the
+/// side. Stock builds read neither.
+pub(crate) fn house_paradrop_plane<'r>(
+    sim: &Simulation,
+    rules: &'r RuleSet,
+    owner: InternedId,
+) -> &'r str {
+    let house = sim.houses.get(&owner);
+    let side = house.map(|house| house.side_index());
+    let country = house
+        .and_then(|house| house.country())
+        .map(|country| sim.interner().resolve(country));
+    country
+        .and_then(|country| rules.country_paradrop_aircraft(country))
+        .or_else(|| rules.side_paradrop_aircraft(side.unwrap_or(-1)))
+        .unwrap_or(PDPLANE)
+}
+
 /// Launch case 5 or 6 for `owner`'s Super of type `sw_type` at (target_rx,
 /// target_ry): see the module doc. Returns whether the Super was charged.
 pub(crate) fn launch(
@@ -171,14 +193,7 @@ pub(crate) fn launch(
     if pairs_checked && types.len() != counts.len() {
         return true;
     }
-    // Ares `[Side] ParaDrop.Aircraft=` replaces the PDPLANE type for both
-    // paradrop cases; an unset or `none` (-1) index falls back to PDPLANE.
-    // `GetParadropPlane @ 0x1001BCB0` puts the country's own aircraft in front
-    // of that, and its `-1` index defers to the side.
-    let plane = country
-        .and_then(|country| rules.country_paradrop_aircraft(country))
-        .or_else(|| rules.side_paradrop_aircraft(side.unwrap_or(-1)))
-        .unwrap_or(PDPLANE);
+    let plane = house_paradrop_plane(sim, rules, owner);
     let plane_known = rules
         .aircraft_ids
         .iter()

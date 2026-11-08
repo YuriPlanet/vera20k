@@ -1119,7 +1119,10 @@ fn a_c4_planter_arriving_at_a_building_raises_its_entered_by_event() {
 /// admission must not raise it, and the building's House is not the actor.
 #[test]
 fn garrison_arrival_raises_entered_by_only_for_an_admitted_infantryman() {
-    for (actor_house, health, entered) in [(0, 500, true), (1, 500, false), (0, 50, false)] {
+    // Ares 3.0 10017060 (hook 0x457D58) refuses a red building only when it
+    // is civilian (TechLevel -1); this one is not.
+    let red_entered = cfg!(feature = "ares");
+    for (actor_house, health, entered) in [(0, 500, true), (1, 500, false), (0, 50, red_entered)] {
         let (mut sim, rules, registry, houses) = super::tests::event_ingress_fixture_with_rules(
             "[Country7]\nMultiplayPassive=yes\n\
              [InfantryTypes]\n0=TAGINF\n[TAGINF]\nStrength=100\nSpeed=4\n\
@@ -1167,7 +1170,7 @@ fn garrison_arrival_raises_entered_by_only_for_an_admitted_infantryman() {
                 .unwrap()
                 .passenger_role
                 .inside_transport_id(),
-            (health == 500).then_some(building),
+            (health == 500 || red_entered).then_some(building),
         );
     }
 }

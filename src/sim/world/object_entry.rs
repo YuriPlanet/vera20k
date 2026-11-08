@@ -352,6 +352,13 @@ fn infantry_target_admission(
     // Get_Mission (vt+0x184, 0x005B3040): current, else the queued mission.
     let eligible = match mover.mission.effective().known() {
         Some(MissionType::Enter | MissionType::Capture | MissionType::Eaten) => true,
+        // Ares 3.0 InfantryClass_IsCellOccupied_C4Ability 10025580 (hook
+        // 0x0051C325) also admits a rank holding the C4 ability.
+        #[cfg(feature = "ares")]
+        Some(MissionType::Sabotage) => {
+            crate::sim::combat::veterancy::holds_c4(mover.veterancy.rank_kind(), obj)
+        }
+        #[cfg(not(feature = "ares"))]
         Some(MissionType::Sabotage) => obj.c4,
         Some(MissionType::AreaGuard | MissionType::Patrol | MissionType::Guard) => obj.engineer,
         _ => false,
@@ -1287,9 +1294,14 @@ fn full_foot_entry<'a>(
                     continue;
                 }
                 //73F5EF/73F628 have distinct type/mission pairs. +1D4 is
-                //the live warp latch.
+                //the live warp latch. Ares 3.0 100177F0 (hook 0x73F606)
+                //sends a `Tunnel=` building down the UnitAbsorb path.
+                #[cfg(feature = "ares")]
+                let absorber = bt.unit_absorb || bt.building_type_ext().tunnel.is_some();
+                #[cfg(not(feature = "ares"))]
+                let absorber = bt.unit_absorb;
                 if object_target_is(e, blocker_id)
-                    && ((mission == Some(MissionType::Enter) && bt.unit_absorb)
+                    && ((mission == Some(MissionType::Enter) && absorber)
                         || (mission == Some(MissionType::Eaten) && bt.grinding))
                     && !b.warped_out
                 {
@@ -1322,6 +1334,21 @@ fn full_foot_entry<'a>(
                 }
             }
             if infantry && bt.invisible_in_game {
+                continue;
+            }
+            // Ares 3.0 10014D70 (hook 0x51C4C8): an `IsPassable` building
+            // is ignored; a `Firestorm.Wall` one takes the stock
+            // FirestormWall branch (0x51C4D2): its owner's firestorm refuses
+            // the cell, else the building is ignored.
+            #[cfg(feature = "ares")]
+            if infantry && bt.building_type_ext().is_passable {
+                continue;
+            }
+            #[cfg(feature = "ares")]
+            if infantry && bt.building_type_ext().firestorm_wall {
+                if live.sim.ares_firestorm.is_active(b.owner) {
+                    return Ok(7);
+                }
                 continue;
             }
             if bt.gate {
@@ -1363,7 +1390,25 @@ fn full_foot_entry<'a>(
                 if bt.invisible_in_game {
                     continue;
                 }
+                // Ares 3.0 10015100 (hook 0x73F7B0): an `IsPassable`
+                // building is ignored; a `Firestorm.Wall` one takes the stock
+                // FirestormWall branch (0x73F7BA) as for infantry.
+                #[cfg(feature = "ares")]
+                if bt.building_type_ext().is_passable {
+                    continue;
+                }
+                #[cfg(feature = "ares")]
+                if bt.building_type_ext().firestorm_wall {
+                    if live.sim.ares_firestorm.is_active(b.owner) {
+                        return Ok(7);
+                    }
+                    continue;
+                }
+                // Ares 3.0 UnitClass_IsCellOccupied_Bib (1005D550, hook
+                // 0x73F7DD): only a building whose owner is allied with the
+                // unit's house has its bib passed over.
                 if bt.bib
+                    && (!crate::rules::ARES_ENABLED || mover.is_ally_of(live, b.owner))
                     && live.sim.substrate.occupancy.first_building_on_layer(
                         (p.0 as u16).wrapping_add(1),
                         p.1 as u16,

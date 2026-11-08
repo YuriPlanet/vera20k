@@ -126,6 +126,8 @@ mod rocket_flight;
 pub use frame_error::FrameAdvanceError;
 pub(crate) use world_orders::CapturedInfantryType;
 pub use world_orders::EngineerBuildingAction;
+#[cfg(feature = "ares")]
+pub use world_orders::InfiltrateAction;
 pub use world_orders::UnitRepairAction;
 #[cfg(feature = "ares")]
 pub(crate) use world_orders::VehicleCaptureOutcome;
@@ -142,6 +144,8 @@ mod trigger_camera_tests;
 mod trigger_explosion;
 mod trigger_strikes;
 pub(crate) use shroud_refresh::ParanoidMaps;
+#[cfg(feature = "ares")]
+pub(crate) use techno_ai::AresPrismForwarding;
 pub(crate) use techno_ai::ObjectAiCtx;
 pub(crate) use techno_ai::PassiveScan;
 pub(crate) use techno_ai::PatrolPost;
@@ -550,6 +554,19 @@ impl AllianceEva {
     }
 }
 
+/// The lines Ares 3.0 `10013E40` gives a captured tech building in place of
+/// `0x0044840B..0x0044848F`: the old owner's player hears the type's
+/// `LostEvaEvent` (default `EVA_TechBuildingLost`; `None` is silent) and
+/// reads `Message.Lost`, the new owner's player hears `CaptureEvaEvent=`
+/// and reads `Message.Capture` (`None`: an empty label prints nothing).
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AresTechCaptureLines {
+    pub lost_eva_event: Option<InternedId>,
+    pub message_lost: Option<InternedId>,
+    pub message_capture: Option<InternedId>,
+}
+
 /// A sound event produced during simulation (combat, death, production).
 /// Pure data — no audio library dependency. Drained by the app layer each frame.
 #[derive(Debug, Clone)]
@@ -693,7 +710,8 @@ pub enum SimSoundEvent {
         kind: crate::sim::house_state::HouseOutcomeKind,
     },
     /// Global `[AudioVisual] SellSound=` for a successful wall-sale event.
-    /// The EventClass receiver can differ from the wall owner.
+    /// The EventClass receiver can differ from the wall owner. A unit's sale
+    /// (`FootClass::On_Sold @ 0x004D9F70`) plays the same cue for its owner.
     WallSold { receiver: InternedId },
     /// A deploy command failed target placement validation.
     /// App layer gates this to the local human player and plays
@@ -706,8 +724,12 @@ pub enum SimSoundEvent {
     /// The PLACE event's Unlimbo succeeded (`HouseClass @ 0x004FB0E0`,
     /// `0x004FB236`; a wall's Unlimbo also returns 1 at `0x00440865`):
     /// `[AudioVisual] BuildingSlam=` centred at full volume when the house is
-    /// the local player's (`0x004FB2CC..0x004FB314`).
-    BuildingPlaced { owner: InternedId },
+    /// the local player's (`0x004FB2CC..0x004FB314`). `building_type` is the
+    /// placed building's type, whose Ares `SlamSound` replaces the cue.
+    BuildingPlaced {
+        owner: InternedId,
+        building_type: InternedId,
+    },
     /// A chrono teleport happened — play the resolved warp sound at this position.
     /// Sim emits two of these per warp: one at the departure Location with the
     /// unit's `ChronoOutSound=` (`0x0071960A..0x0071962C`, Chronosphere state
@@ -790,8 +812,13 @@ pub enum SimSoundEvent {
         sound_id: Option<InternedId>,
         type_id: InternedId,
         /// The object's Location (`0x006FA092..0x006FA0BC`,
-        /// `0x006FA0FF..0x006FA12A`).
+        /// `0x006FA0FF..0x006FA12A`); with Ares, its Transporter's when it
+        /// rides in one (UpdateVeterancy10046D2F..10046D40).
         world: crate::sim::anim_class::AnimWorldCoord,
+        /// Ares `EVA.VeteranPromoted`/`EVA.ElitePromoted`
+        /// (VoxClass::PlayIndex at10046D54); `None` is the silent -1 index.
+        #[cfg(feature = "ares")]
+        eva: Option<InternedId>,
     },
     /// A building / harvester admitted a damage or first Temporal-head warning.
     /// For the local owner the app admits `radar` (type 3 base / type 4 miner) on its client
@@ -822,6 +849,15 @@ pub enum SimSoundEvent {
         owner: InternedId,
         radar: RadarEventRequest,
         type_id: InternedId,
+        /// Ares FootClass_Destroyed (10049080, hook 0x4D98C0) and
+        /// BuildingClass_Destroyed_UnitLost (10013F10, hook 0x44D760): the
+        /// victim type's `EVA.Lost`, spoken whether or not `radar` is
+        /// admitted.
+        #[cfg(feature = "ares")]
+        eva: InternedId,
+        /// Ares: a Foot creates the radar event; a building creates none.
+        #[cfg(feature = "ares")]
+        radar_event: bool,
     },
     /// A `PlayEVA` line native speaks only for the player's house: the
     /// `HouseClass::Update` advice (`EVA_InsufficientFunds` `0x004F8BA0`,
@@ -888,6 +924,10 @@ pub enum SimSoundEvent {
         tech_building: bool,
         radar: Option<RadarEventRequest>,
         capture_eva_event: Option<InternedId>,
+        /// Ares 3.0 `BuildingClass_ChangeOwnership_Tech @ 10013E40` (hook
+        /// `0x0044840B`) replaces the tech building's block with these.
+        #[cfg(feature = "ares")]
+        ares_tech: AresTechCaptureLines,
     },
     /// `BuildingClass::Infiltrate @ 0x004571E0`'s announcements
     /// (`sim::spy_infiltration`). When the building's owner or the spy's
@@ -1090,8 +1130,57 @@ pub enum SimSoundEvent {
         sw_type: InternedId,
     },
     /// Common Ares Launch10033201..10033242: Ready queue cleanup after FX.
+    /// With `message`, every client also prints the type's Message.Launch
+    /// (10033153), which a handler's NoMessage Flag skips. `sw_type` is the
+    /// type whose SWTypeExt the Launch read (a PostClick Super's source); a
+    /// handler whose Flags hold both NoMessage and NoCleanup sends none.
     #[cfg(feature = "ares")]
     AresSuperWeaponFinished {
+        owner: InternedId,
+        sw_type: InternedId,
+        message: bool,
+    },
+    /// Common Ares Launch10032FC3: every client plays `sw_type`'s
+    /// `EVA_Activated` (the PostClick source's for a PostClick Super),
+    /// unless the handler's Flags hold NoEVA.
+    #[cfg(feature = "ares")]
+    AresSuperWeaponActivatedEva { sw_type: InternedId },
+    /// A new type's AbortFire refused a click (SW_PsychicDominator
+    /// 10070780): the owner's client prints the type's `Message.Abort`.
+    #[cfg(feature = "ares")]
+    AresSuperWeaponAborted {
+        owner: InternedId,
+        sw_type: InternedId,
+    },
+    /// A type-13 radar event only the clients whose player `owner` counts as
+    /// an ally see (SW_NuclearMissile::Activate 10072FF0: "allies can see
+    /// the target location before the enemy does").
+    #[cfg(feature = "ares")]
+    AresAlliedRadarEvent {
+        owner: InternedId,
+        radar: RadarEventRequest,
+    },
+    /// Ares SuperClass_Update_DrainMoney100358A0 refused a draining Super's
+    /// money for a ControlledByHuman House: every client plays
+    /// EVA.InsufficientFunds and prints the label in the player's colour.
+    #[cfg(feature = "ares")]
+    AresSuperWeaponDrainRefused {
+        owner: InternedId,
+        sw_type: InternedId,
+    },
+    /// A new type's deferred activation (UnitDelivery's state machine
+    /// Update10075DE0, the Ares Lightning Storm's start 10036B00): every
+    /// client prints Message.Activate.
+    #[cfg(feature = "ares")]
+    AresSuperWeaponActivated {
+        owner: InternedId,
+        sw_type: InternedId,
+    },
+    /// An Ares Lightning Storm's countdown reached a multiple of 225 under
+    /// `Lightning.PrintText` (hook 53A6CF, 10037330): every client prints
+    /// the type's Message.Launch, with no EVA line.
+    #[cfg(feature = "ares")]
+    AresLightningStormApproaching {
         owner: InternedId,
         sw_type: InternedId,
     },
@@ -1353,6 +1442,12 @@ pub struct Simulation {
     #[cfg(feature = "phobos")]
     #[serde(skip, default)]
     pub(crate) reflected_warhead: Option<crate::sim::intern::InternedId>,
+    /// Ares CanMakeStuffUp's RulesClass writes (100677B0, hook 0x687C16),
+    /// drawn once at scenario start; saved and hashed. See
+    /// `sim::ares_make_stuff_up`.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) ares_made_up_rules: Option<crate::sim::ares_make_stuff_up::AresMadeUpRules>,
     /// Scenario RNG — gamemd `Scenario->Random` (Scen+0x218). Drives in-object-tick
     /// sim draws: scatter, sub-cell placement, smudge/destruction, particles,
     /// wall/overlay damage, bridge collapse/destruction presentation, ore growth/spread, TIBTRE,
@@ -1659,6 +1754,21 @@ pub struct Simulation {
     /// Pending UnitDelivery effects; simulation-owned, saved and hashed.
     #[serde(default)]
     pub(crate) unit_deliveries: crate::sim::superweapon::unit_delivery::UnitDeliveryState,
+    /// Ares ChronoWarpStateMachines moving chronoshifted buildings; owned by
+    /// `superweapon::chronosphere`, saved and hashed.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) ares_chrono_warps: crate::sim::superweapon::AresChronoWarps,
+    /// The Houses whose Ares firestorm is up (HouseClass+0x1FA); owned by
+    /// `sim::ares_firestorm`, saved and hashed.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) ares_firestorm: crate::sim::ares_firestorm::FirestormHouses,
+    /// Every House's Ares tunnel networks (HouseExt+0x64); owned by
+    /// `sim::ares_tunnel`, saved and hashed.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) ares_tunnels: crate::sim::ares_tunnel::AresTunnels,
     /// IonBlastClass's vector (`0x00AA0118`), owned by `ion_blast`. Native
     /// saves no blast; Rust retains pending damaging effects for match restore.
     #[serde(
@@ -2355,7 +2465,7 @@ impl Simulation {
     /// Commit a completed Bullet's detonation while its current Logic slot and
     /// physical object are still present. The caller retires the Bullet only
     /// after this transaction returns.
-    fn commit_logic_projectile_detonations(
+    pub(crate) fn commit_logic_projectile_detonations(
         &mut self,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
@@ -2395,14 +2505,26 @@ impl Simulation {
         .bridge_state_changed
     }
 
+    /// `weapon_index` is FireAt's own argument; `overlay_registry` reaches
+    /// the constructor's immediate update.
     pub(crate) fn commit_fired_wave(
         &mut self,
         rules: &RuleSet,
         event: &SimFireEvent,
         wave_type: u8,
+        weapon_index: i32,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) {
+        #[cfg(not(feature = "ares"))]
+        let _ = weapon_index;
         if let Some(wave) = self.prepare_fired_wave(rules, event, wave_type) {
-            self.admit_fired_wave(event.attacker_id, wave, rules);
+            // Ares CreateWave (Ares.dll 10055160) stores the BYTE weapon index
+            // in the owner's TechnoExt before the constructor runs.
+            #[cfg(feature = "ares")]
+            if let Some(owner) = self.substrate.entities.get_mut(event.attacker_id) {
+                owner.record_ares_wave_weapon_slot(weapon_index as u8);
+            }
+            self.admit_fired_wave(event.attacker_id, wave, rules, overlay_registry);
         }
     }
 
@@ -2414,7 +2536,9 @@ impl Simulation {
         event: &SimFireEvent,
         wave_type: u8,
     ) -> Option<crate::sim::wave::Wave> {
-        debug_assert!(matches!(wave_type, 0 | 3));
+        // Only Ares (TechnoClass_Fire_OtherWaves 10056E60) creates the TS
+        // laser types 1 and 2.
+        debug_assert!(matches!(wave_type, 0 | 3) || (cfg!(feature = "ares") && wave_type < 3));
         let target = match event.target {
             // FireAt aims at the target's vt+0xA4 (`0x006FE1EE`), including
             // a Building's TargetCoordOffset. Wave AI later reads +58 instead.
@@ -2431,6 +2555,7 @@ impl Simulation {
         // &[ESP+0x88], this target coordinate (0x006FE204), first and
         // &[ESP+0x44], the launch source (`event.fire_coord`: GetFLH or a
         // Dropping projectile's GetCoords), second.
+        #[cfg(not(feature = "ares"))]
         let wave = crate::sim::wave::Wave::new_owned(
             wave_type,
             event.attacker_id,
@@ -2438,6 +2563,19 @@ impl Simulation {
             target,
             event.fire_coord,
         );
+        // Ares TechnoClass_Fire_SonicWave/OtherWaves (Ares.dll 10056EF0/
+        // 10056E60, hooks 0x6FF449/0x6FF5F5) build both through CreateWave
+        // 10055160, which passes &[ESP+0x44] first and &[ESP+0x88] second,
+        // and registers the firing weapon in WaveExt.
+        #[cfg(feature = "ares")]
+        let wave = crate::sim::wave::Wave::new_owned(
+            wave_type,
+            event.attacker_id,
+            event.target,
+            event.fire_coord,
+            target,
+        )
+        .with_ares_weapon(event.weapon_id);
         Some(wave)
     }
 
@@ -2448,6 +2586,7 @@ impl Simulation {
         attacker_id: u64,
         mut wave: crate::sim::wave::Wave,
         rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) {
         let stable_id = self.substrate.allocate_stable_id();
         if !wave.constructor_distance_is_live() {
@@ -2467,7 +2606,7 @@ impl Simulation {
         self.next_native_runtime_id();
         // Constructor75E950 runs an immediate Update_Wave762AF0, including
         // current target+58 and GetFLH(0), before the first Logic AI visit.
-        let context = self.wave_update_context(&wave, rules);
+        let context = self.wave_update_context(&wave, rules, overlay_registry);
         let terminal = wave.initialize(context, self.resolved_terrain.as_ref());
         self.admit_wave(stable_id, wave);
         self.active_wave_links.insert(attacker_id, stable_id);
@@ -2584,13 +2723,16 @@ impl Simulation {
                 let Some(object_type) = self.interner.object_type(firer.type_ref(), rules) else {
                     break;
                 };
-                let Some(weapon_name) = crate::sim::combat::combat_weapon::primary_for_tier(
-                    object_type,
-                    firer.veterancy.rank(),
-                ) else {
-                    break;
+                // Ares WaveClass_DamageCell (Ares.dll 10056FA0, hook
+                // 0x75F38F) skips GetWeapon(0) for the wave's own weapon.
+                let weapon_name = match request.ares_weapon {
+                    Some(weapon) => Some(self.interner.resolve(weapon)),
+                    None => crate::sim::combat::combat_weapon::primary_for_tier(
+                        object_type,
+                        firer.veterancy.rank(),
+                    ),
                 };
-                let Some(weapon) = rules.weapon(weapon_name) else {
+                let Some(weapon) = weapon_name.and_then(|name| rules.weapon(name)) else {
                     break;
                 };
                 let raw_ambient_damage = weapon.ambient_damage;
@@ -2748,15 +2890,28 @@ impl Simulation {
                         .and_then(|index| order.get(index + 1).copied());
                 }
 
-                // ChainReaction's Wave-tail callee is a bare RET. Wall damage
-                // follows receivers and reloads raw AmbientDamage, ignoring
-                // the shared mutable occupant value.
+                // ChainReaction's Wave-tail callee (75F44A..75F45F) is a bare
+                // RET; Ares 3.0 fills it with CellChainReact (10050DD0). Wall
+                // damage follows receivers and reloads raw AmbientDamage,
+                // ignoring the shared mutable occupant value.
+                #[cfg(feature = "ares")]
+                if self.overlay_chain_reacts((rx, ry), overlay_registry) {
+                    self.ares_cell_chain_react((rx, ry), rules, overlay_registry, frame_effects);
+                }
                 if let (Some(grid), Some(registry)) = (self.overlay_grid.as_mut(), overlay_registry)
                     && let Some(overlay_id) = grid.cell(rx, ry).overlay_id
                     && let Some(flags) = registry.flags(overlay_id)
                 {
                     let _chain_reaction_no_op = flags.chain_reaction;
-                    if flags.wall {
+                    // Ares 3.0 WaveClass_DamageCell_Wall (1005D7A0, hook
+                    // 0x75F46E): only a weapon whose Warhead is `Wall=yes`
+                    // damages the wall.
+                    if flags.wall
+                        && (!crate::rules::ARES_ENABLED
+                            || rules
+                                .warhead(warhead_name)
+                                .is_some_and(|warhead| warhead.wall))
+                    {
                         let _wall = {
                             let mut host = SimulationWallRuntimeHost {
                                 dirty_cells: &mut self.dirty_cells,
@@ -3197,13 +3352,15 @@ impl Simulation {
             } else {
                 RadarEventType::BaseUnderAttack
             };
-            sound_events.emit(SimSoundEvent::UnderAttack {
-                rx: event.rx,
-                ry: event.ry,
-                owner: event.owner,
-                miner,
-                radar: RadarEventRequest::new(event_type, event.rx, event.ry),
-            });
+            if event.own_alert {
+                sound_events.emit(SimSoundEvent::UnderAttack {
+                    rx: event.rx,
+                    ry: event.ry,
+                    owner: event.owner,
+                    miner,
+                    radar: RadarEventRequest::new(event_type, event.rx, event.ry),
+                });
+            }
             if !structure {
                 continue;
             }
@@ -3250,10 +3407,16 @@ impl Simulation {
             if !self.owner_is_human(event.owner) {
                 continue;
             }
+            #[cfg(feature = "ares")]
+            let eva = self.interner.intern(&event.eva);
             self.sound_events.emit(SimSoundEvent::UnitLost {
                 owner: event.owner,
                 radar: RadarEventRequest::new(RadarEventType::UnitLost, event.rx, event.ry),
                 type_id: event.type_id,
+                #[cfg(feature = "ares")]
+                eva,
+                #[cfg(feature = "ares")]
+                radar_event: event.radar_event,
             });
         }
     }
@@ -3805,17 +3968,7 @@ impl Simulation {
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn bomb_attach_for_test(&mut self, planter: u64, target: Option<u64>, rules: &RuleSet) {
-        Self::bomb_attach(
-            &self.interner,
-            &self.session,
-            &mut self.substrate,
-            &mut self.sound_events,
-            &self.resolved_terrain,
-            &mut self.bombs,
-            planter,
-            target,
-            rules,
-        );
+        self.bomb_attach(planter, target, None, rules);
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -4466,6 +4619,8 @@ impl Simulation {
             buildup_bypass: false,
             #[cfg(feature = "phobos")]
             reflected_warhead: None,
+            #[cfg(feature = "ares")]
+            ares_made_up_rules: None,
             scenario_rng: SimRng::new(seed),
             main_rng: MainRng::new(seed),
             mapgen_rng: SimRng::new(0),
@@ -4542,6 +4697,12 @@ impl Simulation {
             lightning_storm: Default::default(),
             psychic_dominator: Default::default(),
             unit_deliveries: Default::default(),
+            #[cfg(feature = "ares")]
+            ares_chrono_warps: Default::default(),
+            #[cfg(feature = "ares")]
+            ares_firestorm: Default::default(),
+            #[cfg(feature = "ares")]
+            ares_tunnels: Default::default(),
             ion_blasts: Vec::new(),
             alpha_shapes: Default::default(),
             terrain_speed_config: terrain_speed::TerrainSpeedConfig::default(),
@@ -5389,7 +5550,9 @@ impl Simulation {
     /// spawn captured ([`ProjectileStore::fire_inviso`]); its OnBridge stays
     /// clear, as only FireAt copies one.
     ///
-    /// RESIDUAL: a child has no WeaponType. The constructor zeroes `+0x130`
+    /// RESIDUAL (default builds; Ares gives the child its shrapnel weapon,
+    /// [`Self::ares_shrapnel_flak_placement`]): a child has no WeaponType.
+    /// The constructor zeroes `+0x130`
     /// (`0x00466401`) and only SetWeaponType (`0x0046B260`, called from
     /// `0x0044CAFF`, `0x006CDB7E`, `0x006E34E6`, `0x006FE573` and
     /// `0x0070D764`) writes it, so a `FlakScatter=` child would fault reading
@@ -5428,6 +5591,16 @@ impl Simulation {
                     .push((stable_id, inviso, projectile));
             }
             if inviso {
+                #[cfg(feature = "ares")]
+                let placement = self.ares_shrapnel_flak_placement(stable_id, placement, rules);
+                // Ares 1001A940 (hook 0x4688BD): a firestorm wall on the way
+                // burns the child before the obstacle walk.
+                #[cfg(feature = "ares")]
+                if self.ares_inviso_firestorm(stable_id, placement, rules) {
+                    continue;
+                }
+                #[cfg(feature = "ares")]
+                let placement = self.ares_inviso_obstacle(stable_id, placement, rules);
                 self.projectiles.fire_inviso(stable_id, placement, false);
             }
         }
@@ -5914,6 +6087,10 @@ impl Simulation {
                     .add_building_drain(drain);
             }
         }
+        // Ares builds: the building's store joins the House's (`0x00502B83`,
+        // `sim::ares_tiberium_storage`).
+        #[cfg(feature = "ares")]
+        self.ares_storage_added_to_game(stable_id, rules);
     }
 
     /// `HouseClass::Removed_From_Game @ 0x005025F0` for an object on its
@@ -5946,6 +6123,12 @@ impl Simulation {
         {
             let factors = house.cost_factors();
             house.tracking_mut().removed_from_game(entity, &factors);
+        }
+        // Ares builds: the building's store leaves the House's
+        // (`0x00502801..0x00502821`, `sim::ares_tiberium_storage`).
+        #[cfg(feature = "ares")]
+        if structure {
+            self.ares_storage_removed_from_game(stable_id, owner);
         }
         if structure {
             Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, false);
@@ -6295,6 +6478,26 @@ impl Simulation {
         // `BuildingClass::ChangeOwner` first (`0x00448277..0x0044828E`): a
         // building changing hands loses its bomb unless it is
         // `CanBeOccupied=`.
+        // Ares hook448277 (100163B0) first kicks out a Hospital's or
+        // Armory's first passenger (BuildingExt::KickOutHospitalArmory
+        // 10012920), with the old owner still in place.
+        #[cfg(feature = "ares")]
+        if category == EntityCategory::Structure {
+            self.ares_kick_out_hospital_armory(stable_id, rules, registry, effects);
+        }
+        // It then takes the building out of its Prism network unless it is
+        // a `ToAllies` supporter whose network stays allied, and then
+        // forgets its radar jammers.
+        #[cfg(feature = "ares")]
+        if category == EntityCategory::Structure
+            && self.ares_prism_change_owner(stable_id, new_owner, rules)
+        {
+            self.clear_registered_jammers(stable_id);
+        }
+        // Ares BuildingClass_ChangeOwner_PrismForwardAndLeaveBomb (100163B0)
+        // always resumes at 0x448293, past the defuse: a captured building
+        // keeps its bomb.
+        #[cfg(not(feature = "ares"))]
         if category == EntityCategory::Structure
             && let Some(entity) = self.substrate.entities.get(stable_id)
             && !self
@@ -6308,6 +6511,12 @@ impl Simulation {
                 &mut self.sound_events,
                 stable_id,
             );
+        }
+        // Ares ChangeOwnership_SensorArrayA10016CA0 (hook448B70) removes an
+        // active sensor array for the old owner before the gap removal.
+        #[cfg(feature = "ares")]
+        if category == EntityCategory::Structure {
+            self.ares_sensor_array_dispatch(stable_id, false, rules, registry);
         }
         if category == EntityCategory::Structure {
             //448260: gap removal precedes ordinary sight release and owner
@@ -6348,6 +6557,14 @@ impl Simulation {
             new_owner,
             rules,
         );
+        // Ares 3.0 10015A20 and 10015A60 (hooks 0x00448312, 0x00448D95,
+        // before and after the owner swap): the new owner's spy bit goes
+        // (`sim::spy_infiltration::DisplayProductionTo`); nothing re-adds it
+        // between the two.
+        #[cfg(feature = "ares")]
+        if let Some(building) = self.substrate.entities.get_mut(stable_id) {
+            building.display_production_to.remove(new_owner);
+        }
         // Building4484AF precedes the delegated Techno owner transfer.
         self.enable_building_after_owner_change(stable_id, rules);
         // `0x00448559..0x004486C8`: the objects docked at a building go along
@@ -6370,6 +6587,10 @@ impl Simulation {
         }
         if category == EntityCategory::Structure {
             self.houses.leave_house_base_lists(stable_id, old_owner);
+            // Ares BuildingClass_ChangeOwnership_Remove_Academy (hook
+            // 0x00448AB2 -> 10023690) follows the House+68 removal.
+            #[cfg(feature = "ares")]
+            self.update_ares_academy_membership(stable_id, false, rules);
         }
         // TechnoClass::ChangeOwner (`0x007014B9..0x007014CF`): the local
         // player's selected object is deselected first (vt+0x150, every
@@ -6377,8 +6598,11 @@ impl Simulation {
         if self.session.current_house() == Some(old_owner) {
             self.object_deselect(stable_id);
         }
-        // Ares7014D5 ->10049FB0/10049FD7 displays the old owner's queued
-        // sum before target/destination callbacks and the actual owner store.
+        // Ares7014D5 ->10049FB0 unjams the object's radar jammer, then
+        //10049FD7 displays the old owner's queued sum before
+        // target/destination callbacks and the actual owner store.
+        #[cfg(feature = "ares")]
+        self.unjam_all(stable_id);
         #[cfg(feature = "ares")]
         self.flush_bounty_display(stable_id, rules, effects, true);
         // Original7014DB/7014E9 dispatch the class target and destination
@@ -6646,6 +6870,10 @@ impl Simulation {
         }
         if category == EntityCategory::Structure {
             self.join_house_base_lists(stable_id, old_owner, new_owner, rules);
+            // Ares BuildingClass_ChangeOwnership_Add_Academy (hook 0x004491D5
+            // -> 10023650) follows the new House+68 append.
+            #[cfg(feature = "ares")]
+            self.update_ares_academy_membership(stable_id, true, rules);
         }
         // `TechnoClass::ChangeOwner` closes with the mission half (the
         // `+0x484` call at 0x00701849 reads the NEW owner's
@@ -6675,6 +6903,10 @@ impl Simulation {
             );
         }
         if category == EntityCategory::Structure {
+            // Ares ChangeOwnership_SensorArrayB10016CD0 (hook448C3E) adds the
+            // array for the new owner before448C69's primary factory.
+            #[cfg(feature = "ares")]
+            self.ares_sensor_array_dispatch(stable_id, true, rules, registry);
             crate::sim::production::initialize_factory_primary(self, rules, stable_id);
             //448CEF: Grand_Opening(1) also runs on an already placed
             //building; its6E4 gate prevents repeating first-opening slots.
@@ -7518,6 +7750,12 @@ impl Simulation {
             if !coarse_candidate {
                 continue;
             }
+            // Ares SpySat_Update_CheckEligible10024620 (hook508F91) skips a
+            // jammed or EMPed uplink to the next one.
+            #[cfg(feature = "ares")]
+            if entity.radar_jam.is_jammed() || entity.emp_remaining() > 0 {
+                continue;
+            }
             // The first coarse candidate decides the house. Warp-out is a
             // blocking result, not a reason to continue to a later uplink.
             return !entity.is_warped_out();
@@ -7668,29 +7906,38 @@ impl Simulation {
     /// (`Type+0x16F0 != -1`) reports itself. Only the owner-independent half
     /// lives here; the listener gates (local player, `IsAlliedWith(PlayerPtr)`,
     /// `[0xA8B538]`, `GameMode`, `AuxBuilding` ownership) are the app's.
+    /// Ares's hook there (4468F4, Ares.dll 100349D0) announces the first Super
+    /// of the type its owner can use (BuildingTypeExt 1000D610), including
+    /// `SuperWeapon2=` and `SuperWeapons=`.
     pub(crate) fn announce_super_weapon_building_complete(
-        interner: &mut StringInterner,
-        substrate: &ObjectSubstrate,
-        sound_events: &mut FrameChannel<SimSoundEvent>,
+        &mut self,
         stable_id: u64,
         rules: &RuleSet,
     ) {
-        let Some((owner, type_ref)) = substrate
+        let Some(building) = self
+            .substrate
             .entities
             .get(stable_id)
             .filter(|e| e.category() == EntityCategory::Structure && !e.death.is_dying())
-            .map(|e| (e.owner(), e.type_ref()))
         else {
             return;
         };
-        let Some(section) = interner
-            .object_type(type_ref, rules)
+        let owner = building.owner();
+        #[cfg(feature = "ares")]
+        let sw_type =
+            crate::sim::superweapon::first_available_building_super(self, rules, building)
+                .map(|instance| instance.type_id());
+        #[cfg(not(feature = "ares"))]
+        let sw_type = self
+            .interner
+            .object_type(building.type_ref(), rules)
             .and_then(|obj| obj.super_weapon.clone())
-        else {
+            .map(|section| self.interner.intern(&section));
+        let Some(sw_type) = sw_type else {
             return;
         };
-        let sw_type = interner.intern(&section);
-        sound_events.emit(SimSoundEvent::SuperWeaponDetected { owner, sw_type });
+        self.sound_events
+            .emit(SimSoundEvent::SuperWeaponDetected { owner, sw_type });
     }
 
     /// The Selling mission's visit in the building's own LogicVector slot

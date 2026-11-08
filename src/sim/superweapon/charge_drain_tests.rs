@@ -15,6 +15,9 @@ use crate::util::save_codec;
 
 const SHIELD: &str = "DrainShield";
 
+/// A full charge's AnimStage: the stock clamp, or Ares 100354C0's 54.
+const FULL_STAGE: i32 = if cfg!(feature = "ares") { 54 } else { 53 };
+
 fn layers() -> RulesLayerStack {
     RulesLayerStack::new(crate::sim::arena_fixture::clear_ground_ini(
         "[Countries]\n0=Americans\n1=Russians\n\
@@ -194,7 +197,14 @@ fn authored_drain_provider_commands_effects_and_saved_phase_follow_native_conver
             .any(|event| matches!(event, SimSoundEvent::SuperWeaponReady { .. }))
     );
     assert_eq!(sim.super_weapons[&owner][&id].ready_tick(), -100);
-    display(&sim, &rules, owner, 53, SuperWeaponStatus::Ready, true);
+    display(
+        &sim,
+        &rules,
+        owner,
+        FULL_STAGE,
+        SuperWeaponStatus::Ready,
+        true,
+    );
 
     // SPECIAL_PLACE at the ordinary frame tail, with no ready/state/timer
     // override. Native6CB9D9 converts (900-0)*q before actual case10.
@@ -437,7 +447,14 @@ fn authored_drain_provider_commands_effects_and_saved_phase_follow_native_conver
             .iter()
             .any(|event| matches!(event, SimSoundEvent::SuperWeaponReady { .. }))
     );
-    display(&sim, &rules, owner, 53, SuperWeaponStatus::Ready, true);
+    display(
+        &sim,
+        &rules,
+        owner,
+        FULL_STAGE,
+        SuperWeaponStatus::Ready,
+        true,
+    );
 }
 
 #[test]
@@ -451,6 +468,9 @@ fn remote_house_human_selector_and_reset_keep_drain_one_time_and_leaf_ready_guar
     // Actual map action33 gives one-time Grant->ForcedCharge6CC080. The
     // remote owner's human byte, not current-house identity, selects6CB93D.
     for human in [true, false] {
+        // Ares ClickFire10035130 drops the computer's FirestormActive arm:
+        // every House converts the timer and toggles.
+        let toggles = human || cfg!(feature = "ares");
         let (mut sim, local, remote, id, _) = world(&rules);
         sim.houses
             .get_mut(&remote)
@@ -489,7 +509,7 @@ fn remote_house_human_selector_and_reset_keep_drain_one_time_and_leaf_ready_guar
         ));
         let instance = &sim.super_weapons[&remote][&id];
         assert!(instance.is_active() && instance.is_ready() && instance.one_time);
-        if human {
+        if toggles {
             assert_eq!(
                 (
                     instance.charge_drain_state(),
@@ -552,8 +572,8 @@ fn remote_house_human_selector_and_reset_keep_drain_one_time_and_leaf_ready_guar
             FrameEffects::default(),
         );
         let instance = &sim.super_weapons[&remote][&id];
-        assert_eq!(instance.charge_drain_state(), if human { 2 } else { 1 });
-        assert_eq!(instance.charge_duration(), if human { 0 } else { 900 });
+        assert_eq!(instance.charge_drain_state(), if toggles { 2 } else { 1 });
+        assert_eq!(instance.charge_duration(), if toggles { 0 } else { 900 });
         assert!(instance.one_time && instance.is_active() && !instance.is_ready());
         assert_eq!(instance.fade(), fade);
         assert_eq!(

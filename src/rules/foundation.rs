@@ -112,6 +112,9 @@ impl Foundation {
         }
     }
 
+    // `dimensions` answers BuildingTypeClass::GetFoundationWidth @ 0x0045EC90
+    // for a custom foundation too: Ares 3.0 10015310 (hook 0x45EC90) returns
+    // its CustomWidth, as 100152D0 (hook 0x45ECA0) its CustomHeight below.
     pub fn dimensions_leptons(&self) -> [i32; 2] {
         let (width, height) = self.dimensions();
         [i32::from(width) << 8, i32::from(height) << 8]

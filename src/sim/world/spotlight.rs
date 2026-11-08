@@ -245,11 +245,15 @@ impl Simulation {
                 self.resolved_terrain.as_ref(),
             ) < -10
         {
-            // BuildingLightDraw_Start1004EB42..1004EB96 hides the beam,
+            // BuildingLightDraw_Start1004EB42..1004EB96 (hook 0x435BFA) hides the beam,
             // retaining its child through cloak, EMP and underground travel.
             return None;
         }
         let (start_height, middle_height, edge_height, glow_flags) = (430, 400, 250, 0);
+        // Ares BuildingLightClass_Draw_430/_400/_250 (1004EAA0, 1004EA70,
+        // 1004EA40; hooks 0x436072, 0x4360D8, 0x4360FF) offset the three
+        // heights from `Spotlight.StartHeight`; Draw_Spotlight (1004EAC0,
+        // hook 0x435CD3) sets the colour flags.
         #[cfg(feature = "ares")]
         let (start_height, middle_height, edge_height, glow_flags) =
             self.entity_object_type(parent, rules).map_or(
@@ -444,6 +448,9 @@ impl Simulation {
         self.substrate
             .pending_delete
             .remove(super::substrate::DeferredDeleteTicket::Object(id));
+        // Ares BuildingLightClass_SDDTOR (1004EBE0, hook 0x4370C0) clears
+        // TechnoExt::Spotlight; BuildingLightClass_CTOR (1004EA20, hook
+        // 0x435820) set it. The parent's one owned pointer is both fields.
         if let Some(parent) = parent.and_then(|p| self.substrate.entities.get_mut(p)) {
             if parent.building_light.light() == Some(id) {
                 parent.building_light.take();
@@ -685,6 +692,18 @@ impl Simulation {
                 });
             if seen {
                 self.dispatch_object_tag_event(parent_id, 35, Some(parent_id), None, context);
+                // Ares 3.0 BuildingLightClass_Update_Trigger (10050550, hook
+                // 0x4368C9): then 66 (in spotlight) on the same object while
+                // it is alive.
+                #[cfg(feature = "ares")]
+                if self
+                    .substrate
+                    .entities
+                    .get(parent_id)
+                    .is_some_and(|parent| parent.lifecycle.object_alive())
+                {
+                    self.dispatch_object_tag_event(parent_id, 66, Some(parent_id), None, context);
+                }
             }
         }
     }

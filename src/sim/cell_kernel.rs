@@ -49,11 +49,18 @@ pub(crate) enum WallConnectionStep {
 /// All negative-type LOS/Bullet/bounce/Spark callers and CAFNCB203 cleanup
 /// resolve in this prefix. The distinct Building/Gate continuations stay
 /// explicit rather than pretending this is a whole-function port.
-pub(crate) fn wall_connection_step(stored: i32, requested: i32) -> WallConnectionStep {
+///
+/// `overlays` is the OverlayType array the Ares build tests instead of the
+/// three literals; `None` (a caller or fixture without one) keeps them.
+pub(crate) fn wall_connection_step(
+    stored: i32,
+    requested: i32,
+    overlays: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+) -> WallConnectionStep {
     if stored != -1 && stored == requested {
         WallConnectionStep::Return(true)
     } else if requested == -1 {
-        WallConnectionStep::Return(matches!(stored, 2 | 26 | 243))
+        WallConnectionStep::Return(any_wall_overlay(stored, overlays))
     } else {
         match requested {
             0 | 2 => WallConnectionStep::GdiBuildings,
@@ -61,6 +68,28 @@ pub(crate) fn wall_connection_step(stored: i32, requested: i32) -> WallConnectio
             _ => WallConnectionStep::Return(false),
         }
     }
+}
+
+/// The `requested == -1` arm of [`wall_connection_step`]: whether `stored`
+/// is a wall.
+fn any_wall_overlay(
+    stored: i32,
+    overlays: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+) -> bool {
+    // Ares 3.0 CellClass_AttachesToNeighbourOverlay 10015740 (hook
+    // 0x480534): a nonnegative index whose OverlayType is `Wall=yes`
+    // (0x480549), so sandbags, fences and the Kremlin wall count too;
+    // anything else continues at 0x480552, which answers false for -1.
+    #[cfg(feature = "ares")]
+    if let Some(overlays) = overlays {
+        return u8::try_from(stored)
+            .ok()
+            .and_then(|id| overlays.flags(id))
+            .is_some_and(|flags| flags.wall);
+    }
+    #[cfg(not(feature = "ares"))]
+    let _ = overlays;
+    matches!(stored, 2 | 26 | 243)
 }
 
 /// Cell4848B0: direction of a cliff entered from `previous_world_xy`.
@@ -480,13 +509,38 @@ mod tests {
                 let stored = i32::try_from(row["stored"].as_i64().unwrap()).unwrap();
                 let requested = i32::try_from(row["requested"].as_i64().unwrap()).unwrap();
                 assert_eq!(
-                    wall_connection_step(stored, requested),
+                    wall_connection_step(stored, requested, None),
                     WallConnectionStep::Return(row["returned_low_byte"].as_u64().unwrap() != 0),
                     "original480510 query {row}"
                 );
                 assert_eq!(row["rng_unchanged"], true);
             }
         }
+    }
+
+    /// Ares 10015740 (hook 0x480534): the any-wall query answers the
+    /// OverlayType's `Wall=` for any index, not the three stock literals.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_any_wall_query_reads_the_overlay_wall_flag() {
+        let overlays = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+            &crate::rules::ini_parser::IniFile::from_str(
+                "[OverlayTypes]\n0=GASAND\n1=CYCL\n2=GAWALL\n\
+                 [GASAND]\nWall=yes\n[CYCL]\n[GAWALL]\n",
+            ),
+            None,
+        );
+        let any_wall = |stored| wall_connection_step(stored, -1, Some(&overlays));
+        assert_eq!(any_wall(0), WallConnectionStep::Return(true));
+        assert_eq!(any_wall(1), WallConnectionStep::Return(false));
+        // GAWALL's index without `Wall=yes` is no wall here.
+        assert_eq!(any_wall(2), WallConnectionStep::Return(false));
+        assert_eq!(any_wall(-1), WallConnectionStep::Return(false));
+        // A requested type still takes the stock arms.
+        assert_eq!(
+            wall_connection_step(0, 2, Some(&overlays)),
+            WallConnectionStep::GdiBuildings
+        );
     }
 
     #[test]

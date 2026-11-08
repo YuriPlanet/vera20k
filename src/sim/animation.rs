@@ -373,12 +373,15 @@ pub(crate) fn commit_unit_firing_counter(
 /// Aircraft414DA3. Only the HoverAttack arm asks for a Unit; the ordinary
 /// moving/idle/DeployToLand arms serve every Foot. Original concrete-class
 /// controls: tools/spatial_oracle/unit_simple_deploy.json.
+///
+/// `air_rate` is the type's Ares `AirRate` (0 in stock builds).
 pub(crate) fn tick_foot_body_frame_counter(
     entity: &mut crate::sim::game_entity::GameEntity,
     rules: crate::sim::movement::SpeedRules<'_>,
     cadence: FootBodyCadence,
     hover_attack: bool,
     deploy_to_land: bool,
+    air_rate: i32,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
     binary_frame: u32,
 ) {
@@ -396,6 +399,16 @@ pub(crate) fn tick_foot_body_frame_counter(
         || entity.is_warped_out()
         || entity.is_warping_in()
     {
+        return;
+    }
+    // Ares 3.0 FootClass_Update_AnimRate (100493D0, hook 0x4DA8B2), past the
+    // same warp and locomotor-swap refusals: a nonzero `AirRate` alone
+    // decides an airborne (GetHeight > 0) Foot's step.
+    if air_rate != 0 && crate::sim::movement::air_movement::current_fly_height(entity, terrain) > 0
+    {
+        if (binary_frame as i32).wrapping_rem(air_rate) == 0 {
+            entity.body_frame_counter.advance();
+        }
         return;
     }
     // Foot4DA886..4DAA01: the same+538 feeds SHP and voxel drawing.

@@ -224,11 +224,23 @@ impl Simulation {
             UninitContext::new(rules, registry).with_effects(frame_effects),
         );
         // RTTI is read after the synchronous tail calls at 0x004DECA2.
+        // Ares FootClass_Crash_Spin (Ares.dll 10049050, hook 0x4DECAE):
+        // `CrashSpin=no` skips the spin and its draws.
+        #[cfg(feature = "ares")]
+        let crash_spin = self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|entity| self.object_type(entity.type_ref(), rules))
+            .is_none_or(|object| object.techno_combat().movement().crash_spin());
+        #[cfg(not(feature = "ares"))]
+        let crash_spin = true;
         if self
             .substrate
             .entities
             .get(id)
             .is_some_and(|entity| entity.category() != EntityCategory::Infantry)
+            && crash_spin
             && !self.object_placement_scope_active()
         {
             let sideways = self.scenario_rng.next_range_i32_inclusive(0, 0x7FFF_FFFE);
@@ -433,7 +445,13 @@ impl Simulation {
             let bridge_state_changed = if balloon_hover {
                 self.fire_death_weapon(id, rules, overlay_registry, frame_effects)
             } else {
-                self.unit_death_explosion(rules, id, &mut Vec::new());
+                self.unit_death_explosion(
+                    rules,
+                    id,
+                    &mut Vec::new(),
+                    overlay_registry,
+                    frame_effects,
+                );
                 false
             };
             self.uninit_with_context(
@@ -758,15 +776,28 @@ impl Simulation {
         if !red || current_fly_height(entity, terrain) <= 0 {
             return;
         }
-        let threshold = if entity.health.current() != 0 { 10 } else { 80 };
+        // Ares AircraftClass_Update_DamageSmoke (Ares.dll 10047B60, hook
+        // 0x415085) puffs the type's `Smoke.Anim` (null: no draw) under its
+        // `Smoke.ChanceRed`/`Smoke.ChanceDead`.
+        #[cfg(feature = "ares")]
+        let Some((anim, threshold)) = object
+            .techno_combat()
+            .damage()
+            .smoke(entity.health.current() > 0)
+        else {
+            return;
+        };
+        #[cfg(not(feature = "ares"))]
+        let (anim, threshold) = (
+            // `0x004150EF..0x00415102`: `AnimTypeClass::Find` of the literal.
+            crate::rules::effect_asset_catalog::AIRCRAFT_SMOKE_ANIM,
+            if entity.health.current() != 0 { 10 } else { 80 },
+        );
         let location = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
         if self.scenario_rng.next_range_i32_inclusive(0, 99) >= threshold {
             return;
         }
-        // `0x004150EF..0x00415102`: `AnimTypeClass::Find` of the literal.
-        let type_id = self
-            .interner
-            .intern(crate::rules::effect_asset_catalog::AIRCRAFT_SMOKE_ANIM);
+        let type_id = self.interner.intern(anim);
         self.admit_death_anim(
             rules,
             type_id,
@@ -799,6 +830,28 @@ impl Simulation {
         attacker: Option<u64>,
         context: UninitContext<'_>,
     ) {
+        self.kill_cargo_passengers(transport, attacker, true, context);
+    }
+
+    /// Ares `TechnoExt::KillCargo @ 100455E0` (3.0) for a Foot: the
+    /// KillPassengers loop with `LiberateMember(-1, false)`, except that each
+    /// passenger's own cargo dies with the same (here no) killer. Its
+    /// Building arm, the occupants first, is reached only by the building
+    /// chronoshift VERA does not port.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_kill_cargo(&mut self, transport: u64, context: UninitContext<'_>) {
+        self.kill_cargo_passengers(transport, None, false, context);
+    }
+
+    /// The shared passenger loop; `nested_by_self` credits each passenger's
+    /// own cargo to that passenger (KillPassengers) instead of `attacker`.
+    fn kill_cargo_passengers(
+        &mut self,
+        transport: u64,
+        attacker: Option<u64>,
+        nested_by_self: bool,
+        context: UninitContext<'_>,
+    ) {
         loop {
             let Some(passenger) = self
                 .substrate
@@ -818,7 +871,12 @@ impl Simulation {
             {
                 entity.passenger_role.clear_carrier_relation();
             }
-            self.kill_passengers(passenger, Some(passenger), context);
+            let nested = if nested_by_self {
+                Some(passenger)
+            } else {
+                attacker
+            };
+            self.kill_cargo_passengers(passenger, nested, nested_by_self, context);
             self.record_kill_and_uninit(passenger, attacker, context);
         }
     }

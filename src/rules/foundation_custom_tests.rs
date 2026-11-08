@@ -200,3 +200,40 @@ fn custom_outline_backing_and_cursor_match_native_direct_consumers() {
     assert!(row["code_unchanged"].as_bool().unwrap());
     assert_eq!(row["rng_states_before"], row["rng_states_after"]);
 }
+
+/// Ares BuildingTypeClass_GetMaxPips 10010150 (hook 0x45ECE0): a custom
+/// foundation's building answers `Foundation.X` whatever its PipScale, where
+/// the stock answer of a passenger building is its `Passengers=`.
+/// Ares BuildingTypeClass_IsUndeployable 100101D0 (hook 0x465D4A): only a
+/// 1x1 custom foundation undeploys.
+#[test]
+fn custom_foundation_answers_its_width_as_max_pips() {
+    let rules_for = |cells: &str| {
+        let art = IniFile::from_str(&format!(
+            "[CUSTOM_ART]\nFoundation=Custom\n{cells}Foundation.0=0,0\nFoundation.1=1,0\n\
+             Foundation.2=2,0\n"
+        ));
+        let ini = IniFile::from_str(
+            "[Clear]\nBuildable=yes\n[Countries]\n0=Americans\n[Americans]\nSide=GDI\n\
+             [VehicleTypes]\n0=MCV\n[MCV]\nStrength=100\n\
+             [BuildingTypes]\n0=CUSTOM_TEST\n[CUSTOM_TEST]\nImage=CUSTOM_ART\n\
+             Owner=Americans\nStrength=500\nTechLevel=1\nPipScale=Passengers\nPassengers=5\n\
+             UndeploysInto=MCV\n",
+        );
+        let processed = RulesLayerStack::new(ini)
+            .process_with_fixed_art(&art)
+            .unwrap();
+        let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+        rules.install_art_data(ArtRegistry::from_ini(&art));
+        rules
+    };
+    let wide = rules_for("Foundation.X=3\nFoundation.Y=1\n");
+    let object = wide.object("CUSTOM_TEST").unwrap();
+    assert!(matches!(object.foundation, Foundation::Custom(_)));
+    assert_eq!(object.pip_max(&wide), 3);
+    assert!(!object.is_1x1_with_undeploy());
+    let single = rules_for("Foundation.X=1\nFoundation.Y=1\n");
+    let object = single.object("CUSTOM_TEST").unwrap();
+    assert_eq!(object.pip_max(&single), 1);
+    assert!(object.is_1x1_with_undeploy());
+}

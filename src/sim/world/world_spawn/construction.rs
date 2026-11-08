@@ -115,6 +115,19 @@ impl Simulation {
             rules,
             ComponentOrigin::Runtime,
         );
+        // Ares ApplyAcademy10020750 closes each class's InitFromType hook,
+        // after the spy veterancy above; a map's authored objects are read
+        // inside the A8E7AC scope, which skips it.
+        #[cfg(feature = "ares")]
+        self.apply_ares_academy(&mut ge, obj, rules);
+        // Ares TechnoClass_Init_1 (1004A530, hook 0x6F407D): an object
+        // constructed inside the A8E7AC scope after frame 0 (a conversion
+        // or deploy product) never makes an InitialPayload. A map's authored
+        // objects are constructed at frame 0 (`sim::ares_transports`).
+        #[cfg(feature = "ares")]
+        if self.object_placement_scope_active() && self.session.binary_frame() != 0 {
+            ge.ares_initial_payload.mark_created();
+        }
         Ok(Some(ge))
     }
 
@@ -195,7 +208,18 @@ impl Simulation {
             ge.set_body_facing_rot(obj.turret_rot);
         }
         if let Some(obj) = obj.filter(|obj| GameEntity::type_has_secondary_facing(obj, category)) {
-            let mut secondary = crate::sim::movement::FacingClass::new(initial, obj.turret_rot);
+            // Ares 3.0 UnitClass_CTOR_TurretROT (1004BC40, hook 0x735584) and
+            // AircraftClass_Init_TurretROT (10048AC0, hook 0x413FFA) give the
+            // secondary controller `TurretROT=`, else `ROT=`.
+            #[cfg(feature = "ares")]
+            let rot = if matches!(category, EntityCategory::Unit | EntityCategory::Aircraft) {
+                obj.secondary_turn_rate()
+            } else {
+                obj.turret_rot
+            };
+            #[cfg(not(feature = "ares"))]
+            let rot = obj.turret_rot;
+            let mut secondary = crate::sim::movement::FacingClass::new(initial, rot);
             if category == EntityCategory::Aircraft {
                 // Aircraft413FD2..414015 supplies ROT to BOTH controllers;
                 // Unlimbo414310 -> Foot4D7170 -> Techno6F6DAA snaps Primary;
@@ -257,6 +281,8 @@ impl Simulation {
         // no Buildup SHP clears the AI sale byte (`0x00442CBC`).
         if category == EntityCategory::Structure {
             ge.bind_building_construction_control(rules.buildup_control(&obj.id));
+            #[cfg(feature = "ares")]
+            ge.bind_building_sell_rate(rules.buildup_sell_rate(&obj.id));
             if matches!(origin, ComponentOrigin::Authored { .. }) {
                 ge.initialize_building_idle_body(session.binary_frame() as i32);
             }
@@ -332,6 +358,8 @@ impl Simulation {
         // no owner guard; a Techno without a represented house is a
         // fixture case. Rust never re-runs this InitFromType tail (Unit
         // slot +0x24 can); only retail [SPY], an Infantry, sets the keys.
+        // Ares 3.0 Sides_Disguise (1002F9C0, hook 0x6F422F) wears the owner
+        // house's GetDisguise instead, which `side_disguise` answers.
         if obj.can_disguise
             && obj.perma_disguise
             && let Some(side) = houses.get(&ge.owner()).map(|h| h.side_index())
@@ -381,6 +409,19 @@ impl Simulation {
                 }
                 _ => false,
             });
+        // Ares 3.0 100237C0, 10023600 and 100236D0 (hooks 0x00735678 and
+        // 0x0074689B, 0x00413FD2, 0x00442D1B): the owner's SpyEffect
+        // veterancy (HouseExt +0x48..+0x4A, `sim::spy_infiltration`) makes a
+        // `Trainable=` naval unit, aircraft or building veteran too.
+        #[cfg(feature = "ares")]
+        let veteran = veteran
+            || obj.trainable
+                && house.is_some_and(|house| match category {
+                    EntityCategory::Unit => obj.naval && house.naval_veterancy(),
+                    EntityCategory::Aircraft => house.aircraft_veterancy(),
+                    EntityCategory::Structure => house.building_veterancy(),
+                    EntityCategory::Infantry => false,
+                });
         if veteran {
             ge.veterancy.set_veteran();
         }

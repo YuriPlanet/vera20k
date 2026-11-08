@@ -126,7 +126,11 @@ pub(crate) fn observer_draw_context(
             .is_some_and(|observer| sim.fog().senses_object_for_house(observer, entity)),
         cloaking_stages: rules.map_or_else(
             || crate::rules::ruleset::GeneralRules::default().cloaking_stages,
-            |r| r.general.cloaking_stages,
+            |r| {
+                object.map_or(r.general.cloaking_stages, |object| {
+                    object.cloaking_stages(r.general.cloaking_stages)
+                })
+            },
         ),
         invisible: object.is_some_and(|obj| {
             obj.invisible

@@ -516,8 +516,8 @@ pub(crate) fn refresh_sidebar_cameo_draw_state(state: &mut AppState) {
 /// Ares1003D800 additionally admits the current Country's retained lists.
 /// An undeploying Building uses the Unit-list branch, comparing its own
 /// BuildingType pointer, not UndeploysInto; that cannot match an INI-produced
-/// UnitType list. New Ares SpyEffect.Custom House gains are a separate chain;
-/// this selector reads the stock spy flags currently represented by HouseState.
+/// UnitType list. Its spy arms read HouseState's stock flags and the Ares
+/// SpyEffect veterancy (`sim::spy_infiltration`).
 ///
 /// [`SidebarCameoAtlas::cameo`]: crate::render::sidebar_cameo_atlas::SidebarCameoAtlas::cameo
 fn shows_alt_cameo(
@@ -538,13 +538,30 @@ fn shows_alt_cameo(
         if rules.country_starts_veteran(country, obj) {
             return true;
         }
-        return obj.trainable
-            && !obj.naval
-            && match obj.category {
-                ObjectCategory::Infantry => house.veteran_infantry(),
-                ObjectCategory::Vehicle => house.veteran_units(),
-                ObjectCategory::Aircraft | ObjectCategory::Building => false,
-            };
+        // Ares 3.0 1003D89A/1003D8DE/1003D911: a naval unit asks the
+        // house's SpyEffect NavalVeterancy instead of the war factory's,
+        // aircraft and non-undeploying buildings their own.
+        #[cfg(feature = "ares")]
+        {
+            return obj.trainable
+                && match obj.category {
+                    ObjectCategory::Infantry => !obj.naval && house.veteran_infantry(),
+                    ObjectCategory::Vehicle if obj.naval => house.naval_veterancy(),
+                    ObjectCategory::Vehicle => house.veteran_units(),
+                    ObjectCategory::Aircraft => house.aircraft_veterancy(),
+                    ObjectCategory::Building => house.building_veterancy(),
+                };
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            return obj.trainable
+                && !obj.naval
+                && match obj.category {
+                    ObjectCategory::Infantry => house.veteran_infantry(),
+                    ObjectCategory::Vehicle => house.veteran_units(),
+                    ObjectCategory::Aircraft | ObjectCategory::Building => false,
+                };
+        }
     }
     obj.trainable
         && match obj.category {

@@ -208,18 +208,24 @@ impl Simulation {
     /// (`SuperClass::Launch 0x006CC7BC..0x006CC858`) and the locomotor imbue
     /// (`0x0046953E..0x004695E6`).
     pub(crate) fn unit_in_contact_war_factory(&self, id: u64, rules: &RuleSet) -> bool {
-        let Some(unit) = self.substrate.entities.get(id) else {
-            return false;
-        };
-        unit.category() == crate::map::entities::EntityCategory::Unit
-            && unit.radio_contacts.slot(0).is_some_and(|contact| {
-                self.is_weapons_factory(contact, rules)
-                    && self.substrate.occupancy.first_building_on_layer(
-                        unit.position.rx(),
-                        unit.position.ry(),
-                        MovementLayer::Ground,
-                    ) == Some(contact)
-            })
+        self.unit_war_factory_contact(id, rules).is_some()
+    }
+
+    /// The war factory of [`Self::unit_in_contact_war_factory`], for the
+    /// ReceiveDamage site whose Ares hook also reads its type.
+    pub(crate) fn unit_war_factory_contact(&self, id: u64, rules: &RuleSet) -> Option<u64> {
+        let unit = self.substrate.entities.get(id)?;
+        if unit.category() != crate::map::entities::EntityCategory::Unit {
+            return None;
+        }
+        unit.radio_contacts.slot(0).filter(|&contact| {
+            self.is_weapons_factory(contact, rules)
+                && self.substrate.occupancy.first_building_on_layer(
+                    unit.position.rx(),
+                    unit.position.ry(),
+                    MovementLayer::Ground,
+                ) == Some(contact)
+        })
     }
 }
 

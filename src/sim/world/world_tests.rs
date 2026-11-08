@@ -1352,6 +1352,7 @@ fn idle_squid_body_counter_starts_move_sound() {
         },
         object.hover_attack,
         object.deploy_to_land,
+        0,
         None,
         4,
     );
@@ -2494,6 +2495,7 @@ fn gsi_04_11_bullet_ore_reduction_precedes_outer_crater_anim_start() {
          [OverlayTypes]\n0=ORE\n\
          [SmudgeTypes]\n0=CR1\n\
          [Tiberiums]\n0=Riparius\n\
+         [Animations]\n0=EXPLOSION\n\
          [OREWH]\nCellSpread=0\nAnimList=EXPLOSION\nTiberium=yes\n\
          Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
          [ORE]\nTiberium=yes\nChainReaction=yes\n\
@@ -2583,6 +2585,11 @@ fn gsi_04_11_bullet_ore_reduction_precedes_outer_crater_anim_start() {
         "the outer crater must observe the already-cleared overlay cell"
     );
     let mut expected_rng = crate::sim::rng::SimRng::new(1);
+    // Ares 3.0 CellChainReact (10050DD0, hook 0x48964F): the spread walk
+    // rolls RandomRanged(0, 99) for the ChainReaction ore before its
+    // reduction; with Power 0 a reaction deals nothing and the ore clears.
+    #[cfg(feature = "ares")]
+    let _ = expected_rng.next_range_i32_inclusive(0, 99);
     let _ = expected_rng.next_range_u32(1);
     assert_eq!(sim.scenario_rng.state(), expected_rng.state());
 }
@@ -2643,7 +2650,12 @@ fn gsi_04_11_missile_outer_anim_precedes_per_cell_ore_reduction() {
     missile.locomotor = Some(locomotor);
     sim.substrate.entities.insert(missile);
     sim.reveal(1);
-    let before_rng = sim.scenario_rng.state();
+    let mut expected_rng = sim.scenario_rng.clone();
+    // Ares 3.0 CellChainReact (10050DD0, hook 0x48964F): the ChainReaction
+    // ore's RandomRanged(0, 99) roll in the spread walk; with Power 0 a
+    // reaction deals nothing and the ore still clears.
+    #[cfg(feature = "ares")]
+    let _ = expected_rng.next_range_i32_inclusive(0, 99);
 
     sim.process_rocket(
         1,
@@ -2669,7 +2681,7 @@ fn gsi_04_11_missile_outer_anim_precedes_per_cell_ore_reduction() {
             .is_none(),
         "RocketLocomotion starts its crater Anim before the later ore sweep"
     );
-    assert_eq!(sim.scenario_rng.state(), before_rng);
+    assert_eq!(sim.scenario_rng.state(), expected_rng.state());
     assert_eq!(sim.combat_light_requests.len(), 1);
 }
 
@@ -3362,6 +3374,7 @@ fn sonic_wave_test_rules(range: u8) -> RuleSet {
     .expect("Sonic Wave fixture")
 }
 
+#[cfg(not(feature = "ares"))]
 fn sonic_tail_order_test_rules() -> RuleSet {
     RuleSet::from_ini(&IniFile::from_str(
         "[VehicleTypes]\n0=DLPH\n1=LATER\n2=TARGET\n\n\
@@ -3381,7 +3394,7 @@ fn admit_test_wave(sim: &mut Simulation, rules: &RuleSet, event: &SimFireEvent) 
     let wave = sim
         .prepare_fired_wave(rules, event, 0)
         .expect("wave prepared");
-    sim.admit_fired_wave(event.attacker_id, wave, rules);
+    sim.admit_fired_wave(event.attacker_id, wave, rules, None);
 }
 
 fn sonic_fire_event(
@@ -3488,19 +3501,189 @@ fn target_coord_offset_moves_initial_wave_endpoint_but_not_tracking() {
     );
     let event = sonic_fire_event(&mut sim, &rules, dolphin, yard);
     let wave = sim.prepare_fired_wave(&rules, &event, 0).unwrap();
+    // Ares CreateWave passes the launch source first instead.
+    #[cfg(not(feature = "ares"))]
     assert_eq!(
         wave.source(),
         crate::sim::projectile::ProjectileCoord::new(centre.x + 300, centre.y + 200, centre.z,)
     );
+    #[cfg(feature = "ares")]
+    let _ = (wave, centre);
     admit_test_wave(&mut sim, &rules, &event);
     let id = sim.active_wave_links[&dolphin];
     assert_eq!(
-        sim.wave_update_context(sim.waves.get(id).unwrap(), &rules)
+        sim.wave_update_context(sim.waves.get(id).unwrap(), &rules, None)
             .target_position,
         Some(crate::sim::projectile::ProjectileCoord::new(
             centre.x, centre.y, centre.z
         ))
     );
+}
+
+#[cfg(feature = "ares")]
+fn ares_sonic_rules(weapon_keys: &str) -> RuleSet {
+    RuleSet::from_ini(&IniFile::from_str(&format!(
+        "[VehicleTypes]\n0=DLPH\n1=TARGET\n\n\
+         [DLPH]\nStrength=200\nArmor=light\nSpeed=8\nPrimary=SonicZap\nElitePrimary=SonicZapE\n\n\
+         [TARGET]\nStrength=100\nArmor=wood\n\n\
+         [SonicZap]\nDamage=4\nROF=20\nRange=10\nProjectile=Sonic\nSpeed=100\nWarhead=SonicWH\nIsSonic=yes\n{weapon_keys}\n\n\
+         [SonicZapE]\nDamage=8\nAmbientDamage=15\nROF=20\nRange=10\nProjectile=Sonic\nSpeed=100\nWarhead=SonicWH\nIsSonic=yes\n\n\
+         [Sonic]\nLevel=yes\n\n\
+         [SonicWH]\nWood=yes\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,0%,0%\n",
+    )))
+    .expect("Ares Sonic Wave fixture")
+}
+
+/// Ares WaveClass_Update_Beam (Ares.dll 10057290, hook 0x762B62): a Sonic
+/// wave keeps tracking within its weapon's Range (here ten cells, beyond the
+/// stock 2172 leptons) and draws from the target end for a reversing class.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_wave_tracks_within_weapon_range_and_reverses_by_target_class() {
+    for reverse in [false, true] {
+        let rules = ares_sonic_rules(if reverse {
+            "Wave.ReverseAgainstVehicles=yes"
+        } else {
+            ""
+        });
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x5EED_A2E5);
+        let dolphin = sim
+            .spawn_object("DLPH", "Americans", 6, 10, 64, &rules)
+            .unwrap();
+        let target = sim
+            .spawn_object("TARGET", "Russians", 16, 10, 0, &rules)
+            .unwrap();
+        let event = sonic_fire_event(&mut sim, &rules, dolphin, target);
+        sim.commit_fired_wave(&rules, &event, 0, 0, None);
+        let wave = sim.waves.get(sim.active_wave_links[&dolphin]).unwrap();
+        assert!(
+            wave.active_geometry() && !wave.decaying(),
+            "reverse={reverse}"
+        );
+        let aim = sim
+            .wave_update_context(wave, &rules, None)
+            .target_position
+            .unwrap();
+        let expected = if reverse { aim } else { event.fire_coord };
+        assert_eq!(wave.source(), expected, "reverse={reverse}");
+    }
+}
+
+/// Ares WaveClass_Update (Ares.dll 100571A0, hook 0x760F50) and
+/// WaveClass_DamageCell (10056FA0, hook 0x75F38F): the recorded cells take
+/// the fired weapon's AmbientDamage, not the elite owner's GetWeapon(0), and
+/// a weapon without AmbientDamage damages nothing.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_wave_damage_uses_the_fired_weapon_and_its_ambient_damage() {
+    for ambient in [10, 0] {
+        let rules = ares_sonic_rules(&format!("AmbientDamage={ambient}"));
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x5EED_A2E6);
+        let dolphin = sim
+            .spawn_object("DLPH", "Americans", 6, 10, 64, &rules)
+            .unwrap();
+        let receiver = sim
+            .spawn_object("TARGET", "Russians", 7, 10, 0, &rules)
+            .unwrap();
+        let target = sim
+            .spawn_object("TARGET", "Russians", 12, 10, 0, &rules)
+            .unwrap();
+        let event = sonic_fire_event(&mut sim, &rules, dolphin, target);
+        sim.commit_fired_wave(&rules, &event, 0, 0, None);
+        sim.substrate
+            .entities
+            .get_mut(dolphin)
+            .unwrap()
+            .veterancy
+            .set_rank_for_test(200);
+        let health = |sim: &Simulation| {
+            sim.substrate
+                .entities
+                .get(receiver)
+                .unwrap()
+                .health
+                .current()
+        };
+        for _ in 0..20 {
+            sim.visit_combat_tail(0, &rules, None, crate::sim::world::FrameEffects::default());
+            if health(&sim) != 100 {
+                break;
+            }
+        }
+        assert_eq!(health(&sim), 100 - ambient, "AmbientDamage={ambient}");
+    }
+}
+
+/// Ares TechnoClass_Fire_OtherWaves (Ares.dll 10056E60, hook 0x6FF5F5) and
+/// WaveClass_Update (100571A0, hook 0x760F50): a `Wave.IsLaser` or
+/// `Wave.IsBigLaser` shot creates a TS laser wave of type 1 or 2, whose
+/// AmbientDamage strikes the cells under the beam on each of its 22 updates
+/// (nLaserIntensity 160, less 6 each, leaves below 32), and then it leaves.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_laser_wave_damages_its_cells_on_each_update_until_it_fades() {
+    for (key, wave_type) in [("Wave.IsLaser", 1), ("Wave.IsBigLaser", 2)] {
+        let Some(patched) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(
+            &IniFile::from_str(&format!(
+                "[MTNK]\nPrimary=LaserWave\n\
+                     [LaserWave]\nDamage=0\nAmbientDamage=3\nROF=200\nRange=6\n\
+                     Projectile=InvisibleLow\nSpeed=100\nWarhead=RailShot2\n{key}=yes\n",
+            )),
+        ) else {
+            return;
+        };
+        let rules = &patched.rules;
+        let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x1A5E_0001);
+        sim.fog = crate::sim::vision::FogState::new(32, 32);
+        let owner = sim.interner.intern("Americans");
+        sim.session.set_current_house_for_test(Some(owner));
+        sim.intern_rule_type_ids(rules);
+        sim.resolve_type_handles(rules);
+        let source = sim
+            .spawn_object("MTNK", "Americans", 16, 16, 64, rules)
+            .unwrap();
+        let target = sim
+            .spawn_object("SMCV", "Russians", 20, 16, 192, rules)
+            .unwrap();
+        let on_line = sim
+            .spawn_object("SMCV", "Russians", 18, 16, 192, rules)
+            .unwrap();
+        sim.fog.mark_visible_for_owner(owner, 20, 16);
+        assert!(sim.apply_command(
+            "Americans",
+            &Command::Attack {
+                attacker_id: source,
+                target_id: target
+            },
+            Some(rules),
+        ));
+        let grid = sim.path_grid_snapshot().unwrap();
+        let health = |sim: &Simulation| {
+            sim.substrate
+                .entities
+                .get(on_line)
+                .unwrap()
+                .health
+                .current()
+        };
+        let mut wave_id = None;
+        let mut damaged_updates = 0;
+        for _ in 0..96 {
+            let before = health(&sim);
+            sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
+            if health(&sim) != before {
+                assert_eq!(before - health(&sim), 3, "{key}: one AmbientDamage");
+                damaged_updates += 1;
+            }
+            if let Some(id) = sim.active_wave_id(source) {
+                assert_eq!(*wave_id.get_or_insert(id), id, "{key}: one shot");
+                assert_eq!(sim.waves.get(id).unwrap().wave_type(), wave_type, "{key}");
+            }
+        }
+        let id = wave_id.expect("the laser-wave shot creates its wave");
+        assert_eq!(damaged_updates, 22, "{key}");
+        assert!(sim.waves.get(id).is_none(), "{key}: the faded wave leaves");
+    }
 }
 
 #[test]
@@ -3601,7 +3784,7 @@ fn sonic_cell_target_uses_persistent_dummy_gettargetcoords_on_create_and_refresh
     assert_eq!(process_dummy.snapshot().coord, (-1, 7));
 
     process_dummy.stamp_coord(-9, -9);
-    let context = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), &rules);
+    let context = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), &rules, None);
     assert_eq!(process_dummy.snapshot().coord, (-1, 7));
     assert_eq!(
         context.target_position,
@@ -3799,6 +3982,8 @@ fn guard_infantry_acquire_return_fire_and_finish_a_duel() {
     assert!(survivor.attack_target.target().is_none());
 }
 
+// Ares WaveClass_Update damages before the update; see the ares_wave tests.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn sonic_fire_registers_immediately_but_later_techno_fires_before_wave_tail_ai() {
     let rules = sonic_tail_order_test_rules();
@@ -3950,6 +4135,8 @@ fn sonic_fire_registers_immediately_but_later_techno_fires_before_wave_tail_ai()
     );
 }
 
+// Ares WaveClass_Update damages before the update; see the ares_wave tests.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn sonic_cell_fire_wave_damage_selects_level_two_bridge_plane() {
     // Range6 cannot reach this six-cell horizontal separation plus the
@@ -9175,6 +9362,7 @@ fn captured_events(
                 tech_building,
                 radar,
                 capture_eva_event,
+                ..
             } => Some((
                 *old_owner,
                 *new_owner,

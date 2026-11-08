@@ -74,8 +74,15 @@ mod tests {
         resolve(processed.neutral_tech_buildings(), art)
     }
 
+    /// The list's comma-separated names are registered BuildingTypes, so
+    /// Ares's Find-only read (Buf_AI 1005B830, hook 0x672B0E) resolves them.
     fn rules_with(list: &str) -> String {
-        format!("[AI]\nNeutralTechBuildings={list}\n")
+        let types: String = list
+            .split(',')
+            .enumerate()
+            .map(|(index, name)| format!("{index}={name}\n"))
+            .collect();
+        format!("[BuildingTypes]\n{types}[AI]\nNeutralTechBuildings={list}\n")
     }
 
     /// The verified stock YR list and footprints through a narrow INI fixture.
@@ -112,7 +119,9 @@ mod tests {
     }
 
     /// `strtok` skips empty fields but the type list allocates each token as
-    /// written, so a spaced name misses its art section.
+    /// written, so a spaced name misses its art section. Ares's Find-only
+    /// read (Buf_AI 1005B830, hook 0x672B0E) allocates no spaced name.
+    #[cfg(not(feature = "ares"))]
     #[test]
     fn list_entries_keep_their_spaces_and_empty_fields_drop() {
         let art = IniFile::from_str("[CAOILD]\nFoundation=2x2\n[CAPOWR]\nFoundation=2x2\n");

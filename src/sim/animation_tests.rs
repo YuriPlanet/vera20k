@@ -241,7 +241,16 @@ fn gsi_13_06_counter_suppressions_hold_the_persistent_value() {
 
     for (name, mut entity) in variants {
         entity.body_frame_counter.set_for_test(17);
-        tick_foot_body_frame_counter(&mut entity, speed.rules(), cadence, false, false, None, 1);
+        tick_foot_body_frame_counter(
+            &mut entity,
+            speed.rules(),
+            cadence,
+            false,
+            false,
+            0,
+            None,
+            1,
+        );
         assert_eq!(entity.body_frame_counter.get(), 17, "{name}");
     }
 }
@@ -274,6 +283,7 @@ fn gsi_13_06_positive_fraction_below_get_current_speed_threshold_is_idle() {
             },
             false,
             false,
+            0,
             None,
             1,
         );
@@ -1624,6 +1634,7 @@ fn unit_body_counter_matches_original_foot_cadence() {
                 },
                 flag("hover_attack"),
                 flag("deploy_to_land"),
+                0,
                 None,
                 integer("frame", 0) as u32,
             );
@@ -1735,6 +1746,7 @@ fn foot_body_counter_matches_original_concrete_classes() {
             },
             flag("hover_attack"),
             flag("deploy_to_land"),
+            0,
             None,
             integer("frame", 0) as u32,
         );
@@ -1750,4 +1762,47 @@ fn foot_body_counter_matches_original_concrete_classes() {
             assert_eq!(row["observed"]["unit_deployed_calls"], 0, "{input}");
         }
     }
+}
+
+/// Ares 3.0 FootClass_Update_AnimRate (100493D0, hook 0x4DA8B2): an airborne
+/// Foot with an `AirRate` steps only on the frames it divides, whatever its
+/// IdleRate; on the ground the stock cadence decides again.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_air_rate_alone_steps_an_airborne_foot() {
+    let cadence = FootBodyCadence {
+        walk_rate: 1,
+        idle_rate: 1,
+    };
+    let speed = Gsi1306Speed::new();
+    let mut entity = gsi_13_06_active_shp_unit("DRON", LocomotorKind::Drive);
+    entity.position.set_exact_z_leptons_for_test(Some(300));
+    entity.body_frame_counter.set_for_test(0);
+    for frame in 1..=6 {
+        tick_foot_body_frame_counter(
+            &mut entity,
+            speed.rules(),
+            cadence,
+            false,
+            false,
+            3,
+            None,
+            frame,
+        );
+    }
+    assert_eq!(entity.body_frame_counter.get(), 2);
+    entity.position.set_exact_z_leptons_for_test(Some(0));
+    for frame in 7..=8 {
+        tick_foot_body_frame_counter(
+            &mut entity,
+            speed.rules(),
+            cadence,
+            false,
+            false,
+            3,
+            None,
+            frame,
+        );
+    }
+    assert_eq!(entity.body_frame_counter.get(), 4);
 }

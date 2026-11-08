@@ -276,9 +276,13 @@ pub(super) fn classify_collision_kind(
     if facts.accepted_building {
         Ok(Some(SparkCollisionKind::Building))
     } else if matches!(
+        // The stock literals even under Ares (hook 0x480534): its
+        // ParticleSystemExt simulates these sparks itself, which is not
+        // ported (docs/ares-anim-particles.md).
         crate::sim::cell_kernel::wall_connection_step(
             facts.wall_overlay_id.map_or(-1, i32::from),
-            -1
+            -1,
+            None,
         ),
         crate::sim::cell_kernel::WallConnectionStep::Return(true)
     ) {

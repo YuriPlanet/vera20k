@@ -928,13 +928,20 @@ impl Simulation {
             .filter(|(_, category)| *category == EntityCategory::Unit)
             .map(|(id, _)| id);
         // 741CE5..741D0D: a `UnitAbsorb=` building waits there too, whatever
-        // its contacts.
+        // its contacts; with Ares 3.0 a `Tunnel=` one as well (10017830,
+        // hook 0x741CE5).
         let absorber = original_building.filter(|&building| {
             self.substrate
                 .entities
                 .get(building)
                 .and_then(|building| self.entity_object_type(building, rules))
-                .is_some_and(|object| object.unit_absorb)
+                .is_some_and(|object| {
+                    #[cfg(feature = "ares")]
+                    if object.building_type_ext().tunnel.is_some() {
+                        return true;
+                    }
+                    object.unit_absorb
+                })
         });
         if let Some(target) = mobile_target.or(absorber)
             && enter_radio_arm

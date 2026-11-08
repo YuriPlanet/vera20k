@@ -181,6 +181,7 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, id: u64, step: &Value, context: 
             },
             object.hover_attack,
             object.deploy_to_land,
+            0,
             None,
             sim.session.binary_frame(),
         );

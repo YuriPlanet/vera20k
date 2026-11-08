@@ -72,9 +72,9 @@ mod tests;
 pub(crate) use allocated_order::{AllocatedCellOrder, ROW_NEIGHBORS};
 pub(crate) use bridge_flags::RealCellBridgeFlags0x1180;
 pub use build::OverlayLoadSource;
+pub(crate) use build::cliff_back_normal_reclass_applies;
 pub use build::{AuthoredTerrainFill, RadarColorMetadata, current_tile_permissions};
 use build::{presentation_tile_parts, wheel_speed_at_or_below_one_percent};
-pub(crate) use build::cliff_back_normal_reclass_applies;
 pub(crate) use cell_recalc::{
     AutomaticTubeAllocation, AutomaticTubeRequest, LoadCellRecalcEffects, LoadCellRecalcError,
     LoadCellRecalcOutcome, LoadCellRecalcState, is_behind_cliff,
@@ -127,6 +127,41 @@ pub(crate) fn recalc_zone_type(
         overlay_zone_type,
         land_type,
         wheel_speed_at_or_below_one_percent(wheel_speed),
+        terrain_object_occupation,
+    )
+}
+
+/// [`recalc_zone_type`] with the object list's building arm
+/// (`0x00483D94..0x00483DB0`), which runs after the wheel test and before
+/// any later object: `building_impassable` is a building there whose cell is
+/// Impassable (6, `0x00483D6B`). The stock arm's FirestormWall= branch
+/// needs `HouseClass::FirestormActive` (`+0x1FA`), which only Ares sets
+/// (its `Firestorm.Wall` sections take that branch: Ares 3.0 10014B70, hook
+/// 0x483D94), so default builds have no caller; the LaserFence branch is
+/// not ported (no retail type is a laser fence).
+#[cfg(feature = "ares")]
+pub(crate) fn recalc_zone_type_with_buildings(
+    outside: bool,
+    overlay_zone_type: Option<u8>,
+    land_type: u8,
+    wheel_speed: Option<crate::util::native_x87::NativeF32Bits>,
+    terrain_object_occupation: Option<i32>,
+    building_impassable: bool,
+) -> u8 {
+    let wheel_blocked = wheel_speed_at_or_below_one_percent(wheel_speed);
+    let reaches_objects = !outside
+        && overlay_zone_type.is_none()
+        && land_type != LandType::Water.as_index()
+        && land_type != LandType::Beach.as_index()
+        && !wheel_blocked;
+    if building_impassable && reaches_objects {
+        return zone_class::IMPASSABLE;
+    }
+    recalc_zone_type_for_wheel_block(
+        outside,
+        overlay_zone_type,
+        land_type,
+        wheel_blocked,
         terrain_object_occupation,
     )
 }

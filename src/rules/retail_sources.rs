@@ -655,7 +655,12 @@ mod tests {
     #[test]
     fn random_map_catalog_uses_retained_root_langrule_and_fixed_art() {
         let directory = TestDirectory::new("rmg-retained-rules");
-        directory.write("rulesmd.ini", b"[AI]\nNeutralTechBuildings=TECH1\n");
+        // TECH2 is registered so that Ares's Find-only list read (Buf_AI
+        // 1005B830, hook 0x672B0E) resolves the langrule list too.
+        directory.write(
+            "rulesmd.ini",
+            b"[BuildingTypes]\n0=TECH2\n[AI]\nNeutralTechBuildings=TECH1\n",
+        );
         // The original Reset's ReadCCFile4741F0 accepted this Digest for the
         // exact physical body through the existing RawFile/INI owners.
         directory.write(

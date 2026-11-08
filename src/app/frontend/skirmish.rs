@@ -2233,6 +2233,9 @@ mod tests {
         );
     }
 
+    // The stock budget: Ares 3.0 MPGameModeClass_CreateStartingUnits_UnitCost
+    // (1001EE10, hook 0x5D6D9A) averages a type set without BaseUnit.
+    #[cfg(not(feature = "ares"))]
     #[test]
     fn skirmish_positive_unit_count_spawns_extra_starting_units() {
         let mut sim = Simulation::new();
@@ -2324,6 +2327,9 @@ mod tests {
     /// `Post_Map_Init` calls `Generate_Starting_Units` at `0x00686937` before
     /// the AI grant loop at `0x006869BE`, so the Hard multiplier applies to the
     /// balance that already includes the credited leftover budget.
+    // The stock budget: Ares 3.0 MPGameModeClass_CreateStartingUnits_UnitCost
+    // (1001EE10, hook 0x5D6D9A) averages a type set without BaseUnit.
+    #[cfg(not(feature = "ares"))]
     #[test]
     fn gsi_09_01_ai_grant_multiplies_post_leftover_balance() {
         let mut sim = Simulation::new();

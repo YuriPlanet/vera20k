@@ -44,11 +44,52 @@ impl PromotionAbilities {
     /// cached rank. Above two, either tier protects; below one neither does.
     #[cfg(feature = "ares")]
     pub(crate) fn driver_protected(&self, experience: NativeF32Bits) -> bool {
+        self.has_at(2, experience)
+    }
+
+    /// `PSIONICSIMMUNE` (TypeExt+131/+138) by the same raw-XP test, as
+    /// TechnoExt::ApplyPermaMC 10045E30 inlines HasAresAbility.
+    #[cfg(feature = "ares")]
+    pub(crate) fn psionics_immune(&self, experience: NativeF32Bits) -> bool {
+        self.has_at(5, experience)
+    }
+
+    /// `RADIMMUNE` (TypeExt+12D/+134): FootClass_Update_RadImmune
+    /// (10049490, hook 0x4DA584) and ReceiveDamage_Abilities (1004A950,
+    /// hook 0x701BFE).
+    #[cfg(feature = "ares")]
+    pub(crate) fn rad_immune(&self, experience: NativeF32Bits) -> bool {
+        self.has_at(1, experience)
+    }
+
+    /// `POISONIMMUNE` (TypeExt+130/+137), ReceiveDamage_Abilities.
+    #[cfg(feature = "ares")]
+    pub(crate) fn poison_immune(&self, experience: NativeF32Bits) -> bool {
+        self.has_at(4, experience)
+    }
+
+    /// `PSIONICWEAPONIMMUNE` (TypeExt+132/+139), ReceiveDamage_Abilities.
+    #[cfg(feature = "ares")]
+    pub(crate) fn psionic_weapon_immune(&self, experience: NativeF32Bits) -> bool {
+        self.has_at(6, experience)
+    }
+
+    /// `UNWARPABLE` (TypeExt+12F/+136) by the same raw-XP test, as
+    /// TechnoExt::CanWarpTarget 1004F300 inlines HasAresAbility.
+    #[cfg(feature = "ares")]
+    pub(crate) fn unwarpable(&self, experience: NativeF32Bits) -> bool {
+        self.has_at(3, experience)
+    }
+
+    /// HasAresAbility over the raw binary32 XP: from two either tier, from
+    /// one the veteran tier, below one none.
+    #[cfg(feature = "ares")]
+    fn has_at(&self, ability: usize, experience: NativeF32Bits) -> bool {
         let experience = f32::from_bits(experience.bits());
         if experience >= 2.0 {
-            self.veteran[2] || self.elite[2]
+            self.veteran[ability] || self.elite[ability]
         } else {
-            experience >= 1.0 && self.veteran[2]
+            experience >= 1.0 && self.veteran[ability]
         }
     }
 }

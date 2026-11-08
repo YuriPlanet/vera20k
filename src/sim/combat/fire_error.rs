@@ -257,9 +257,21 @@ pub(crate) struct FirerFacts {
     /// `+0x82`, `+0x11C`.
     pub in_open_transport: bool,
     pub transporter: Transporter,
+    /// Ares: the transport's type is `Gunner=` and `OpenTopped=`
+    /// (TechnoClass_CanFire_OpenToppedGunnerTemporal 1005D200).
+    #[cfg(feature = "ares")]
+    pub transporter_gunner_open_topped: bool,
+    /// Ares: the transport is not uncloaked (`+0x220`,
+    /// TechnoClass_GetWeaponState 1005D2B0).
+    #[cfg(feature = "ares")]
+    pub transporter_cloaked: bool,
     /// `+0x8C`, `+0xA4` (Location.Z, leptons).
     pub on_bridge: bool,
     pub z: i32,
+    /// Ares TechnoExt+50 DisableWeaponTimer in progress (StartTime set and
+    /// time left), read by hook 0x6FC0D3.
+    #[cfg(feature = "ares")]
+    pub weapons_disabled: bool,
     /// `+0x504` and, for a Unit, `+0x6D8` DeathFrameCounter (vt+0x37C).
     pub emp_remaining: i32,
     pub death_frame_counter: i32,
@@ -283,6 +295,11 @@ pub(crate) struct FirerFacts {
     pub locomotor_target: Link,
     /// `+0x274` TemporalImUsing and what it holds (`Temporal+0x28`).
     pub temporal: Option<Link>,
+    /// Ares UnitClass_CanFire (1004BC80, hook 0x741206): a `TurretCount=`
+    /// non-Gattling type whose SelectWeapon(NULL) weapon has a `Temporal=`
+    /// warhead.
+    #[cfg(feature = "ares")]
+    pub temporal_gunner_weapon: bool,
     /// Owner `IsHumanPlayer` (`House+0x1EC`).
     pub owner_is_human: bool,
     /// Paralysed (vt+0x380: Foot `0x004DE770`, time left != 0).
@@ -319,6 +336,10 @@ pub(crate) struct FirerFacts {
     pub effective_mission: i32,
     pub delayed_fire_counter: i32,
     pub building_has_turret: bool,
+    /// Ares: a charging supporter of a `PrismForwarding.BreakSupport=yes`
+    /// tower that can fire (`10016360`).
+    #[cfg(feature = "ares")]
+    pub prism_breaks_support: bool,
 }
 
 impl Default for FirerFacts {
@@ -334,8 +355,14 @@ impl Default for FirerFacts {
             falling: false,
             in_open_transport: false,
             transporter: Transporter::None,
+            #[cfg(feature = "ares")]
+            transporter_gunner_open_topped: false,
+            #[cfg(feature = "ares")]
+            transporter_cloaked: false,
             on_bridge: false,
             z: 0,
+            #[cfg(feature = "ares")]
+            weapons_disabled: false,
             emp_remaining: 0,
             death_frame_counter: -1,
             fire_particles_live: false,
@@ -351,6 +378,8 @@ impl Default for FirerFacts {
             drain_target: Link::None,
             locomotor_target: Link::None,
             temporal: None,
+            #[cfg(feature = "ares")]
+            temporal_gunner_weapon: false,
             owner_is_human: false,
             paralyzed: false,
             spawns: None,
@@ -372,6 +401,8 @@ impl Default for FirerFacts {
             effective_mission: 0,
             delayed_fire_counter: 0,
             building_has_turret: false,
+            #[cfg(feature = "ares")]
+            prism_breaks_support: false,
         }
     }
 }
@@ -441,12 +472,29 @@ impl Default for FirerTypeFacts {
     }
 }
 
+/// Ares TechnoClass_CanFire_IvanBomb (Ares.dll 10056C60, hook 0x6FCBAD,
+/// between the two stock bomb gates): a BombDisarm warhead may not fire at a
+/// bomb that is not `IvanBomb.Detachable` (ILLEGAL, `0x6FCBBE`).
+fn ares_bomb_fixed(bomb_disarm: bool, target: &TargetFacts) -> bool {
+    #[cfg(feature = "ares")]
+    return bomb_disarm && target.bomb_fixed;
+    #[cfg(not(feature = "ares"))]
+    {
+        let _ = (bomb_disarm, target);
+        false
+    }
+}
+
 /// The target's fields (techno fields are read only for a techno target).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) struct TargetFacts {
     pub kind: FireTargetKind,
     /// `+0x38` an attached bomb (any ObjectClass).
     pub bomb: bool,
+    /// Ares: that bomb's weapon says `IvanBomb.Detachable=no`
+    /// ([`crate::sim::world::Simulation::bomb_detachable`]).
+    #[cfg(feature = "ares")]
+    pub bomb_fixed: bool,
     pub in_limbo: bool,          // +0x81
     pub on_bridge: bool,         // +0x8C
     pub z: i32,                  // +0xA4
@@ -669,13 +717,16 @@ fn unit(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> Fir
     // vehicle, the vt+0x80 of a Techno target (AsTechno `0x0040DD20`).
     if weapon_value(facts, query) < 0 {
         let target = &facts.target;
+        // Ares 3.0 UnitClass_CanFire_Heal (1004E540, hook 0x741113) replaces
+        // the vt+0x80 call: any Techno below the threshold may be healed.
         let vehicle = target.kind.techno_class().is_some_and(|class| {
-            super::vehicle_like(
-                class,
-                facts.target_type.non_vehicle,
-                facts.target_type.is_1x1_with_undeploy,
-                || query.low_flying(),
-            )
+            cfg!(feature = "ares")
+                || super::vehicle_like(
+                    class,
+                    facts.target_type.non_vehicle,
+                    facts.target_type.is_1x1_with_undeploy,
+                    || query.low_flying(),
+                )
         });
         if !vehicle || target.health.is_full(facts.target_type.strength) {
             return FireError::Illegal;
@@ -699,8 +750,15 @@ fn unit(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> Fir
     if (weapon.use_spark_particles || weapon.use_fire_particles) && firer.navcom {
         return FireError::Moving;
     }
-    // U10 `0x00741206`.
-    if firer.temporal.is_some() && firer.navcom {
+    // U10 `0x00741206`. Ares 3.0 UnitClass_CanFire (1004BC80) asks instead
+    // whether a turreted, non-Gattling type's SelectWeapon(NULL) weapon has
+    // a `Temporal=` warhead (0x00741210), so an IFV moves and fires its other
+    // gunner weapons.
+    #[cfg(feature = "ares")]
+    let warping = firer.temporal_gunner_weapon;
+    #[cfg(not(feature = "ares"))]
+    let warping = firer.temporal.is_some();
+    if warping && firer.navcom {
         return FireError::Moving;
     }
     // U11 `0x00741229`: the turret is still finishing its arc.
@@ -736,11 +794,18 @@ fn infantry(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) ->
     if matches!(firer.sequence, 0xB..=0xF | 0x14 | 0x15 | 0x22..=0x24) {
         return FireError::Cant;
     }
-    // I2 `0x0051C8FE`: a medic heals only damaged infantry.
-    if weapon_value(facts, query) < 0
-        && (target.kind != FireTargetKind::Infantry
-            || target.health.is_full(facts.target_type.strength))
-    {
+    // I2 `0x0051C8FE`: a medic heals only damaged infantry. Ares 3.0
+    // InfantryClass_CanFire_Heal (1004E270, hook 0x0051C913): any damaged
+    // Techno (GetHealthPercentage below the threshold; 0/0 is not damaged).
+    let healable = if cfg!(feature = "ares") {
+        target.kind.techno_class().is_some()
+            && target.health.compare_ratio(facts.target_type.strength, 1.0)
+                == crate::util::native_x87::MaskedX87Ordering::Less
+    } else {
+        target.kind == FireTargetKind::Infantry
+            && !target.health.is_full(facts.target_type.strength)
+    };
+    if weapon_value(facts, query) < 0 && !healable {
         return FireError::Illegal;
     }
     // I3 `0x0051C947`: another object rocks the Unit.
@@ -818,7 +883,15 @@ fn building(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) ->
         return FireError::Cant;
     }
     // B6 `0x00447FAE`: a delayed shot is counting down.
+    #[cfg(not(feature = "ares"))]
     if firer.delayed_fire_counter != 0 {
+        return FireError::Rearm;
+    }
+    // Ares BuildingClass_CanFire_PrismForward (10016360, hook 0x447FAE)
+    // tests the countdown signed, and spares a charging BreakSupport
+    // supporter, which may still turn master.
+    #[cfg(feature = "ares")]
+    if firer.delayed_fire_counter > 0 && !firer.prism_breaks_support {
         return FireError::Rearm;
     }
     let base = techno(facts, query, check_range);
@@ -872,6 +945,13 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
     // T1..T11 `0x006FC0BA..0x006FC1B0`.
     if kind == FireTargetKind::None || firer.enslaved {
         return Illegal;
+    }
+    // Ares TechnoClass_CanFire_DisableWeapons (hook 0x6FC0D3, installed
+    // 10049EA0): `DisableWeapons.Duration` answers Rearm (0x6FC0DF) ahead of
+    // the warping test.
+    #[cfg(feature = "ares")]
+    if firer.weapons_disabled {
+        return Rearm;
     }
     if firer.warping_in || firer.locomotor_target == Link::Target {
         return Rearm;
@@ -943,6 +1023,17 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
     }
     // T22 (IonSensitive) asks `0x0053A130`, which is `XOR AL,AL; RET`.
     let warhead = weapon.warhead.unwrap_or_default();
+    // Ares 3.0 TechnoClass_CanFire_OpenToppedGunnerTemporal (1005D200, hook
+    // 0x6FC339): a Temporal shot from inside a Gunner OpenTopped transport
+    // needs the firer's own TemporalImUsing (the gunner takes it).
+    #[cfg(feature = "ares")]
+    if firer.transporter != Transporter::None
+        && warhead.temporal
+        && firer.transporter_gunner_open_topped
+        && firer.temporal.is_none()
+    {
+        return Cant;
+    }
 
     // T23 `0x006FC356`: one drainer per victim, and only a drainable one.
     if weapon.drain_weapon && kind.is_techno() && (target.draining_me || !target_type.drainable) {
@@ -1108,6 +1199,13 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
         return Ammo;
     }
     // T48 `0x006FCA26`: an aircraft surfaces only from a full cloak.
+    // Ares 3.0 TechnoClass_GetWeaponState (1005D2B0, hook 0x6FCA30): a
+    // transport that is not uncloaked answers CLOAKED first.
+    #[cfg(feature = "ares")]
+    if weapon.decloak_to_fire && firer.transporter != Transporter::None && firer.transporter_cloaked
+    {
+        return Cloaked;
+    }
     if weapon.decloak_to_fire
         && firer.cloak_state != 0
         && (class != FirerClass::Aircraft || firer.cloak_state == 2)
@@ -1133,6 +1231,7 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
             || (warhead.mind_control && !query.can_capture())
             || warhead.armor_rejects_fire
             || (warhead.bomb_disarm && !target.bomb)
+            || ares_bomb_fixed(warhead.bomb_disarm, &target)
             || (warhead.ivan_bomb && target.bomb)
             || target.sinking
         {

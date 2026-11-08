@@ -6,9 +6,20 @@ use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::projectile::ProjectileCoord;
 
 fn scene() -> Option<(Simulation, RuleSet)> {
+    // Ares 3.0 1002C8E0 (hook 0x48A2D9) keeps an Explodes overlay below
+    // [General] OverlayExplodeThreshold (0); -1 keeps the stock outcomes.
+    #[cfg(feature = "ares")]
+    return scene_with("[General]\nOverlayExplodeThreshold=-1\n");
+    #[cfg(not(feature = "ares"))]
+    scene_with("")
+}
+
+fn scene_with(patch: &str) -> Option<(Simulation, RuleSet)> {
     let battle = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
         "XMP03T4.MAP",
-        &IniFile::from_str("[TROCK05]\nExplodes=yes\n[Animations]\n999=FIRE3\n"),
+        &IniFile::from_str(&format!(
+            "[TROCK05]\nExplodes=yes\n[Animations]\n999=FIRE3\n{patch}"
+        )),
     )?;
     let mut rules = battle.rules;
     let (_, mut assets) = crate::rules::retail_ini_fixture::retail_assets()?;
@@ -380,4 +391,42 @@ fn retail_voxel_contact_cap_survives_snapshot_and_piece_retirement() {
     );
     assert_eq!(restored.voxel_type_damage(type_id, &rules), 20);
     assert_ne!(restored.state_hash(), expected_hash);
+}
+
+/// Ares 3.0 1002C8E0 (hook 0x48A2D9): an Explodes overlay blows up only from
+/// `damage >= [General] OverlayExplodeThreshold`.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_overlay_explode_threshold_gates_the_explodes_tail() {
+    let Some((mut sim, rules)) = scene_with("[General]\nOverlayExplodeThreshold=50\n") else {
+        return;
+    };
+    let cell = (12, 12);
+    rock(&mut sim, &rules, cell);
+    let house = sim.interner.intern("Americans");
+    let warhead_ref = sim.interner.intern("SA");
+    let warhead = rules.warhead("SA").unwrap();
+    let impact = ProjectileCoord::new(12 * 256 + 128, 12 * 256 + 128, 0);
+    for (damage, survives) in [(49, true), (50, false)] {
+        world_receiver::apply_area_damage(
+            &mut sim,
+            &rules,
+            Some(rules.overlay_registry()),
+            impact,
+            damage,
+            warhead,
+            true,
+            (0, Some(house), warhead_ref),
+            FrameEffects::default(),
+        );
+        assert_eq!(
+            sim.overlay_grid()
+                .unwrap()
+                .cell(cell.0, cell.1)
+                .overlay_id
+                .is_some(),
+            survives,
+            "damage {damage}"
+        );
+    }
 }

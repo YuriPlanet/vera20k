@@ -8,14 +8,51 @@ use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 /// Techno+270/278: GoOnline can set it while a Temporal chain still exists.
 /// Steam gamemd.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(transparent)]
+#[cfg_attr(not(feature = "ares"), serde(transparent))]
 pub(crate) struct BuildingOnline {
     online: bool,
+    /// Ares BuildingExt `TogglePower_HasPower` (`+0x51`, constructor true):
+    /// the state the last GoOnline/GoOffline left, which a Temporal release
+    /// restores instead of forcing the latch on.
+    #[cfg(feature = "ares")]
+    toggle_power_has_power: bool,
 }
 
 impl Default for BuildingOnline {
     fn default() -> Self {
-        Self { online: true }
+        Self {
+            online: true,
+            #[cfg(feature = "ares")]
+            toggle_power_has_power: true,
+        }
+    }
+}
+
+impl BuildingOnline {
+    /// GoOnline/GoOffline's admitted latch write (`0x00452287`,
+    /// `0x00452393`). Ares 3.0 BuildingClass_GoOnline_TogglePower 10014090
+    /// and _GoOffline_TogglePower 10014070 also record it.
+    fn toggle(&mut self, online: bool) {
+        self.online = online;
+        #[cfg(feature = "ares")]
+        {
+            self.toggle_power_has_power = online;
+        }
+    }
+
+    /// TemporalGoOffline `0x004521C0` / TemporalGoOnline `0x00452210`. Ares
+    /// 3.0 BuildingClass_Enable_TogglePower 10013FB0 (hook `0x00452210`)
+    /// restores the last toggle on release instead of storing one.
+    fn temporal(&mut self, online: bool) {
+        #[cfg(feature = "ares")]
+        let online = online && self.toggle_power_has_power;
+        self.online = online;
+    }
+
+    /// Whether the last GoOffline is still in force (hashed with the latch).
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_toggled_off(&self) -> bool {
+        !self.toggle_power_has_power
     }
 }
 
@@ -75,7 +112,7 @@ impl Simulation {
             .get_mut(id)
             .unwrap()
             .building_online
-            .online = false;
+            .toggle(false);
         Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, true);
         self.houses.request_house_tech_tree_recheck(owner);
         self.set_building_stuff_enabled(id, false, rules);
@@ -119,7 +156,7 @@ impl Simulation {
             .get_mut(id)
             .unwrap()
             .building_online
-            .online = true;
+            .toggle(true);
         Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, true);
         self.houses.request_house_tech_tree_recheck(owner);
         self.set_building_stuff_enabled(id, true, rules);
@@ -152,12 +189,50 @@ impl crate::sim::world::ObjectSubstrate {
         if entity.category() != EntityCategory::Structure {
             return;
         }
-        entity.building_online.online = online;
+        entity.building_online.temporal(online);
         let slots = *entity.building_art.anim_slots();
         for slot in slots.into_iter().flatten() {
             if let Some(anim) = self.anims.get_mut(slot) {
                 anim.set_temporal_erase(!online);
             }
         }
+    }
+}
+
+#[cfg(all(test, feature = "ares"))]
+mod ares_tests {
+    use crate::rules::ruleset::RuleSet;
+    use crate::sim::world::{FrameEffects, Simulation};
+
+    /// Ares 10013FB0 (hook 0x452210): a building the player powered down
+    /// stays offline when a Temporal erase lets it go; one left online
+    /// comes back, and GoOnline still powers it up afterwards.
+    #[test]
+    fn ares_temporal_release_restores_the_power_toggle() {
+        let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+            "[BuildingTypes]\n0=DRAIN\n[DRAIN]\nStrength=100\nPower=-10\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        let owner = sim.interner.intern("A");
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, false, 0, 10,
+            ));
+        let off = sim.spawn_object("DRAIN", "A", 10, 10, 0, &rules).unwrap();
+        let on = sim.spawn_object("DRAIN", "A", 14, 10, 0, &rules).unwrap();
+        assert!(sim.go_building_offline(off, &rules, FrameEffects::default()));
+        for id in [off, on] {
+            sim.substrate.set_building_online_for_temporal(id, false);
+            sim.substrate.set_building_online_for_temporal(id, true);
+        }
+        let online = |sim: &Simulation, id| sim.entities().get(id).unwrap().building_online();
+        assert!(!online(&sim, off));
+        assert!(online(&sim, on));
+        assert!(sim.go_building_online(off, &rules, FrameEffects::default()));
+        sim.substrate.set_building_online_for_temporal(off, false);
+        sim.substrate.set_building_online_for_temporal(off, true);
+        assert!(online(&sim, off));
     }
 }

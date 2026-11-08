@@ -42,6 +42,41 @@ impl Simulation {
             .ok_or("simple deploy receiver retired")?
             .is_fully_deployed();
         self.update_unit_simple_deploy(id, !deployed, rules, effects)?;
+        // Ares 3.0 UnitClass_Mi_Unload_SimpleDeployer (1004C070, hook
+        // 0x73DE90), past the updater: a deployed (6E0) unit whose type has
+        // `Convert.Deploy` converts in place (TechnoExt::ConvertToType
+        // 10043650) and, converted, is no longer deployed; then the Unload
+        // waits (return 1 at 0x73E5B1) while the locomotor is moving.
+        #[cfg(feature = "ares")]
+        {
+            let entity = self
+                .substrate
+                .entities
+                .get(id)
+                .ok_or("simple deploy receiver retired")?;
+            if entity.is_fully_deployed()
+                && let Some(target) = self
+                    .entity_object_type(entity, rules)
+                    .and_then(|object| object.techno_combat().convert_deploy())
+                    .cloned()
+                && self.convert_techno_type(id, &target, rules, effects)
+                && let Some(entity) = self.substrate.entities.get_mut(id)
+            {
+                entity.mission_leaf.set_unit_deployed(0);
+            }
+            let entity = self
+                .substrate
+                .entities
+                .get(id)
+                .ok_or("simple deploy receiver retired")?;
+            if crate::sim::movement::motion_query::is_moving_now(
+                entity,
+                crate::sim::movement::SpeedRules::new(rules, &self.interner, &self.houses),
+                self.session.binary_frame(),
+            ) {
+                return Ok(1);
+            }
+        }
         let entity = self
             .substrate
             .entities
@@ -91,11 +126,12 @@ impl Simulation {
             entity,
             self.resolved_terrain.as_ref(),
         );
+        // Ares 3.0 UnitClass_SimpleDeploy_Height (1004C380, hook 0x739ADA)
+        // drops the airborne non-DeployToLand refusal: such a deployer
+        // deploys where it is.
+        let airborne_refused = !cfg!(feature = "ares") && height > 0 && !object.deploy_to_land;
         if deploying {
-            if !object.is_simple_deployer
-                || (height > 0 && !object.deploy_to_land)
-                || leaf.deployed() != 0
-            {
+            if !object.is_simple_deployer || airborne_refused || leaf.deployed() != 0 {
                 return Ok(());
             }
         } else if leaf.deployed() == 0 {
@@ -103,13 +139,19 @@ impl Simulation {
         }
         let deploy_to_land = object.deploy_to_land;
         let configured_anim = object.deploying_anim.clone();
+        let object_has_deploying_anim = configured_anim.is_some();
         let active = if deploying {
             leaf.deploy_begin_active()
         } else {
             leaf.deploy_reverse_active()
         } != 0;
         let retained = entity.deploy_anim();
-        if deploying && !entity.landing_for_deploy() && height > 0 {
+        // The same hook raises InAir only for a `DeployToLand=` type.
+        if deploying
+            && !entity.landing_for_deploy()
+            && height > 0
+            && (!cfg!(feature = "ares") || deploy_to_land)
+        {
             self.substrate
                 .entities
                 .get_mut(id)
@@ -165,7 +207,9 @@ impl Simulation {
                 .expect("same Unit")
                 .landing_for_deploy()
         {
-            if let Some(name) = configured_anim {
+            if let Some(name) = configured_anim
+                && !(deploying && self.ares_simple_deploy_turning(id, rules))
+            {
                 let anim_id = if let Some(anim_id) = retained {
                     anim_id
                 } else {
@@ -186,7 +230,7 @@ impl Simulation {
                 } else {
                     entity.mission_leaf.set_unit_deploy_reverse_active(1);
                 }
-            } else {
+            } else if !(deploying && object_has_deploying_anim) {
                 self.substrate
                     .entities
                     .get_mut(id)
@@ -218,6 +262,46 @@ impl Simulation {
             if deploying { 27 } else { 31 },
             rules,
         )
+    }
+
+    /// Ares 3.0 UnitClass_SimpleDeploy_Facing (1004C2D0, hook 0x739B8A): a
+    /// deployer with a `DeployingAnim=` first faces its type's `DeployDir`,
+    /// else `[AudioVisual] DeployDir`, in eighth turns; until it does, it
+    /// turns (Do_Turn, while its locomotor is not moving) and starts no
+    /// animation (0x739C70, the shared sound tail). True while it turns.
+    fn ares_simple_deploy_turning(&mut self, id: u64, rules: &RuleSet) -> bool {
+        #[cfg(feature = "ares")]
+        {
+            let frame = self.session.binary_frame();
+            let Some(entity) = self.substrate.entities.get(id) else {
+                return false;
+            };
+            let Some(object) = self.object_type(entity.type_ref(), rules) else {
+                return false;
+            };
+            let dir = object.techno_combat().movement().deploy_dir().map_or_else(
+                || ((((rules.general.deploy_dir as u16) >> 4) + 1) >> 1) & 7,
+                u16::from,
+            );
+            let current = entity.body_facing_current(frame);
+            if (((current >> 12) + 1) >> 1) & 7 == dir {
+                return false;
+            }
+            let moving = crate::sim::movement::motion_query::is_moving_now(
+                entity,
+                crate::sim::movement::SpeedRules::new(rules, &self.interner, &self.houses),
+                frame,
+            );
+            if !moving && let Some(entity) = self.substrate.entities.get_mut(id) {
+                crate::sim::movement::locomotor_do_turn(entity, dir << 13, frame);
+            }
+            true
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            let _ = (id, rules);
+            false
+        }
     }
 
     fn start_unit_deploy_anim(
