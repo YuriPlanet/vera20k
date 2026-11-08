@@ -2062,9 +2062,10 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         HotkeyCommand::AutoLoad => {}
         // A chord runs in the window owner before this dispatch; a binding on
         // a typing key reaches here, after the chat edit.
-        HotkeyCommand::PerformanceStats | HotkeyCommand::LockCursor | HotkeyCommand::FullScreen => {
-            run_window_command(state, command)
-        }
+        HotkeyCommand::PerformanceStats
+        | HotkeyCommand::LockCursor
+        | HotkeyCommand::FullScreen
+        | HotkeyCommand::StringKeys => run_window_command(state, command),
         HotkeyCommand::RenderInterpolation => {
             let enabled = state.match_state.match_presentation.interpolation.toggle();
             state.persistence.options_profile.render_interpolation = enabled;
@@ -2099,6 +2100,7 @@ pub(crate) fn run_window_command(state: &mut AppState, command: HotkeyCommand) {
                 if shown { "shown" } else { "hidden" }
             );
         }
+        HotkeyCommand::StringKeys => state.toggle_string_keys_view(),
         _ => return,
     }
     state.platform.window.request_redraw();

@@ -45,10 +45,15 @@
 //! rewrites and lengthens every text, VERA's and the game's, so a screen
 //! shows any text that does not come from a language file or does not fit;
 //! `VERA20K_TEXT_AUDIT` logs both ([`crate::render::text_audit`]).
+//!
+//! Options' Developer page can show every label as its own string-table key
+//! ([`set_show_string_keys`]), so a screen names the key it draws, whether the
+//! text comes from the game's table or from a language file.
 
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::{self, Display, Write as _};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, PoisonError, RwLock};
 
 use icu_locale_core::LanguageIdentifier;
@@ -226,6 +231,43 @@ impl Catalog {
 
 static CATALOG: LazyLock<RwLock<Catalog>> =
     LazyLock::new(|| RwLock::new(Catalog::new(languages(None))));
+
+/// Whether every label displays its own string-table key instead of its text
+/// (Options' Developer page), VERA's own `VERA:` labels included.
+static SHOW_STRING_KEYS: AtomicBool = AtomicBool::new(false);
+/// Set by the every-screen hotkey: while the box is ticked, show the texts
+/// again without unticking it, so the two views compare in place.
+static STRING_KEYS_VALUES: AtomicBool = AtomicBool::new(false);
+
+/// Whether labels currently show their keys: the Developer box is ticked and
+/// the hotkey has not flipped this view back to the texts.
+pub fn show_string_keys() -> bool {
+    string_keys_enabled() && !STRING_KEYS_VALUES.load(Ordering::Relaxed)
+}
+
+/// Whether the Developer page's String Keys box is ticked. The hotkey only
+/// works while it is.
+pub fn string_keys_enabled() -> bool {
+    SHOW_STRING_KEYS.load(Ordering::Relaxed)
+}
+
+/// Turn the Developer page's String Keys box on or off. Either way the hotkey
+/// starts from keys shown. The caller re-applies the loaded string table
+/// ([`apply`]) and lets the next frame read it.
+pub fn set_show_string_keys(enabled: bool) {
+    SHOW_STRING_KEYS.store(enabled, Ordering::Relaxed);
+    STRING_KEYS_VALUES.store(false, Ordering::Relaxed);
+}
+
+/// The every-screen hotkey: flip between keys and texts while the box is
+/// ticked, and do nothing while it is not. True when labels now show keys.
+pub fn toggle_string_keys() -> bool {
+    if !string_keys_enabled() {
+        return false;
+    }
+    // After the flip: values show iff they did not before.
+    STRING_KEYS_VALUES.fetch_xor(true, Ordering::Relaxed)
+}
 
 fn catalog() -> std::sync::RwLockReadGuard<'static, Catalog> {
     CATALOG.read().unwrap_or_else(PoisonError::into_inner)
@@ -486,10 +528,10 @@ impl Subtags {
 /// ahead of the game's, and English answers labels neither has. Called by the
 /// one CSF loader and after a language change.
 pub fn apply(csf: &mut CsfFile) {
-    apply_catalog(&catalog(), csf);
+    apply_catalog(&catalog(), csf, show_string_keys());
 }
 
-fn apply_catalog(catalog: &Catalog, csf: &mut CsfFile) {
+fn apply_catalog(catalog: &Catalog, csf: &mut CsfFile, show_keys: bool) {
     csf.clear_localization();
     let single = |(key, _): &(&String, &String)| !key.ends_with(']');
     for (key, text) in catalog.english().strings.iter().filter(single) {
@@ -507,6 +549,27 @@ fn apply_catalog(catalog: &Catalog, csf: &mut CsfFile) {
     for (key, text) in catalog.selected.strings.iter().filter(single) {
         csf.set_override(key, text);
     }
+    if show_keys {
+        // Every label reads as its own key. The catalog's labels are in the
+        // table as VERA's overrides and fallbacks, so they need their own key
+        // overrides too; plural forms (`LABEL[one]`) are not labels a screen
+        // asks for.
+        let catalog_keys = catalog
+            .english()
+            .strings
+            .keys()
+            .chain(catalog.selected.strings.keys())
+            .filter(|key| !key.ends_with(']'));
+        let keys: Vec<String> = csf
+            .entries()
+            .map(|(key, _)| key)
+            .chain(catalog_keys.map(String::as_str))
+            .map(str::to_ascii_uppercase)
+            .collect();
+        for key in keys {
+            csf.set_override(&key, &key);
+        }
+    }
 }
 
 /// The text of a label a screen names: VERA's own (`VERA:`) from its
@@ -514,14 +577,21 @@ fn apply_catalog(catalog: &Catalog, csf: &mut CsfFile) {
 /// loaded, and the game's from that table (`csf`), or `fallback` while none
 /// has.
 pub fn label(csf: Option<&CsfFile>, key: &str, fallback: &str) -> String {
+    if show_string_keys() {
+        return key.to_ascii_uppercase();
+    }
     if key.starts_with("VERA:") {
         return tr(key);
     }
     csf.map_or_else(|| fallback.to_owned(), |csf| csf.text(key).into_owned())
 }
 
-/// VERA's text for `key` in the language in use.
+/// VERA's text for `key` in the language in use, or the key itself while the
+/// Developer page shows string keys.
 pub fn tr(key: &str) -> String {
+    if show_string_keys() {
+        return key.to_ascii_uppercase();
+    }
     catalog()
         .text(key)
         .map_or_else(|| missing(key), str::to_owned)
@@ -533,11 +603,15 @@ pub fn tr_fill(key: &str, values: &[(&str, &dyn Display)]) -> String {
 }
 
 /// The text for `key` in the plural form `count` takes in the language in
-/// use, with `{count}` and each `{name}` filled in.
+/// use, with `{count}` and each `{name}` filled in; the key itself while the
+/// Developer page shows string keys.
 pub fn tr_count<N>(key: &str, count: N, values: &[(&str, &dyn Display)]) -> String
 where
     N: Into<PluralOperands> + Display + Copy,
 {
+    if show_string_keys() {
+        return key.to_ascii_uppercase();
+    }
     let text = catalog()
         .plural(key, count.into())
         .map_or_else(|| missing(key), str::to_owned);
@@ -1023,7 +1097,7 @@ mod tests {
         let file = "[Strings]\nGUI:Ok=确定\nVERA:Pausing=正在暂停...\n";
         let catalog = catalog_with("zh-CN", file);
         let mut csf = test_csf(&[("GUI:Ok", "OK"), ("GUI:Cancel", "Cancel")]);
-        apply_catalog(&catalog, &mut csf);
+        apply_catalog(&catalog, &mut csf, false);
         // The chosen language replaces the game's own text...
         assert_eq!(csf.text("GUI:Ok"), "确定");
         assert_eq!(csf.text("GUI:Cancel"), "Cancel");
@@ -1031,6 +1105,19 @@ mod tests {
         // ...and English answers what it lacks.
         assert_eq!(csf.text("VERA:Resuming"), "Resuming...");
         assert_eq!(catalog.text("VERA:Resuming"), Some("Resuming..."));
+    }
+
+    /// The Developer page's box shows every label's key, the game's and
+    /// VERA's own alike.
+    #[test]
+    fn string_keys_replace_every_label_including_vera_labels() {
+        let file = "[Strings]\nGUI:Ok=确定\nVERA:Pausing=正在暂停...\n";
+        let catalog = catalog_with("zh-CN", file);
+        let mut csf = test_csf(&[("GUI:Ok", "OK"), ("TXT_MONEY_FORMAT", "%s $%d")]);
+        apply_catalog(&catalog, &mut csf, true);
+        assert_eq!(csf.text("GUI:Ok"), "GUI:OK");
+        assert_eq!(csf.text("TXT_MONEY_FORMAT"), "TXT_MONEY_FORMAT");
+        assert_eq!(csf.text("VERA:Pausing"), "VERA:PAUSING");
     }
 
     #[test]

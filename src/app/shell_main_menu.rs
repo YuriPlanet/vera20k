@@ -54,6 +54,30 @@ impl AppState {
         self.renderer.bit_font.set_locale(tag);
         true
     }
+
+    /// Re-resolve the loaded string table and the map titles after the String
+    /// Keys box or its hotkey changed what labels answer.
+    pub(crate) fn refresh_string_key_labels(&mut self) {
+        if let Some(csf) = self.process_assets.csf.as_mut() {
+            crate::i18n::apply(csf);
+            crate::map::scenario_sources::relabel_records(
+                &mut self.frontend.scenario_catalog.records_mut(),
+                csf,
+            );
+        }
+    }
+
+    /// The String Keys hotkey: with the Developer box ticked, keys and texts
+    /// swap in place; with it off, the key does nothing.
+    pub(crate) fn toggle_string_keys_view(&mut self) {
+        if !crate::i18n::string_keys_enabled() {
+            return;
+        }
+        let keys = crate::i18n::toggle_string_keys();
+        self.refresh_string_key_labels();
+        log::info!("String keys: {}", if keys { "keys" } else { "values" });
+        self.platform.window.request_redraw();
+    }
 }
 
 impl crate::app::persistence::options::launcher::LauncherPreviewOperations for AppState {
@@ -86,6 +110,13 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
     fn set_performance_stats(&mut self, shown: bool) {
         // Live state only; no profile stores it, so each launch starts hidden.
         self.renderer.performance_overlay.set_visible(shown);
+    }
+    fn set_show_string_keys(&mut self, shown: bool) {
+        // Live state only, like the FPS readout: the loaded table and the
+        // language catalog both answer with keys, and the hotkey starts from
+        // keys shown. Map titles follow, as they do on a language change.
+        crate::i18n::set_show_string_keys(shown);
+        self.refresh_string_key_labels();
     }
     fn store_original_shape(&mut self, original_shape: bool) {
         self.persistence.options_profile.original_shape = original_shape;
@@ -1186,6 +1217,7 @@ impl App {
             labels,
             state.platform.window.fullscreen().is_some(),
             state.renderer.performance_overlay.is_visible(),
+            crate::i18n::string_keys_enabled(),
             state.audio.launcher_audio_available,
             displays,
         );

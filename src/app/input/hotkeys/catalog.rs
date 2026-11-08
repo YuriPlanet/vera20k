@@ -101,7 +101,7 @@ const CAMERA_COMMANDS: [CommandMetadata; 4] = [
 /// VERA's built-in keys, with their default keys in the binding owner
 /// (`hotkeys::VERA_DEFAULT_KEYS`). Each name is the Options page's label for
 /// the same setting; each category literal is [`VERA_CATEGORY_KEY`].
-const SHORTCUT_COMMANDS: [CommandMetadata; 4] = [
+const SHORTCUT_COMMANDS: [CommandMetadata; 5] = [
     command!(
         HotkeyCommand::PerformanceStats,
         "PerformanceStats",
@@ -132,6 +132,14 @@ const SHORTCUT_COMMANDS: [CommandMetadata; 4] = [
         "VERA:RenderInterpolation",
         "VERA:HotkeyCategory",
         "VERA:RenderInterpolationDesc",
+        None
+    ),
+    command!(
+        HotkeyCommand::StringKeys,
+        "StringKeys",
+        "VERA:ShowStringKeys",
+        "VERA:HotkeyCategory",
+        "VERA:ShowStringKeysDesc",
         None
     ),
 ];
