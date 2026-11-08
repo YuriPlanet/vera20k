@@ -825,6 +825,7 @@ pub struct ObjectType {
     /// Entry ImageFile at the last LoadVoxel5F8110, including a saved load
     /// that precedes an Arctic SHP mutation.
     voxel_image_load: Option<String>,
+    pub(crate) voxel_model_slots: super::voxel_model_plan::ModelSlots,
     /// Signed Power read result for Buildings. Constructor45DEF6/45DEFC
     /// starts output/drain at0;461060..4610A0 passes their reconstructed
     /// signed value to ReadInt5276D0. The existing reached-history reader
@@ -2680,6 +2681,7 @@ impl ObjectType {
         self.image = state.image().to_string();
         self.shp_image_loads = state.shp_loads().to_vec();
         self.voxel_image_load = state.voxel_load().map(str::to_string);
+        self.voxel_model_slots = state.model_slots.clone();
     }
 
     /// Immutable load request consumed by the client SHP atlas.
@@ -4275,6 +4277,7 @@ impl ObjectType {
             image: id.to_owned(),
             shp_image_loads: Vec::new(),
             voxel_image_load: None,
+            voxel_model_slots: Default::default(),
             power: section.read_int("Power", 0),
             // Only the ordered Rules processor reads it: a later layer's
             // non-negative value keeps an earlier drain.

@@ -34,12 +34,13 @@ fn a_piece_at_a_bridge_deck_shadows_one_lepton_above_it() {
 /// skipped without them.
 #[test]
 fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
-    let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+    let Some(mut battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
     };
     let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
         return;
     };
+    battle.rules.bind_effect_assets(&assets, "tem", "TEMPERATE");
     let rules = &battle.rules;
     let mut sim = Simulation::with_seed(17);
     sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_flat_ground_grid(
@@ -133,19 +134,19 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
             "a scheme Convert"
         );
         let mut rendered = None;
-        let object = voxel_anim_draw_instance(
-            id,
-            piece,
-            kind,
-            palette,
-            &view,
-            &order,
-            |image, section, m| {
+        let object =
+            voxel_anim_draw_instance(id, piece, kind, palette, &view, &order, |section, m| {
                 rendered = Some(m);
-                cache.render_tumble(&assets, image, section, m, false, None)
-            },
-        )
-        .expect("an admitted piece in view draws");
+                cache.render_tumble(
+                    &assets,
+                    rules.voxel_anim_model(piece.type_id())?,
+                    section,
+                    m,
+                    false,
+                    None,
+                )
+            })
+            .expect("an admitted piece in view draws");
         assert_eq!(object.parent.layer.0, DisplayLayer::AIR.index());
         assert_eq!(
             object.parent.display_order,
@@ -219,12 +220,13 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
 /// this presentation fixture supplies the impact coordinate, not combat.
 #[test]
 fn an_unowned_retail_tyre_draws_with_the_global_plain_convert() {
-    let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+    let Some(mut battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
     };
     let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
         return;
     };
+    battle.rules.bind_effect_assets(&assets, "tem", "TEMPERATE");
     let rules = &battle.rules;
     let tire_id = rules.voxel_anim_type_id_by_name("TIRE").unwrap();
     let kind = rules.voxel_anim_type(tire_id);
@@ -306,7 +308,16 @@ fn an_unowned_retail_tyre_draws_with_the_global_plain_convert() {
         palette,
         &view,
         &order,
-        |image, section, matrix| cache.render_tumble(&assets, image, section, matrix, false, None),
+        |section, matrix| {
+            cache.render_tumble(
+                &assets,
+                rules.voxel_anim_model(piece.type_id())?,
+                section,
+                matrix,
+                false,
+                None,
+            )
+        },
     )
     .expect("an unowned admitted tyre reaches the physical TIRE pose page");
     assert_eq!(object.parent.layer.0, DisplayLayer::AIR.index());

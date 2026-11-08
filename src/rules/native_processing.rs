@@ -828,7 +828,16 @@ impl ProcessedRulesLayers {
     ) -> Result<(), RulesError> {
         self.validate_saved_state()?;
         let theater = ImageTheater::from_name(theater_name);
-        for (&family, members) in &mut self.native_type_construction_trace.registry_state.families {
+        let registry = &mut self.native_type_construction_trace.registry_state;
+        // Type Load receives fresh resource pointers. Saved borrowed addresses
+        // are never swizzled; VoxelType74B8BB reloads its own image instead.
+        registry.model_plan = Default::default();
+        // Interned predicate order contributes to the retained plan identity.
+        // Deserialization creates a new HashMap seed, so rebuild in the same
+        // family order every time, before canonicalizing its live roots.
+        let mut families: Vec<_> = registry.families.iter_mut().collect();
+        families.sort_unstable_by_key(|(family, _)| **family as u8);
+        for (&family, members) in families {
             if family.object_category().is_none()
                 && !matches!(
                     family,
@@ -836,25 +845,41 @@ impl ProcessedRulesLayers {
                         | RulesTypeFamily::Projectile
                         | RulesTypeFamily::Overlay
                         | RulesTypeFamily::Animation
+                        | RulesTypeFamily::VoxelAnimation
                 )
             {
                 continue;
             }
             for member in members {
                 if let Some(terrain) = member.terrain_type_read_state.as_mut() {
-                    // TerrainTypeLoad71E21D..71E22D binds its retained index
-                    // even when no ReadINI ever initialized the cached list.
                     terrain.restore_occupy_list();
                 }
                 let image = &mut member.object_image;
-                // ObjectLoad5F9856/985C clears shape/ownership after raw load.
+                image.model_slots = Default::default();
                 image.clear_shp();
-                // Terrain71E211/18, Bullet46C6E1/E8, Aircraft41CE72/79,
-                // Unit74805A/61 and Infantry5249AD/B4 load VXL BEFORE SHP,
-                // regardless of the retained Voxel flag. Building4651F6
-                // reaches only generic SHP; its derived visual owner follows.
                 if family != RulesTypeFamily::Building {
                     image.load_voxel();
+                    if family.object_category().is_some()
+                        || family == RulesTypeFamily::VoxelAnimation
+                    {
+                        let input = super::voxel_model_plan::GenericLoadInput {
+                            image: image.image().to_owned(),
+                            unit: family == RulesTypeFamily::Vehicle,
+                            apc: member.native_stored_id == "APC",
+                            turret: member.body.read_bool("Turret", false),
+                            turret_count: member.weapon_slots.turret_count,
+                            gattling: member.is_gattling,
+                            no_spawn_alt: member.body.read_bool("NoSpawnAlt", false),
+                        };
+                        registry
+                            .model_plan
+                            .load_generic(&mut image.model_slots, &input);
+                    }
+                }
+                // VoxelTypeLoad74B810 has no generic SHP call. Keep its saved
+                // +296 flag while its resources follow generic5F8110.
+                if family == RulesTypeFamily::VoxelAnimation {
+                    continue;
                 }
                 let kind = match family {
                     RulesTypeFamily::Terrain => ObjectImageKind::Terrain,
@@ -862,14 +887,21 @@ impl ProcessedRulesLayers {
                     _ => ObjectImageKind::Ordinary,
                 };
                 image.load_unowned_shp(kind, theater);
+                if family == RulesTypeFamily::Building {
+                    if let Some((turret, barrel)) =
+                        super::voxel_frame_catalog::building_voxel_read_names(&member.body)
+                    {
+                        registry.model_plan.load_building(
+                            &mut image.model_slots,
+                            turret.as_deref(),
+                            Some(&barrel),
+                        );
+                    }
+                }
                 if family == RulesTypeFamily::Animation {
-                    // AnimTypeLoad42884E/55 reaches VXL then generic SHP
-                    // even for an unread type. Ctor-only false flags leave
-                    // that image resident without ART or bounds reads.
                     if image.theater() {
                         image.load_saved_anim_theater_shp(&member.native_stored_id);
                     } else if image.new_theater() {
-                        //42894F invokes the distinct bounds/image resolver.
                         image.load_anim_shp(
                             &member.native_stored_id,
                             theater,
@@ -879,14 +911,20 @@ impl ProcessedRulesLayers {
                     image.init_anim_theater(&member.native_stored_id, theater);
                 }
                 if family == RulesTypeFamily::Overlay {
-                    // OverlayLoad5FEB3E/45 loads VXL before unconditional
-                    // generic SHP, then5FEBEC tries its suffix only on null.
                     image.append_saved_overlay_shp();
-                    // MouseLoad5BE668 reaches the subsequent theater pass.
                     image.init_overlay_theater();
                 }
             }
         }
+        let mut families: Vec<_> = registry.families.iter_mut().collect();
+        families.sort_unstable_by_key(|(family, _)| **family as u8);
+        registry
+            .model_plan
+            .compact(families.into_iter().flat_map(|(_, members)| {
+                members
+                    .iter_mut()
+                    .map(|member| &mut member.object_image.model_slots)
+            }));
         Ok(())
     }
 
@@ -1021,6 +1059,9 @@ impl ProcessedRulesLayers {
                 "saved Rules contain disabled Ares extension state",
             ));
         }
+        if !registry.model_plan.validate() {
+            return Err(RulesError::InvalidSavedState("invalid voxel model plan"));
+        }
         let families = &registry.families;
         if registry.ares_armors.is_some() != crate::rules::ARES_ENABLED {
             return Err(RulesError::InvalidSavedState(
@@ -1080,6 +1121,13 @@ impl ProcessedRulesLayers {
                     ));
                 }
                 member.object_image.validate_saved_state()?;
+                if !self
+                    .native_registry_state()
+                    .model_plan
+                    .valid_slots(&member.object_image.model_slots)
+                {
+                    return Err(RulesError::InvalidSavedState("invalid voxel model plan"));
+                }
                 if let Some(terrain) = &member.terrain_type_read_state {
                     terrain.validate_saved_state()?;
                 }
@@ -1777,6 +1825,42 @@ impl ProcessedRulesLayers {
                     open_topped_anim: member.weapon.open_topped_anim.as_deref(),
                     attached_particle_system: member.weapon.attached_particle_system.as_deref(),
                 }
+            })
+    }
+
+    pub(crate) fn voxel_model_plan(&self) -> &super::voxel_model_plan::VoxelModelPlan {
+        &self.native_registry_state().model_plan
+    }
+
+    pub(crate) fn voxel_anim_type_projections(
+        &self,
+    ) -> impl Iterator<Item = crate::rules::voxel_anim_type::VoxelAnimType> {
+        self.native_registry_state()
+            .families
+            .get(&RulesTypeFamily::VoxelAnimation)
+            .into_iter()
+            .flatten()
+            .map(|member| {
+                let mut kind = if member.voxel_anim_read {
+                    crate::rules::voxel_anim_type::VoxelAnimType::from_ini_section(
+                        &member.native_stored_id,
+                        &member.body,
+                    )
+                } else {
+                    crate::rules::voxel_anim_type::VoxelAnimType::with_defaults(
+                        &member.native_stored_id,
+                    )
+                };
+                kind.image = member.object_image.image().to_owned();
+                [
+                    kind.share_body_data,
+                    kind.share_turret_data,
+                    kind.share_barrel_data,
+                ] = member.voxel_anim_share_flags;
+                [kind.min_angular_velocity, kind.max_angular_velocity] =
+                    member.voxel_anim_angular_velocities;
+                kind.model_slots = member.object_image.model_slots.clone();
+                kind
             })
     }
 
@@ -3696,6 +3780,7 @@ pub(crate) struct NativeRulesRegistryState {
     phobos_attach_effect_types: Option<AttachEffectTypeCatalog>,
     #[cfg(feature = "ares")]
     ares_global_controls: AresGlobalControls,
+    model_plan: super::voxel_model_plan::VoxelModelPlan,
     families: HashMap<RulesTypeFamily, Vec<ProcessedType>>,
     /// TechnoTypeClass::Array A8EB04/countA8EB10. Each pair points to the
     /// existing family member; names alone cannot distinguish repeated native
@@ -3816,6 +3901,7 @@ impl Default for NativeRulesRegistryState {
                 .then(AttachEffectTypeCatalog::default),
             #[cfg(feature = "ares")]
             ares_global_controls: AresGlobalControls::default(),
+            model_plan: Default::default(),
             families: HashMap::new(),
             techno_type_order: Vec::new(),
             tiberiums: Vec::new(),
@@ -4803,6 +4889,11 @@ struct ProcessedType {
     voxel_anim_references: VoxelAnimTypeReferences,
     /// Type+2F0 is mutable through Voxel contact74A923 and retained on reread.
     voxel_anim_damage: i32,
+    ///74B107..167: each reached section supplies literal -1 defaults, unlike
+    /// current-default fields that can project from the merged text history.
+    voxel_anim_angular_velocities: [NativeF64Bits; 2],
+    voxel_anim_read: bool,
+    voxel_anim_share_flags: [bool; 3],
     anim_references: AnimTypeReferences,
     /// BulletType+2B4 `ShrapnelWeapon=`, read the same way by BulletType
     /// ReadINI (`0x0046C2E1..0x0046C31F`) over the constructor's null
@@ -5314,6 +5405,10 @@ impl ProcessedType {
             particle_warhead: None,
             voxel_anim_references: VoxelAnimTypeReferences::default(),
             voxel_anim_damage: 0,
+            voxel_anim_angular_velocities:
+                crate::rules::voxel_anim_type::DEFAULT_ANGULAR_VELOCITIES,
+            voxel_anim_read: false,
+            voxel_anim_share_flags: [false; 3],
             anim_references: AnimTypeReferences::default(),
             shrapnel_weapon: None,
             airburst_weapon: None,
@@ -5429,6 +5524,7 @@ struct RulesPassProcessor {
     powerups: PowerupTable,
     general_type_lists: GeneralTypeLists,
     missile_spawn: MissileSpawnRules,
+    model_plan: super::voxel_model_plan::VoxelModelPlan,
     families: HashMap<RulesTypeFamily, Vec<ProcessedType>>,
     techno_type_order: Vec<(RulesTypeFamily, usize)>,
     native_type_construction_events: Vec<NativeTypeConstructionEvent>,
@@ -5519,6 +5615,7 @@ impl RulesPassProcessor {
             phobos_attach_effect_types: registry_state.phobos_attach_effect_types,
             #[cfg(feature = "ares")]
             ares_global_controls: registry_state.ares_global_controls,
+            model_plan: registry_state.model_plan,
             families: registry_state.families,
             techno_type_order: registry_state.techno_type_order,
             tiberiums: registry_state.tiberiums,
@@ -5708,6 +5805,7 @@ impl RulesPassProcessor {
         self.process_special_weapons(pass);
         self.process_tiberiums(pass)?;
         // AdvancedCommandBar contains no Type factory.
+        self.compact_model_plan();
         Ok(())
     }
 
@@ -6673,7 +6771,7 @@ impl RulesPassProcessor {
         self.process_plain_family(RulesTypeFamily::Overlay, pass, fixed_art, fixed_sounds);
         self.process_particle_family(pass, fixed_sounds);
         self.process_particle_system_family(pass, fixed_sounds);
-        self.process_voxel_anim_family(pass, fixed_sounds);
+        self.process_voxel_anim_family(pass, fixed_art, fixed_sounds);
         // MissionControl adds no Type references.
     }
 
@@ -7421,6 +7519,18 @@ impl RulesPassProcessor {
                 // rename a resource whose load was skipped.
                 if member.object_image.voxel() {
                     member.object_image.load_voxel();
+                    // TechnoType71609C: capture this read's fields, not final render metadata.
+                    let input = super::voxel_model_plan::GenericLoadInput {
+                        image: member.object_image.image().to_owned(),
+                        unit: family == RulesTypeFamily::Vehicle,
+                        apc: native_stored_id == "APC",
+                        turret: effective.read_bool("Turret", false),
+                        turret_count: member.weapon_slots.turret_count,
+                        gattling: member.is_gattling,
+                        no_spawn_alt: effective.read_bool("NoSpawnAlt", false),
+                    };
+                    self.model_plan
+                        .load_generic(&mut member.object_image.model_slots, &input);
                 }
                 // Installed suffix hooks716123/716132 ->10040DF0 ->1003DEC0
                 // reach the common TechnoType extension before subclass reads.
@@ -7753,6 +7863,18 @@ impl RulesPassProcessor {
                             .read_pass(fixed_art, &image, fixed_sounds);
                     }
                     _ => unreachable!("only Techno families enter the Techno reader"),
+                }
+                if family == RulesTypeFamily::Building {
+                    if let Some((turret, barrel)) =
+                        super::voxel_frame_catalog::building_voxel_read_names(&effective)
+                    {
+                        let member = &mut self.families.get_mut(&family).unwrap()[index];
+                        self.model_plan.load_building(
+                            &mut member.object_image.model_slots,
+                            turret.as_deref(),
+                            Some(&barrel),
+                        );
+                    }
                 }
                 #[cfg(feature = "ares")]
                 if family == RulesTypeFamily::Building {
@@ -8507,7 +8629,12 @@ impl RulesPassProcessor {
         }
     }
 
-    fn process_voxel_anim_family(&mut self, pass: &IniFile, fixed_sounds: &SoundRegistry) {
+    fn process_voxel_anim_family(
+        &mut self,
+        pass: &IniFile,
+        fixed_art: &IniFile,
+        fixed_sounds: &SoundRegistry,
+    ) {
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::VoxelAnimation) {
             if let Some((_id, raw, _effective)) =
@@ -8515,10 +8642,24 @@ impl RulesPassProcessor {
             {
                 self.family_mut(RulesTypeFamily::VoxelAnimation)[index]
                     .read_object_sound(&raw, fixed_sounds);
-                let mut references = std::mem::take(
-                    &mut self.family_mut(RulesTypeFamily::VoxelAnimation)[index]
-                        .voxel_anim_references,
-                );
+                // ObjectRead5F92D0 runs before the subtype's model selection.
+                self.families
+                    .get_mut(&RulesTypeFamily::VoxelAnimation)
+                    .unwrap()[index]
+                    .object_image
+                    .read_ini(
+                        &raw,
+                        fixed_art,
+                        ObjectImageKind::Ordinary,
+                        self.image_theater,
+                    );
+                let member = &mut self.family_mut(RulesTypeFamily::VoxelAnimation)[index];
+                member.voxel_anim_angular_velocities =
+                    crate::rules::voxel_anim_type::read_angular_velocities(
+                        &raw,
+                        member.voxel_anim_angular_velocities,
+                    );
+                let mut references = std::mem::take(&mut member.voxel_anim_references);
                 for (key, family, field) in [
                     (
                         "Spawns",
@@ -8562,6 +8703,59 @@ impl RulesPassProcessor {
                 }
                 self.family_mut(RulesTypeFamily::VoxelAnimation)[index].voxel_anim_references =
                     references;
+                //74B23E..274: these are fresh false-default locals on each reached body.
+                let flags = [
+                    raw.read_bool("ShareBodyData", false),
+                    raw.read_bool("ShareTurretData", false),
+                    raw.read_bool("ShareBarrelData", false),
+                ];
+                let source = flags
+                    .iter()
+                    .any(|flag| *flag)
+                    .then(|| raw.read_string("ShareSource", "<none>", 128));
+                let source = source.as_deref().and_then(|name| {
+                    [
+                        RulesTypeFamily::Infantry,
+                        RulesTypeFamily::Vehicle,
+                        RulesTypeFamily::Aircraft,
+                        RulesTypeFamily::Building,
+                    ]
+                    .into_iter()
+                    .find_map(|family| {
+                        // ReadTechno476EB0: only InfantryFind523C90 rejects these sentinels.
+                        if family == RulesTypeFamily::Infantry && is_native_none_type_name(name) {
+                            return None;
+                        }
+                        self.families
+                            .get(&family)?
+                            .iter()
+                            .find(|member| member.native_stored_id.eq_ignore_ascii_case(name))
+                            .map(|member| {
+                                let slots = &member.object_image.model_slots;
+                                if flags[0] {
+                                    slots.main
+                                } else if flags[1] {
+                                    slots.auxiliary
+                                } else {
+                                    slots.barrel
+                                }
+                            })
+                    })
+                });
+                let member = &mut self
+                    .families
+                    .get_mut(&RulesTypeFamily::VoxelAnimation)
+                    .unwrap()[index];
+                member.voxel_anim_read = true;
+                member.voxel_anim_share_flags = flags;
+                if flags.iter().any(|flag| *flag) {
+                    self.model_plan
+                        .copy_debris(&mut member.object_image.model_slots, source);
+                } else {
+                    let image = member.object_image.image().to_owned();
+                    self.model_plan
+                        .load_debris(&mut member.object_image.model_slots, &image);
+                }
             }
             index += 1;
         }
@@ -8905,7 +9099,19 @@ impl RulesPassProcessor {
         Ok(())
     }
 
+    fn compact_model_plan(&mut self) {
+        let mut families: Vec<_> = self.families.iter_mut().collect();
+        families.sort_unstable_by_key(|(family, _)| **family as u8);
+        self.model_plan
+            .compact(families.into_iter().flat_map(|(_, members)| {
+                members
+                    .iter_mut()
+                    .map(|member| &mut member.object_image.model_slots)
+            }));
+    }
+
     fn finish(mut self) -> (IniFile, NativeTypeConstructionTrace) {
+        self.compact_model_plan();
         let allocated_super_weapon_type_count = self
             .families
             .get(&RulesTypeFamily::SuperWeapon)
@@ -8978,6 +9184,7 @@ impl RulesPassProcessor {
                     phobos_attach_effect_types: self.phobos_attach_effect_types,
                     #[cfg(feature = "ares")]
                     ares_global_controls: self.ares_global_controls,
+                    model_plan: self.model_plan,
                     families: self.families,
                     techno_type_order: self.techno_type_order,
                     tiberiums: self.tiberiums,
