@@ -376,7 +376,7 @@ fn cliff_passes_match_original_cells_regions_border_and_rng() {
             .collect();
         // The producer refuses any native scratch change outside region+38,
         // so every other modeled scratch field must stay as supplied.
-        let mut expected_scratch = scratch.cells().to_vec();
+        let mut expected_scratch = scratch.clone();
         for change in row["changed_regions"].as_array().unwrap() {
             let (cx, cy) = xy(&change["coords"]);
             assert_eq!(
@@ -385,7 +385,7 @@ fn cliff_passes_match_original_cells_regions_border_and_rng() {
                 "{}: supplied region prior",
                 row["id"]
             );
-            expected_scratch[scratch.index(cx, cy)].region = number(&change["after"]);
+            expected_scratch.get_mut(cx, cy).region = number(&change["after"]);
         }
         for changed in row["changed_cells"].as_array().unwrap() {
             let cell = expected_cells.get_mut(&xy(&changed["coords"])).unwrap();
@@ -547,8 +547,7 @@ fn cliff_passes_match_original_cells_regions_border_and_rng() {
             );
         }
         assert_eq!(
-            scratch.cells(),
-            expected_scratch,
+            scratch, expected_scratch,
             "{} scratch fields and untouched state",
             row["id"]
         );

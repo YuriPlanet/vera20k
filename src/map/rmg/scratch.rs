@@ -9,8 +9,9 @@
 ///
 /// Field names map to the original record's documented offsets: coordinate at
 /// +0x00, height +0x08, velocity +0x10, rough probability +0x18, green +0x20,
-/// sand +0x28, region id +0x38, stamp +0x3C, shore-mask cache +0x40, water
-/// lock +0x45, visited +0x47, shore enable +0x4A, water/region flag +0x4B.
+/// sand +0x28, region id +0x38, stamp +0x3C, water lock +0x45, visited +0x47,
+/// water/region flag +0x4B. The record's shore-mask cache (+0x40) and shore
+/// enable (+0x4A) live in [`RmgScratch`]'s own arrays.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScratchCell {
     pub x: i16,
@@ -66,12 +67,14 @@ impl Default for ScratchCell {
 }
 
 /// The generator's working grid plus the isometric diamond that bounds it.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RmgScratch {
     width: usize,
     cells: Vec<ScratchCell>,
     /// The shore tiler's per-cell cache (-1 = invalid, recompute) and enable
-    /// flag, kept out of [`ScratchCell`] and stored diagonal-major like
+    /// flag, the native record's +0x40 and +0x4A
+    /// (`MapClass::RmgShoreWaterMask @ 0x0057B210`), kept out of
+    /// [`ScratchCell`] and stored diagonal-major like
     /// [`super::grid::RmgGrid`]: the tiler reads both on every cell of every
     /// full-map pass in native (anti-diagonal) order, so a compact
     /// consecutive layout is what keeps those passes in cache.

@@ -192,11 +192,14 @@ impl RmgGrid {
 
     /// Storage slot of an in-bounds cell: diagonal-major, `(x + y) * W + x`.
     ///
-    /// Every native iteration walks anti-diagonals `(x + 1, y - 1)`, so this
-    /// puts consecutive cells of a scan in consecutive slots; the row-major
+    /// [`Self::native_cells`] walks anti-diagonals `(x + 1, y - 1)`, so this
+    /// puts consecutive cells of that scan in consecutive slots; the row-major
     /// `y * W + x` put each one a whole row apart and missed the cache on
-    /// every step of the shore tiler's full-map passes. A storage choice only:
-    /// cells are still addressed by `(x, y)`, so no value or order changes.
+    /// every step of the shore tiler's full-map passes. The linear scratch
+    /// walks that read the grid (`PartitionRegions @ 0x0058CF90`, the hill
+    /// corner morph) take those misses instead, but once per stage rather than
+    /// after every blob. A storage choice only: cells are still addressed by
+    /// `(x, y)`, so no value or order changes.
     fn slot(&self, x: i32, y: i32) -> usize {
         (x + y) as usize * self.width + x as usize
     }
