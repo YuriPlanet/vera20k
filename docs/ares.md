@@ -297,10 +297,15 @@ the merged pull requests that carried each chain:
 
 ## Original project and authors
 
-VERA20K is an independent Rust reimplementation. It does not load `Ares.dll`,
-import Ares source code or redistribute Ares binaries; the supported behavior
-follows the [Ares 3.0 documentation](https://ares-developers.github.io/Ares-docs/)
-and observations of the installed DLL.
+VERA20K is an independent Rust reimplementation. It does not load `Ares.dll` or
+redistribute Ares binaries. The supported behavior follows the
+[Ares 3.0 documentation](https://ares-developers.github.io/Ares-docs/), the
+installed DLL and Ares' source code. Parts of the `ares` build are translated
+from that source, including source restored from the Ares 3.0 DLL, and keep
+Ares' copyright notice and
+[license](https://github.com/YuriPlanet/vera20k/blob/main/LICENSES/Ares.txt).
+
+This product includes software developed by the Ares Contributors.
 
 Ares was created by **pd** in 2007 and is developed by
 [The Ares Contributors](https://ares-developers.github.io/Ares-docs/credits.html):

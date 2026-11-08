@@ -149,6 +149,8 @@ Command & Conquer y Red Alert son marcas comerciales de Electronic Arts Inc., y 
 pantalla y el icono de la aplicación, la estrella roja de Red Alert 2, muestran arte del juego
 propiedad de Electronic Arts. VERA20K no está afiliado a Electronic Arts ni cuenta con su respaldo.
 
+This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
 **Lee el [aviso legal](LEGAL.md) antes de compartir, vender o hacer un fork de VERA20K.**
 
 ## Documentación
