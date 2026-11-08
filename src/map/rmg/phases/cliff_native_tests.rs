@@ -354,7 +354,7 @@ fn cliff_passes_match_original_cells_regions_border_and_rng() {
         if let Some(disabled) = prior["disabled"].as_array() {
             for coords in disabled {
                 let (x, y) = xy(coords);
-                scratch.get_mut(x, y).shore_enable = false;
+                scratch.set_shore_enable(x, y, false);
             }
         }
         if kind == "stamp" {
