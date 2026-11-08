@@ -46,8 +46,6 @@ first; the Ares part is then small. None of them is reachable with retail YR dat
 
 | Ares feature (keys, hooks) | Needs this stock gamemd logic | Retail |
 |---|---|---|
-| Carryall totes: `Carryall.Allowed`, `Carryall.SizeLimit` (0x417D75, 0x416E37) | The Carryall tote: AircraftClass::Receive_Radio message 8 for a `Carryall=` type (0x4194C5), the Tote action, Mission_Move_Carryall 0x416D50 | No `Carryall=` type |
-| `Passengers.Allowed`/`Disallowed` on aircraft (0x41949F, 10048D10) | Aircraft passengers: the transport arms of AircraftClass::Receive_Radio 0x4190B0 (0xE admission 0x4193B7, 0xF answer 0x41946B, 0x15) and an aircraft hold. Retail transports SHAD and HIND are Jumpjet VehicleTypes and already work | No AircraftType has `Passengers=` |
 | `DigIn`, `DigOut`, `DigInSound`, `DigOutSound` (0x728EF0, 0x7292CF, 0x7293DA, 0x7297C4, 0x7299A9) | TunnelLocomotionClass (the subterranean locomotor) | No subterranean type |
 | `Assaulter.Level` (0x457DB7, 10016FD0) and KillOccupants' assaulter arm (0x4586CA) | The stock `Assaulter=` arms: CanBeOccupiedBy 0x457DAD..0x457DD3 and the assault at 0x522A09..0x522A45 | No assaulter infantry |
 | Visceroid merge (0x739F21, 1004C530) | UnitClass::UpdateVisceroid, called from UnitClass::AI 0x7360C0 | Visceroids spawn only when a mod enables tiberium damage |

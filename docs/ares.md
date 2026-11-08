@@ -165,8 +165,7 @@ Supported extensions:
   passive acquisition, `CivilianEnemy`, damage smoke and sparks,
   `CrashSpin`, `PassengerTurret`, self-healing rates and combat delay, fall
   rates, `AirRate`, `NoManualUnload`/`NoManualEnter`, the Desolator, cow and
-  bomb roles, drain keys and building reload. Carryall totes remain outside
-  this chain.
+  bomb roles, drain keys and building reload.
 - [Superweapon retail types](ares-superweapon-types.md): Ares handlers for
   the Chronosphere and ChronoWarp (`Chronosphere.*`, `Chronoshift.*`), Nuke
   (`Nuke.*`, `NukeFlash.Duration`, `PreImpactAnim`), Psychic Dominator
@@ -237,7 +236,9 @@ Supported extensions:
   `SpyEffect.UndoReverseEngineer`, `UnitSell`/`Unsellable` sales on a depot,
   the ProduceCash rework with `ProduceCashDisplay`, and `SecretLab.*`.
 - [Transports and payloads](ares-transports.md): `InitialPayload.*`,
-  `Convert.Deploy` and Hospital/Armory eviction on sale and capture.
+  `Convert.Deploy`, Hospital/Armory eviction on sale and capture, Carryall
+  totes (`Carryall.Allowed`, `Carryall.SizeLimit` and the 3.0 drop hooks) and
+  `Passengers.Allowed`/`.Disallowed` on aircraft transports.
 - [Warhead, AI and techno residuals](ares-warhead-residuals.md): airborne
   victims of the curtain, EMP and AttachEffect, PoweredBy team, spawn and slave
   updates, `TeamRetaliate`, `AIInnerBase`, `EVA.Lost`, EMP on Fly and Jumpjet

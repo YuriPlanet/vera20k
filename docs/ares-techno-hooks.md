@@ -101,8 +101,8 @@ Every `HasSpotlight=` Techno gets its BuildingLight at TechnoClass::Unlimbo
   0x514DFE); NoSelfGuardArea (0x51E748: the healer's self arm it skips is
   not ported); the Occupier+VehicleThief expiry
   (0x4D9A83); the infantry DamageSparks parse order (0x5240BD).
-- Dormant in retail: flying carriers (0x414338, 0x6B783B), paradropped
-  vehicles (0x415CA6, 0x415DF6), the Carryall and aircraft transport arms.
+- Dormant in retail: flying carriers (0x414338, 0x6B783B) and paradropped
+  vehicles (0x415CA6).
 - Presentation and audio: the radial indicators of non-buildings
   (0x41BE80; the building GetSensorRange override 0x4566B0 is ported), the
   power-off marker (0x6F526C, whose wrench gate is ported in
@@ -179,19 +179,19 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 |---|---|---|---|
 | `413FFA` | AircraftClass_Init_TurretROT | `10048AC0` | ported: Aircraft secondary facing TurretROT |
 | `414338` | AircraftClass_Put_SpawnHigh | `10048C10` | residual: spawned aircraft keep their launch Z (flying carriers) |
-| `415544` | AircraftClass_Mi_Unload_Blocked | `10048B30` | not applicable: aircraft transport unload is not represented |
+| `415544` | AircraftClass_Mi_Unload_Blocked | `10048B30` | ported: [ares-transports.md](ares-transports.md) |
 | `415CA6` | AircraftClass_Paradrop_Units | `10048BA0` | residual: paradropped vehicles fall from the cell centre |
-| `415DF6` | AircraftClass_Paradrop_Carryall | `10048B80` | residual: carryall drop clears Transporter |
+| `415DF6` | AircraftClass_Paradrop_Carryall | `10048B80` | ported: [ares-transports.md](ares-transports.md) |
 | `41668B` | AircraftClass_ReceiveDamage | `10048C50` | ported earlier |
-| `416C3A` | AircraftClass_Carryall_Unload_Facing | `10048920` | not applicable: no Carryall tote in VERA |
-| `416C4D` | AircraftClass_Carryall_Unload_DestroyCargo | `100488C0` | not applicable: no Carryall tote in VERA |
-| `416C94` | AircraftClass_Carryall_Unload_UpdateCargo | `10048A10` | not applicable: no Carryall tote in VERA |
-| `416CF4` | AircraftClass_Carryall_Unload_Guard | `100489D0` | not applicable: no Carryall tote in VERA |
-| `416E37` | AircraftClass_Mi_MoveCarryall_CanTote | `10048B00` | not applicable: no Carryall tote in VERA |
-| `417D75` | AircraftClass_GetActionOnObject_CanTote | `10048A60` | not applicable: no Carryall tote in VERA |
+| `416C3A` | AircraftClass_Carryall_Unload_Facing | `10048920` | ported: [ares-transports.md](ares-transports.md) |
+| `416C4D` | AircraftClass_Carryall_Unload_DestroyCargo | `100488C0` | ported with a residual: [ares-transports.md](ares-transports.md) |
+| `416C94` | AircraftClass_Carryall_Unload_UpdateCargo | `10048A10` | ported: [ares-transports.md](ares-transports.md) |
+| `416CF4` | AircraftClass_Carryall_Unload_Guard | `100489D0` | ported: [ares-transports.md](ares-transports.md) |
+| `416E37` | AircraftClass_Mi_MoveCarryall_CanTote | `10048B00` | ported: [ares-transports.md](ares-transports.md) |
+| `417D75` | AircraftClass_GetActionOnObject_CanTote | `10048A60` | ported: [ares-transports.md](ares-transports.md) |
 | `417DD2` | AircraftClass_GetActionOnObject_NoManualUnload | `10048A90` | ported earlier |
-| `41946B` | AircraftClass_ReceivedRadioCommand_QueryEnterAsPassenger_KillDriver | `10048CF0` | not applicable: aircraft transport arms are not represented |
-| `41949F` | AircraftClass_ReceivedRadioCommand_SpecificPassengers | `10048D10` | not applicable: aircraft transport arms are not represented |
+| `41946B` | AircraftClass_ReceivedRadioCommand_QueryEnterAsPassenger_KillDriver | `10048CF0` | ported: [ares-transports.md](ares-transports.md) |
+| `41949F` | AircraftClass_ReceivedRadioCommand_SpecificPassengers | `10048D10` | ported: [ares-transports.md](ares-transports.md) |
 | `41BE80` | ObjectClass_DrawRadialIndicator | `10049A70` | residual: radial indicators for all technos (presentation) |
 | `41D5AE` | AirstrikeClass_PointerGotInvalid_AirstrikeAbortSound | `10048DE0` | residual: per-type airstrike abort voice (audio) |
 | `41D940` | AirstrikeClass_Fire_AirstrikeAttackVoice | `10048D60` | residual: per-type airstrike attack voice (audio) |
