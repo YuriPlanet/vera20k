@@ -209,6 +209,14 @@ Supported extensions:
   dispositions, including healers, gap and spotlight hooks, rank immunities, the
   AI base plan and unit-chooser fixes, power-toggle and EMP power, and infantry
   death-anim owners.
+- The last ExtData keys: every Ares 3.0 ExtData INI key is now read. The
+  [RulesExt general keys](ares-techno-hooks.md#rulesext-general-keys) and
+  [presentation keys](ares-techno-types.md#presentation-keys) list the wired
+  consumers (airstrike voices, `EnemyUIName`, gate and slam sounds, bullet
+  `AnimLength`, `InfantryElectrocuted`, `EnemyWrench`, `DiskLaserAnimEnabled`,
+  `AIFriendlyDistance`, `StartInMultiplayerUnitCost`, `CameoPalette`) and the
+  keys whose mechanism is still missing (hunter-seeker flight, Carryall,
+  Tunnel, reverse engineering, unit selling, `InitialPayload`, TS laser waves).
 - [INI Include and inheritance](ini-directives.md). The read-only `asset ini-expand` probe works
   in every build.
 - [Extended authored House ally lists](../tools/input_oracle/ares_allies_reader.md).
@@ -250,7 +258,8 @@ the merged pull requests that carried each chain:
   Storm superweapon types with building chronoshift, prism forwarding,
   trigger events and actions, tiberium and harvesters, the line of fire, EMPulse,
   firestorm walls, mouse cursors, the Misc/Bugfixes hooks, anim and particle
-  extensions, and the remaining Techno, Building, House and Infantry hooks.
+  extensions, the remaining Techno, Building, House and Infantry hooks, and
+  the last ExtData keys.
 
 ## Original project and authors
 
