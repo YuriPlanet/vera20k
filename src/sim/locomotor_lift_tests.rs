@@ -93,6 +93,11 @@ fn magnetron_ground_release_change_house_at_touchdown() {
             tank.locomotor.as_ref().unwrap().active_kind(),
             LocomotorKind::Drive
         );
+        assert_eq!(
+            tank.air_tracker_cell(),
+            (0, 0),
+            "the landed tank has left the AircraftTracker"
+        );
         eprintln!("change_house={change_house}: tank landed with Drive");
     }
 }

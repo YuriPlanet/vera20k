@@ -513,13 +513,11 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         // State4_Descend54C905..54C92C jumps to54CA7C after both callbacks
         // for a dead, limbo or falling Foot. This is ObjectAlive, not Health.
         // Evidence: retail gamemd.exe, tools.native_inspect at54C8CB..54CA83.
-        if !self.has_installed_jumpjet()
-            || !self.sim.substrate.entities.get(id).is_some_and(|owner| {
-                owner.lifecycle.object_alive()
-                    && !owner.lifecycle.in_limbo()
-                    && !owner.is_falling_down()
-            })
-        {
+        if !self.sim.substrate.entities.get(id).is_some_and(|owner| {
+            owner.lifecycle.object_alive()
+                && !owner.lifecycle.in_limbo()
+                && !owner.is_falling_down()
+        }) {
             return false;
         }
         self.sim
@@ -530,7 +528,13 @@ impl JumpjetFlightHost for CruiseHost<'_> {
             self.release_air_slot_at(here);
         }
         self.sim.substrate.aircraft_tracker_remove(id);
-        true
+        // A callback above can end a Magnetron lift: Change House reaches
+        // Foot Enter_Idle_Mode's End_Piggyback (0x004D8347..0x004D8373) and
+        // the Drive returns. gamemd crashes on this path: the released
+        // Jumpjet's destructor zeroes its owner (0x0055A6FD) and
+        // State4_Descend reads through it at 0x0054C8FD. VERA takes the Foot
+        // out of the air, as above, and ends the landing here.
+        self.has_installed_jumpjet()
     }
     fn finish_touchdown(&mut self, runtime: &mut JumpjetRuntime) {
         let id = self.stable_id;
