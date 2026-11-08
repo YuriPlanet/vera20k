@@ -335,9 +335,6 @@ pub(crate) enum CursorFeedbackKind {
     Minimap(CursorId),
     /// Deploy/undeploy cursor — shown when a Deployer unit hovers over itself.
     Deploy,
-    /// Ares `Cursor.Deploy=` resolved to a named `[MouseCursors]` row. The
-    /// index is the catalog position, not a native cursor-table row.
-    CustomDeploy(u16),
     NoDeploy,
     /// Enter cursor — garrison, capture, board transport, sabotage, grind.
     Enter,

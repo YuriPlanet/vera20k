@@ -591,7 +591,7 @@ impl Simulation {
             return;
         };
         let name = config.anim_type.clone();
-        let slot = self.allocate_building_anim_slot(id, 9, &name, damaged, 0, &config, rules);
+        let slot = self.allocate_building_anim_slot(id, 9, &name, damaged, 0, Some(config), rules);
         // A turret whose SHP no archive holds leaves slot 9 empty and draws
         // nothing, as natively; the name and that outcome are worth one line
         // when a mod's data is in question.

@@ -872,7 +872,6 @@ impl App {
                         &gpu,
                         &batch_renderer,
                         assets,
-                        None,
                     )
                 });
                 let hotkey_bindings = game_config.as_ref().map_or_else(
