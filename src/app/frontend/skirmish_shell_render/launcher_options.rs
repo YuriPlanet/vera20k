@@ -255,7 +255,6 @@ fn build_text(
             LauncherComboId::Display => dialog.shell_display_label(),
             LauncherComboId::HealthBars => dialog.shell_selected_health_bars().label(),
             LauncherComboId::Language => dialog.shell_language_label(),
-            LauncherComboId::ChatTranslation => dialog.shell_chat_translation_label(),
         };
         out.push(text_draw(
             font,
@@ -331,7 +330,6 @@ fn build_open_list(
             .map(HealthBarMode::label)
             .collect(),
         LauncherComboId::Language => dialog.shell_language_rows(),
-        LauncherComboId::ChatTranslation => dialog.shell_chat_translation_rows(),
     };
     for (i, row_text) in rows.iter().enumerate() {
         let rect = popup.row_rect(i);

@@ -225,13 +225,6 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
             self.persistence.options_profile.language = Some(tag);
         }
     }
-    fn store_chat_translation(
-        &mut self,
-        language: Option<crate::ui::chat_translation::ChatLanguage>,
-    ) {
-        // The next received online line reads it; Options' accept writes it.
-        self.persistence.options_profile.translate_chat = language;
-    }
     fn store_mouse_wheel_zoom(&mut self, enabled: bool) {
         self.persistence.options_profile.mouse_wheel_zoom = enabled;
         if !enabled {
@@ -1925,6 +1918,12 @@ impl App {
                 crate::app::shell_wol::lobby::commit_create(state, observe)
             }
             ShellExitThen::WolOptionsOpen => crate::app::shell_wol::options::commit_open(state),
+            ShellExitThen::WolChatTranslationOpen => {
+                crate::app::shell_wol::chat_translation::commit_open(state)
+            }
+            ShellExitThen::WolChatTranslationClose(staged) => {
+                crate::app::shell_wol::chat_translation::commit_close(state, staged)
+            }
             ShellExitThen::WolOptionsClose(staged) => {
                 crate::app::shell_wol::options::commit_close(state, staged)
             }

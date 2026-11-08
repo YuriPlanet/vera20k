@@ -16,6 +16,7 @@ use crate::app::shell_wol::{
     WolApiStatus, WolLoginAccepted, WolProvider, WolServer, WolServerList, WolServiceEvent,
     WolServiceRequest, service_event,
 };
+use crate::ui::chat_translation::ChatLanguage;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::wol_chat::WolChatLine;
 use crate::ui::wol_lobby::{
@@ -184,6 +185,12 @@ pub enum WolTarget {
     /// The modern lobby's Options over the test service: `0x2BC` settled
     /// with Play Music alone, help under it.
     ModernOptions,
+    /// The modern lobby's Chat Translation: the list picks Simplified Chinese,
+    /// Same-Alphabet Languages is checked and OK saves them; the reopened page
+    /// shows them, the help under that box.
+    ModernChatTranslation,
+    /// The same, then the language list open over the page.
+    ModernChatTranslationList,
     /// `0x2BC` Play Music unchecked: the preview queues -3, nothing saved.
     OptionsMusicOff,
     /// Pages and Buddies toggled, then Cancel: the lobby again, applied
@@ -539,6 +546,8 @@ impl WolTarget {
                     | Self::ModernRoomOptions
                     | Self::ModernSpectators
                     | Self::ModernOptions
+                    | Self::ModernChatTranslation
+                    | Self::ModernChatTranslationList
                     | Self::TestServiceCreate
                     | Self::TestServiceJoin
                     | Self::GuestChoices
@@ -735,6 +744,14 @@ pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-0x130-mismatch-ok", WolTarget::MismatchOk),
     ("wol-0x2bc-steady", WolTarget::OptionsSteady),
     ("wol-modern-options", WolTarget::ModernOptions),
+    (
+        "wol-modern-chat-translation",
+        WolTarget::ModernChatTranslation,
+    ),
+    (
+        "wol-modern-chat-translation-list",
+        WolTarget::ModernChatTranslationList,
+    ),
     ("wol-0x2bc-music-off", WolTarget::OptionsMusicOff),
     ("wol-0x2bc-cancel", WolTarget::OptionsCancel),
     ("wol-0x2bc-ok", WolTarget::OptionsOk),
@@ -869,6 +886,9 @@ enum WolPhase {
     ServiceSetup,
     /// `0x113` Options pressed: waiting for `0x2BC`.
     OptionsOpening,
+    ChatTranslationOpening,
+    ChatTranslationReturn,
+    ChatTranslationReopened,
     /// `0x2BC` closed: waiting for the lobby.
     OptionsReturn,
     /// OK's result checked: `0x2BC` opened again.
@@ -1114,7 +1134,9 @@ impl WolCapture {
                     | WolTarget::ModernChangeCountry
                     | WolTarget::ModernRoomOptions
                     | WolTarget::ModernSpectators
-                    | WolTarget::ModernOptions => WolPhase::ServiceLogin,
+                    | WolTarget::ModernOptions
+                    | WolTarget::ModernChatTranslation
+                    | WolTarget::ModernChatTranslationList => WolPhase::ServiceLogin,
                     _ => WolPhase::Welcome,
                 };
             }
@@ -2134,6 +2156,8 @@ impl WolCapture {
                                     | WolTarget::ModernRoomOptions
                                     | WolTarget::ModernSpectators
                                     | WolTarget::ModernOptions
+                                    | WolTarget::ModernChatTranslation
+                                    | WolTarget::ModernChatTranslationList
                             ) {
                                 1
                             } else {
@@ -2297,6 +2321,20 @@ impl WolCapture {
                     );
                     self.event(frame, "0x113 Options");
                     self.phase = WolPhase::OptionsOpening;
+                    return Ok(());
+                }
+                if matches!(
+                    self.target,
+                    WolTarget::ModernChatTranslation | WolTarget::ModernChatTranslationList
+                ) {
+                    let layout = crate::app::shell_wol::lobby::layout(state);
+                    lobby_button(state, &layout, lobby_ui::CHAT_TRANSLATION)?;
+                    ensure!(
+                        state.frontend.shell_exit.is_some(),
+                        "Chat Translation did not slide the lobby out"
+                    );
+                    self.event(frame, "lobby Chat Translation");
+                    self.phase = WolPhase::ChatTranslationOpening;
                     return Ok(());
                 }
                 if self.target == WolTarget::BuddyFromLobby && !self.rejoined {
@@ -2506,6 +2544,24 @@ impl WolCapture {
                     && Self::page_settled(state, ShellSlideKind::WolOptions) =>
             {
                 self.options_settled(state, frame)?;
+            }
+            WolPhase::ChatTranslationOpening
+                if rendered == PresentedShell::WolChatTranslation
+                    && Self::page_settled(state, ShellSlideKind::WolChatTranslation) =>
+            {
+                self.chat_translation_opened(state, frame)?;
+            }
+            WolPhase::ChatTranslationReturn
+                if rendered == PresentedShell::WolLobby
+                    && Self::page_settled(state, ShellSlideKind::WolLobby) =>
+            {
+                self.chat_translation_saved(state, frame)?;
+            }
+            WolPhase::ChatTranslationReopened
+                if rendered == PresentedShell::WolChatTranslation
+                    && Self::page_settled(state, ShellSlideKind::WolChatTranslation) =>
+            {
+                self.chat_translation_reopened(state, frame)?;
             }
             WolPhase::OptionsReturn
                 if rendered == PresentedShell::WolLobby
@@ -4171,6 +4227,100 @@ impl WolCapture {
         Ok(())
     }
 
+    /// The Chat Translation page settled: real clicks choose Simplified
+    /// Chinese and Same-Alphabet Languages, then OK.
+    fn chat_translation_opened(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        use crate::app::shell_wol::chat_translation as app_page;
+        use crate::ui::skirmish_shell::checkbox_icon_rect;
+        use crate::ui::wol_chat_translation::{OK, SAME_ALPHABET};
+        self.options_before = Some((read_settings(state)?, state.frontend.wol_preferences));
+        ensure!(!Self::lobby(state)?.shown, "the lobby must hide under the page");
+        let layout = app_page::layout(state);
+        let page = app_page::page(state).context("the page")?;
+        ensure!(page.settings.language.is_none(), "translation starts off");
+        ensure!(!page.enabled(SAME_ALPHABET), "off locks the checkboxes");
+        welcome_click(state, language_list_arrow(&layout));
+        let page = app_page::page(state).context("the page")?;
+        let popup = page
+            .popup_geometry(&layout)
+            .context("the language list did not open")?;
+        welcome_click(state, popup.row_rect(2).context("Simplified Chinese")?);
+        let same = layout.checkbox_rect(SAME_ALPHABET).context("the checkbox")?;
+        welcome_click(state, checkbox_icon_rect(same, layout.page.scale));
+        let page = app_page::page(state).context("the page")?;
+        ensure!(
+            page.settings.language == Some(ChatLanguage::SimplifiedChinese)
+                && page.settings.same_alphabet
+                && page.popup.control.is_none(),
+            "the clicks did not set the page: {:?}",
+            page.settings
+        );
+        welcome_click(state, layout.page.button_rect(OK).context("OK")?);
+        ensure!(
+            state.frontend.shell_exit.is_some(),
+            "the page did not slide out"
+        );
+        self.event(frame, "Simplified Chinese, Same-Alphabet Languages, OK");
+        self.phase = WolPhase::ChatTranslationReturn;
+        Ok(())
+    }
+
+    /// OK kept and wrote the choices; the page opens again to show them.
+    fn chat_translation_saved(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        let chat = state.persistence.options_profile.chat_translation;
+        ensure!(
+            chat.language == Some(ChatLanguage::SimplifiedChinese) && chat.same_alphabet,
+            "OK did not keep the choices: {chat:?}"
+        );
+        let saved = read_settings(state)?.context("VERA.INI")?;
+        let saved = String::from_utf8_lossy(&saved);
+        ensure!(
+            saved.contains("TranslateChat=zh-Hans") && saved.contains("TranslateSameAlphabet=yes"),
+            "OK did not write VERA.INI"
+        );
+        self.event(frame, "the lobby again: the choices are saved");
+        let layout = crate::app::shell_wol::lobby::layout(state);
+        lobby_button(state, &layout, lobby_ui::CHAT_TRANSLATION)?;
+        self.phase = WolPhase::ChatTranslationReopened;
+        Ok(())
+    }
+
+    fn chat_translation_reopened(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        use crate::app::shell_wol::chat_translation as app_page;
+        use crate::ui::wol_chat_translation::SAME_ALPHABET;
+        let layout = app_page::layout(state);
+        let page = app_page::page(state).context("the page")?;
+        ensure!(
+            page.settings.language == Some(ChatLanguage::SimplifiedChinese)
+                && page.is_checked(SAME_ALPHABET),
+            "the reopened page does not show the saved choices"
+        );
+        self.event(frame, "reopened with the saved choices");
+        // The capture's isolated profile goes back as it was.
+        let (bytes, _) = self.options_before.clone().context("saved VERA.INI")?;
+        restore_settings(state, bytes)?;
+        if self.target == WolTarget::ModernChatTranslationList {
+            welcome_click(state, language_list_arrow(&layout));
+            let page = app_page::page(state).context("the page")?;
+            let row = page
+                .popup_geometry(&layout)
+                .and_then(|popup| popup.row_rect(4))
+                .context("the language list did not open")?;
+            set_window_pointer_to_rect_center(state, row);
+        } else {
+            let same = layout.checkbox_rect(SAME_ALPHABET).context("the checkbox")?;
+            set_window_pointer_to_rect_center(state, same);
+        }
+        App::handle_wol_mouse_move(state);
+        ensure!(
+            app_page::status_key(state).is_some()
+                || self.target == WolTarget::ModernChatTranslationList,
+            "the box has no help"
+        );
+        self.settle();
+        Ok(())
+    }
+
     /// The lobby shown again after `0x2BC` closed.
     fn options_returned(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         let lobby = Self::lobby(state)?;
@@ -5076,6 +5226,14 @@ fn restore_settings(state: &AppState, bytes: Option<Vec<u8>>) -> Result<()> {
         None => std::fs::remove_file(&path),
     }
     .with_context(|| format!("restore {}", path.display()))
+}
+
+/// The language list's face where a press opens it: the arrow at its right.
+fn language_list_arrow(
+    layout: &crate::ui::wol_chat_translation::WolChatTranslationLayout,
+) -> RectPx {
+    let face = layout.language;
+    RectPx::new(face.x + face.w - 12, face.y, 4, face.h)
 }
 
 fn lobby_button(state: &mut AppState, layout: &lobby_ui::WolLobbyLayout, id: u16) -> Result<()> {

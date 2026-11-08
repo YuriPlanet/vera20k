@@ -32,6 +32,7 @@ use crate::app::shell_network_setup::{NetworkSetupEvent, NetworkSetupRequest};
 use crate::i18n::tr;
 use crate::net::reliable::{LanConnectionConfig, LanConnections, RetryTiming};
 use crate::net::udp::{LanUdpTransport, UdpBindConfig};
+use crate::ui::chat_translation::{ChatReply, only_repeats, without_note};
 use crate::ui::wol_account::AccountRequest;
 use crate::ui::wol_chat::WolChatLine;
 
@@ -535,13 +536,13 @@ impl Translations {
     fn reply(
         &mut self,
         id: u64,
-        outcome: Result<String, http::TranslateFailure>,
+        outcome: Result<ChatReply, http::TranslateFailure>,
         now: Instant,
-    ) -> Option<(super::translation::TranslatedLine, String)> {
+    ) -> Option<(super::translation::TranslatedLine, ChatReply)> {
         let (line, original) = self.pending.remove(&id)?;
         match outcome {
-            Ok(text) if crate::ui::chat_translation::only_repeats(&original, &text) => None,
-            Ok(text) => Some((line, text)),
+            Ok(reply) if only_repeats(&original, without_note(&reply.text)) => None,
+            Ok(reply) => Some((line, reply)),
             Err(failure) => {
                 if failure == http::TranslateFailure::Unavailable {
                     self.paused_until = Some(now + TRANSLATION_PAUSE);
@@ -1696,7 +1697,7 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
             request_match(service, matchbot, &request)
         }
         WolServiceRequest::Translate { text, line } => {
-            if let Some(target) = state.persistence.options_profile.translate_chat {
+            if let Some(target) = state.persistence.options_profile.chat_translation.language {
                 service.translations.request(
                     &service.requests,
                     &text,
@@ -2372,8 +2373,8 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             _ => notice(state, &tr("VERA:OnlineRequestRefused")),
         },
         http::Response::Translated { id, outcome } => {
-            if let Some((line, text)) = service.translations.reply(id, outcome, Instant::now()) {
-                super::translation::show(state, line, &text);
+            if let Some((line, reply)) = service.translations.reply(id, outcome, Instant::now()) {
+                super::translation::show(state, line, &reply);
             }
         }
         http::Response::AccountAnswered { attempt, answer } => {
@@ -4104,8 +4105,15 @@ mod completion_tests {
             })
             .collect();
         assert_eq!(sent, [0, 1, 2, 3].map(|id| (id, "zh-Hans")));
-        let shown = translations.reply(0, Ok("冲".into()), now);
-        assert!(shown.is_some_and(|(shown, text)| shown == line("A") && text == "冲"));
+        let shown = translations.reply(
+            0,
+            Ok(ChatReply {
+                text: "冲".into(),
+                source: None,
+            }),
+            now,
+        );
+        assert!(shown.is_some_and(|(shown, reply)| shown == line("A") && reply.text == "冲"));
         let failed = translations.reply(1, Err(http::TranslateFailure::Unavailable), now);
         assert!(failed.is_none());
         let mut ask = |name, at| {
@@ -4136,6 +4144,7 @@ mod completion_tests {
             ("GG!", "gg", false),
             ("2v2 go", "2V2, go.", false),
             ("gg wp", "gg 打得好", true),
+            ("gg", "[从英语翻译] gg", false),
         ]
         .into_iter()
         .enumerate()
@@ -4146,7 +4155,11 @@ mod completion_tests {
                 color: 0,
             };
             translations.request(&requests, &text, ChatLanguage::SimplifiedChinese, line, now);
-            let reply = translations.reply(id as u64, Ok(reply.into()), now);
+            let reply = ChatReply {
+                text: reply.into(),
+                source: None,
+            };
+            let reply = translations.reply(id as u64, Ok(reply), now);
             assert_eq!(reply.is_some(), shown, "{original}");
         }
     }
