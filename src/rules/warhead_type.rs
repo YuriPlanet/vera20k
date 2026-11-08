@@ -155,7 +155,7 @@ pub struct WarheadType {
     /// VERA's `DeformRadius=`, which gamemd does not read: how many cells
     /// around the hit cell one dent sinks, deepest in the middle. A signed
     /// int, default 0 (Tiberian Sun's single cell); terrain deformation reads
-    /// it as `0..=8`.
+    /// it as `0..=11`.
     pub deform_radius: i32,
     /// `Bullets=` at +0x17A, ReadBool @0x005295F0 called from ReadINI
     /// @0x0075DA01; constructor default false (`0x0075D04A`).

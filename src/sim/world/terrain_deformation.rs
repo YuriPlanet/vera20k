@@ -23,9 +23,10 @@ use crate::sim::world::Simulation;
 /// pull a slope.
 const WINDOW_RADIUS: i32 = 16;
 
-/// The widest `DeformRadius=`: half the window, leaving the other half for
-/// the slopes a crater pulls along.
-const MAX_CRATER_RADIUS: i32 = WINDOW_RADIUS / 2;
+/// The widest `DeformRadius=`: the widest band of gamemd's cell-spread table
+/// (`sim::combat::cell_spread`), so a crater can be as wide as any blast. The
+/// window leaves room past it for the ramps a crater pulls along.
+const MAX_CRATER_RADIUS: i32 = 11;
 
 /// TS `LEVEL_LEPTON_H`: one level in leptons, the close-to-ground tolerance.
 const LEVEL_LEPTONS: i32 = 104;
@@ -297,16 +298,20 @@ mod tests {
 
     /// Flat level-0 Morphable ground, 12 cells square, with one overlay.
     fn flat_sim(overlay: (u16, u16)) -> Simulation {
-        sim_of(test_smudge_cell, overlay)
+        sim_of(12, test_smudge_cell, overlay)
     }
 
-    /// Level-0 ground of `cell`s, 12 cells square, with one overlay.
-    fn sim_of(cell: fn(u16, u16) -> ResolvedTerrainCell, overlay: (u16, u16)) -> Simulation {
+    /// Level-0 ground of `cell`s, `size` cells square, with one overlay.
+    fn sim_of(
+        size: u16,
+        cell: fn(u16, u16) -> ResolvedTerrainCell,
+        overlay: (u16, u16),
+    ) -> Simulation {
         let mut sim = Simulation::new();
-        let mut terrain = test_grid(12, 12, cell);
+        let mut terrain = test_grid(size, size, cell);
         terrain.test_install_deformation_catalog(0, RAMP_BASE);
         sim.resolved_terrain = Some(terrain);
-        let mut overlays = OverlayGrid::new(12, 12);
+        let mut overlays = OverlayGrid::new(size, size);
         overlays.place_overlay(overlay.0, overlay.1, 0, 0);
         sim.overlay_grid = Some(overlays);
         sim
@@ -414,9 +419,21 @@ mod tests {
     }
 
     #[test]
+    fn a_crater_radius_reaches_the_widest_cell_spread_and_no_further() {
+        let rules = rules(true, "DeformRadius=12\n");
+        let mut sim = sim_of(30, test_smudge_cell, (0, 0));
+        assert!(sim.deform_terrain((15, 15), &rules, rules.warhead("CRATERWH").unwrap()));
+        // Radius 11: the cell 11 east sinks, 12 east ramps back up, 13 east
+        // keeps its ground.
+        assert_eq!(level_slope(&sim, 26, 15), (-1, 0));
+        assert_eq!(level_slope(&sim, 28, 15), (0, 0));
+    }
+
+    #[test]
     fn a_crater_digs_flat_road_except_beside_water() {
         // Road tiles are not Morphable; one water cell east of the crater.
         let mut sim = sim_of(
+            12,
             |rx, ry| ResolvedTerrainCell {
                 land_type: if (rx, ry) == (9, 5) {
                     LandType::Water

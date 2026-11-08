@@ -70,10 +70,11 @@ impl PersonalRules {
     /// The selected root as each scenario reads it, unchanged while the
     /// Options switches are off. Terrain Deformation turns on
     /// `[CombatDamage] TerrainDeformation=` and gives the nuke's warhead each
-    /// of `Deform=100%`, `DeformDepth=3` and `DeformRadius=5` the root does
-    /// not set, so a nuke digs a crater three levels deep and 13 cells across:
-    /// gamemd names that warhead `NUKE` (0x0081AF98), and retail sets none of
-    /// them. Map and mode rules still read after it and can turn it off.
+    /// of `Deform=100%`, `DeformDepth=3` and `DeformRadius=10` the root does
+    /// not set, so a nuke digs a crater three levels deep and 23 cells across,
+    /// as wide as its retail `CellSpread=10` blast: gamemd names that warhead
+    /// `NUKE` (0x0081AF98), and retail sets none of them. Map and mode rules
+    /// still read after it and can turn it off.
     pub(crate) fn scenario_root<'a>(&self, root: &'a IniFile) -> Cow<'a, IniFile> {
         if !self.terrain_deformation {
             return Cow::Borrowed(root);
@@ -83,7 +84,7 @@ impl PersonalRules {
             let crater: String = [
                 ("Deform", "100%"),
                 ("DeformDepth", "3"),
-                ("DeformRadius", "5"),
+                ("DeformRadius", "10"),
             ]
             .into_iter()
             .filter(|(key, _)| !nuke.is_present(key))
@@ -304,7 +305,7 @@ mod tests {
         };
         let root = b"[Warheads]\n0=NUKE\n[NUKE]\nVerses=100%\n";
         assert_eq!(scenario(root, false), (false, (0.0, 1, 0), false, false));
-        assert_eq!(scenario(root, true), (true, (1.0, 3, 5), true, true));
+        assert_eq!(scenario(root, true), (true, (1.0, 3, 10), true, true));
         // Keys the root already sets, from a mod or VERARULES.INI, stay.
         let modded = b"[Warheads]\n0=NUKE\n[NUKE]\nDeform=25%\nDeformRadius=2\n";
         assert_eq!(scenario(modded, true).1, (0.25, 3, 2));
