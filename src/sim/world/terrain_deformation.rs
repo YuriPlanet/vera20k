@@ -9,9 +9,13 @@ use crate::map::corner_heights::{self, CornerCells, CornerGrid, FinalCell};
 use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
 use crate::rules::ruleset::RuleSet;
 use crate::rules::warhead_type::WarheadType;
+use crate::sim::entity_store::EntityStore;
+use crate::sim::game_entity::GameEntity;
+use crate::sim::movement::locomotor::MovementLayer;
+use crate::sim::occupancy::OccupancyGrid;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::projectile::ProjectileCoord;
-use crate::sim::tiberium::NativeCellObjectView;
+use crate::sim::terrain_object::{TerrainObjectState, TerrainObjectStore};
 use crate::sim::world::Simulation;
 
 /// Cells from the hit cell to the corner window's edge. A reshape that would
@@ -27,11 +31,13 @@ const MAX_CRATER_RADIUS: i32 = WINDOW_RADIUS / 2;
 const LEVEL_LEPTONS: i32 = 104;
 
 /// The live map as the corner engine reads it: Level and slope, overlay
-/// identity, FirstObject and the tile's `Morphable=`.
+/// identity, the living objects on the ground and the tile.
 struct LiveCornerCells<'a> {
     terrain: &'a ResolvedTerrainGrid,
     overlays: Option<&'a OverlayGrid>,
-    objects: NativeCellObjectView<'a>,
+    occupancy: &'a OccupancyGrid,
+    entities: &'a EntityStore,
+    terrain_objects: &'a TerrainObjectStore,
 }
 
 impl LiveCornerCells<'_> {
@@ -40,6 +46,25 @@ impl LiveCornerCells<'_> {
             return None;
         };
         self.terrain.cell(x, y)
+    }
+
+    /// Whether a living object stands on the cell: one on its ground object
+    /// list with Health above 0, or a live terrain object such as a tree. The
+    /// corner engine's own test reads FirstObject (`CellClass+0xE4`); what the
+    /// blast just killed is listed there until its death is delivered later
+    /// in the tick, but it no longer holds the ground up.
+    fn living_object_at(&self, (x, y): (u16, u16)) -> bool {
+        self.occupancy.get(x, y).is_some_and(|cell| {
+            cell.iter_layer(MovementLayer::Ground).any(|occupant| {
+                self.entities
+                    .get(occupant.entity_id)
+                    .is_none_or(GameEntity::is_alive)
+            })
+        }) || self.terrain_objects.members_at((x, y)).any(|id| {
+            self.terrain_objects
+                .get(id)
+                .is_none_or(TerrainObjectState::is_live)
+        })
     }
 }
 
@@ -74,8 +99,8 @@ impl CornerCells for LiveCornerCells<'_> {
             && self
                 .overlays
                 .is_none_or(|grid| grid.cell(coord.0, coord.1).overlay_id.is_none())
-            && !self.objects.ground_object_present(coord)
-            && self.terrain.deformation_tile_morphable(cell)
+            && !self.living_object_at(coord)
+            && self.terrain.deformation_tile_diggable(cell)
     }
 }
 
@@ -153,7 +178,7 @@ impl Simulation {
         }
         self.publish_cell_lighting_levels(changed.iter().copied());
         // Every stamped tile is a passable Clear or ramp tile, as the
-        // Morphable tile it replaced: zones stay, the path view republishes.
+        // flat land it replaced: zones stay, the path view republishes.
         self.publish_recalculated_cells(rules, &changed);
         for &coord in &changed {
             self.dirty_cells.mark_radar([coord]);
@@ -182,10 +207,9 @@ impl Simulation {
         let cells = LiveCornerCells {
             terrain,
             overlays: self.overlay_grid.as_ref(),
-            objects: NativeCellObjectView::new(
-                &self.substrate.occupancy,
-                self.terrain_objects.cell_index(),
-            ),
+            occupancy: &self.substrate.occupancy,
+            entities: &self.substrate.entities,
+            terrain_objects: &self.terrain_objects,
         };
         let (cx, cy) = (i32::from(cell.0), i32::from(cell.1));
         let depth = warhead.deform_depth.clamp(1, WINDOW_RADIUS);
@@ -251,8 +275,10 @@ impl Simulation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::map::resolved_terrain::{test_grid, test_smudge_cell};
+    use crate::map::resolved_terrain::{test_clear_cell, test_grid, test_smudge_cell};
     use crate::rules::ini_parser::IniFile;
+    use crate::rules::terrain_rules::LandType;
+    use crate::sim::occupancy::CellListInsertion;
 
     const RAMP_BASE: u16 = 600;
 
@@ -271,8 +297,13 @@ mod tests {
 
     /// Flat level-0 Morphable ground, 12 cells square, with one overlay.
     fn flat_sim(overlay: (u16, u16)) -> Simulation {
+        sim_of(test_smudge_cell, overlay)
+    }
+
+    /// Level-0 ground of `cell`s, 12 cells square, with one overlay.
+    fn sim_of(cell: fn(u16, u16) -> ResolvedTerrainCell, overlay: (u16, u16)) -> Simulation {
         let mut sim = Simulation::new();
-        let mut terrain = test_grid(12, 12, test_smudge_cell);
+        let mut terrain = test_grid(12, 12, cell);
         terrain.test_install_deformation_catalog(0, RAMP_BASE);
         sim.resolved_terrain = Some(terrain);
         let mut overlays = OverlayGrid::new(12, 12);
@@ -380,5 +411,52 @@ mod tests {
         assert_eq!(level_slope(&sim, 5, 5), (0, 0));
         assert_eq!(level_slope(&sim, 5, 3), (-1, 0));
         assert_eq!(level_slope(&sim, 5, 2), (-1, 0));
+    }
+
+    #[test]
+    fn a_crater_digs_flat_road_except_beside_water() {
+        // Road tiles are not Morphable; one water cell east of the crater.
+        let mut sim = sim_of(
+            |rx, ry| ResolvedTerrainCell {
+                land_type: if (rx, ry) == (9, 5) {
+                    LandType::Water
+                } else {
+                    LandType::Road
+                }
+                .as_index(),
+                ..test_clear_cell(rx, ry)
+            },
+            (0, 0),
+        );
+        let rules = rules(true, "DeformRadius=3\n");
+        assert!(sim.deform_terrain((5, 5), &rules, rules.warhead("CRATERWH").unwrap()));
+        assert_eq!(level_slope(&sim, 5, 5), (-1, 0));
+        assert_eq!(level_slope(&sim, 2, 5), (-1, 0));
+        // The road beside the water keeps its ground, as a shore cell would.
+        assert_eq!(level_slope(&sim, 8, 5), (0, 0));
+    }
+
+    #[test]
+    fn a_crater_digs_under_what_the_blast_killed_but_not_the_living() {
+        let mut sim = flat_sim((0, 0));
+        for ((x, y), health) in [((5, 5), 0), ((2, 5), 100)] {
+            let id = sim.substrate.allocate_stable_id();
+            let mut unit = GameEntity::test_default(id, "MTNK", "Americans", x, y);
+            unit.health.set_for_test(health);
+            sim.substrate.entities.insert(unit);
+            sim.substrate.occupancy.add(
+                x,
+                y,
+                id,
+                MovementLayer::Ground,
+                None,
+                CellListInsertion::PrependNonBuilding,
+            );
+        }
+        let rules = rules(true, "DeformRadius=3\n");
+        assert!(sim.deform_terrain((5, 5), &rules, rules.warhead("CRATERWH").unwrap()));
+        assert_eq!(level_slope(&sim, 5, 5), (-1, 0));
+        assert_eq!(level_slope(&sim, 2, 5), (0, 0));
+        assert_eq!(level_slope(&sim, 8, 5), (-1, 0));
     }
 }

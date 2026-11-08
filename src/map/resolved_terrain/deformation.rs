@@ -114,17 +114,48 @@ impl ResolvedTerrainGrid {
         })
     }
 
-    /// The tile half of the corner engine's editable test (`0x006B2520`):
-    /// an unassigned or unregistered tile index passes, any other its
-    /// tileset's `Morphable=` (`IsoTileType+0x2E0`, kept as `accepts_smudge`).
-    pub(crate) fn deformation_tile_morphable(&self, cell: &ResolvedTerrainCell) -> bool {
+    /// The tile half of terrain deformation's editable test. The corner
+    /// engine's own (`0x006B2520`) passes an unassigned or unregistered tile
+    /// index, or a tileset with `Morphable=` (`IsoTileType+0x2E0`, kept as
+    /// `accepts_smudge`). VERA's craters also dig flat Clear, Road or Rough
+    /// land (roads, pavement, crops, sand, rough grass) unless it borders
+    /// water, beach, cliff, ice, tunnel or rail: shore pieces share their
+    /// templates with such cells, and a ramp stamped on one would cut the
+    /// piece's art.
+    pub(crate) fn deformation_tile_diggable(&self, cell: &ResolvedTerrainCell) -> bool {
         let tile = cell.final_tile_index;
-        tile < 0
+        let morphable = tile < 0
             || tile == 0xFFFF
             || self
                 .tile_registry_len
                 .is_some_and(|len| tile as usize >= len)
-            || cell.accepts_smudge
+            || cell.accepts_smudge;
+        let land = |types: &[LandType], land_type: u8| {
+            types.iter().any(|land| land.as_index() == land_type)
+        };
+        let fringe = [
+            LandType::Water,
+            LandType::Beach,
+            LandType::Rock,
+            LandType::Ice,
+            LandType::Tunnel,
+            LandType::Railroad,
+        ];
+        let (x, y) = (i32::from(cell.rx), i32::from(cell.ry));
+        morphable
+            || cell.slope_type == 0
+                && cell.template_height == 0
+                && !cell.is_wood_bridge_repair_tile
+                && land(
+                    &[LandType::Clear, LandType::Road, LandType::Rough],
+                    cell.land_type,
+                )
+                && (y - 1..=y + 1)
+                    .flat_map(|ny| (x - 1..=x + 1).map(move |nx| (nx, ny)))
+                    .filter_map(|(nx, ny)| {
+                        self.cell(u16::try_from(nx).ok()?, u16::try_from(ny).ok()?)
+                    })
+                    .all(|neighbour| !land(&fringe, neighbour.land_type))
     }
 
     /// Stamp the cells the corner engine's finalize (`0x006B3850`) chose,
