@@ -67,7 +67,7 @@ python3 tools/wasm/serve.py
 - `util::file_system` 在桌面端重新导出标准文件操作。浏览器导入资源位于 `/retail`，存档位于 `/saves`，配置位于 `/saves/profile`；MIX 归档共享导入字节，不使用内存映射。
 - 浏览器通过现有并行工作接口串行执行工作。桌面端仍选择原生 Rayon 和工作线程路径。
 - GPU 获取通过现有初始化任务让出执行。渲染使用离屏 sRGB 帧和 canvas 呈现 pass。浏览器纹理上传不会阻塞等待 GPU 完成。
-- 没有可用的 WebGPU 适配器时，浏览器构建回退到 WebGL2。WebGL2 没有存储缓冲、计算着色器、片元原子操作和重解释格式的纹理视图，因此用到这些能力的渲染器只在该设备上改用等价的渲染目标实现（`render::webgl`、`gpu::webgl_fallback`）；其他设备的路径不变。原生测试会把这些着色器翻译为 GLSL ES 3.00，设置 `VERA20K_TEST_WEBGL_FALLBACK=1` 可在原生设备上让 GPU 基准测试走回退路径。
+- 没有可用的 WebGPU 适配器时，浏览器构建回退到 WebGL2。WebGL2 没有存储缓冲、计算着色器和重解释格式的纹理视图，因此用到这些能力的渲染器只在该设备上改用等价的渲染目标实现（`render::webgl`、`gpu::webgl_fallback`）；其他设备的路径不变。原生测试会把这些着色器翻译为 GLSL ES 3.00，设置 `VERA20K_TEST_WEBGL_FALLBACK=1` 可在原生设备上让 GPU 基准测试走回退路径。
 - 浏览器入口提供 canvas、状态回调和存储回调；现有 App 继续负责启动和对局生命周期。
 
 只有同时启用 `wasm-net` 和浏览器目标，才会启用 Fetch、WS socket 和延后的联机加载等待。桌面构建（包括启用 `wasm-net` 的构建）仍使用原生 UDP、阻塞 HTTPS 和线程调度。仅启用 `wasm` 的单机包仍会在网络入口明确返回不支持错误。浏览器不支持 LAN 发现和直接 UDP 连接。

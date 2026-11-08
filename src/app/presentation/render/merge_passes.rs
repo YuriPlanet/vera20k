@@ -246,9 +246,9 @@ pub(super) fn draw_native_object_pass<'a>(
             continue;
         }
         if let Some((piece, atlas_slot)) = destination_edit(run.target) {
-            // ReadOnly edits reduce in sequence inside one interval; ReadWrite
-            // edits keep their order inside one too: waves, replays, or the
-            // live depth test (`TerrainDrawRenderer::draw_span`).
+            // ReadOnly and ReadWrite edits each keep their order inside one
+            // interval: waves, replays, or the live depth test
+            // (`TerrainDrawRenderer::draw_span`).
             let kind = if run.render_z == RenderZPolicy::ReadOnly {
                 StageKind::EditReadOnly
             } else {
