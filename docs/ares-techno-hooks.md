@@ -99,18 +99,75 @@ Every `HasSpotlight=` Techno gets its BuildingLight at TechnoClass::Unlimbo
   swap (0x74642C, 0x74653C); InitialPayload (0x446EE2, 0x4D718C); grinder
   reverse engineering (0x5198AD, 0x73A1BC); small visceroid merging
   (0x739F21, a raw type swap); Hover DeployToLand (0x513EAA, 0x514A21,
-  0x514DFE); NoSelfGuardArea (0x51E748); the Occupier+VehicleThief expiry
+  0x514DFE); NoSelfGuardArea (0x51E748: the healer's self arm it skips is
+  not ported); the Occupier+VehicleThief expiry
   (0x4D9A83); the infantry DamageSparks parse order (0x5240BD).
 - Dormant in retail: flying carriers (0x414338, 0x6B783B), paradropped
   vehicles (0x415CA6, 0x415DF6), the Carryall and aircraft transport arms.
-- Presentation and audio: radial indicators (0x41BE80, 0x4566B0), the
-  power-off and wrench markers (0x6F526C), passenger pips (0x709D38),
-  damage spark and smoke particle-system lists (0x6FAD49, 0x702894),
-  airstrike voices (0x41D5AE, 0x41D940), move sounds (0x4DAA68, 0x7101CF).
+- Presentation and audio: the radial indicators of non-buildings
+  (0x41BE80; the building GetSensorRange override 0x4566B0 is ported), the
+  power-off marker (0x6F526C, whose wrench gate is ported in
+  `app/presentation/ui_overlays.rs`), passenger pips (0x709D38), damage
+  spark and smoke particle-system lists (0x6FAD49, 0x702894), move sounds
+  (0x4DAA68, 0x7101CF). The airstrike voices (0x41D5AE, 0x41D940) are
+  ported in `sim/airstrike.rs`.
 - Activate/Deactivate's factory queue refresh and sound mutex, and the
   AttachEffect anim hiding of the Temporal hook.
 - `SuperGapRadiusInCells` multiples of 256: the stock What_Action
   (`0x004472AA`) still reads the char, VERA the int.
+
+## RulesExt general keys
+
+With `--features ares`, the RulesExt `[General]` and `[AudioVisual]` keys
+below are read by `AresGeneralRules` (`rules/native_processing.rs`) in
+LoadBeforeTypeData (`1002AB60`) or LoadAfterTypeData (`1002A800`), with the
+constructor's (`1002A360`) defaults. Default builds read none of them.
+
+```ini
+[General]
+TeamRetaliate=no              ; read, not consumed (see below)
+AIFriendlyDistance=           ; unset: AISafeDistance
+StartInMultiplayerUnitCost=   ; unset: the average cost
+EnemyWrench=yes
+[AudioVisual]
+DiskLaserAnimEnabled=no
+InfantryElectrocuted=         ; Find only; unset: ELECTRO, else AnimTypes[1]
+```
+
+### Where VERA20K owns them
+
+- `rules/ruleset.rs`: the InfDeath=5 anim (InfantryClass_ReceiveDamage_
+  ElectricDeath `1002C930`, hook `0x518744`), resolved against the final
+  AnimType registry.
+- `sim/team_script_vm/actions.rs`: script action 54 regroups its argument
+  plus `AIFriendlyDistance` (else `AISafeDistance`) cells from the base
+  (`1003A2A0`, hook `0x6EFB69`); action 53 gathers its argument plus
+  `AISafeDistance` from the enemy base (`1003A270`, hook `0x6EF8A1`).
+- `sim/scenario_bootstrap.rs`: a set `StartInMultiplayerUnitCost` prices each
+  starting unit (`1001EE10`, hook `0x5D6D9A`).
+- `sim/world/disk_laser.rs`: a disk laser's hit flashes its warhead and, with
+  `DiskLaserAnimEnabled`, plays its damage animation (`1004CFF0`, hook
+  `0x4A76ED`).
+- `app/presentation/ui_overlays.rs`: `EnemyWrench` and the warp tests of the
+  repair wrench (`10049FE0`, hook `0x6F526C`).
+
+### Not covered
+
+- `TeamRetaliate` (`1003A180`, hook `0x6EB432`): retaliating needs
+  `TechnoClass::IsCloseEnoughToAttackCoords` (vt+0x3B0) for an armed focus,
+  which VERA has not ported; computer teams keep the stock reaction.
+- `CanMakeStuffUp` (`100677B0`, hook `0x687C16`; `100680F0`, hook `0x55AFB3`): Ares'
+  randomized VeteranRatio/BuildSpeed/BuildupTime write the immutable Rules,
+  and its 90-frame infantry panic is not ported.
+- `Message.SilosNeeded` (`10024AE0`, hook `0x4F8C23`): the silo nag is
+  unreachable while VERA has no Ares tiberium storage (hook `0x4F9610`).
+- `UnitsUnsellable`: no unit sale on a repair depot
+  ([ares-building-types.md](ares-building-types.md)).
+- The `HunterSeeker*` defaults: [ares-hunter-seeker.md](ares-hunter-seeker.md).
+- `StartInMultiplayerUnitCost` unset: Ares' own average also takes the
+  HouseType `StartInMultiplayer.Types`, which VERA does not read; HouseType
+  `StartInMultiplayer.WithConst` (`1001F0B0`, hook `0x5D7048`, a starting
+  construction yard) is read and not consumed.
 
 ## Hook table
 

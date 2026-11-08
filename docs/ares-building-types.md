@@ -163,6 +163,14 @@ TogglePower=-1                          ; the IQ a computer needs to balance
   `0x73DF66`); Mission_Unload then compares the facing exactly and lets a
   mid-swing turret through.
 
+`SlamSound` replaces `BuildingSlam` for the placed type
+(`app/match_runtime/sound_dispatch.rs`, `10010290`, hook `0x4FB2FD`).
+`UnitSell`, `SecretLab.GenerateOnCapture`, `ReverseEngineersVictims`,
+`ProduceCashDisplay` and `AIInnerBase` below are read
+(`ResidualBuildingTypeRules` in `rules/ares_building_type.rs`), and the
+RulesExt `UnitsUnsellable` with the other `[General]` keys
+(`AresGeneralRules`); nothing consumes them.
+
 ### Not covered in part 2
 
 - `UnitSell` and `UnitsUnsellable`: VERA has no unit sale on a repair depot
@@ -171,13 +179,16 @@ TogglePower=-1                          ; the IQ a computer needs to balance
   gates.
 - `SecretLab.GenerateOnCapture`: part of the Ares Secret Lab rework
   (`SecretLab.PossibleBoons`, `UpdateSecretLab`), which VERA does not port.
+- `ReverseEngineersVictims`: grinder reverse engineering (10012E00, hooks
+  `0x5198AD`, `0x73A1BC`) is not ported.
 - HouseExt `Degrades=` in a map's house section (`10021A70`): a house takes
   its country's answer.
-- `GateUpSound`, `GateDownSound`: the gate sounds themselves are not
-  played yet (`sim::gate_runtime`).
-- `SlamSound` (`10010290`, hook `0x4FB2FD`) and `MassSelectable`
-  (`10013CF0`, hook `0x459C03`): the stock `BuildingSlam` and the stock
-  band-selection test stay.
+- `MassSelectable` (`10013CF0`, hook `0x459C03`): the stock band-selection
+  test stays.
+- The stock `[AudioVisual] GateUp`/`GateDown` sounds of Mission_Open play in
+  Ares builds only, with the type's `GateUpSound`/`GateDownSound` first
+  (`sim::gate_runtime`, `10015670`/`100156B0`, hooks `0x44E550`/`0x44E61E`);
+  default builds keep them unplayed.
 - `ProduceCashDisplay` (`100117C0`): it rides Ares' replaced ProduceCash
   payout (`100146E0`, `10013D40`, `10014490`: hooks `0x43FD2C`, `0x4482BD`,
   `0x4409F4`, with the upgrades' cash timers), which VERA does not port.

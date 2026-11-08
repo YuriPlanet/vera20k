@@ -44,3 +44,11 @@ This is a bounded launch and initial-acquisition port. It does not establish
 complete flying hunter movement, impact behavior or reacquisition after target
 loss. Stock redirected superweapons retain their existing settlement path.
 No mod-specific unit names, resource readers or assets are included.
+
+The flight's tuning keys are read and consumed by nothing until that flight
+(`Ext/Techno/Hooks.HunterSeeker.cpp`, hooks 0x4CCB84..0x4D8D95) is ported:
+the TechnoType `HunterSeeker.DetonateProximity`, `.DescendProximity`,
+`.AscentSpeed`, `.DescentSpeed` and `.EmergeSpeed` (Nullable<int>,
+`rules::ares_techno_type`) and their `[General]` defaults
+`HunterSeekerDetonateProximity` .. `HunterSeekerEmergeSpeed` (Valueable<int>,
+0, read by LoadAfterTypeData 1002A800 after HSBuilding; `AresGeneralRules`).

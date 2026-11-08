@@ -77,7 +77,8 @@ it to the hold.
 
 - The player's Detonate action for an own bomb (`IvanBomb.CanDetonate*`,
   [General]`CanDetonateTimeBomb`/`CanDetonateDeathBomb`, the What_Action and
-  Berzerk click hooks): not read, no action.
+  Berzerk click hooks, `TechnoExt::CanDetonateAttachedBomb`): the two
+  weapon keys are read (`AresIvanBomb`), there is no action to gate.
 - Abduction of a spawned or enslaved unit, a slave master's manager, the
   locomotor reset and a Building abductor's Absorbed flag (see
   `sim/abduction.rs`). The trigger events 0x47..0x4A are in

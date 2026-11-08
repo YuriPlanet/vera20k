@@ -3226,26 +3226,40 @@ pub fn projectile_shp_frame_with_velocity(
     if projectile_type.rotates {
         return 0;
     }
-    use crate::util::direction_tables::{
-        DRAGON_FRAME_TABLE, facing16_from_angle, step32_from_facing16,
-    };
+    use crate::util::direction_tables::DRAGON_FRAME_TABLE;
+    #[cfg(not(feature = "ares"))]
+    use crate::util::direction_tables::{facing16_from_angle, step32_from_facing16};
     use crate::util::native_x87::X87Chop53 as X;
     use native_math::{atan, d};
-    // FCHS of the velocity Y, `Math::atan2 @ 0x004CAE30`, then the DirStruct
-    // word conversion (FSUB pi/2, FMUL, ftol).
-    let word = facing16_from_angle(atan(X::neg(d(velocity.y)), d(velocity.x)));
-    // 46805D: the 32-step bucket of the angle word indexes the 0x007F4890 table.
-    let facing = DRAGON_FRAME_TABLE[usize::from(step32_from_facing16(word))];
-    // Ares BulletClass_GetAnimFrame (1001A840, hook 0x468000) replaces the
-    // body: an AnimLength above one gives each facing that many frames.
-    #[cfg(feature = "ares")]
-    let facing = projectile_type.bullet_type_ext.rotating_frame(
-        facing,
-        frame as i32,
-        projectile_type.anim_rate,
-    );
+    // FCHS of the velocity Y, `Math::atan2 @ 0x004CAE30`.
+    let angle = atan(X::neg(d(velocity.y)), d(velocity.x));
+    // The DirStruct word conversion (FSUB pi/2, FMUL, ftol); 46805D: its
+    // 32-step bucket indexes the 0x007F4890 table.
     #[cfg(not(feature = "ares"))]
-    let _ = frame;
+    let facing = {
+        let _ = frame;
+        DRAGON_FRAME_TABLE[usize::from(step32_from_facing16(facing16_from_angle(angle)))]
+    };
+    // Ares BulletClass_GetAnimFrame (1001A840, hook 0x468000) replaces the
+    // body with its own word, 0x3FFF less the truncated angle times 65535/2pi
+    // (1001A894..1001A8BB, constant 10097DB8), whose bucket can differ at the
+    // edges; then AnimLength gives each facing its frames.
+    #[cfg(feature = "ares")]
+    let facing = {
+        const ARES_FACING_SCALE: crate::util::native_x87::NativeF64Bits =
+            crate::util::native_x87::NativeF64Bits::from_bits(0x40c4_5f1c_0e99_5ab9);
+        let scaled = X::mul(
+            angle,
+            X::load_f64(ARES_FACING_SCALE).expect("finite Ares facing scale"),
+        );
+        let word = 0x3fff_i32.wrapping_sub(X::ftol_i32_low_masked(scaled)) as u16;
+        let bucket = ((usize::from(word >> 10) + 1) >> 1) & 0x1f;
+        projectile_type.bullet_type_ext.rotating_frame(
+            DRAGON_FRAME_TABLE[bucket],
+            frame as i32,
+            projectile_type.anim_rate,
+        )
+    };
     facing as u16
 }
 

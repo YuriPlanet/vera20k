@@ -72,15 +72,19 @@ the 3.0 DLL divides integers (`IDIV` at `1006E411..1006E42B`), which VERA
 follows. The three `0x4CC1xx`/`0x4CC3xx` hooks themselves have no caller in
 an Ares build: their only callers sit inside the code the hooks above skip.
 
+`AnimLength` and Ares' own facing conversion of a rotating bullet,
+`0x3FFF - ftol(angle * 65535/2pi)`, which can pick a neighbouring facing at
+bucket edges (`projectile_shp_frame_with_velocity`, `1001A840`, hook
+`468000`): with `AnimLength` above one each facing owns that many frames,
+stepped every `AnimRate` frames; `AnimRate=0` would divide by zero in the
+DLL, VERA keeps the facing's first frame.
+
 ## Not covered
 
 - The other BulletTypeExt keys: `Parachuted` (`46867F`), `Splits`,
   `RetargetSelf`, `RetargetAccuracy`, `AirburstSpread` and `AroundTarget`
   (the airburst tail `469EBA`, `1001A090`, which Ares builds skip),
-  `AnimLength` (`468000`, `1001A840`: the client draw path has no global
-  frame and the atlas holds 32 facings; Ares' own facing conversion,
-  `0x3FFF - ftol(angle * 65535/2pi)`, can also pick a neighbouring facing
-  at bucket edges), `AttachedSystem` (`5F4FE7`) and the anim palette
+  `AttachedSystem` (`5F4FE7`) and the anim palette
   (`468379`). None is set by retail rules; retail's only `Airburst=`
   projectile (`V3AirburstP`) is fired by no weapon.
 - The original shared probe's oracle vectors

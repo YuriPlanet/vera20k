@@ -72,6 +72,7 @@ for retail weapons too:
 ## Not ported
 
 `Wave.IsLaser` and `Wave.IsBigLaser` (Tiberian Sun laser waves, WaveClass types
-1 and 2) are not read: their geometry (`Draw_NonMagnetic`'s per-type corner
-table and 1.05 endpoint factor) and `Draw_Laser 0x7609E0` have no Rust port yet,
-so such a weapon fires without its laser.
+1 and 2, `Ext/WeaponType/Hooks.Wave.cpp`) are read and consumed by nothing:
+their geometry (`Draw_NonMagnetic`'s per-type corner table and 1.05 endpoint
+factor) and `Draw_Laser 0x7609E0` have no Rust port yet, so such a weapon fires
+without its laser.

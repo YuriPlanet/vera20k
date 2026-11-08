@@ -190,7 +190,23 @@ stock visit refills an empty magazine at once.
   `sim/infantry.rs`: IsCow; `sim/power_system.rs`: Drain.Local;
   `sim/world/techno_ai/building_missions.rs`: the building reload.
 
+## Presentation keys
+
+- `VoiceAirstrikeAttack`, `VoiceAirstrikeAbort` (NullableIdx<VocClass>):
+  the first aircraft's, then the designator's, replace the Rules airstrike
+  voices (`sim/airstrike.rs`, 10048D60/10048DE0, hooks 0x41D940/0x41D5AE).
+- `EnemyUIName`: a building's tooltip name for a player its owner does not
+  count as an ally, unless it spied the building (`app/input/tooltips.rs`,
+  10015DA0, hook 0x459ED0).
+- `RadialIndicatorRadius`: a building's GetSensorRange answer
+  (`ObjectType::building_sensor_range`, 10048E60, hook 0x4566B0).
+- Art `CameoPalette`: the SHP cameo's palette when it loads
+  (`render/sidebar_cameo_atlas.rs`, 1005E390, hook 0x6A9A2A).
+
 ## Not covered in part 2
+
+These keys are read (`ResidualTypeRules` in `rules/ares_techno_type.rs`) and
+nothing consumes them:
 
 - `Carryall.Allowed`, `Carryall.SizeLimit`: VERA has no Carryall tote
   (hooks 0x417D75, 0x416E37); retail has no carryall.
@@ -198,10 +214,23 @@ stock visit refills an empty magazine at once.
   not ported. `Assaulter.Level`: the stock `Assaulter=` arm of
   CanBeOccupiedBy (hook 0x457DB7) is not ported.
 - `Convert.Deploy` (1004C070, hook 0x73DE90), which also replaces the stock
-  +6E1 test of every simple deployer's Unload; `InitialPayload.Nums` with
-  `InitialPayload.Types` (hooks 0x446EE2, 0x4D718C).
-- Presentation: `EnemyUIName`, `RadialIndicatorRadius` (hooks 0x4566B0,
-  0x41BE80), `CameoPalette`.
+  +6E1 test of every simple deployer's Unload; `InitialPayload.Nums` and
+  its partner `InitialPayload.Types`, which is not read (hooks 0x446EE2,
+  0x4D718C).
+- `CanBeReversed`, `ReversedAs`: grinder reverse engineering
+  (`HouseExt::ReverseEngineer`, hooks 0x5198AD, 0x73A1BC) is not ported.
+- `FakeOf`: only the selection's value readout reads it
+  (TacticalSelection 0x731D90, hook 0x731E08), which VERA does not draw.
+- `EVA.Lost`: Ares rewrites the unit-lost cue (FootClass_Destroyed
+  10049080, hook 0x4D98C0, adding the DontScore and Insignificant gates) and
+  gives buildings one (10013F10, hook 0x44D760); VERA keeps the stock
+  `EVA_UnitLost` of `Death_Announcement`.
+- `NoSelfGuardArea` (10049710, hook 0x51E748): the healer infantry's
+  GuardArea over itself (0x51E710..0x51E748) is not ported.
+- `RadialIndicatorRadius` of non-building technos (0x41BE80) and the
+  `~~~` theater placeholder in `CameoPalette` (the cameo atlas is not
+  built per theater).
 - The infantry `NoManualEnter` hook also admits Ares tunnels, not ported.
-- The `HunterSeeker.*` speeds and proximities need the unported hunter
-  flight (hooks 0x4CCB84..0x4D8D95).
+- The `HunterSeeker.*` speeds and proximities, and the RulesExt
+  `HunterSeeker*` defaults, need the unported hunter flight (hooks
+  0x4CCB84..0x4D8D95).
