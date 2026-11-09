@@ -1,0 +1,4 @@
+{
+  "_readme": "Optional manifest for <game>/vera20k/scripts. A .rhai file already binds by its own file name (example_ring.rhai answers Script=example_ring), so this file is only needed to bind a different name or to point at a module. See docs/scripting.md.",
+  "scripts": []
+}

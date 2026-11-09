@@ -80,6 +80,13 @@ libm = "0.2.16"
 serde = { workspace = true }
 serde_json = { workspace = true }
 
+# --- File-backed scripts ---
+# A pure-Rust embedded interpreter: no C toolchain and no dynamic library, so
+# the script sources stay readable text. `serde` converts a script's persisted
+# state map to and from the JSON bytes in `ScriptState`; the std package
+# supplies loops, arrays and maps.
+rhai = { version = "1.27", default-features = false, features = ["std", "serde"] }
+
 # --- Binary parsing ---
 # RA2's binary asset formats (.mix, .shp, .vxl, .pal, .tmp, .hva) are parsed by
 # hand-written readers in `assets/` — no parser library, no RA2-specific crates.

@@ -41,6 +41,9 @@ Thumbs.db
 
 /docs/*
 !/docs/capabilities.md
+!/docs/scripting.md
+!/docs/scripts/
+!/docs/scripts.example.json
 !/docs/wasm.md
 !/docs/ares.md
 !/docs/android.md
