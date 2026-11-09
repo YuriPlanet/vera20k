@@ -5,7 +5,6 @@
 //! presentation-only rounding difference is not an executed GPU parity claim.
 
 use crate::render::gpu::GpuContext;
-use wgpu::util::DeviceExt;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum ChronoScreenDraw {
@@ -77,8 +76,7 @@ impl ChronoScreenRenderer {
         // One immutable retail table owner; do not regenerate sin/cos.
         // WebGL2 has no storage buffers; the same bytes become a data texture.
         let trig = (!webgl).then(|| {
-            gpu.device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            crate::render::gpu::create_init_buffer(&gpu.device, &wgpu::util::BufferInitDescriptor {
                     label: Some("Chrono shared retail trig table"),
                     contents: crate::util::native_trig::RETAIL_SINE_TABLE,
                     usage: wgpu::BufferUsages::STORAGE,

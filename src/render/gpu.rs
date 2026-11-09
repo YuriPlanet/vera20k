@@ -15,6 +15,7 @@
 //! ## Dependency rules
 //! - gpu.rs is part of render/ — see render/mod.rs for dependency rules.
 
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::task::{Context as TaskContext, Poll, Wake, Waker};
 
@@ -183,7 +184,28 @@ pub struct GpuContext {
     pub surface_format: wgpu::TextureFormat,
     /// Exact identity returned by the adapter that backs this context.
     adapter_info: wgpu::AdapterInfo,
+    /// Surface frames the app still holds. A frame that outlives the frame that
+    /// took it makes the next `configure` fail (`PreviousOutputExists`), which
+    /// wgpu answers silently by dropping the surface's presentation state, so
+    /// the count is the one thing that tells the two validation failures apart.
+    live_frames: Arc<AtomicUsize>,
+    /// Set the moment the device-lost callback runs. A lost device never draws
+    /// again: every buffer the util helper then creates is invalid, and the
+    /// helper's own `expect` panics inside wgpu. The flag lets the frame loop
+    /// stop before it reaches that.
+    device_lost: Arc<AtomicBool>,
+    /// The driver's own words about the loss, kept for the dialog that tells
+    /// the player why the game stopped drawing.
+    device_loss_message: Arc<Mutex<String>>,
+    /// So the loss is reported once, not once per frame.
+    device_loss_reported: AtomicBool,
     capture_target: Option<CaptureTarget>,
+    /// A frame target for a minimised window. A minimised window has no
+    /// presentable surface, yet a subscribed whole-map viewer still needs the
+    /// match drawn, so the same passes run into this texture instead and the
+    /// picture is read back from the frame, not from a window nobody sees.
+    /// Created lazily: an ordinary session never allocates it.
+    offscreen_frame: Mutex<Option<CaptureTarget>>,
     /// The GPU time of each frame, while the Performance Stats panel shows.
     pub(crate) timer: super::gpu_timer::GpuTimer,
     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
@@ -346,6 +368,21 @@ impl GpuContext {
             })
             .await
             .context("Failed to create wgpu device")?;
+        // A lost device never draws again, and the surface API can only report
+        // that as a failed acquisition. Say so once, when it happens, instead
+        // of leaving a silent wall of refused frames behind — and raise the
+        // flag that stops the frame loop from creating buffers on it (the util
+        // helper panics on the invalid ones).
+        let device_lost = Arc::new(AtomicBool::new(false));
+        let device_loss_message = Arc::new(Mutex::new(String::new()));
+        let lost_flag = Arc::clone(&device_lost);
+        let lost_words = Arc::clone(&device_loss_message);
+        device.set_device_lost_callback(move |reason, message| {
+            log::error!("GPU device lost ({reason:?}): {message}");
+            *lost_words.lock().unwrap_or_else(PoisonError::into_inner) =
+                format!("GPU device lost ({reason:?}): {message}");
+            lost_flag.store(true, Ordering::Release);
+        });
 
         // Pick the best texture format for the surface.
         // This is usually Bgra8UnormSrgb on Windows, Bgra8Unorm on some other platforms.
@@ -458,7 +495,12 @@ impl GpuContext {
             config,
             surface_format,
             adapter_info,
+            live_frames: Arc::new(AtomicUsize::new(0)),
+            device_lost,
+            device_loss_message,
+            device_loss_reported: AtomicBool::new(false),
             capture_target,
+            offscreen_frame: Mutex::new(None),
             timer,
             #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
             web_present,
@@ -468,6 +510,30 @@ impl GpuContext {
     /// Return a borrowed capture-only view of the selected adapter identity.
     pub(crate) fn capture_adapter_observation(&self) -> GpuAdapterObservation<'_> {
         GpuAdapterObservation::from(&self.adapter_info)
+    }
+
+    /// Whether the device-lost callback has fired. Nothing may be created on
+    /// the device after that; see [`create_init_buffer`].
+    pub fn device_lost(&self) -> bool {
+        self.device_lost.load(Ordering::Acquire)
+    }
+
+    /// The device-loss report, the first time it is asked for and never again:
+    /// the driver's own words about why it stopped. The frame loop turns this
+    /// into the player's dialog and quits, since nothing can be drawn after.
+    pub fn take_device_loss_report(&self) -> Option<String> {
+        if !self.device_lost.load(Ordering::Acquire) {
+            return None;
+        }
+        if self.device_loss_reported.swap(true, Ordering::AcqRel) {
+            return None;
+        }
+        Some(
+            self.device_loss_message
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone(),
+        )
     }
 
     /// Whether the window currently owns a render surface.
@@ -561,9 +627,17 @@ impl GpuContext {
     ///
     /// A stale or suboptimal swapchain is reconfigured once and asked again;
     /// a lost surface is recreated first, as wgpu requires. Timeout and
-    /// occlusion skip this redraw. Validation failures remain errors.
+    /// occlusion skip this redraw. A validation failure means the surface lost
+    /// its configuration to an earlier failed `configure` and is reconfigured,
+    /// so it recovers instead of failing every redraw from then on.
     /// https://docs.rs/wgpu/30.0.1/wgpu/enum.CurrentSurfaceTexture.html
     pub fn acquire_frame(&self) -> Result<Option<GpuFrame>> {
+        // A lost device can neither present nor take new buffers (wgpu's
+        // `create_buffer_init` panics on the invalid ones). Skip the frame
+        // outright; the device-lost callback has already said why.
+        if self.device_lost.load(Ordering::Acquire) {
+            return Ok(None);
+        }
         let mut surface = self.surface.lock().unwrap_or_else(PoisonError::into_inner);
         let Some(surface) = surface.as_mut() else {
             return Ok(None);
@@ -630,37 +704,154 @@ impl GpuContext {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SurfaceRecovery {
-    Reconfigure,
-    Recreate,
+    /// The swapchain no longer matches the window (`Outdated`, `Suboptimal`).
+    Stale,
+    /// The native surface behind the swapchain is gone and must be replaced.
+    Lost,
+    /// Acquisition answered `Validation`, which is what a surface can no longer
+    /// avoid answering: wgpu takes its presentation state down before the check
+    /// a failing `configure` trips (`PreviousOutputExists` for a frame still
+    /// alive, `GpuWaitTimeout` for a queue that never emptied), and a backend
+    /// that drops the device answers it too. Reconfiguring restores the first
+    /// case; nothing in this API restores a lost device.
+    Unconfigured,
 }
 
-/// Request at most two frames, recovering before the second acquisition only.
+/// Try the surface again after a recovery, up to this many acquisitions.
+///
+/// Three covers the worst case a validation failure leaves behind: the first
+/// acquisition answers `Validation`, its reconfigure fails for the same reason
+/// the surface went down (a busy queue takes a while to empty), and the second
+/// reconfigure — now against a surface with no presentation state to lose —
+/// puts it back.
+const ACQUIRE_ATTEMPTS: usize = 3;
+
+/// `DeviceExt::create_buffer_init` without its panic.
+///
+/// The util creates the buffer with `mapped_at_creation`, then `expect`s the
+/// mapped range. A lost device hands back an invalid buffer instead of failing
+/// the call, so that `expect` kills the process long after the driver is gone
+/// (`Buffer with '<label>' label is invalid`). Map it ourselves and answer the
+/// failure as an error: the frame loop is already stopping (see
+/// [`GpuContext::acquire_frame`]).
+pub fn create_init_buffer(
+    device: &wgpu::Device,
+    descriptor: &wgpu::util::BufferInitDescriptor<'_>,
+) -> wgpu::Buffer {
+    if descriptor.contents.is_empty() {
+        return device.create_buffer(&wgpu::BufferDescriptor {
+            label: descriptor.label,
+            size: 0,
+            usage: descriptor.usage,
+            mapped_at_creation: false,
+        });
+    }
+    // Round up to the copy alignment, exactly as the util does: a buffer must
+    // be a non-zero multiple of `COPY_BUFFER_ALIGNMENT` to be valid at all.
+    let unpadded_size = descriptor.contents.len() as wgpu::BufferAddress;
+    let align_mask = wgpu::COPY_BUFFER_ALIGNMENT - 1;
+    let padded_size = ((unpadded_size + align_mask) & !align_mask).max(wgpu::COPY_BUFFER_ALIGNMENT);
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: descriptor.label,
+        size: padded_size,
+        usage: descriptor.usage,
+        mapped_at_creation: true,
+    });
+    match buffer.get_mapped_range_mut(..) {
+        Ok(mut view) => {
+            view.slice(..unpadded_size as usize)
+                .copy_from_slice(descriptor.contents);
+            drop(view);
+            buffer.unmap();
+        }
+        Err(error) => {
+            log::error!(
+                "create_init_buffer({:?}) could not map the upload: {error}",
+                descriptor.label
+            );
+            buffer.unmap();
+        }
+    }
+    buffer
+}
+
+/// Configure the swapchain, and report why wgpu refused it.
+///
+/// `Surface::configure` has no return value, and wgpu arms the failure before
+/// the check it fails: it takes the presentation state down, then notices that
+/// a frame is still alive (`PreviousOutputExists`), the queue never drained
+/// (`GpuWaitTimeout`), or the backend rejected the swapchain (`InvalidSurface`).
+/// The surface then answers `Validation` to every acquisition, and nothing in
+/// the public API says why — the refusal is only readable from an error scope.
+fn configure_surface(
+    device: &wgpu::Device,
+    surface: &wgpu::Surface,
+    config: &wgpu::SurfaceConfiguration,
+    reason: &str,
+) {
+    let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+    surface.configure(device, config);
+    let error = block_on(scope.pop());
+    if let Some(error) = error {
+        log::warn!(
+            "Surface configure ({reason}) refused at {}x{} {:?}: {error:#}",
+            config.width,
+            config.height,
+            config.present_mode
+        );
+    }
+}
+
+/// Ask for a frame, recovering before the next attempt when the surface says so.
+///
+/// A stale or lost swapchain gets exactly one recovery, as it always has. A
+/// validation failure gets up to [`ACQUIRE_ATTEMPTS`], because the state that
+/// produces it is recoverable: the surface reads as unconfigured, and one more
+/// `configure` brings it back.
 fn acquire_with_recovery(
     mut acquire: impl FnMut(Option<SurfaceRecovery>) -> Result<wgpu::CurrentSurfaceTexture>,
 ) -> Result<Option<wgpu::SurfaceTexture>> {
     use wgpu::CurrentSurfaceTexture;
 
-    let recovery = match acquire(None)? {
-        CurrentSurfaceTexture::Success(frame) => return Ok(Some(frame)),
-        CurrentSurfaceTexture::Suboptimal(frame) => {
-            // Drop the acquired texture before reconfiguring its surface.
-            drop(frame);
-            SurfaceRecovery::Reconfigure
-        }
-        CurrentSurfaceTexture::Timeout | CurrentSurfaceTexture::Occluded => return Ok(None),
-        CurrentSurfaceTexture::Outdated => SurfaceRecovery::Reconfigure,
-        CurrentSurfaceTexture::Lost => SurfaceRecovery::Recreate,
-        CurrentSurfaceTexture::Validation => bail!("surface acquisition validation failed"),
-    };
-    match acquire(Some(recovery))? {
-        CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => {
-            Ok(Some(frame))
-        }
-        CurrentSurfaceTexture::Timeout
-        | CurrentSurfaceTexture::Occluded
-        | CurrentSurfaceTexture::Outdated => Ok(None),
-        CurrentSurfaceTexture::Lost => bail!("surface still lost after recovery"),
-        CurrentSurfaceTexture::Validation => bail!("surface acquisition validation failed"),
+    let mut recovery = None;
+    let mut attempts = 0;
+    loop {
+        attempts += 1;
+        let recovered = attempts > 1;
+        recovery = match acquire(recovery.take())? {
+            CurrentSurfaceTexture::Success(frame) => return Ok(Some(frame)),
+            CurrentSurfaceTexture::Suboptimal(frame) => {
+                // A reconfigured surface may still call the next frame
+                // suboptimal; drawing it beats another round trip.
+                if recovered {
+                    return Ok(Some(frame));
+                }
+                // Drop the acquired texture before reconfiguring its surface.
+                drop(frame);
+                Some(SurfaceRecovery::Stale)
+            }
+            CurrentSurfaceTexture::Timeout | CurrentSurfaceTexture::Occluded => return Ok(None),
+            CurrentSurfaceTexture::Outdated => {
+                if recovered {
+                    return Ok(None);
+                }
+                Some(SurfaceRecovery::Stale)
+            }
+            CurrentSurfaceTexture::Lost => {
+                // A recreation that loses the surface again is not something a
+                // second attempt can fix.
+                if recovered {
+                    bail!("surface still lost after recovery");
+                }
+                Some(SurfaceRecovery::Lost)
+            }
+            CurrentSurfaceTexture::Validation => {
+                if attempts >= ACQUIRE_ATTEMPTS {
+                    bail!("surface acquisition validation failed");
+                }
+                Some(SurfaceRecovery::Unconfigured)
+            }
+        };
     }
 }
 

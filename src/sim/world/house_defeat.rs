@@ -567,14 +567,49 @@ impl Simulation {
                     .is_some_and(|house| !house.is_defeated() && !house.multiplay_passive())
             })
             .collect();
-        let living_humans = alive
+        //4FC62C's final human scan does not filter passive Houses, so this
+        //count may not come from `alive`: a spectated match's observer holds
+        //no forces (and is passive so the defeat gate leaves it alone), yet
+        //the person behind it is still watching, and the match runs on until
+        //one side is left. Counting only `alive` ended such a match at the
+        //first defeated computer.
+        let living_humans = self
+            .houses
+            .order()
             .iter()
+            .copied()
+            .filter(|owner| {
+                self.houses
+                    .get(owner)
+                    .is_some_and(|house| !house.is_defeated())
+            })
             .filter(|owner| {
                 self.houses[owner].is_controlled_by_human(self.session.game_mode_nonzero())
             })
             .count();
-        let all_allied = alive.iter().all(|left| {
-            alive.iter().all(|right| {
+        // The pairwise "is the field one side" scan (0x4FC493..0x4FC4AC) walks
+        // the same contenders `alive` does — but a spectator is passive (the
+        // defeat gate 0x4F8E92..0x4F8F77 needs that to leave its empty House
+        // alone) and so would drop out of the scan, leaving the computers'
+        // own alliance looking like the whole field. Keep every living human
+        // in it instead: behind an observer there is still a player, and
+        // native counts such a House the moment it is not passive.
+        let contenders: Vec<_> = self
+            .houses
+            .order()
+            .iter()
+            .copied()
+            .filter(|owner| {
+                self.houses.get(owner).is_some_and(|house| {
+                    !house.is_defeated()
+                        && (!house.multiplay_passive()
+                            || house
+                                .is_controlled_by_human(self.session.game_mode_nonzero()))
+                })
+            })
+            .collect();
+        let all_allied = contenders.iter().all(|left| {
+            contenders.iter().all(|right| {
                 left == right
                     || (self
                         .house_alliances

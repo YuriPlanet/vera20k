@@ -2512,12 +2512,15 @@ pub(crate) fn load_map_initial_with_assets(
     the_team_enabled: bool,
     progress: &mut dyn crate::app::loading::pump::LoadingProgressSink,
 ) -> Result<MapLoadInitial> {
-    // Check RA2_QUICKPLAY env var: if it names a .map/.mpr file, load that directly.
+    // Check RA2_QUICKPLAY env var: if it names a map file, load that directly.
+    // The extension set is the one map lookup tries (`.yrm` is the Yuri's
+    // Revenge map extension FinalAlert 2 writes, so it must not be filtered
+    // out here while the loader below accepts it).
     // UI-selected map name/path (requested_map) takes precedence.
     // Default: try testmap1.map in the project directory first, then fall back to .mmx files.
     let quickplay_map: Option<String> = std::env::var("RA2_QUICKPLAY")
         .ok()
-        .filter(|v| v.ends_with(".map") || v.ends_with(".mpr") || v.ends_with(".mmx"));
+        .filter(|value| crate::map::source::is_loose_map_name(std::path::Path::new(value)));
     // `RA2_QUICKPLAY=<name>.sed` forces a random-map generation without going
     // through the skirmish UI — a dev shortcut for exercising the generator.
     let quickplay_seed: Option<String> = std::env::var("RA2_QUICKPLAY")

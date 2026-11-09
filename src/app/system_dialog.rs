@@ -76,6 +76,16 @@ pub(crate) fn report_startup_failure(error: &anyhow::Error) {
     }
 }
 
+/// The GPU stopped mid-game — a driver reset or loss. Nothing can be drawn
+/// after that, so the game ends here; say why with the same dialog a panic
+/// gets, and point at the log, which has the driver's own words.
+pub(crate) fn report_device_lost(message: &str) {
+    show_fatal(
+        &crate::i18n::tr("VERA:CrashTitle"),
+        &crate::i18n::tr_fill("VERA:CrashText", &[("panic", &message), ("log", &log_note())]),
+    );
+}
+
 /// What the graphics failure advises on this system, as its text's label.
 #[cfg(target_os = "windows")]
 const GRAPHICS_ADVICE: &str = "VERA:GraphicsAdviceWindows";

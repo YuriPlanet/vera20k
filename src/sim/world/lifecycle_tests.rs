@@ -6093,6 +6093,28 @@ fn substrate_registration_and_removal_dispatch_is_order_identical() {
     sim.debug_assert_logic_membership_consistent();
 }
 
+/// A delete that reaches `unregister` *after* the object has left its store
+/// must still take the id out of the Logic order. The helper used to bail on
+/// the missing object and leave the orphan behind, and the next frame's
+/// `debug_assert_logic_membership_consistent` (run from
+/// `Simulation::finish_master_frame`) then panicked with "logic order id N is
+/// missing or not membership-flagged". The erase half of native
+/// `LogicClass__UnregisterObject 0x0055BAE0` is idempotent on exactly this.
+#[test]
+fn unregister_drops_an_order_entry_whose_object_already_left_its_store() {
+    let (mut sim, mixed) = gsi_05_02_mixed_fixture();
+    let wave_id = mixed[1];
+    assert!(sim.waves.get(wave_id).unwrap().in_logic_vector());
+    // A scalar teardown that removes the body first, with no UnInit pass.
+    sim.waves.remove(wave_id);
+    assert!(
+        sim.unregister_live_object(wave_id),
+        "an orphan id must come out of the order even without its object"
+    );
+    assert!(!sim.live_object_order_snapshot().contains(&wave_id));
+    sim.debug_assert_logic_membership_consistent();
+}
+
 #[test]
 fn gsi_05_02_tail_appends_run_same_pass_and_terminal_current_skips_successor() {
     let mut sim = Simulation::new();

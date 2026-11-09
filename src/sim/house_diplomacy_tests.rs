@@ -167,6 +167,57 @@ fn computer_paranoid_needs_allies_allowed_and_no_computer_team() {
     }
 }
 
+/// The gate's Rules half (`0x00501640..0x00501662`, an OR with the mode's
+/// vt+4): Battle and FreeForAll's vt+4 `0x005C0E30` answers false, so the
+/// match's `MultiplayerDialogSettings` `AlliesAllowed` decides. Both
+/// directions have to work — the paranoid pass used to run there whatever
+/// that key said, and a later attempt stopped it there for the wrong reason.
+#[test]
+fn computer_paranoid_follows_allies_allowed_under_a_false_mode_gate() {
+    for class in [
+        crate::skirmish_modes::MpModeClass::Battle,
+        crate::skirmish_modes::MpModeClass::FreeForAll,
+    ] {
+        // `mpbattlemd.ini` sets AlliesAllowed=yes: that half of the OR is open.
+        let on = rules();
+        let (mut sim, _) = sim_with(
+            &on,
+            &[
+                ("Player", "Americans", true),
+                ("Computer1", "Russians", false),
+                ("Computer2", "Russians", false),
+            ],
+        );
+        sim.session
+            .install_multiplayer_house_identity(class, Vec::new());
+        paranoid(&mut sim, &on);
+        assert_eq!(
+            allies(&sim, "Computer1"),
+            set(&["Computer2"]),
+            "{class:?} with AlliesAllowed=yes runs the pass"
+        );
+
+        // Both halves closed: nothing is allied.
+        let mut off = rules();
+        off.general.allies_allowed = false;
+        let (mut sim, _) = sim_with(
+            &off,
+            &[
+                ("Player", "Americans", true),
+                ("Computer1", "Russians", false),
+                ("Computer2", "Russians", false),
+            ],
+        );
+        sim.session
+            .install_multiplayer_house_identity(class, Vec::new());
+        paranoid(&mut sim, &off);
+        assert!(
+            allies(&sim, "Computer1").is_empty(),
+            "{class:?} with AlliesAllowed=no keeps the computers hostile"
+        );
+    }
+}
+
 /// MakeAlly's Logic walk (`0x004F9C7F..0x004F9D48`): a house's objects drop
 /// a target its house now allies; others keep theirs.
 #[test]
