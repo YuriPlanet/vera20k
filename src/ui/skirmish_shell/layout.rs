@@ -350,6 +350,9 @@ pub enum RandomMapSetupControl {
     AdvancedToggle,
     /// VERA: one of the Advanced view's sliders.
     Advanced(AdvancedField),
+    /// Ares' Urban Areas box (`ARES_CHK_RMG_URBAN_AREAS`, Ares' dialog 261).
+    #[cfg(feature = "ares")]
+    UrbanAreas5000,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -418,6 +421,10 @@ pub struct RandomMapSetupLayout {
     pub status_help: RectPx,
     pub progress_text: RectPx,
     pub progress_bar: RectPx,
+    /// Ares' Urban Areas checkbox: `177, 192, 150, 14` in Ares' dialog 261
+    /// (RMGDialog.rc), which keeps every stock control's position.
+    #[cfg(feature = "ares")]
+    pub urban_areas: RectPx,
 }
 
 fn checkbox_dlu_rect(x: i32, y: i32, w: i32, h: i32) -> RectPx {
@@ -979,6 +986,8 @@ pub fn compute_random_map_setup_layout(screen_w: u32, screen_h: u32) -> RandomMa
         ),
         progress_text: dlu_rect(ptext_x, ptext_y, ptext_w, ptext_h),
         progress_bar: dlu_rect(pbar_x, pbar_y, pbar_w, pbar_h),
+        #[cfg(feature = "ares")]
+        urban_areas: checkbox_dlu_rect(177, 192, 150, 14),
     }
 }
 
@@ -1021,10 +1030,18 @@ pub fn random_map_setup_control_at(
         (layout.delete, RandomMapSetupControl::Delete0x6c4),
         (layout.cancel, RandomMapSetupControl::Cancel0x5c0),
     ];
-    others
+    let control = others
         .iter()
         .find(|(rect, _)| rect.contains(x, y))
-        .map(|(_, control)| *control)
+        .map(|(_, control)| *control);
+    #[cfg(feature = "ares")]
+    let control = control.or_else(|| {
+        layout
+            .urban_areas
+            .contains(x, y)
+            .then_some(RandomMapSetupControl::UrbanAreas5000)
+    });
+    control
 }
 
 /// [`random_map_setup_control_at`] for a dialog that may show the Advanced
@@ -1049,12 +1066,25 @@ pub fn random_map_setup_control_at_view(
     {
         return Some(RandomMapSetupControl::Advanced(field));
     }
-    // Everything but the option rows hit-tests as in the basic view.
+    // Everything but the option rows hit-tests as in the basic view; Ares'
+    // Urban Areas box sits under the seventh slider and is basic-only.
     random_map_setup_control_at(layout, x, y).filter(|control| {
         SETUP_BASIC_ROW_CONTROLS
             .iter()
             .all(|row_control| row_control != control)
+            && !is_ares_urban_areas_box(*control)
     })
+}
+
+/// Ares' Urban Areas box, which only the basic view shows.
+fn is_ares_urban_areas_box(control: RandomMapSetupControl) -> bool {
+    #[cfg(feature = "ares")]
+    return control == RandomMapSetupControl::UrbanAreas5000;
+    #[cfg(not(feature = "ares"))]
+    {
+        let _ = control;
+        false
+    }
 }
 
 const SETUP_BASIC_ROW_CONTROLS: [RandomMapSetupControl; 6] = [
@@ -1389,6 +1419,8 @@ impl ScaledRects for RandomMapSetupLayout {
             status_help: self.status_help.scaled_rects(scale),
             progress_text: self.progress_text.scaled_rects(scale),
             progress_bar: self.progress_bar.scaled_rects(scale),
+            #[cfg(feature = "ares")]
+            urban_areas: self.urban_areas.scaled_rects(scale),
         }
     }
 }

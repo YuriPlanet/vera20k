@@ -1169,11 +1169,15 @@ impl UdpIo {
         let session =
             ClientSession::new(ticket, packet_key, payload_key).map_err(relay_io_error)?;
         #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
-        {
+        let session = {
+            let mut session = session;
+            // Browser relay datagrams ride the gateway's WebSocket.
+            session.use_stream_transport();
             let gateway = self.relay_gateway.as_deref().unwrap_or(browser_proxy_url());
             self.primary.set_relay(address, gateway)?;
             self.alternate.set_relay(address, gateway)?;
-        }
+            session
+        };
         self.relay = Some(RelayRoute {
             address,
             session,
@@ -1641,6 +1645,20 @@ fn ipv4_addr(socket: &UdpSocket) -> io::Result<SocketAddrV4> {
     }
 }
 
+/// One socket read and its receive time (spec §6.5): the read itself here,
+/// where the native IO pump reads as datagrams arrive.
+#[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
+fn recv_from_at(socket: &UdpSocket, buffer: &mut [u8]) -> io::Result<(usize, SocketAddr, Instant)> {
+    let (length, source) = socket.recv_from(buffer)?;
+    Ok((length, source, Instant::now()))
+}
+
+/// The browser drains between frames; its socket reports the arrival.
+#[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+fn recv_from_at(socket: &UdpSocket, buffer: &mut [u8]) -> io::Result<(usize, SocketAddr, Instant)> {
+    socket.recv_from_at(buffer)
+}
+
 fn drain_socket(
     socket: &UdpSocket,
     ack_socket: &UdpSocket,
@@ -1659,7 +1677,7 @@ fn drain_socket(
     // oversized/truncated datagram on platforms whose recvfrom truncates.
     let mut bytes = [0; vera20k_relay_protocol::MAX_DATAGRAM + 1];
     for _ in 0..receive_budget {
-        let (length, source) = match socket.recv_from(&mut bytes) {
+        let (length, source, received_at) = match recv_from_at(socket, &mut bytes) {
             Ok(packet) => packet,
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
             Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
@@ -1677,7 +1695,6 @@ fn drain_socket(
                 break;
             }
         };
-        let received_at = Instant::now();
         report.received_datagrams += 1;
         let SocketAddr::V4(source) = source else {
             report.malformed_datagrams += 1;

@@ -42,7 +42,7 @@ fn generated_tree_color_survives_progress_and_thumbnail_persistence() {
         prepared.settings,
         prepared.resolved_inputs,
         prepared.blocks,
-        prepared.tech_types,
+        RandomMapObjects::tech(prepared.tech_types),
         crate::map::resolved_terrain::SharedCellDummy::fresh(),
         decision,
     )

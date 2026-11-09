@@ -3,13 +3,17 @@
 //! Map generators produce this ordered data, while simulation bootstrap
 //! consumes it without depending on any generator implementation.
 
-/// The generated-Building constructor phases that consume Scenario words.
+/// The generated-Techno constructor phases that consume Scenario words.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RmgConstructionPhase {
     BridgeRepairHut,
     NeutralTech,
     /// VERA extension: a civilian building of the urban stage.
     Urban,
+    /// Ares urban areas: civilian buildings, infantry and vehicles
+    /// (`0x005A6510`, `0x005A6920` under hook 0x598FB8).
+    #[cfg(feature = "ares")]
+    UrbanAreas,
 }
 
 /// Whether a generated constructor survived placement and entered MapFile.

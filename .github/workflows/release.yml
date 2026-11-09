@@ -498,6 +498,16 @@ jobs:
           $code = Install ''
           if ($code -ne 0) { Get-Content $log; throw "setup failed to find the EA app game: exit code $code" }
           Assert-Found $eaGame
+          # An earlier install on a drive that is gone, such as a memory card now
+          # under another letter, must not stop setup: it uses the default folder.
+          $goneDrive = [char[]](90..68) | Where-Object { -not (Test-Path "${_}:\") } | Select-Object -First 1
+          Set-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{9C9BFC32-A7B8-48ED-A428-72333354BDDB}_is1' `
+            -Name 'Inno Setup: App Path' -Value "${goneDrive}:\VERA20K"
+          $p = Start-Process $setup -Wait -PassThru -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$log`""
+          if ($p.ExitCode -ne 0) { Get-Content $log; throw "setup stopped at the missing drive: exit code $($p.ExitCode)" }
+          if (-not (Test-Path (Join-Path $env:LOCALAPPDATA 'Programs\VERA20K\vera20k.exe'))) {
+            throw 'setup did not use the default folder'
+          }
           Write-Output 'Installer: refused, installed, upgraded, uninstalled and found the game as expected.'
       # macOS gets the program as VERA20K.app on a disk image: it keeps its
       # files in ~/Library/Application Support/VERA20k and finds or asks for the

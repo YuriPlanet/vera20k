@@ -268,6 +268,8 @@ pub struct ClientSession {
     hop: link::HopLink,
     // The `now_ms` of the timed call in progress (spec §4.2, §4.4).
     clock_ms: u64,
+    // The hop rides a reliable stream to a UDP gateway (`use_stream_transport`).
+    stream_transport: bool,
     // Test support: start the uplink measured good (see
     // `preset_uplink_measured_good`).
     #[cfg(any(test, feature = "test-support"))]
@@ -321,9 +323,20 @@ impl ClientSession {
             federation: None,
             hop: link::HopLink::default(),
             clock_ms: 0,
+            stream_transport: false,
             #[cfg(any(test, feature = "test-support"))]
             measured_good: false,
         })
+    }
+
+    /// Marks a hop whose datagrams ride a reliable, ordered stream to a
+    /// gateway that forwards each one as a UDP datagram: the browser's
+    /// WebSocket to `tools/wasm/gateway`. A copy there can only queue behind
+    /// its original, so the lossy-state copies (spec §6.3 row 6) are not
+    /// sent; RTO resends (row 4) still recover what the gateway drops or the
+    /// UDP leg loses. Renewals keep the mark.
+    pub fn use_stream_transport(&mut self) {
+        self.stream_transport = true;
     }
 
     /// Carry a federated match's roster in every admission of this session.
@@ -374,6 +387,7 @@ impl ClientSession {
         }
         next.ordering = self.ordering.clone();
         next.federation = self.federation.clone();
+        next.stream_transport = self.stream_transport;
         Ok(next)
     }
     pub fn forget_readiness(&mut self) {

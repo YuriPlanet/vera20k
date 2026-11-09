@@ -79,6 +79,42 @@ pub fn resolve_urban(
         .collect()
 }
 
+/// Resolve the Ares `[Urban]` lists of `settings` against the processed Rules
+/// type arrays and the art foundations: a structure that is no BuildingType
+/// has no footprint, a foot that is no type is unknown.
+#[cfg(feature = "ares")]
+pub fn resolve_ares_urban(
+    settings: &crate::map::rmg::RmgSettings,
+    processed: &crate::rules::native_processing::ProcessedRulesLayers,
+    art: &IniFile,
+) -> crate::map::rmg::phases::urban_areas::UrbanCatalog {
+    use crate::map::rmg::phases::urban_areas::{UrbanCatalog, UrbanFoot, UrbanStructure};
+    use crate::rules::native_processing::UrbanTypeKind;
+    let feet = |names: &[String], kind| {
+        names
+            .iter()
+            .map(|name| UrbanFoot {
+                name: name.clone(),
+                known: processed.registers_urban_type(kind, name),
+            })
+            .collect()
+    };
+    UrbanCatalog {
+        structures: settings
+            .urban_structures
+            .iter()
+            .map(|name| UrbanStructure {
+                name: name.clone(),
+                footprint: processed
+                    .registers_urban_type(UrbanTypeKind::Building, name)
+                    .then(|| footprint_for(art, name)),
+            })
+            .collect(),
+        infantry: feet(&settings.urban_infantry, UrbanTypeKind::Infantry),
+        vehicles: feet(&settings.urban_vehicles, UrbanTypeKind::Vehicle),
+    }
+}
+
 /// The NW-anchor-relative foundation cells of `name`.
 ///
 /// Row-major order: the placement gate requires *every* cell to pass and
