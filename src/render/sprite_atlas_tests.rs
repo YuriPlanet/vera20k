@@ -3550,3 +3550,25 @@ fn building_type_bounds_publish_with_color_growth_type_growth_and_abort() {
     assert!(extended.building_type_bounds("CANEWY01").is_some());
     assert_eq!(extended.building_type_bounds.len(), 2);
 }
+
+/// The coverage check runs on every spawn and death, so objects of one type
+/// and owner give one pair between them; another owner's keeps its own.
+#[test]
+fn object_pairs_give_each_type_and_owner_once() {
+    let colors = HouseColorMap::from([
+        ("Americans".to_string(), HouseColorIndex(2)),
+        ("Russians".to_string(), HouseColorIndex(5)),
+    ]);
+    let mut world = crate::sim::entity_store::EntityStore::new();
+    for (id, owner) in [(1, "Americans"), (2, "Americans"), (3, "Russians")] {
+        let mut entity = crate::sim::game_entity::GameEntity::test_default(id, "E1", owner, 5, 5);
+        entity.set_is_voxel_for_test(false);
+        world.insert(entity);
+    }
+    let interner = crate::sim::intern::test_interner();
+    let pairs: Vec<_> = object_pairs(&world, &colors, &[], Some(&interner)).collect();
+    assert_eq!(
+        pairs,
+        [("E1", HouseColorIndex(2)), ("E1", HouseColorIndex(5))]
+    );
+}

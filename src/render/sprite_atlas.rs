@@ -1131,15 +1131,19 @@ pub fn atlas_covers_world(
 /// non-voxel object in its owner's colour, and every building a unit can
 /// deploy into in every house colour. Every sprite key an object needs
 /// derives from one of these pairs, so the atlas records coverage per pair.
+/// Objects of one type and owner give one pair between them, at the first.
 fn object_pairs<'a>(
     entities: &'a crate::sim::entity_store::EntityStore,
     house_colors: &'a HouseColorMap,
     extra_building_types: &'a [&'a str],
     interner: Option<&'a crate::sim::intern::StringInterner>,
 ) -> impl Iterator<Item = (&'a str, HouseColorIndex)> + 'a {
+    let mut asked = crate::util::lookup_hash::LookupSet::default();
     let placed = entities
         .values()
-        .filter(|entity| !entity.is_voxel())
+        .filter(move |entity| {
+            !entity.is_voxel() && asked.insert((entity.type_ref(), entity.owner()))
+        })
         .map(move |entity| {
             let owner = interner.map_or("", |i| i.resolve(entity.owner()));
             let color = house_colors
@@ -1337,17 +1341,23 @@ pub(crate) fn atlas_covers_anim_remaps(
         .all(|key| atlas.is_some_and(|atlas| atlas.covered_anim_remaps.contains(&key)))
 }
 
+/// The atlas key of every live remapped Anim. Many Anims share a type,
+/// palette and colour: each such triple gives one key, at its first Anim.
 fn anim_remap_base_keys<'a>(
     sim: &'a crate::sim::world::Simulation,
     house_colors: &'a HouseColorMap,
 ) -> impl Iterator<Item = AnimRemapKey> + 'a {
+    let mut asked = crate::util::lookup_hash::LookupSet::default();
     sim.anims().filter_map(move |(_, anim)| {
         let color = anim_remap_color(anim, sim.interner(), house_colors)?;
-        Some((
-            sim.interner().resolve(anim.type_id()).to_ascii_uppercase(),
-            anim_remap_context(anim),
-            color,
-        ))
+        let context = anim_remap_context(anim);
+        asked.insert((anim.type_id(), context, color)).then(|| {
+            (
+                sim.interner().resolve(anim.type_id()).to_ascii_uppercase(),
+                context,
+                color,
+            )
+        })
     })
 }
 
