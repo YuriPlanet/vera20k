@@ -459,19 +459,19 @@ pub(super) fn dispatch_sim_sound_events(
                 // `PlayAt` cue is not dispatched here.
                 // It follows the case's EVA line (the silo arm of case 0
                 // has them the other way round, `0x006CDDE9`/`0x006CDE01`).
-                let retained_cue = cue
-                    .positional
-                    .then(|| cue.sound_id.take())
-                    .flatten()
-                    .map(|sound_id| {
-                        let coordinate = [world.x, world.y, world.z];
-                        GameSoundEvent::VocAtCoord {
-                            sound_id,
-                            coordinate,
-                            flags: 0,
-                            source: SoundSource::from_coordinate(coordinate),
-                        }
-                    });
+                let retained_cue =
+                    cue.positional
+                        .then(|| cue.sound_id.take())
+                        .flatten()
+                        .map(|sound_id| {
+                            let coordinate = [world.x, world.y, world.z];
+                            GameSoundEvent::VocAtCoord {
+                                sound_id,
+                                coordinate,
+                                flags: 0,
+                                source: SoundSource::from_coordinate(coordinate),
+                            }
+                        });
                 // The EVA column is picked for the *listening* client's
                 // side, not the launcher's: `VoxClass::PlayEVA` takes
                 // only the event name; the consumer resolves the side.
