@@ -9628,16 +9628,17 @@ impl RulesPassProcessor {
                 state.damage = raw.read_int("Damage", state.damage);
                 state.speed = raw.read_speed("Speed", state.speed);
                 state.range_leptons = raw.read_range("Range", state.range_leptons);
-                // Ares 3.0 WeaponTypeClass_LoadFromINI_ListLength (1005C0F0,
-                // hook 0x772462): ParseList, shared 0x800 buffer, Find-only.
-                #[cfg(feature = "ares")]
-                let anims = self.resolve_existing_list_from(
-                    &raw,
-                    "Anim",
-                    RulesTypeFamily::Animation,
-                    0x800,
-                );
-                #[cfg(not(feature = "ares"))]
+                // The weapon muzzle-flash `Anim=` list. Ares 3.0's
+                // WeaponTypeClass_LoadFromINI_ListLength (1005C0F0, hook
+                // 0x772462) reads this with ParseList (0x800 buffer,
+                // Find-only), so an unregistered animation name is dropped.
+                // Mods that declare weapons only through a techno's
+                // `WeaponN=` slot (Find-or-Allocate) rather than
+                // `[WeaponTypes]`, and put the fire sound on the muzzle
+                // anim's `Report=`, lose both the anim and its sound under
+                // that Find-only read. Restore the retail Find-or-Allocate
+                // read so these names resolve (a found name is identical,
+                // and an unknown one is allocated instead of dropped).
                 let anims = self.resolve_list_from(&raw, "Anim", RulesTypeFamily::Animation, 0x80);
                 if let Some(anims) = anims {
                     self.family_mut(RulesTypeFamily::Weapon)[index].weapon.anim = anims;
@@ -9859,36 +9860,25 @@ impl RulesPassProcessor {
                 // WarheadTypeClass::ReadINI75D576..75D58A: the current
                 // +14A byte is the default, including malformed values.
                 current.sparky = raw.read_bool("Sparky", current.sparky);
-                // Ares 3.0 WarheadTypeClass_LoadFromINI_ListLength (1005C080,
-                // hook 0x75D660) reads AnimList, DebrisMaximums (WarheadType's
-                // int list) and DebrisTypes here through ParseList (shared
-                // 0x800 buffer, Find-only) and skips to 0x75D75D; SkipLists
-                // (1005C0E0, hook 0x75DAE6) skips the later DebrisTypes read.
-                #[cfg(feature = "ares")]
-                let (anim_list, debris_types) = (
-                    self.resolve_existing_list_from(
-                        &raw,
-                        "AnimList",
-                        RulesTypeFamily::Animation,
-                        0x800,
-                    ),
-                    self.resolve_existing_list_from(
-                        &raw,
-                        "DebrisTypes",
-                        RulesTypeFamily::VoxelAnimation,
-                        0x800,
-                    ),
-                );
-                #[cfg(not(feature = "ares"))]
+                // The warhead impact `AnimList=`. Ares 3.0's
+                // WarheadTypeClass_LoadFromINI_ListLength (1005C080, hook
+                // 0x75D660) reads AnimList with ParseList (0x800 buffer,
+                // Find-only), dropping an unregistered animation name.
+                // Custom animations appended through `[Animations] +=`, and
+                // warheads reached only through a weapon that a techno's
+                // `WeaponN=` slot allocates, are lost under that read.
+                // Restoring the retail Find-or-Allocate read keeps those
+                // impact animations (and their `Report=` sounds) resolving
+                // instead of being silently dropped.
                 let anim_list =
                     self.resolve_list_from(&raw, "AnimList", RulesTypeFamily::Animation, 0x80);
-                if let Some(list) = anim_list {
-                    self.family_mut(RulesTypeFamily::Warhead)[index]
-                        .warhead_anim
-                        .anim_list = list;
-                }
-                let current = &mut self.family_mut(RulesTypeFamily::Warhead)[index].warhead_anim;
-                current.em_effect = raw.read_bool("EMEffect", current.em_effect);
+                #[cfg(feature = "ares")]
+                let debris_types = self.resolve_existing_list_from(
+                    &raw,
+                    "DebrisTypes",
+                    RulesTypeFamily::VoxelAnimation,
+                    0x800,
+                );
                 #[cfg(not(feature = "ares"))]
                 let debris_types = self.resolve_list_from(
                     &raw,
@@ -9896,6 +9886,13 @@ impl RulesPassProcessor {
                     RulesTypeFamily::VoxelAnimation,
                     0x80,
                 );
+                if let Some(list) = anim_list {
+                    self.family_mut(RulesTypeFamily::Warhead)[index]
+                        .warhead_anim
+                        .anim_list = list;
+                }
+                let current = &mut self.family_mut(RulesTypeFamily::Warhead)[index].warhead_anim;
+                current.em_effect = raw.read_bool("EMEffect", current.em_effect);
                 if let Some(types) = debris_types {
                     self.family_mut(RulesTypeFamily::Warhead)[index]
                         .warhead_anim
