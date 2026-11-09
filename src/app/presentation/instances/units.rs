@@ -265,6 +265,18 @@ fn terrain_slope_for_render(
         .unwrap_or(0)
 }
 
+/// The slope a ground Unit's shadow lies on. Base
+/// `LocomotionClass::Shadow_Matrix @ 0x0055A7D0`, where Drive's (`0x004B0410`)
+/// and Ship's (`0x0069FB20`) end, reads the cell under Location
+/// (`0x0055A801..0x0055A80C`), whatever slope its body is drawing.
+fn unit_shadow_slope(
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+    entity: &crate::sim::game_entity::GameEntity,
+) -> u8 {
+    let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
+    clamp_slope_for_render(cells.map_or(0, |cells| cells.ground_fields(cells.lookup_world(x, y)).1))
+}
+
 /// The slope a Unit body's locomotor Draw_Matrix draws it at. `terrain`
 /// supplies the fallback's cell slope, `cells` is the draw's isolated query
 /// of the live map, and `angles` are the rocking angles the body is drawn
@@ -297,8 +309,16 @@ fn unit_render_slope_state(
     // or airborne.
     // A body that has left the floor has no cell slope to sit on, so it never
     // enters the drive-track tilt transition. Upper-layer bodies therefore
-    // keep their stable atlas shape.
-    if kind == Some(LocomotorKind::Jumpjet) || band != EntityDrawBand::Ground {
+    // keep their stable atlas shape. Teleport and Walk keep the base
+    // `LocomotionClass::Draw_Matrix @ 0x0055A730` too (vtable slots
+    // `0x007F5024`, `0x007F6A1C`), the level facing matrix on any ramp: a
+    // Chrono Miner before the Drive its next move installs, or a vehicle
+    // inside a Chronosphere warp's Teleport piggyback.
+    if matches!(
+        kind,
+        Some(LocomotorKind::Jumpjet | LocomotorKind::Teleport | LocomotorKind::Walk)
+    ) || band != EntityDrawBand::Ground
+    {
         return UnitRenderSlopeState::Stable(0);
     }
     // `HoverLocomotionClass::Draw_Matrix @ 0x00513F40`: the level facing
@@ -310,17 +330,8 @@ fn unit_render_slope_state(
             crate::sim::movement::hover::hover_draw_slope(entity, cells, angles),
         ));
     }
-    // RESIDUAL: every other locomotor that reaches here draws through the
-    // base `LocomotionClass::Draw_Matrix @ 0x0055A730`, the level facing
-    // matrix (Teleport's vtable slot `0x007F5024`, Walk's `0x007F6A1C`,
-    // Mech's `0x007EDB90`), but takes its cell's slope here. Trigger: a voxel
-    // Unit with one of them active on a sloped cell: a Chrono Miner (CMIN,
-    // Teleport primary) before the Drive its next move installs, a vehicle
-    // inside a Chronosphere warp's Teleport piggyback, and the unbuildable
-    // CMON and SMON; no retail vehicle uses Walk or Mech. Effect: the body
-    // tilts with the ground where gamemd draws it level; its shadow (base
-    // `0x0055A7D0`) lies on the slope either way. Frequency: whenever one of
-    // them stands on a ramp in that state. Risk: visual only.
+    // Only a Unit no locomotor state answers for, or with an unused
+    // locomotor (Tunnel), reaches this cell-slope fallback.
     UnitRenderSlopeState::Stable(terrain_slope_for_render(
         terrain,
         entity.position.rx(),
@@ -672,20 +683,9 @@ pub(crate) fn unit_visitor<'a>(
                             render_pose.angles,
                         )
                     });
-                // The flat-ground shadow lies on its body's slope. A lifted body's
-                // shadow (Jumpjet, Hover) lies on its cell's slope instead, through
+                // A lifted body's shadow (Jumpjet, Hover) goes through
                 // [`emit_lifted_unit_shadow`].
-                //
-                // RESIDUAL: Drive's and Ship's Shadow_Matrix (`0x004B0410`,
-                // `0x0069FB20`) key -1 while their slope changes or they rock, then
-                // end in the base `LocomotionClass::Shadow_Matrix @ 0x0055A7D0`, so
-                // natively their shadow lies on the slope of the cell under their
-                // Location. Trigger: a Drive or Ship body whose slope state (the
-                // transition's `to_slope` mid-transition) differs from that cell's
-                // slope. Effect: its shadow lies on the other slope. Frequency:
-                // untraced, at most the frames around a slope change. Risk: visual
-                // only.
-                let shadow_slope = stable_slope_for_key(slope_state);
+                let shadow_slope = unit_shadow_slope(cells.as_ref(), entity);
                 let interp_z = pos.z();
                 let draw_state = draw_decision.state;
                 let extra_light = state.rules().map_or(0, |rules| {

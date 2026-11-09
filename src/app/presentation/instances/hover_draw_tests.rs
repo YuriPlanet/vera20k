@@ -62,6 +62,24 @@ fn shadow_slope(terrain: &ResolvedTerrainGrid, entity: &GameEntity) -> u8 {
     lifted_unit_shadow_pose(entity, terrain, 0).unwrap().slope
 }
 
+/// Teleport keeps the base Draw_Matrix (`0x0055A730`, vtable slot
+/// `0x007F5024`), level on any ramp, while every ground body's shadow
+/// (base `0x0055A7D0`) follows the cell under its Location.
+#[test]
+fn a_teleporter_draws_level_on_a_ramp_and_its_shadow_lies_on_it() {
+    let terrain = ramp_terrain();
+    let mut miner = hover_on_ramp(&terrain, "CMIN", 0);
+    miner.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Teleport));
+    assert_eq!(
+        body_slope(&terrain, &miner, [0.; 2]),
+        UnitRenderSlopeState::Stable(0)
+    );
+    assert_eq!(
+        unit_shadow_slope(Some(&NativeCellQuery::isolated(&terrain)), &miner),
+        RAMP
+    );
+}
+
 /// Is_Powered (`0x00516C70`) holds through the powered byte or any height,
 /// and either one draws the level facing matrix (`0x0051407F..0x00514092`).
 /// Only an unpowered Hover resting on its cell takes the ramp
