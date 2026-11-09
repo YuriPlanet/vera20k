@@ -186,6 +186,7 @@ impl SoundPlaybackInputs<'_> {
             match event {
                 GameSoundEvent::UnitVoiceVisit { owner } => sfx.visit_unit_voice(*owner, registry),
                 GameSoundEvent::UnitVoiceDestroyed { owner } => sfx.destroy_unit_voice(*owner),
+                GameSoundEvent::UnitVoiceMoved { from, to } => sfx.move_unit_voice(*from, *to),
                 // Unit acknowledgement lines — always full volume (non-positional).
                 // `TechnoClass::Queue_Voice @ 0x00708D90` only latches the line on
                 // the speaking object. Only an actual reached Techno6F9EBB

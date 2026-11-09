@@ -1904,6 +1904,17 @@ impl SfxPlayer {
         }
     }
 
+    /// A deploy conversion's voice hand-off (`UnitClass::Deploy @
+    /// 0x00739971..0x007399B2`, unit to building; `BuildingClass::
+    /// Mission_Selling @ 0x0044A0D4..0x0044A115`, building to unit): the new
+    /// object takes the handle, pending and playing slots and the old one is
+    /// left empty, so its destructor stops nothing and the line plays on.
+    pub(crate) fn move_unit_voice(&mut self, from: u64, to: u64) {
+        self.arbiter
+            .move_loop_handle(HandleOwner::UnitVoice(from), HandleOwner::UnitVoice(to));
+        self.voice_queue.move_owner(from, to);
+    }
+
     /// Techno destructor6F4607 -> VocHandle405C00 hard-stops this handle's
     /// event, then destroys pending/last with the Techno. Other owners survive.
     pub(crate) fn destroy_unit_voice(&mut self, owner: u64) {
@@ -4088,6 +4099,40 @@ mod tests {
             "both Techno+4DC handles must own shared-pool events before service"
         );
         assert_eq!(player.arbiter.busy_channel_count(), 0);
+        player.stop_all();
+    }
+
+    /// `UnitClass::Deploy @ 0x00739971..0x007399B2` gives the building the
+    /// unit's voice handle and latch before the unit's destructor
+    /// (`0x006F4607` -> `0x00405C00`) runs, so the line an MCV is speaking
+    /// plays on and a held line still waits behind it.
+    #[test]
+    fn a_deploy_conversion_keeps_the_speaking_units_line() {
+        let Some(definitions) = crate::rules::retail_ini_fixture::retail_audio_definitions() else {
+            return;
+        };
+        let Some(mut player) = SfxPlayer::new() else {
+            return;
+        };
+        player.set_volume(0.0);
+        player.queue_unit_voice(3, "GISelect");
+        player.visit_unit_voice(3, definitions.sounds());
+        player.queue_unit_voice(3, "GIMove");
+        player.visit_unit_voice(3, definitions.sounds());
+        let line = player.arbiter.validate_loop_handle(HandleOwner::UnitVoice(3));
+        assert!(line.is_some());
+
+        player.move_unit_voice(3, 9);
+        player.destroy_unit_voice(3);
+
+        assert_eq!(
+            player.arbiter.validate_loop_handle(HandleOwner::UnitVoice(9)),
+            line,
+            "the unit's destructor must not stop the line the building took"
+        );
+        assert_eq!(player.voice_queue.playing_for(9), Some("GISELECT"));
+        assert_eq!(player.voice_queue.pending_for(9), Some("GIMOVE"));
+        assert_eq!(player.pending_unit_voice_owners(), BTreeSet::from([9]));
         player.stop_all();
     }
 

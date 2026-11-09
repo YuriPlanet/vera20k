@@ -136,6 +136,12 @@ pub enum GameSoundEvent {
     /// ordered with visits; final-world membership cannot recover the order.
     UnitVoiceDestroyed { owner: u64 },
 
+    /// A deploy conversion moved the speaker's voice handle and latch to the
+    /// object replacing it (`UnitClass::Deploy @ 0x00739971`,
+    /// `BuildingClass::Mission_Selling @ 0x0044A0D4`), ahead of the old
+    /// object's `UnitVoiceDestroyed`.
+    UnitVoiceMoved { from: u64, to: u64 },
+
     /// An entity was destroyed — play DieSound.
     EntityDestroyed {
         /// sound.ini ID from the entity's DieSound= field.
@@ -376,6 +382,7 @@ impl GameSoundEvent {
             | Self::VocStopAtCoord { .. }
             | Self::UnitVoiceVisit { .. }
             | Self::UnitVoiceDestroyed { .. }
+            | Self::UnitVoiceMoved { .. }
             | Self::TriggerEva { .. }
             | Self::VocIndex { .. } => "",
             // The event name, not a sample: the sample is a per-side column
