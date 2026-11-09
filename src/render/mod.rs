@@ -43,6 +43,7 @@ pub mod draw_state;
 pub(crate) mod electric_bolt;
 pub(crate) mod entity_atlas_growth;
 pub(crate) mod foot_depth;
+pub(crate) mod frame_handoff;
 pub mod frame_readback;
 pub mod gpu;
 pub(crate) mod gpu_timer;
