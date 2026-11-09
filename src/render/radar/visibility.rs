@@ -312,7 +312,7 @@ pub(super) fn build_radar_object_update(
     houses: &crate::sim::houses::Houses,
     local_owner: Option<InternedId>,
     fog: &FogState,
-    alliances: &crate::map::houses::HouseAllianceMap,
+    alliances: &crate::sim::house_diplomacy::HouseAlliances,
     full_visibility: bool,
     game_mode_nonzero: bool,
     rules: Option<&RuleSet>,
@@ -390,11 +390,7 @@ pub(super) fn build_radar_object_update(
         || local_owner.is_some_and(|local_owner| {
             entity.owner() == local_owner
                 || interner.is_some_and(|interner| {
-                    crate::map::houses::is_allied_with(
-                        alliances,
-                        interner.resolve(local_owner),
-                        interner.resolve(entity.owner()),
-                    )
+                    alliances.is_allied(interner, local_owner, entity.owner())
                 })
         });
     let effective_type_invisible =
@@ -641,7 +637,7 @@ mod tests {
                 sim.houses(),
                 None,
                 sim.fog(),
-                sim.house_alliances().as_map(),
+                sim.house_alliances(),
                 true,
                 false,
                 Some(&rules),
@@ -1149,7 +1145,7 @@ mod tests {
                 &houses,
                 Some(local),
                 &fog,
-                &alliances,
+                &super::super::helpers::test_alliances(alliances),
                 false,
                 true,
                 Some(&rules),

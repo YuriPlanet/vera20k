@@ -821,6 +821,10 @@ pub(crate) fn render_game(
                 .unwrap()
                 .duration_since(after_lights.unwrap()),
     });
+    state
+        .match_state
+        .match_presentation
+        .cached_terrain_instances = std::mem::take(&mut world.terrain.normal);
     Ok(GameRenderOutput {
         instance_counts: sidebar.emitted_instance_counts(),
         sidebar_view: sidebar.view,
