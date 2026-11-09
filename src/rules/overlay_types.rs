@@ -467,11 +467,9 @@ impl OverlayTypeRegistry {
             flags,
             alpha_images,
             images: Vec::new(),
-            cliff_back_rock: (ini
-                .section("General")
-                .map_or(2, |general| general.read_int("CliffBackImpassability", 2))
-                as u8
-                == 2)
+            cliff_back_rock: (crate::rules::ruleset::read_cliff_back_impassability(
+                ini.section("General"),
+            ) == 2)
                 .then(|| *terrain_rules.row(LandType::Rock)),
         }
     }

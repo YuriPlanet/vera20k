@@ -286,15 +286,16 @@ pub(crate) fn release_normal(
     #[cfg(test)]
     release_tests::record(sim, building_id, unit_id, "unit-link");
     power_and_force_release(sim, building_id, unit_id, rules, effects);
+    //4597FA: the class setter (vt+0x480) with its queue flag set, so the Foot
+    //setter's tail runs too.
     if let Some(cell) = bunker_exit_cell(sim, building_id, unit_id, rules) {
-        let terrain = sim.resolved_terrain.as_ref();
-        let frame = sim.session.binary_frame();
-        if let Some(unit) = sim.substrate.entities.get_mut(unit_id)
-            && crate::sim::movement::set_destination_internal_cell(unit, cell, terrain, frame)
-            && let Err(error) = sim.hover_move_to_path_step(unit_id, rules, effects)
-        {
-            log::warn!("Bunker release Hover MoveTo {unit_id}: {}", error.cause);
-        }
+        sim.set_unit_destination(
+            unit_id,
+            crate::sim::components::NavTargetRef::cell(cell.0, cell.1),
+            rules,
+            true,
+            effects,
+        );
     }
     #[cfg(test)]
     release_tests::record(sim, building_id, unit_id, "destination");

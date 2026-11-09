@@ -473,6 +473,14 @@ fn is_ship_locomotor(entity: &GameEntity) -> bool {
         .is_some_and(|loco| matches!(loco.active_kind(), LocomotorKind::Ship))
 }
 
+/// The Foot's Locomotor (`+0x674`) is a `HoverLocomotionClass` (CLSID `0x007E9A40`).
+fn is_hover_locomotor(entity: &GameEntity) -> bool {
+    entity
+        .locomotor
+        .as_ref()
+        .is_some_and(|loco| matches!(loco.active_kind(), LocomotorKind::Hover))
+}
+
 /// `CellClass::GetCoords` (`0x00486840`) of the cell `MapClass::Get_CellClass`
 /// (`0x005657A0`) gives for `(rx, ry)` through `cells`, which stamps the
 /// query's fallback CellClass on a miss. Z 0 for an unsupported slope
@@ -718,6 +726,7 @@ impl crate::sim::world::Simulation {
 
 /// Cell callers of the shared non-null destination owner. Object callers
 /// capture their receiver's +4C through `nav_target_coordinate` instead.
+#[cfg(test)]
 pub(crate) fn set_destination_internal_cell(
     entity: &mut GameEntity,
     target: (u16, u16),
@@ -759,6 +768,23 @@ pub(crate) fn set_destination_internal_coord(
         ship_set_destination(entity, coord, resolved_terrain, binary_frame);
     } else {
         use super::hover::HoverMoveTo;
+        // 0x004D95B3..0x004D9601: ahead of Hover's Move_To an expired +640
+        // restarts for one frame, so Path_And_Arrival's gate
+        // (0x00516621..0x00516645) refuses the search inside the order. The
+        // setter's tail (`DestinationTiming::accept`) zeroes the timer, and
+        // the first search is the next Process's.
+        if is_hover_locomotor(entity)
+            && entity
+                .navigation
+                .path_runtime()
+                .movement_timer()
+                .expired(binary_frame as i32)
+        {
+            entity
+                .navigation
+                .path_runtime_mut()
+                .start_movement(binary_frame, 1);
+        }
         match super::hover::hover_move_to(entity, coord, resolved_terrain, binary_frame) {
             HoverMoveTo::PathStepOwed => return true,
             HoverMoveTo::Done => {}

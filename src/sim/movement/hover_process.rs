@@ -330,8 +330,10 @@ impl Simulation {
     /// The tail of Move_To 0x00514D90 ([`HoverMoveTo::PathStepOwed`]):
     /// `Path_And_Arrival(0)` then `ProcessMovement(1)` (0x00514E85..0x00514E92
     /// and 0x00514F4A..0x00514F5B; the second site's skip of ProcessMovement
-    /// needs a head, and it runs only without one). An order therefore has its
-    /// path, head and cell claim before the Foot's next Process.
+    /// needs a head, and it runs only without one). The Foot setter has just
+    /// restarted the movement timer, so neither call searches: they stop a
+    /// Foot already in its destination's cell and step along a retained path.
+    /// A new route's search belongs to the next Process.
     pub(crate) fn hover_move_to_path_step(
         &mut self,
         id: u64,

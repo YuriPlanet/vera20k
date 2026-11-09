@@ -5747,12 +5747,14 @@ impl Simulation {
             }
             if !entity.lifecycle.cell_marked()
                 || entity.passenger_role.is_inside_transport()
-                // A Jumpjet's hold and cruise move it with no Mark pair
-                // (0x0054D0FF..0x0054D134), so one flown onto a cliff answers
-                // Ground with no list entry, in gamemd too.
-                || entity.locomotor.as_ref().is_some_and(|locomotor| {
-                    locomotor.active_kind() == crate::rules::locomotor_type::LocomotorKind::Jumpjet
-                })
+                // A Jumpjet's hold and cruise (states 2 and 3) move it with
+                // no Mark pair (0x0054D0FF..0x0054D134), so one flown onto a
+                // cliff answers Ground with no list entry, in gamemd too.
+                || entity
+                    .locomotor
+                    .as_ref()
+                    .and_then(|locomotor| locomotor.jumpjet_runtime())
+                    .is_some_and(|jumpjet| matches!(jumpjet.phase(), 2 | 3))
             {
                 continue;
             }

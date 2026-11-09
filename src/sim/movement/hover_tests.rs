@@ -431,6 +431,8 @@ fn a_route_search_starts_at_the_cell_of_the_live_head() {
         true,
         FrameEffects::default(),
     ));
+    sim.process_hover_locomotor(id, &rules, None, FrameEffects::default())
+        .expect("first step");
     sim.substrate
         .entities
         .get_mut(id)
@@ -464,11 +466,12 @@ fn a_route_search_starts_at_the_cell_of_the_live_head() {
     assert_eq!(directions.len(), 3, "from the head at (11,10) to (14,10)");
 }
 
-/// Move_To 0x00514D90 ends in `Path_And_Arrival(0)` and `ProcessMovement(1)`
-/// (0x00514E85..0x00514E92), so the order alone leaves a stationary Foot with
-/// its route and the first head, before the Foot's next Process.
+/// The Foot setter restarts an expired movement timer ahead of a Hover
+/// Move_To (0x004D95B3..0x004D9601), so Path_And_Arrival's gate
+/// (0x00516621..0x00516645) refuses the search inside the order. Its tail
+/// zeroes the timer (0x004D96F0..0x004D9707) and the next Process searches.
 #[test]
-fn an_order_takes_the_first_step_before_the_next_process() {
+fn an_order_leaves_the_first_search_to_the_next_process() {
     use crate::rules::ini_parser::IniFile;
     use crate::sim::components::NavTargetRef;
     use crate::sim::world::{FrameEffects, Simulation};
@@ -495,7 +498,31 @@ fn an_order_takes_the_first_step_before_the_next_process() {
 
     let entity = sim.substrate.entities.get(id).unwrap();
     let hover = entity.locomotor.as_ref().unwrap().hover_runtime().unwrap();
-    let head = hover.head.expect("Move_To admitted the first cell");
+    assert_eq!(hover.head, None, "the order alone takes no step");
+    assert!(
+        entity
+            .navigation
+            .path_replay()
+            .remaining_directions()
+            .is_empty(),
+        "and finds no route"
+    );
+    let frame = sim.session.binary_frame() as i32;
+    assert!(
+        entity
+            .navigation
+            .path_runtime()
+            .movement_timer()
+            .expired(frame),
+        "the setter's tail leaves the next Process free to search"
+    );
+
+    sim.process_hover_locomotor(id, &rules, None, FrameEffects::default())
+        .expect("hover process");
+
+    let entity = sim.substrate.entities.get(id).unwrap();
+    let hover = entity.locomotor.as_ref().unwrap().hover_runtime().unwrap();
+    let head = hover.head.expect("Process admitted the first cell");
     assert_eq!((head.x / 256, head.y / 256), (11, 10));
     assert_eq!(
         entity.navigation.path_replay().remaining_directions().len(),

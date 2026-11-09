@@ -1202,6 +1202,8 @@ fn full_foot_entry<'a>(
             }
             //51C37D..51C3B6 tests every listed object: NavCom on a tree's
             //cell ends the walk at 51C71B (Terrain's +160 is false, 0x426490).
+            //Residual: the tree itself as NavCom or Target (51C3B6, 51C3C2)
+            //has no retail producer under these missions and no NavTargetRef.
             if infantry && infantry_mission_tests_targets(e, obj) && nav_com_is_cell(live, e, cell)
             {
                 return Ok(
