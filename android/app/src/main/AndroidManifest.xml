@@ -19,6 +19,8 @@
 
     <application
         android:label="VERA20K"
+        android:icon="@mipmap/ic_launcher_retail"
+        android:roundIcon="@mipmap/ic_launcher_retail"
         android:hasCode="true"
         android:largeHeap="true"
         android:extractNativeLibs="false"

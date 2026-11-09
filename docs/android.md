@@ -65,6 +65,34 @@ and add `-t x86_64` when you need it. Drop it for releases. On macOS/Linux, use
 for `CARGO_PROFILE_SHIPPING_STRIP`, and
 `./android/gradlew -p android :app:assembleDebug`.
 
+## Launcher icon
+
+The desktop picks its window icon at run time (`src/app/window_icon.rs`): the
+retail red star read out of the player's `GAME.EXE`, or VERA's artwork when the
+Options page's VERA Icon box is ticked. A launcher icon has to be a resource
+compiled into the package, so Android carries both instead:
+
+- `res/mipmap-*/ic_launcher_retail.png` from `.github/release/icon.png`, the red
+  star the release packages already ship — the default, matching
+  `[VERA] VeraIcon=false`.
+- `res/mipmap-*/ic_launcher_vera.png` from `src/app/vera_icon.png`, the artwork
+  the VERA Icon box selects.
+
+Each density also has a `*_foreground.png` on a 108 dp canvas with the artwork
+inside the 72 dp safe zone, and `res/mipmap-anydpi-v26/ic_launcher_<name>.xml`
+pairs it with a median-colour background, so every launcher mask crops the icon
+correctly. `res/values/ic_launcher_backgrounds.xml` holds those colours.
+
+Regenerate after either source image changes:
+
+```powershell
+python android/tools/make_launcher_icons.py
+```
+
+Switching between the two at run time needs `activity-alias` components enabled
+by `PackageManager`; the manifest still names a single icon and the VERA Icon box
+does not touch the launcher yet.
+
 ## Deliberate choices
 
 - **`NativeActivity`, not `GameActivity`.** Smallest M0. It has no IME, so text
