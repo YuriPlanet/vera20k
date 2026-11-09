@@ -10605,7 +10605,9 @@ impl RuleSet {
 
     /// Resolve a side name to its stable `[Sides]` registration index.
     pub fn side_index(&self, id: &str) -> Option<SideIdx> {
-        self.side_indices.get(&id.to_ascii_uppercase()).copied()
+        crate::util::native_string::with_ascii_uppercase(id, |key| {
+            self.side_indices.get(key).copied()
+        })
     }
 
     /// Commander personalities from `[AIPersonalities]`. Empty for retail data.

@@ -146,7 +146,7 @@ impl SoundPlaybackInputs<'_> {
         let source = crate::app::match_runtime::sound_dispatch::anim_world_sound_source(world);
         let gain = self
             .spatial_context(Some(sim), local_owner)
-            .gain_for(&sound, Some(source));
+            .gain_for(sound, Some(source));
         sfx.update_looping_sound(owner, gain, self.catalog.sounds());
     }
 
@@ -641,7 +641,7 @@ fn registry_facts_for_owner(
     owner: u64,
 ) -> Option<crate::audio::sfx::SpatialSource> {
     let key = sfx.handle_sound_id(owner)?;
-    Some(registry.get(&key).map_or_else(
+    Some(registry.get(key).map_or_else(
         || crate::audio::sfx::SpatialSource::from_registry_defaults(registry),
         crate::audio::sfx::SpatialSource::from_entry,
     ))

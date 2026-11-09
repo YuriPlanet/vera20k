@@ -505,7 +505,7 @@ impl SoundRegistry {
 
     /// Look up a sound entry by ID (case-insensitive).
     pub fn get(&self, sound_id: &str) -> Option<&SoundEntry> {
-        self.entries.get(&sound_id.to_ascii_uppercase())
+        crate::util::native_string::with_ascii_uppercase(sound_id, |key| self.entries.get(key))
     }
 
     /// VocClass::FindIndex7514D0 returns the first registered slot matching
