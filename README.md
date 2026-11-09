@@ -127,6 +127,9 @@ The [modding guide](docs/modding.md) explains how to make your own mods.
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="Support VERA20K via PayPal" height="23"></a>
 
+You can also [support VERA20K via Wise](https://wise.com/pay/me/halvorr2).
+The Wise page lists Halvor Rusten, the maintainer, as the recipient.
+
 All donations received are distributed
 to contributors according to the [TIBTRE contribution ledger](https://github.com/YuriPlanet/tibtre-ledger).
 

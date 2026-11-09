@@ -128,6 +128,9 @@ Ghidra, затем переносят его поведение на Rust и п�
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="Поддержать VERA20K через PayPal" height="23"></a>
 
+Вы также можете [поддержать VERA20K через Wise](https://wise.com/pay/me/halvorr2).
+На странице Wise получателем указан Halvor Rusten, сопровождающий проект.
+
 Все полученные пожертвования
 распределяются между участниками проекта согласно
 [журналу вкладов TIBTRE](https://github.com/YuriPlanet/tibtre-ledger).

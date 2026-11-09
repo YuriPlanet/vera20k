@@ -127,6 +127,9 @@ lobbyinställningar, moddar eller kartor.
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="Stöd VERA20K via PayPal" height="23"></a>
 
+Du kan också [stödja VERA20K via Wise](https://wise.com/pay/me/halvorr2).
+På Wise-sidan står Halvor Rusten, projektets underhållare, som mottagare.
+
 Alla mottagna donationer fördelas till
 medverkande enligt [TIBTRE:s bidragsregister](https://github.com/YuriPlanet/tibtre-ledger).
 

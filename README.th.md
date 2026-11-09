@@ -118,6 +118,9 @@ cargo run --release --bin vera20k
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="สนับสนุน VERA20K ผ่าน PayPal" height="23"></a>
 
+คุณยังสามารถ[สนับสนุน VERA20K ผ่าน Wise](https://wise.com/pay/me/halvorr2) ได้
+หน้า Wise แสดงชื่อ Halvor Rusten ผู้ดูแลโครงการเป็นผู้รับเงิน
+
 เงินบริจาคทั้งหมดที่ได้รับจะจัดสรรให้
 ผู้มีส่วนร่วมตาม[บัญชีบันทึกผลงาน TIBTRE](https://github.com/YuriPlanet/tibtre-ledger)
 
