@@ -41,6 +41,17 @@ impl SoundSource {
         }
     }
 
+    /// The spatial-audio projection of a native Coord in leptons.
+    /// `VocClass::CalcVolumeAndPan` (`0x00750B32`) takes the shroud cell by
+    /// arithmetic `coord >> 8`; the XYZ is projected as it is, not recentred.
+    pub fn from_coordinate(coordinate: [i32; 3]) -> Self {
+        let [x, y, z] = coordinate;
+        Self::new(
+            crate::util::lepton::absolute_leptons_to_screen(x, y, z),
+            ((x >> 8) as u16, (y >> 8) as u16),
+        )
+    }
+
     pub fn screen_pos(&self) -> (f32, f32) {
         (self.screen_x, self.screen_y)
     }
