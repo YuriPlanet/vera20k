@@ -8,7 +8,9 @@
 //!
 //! Focused play is capped at 60 fps by default (`VERA_FPS_CAP` overrides it, `0`
 //! disables the cap). An unfocused window drops to 15 fps
-//! (`VERA_FPS_CAP_IDLE`), because the player is not looking at it.
+//! (`VERA_FPS_CAP_IDLE`), because the player is not looking at it. The top
+//! game-speed position bypasses this cap entirely: its simulation pacing is
+//! already uncapped.
 
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
