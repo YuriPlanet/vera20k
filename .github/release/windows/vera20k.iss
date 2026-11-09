@@ -49,8 +49,9 @@ SignedUninstallerDir={#SignedUninstallerDir}
 #endif
 ; Per user: {autopf} is %LOCALAPPDATA%\Programs, which the program can write to.
 PrivilegesRequired=lowest
-; An upgrade keeps the folder of the install it replaces.
 DefaultDirName={autopf}\VERA20K
+; An upgrade keeps the folder of the install it replaces, unless its drive is gone.
+UsePreviousAppDir=PreviousDriveExists
 DisableProgramGroupPage=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -302,6 +303,18 @@ begin
       Value := ExtractFileDir(Value);
     Result := RemoveBackslashUnlessRoot(Value);
   end;
+end;
+
+{ [Setup] UsePreviousAppDir. An upgrade takes the previous folder without showing
+  Setup's folder page, and Inno first checks it once installing has started
+  (Inno 7.1.0: Setup.MainForm.pas:201), where a drive that is gone, such as a
+  memory card now under another letter, can only end Setup. Forgetting that
+  folder brings the page back, offering the default one. }
+function PreviousDriveExists(): Boolean;
+begin
+  Result := DirExists(AddBackslash(ExtractFileDrive(RegistryDir(HKA,
+    ExpandConstant('Software\Microsoft\Windows\CurrentVersion\Uninstall\{#SetupSetting("AppId")}_is1'),
+    'Inno Setup: App Path', False))));
 end;
 
 procedure AddCandidate(var Candidates: TGameInstallations; Dir: String; Source: TGameSource);
