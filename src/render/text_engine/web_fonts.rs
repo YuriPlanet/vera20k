@@ -11,6 +11,11 @@
 //! build.rs reads (`font_coverage.rs`): fallback picks the first font in the
 //! order that maps it.
 //!
+//! Noto Sans and Unifont's CJK table draw GAME.FNT's missing letters, which
+//! are made when its font loads, so the browser build fetches those two
+//! before the game starts instead ([`preload`]): the host awaits
+//! `fonts_ready()` (`crate::web`) first.
+//!
 //! Other builds embed every font, so nothing is fetched there.
 #![cfg_attr(
     not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")),
@@ -18,7 +23,7 @@
 )]
 
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, LazyLock, Mutex, PoisonError};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock, PoisonError};
 
 use parley::fontique::Blob;
 
@@ -121,6 +126,41 @@ fn arrive(place: usize, file: &str, bytes: Option<Vec<u8>>) {
     }
 }
 
+/// The files fetched before the game starts, with their bytes once fetched.
+static PRELOADS: [(&str, OnceLock<&'static [u8]>); 2] = [
+    (fonts::NOTO_SANS_FILE, OnceLock::new()),
+    (super::fnt_fill::UNIFONT_CJK_FILE, OnceLock::new()),
+];
+
+/// A file [`preload`] fetched. The game starts only once both have come
+/// ([`preloads_arrived`]), so the text drawn in it always finds them.
+pub(super) fn preloaded(file: &str) -> &'static [u8] {
+    PRELOADS
+        .iter()
+        .find(|(known, _)| *known == file)
+        .and_then(|(_, bytes)| bytes.get().copied())
+        .unwrap_or_else(|| panic!("{file} is drawn from before fonts_ready() resolved"))
+}
+
+/// Whether every file [`preload`] fetches has come.
+pub(crate) fn preloads_arrived() -> bool {
+    PRELOADS.iter().all(|(_, bytes)| bytes.get().is_some())
+}
+
+/// The URL version of `file`: the start of its SHA-256, from build.rs.
+fn version(file: &str) -> &'static str {
+    coverage::FONTS
+        .iter()
+        .map(|&(known, version, _)| (known, version))
+        .chain(coverage::TABLES.iter().copied())
+        .find(|(known, _)| *known == file)
+        .map(|(_, version)| version)
+        .expect("build.rs versions every file in src/render/fonts")
+}
+
+#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+pub(crate) use browser::preload;
+
 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
 mod browser {
     use wasm_bindgen::prelude::*;
@@ -136,6 +176,57 @@ mod browser {
     extern "C" {
         #[wasm_bindgen(js_name = veraFetchFont)]
         fn fetch_font(path: &str) -> js_sys::Promise;
+    }
+
+    thread_local! {
+        /// [`preload`]'s promise, made once.
+        static PRELOAD: std::cell::OnceCell<js_sys::Promise> = const { std::cell::OnceCell::new() };
+    }
+
+    /// Fetch the files the game needs before it starts ([`super::PRELOADS`]),
+    /// once: the promise resolves when both have come, and rejects if one
+    /// cannot be fetched or is not what it should be.
+    pub(crate) fn preload() -> js_sys::Promise {
+        PRELOAD.with(|promise| {
+            promise
+                .get_or_init(|| {
+                    let requests: Vec<_> = super::PRELOADS
+                        .iter()
+                        .map(|(file, _)| {
+                            (
+                                *file,
+                                fetch_font(&format!("{file}?v={}", super::version(file))),
+                            )
+                        })
+                        .collect();
+                    wasm_bindgen_futures::future_to_promise(async move {
+                        for (file, request) in requests {
+                            let bytes = wasm_bindgen_futures::JsFuture::from(request)
+                                .await
+                                .map_err(|error| {
+                                    JsValue::from_str(&format!("Could not fetch {file}: {error:?}"))
+                                })?;
+                            let bytes = js_sys::Uint8Array::new(&bytes).to_vec();
+                            if file == super::fonts::NOTO_SANS_FILE
+                                && swash::FontRef::from_index(&bytes, 0).is_none()
+                            {
+                                return Err(JsValue::from_str(&format!(
+                                    "The fetched {file} is not a font"
+                                )));
+                            }
+                            log::info!("Fetched {file} ({} bytes)", bytes.len());
+                            let slot = super::PRELOADS
+                                .iter()
+                                .find(|(known, _)| *known == file)
+                                .map(|(_, slot)| slot)
+                                .expect("a preloaded file");
+                            let _ = slot.set(Vec::leak(bytes));
+                        }
+                        Ok(JsValue::UNDEFINED)
+                    })
+                })
+                .clone()
+        })
     }
 
     /// Fetch `file`, versioned so that a browser keeps it until it changes.
@@ -189,6 +280,15 @@ mod tests {
                 .flat_map(|&(start, end)| start..=end)
                 .collect();
             assert_eq!(read, mapped, "{}", font.file);
+        }
+    }
+
+    /// The browser build fetches each preloaded file by its URL version;
+    /// build.rs gives the glyph table one beside the fonts'.
+    #[test]
+    fn every_preloaded_file_has_a_url_version() {
+        for (file, _) in &PRELOADS {
+            assert_eq!(version(file).len(), 16, "{file}");
         }
     }
 }

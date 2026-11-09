@@ -166,6 +166,8 @@ pub fn initialize() {
     // The page's first status lines come before the engine reads its
     // settings: they follow the browser's languages until then.
     crate::i18n::init(None, None);
+    // Fetched while the player picks the game folder; `fonts_ready` waits.
+    let _ = crate::render::text_engine::web_fonts::preload();
     crate::util::file_system::set_persistence_callbacks(
         |path, bytes, modified_ms| {
             WRITE.with(|slot| {
@@ -334,6 +336,14 @@ pub(crate) fn take_sfx_output() -> Option<crate::audio::sfx::SfxPlayer> {
     SFX.with(|slot| slot.borrow_mut().take())
 }
 
+/// Resolves once the fonts the engine's first text draws with have been
+/// fetched from `pkg/fonts/` (`render::text_engine::web_fonts`); rejects if
+/// one cannot be. Await it before `start_game` or `start_spawn`.
+#[wasm_bindgen]
+pub fn fonts_ready() -> js_sys::Promise {
+    crate::render::text_engine::web_fonts::preload()
+}
+
 #[wasm_bindgen]
 pub fn start_game(
     canvas: web_sys::HtmlCanvasElement,
@@ -439,6 +449,9 @@ fn run(
         return Err(JsValue::from_str(&crate::i18n::tr(
             "VERA:GameAlreadyStarted",
         )));
+    }
+    if !crate::render::text_engine::web_fonts::preloads_arrived() {
+        return Err(JsValue::from_str("Await fonts_ready() before starting"));
     }
     let event_loop =
         winit::event_loop::EventLoop::new().map_err(|e| JsValue::from_str(&e.to_string()))?;

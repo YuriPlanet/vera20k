@@ -1,4 +1,4 @@
-import init, { import_file, prepare_audio, restore_user_file, set_persistence_callbacks, start_game } from './pkg/vera20k.js';
+import init, { fonts_ready, import_file, prepare_audio, restore_user_file, set_persistence_callbacks, start_game } from './pkg/vera20k.js';
 // Only a --threads package exports initThreadPool.
 import * as engine from './pkg/vera20k.js';
 
@@ -405,6 +405,8 @@ async function launch() {
             done += file.size;
             bar.style.width = `${(100 * done / total).toFixed(1)}%`;
         }
+        // The engine began fetching its first fonts when it loaded.
+        await fonts_ready();
         start_game(canvas, show);
         started = true;
         launcher.classList.add('leaving');

@@ -12,8 +12,8 @@
 //!   game's files, those drawn letters alone.
 //! - Behind it, the bundled Noto fonts ([`fonts`]) for what it lacks, such as
 //!   Arabic and Thai: shaped as vector fonts, so letters join and marks
-//!   stack. The browser build fetches all but Noto Sans the first time text
-//!   needs one ([`web_fonts`]).
+//!   stack. The browser build fetches them: Noto Sans before the game
+//!   starts, the others the first time text needs one ([`web_fonts`]).
 //!
 //! Every glyph, GAME.FNT's own too, draws as hard pixels on the line's native
 //! grid ([`pixels`]), so a glyph off that grid, squeezed narrower or shrunk
@@ -26,7 +26,7 @@ mod fnt_fill;
 pub(crate) mod fnt_font;
 pub(crate) mod fonts;
 mod pixels;
-mod web_fonts;
+pub(crate) mod web_fonts;
 
 use std::borrow::Cow;
 use std::collections::HashMap;

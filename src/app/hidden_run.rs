@@ -15,6 +15,43 @@ use crate::app::map_picture::session::MapPictureSession;
 use crate::app::presentation::render::GameRenderOutput;
 use crate::util::time::{Duration, Instant};
 
+/// A run only a desktop process starts (`crate::entry`'s capture and
+/// map-picture launches): a shell capture, or a [`HiddenRun`]. The browser
+/// build starts neither, so there it always reports none, which leaves the
+/// runs' code out of the browser package.
+pub(crate) struct DesktopRun<T>(Option<T>);
+
+/// The browser build: it has no command line to start a desktop run from.
+const BROWSER: bool = cfg!(all(
+    feature = "wasm",
+    target_arch = "wasm32",
+    target_os = "unknown"
+));
+
+impl<T> DesktopRun<T> {
+    pub(crate) const NONE: Self = Self(None);
+
+    pub(crate) fn new(run: T) -> Self {
+        Self(Some(run))
+    }
+
+    pub(crate) fn as_ref(&self) -> Option<&T> {
+        if BROWSER { None } else { self.0.as_ref() }
+    }
+
+    pub(crate) fn as_mut(&mut self) -> Option<&mut T> {
+        if BROWSER { None } else { self.0.as_mut() }
+    }
+
+    pub(crate) fn is_some(&self) -> bool {
+        self.as_ref().is_some()
+    }
+
+    pub(crate) fn is_none(&self) -> bool {
+        self.as_ref().is_none()
+    }
+}
+
 pub(crate) enum HiddenRun {
     Capture(Box<TacticalCaptureSession>),
     Picture(Box<MapPictureSession>),

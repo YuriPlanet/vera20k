@@ -24,6 +24,11 @@ path = "bin/parity-digest.rs"
 name = "sim-bench"
 path = "bin/sim-bench.rs"
 
+# The saved-game layout id the browser build compiles in (tools/wasm/build.py).
+[[bin]]
+name = "snapshot-layout"
+path = "bin/snapshot-layout.rs"
+
 # External two-client LAN fault proof; absent from normal game builds.
 [[bin]]
 name = "lan-fault-proxy"

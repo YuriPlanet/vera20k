@@ -24,10 +24,11 @@
 //! - Other scripts have no GAME.FNT reference; they take a size that reads
 //!   at the Latin text's height and weight 600.
 //!
-//! The browser build embeds only Noto Sans, which GAME.FNT's drawn-in letters
-//! need ([`super::fnt_fill`]); it fetches each of the others the first time
-//! text needs a character from it ([`super::web_fonts`]), as they would add
-//! some 28 MB to every player's download.
+//! The browser build embeds none of them. It fetches Noto Sans, which
+//! GAME.FNT's drawn-in letters need ([`super::fnt_fill`]), before the game
+//! starts, and each of the others the first time text needs a character from
+//! it ([`super::web_fonts`]): they would add some 30 MB to the engine every
+//! player downloads, and kept apart a browser keeps them across its updates.
 
 /// One bundled font file.
 pub(crate) struct BundledFont {
@@ -57,17 +58,26 @@ macro_rules! font {
     };
 }
 
+/// Noto Sans's file name.
+pub(crate) const NOTO_SANS_FILE: &str = "NotoSans-VF.ttf";
+
 /// Noto Sans, first in [`bundled`]; [`super::fnt_fill`] also draws GAME.FNT's
-/// missing Latin, Greek and Cyrillic letters from it.
-pub(crate) const NOTO_SANS: &[u8] = include_bytes!("../fonts/NotoSans-VF.ttf");
+/// missing Latin, Greek and Cyrillic letters from it. The browser build
+/// fetches it before the game starts ([`super::web_fonts::preloaded`]).
+pub(crate) fn noto_sans() -> &'static [u8] {
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    return include_bytes!("../fonts/NotoSans-VF.ttf");
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    super::web_fonts::preloaded(NOTO_SANS_FILE)
+}
 
 /// Fallback order. Noto Sans first, so Latin, Greek, Cyrillic, digits and
 /// common punctuation inside any script take its forms.
 pub(crate) fn bundled() -> [BundledFont; 21] {
     [
         BundledFont {
-            file: "NotoSans-VF.ttf",
-            data: Some(NOTO_SANS),
+            file: NOTO_SANS_FILE,
+            data: Some(noto_sans()),
             baseline_shift: 0.0,
         },
         // GAME.FNT's hanzi fill rows 1..15 around its row-13 baseline, centred

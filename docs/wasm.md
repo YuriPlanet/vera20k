@@ -10,26 +10,36 @@ browser package is single-player. Optional online transport uses the separate
 ## Build
 
 Requirements: stable Rust, Python 3.11 or newer, and `wasm-bindgen-cli` at the
-version recorded for `wasm-bindgen` in `Cargo.lock` (currently 0.2.114).
+version recorded for `wasm-bindgen` in `Cargo.lock` (currently 0.2.127).
 
 ```sh
 rustup target add wasm32-unknown-unknown
-cargo install wasm-bindgen-cli --version 0.2.114 --locked
+cargo install wasm-bindgen-cli --version 0.2.127 --locked
 python3 tools/wasm/build.py
 ```
 
 The helper builds the client library as a `cdylib` with
-`--target wasm32-unknown-unknown --no-default-features --features wasm`, uses the
-existing `fast` profile, and packages its bindings and an asset-free host into
-`target/wasm-dist/`. Use `--profile release` for release optimization. It checks that the
-binding CLI matches the lockfile and sets an 8 MiB Wasm stack for the engine.
+`--target wasm32-unknown-unknown --no-default-features --features wasm` and
+packages its bindings and an asset-free host into `target/wasm-dist/`. By default
+it uses the `wasm` profile, which players download: optimized for size, fat LTO,
+one codegen unit and no symbol names; it takes several times as long to build
+(on 2026-11-09 the single-player Wasm was 19.5 MB, 6.5 MB compressed with brotli, against 45.6 MB and 10.3 MB with `fast`). Use `--profile fast` while editing, or `--profile release`. It
+checks that the binding CLI matches the lockfile and sets an 8 MiB Wasm stack
+for the engine. It also builds `src/bin/snapshot-layout.rs` for the host first:
+the browser engine compiles in the saved-game layout id
+(`VERA20K_SNAPSHOT_LAYOUT`) instead of tracing its saved types at run time.
 Desktop artifact types, default features and build commands are unchanged.
 
-Of the interface's bundled fonts, the browser engine embeds only Noto Sans. The
-others (Noto Sans CJK and 19 script fonts, about 28 MB) are copied with their
-licences to `pkg/fonts/`, and the engine fetches each one from beside its own
-files the first time text needs a character only that font draws, such as a
-Thai name in a chat. A host that serves the package must serve that folder too.
+The browser engine embeds none of the interface's bundled fonts. They (Noto Sans,
+Noto Sans CJK and 19 script fonts, about 30 MB) and Unifont's CJK glyph table are
+copied with their licences to `pkg/fonts/`. The engine starts fetching Noto Sans
+and the glyph table, which draw GAME.FNT's missing letters, as soon as it
+loads, and `fonts_ready()` resolves once both have arrived: await it before
+`start_game` or `start_spawn`, which fail until then. It fetches each other font
+the first time text needs a character only that font draws, such as a Thai name
+in a chat. A host that serves the package must serve that folder too. Each URL
+carries its file's version, so a browser keeps the fonts across engine updates.
+The engine does not set a window icon in the browser build.
 
 For the optional online build:
 

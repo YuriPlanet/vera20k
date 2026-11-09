@@ -25,10 +25,13 @@ on:
       - 'src/assets/asset_manager.rs'
       - 'src/assets/mix_archive.rs'
       - 'src/map/source**'
+      - 'src/bin/snapshot-layout.rs'
       - 'src/sim/mod.rs'
       - 'src/sim/parallel.rs'
       - 'src/sim/parallel_web.rs'
+      - 'src/sim/snapshot.rs'
       - 'src/render/frame_readback.rs'
+      - 'src/render/text_engine/fnt_fill.rs'
       - 'src/render/text_engine/fonts.rs'
       - 'src/render/gpu.rs'
       - 'src/render/sprite_atlas*.rs'
@@ -42,12 +45,14 @@ on:
       - 'src/app/frontend/shell_transition.rs'
       - 'src/app/frontend/state.rs'
       - 'src/app/handler.rs'
+      - 'src/app/hidden_run.rs'
       - 'src/app/in_game.rs'
       - 'src/app/initialize.rs'
       - 'src/app/shell_main_menu.rs'
       - 'src/app/shell_random_map.rs'
       - 'src/app/shell_wol.rs'
       - 'src/app/spawn_probe.rs'
+      - 'src/app/input/hardware_cursor.rs'
       - 'src/app/input/ime.rs'
       - 'src/app/input/keyboard.rs'
       - 'src/app/lan_service**'
@@ -57,6 +62,7 @@ on:
       - 'src/app/match_runtime/frame_pacer.rs'
       - 'src/app/persistence/**'
       - 'src/app/shell_wol/**'
+      - 'src/app/window_icon.rs'
 
 # A new push to the same pull request replaces its unfinished run.
 concurrency:
@@ -91,13 +97,16 @@ jobs:
       - name: Build browser package
         env:
           WASM_MODE: ${{ matrix.mode }}
+          # A pull request only shows that the package builds; the size-optimized
+          # profile takes several times as long and is for the uploaded package.
+          WASM_PROFILE: ${{ github.event_name == 'pull_request' && 'fast' || 'wasm' }}
         run: |
           if [ "$WASM_MODE" = lan ]; then
-            python3 tools/wasm/build.py --network --lan
+            python3 tools/wasm/build.py --profile "$WASM_PROFILE" --network --lan
           elif [ "$WASM_MODE" = network ]; then
-            python3 tools/wasm/build.py --network
+            python3 tools/wasm/build.py --profile "$WASM_PROFILE" --network
           else
-            python3 tools/wasm/build.py
+            python3 tools/wasm/build.py --profile "$WASM_PROFILE"
           fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: github.event_name != 'pull_request'

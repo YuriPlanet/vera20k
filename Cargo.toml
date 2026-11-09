@@ -297,3 +297,18 @@ incremental = true
 inherits = "release"
 lto = "fat"
 codegen-units = 1
+
+# The browser package (tools/wasm/build.py's default), which every player
+# downloads: optimized for size across every crate as one unit, without the
+# function names only a debugger reads. Optimization levels keep simulation
+# results (Rust has no fast-math; Wasm integer and float operations are
+# exact). Measured on 2026-11-09 with sim-bench built for wasm32-wasip1 under
+# Node (match scenario, amazon.mmx, 900 ticks, about 6,000 objects), each with
+# the same final hash: opt-level 3 took 143.5 ms a tick in an 8.2 MB binary,
+# "s" 162.2 ms in 5.7 MB and "z" 203.9 ms in 5.3 MB.
+[profile.wasm]
+inherits = "release"
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+strip = true
