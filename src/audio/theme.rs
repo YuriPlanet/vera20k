@@ -938,7 +938,10 @@ impl ThemeRuntime {
                 return action;
             }
         }
+        // This pending request is Play's own, whatever a scenario queued
+        // before it: a muted Play(LOADING) must outlive the scenario reset.
         self.slots.pending = index;
+        self.scenario_owns_pending = false;
         action
     }
 }
@@ -2013,6 +2016,23 @@ mod tests {
             theme.slots.pending, THEME_HOLD,
             "Stop must not auto-restart music"
         );
+    }
+
+    /// `Play 0x00720C8E`: at score volume 0 a played song only replaces
+    /// Pending, and that request is Play's own. The loading screen's track
+    /// must outlive the scenario reset that follows it, so it plays once the
+    /// volume comes up, as in gamemd.
+    #[test]
+    fn a_muted_play_keeps_its_pending_song_through_the_scenario_reset() {
+        let mut theme = stock_runtime();
+        theme.score_volume = 0;
+        // Left by the previous scenario's request, never consumed while muted.
+        theme.scenario_owns_pending = true;
+        let action = theme.play_song(5, gates(true), MusicOutputState::Idle, &mut prepared);
+        assert!(action.start.is_none());
+        assert_eq!(theme.slots().pending, 5);
+        theme.cancel_scenario_theme_request();
+        assert_eq!(theme.slots().pending, 5);
     }
 
     #[test]
