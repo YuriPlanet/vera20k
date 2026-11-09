@@ -199,11 +199,6 @@ fn draw_bridge_enable(rng: &mut RmgRng) -> bool {
         .lt(TruncF64::from_f64(f64::from(BRIDGE_ENABLE_CHANCE)))
 }
 
-/// As [`generate_map`], calling `observe` at every generation boundary.
-///
-/// The observer sees the run; it cannot alter it. Everything that decides the
-/// output — the RNG, the scratch, the grid — is either not handed over or handed
-/// over shared, so an observed run generates exactly what an unobserved one does.
 /// Mixed into the map seed for VERA's urban foot stream.
 const VERA_URBAN_SALT: u16 = 0xB71D;
 
@@ -235,6 +230,11 @@ fn urban_inputs<'a>(
     (None, options.urban_presence, None)
 }
 
+/// As [`generate_map`], calling `observe` at every generation boundary.
+///
+/// The observer sees the run; it cannot alter it. Everything that decides the
+/// output — the RNG, the scratch, the grid — is either not handed over or handed
+/// over shared, so an observed run generates exactly what an unobserved one does.
 pub fn generate_map_observed(
     options: &RmgOptions,
     settings: &RmgSettings,

@@ -52,8 +52,8 @@ pub enum Stage {
     TechBuildings,
     Tiberium,
     RegionReset,
-    /// Ares urban areas (hook 0x598FB8), run only when `RMG::UrbanAreas`
-    /// is set.
+    /// Urban areas (`0x005A5020`): Ares hook 0x598FB8 when `RMG::UrbanAreas`
+    /// is set, or VERA's opted-in Urban Presence.
     UrbanAreas,
     RecalcAfterTiberium,
     Hills,

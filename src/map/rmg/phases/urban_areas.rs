@@ -3,8 +3,10 @@
 //!
 //! Stock `RandomMapGenerator::Generate @ 0x00598960` never calls it. Ares'
 //! `MapSeedClass_Generate_UrbanAreas` (Ares.dll 1006ABD0, hook 0x598FB8)
-//! calls it right after the region reset when `RMG::UrbanAreas` is set, so it
-//! is compiled into Ares builds only. Ares also patches the subtree:
+//! calls it right after the region reset when `RMG::UrbanAreas` is set; VERA's
+//! opted-in Urban Presence runs it at the same point in any build
+//! ([`UrbanArgs::vera_fill`]). Ares also patches the subtree, and this port
+//! carries those patches in every build:
 //! - `PlacePavedRoads @ 0x005A5B50`: the four road-end coins jump to their
 //!   default piece (MapSeedClass_Generate_PlacePavedRoads_RoadEnd*, Ares.dll
 //!   1006AA90/1006AAC0/1006AAA0/1006AAB0, hooks 0x5A5C6A/0x5A5D6F/0x5A5F6A/
