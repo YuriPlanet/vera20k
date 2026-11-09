@@ -2303,9 +2303,8 @@ impl LanCapture {
                         .context("trackbar session")?
                         .options;
                     let actual = match control {
-                        SPEED => crate::ui::skirmish_shell::game_speed_visual_position(
-                            options.game_speed,
-                        ),
+                        SPEED => crate::ui::shell::game_speed::SpeedContext::Network
+                            .visual_position(options.game_speed),
                         CREDITS => options.starting_credits,
                         UNITS => options.unit_count,
                         _ => unreachable!(),

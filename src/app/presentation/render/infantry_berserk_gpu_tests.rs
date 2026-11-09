@@ -120,20 +120,108 @@ fn retail_gi_production_depth_keeps_native_front_pixels_visible() {
     compare_original_body_pixels(BodyReplay::DepthBoundary);
 }
 
+#[test]
+#[ignore = "requires GPU and retail assets; class-light map override through the production GI emitter and pixels"]
+fn retail_gi_pixels_follow_the_reached_class_light_default() {
+    use crate::rules::retail_ini_fixture::{
+        retail_battle_rules_for_map, retail_battle_rules_for_map_with_patch,
+    };
+
+    let Some(stock) = retail_battle_rules_for_map("Hills.mmx") else {
+        return;
+    };
+    let Some(omitted) = retail_battle_rules_for_map_with_patch(
+        "Hills.mmx",
+        &IniFile::from_str("[AudioVisual]\nBerserkColor=6\n"),
+    ) else {
+        return;
+    };
+    // ReadAudioVisual66B6BC..66B6FF uses integer current/1000 as its
+    // default. The ordinary GI never activates the unrelated BerserkColor.
+    assert_eq!(stock.rules.general.extra_infantry_light, 200);
+    assert_eq!(omitted.rules.general.extra_infantry_light, 0);
+    let stock =
+        render_original_body_pixels(BodyReplay::ClassLight { native: true }, Some(stock.rules))
+            .unwrap();
+    let omitted = render_original_body_pixels(
+        BodyReplay::ClassLight { native: false },
+        Some(omitted.rules),
+    )
+    .unwrap();
+    assert_eq!((stock.intensity, omitted.intensity), (1200, 1000));
+    assert!(
+        stock.coverage == omitted.coverage,
+        "physical SHP coverage must stay unchanged"
+    );
+    assert_eq!(stock.draw_without_light, omitted.draw_without_light);
+    assert_eq!(stock.z, omitted.z);
+    assert_eq!(stock.a, omitted.a);
+    for ((before, after), &covered) in stock
+        .pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(omitted.pixels.as_chunks::<4>().0)
+        .zip(&stock.coverage)
+    {
+        if !covered {
+            assert_eq!(
+                before, after,
+                "light must not change a transparent source pixel"
+            );
+        }
+    }
+    assert!(
+        stock
+            .pixels
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(omitted.pixels.as_chunks::<4>().0)
+            .zip(stock.coverage)
+            .any(|((before, after), covered)| covered && before != after),
+        "the reached default must change an actual GI body pixel"
+    );
+}
+
 #[derive(Clone, Copy)]
 enum BodyReplay {
     Caller,
     Viewport,
     Production,
     DepthBoundary,
+    ClassLight { native: bool },
+}
+
+struct ClassLightDraw {
+    pixels: Vec<u8>,
+    // Physical SHP nonzero indices mapped through the atlas frame position.
+    // An opaque palette color can equal the background after light conversion.
+    coverage: Vec<bool>,
+    draw_without_light: Vec<u8>,
+    z: Vec<u8>,
+    a: Vec<u32>,
+    intensity: i32,
 }
 
 fn compare_original_body_pixels(mode: BodyReplay) {
+    let _ = render_original_body_pixels(mode, None);
+}
+
+fn render_original_body_pixels(
+    mode: BodyReplay,
+    prepared_rules: Option<crate::rules::ruleset::RuleSet>,
+) -> Option<ClassLightDraw> {
     let join_viewport = !matches!(mode, BodyReplay::Caller);
-    let production = matches!(mode, BodyReplay::Production | BodyReplay::DepthBoundary);
+    let production = matches!(
+        mode,
+        BodyReplay::Production | BodyReplay::DepthBoundary | BodyReplay::ClassLight { .. }
+    );
     let depth_boundary = matches!(mode, BodyReplay::DepthBoundary);
+    let class_light = matches!(mode, BodyReplay::ClassLight { .. });
+    let native_pixels = !matches!(mode, BodyReplay::ClassLight { native: false });
     let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
-        return;
+        return None;
     };
     let theater = crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
     let native =
@@ -182,7 +270,7 @@ fn compare_original_body_pixels(mode: BodyReplay) {
             .to_ascii_lowercase(),
         format!("{}01.tem", mapping["file_name"].as_str().unwrap()).to_ascii_lowercase()
     );
-    let rules = physical_rules(&assets, shared);
+    let rules = prepared_rules.unwrap_or_else(|| physical_rules(&assets, shared));
     let source = ShpFile::from_bytes(assets.get_ref("GI.SHP").unwrap()).unwrap();
     let palette = Palette::from_bytes(assets.get_ref("UNITTEM.PAL").unwrap()).unwrap();
     let scheme = &shared["colour_scheme"];
@@ -247,8 +335,7 @@ fn compare_original_body_pixels(mode: BodyReplay) {
     sim.entities_mut_for_test().insert(gi);
     sim.submit_object_display_for_test(1, DisplayLayer::GROUND, Some(&rules));
     let order = NativeDisplayOrder::from_display(sim.display_layers());
-    let mut resources = SimResources::empty();
-    resources.rules = rules;
+    let resources = SimResources::new(rules);
     if production {
         let mut terrain = crate::map::resolved_terrain::test_grid(32, 32, |x, y| {
             crate::map::resolved_terrain::test_smudge_cell(x, y)
@@ -282,6 +369,9 @@ fn compare_original_body_pixels(mode: BodyReplay) {
     let size = ["width", "height"].map(|key| int(&surface[key]) as u32);
     let pixels = (size[0] * size[1]) as usize;
     let a_value = int(&surface["a_value"]) as u8;
+    if class_light {
+        assert_eq!(a_value, 127, "full visibility can saturate both light rows");
+    }
     let background = int(&surface["background"]) as u16;
     let rows = native[if join_viewport {
         "viewport_rows"
@@ -293,10 +383,14 @@ fn compare_original_body_pixels(mode: BodyReplay) {
     assert_eq!(rows.len(), if join_viewport { 28 } else { 8 });
     let gpu = Gpu::new();
     let mut compared = 0;
+    let mut class_light_draw = None;
     for format in [
         wgpu::TextureFormat::Bgra8UnormSrgb,
         wgpu::TextureFormat::Rgba8UnormSrgb,
-    ] {
+    ]
+    .into_iter()
+    .take(if class_light { 1 } else { 2 })
+    {
         let sim = &runtime.simulation;
         let mut batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
         let mut view = camera(size);
@@ -336,10 +430,14 @@ fn compare_original_body_pixels(mode: BodyReplay) {
             if production && !matches!(name, "frame0_center" | "frame1_center") {
                 continue;
             }
-            if depth_boundary && name != "frame0_center" {
+            if (depth_boundary || class_light) && name != "frame0_center" {
                 continue;
             }
             let input = &row["input"];
+            if class_light {
+                assert_eq!(input["berserk"], false);
+                assert_eq!(input["shrouded"], false);
+            }
             // DrawIfVisible may return before the body. Its return value never
             // gates the Rust draw: a conservatively submitted outside sprite
             // must still produce the same final pixels. Use the original
@@ -399,6 +497,8 @@ fn compare_original_body_pixels(mode: BodyReplay) {
             let sim = &runtime.simulation;
             let gi = sim.entities().get(1).unwrap();
             let before = sim.state_hash();
+            let rng_before = sim.rng_state();
+            let dummy_before = sim.effective_shared_cell_dummy().snapshot();
             let record = rules
                 .animation_sequence("E1")
                 .unwrap()
@@ -444,7 +544,11 @@ fn compare_original_body_pixels(mode: BodyReplay) {
             });
             assert_eq!(
                 light.brightness(),
-                int(&body["intensity"]),
+                if native_pixels {
+                    int(&body["intensity"])
+                } else {
+                    1000
+                },
                 "{name}: class/shared intensity"
             );
             assert_eq!(
@@ -609,7 +713,11 @@ fn compare_original_body_pixels(mode: BodyReplay) {
             for (stage, expected) in stages {
                 let expected = decode(expected);
                 assert_eq!(expected.len(), pixels * 2);
-                if depth_boundary {
+                if !native_pixels {
+                    // Only the stock input has a native pixel golden. The
+                    // omitted-key result is compared with it by the new test.
+                    continue;
+                } else if depth_boundary {
                     let first = expected
                         .as_chunks::<2>()
                         .0
@@ -652,22 +760,25 @@ fn compare_original_body_pixels(mode: BodyReplay) {
             }
             let frame = &source.frames[usize::from(frame)];
             let mut holes = 0;
+            let mut coverage = vec![false; pixels];
             for (at, &index) in frame.pixels.iter().enumerate() {
+                let x = (position[0] - view.camera_pos[0]) as i32
+                    + (at % usize::from(frame.frame_width)) as i32;
+                let y = (position[1] - view.camera_pos[1]) as i32
+                    + (at / usize::from(frame.frame_width)) as i32;
+                if x < 0 || y < 0 || x >= size[0] as i32 || y >= size[1] as i32 {
+                    continue;
+                }
+                let (x, y) = (x as usize, y as usize);
                 if index == 0 {
-                    let x = (position[0] - view.camera_pos[0]) as i32
-                        + (at % usize::from(frame.frame_width)) as i32;
-                    let y = (position[1] - view.camera_pos[1]) as i32
-                        + (at / usize::from(frame.frame_width)) as i32;
-                    if x < 0 || y < 0 || x >= size[0] as i32 || y >= size[1] as i32 {
-                        continue;
-                    }
-                    let (x, y) = (x as usize, y as usize);
                     assert_eq!(
                         &output[0][(y * size[0] as usize + x) * 4..][..4],
                         &encoded(background, format),
                         "{name}: physical source hole{x},{y}"
                     );
                     holes += 1;
+                } else {
+                    coverage[y * size[0] as usize + x] = true;
                 }
             }
             if !join_viewport {
@@ -680,7 +791,8 @@ fn compare_original_body_pixels(mode: BodyReplay) {
                     "{name}: Z unchanged"
                 );
             }
-            for actual in gpu.read_float_texels(fog.gpu_source().0, [0, 0], size) {
+            let a_plane = gpu.read_float_texels(fog.gpu_source().0, [0, 0], size);
+            for actual in &a_plane {
                 assert_eq!(
                     (actual[0] * 255.).round() as u8,
                     a_value,
@@ -692,12 +804,35 @@ fn compare_original_body_pixels(mode: BodyReplay) {
                 before,
                 "{name}: presentation leaves simulation unchanged"
             );
+            if class_light {
+                assert_eq!(sim.rng_state(), rng_before, "{name}: RNG unchanged");
+                assert_eq!(
+                    sim.effective_shared_cell_dummy().snapshot(),
+                    dummy_before,
+                    "{name}: shared fallback Cell unchanged"
+                );
+                let mut draw_without_light = layer.instances[0];
+                // shp_body_tint forwards this same class light to the legacy
+                // tint path; the native palette input carries it separately.
+                draw_without_light.tint = [1.; 3];
+                draw_without_light.palette_light = Default::default();
+                class_light_draw = Some(ClassLightDraw {
+                    pixels: output[0].clone(),
+                    coverage,
+                    draw_without_light: bytemuck::bytes_of(&draw_without_light).to_vec(),
+                    z: output[1].clone(),
+                    a: a_plane.iter().map(|texel| texel[0].to_bits()).collect(),
+                    intensity: layer.instances[0].palette_light.brightness(),
+                });
+            }
             compared += 1;
         }
     }
     assert_eq!(
         compared,
-        if depth_boundary {
+        if class_light {
+            1
+        } else if depth_boundary {
             2
         } else if production {
             4
@@ -705,4 +840,5 @@ fn compare_original_body_pixels(mode: BodyReplay) {
             rows.len() * 2
         }
     );
+    class_light_draw
 }

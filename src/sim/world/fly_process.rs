@@ -799,12 +799,9 @@ impl Simulation {
     /// `FootClass::Stun @ 0x004D5660`) and UnInit (vt+0xF8). Without MapClass
     /// authority (headless fixtures) nothing happens.
     ///
-    /// RESIDUAL: a passenger infantry of a `Civilian=` type that is no
-    /// survivor (`0x00413CD0`: InfantryType `+0xEC1`, Infantry `+0x6D9`) sets
-    /// its house's CiviliansEvacuated (`+0x1F9`), which VERA does not
-    /// represent. Trigger: a retreating transport aircraft carrying
-    /// civilians off the map, in campaigns. Effect: the trigger event that
-    /// reads the flag does not fire.
+    /// Before Team/teardown, a qualifying Civilian passenger sets its own
+    /// House's CiviliansEvacuated byte (4CD580..4CD58F), later read by
+    /// event18. Source: original gamemd.exe instructions.
     ///
     /// RESIDUAL: each passenger is deleted at once (`0x004CD5AE`); VERA
     /// UnInits it, which announces the same expiry but removes the object at
@@ -850,6 +847,12 @@ impl Simulation {
             .and_then(|owner| owner.passenger_role.cargo_mut())
             .and_then(|cargo| cargo.unload_first())
         {
+            if self.is_evacuation_civilian(passenger, rules) {
+                let owner = self.substrate.entities.get(passenger).unwrap().owner();
+                if let Some(house) = self.houses.get_mut(&owner) {
+                    house.mark_civilians_evacuated();
+                }
+            }
             self.team_script_vm.mark_member_team_leaving_map(passenger);
             // RemoveFirstPassenger leaves the passenger's own hold for its
             // teardown.

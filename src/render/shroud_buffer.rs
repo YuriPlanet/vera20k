@@ -74,6 +74,43 @@ struct CellBlits {
     frames: [u16; 2],
 }
 
+/// What a composed A plane showed, for [`ShroudBuffer::shows_kept`].
+#[derive(Default)]
+pub(crate) struct KeptPlane {
+    /// The plane's world origin, which `blits` are relative to.
+    origin: [i32; 2],
+    blits: Vec<CellBlits>,
+    options: FogDrawOptions,
+    fog_strength_milli: u32,
+    epoch: u64,
+}
+
+impl KeptPlane {
+    pub(crate) fn origin(&self) -> [i32; 2] {
+        self.origin
+    }
+}
+
+/// The blits of `blits`, whose origins are relative to the world pixel
+/// `origin`, that land on the world pixels `area` (left, top, right, bottom),
+/// at their world origins. A pixel's A depends on these alone, in this order.
+fn blits_over(
+    area: [i32; 4],
+    canvas: [i32; 2],
+    blits: &[CellBlits],
+    origin: [i32; 2],
+) -> impl Iterator<Item = ([i32; 2], [u16; 2])> + '_ {
+    blits
+        .iter()
+        .map(move |blit| {
+            let world = [blit.origin[0] + origin[0], blit.origin[1] + origin[1]];
+            (world, blit.frames)
+        })
+        .filter(move |([x, y], _)| {
+            *x < area[2] && x + canvas[0] > area[0] && *y < area[3] && y + canvas[1] > area[1]
+        })
+}
+
 const NO_FRAME: u16 = u16::MAX;
 
 /// One AlphaShapeClass glow (`sim::world::alpha_shape`): its origin in
@@ -974,6 +1011,8 @@ pub struct ShroudBuffer {
     last_cam_y: f32,
     /// Cached fog generation for change detection.
     last_fog_gen: u64,
+    /// Advances whenever what the plane shows may change.
+    generation: u64,
     /// The same fog generation can be sampled for a different local viewer.
     last_owner: Option<InternedId>,
     last_fog_options: FogDrawOptions,
@@ -1002,6 +1041,8 @@ pub struct ShroudBuffer {
     /// A resize, new frames or a load leaves the plane unproven by
     /// `drawn_blits`; the next rebuild redraws whatever it collects.
     redraw_required: bool,
+    /// Counts the compositions `drawn_blits` alone does not describe.
+    epoch: u64,
 }
 
 /// Same virtual-pixel coverage as the camera projection; no arbitrary4096
@@ -1108,6 +1149,7 @@ impl ShroudBuffer {
             last_cam_x: f32::NAN,
             last_cam_y: f32::NAN,
             last_fog_gen: u64::MAX,
+            generation: 0,
             last_owner: None,
             last_fog_options: FogDrawOptions::default(),
             last_screen_w: screen_w,
@@ -1121,6 +1163,7 @@ impl ShroudBuffer {
             next_blits: Vec::new(),
             alpha_shapes: Vec::new(),
             next_alpha_shapes: Vec::new(),
+            epoch: 0,
             redraw_required: true,
         }
     }
@@ -1131,6 +1174,7 @@ impl ShroudBuffer {
         let strength = if enabled { 500 } else { FOG_STRENGTH_MILLI };
         if self.fog_strength_milli != strength {
             self.fog_strength_milli = strength;
+            self.generation += 1;
             self.write_source_uniform(queue);
         }
     }
@@ -1399,6 +1443,7 @@ impl ShroudBuffer {
         encoder: &mut wgpu::CommandEncoder,
         fog_options: FogDrawOptions,
     ) {
+        self.generation += 1;
         self.compose_cells(device, queue, encoder, fog_options, true);
         // `AlphaShapeClass::DrawAll_NoMask @ 0x00421350` follows the cell
         // loop (`0x006D754C`), over the same pass rectangle.
@@ -1427,6 +1472,7 @@ impl ShroudBuffer {
         fog_options: FogDrawOptions,
         clear: bool,
     ) {
+        self.epoch += u64::from(self.redraw_required);
         self.redraw_required = false;
         let frames = if fog_options.fog_of_war {
             &mut self.fog_frames
@@ -1449,8 +1495,50 @@ impl ShroudBuffer {
 
     /// Read-only GPU source. The view stays stable until a resize; the uniform
     /// holds the floored world origin from the last rebuild.
+    /// A number that changes whenever what the plane shows may change.
+    pub(crate) fn generation(&self) -> u64 {
+        self.generation
+    }
+
     pub(crate) fn gpu_source(&self) -> (&wgpu::TextureView, &wgpu::Buffer) {
         (&self.view, &self.source_uniform)
+    }
+
+    /// The plane's world origin: the floored camera of its last rebuild.
+    pub(crate) fn world_origin(&self) -> [i32; 2] {
+        [self.last_cam_x as i32, self.last_cam_y as i32]
+    }
+
+    /// Record what the plane shows, for [`Self::shows_kept`].
+    pub(crate) fn keep(&self, kept: &mut KeptPlane) {
+        kept.origin = self.world_origin();
+        kept.blits.clone_from(&self.drawn_blits);
+        kept.options = self.last_fog_options;
+        kept.fog_strength_milli = self.fog_strength_milli;
+        kept.epoch = self.epoch;
+    }
+
+    /// Whether every pixel in the world rect `area` (left, top, right,
+    /// bottom) reads the A it read when `kept` was recorded. A pixel's A is a
+    /// pure function of the blits over it, the frames they select and what
+    /// `epoch` counts.
+    pub(crate) fn shows_kept(&self, kept: &KeptPlane, area: [i32; 4]) -> bool {
+        let frames = if self.last_fog_options.fog_of_war {
+            &self.fog_frames
+        } else {
+            &self.frames
+        };
+        let canvas = frames.canvas.map(|side| side as i32);
+        !self.redraw_required
+            && kept.epoch == self.epoch
+            && kept.options == self.last_fog_options
+            && kept.fog_strength_milli == self.fog_strength_milli
+            && blits_over(area, canvas, &kept.blits, kept.origin).eq(blits_over(
+                area,
+                canvas,
+                &self.drawn_blits,
+                self.world_origin(),
+            ))
     }
 
     /// Synthetic native A input for GPU leaf tests, through the production
@@ -1591,6 +1679,33 @@ mod tests {
     use super::*;
     use crate::sim::intern;
     use crate::sim::vision::apply_gap_generators;
+
+    /// A scrolled plane holds the same cells at other lattice origins, and
+    /// only the cells over the compared world pixels matter.
+    #[test]
+    fn blits_compare_in_world_pixels_over_the_area_alone() {
+        let blit = |x, y, frame| CellBlits {
+            origin: [x, y],
+            frames: [frame, NO_FRAME],
+        };
+        // Cells 60x30; the area ends at world (130, 110).
+        let area = [0, 0, 130, 110];
+        let canvas = [60, 30];
+        let same = |kept: &[CellBlits], now: &[CellBlits]| {
+            blits_over(area, canvas, kept, [100, 50]).eq(blits_over(area, canvas, now, [90, 40]))
+        };
+        // World (110, 60) in both, plus a cell only one list has beyond the area.
+        assert!(same(
+            &[blit(10, 10, 1), blit(30, 10, 9)],
+            &[blit(20, 20, 1), blit(40, 80, 2)],
+        ));
+        assert!(!same(&[blit(10, 10, 1)], &[blit(20, 20, 2)]));
+        assert!(!same(&[blit(10, 10, 1)], &[blit(21, 20, 1)]));
+        // A cell whose last pixel column is the area's first one counts; one
+        // that stops just short of it does not.
+        assert!(!same(&[blit(-159, 0, 1)], &[]));
+        assert!(same(&[blit(-160, 0, 1)], &[]));
+    }
 
     #[test]
     fn virtual_source_covers_the_supported_zoomed_out_view() {

@@ -519,15 +519,16 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let trackbars = vec![
         SetupTrackbar {
             id: SPEED,
-            value: skirmish_shell::game_speed_visual_position(options.game_speed),
+            value: crate::ui::shell::game_speed::SpeedContext::Network
+                .visual_position(options.game_speed),
             range: bounds.range(SkirmishTrackbarId::GameSpeed0x529),
             enabled: host,
             visible: true,
         },
         SetupTrackbar {
             id: CREDITS,
-            value: options.starting_credits,
-            range: bounds.range(SkirmishTrackbarId::Credits0x511),
+            value: bounds.credits_visual_position(options.starting_credits),
+            range: bounds.visual_range(SkirmishTrackbarId::Credits0x511),
             enabled: host,
             visible: true,
         },

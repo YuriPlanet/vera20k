@@ -1531,7 +1531,7 @@ pub enum Command {
     /// Execute the local player's native EXIT event and end the active scenario.
     ExitMatch,
     /// Apply an offline in-game Options speed transition before the next logic
-    /// frame. The dialog emits only the stored range 0..=6; live network opcode
+    /// frame. The dialog emits 0..=6 or VERA's 90-tick preset 8; live network opcode
     /// 0x0D keeps its separate EventClass-tail timing when networking is added.
     SetGameSpeed { speed: u8 },
     /// Strip6A8EB8's mobile PLACE event. House4FB0E0 resolves the category's

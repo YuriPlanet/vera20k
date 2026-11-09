@@ -60,6 +60,7 @@ pub mod pixel_fx_sparkles;
 pub mod radar;
 pub(crate) mod radial_indicator;
 pub(crate) mod radiation_beam;
+pub(crate) mod depth_shift;
 pub(crate) mod scaled_copy;
 pub(crate) mod screen_presentation;
 pub mod screenshot;
@@ -111,3 +112,5 @@ pub mod xbr;
 
 #[cfg(test)]
 mod sidebar_gpu_tests;
+#[cfg(test)]
+mod smooth_chrome_gpu_tests;

@@ -787,10 +787,11 @@ pub(super) fn push_trackbar_instances(
     ] {
         let rect = trackbar_rect_for_id(layout, id);
         let value = trackbar_visual_value(shell, id);
-        let thumb_left = shell
-            .trackbar_bounds
-            .range(id)
-            .thumb_left_in(value, rect, layout.scale);
+        let thumb_left =
+            shell
+                .trackbar_bounds
+                .visual_range(id)
+                .thumb_left_in(value, rect, layout.scale);
         paint_control(
             out,
             &chrome,

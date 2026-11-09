@@ -93,7 +93,7 @@ impl Simulation {
         }
     }
 
-    pub(crate) fn cell_objects(
+    pub fn cell_objects(
         &self,
         cell: (u16, u16),
         layer: MovementLayer,

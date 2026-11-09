@@ -1397,14 +1397,17 @@ pub(crate) fn local_pacing_inputs(state: &AppState) -> (u8, Option<(u16, u32)>) 
         .map(|rt| &rt.simulation)
         .map_or_else(
             || {
-                state
-                    .match_state
-                    .match_presentation
-                    .in_game_options
-                    .game_speed
-                    .min(6) as u8
+                crate::sim::game_options::clamp_game_speed(
+                    state
+                        .match_state
+                        .match_presentation
+                        .in_game_options
+                        .game_speed as i32,
+                )
             },
-            |sim| sim.session().game_options().game_speed.clamp(0, 6) as u8,
+            |sim| {
+                crate::sim::game_options::clamp_game_speed(sim.session().game_options().game_speed)
+            },
         );
     (game_speed, super::network_match::frame_budget(state))
 }
@@ -1824,12 +1827,9 @@ fn advance_one_simulation_frame(
                 // five seconds since the previous point rather than the whole
                 // match.
                 if crate::app::match_runtime::telemetry::ReportHistory::due(tick) {
-                    let speed = rt
-                        .simulation
-                        .session()
-                        .game_options()
-                        .game_speed
-                        .clamp(0, 6) as u8;
+                    let speed = crate::sim::game_options::clamp_game_speed(
+                        rt.simulation.session().game_options().game_speed,
+                    );
                     let mut timing = state.match_state.telemetry_timing.summarize(
                         state.platform.frame_pacer.budget_ms(
                             speed,

@@ -81,7 +81,7 @@ fn mean(samples: impl Iterator<Item = ([f32; 4], f32)>) -> [f32; 4] {
     })
 }
 
-fn srgb_to_linear(value: f32) -> f32 {
+pub(super) fn srgb_to_linear(value: f32) -> f32 {
     if value <= 0.040_45 {
         value / 12.92
     } else {

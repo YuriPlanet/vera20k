@@ -355,6 +355,8 @@ pub(crate) trait JumpjetFlightHost {
     fn binary_frame(&self) -> u32;
     fn trig(&self) -> &TrigTable;
     fn owner_kind(&self) -> FlightOwnerKind;
+    /// Whether the owner still has this kind of locomotor after a callback.
+    fn has_installed_jumpjet(&self) -> bool;
     /// Object+90, checked after Update54AF24 before the state dispatch.
     fn is_object_alive(&self) -> bool;
     /// Process's tail after the state dispatch (`0x0054B07D..0x0054B16C`):
@@ -825,6 +827,9 @@ pub(crate) fn state3_translate(
         if host.piggyback_active() {
             runtime.flight.target_height = 0;
             host.piggyback_arrival(runtime);
+            if !host.has_installed_jumpjet() {
+                return runtime.phase;
+            }
             state = STATE_DESCEND;
         } else if !has_target && !host.balloon_hover() {
             if unit_owner && host.simple_deployer() && host.type_flag_6ad() {
@@ -839,7 +844,9 @@ pub(crate) fn state3_translate(
                 runtime.flight.target_height = 0;
                 state = STATE_DESCEND;
             }
-            host.arrival_notify();
+            if host.has_installed_jumpjet() {
+                host.arrival_notify();
+            }
         } else if claim_or_scatter(here, runtime, host) {
             let marked = host.marked();
             host.mark(false);
@@ -897,6 +904,9 @@ pub(crate) fn state3_translate(
 
     // Tail 0x0054C4FD..C544: hovering types, water and beach destinations and
     // flagged units keep full height.
+    if !host.has_installed_jumpjet() {
+        return runtime.phase;
+    }
     if host.balloon_hover()
         || matches!(
             host.cell_land_type([runtime.destination.x, runtime.destination.y]),
@@ -935,7 +945,7 @@ pub(crate) fn process(runtime: &mut JumpjetRuntime, host: &mut impl JumpjetFligh
     ];
     let params = runtime.params;
     update_coordinates_and_altitude(state, destination, &params, &mut runtime.flight, host);
-    if !host.is_object_alive() {
+    if !host.has_installed_jumpjet() || !host.is_object_alive() {
         return runtime.phase;
     }
     runtime.phase = crash_latch(state, runtime, host);
@@ -960,7 +970,9 @@ pub(crate) fn process(runtime: &mut JumpjetRuntime, host: &mut impl JumpjetFligh
         STATE_CRASH => state5_crash(runtime, host),
         other => other,
     };
-    host.visibility_tail(runtime);
+    if host.has_installed_jumpjet() {
+        host.visibility_tail(runtime);
+    }
     runtime.phase
 }
 
@@ -1115,6 +1127,9 @@ pub(crate) fn state1_ascend(
             // A factory contact hears the lift-off; the barracks releases
             // its tether and the owner may take its rally or scatter again.
             host.factory_contact_notify(runtime);
+            if !host.has_installed_jumpjet() {
+                return runtime.phase;
+            }
             // 0x0054BCB5 re-reads +0x40/+0x44 after that callback.
             let destination = [runtime.destination.x, runtime.destination.y];
             let dest_cell = host.cell_of(destination);
@@ -1133,6 +1148,9 @@ pub(crate) fn state1_ascend(
     // At cruise height the owner claims the cell's air slot, or scatters to a
     // random neighbour when another object already holds it.
     let claimed = claim_or_scatter(here, runtime, host);
+    if !host.has_installed_jumpjet() {
+        return runtime.phase;
+    }
     //54BB3C/54BB62 suffix is after the class callback on both arms.
     let marked = host.marked();
     host.mark(false);
@@ -1230,6 +1248,9 @@ pub(crate) fn state4_descend(
         if matches!(host.cell_land_type([destination[0], destination[1]]), 2 | 6) && !mission_seven
         {
             let claimed = claim_or_scatter(here, runtime, host);
+            if !host.has_installed_jumpjet() {
+                return runtime.phase;
+            }
             let marked = host.marked();
             host.mark(false);
             host.replace_marked_byte(marked);
@@ -1372,6 +1393,9 @@ pub(crate) fn state5_crash(runtime: &mut JumpjetRuntime, host: &mut impl Jumpjet
     let mut crash = false;
     if (host.height_above_ground() <= 0 || crossed_deck) && host.dropped() {
         let evaluated = !host.crush_below(runtime);
+        if !host.has_installed_jumpjet() {
+            return runtime.phase;
+        }
         if evaluated {
             let location = host.location();
             let xy = [location[0], location[1]];
@@ -1400,6 +1424,9 @@ pub(crate) fn state5_crash(runtime: &mut JumpjetRuntime, host: &mut impl Jumpjet
             }
         } else {
             crash = true;
+        }
+        if !host.has_installed_jumpjet() {
+            return runtime.phase;
         }
         if crossed_deck {
             if evaluated {
@@ -1494,6 +1521,9 @@ mod tests {
     impl JumpjetFlightHost for FixtureHost<'_> {
         // This older corpus substitutes Mark/tracker/class receivers.
         fn is_object_alive(&self) -> bool {
+            true
+        }
+        fn has_installed_jumpjet(&self) -> bool {
             true
         }
         fn visibility_tail(&mut self, _runtime: &mut JumpjetRuntime) {}
@@ -1968,6 +1998,9 @@ mod tests {
     impl JumpjetFlightHost for StatesHost<'_> {
         // This older corpus substitutes Mark/tracker/class receivers.
         fn is_object_alive(&self) -> bool {
+            true
+        }
+        fn has_installed_jumpjet(&self) -> bool {
             true
         }
         fn visibility_tail(&mut self, _runtime: &mut JumpjetRuntime) {}

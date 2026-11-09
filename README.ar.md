@@ -120,6 +120,8 @@ cargo run --release --bin vera20k
 
 تُحفظ إعدادات الصوت والرسوم والتحكم في `VERA.INI`. وتأتي قواعد اللعب من إعدادات الردهة أو التعديلات أو الخرائط.
 
+يشرح [دليل التعديلات](docs/modding.md) كيفية صنع تعديلاتك الخاصة.
+
 ## الدعم
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="ادعم VERA20K عبر PayPal" height="23"></a>

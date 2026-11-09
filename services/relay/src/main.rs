@@ -105,20 +105,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut counts = TrafficCounts::default();
     let mut reported_at = Instant::now();
     let clock_origin = Instant::now();
-    // The millisecond the last pass over every room ended, and whether the
-    // server has accepted a datagram since.
+    // The millisecond the last pass over every room ended.
     let mut passed_ms = None;
-    let mut accepted = false;
     eprintln!("VERA20k relay listening on {}", socket.local_addr()?);
     loop {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
         let monotonic_ms = clock_origin.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
         // A pass costs time in every room, so it starts a millisecond after
-        // the last one ended, even when a full relay's pass takes longer, and
-        // before the next receive after an accepted datagram, which may owe
-        // pushes or link packets. A rejected one, junk included, adds none.
-        if accepted || passed_ms.is_none_or(|passed| monotonic_ms > passed) {
-            accepted = false;
+        // the last one ended, even when a full relay's pass takes longer. No
+        // datagram adds one: the pushes or link packets an accepted one may
+        // owe go out with the next pass, as a sealed frame's do.
+        if passed_ms.is_none_or(|passed| monotonic_ms > passed) {
             // Clock advancement is independent of datagram arrivals and readers.
             server.advance_clock(monotonic_ms, now);
             // Federated relays exchange what they just sealed before players read it.
@@ -175,10 +172,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Rejections expose no packet, key, ticket, address or player data.
         // Ordinary UDP loss is handled by the existing client reliable owner.
         match server.process_at(source, &buffer[..length], now, monotonic_ms) {
-            Ok(forward) => {
-                accepted = true;
-                send_datagrams(&socket, &mut counts, forward);
-            }
+            Ok(forward) => send_datagrams(&socket, &mut counts, forward),
             Err(error) => counts.reject(error),
         }
     }

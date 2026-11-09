@@ -13,6 +13,7 @@ pub mod connection;
 pub mod controller;
 pub mod descriptor;
 pub mod diplomacy;
+pub mod game_speed;
 pub mod geom;
 pub mod in_game_options;
 pub mod in_game_options_state;

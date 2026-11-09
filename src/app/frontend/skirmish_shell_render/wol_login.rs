@@ -350,7 +350,11 @@ fn paint_info_pane(
 }
 
 /// A panel's darkened backing and a list's two frame rings around it.
-fn push_info_panel(out: &mut Vec<SpriteInstance>, atlas: &SkirmishShellChromeAtlas, panel: RectPx) {
+pub(super) fn push_info_panel(
+    out: &mut Vec<SpriteInstance>,
+    atlas: &SkirmishShellChromeAtlas,
+    panel: RectPx,
+) {
     let Some(pixel) = atlas.white_pixel else {
         return;
     };

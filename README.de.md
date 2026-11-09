@@ -122,6 +122,8 @@ aus Mods wie Ares, muss ausgeschaltet bleiben, bis sie auf einem dieser Wege akt
 Einstellungen für Ton, Grafik und Steuerung werden in `VERA.INI` gespeichert. Die Spielregeln
 stammen aus den Lobby-Einstellungen, Mods oder Karten.
 
+Die [Modding-Anleitung](docs/modding.md) erklärt, wie man eigene Mods erstellt.
+
 ## Unterstützen
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="Unterstütze VERA20K über PayPal" height="23"></a>

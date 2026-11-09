@@ -373,7 +373,7 @@ pub(crate) fn render_pause_menu_shell(
                 ShellAlign::H_RIGHT,
             ));
             let (key, fallback) = pause.value_caption(slider);
-            let right = csf.map_or_else(|| fallback.to_string(), |csf| csf.text(key).into_owned());
+            let right = crate::i18n::label(csf, key, fallback);
             texts.push(text_draw(
                 font,
                 &right,

@@ -1,6 +1,7 @@
+// The WebGL2 fallback's read-only final words (terrain_read_only.wgsl).
 @group(0) @binding(0) var old_words: texture_2d<u32>;
-struct ReadOnlyPixel { body: atomic<u32>, shadows: atomic<u32> };
-@group(1) @binding(0) var<storage, read_write> read_only_pixels: array<ReadOnlyPixel>;
+@group(1) @binding(0) var read_only_bodies: texture_2d<u32>;
+@group(1) @binding(1) var read_only_shadows: texture_2d<f32>;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
@@ -10,19 +11,14 @@ fn vs_main(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
 
 @fragment
 fn fs_main(@builtin(position) position: vec4f) -> @location(0) vec4f {
-    let p = vec2u(position.xy);
-    let width = textureDimensions(old_words).x;
-    let rows = arrayLength(&read_only_pixels) / width;
-    let address = (p.y % rows) * width + p.x;
-    let body = atomicLoad(&read_only_pixels[address].body);
-    let shadows = atomicLoad(&read_only_pixels[address].shadows);
+    let p = vec2i(position.xy);
+    let body = textureLoad(read_only_bodies, p, 0).r;
+    let shadows = u32(round(textureLoad(read_only_shadows, p, 0).r * 255.0));
     // Preserve untouched attachment bytes, including colors outside RGB565.
     if body == 0u && shadows == 0u { discard; }
-    var word = select(textureLoad(old_words, vec2i(p), 0).r, body & 65535u, body != 0u);
+    var word = select(textureLoad(old_words, p, 0).r, body & 65535u, body != 0u);
     // Every native RGB565 word reaches zero after six original half operations.
     // The native exhaustive transition corpus proves this bound for all words.
     for (var i = 0u; i < min(shadows, 6u); i += 1u) { word = native_half_word(word); }
-    let encoded = vec3f(f32(RETAIL_FIVE[(word >> 11u) & 31u]),
-        f32(RETAIL_SIX[(word >> 5u) & 63u]), f32(RETAIL_FIVE[word & 31u])) / 255.0;
-    return vec4f(srgb_decode(encoded), 1.0);
+    return vec4f(retail_linear(word), 1.0);
 }

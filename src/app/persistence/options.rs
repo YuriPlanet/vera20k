@@ -28,7 +28,9 @@ fn project_speed_control(value: i32) -> u32 {
 /// accepted bounded dialog selection replaces them.
 pub(crate) fn in_game_options_from_profile(profile: &RetailOptionsProfile) -> InGameOptionsState {
     InGameOptionsState {
-        game_speed: project_speed_control(profile.game_speed),
+        game_speed: u32::from(crate::sim::game_options::clamp_game_speed(
+            profile.game_speed,
+        )),
         scroll_rate: project_speed_control(profile.scroll_rate),
         detail_level: profile.detail_level.clamp(0, OPTIONS_DETAIL_MAX as i32) as u32,
         unit_action_lines: profile.unit_action_lines,

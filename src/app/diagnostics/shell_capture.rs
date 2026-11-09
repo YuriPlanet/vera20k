@@ -1308,6 +1308,8 @@ impl ShellCaptureRequest {
                             | movies::WolTarget::ModernRoomOptions
                             | movies::WolTarget::ModernSpectators
                             | movies::WolTarget::ModernOptions
+                            | movies::WolTarget::ModernChatTranslation
+                            | movies::WolTarget::ModernChatTranslationList
                     )
             }
             Some(movies::MoviesTarget::WolWelcome {

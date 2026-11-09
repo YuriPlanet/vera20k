@@ -2204,18 +2204,26 @@ pub(crate) fn set_os_cursor_visible(state: &mut AppState, visible: bool) {
 
 /// The macOS half of the cursor lock, for a pointer that just left the client
 /// area: put it back on the nearest point inside and move the game's cursor
-/// there, so edge scrolling keeps reading the edge. True when it did; false
-/// when the lock is not holding the pointer (it is off, the window is not
-/// active, or the platform clips the pointer itself). Presentation-only.
+/// there, so edge scrolling keeps reading the edge. An active full-screen
+/// window below a camera housing does the same for the strip beside the
+/// housing, lock or no lock: the pointer would otherwise pass the one row that
+/// scrolls north and stand on black, out of the game's sight. True when it
+/// did; false when nothing holds the pointer (the lock is off and it left
+/// another way, the window is not active, or the platform clips the pointer
+/// itself). Presentation-only.
 pub(crate) fn hold_pointer_in_window(state: &mut AppState) -> bool {
     #[cfg(target_os = "macos")]
     {
-        if !state.platform.pointer_held.get() {
-            return false;
-        }
         let Some(pointer) = super::mac_pointer::pointer_in_view(&state.platform.window) else {
             return false;
         };
+        let beside_housing = state.platform.window_active
+            && pointer.in_strip_above(super::mac_pointer::strip_above_full_screen(
+                &state.platform.window,
+            ));
+        if !state.platform.pointer_held.get() && !beside_housing {
+            return false;
+        }
         let (x, y) = pointer.nearest_inside();
         let position = winit::dpi::LogicalPosition::new(x, y);
         if state.platform.window.set_cursor_position(position).is_err() {
