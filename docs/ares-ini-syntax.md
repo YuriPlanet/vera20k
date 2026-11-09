@@ -24,9 +24,9 @@ load builds each section and links it once it ends. Loading into an INI that has
 key and lists it last. `ReadCCFile` loads every Ares `[#include]` and Phobos `$Include`
 file this way into the INI that lists it, so an Ares build now loads included files into
 the root INI (`IniFile::merge_load`) instead of composing them with `IniFile::merge`.
-That holds in `ares,phobos` too. Phobos-only builds keep `merge`. The load also returns
-the entries the file put under its include section, which is the list VERA follows
-next. Those entries include an unterminated last line, which this arm loads.
+That holds in `ares,phobos` too. Phobos-only builds keep `merge`. A file's `[#include]`
+entries join the root's, so the include walk reads them next. Those entries include an
+unterminated last line, which this arm loads.
 
 - **`+` keys.** A key that is exactly `+` becomes `var_<n>`. One counter serves both arms.
   VERA numbers per INI, continuing through its included files, so a registry such as
@@ -80,9 +80,9 @@ lookups decide which same-named section a later base lookup finds.
   looked up, and that name has two sections.
 - A header on an included file's unterminated last line leaves its base set for the next
   load's first header; VERA drops it.
-- Ares walks one include list that every loaded file adds to (`CCINIClass_ReadCCFile2`
-  `10064660`). VERA still follows each file's own list depth-first, so with nested lists
-  a later root entry can be read before a child's own entry. A reused key can also hide
-  a root entry. See [INI directives](ini-directives.md).
+- Each included file's `[#include]` entries join the root's list, and one walk reads them
+  in turn (`CCINIClass_ReadCCFile2` `10064660`; see [INI directives](ini-directives.md)).
+  A file that replaces the entry being walked sends native through freed memory. VERA
+  reads the replacing entry and the root entries after it.
 
 No RNG draw, timer or detach is involved.

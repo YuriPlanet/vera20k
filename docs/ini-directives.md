@@ -50,12 +50,18 @@ Strength=250
   `LoadFromStraw`'s merge arm. An Ares build does the same, with Ares's parser
   hooks ([Ares INI syntax](ares-ini-syntax.md)); other builds compose with
   `IniFile::merge`.
-- Residual: nested lists are expanded depth-first per document. Natively each
-  included file's list joins one shared include section: Ares walks it with
-  one index shared by every nesting level, and Phobos re-walks it skipping
-  saved names. A parent's remaining entries are therefore read before a
-  child's own list, and a child entry that reuses a parent's key name resolves
-  through the shared section. VERA reads each file's own list instead.
+- An included file's `[#include]` list joins the root's. Ares walks that one
+  list with an index every nesting level shares (`CCINIClass_ReadCCFile2`
+  `10064660`), so a parent's remaining entries are read before the entries its
+  child adds. A child entry that reuses a key replaces the earlier entry. The
+  walk continues from the entry it last read (Ares's `GetKeyName` hook
+  `100651D0`), and VERA reads the first entry it has not yet read.
+  Residual: if a child replaces the entry being walked, native continues from
+  freed memory. VERA reads the replacing entry and the entries after it.
+- Residual: Phobos re-walks its shared `$Include` section after each file,
+  skipping saved names. VERA follows each file's own `$Include` list
+  depth-first instead, so for nested Phobos lists a parent's remaining
+  entries are read after the child's list.
 - Inheritance runs after the complete Include expansion. `$Inherits=A,B` copies
   only missing keys: child-authored values win, then the first supplying parent.
   Parent section names remain case-sensitive. Directive keys are not inherited.
@@ -154,7 +160,7 @@ commit. This contribution is under VERA's GPLv3; no Ares/Phobos C++ is imported.
 
 | native source | VERA adaptation |
 | --- | --- |
-| Ares.dll `CCINIClass_ReadCCFile1`/`2` hooks (gamemd `0x474200`/`0x474314`, `ReadCCFile` `0x4741F0`) | Ares dialect in `rules/ini_directives.rs`: stored-order list read, once-per-root-load skip, missing file skipped, merge after load |
+| Ares.dll `CCINIClass_ReadCCFile1`/`2` hooks (gamemd `0x474200`/`0x474314`, `ReadCCFile` `0x4741F0`) | Ares dialect in `rules/ini_directives.rs`: one walk over the shared stored-order list, once-per-root-load skip, missing file skipped, merge after load |
 | Ares `INIClass::GetKeyCount` `0x526960`, `GetKeyName` `0x526CC0`, `ReadString` `0x528A10` | `IniSection::physical_entries` walk plus `read_name` with the native `0x80` buffer capacity |
 | Phobos `src/Misc/Hooks.INIInheritance.cpp` (`CCINIClass_Load_Inheritance` `0x474230`) | Phobos dialect: `$Include`, `SavedIncludes` once-per-file, fatal missing file, merge after load |
 | Phobos `src/Phobos.cpp` `-Include` (`0x474200`/`0x474314` restored) | A document's `$Include` takes over from its `[#include]`; selected by `DirectiveOptions::production` |

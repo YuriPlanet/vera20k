@@ -116,6 +116,54 @@ fn ini_directives_ares_nested_descendants_follow_stored_list_order() {
 }
 
 #[test]
+fn ini_directives_ares_reads_a_parents_remaining_entries_before_a_childs_list() {
+    // CCINIClass_ReadCCFile2 10064660: a.ini's `2=c.ini` joins the root's
+    // shared [#include] after b.ini, so c.ini is read last and wins.
+    let mut reads = Vec::new();
+    let result = process_directives(
+        IniFile::from_str("[#include]\n0=a.ini\n1=b.ini\n"),
+        "root.ini",
+        |name| {
+            reads.push(name.to_owned());
+            let list = if name == "a.ini" {
+                "[#include]\n2=c.ini\n"
+            } else {
+                ""
+            };
+            Ok(Some(format!("{list}[Unit]\nValue={name}\n").into_bytes()))
+        },
+        DirectiveOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(reads, ["a.ini", "b.ini", "c.ini"]);
+    assert_eq!(text(&result.ini, "Unit", "Value").as_deref(), Some("c.ini"));
+}
+
+#[test]
+fn ini_directives_ares_child_reusing_the_walked_key_skips_no_root_entry() {
+    // a.ini replaces the `0=` entry being walked; native then follows a freed
+    // node. VERA reads the replacing entry and every root entry after it.
+    let mut reads = Vec::new();
+    process_directives(
+        IniFile::from_str("[#include]\n0=a.ini\n1=b.ini\n"),
+        "root.ini",
+        |name| {
+            reads.push(name.to_owned());
+            let list = if name == "a.ini" {
+                "[#include]\n0=c.ini\n"
+            } else {
+                ""
+            };
+            Ok(Some(format!("{list}[Unit]\nValue={name}\n").into_bytes()))
+        },
+        DirectiveOptions::default(),
+    )
+    .unwrap();
+    reads.sort();
+    assert_eq!(reads, ["a.ini", "b.ini", "c.ini"]);
+}
+
+#[test]
 fn ini_directives_ares_documented_included_strength_overrides_root() {
     // Official Ares example, not a golden captured from an Ares DLL:
     // https://ares-developers.github.io/Ares-docs/new/misc/include.html
@@ -204,13 +252,14 @@ fn ini_directives_include_list_keeps_stored_entry_order() {
 fn ini_directives_ares_reads_a_shared_child_once_per_root_load() {
     // Ares.dll CCINIClass_ReadCCFile1 (hook 0x474200) records every file read
     // and CCINIClass_ReadCCFile2 (0x474314) skips a recorded name, clearing the
-    // record only when the outermost read returns.
+    // record only when the outermost read returns. The children's lists join
+    // the root's, after its own entries.
     let root = "[#include]\n0=left.ini\n1=right.ini\n2=left.ini\n";
     let files = [
-        ("left.ini", "[#include]\n0=shared.ini\n[Unit]\nValue=left\n"),
+        ("left.ini", "[#include]\nl=shared.ini\n[Unit]\nValue=left\n"),
         (
             "right.ini",
-            "[#include]\n0=shared.ini\n[Unit]\nOther=right\n",
+            "[#include]\nr=shared.ini\n[Unit]\nOther=right\n",
         ),
         ("shared.ini", "[Unit]\nValue=shared\n"),
     ];
@@ -233,7 +282,7 @@ fn ini_directives_ares_reads_a_shared_child_once_per_root_load() {
         DirectiveOptions::default(),
     )
     .unwrap();
-    assert_eq!(reads, ["left.ini", "shared.ini", "right.ini"]);
+    assert_eq!(reads, ["left.ini", "right.ini", "shared.ini"]);
     assert_eq!(
         text(&result.ini, "Unit", "Value").as_deref(),
         Some("shared")
