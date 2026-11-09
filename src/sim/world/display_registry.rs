@@ -19,8 +19,8 @@ use crate::sim::movement::ground_pose::{building_render_order_parts, position_wo
 use crate::sim::terrain_object::TerrainObjectStore;
 use crate::sim::world::ObjectSubstrate;
 
-/// Foot4DB7E0 / Aircraft41ADC0 dispatch to the active locomotor. Fly4CFCF0
-/// reads physical GetHeight, Jumpjet54B8D0 additionally reads structural
+/// Foot4DB7E0 / Aircraft41ADC0 dispatch to the active locomotor. Tunnel72A1A0
+/// answers from its State, Fly4CFCF0 reads physical GetHeight, Jumpjet54B8D0 additionally reads structural
 /// bridge, falling, its owner's virtual +54 (IsHighFlying,
 /// [`is_high_flying`]) and its linked +2C height. Ground movers do not query
 /// height. No terrain is a headless compatibility case, not native proof.
@@ -36,6 +36,15 @@ pub(crate) fn entity_layer(
         // Rocket In_Which_Layer (`0x00663460`) answers the Air layer.
         if kind == Some(LocomotorKind::Rocket) {
             return DisplayLayer::AIR;
+        }
+        // Tunnel In_Which_Layer (`0x0072A1A0`): underground in State 4.
+        if entity
+            .locomotor
+            .as_ref()
+            .and_then(|locomotor| locomotor.tunnel_runtime())
+            .is_some_and(crate::sim::movement::tunnel_movement::TunnelRuntime::underground)
+        {
+            return DisplayLayer::UNDERGROUND;
         }
         if !matches!(kind, Some(LocomotorKind::Fly | LocomotorKind::Jumpjet)) {
             return DisplayLayer::GROUND;

@@ -549,24 +549,8 @@ pub(crate) fn respond_to_base_attack(
                 continue;
             };
             let cells = NativeCellQuery::canonical(terrain);
-            let current = ground_pose::position_world_coord(&candidate.position);
-            let in_tube = candidate.low_bridge_tube_state.is_some();
             // Foot4DDC40 short-circuits before virtual+4C in a Tube.
-            let navigation = if in_tube {
-                current
-            } else {
-                match sim.foot_navigation_coordinate(candidate_id) {
-                    Ok(coord) => coord,
-                    Err(_) => continue,
-                }
-            };
-            let Ok(source_should_be_on_bridge) = ground_pose::navigation_should_be_on_bridge(
-                &cells,
-                navigation,
-                current,
-                candidate.on_bridge(),
-                in_tube,
-            ) else {
+            let Ok(source_should_be_on_bridge) = sim.foot_should_be_on_bridge(candidate_id) else {
                 continue;
             };
             let bounds = sim

@@ -311,10 +311,11 @@ pub(crate) struct ResidualTypeRules {
     /// `NoSelfGuardArea` (+0x4C8, false).
     no_self_guard_area: bool,
     /// `DigInSound`/`DigOutSound` (+0x550/+0x558, NullableIdx<VocClass>),
-    /// bound with the type's other sounds.
+    /// bound with the type's other sounds. Consumed by the Tunnel
+    /// locomotor's dig effects ([`AresTechnoTypeRules::dig_effects`]).
     dig_sounds: [Option<Option<String>>; 2],
     /// `DigIn`/`DigOut` (+0x560/+0x568, Nullable<AnimTypeClass*>, Find
-    /// only): `Some(None)` is an explicit none.
+    /// only): `Some(None)` is an explicit none. Consumed with the sounds.
     dig_anims: [Option<Option<String>>; 2],
     /// `FakeOf` (+0x600) and `Convert.Deploy` (+0x60C), Find-only
     /// Valueable<TechnoTypeClass*>, null; `Convert.Deploy` is consumed by
@@ -1157,6 +1158,20 @@ impl AresTechnoTypeRules {
         self.residual
             .unit_lost_eva_bound
             .then(|| self.residual.unit_lost_eva.as_deref())
+    }
+
+    /// `PlayDigEffects` (Ares.dll `0x100443E0`): the sound and anim of a
+    /// dig-in or dig-out, `DigInSound`/`DigIn` or `DigOutSound`/`DigOut`
+    /// (`+0x550 + (digIn ^ 1) * 8`, `+0x560 + (digIn ^ 1) * 8`). `None` is
+    /// unset, which plays the `[AudioVisual]` value; `Some(None)` is an
+    /// explicit none.
+    #[cfg(feature = "ares")]
+    pub(crate) fn dig_effects(&self, dig_in: bool) -> [Option<Option<&str>>; 2] {
+        let slot = usize::from(!dig_in);
+        [
+            self.residual.dig_sounds[slot].as_ref().map(|sound| sound.as_deref()),
+            self.residual.dig_anims[slot].as_ref().map(|anim| anim.as_deref()),
+        ]
     }
 
     #[cfg(feature = "ares")]
