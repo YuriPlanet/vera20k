@@ -33,7 +33,10 @@ const RENDER_STANDING_DRAWS: u32 = 4;
 /// LAN live capture reads that history once per presented frame.
 const MAX_TICKS_BETWEEN_PRESENTS: u32 = 128;
 const MIN_TIMED_GAME_SPEED: u8 = 1;
-const MAX_TIMED_GAME_SPEED: u8 = 6;
+/// The Options slider offers six speeds (0..5): 5 is the fastest position and
+/// is uncapped, 4 paces one 60 Hz frame per tick, and each step below adds a
+/// bucket. Value 6 exists in the dialog's native range but is unreachable.
+const MAX_TIMED_GAME_SPEED: u8 = 5;
 const ELAPSED_CLOCK_STOPPED: u32 = u32::MAX;
 const SCORE_BUCKETS_PER_SECOND: i32 = 60;
 

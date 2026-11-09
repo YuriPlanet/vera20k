@@ -715,7 +715,7 @@ impl App {
         // advances it. Below the top speed, cap the display refresh.
         let (game_speed, _) =
             crate::app::match_runtime::sim_tick::local_pacing_inputs(state);
-        if shell_capture.is_none() && game_speed < 6 {
+        if shell_capture.is_none() && game_speed < 5 {
             crate::app::present_cap::pace_frame(state.platform.window.has_focus());
         }
         // Publish the player's colour-vision matrix before any early-return
