@@ -19,6 +19,7 @@ use crate::map::source::read_map_ini_for_metadata;
 use crate::map::waypoints::DEFAULT_SKIRMISH_PLAYER_CAPACITY;
 use crate::rules::ini_parser::IniFile;
 use crate::util::config::GameConfig;
+use crate::util::native_string::decode_widened_utf8;
 
 /// Names the loose wildcard scans skip. Both are exclusions, not prerequisites:
 /// the archived `MISSIONSMD.PKT` is already consumed as the first source, and
@@ -383,7 +384,7 @@ fn pkt_display_name(
 ) -> Option<(String, Option<String>)> {
     let section = pkt.section(map_stem)?;
     if let Some(value) = section.read_name("DescriptionText", 0x2C) {
-        return Some((value.to_string(), None));
+        return Some((decode_widened_utf8(value).into_owned(), None));
     }
     section.read_name("Description", 0x400).map(|label| {
         let text = csf.map_or_else(|| label.to_string(), |csf| csf.text(label).into_owned());
@@ -445,6 +446,38 @@ mod tests {
         assert_eq!(entry.multiplayer_start_waypoints[0].ry, 100);
         assert_eq!(entry.player_capacity, 3);
         assert_eq!(entry.preview_source_bounds, None);
+    }
+
+    #[test]
+    fn map_text_saved_as_utf8_reads_as_its_characters() {
+        let directory = TestDirectory::new("utf8-map-text");
+        let path = directory.path().join("Daxian.yrm");
+        std::fs::write(&path, "[Basic]\nName=大仙防守\nAuthor=小明\n").unwrap();
+        let entry = read_map_menu_entry(&path, "Daxian.yrm");
+        assert_eq!(entry.display_name, "大仙防守");
+        assert_eq!(entry.author.as_deref(), Some("小明"));
+
+        // gamemd's 64-byte buffer ends this name inside a character.
+        std::fs::write(&path, format!("[Basic]\nName=A{}\n", "大".repeat(30))).unwrap();
+        let entry = read_map_menu_entry(&path, "Daxian.yrm");
+        assert_eq!(entry.display_name, format!("A{}", "大".repeat(20)));
+
+        let pkt = "[MultiMaps]\n1=Arena\n[Arena]\nDescriptionText=大仙防守\n";
+        let pkt = IniFile::from_bytes(pkt.as_bytes()).unwrap();
+        let mut records = Vec::new();
+        append_pkt_records(
+            &mut records,
+            &pkt,
+            SkirmishScenarioSource::MissionsMdPkt,
+            None,
+            bare_map_payload,
+        );
+        assert_eq!(records[0].display_name, "大仙防守");
+
+        assert_eq!(
+            crate::map::basic::briefing_text("[Basic]\nBriefing=守住@大桥\n".as_bytes()).as_deref(),
+            Some("守住\n大桥")
+        );
     }
 
     #[test]
