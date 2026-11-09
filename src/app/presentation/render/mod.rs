@@ -125,8 +125,9 @@ pub(crate) struct RenderPhases {
     /// Phase 7 — recording the frame's render passes, without the
     /// submissions made on the way (those are `handoff`).
     pub draw_calls: Duration,
-    /// Encoding the recorded passes, submitting them and presenting: the
-    /// bounded mid-frame submissions, plus the frame owner's final one.
+    /// What handing frames to the driver cost this thread: the bounded
+    /// mid-frame submissions, the send of the frame to the hand-off thread,
+    /// and any wait for the frame before it.
     pub handoff: Duration,
     /// Prep before phase 1 and between the lights and the effects (sidebar
     /// surfaces, terrain targets) — the part no named span owns.

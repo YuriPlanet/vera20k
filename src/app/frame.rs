@@ -1610,19 +1610,16 @@ impl App {
             .renderer
             .gpu
             .encode_color_vision(&mut encoder, &output.texture);
-        let submission = state
-            .renderer
-            .gpu
-            .queue
-            .submit(std::iter::once(encoder.finish()));
-        output.present(&state.renderer.gpu.queue);
+        let submission = state.renderer.gpu.hand_off_frame(encoder, output);
         let presented_at = Instant::now();
+        let handoff_waited = state.renderer.gpu.take_handoff_wait();
         if let Some((mut phases, handoff_started)) = measured_phases {
-            // Handing the frame to the driver: every bounded submission this
-            // frame (render_game's and any after it), then encoding the rest,
-            // submitting and presenting.
+            // What handing frames to the driver cost this thread: every
+            // bounded submission this frame (render_game's and any after it),
+            // the send to the hand-off thread, and any wait for the last one.
             phases.handoff = state.renderer.terrain_draw_renderer.frame_submit_time()
-                + presented_at.duration_since(handoff_started);
+                + presented_at.duration_since(handoff_started)
+                + handoff_waited;
             #[cfg(feature = "telemetry-dashboard")]
             state.diag.render_timing.record(phases);
             state
@@ -1647,7 +1644,8 @@ impl App {
             .commit_presentation_observation()
         {
             // Diagnostic callback is an upper bound on this submitted frame's
-            // GPU completion. It never waits or enters simulation state.
+            // GPU completion; reaching the queue waits for the frame's hand-off,
+            // so it covers this frame. It never waits or enters simulation state.
             state.renderer.gpu.queue.on_submitted_work_done(move || {
                 *completed.lock().unwrap_or_else(|error| error.into_inner()) =
                     Some(crate::app::match_diagnostics::ObservationTime::now());
@@ -1710,7 +1708,7 @@ impl App {
         if let Some(readback) = pending_gate_audit {
             let pixels = readback.finish(
                 &state.renderer.gpu.device,
-                submission.clone(),
+                submission.index(),
                 crate::render::screenshot::READBACK_TIMEOUT,
             )?;
             state
@@ -1726,7 +1724,7 @@ impl App {
             shell_capture
                 .as_deref_mut()
                 .expect("entry-sequence session exists for retained readback")
-                .record_entry_sequence_submission(identity, readback, submission.clone())?;
+                .record_entry_sequence_submission(identity, readback, submission.index())?;
         }
         if let Some(receipt) = pending_main_menu_title_receipt.take() {
             anyhow::ensure!(
@@ -1752,7 +1750,7 @@ impl App {
         if let Some(pending_capture) = pending_capture {
             let pixels = pending_capture.finish(
                 &state.renderer.gpu.device,
-                submission.clone(),
+                submission.index(),
                 capture_timeout.expect("capture timeout exists with pending readback"),
             )?;
             let surface_format = state.renderer.gpu.config.format;
@@ -1790,7 +1788,7 @@ impl App {
         if let Some(pending_screenshot) = pending_retail_screenshot {
             match pending_screenshot.finish(
                 &state.renderer.gpu.device,
-                submission,
+                submission.index(),
                 crate::render::screenshot::READBACK_TIMEOUT,
             ) {
                 Ok(pixels) => match crate::render::screenshot::write_retail_screenshot(

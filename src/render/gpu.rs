@@ -166,6 +166,9 @@ impl<'a> From<&'a wgpu::AdapterInfo> for GpuAdapterObservation<'a> {
 /// Created once during app initialization when the window becomes available.
 /// Other render modules borrow `device` and `queue` from this struct.
 pub struct GpuContext {
+    /// The thread frames reach the driver on. First, so it finishes the frame
+    /// on its way and ends before the surface and device below drop.
+    handoff: super::frame_handoff::FrameHandoff,
     /// The GPU surface we render to (tied to the window).
     // Loading progress shares the GPU context with asset uploads. Only this
     // owner locks the surface, briefly, to acquire or replace a lost swapchain.
@@ -176,7 +179,7 @@ pub struct GpuContext {
     /// The logical GPU device — used to create buffers, textures, pipelines.
     pub device: wgpu::Device,
     /// The command queue — used to submit render commands to the GPU.
-    pub queue: wgpu::Queue,
+    pub queue: super::frame_handoff::HandoffQueue,
     /// Current surface configuration (format, size, present mode).
     pub config: wgpu::SurfaceConfiguration,
     /// The texture format the surface uses (needed when creating pipelines).
@@ -452,7 +455,10 @@ impl GpuContext {
             surface_format
         );
 
+        let handoff = super::frame_handoff::FrameHandoff::new();
+        let queue = super::frame_handoff::HandoffQueue::new(queue, handoff.waiter());
         Ok(Self {
+            handoff,
             surface: Mutex::new(Some(surface)),
             instance,
             window,
@@ -486,6 +492,30 @@ impl GpuContext {
             .encode(&self.device, &self.queue, encoder, target);
     }
 
+    /// Finish and submit `encoder`, then present `frame`, on the hand-off
+    /// thread (`frame_handoff`). Bounded submissions the frame already made
+    /// stay ahead of this one, as they went through the queue on this thread.
+    pub(crate) fn hand_off_frame(
+        &self,
+        encoder: wgpu::CommandEncoder,
+        frame: GpuFrame,
+    ) -> super::frame_handoff::FrameSubmission {
+        let queue = (*self.queue).clone();
+        let index = Arc::new(std::sync::OnceLock::new());
+        let submitted = Arc::clone(&index);
+        self.handoff.send(move || {
+            let _ = submitted.set(queue.submit(std::iter::once(encoder.finish())));
+            frame.present(&queue);
+        });
+        super::frame_handoff::FrameSubmission::new(index, self.handoff.waiter())
+    }
+
+    /// The time this thread spent blocked on a frame on its way to the driver
+    /// since the last call.
+    pub(crate) fn take_handoff_wait(&self) -> crate::util::time::Duration {
+        self.handoff.waiter().take_waited()
+    }
+
     /// Return a borrowed capture-only view of the selected adapter identity.
     pub(crate) fn capture_adapter_observation(&self) -> GpuAdapterObservation<'_> {
         GpuAdapterObservation::from(&self.adapter_info)
@@ -506,6 +536,7 @@ impl GpuContext {
     /// https://docs.rs/winit/0.30.13/winit/application/trait.ApplicationHandler.html#method.suspended
     #[cfg(target_os = "android")]
     pub(crate) fn suspend_surface(&mut self) {
+        self.handoff.waiter().wait();
         drop(
             self.surface
                 .get_mut()
@@ -525,6 +556,7 @@ impl GpuContext {
     /// updates the depth and offscreen targets together with the surface.
     #[cfg(target_os = "android")]
     pub(crate) fn restore_surface(&mut self) -> anyhow::Result<()> {
+        self.handoff.waiter().wait();
         let slot = self
             .surface
             .get_mut()
@@ -554,6 +586,8 @@ impl GpuContext {
         if width == 0 || height == 0 {
             return; // Minimized window — skip reconfigure
         }
+        // Configuring a surface needs its last frame presented.
+        self.handoff.waiter().wait();
         self.config.width = width;
         self.config.height = height;
         if let Some(surface) = self
@@ -585,6 +619,9 @@ impl GpuContext {
     /// occlusion skip this redraw. Validation failures remain errors.
     /// https://docs.rs/wgpu/30.0.1/wgpu/enum.CurrentSurfaceTexture.html
     pub fn acquire_frame(&self) -> Result<Option<GpuFrame>> {
+        // A surface gives out one frame at a time, and drawing keeps plain
+        // queue clones that do not wait for themselves (`HandoffQueue`).
+        self.handoff.waiter().wait();
         let mut surface = self.surface.lock().unwrap_or_else(PoisonError::into_inner);
         let Some(surface) = surface.as_mut() else {
             return Ok(None);
