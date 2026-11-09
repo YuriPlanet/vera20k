@@ -55,6 +55,10 @@ mod airborne_cell_tag_tests;
 #[path = "periodic_cell_object_turn_tests.rs"]
 mod periodic_cell_object_turn_tests;
 
+#[cfg(test)]
+#[path = "object_turn_lookup_tests.rs"]
+mod object_turn_lookup_tests;
+
 #[derive(Default)]
 pub(super) struct LiveObjectPassOutcome {
     pub destroyed_structure: bool,
@@ -841,20 +845,24 @@ impl Simulation {
         let sim = self;
         let overlay_registry = object_ctx.overlay_registry;
         let mut outcome = ObjectTurnOutcome::default();
+        // The turn looks this object up by id about a hundred times; from
+        // here the store answers for it without its id index (VERA-only,
+        // every answer unchanged).
+        sim.substrate.entities.focus(stable_id);
         // UnitClass::AI / InfantryClass::AI give an active TubeMovement
         // object the whole live-object turn.  Capture before the leaf:
         // successful finalization clears the payload but must still skip
         // every ordinary locomotor tail and the second mission checkpoint.
-        let tube_active_at_entry = sim
-            .substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(tube_active);
-        let was_structure = sim
-            .substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(|entity| entity.category() == EntityCategory::Structure);
+        let (tube_active_at_entry, was_structure) =
+            sim.substrate
+                .entities
+                .get(stable_id)
+                .map_or((false, false), |entity| {
+                    (
+                        tube_active(entity),
+                        entity.category() == EntityCategory::Structure,
+                    )
+                });
         let _building_area = was_structure
             .then(|| crate::sim::frame_profile::area(crate::sim::frame_profile::phase::BUILDINGS));
         let mut ai = sim.object_ai_visit_one_with_effects(stable_id, rules, object_ctx);
@@ -864,24 +872,20 @@ impl Simulation {
         outcome.bridge_state_changed |= ai.bridge_state_changed;
         outcome.destroyed_structure |= ai.destroyed_structure;
         outcome.ownership_changed |= ai.ownership_changed();
-        if was_structure
-            && sim
-                .substrate
-                .entities
-                .get(stable_id)
-                .is_none_or(|entity| entity.death.is_dying())
-        {
+        // One read serves the three gates after the AI visit.
+        let Some(entity) = sim.substrate.entities.get(stable_id) else {
+            outcome.destroyed_structure |= was_structure;
+            return Ok(outcome);
+        };
+        let dying = entity.death.is_dying();
+        let foot = matches!(
+            entity.category(),
+            EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
+        );
+        if was_structure && dying {
             outcome.destroyed_structure = true;
         }
-        if sim.substrate.entities.get(stable_id).is_none_or(|entity| {
-            entity.death.is_dying()
-                || (!tube_active_at_entry
-                    && matches!(
-                        entity.category(),
-                        EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
-                    )
-                    && !entity.lifecycle.object_alive())
-        }) {
+        if dying || (!tube_active_at_entry && foot && !entity.lifecycle.object_alive()) {
             // Foot4DA53E..548 reloads Object+90 after TechnoAI and returns
             // before locomotor Process when false. Health and the Rust dying
             // state are independent: even Process's slope prelude must wait
@@ -893,12 +897,7 @@ impl Simulation {
         // A temporal-warped object's leaf AI returned before its locomotor
         // Process (Unit 0x007362B5..0x007362CB, Infantry and Aircraft alike;
         // `Simulation::temporal_ai_prologue`).
-        if sim
-            .substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(crate::sim::game_entity::GameEntity::ai_frozen)
-        {
+        if entity.ai_frozen() {
             return Ok(outcome);
         }
 
