@@ -2992,14 +2992,19 @@ impl Simulation {
             let chance_draw = self.scenario_rng.next_range_u32_inclusive(0, 99) as i32;
             if chance_draw < rules.combat_damage.collapse_chance
                 && let Some(mutation) = self.resolved_terrain.as_mut().and_then(|terrain| {
-                    terrain.collapse_destroyable_cliff_terrain(rx, ry, |cell_x, cell_y| {
-                        if let Some(grid) = self.overlay_grid.as_mut() {
-                            let _ = grid.clear_overlay(cell_x, cell_y);
-                        }
-                        if let Some(grid) = self.smudge_grid.as_mut() {
-                            let _ = grid.clear_cell_slot(cell_x, cell_y);
-                        }
-                    })
+                    terrain.collapse_destroyable_cliff_terrain(
+                        rx,
+                        ry,
+                        overlay_registry.and_then(|registry| registry.cliff_back_rock()),
+                        |cell_x, cell_y| {
+                            if let Some(grid) = self.overlay_grid.as_mut() {
+                                let _ = grid.clear_overlay(cell_x, cell_y);
+                            }
+                            if let Some(grid) = self.smudge_grid.as_mut() {
+                                let _ = grid.clear_cell_slot(cell_x, cell_y);
+                            }
+                        },
+                    )
                 })
             {
                 // Cliff stamps change Cell+11B without refreshing

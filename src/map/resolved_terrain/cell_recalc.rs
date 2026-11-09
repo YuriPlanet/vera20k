@@ -720,6 +720,39 @@ impl ResolvedTerrainGrid {
         }
         // The Rock row, as a TMP Rock cell takes it.
         let rock = land_row(state.terrain_rules, LandType::Rock);
+        self.write_cliff_back_rock(index, &rock, apply_base, apply_current)
+    }
+
+    /// The final-normal CliffBack writer of `CellClass::RecalcAttributes @
+    /// 0x0047D2B0` (`0x0047DB59..0x0047DD2A`, then RecalcZoneType at
+    /// `0x0047DD36`) for a runtime tile stamp whose other attributes are
+    /// already written ([`recalc_dynamic_tile_attributes`]).
+    pub(super) fn reclass_cell_behind_cliff(&mut self, index: usize, rock: &LandTypeSemantics) {
+        if !cliff_back_normal_reclass_applies(self.cells[index].land_type)
+            || !self.authored_load_cell_is_behind_cliff(index)
+        {
+            return;
+        }
+        self.write_cliff_back_rock(index, rock, true, true);
+        let cell = &mut self.cells[index];
+        cell.ground_walk_blocked =
+            rock.ground_blocked || cell.terrain_object_blocks || cell.overlay_blocks;
+        cell.zone_type = recalc_zone_type(
+            cell.outside_playfield,
+            cell.overlay_zone_type,
+            cell.land_type,
+            cell.speed_costs.wheel,
+            cell.terrain_object_occupation,
+        );
+    }
+
+    fn write_cliff_back_rock(
+        &mut self,
+        index: usize,
+        rock: &LandTypeSemantics,
+        apply_base: bool,
+        apply_current: bool,
+    ) -> Option<bool> {
         let cell = &mut self.cells[index];
         if apply_base {
             cell.base_land_type = LandType::Rock.as_index();

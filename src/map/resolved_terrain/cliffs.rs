@@ -177,6 +177,7 @@ impl ResolvedTerrainGrid {
         &mut self,
         rx: u16,
         ry: u16,
+        cliff_back_rock: Option<&LandTypeSemantics>,
         mut clear_replacement_cell: impl FnMut(u16, u16),
     ) -> Option<DestroyableCliffMutation> {
         let catalog = self.destroyable_cliff_catalog.clone()?;
@@ -297,6 +298,17 @@ impl ResolvedTerrainGrid {
                         changed_cells.push((x, y));
                     }
                 }
+            }
+        }
+
+        // Family A 0x0058137B, family B 0x00581A7A: RecalcAttributes once
+        // more over the old footprint, every Level now final. The retail
+        // stamps cover that footprint exactly, and the one answer the stamps'
+        // own Recalc could have got wrong is the CliffBack neighbour test.
+        if let Some(rock) = cliff_back_rock {
+            for &(x, y) in &original_footprint {
+                let index = self.index(x, y).expect("validated real cell");
+                self.reclass_cell_behind_cliff(index, rock);
             }
         }
 
