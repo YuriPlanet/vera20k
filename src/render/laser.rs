@@ -175,6 +175,12 @@ impl LaserDraw {
         } else {
             rgb.map(|v| v >> 1)
         };
+        // Retail beams are 1..=5 rings wide. At 40 or more the per-ring halving
+        // below runs out of colour after a handful of rings and `break`s, so
+        // the beam is drawn as thin as a hairline whatever thickness it asked
+        // for. A wide beam therefore fades linearly across every ring it
+        // requested instead of halving to black.
+        let wide = self.width > 8;
         const OFFSETS: [[i32; 4]; 8] = [
             [-1, -1, 1, 1],
             [0, -1, 0, 1],
@@ -197,8 +203,17 @@ impl LaserDraw {
                 a[1] = a[1].wrapping_add(steps[1]);
                 b[0] = b[0].wrapping_add(steps[2]);
             }
-            line(shift(from, a), shift(to, a), side);
-            line(shift(from, b), shift(to, b), side);
+            let ring = if wide {
+                let remaining = (self.width - width + 1).max(0);
+                rgb.map(|v| ((i32::from(v) * remaining) / self.width) as u8)
+            } else {
+                side
+            };
+            line(shift(from, a), shift(to, a), ring);
+            line(shift(from, b), shift(to, b), ring);
+            if wide {
+                continue;
+            }
             if self.supported && width == 1 {
                 side = rgb;
             } else {
