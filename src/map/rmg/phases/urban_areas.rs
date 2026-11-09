@@ -3,8 +3,10 @@
 //!
 //! Stock `RandomMapGenerator::Generate @ 0x00598960` never calls it. Ares'
 //! `MapSeedClass_Generate_UrbanAreas` (Ares.dll 1006ABD0, hook 0x598FB8)
-//! calls it right after the region reset when `RMG::UrbanAreas` is set, so it
-//! is compiled into Ares builds only. Ares also patches the subtree:
+//! calls it right after the region reset when `RMG::UrbanAreas` is set; VERA's
+//! opted-in Urban Presence runs it at the same point in any build
+//! ([`UrbanArgs::vera_fill`]). Ares also patches the subtree, and this port
+//! carries those patches in every build:
 //! - `PlacePavedRoads @ 0x005A5B50`: the four road-end coins jump to their
 //!   default piece (MapSeedClass_Generate_PlacePavedRoads_RoadEnd*, Ares.dll
 //!   1006AA90/1006AAC0/1006AAA0/1006AAB0, hooks 0x5A5C6A/0x5A5D6F/0x5A5F6A/
@@ -89,6 +91,10 @@ pub struct UrbanArgs {
     pub map_h: i32,
     /// Scratch stride (`0x0089C2DC`).
     pub stride: i32,
+    /// VERA extension: an opted-in Buildings value (1..=100) that sets how
+    /// much open land the districts cover (see [`fill_plan`]). `None` keeps
+    /// the native target from `urban_presence`.
+    pub vera_fill: Option<i32>,
 }
 
 /// Everything the pass borrows.
@@ -127,6 +133,17 @@ const MAX_ATTEMPTS: i32 = 10;
 const MAX_PLACEMENTS: i32 = 60;
 /// Building names past this index are used once (`0x005A67E9`).
 const REUSABLE_STRUCTURES: usize = 18;
+/// VERA fill: the district size range [`fill_plan`] assumes, the share of
+/// open land a full Buildings value aims to pave (past 100: pruned edges and
+/// gaps leave districts smaller than drawn), the attempts allowed per wanted
+/// district, and the bounding-rect slack a district may take (native 1.6), so
+/// broken-up land still takes districts. Fill seeds also skip locked cells,
+/// which native accepts and then cannot grow from.
+const FILL_MIN_AREA: i32 = 300;
+const FILL_MAX_AREA: i32 = 1700;
+const FILL_COVER_PERCENT: i64 = 120;
+const FILL_ATTEMPTS_PER_DISTRICT: i32 = 3;
+const FILL_COMPACTNESS: f64 = 2.2;
 /// Plaza sizes in try order (`0x005A78D9..0x005A7964`).
 const PLAZAS: [(i32, i32); 5] = [(6, 4), (4, 6), (4, 4), (4, 2), (2, 4)];
 
@@ -154,12 +171,15 @@ fn step(cell: (i32, i32), dir: usize) -> (i32, i32) {
 /// (`0x005A89D0`, `0x005A82E0`, `0x005A8720`) is unreachable and not ported.
 pub fn run(ctx: &mut UrbanCtx<'_>, args: &UrbanArgs, out: &mut UrbanOutput<'_>) {
     let presence = f64::from(args.urban_presence);
-    // 0x005A502E: FILD +0x60; FADD 0.32 [0x007EDAF0]; FMUL 3.0 [0x007E3D90].
-    let target = ftol(t(presence).add(t(0.32)).mul(t(3.0)));
+    let (target, max_attempts) = match args.vera_fill {
+        Some(fill) => fill_plan(ctx, args, fill),
+        // 0x005A502E: FILD +0x60; FADD 0.32 [0x007EDAF0]; FMUL 3.0 [0x007E3D90].
+        None => (ftol(t(presence).add(t(0.32)).mul(t(3.0))), MAX_ATTEMPTS),
+    };
     let mut successes = 0;
     let mut attempts = 0;
     while successes < target {
-        let (seed, scans) = pick_seed(ctx, args.stride);
+        let (seed, scans) = pick_seed(ctx, args.stride, args.vera_fill.is_some());
         // 0x005A51C6: the urban branch runs when 1.0 - presence <= draw * K.
         let draw = t(f64::from(ctx.rng.next_u32())).mul(t(f64::from_bits(RANGE_K_BITS)));
         if draw.lt(t(1.0).sub(t(presence))) {
@@ -168,7 +188,12 @@ pub fn run(ctx: &mut UrbanCtx<'_>, args: &UrbanArgs, out: &mut UrbanOutput<'_>) 
         // The twentieth scan skips the area but still counts the attempt.
         if scans != MAX_SEED_SCANS {
             let size = area_size(ctx, args);
-            if let Some(cells) = grow_area(ctx, seed, size) {
+            let compact = if args.vera_fill.is_some() {
+                FILL_COMPACTNESS
+            } else {
+                1.6
+            };
+            if let Some(cells) = grow_area(ctx, seed, size, compact) {
                 place_paved_roads(ctx, &cells);
                 place_structures(ctx, &cells, out);
                 place_foots(ctx, &cells, out);
@@ -177,10 +202,31 @@ pub fn run(ctx: &mut UrbanCtx<'_>, args: &UrbanArgs, out: &mut UrbanOutput<'_>) 
             }
         }
         attempts += 1;
-        if attempts >= MAX_ATTEMPTS {
+        if attempts >= max_attempts {
             return;
         }
     }
+}
+
+/// VERA extension: the districts and attempts for an opted-in Buildings
+/// value. One district at 1; at 100, enough districts of the mean size
+/// [`area_size`] draws to pave most of the open land, the clear cells the
+/// earlier phases left unlocked (start bases, ore fields and tech buildings
+/// stay locked). Values between scale linearly.
+fn fill_plan(ctx: &mut UrbanCtx<'_>, args: &UrbanArgs, fill: i32) -> (i32, i32) {
+    let mut open = 0i64;
+    for (x, y) in ctx.grid.native_cells() {
+        let cell = *ctx.grid.cell_native(x, y);
+        if ctx.ids.is_clear(cell.tile) && cell.overlay == -1 && !ctx.scratch.get(x, y).water_lock {
+            open += 1;
+        }
+    }
+    let district =
+        i64::from((args.map_w * args.map_h * 2 / 30).clamp(FILL_MIN_AREA, FILL_MAX_AREA));
+    let full = (open * FILL_COVER_PERCENT / 100 / district).max(1);
+    let target = 1 + (i64::from(fill.clamp(1, 100)) - 1) * (full - 1) / 99;
+    let target = target as i32;
+    (target, target * FILL_ATTEMPTS_PER_DISTRICT + MAX_ATTEMPTS)
 }
 
 /// The seed loop of `0x005A5020` (0x005A50B1..0x005A51C2): a clear cell drawn
@@ -188,7 +234,7 @@ pub fn run(ctx: &mut UrbanCtx<'_>, args: &UrbanArgs, out: &mut UrbanOutput<'_>) 
 /// water-locked seed with special terrain in its 14x14 square restarts the
 /// picks; every pass counts one scan, and from the twentieth on the square
 /// is not tested.
-fn pick_seed(ctx: &mut UrbanCtx<'_>, stride: i32) -> ((i32, i32), i32) {
+fn pick_seed(ctx: &mut UrbanCtx<'_>, stride: i32, fill: bool) -> ((i32, i32), i32) {
     let mut scans = 0;
     let mut picks = 0;
     loop {
@@ -202,7 +248,9 @@ fn pick_seed(ctx: &mut UrbanCtx<'_>, stride: i32) -> ((i32, i32), i32) {
             (0, 0)
         } else {
             let cell = (i32::from(record.x), i32::from(record.y));
-            if !ctx.ids.is_clear(ctx.grid.cell_native(cell.0, cell.1).tile) {
+            if !ctx.ids.is_clear(ctx.grid.cell_native(cell.0, cell.1).tile)
+                || (fill && ctx.scratch.get(cell.0, cell.1).water_lock)
+            {
                 continue;
             }
             cell
@@ -270,7 +318,12 @@ fn bounds(cells: &[(i32, i32)]) -> (i32, i32, i32, i32) {
 /// cell keep the area: cells next to unpaved ground leave the list, the rest
 /// are locked and a third of them get a misc-pave decoration. Otherwise every
 /// listed cell returns to the unassigned tile and there is no area.
-fn grow_area(ctx: &mut UrbanCtx<'_>, seed: (i32, i32), size: i32) -> Option<Vec<(i32, i32)>> {
+fn grow_area(
+    ctx: &mut UrbanCtx<'_>,
+    seed: (i32, i32),
+    size: i32,
+    compact: f64,
+) -> Option<Vec<(i32, i32)>> {
     let mut heap = CellHeap::new(size.max(0) as usize * 10);
     for (x, y) in ctx.grid.native_cells() {
         ctx.scratch.get_mut(x, y).stamp = 0;
@@ -318,7 +371,7 @@ fn grow_area(ctx: &mut UrbanCtx<'_>, seed: (i32, i32), size: i32) -> Option<Vec<
 
     let (_, _, w, h) = bounds(&cells);
     let count = cells.len() as i32;
-    if steps > 100 && t(f64::from(w * h)).lt(t(f64::from(count)).mul(t(1.6))) {
+    if steps > 100 && t(f64::from(w * h)).lt(t(f64::from(count)).mul(t(compact))) {
         prune_edges(ctx, &mut cells);
         for &(x, y) in &cells {
             ctx.scratch.get_mut(x, y).water_lock = true;
@@ -924,6 +977,7 @@ mod tests {
                 map_w,
                 map_h,
                 stride,
+                vera_fill: None,
             },
             playfield: PlayfieldBounds::from_normalized_local_size(map_w, 2, 5, gen_w, gen_h),
         }
@@ -1104,7 +1158,7 @@ mod tests {
     fn a_small_area_is_rolled_back_to_unassigned_tiles() {
         let mut w = world();
         with_ctx(&mut w, |ctx| {
-            assert_eq!(grow_area(ctx, (80, 80), 100), None);
+            assert_eq!(grow_area(ctx, (80, 80), 100, 1.6), None);
         });
         assert_eq!(w.grid.get(80, 80).unwrap().tile, TILE_UNASSIGNED);
         assert!(

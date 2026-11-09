@@ -55,6 +55,18 @@ pub struct RmgOptions {
     pub urban_areas: bool,
 }
 
+impl RmgOptions {
+    /// Whether the urban pass (`0x005A5020`) runs: Ares' `RMG::UrbanAreas`,
+    /// or VERA's opted-in Urban Presence.
+    pub fn urban_pass_runs(&self) -> bool {
+        #[cfg(feature = "ares")]
+        if self.urban_areas {
+            return true;
+        }
+        self.urban_enabled
+    }
+}
+
 /// VERA's `.SED` key for [`RmgOptions::urban_enabled`].
 const VERA_URBAN_KEY: &str = "VeraUrban";
 

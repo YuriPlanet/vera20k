@@ -153,7 +153,6 @@ pub struct GenerationObjects<'a> {
     pub tech_types: &'a [TechType],
     /// The Ares urban catalog and Main draw, used when the options' urban
     /// switch is set.
-    #[cfg(feature = "ares")]
     pub urban_areas: Option<super::phases::urban_areas::UrbanInputs<'a>>,
 }
 
@@ -162,7 +161,6 @@ impl<'a> GenerationObjects<'a> {
     pub fn tech(tech_types: &'a [TechType]) -> Self {
         Self {
             tech_types,
-            #[cfg(feature = "ares")]
             urban_areas: None,
         }
     }
@@ -201,6 +199,37 @@ fn draw_bridge_enable(rng: &mut RmgRng) -> bool {
         .lt(TruncF64::from_f64(f64::from(BRIDGE_ENABLE_CHANCE)))
 }
 
+/// Mixed into the map seed for VERA's urban foot stream.
+const VERA_URBAN_SALT: u16 = 0xB71D;
+
+/// The urban pass's inputs, the presence it reads and VERA's fill: Ares'
+/// switch keeps the seed's own presence and the native district count;
+/// VERA's opt-in passes presence 1 (`0x005A5020` never takes its early exit
+/// at 1 or more) and the Buildings slider (1..=100) as the fill, from one
+/// district up to most of the open land.
+fn urban_inputs<'a>(
+    options: &RmgOptions,
+    objects: &'a GenerationObjects<'a>,
+    vera: &'a super::phases::urban_areas::UrbanInputs<'a>,
+) -> (
+    Option<&'a super::phases::urban_areas::UrbanInputs<'a>>,
+    i32,
+    Option<i32>,
+) {
+    #[cfg(feature = "ares")]
+    if options.urban_areas {
+        if objects.urban_areas.is_none() {
+            log::warn!("random map: urban areas requested without an urban catalog");
+        }
+        return (objects.urban_areas.as_ref(), options.urban_presence, None);
+    }
+    let _ = objects;
+    if options.urban_enabled && options.urban_presence > 0 {
+        return (Some(vera), 1, Some(options.urban_presence.min(100)));
+    }
+    (None, options.urban_presence, None)
+}
+
 /// As [`generate_map`], calling `observe` at every generation boundary.
 ///
 /// The observer sees the run; it cannot alter it. Everything that decides the
@@ -216,15 +245,16 @@ pub fn generate_map_observed(
 ) -> GeneratedMap {
     let mut options = options.clone();
     options.normalize();
-    #[cfg(feature = "ares")]
-    let urban = if options.urban_areas {
-        if objects.urban_areas.is_none() {
-            log::warn!("random map: urban areas requested without an urban catalog");
-        }
-        objects.urban_areas.as_ref()
-    } else {
-        None
+    // VERA extension: an opted-in Urban Presence runs the same urban pass with
+    // VERA's catalogue, and its foot picks draw from a stream seeded by the
+    // map seed, so the setup preview and the match load build the same map.
+    let vera_draws = std::cell::RefCell::new(RmgRng::new(options.seed_u16() ^ VERA_URBAN_SALT));
+    let vera_draw = || vera_draws.borrow_mut().next_u32();
+    let vera_urban = super::phases::urban_areas::UrbanInputs {
+        catalog: &settings.vera_urban,
+        main_draw: &vera_draw,
     };
+    let (urban, urban_presence, urban_fill) = urban_inputs(&options, objects, &vera_urban);
 
     let geometry = MapGeometry::from_options(&options);
     let mut rng = RmgRng::new(options.seed_u16());
@@ -261,11 +291,8 @@ pub fn generate_map_observed(
         // (0..3); a final binary confirmation is still open.
         width: options.width,
         max_trees: settings.max_trees,
-        urban_types: &settings.urban_types,
-        urban_presence: options.urban_presence,
-        urban_enabled: options.urban_enabled,
-        seed: options.seed_u16(),
-        #[cfg(feature = "ares")]
+        urban_presence,
+        urban_fill,
         urban_areas: urban,
     };
 
@@ -313,7 +340,6 @@ pub fn generate_map_observed(
         &output.structures,
         &output.waypoints,
     );
-    #[cfg(feature = "ares")]
     emit::populate_urban(&mut map_file, &output.urban_areas);
 
     GeneratedMap {
@@ -649,13 +675,14 @@ mod tests {
         }
     }
 
-    /// VERA extension: an opted-in Urban Presence adds towns of the theater's
-    /// civilian buildings on top of exactly the terrain, ore and starts the
-    /// seed makes without it, and traces every building so the load replays
-    /// it; the same presence without the opt-in adds nothing.
+    /// VERA extension: an opted-in Urban Presence runs the urban pass
+    /// (`0x005A5020`) in any build with VERA's catalogue: paved roads,
+    /// civilian buildings of the theater's style families and foots, every one
+    /// traced so the load replays it. The same presence without the opt-in
+    /// leaves the pass out.
     #[test]
     #[ignore = "slow; run when changing what it covers"]
-    fn opted_in_urban_presence_adds_towns_without_touching_the_terrain() {
+    fn opted_in_urban_presence_builds_paved_districts() {
         let Some((mut settings, resolved, blocks)) = retail_inputs() else {
             return;
         };
@@ -664,33 +691,39 @@ mod tests {
         let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()
             .expect("retail rules");
         let art = crate::rules::retail_ini_fixture::retail_ini("artmd.ini").expect("art");
-        settings.urban_types = crate::map::rmg::tech_catalog::resolve_urban(
+        settings.vera_urban = crate::map::rmg::tech_catalog::resolve_vera_urban(
             &rules,
             &art,
             &[],
             "tem",
             "TEMPERATE",
+            4242,
             |file| assets.contains(file),
         );
+        assert!(!settings.vera_urban.structures.is_empty());
+        assert!(!settings.vera_urban.infantry.is_empty());
         assert!(
-            !settings.urban_types.is_empty(),
-            "TEMPERATE draws civilian buildings"
+            !settings
+                .vera_urban
+                .structures
+                .iter()
+                .any(|entry| entry.name == "CALOND06"),
+            "Temperate draws CALOND06 as Westwood's placeholder cube"
         );
 
         let base = RmgOptions {
             num_players: 4,
+            width: 2,
+            height: 2,
             urban_presence: 80,
-            urban_enabled: false,
+            water_amount: 15,
+            seed: 4242,
             ..options(1, 0)
         };
-        let plain = generate_map(
-            &base,
-            &settings,
-            &resolved,
-            &blocks,
-            &GenerationObjects::tech(&[]),
-        );
-        let towns = generate_map(
+        let objects = GenerationObjects::tech(&[]);
+        let plain = generate_map(&base, &settings, &resolved, &blocks, &objects);
+        assert!(!plain.stages_run.contains(&Stage::UrbanAreas));
+        let urban = generate_map(
             &RmgOptions {
                 urban_enabled: true,
                 ..base.clone()
@@ -698,36 +731,49 @@ mod tests {
             &settings,
             &resolved,
             &blocks,
-            &GenerationObjects::tech(&[]),
+            &objects,
         );
-        let terrain = |g: &GeneratedMap| {
-            let tiles: Vec<_> = g
-                .map_file
+        assert!(urban.stages_run.contains(&Stage::UrbanAreas));
+        let roads = urban
+            .map_file
+            .cells
+            .iter()
+            .filter(|cell| resolved.ids.is_paved_road(cell.tile_index))
+            .count();
+        assert!(roads > 0, "the district has paved roads");
+        // Buildings 1 is one district; 100 paves most of the open land (this
+        // small map's land is broken up, so it takes only a few more).
+        let paved = |presence: i32| {
+            let map = generate_map(
+                &RmgOptions {
+                    urban_enabled: true,
+                    urban_presence: presence,
+                    ..base.clone()
+                },
+                &settings,
+                &resolved,
+                &blocks,
+                &objects,
+            );
+            map.map_file
                 .cells
                 .iter()
-                .map(|c| (c.rx, c.ry, c.tile_index, c.sub_tile, c.z))
-                .collect();
-            let overlays: Vec<_> = g
-                .map_file
-                .overlays
-                .iter()
-                .map(|o| (o.rx, o.ry, o.overlay_id, o.frame))
-                .collect();
-            (tiles, overlays, g.start_waypoints.clone())
+                .filter(|cell| cell.tile_index == resolved.ids.pave)
+                .count()
         };
+        let (least, most) = (paved(1), paved(100));
         assert!(
-            terrain(&plain) == terrain(&towns),
-            "the towns change no terrain"
+            most > least * 3 / 2,
+            "Buildings 100 paves {most} cells, 1 paves {least}"
         );
         assert!(
-            towns.map_file.entities.len() > plain.map_file.entities.len() + 4,
-            "towns add buildings: {} vs {}",
-            towns.map_file.entities.len(),
+            urban.map_file.entities.len() > plain.map_file.entities.len() + 4,
+            "the district adds buildings: {} vs {}",
+            urban.map_file.entities.len(),
             plain.map_file.entities.len()
         );
-        // Every entity has its emitted constructor, as the load validates.
-        for (index, entity) in towns.map_file.entities.iter().enumerate() {
-            let traced = towns.construction_trace.events.iter().any(|event| {
+        for (index, entity) in urban.map_file.entities.iter().enumerate() {
+            let traced = urban.construction_trace.events.iter().any(|event| {
                 event.outcome
                     == crate::map::rmg::RmgConstructionOutcome::Emitted {
                         entity_index: index,

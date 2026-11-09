@@ -764,12 +764,13 @@ pub(super) fn prepare_random_map_generation(
     if options.urban_enabled
         && let Some((owner, preview)) = native_rules.zip(preview_rules.as_ref())
     {
-        settings.urban_types = crate::map::rmg::tech_catalog::resolve_urban(
+        settings.vera_urban = crate::map::rmg::tech_catalog::resolve_vera_urban(
             &preview.rules,
             owner.fixed_art(),
             &tech_types,
             theater.extension,
             theater_name,
+            options.seed_u16(),
             |file| asset_manager.contains(file),
         );
     }

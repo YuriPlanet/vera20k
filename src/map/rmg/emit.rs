@@ -195,7 +195,6 @@ fn neutral_entity(name: &str, category: EntityCategory, cell: (i16, i16), facing
 
 /// Append the urban objects after the structures [`populate`] wrote, in the
 /// order the trace's entity indices name them.
-#[cfg(feature = "ares")]
 pub fn populate_urban(map_file: &mut MapFile, objects: &[super::phases::urban_areas::UrbanObject]) {
     for object in objects {
         map_file.entities.push(neutral_entity(

@@ -8,11 +8,9 @@
 pub enum RmgConstructionPhase {
     BridgeRepairHut,
     NeutralTech,
-    /// VERA extension: a civilian building of the urban stage.
-    Urban,
-    /// Ares urban areas: civilian buildings, infantry and vehicles
-    /// (`0x005A6510`, `0x005A6920` under hook 0x598FB8).
-    #[cfg(feature = "ares")]
+    /// Urban areas: civilian buildings, infantry and vehicles (`0x005A6510`,
+    /// `0x005A6920`), under Ares hook 0x598FB8 or VERA's opted-in Urban
+    /// Presence in any build.
     UrbanAreas,
 }
 
