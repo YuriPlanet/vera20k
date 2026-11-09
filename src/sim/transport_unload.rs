@@ -571,20 +571,22 @@ fn eject_head_passenger(
                 sim.team_add_member(team, pax_id, false, rules, overlay_registry, effects);
             }
 
-            // `0x0073DC35..0x0073DC67` (PlayAtCoord `0x00750E20`): at the
-            // transport's Location, after the passenger's Unlimbo.
-            if let Some(sound) = leave_sound {
-                let world = crate::sim::movement::ground_pose::object_location(
+            // `0x0073DC35..0x0073DC67` (PlayAtCoord `0x00750E20`, flags 0):
+            // a retained request at the transport's Location, after the
+            // passenger's Unlimbo, once per placed passenger.
+            if let Some(sound_id) = leave_sound {
+                let coordinate = crate::sim::movement::ground_pose::object_location(
                     sim.substrate
                         .entities
                         .get(transport_id)
                         .expect("transport resolved before the head pop"),
                     sim.resolved_terrain.as_ref(),
-                )
-                .into();
-                let sound_id = sim.interner.intern(&sound);
-                sim.sound_events
-                    .emit(SimSoundEvent::LeaveTransport { sound_id, world });
+                );
+                sim.sound_events.emit(SimSoundEvent::VocAtCoord {
+                    sound_id,
+                    coordinate,
+                    flags: 0,
+                });
             }
             Ok(())
         },

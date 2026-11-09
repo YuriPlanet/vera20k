@@ -683,15 +683,6 @@ pub enum SimSoundEvent {
         /// (`0x00739E81..0x00739EB3`).
         world: crate::sim::anim_class::AnimWorldCoord,
     },
-    /// A transport placed an ejected passenger — `UnitClass::Mission_Unload @
-    /// 0x0073D630` plays the transport type's `LeaveTransportSound=`
-    /// (`+0x568`) through `VocClass::PlayAtCoord @ 0x00750E20` at the
-    /// TRANSPORT's own Location after the passenger's Unlimbo
-    /// (`0x0073DC35`..`0x0073DC67`), once per placed passenger.
-    LeaveTransport {
-        sound_id: InternedId,
-        world: crate::sim::anim_class::AnimWorldCoord,
-    },
     /// A building finished construction — play EVA "Construction complete".
     /// `type_id` is the factory's already-resolved completed product; the app
     /// names it in the optional accessibility text line. Transient event only:

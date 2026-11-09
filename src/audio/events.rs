@@ -182,15 +182,6 @@ pub enum GameSoundEvent {
         source: Option<SoundSource>,
     },
 
-    /// A transport placed an ejected passenger — play the transport type's
-    /// LeaveTransportSound at the transport's screen position.
-    LeaveTransport {
-        /// sound.ini ID from the transport type's LeaveTransportSound= field.
-        sound_id: String,
-        /// Screen position of the sound source (for spatial audio).
-        source: Option<SoundSource>,
-    },
-
     /// An infantry entity entered the Undeploying phase — play UndeploySound.
     EntityUndeployed {
         /// sound.ini ID from the entity's UndeploySound= field.
@@ -371,7 +362,6 @@ impl GameSoundEvent {
             | Self::EntityCrushed { sound_id, .. }
             | Self::AircraftPhase { sound_id, .. }
             | Self::EntityDeployed { sound_id, .. }
-            | Self::LeaveTransport { sound_id, .. }
             | Self::EntityUndeployed { sound_id, .. }
             | Self::ChronoTeleport { sound_id, .. }
             | Self::UnitPromoted { sound_id, .. }
@@ -411,7 +401,6 @@ impl GameSoundEvent {
             | Self::EntityCrushed { source, .. }
             | Self::AircraftPhase { source, .. }
             | Self::EntityDeployed { source, .. }
-            | Self::LeaveTransport { source, .. }
             | Self::EntityUndeployed { source, .. }
             | Self::ChronoTeleport { source, .. }
             | Self::UnitPromoted { source, .. }
@@ -539,10 +528,13 @@ impl GameSoundEvent {
 /// effect is common when shooting scenery. These requests survive actor
 /// Stop/destruction, use the common audio pump, and retire via750EC0/750FA0.
 ///
-/// Residual: other750E20 families, including global BuildingDie and mixed
-/// superweapon callers, still use their existing direct presentation paths.
-/// This can affect camera movement/retry/cleanup at those triggers; their
-/// own caller migrations are separate chains, not blanket source-based routing.
+/// The other750E20 callers use the same retained request: BuildingDie
+/// (441779), the passenger sounds (7106D0, Unit Mission_Unload 73DC67), the
+/// trigger actions (6DE831, 6DE8A3) and the SuperClass::Launch cues (6CCE28,
+/// 6CD7BF, 6CD8D3, 6CDCAE, 6CDDE9).
+///
+/// Residual: `CreateUnitSound=` (Factory_AI 450198, Place_Production
+/// 4FB50D) is not ported; see `sim::production::factory_ai`.
 ///
 /// **Partly closed.** `TurretRotateSound=` is landed: the building update's
 /// rotation sample and the `TechnoClass::AI_Update` block drive the type's own
