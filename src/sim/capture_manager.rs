@@ -783,6 +783,27 @@ impl Simulation {
     }
 
     /// `CaptureManagerClass::CaptureUnit @ 0x00471D40`.
+    /// The announce=1 that CaptureUnit (`0x00471DAE`) and FreeUnit
+    /// (`0x004720D5`) pass to the target's ChangeOwner (vt+0x3D4). Only
+    /// `BuildingClass::ChangeOwner @ 0x00448260` reads it: radar event 10 and
+    /// `EVA_BuildingCaptured` for the player on either side. Run before the
+    /// owner swap, as that block reads the old owner.
+    fn announce_controlled_building(
+        &mut self,
+        target_id: u64,
+        new_owner: InternedId,
+        rules: &RuleSet,
+    ) {
+        if self
+            .substrate
+            .entities
+            .get(target_id)
+            .is_some_and(|target| target.category() == EntityCategory::Structure)
+        {
+            self.announce_building_capture(target_id, new_owner, rules);
+        }
+    }
+
     pub(crate) fn capture_unit(
         &mut self,
         controller_id: u64,
@@ -927,6 +948,7 @@ impl Simulation {
         };
         // 0x00471DB8: ChangeOwner(controller's house, 1). It refuses only an
         // unchanged house, which CanCapture already excluded.
+        self.announce_controlled_building(target_id, controller_owner, rules);
         self.change_owner_with_rules(target_id, controller_owner, rules, registry, frame_effects);
         if let Some(manager) = self
             .substrate
@@ -1437,6 +1459,8 @@ impl Simulation {
                     self.sound_events.emit(event);
                 }
             }
+            // 0x004720D5..0x004720DA: ChangeOwner(original house, 1).
+            self.announce_controlled_building(victim_id, original_owner, rules);
             self.change_owner_with_rules(victim_id, original_owner, rules, registry, frame_effects);
             // DecideUnitFate runs while `+0x2C0` still names the controller.
             // Back with its own house, the unit cannot join the controller's
