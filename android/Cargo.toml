@@ -1,6 +1,6 @@
 [package]
 name = "vera20k-android"
-version = "0.2.9"
+version = "0.2.10"
 edition = "2024"
 description = "Android NativeActivity entry point for the VERA20k client"
 publish = false
