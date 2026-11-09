@@ -401,3 +401,105 @@ fn power_off_matches_original_execution() {
     }
     assert_eq!(rows, 49);
 }
+
+/// Run_AStar `0x004CBBA0` starts at Foot vt+0x4C (`0x004DBDF0`): a Hover whose
+/// route ran out short of its live head searches from the head's cell, so the
+/// new route holds no step back onto the head.
+#[test]
+fn a_route_search_starts_at_the_cell_of_the_live_head() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::components::{DriveCoord, NavTargetRef};
+    use crate::sim::movement::FindPathResult;
+    use crate::sim::movement::movement_tick::FootPathRequest;
+    use crate::sim::world::{FrameEffects, Simulation};
+
+    let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=HOVR\n[HOVR]\nStrength=300\nArmor=heavy\nSpeed=8\n\
+         MovementZone=Amphibious\nSpeedType=Hover\n\
+         Locomotor={4A582742-9839-11d1-B709-00A024DDAFD1}\n",
+    ))
+    .expect("hover rules");
+    let mut sim = Simulation::with_seed(7);
+    crate::sim::arena_fixture::supply_native_map(&mut sim);
+    let id = sim
+        .spawn_object("HOVR", "Americans", 10, 10, 64, &rules)
+        .expect("spawn hover");
+    assert!(sim.set_unit_destination(
+        id,
+        NavTargetRef::cell(14, 10),
+        &rules,
+        true,
+        FrameEffects::default(),
+    ));
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .navigation
+        .path_replay_mut()
+        .set_directions_for_test(Vec::new());
+
+    let request = FootPathRequest::track(
+        &sim.substrate.entities,
+        id,
+        DriveCoord::cell(14, 10, 0),
+        0,
+        sim.playfield_bounds(),
+    )
+    .expect("live hover");
+    let found = sim
+        .foot_find_path(&request, &rules, None, FrameEffects::default())
+        .expect("searches");
+
+    assert_ne!(found, FindPathResult::Failed);
+    let directions = sim
+        .substrate
+        .entities
+        .get(id)
+        .unwrap()
+        .navigation
+        .path_replay()
+        .remaining_directions()
+        .to_vec();
+    assert_eq!(directions.len(), 3, "from the head at (11,10) to (14,10)");
+}
+
+/// Move_To 0x00514D90 ends in `Path_And_Arrival(0)` and `ProcessMovement(1)`
+/// (0x00514E85..0x00514E92), so the order alone leaves a stationary Foot with
+/// its route and the first head, before the Foot's next Process.
+#[test]
+fn an_order_takes_the_first_step_before_the_next_process() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::components::NavTargetRef;
+    use crate::sim::world::{FrameEffects, Simulation};
+
+    let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=HOVR\n[HOVR]\nStrength=300\nArmor=heavy\nSpeed=8\n\
+         MovementZone=Amphibious\nSpeedType=Hover\n\
+         Locomotor={4A582742-9839-11d1-B709-00A024DDAFD1}\n",
+    ))
+    .expect("hover rules");
+    let mut sim = Simulation::with_seed(7);
+    crate::sim::arena_fixture::supply_native_map(&mut sim);
+    let id = sim
+        .spawn_object("HOVR", "Americans", 10, 10, 64, &rules)
+        .expect("spawn hover");
+
+    assert!(sim.set_unit_destination(
+        id,
+        NavTargetRef::cell(14, 10),
+        &rules,
+        true,
+        FrameEffects::default(),
+    ));
+
+    let entity = sim.substrate.entities.get(id).unwrap();
+    let hover = entity.locomotor.as_ref().unwrap().hover_runtime().unwrap();
+    let head = hover.head.expect("Move_To admitted the first cell");
+    assert_eq!((head.x / 256, head.y / 256), (11, 10));
+    assert_eq!(
+        entity.navigation.path_replay().remaining_directions().len(),
+        3,
+        "ProcessMovement consumed the first of the four steps"
+    );
+}

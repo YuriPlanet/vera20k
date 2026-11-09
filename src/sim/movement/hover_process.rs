@@ -12,18 +12,6 @@
 //! as the Foot's one Process.
 //!
 //! Residuals:
-//! - Move_To's own `Path_And_Arrival(0)` and `ProcessMovement(1)`
-//!   (0x00514E5A..0x00514F5C) run at the Foot's next Process, through
-//!   SpeedUpdate's null-head arm (0x005162BA..0x00516309), which makes the
-//!   same two calls after the same `Set_Speed(1.0)`: the Foot setter has no
-//!   overlay registry for Can_Enter_Cell. Trigger: every Hover order.
-//!   Effect: commands run before the object turns, so native's first
-//!   Process after an order already has a head and turns and ramps; VERA's
-//!   takes the null-head arm, so every order starts one frame later, its
-//!   Can_Enter_Cell and cell claim run after the objects before it in the
-//!   turn order have moved, and a Foot that already has a head keeps it
-//!   until arrival instead of being re-admitted. Risk: order-to-motion
-//!   timing and same-frame cell claims.
 //! - Move_To's early return for a null coordinate (0x00514D90 entry) is not
 //!   ported: every VERA caller passes a resolved coordinate, so it is dormant.
 //! - The Foot's AbstractClass ID (Fetch_ID) phases the altitude bob
@@ -101,26 +89,38 @@ fn path_word(entity: &GameEntity, index: usize) -> Option<u8> {
         .copied()
 }
 
+/// What [`hover_move_to`] leaves to its caller, the owner of the Simulation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum HoverMoveTo {
+    /// The Foot is not on Hover.
+    NotHover,
+    /// Move_To returned after its state writes.
+    Done,
+    /// Move_To goes on to [`Simulation::hover_move_to_path_step`].
+    PathStepOwed,
+}
+
 /// `Move_To` 0x00514D90 on a Hover Foot, as the Foot setter (0x004D94B0)
 /// dispatches it: the destination, dropped to the ground (a deck on a
-/// structural cell), then the speed request. Returns false when the Foot is
-/// not on Hover. The Path_And_Arrival/ProcessMovement pair waits for the
-/// next Process (module residual).
+/// structural cell), then the speed request. House 0x0053A130 answers false,
+/// so the ion-storm Power_Off arm (0x00514DC7..0x00514DF0) is dead. The
+/// caller finishes with [`Simulation::hover_move_to_path_step`] on
+/// [`HoverMoveTo::PathStepOwed`].
 pub(crate) fn hover_move_to(
     entity: &mut GameEntity,
     coord: DriveCoord,
     terrain: Option<&ResolvedTerrainGrid>,
     frame: u32,
-) -> bool {
+) -> HoverMoveTo {
     let paralyzed = entity.parasite.is_paralyzed(frame);
     let airborne = hover_is_powered(entity, terrain.map(NativeCellQuery::canonical).as_ref());
     let Some(hover) = runtime_mut(entity) else {
-        return false;
+        return HoverMoveTo::NotHover;
     };
     //514D9C..514DBE: the coordinate is stored before the paralysis return.
     hover.destination = Some(coord);
     if paralyzed {
-        return true;
+        return HoverMoveTo::Done;
     }
     //514DE5..514E26: ground height, plus the deck on a structural cell.
     let z = terrain.map_or(coord.z, |terrain| {
@@ -135,19 +135,19 @@ pub(crate) fn hover_move_to(
     });
     hover.destination = Some(DriveCoord { z, ..coord });
     if !airborne {
-        return true;
+        return HoverMoveTo::Done;
     }
-    // Its own Is_Moving_Now (`0x00514E66`): moving now only with a head; a
-    // head leaves the request alone.
+    //514E66: Is_Moving_Now is moving with a nonzero request. A Foot already
+    //moving to a head keeps it; one without a head (514EA1) takes the request.
     let moving_now = hover.ready_state().is_moving_now();
     if moving_now && hover.head.is_some() {
-        return true;
+        return HoverMoveTo::Done;
     }
     if moving_now {
         hover.speed_request = crate::util::native_x87::NativeF64Bits::ONE;
     }
     entity.foot_speed.set_speed_fraction(SIM_ONE);
-    true
+    HoverMoveTo::PathStepOwed
 }
 
 /// `Stop_Moving` 0x00516320 on a Hover Foot: a destination other than the
@@ -325,6 +325,24 @@ impl Simulation {
             rules.general.veteran_speed,
             &self.houses,
         )
+    }
+
+    /// The tail of Move_To 0x00514D90 ([`HoverMoveTo::PathStepOwed`]):
+    /// `Path_And_Arrival(0)` then `ProcessMovement(1)` (0x00514E85..0x00514E92
+    /// and 0x00514F4A..0x00514F5B; the second site's skip of ProcessMovement
+    /// needs a head, and it runs only without one). An order therefore has its
+    /// path, head and cell claim before the Foot's next Process.
+    pub(crate) fn hover_move_to_path_step(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) -> Result<(), FrameAdvanceError> {
+        let registry = effects.overlay_registry();
+        self.hover_path_and_arrival(id, 0, rules, registry, effects)?;
+        let mut out = HoverProcessOutcome::default();
+        self.hover_process_movement(id, true, rules, registry, &mut out, effects)?;
+        Ok(())
     }
 
     /// FootClass::AI's Process call for a Hover Foot (ILocomotion +0x40,

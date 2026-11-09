@@ -25,7 +25,7 @@ use crate::util::native_x87::{
 #[path = "hover_process.rs"]
 mod process;
 
-pub(crate) use process::{hover_is_powered, hover_move_to, hover_stop_moving};
+pub(crate) use process::{HoverMoveTo, hover_is_powered, hover_move_to, hover_stop_moving};
 
 /// `HoverLocomotionClass::Draw_Matrix @ 0x00513F40` (vt+0x24) as the slope
 /// [`ground_locomotor_matrix`] builds it at, with the same angles. Either

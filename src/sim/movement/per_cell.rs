@@ -1715,8 +1715,9 @@ impl Simulation {
     /// Ordinary Fly ingress remains unproven.
     /// Agent Infantry53 then54 follow1/59 at4D8A14..4D8A6B. Map zone24
     /// follows line25/26 at4D8B66..4D8CA5 through the
-    /// same Tag funnel. RESIDUAL: planning-waypoint upkeep
-    /// (`0x004D8DFF..0x004D8F1D`) still needs its own movement-owner audit.
+    /// same Tag funnel. Planning-waypoint upkeep (`0x004D8DFF..0x004D8F1D`) is
+    /// skipped while Foot+0x520 is -1, which a fresh YR game never changes
+    /// (`world::planning`).
     ///
     /// The off-playfield exit at 0x004D8D67..0x004D8DA4 asks the class IsLeavingMap
     /// after Map578460(cell,1), then UnInit and returns before the tail.

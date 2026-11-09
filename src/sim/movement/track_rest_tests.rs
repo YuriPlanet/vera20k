@@ -1,4 +1,5 @@
-//! Connected Drive rest-speed regressions, native Process4B0828 and Stop4AFE00.
+//! Connected Drive and Ship rest-speed regressions, native Process4B0828 and
+//! Stop4AFE00, and their Ship twins Process69FEF0 and Stop69F510.
 use crate::rules::retail_ini_fixture::retail_battle_rules_for_map;
 use crate::sim::movement::track_process::TrackFamily;
 use crate::sim::world::FrameEffects;
@@ -65,6 +66,70 @@ fn drive_stop_retains_speed_until_an_eligible_process_rest_tail() {
         "the admitted Drive rest tail clears speed before the next order"
     );
     assert_eq!(rng_streams(&sim), rng);
+}
+
+/// A rolling Ship with `head` committed and no destination or path.
+fn rolling_ship(
+    rules: &crate::rules::ruleset::RuleSet,
+    head: Option<crate::sim::components::DriveCoord>,
+) -> (crate::sim::world::Simulation, u64) {
+    let mut sim = crate::sim::arena_fixture::rival_arena(rules, 1097);
+    sim.session.set_binary_frame_for_test(100);
+    let id = sim
+        .spawn_object("SHIP", "Americans", 10, 10, 0, rules)
+        .unwrap();
+    let entity = sim.substrate.entities.get_mut(id).unwrap();
+    let loco = entity.locomotor.as_mut().unwrap();
+    assert!(loco.ensure_installed_track_state());
+    assert!(loco.store_track_head(TrackFamily::Ship, head));
+    entity.foot_speed.set_speed_fraction(SimFixed::lit("0.75"));
+    (sim, id)
+}
+
+fn ship_rules() -> crate::rules::ruleset::RuleSet {
+    crate::rules::ruleset::RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+        "[VehicleTypes]\n0=SHIP\n[SHIP]\nStrength=300\nSpeed=6\nROT=5\n\
+         SpeedType=Track\nMovementZone=Normal\nTurret=no\n\
+         Locomotor={2BEA74E1-7CCA-11D3-BE14-00104B62A16C}\n",
+    ))
+    .unwrap()
+}
+
+/// Stop69F510 clamps the target and clears only the destination, even with
+/// no head; Foot speed waits for the Process tail 0x69FEF0.
+#[test]
+fn ship_stop_retains_speed_until_the_process_rest_tail() {
+    let rules = ship_rules();
+    let (mut sim, id) = rolling_ship(&rules, None);
+    sim.locomotor_stop_moving(id, &rules, None, FrameEffects::default())
+        .unwrap();
+    let speed = |sim: &crate::sim::world::Simulation| {
+        let entity = sim.substrate.entities.get(id).unwrap();
+        entity.foot_speed.applied_fraction()
+    };
+    assert_eq!(speed(&sim), SimFixed::lit("0.75"));
+    sim.process_ground_locomotor_stats_for_test(id, Some(&rules), None)
+        .unwrap();
+    assert_eq!(speed(&sim), SIM_ZERO);
+}
+
+/// A Ship whose track has ended rests in that Process (0x69FEF0..0x69FF47),
+/// though the Stop that halted it found a head and left its speed alone.
+#[test]
+fn a_ship_halted_mid_track_rests_when_its_head_is_gone() {
+    let rules = ship_rules();
+    let head = crate::sim::components::DriveCoord::cell(11, 10, 0);
+    let (mut sim, id) = rolling_ship(&rules, Some(head));
+    sim.locomotor_stop_moving(id, &rules, None, FrameEffects::default())
+        .unwrap();
+    let entity = sim.substrate.entities.get_mut(id).unwrap();
+    let loco = entity.locomotor.as_mut().unwrap();
+    assert!(loco.store_track_head(TrackFamily::Ship, None));
+    assert_eq!(entity.foot_speed.applied_fraction(), SimFixed::lit("0.75"));
+    sim.process_ground_locomotor_stats_for_test(id, Some(&rules), None)
+        .unwrap();
+    let entity = sim.substrate.entities.get(id).unwrap();
+    assert_eq!(entity.foot_speed.applied_fraction(), SIM_ZERO);
 }
 
 fn native_bits(value: &serde_json::Value) -> NativeF64Bits {
@@ -336,7 +401,7 @@ fn a_callback_destination_is_published_before_the_drive_rest_decision() {
         .navigation
         .set_nav_com_for_test(Some(NavTargetRef::cell(11, 10)));
     entity.navigation.owe_destination_setter();
-    sim.drive_process_rest_tail(id, &rules, None, FrameEffects::default());
+    sim.track_process_rest_tail(id, &rules, None, FrameEffects::default());
     let entity = sim.substrate.entities.get(id).unwrap();
     assert!(
         entity

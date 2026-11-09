@@ -1309,9 +1309,12 @@ impl Simulation {
                     | LocomotorKind::Walk,
                 ) => {
                     let coord = coord.expect("accepted Move_To captures target +4C");
-                    super::navcom::set_destination_internal_coord(
+                    if super::navcom::set_destination_internal_coord(
                         actor, requested, coord, terrain, frame,
-                    );
+                    ) && let Err(error) = self.hover_move_to_path_step(id, rules, frame_effects)
+                    {
+                        log::warn!("Unit Hover MoveTo {id}: {}", error.cause);
+                    }
                     true
                 }
                 Some(LocomotorKind::Tunnel) => {

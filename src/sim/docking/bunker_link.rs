@@ -289,8 +289,11 @@ pub(crate) fn release_normal(
     if let Some(cell) = bunker_exit_cell(sim, building_id, unit_id, rules) {
         let terrain = sim.resolved_terrain.as_ref();
         let frame = sim.session.binary_frame();
-        if let Some(unit) = sim.substrate.entities.get_mut(unit_id) {
-            crate::sim::movement::set_destination_internal_cell(unit, cell, terrain, frame);
+        if let Some(unit) = sim.substrate.entities.get_mut(unit_id)
+            && crate::sim::movement::set_destination_internal_cell(unit, cell, terrain, frame)
+            && let Err(error) = sim.hover_move_to_path_step(unit_id, rules, effects)
+        {
+            log::warn!("Bunker release Hover MoveTo {unit_id}: {}", error.cause);
         }
     }
     #[cfg(test)]
