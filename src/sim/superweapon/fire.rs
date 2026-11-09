@@ -686,6 +686,17 @@ fn launch(
             SuperWeaponKind::LightningStorm => {
                 super::lightning_storm::ares_launch(sim, rules, owner, sw_type_id, sw, (rx, ry))
             }
+            SuperWeaponKind::ParaDrop | SuperWeaponKind::AmerParaDrop => {
+                super::paradrop::ares_launch(
+                    sim,
+                    rules,
+                    owner,
+                    sw_type_id,
+                    sw,
+                    (rx, ry),
+                    frame_effects,
+                )
+            }
             SuperWeaponKind::GeneticConverter => {
                 super::genetic_converter::ares_launch(
                     sim,
