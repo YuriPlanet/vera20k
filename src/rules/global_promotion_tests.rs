@@ -3,7 +3,7 @@ use super::RuleSet;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
 use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
-use crate::sim::world::{SimSoundEvent, Simulation};
+use crate::sim::world::SimSoundEvent;
 use std::sync::Arc;
 
 const SOUNDS: &str =

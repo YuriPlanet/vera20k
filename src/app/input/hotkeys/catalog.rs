@@ -45,6 +45,7 @@ pub(crate) fn registered_commands() -> &'static [CommandMetadata] {
 
 /// Original gamemd registration only; the keyboard-page fixture compares it
 /// row for row, so VeraX's own commands stay outside it.
+#[cfg(test)]
 pub(crate) fn retail_commands() -> &'static [CommandMetadata] {
     &RETAIL_COMMANDS
 }

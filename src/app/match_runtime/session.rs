@@ -2967,14 +2967,6 @@ impl MatchSession {
         self.frame_checksums.record_frame_checksum(frame, checksum);
     }
 
-    /// Queue_AI_Multiplayer647849..647879 resets both the history and its
-    /// comparison grace timer. The native period is literally Frame+256,
-    /// even at a nonzero-frame restart. The other native trigger is A8B8B8;
-    /// its transport writer is not yet implemented here.
-    pub(crate) fn reset_frame_checksum_history(&mut self, frame: u32) {
-        self.frame_checksums.reset_frame_checksum_history(frame);
-    }
-
     /// Execute_DoList64C668..64C6F2 checks the grace timer before comparing
     /// an on-time FRAMEINFO against history[(event frame - delay) &255]. The
     /// queue owns on-time/House admission; this owner stores and compares the
@@ -4857,7 +4849,7 @@ mod tests {
     fn nonzero_checksum_restart_uses_frame_plus_256_as_timer_period() {
         let mut session = MatchSession::default();
         session.record_frame_checksum(100, 0x1234_5678);
-        session.reset_frame_checksum_history(100);
+        session.frame_checksums.reset_frame_checksum_history(100);
         assert_eq!(session.checksum_history().get(100), 0);
         assert_eq!(
             session.frame_checksums.compare_gate(),

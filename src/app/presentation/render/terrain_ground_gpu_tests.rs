@@ -409,7 +409,6 @@ fn tree_transactions_preserve_tmp_shp_voxel_overlap_and_coalesced_order() {
     let ramps = crate::rules::house_colors::HouseColorRamps::from_schemes(&[]);
     let palettes =
         PaletteSet::new_on_device(&gpu.device, &gpu.queue, &palette, &palette, &ramps, &[]);
-    let white = rgba([248, 252, 248]);
     let ztex = gpu.device.create_texture_with_data(
         &gpu.queue,
         &wgpu::TextureDescriptor {

@@ -533,11 +533,6 @@ impl StageReplay<'_> {
             ObjectTexture::TerrainShp(_) | ObjectTexture::SpriteAtlasEdit(_, _) => {
                 unreachable!("native destination edits split normal runs")
             }
-            ObjectTexture::OverlayAtlas => {
-                if let Some(atlas) = self.overlay_atlas {
-                    batch.draw_passthrough_range(pass, &atlas.texture, buffer, start, count);
-                }
-            }
             ObjectTexture::UnitAtlasPage(page) => {
                 if let (Some(palette), Some(texture)) = (
                     self.palette_set,
@@ -689,19 +684,6 @@ fn destination_edit(
     }
 }
 
-/// A shimmered Unit can borrow the same terrain texture as an ordinary tree.
-/// Its packed Convert blit is a fence even though both are TerrainShp sources.
-fn destination_span_end(runs: &[ObjectDrawRun], start: usize) -> usize {
-    let mut end = start;
-    while end < runs.len()
-        && runs[end].packed_parent.is_none()
-        && destination_edit(runs[end].target).is_some()
-    {
-        end += 1;
-    }
-    end
-}
-
 #[cfg(test)]
 mod tests {
     use super::super::draw_plan_lowering::{
@@ -764,6 +746,19 @@ mod tests {
             voxel_needs_manual_depth(&safe, camera),
             "the shared composite rect owns row Z"
         );
+    }
+
+    /// A shimmered Unit can borrow the same terrain texture as an ordinary tree.
+    /// Its packed Convert blit is a fence even though both are TerrainShp sources.
+    fn destination_span_end(runs: &[ObjectDrawRun], start: usize) -> usize {
+        let mut end = start;
+        while end < runs.len()
+            && runs[end].packed_parent.is_none()
+            && destination_edit(runs[end].target).is_some()
+        {
+            end += 1;
+        }
+        end
     }
 
     #[test]

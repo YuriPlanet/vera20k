@@ -92,8 +92,6 @@ pub(crate) const SHIFT_QUEUE_LABEL: &str = "VERA:ShiftQueue";
 /// The two category pages retail's string table has no band name for.
 pub(crate) const CONTROLS_LABEL: &str = "VERA:Controls";
 pub(crate) const DEVELOPER_OPTIONS_LABEL: &str = "VERA:DeveloperOptions";
-pub(crate) const WOL_TEST_SERVICE_LABEL: &str = "VERA:WolTestService";
-pub(crate) const WOL_TEST_SERVICE_HELP: &str = "VERA:WolTestServiceHelp";
 pub(crate) const SKIP_INTRO_LABEL: &str = "VERA:SkipIntro";
 pub(crate) const SKIP_INTRO_HELP: &str = "VERA:SkipIntroHelp";
 pub(crate) const PERFORMANCE_STATS_LABEL: &str = "VERA:PerformanceStats";
@@ -604,10 +602,6 @@ pub(crate) enum LauncherCheckboxId {
     /// nuke leaves a crater. Saved; the next game's rules read it, so a match
     /// already running keeps its own.
     TerrainDeformation,
-    /// VERA's developer box: Internet answers from the stand-in WOL test
-    /// service instead of showing that WOLAPI is missing. The next Internet
-    /// visit reads it.
-    WolTestService,
     /// Client-only smoothing, independent of native simulation and detail.
     RenderInterpolation,
     /// VERA's local camera option: the wheel changes battle view distance.
@@ -707,7 +701,6 @@ pub(crate) enum LauncherOptionsEvent {
     YrOriginalStyleChanged(bool),
     ShiftQueueChanged(bool),
     TerrainDeformationChanged(bool),
-    WolTestServiceChanged(bool),
     RenderInterpolationChanged(bool),
     MouseWheelZoomChanged(bool),
     RightClickOrdersChanged(bool),
@@ -772,7 +765,6 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) hd_map_previews: bool,
     pub(crate) shift_queue: bool,
     pub(crate) terrain_deformation: bool,
-    pub(crate) wol_test_service: bool,
     /// The FPS readout's live state when the page opened, then each toggle.
     pub(crate) performance_stats: bool,
     /// `[VERA] ShowStringKeys=`, the String Keys box, then each toggle.
@@ -825,7 +817,6 @@ impl Default for LauncherOptionsValues {
             hd_map_previews: true,
             shift_queue: false,
             terrain_deformation: false,
-            wol_test_service: false,
             performance_stats: false,
             show_string_keys: false,
             skip_intro: false,
@@ -1229,7 +1220,6 @@ impl OptionsDialogState {
             LauncherCheckboxId::YrOriginalStyle => &mut self.values.yr_original_style,
             LauncherCheckboxId::ShiftQueue => &mut self.values.shift_queue,
             LauncherCheckboxId::TerrainDeformation => &mut self.values.terrain_deformation,
-            LauncherCheckboxId::WolTestService => &mut self.values.wol_test_service,
             LauncherCheckboxId::RenderInterpolation => &mut self.values.render_interpolation,
             LauncherCheckboxId::MouseWheelZoom => &mut self.values.mouse_wheel_zoom,
             LauncherCheckboxId::RightClickOrders => &mut self.values.right_click_orders,
@@ -1267,9 +1257,6 @@ impl OptionsDialogState {
             LauncherCheckboxId::TerrainDeformation => self
                 .pending_events
                 .push(LauncherOptionsEvent::TerrainDeformationChanged(checked)),
-            LauncherCheckboxId::WolTestService => self
-                .pending_events
-                .push(LauncherOptionsEvent::WolTestServiceChanged(checked)),
             LauncherCheckboxId::RenderInterpolation => self
                 .pending_events
                 .push(LauncherOptionsEvent::RenderInterpolationChanged(checked)),
@@ -2248,6 +2235,5 @@ mod tests {
             assert_eq!(pages, 1, "{setting:?}");
         }
         assert_eq!(placed.len(), every.len());
-        assert!(!placed.contains(&Setting::Checkbox(Check::WolTestService)));
     }
 }

@@ -26,7 +26,6 @@ enum RoundPhase {
     HostAi,
     HostReady,
     GuestSetup,
-    Loading,
     Running,
     HoldFailureGuest,
     EndRound,
@@ -696,7 +695,7 @@ impl LiveRoundFlow {
         }
         if self.config.is_some()
             && !self.input_host(core)
-            && matches!(self.phase, RoundPhase::GuestSetup | RoundPhase::Loading)
+            && self.phase == RoundPhase::GuestSetup
             && lobby_ready(state, rendered)
         {
             ensure!(
@@ -1053,10 +1052,7 @@ impl LiveRoundFlow {
                     );
                 }
             }
-            RoundPhase::Loading
-            | RoundPhase::HostReady
-            | RoundPhase::GuestSetup
-            | RoundPhase::QuickMatch
+            RoundPhase::HostReady | RoundPhase::GuestSetup | RoundPhase::QuickMatch
                 if state.frontend.screen == GameScreen::InGame =>
             {
                 ensure!(

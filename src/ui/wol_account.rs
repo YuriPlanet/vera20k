@@ -5,7 +5,7 @@
 //! username and password. gamemd has no such dialog; they use the online
 //! Create Game box's art, field column, checkbox rows and buttons.
 
-use crate::i18n::{tr, tr_fill};
+use crate::i18n::tr_fill;
 use crate::ui::shell::button::ShellButtonInteraction;
 use crate::ui::shell::modal::WolAccountFormLayout;
 use crate::ui::skirmish_shell::SavedSeedDescriptionEdit;

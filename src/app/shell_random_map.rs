@@ -52,6 +52,7 @@ pub(super) struct RandomMapStorageDecision {
 }
 
 impl RandomMapStorageDecision {
+    #[cfg(test)]
     pub(super) fn reinitializes(self) -> bool {
         self.reinitialize
     }

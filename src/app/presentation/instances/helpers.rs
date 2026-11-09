@@ -1374,7 +1374,7 @@ mod tests {
         };
 
         // Never explored: hidden in both modes; the wall path agrees.
-        let mut fog = FogState::new(16, 16);
+        let fog = FogState::new(16, 16);
         assert!(conceal(&fog, &enemy_entity, "Soviet", false));
         assert!(conceal(&fog, &enemy_entity, "Soviet", true));
         assert!(!conceal(&fog, &own_entity, viewer_name, false));
