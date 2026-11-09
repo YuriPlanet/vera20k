@@ -97,10 +97,16 @@ disables the other through `PackageManager` with `DONT_KILL_APP`. Rust calls it
 at start-up and on every toggle through `vera20k::util::app_icon`, which the
 Android crate hooks in `android_main`.
 
-Two behaviours to expect: the home screen updates when the launcher next reloads
-its list, and a shortcut pinned before the switch keeps the old component's icon
-(the launcher owns pinned shortcuts, not the app). The app switcher's entry
-updates at once from the task description.
+Two behaviours to expect. First, changing the box **closes the game**: disabling the
+alias that launched the task removes that task, and one process cannot serve a
+second one (winit builds a single event loop per process), so the activity ends
+deliberately rather than leaving a headless process behind. Reopen the game from
+its new icon. Relaunching it automatically was tried and abandoned: it needs a
+background activity start, which Android refuses once the process is no longer in
+front. Second, the home screen picks the new icon up when the launcher next
+reloads its list, and a shortcut pinned before the switch keeps the old
+component's icon (the launcher owns pinned shortcuts, not the app). The app
+switcher's entry updates at once from the task description.
 
 ## Deliberate choices
 

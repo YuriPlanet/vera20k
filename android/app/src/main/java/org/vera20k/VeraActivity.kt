@@ -2,16 +2,13 @@ package org.vera20k
 
 import android.app.Activity
 import android.app.ActivityManager.TaskDescription
-import android.app.AlarmManager
 import android.app.NativeActivity
-import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Process
-import android.os.SystemClock
 import android.provider.DocumentsContract
 import java.io.File
 import java.io.IOException
@@ -136,28 +133,16 @@ class VeraActivity : NativeActivity() {
         }
         packageManager.setComponentEnabledSetting(wantedName, enabled, PackageManager.DONT_KILL_APP)
         packageManager.setComponentEnabledSetting(otherName, disabled, PackageManager.DONT_KILL_APP)
-        // Disabling the alias that launched this task removes the task, and a
+        // Disabling the alias that launched this task already removed it, and a
         // surviving process cannot serve another one (winit builds a single
-        // event loop per process). End it, and let the system open the app again
-        // through the alias that now owns the icon: the player is in a full
-        // screen game, so a short restart is the only way to show the change.
-        val restart = Intent(this, VeraActivity::class.java).apply {
-            component = wantedName
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-        }
-        val pending = PendingIntent.getActivity(
-            this,
-            0,
-            restart,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_CANCEL_CURRENT,
-        )
-        // `setWindow` needs no exact-alarm permission; it fires within ~a second.
-        getSystemService(AlarmManager::class.java).setWindow(
-            AlarmManager.ELAPSED_REALTIME_WAKEUP,
-            SystemClock.elapsedRealtime() + 500,
-            500,
-            pending,
-        )
+        // event loop per process). Close deliberately instead of leaving a
+        // headless process, and the next tap on the new icon is a cold start.
+        //
+        // Restarting the app for the player would need a background activity
+        // start, which Android refuses once this process is no longer in front;
+        // the alarm-and-relaunch approach only worked while the app still held
+        // the foreground.
+        finishAndRemoveTask()
         Process.killProcess(Process.myPid())
     }
 
