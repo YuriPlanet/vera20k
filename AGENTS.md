@@ -29,11 +29,8 @@ What it is for, in the order that decides when two of these pull apart:
 5. **Playing online is easy.** A match starts from inside the game, and an older
    version is told plainly when it can no longer join.
 
-Development follows complete gameplay mechanisms and their required dependencies,
-with clear ownership of state and shared logic.
-
-This contract governs Codex and Claude. Use engineering judgment; skills are optional
-specialized help. Specific user instructions override workflow defaults.
+This contract governs Codex and Claude. Specific user instructions override workflow
+defaults.
 
 ## Intent and autonomy
 
@@ -63,8 +60,7 @@ Missing or unproven required behavior keeps an exhaustive task open.
 
 Native evidence is the instructions you read: cite the native function name and
 address next to the Rust. That is enough for control flow, ordering, gameplay rules,
-timers and plain arithmetic; compare with retail play side by side when it matters.
-Avoid unqualified “VERIFIED”/“complete”.
+timers and plain arithmetic. Avoid unqualified “VERIFIED”/“complete”.
 
 Tests are regression tests: per fix, one to three focused tests through production code
 that fail without the fix. Use boundary cases, not sweeps or grids, and keep tests
@@ -87,10 +83,9 @@ screenshots, critic reviews or static disassembly packets. A PR description says
 changed, why (native address) and how it was tested, in about 15 lines; no
 evidence-level sections, templates or run logs.
 
-Each cohesive gamemd-derived Rust behavior carries nearby native function name/address
-and source; sim-behavior commits cite their evidence.
-Consult the [Ghidra reference](docs/ghidra-workflow.md) for access,
-interpretation pitfalls and shared-database edits.
+Sim-behavior commits cite their evidence. Consult the
+[Ghidra reference](docs/ghidra-workflow.md) for access, interpretation pitfalls and
+shared-database edits.
 
 ## Retail data
 
@@ -195,10 +190,10 @@ invalidation rules, and consistency validation are explicit.
 
 One owner completes one player-visible gameplay chain at a time through native
 evidence, implementation, production integration and review. Bound each chain to one
-common unit, weapon or screen path; other paths follow later. Prioritize by
-visibility and frequency. One chain is one PR: don't split a chain into several PRs
-or open one per gap, and don't stack unmerged implementation branches. Plans are
-optional; implementation authority includes design choices.
+common unit, weapon or screen path; other paths follow later. One chain is one PR:
+don't split a chain into several PRs or open one per gap, and don't stack unmerged
+implementation branches. Plans are optional; implementation authority includes design
+choices.
 
 Trace affected state, call chains and native dependencies across classes and
 subsystems wherever the selected behavior requires them: trigger, prerequisites,
@@ -218,11 +213,9 @@ dependencies still used elsewhere. An outside contribution is bounded by its iss
 stated done-criteria; prerequisites found beyond it become issues, not commits.
 Record unrelated findings as follow-ups.
 
-File `refactor` issues only for work outside the chain or too large for it; add
-`tooling` for tools, tests, CI or workflow. Search open issues for a match first.
-Describe location, impact and work delayed, not a proposed fix. Comment only with
-meaningful new evidence. Verify claims; correct or close false ones. Prioritize by
-recorded cost, and close or correct affected issues in the PR that changes them.
+File `refactor` issues (`tooling` for tools, tests, CI or workflow) only for work
+outside the chain or too large for it. Search for an open match first, describe
+location and impact, not a fix, and close or correct an issue in the PR that changes it.
 
 Residuals name trigger, effect, frequency and downstream risk. Record the RNG draws,
 timer writes and detach calls the chain passes in its residuals or ledger row, even
@@ -247,19 +240,14 @@ Integrate promptly when authorized. Owners resolve conflicts and revalidate.
 Preserve unique/local data: remove a worktree or branch only once its work is merged or
 saved, with `git worktree remove` and `git branch -d`, never forced.
 
-Preserve contributor credit. Use verified GitHub usernames unless the contributor
-explicitly prefers another public name; raw Git names and email addresses do not
-establish that preference. Before merging, check the final author identity, message
-and trailers using the [attribution rule](.agents/skills/review-pr/SKILL.md#contributor-attribution),
-then verify the resulting commit.
+Preserve contributor credit: before merging someone else's work, check the final author
+identity, message and trailers against the
+[attribution rule](.agents/skills/review-pr/SKILL.md#contributor-attribution), then
+verify the resulting commit.
 
 After each fetch, fast-forward `<main-checkout>` (`merge --ff-only origin/main`) when it is on
 `main` with no tracked changes and no Cargo run from it; sessions load this contract
 from it.
-
-Choose validation appropriate to the change, considering native fidelity, connected
-production behavior (with runtime reproduction when needed) and protection against
-regressions. Reassess worsening fixes.
 
 Before a run (test, capture, benchmark, replay), ask which result would change your
 next step; if none would, skip it. When reading the code settles the question, say so
@@ -278,10 +266,9 @@ A check counts only if it ran: the test filter matched tests, no retail test pri
 `SKIPPED`, each build printed `Finished`, and an empty search counts only after the
 same search finds a known use.
 
-Avoid tests that merely mirror the implementation or require maintaining a second implementation of the same logic.
-Before fixing a bug whose expected behavior is established, first make a focused test fail on it where practical.
+Avoid tests that merely mirror the implementation. Before fixing a bug whose expected
+behavior is established, first make a focused test fail on it where practical.
 
-**Debug narrowly.** Rerun failing tests while debugging, then affected coverage.
 Skip `cargo check` when a planned test answers the same question.
 
 - Working Rust: start with focused
@@ -294,8 +281,7 @@ Skip `cargo check` when a planned test answers the same question.
   asked. Tests tagged `#[ignore = "slow; …"]` run (`-- --ignored`) only when your
   change touches what they cover. Don't dispatch the manual platform workflows unless
   asked.
-- Clippy: once a month on `main`, not per PR: `clippy --workspace --lib` through the
-  runner in the same environment, with its fixes in one PR.
+- Clippy: not per PR; once a month on `main`, with its fixes in one PR.
 - Asset binding, loader or rules-closure changes: a `--profile fast` retail map load
   before merge; the lib suite never runs the app loader against retail assets.
 - Docs/Markdown-only skills: check content, links/examples and relevant tooling
@@ -331,15 +317,9 @@ maintaining chains of superseded reports. Retention is not proof of correctness.
 
 Internet documentation lookup is allowed without routine approval. Resolve uncertain
 technical behavior using authoritative references, specifications and upstream source;
-match library/API documentation to the version in use. Graphics work requires both
-API knowledge (e.g. wgpu) and rendering principles: visibility/depth, blending,
-color/palette math, projection/sampling, GPU execution and performance. Cite
-consequential findings near the implementation or review. Validate affected production
-output and performance with appropriate captures, GPU readbacks or profiling;
-documentation and CPU-only tests alone do not establish rendered gamemd parity.
-For Rust style beyond this contract, consult the
-[condensed Rust guidelines](.agents/skills/_shared/rust-guidelines.md) when shaping
-APIs, hot loops, error handling or tests; this contract wins on conflict.
+match library/API documentation to the version in use. Cite consequential findings
+near the implementation or review. CPU-only tests do not show what the GPU draws; when
+the picture is the question, look at a capture or GPU readback.
 
 Resolve `<main-checkout>` with `git worktree list`; its `ini/`, config and `LOCAL.md`
 are machine-local. Use `asset`/`asset-browser`; a successful parse or plausible
@@ -358,9 +338,8 @@ where needed; remove superseded rules.
 ## Codex notes
 
 Use Codex task tools for cross-session context; verify current source/Git before
-treating past conclusions as current. Load only relevant skills and references.
+treating past conclusions as current.
 
 ## Claude Code notes
 
-Use host-native tools and relevant skills. Preserve explicitly requested `/loop`
-invocations. Memory holds durable preferences, not progress claims.
+Memory holds durable preferences, not progress claims.
