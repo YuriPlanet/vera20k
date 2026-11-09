@@ -8,6 +8,7 @@
 //! - Any module may depend on util/.
 
 pub mod base64;
+#[cfg(target_os = "android")]
 pub mod app_icon;
 pub(crate) mod bit_span;
 pub mod case_insensitive_path;

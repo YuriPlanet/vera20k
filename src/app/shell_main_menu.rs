@@ -189,12 +189,15 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // star, the window keeps VERA's icon until the next launch, which
         // starts with the program's own.
         self.persistence.options_profile.vera_icon = vera_icon;
-        // Android changes its launcher icon by closing the app and reopening it
-        // through the other alias, so the choice must be on disk before the
-        // process goes away.
-        crate::app::persistence::options::persist_options_profile(self);
-        // Android's launcher icon is a compiled resource: the aliases carry it.
-        crate::util::app_icon::apply(vera_icon);
+        // Android's launcher icon is a compiled resource carried by the two
+        // activity aliases, and changing it closes the app, so the choice has to
+        // be on disk first. Every other platform applies the icon to the live
+        // window below and keeps its own write timing.
+        #[cfg(target_os = "android")]
+        {
+            crate::app::persistence::options::persist_options_profile(self);
+            crate::util::app_icon::apply(vera_icon);
+        }
         if self.platform.window.is_visible() == Some(false) {
             return;
         }

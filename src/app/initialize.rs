@@ -478,7 +478,8 @@ impl App {
             window_attrs = icon.apply(window_attrs);
         }
         // Android's launcher icon is a compiled resource, so the same choice is
-        // applied through the two activity aliases instead (no-op elsewhere).
+        // applied through the two activity aliases instead.
+        #[cfg(target_os = "android")]
         crate::util::app_icon::apply(options_profile.vera_icon);
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         {
