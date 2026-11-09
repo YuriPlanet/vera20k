@@ -89,9 +89,18 @@ Regenerate after either source image changes:
 python android/tools/make_launcher_icons.py
 ```
 
-Switching between the two at run time needs `activity-alias` components enabled
-by `PackageManager`; the manifest still names a single icon and the VERA Icon box
-does not touch the launcher yet.
+The Options page's VERA Icon box (`[VERA] VeraIcon`) selects between them at run
+time. A launcher icon is a compiled resource, so the manifest declares two
+`activity-alias` entries — `org.vera20k.LauncherRetail` (enabled) and
+`org.vera20k.LauncherVera` — and `VeraActivity.applyAppIcon` enables one and
+disables the other through `PackageManager` with `DONT_KILL_APP`. Rust calls it
+at start-up and on every toggle through `vera20k::util::app_icon`, which the
+Android crate hooks in `android_main`.
+
+Two behaviours to expect: the home screen updates when the launcher next reloads
+its list, and a shortcut pinned before the switch keeps the old component's icon
+(the launcher owns pinned shortcuts, not the app). The app switcher's entry
+updates at once from the task description.
 
 ## Deliberate choices
 

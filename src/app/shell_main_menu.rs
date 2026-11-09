@@ -189,6 +189,8 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // star, the window keeps VERA's icon until the next launch, which
         // starts with the program's own.
         self.persistence.options_profile.vera_icon = vera_icon;
+        // Android's launcher icon is a compiled resource: the aliases carry it.
+        crate::util::app_icon::apply(vera_icon);
         if self.platform.window.is_visible() == Some(false) {
             return;
         }

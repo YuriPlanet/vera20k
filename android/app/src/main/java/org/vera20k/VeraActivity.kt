@@ -1,8 +1,12 @@
 package org.vera20k
 
 import android.app.Activity
+import android.app.ActivityManager.TaskDescription
 import android.app.NativeActivity
+import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.DocumentsContract
 import java.io.File
@@ -31,6 +35,10 @@ class VeraActivity : NativeActivity() {
 
         /** What the engine opens directly; a folder without these is not RA2. */
         val REQUIRED_ARCHIVES = listOf("ra2md.mix", "ra2.mix")
+
+        /** The two launcher entries; exactly one is enabled at a time. */
+        const val LAUNCHER_RETAIL = "org.vera20k.LauncherRetail"
+        const val LAUNCHER_VERA = "org.vera20k.LauncherVera"
     }
 
     /**
@@ -72,6 +80,43 @@ class VeraActivity : NativeActivity() {
     private external fun nativeConfigForImport(directory: String): String
 
     fun cancelImport(): Boolean = AssetImportJob.cancelActive()
+
+    /**
+     * Shows the icon the Options page's VERA Icon box selected.
+     *
+     * A launcher icon is a resource compiled into the package, so the only way
+     * to change it at run time is to enable one `activity-alias` and disable the
+     * other. The app switcher takes the same bitmap from the task description.
+     * Called from Rust at start-up and whenever the box is toggled
+     * (`vera20k::util::app_icon`).
+     */
+    fun applyAppIcon(veraIcon: Boolean) {
+        val enabled = if (veraIcon) LAUNCHER_VERA else LAUNCHER_RETAIL
+        val disabled = if (veraIcon) LAUNCHER_RETAIL else LAUNCHER_VERA
+        packageManager.setComponentEnabledSetting(
+            ComponentName(this, enabled),
+            PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+            PackageManager.DONT_KILL_APP,
+        )
+        packageManager.setComponentEnabledSetting(
+            ComponentName(this, disabled),
+            PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+            PackageManager.DONT_KILL_APP,
+        )
+        // The adaptive icon is an XML drawable, which decodes to no bitmap; the
+        // foreground PNG is the same artwork the launcher composites.
+        val icon = BitmapFactory.decodeResource(
+            resources,
+            if (veraIcon) {
+                R.mipmap.ic_launcher_vera_foreground
+            } else {
+                R.mipmap.ic_launcher_retail_foreground
+            },
+        ) ?: return
+        setTaskDescription(
+            TaskDescription(applicationInfo.loadLabel(packageManager).toString(), icon),
+        )
+    }
 
     private var copiedBytes = 0L
     private var reportedBytes = 0L
