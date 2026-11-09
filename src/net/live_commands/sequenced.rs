@@ -54,6 +54,10 @@ pub struct DeliveryCounters {
     pub round_trip_max_ms: u64,
     /// The sampled frame whose checksums differed, from the relay's DESYNC.
     pub desync_frame: Option<u32>,
+    /// The relay's clock for this match has started.
+    pub started: bool,
+    /// [`SequencedError::code`] of the error that ended the match here.
+    pub failure: Option<&'static str>,
 }
 
 /// App diagnostics for one local command batch: its first transmission, the
@@ -256,6 +260,28 @@ pub enum SequencedError {
     QueueFull,
     #[error("this online match needs a newer VERA20k")]
     NewerClientRequired,
+    /// A refusal the session cannot act on, such as the games' start
+    /// agreements differing.
+    #[error("the online ordering service refused this match: {0:?}")]
+    Refused(OrderError),
+}
+
+impl SequencedError {
+    /// The name match reports give this error (`docs/lobby-protocol.md`).
+    fn code(&self) -> &'static str {
+        match self {
+            Self::HistoryExpired => "history_expired",
+            Self::InvalidTimeline => "invalid_timeline",
+            Self::Desync { .. } => "desync",
+            Self::Unavailable => "unavailable",
+            Self::QueueFull => "queue_full",
+            Self::NewerClientRequired => "newer_client_required",
+            Self::Refused(OrderError::AgreementMismatch) => "agreement_mismatch",
+            Self::Refused(OrderError::ModifiedRetry) => "modified_retry",
+            Self::Refused(OrderError::InvalidCursor) => "invalid_cursor",
+            Self::Refused(_) => "refused",
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -527,7 +553,19 @@ impl SequencedSession {
     }
 
     pub(super) fn delivery_counters(&self) -> DeliveryCounters {
-        self.delivery
+        DeliveryCounters {
+            started: self.started,
+            ..self.delivery
+        }
+    }
+
+    /// Keeps the error that ended this match for its report.
+    pub(super) fn record_failure(&mut self, error: &LiveCommandError) {
+        let code = match error {
+            LiveCommandError::Sequenced(error) => error.code(),
+            _ => "local_error",
+        };
+        self.delivery.failure.get_or_insert(code);
     }
 
     /// The relay's sealed head as this PC last learned it.
@@ -967,7 +1005,7 @@ impl SequencedSession {
                 OrderError::Inactive | OrderError::StorageUnavailable => {
                     return Err(SequencedError::Unavailable);
                 }
-                _ => return Err(SequencedError::InvalidTimeline),
+                refused => return Err(SequencedError::Refused(refused)),
             },
         }
         Ok(())

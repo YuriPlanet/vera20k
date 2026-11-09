@@ -155,6 +155,8 @@ pub(crate) struct PacingReport {
 pub(crate) struct OutcomeReport {
     pub(crate) desync_frame: Option<u32>,
     pub(crate) reconnects: u32,
+    pub(crate) started: bool,
+    pub(crate) failure: Option<&'static str>,
 }
 
 /// Live values for the telemetry dashboard.
@@ -293,6 +295,8 @@ impl NetworkQualityStats {
             outcome: OutcomeReport {
                 desync_frame: delivery.desync_frame,
                 reconnects: self.reconnects,
+                started: delivery.started,
+                failure: delivery.failure,
             },
         }
     }
@@ -442,7 +446,7 @@ mod tests {
                 "performance": {"tick_ms_p50": null, "tick_ms_p99": null, "fps_p50": null,
                     "fps_p5": null, "unfocused_seconds": 0.0},
                 "pacing": {"slowdowns": 0, "slowed_by": [], "slowed_seconds": 0.0},
-                "outcome": {"desync_frame": null, "reconnects": 0},
+                "outcome": {"desync_frame": null, "reconnects": 0, "started": false, "failure": null},
             })
         );
     }
