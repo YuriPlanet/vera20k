@@ -22,14 +22,16 @@
 //! ```
 //!
 //! The English retail file holds only its mark; localized releases fill it.
+//! VERA's own language files can bring theirs ([`crate::i18n::subtitle_file`]).
 
+use crate::assets::asset_manager::AssetManager;
 use crate::util::native_string::{
     crt_wcstol, crt_wcstoul, wcs_eq_ignore_case, wcs_starts_with_ignore_case, wcstrim,
 };
 
 /// The file `Subtitle_LookupByKey` `0x006C9B70` opens through the loose-file
 /// and MIX search.
-pub(crate) const SUBTITLE_FILE: &str = "subtitlemd.txt";
+const SUBTITLE_FILE: &str = "subtitlemd.txt";
 
 /// The subtitle surface `0x006C99D0` allocates (`BSurface(640, 255, 2)`).
 pub(crate) const BAND_WIDTH: i32 = 640;
@@ -127,10 +129,26 @@ impl Lines<'_> {
     }
 }
 
+/// `movie`'s cues for the interface language: its own subtitles, then the
+/// game's `subtitlemd.txt` (`0x006C99D0`).
+pub(crate) fn cues_for_movie(assets: Option<&AssetManager>, movie: &str) -> Option<Vec<Subtitle>> {
+    cues_from(
+        crate::i18n::subtitle_file().as_deref(),
+        assets.and_then(|assets| assets.get_ref(SUBTITLE_FILE)),
+        movie,
+    )
+}
+
+fn cues_from(language: Option<&[u8]>, game: Option<&[u8]>, movie: &str) -> Option<Vec<Subtitle>> {
+    language
+        .and_then(|file| movie_subtitles(file, movie))
+        .or_else(|| game.and_then(|file| movie_subtitles(file, movie)))
+}
+
 /// The cues `0x006C9F10` collects for `movie` (the movie file's name without
 /// directory or extension, compared case-insensitively); `None` when the file
 /// names no such movie or the movie has no cue.
-pub(crate) fn movie_subtitles(file: &[u8], movie: &str) -> Option<Vec<Subtitle>> {
+fn movie_subtitles(file: &[u8], movie: &str) -> Option<Vec<Subtitle>> {
     // mbstowcs(name, fname, 0x20)
     let movie: Vec<u16> = movie.encode_utf16().take(0x20).collect();
     let (begin, end) = (wide("BeginMovie"), wide("EndMovie"));
@@ -383,6 +401,28 @@ mod tests {
         assert_eq!((cues[1].duration, cues[1].line), (1200, 15));
         assert_eq!(cues[1].align, SubtitleAlign::Center);
         assert!(movie_subtitles(&file(text), "SOV01").is_none());
+    }
+
+    /// A language's subtitles answer first; a movie they leave out keeps the
+    /// game's.
+    #[test]
+    fn a_languages_subtitles_come_before_the_games() {
+        let cue = |movie: &str, text: &str| {
+            file(&format!(
+                "BeginMovie {movie}\r\n<Text=\"{text}\">\r\nEndMovie\r\n"
+            ))
+        };
+        let language = cue("ALLIES1", "own");
+        let game = [cue("ALLIES1", "game"), cue("SOV01", "game")];
+        let text = |movie: &str, game: &[u8]| {
+            cues_from(Some(&language), Some(game), movie).unwrap()[0]
+                .text
+                .clone()
+                .unwrap()
+        };
+        assert_eq!(text("ALLIES1", &game[0]), "own");
+        assert_eq!(text("SOV01", &game[1]), "game");
+        assert!(cues_from(None, None, "ALLIES1").is_none());
     }
 
     #[test]

@@ -1026,9 +1026,6 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
         for line in crate::rules::ini_value::strtok(&motd, &['\n']) {
             message_line(state, line.to_owned());
         }
-        if modern_lobby(state) {
-            message_line(state, crate::i18n::tr(JOINED_LOBBY_LINE));
-        }
         message_line(state, "\n".to_owned());
     }
     show_wait(state, "GUI:LoginComplete");
@@ -1684,11 +1681,6 @@ fn left_channel(state: &mut AppState) {
     );
     message_line(state, text);
 }
-
-/// The label of VERA's line after the MOTD, once per sign-in, in its chat
-/// lobby, which has no `TXT_JOINED_S` line (VERA's own addition; gamemd's
-/// reads "You joined channel %s").
-const JOINED_LOBBY_LINE: &str = "VERA:JoinedLobby";
 
 /// The Room name VERA's online Create Game starts with; OK with it unchanged
 /// creates gamemd's own name.
@@ -2781,8 +2773,8 @@ fn joined(state: &mut AppState, result: Result<WolJoined, u32>) {
         return;
     }
     // A chat lobby: its number (0x7A5EFD, any type-0 name), the
-    // TXT_JOINED_S line (not in the modern lobby, which prints its own
-    // line once with the MOTD), the controls back with Join as the selected
+    // TXT_JOINED_S line (not in the modern lobby, whose operator writes
+    // its sign-in text), the controls back with Join as the selected
     // game admits for either role.
     state.frontend.wol_lobby_globals.lobby_number = joined.channel.joined_lobby_number();
     if quick_match_runner(state) {
