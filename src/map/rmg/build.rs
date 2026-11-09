@@ -207,28 +207,32 @@ fn draw_bridge_enable(rng: &mut RmgRng) -> bool {
 /// Mixed into the map seed for VERA's urban foot stream.
 const VERA_URBAN_SALT: u16 = 0xB71D;
 
-/// The urban pass's inputs and the presence it reads: Ares' switch keeps the
-/// seed's own presence; VERA's opt-in maps the Buildings slider (1..=100) to
-/// 1..=3, which `0x005A5020` turns into 3, 6 or 9 wanted districts
-/// (`(presence + 0.32) * 3`; any presence of 1 or more never takes its early
-/// exit, and ten attempts cap the districts).
+/// The urban pass's inputs, the presence it reads and VERA's fill: Ares'
+/// switch keeps the seed's own presence and the native district count;
+/// VERA's opt-in passes presence 1 (`0x005A5020` never takes its early exit
+/// at 1 or more) and the Buildings slider (1..=100) as the fill, from one
+/// district up to most of the open land.
 fn urban_inputs<'a>(
     options: &RmgOptions,
     objects: &'a GenerationObjects<'a>,
     vera: &'a super::phases::urban_areas::UrbanInputs<'a>,
-) -> (Option<&'a super::phases::urban_areas::UrbanInputs<'a>>, i32) {
+) -> (
+    Option<&'a super::phases::urban_areas::UrbanInputs<'a>>,
+    i32,
+    Option<i32>,
+) {
     #[cfg(feature = "ares")]
     if options.urban_areas {
         if objects.urban_areas.is_none() {
             log::warn!("random map: urban areas requested without an urban catalog");
         }
-        return (objects.urban_areas.as_ref(), options.urban_presence);
+        return (objects.urban_areas.as_ref(), options.urban_presence, None);
     }
     let _ = objects;
     if options.urban_enabled && options.urban_presence > 0 {
-        return (Some(vera), 1 + (options.urban_presence - 1) * 3 / 100);
+        return (Some(vera), 1, Some(options.urban_presence.min(100)));
     }
-    (None, options.urban_presence)
+    (None, options.urban_presence, None)
 }
 
 pub fn generate_map_observed(
@@ -250,7 +254,7 @@ pub fn generate_map_observed(
         catalog: &settings.vera_urban,
         main_draw: &vera_draw,
     };
-    let (urban, urban_presence) = urban_inputs(&options, objects, &vera_urban);
+    let (urban, urban_presence, urban_fill) = urban_inputs(&options, objects, &vera_urban);
 
     let geometry = MapGeometry::from_options(&options);
     let mut rng = RmgRng::new(options.seed_u16());
@@ -288,6 +292,7 @@ pub fn generate_map_observed(
         width: options.width,
         max_trees: settings.max_trees,
         urban_presence,
+        urban_fill,
         urban_areas: urban,
     };
 
@@ -697,6 +702,14 @@ mod tests {
         );
         assert!(!settings.vera_urban.structures.is_empty());
         assert!(!settings.vera_urban.infantry.is_empty());
+        assert!(
+            !settings
+                .vera_urban
+                .structures
+                .iter()
+                .any(|entry| entry.name == "CALOND06"),
+            "Temperate draws CALOND06 as Westwood's placeholder cube"
+        );
 
         let base = RmgOptions {
             num_players: 4,
@@ -728,6 +741,31 @@ mod tests {
             .filter(|cell| resolved.ids.is_paved_road(cell.tile_index))
             .count();
         assert!(roads > 0, "the district has paved roads");
+        // Buildings 1 is one district; 100 paves most of the open land (this
+        // small map's land is broken up, so it takes only a few more).
+        let paved = |presence: i32| {
+            let map = generate_map(
+                &RmgOptions {
+                    urban_enabled: true,
+                    urban_presence: presence,
+                    ..base.clone()
+                },
+                &settings,
+                &resolved,
+                &blocks,
+                &objects,
+            );
+            map.map_file
+                .cells
+                .iter()
+                .filter(|cell| cell.tile_index == resolved.ids.pave)
+                .count()
+        };
+        let (least, most) = (paved(1), paved(100));
+        assert!(
+            most > least * 3 / 2,
+            "Buildings 100 paves {most} cells, 1 paves {least}"
+        );
         assert!(
             urban.map_file.entities.len() > plain.map_file.entities.len() + 4,
             "the district adds buildings: {} vs {}",

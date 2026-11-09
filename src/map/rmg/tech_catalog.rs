@@ -36,7 +36,10 @@ pub fn resolve(names: &[String], art: &IniFile) -> Vec<TechType> {
 /// theater (`has_file` answers for the names
 /// [`crate::rules::art_data::building_body_shp_candidates`] tries) and whose
 /// `Name=` reads as no wall, fence or street prop: authored maps set those
-/// apart from the blocks they line. A survey of 2,576 authored towns found
+/// apart from the blocks they line. On a theater `urban_survey.ini` lists,
+/// only the buildings authored maps of that theater put in their towns are
+/// kept: the rest draw Westwood's placeholder cube or another theater's
+/// style there. A survey of 2,576 authored towns found
 /// each mostly of one style family (the name without its number), so the list
 /// is a main family drawn from `seed` by family size, then a second one; the
 /// main family leads, inside the eighteen entries the pass may reuse.
@@ -77,6 +80,7 @@ pub fn resolve_vera_urban(
         "TRUCKA", "TRUCKB", "COP", "EUROC", "SUVW", "SUVB", "FTRK", "AMBU",
     ];
 
+    let surveyed = surveyed_urban_names(theater_name);
     let registry = rules.art();
     let mut families: Vec<(String, Vec<UrbanStructure>)> = Vec::new();
     for id in &rules.building_ids {
@@ -84,6 +88,12 @@ pub fn resolve_vera_urban(
             continue;
         };
         let upper = id.to_ascii_uppercase();
+        if surveyed
+            .as_ref()
+            .is_some_and(|names| !names.contains(&upper.as_str()))
+        {
+            continue;
+        }
         if !(upper.starts_with("CA") || upper.starts_with("CT") || upper.starts_with("CI"))
             || object.capturable
             || tech.iter().any(|tech| tech.name.eq_ignore_ascii_case(id))
@@ -191,6 +201,22 @@ pub fn resolve_vera_urban(
         infantry: feet(&INFANTRY),
         vehicles: feet(&VEHICLES),
     }
+}
+
+/// The `[THEATER]` row of `urban_survey.ini`: the civilian buildings
+/// authored maps of that theater place in towns. `None` for a theater the
+/// survey has no row for, which keeps every candidate.
+fn surveyed_urban_names(theater_name: &str) -> Option<Vec<&'static str>> {
+    const SURVEY: &str = include_str!("urban_survey.ini");
+    let header = format!("[{}]", theater_name.to_ascii_uppercase());
+    let mut lines = SURVEY.lines();
+    lines.by_ref().find(|line| line.trim() == header)?;
+    Some(
+        lines
+            .take_while(|line| !line.trim().is_empty() && !line.starts_with('['))
+            .flat_map(str::split_whitespace)
+            .collect(),
+    )
 }
 
 /// Resolve the Ares `[Urban]` lists of `settings` against the processed Rules

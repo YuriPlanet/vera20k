@@ -98,6 +98,9 @@ pub struct PipelineInputs<'a> {
     pub max_trees: i32,
     /// The presence the urban pass reads (`MapSeed+0x60`).
     pub urban_presence: i32,
+    /// VERA extension: the opted-in Buildings value the urban pass fills the
+    /// map by (`UrbanArgs::vera_fill`).
+    pub urban_fill: Option<i32>,
     /// Whether a river may attempt waterfall terrain, decided by the
     /// generation's very first draw. Only the river carver reads the value;
     /// the draw that produces it is stream-relevant to every map type.
@@ -463,6 +466,7 @@ pub fn run_pipeline(
             map_w,
             map_h,
             stride: stride as i32,
+            vera_fill: inputs.urban_fill,
         };
         let mut output = urban_areas::UrbanOutput {
             objects: &mut urban_area_objects,
