@@ -1018,7 +1018,7 @@ pub struct GameEntity {
     pub(crate) produce_cash: crate::sim::credit_income::ProduceCash,
     /// The Floating Disc drain link pair ([`credit_income`](crate::sim::credit_income)).
     #[serde(default)]
-    pub(crate) drain: crate::sim::credit_income::Drain,
+    pub drain: crate::sim::credit_income::Drain,
     /// The parasite fields: the ParasiteClass a dog or drone owns, the eater
     /// attached to a victim, paralysis ([`parasite`](crate::sim::combat::parasite)).
     #[serde(default)]
@@ -1650,7 +1650,7 @@ impl GameEntity {
     /// 0x00443C60` reads `+0x218` for the object leaving it. The shared
     /// Building destination setter (`0x00455D50`) can also replace this
     /// archive; Stop reaches its null arm and removes the rally.
-    pub(crate) fn rally_cell(&self) -> Option<(u16, u16)> {
+    pub fn rally_cell(&self) -> Option<(u16, u16)> {
         match self.archive_target() {
             Some(crate::sim::combat::TargetKind::Cell(rx, ry)) => Some((rx, ry)),
             _ => None,

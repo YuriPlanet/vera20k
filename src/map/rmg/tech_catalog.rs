@@ -27,16 +27,68 @@ pub fn resolve(names: &[String], art: &IniFile) -> Vec<TechType> {
         .collect()
 }
 
+/// VERA extension: the civilian buildings the urban stage may place on a
+/// theater, in `[BuildingTypes]` order.
+///
+/// A candidate is a building infantry can garrison (`CanBeOccupied=yes`:
+/// houses, city blocks, farms) that is not capturable and not a neutral tech
+/// building, with a foundation of at most twelve cells, and whose body art
+/// exists on this theater: `has_file` answers for the names
+/// [`crate::rules::art_data::building_body_shp_candidates`] tries, so a
+/// building drawn only in other theaters is left out.
+pub fn resolve_urban(
+    rules: &crate::rules::ruleset::RuleSet,
+    art: &IniFile,
+    tech: &[TechType],
+    theater_ext: &str,
+    theater_name: &str,
+    has_file: impl Fn(&str) -> bool,
+) -> Vec<TechType> {
+    const MAX_FOOTPRINT_CELLS: usize = 12;
+    let registry = rules.art();
+    rules
+        .building_ids
+        .iter()
+        .filter_map(|id| {
+            let object = rules.object(id)?;
+            if !object.can_be_occupied
+                || object.capturable
+                || tech.iter().any(|tech| tech.name.eq_ignore_ascii_case(id))
+            {
+                return None;
+            }
+            let footprint = footprint_for(art, id);
+            if footprint.len() > MAX_FOOTPRINT_CELLS {
+                return None;
+            }
+            let image_id = registry.resolve_effective_image_id(id, &object.image);
+            let drawn = crate::rules::art_data::building_body_shp_candidates(
+                Some(registry),
+                &object.image,
+                &image_id,
+                theater_ext,
+                theater_name,
+            )
+            .iter()
+            .any(|file| has_file(file));
+            drawn.then(|| TechType {
+                name: id.clone(),
+                footprint,
+            })
+        })
+        .collect()
+}
+
 /// Resolve the Ares `[Urban]` lists of `settings` against the processed Rules
 /// type arrays and the art foundations: a structure that is no BuildingType
 /// has no footprint, a foot that is no type is unknown.
 #[cfg(feature = "ares")]
-pub fn resolve_urban(
+pub fn resolve_ares_urban(
     settings: &crate::map::rmg::RmgSettings,
     processed: &crate::rules::native_processing::ProcessedRulesLayers,
     art: &IniFile,
-) -> crate::map::rmg::phases::urban::UrbanCatalog {
-    use crate::map::rmg::phases::urban::{UrbanCatalog, UrbanFoot, UrbanStructure};
+) -> crate::map::rmg::phases::urban_areas::UrbanCatalog {
+    use crate::map::rmg::phases::urban_areas::{UrbanCatalog, UrbanFoot, UrbanStructure};
     use crate::rules::native_processing::UrbanTypeKind;
     let feet = |names: &[String], kind| {
         names

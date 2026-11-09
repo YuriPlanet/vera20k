@@ -305,6 +305,13 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
             insert(name);
         }
     }
+    // AircraftAI414ED0..414F42 constructs this retained fixed-ART AnimType
+    // through ordinary Anim421EA0, including dynamically allocated aliases.
+    for object in rules.all_objects() {
+        if let Some(name) = object.aircraft_trailer().animation() {
+            insert(name);
+        }
+    }
     for name in rules.general.infantry_death_anims.iter().flatten() {
         insert(name);
     }
@@ -326,6 +333,12 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     // General list. The completion owner must find bound physical shapes
     // even when no warhead or other producer names these corpse animations.
     for name in &rules.general.dead_bodies {
+        insert(name);
+    }
+    // BuildingReceiveDamage442832..4428F4 constructs an OnFire Anim before
+    // attaching it. Keep each resolved slot key, including unread late AV
+    // allocations, in the ordinary AnimClass asset-binding closure.
+    for name in &rules.general.on_fire {
         insert(name);
     }
     for name in &rules.general.metallic_debris {

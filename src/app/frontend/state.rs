@@ -286,8 +286,38 @@ pub(crate) struct ShellMessageBox {
     pub(crate) purpose: ShellMessageBoxPurpose,
 }
 
+impl ShellMessageBox {
+    /// VERA's Esc menu asks over the page that is showing. gamemd's callers
+    /// destroy their dialog first and ask over the empty backdrop.
+    pub(crate) fn keeps_page(&self) -> bool {
+        matches!(self.purpose, ShellMessageBoxPurpose::ShellMenu(_))
+    }
+
+    /// The settings VERA's Esc menu shows.
+    pub(crate) fn menu_settings(
+        &self,
+    ) -> Option<&crate::ui::main_menu_dialogs::OptionsDialogState> {
+        match &self.purpose {
+            ShellMessageBoxPurpose::ShellMenu(settings) => Some(settings),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn menu_settings_mut(
+        &mut self,
+    ) -> Option<&mut crate::ui::main_menu_dialogs::OptionsDialogState> {
+        match &mut self.purpose {
+            ShellMessageBoxPurpose::ShellMenu(settings) => Some(settings),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) enum ShellMessageBoxPurpose {
+    /// VERA's Esc menu (`app::shell_menu`): Options, Exit Game or Cancel, with
+    /// a few settings from the Options page.
+    ShellMenu(Box<crate::ui::main_menu_dialogs::OptionsDialogState>),
     /// Main_Game state 6: OK quits, Cancel rebuilds `0xE2`.
     ExitGame,
     /// GameExit::Defeat `0x006860E5`: Yes restarts this start, if VERA can

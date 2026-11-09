@@ -766,7 +766,7 @@ pub(crate) fn schedule_command_in_sim(
     let execute_tick = sim.session().tick();
     let owner_id = match &payload {
         Command::SetGameSpeed { speed } => {
-            if *speed > crate::sim::game_options::IN_GAME_OPTIONS_MAX_SPEED {
+            if !crate::sim::game_options::is_selectable_game_speed(*speed) {
                 return None;
             }
             let owner_id = sim.interner().get(owner)?;

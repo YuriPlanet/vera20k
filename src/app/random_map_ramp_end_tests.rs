@@ -23,6 +23,7 @@ fn ordinary_recipe(seed: i32, map_type: i32) -> RmgOptions {
         tiberium: 35,
         vegetation: 30,
         urban_presence: 40,
+        urban_enabled: false,
         seed,
         ..Default::default()
     }

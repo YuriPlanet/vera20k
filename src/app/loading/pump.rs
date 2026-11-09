@@ -1442,6 +1442,7 @@ pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
         session,
         now_ms,
     );
+    crate::app::App::close_shell_menu_at_launch(state);
     state.frontend.screen = GameScreen::Loading;
 }
 

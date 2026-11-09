@@ -26,7 +26,7 @@ use crate::ui::skirmish_shell::{
     SkirmishShellState, SkirmishTrackbarId, checkbox_text_rect, combo_dropdown_content_rect,
     combo_dropdown_rect, combo_dropdown_visible_row_count, combo_enabled, combo_items,
     combo_text_rect, player_name_edit_text_rect, player_row_visible,
-    random_map_setup_dropdown_rect, trackbar_visual_value,
+    random_map_setup_dropdown_rect,
 };
 
 use super::controls::trackbar_rect_for_id;
@@ -131,7 +131,9 @@ pub(super) fn country_label(state: &AppState, country: LaunchCountry) -> String 
 
 pub(super) fn trackbar_display_value(shell: &SkirmishShellState, id: SkirmishTrackbarId) -> String {
     match id {
-        SkirmishTrackbarId::GameSpeed0x529 => trackbar_visual_value(shell, id).to_string(),
+        SkirmishTrackbarId::GameSpeed0x529 => {
+            crate::ui::shell::game_speed::SpeedContext::Offline.value_text(shell.game_speed)
+        }
         SkirmishTrackbarId::Credits0x511 => shell.credits().to_string(),
         SkirmishTrackbarId::UnitCount0x50c => shell.unit_count.to_string(),
     }
@@ -398,7 +400,7 @@ fn rects_intersect(a: RectPx, b: RectPx) -> bool {
         && a.y + a.h > b.y
 }
 
-fn text_covered_by_overlay(rect: RectPx, overlays: &[RectPx]) -> bool {
+pub(super) fn text_covered_by_overlay(rect: RectPx, overlays: &[RectPx]) -> bool {
     overlays
         .iter()
         .any(|overlay| rects_intersect(rect, *overlay))
@@ -893,6 +895,39 @@ pub(super) fn push_random_map_setup_modal_text_draws(
 
     // Row order: map type, time, theater, size, resources, players. The 0x405
     // label reads "Environment" even though the control writes the map type.
+    // VERA: the Advanced view labels its sliders and shows each value in the
+    // slider's plaque, as the Players slider does.
+    if modal.advanced {
+        for field in crate::ui::skirmish_shell::AdvancedField::ALL {
+            let (key, fallback) = field.label();
+            let color = if modal.is_enabled(RandomMapSetupControl::Advanced(field)) {
+                SHELL_LABEL_TEXT_RGB
+            } else {
+                crate::render::shell_paint::SHELL_TEXT_RGB_DISABLED
+            };
+            push_text_draw(
+                out,
+                state,
+                &localized_label(state, key, fallback),
+                rect_to_text_rect(layout.advanced_label_rects[field.row()]),
+                color,
+                ShellAlign::V_CENTER,
+                SHELL_DROPDOWN_TEXT_DEPTH - 0.00008,
+                scale.factor(),
+            );
+            let value_rect = value_text_rect(layout.advanced_control_rects[field.row()], scale);
+            push_text_draw(
+                out,
+                state,
+                &modal.advanced_value(field).to_string(),
+                rect_to_text_rect(value_rect),
+                color,
+                ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+                SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
+                scale.factor(),
+            );
+        }
+    }
     for (row, (key, fallback)) in [
         ("GUI:Environment", "Environment"),
         ("GUI:TimeOfDay", "Time of Day"),
@@ -903,6 +938,7 @@ pub(super) fn push_random_map_setup_modal_text_draws(
     ]
     .into_iter()
     .enumerate()
+    .filter(|_| !modal.advanced)
     {
         push_text_draw(
             out,
@@ -917,18 +953,20 @@ pub(super) fn push_random_map_setup_modal_text_draws(
     }
 
     // Ares' Urban Areas box takes its caption beside the icon, like the
-    // `0x102` checkboxes.
+    // `0x102` checkboxes, in the basic view only.
     #[cfg(feature = "ares")]
-    push_text_draw(
-        out,
-        state,
-        &localized_label(state, "GUI:UrbanAreas", "Urban Areas"),
-        rect_to_text_rect(checkbox_text_rect(layout.urban_areas, scale)),
-        SHELL_LABEL_TEXT_RGB,
-        ShellAlign::V_CENTER,
-        SHELL_DROPDOWN_TEXT_DEPTH - 0.00008,
-        scale.factor(),
-    );
+    if !modal.advanced {
+        push_text_draw(
+            out,
+            state,
+            &localized_label(state, "GUI:UrbanAreas", "Urban Areas"),
+            rect_to_text_rect(checkbox_text_rect(layout.urban_areas, scale)),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::V_CENTER,
+            SHELL_DROPDOWN_TEXT_DEPTH - 0.00008,
+            scale.factor(),
+        );
+    }
 
     for (key, fallback, rect, control) in [
         (
@@ -987,10 +1025,26 @@ pub(super) fn push_random_map_setup_modal_text_draws(
             layout.cancel,
             RandomMapSetupControl::Cancel0x5c0,
         ),
+        if modal.advanced {
+            (
+                "VERA:RandomMapBasic",
+                "Basic",
+                layout.advanced,
+                RandomMapSetupControl::AdvancedToggle,
+            )
+        } else {
+            (
+                "VERA:RandomMapAdvanced",
+                "Advanced",
+                layout.advanced,
+                RandomMapSetupControl::AdvancedToggle,
+            )
+        },
     ]
     .into_iter()
-    .filter(|_| !sliding)
-    {
+    .filter(|(_, _, _, control)| {
+        !sliding && (*control != RandomMapSetupControl::AdvancedToggle || modal.extended)
+    }) {
         push_text_draw(
             out,
             state,
@@ -1016,7 +1070,11 @@ pub(super) fn push_random_map_setup_modal_text_draws(
     // Selected entry on each closed combo face. A value with no entry -- map
     // type 0, which the list omits -- leaves the face blank, as the original's
     // match-the-entry selection does.
-    for (row, combo) in SETUP_COMBO_ROWS.iter().enumerate() {
+    for (row, combo) in SETUP_COMBO_ROWS
+        .iter()
+        .enumerate()
+        .filter(|_| !modal.advanced)
+    {
         let items = modal.combo_items(*combo);
         let Some(selected) = modal.selected_item_index(*combo) else {
             continue;
@@ -1040,7 +1098,7 @@ pub(super) fn push_random_map_setup_modal_text_draws(
 
     // The players trackbar carries its value in the plaque at its right end.
     let value_rect = value_text_rect(layout.control_rects[PLAYERS_ROW], scale);
-    if !text_covered_by_overlay(value_rect, &open_list) {
+    if !modal.advanced && !text_covered_by_overlay(value_rect, &open_list) {
         push_text_draw(
             out,
             state,

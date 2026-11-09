@@ -2533,7 +2533,7 @@ pub(crate) fn load_map_initial_with_assets(
         .map(str::to_string)
         .or(quickplay_seed);
     if let Some(seed_name) = seed_selection.as_deref() {
-        let settings = crate::map::rmg::RmgSettings::load(asset_manager);
+        let mut settings = crate::map::rmg::RmgSettings::load(asset_manager);
         let mut options = crate::map::rmg::RmgOptions::default();
         // A seed without VERA's UrbanAreas= key regenerates with the urban
         // switch the process's first RMGMD.INI read gives (Ares.dll 1006ABF0).
@@ -2628,6 +2628,18 @@ pub(crate) fn load_map_initial_with_assets(
             processed.neutral_tech_buildings(),
             owner.fixed_art(),
         );
+        // VERA: the theater's civilian buildings, for an opted-in Urban
+        // Presence; the same list the setup dialog's preview generated with.
+        if options.urban_enabled {
+            settings.urban_types = crate::map::rmg::tech_catalog::resolve_urban(
+                generated_rules.native.rules(),
+                owner.fixed_art(),
+                &tech_types,
+                theater.extension,
+                theater_name,
+                |file| asset_manager.contains(file),
+            );
+        }
         #[cfg(not(feature = "ares"))]
         let _ = launch_seed;
         #[cfg(not(feature = "ares"))]
@@ -2637,8 +2649,11 @@ pub(crate) fn load_map_initial_with_assets(
         // it regenerates the seed. RESIDUAL: that owner is built after this
         // generation and does not continue past these draws.
         #[cfg(feature = "ares")]
-        let urban_catalog =
-            crate::map::rmg::tech_catalog::resolve_urban(&settings, processed, owner.fixed_art());
+        let urban_catalog = crate::map::rmg::tech_catalog::resolve_ares_urban(
+            &settings,
+            processed,
+            owner.fixed_art(),
+        );
         #[cfg(feature = "ares")]
         let launch_main = std::cell::RefCell::new(crate::sim::rng::SimRng::new(u64::from(
             launch_seed.unwrap_or_default(),
@@ -2648,7 +2663,7 @@ pub(crate) fn load_map_initial_with_assets(
         #[cfg(feature = "ares")]
         let objects = crate::map::rmg::build::GenerationObjects {
             tech_types: &tech_types,
-            urban: Some(crate::map::rmg::phases::urban::UrbanInputs {
+            urban_areas: Some(crate::map::rmg::phases::urban_areas::UrbanInputs {
                 catalog: &urban_catalog,
                 main_draw: &main_draw,
             }),

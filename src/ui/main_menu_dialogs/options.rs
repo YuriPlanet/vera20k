@@ -7,7 +7,6 @@
 //! Retail's controls and VERA's own share one dialog, sorted into the
 //! [`Category`] pages its right-hand column picks between.
 
-use crate::ui::chat_translation::ChatLanguage;
 use crate::ui::shell::trackbar::{
     TrackbarHold, TrackbarPress, trackbar_position_from_x, trackbar_press,
 };
@@ -81,6 +80,8 @@ pub(crate) const HD_RADAR_LABEL: &str = "VERA:HdRadar";
 pub(crate) const HD_RADAR_HELP: &str = "VERA:HdRadarHelp";
 pub(crate) const SMOOTH_SIDEBAR_LABEL: &str = "VERA:SmoothSidebar";
 pub(crate) const SMOOTH_SIDEBAR_HELP: &str = "VERA:SmoothSidebarHelp";
+pub(crate) const SMOOTH_ONLINE_MENUS_LABEL: &str = "VERA:SmoothOnlineMenus";
+pub(crate) const SMOOTH_ONLINE_MENUS_HELP: &str = "VERA:SmoothOnlineMenusHelp";
 /// The Interface page's HD Map Previews (`app::map_picture`). The browser
 /// build cannot start the hidden run that draws a map's picture.
 pub(crate) const HAS_HD_MAP_PREVIEWS: bool =
@@ -134,12 +135,6 @@ pub(crate) const DISPLAY_AUTO_LABEL: &str = "VERA:DisplayAuto";
 /// own name for itself, so they need no translation.
 pub(crate) const LANGUAGE_LABEL: &str = "VERA:Language";
 pub(crate) const LANGUAGE_HELP: &str = "VERA:LanguageHelp";
-/// The Interface page's Chat Translation list. After its off row, the rows
-/// are each language's own name for itself.
-pub(crate) const CHAT_TRANSLATION_LABEL: &str = "VERA:ChatTranslation";
-pub(crate) const CHAT_TRANSLATION_HELP: &str = "VERA:ChatTranslationHelp";
-/// The Chat Translation list's first row: no translation.
-pub(crate) const CHAT_TRANSLATION_NONE_LABEL: &str = "VERA:ChatTranslationNone";
 /// The Developer page's Check for Updates: the desktop updater
 /// (`app::updater`) checks once the dialog has slid out. The browser build
 /// has no updater.
@@ -147,6 +142,14 @@ pub(crate) const HAS_CHECK_FOR_UPDATES: bool =
     !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
 pub(crate) const CHECK_FOR_UPDATES_LABEL: &str = "VERA:CheckForUpdates";
 pub(crate) const CHECK_FOR_UPDATES_HELP: &str = "VERA:CheckForUpdatesHelp";
+/// The Esc menu's Set Window Size button. A browser tab's canvas takes its size
+/// from the page and an Android window fills the screen, so those builds have
+/// none.
+pub(crate) const HAS_SET_WINDOW_SIZE: bool = !cfg!(any(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    target_os = "android"
+));
+pub(crate) const SET_WINDOW_SIZE_LABEL: &str = "VERA:SetWindowSize";
 
 /// A button of the dialog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -157,6 +160,16 @@ pub(crate) enum LauncherButton {
     Category(Category),
     /// Check for Updates on the Developer page.
     CheckForUpdates,
+    /// The Esc menu's Set Window Size: the window goes back to how a launch opens it.
+    SetWindowSize,
+}
+
+impl LauncherButton {
+    /// Whether it sits among the page's own controls, rather than being one
+    /// of the right-hand column's.
+    pub(crate) const fn on_page(self) -> bool {
+        matches!(self, Self::CheckForUpdates | Self::SetWindowSize)
+    }
 }
 
 /// VERA's battle zoom: the Options combo that took the place of gamemd's
@@ -450,9 +463,6 @@ pub(crate) enum LauncherComboId {
     HealthBars,
     /// The `[VERA] Language=` list: VERA's interface language.
     Language,
-    /// The `[VERA] TranslateChat=` list: the language received online chat
-    /// is translated into, or off.
-    ChatTranslation,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -620,6 +630,10 @@ pub(crate) enum LauncherCheckboxId {
     /// at that multiple (`render::sidebar_smoothing`). Saved; a battle
     /// follows it at once.
     SmoothSidebar,
+    /// VERA's own box: the online client's enlarged art draws lightly
+    /// smoothed (`BatchRenderer::draw_chrome`). Saved; the next frame follows
+    /// it.
+    SmoothOnlineMenus,
     /// VERA's own box: the setup screens' map preview shows VERA's own
     /// drawing of the whole map (`app::map_picture`) instead of the
     /// map's `[PreviewPack]` picture. On by default; saved, and the next
@@ -686,10 +700,9 @@ pub(crate) enum LauncherOptionsEvent {
     DisplaySelected(DisplayTarget),
     /// The Language list's pick, a language tag, applied at once.
     LanguageSelected(String),
-    /// The Chat Translation list's pick, applied at once: a language, or
-    /// `None` for off.
-    ChatTranslationSelected(Option<ChatLanguage>),
     FullScreenChanged(bool),
+    /// The Esc menu's Set Window Size button, applied to the window at once.
+    SetWindowSizeRequested,
     OriginalShapeChanged(bool),
     YrOriginalStyleChanged(bool),
     ShiftQueueChanged(bool),
@@ -702,6 +715,7 @@ pub(crate) enum LauncherOptionsEvent {
     VeraIconChanged(bool),
     HdRadarChanged(bool),
     SmoothSidebarChanged(bool),
+    SmoothOnlineMenusChanged(bool),
     HdMapPreviewsChanged(bool),
     PerformanceStatsChanged(bool),
     ShowStringKeysChanged(bool),
@@ -754,6 +768,7 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) vera_icon: bool,
     pub(crate) hd_radar: bool,
     pub(crate) smooth_sidebar: bool,
+    pub(crate) smooth_online_menus: bool,
     pub(crate) hd_map_previews: bool,
     pub(crate) shift_queue: bool,
     pub(crate) terrain_deformation: bool,
@@ -778,9 +793,6 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) sidebar: SidebarSize,
     /// The Health Bars list's choice; like Sidebar, it applies at once.
     pub(crate) health_bars: HealthBarMode,
-    /// The Chat Translation list's choice, `None` for off; like Sidebar, it
-    /// applies at once.
-    pub(crate) translate_chat: Option<ChatLanguage>,
     /// VERA's team-colour strength as the slider's position,
     /// [`crate::rules::house_colors::STRENGTH_MIN`] less than the level the
     /// profile stores. Position 0 is gamemd's own bands.
@@ -809,6 +821,7 @@ impl Default for LauncherOptionsValues {
             vera_icon: false,
             hd_radar: false,
             smooth_sidebar: false,
+            smooth_online_menus: false,
             hd_map_previews: true,
             shift_queue: false,
             terrain_deformation: false,
@@ -822,7 +835,6 @@ impl Default for LauncherOptionsValues {
             detailed_eva_text: false,
             sidebar: SidebarSize::Normal,
             health_bars: HealthBarMode::Vanilla,
-            translate_chat: None,
             house_color_position: 0,
             score_position: 4,
             sound_position: 7,
@@ -908,6 +920,10 @@ pub(crate) struct OptionsDialogState {
     /// use. Set by [`Self::set_languages`]; empty until then.
     languages: Vec<crate::i18n::LanguageChoice>,
     language: String,
+    /// The size this launch opened the window at, which the Esc menu's Set
+    /// Window Size button names. Set by [`Self::set_launch_window_size`]; zero
+    /// until then.
+    launch_window_size: (u32, u32),
     /// The list that is open, if any.
     open_combo: Option<LauncherComboId>,
     launcher_audio_available: bool,
@@ -984,6 +1000,7 @@ impl OptionsDialogState {
             display,
             languages: Vec::new(),
             language: String::new(),
+            launch_window_size: (0, 0),
             open_combo: None,
             launcher_audio_available,
             capture: None,
@@ -1003,6 +1020,11 @@ impl OptionsDialogState {
     ) {
         self.languages = languages;
         self.language = language;
+    }
+
+    /// The size this launch opened the window at, width then height.
+    pub(crate) fn set_launch_window_size(&mut self, size: (u32, u32)) {
+        self.launch_window_size = size;
     }
 
     /// After a language change: the retail captions read from the string
@@ -1215,6 +1237,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::VeraIcon => &mut self.values.vera_icon,
             LauncherCheckboxId::HdRadar => &mut self.values.hd_radar,
             LauncherCheckboxId::SmoothSidebar => &mut self.values.smooth_sidebar,
+            LauncherCheckboxId::SmoothOnlineMenus => &mut self.values.smooth_online_menus,
             LauncherCheckboxId::HdMapPreviews => &mut self.values.hd_map_previews,
             LauncherCheckboxId::PerformanceStats => &mut self.values.performance_stats,
             LauncherCheckboxId::ShowStringKeys => &mut self.values.show_string_keys,
@@ -1268,6 +1291,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::SmoothSidebar => self
                 .pending_events
                 .push(LauncherOptionsEvent::SmoothSidebarChanged(checked)),
+            LauncherCheckboxId::SmoothOnlineMenus => self
+                .pending_events
+                .push(LauncherOptionsEvent::SmoothOnlineMenusChanged(checked)),
             LauncherCheckboxId::HdMapPreviews => self
                 .pending_events
                 .push(LauncherOptionsEvent::HdMapPreviewsChanged(checked)),
@@ -1358,14 +1384,6 @@ impl OptionsDialogState {
         self.open_combo = None;
         self.pending_events
             .push(LauncherOptionsEvent::HealthBarModeSelected(mode));
-    }
-
-    /// The Chat Translation list publishes its pick at once, like Sidebar.
-    pub(crate) fn select_chat_translation(&mut self, language: Option<ChatLanguage>) {
-        self.values.translate_chat = language;
-        self.open_combo = None;
-        self.pending_events
-            .push(LauncherOptionsEvent::ChatTranslationSelected(language));
     }
 
     /// The Display list publishes its pick at once too: the window moves to
@@ -1504,24 +1522,24 @@ impl Category {
             ],
             Self::Interface if !HAS_HD_MAP_PREVIEWS => &[
                 Setting::List(List::Language),
-                Setting::List(List::ChatTranslation),
                 Setting::List(List::Sidebar),
                 Setting::List(List::HealthBars),
                 Setting::Checkbox(Check::Tooltips),
                 Setting::Checkbox(Check::VeraIcon),
                 Setting::Checkbox(Check::HdRadar),
                 Setting::Checkbox(Check::SmoothSidebar),
+                Setting::Checkbox(Check::SmoothOnlineMenus),
                 Setting::Checkbox(Check::DetailedEvaText),
             ],
             Self::Interface => &[
                 Setting::List(List::Language),
-                Setting::List(List::ChatTranslation),
                 Setting::List(List::Sidebar),
                 Setting::List(List::HealthBars),
                 Setting::Checkbox(Check::Tooltips),
                 Setting::Checkbox(Check::VeraIcon),
                 Setting::Checkbox(Check::HdRadar),
                 Setting::Checkbox(Check::SmoothSidebar),
+                Setting::Checkbox(Check::SmoothOnlineMenus),
                 Setting::Checkbox(Check::HdMapPreviews),
                 Setting::Checkbox(Check::DetailedEvaText),
             ],
@@ -2180,7 +2198,6 @@ mod tests {
             List::Display,
             List::HealthBars,
             List::Language,
-            List::ChatTranslation,
         ]
         .map(Setting::List)
         .into_iter()
@@ -2211,6 +2228,7 @@ mod tests {
                 Check::VeraIcon,
                 Check::HdRadar,
                 Check::SmoothSidebar,
+                Check::SmoothOnlineMenus,
                 Check::HdMapPreviews,
                 Check::ShiftQueue,
                 Check::TerrainDeformation,

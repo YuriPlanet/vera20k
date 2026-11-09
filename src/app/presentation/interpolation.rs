@@ -627,20 +627,13 @@ pub(crate) fn prepare(state: &mut AppState, exact_capture: bool) {
     let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
         return;
     };
-    let speed = runtime
-        .simulation
-        .session()
-        .game_options()
-        .game_speed
-        .clamp(0, 6) as u8;
-    let interval = state.platform.frame_pacer.budget_ms(
-        speed,
-        crate::app::match_runtime::network_match::frame_budget(state),
-    );
-    let phase = state
-        .platform
-        .frame_pacer
-        .interpolation_elapsed_ms(u64::from(now_ms));
+    let interval = crate::app::match_runtime::network_match::game_frame_ms(state);
+    let (speed, network_fps) = crate::app::match_runtime::sim_tick::local_pacing_inputs(state);
+    let phase =
+        state
+            .platform
+            .frame_pacer
+            .interpolation_elapsed_ms(u64::from(now_ms), speed, network_fps);
     let interpolation = &mut state.match_state.match_presentation.interpolation;
     interpolation.observe(&runtime.simulation, now_ms, interval, held);
     if let Some(elapsed) = phase {

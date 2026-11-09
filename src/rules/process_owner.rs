@@ -1322,6 +1322,164 @@ mod tests {
     use crate::rules::retail_sources::RetailRulesSources;
 
     #[test]
+    fn retail_class_lights_convert_omitted_keys_only_in_reached_sections() {
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let lights = |rules: &RuleSet| {
+            [
+                rules.general.extra_unit_light,
+                rules.general.extra_infantry_light,
+                rules.general.extra_aircraft_light,
+            ]
+        };
+        let mut owner = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
+        let stock = owner
+            .load_scenario(
+                NativeScenarioRulesPrefix::NonCampaign(None),
+                &IniFile::empty(),
+            )
+            .unwrap();
+        assert_eq!(lights(&stock.rules), [200; 3]);
+        let unrelated = IniFile::from_str("[AudioVisual]\nBerserkColor=6\n");
+        let omitted = owner
+            .load_scenario(NativeScenarioRulesPrefix::NonCampaign(None), &unrelated)
+            .unwrap();
+        assert_eq!(lights(&omitted.rules), [0; 3], "native integer defaults");
+        let signed = IniFile::from_str(
+            "[AudioVisual]\nExtraUnitLight=-1.25\nExtraInfantryLight=2.75\nExtraAircraftLight=3.25\n",
+        );
+        let absent = owner
+            .load_scenario(
+                NativeScenarioRulesPrefix::NonCampaign(Some(&signed)),
+                &IniFile::empty(),
+            )
+            .unwrap();
+        assert_eq!(lights(&absent.rules), [-1250, 2750, 3250]);
+        let omitted = owner
+            .load_scenario(
+                NativeScenarioRulesPrefix::NonCampaign(Some(&signed)),
+                &unrelated,
+            )
+            .unwrap();
+        assert_eq!(lights(&omitted.rules), [-1000, 2000, 3000]);
+        let empty = IniFile::from_str(
+            "[AudioVisual]\nBerserkColor=6\nExtraUnitLight=\nExtraInfantryLight=\nExtraAircraftLight=\n",
+        );
+        let empty = owner
+            .load_scenario(
+                NativeScenarioRulesPrefix::NonCampaign(Some(&signed)),
+                &empty,
+            )
+            .unwrap();
+        assert_eq!(lights(&empty.rules), [-1000, 2000, 3000]);
+    }
+
+    #[test]
+    fn class_light_history_survives_preview_failure_cancel_and_saved_rules() {
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let retail = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
+        let mut root = retail.sources.selected_rules_root.clone();
+        // An explicit mod root without AudioVisual makes retained history
+        // observable; the actual retail root replaces all three with .2.
+        root.remove_section("AudioVisual");
+        let lights = |rules: &RuleSet| {
+            [
+                rules.general.extra_unit_light,
+                rules.general.extra_infantry_light,
+                rules.general.extra_aircraft_light,
+            ]
+        };
+        let mut hashes = Vec::new();
+        for (first, expected_unit) in [("1.25", 1000), ("2.25", 2000)] {
+            let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+                root.clone(),
+                None,
+                retail.sources.fixed_art.clone(),
+                retail.sources.fixed_sounds.clone(),
+                retail.sources.fixed_eva.clone(),
+            )
+            .unwrap();
+            owner
+                .load_scenario(
+                    NativeScenarioRulesPrefix::Campaign(None),
+                    &IniFile::from_str(&format!(
+                        "[AudioVisual]\nExtraUnitLight={first}\nExtraInfantryLight=-1.25\nExtraAircraftLight=.5\n",
+                    )),
+                )
+                .unwrap();
+            let expected = [expected_unit, -1000, 0];
+            owner
+                .prepare_random_map_preview(
+                    Some(&IniFile::from_str("[AudioVisual]\nBerserkColor=6\n")),
+                    "TEMPERATE",
+                    true,
+                )
+                .unwrap();
+            let preview =
+                RuleSet::from_processed_rules(owner.prepared_random_map_rules().unwrap()).unwrap();
+            assert_eq!(lights(&preview), expected);
+            owner
+                .prepare_random_map_preview(
+                    Some(&IniFile::from_str("[AudioVisual]\nExtraUnitLight=9\n")),
+                    "TEMPERATE",
+                    false,
+                )
+                .unwrap();
+            let prospective = owner
+                .random_map_preview_projection(None, "TEMPERATE")
+                .unwrap();
+            assert_eq!(
+                lights(&RuleSet::from_processed_rules(&prospective).unwrap()),
+                expected
+            );
+            // Process668F56 reads AudioVisual before Tiberium668F65. A
+            // later failure keeps the already reached light write.
+            let failed = IniFile::from_str(
+                "[Tiberiums]\n-1=Riparius\n[AudioVisual]\nExtraInfantryLight=9\n",
+            );
+            assert!(
+                owner
+                    .prepare_random_map_preview(Some(&failed), "TEMPERATE", true)
+                    .is_err()
+            );
+            let expected = [expected_unit, 9000, 0];
+            let loaded = owner
+                .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &IniFile::empty())
+                .unwrap();
+            assert_eq!(
+                lights(&loaded.rules),
+                expected,
+                "cancel/next reset keeps scalars"
+            );
+            let bytes =
+                crate::util::save_codec::serialize(owner.saved_scenario_rules().unwrap()).unwrap();
+            owner.install_saved_scenario_rules(
+                crate::util::save_codec::deserialize(&bytes).unwrap(),
+            );
+            let restored = owner
+                .project_saved_scenario_rules(owner.saved_scenario_rules().unwrap())
+                .unwrap();
+            assert_eq!(lights(&restored), expected);
+            assert_eq!(
+                restored.simulation_config_hash(),
+                loaded.rules.simulation_config_hash()
+            );
+            hashes.push((
+                restored.source_ini_hash(),
+                restored.simulation_config_hash(),
+            ));
+        }
+        assert_eq!(hashes[0].0, hashes[1].0, "identical final sources");
+        assert_ne!(
+            hashes[0].1, hashes[1].1,
+            "retained light enters the effective hash"
+        );
+    }
+
+    #[test]
     fn retail_crush_sounds_retain_fixed_catalog_bindings() {
         let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
             return;
@@ -1464,6 +1622,127 @@ mod tests {
             "same final text, different retained Voc IDs"
         );
         assert_ne!(hashes[0].1, hashes[1].1);
+    }
+
+    #[test]
+    fn heal_crate_binding_survives_unknown_layers_preview_and_saved_rules() {
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let mut retail = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
+        let stock = retail
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &IniFile::empty())
+            .unwrap();
+        assert!(
+            stock
+                .rules
+                .crate_rules
+                .heal_crate_sound
+                .as_deref()
+                .is_some_and(|sound| sound.eq_ignore_ascii_case("HealCrate"))
+        );
+        let rejected = retail
+            .load_scenario(
+                NativeScenarioRulesPrefix::Campaign(None),
+                &IniFile::from_str("[CrateRules]\nHealCrateSound=Unknown\n"),
+            )
+            .unwrap();
+        assert!(
+            rejected
+                .rules
+                .crate_rules
+                .heal_crate_sound
+                .as_deref()
+                .is_some_and(|sound| sound.eq_ignore_ascii_case("HealCrate")),
+            "an unknown later name must retain the valid retail binding"
+        );
+
+        // Preserve the real catalog and all other retail Rules/ART. The
+        // authored root's failed lookup must keep the process's prior Voc.
+        let mut root = retail.sources.selected_rules_root.clone();
+        root.merge(&IniFile::from_str("[CrateRules]\nHealCrateSound=Unknown\n"));
+        let make_owner = || {
+            NativeRulesProcessOwner::from_cold_start_sources(
+                root.clone(),
+                None,
+                retail.sources.fixed_art.clone(),
+                retail.sources.fixed_sounds.clone(),
+                retail.sources.fixed_eva.clone(),
+            )
+            .unwrap()
+        };
+        let mut owner = make_owner();
+        let never_bound = owner
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &IniFile::empty())
+            .unwrap();
+        assert_eq!(never_bound.rules.crate_rules.heal_crate_sound, None);
+        let initial = owner
+            .load_scenario(
+                NativeScenarioRulesPrefix::Campaign(None),
+                &IniFile::from_str("[CrateRules]\nHealCrateSound=HealCrate\n"),
+            )
+            .unwrap();
+        assert_eq!(
+            initial.rules.crate_rules.heal_crate_sound.as_deref(),
+            Some("HealCrate")
+        );
+        let mode = IniFile::from_str("[CrateRules]\nHealCrateSound=CrateMoney\n");
+        owner
+            .prepare_random_map_preview(Some(&mode), "TEMPERATE", true)
+            .unwrap();
+        let changed = IniFile::from_str("[CrateRules]\nHealCrateSound=HealCrate\n");
+        owner
+            .prepare_random_map_preview(Some(&changed), "TEMPERATE", false)
+            .unwrap();
+        assert_eq!(
+            owner
+                .prepared_random_map_rules()
+                .unwrap()
+                .crate_rules()
+                .heal_crate_sound
+                .as_deref(),
+            Some("CrateMoney")
+        );
+        let prospective = owner
+            .random_map_preview_projection(None, "TEMPERATE")
+            .unwrap();
+        assert_eq!(
+            prospective.crate_rules().heal_crate_sound.as_deref(),
+            Some("CrateMoney")
+        );
+        // Cancel followed by Full_Init retains the same scalar; the next
+        // root pass still cannot resolve Unknown and must not erase it.
+        let loaded = owner
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &IniFile::empty())
+            .unwrap();
+        assert_eq!(
+            loaded.rules.crate_rules.heal_crate_sound.as_deref(),
+            Some("CrateMoney")
+        );
+        let hash = loaded.rules.simulation_config_hash();
+        let bytes =
+            crate::util::save_codec::serialize(owner.saved_scenario_rules().unwrap()).unwrap();
+        owner.install_saved_scenario_rules(crate::util::save_codec::deserialize(&bytes).unwrap());
+        let restored = owner
+            .project_saved_scenario_rules(owner.saved_scenario_rules().unwrap())
+            .unwrap();
+        assert_eq!(
+            restored.crate_rules.heal_crate_sound.as_deref(),
+            Some("CrateMoney")
+        );
+        assert_eq!(restored.simulation_config_hash(), hash);
+        let mut other = make_owner();
+        other
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &changed)
+            .unwrap();
+        let other = other
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &IniFile::empty())
+            .unwrap();
+        assert_ne!(
+            other.rules.simulation_config_hash(),
+            hash,
+            "effective bindings enter the existing hash"
+        );
     }
 
     #[test]
@@ -2287,5 +2566,105 @@ mod tests {
                 .unwrap_err()
                 .ends_with(&RulesError::LangRuleDigestRejected.to_string())
         );
+    }
+
+    #[test]
+    fn sparky_on_fire_preserves_factory_slots_through_reread_save_and_reset() {
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let mut owner = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
+        let retail = owner
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &IniFile::empty())
+            .unwrap()
+            .into_parts()
+            .0;
+        assert!(retail.warheads_iter().all(|warhead| !warhead.sparky));
+        assert!(retail.general.on_fire.is_empty());
+
+        // Continue the same live Rules object through actual Process passes.
+        let reread = |owner: &mut NativeRulesProcessOwner, input: &str| {
+            let state = owner.registry.take().unwrap().into_registry_state();
+            let processed = RulesLayerStack::new(IniFile::from_str(input))
+                .process_with_fixed_art_and_registry_state_recovering(
+                    &owner.sources.fixed_art,
+                    state,
+                    RulesProcessContext::Ordinary,
+                    &owner.sources.fixed_eva,
+                    &owner.sources.fixed_sounds,
+                )
+                .unwrap();
+            let rules = owner.project_saved_scenario_rules(&processed).unwrap();
+            owner.install_saved_scenario_rules(processed);
+            rules
+        };
+        let first = reread(
+            &mut owner,
+            "[Fire]\nSparky=yes\n[AudioVisual]\nOnFire=ONFIRE_FIRST\n",
+        );
+        assert!(first.warhead("Fire").unwrap().sparky);
+        assert_eq!(first.general.on_fire, ["ONFIRE_FIRST"]);
+
+        // Repeated >24-byte names allocate distinct slots. Comma tokens keep
+        // leading spaces, so ` none` is a type while exact `none` is null.
+        let replaced = reread(
+            &mut owner,
+            "[Fire]\nSparky=invalid\n[AudioVisual]\n\
+             OnFire=ABCDEFGHIJKLMNOPQRSTUVWXA,ABCDEFGHIJKLMNOPQRSTUVWXA, none,none,ONFIRE_FIRST,ONFIRE_FIRST\n",
+        );
+        assert!(replaced.warhead("Fire").unwrap().sparky);
+        let names = &replaced.general.on_fire;
+        assert_eq!(names.len(), 5);
+        assert_eq!(names[0], "ABCDEFGHIJKLMNOPQRSTUVWX");
+        assert_ne!(
+            names[0], names[1],
+            "equal stored IDs keep distinct pointers"
+        );
+        assert_eq!(&names[2..], [" none", "ONFIRE_FIRST", "ONFIRE_FIRST"]);
+        let roots = crate::rules::effect_asset_catalog::anim_class_roots(&replaced);
+        for name in names {
+            assert!(roots.contains(&name.to_ascii_uppercase()));
+        }
+        let retained = reread(&mut owner, "[Fire]\nSparky=\n[AudioVisual]\nOnFire=\n");
+        assert!(retained.warhead("Fire").unwrap().sparky);
+        assert_eq!(retained.general.on_fire, *names);
+        // The same pass first sweeps the late AV-allocated Anim bodies;
+        // retaining this list does not retain the complete prior Rules hash.
+
+        let bytes =
+            crate::util::save_codec::serialize(owner.saved_scenario_rules().unwrap()).unwrap();
+        let cleared = reread(&mut owner, "[AudioVisual]\nOnFire=none,<none>\n");
+        assert!(cleared.general.on_fire.is_empty());
+        assert_ne!(
+            cleared.simulation_config_hash(),
+            retained.simulation_config_hash()
+        );
+        let no_sparks = reread(&mut owner, "[Fire]\nSparky=no\n");
+        assert!(!no_sparks.warhead("Fire").unwrap().sparky);
+        assert_ne!(
+            no_sparks.simulation_config_hash(),
+            cleared.simulation_config_hash()
+        );
+
+        owner.install_saved_scenario_rules(crate::util::save_codec::deserialize(&bytes).unwrap());
+        let restored = owner
+            .project_saved_scenario_rules(owner.saved_scenario_rules().unwrap())
+            .unwrap();
+        assert!(restored.warhead("Fire").unwrap().sparky);
+        assert_eq!(restored.general.on_fire, *names);
+        assert_eq!(
+            restored.simulation_config_hash(),
+            retained.simulation_config_hash()
+        );
+        let reset = owner
+            .load_scenario(
+                NativeScenarioRulesPrefix::NonCampaign(None),
+                &IniFile::empty(),
+            )
+            .unwrap()
+            .into_parts()
+            .0;
+        assert!(!reset.warhead("Fire").unwrap().sparky);
+        assert!(reset.general.on_fire.is_empty());
     }
 }

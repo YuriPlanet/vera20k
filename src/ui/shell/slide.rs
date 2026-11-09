@@ -287,6 +287,15 @@ pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
         top_panel: true,
         campaign_score: false,
     },
+    // VERA's Chat Translation page: OK, then Cancel.
+    SlideDialogSpec {
+        dialog_id: crate::ui::wol_chat_translation::DIALOG.0,
+        top_buttons: 1,
+        bottom_button: true,
+        map_button: false,
+        top_panel: false,
+        campaign_score: false,
+    },
     // WOL Options 0x2BC: OK and Sound Options, then Cancel. Its nested
     // Sound Options 0xD6: Back only (executed slide records).
     SlideDialogSpec {

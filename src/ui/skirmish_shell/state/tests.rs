@@ -11,10 +11,9 @@ use crate::map::waypoints::Waypoint;
 use crate::rules::ini_parser::IniFile;
 use crate::skirmish_launch::{
     LaunchCountry, LaunchStartPosition, LaunchTeam, LaunchValidationError, SKIRMISH_AI_SLOT_COUNT,
-    SkirmishLaunchOptions,
 };
 use crate::skirmish_modes::stock_skirmish_modes;
-use crate::ui::shell::trackbar::{THUMB_W, TrackbarHold, TrackbarRange};
+use crate::ui::shell::trackbar::{THUMB_W, TrackbarHold};
 use crate::ui::skirmish_shell::layout::compute_choose_map_modal_layout;
 use crate::ui::skirmish_shell::{
     COMBO_DROPDOWN_ROW_H, COMBO_DROPDOWN_SCROLLBAR_BUTTON_H, COMBO_DROPDOWN_SCROLLBAR_W,
@@ -296,70 +295,36 @@ fn retail_ranges_shell() -> Option<SkirmishShellState> {
 fn credits_thumb_x(shell: &SkirmishShellState, rect: RectPx) -> i32 {
     let range = shell
         .trackbar_bounds
-        .range(SkirmishTrackbarId::Credits0x511);
-    rect.x + range.thumb_left(shell.starting_credits, rect.w)
-}
-
-/// The original instructions' Credits samples for the runtime window
-/// (`tools/storage_oracle/launcher_trackbar.py`): `(x, position)` pairs.
-fn native_credits_pointers() -> Vec<(i32, i32)> {
-    let golden: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/storage_oracle/launcher_trackbar.json",
-    ))
-    .unwrap();
-    let geometry = golden["geometries"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|g| g["width"] == 129 && g["maximum"] == 5000)
-        .expect("runtime Credits fixture");
-    geometry["pointers"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|p| {
-            (
-                p["x"].as_i64().unwrap() as i32,
-                p["position"].as_i64().unwrap() as i32,
-            )
-        })
-        .collect()
+        .visual_range(SkirmishTrackbarId::Credits0x511);
+    rect.x
+        + range.thumb_left(
+            shell
+                .trackbar_bounds
+                .credits_visual_position(shell.starting_credits),
+            rect.w,
+        )
 }
 
 #[test]
-fn credits_presses_and_drags_follow_the_native_pointer_partition() {
-    let Some(retail) = retail_ranges_shell() else {
+fn extra_credit_presets_are_reachable_by_drag_and_reach_the_launched_match() {
+    let Some(mut shell) = retail_ranges_shell() else {
         return;
     };
-    // The native samples ran with retail Rules' Credits range.
-    let range = retail
-        .trackbar_bounds
-        .range(SkirmishTrackbarId::Credits0x511);
-    assert_eq!(range, TrackbarRange::new(5000, 10000, 100));
     let layout = compute_layout(800, 600);
     let rect = layout.trackbars.credits;
     let y = first_admitted_row(rect);
-    let thumb = credits_thumb_x(&retail, rect) - rect.x;
-    let samples = native_credits_pointers();
-    for &(x, position) in &samples {
-        let mut shell = retail.clone();
-        let before = shell.starting_credits;
-        handle_option_mouse_down(&mut shell, &layout, &[], rect.x + x, y);
-        if !(0..rect.w).contains(&x) {
-            assert_eq!(shell.starting_credits, before, "x={x} is off the window");
-        } else if (thumb..thumb + THUMB_W).contains(&x) {
-            assert_eq!(shell.starting_credits, before, "x={x} grabs the thumb");
-        } else {
-            assert_eq!(shell.starting_credits, range.min + position, "x={x}");
-        }
-    }
-    // A grabbed thumb follows the pointer anywhere along the row.
-    let mut shell = retail;
-    handle_option_mouse_down(&mut shell, &layout, &[], rect.x + thumb, y);
-    for &(x, position) in &samples {
-        handle_option_mouse_move(&mut shell, &layout, &[], rect.x + x, y);
-        assert_eq!(shell.starting_credits, range.min + position, "drag x={x}");
-    }
+    let thumb = credits_thumb_x(&shell, rect);
+    handle_option_mouse_down(&mut shell, &layout, &[], thumb, y);
+    // The two added choices occupy the right end of the existing rail.
+    handle_option_mouse_move(&mut shell, &layout, &[], rect.x + 66, y);
+    assert_eq!(shell.credits(), 30_000);
+    let maps = [test_map_entry("first.mmx")];
+    let launch = launch_session(&shell, &maps, &stock_skirmish_modes(), false).unwrap();
+    assert_eq!(launch.options.starting_credits, 30_000);
+    handle_option_mouse_move(&mut shell, &layout, &[], rect.x + rect.w, y);
+    assert_eq!(shell.credits(), 100_000);
+    let launch = launch_session(&shell, &maps, &stock_skirmish_modes(), false).unwrap();
+    assert_eq!(launch.options.starting_credits, 100_000);
 }
 
 #[test]
@@ -859,7 +824,15 @@ fn a_zero_money_increment_slides_credits_in_ones() {
         .trackbar_bounds
         .range(SkirmishTrackbarId::Credits0x511);
     assert_eq!(range.step, 1);
-    assert_eq!(shell.starting_credits, range.value_at(39, rect.w));
+    assert_eq!(
+        shell.starting_credits,
+        shell.trackbar_bounds.credits_from_visual_position(
+            shell
+                .trackbar_bounds
+                .visual_range(SkirmishTrackbarId::Credits0x511)
+                .value_at(39, rect.w)
+        )
+    );
     assert_eq!(shell.credits(), shell.starting_credits);
 }
 
@@ -915,7 +888,8 @@ fn trackbar_rail_click_jumps_once_and_does_not_track_cursor() {
     // following move must not retrack the value to the cursor.
     handle_option_mouse_move(&mut shell, &layout, &[], 470, 319);
 
-    assert_eq!(shell.starting_credits, 7400);
+    let selected = shell.starting_credits;
+    assert!((5000..10000).contains(&selected));
     assert_eq!(
         shell.trackbar_hold,
         Some(TrackbarHold {
@@ -930,7 +904,7 @@ fn trackbar_rail_click_jumps_once_and_does_not_track_cursor() {
 
     handle_option_mouse_up(&mut shell);
     handle_option_mouse_move(&mut shell, &layout, &[], rect.x - 100, 319);
-    assert_eq!(shell.starting_credits, 7400);
+    assert_eq!(shell.starting_credits, selected);
     assert_eq!(shell.trackbar_hold, None);
     assert!(shell.drain_pending_ui_sounds().is_empty());
 }
@@ -943,14 +917,15 @@ fn trackbar_repeated_drag_same_value_is_silent() {
     let thumb_x = credits_thumb_x(&shell, rect);
     let y = first_admitted_row(rect);
 
-    let max_value_x = thumb_x + THUMB_W / 2;
-    handle_option_mouse_down(&mut shell, &layout, &[], max_value_x, y);
-    handle_option_mouse_move(&mut shell, &layout, &[], max_value_x, y);
-
+    handle_option_mouse_down(&mut shell, &layout, &[], thumb_x + THUMB_W / 2, y);
+    handle_option_mouse_move(&mut shell, &layout, &[], rect.x + 66, y);
+    assert_eq!(shell.credits(), 30_000);
     assert_eq!(
-        shell.starting_credits,
-        SkirmishLaunchOptions::default().starting_credits
+        shell.drain_pending_ui_sounds(),
+        vec![SkirmishShellUiSound::GenericClick]
     );
+    handle_option_mouse_move(&mut shell, &layout, &[], rect.x + 66, y);
+    assert_eq!(shell.credits(), 30_000);
     assert!(shell.drain_pending_ui_sounds().is_empty());
 }
 
@@ -967,7 +942,7 @@ fn launch_session_packs_selected_map_and_enabled_slots() {
     shell.player_team = 0;
     shell.starting_credits = 7400;
     shell.unit_count = 4;
-    shell.game_speed = game_speed_from_visual_position(3);
+    shell.game_speed = crate::ui::shell::game_speed::SpeedContext::Offline.stored_speed(3);
     shell.short_game = false;
     shell.super_weapons = false;
     shell.build_off_ally = false;

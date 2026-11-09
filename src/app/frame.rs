@@ -5,6 +5,7 @@
 
 use super::input::precedence::{ModalPage, ScreenPage};
 use super::loading::transitions;
+use super::match_runtime::redraw_gate::ProbeVerdict;
 use super::{
     ActiveEventLoop, App, AppState, GameScreen, Instant, Result, frontend::startup_splash, render,
     sim_tick,
@@ -44,7 +45,8 @@ pub(super) enum FrameRenderOutcome {
     Presented,
     Unavailable,
     Deferred,
-    /// A probe found the presented picture still standing and drew nothing.
+    /// A probe drew nothing: the presented picture still stands, or the draw
+    /// limits hold the next one.
     Unchanged,
 }
 
@@ -879,19 +881,27 @@ impl App {
         // still follows exactly one match service. The picture is judged by
         // the clock before the draw (`redraw_gate::PictureClock`).
         let picture_clock = crate::app::match_runtime::redraw_gate::PictureClock::now();
-        let unchanged = pass == FramePass::Probe
-            && state.platform.redraw_gate.still_presented(
+        let verdict = (pass == FramePass::Probe).then(|| {
+            state.platform.redraw_gate.probe_verdict(
                 crate::app::match_runtime::redraw_gate::still_frame(
                     state,
                     false,
                     runtime_pass.screen_shake_offset,
                     picture_clock,
                 ),
-            );
-        // The gate's audit draws the pass anyway and checks its pixels.
-        if unchanged && !state.platform.redraw_gate.auditing() {
-            state.match_state.network_quality.picture_stood();
-            return Ok(FrameRenderOutcome::Unchanged);
+                picture_clock.at,
+            )
+        });
+        let unchanged = verdict == Some(ProbeVerdict::Stands);
+        match verdict {
+            // The gate's audit draws the pass anyway and checks its pixels.
+            Some(ProbeVerdict::Stands) if state.platform.redraw_gate.auditing() => {}
+            Some(ProbeVerdict::Stands | ProbeVerdict::PointerWaits) => {
+                state.match_state.network_quality.picture_stood();
+                return Ok(FrameRenderOutcome::Unchanged);
+            }
+            Some(ProbeVerdict::DrawWaits) => return Ok(FrameRenderOutcome::Unchanged),
+            Some(ProbeVerdict::Draw) | None => {}
         }
         // Judged after the service: a frame that arrived or came due while
         // it ran may still go before this draw.
@@ -961,6 +971,12 @@ impl App {
                 });
         state.renderer.gpu.timer.begin_frame(&mut encoder);
         state.renderer.window_ui.begin_frame();
+        if state.match_state.input.retail_screenshot_requested {
+            state
+                .renderer
+                .retail_screenshot_frame_cache
+                .retain_presented(&state.renderer.gpu.device, &mut encoder);
+        }
         let mut pending_main_menu_entry_token = None;
         let mut pending_main_menu_title_receipt = None;
         use crate::app::diagnostics::shell_capture::PresentedShell;
@@ -1181,6 +1197,13 @@ impl App {
                         }
                     }
                 }
+                if page == Some(ModalPage::ShellMessageBox) {
+                    crate::app::frontend::main_menu_shell_render::render_shell_message_box_over_page(
+                        state,
+                        &mut encoder,
+                        &output.texture,
+                    );
+                }
             }
             GameScreen::Loading => {
                 match crate::app::loading::pump::render_loading_screen(
@@ -1299,6 +1322,12 @@ impl App {
                     state
                         .renderer
                         .copy_game_frame_to(&mut encoder, &output.texture);
+                    render::draw_software_cursor(
+                        state,
+                        &mut encoder,
+                        &view,
+                        render_output.software_cursor,
+                    );
                     render_output
                 };
                 game_render_output = Some(game_output);
@@ -1631,13 +1660,39 @@ impl App {
             } else {
                 [0, 0]
             });
+        // A family renderer that drew a timer-driven 0x71C frame this pass
+        // advances it now that the frame reached the screen.
+        state.frontend.shell_monitor.commit_presented();
+        state.frontend.shell_page_title.commit_presented();
+        let mut status_step = state.frontend.shell_status_line.commit_presented();
+        if let Some(page) = state.frontend.score_page.as_mut() {
+            page.commit_presented();
+        }
+        if let Some(page) = state.frontend.campaign_score_page.as_mut() {
+            page.commit_presented();
+        }
+        if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
+            status_step |= ui.statics.commit_presented();
+        }
+        let skirmish = &mut state.frontend.skirmish_shell_state;
+        status_step |= skirmish.statics.commit_presented();
+        if let Some(modal) = skirmish.choose_map_modal.as_mut() {
+            status_step |= modal.statics.commit_presented();
+        }
+        if let Some(setup) = skirmish.random_map_setup_modal.as_mut() {
+            status_step |= setup.statics.commit_presented();
+        }
         let still = crate::app::match_runtime::redraw_gate::still_frame(
             state,
             shell_capture.is_some() || hidden_run.is_some(),
             runtime_pass.screen_shake_offset,
             picture_clock,
         );
-        state.platform.redraw_gate.record_presented(still);
+        let limits = crate::app::match_runtime::redraw_gate::draw_limits(state, status_step);
+        state
+            .platform
+            .redraw_gate
+            .record_presented(still, draw_started, limits);
         if let Some(readback) = pending_gate_audit {
             let pixels = readback.finish(
                 &state.renderer.gpu.device,
@@ -1648,25 +1703,6 @@ impl App {
                 .platform
                 .redraw_gate
                 .audit_presented(pixels, unchanged);
-        }
-        // A family renderer that drew a timer-driven 0x71C frame this pass
-        // advances it now that the frame reached the screen.
-        state.frontend.shell_monitor.commit_presented();
-        state.frontend.shell_page_title.commit_presented();
-        state.frontend.shell_status_line.commit_presented();
-        if let Some(page) = state.frontend.score_page.as_mut() {
-            page.commit_presented();
-        }
-        if let Some(page) = state.frontend.campaign_score_page.as_mut() {
-            page.commit_presented();
-        }
-        let skirmish = &mut state.frontend.skirmish_shell_state;
-        skirmish.statics.commit_presented();
-        if let Some(modal) = skirmish.choose_map_modal.as_mut() {
-            modal.statics.commit_presented();
-        }
-        if let Some(setup) = skirmish.random_map_setup_modal.as_mut() {
-            setup.statics.commit_presented();
         }
         if let Some(token) = pending_main_menu_entry_token.take() {
             crate::app::frontend::shell_transition::record_main_menu_entry_presented(state, token)?;

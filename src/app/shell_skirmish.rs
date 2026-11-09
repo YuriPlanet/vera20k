@@ -1087,6 +1087,23 @@ impl App {
         true
     }
 
+    /// VERA's Esc menu (`app::shell_menu`): Esc stays with the seed browser,
+    /// a validation box and a chooser's prompt, and does nothing while a
+    /// random map generates.
+    pub(super) fn skirmish_leaves_escape(state: &AppState) -> bool {
+        let shell = &state.frontend.skirmish_shell_state;
+        shell.saved_seed_browser.is_none()
+            && shell.validation_modal.is_none()
+            && shell
+                .choose_map_modal
+                .as_ref()
+                .is_none_or(|modal| modal.message_box.is_none())
+            && shell
+                .random_map_setup_modal
+                .as_ref()
+                .is_none_or(|modal| !modal.generating)
+    }
+
     /// Enter or Escape on Use Map's box answer Cancel (`0x005D370D`). VERA's
     /// download boxes take Enter as OK, as the room's missing-map offer
     /// does: Download, or going on with a downloaded map. While the

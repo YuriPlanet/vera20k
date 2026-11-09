@@ -58,7 +58,7 @@ pub(crate) mod base_plan_generation;
 pub mod bomb;
 #[cfg(feature = "ares")]
 pub mod bounty;
-pub(crate) mod build_site;
+pub mod build_site;
 pub mod building_art;
 pub mod building_construction;
 pub(crate) mod building_entry;

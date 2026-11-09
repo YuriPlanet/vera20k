@@ -33,6 +33,10 @@ pub struct RmgSettings {
     /// Indexed by map type.
     pub vegetation_min: [i32; MAP_TYPE_BUCKETS],
     pub vegetation_max: [i32; MAP_TYPE_BUCKETS],
+    /// VERA extension: the theater's civilian buildings the urban stage may
+    /// place (`tech_catalog::resolve_urban`). Not from `RMGMD.INI`; the app
+    /// fills it per theater. Empty places no towns.
+    pub urban_types: Vec<crate::map::rmg::phases::tech_buildings::TechType>,
     /// Ares `[General] GenerateUrbanAreas=`: the process's first value of
     /// the urban-areas switch ([`RmgOptions::urban_areas`]).
     #[cfg(feature = "ares")]
@@ -79,6 +83,7 @@ impl Default for RmgSettings {
             snow_rgb: Default::default(),
             vegetation_min: [0; MAP_TYPE_BUCKETS],
             vegetation_max: [0; MAP_TYPE_BUCKETS],
+            urban_types: Vec::new(),
             // RMG::UrbanAreas starts false; an absent file reads the defaults.
             #[cfg(feature = "ares")]
             generate_urban_areas: false,

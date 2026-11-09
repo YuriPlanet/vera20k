@@ -59,22 +59,22 @@ keys, so the defaults above apply.
 | `0x596FFE` | `1006ACF0` | RMG_EnableArchipelago | Ported: `ui/skirmish_shell/state/random_map_setup.rs` list |
 | `0x5970EA` | `1006AD10` | RMG_EnableDesert | Ported: same |
 | `0x5982D5` | `1006ABF0` | MapSeedClass_LoadFromINI | Ported: `rmg/settings.rs`, latch in `app/frontend/skirmish_session.rs` |
-| `0x598FB8` | `1006ABD0` | MapSeedClass_Generate_UrbanAreas | Ported: `rmg/pipeline.rs` stage `UrbanAreas`, `rmg/phases/urban.rs` `run` |
-| `0x5A5C6A` | `1006AA90` | MapSeedClass_Generate_PlacePavedRoads_RoadEndNE | Ported: `urban.rs` `place_paved_roads` |
+| `0x598FB8` | `1006ABD0` | MapSeedClass_Generate_UrbanAreas | Ported: `rmg/pipeline.rs` stage `UrbanAreas`, `rmg/phases/urban_areas.rs` `run` |
+| `0x5A5C6A` | `1006AA90` | MapSeedClass_Generate_PlacePavedRoads_RoadEndNE | Ported: `urban_areas.rs` `place_paved_roads` |
 | `0x5A5D6F` | `1006AAC0` | MapSeedClass_Generate_PlacePavedRoads_RoadEndSW | Ported: same |
-| `0x5A5F6A` | `1006AAA0` | MapSeedClass_Generate_PlacePavedRoads_RoadEndNW | Ported: `urban.rs` `place_north_south_road` |
+| `0x5A5F6A` | `1006AAA0` | MapSeedClass_Generate_PlacePavedRoads_RoadEndNW | Ported: `urban_areas.rs` `place_north_south_road` |
 | `0x5A6464` | `1006AAB0` | MapSeedClass_Generate_PlacePavedRoads_RoadEndSE | Ported: same |
-| `0x5A65CA` | `1006ABA0` | MapSeedClass_Generate_PlaceUrbanStructures_Start | Ported: `urban.rs` `place_structures` |
+| `0x5A65CA` | `1006ABA0` | MapSeedClass_Generate_PlaceUrbanStructures_Start | Ported: `urban_areas.rs` `place_structures` |
 | `0x5A6619` | `1006AB70` | MapSeedClass_Generate_PlaceUrbanStructures_Loop | Ported: same |
 | `0x5A66B0` | `1006AB90` | MapSeedClass_Generate_PlaceUrbanStructures_SanityCheck | Ported: same |
-| `0x5A6998` | `1006AAD0` | MapSeedClass_Generate_PlaceUrbanFoots | Ported: `urban.rs` `place_foots` |
+| `0x5A6998` | `1006AAD0` | MapSeedClass_Generate_PlaceUrbanFoots | Ported: `urban_areas.rs` `place_foots` |
 
 `0x5FED00` (OverlayTypeClass_GetRadarColor, `1006ACC0`) is not part of this
 chain; see [remaining work](ares-remaining.md).
 
 ## Where VERA20K owns it
 
-- `map/rmg/phases/urban.rs` ports gamemd's urban pass, which stock Generate
+- `map/rmg/phases/urban_areas.rs` ports gamemd's urban pass, which stock Generate
   never calls: `0x005A5020` (driver), `0x005A5360` (area growth),
   `0x005A7640` (bounds), `0x005A5B50` (roads, with `0x005A6D80`,
   `0x005A7070`, `0x005A76E0` and `Tile_Is_Median @ 0x00486730`),
@@ -87,12 +87,16 @@ chain; see [remaining work](ares-remaining.md).
   `GenerateUrbanAreas=`.
 - Urban buildings, infantry and vehicles are emitted as Neutral entities
   after the bridge huts and tech buildings; each constructor is a
-  `RmgConstructionPhase::Urban` trace row, replayed as one Scenario word.
+  `RmgConstructionPhase::UrbanAreas` trace row, replayed as one Scenario
+  word. They follow VERA's own towns (`phases/urban.rs`, `VeraUrban=`), a
+  separate extension that may run in the same map.
 - `rules/native_processing.rs` `registers_urban_type` answers the type
-  lookups; `rmg/tech_catalog.rs` `resolve_urban` resolves the lists, with
+  lookups; `rmg/tech_catalog.rs` `resolve_ares_urban` resolves the lists, with
   footprints from art `Foundation=` like the tech buildings.
 - The dialog's Urban Areas box is `RandomMapSetupControl::UrbanAreas5000`
-  at Ares' resource rect, with `GUI:UrbanAreas` and `STT:RMGUrbanAreas`.
+  at Ares' resource rect, with `GUI:UrbanAreas` and `STT:RMGUrbanAreas`. VERA's
+  Advanced view puts its seventh slider there, so the box shows in the basic
+  view only.
 
 ## Residuals
 

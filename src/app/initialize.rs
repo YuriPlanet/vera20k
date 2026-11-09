@@ -414,8 +414,7 @@ impl App {
         let capture = capture_dimensions.is_some();
         // A player window opens at that size on every launch, as gamemd's
         // shell does (`WinMain` 006BD9B5, `RetailOptionsLoad`), however large
-        // it was left; only its corner is kept.
-        let placement = options_profile.window_placement.filter(|_| !capture);
+        // it was left.
         let inner_size: winit::dpi::Size = if capture {
             PhysicalSize::new(window_width, window_height).into()
         } else {
@@ -432,7 +431,6 @@ impl App {
         } else {
             crate::app::display_target::current_displays_for(event_loop)
         };
-        let wanted_display = super::display_target::screen_for(&displays, &options_profile.display);
         let fullscreen = (!capture && !hidden_spawn_window && options_profile.full_screen)
             .then(|| super::display_target::fullscreen_for(&displays, &options_profile.display));
         // A hidden run's window has a title of its own, so a second launch's
@@ -492,31 +490,11 @@ impl App {
             window_attrs = window_attrs.with_canvas(Some(crate::web::canvas()));
         }
         let window: Arc<Window> = Arc::new(event_loop.create_window(window_attrs)?);
-        // A windowed launch opens where the player last left the window, while
-        // that spot still shows its title bar on the chosen screen (any screen
-        // when none is chosen); otherwise it opens centred on the chosen
-        // screen. Full screen already covers it from the attributes above.
-        if !options_profile.full_screen {
-            let saved_corner = placement
-                .map(|placement| winit::dpi::PhysicalPosition::new(placement.x, placement.y))
-                .filter(|corner| {
-                    let screens = displays
-                        .iter()
-                        .map(|display| &display.handle)
-                        .filter(|screen| match &wanted_display {
-                            Some(wanted) => wanted == *screen,
-                            None => true,
-                        })
-                        .map(|screen| (screen.position(), screen.size()));
-                    super::display_target::title_bar_on_a_screen(*corner, screens)
-                });
-            if let Some(corner) = saved_corner {
-                window.set_outer_position(corner);
-            } else if let Some(monitor) = wanted_display.as_ref() {
-                window.set_outer_position(super::display_target::centered_outer_position(
-                    &window, monitor,
-                ));
-            }
+        // A windowed launch opens in the middle of the chosen screen, or of the
+        // one the system picked when none is chosen. Full screen already covers
+        // it from the attributes above.
+        if !capture && !options_profile.full_screen {
+            super::display_target::center_at_launch(&window, &displays, &options_profile.display);
         }
         // gamemd's WinMain builds WWMouse (`0x006BDF1C`), whose constructor hides
         // the cursor, before the startup splash; from the first frame after it,
@@ -552,6 +530,7 @@ impl App {
                 startup_options,
                 startup_audio,
                 capture_dimensions,
+                profile_screen,
                 external_launch,
                 quickplay_allowed,
             )
@@ -577,6 +556,7 @@ impl App {
         startup_options: RetailStartupOptions,
         startup_audio: StartupAudioDisposition,
         capture_dimensions: Option<(u32, u32)>,
+        launch_window_size: ScreenSize,
         external_launch: bool,
         quickplay_allowed: bool,
     ) -> Result<InitializationStep> {
@@ -986,6 +966,7 @@ impl App {
                 window,
                 game_config,
                 capture_dimensions.map(|(w, h)| PhysicalSize::new(w, h)),
+                launch_window_size,
             ),
             match_state: crate::app::match_runtime::state::MatchState {
                 campaign_names: Default::default(),
@@ -1277,6 +1258,7 @@ impl App {
                 outcome_banner_art,
                 vxl_pose_frame_cache: std::cell::RefCell::new(Default::default()),
                 retail_screenshot_frame_cache: Default::default(),
+                terrain_picture: Default::default(),
             },
             process_assets,
             audio: startup_audio_runtime,
