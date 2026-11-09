@@ -7,6 +7,8 @@
 //! `finish`), and the closed report stays for the external launch result
 //! until the next install.
 
+use std::collections::BTreeMap;
+
 use crate::net::live_commands::{
     ClientLinkStats, DeliveryCounters, LinkState, NetworkRecoveryStatus,
 };
@@ -157,6 +159,10 @@ pub(crate) struct OutcomeReport {
     pub(crate) reconnects: u32,
     pub(crate) started: bool,
     pub(crate) failure: Option<&'static str>,
+    /// Each part of the start this game offered the relay, as long as the
+    /// match has not started: two games' reports of one match differ in the
+    /// part that differs.
+    pub(crate) start_hash: Option<BTreeMap<&'static str, String>>,
 }
 
 /// Live values for the telemetry dashboard.
@@ -193,6 +199,7 @@ pub(crate) struct NetworkQualityStats {
     slowdowns: u32,
     slowed_by: Vec<i8>,
     delivery: DeliveryCounters,
+    start_parts: Vec<(&'static str, u64)>,
     tick_ms: MsHistogram,
     frame_ms: MsHistogram,
     last_present: Option<Instant>,
@@ -206,6 +213,11 @@ impl NetworkQualityStats {
             deferrals_at_start: render_deferrals,
             ..Self::default()
         };
+    }
+
+    /// The parts of the start a relay-sequenced match is about to offer.
+    pub(crate) fn record_start_parts(&mut self, parts: Vec<(&'static str, u64)>) {
+        self.start_parts = parts;
     }
 
     pub(crate) fn record_tick(&mut self, tick_ms: f32) {
@@ -297,6 +309,12 @@ impl NetworkQualityStats {
                 reconnects: self.reconnects,
                 started: delivery.started,
                 failure: delivery.failure,
+                start_hash: (!delivery.started && !self.start_parts.is_empty()).then(|| {
+                    self.start_parts
+                        .iter()
+                        .map(|&(part, digest)| (part, format!("{digest:016x}")))
+                        .collect()
+                }),
             },
         }
     }
@@ -446,9 +464,26 @@ mod tests {
                 "performance": {"tick_ms_p50": null, "tick_ms_p99": null, "fps_p50": null,
                     "fps_p5": null, "unfocused_seconds": 0.0},
                 "pacing": {"slowdowns": 0, "slowed_by": [], "slowed_seconds": 0.0},
-                "outcome": {"desync_frame": null, "reconnects": 0, "started": false, "failure": null},
+                "outcome": {"desync_frame": null, "reconnects": 0, "started": false, "failure": null,
+                    "start_hash": null},
             })
         );
+    }
+
+    /// Only a match the relay never started reports its start part by part.
+    #[test]
+    fn a_match_that_started_leaves_out_its_start_hash() {
+        let mut stats = NetworkQualityStats::default();
+        stats.record_start_parts(vec![("setup_seed", 7), ("world", u64::MAX)]);
+        let start_hash = |stats: &NetworkQualityStats| {
+            serde_json::to_value(stats.summarize()).unwrap()["outcome"]["start_hash"].clone()
+        };
+        assert_eq!(
+            start_hash(&stats),
+            serde_json::json!({"setup_seed": "0000000000000007", "world": "ffffffffffffffff"})
+        );
+        stats.delivery.started = true;
+        assert_eq!(start_hash(&stats), serde_json::Value::Null);
     }
 
     /// The relay hop's report reads the uplink's time by state, and the gap

@@ -54,9 +54,10 @@ pub struct DeliveryCounters {
     pub round_trip_max_ms: u64,
     /// The sampled frame whose checksums differed, from the relay's DESYNC.
     pub desync_frame: Option<u32>,
-    /// The relay's clock for this match has started.
+    /// The relay's clock for this match has started, even if the relay
+    /// lost the match later.
     pub started: bool,
-    /// [`SequencedError::code`] of the error that ended the match here.
+    /// The name (`SequencedError::code`) of the error that ended the match here.
     pub failure: Option<&'static str>,
 }
 
@@ -521,6 +522,7 @@ impl SequencedSession {
     #[cfg(any(test, feature = "test-support"))]
     pub(super) fn mark_started_for_test(&mut self) {
         self.started = true;
+        self.delivery.started = true;
     }
 
     pub(super) fn frontier(&self) -> u32 {
@@ -553,10 +555,7 @@ impl SequencedSession {
     }
 
     pub(super) fn delivery_counters(&self) -> DeliveryCounters {
-        DeliveryCounters {
-            started: self.started,
-            ..self.delivery
-        }
+        self.delivery
     }
 
     /// Keeps the error that ended this match for its report.
@@ -914,6 +913,7 @@ impl SequencedSession {
                     self.last_progress = None;
                 }
                 self.started |= status.started;
+                self.delivery.started |= status.started;
                 self.head_frame = self.head_frame.max(status.head_frame);
                 self.remote_next_sequence = self.remote_next_sequence.max(status.next_seq);
                 self.pause_active_sources &= status.active_sources;
@@ -1694,6 +1694,23 @@ mod restore_tests {
             started: true,
             feedback: Default::default(),
         })
+    }
+
+    /// A relay that loses the match later does not unsay that it started.
+    #[test]
+    fn the_report_keeps_that_the_match_started() {
+        let mut houses = [None; 30];
+        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
+        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        assert!(!session.delivery_counters().started);
+        session.receive(status(1, 0), Instant::now()).unwrap();
+        let lost = OrderEvent::Error {
+            code: OrderError::NotConfigured,
+            expected: 0,
+        };
+        session.receive(lost, Instant::now()).unwrap();
+        assert!(!session.started());
+        assert!(session.delivery_counters().started);
     }
 
     /// The counter the departed process reached comes from the history: its

@@ -3434,6 +3434,14 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
         rate,
         sim.state_hash(),
     )?;
+    if ordering_clock.is_some() {
+        let parts = agreement
+            .report_parts()
+            .into_iter()
+            .chain(sim.state_hash_owners())
+            .collect();
+        state.match_state.network_quality.record_start_parts(parts);
+    }
     if state.match_state.session_mode() == SessionMode::Lan {
         let service = state.match_state.lan_service.as_mut().expect("visit");
         let scope = service
