@@ -97,7 +97,8 @@ pack credited at the top of [its language file](vera20k.vi.ini).
 ## Where the languages are after installing
 
 The game has English built in. An installed game keeps every other language in a
-`languages` folder, as the same files that are in this folder:
+`languages` folder, as the same files that are in this folder, along with the fonts for
+other writing systems:
 
 | System | Folder |
 | --- | --- |
@@ -106,8 +107,10 @@ The game has English built in. An installed game keeps every other language in a
 | Linux | `usr/share/vera20k/languages` inside the AppImage |
 
 On Windows, delete a language's files from that folder to take it out of the game. The
-next update puts it back. The macOS app and the Linux AppImage are sealed when they are
-made, so for those, delete the files from the `languages` folder that
+next update puts it back. A font can go too, but it isn't tied to one language: without
+it, any text only that font draws shows as empty boxes, even a player's name in an English
+game. The macOS app and the Linux AppImage are sealed when they are made, so for those,
+delete the files from the `languages` folder that
 [`languages.sh`](../../.github/release/languages.sh) makes before packaging.
 
 ## Keep a language up to date

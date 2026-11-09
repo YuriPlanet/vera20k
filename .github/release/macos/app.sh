@@ -11,8 +11,7 @@
 # Release job applies Developer ID signing and notarization before publishing.
 # The image
 # window shows only the app, an arrow and Applications (dmg_settings.py);
-# README.txt, the licenses and every language but English are in the app's
-# Resources.
+# README.txt, the licenses and the languages folder are in the app's Resources.
 set -euo pipefail
 package="$1"
 dmg="$2"

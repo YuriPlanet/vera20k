@@ -48,6 +48,7 @@ def package_fixture(package):
     for filename in signing.PACKAGE_FILES:
         (package / filename).write_bytes(pe_fixture() if filename.endswith(".exe") else b"text")
     (package / signing.LANGUAGES / "vera20k.vi.ini").write_bytes(b"language")
+    (package / signing.LANGUAGES / "NotoSansThai-VF.ttf").write_bytes(b"font")
 
 
 def waiting_result(directory, data):

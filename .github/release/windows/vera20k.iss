@@ -181,8 +181,8 @@ Source: "config.toml.example"; DestDir: "{app}"; Flags: ignoreversion
 Source: "README.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "LICENSE-GPL"; DestDir: "{app}"; Flags: ignoreversion
 Source: "THIRD_PARTY_LICENSES.html"; DestDir: "{app}"; Flags: ignoreversion
-; Every language but English. Deleting a language's files removes it from the
-; game until the next update.
+; Every language but English and the fonts behind them. Deleting a language's
+; files removes it from the game until the next update.
 Source: "languages\*"; DestDir: "{app}\languages"; Flags: ignoreversion
 
 [Tasks]

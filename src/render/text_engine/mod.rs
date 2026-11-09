@@ -13,7 +13,8 @@
 //! - Behind it, the bundled Noto fonts ([`fonts`]) for what it lacks, such as
 //!   Arabic and Thai: shaped as vector fonts, so letters join and marks
 //!   stack. The browser build fetches them: Noto Sans before the game
-//!   starts, the others the first time text needs one ([`web_fonts`]).
+//!   starts, the others the first time text needs one ([`web_fonts`]). An
+//!   installer's build reads those others from the languages folder.
 //!
 //! Every glyph, GAME.FNT's own too, draws as hard pixels on the line's native
 //! grid ([`pixels`]), so a glyph off that grid, squeezed narrower or shrunk
@@ -164,6 +165,8 @@ pub(crate) struct TextEngine {
     unfetched: Vec<(usize, f32)>,
     /// [`web_fonts::arrivals`] when the engine last registered what arrived.
     arrivals_seen: usize,
+    /// The folder a waiting font is read from, where an installer made one.
+    font_folder: Option<std::path::PathBuf>,
     /// GAME.FNT's family at each width a [`Fit`] narrows to, as designed
     /// first ([`fnt_font`]).
     original_families: Vec<(f32, String)>,
@@ -198,14 +201,16 @@ fn original_family(families: &[(f32, String)], fit: Fit) -> Option<&str> {
 
 impl TextEngine {
     pub(crate) fn new(gpu: Option<(&wgpu::Device, &wgpu::Queue, &BatchRenderer)>) -> Self {
-        Self::with_fonts(gpu, fonts::bundled())
+        Self::with_fonts(gpu, fonts::bundled(), crate::i18n::installed_language_dir())
     }
 
     /// The engine with `bundled`'s fonts in their fallback order; one without
-    /// bytes is registered once [`web_fonts`] has fetched it.
+    /// bytes is registered once [`web_fonts`] has fetched it, from
+    /// `font_folder` outside the browser.
     fn with_fonts(
         gpu: Option<(&wgpu::Device, &wgpu::Queue, &BatchRenderer)>,
         bundled: impl IntoIterator<Item = fonts::BundledFont>,
+        font_folder: Option<std::path::PathBuf>,
     ) -> Self {
         let mut engine = Self {
             fonts: FontContext {
@@ -225,6 +230,7 @@ impl TextEngine {
             bundled_stack: Vec::new(),
             unfetched: Vec::new(),
             arrivals_seen: 0,
+            font_folder,
             original_families: Vec::new(),
             original_slot: None,
             layouts: HashMap::new(),
@@ -285,7 +291,7 @@ impl TextEngine {
                 && self.unfetched.iter().any(|&(waiting, _)| waiting == place)
                 && !self.original_draws(c)
             {
-                web_fonts::fetch(place);
+                web_fonts::fetch(place, self.font_folder.as_deref());
             }
         }
     }
@@ -399,6 +405,8 @@ impl TextEngine {
         }
         if !self.unfetched.is_empty() {
             self.fetch_fonts_for(text);
+            // A font read from the languages folder has already come.
+            self.add_fetched_fonts();
         }
         crate::render::text_audit::laid_out(text);
         let shaped = Arc::new(self.shape_uncached(text, max_width, fit));
@@ -1148,7 +1156,7 @@ mod tests {
     #[test]
     fn a_fetched_font_draws_the_text_that_asked_for_it() {
         let (bundled, thai, data) = waiting_for("NotoSansThai-VF.ttf");
-        let mut engine = TextEngine::with_fonts(None, bundled);
+        let mut engine = TextEngine::with_fonts(None, bundled, None);
         let text = "สวัสดี";
         let before = engine.shape(text, 0, Fit::NONE);
         assert!(web_fonts::asked_for(thai));
@@ -1165,12 +1173,35 @@ mod tests {
         assert!(places.contains(&thai) && places.is_sorted(), "{places:?}");
     }
 
+    /// A font in the languages folder draws the text that needs it at once,
+    /// and one deleted from the folder leaves its characters undrawn.
+    #[test]
+    fn a_font_in_the_languages_folder_draws_the_text_that_needs_it() {
+        let folder = std::env::temp_dir().join(format!("vera-font-folder-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let (mut bundled, _, data) = waiting_for("NotoSansHebrew-VF.ttf");
+        std::fs::write(folder.join("NotoSansHebrew-VF.ttf"), data).unwrap();
+        let georgian = bundled
+            .iter()
+            .position(|font| font.file == "NotoSansGeorgian-VF.ttf")
+            .unwrap();
+        bundled[georgian].data = None;
+        let mut engine = TextEngine::with_fonts(None, bundled, Some(folder.clone()));
+
+        let drawn = engine.shape("שלום", 0, Fit::NONE);
+        assert!(drawn.lines[0].glyphs.iter().all(|glyph| glyph.id != 0));
+        let undrawn = engine.shape("გამარჯობა", 0, Fit::NONE);
+        assert!(web_fonts::asked_for(georgian));
+        assert!(undrawn.lines[0].glyphs.iter().all(|glyph| glyph.id == 0));
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
     /// Hanzi GAME.FNT draws, its own or drawn in its style, fetch no font.
     #[test]
     fn characters_game_fnt_draws_fetch_nothing() {
         use crate::render::bit_font::{BITMAP_ROWS, CELL_HEIGHT};
         let (bundled, cjk, _) = waiting_for("NotoSansCJKsc-Regular.otf");
-        let mut engine = TextEngine::with_fonts(None, bundled);
+        let mut engine = TextEngine::with_fonts(None, bundled, None);
         engine.set_original_font(fnt_font::FntFont::build(
             &FntFile::blank(CELL_HEIGHT, BITMAP_ROWS),
             BASELINE as u32,

@@ -47,7 +47,8 @@ name: Release
 # Each installer holds the game program, its license (LICENSE-GPL), the
 # third-party notices (THIRD_PARTY_LICENSES.html) and a README.txt made from
 # .github/release/README.txt.in; the Windows one also config.toml.example. Each
-# also holds every language but English (.github/release/languages.sh). They
+# also holds every language but English, and the fonts behind them
+# (.github/release/languages.sh). They
 # never hold game files (README.md, README.txt.in). Their one piece of game art
 # is the app icon, Red Alert 2's red star from retail game.exe
 # (.github/release/icon.png).
@@ -244,7 +245,7 @@ jobs:
         # Shipped binaries leave out the default `dev-overlays` (the Ctrl+Shift dev chord),
         # and use the whole-program `shipping` profile (Cargo.toml). The splash's
         # license notice names the commit built, and the installers bring every
-        # language but English (build.rs).
+        # language but English and most of the fonts (build.rs).
         env:
           VERA20K_COMMIT: ${{ needs.prepare.outputs.sha }}
           VERA20K_LANGUAGE_FOLDER: '1'
@@ -404,7 +405,8 @@ jobs:
             throw 'setup did not warn about optional music'
           }
           foreach ($f in 'vera20k.exe', 'config.toml', 'config.toml.example', 'README.txt',
-                         'LICENSE-GPL', 'THIRD_PARTY_LICENSES.html', 'languages\vera20k.vi.ini') {
+                         'LICENSE-GPL', 'THIRD_PARTY_LICENSES.html', 'languages\vera20k.vi.ini',
+                         'languages\NotoSansThai-VF.ttf') {
             if (-not (Test-Path (Join-Path $app $f))) { throw "setup did not install $f" }
           }
           $config = Read-Config
