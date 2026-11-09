@@ -61,7 +61,9 @@ Missing or unproven required behavior keeps an exhaustive task open.
 
 Native evidence is the instructions you read: cite the native function name and
 address next to the Rust. That is enough for control flow, ordering, gameplay rules,
-timers and plain arithmetic. Avoid unqualified “VERIFIED”/“complete”.
+timers and plain arithmetic. Comments are claims: when behavior changes, search for
+the address and fix every comment that still states the old behavior. Avoid
+unqualified “VERIFIED”/“complete”.
 
 Tests are regression tests: per fix, one to three focused tests through production code
 that fail without the fix. Use boundary cases, not sweeps or grids, and keep tests
@@ -102,9 +104,10 @@ fixtures. Each scenario re-reads rules from `RULESMD.INI`, `LANGRULE.INI` when p
 the selected mode INI, then the map (campaigns and one mode add passes); the map also
 extends `AIMD.INI`. `ARTMD.INI` and the sound, EVA and theme INIs are not layered, and
 gamemd never reads the RA2 base INIs in `ini/`. A branch gated on a key the retail rules
-leave unset is dormant, not unreachable. Check retail data with a gamemd-exact parse,
-not grep. When INI values decide an outcome, test through the production reader on
-retail INIs. Details: [retail INI reference](src/rules/mod.rs).
+leave unset is dormant, not unreachable. Check retail values with `asset ini-get`
+([INI lookup](tools/ini_lookup.md)), a gamemd-exact parse, not grep. When INI values
+decide an outcome, test through the production reader on retail INIs. Details:
+[retail INI reference](src/rules/mod.rs).
 
 ## Stability, extensions and online play
 
@@ -267,10 +270,14 @@ A check counts only if it ran: the test filter matched tests, no retail test pri
 `SKIPPED`, each build printed `Finished`, and an empty search counts only after the
 same search finds a known use.
 
-Avoid tests that merely mirror the implementation. Before fixing a bug whose expected
-behavior is established, first make a focused test fail on it where practical.
+Avoid tests that merely mirror the implementation. See each new test fail without the
+fix: write it first, or run it once with the fix reverted, and say so in the PR.
 
-Skip `cargo check` when a planned test answers the same question.
+Skip `cargo check` when a planned test answers the same question. A test run does not
+show that the game builds, though: tests switch on core's `test-support` code. When
+production code touches anything behind `test-support` or `#[cfg(test)]`, also run
+`python -m tools.cargo_run -- check -p vera20k --lib --bins`; for a file listed in
+`.github/workflows/wasm.yml`, the wasm check in the [Wasm guide](docs/wasm.md#checks).
 
 - Working Rust: start with focused
   `python -m tools.cargo_run -- test -p <crate> --lib <module_path>::`, where `<crate>`
@@ -301,6 +308,10 @@ space follow the [Cargo ownership procedure](tools/README.md#cargo-ownership-and
 Run `python -m tools.prepare_checkout` in a new worktree or clone.
 Format edited leaf files only (`rustfmt --edition 2024 <file>`), never crate-wide
 or recursive `mod.rs`. Coordinate rebaselines; exclude others' WIP.
+
+Run your heavy jobs one at a time: a build, a test run, a sim-bench battle or a
+retail-asset scan. Never run a long battle on a `test-support` build; its test-only
+recorders grow until the OS kills the run.
 
 Don't poll: each check re-reads the whole session context. Don't look for other builds
 before Cargo; the runner waits for them. Wait for a long command or CI
