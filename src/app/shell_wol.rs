@@ -241,6 +241,9 @@ pub(crate) struct WolVisit {
     /// joined through the match so its players return to it afterwards
     /// (`finish` asks the lobby for it back).
     pub(crate) back_to_room: bool,
+    /// VERA: why the last online match ended, until the chat the player
+    /// lands in exists.
+    problem_line: Option<String>,
     /// VERA: BC6's Continue after a co-op mission: the stage the kept
     /// room's host takes when the room comes back. The runner's post-match
     /// entry drops it unless it waits for that room.
@@ -310,6 +313,7 @@ impl WolVisit {
             last_pager: None,
             in_game: false,
             back_to_room: false,
+            problem_line: None,
             cooperative_resume: None,
             connected: false,
             disconnected: false,
@@ -476,6 +480,15 @@ fn logout(visit: &mut WolVisit) {
     visit.connected = false;
     visit.requests.push(service::WolServiceRequest::Logout);
     visit.page_received = None;
+}
+
+/// VERA: show `text` in the chat this online visit next lands in.
+pub(crate) fn hold_problem_line(state: &mut AppState, text: String) {
+    if let Some(visit) = state.frontend.wol.as_mut()
+        && visit.provider == WolProvider::Online
+    {
+        visit.problem_line = Some(text);
+    }
 }
 
 /// The runner handed over to a WOL match (`[0xB77DC1]` set).

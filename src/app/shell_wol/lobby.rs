@@ -1073,7 +1073,7 @@ pub(super) fn room_refused(state: &mut AppState) {
     }
 }
 
-fn awaiting_room(state: &AppState) -> bool {
+pub(super) fn awaiting_room(state: &AppState) -> bool {
     lobby(state).is_some_and(|lobby| matches!(lobby.step, Step::ReturningToRoom))
 }
 
