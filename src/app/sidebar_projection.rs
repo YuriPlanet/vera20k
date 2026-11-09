@@ -1372,6 +1372,15 @@ fn super_cameo(
     id: InternedId,
 ) -> Option<Cameo> {
     let kind = rules.super_weapon(sim.interner().try_resolve(id)?)?;
+    // `SW.ShowCameo=no` hides the superweapon's cameo everywhere, including the
+    // right build sidebar. Mods use this to hide technical, auto-firing
+    // superweapons (AutoFire + AlwaysGranted + ManualFire=no) that have no
+    // player-facing action; without this gate they leak into the Defense
+    // strip as an inert, unnamed cameo.
+    #[cfg(feature = "phobos")]
+    if !kind.sw_show_cameo {
+        return None;
+    }
     Some(Cameo {
         id: CameoId::SuperWeapon(id),
         tab: crate::ui::sidebar::SidebarTab::Defense,
