@@ -50,7 +50,12 @@
              resource compiled into the package, so the VERA Icon box cannot
              change it directly: `VeraActivity.applyAppIcon` enables the chosen
              alias and disables the other through PackageManager. The activity
-             itself carries no LAUNCHER filter, or the app would show twice. -->
+             itself carries no LAUNCHER filter, or the app would show twice.
+
+             NativeActivity reads `android.app.lib_name` from the component it
+             was launched through, and an alias does not inherit the target's
+             meta-data: without this copy on each alias the process dies in
+             NativeActivity.onCreate looking for the default `libmain.so`. -->
         <activity-alias
             android:name="org.vera20k.LauncherRetail"
             android:targetActivity="org.vera20k.VeraActivity"
@@ -63,6 +68,10 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <meta-data
+                android:name="android.app.lib_name"
+                android:value="vera20k_android" />
         </activity-alias>
 
         <activity-alias
@@ -77,6 +86,10 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <meta-data
+                android:name="android.app.lib_name"
+                android:value="vera20k_android" />
         </activity-alias>
     </application>
 
