@@ -7,9 +7,9 @@
 //! to Foot, and XYZ/Mark/raw occupation use their existing shared owners.
 //!
 //! Native composed controls and coverage: tools/spatial_oracle/jumpjet_states.md.
-//! Other large mechanisms remain bounded: target-facing hold, radio/tag
-//! arrival side effects beyond the existing per-cell owner. The
-//! Magnetron's callbacks run through `sim::locomotor_lift`.
+//! Radio and tag arrival side effects beyond the existing per-cell owner
+//! remain bounded. The Magnetron's callbacks run through
+//! `sim::locomotor_lift`.
 //! Native Unit touchdown calls Cell PickupCrate481A00 at54C9F6 after phase0;
 //! the touchdown asks `Simulation::pickup_crate_at` after the tracker removal
 //! (54C9DC) as native does. The no-crate native controls do not establish
@@ -311,8 +311,18 @@ impl JumpjetFlightHost for CruiseHost<'_> {
             .body_facing
             .snap(facing, self.frame);
     }
+    /// `0x0054D636..0x0054D684`: only a type with `JumpJetTurn=` (`+0xECB`)
+    /// and a TarCom aims. Its answer is DirectionToTarget (`0x005F3DB0`).
     fn hold_target_facing(&self) -> Option<u16> {
-        None
+        let owner = self.owner();
+        self.sim
+            .object_type(owner.type_ref(), self.rules)
+            .filter(|object| object.jumpjet_turn)?;
+        crate::sim::movement::turret::facing_toward_target(
+            owner,
+            &owner.attack_target.target()?,
+            self.sim,
+        )
     }
     fn cell_of(&self, xy: [i32; 2]) -> (i16, i16) {
         (lepton_to_cell_packed(xy[0]), lepton_to_cell_packed(xy[1]))

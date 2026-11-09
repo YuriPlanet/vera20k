@@ -276,6 +276,10 @@ pub struct OverlayTypeRegistry {
     alpha_images: Vec<String>,
     /// Immutable projection; ProcessedType remains the mutable reader owner.
     images: Vec<ObjectImageState>,
+    /// The Rock row when the scenario's `CliffBackImpassability=` byte is 2,
+    /// which `CellClass::RecalcAttributes` writes on an overlay cell behind a
+    /// cliff (`0x0047D53E`).
+    cliff_back_rock: Option<crate::rules::terrain_rules::LandTypeSemantics>,
 }
 
 impl OverlayTypeRegistry {
@@ -338,6 +342,7 @@ impl OverlayTypeRegistry {
                     flags: Vec::new(),
                     alpha_images: Vec::new(),
                     images: Vec::new(),
+                    cliff_back_rock: None,
                 };
             }
         };
@@ -354,6 +359,7 @@ impl OverlayTypeRegistry {
                 flags: Vec::new(),
                 alpha_images: Vec::new(),
                 images: Vec::new(),
+                cliff_back_rock: None,
             };
         }
 
@@ -461,6 +467,10 @@ impl OverlayTypeRegistry {
             flags,
             alpha_images,
             images: Vec::new(),
+            cliff_back_rock: (crate::rules::ruleset::read_cliff_back_impassability(
+                ini.section("General"),
+            ) == 2)
+                .then(|| *terrain_rules.row(LandType::Rock)),
         }
     }
 
@@ -507,7 +517,16 @@ impl OverlayTypeRegistry {
             flags: Vec::new(),
             alpha_images: Vec::new(),
             images: Vec::new(),
+            cliff_back_rock: None,
         }
+    }
+
+    /// The Rock row the early overlay branch of RecalcAttributes writes behind
+    /// a cliff, when `CliffBackImpassability=2`.
+    pub(crate) fn cliff_back_rock(
+        &self,
+    ) -> Option<&crate::rules::terrain_rules::LandTypeSemantics> {
+        self.cliff_back_rock.as_ref()
     }
 
     /// AlphaImage strings retained by the allocated OverlayType entries.

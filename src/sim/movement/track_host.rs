@@ -1008,6 +1008,7 @@ impl Simulation {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return Ok(false);
         };
+        let head_cell = super::foot_path::coord_cell(head(entity, family));
         let candidate = super::track_head::offset_head(head(entity, family), direction);
         let saved_speed = entity.foot_speed.native_applied_fraction();
         //4B1BA1..4B1C3E: Unit+1AC(cell(head + delta), dir, Object 0x5F5F00,
@@ -1051,9 +1052,11 @@ impl Simulation {
                 );
                 return Ok(false);
             }
-            //4B1EC0..4B1F43: the forced deck-aware Scatter_Objects on the cell.
+            //4B1EC0..4B1F43 (Ship 6A1503..6A1586): the deck flag comes from
+            //the candidate's Cell, but Scatter_Objects runs on Map[ESI], still
+            //&HeadTo from 4B1BA4. The fresh-step arms scatter the candidate.
             6 => {
-                self.scatter_blocked_track_cell(id, target, rules, registry, effects)?;
+                self.scatter_blocked_track_list(id, target, head_cell, rules, registry, effects)?;
                 return Ok(false);
             }
             _ => return Ok(false),

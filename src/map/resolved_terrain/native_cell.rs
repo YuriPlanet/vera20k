@@ -322,7 +322,7 @@ impl<'a> NativeCellQuery<'a> {
         self.lookup((x.wrapping_add(dx as i16), y.wrapping_add(dy as i16)))
     }
 
-    pub(crate) fn ground_fields(&self, cell: NativeCellIdentity) -> (u8, u8) {
+    pub fn ground_fields(&self, cell: NativeCellIdentity) -> (u8, u8) {
         match cell {
             NativeCellIdentity::Real(_) => self.terrain.native_cell_ground_fields(cell),
             NativeCellIdentity::Dummy => {

@@ -615,7 +615,7 @@ impl Simulation {
         match sim.process_track_turn(stable_id, rules, overlay_registry, effects) {
             movement::track_turn::TrackProcessEntry::Movement => {}
             movement::track_turn::TrackProcessEntry::Tail => {
-                sim.drive_process_rest_tail(stable_id, rules, overlay_registry, effects);
+                sim.track_process_rest_tail(stable_id, rules, overlay_registry, effects);
                 return Ok(outcome);
             }
             movement::track_turn::TrackProcessEntry::Return => return Ok(outcome),
@@ -768,7 +768,7 @@ impl Simulation {
                 pending_movement,
             ));
         if process_tail {
-            sim.drive_process_rest_tail(stable_id, rules, overlay_registry, effects);
+            sim.track_process_rest_tail(stable_id, rules, overlay_registry, effects);
         }
         Ok(outcome)
     }

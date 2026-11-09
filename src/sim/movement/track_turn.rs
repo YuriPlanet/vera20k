@@ -145,12 +145,13 @@ impl Simulation {
         }
     }
 
-    /// Drive4B0828..4B0880, reached only through the common Process tail.
-    /// Stop4AFE00 leaves Foot+578 alone. Neither NavCom nor the selector
-    /// decides this write: both class coordinates and Foot's queue must be
-    /// empty, and only a positive applied speed calls SetSpeedFraction(0).
+    /// Drive4B0828..4B0880 / Ship69FEF0..69FF47, reached only through the
+    /// common Process tail. Stop4AFE00 / Stop69F510 leave Foot+578 alone.
+    /// Neither NavCom nor the selector decides this write: both class
+    /// coordinates and Foot's queue must be empty, and only a positive
+    /// applied speed calls SetSpeedFraction(0).
     /// Original whole-Process controls: track_order_path --rest.
-    pub(crate) fn drive_process_rest_tail(
+    pub(crate) fn track_process_rest_tail(
         &mut self,
         id: u64,
         rules: &RuleSet,
@@ -162,7 +163,7 @@ impl Simulation {
                 && entity
                     .locomotor
                     .as_ref()
-                    .is_some_and(|loco| loco.active_kind() == LocomotorKind::Drive)
+                    .is_some_and(|loco| TrackFamily::from_kind(loco.active_kind()).is_some())
         }) {
             return;
         }
@@ -176,12 +177,12 @@ impl Simulation {
         let Some(loco) = entity.locomotor.as_ref() else {
             return;
         };
-        // Ship's separate tail and existing Stop adapter are outside this
-        // Drive chain. Keep its behavior until its continuation is ported.
-        if loco.active_kind() == LocomotorKind::Drive
-            && entity.lifecycle.object_alive()
-            && loco.track_destination(TrackFamily::Drive).is_none()
-            && loco.track_head(TrackFamily::Drive).is_none()
+        let Some(family) = TrackFamily::from_kind(loco.active_kind()) else {
+            return;
+        };
+        if entity.lifecycle.object_alive()
+            && loco.track_destination(family).is_none()
+            && loco.track_head(family).is_none()
             && entity
                 .navigation
                 .path_replay()
@@ -222,10 +223,11 @@ impl Simulation {
                 .remaining_directions()
                 .is_empty()
         {
-            // 4B0921..4B096C: the +3CD (sinking/crashing) arm has no Rust
-            // producer. 4B0971..4B09A6: a NavCom re-enters the locomotor's
-            // own Move_To (+0x44) with its live coordinate; either way the
-            // tail follows and Process_Movement waits for the next visit.
+            // 4B0921..4B096C: the +3CD (sinking) arm is unreachable, as
+            // FootClass::AI runs no locomotor Process while sinking (4DA81A
+            // skips 4DA877). 4B0971..4B09A6: a NavCom re-enters the
+            // locomotor's own Move_To (+0x44) with its live coordinate; either
+            // way the tail follows and Process_Movement waits for the next visit.
             if let Some(target) = entity.navigation.nav_com()
                 && let Ok(coord) = super::navcom::nav_target_coordinate(
                     target,
@@ -253,9 +255,9 @@ impl Simulation {
         // on to the tail; a true one returns false without it (4B0A57).
         // RESIDUAL: VERA runs the tail after a true idle entry too. Its rest
         // write needs empty class coordinates, which the taken waypoint
-        // fills, and FootClass::AI ignores Process's result (4DA877), so the
-        // one extra effect is the tail's Wake anim for a moving Drive unit on
-        // a water cell off a bridge, every 10th frame (4B078C..4B0823).
+        // fills, and FootClass::AI ignores Process's result (4DA877). The
+        // tail's Wake (4B078C..4B0823) is `spawn_wakes_for_frame` here, which
+        // does not depend on this return: at most one invisible wake differs.
         if entity.in_playfield() && mission != Some(MissionType::Enter) && moving {
             let destination = super::track_path::track_destination_or_null(entity);
             // Unrepresented precheck inputs (no zone topology or bounds in a

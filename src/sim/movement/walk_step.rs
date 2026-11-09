@@ -6,8 +6,8 @@
 //! without stepping (0x75BF85..0x75BFA6).
 //! - Trigger: a walking infantryman under an EMP effect.
 //! - Effect: it keeps stepping, and its Walk sequence, instead of freezing.
-//! - Frequency: none with retail data: VERA has no EMP timer and no stock
-//!   weapon mounts EMPuls (`warhead_type.rs`).
+//! - Frequency: none with retail data: `EMEffect=` is set only on the
+//!   `EMPuls` warhead and no stock weapon mounts it (`warhead_type.rs`).
 //! - Risk: modded EMP warheads.
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::sim::game_entity::GameEntity;

@@ -265,6 +265,10 @@ impl Simulation {
             .ok_or("retired failed Walk actor")?;
         //75B2BC..75B2DC: all failed-queue exits set speed0 then Stop;
         //Stop does not itself clear NavCom or retire the paid head.
+        // Residual: the 75AFE3 arm above reaches 75B580 and calls only
+        // vt+480(0, 1) there, so speed and Stop run once more here. Trigger:
+        // a failed Find_Path whose zone precheck fails. Both writes repeat
+        // what the null destination did, with no visible effect.
         actor
             .foot_speed
             .set_speed_fraction(crate::util::fixed_math::SIM_ZERO);

@@ -47,9 +47,13 @@ impl BridgeRuntimeState {
     /// damage machines after a collapse. Every matching active record is
     /// deactivated; the return requests56C510.
     ///
-    /// Not ported: the per-record RemoveBridgeZoneEdges (584E50) hierarchy
-    /// edge removal. The caller's full navigation rebuild derives the graph
-    /// from the active records instead, discarding56DB70's append order.
+    /// Residual: the per-record RemoveBridgeZoneEdges (584E50) hierarchy edge
+    /// removal is not ported. Whenever a bridge span falls, the caller's full
+    /// navigation rebuild derives the graph from the active records instead,
+    /// discarding 56DB70's append order and the zone IDs and holes of earlier
+    /// 584550 repairs. Base zones and Can_Reach_Zone answers are the same, so
+    /// only ties in Zone_precheck (42C290) can differ: a unit may take another
+    /// equal-cost corridor after a bridge falls, which no player can tell.
     pub(crate) fn invalidate_bridge_zones(
         &mut self,
         terrain: &ResolvedTerrainGrid,

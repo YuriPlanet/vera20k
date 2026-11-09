@@ -220,6 +220,7 @@ mod tests {
                 blocker_neighbor_counts: Some(&counts),
             },
             &witness,
+            true,
         );
 
         assert_eq!(
