@@ -317,6 +317,49 @@ fn deploy_then_undeploy_returns_the_mcv_to_its_original_cell() {
     }
 }
 
+/// Deploy (`0x00739971..0x007399B2`) and Selling (`0x0044A0D4..0x0044A115`)
+/// copy the voice handle and latch (`+0x4DC..+0x4F4`) to the new object and
+/// empty the old one's, so its destructor (`0x006F4607`) cannot stop a line
+/// it was speaking: the hand-off is ordered ahead of the destruction.
+#[test]
+fn a_deploy_conversion_hands_the_voice_on_before_the_old_object_is_destroyed() {
+    fn voice_facts(sim: &Simulation) -> Vec<(u64, Option<u64>)> {
+        sim.sound_events
+            .iter()
+            .filter_map(|event| match event {
+                SimSoundEvent::UnitVoiceMoved { from, to } => Some((*from, Some(*to))),
+                SimSoundEvent::UnitVoiceDestroyed { owner } => Some((*owner, None)),
+                _ => None,
+            })
+            .collect()
+    }
+    let mut rules = make_mcv_rules();
+    rules.set_buildup_control_for_test("GACNST", [0, 29, 1]);
+    let mut sim = deploy_sim(&rules);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
+    add_house(&mut sim, "Americans", true);
+    let mcv = sim
+        .spawn_object("AMCV", "Americans", 20, 22, 128, &rules)
+        .expect("spawn MCV");
+    assert!(sim.deploy_mcv(
+        mcv,
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default()
+    ));
+    tick_n(&mut sim, &rules, 60);
+    let yard = deployed_type(&sim, "GACNST").stable_id();
+    assert_eq!(voice_facts(&sim), [(mcv, Some(yard)), (mcv, None)]);
+
+    sim.sound_events.clear_for_test();
+    let undeploy = Command::UndeployBuilding { entity_id: yard };
+    assert!(sim.apply_command("Americans", &undeploy, Some(&rules)));
+    tick_n(&mut sim, &rules, 40);
+    let unit = deployed_type(&sim, "AMCV").stable_id();
+    assert_eq!(voice_facts(&sim), [(yard, Some(unit)), (yard, None)]);
+}
+
 /// A lit yard outside a campaign. Its Unlimbo skips the light block
 /// (`0x00440D4D..0x00440D54`), so its light first comes on as it opens
 /// (`0x004466D5..0x0044676C`), centred on its GetCoords (`0x00447AC0`, the

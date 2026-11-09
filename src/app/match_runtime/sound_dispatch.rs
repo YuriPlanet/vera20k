@@ -162,6 +162,9 @@ pub(super) fn dispatch_sim_sound_events(
             SimSoundEvent::UnitVoiceDestroyed { owner } => {
                 GameSoundEvent::UnitVoiceDestroyed { owner }
             }
+            SimSoundEvent::UnitVoiceMoved { from, to } => {
+                GameSoundEvent::UnitVoiceMoved { from, to }
+            }
             SimSoundEvent::ObjectSoundStarted {
                 owner,
                 sound_id,

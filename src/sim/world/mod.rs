@@ -590,6 +590,10 @@ pub enum SimSoundEvent {
     /// Techno destructor6F4607 destroys its voice handle before its owned
     /// Anims. The app discards both pending and playing voice identities.
     UnitVoiceDestroyed { owner: u64 },
+    /// A deploy conversion copied the voice handle, pending and playing slots
+    /// (`+0x4DC..+0x4F4`) to the object replacing `from` and emptied `from`'s:
+    /// UnitClass::Deploy739971, BuildingClass::Mission_Selling44A0D4.
+    UnitVoiceMoved { from: u64, to: u64 },
     /// Voc7509E0 on the object's handle (Building+6A0 for Construction).
     /// The existing app/audio handle owner performs looping updates and release.
     ObjectSoundStarted {
@@ -8143,6 +8147,18 @@ impl Simulation {
             self.sound_events
                 .emit(SimSoundEvent::UnitVoiceVisit { owner });
         }
+    }
+
+    /// A deploy conversion's voice hand-off (UnitClass::Deploy
+    /// `0x00739971..0x007399B2`, BuildingClass::Mission_Selling
+    /// `0x0044A0D4..0x0044A115`). The audio owner moves the handle and latch;
+    /// a pending line's visit interest follows it to the new object.
+    pub(crate) fn move_unit_voice(&mut self, from: u64, to: u64) {
+        if self.unit_voice_visit_interest.remove(&from) {
+            self.unit_voice_visit_interest.insert(to);
+        }
+        self.sound_events
+            .emit(SimSoundEvent::UnitVoiceMoved { from, to });
     }
 }
 

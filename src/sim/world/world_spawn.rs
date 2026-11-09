@@ -2454,9 +2454,9 @@ impl Simulation {
     /// already facing it, becomes that building. False when it refuses.
     ///
     /// Not carried over to the building: the unit's AttachedTag
-    /// (`+0x34`, `0x007399EE`), its looping sound handles (`+0x4DC..+0x4F4`,
-    /// `0x00739971`), `DiscoveredBy(owner)` (vt+0x198, `0x00739848`) and the
-    /// turret facing a `+0x16CA`/`+0x16C4` type starts at (`0x007397FB`).
+    /// (`+0x34`, `0x007399EE`), `DiscoveredBy(owner)` (vt+0x198,
+    /// `0x00739848`) and the turret facing a `+0x16CA`/`+0x16C4` type starts
+    /// at (`0x007397FB`).
     /// Phobos `TechnoExt::SyncInvulnerability` (`Techno/Body.cpp:156`): a
     /// deploy or undeploy conversion carries an active curtain to the new
     /// object when the source type's `KeptOnDeploy` (else its global) allows
@@ -2973,6 +2973,9 @@ impl Simulation {
             self.transfer_factory_country(stable_id, new_sid);
         }
         self.transfer_slave_manager(stable_id, new_sid, true, rules, registry, frame_effects);
+        // 0x00739971..0x007399B2: the building takes the unit's voice handle
+        // and latch, so a line the unit is speaking plays on.
+        self.move_unit_voice(stable_id, new_sid);
         self.uninit_with_context(
             stable_id,
             super::UninitContext::new(rules, registry).with_effects(frame_effects),
@@ -3208,6 +3211,9 @@ impl Simulation {
             self.transfer_factory_country(sid, new_sid);
         }
         self.transfer_slave_manager(sid, new_sid, false, rules, overlay_registry, frame_effects);
+        // BuildingClass::Mission_Selling 0x0044A0D4..0x0044A115: the unit
+        // takes the building's voice handle and latch.
+        self.move_unit_voice(sid, new_sid);
         // Cell clicks, object clicks (event 0x1E) and the SlaveManager
         // relocation share ArchiveTarget; conversion sends the new Unit to
         // that existing goal, a Cell or an object: vt+0x480
