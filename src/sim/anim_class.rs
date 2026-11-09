@@ -1311,6 +1311,37 @@ impl DamageFires {
     }
 }
 
+/// The fields `Simulation::visit_anim`'s prefix and gates read, copied in one
+/// lookup of the anim.
+#[derive(Clone, Copy)]
+struct AnimGates {
+    /// The stored Location (`+0x9C`), owner-relative on an attached anim.
+    location: AnimWorldCoord,
+    bouncing: bool,
+    inactive: bool,
+    first_ai_guard: bool,
+    delay_remaining: u16,
+    /// Paused (`+0x19E`) or Temporal-paused (`+0x11A`).
+    paused: bool,
+    rate_reload: u16,
+    frame_timer: CdTimer,
+}
+
+impl AnimGates {
+    fn of(anim: &AnimObject) -> Self {
+        Self {
+            location: anim.world_coord,
+            bouncing: anim.bounce.is_some(),
+            inactive: anim.runtime.inactive,
+            first_ai_guard: anim.runtime.first_ai_guard,
+            delay_remaining: anim.runtime.delay_remaining,
+            paused: anim.runtime.paused || anim.runtime.temporal_paused,
+            rate_reload: anim.runtime.rate_reload,
+            frame_timer: anim.runtime.frame_timer,
+        }
+    }
+}
+
 impl Simulation {
     pub fn anim(&self, id: AnimId) -> Option<&AnimObject> {
         self.substrate.anims.get(id)
@@ -2122,12 +2153,14 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<bool, RuntimeOverlayError> {
-        // HideIfNoOre and the MakeInfantry mark read the stored Location
-        // (`+0x9C`, `0x00423BD6..0x00423BFD`), not GetCoords: an owner-attached
-        // anim stores an owner-relative delta there.
-        let Some(type_id) = self.anim(id).map(|anim| anim.type_id) else {
+        // One read serves the visit's prefix and gates: most visits end at a
+        // gate, and each step that may write the anim re-reads it (VERA-only,
+        // results unchanged).
+        let Some(anim) = self.anim(id) else {
             return Ok(false);
         };
+        let type_id = anim.type_id;
+        let mut gates = AnimGates::of(anim);
         // Borrowed from the rules, not the world: the visit below mutates the
         // world while it reads the type.
         let Some(config) = rules
@@ -2141,10 +2174,15 @@ impl Simulation {
         //423B17/423B1E precede the ordinary first-AI, delay and timer gates.
         if config.is_flaming_guy {
             self.anim_flaming_guy_ai(id, &config, rules, overlay_registry);
+            let Some(reread) = self.anim(id).map(AnimGates::of) else {
+                return Ok(false);
+            };
+            gates = reread;
         }
-        let Some(location) = self.anim(id).map(|anim| anim.world_coord) else {
-            return Ok(false);
-        };
+        // HideIfNoOre and the MakeInfantry mark read the stored Location
+        // (`+0x9C`, `0x00423BD6..0x00423BFD`), not GetCoords: an owner-attached
+        // anim stores an owner-relative delta there.
+        let location = gates.location;
 
         // `AnimClass::AI @ 0x00423AC0`, before the MakeInfantry `vtable+0xF0`
         // call, the bounce-landing block, and the trailer block: with
@@ -2181,28 +2219,33 @@ impl Simulation {
         }
         // `AnimClass::AI 0x00423C24`: a bouncing chunk flies its body before
         // the trailer and the first-AI guard; touching down ends it.
-        if self.anim(id).is_some_and(|anim| anim.bounce.is_some())
-            && let Some(bridge_state_changed) =
+        if gates.bouncing {
+            if let Some(bridge_state_changed) =
                 self.anim_bounce_step(id, &config, rules, overlay_registry, frame_effects)?
-        {
-            return Ok(bridge_state_changed);
+            {
+                return Ok(bridge_state_changed);
+            }
+            let Some(reread) = self.anim(id).map(AnimGates::of) else {
+                return Ok(false);
+            };
+            gates = reread;
         }
-        // The trailer spawns at GetCoords after the body moved the anim.
-        let Some(world_coord) = self.anim_absolute_coord(id) else {
-            return Ok(false);
-        };
 
         // AnimAI4242A6/4242B0 gates only this producer on ObjectAlive and
         // inactive. Bounce above still runs before the retirement gate.
-        if !self.substrate.pending_delete.contains_object(&id)
-            && self.anim(id).is_some_and(|anim| !anim.runtime.inactive)
-            && let Some(trailer_name) = config.trailer_anim.as_deref()
+        if let Some(trailer_name) = config.trailer_anim.as_deref()
+            && !gates.inactive
+            && !self.substrate.pending_delete.contains_object(&id)
             && trailer_cadence_matches(
                 u64::from(self.session.binary_frame()),
                 config.trailer_seperation,
             )
             && rules.art().anim_runtime_config(trailer_name).is_some()
         {
+            // The trailer spawns at GetCoords after the body moved the anim.
+            let Some(world_coord) = self.anim_absolute_coord(id) else {
+                return Ok(false);
+            };
             let trailer_type = self.interner.intern(trailer_name);
             let descriptor = AnimClassSpawnDescriptor {
                 type_name: trailer_type,
@@ -2237,6 +2280,10 @@ impl Simulation {
                 }
                 Err(error) => panic!("validated trailer closure must remain spawnable: {error}"),
             }
+            let Some(reread) = self.anim(id).map(AnimGates::of) else {
+                return Ok(false);
+            };
+            gates = reread;
         }
 
         //AnimAI424322..42435F: a DropZone marker ends over the first ground
@@ -2261,19 +2308,17 @@ impl Simulation {
         {
             if let Some(anim) = self.substrate.anims.get_mut(id) {
                 anim.runtime.inactive = true; //424358 writes+19B before UnInit.
+                gates.inactive = true;
             }
         }
 
         // AnimAI42435F rereads after prefix callbacks. All inactive writers
         // share this retirement; a Bouncer may already have landed/retired.
-        if self.anim(id).is_some_and(|anim| anim.runtime.inactive) {
+        if gates.inactive {
             self.destroy_anim(id, rules);
             return Ok(false);
         }
-        if self
-            .anim(id)
-            .is_some_and(|anim| anim.runtime.first_ai_guard)
-        {
+        if gates.first_ai_guard {
             if let Some(anim) = self.substrate.anims.get_mut(id) {
                 anim.runtime.first_ai_guard = false;
             }
@@ -2284,17 +2329,15 @@ impl Simulation {
         // to zero calls `AnimClass::Start @ 0x00424CE0` (call site `0x004243A1`)
         // and returns. The field also holds the `RandomLoopDelay=` pause, so a
         // looping anim restarts, and replays its start sound, after each pause.
-        {
+        if gates.delay_remaining > 0 {
             let Some(anim) = self.substrate.anims.get_mut(id) else {
                 return Ok(false);
             };
-            if anim.runtime.delay_remaining > 0 {
-                anim.runtime.delay_remaining -= 1;
-                if anim.runtime.delay_remaining == 0 {
-                    self.anim_start(id, &config, rules, overlay_registry, frame_effects)?;
-                }
-                return Ok(false);
+            anim.runtime.delay_remaining -= 1;
+            if anim.runtime.delay_remaining == 0 {
+                self.anim_start(id, &config, rules, overlay_registry, frame_effects)?;
             }
+            return Ok(false);
         }
 
         // AnimAI4243AE..4243B6 checks Object+90 after first-AI/delay.
@@ -2330,21 +2373,15 @@ impl Simulation {
         let mut action = VisitAction::None;
         let mut random_loop_delay = None;
         let current_frame = self.session.binary_frame() as i32;
+        //42449B: power pause follows first-AI/delay gates and precedes timer advance;
+        //4244A9: the Temporal erase pause (+11A) right after it.
+        if gates.paused || gates.rate_reload == 0 || !gates.frame_timer.expired(current_frame) {
+            return Ok(false);
+        }
         {
             let Some(anim) = self.substrate.anims.get_mut(id) else {
                 return Ok(false);
             };
-            //42449B: power pause follows first-AI/delay gates and precedes timer advance;
-            //4244A9: the Temporal erase pause (+11A) right after it.
-            if anim.runtime.paused || anim.runtime.temporal_paused {
-                return Ok(false);
-            }
-            if anim.runtime.rate_reload == 0 {
-                return Ok(false);
-            }
-            if !anim.runtime.frame_timer.expired(current_frame) {
-                return Ok(false);
-            }
             anim.runtime
                 .frame_timer
                 .start(current_frame, i32::from(anim.runtime.rate_reload));
@@ -7089,6 +7126,34 @@ mod tests {
             .unwrap(); // a second visit in the same frame cannot advance again
         assert_eq!(sim.anim(id).unwrap().runtime.current_frame, 1);
         assert_eq!(sim.scenario_rng.logical_state(), rng_before);
+    }
+
+    /// An anim waiting on its frame timer ends its visit at the gates without
+    /// being handed out, so nothing re-derives from it; the visit that
+    /// advances its frame hands it out.
+    #[test]
+    fn a_waiting_anims_visit_hands_it_out_to_no_one() {
+        let rules = runtime_rules("[TEST]\nRate=450\nEnd=3\nLoopCount=1\n", &[("TEST", 3)]);
+        let mut sim = Simulation::new();
+        let type_id = sim.interner.intern("TEST");
+        let id = sim
+            .spawn_anim_object(&rules, runtime_descriptor(type_id, 1))
+            .unwrap();
+        let visit = |sim: &mut Simulation, frame: u32| {
+            sim.session.set_binary_frame_for_test(frame);
+            sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
+                .unwrap();
+            sim.substrate
+                .anims
+                .take_touched(AnimTouchReader::GroundKeys)
+        };
+        visit(&mut sim, 0); // constructor first-AI guard
+        visit(&mut sim, 1); // delay 1 -> 0
+        assert_eq!(visit(&mut sim, 2), Touched::Ids(vec![id]));
+        assert_eq!(sim.anim(id).unwrap().runtime.current_frame, 1);
+        // The timer the last visit restarted is not due in the same frame.
+        assert_eq!(visit(&mut sim, 2), Touched::Ids(Vec::new()));
+        assert_eq!(sim.anim(id).unwrap().runtime.current_frame, 1);
     }
 
     #[test]
