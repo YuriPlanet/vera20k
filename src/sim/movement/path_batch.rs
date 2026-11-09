@@ -699,6 +699,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) {
+        let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::PATHFINDING);
         self.answer_path_searches_within(rules, registry, URGENCY2_STEPS_PER_PASS);
     }
 

@@ -78,7 +78,10 @@ use crate::sim::world::Simulation;
 /// v31: `render` splits the old catch-all `other_ms` into combat lights, effect
 /// lines, draw calls and handing the frame to the driver; `other_ms` keeps the
 /// remainder.
-pub const TELEMETRY_SCHEMA_VERSION: u32 = 31;
+/// v32: `profile.phases_ms` splits the object pass into unit AI, pathfinding,
+/// targeting, movement, firing, buildings, bullets and effects, and drops four
+/// slots no step ever filled.
+pub const TELEMETRY_SCHEMA_VERSION: u32 = 32;
 
 /// One house row of a [`ReportPoint`]: just what the report's party table and
 /// pie captions read.

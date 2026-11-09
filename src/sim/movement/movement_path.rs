@@ -43,6 +43,7 @@ pub(super) fn find_move_path(
     allow_zone_hierarchy: bool,
     foot_entry: &dyn crate::sim::pathfinding::SearchFootEntry,
 ) -> Result<LayeredPath, MovePathFailure> {
+    let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::PATHFINDING);
     let facts = crate::sim::pathfinding::MoverSearchFacts {
         urgency,
         foot_entry,

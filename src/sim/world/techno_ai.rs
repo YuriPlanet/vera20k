@@ -604,7 +604,22 @@ impl Simulation {
         ctx: ObjectAiCtx<'_>,
     ) -> ObjectAiOutcome {
         let mut outcome = ObjectAiOutcome::visited();
-        match self.classify_object(id) {
+        let kind = self.classify_object(id);
+        // These kinds' whole turn is this dispatch.
+        let _area = {
+            use crate::sim::frame_profile::{area, phase};
+            match kind {
+                Some(ObjectKind::Projectile | ObjectKind::Wave) => Some(area(phase::BULLETS)),
+                Some(
+                    ObjectKind::Anim
+                    | ObjectKind::VoxelAnim
+                    | ObjectKind::Spotlight
+                    | ObjectKind::ParticleSystem,
+                ) => Some(area(phase::EFFECTS)),
+                _ => None,
+            }
+        };
+        match kind {
             Some(ObjectKind::Entity) => {}
             Some(ObjectKind::Anim) => {
                 match self.visit_anim(id, rules, ctx.overlay_registry, ctx.effects) {

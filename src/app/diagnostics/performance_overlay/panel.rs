@@ -21,7 +21,8 @@ const WINDOW: Duration = Duration::from_secs(1);
 pub(super) const DOT: &str = "  ·  ";
 /// Areas under this share of the window stay off the Most CPU row.
 const MIN_AREA_PERCENT: f32 = 1.0;
-const MOST_AREAS: usize = 5;
+/// Room for the object pass's parts beside the costliest drawing.
+const MOST_AREAS: usize = 8;
 
 /// The labels of the simulation's frame-profile phases, by
 /// `frame_profile::phase` slot.
@@ -36,17 +37,20 @@ const SIM_AREAS: [&str; PHASE_COUNT] = [
     "VERA:CpuSuperweapons",
     "VERA:CpuRadiation",
     "VERA:CpuTeamAI",
-    "VERA:CpuObjects",
-    "VERA:CpuWallCrush",
+    "VERA:CpuUnitAI",
+    "VERA:CpuPathfinding",
+    "VERA:CpuTargeting",
+    "VERA:CpuMovement",
+    "VERA:CpuFiring",
+    "VERA:CpuBuildings",
+    "VERA:CpuBullets",
+    "VERA:CpuEffects",
     "VERA:CpuWakes",
     "VERA:CpuVision",
     "VERA:CpuCombat",
-    "VERA:CpuPassengers",
     "VERA:CpuIonBlasts",
     "VERA:CpuCrates",
     "VERA:CpuProduction",
-    "VERA:CpuDocks",
-    "VERA:CpuSpawnFog",
     "VERA:CpuLateAI",
     "VERA:CpuOverlays",
     "VERA:CpuDebugChecks",
@@ -303,7 +307,7 @@ mod tests {
             tps: Some(30.0),
             units: Some(12_345),
             areas: vec![
-                ("VERA:CpuObjects", 38.4),
+                ("VERA:CpuMovement", 38.4),
                 ("VERA:CpuDrawWorld", 27.0),
                 ("VERA:CpuVision", 11.0),
             ],
@@ -315,7 +319,7 @@ mod tests {
             text(&rows[0][0]),
             "FPS 60  ·  17 ms  ·  Sim 30 TPS  ·  Units 12,345"
         );
-        assert_eq!(rows[1][1], Part::Text("Objects 38%".to_owned(), WARM));
+        assert_eq!(rows[1][1], Part::Text("Movement 38%".to_owned(), WARM));
         assert_eq!(text(&rows[1][2]), "  ·  Draw world 27%  ·  Vision 11%");
         assert_eq!(rows[2][1], Part::Bars(vec![90.0, 10.0]));
         assert_eq!(text(&rows[2][2]), "   avg 50%");
@@ -379,7 +383,7 @@ mod tests {
     #[test]
     fn most_cpu_ranks_sim_and_render_areas_and_skips_a_restarted_profile() {
         let mut sim = [0u128; PHASE_COUNT];
-        sim[crate::sim::frame_profile::phase::OBJECTS] = 300_000_000;
+        sim[crate::sim::frame_profile::phase::MOVEMENT] = 300_000_000;
         sim[crate::sim::frame_profile::phase::VISION] = 5_000_000;
         let mut render = [Duration::ZERO; RenderPhases::COUNT];
         render[0] = Duration::from_millis(200);
@@ -389,7 +393,7 @@ mod tests {
             most_cpu(Duration::from_secs(1), Some(&sim), &render),
             [
                 ("VERA:CpuDriverHandoff", 40.0),
-                ("VERA:CpuObjects", 30.0),
+                ("VERA:CpuMovement", 30.0),
                 ("VERA:CpuDrawWorld", 20.0)
             ]
         );

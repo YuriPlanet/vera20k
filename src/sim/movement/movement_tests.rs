@@ -1281,12 +1281,10 @@ fn walk_frame(sim: &mut Simulation, rules: &crate::rules::ruleset::RuleSet) {
     sim.advance_tick(&[], Some(rules), grid.as_deref(), None, 67);
 }
 
-/// Order one infantryman from (0,0) to (2,0) on a 3x1 corridor whose middle
-/// cell is `middle`, through the production Move command and frame. Returns
-/// the distinct cells he stood in, in order.
-fn walk_infantry_corridor(
+/// A 3x1 corridor of clear cells whose middle cell is `middle`.
+fn walk_corridor(
     middle: crate::map::resolved_terrain::ResolvedTerrainCell,
-) -> Vec<(u16, u16)> {
+) -> crate::map::resolved_terrain::ResolvedTerrainGrid {
     let clear_costs = crate::rules::terrain_rules::SpeedCostProfile {
         foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
         track: Some(crate::util::native_x87::NativeF32Bits::ONE),
@@ -1301,7 +1299,7 @@ fn walk_infantry_corridor(
             ..cell
         }
     };
-    let terrain = crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(
+    crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(
         3,
         1,
         vec![
@@ -1309,8 +1307,16 @@ fn walk_infantry_corridor(
             clear(middle),
             clear(crate::map::resolved_terrain::test_flat_cell(2, 0)),
         ],
-    );
-    let (mut sim, rules) = walk_scene(0x75bd25, Some(terrain));
+    )
+}
+
+/// Order one infantryman from (0,0) to (2,0) on a 3x1 corridor whose middle
+/// cell is `middle`, through the production Move command and frame. Returns
+/// the distinct cells he stood in, in order.
+fn walk_infantry_corridor(
+    middle: crate::map::resolved_terrain::ResolvedTerrainCell,
+) -> Vec<(u16, u16)> {
+    let (mut sim, rules) = walk_scene(0x75bd25, Some(walk_corridor(middle)));
     let id = sim
         .spawn_object("E1", "Americans", 0, 0, 0, &rules)
         .unwrap();
@@ -1340,6 +1346,28 @@ fn infantry_walks_a_plain_corridor_end_to_end() {
         Some((2, 0)),
         "control walker must cross a corridor with no terrain object: {visited:?}",
     );
+}
+
+/// The stats panel's object rows come from the real pass: a walker's path
+/// search and steps land in their own slots, and the slots still add up.
+#[test]
+fn a_profiled_walk_fills_the_object_pass_slots() {
+    use crate::sim::frame_profile::phase;
+    let middle = crate::map::resolved_terrain::test_flat_cell(1, 0);
+    let (mut sim, rules) = walk_scene(0x75bd25, Some(walk_corridor(middle)));
+    let id = sim
+        .spawn_object("E1", "Americans", 0, 0, 0, &rules)
+        .unwrap();
+    sim.set_frame_profiling(true);
+    walk_move(&mut sim, &rules, id, (2, 0));
+    for _ in 0..30 {
+        walk_frame(&mut sim, &rules);
+    }
+    let report = sim.frame_profile().report().unwrap();
+    for slot in [phase::PATHFINDING, phase::MOVEMENT, phase::UNIT_AI] {
+        assert!(report.phases_ms[slot] > 0.0, "slot {slot} stayed empty");
+    }
+    assert!((report.phases_ms.iter().sum::<f64>() - report.mean_frame_ms).abs() < 1e-6);
 }
 
 /// The search and the runtime step-in have to be ONE predicate, the way the
