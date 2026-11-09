@@ -120,8 +120,8 @@ VERA20K 的开发者都是你们的朋友。我们希望把庞大的中国红警
 ## 支持项目
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="通过 PayPal 支持 VERA20K" height="23"></a>
+<a href="https://wise.com/pay/me/halvorr2"><img src="https://img.shields.io/badge/Donate_via_Wise-9FE870?style=flat&amp;logo=wise&amp;logoColor=163300" alt="通过 Wise 支持 VERA20K" height="23"></a>
 
-你也可以[通过 Wise 支持 VERA20K](https://wise.com/pay/me/halvorr2)。
 Wise 页面上的收款人是项目维护者 Halvor Rusten。
 
 所有收到的捐款都将根据

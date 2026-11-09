@@ -127,8 +127,8 @@ Ghidra, затем переносят его поведение на Rust и п�
 ## Поддержка проекта
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="Поддержать VERA20K через PayPal" height="23"></a>
+<a href="https://wise.com/pay/me/halvorr2"><img src="https://img.shields.io/badge/Donate_via_Wise-9FE870?style=flat&amp;logo=wise&amp;logoColor=163300" alt="Поддержать VERA20K через Wise" height="23"></a>
 
-Вы также можете [поддержать VERA20K через Wise](https://wise.com/pay/me/halvorr2).
 На странице Wise получателем указан Halvor Rusten, сопровождающий проект.
 
 Все полученные пожертвования

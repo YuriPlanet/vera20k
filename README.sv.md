@@ -126,8 +126,8 @@ lobbyinställningar, moddar eller kartor.
 ## Stöd projektet
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="Stöd VERA20K via PayPal" height="23"></a>
+<a href="https://wise.com/pay/me/halvorr2"><img src="https://img.shields.io/badge/Donate_via_Wise-9FE870?style=flat&amp;logo=wise&amp;logoColor=163300" alt="Stöd VERA20K via Wise" height="23"></a>
 
-Du kan också [stödja VERA20K via Wise](https://wise.com/pay/me/halvorr2).
 På Wise-sidan står Halvor Rusten, projektets underhållare, som mottagare.
 
 Alla mottagna donationer fördelas till

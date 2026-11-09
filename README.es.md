@@ -130,8 +130,8 @@ La [guía de modding](docs/modding.md) explica cómo crear mods propios.
 ## Apoya el proyecto
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="Apoya a VERA20K con PayPal" height="23"></a>
+<a href="https://wise.com/pay/me/halvorr2"><img src="https://img.shields.io/badge/Donate_via_Wise-9FE870?style=flat&amp;logo=wise&amp;logoColor=163300" alt="Apoya a VERA20K con Wise" height="23"></a>
 
-También puedes [apoyar a VERA20K a través de Wise](https://wise.com/pay/me/halvorr2).
 En la página de Wise aparece Halvor Rusten, el mantenedor del proyecto, como destinatario.
 
 Todas las donaciones recibidas se reparten
