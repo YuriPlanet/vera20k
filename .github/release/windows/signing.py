@@ -28,6 +28,8 @@ PACKAGE_FILES = {
     "THIRD_PARTY_LICENSES.html",
 }
 SIGNED_FILES = {"vera20k.exe", "uninstaller.exe"}
+LANGUAGES = "languages"
+LANGUAGE_FILE = re.compile(r"vera20k\.[A-Za-z0-9-]+\.(?:ini|subtitles\.txt|cameos)")
 UNINSTALLER_NAME = re.compile(r"uninst-7\.1\.0-[0-9a-f]{10}\.e(?:32|64)", re.IGNORECASE)
 # Compiler.Compile.NotifyError calls Shared.CommonFunc.GetExceptMessage, which
 # adds the final period before ISCC writes the compiler error to stderr JSONL.
@@ -42,13 +44,25 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def regular_files(directory, expected):
+def regular_files(directory, expected, folders=frozenset()):
     """Reject extra files and links before copying any externally supplied payload."""
     entries = list(directory.iterdir())
-    if {entry.name for entry in entries} != expected or any(
-        entry.is_symlink() or not entry.is_file() for entry in entries
+    if {entry.name for entry in entries} != expected | folders or any(
+        entry.is_symlink() or not (entry.is_dir() if entry.name in folders else entry.is_file())
+        for entry in entries
     ):
         raise RuntimeError(f"Unexpected files in {directory}")
+
+
+def package_files(directory, expected):
+    """A package or payload's files by relative path: `expected` and its languages."""
+    regular_files(directory, expected, {LANGUAGES})
+    languages = directory / LANGUAGES
+    names = {entry.name for entry in languages.iterdir()}
+    if not names or not all(LANGUAGE_FILE.fullmatch(name) for name in names):
+        raise RuntimeError(f"Unexpected files in {languages}")
+    regular_files(languages, names)
+    return expected | {f"{LANGUAGES}/{name}" for name in names}
 
 
 def validate_identity(version, build, name):
@@ -151,9 +165,10 @@ def generated_uninstaller(result, directory):
 def prepare(package, staging, version, build, name, iscc):
     validate_identity(version, build, name)
     package, staging = package.resolve(), staging.resolve()
-    regular_files(package, PACKAGE_FILES)
+    contents = package_files(package, PACKAGE_FILES)
     staging.mkdir(parents=True, exist_ok=False)
-    for filename in sorted(PACKAGE_FILES):
+    (staging / LANGUAGES).mkdir()
+    for filename in sorted(contents):
         shutil.copyfile(package / filename, staging / filename)
     with tempfile.TemporaryDirectory(prefix="vera20k-inno-") as temporary:
         temporary = Path(temporary)
@@ -164,7 +179,7 @@ def prepare(package, staging, version, build, name, iscc):
         original_name = uninstaller.name
         shutil.copyfile(uninstaller, staging / "uninstaller.exe")
     files = {}
-    for filename in sorted(PACKAGE_FILES | {"uninstaller.exe"}):
+    for filename in sorted(contents | {"uninstaller.exe"}):
         data = (staging / filename).read_bytes()
         files[filename] = {"size": len(data), "sha256": digest(data)}
         if filename in SIGNED_FILES:
@@ -234,13 +249,15 @@ def verify_installer(original_installer, signed_directory, fingerprint):
 
 
 def check_payload(payload, original_payload):
-    regular_files(original_payload, PACKAGE_FILES | {"uninstaller.exe", "manifest.json"})
-    regular_files(payload, PACKAGE_FILES | {"uninstaller.exe", "manifest.json"})
+    expected = PACKAGE_FILES | {"uninstaller.exe", "manifest.json"}
+    contents = package_files(original_payload, expected)
+    if package_files(payload, expected) != contents:
+        raise RuntimeError(f"Unexpected files in {payload}")
     original_manifest = (original_payload / "manifest.json").read_bytes()
     manifest = json.loads(original_manifest)
     if (set(manifest) != {"schema", "version", "build", "name", "uninstaller_name", "files"}
             or manifest["schema"] != 1
-            or set(manifest["files"]) != PACKAGE_FILES | {"uninstaller.exe"}
+            or set(manifest["files"]) != contents - {"manifest.json"}
             or not UNINSTALLER_NAME.fullmatch(manifest["uninstaller_name"])):
         raise RuntimeError("Invalid signing payload manifest")
     validate_identity(manifest["version"], manifest["build"], manifest["name"])
@@ -275,7 +292,8 @@ def package_signed(payload, original_payload, output, iscc, fingerprint):
         cache = temporary / "uninstaller"
         package.mkdir()
         cache.mkdir()
-        for filename in sorted(PACKAGE_FILES):
+        (package / LANGUAGES).mkdir()
+        for filename in sorted(set(manifest["files"]) - {"uninstaller.exe"}):
             shutil.copyfile(payload / filename, package / filename)
         shutil.copyfile(payload / "uninstaller.exe", cache / manifest["uninstaller_name"])
         result = compile_setup(iscc, package, output, manifest["version"], manifest["build"],
@@ -287,7 +305,7 @@ def package_signed(payload, original_payload, output, iscc, fingerprint):
 def plain(package, output, version, build, name, iscc):
     validate_identity(version, build, name)
     package, output = package.resolve(), output.resolve()
-    regular_files(package, PACKAGE_FILES)
+    package_files(package, PACKAGE_FILES)
     require_compile_success(compile_setup(iscc, package, output, version, build, name))
     return compiled_image(output, name)
 

@@ -284,6 +284,12 @@ def install(work: Path, release: Path, program: Path, game_folder: Path, quarant
     shutil.copy(program, package / "vera20k")
     for name in ("README.txt", "LICENSE-GPL", "THIRD_PARTY_LICENSES.html"):
         shutil.copyfile(extracted / "squashfs-root/usr/share/doc/vera20k" / name, package / name)
+    # An older release has its languages in the program.
+    languages = extracted / "squashfs-root/usr/share/vera20k/languages"
+    if languages.is_dir():
+        shutil.copytree(languages, package / "languages")
+    else:
+        (package / "languages").mkdir()
     LINUX_IMAGE.parent.mkdir(parents=True, exist_ok=True)
     run("bash", ROOT / ".github/release/linux/appimage.sh", package, LINUX_IMAGE)
     return Game(LINUX_IMAGE, data, [str(LINUX_IMAGE)], ["pkill", "-x", "vera20k"])

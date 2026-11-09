@@ -22,6 +22,7 @@ Thumbs.db
 !tools/telemetry-dashboard/vendor/THREE-LICENSE.txt
 !/LICENSES/*.txt
 !/src/render/fonts/*.txt
+!/src/i18n/vera20k.*.subtitles.txt
 !.github/release/macos/requirements.txt
 !.github/release/icon.png
 !/src/app/vera_icon.png

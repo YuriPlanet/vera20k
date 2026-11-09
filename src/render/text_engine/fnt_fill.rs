@@ -25,6 +25,9 @@
 //! - Chinese, Japanese and Korean come from GNU Unifont's 1-pixel Song
 //!   glyphs, trimmed to GAME.FNT's 15x15 box by `tools/unifont_cjk.py`
 //!   (`src/render/fonts/README.md`).
+//! - The Vietnamese letters it lacks are the ones a Vietnamese language
+//!   pack's GAME.FNT draws by hand in its style, ahead of Noto Sans'
+//!   ([`VIETNAMESE_LETTERS`]).
 
 use std::collections::HashSet;
 
@@ -108,10 +111,17 @@ fn unifont_cjk() -> &'static [u8] {
 }
 /// GAME.FNT's hanzi box, and Unifont's glyphs trimmed to it.
 const CJK_SIDE: usize = 15;
-const CJK_RECORD: usize = 2 + 2 * CJK_SIDE;
 /// The hanzi box ends this many rows below the baseline: GAME.FNT fills rows
 /// 1..15 around its row-13 baseline.
 const CJK_DESCENT: i32 = 3;
+
+/// The Vietnamese letters GAME.FNT lacks, written by
+/// `tools/language_assets.py`: records like [`unifont_cjk`]'s, of
+/// [`VIETNAMESE_ROWS`] rows.
+const VIETNAMESE_LETTERS: &[u8] = include_bytes!("../../i18n/vera20k.vi.letters");
+const VIETNAMESE_ROWS: usize = 16;
+/// The row those letters stand on, as GAME.FNT's own do.
+const VIETNAMESE_BASELINE: i32 = 13;
 
 /// GAME.FNT-style glyphs for the characters `fnt` lacks: `fnt.bitmap_rows`
 /// tall like its own, with the baseline above row `baseline_row`.
@@ -133,21 +143,34 @@ pub(crate) fn glyphs(fnt: &FntFile, baseline_row: u32) -> Vec<(u16, FntGlyph)> {
             ))
         })
         .collect();
-    let top = baseline_row as i32 + CJK_DESCENT - CJK_SIDE as i32;
-    for record in unifont_cjk().chunks_exact(CJK_RECORD) {
-        let codepoint = u16::from_le_bytes([record[0], record[1]]);
-        if fnt.draws(codepoint) {
-            continue;
+    let baseline = baseline_row as i32;
+    for (table, side, top) in [
+        (
+            unifont_cjk(),
+            CJK_SIDE,
+            baseline + CJK_DESCENT - CJK_SIDE as i32,
+        ),
+        (
+            VIETNAMESE_LETTERS,
+            VIETNAMESE_ROWS,
+            baseline - VIETNAMESE_BASELINE,
+        ),
+    ] {
+        for record in table.chunks_exact(2 + 2 * side) {
+            let codepoint = u16::from_le_bytes([record[0], record[1]]);
+            if fnt.draws(codepoint) {
+                continue;
+            }
+            let lit: HashSet<(i32, i32)> = (0..side)
+                .flat_map(|y| {
+                    let bits = u16::from_be_bytes([record[2 + 2 * y], record[3 + 2 * y]]);
+                    (0..side)
+                        .filter(move |x| bits & (0x8000 >> x) != 0)
+                        .map(move |x| (x as i32, top + y as i32))
+                })
+                .collect();
+            glyphs.push((codepoint, cropped(&lit, rows, side)));
         }
-        let lit: HashSet<(i32, i32)> = (0..CJK_SIDE)
-            .flat_map(|y| {
-                let bits = u16::from_be_bytes([record[2 + 2 * y], record[3 + 2 * y]]);
-                (0..CJK_SIDE)
-                    .filter(move |x| bits & (0x8000 >> x) != 0)
-                    .map(move |x| (x as i32, top + y as i32))
-            })
-            .collect();
-        glyphs.push((codepoint, cropped(&lit, rows, CJK_SIDE)));
     }
     let taken: HashSet<u16> = glyphs.iter().map(|&(codepoint, _)| codepoint).collect();
     glyphs.extend(noto_glyphs(fnt, rows, baseline_row as f32, &taken));
@@ -264,6 +287,30 @@ mod tests {
         (0..rows)
             .filter(|&row| (0..glyph.width as usize).any(|x| lit(glyph, x, row)))
             .collect()
+    }
+
+    /// The Vietnamese letters GAME.FNT lacks are the pack's drawings on its
+    /// baseline (the rows below are its GAME.FNT's bytes); 'ỵ' keeps its dot
+    /// on the last of GAME.FNT's rows.
+    #[test]
+    fn vietnamese_letters_keep_the_packs_drawings() {
+        let fill_ins: HashMap<u16, FntGlyph> =
+            glyphs(&FntFile::blank(17, 16), 13).into_iter().collect();
+        let drawn = |glyph: &FntGlyph, row: usize| -> String {
+            (0..glyph.width as usize)
+                .map(|x| if lit(glyph, x, row) { '#' } else { '.' })
+                .collect()
+        };
+        let a_circumflex_acute = &fill_ins[&0x1EA5];
+        let rows: Vec<String> = (0..13).map(|row| drawn(a_circumflex_acute, row)).collect();
+        assert_eq!(
+            rows,
+            [
+                "...##", "..##.", ".....", ".###.", "##.##", ".....", ".###.", "##.##", "...##",
+                ".####", "##.##", "##.##", ".####",
+            ]
+        );
+        assert_eq!(drawn(&fill_ins[&0x1EF5], 15), "..##..");
     }
 
     /// Retail GAME.FNT's gaps fill in its style: Cyrillic 'А' is its 'A',

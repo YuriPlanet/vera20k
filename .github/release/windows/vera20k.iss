@@ -181,6 +181,9 @@ Source: "config.toml.example"; DestDir: "{app}"; Flags: ignoreversion
 Source: "README.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "LICENSE-GPL"; DestDir: "{app}"; Flags: ignoreversion
 Source: "THIRD_PARTY_LICENSES.html"; DestDir: "{app}"; Flags: ignoreversion
+; Every language but English. Deleting a language's files removes it from the
+; game until the next update.
+Source: "languages\*"; DestDir: "{app}\languages"; Flags: ignoreversion
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
@@ -198,6 +201,8 @@ Type: files; Name: "{autodesktop}\VERA.lnk"
 ; Releases before the Bink decoder and xBR scaler moved to the GPLv3 installed
 ; the LGPL's text, which no file is under now.
 Type: files; Name: "{app}\LGPL-2.1-or-later.txt"
+; The folder is the release's, so a language it no longer has does not stay.
+Type: filesandordirs; Name: "{app}\languages"
 
 [Run]
 Filename: "{app}\vera20k.exe"; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,VERA20K}"; Flags: nowait postinstall skipifsilent
@@ -853,7 +858,7 @@ begin
   AppendReadySection(Result, MemoGroupInfo, NewLine);
   AppendReadySection(Result, CustomMessage('ReadyFiles') + NewLine +
     Space + 'vera20k.exe, config.toml.example, README.txt' + NewLine +
-    Space + 'LICENSE-GPL, THIRD_PARTY_LICENSES.html', NewLine);
+    Space + 'LICENSE-GPL, THIRD_PARTY_LICENSES.html, languages', NewLine);
   if FileExists(AddBackslash(WizardDirValue()) + 'config.toml') then
     ConfigInfo := CustomMessage('ReadyConfigExisting')
   else

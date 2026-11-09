@@ -43,6 +43,13 @@ def signed_fixture(data):
     return bytes(data)
 
 
+def package_fixture(package):
+    (package / signing.LANGUAGES).mkdir(parents=True)
+    for filename in signing.PACKAGE_FILES:
+        (package / filename).write_bytes(pe_fixture() if filename.endswith(".exe") else b"text")
+    (package / signing.LANGUAGES / "vera20k.vi.ini").write_bytes(b"language")
+
+
 def waiting_result(directory, data):
     candidate = directory / f"uninst-7.1.0-{signing.digest(data)[:10]}.e32"
     candidate.write_bytes(data)
@@ -77,9 +84,7 @@ class WindowsSigningTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             package = root / "package"
-            package.mkdir()
-            for filename in signing.PACKAGE_FILES:
-                (package / filename).write_bytes(pe_fixture() if filename.endswith(".exe") else b"text")
+            package_fixture(package)
             staging = root / "staging"
 
             def prepare_compile(iscc, package, output, version, build, name, cache):
@@ -109,7 +114,7 @@ class WindowsSigningTests(unittest.TestCase):
                 self.assertEqual(parameters["version"], "true")
                 self.assertNotIn("inno_version", parameters)
             manifest = json.loads((staging / "manifest.json").read_text())
-            original_bytes = {path.name: path.read_bytes() for path in staging.iterdir()}
+            original_bytes = {path: path.read_bytes() for path in staging.rglob("*") if path.is_file()}
             signed = root / "signed"
             shutil.copytree(staging, signed)
             for filename in ("vera20k.exe", "uninstaller.exe"):
@@ -121,6 +126,7 @@ class WindowsSigningTests(unittest.TestCase):
                                  (signed / "uninstaller.exe").read_bytes())
                 self.assertEqual((package / "vera20k.exe").read_bytes(),
                                  (signed / "vera20k.exe").read_bytes())
+                self.assertEqual((package / "languages/vera20k.vi.ini").read_bytes(), b"language")
                 output.mkdir()
                 (output / f"{name}-setup.exe").write_bytes(b"setup")
                 return subprocess.CompletedProcess([], 0, b"", b"")
@@ -145,7 +151,34 @@ class WindowsSigningTests(unittest.TestCase):
                     signing.package_signed(signed, staging, root / "rejected", "ISCC", FINGERPRINT)
                 compiler.assert_not_called()
                 verify.assert_not_called()
-            self.assertEqual({path.name: path.read_bytes() for path in staging.iterdir()}, original_bytes)
+            self.assertEqual({path: path.read_bytes() for path in staging.rglob("*") if path.is_file()},
+                             original_bytes)
+
+    def test_the_languages_are_checked_like_the_other_package_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            package = root / "package"
+            package_fixture(package)
+            staging = root / "staging"
+
+            def prepare_compile(iscc, package, output, version, build, name, cache):
+                return waiting_result(cache, pe_fixture())[1]
+
+            with patch.object(signing, "compile_setup", side_effect=prepare_compile):
+                signing.prepare(package, staging, "0.2.5", "20261102-120000", "vera20k-check", "ISCC")
+            signed = root / "signed"
+            shutil.copytree(staging, signed)
+            language = signed / "languages/vera20k.vi.ini"
+            language.write_bytes(b"changed")
+            with self.assertRaisesRegex(RuntimeError, "changed the package contents: languages/vera20k.vi.ini"):
+                signing.check_payload(signed, staging)
+            language.write_bytes(b"language")
+            (signed / "languages/vera20k.xx.ini").write_bytes(b"added")
+            with self.assertRaisesRegex(RuntimeError, "Unexpected files"):
+                signing.check_payload(signed, staging)
+            shutil.rmtree(package / "languages")
+            with self.assertRaisesRegex(RuntimeError, "Unexpected files"):
+                signing.plain(package, root / "plain", "0.2.5", "20261102-120000", "vera20k-check", "ISCC")
 
     def test_windows_trust_and_exact_signer_are_both_required(self):
         with tempfile.TemporaryDirectory() as temporary:
