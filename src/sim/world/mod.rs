@@ -1523,6 +1523,8 @@ pub struct Simulation {
     pub(crate) lifecycle_outputs: FrameChannel<LifecycleOutput>,
     /// Derived presentation interest for the next admitted frame. The app
     /// copies only pending voice owners; this is never a second voice latch.
+    /// A deploy conversion renames its old object's entry to the new one
+    /// (`move_unit_voice`), following the audio owner's own move.
     /// `advance_app_frame` clears it on success and error, and restore starts
     /// empty. Neither snapshots nor world hashes include this transient set.
     #[serde(skip)]
