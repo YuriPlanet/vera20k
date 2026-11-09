@@ -254,6 +254,8 @@ Supported extensions:
   [remaining work](ares-remaining.md).
 - [INI Include and inheritance](ini-directives.md). The read-only `asset ini-expand` probe works
   in every build.
+- [INI syntax](ares-ini-syntax.md): `+=` keys, `[Child]:[Base]` sections and later-wins
+  repeated keys in every INI load, with included files loaded into the INI that lists them.
 - [Extended authored House ally lists](../tools/input_oracle/ares_allies_reader.md).
 
 ## VERA20K porting credits
