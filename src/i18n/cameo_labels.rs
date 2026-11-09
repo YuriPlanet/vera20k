@@ -149,4 +149,21 @@ mod tests {
         assert!(parse(&file[..file.len() - 1]).is_none());
         assert!(parse(b"nope").is_none());
     }
+
+    /// Every cameo name VERA ships fits the retail picture the game draws.
+    #[test]
+    fn shipped_names_fit_the_retail_cameos() {
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        for (tag, file) in crate::i18n::shipped::CAMEO_LABELS {
+            let labels = parse(file).unwrap_or_else(|| panic!("{tag}: damaged file"));
+            for (name, label) in &labels {
+                let data = assets.get_ref(name).unwrap_or_else(|| panic!("{name}"));
+                let shp = crate::assets::shp_file::ShpFile::from_bytes(data).unwrap();
+                let mut canvas = shp.frames[0].pixels.clone();
+                assert!(label.apply(&mut canvas), "{tag}: {name}");
+            }
+        }
+    }
 }

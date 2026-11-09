@@ -91,6 +91,9 @@ names. Both are optional, and the game reads them from the same folder.
   [its script](../../tools/language_assets.py) explains how. The file keeps only the
   difference from the game's own name rows, so it holds none of the game's art.
 
+Vietnamese has both. They and the letters in `vera20k.vi.letters` come from the language
+pack credited at the top of [its language file](vera20k.vi.ini).
+
 ## Keep a language up to date
 
 When the English text changes, the person who changes it also updates every language
@@ -116,9 +119,9 @@ is explained at the top of [`mod.rs`](mod.rs).
 
 ## Other text
 
-- **The original game's text**, such as unit names and missions, isn't in these files.
-  It comes from the player's game files. A language file can replace it using the game's
-  own labels, such as `NAME:MTNK=` or `GUI:Ok=`, but no language does that yet. Ask on
-  Discord for the list of labels, and keep any `%s` or `%d` in that text.
+- **The original game's text**, such as unit names and missions, comes from the player's
+  game files. A language file can replace it using the game's own labels, such as
+  `NAME:MTNK=` or `GUI:Ok=`, as the Vietnamese file does. Ask on Discord for the list of
+  labels, and keep any `%s` or `%d` in that text.
 - **The README and project page** are `README.<code>.md` and `docs/<code>/index.md`.
 - **The website** (vera20k.org) isn't in this repository. Ask on Discord.
