@@ -186,6 +186,9 @@ pub struct GpuContext {
     capture_target: Option<CaptureTarget>,
     /// The GPU time of each frame, while the Performance Stats panel shows.
     pub(crate) timer: super::gpu_timer::GpuTimer,
+    /// VERA's whole-viewport colour-vision filter. Every present path shares
+    /// it, including the synchronous loading repaints outside the frame loop.
+    pub(crate) color_vision: super::color_vision::ColorVisionFilter,
     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
     web_present: Arc<web_present::WebPresent>,
 }
@@ -460,9 +463,27 @@ impl GpuContext {
             adapter_info,
             capture_target,
             timer,
+            color_vision: super::color_vision::ColorVisionFilter::new(),
             #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
             web_present,
         })
+    }
+
+    /// Publish this frame's colour-vision correction; `None` means `Off`.
+    /// The frame loop calls this once per frame, so the synchronous loading
+    /// repaints (which present outside the frame loop) use the same value.
+    pub(crate) fn set_color_vision_matrix(&self, matrix: Option<super::color_vision::Mat3>) {
+        self.color_vision.set_matrix(matrix);
+    }
+
+    /// Apply the published correction as the last draw before `present`.
+    pub(crate) fn encode_color_vision(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        target: &wgpu::Texture,
+    ) {
+        self.color_vision
+            .encode(&self.device, &self.queue, encoder, target);
     }
 
     /// Return a borrowed capture-only view of the selected adapter identity.

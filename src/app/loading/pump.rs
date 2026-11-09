@@ -3448,6 +3448,10 @@ pub(crate) fn present_saved_game_loading(state: &mut AppState) -> anyhow::Result
     state
         .renderer
         .gpu
+        .encode_color_vision(&mut encoder, &output.texture);
+    state
+        .renderer
+        .gpu
         .queue
         .submit(std::iter::once(encoder.finish()));
     output.present(&state.renderer.gpu.queue);

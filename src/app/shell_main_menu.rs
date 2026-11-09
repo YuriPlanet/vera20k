@@ -100,6 +100,12 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // strip policy; Options' accept writes it out.
         self.persistence.options_profile.health_bars = mode;
     }
+    fn store_color_vision(&mut self, mode: crate::ui::main_menu_dialogs::options::ColorVisionMode) {
+        // The final-frame pass reads the profile every frame, so the very next
+        // frame is corrected; no atlas or ramp has to be rebuilt. Options'
+        // accept writes it out.
+        self.persistence.options_profile.color_vision = mode;
+    }
     fn set_display(&mut self, display: crate::ui::main_menu_dialogs::options::DisplayTarget) {
         // Applied at once, like Full Screen: the window moves to the picked
         // screen (or back to the system's choice) before the page is accepted.

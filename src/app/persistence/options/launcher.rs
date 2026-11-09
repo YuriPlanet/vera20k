@@ -8,9 +8,9 @@
 use super::audio::{AudioVolume, AudioVolumeOperations, apply_volume};
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::ui::main_menu_dialogs::options::{
-    DisplayTarget, HealthBarMode, LauncherCue, LauncherOptionsEvent, LauncherOptionsLabels,
-    LauncherOptionsPacked, LauncherOptionsValues, LauncherParentResult, OptionsDialogState,
-    SidebarSize, Zoom, admitted_initial_position, admitted_volume_position,
+    ColorVisionMode, DisplayTarget, HealthBarMode, LauncherCue, LauncherOptionsEvent,
+    LauncherOptionsLabels, LauncherOptionsPacked, LauncherOptionsValues, LauncherParentResult,
+    OptionsDialogState, SidebarSize, Zoom, admitted_initial_position, admitted_volume_position,
 };
 
 /// Project the retained signed profile into the fresh native-shaped controls.
@@ -54,6 +54,7 @@ pub(crate) fn launcher_values_from_profile(
         detailed_eva_text: profile.detailed_eva_text,
         sidebar: profile.sidebar,
         health_bars: profile.health_bars,
+        color_vision: profile.color_vision,
         // The slider's position is the stored level less the retail strength,
         // so gamemd's own bands sit at the left end.
         house_color_position: profile
@@ -104,6 +105,9 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_sidebar(&mut self, size: SidebarSize);
     /// The `[VERA] HealthBars=` list's pick; presentation only.
     fn store_health_bars(&mut self, mode: HealthBarMode);
+    /// The `[VERA] ColorVisionMode=` list's pick; presentation only, read by
+    /// the final frame pass on the very next frame.
+    fn store_color_vision(&mut self, mode: ColorVisionMode);
     /// Move the window to the picked screen, or hand it back to the system.
     fn set_display(&mut self, display: DisplayTarget);
     fn set_full_screen(&mut self, full_screen: bool);
@@ -159,6 +163,7 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::ZoomSelected(zoom) => operations.store_zoom(zoom),
         LauncherOptionsEvent::SidebarSelected(size) => operations.store_sidebar(size),
         LauncherOptionsEvent::HealthBarModeSelected(mode) => operations.store_health_bars(mode),
+        LauncherOptionsEvent::ColorVisionModeSelected(mode) => operations.store_color_vision(mode),
         LauncherOptionsEvent::DisplaySelected(display) => operations.set_display(display),
         LauncherOptionsEvent::LanguageSelected(tag) => operations.store_language(tag),
         LauncherOptionsEvent::FullScreenChanged(full_screen) => {

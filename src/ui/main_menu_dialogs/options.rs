@@ -127,6 +127,10 @@ pub(crate) const HEALTH_BARS_HELP: &str = "VERA:HealthBarsHelp";
 /// string table has nothing for it.
 pub(crate) const HOUSE_COLOR_STRENGTH_LABEL: &str = "VERA:HouseColorStrength";
 pub(crate) const HOUSE_COLOR_STRENGTH_HELP: &str = "VERA:HouseColorStrengthHelp";
+/// VERA's whole-viewport colour-vision filter. Retail's string table has
+/// nothing for it.
+pub(crate) const COLOR_VISION_LABEL: &str = "VERA:ColorVision";
+pub(crate) const COLOR_VISION_HELP: &str = "VERA:ColorVisionHelp";
 /// The Display list's first row: the window system's own choice.
 pub(crate) const DISPLAY_AUTO_LABEL: &str = "VERA:DisplayAuto";
 /// VERA's Language list on the Interface page. Its rows are each language's
@@ -376,6 +380,79 @@ impl HealthBarMode {
     }
 }
 
+/// VERA's `[VERA] ColorVisionMode=` whole-viewport colour-vision filter.
+///
+/// gamemd has no equivalent: this is a presentation-only final-frame pass
+/// (`render::color_vision`), never simulation state. `Generic` and
+/// `Deuteranopia` are the same correction matrix; the former is just a label
+/// for players who cannot name their deficiency. The matrices themselves live
+/// in `render/`, so `ui/` owns only the enum and its strings and the app frame
+/// maps a mode to a matrix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum ColorVisionMode {
+    /// The retail image; the pass is skipped entirely.
+    #[default]
+    Off,
+    /// "Not sure? Use this": the common red-green correction.
+    Generic,
+    /// Red-green, green-cone.
+    Deuteranopia,
+    /// Red-green, red-cone.
+    Protanopia,
+    /// Blue-yellow; the rarest and least reliable model.
+    Tritanopia,
+}
+
+impl ColorVisionMode {
+    /// The list's rows, top to bottom; the first is the default.
+    const ALL: [Self; 5] = [
+        Self::Off,
+        Self::Generic,
+        Self::Deuteranopia,
+        Self::Protanopia,
+        Self::Tritanopia,
+    ];
+
+    /// The row's text.
+    pub(crate) fn label(self) -> String {
+        crate::i18n::tr(match self {
+            Self::Off => "VERA:ColorVisionOff",
+            Self::Generic => "VERA:ColorVisionGeneric",
+            Self::Deuteranopia => "VERA:ColorVisionDeuteranopia",
+            Self::Protanopia => "VERA:ColorVisionProtanopia",
+            Self::Tritanopia => "VERA:ColorVisionTritanopia",
+        })
+    }
+
+    /// The list's rows, top to bottom.
+    pub(crate) fn choices() -> Vec<Self> {
+        Self::ALL.to_vec()
+    }
+
+    /// The `[VERA] ColorVisionMode` value.
+    pub(crate) const fn ini_value(self) -> i32 {
+        match self {
+            Self::Off => 0,
+            Self::Generic => 1,
+            Self::Deuteranopia => 2,
+            Self::Protanopia => 3,
+            Self::Tritanopia => 4,
+        }
+    }
+
+    /// A value this build does not know reads as `Off`, so a hand-edited INI
+    /// never enables a filter the build has no matrix for.
+    pub(crate) const fn from_ini_value(value: i32) -> Self {
+        match value {
+            1 => Self::Generic,
+            2 => Self::Deuteranopia,
+            3 => Self::Protanopia,
+            4 => Self::Tritanopia,
+            _ => Self::Off,
+        }
+    }
+}
+
 /// One screen the Display list offers, as the window layer reported it when the
 /// page opened. VERA's own data: no profile or native code names a monitor.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -459,6 +536,8 @@ pub(crate) enum LauncherComboId {
     Display,
     /// The `[VERA] HealthBars=` list.
     HealthBars,
+    /// The `[VERA] ColorVisionMode=` list: the whole-viewport filter.
+    ColorVision,
     /// The `[VERA] Language=` list: VERA's interface language.
     Language,
 }
@@ -690,6 +769,8 @@ pub(crate) enum LauncherOptionsEvent {
     SidebarSelected(SidebarSize),
     /// The Health Bars list's pick, applied at once like Sidebar.
     HealthBarModeSelected(HealthBarMode),
+    /// The Colour Vision list's pick, applied to the very next frame.
+    ColorVisionModeSelected(ColorVisionMode),
     /// The Display list's pick, applied to the window at once.
     DisplaySelected(DisplayTarget),
     /// The Language list's pick, a language tag, applied at once.
@@ -785,6 +866,9 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) sidebar: SidebarSize,
     /// The Health Bars list's choice; like Sidebar, it applies at once.
     pub(crate) health_bars: HealthBarMode,
+    /// The Colour Vision list's choice; reads every frame, so it applies at
+    /// once without rebuilding anything.
+    pub(crate) color_vision: ColorVisionMode,
     /// VERA's team-colour strength as the slider's position,
     /// [`crate::rules::house_colors::STRENGTH_MIN`] less than the level the
     /// profile stores. Position 0 is gamemd's own bands.
@@ -826,6 +910,7 @@ impl Default for LauncherOptionsValues {
             detailed_eva_text: false,
             sidebar: SidebarSize::Normal,
             health_bars: HealthBarMode::Vanilla,
+            color_vision: ColorVisionMode::Off,
             house_color_position: 0,
             score_position: 4,
             sound_position: 7,
@@ -1373,6 +1458,15 @@ impl OptionsDialogState {
             .push(LauncherOptionsEvent::HealthBarModeSelected(mode));
     }
 
+    /// The Colour Vision list publishes its pick at once too: the filter reads
+    /// the profile every frame, so no atlas or ramp has to be rebuilt.
+    pub(crate) fn select_color_vision(&mut self, mode: ColorVisionMode) {
+        self.values.color_vision = mode;
+        self.open_combo = None;
+        self.pending_events
+            .push(LauncherOptionsEvent::ColorVisionModeSelected(mode));
+    }
+
     /// The Display list publishes its pick at once too: the window moves to
     /// that screen straight away. Picking the screen already chosen, or one the
     /// window layer did not list, changes nothing.
@@ -1491,6 +1585,7 @@ impl Category {
                 Setting::List(List::Zoom),
                 Setting::List(List::Display),
                 Setting::Slider(Slider::HouseColorStrength),
+                Setting::List(List::ColorVision),
                 Setting::Checkbox(Check::FullScreen),
                 Setting::Checkbox(Check::OriginalShape),
                 Setting::Checkbox(Check::RenderInterpolation),
@@ -2184,6 +2279,7 @@ mod tests {
             List::Sidebar,
             List::Display,
             List::HealthBars,
+            List::ColorVision,
             List::Language,
         ]
         .map(Setting::List)

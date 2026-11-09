@@ -50,6 +50,22 @@ pub(crate) fn reset_scenario_exit_runtime(state: &mut AppState) {
     state.audio.restore_sound_master();
 }
 
+/// The correction matrix for `[VERA] ColorVisionMode=`, or `None` for `Off`.
+/// Startup needs it before an `AppState` exists, so the mapping lives here
+/// rather than on the state: `render/` only ever sees a plain matrix.
+pub(crate) fn color_vision_matrix_for(
+    mode: crate::ui::main_menu_dialogs::options::ColorVisionMode,
+) -> Option<crate::render::color_vision::Mat3> {
+    use crate::render::color_vision as cv;
+    use crate::ui::main_menu_dialogs::options::ColorVisionMode as Mode;
+    match mode {
+        Mode::Off => None,
+        Mode::Generic | Mode::Deuteranopia => Some(cv::CORRECT_DEUTERANOPIA),
+        Mode::Protanopia => Some(cv::CORRECT_PROTANOPIA),
+        Mode::Tritanopia => Some(cv::CORRECT_TRITANOPIA),
+    }
+}
+
 impl AppState {
     /// Client presentation preference; the simulation never reads this option.
     pub(crate) fn translucent_fog_enabled(&self) -> bool {
@@ -63,6 +79,19 @@ impl AppState {
     /// the simulation never reads it.
     pub(crate) fn health_bar_mode(&self) -> crate::ui::main_menu_dialogs::options::HealthBarMode {
         self.persistence.options_profile.health_bars
+    }
+
+    /// `[VERA] ColorVisionMode=`: the final-frame colour filter. Presentation
+    /// only; the simulation never reads it, and the frame reads it live.
+    pub(crate) fn color_vision_mode(
+        &self,
+    ) -> crate::ui::main_menu_dialogs::options::ColorVisionMode {
+        self.persistence.options_profile.color_vision
+    }
+
+    /// Publish this frame's matrix to the shared frame-output filter.
+    pub(crate) fn color_vision_matrix(&self) -> Option<crate::render::color_vision::Mat3> {
+        color_vision_matrix_for(self.color_vision_mode())
     }
 
     /// Is the match frozen because the window is not the foreground? Only the
