@@ -78,7 +78,9 @@ The `/v1/*` proxy preserves the existing method, path, Authorization, request bo
 
 [`network.js`](../tools/wasm/network.js) buffers only raw bytes. Reception is limited to 256 packets and 256 KiB; sending uses `bufferedAmount` to enforce a 256 KiB limit. Rust uses the original codec's `MAX_DATAGRAM`. A pending connection or send backlog returns WouldBlock, leaving retries with the protocol queues.
 
-Physical connection failures trigger reconnects with bounded backoff, clear the old connection's bytes and callbacks, and notify the original Rust owner to repeat the relay challenge. Original reliable queues, match identity, unacknowledged batches and the log cursor remain intact. Network loss never creates Leave; explicit exit still follows the original acknowledgement flow. Browsers have no native I/O pump thread, so incremental app service calls and the event loop advance networking together.
+Physical connection failures trigger reconnects with backoff capped at 2 seconds (the relay counts a hop silent for 1.5 s as offline), clear the old connection's bytes and callbacks, and notify the original Rust owner to repeat the relay challenge. Original reliable queues, match identity, unacknowledged batches and the log cursor remain intact. Network loss never creates Leave; explicit exit still follows the original acknowledgement flow. Browsers have no native I/O pump thread, so incremental app service calls and the event loop advance networking together.
+
+Because the game loop drains received datagrams only between frames, `network.js` records each message's arrival time and the socket hands it to the relay session as the receive time (adaptive-transport spec §6.5), so frame time does not enter RTT, loss judgement or JITTERY. A browser relay session also marks its hop as a stream transport (`ClientSession::use_stream_transport`): a lossy-state uplink copy could only queue behind its original on the WebSocket, so none is sent, while RTO resends still recover what the gateway drops or its UDP leg loses. The relay's downlink policy is unchanged.
 
 ### Lobby executor
 

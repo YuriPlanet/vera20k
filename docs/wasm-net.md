@@ -78,7 +78,9 @@ WS_PROXY_URL=ws://localhost:8788 python3 tools/wasm/build.py --network
 
 [`network.js`](../tools/wasm/network.js) 只缓冲原始字节。接收上限为 256 包和 256 KiB，发送通过 `bufferedAmount` 限制为 256 KiB；Rust 使用原 codec 的 `MAX_DATAGRAM`。未连接或发送积压时返回 WouldBlock，协议队列仍拥有重试责任。
 
-物理连接失败时使用有界退避重连，清除旧连接的字节与回调，通知原 Rust owner 重新进行 relay challenge。原可靠队列、对局身份、未确认 batch 和日志 cursor 保留。断网不制造 Leave；显式退出仍走原确认流程。浏览器没有原生 I/O pump 线程，app 的分次 service 和事件循环共同推进网络。
+物理连接失败时重连，退避上限 2 秒（relay 对 1.5 秒无消息的跳判为离线），清除旧连接的字节与回调，通知原 Rust owner 重新进行 relay challenge。原可靠队列、对局身份、未确认 batch 和日志 cursor 保留。断网不制造 Leave；显式退出仍走原确认流程。浏览器没有原生 I/O pump 线程，app 的分次 service 和事件循环共同推进网络。
+
+游戏循环只在帧与帧之间取出收到的数据报，所以 `network.js` 记录每条消息的到达时间，socket 把它作为接收时刻交给 relay 会话（adaptive-transport spec §6.5），帧耗时不会进入 RTT、丢包判定和 JITTERY。浏览器 relay 会话还把这一跳标记为流式传输（`ClientSession::use_stream_transport`）：在 WebSocket 上，丢包状态的上行副本只会排在原包之后，所以不再发送；gateway 丢弃或 UDP 段丢失的数据仍由 RTO 重发恢复。中继的下行策略不变。
 
 ### 大厅执行器
 

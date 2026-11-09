@@ -6,6 +6,7 @@ const test = require('node:test');
 
 function fixture() {
   const sockets = [], timers = new Map();
+  const clock = {now: 0};
   let nextTimer = 1;
   class Socket {
     static OPEN = 1;
@@ -25,12 +26,12 @@ function fixture() {
     packet(bytes) { this.onmessage({data: Uint8Array.from(bytes).buffer}); }
   }
   const api = vm.createContext({
-    URL, WebSocket: Socket, ArrayBuffer, Uint8Array,
+    URL, WebSocket: Socket, ArrayBuffer, Uint8Array, performance: {now: () => clock.now},
     setTimeout(fn, delay) { const id = nextTimer++; timers.set(id, {fn, delay}); return id; },
     clearTimeout(id) { timers.delete(id); },
   });
   vm.runInContext(readFileSync(path.join(__dirname, '../network.js'), 'utf8'), api);
-  return {api, sockets, timers, runTimer(delay) {
+  return {api, sockets, timers, clock, runTimer(delay) {
     const [id, timer] = [...timers].find(([, timer]) => timer.delay === delay);
     timers.delete(id);
     timer.fn();
@@ -125,4 +126,31 @@ test('receive overflow and malformed messages reset the route without unbounded 
   api.veraSocketClose(id);
   api.veraSocketClose(other);
   assert.equal(timers.size, 0);
+});
+
+test('each received datagram reports how long it waited for the game loop', () => {
+  const {api, sockets, clock} = fixture();
+  const id = api.veraSocketOpen('wss://proxy.example', 'primary', 827);
+  sockets[0].opened();
+  clock.now = 1000;
+  sockets[0].packet([1]);
+  clock.now = 1012.5;
+  sockets[0].packet([2]);
+  clock.now = 1040;
+  assert.deepEqual([...api.veraSocketReceive(id)], [1]);
+  assert.equal(api.veraSocketReceivedAgo(id), 40);
+  assert.deepEqual([...api.veraSocketReceive(id)], [2]);
+  assert.equal(api.veraSocketReceivedAgo(id), 27.5);
+  api.veraSocketClose(id);
+});
+
+test('repeated connection failures retry within two seconds', () => {
+  const {api, sockets, runTimer} = fixture();
+  const id = api.veraSocketOpen('wss://proxy.example', 'primary', 827);
+  for (const delay of [250, 500, 1000, 2000, 2000]) {
+    sockets.at(-1).onclose();
+    runTimer(delay);
+  }
+  assert.equal(sockets.length, 6);
+  api.veraSocketClose(id);
 });

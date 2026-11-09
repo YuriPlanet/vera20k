@@ -4,6 +4,8 @@
   const MAX_PACKETS = 256;
   const MAX_QUEUED_BYTES = 256 * 1024;
   const MAX_SEND_BYTES = 256 * 1024;
+  // The relay drops a hop silent for 1.5 s, so a match never waits longer than this to retry.
+  const MAX_RETRY_DELAY = 2000;
   let next = 1;
 
   function detach(state) {
@@ -27,7 +29,7 @@
       state.retryTimer = undefined;
       if (!state.closed) connect(state);
     }, state.retryDelay);
-    state.retryDelay = Math.min(state.retryDelay * 2, 30000);
+    state.retryDelay = Math.min(state.retryDelay * 2, MAX_RETRY_DELAY);
   }
 
   function connect(state) {
@@ -55,7 +57,8 @@
         return;
       }
       state.retryDelay = 250;
-      state.packets.push(new Uint8Array(data));
+      // Arrival time: Rust reads the queue only when the game loop next services it.
+      state.packets.push({bytes: new Uint8Array(data), at: performance.now()});
       state.bytes += data.byteLength;
     };
     ws.onclose = ws.onerror = () => {
@@ -76,7 +79,7 @@
     const state = {
       url: url.href, maxDatagram, ws: null, packets: [], bytes: 0,
       retryTimer: undefined, connectTimer: undefined, retryDelay: 250,
-      closed: false, routeChanged: false,
+      closed: false, routeChanged: false, receivedAgo: 0,
     };
     const id = next++;
     sockets.set(id, state);
@@ -100,9 +103,13 @@
     if (!state || state.closed) return undefined;
     const packet = state.packets.shift();
     if (!packet) return null;
-    state.bytes -= packet.byteLength;
-    return packet;
+    state.bytes -= packet.bytes.byteLength;
+    state.receivedAgo = Math.max(0, performance.now() - packet.at);
+    return packet.bytes;
   };
+
+  // Milliseconds since the datagram last returned by veraSocketReceive arrived.
+  globalThis.veraSocketReceivedAgo = id => sockets.get(id)?.receivedAgo ?? 0;
 
   globalThis.veraSocketTakeRouteChange = id => {
     const state = sockets.get(id);
