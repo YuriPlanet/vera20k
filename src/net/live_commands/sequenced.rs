@@ -15,7 +15,9 @@ use crate::net::event_packet::{EVENT_PACKET_HEADER_LEN, EventPacketCodec};
 use crate::net::udp::LanUdpTransport;
 use crate::sim::command::{CommandRecord, ExitRecord, REMOVE_PLAYER_OPCODE};
 use crate::sim::command_queue::FrameInfo;
-use crate::sim::world::{NetworkCommandQueues, NetworkQueueContext, NetworkQueuePass};
+use crate::sim::world::{
+    NetworkCommandQueues, NetworkInterruption, NetworkQueueContext, NetworkQueuePass,
+};
 use crate::util::time::Instant;
 
 const BUFFERED_FRAMES: usize = 64;
@@ -257,6 +259,9 @@ pub enum SequencedError {
     },
     #[error("online ordering service cannot recover this match")]
     Unavailable,
+    /// The relay closed this match's room before it started: a player left.
+    #[error("a player left before the online match started")]
+    StartCancelled,
     #[error("online command queue is full")]
     QueueFull,
     #[error("this online match needs a newer VERA20k")]
@@ -275,12 +280,27 @@ impl SequencedError {
             Self::InvalidTimeline => "invalid_timeline",
             Self::Desync { .. } => "desync",
             Self::Unavailable => "unavailable",
+            Self::StartCancelled => "start_cancelled",
             Self::QueueFull => "queue_full",
             Self::NewerClientRequired => "newer_client_required",
             Self::Refused(OrderError::AgreementMismatch) => "agreement_mismatch",
             Self::Refused(OrderError::ModifiedRetry) => "modified_retry",
             Self::Refused(OrderError::InvalidCursor) => "invalid_cursor",
             Self::Refused(_) => "refused",
+        }
+    }
+
+    /// What a match this error ended tells the player.
+    pub fn interruption(&self) -> NetworkInterruption {
+        match self {
+            Self::Desync { .. } => NetworkInterruption::ScenariosDiffer,
+            Self::QueueFull => NetworkInterruption::QueueFull,
+            Self::NewerClientRequired => NetworkInterruption::NewerClientRequired,
+            Self::Refused(OrderError::AgreementMismatch) => NetworkInterruption::StartMismatch,
+            Self::StartCancelled => NetworkInterruption::StartCancelled,
+            Self::HistoryExpired | Self::InvalidTimeline | Self::Unavailable | Self::Refused(_) => {
+                NetworkInterruption::ConnectionFailed
+            }
         }
     }
 }
@@ -1002,6 +1022,11 @@ impl SequencedSession {
                     self.accept_through(accepted)?;
                 }
                 OrderError::HistoryGap => return Err(SequencedError::HistoryExpired),
+                // Only a match that never started: a restored session has not
+                // heard from the relay yet, and its match did start.
+                OrderError::Inactive if !self.delivery.started && !self.restoring => {
+                    return Err(SequencedError::StartCancelled);
+                }
                 OrderError::Inactive | OrderError::StorageUnavailable => {
                     return Err(SequencedError::Unavailable);
                 }
@@ -1711,6 +1736,49 @@ mod restore_tests {
         session.receive(lost, Instant::now()).unwrap();
         assert!(!session.started());
         assert!(session.delivery_counters().started);
+    }
+
+    /// A room closed before the start means a player left. The same refusal
+    /// later, or to a restored session, is the service losing the match.
+    #[test]
+    fn an_inactive_room_is_a_cancelled_start_only_before_the_match_started() {
+        let mut houses = [None; 30];
+        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
+        let session = || SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        let inactive = || OrderEvent::Error {
+            code: OrderError::Inactive,
+            expected: 0,
+        };
+
+        let refused = session().receive(inactive(), Instant::now()).unwrap_err();
+        assert_eq!(refused.code(), "start_cancelled");
+        assert_eq!(refused.interruption(), NetworkInterruption::StartCancelled);
+
+        let mut started = session();
+        started.receive(status(1, 0), Instant::now()).unwrap();
+        let refused = started.receive(inactive(), Instant::now()).unwrap_err();
+        assert_eq!(refused.code(), "unavailable");
+        assert_eq!(
+            refused.interruption(),
+            NetworkInterruption::ConnectionFailed
+        );
+
+        let mut restored = session();
+        restored.begin_restore();
+        let refused = restored.receive(inactive(), Instant::now()).unwrap_err();
+        assert_eq!(refused.code(), "unavailable");
+    }
+
+    #[test]
+    fn only_differing_start_agreements_read_as_a_start_mismatch() {
+        assert_eq!(
+            SequencedError::Refused(OrderError::AgreementMismatch).interruption(),
+            NetworkInterruption::StartMismatch
+        );
+        assert_eq!(
+            SequencedError::Refused(OrderError::ModifiedRetry).interruption(),
+            NetworkInterruption::ConnectionFailed
+        );
     }
 
     /// The counter the departed process reached comes from the history: its

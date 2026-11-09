@@ -32,9 +32,14 @@ pub(crate) fn labels(
             ("TXT_SCENARIOS_DO_NOT_MATCH", "Scenarios do not match.")
         }
         Some(NetworkInterruption::QueueFull) => ("TXT_QUEUE_FULL", "Network event queue is full."),
-        // A newer relay's record ends the match in the same box; vera_body
-        // replaces its body.
-        Some(NetworkInterruption::ConnectionFailed | NetworkInterruption::NewerClientRequired) => (
+        // A newer relay's record and a refused start end the match in the
+        // same box; vera_body replaces its body.
+        Some(
+            NetworkInterruption::ConnectionFailed
+            | NetworkInterruption::NewerClientRequired
+            | NetworkInterruption::StartMismatch
+            | NetworkInterruption::StartCancelled,
+        ) => (
             "TXT_SYSTEM_NOT_RESPONDING",
             "The other system is not responding.",
         ),
@@ -49,7 +54,8 @@ pub(crate) fn labels(
 /// this build cannot read, so the box names the cause and the download page.
 /// An online match's connection failure is the relay's ordered stream, not
 /// another player (their silence removes only their House), so it names the
-/// game server rather than "the other system".
+/// game server rather than "the other system". A start the relay refused says
+/// why, so the players can do something about it.
 ///
 /// VERA-only: a frame that failed in a network match (`frame_stopped`) is an
 /// error, not a desync, so the box says so and points at the log instead of
@@ -77,6 +83,8 @@ pub(crate) fn vera_body(state: &AppState) -> Option<String> {
         {
             Some(crate::i18n::tr("VERA:GameServerConnectionFailed"))
         }
+        NetworkInterruption::StartMismatch => Some(crate::i18n::tr("VERA:MatchStartMismatch")),
+        NetworkInterruption::StartCancelled => Some(crate::i18n::tr("VERA:MatchStartCancelled")),
         _ => None,
     }
 }
