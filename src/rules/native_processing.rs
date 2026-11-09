@@ -2242,6 +2242,29 @@ impl ProcessedRulesLayers {
         self.rules_type_references().list("NeutralTechBuildings")
     }
 
+    /// Whether `name` is a registered BuildingType, InfantryType or
+    /// VehicleType: the case-insensitive ID scans of
+    /// `BuildingTypeClass::FindIndex @ 0x0045E7B0`, `InfantryTypeClass::Find`
+    /// and `UnitTypeClass::Find`, as Ares' `[Urban]` lists use them
+    /// (Ares.dll 1006AAD0, hook 0x5A66B0).
+    #[cfg(feature = "ares")]
+    pub(crate) fn registers_urban_type(&self, kind: UrbanTypeKind, name: &str) -> bool {
+        let family = match kind {
+            UrbanTypeKind::Building => RulesTypeFamily::Building,
+            UrbanTypeKind::Infantry => RulesTypeFamily::Infantry,
+            UrbanTypeKind::Vehicle => RulesTypeFamily::Vehicle,
+        };
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .get(&family)
+            .is_some_and(|members| {
+                members
+                    .iter()
+                    .any(|member| member.native_stored_id.eq_ignore_ascii_case(name))
+            })
+    }
+
     /// Retained Warhead ReadINI fields, including+0xA0 after its last reached
     /// ReadINI75DDCC..75DE5A. The compatibility INI cannot represent the
     /// table's literal per-pass default.
@@ -4993,6 +5016,15 @@ impl NativeRulesRegistryState {
             ..Self::default()
         }
     }
+}
+
+/// The type arrays the Ares `[Urban]` lists name.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum UrbanTypeKind {
+    Building,
+    Infantry,
+    Vehicle,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]

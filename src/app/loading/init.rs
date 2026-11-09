@@ -2510,6 +2510,7 @@ pub(crate) fn load_map_initial_with_assets(
     mode_rules_file: Option<&str>,
     full_init_entry_mode: crate::app::match_runtime::session::SessionMode,
     the_team_enabled: bool,
+    launch_seed: Option<u32>,
     progress: &mut dyn crate::app::loading::pump::LoadingProgressSink,
 ) -> Result<MapLoadInitial> {
     // Check RA2_QUICKPLAY env var: if it names a .map/.mpr file, load that directly.
@@ -2532,7 +2533,14 @@ pub(crate) fn load_map_initial_with_assets(
         .map(str::to_string)
         .or(quickplay_seed);
     if let Some(seed_name) = seed_selection.as_deref() {
+        let mut settings = crate::map::rmg::RmgSettings::load(asset_manager);
         let mut options = crate::map::rmg::RmgOptions::default();
+        // A seed without VERA's UrbanAreas= key regenerates with the urban
+        // switch the process's first RMGMD.INI read gives (Ares.dll 1006ABF0).
+        #[cfg(feature = "ares")]
+        {
+            options.urban_areas = settings.generate_urban_areas;
+        }
         // A received seed's name is already its cached path.
         let seed_path = crate::map::source::random_map_dir(&ra2_dir).join(seed_name);
         let mut seed_source = None;
@@ -2556,7 +2564,6 @@ pub(crate) fn load_map_initial_with_assets(
         }
         options.normalize();
 
-        let mut settings = crate::map::rmg::RmgSettings::load(asset_manager);
         let theater_name = crate::map::rmg::emit::theater_name(options.theater);
         let theater = crate::map::theater::load_theater(asset_manager, theater_name)
             .ok_or_else(|| anyhow::anyhow!("random map: theater {theater_name} unavailable"))?;
@@ -2614,11 +2621,11 @@ pub(crate) fn load_map_initial_with_assets(
         // `[AI] NeutralTechBuildings` plus each type's `Foundation=`. The phase
         // runs for every map type except 0, so an empty list here would both
         // strip the buildings and skip the draws the original consumes.
+        let processed = owner
+            .saved_scenario_rules()
+            .expect("completed RMG Rules remain owned");
         let tech_types = crate::map::rmg::tech_catalog::resolve(
-            owner
-                .saved_scenario_rules()
-                .expect("completed RMG Rules remain owned")
-                .neutral_tech_buildings(),
+            processed.neutral_tech_buildings(),
             owner.fixed_art(),
         );
         // VERA: the theater's civilian buildings, for an opted-in Urban
@@ -2633,13 +2640,36 @@ pub(crate) fn load_map_initial_with_assets(
                 |file| asset_manager.contains(file),
             );
         }
-        let mut generated = crate::map::rmg::build::generate_map(
-            &options,
+        #[cfg(not(feature = "ares"))]
+        let _ = launch_seed;
+        #[cfg(not(feature = "ares"))]
+        let objects = crate::map::rmg::build::GenerationObjects::tech(&tech_types);
+        // Ares' foot picks draw Main (Ares.dll 1006AAD0). The launch load
+        // seeds Main with the match seed (ScenarioBootstrapRng::new) before
+        // it regenerates the seed. RESIDUAL: that owner is built after this
+        // generation and does not continue past these draws.
+        #[cfg(feature = "ares")]
+        let urban_catalog = crate::map::rmg::tech_catalog::resolve_ares_urban(
             &settings,
-            &resolved,
-            &blocks,
-            &tech_types,
+            processed,
+            owner.fixed_art(),
         );
+        #[cfg(feature = "ares")]
+        let launch_main = std::cell::RefCell::new(crate::sim::rng::SimRng::new(u64::from(
+            launch_seed.unwrap_or_default(),
+        )));
+        #[cfg(feature = "ares")]
+        let main_draw = || launch_main.borrow_mut().next_u32();
+        #[cfg(feature = "ares")]
+        let objects = crate::map::rmg::build::GenerationObjects {
+            tech_types: &tech_types,
+            urban_areas: Some(crate::map::rmg::phases::urban_areas::UrbanInputs {
+                catalog: &urban_catalog,
+                main_draw: &main_draw,
+            }),
+        };
+        let mut generated =
+            crate::map::rmg::build::generate_map(&options, &settings, &resolved, &blocks, &objects);
         generated.map_file.ini = synthetic_ini;
         log::info!(
             "Random map generated: theater={}, {}x{}, seed={}, players={}",
@@ -4239,6 +4269,7 @@ mod full_init_rules_gate_tests {
             Some("mode.ini"),
             SessionMode::Skirmish,
             true,
+            None,
             &mut Progress { fail: false },
         )
         .unwrap();
@@ -4295,6 +4326,7 @@ mod full_init_rules_gate_tests {
                 Some("mode.ini"),
                 SessionMode::Skirmish,
                 true,
+                None,
                 &mut Progress { fail: true },
             )
             .is_err()
@@ -4681,6 +4713,7 @@ mod random_map_retail_tests {
                     None,
                     crate::app::match_runtime::session::SessionMode::Skirmish,
                     false,
+                    None,
                     &mut SilentProgress,
                 )
                 .unwrap_or_else(|err| panic!("{tag}: the .SED branch failed: {err}"));

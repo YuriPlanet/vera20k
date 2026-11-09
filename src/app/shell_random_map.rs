@@ -588,6 +588,53 @@ pub(super) struct PreparedRandomMapGeneration {
     pub(super) resolved_inputs: crate::map::rmg::build::ResolvedTheaterInputs,
     pub(super) blocks: crate::map::rmg::theater_blocks::TheaterTileBlocks,
     pub(super) tech_types: Vec<crate::map::rmg::phases::tech_buildings::TechType>,
+    /// The resolved Ares `[Urban]` lists.
+    #[cfg(feature = "ares")]
+    pub(super) urban_catalog: crate::map::rmg::phases::urban_areas::UrbanCatalog,
+}
+
+/// What a generation worker may construct, owned so it can cross threads.
+pub(super) struct RandomMapObjects {
+    tech_types: Vec<crate::map::rmg::phases::tech_buildings::TechType>,
+    /// The Ares `[Urban]` catalog and the process Main stream its foot picks
+    /// draw (`Randomizer::Global()`), when the urban switch is set.
+    #[cfg(feature = "ares")]
+    urban: Option<(
+        crate::map::rmg::phases::urban_areas::UrbanCatalog,
+        crate::sim::rng::MainRngDraws,
+    )>,
+}
+
+impl RandomMapObjects {
+    /// Tech buildings only.
+    pub(super) fn tech(tech_types: Vec<crate::map::rmg::phases::tech_buildings::TechType>) -> Self {
+        Self {
+            tech_types,
+            #[cfg(feature = "ares")]
+            urban: None,
+        }
+    }
+
+    /// Run `generate` over the borrowed generation objects.
+    fn generate<R>(
+        &self,
+        generate: impl FnOnce(&crate::map::rmg::build::GenerationObjects<'_>) -> R,
+    ) -> R {
+        #[cfg(feature = "ares")]
+        if let Some((catalog, main)) = &self.urban {
+            let main_draw = || main.next_u32();
+            return generate(&crate::map::rmg::build::GenerationObjects {
+                tech_types: &self.tech_types,
+                urban_areas: Some(crate::map::rmg::phases::urban_areas::UrbanInputs {
+                    catalog,
+                    main_draw: &main_draw,
+                }),
+            });
+        }
+        generate(&crate::map::rmg::build::GenerationObjects::tech(
+            &self.tech_types,
+        ))
+    }
 }
 
 impl PreparedRandomMapGeneration {
@@ -693,6 +740,15 @@ pub(super) fn prepare_random_map_generation(
         ),
         _ => Vec::new(),
     };
+    #[cfg(feature = "ares")]
+    let urban_catalog = match (native_rules, processed) {
+        (Some(owner), Some(processed)) => crate::map::rmg::tech_catalog::resolve_ares_urban(
+            &settings,
+            processed,
+            owner.fixed_art(),
+        ),
+        _ => Default::default(),
+    };
     let preview_rules = if let Some((owner, processed)) = native_rules.zip(processed) {
         Some(RandomMapPreviewRules::from_processed(
             owner,
@@ -746,6 +802,8 @@ pub(super) fn prepare_random_map_generation(
         resolved_inputs,
         blocks,
         tech_types,
+        #[cfg(feature = "ares")]
+        urban_catalog,
     })
 }
 
@@ -755,7 +813,7 @@ pub(super) fn spawn_random_map_generation_worker(
     _settings: crate::map::rmg::RmgSettings,
     _resolved_inputs: crate::map::rmg::build::ResolvedTheaterInputs,
     _blocks: crate::map::rmg::theater_blocks::TheaterTileBlocks,
-    _tech_types: Vec<crate::map::rmg::phases::tech_buildings::TechType>,
+    _objects: RandomMapObjects,
     _shared_cell_dummy: crate::map::resolved_terrain::SharedCellDummy,
     _map_storage_decision: RandomMapStorageDecision,
 ) -> std::io::Result<std::sync::mpsc::Receiver<RandomMapUpdate>> {
@@ -771,7 +829,7 @@ pub(super) fn spawn_random_map_generation_worker(
     settings: crate::map::rmg::RmgSettings,
     resolved_inputs: crate::map::rmg::build::ResolvedTheaterInputs,
     blocks: crate::map::rmg::theater_blocks::TheaterTileBlocks,
-    tech_types: Vec<crate::map::rmg::phases::tech_buildings::TechType>,
+    objects: RandomMapObjects,
     shared_cell_dummy: crate::map::resolved_terrain::SharedCellDummy,
     map_storage_decision: RandomMapStorageDecision,
 ) -> std::io::Result<std::sync::mpsc::Receiver<RandomMapUpdate>> {
@@ -784,21 +842,23 @@ pub(super) fn spawn_random_map_generation_worker(
             // worker. It therefore proves a production generation entry even
             // when the caller and worker use different test threads.
             let _ = sender.send(RandomMapUpdate::Started);
-            let generated = crate::map::rmg::build::generate_map_observed(
-                &options,
-                &settings,
-                &resolved_inputs,
-                &blocks,
-                &tech_types,
-                // A closed receiver means the dialog went away; dropping
-                // what we produce is the correct outcome, not an error.
-                &mut |view| {
-                    if !draws_preview(view.point()) {
-                        return;
-                    }
-                    let _ = sender.send(RandomMapUpdate::Progress(Box::new(view.snapshot())));
-                },
-            );
+            let generated = objects.generate(|objects| {
+                crate::map::rmg::build::generate_map_observed(
+                    &options,
+                    &settings,
+                    &resolved_inputs,
+                    &blocks,
+                    objects,
+                    // A closed receiver means the dialog went away; dropping
+                    // what we produce is the correct outcome, not an error.
+                    &mut |view| {
+                        if !draws_preview(view.point()) {
+                            return;
+                        }
+                        let _ = sender.send(RandomMapUpdate::Progress(Box::new(view.snapshot())));
+                    },
+                )
+            });
             if generated.unfilled_start_slots > 0 {
                 log::warn!(
                     "Random map is short of spawns: {} start slot(s) could \
@@ -1093,6 +1153,8 @@ impl App {
             resolved_inputs,
             blocks,
             tech_types,
+            #[cfg(feature = "ares")]
+            urban_catalog,
         }) = prepare_random_map_generation(
             asset_manager,
             options,
@@ -1107,6 +1169,22 @@ impl App {
         };
         let options = options.clone();
         let shared_cell_dummy = state.process_assets.shared_cell_dummy.clone();
+        #[cfg(not(feature = "ares"))]
+        let objects = RandomMapObjects::tech(tech_types);
+        // The dialog's Generate draws Ares' foot picks from process Main.
+        #[cfg(feature = "ares")]
+        let objects = RandomMapObjects {
+            tech_types,
+            urban: options.urban_areas.then(|| {
+                (
+                    urban_catalog,
+                    crate::app::state::process_main_draws(
+                        state.match_state.sim_runtime.as_mut(),
+                        &mut state.frontend.frontend_main_rng,
+                    ),
+                )
+            }),
+        };
         // Generation stays single-threaded and seed-driven; the thread changes
         // only where it runs, never the order it consumes its RNG in.
         match spawn_random_map_generation_worker(
@@ -1114,7 +1192,7 @@ impl App {
             settings,
             resolved_inputs,
             blocks,
-            tech_types,
+            objects,
             shared_cell_dummy,
             map_storage_decision,
         ) {
@@ -1693,6 +1771,8 @@ impl App {
             Control::Load0x6c2 => open_browser = Some(SavedSeedMode::Load),
             Control::Save0x6c3 => open_browser = Some(SavedSeedMode::Save),
             Control::Delete0x6c4 => open_browser = Some(SavedSeedMode::Delete),
+            #[cfg(feature = "ares")]
+            Control::UrbanAreas5000 => modal.toggle_urban_areas(),
             // The combos act on press (`press_combos`) and never arm a press;
             // dragging the players slider is a separate input mode.
             Control::MapType0x405
@@ -1880,7 +1960,7 @@ mod tests {
             &prepared.settings,
             &prepared.resolved_inputs,
             &prepared.blocks,
-            &prepared.tech_types,
+            &crate::map::rmg::build::GenerationObjects::tech(&prepared.tech_types),
         );
         let staging = crate::app::loading::composition::scenario_start_staging(
             &generated.map_file,
@@ -1955,7 +2035,7 @@ mod tests {
             prepared.settings,
             prepared.resolved_inputs,
             prepared.blocks,
-            prepared.tech_types,
+            RandomMapObjects::tech(prepared.tech_types),
             crate::map::resolved_terrain::SharedCellDummy::fresh(),
             decision,
         )
@@ -1994,9 +2074,14 @@ mod tests {
             .entities
             .iter()
             .flat_map(|entity| {
-                tech_footprints[&entity.type_id]
-                    .iter()
-                    .map(move |&(dx, dy)| {
+                // An Ares build's unvalidated decks (hook 0x58FA51) can add
+                // a one-cell CABHUT, which is no tech building.
+                tech_footprints
+                    .get(&entity.type_id)
+                    .cloned()
+                    .unwrap_or_else(|| vec![(0, 0)])
+                    .into_iter()
+                    .map(move |(dx, dy)| {
                         (
                             entity.cell_x.wrapping_add_signed(dx),
                             entity.cell_y.wrapping_add_signed(dy),

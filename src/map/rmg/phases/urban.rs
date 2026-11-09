@@ -5,7 +5,8 @@
 //! the map type (`MapSeedClass::RandomizeDerivedFields @ 0x00597260`), but no
 //! generation stage reads it: the two routines that do, `0x005A5020` and
 //! `0x005A80B0`, have no caller in gamemd, so this layout is VERA's own and
-//! not a port of them. This stage gives it an effect when the player
+//! not a port of them. (An Ares build reaches `0x005A5020` through hook
+//! 0x598FB8: `super::urban_areas`.) This stage gives it an effect when the player
 //! opts in ([`crate::map::rmg::RmgOptions::urban_enabled`]). It runs after
 //! the rocks, on its own RNG seeded from the map seed, so the terrain, starts,
 //! ore, trees and tech buildings stay exactly what the original would make;

@@ -344,6 +344,8 @@ mod tests {
             region_size: 83,
             seed: 42,
             description: "Prior map".into(),
+            #[cfg(feature = "ares")]
+            urban_areas: true,
         };
         let loaded = load_saved_seed(&path, &current, "Localized random map").unwrap();
         let expected = RmgOptions {

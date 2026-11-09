@@ -160,7 +160,7 @@ fn generated_connector_uses_native_slope_piece_tileset() {
         &prepared.settings,
         &prepared.resolved_inputs,
         &prepared.blocks,
-        &prepared.tech_types,
+        &crate::map::rmg::build::GenerationObjects::tech(&prepared.tech_types),
         &mut |view| match view.point() {
             GenerationPoint::After(Stage::Regions) => {
                 before_islands = Some(
@@ -281,6 +281,7 @@ fn generated_connector_uses_native_slope_piece_tileset() {
         None,
         crate::app::match_runtime::session::SessionMode::Skirmish,
         false,
+        None,
         &mut SilentProgress,
     )
     .expect("ordinary selected-.SED load");
@@ -363,7 +364,7 @@ fn generated_raised_ridge_materializes_native_cliff_faces() {
         &prepared.settings,
         &prepared.resolved_inputs,
         &prepared.blocks,
-        &prepared.tech_types,
+        &crate::map::rmg::build::GenerationObjects::tech(&prepared.tech_types),
         &mut |view| {
             if view.point() == GenerationPoint::After(Stage::Regions) {
                 let cells = view.snapshot().map_file.cells;
