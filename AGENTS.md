@@ -213,11 +213,29 @@ and trailers using the [attribution rule](.agents/skills/review-pr/SKILL.md#cont
 then verify the resulting commit.
 
 After each fetch, fast-forward `<main-checkout>` (`merge --ff-only origin/main`) when it is on
-`main` without tracked changes or a Cargo run; sessions load this contract from it.
+`main` with no tracked changes and no Cargo run from it; sessions load this contract
+from it.
 
 Choose validation appropriate to the change, considering native fidelity, connected
 production behavior (with runtime reproduction when needed) and protection against
 regressions. Reassess worsening fixes.
+
+Before a run (test, capture, benchmark, replay), ask which result would change your
+next step; if none would, skip it. When reading the code settles the question, say so
+and offer to close the task: don't build harnesses or add runs to complete a set. In a
+goal's finish line, "native comparison" means comparing gamemd's instructions with the
+Rust, plus native execution only where Exactness and evidence calls for it, and
+"production validation" means the changed path ran once in the game or a headless map.
+Never run gamemd as a whole game under Wine to compare.
+
+Performance work: find waste by reading the code, starting where existing profiles
+point, and fix it. Measure once per chain, at the end: one `--release` before/after,
+with sim-bench's final state hash unchanged for a simulation change. No timing per
+step.
+
+A check counts only if it ran: the test filter matched tests, no retail test printed
+`SKIPPED`, each build printed `Finished`, and an empty search counts only after the
+same search finds a known use.
 
 Avoid tests that merely mirror the implementation or require maintaining a second implementation of the same logic.
 Before fixing a bug whose expected behavior is established, first make a focused test fail on it where practical.
@@ -226,16 +244,17 @@ Before fixing a bug whose expected behavior is established, first make a focused
 Skip `cargo check` when a planned test answers the same question.
 
 - Working Rust: start with focused
-  `cargo test -p <crate> --lib <module_path>::`, where `<crate>` is the module's crate
-  from the split above (`vera20k-core` or `vera20k`).
+  `python -m tools.cargo_run -- test -p <crate> --lib <module_path>::`, where `<crate>`
+  is the module's crate from the split above (`vera20k-core` or `vera20k`).
 - Rust PR readiness: after any critic fixes, focused tests for the modules the change
-  touches and their direct consumers, with retail `ini/` and
-  `VERA20K_REQUIRE_RETAIL_INI=1`; no baseline runs. The full
-  `cargo test --workspace --lib` is not required; run it only when asked. Tests
-  tagged `#[ignore = "slow; …"]` run (`-- --ignored`) only when your change touches
-  what they cover. Don't dispatch the manual platform workflows unless asked.
-- Clippy: once a month on `main`, not per PR: `cargo clippy --workspace --lib` in the
-  same environment, with its fixes in one PR.
+  touches and their direct consumers, with retail `ini/`, `RA2_DIR` set,
+  `VERA20K_REQUIRE_RETAIL_INI=1` and `VERA20K_REQUIRE_RETAIL_ASSETS=1`; no baseline
+  runs. The full suite (`test --workspace --lib`) is not required; run it only when
+  asked. Tests tagged `#[ignore = "slow; …"]` run (`-- --ignored`) only when your
+  change touches what they cover. Don't dispatch the manual platform workflows unless
+  asked.
+- Clippy: once a month on `main`, not per PR: `clippy --workspace --lib` through the
+  runner in the same environment, with its fixes in one PR.
 - Asset binding, loader or rules-closure changes: a `--profile fast` retail map load
   before merge; the lib suite never runs the app loader against retail assets.
 - Docs/Markdown-only skills: check content, links/examples and relevant tooling
@@ -243,7 +262,6 @@ Skip `cargo check` when a planned test answers the same question.
 - Python tools/skill scripts: run `python -m tools.run_tests` once on the final
   candidate with `tools/requirements-test.txt` installed. Failures are regressions;
   the suite passes on `main`.
-- Every `cargo test` uses `--lib`.
 
 Run Cargo through `python -m tools.cargo_run -- <cargo arguments>` from the checkout.
 It waits for other builds and serializes cooperating worktrees; do not compete with or
@@ -256,12 +274,13 @@ Run `python -m tools.prepare_checkout` in a new worktree or clone.
 Format edited leaf files only (`rustfmt --edition 2024 <file>`), never crate-wide
 or recursive `mod.rs`. Coordinate rebaselines; exclude others' WIP.
 
-Don't poll: each check re-reads the whole session context. Run no separate build
-process checks. Wait for a long command or CI
+Don't poll: each check re-reads the whole session context. Don't look for other builds
+before Cargo; the runner waits for them. Wait for a long command or CI
 through one blocking call or the host's completion notice, not `sleep`/`until` loops
-or repeated status queries. When merging is authorized, enable auto-merge on the
-validated PR (`gh pr merge <number> --auto --merge`) and move on; GitHub merges it
-once every required check passes. Confirm it merged before publishing your next PR.
+or repeated status queries. When merging is authorized, merge the validated PR
+(`gh pr merge <number> --merge`) and move on; add `--auto` only when the PR lists
+pending required checks, and `main` requires none today. Confirm it merged before
+publishing your next PR.
 
 ## Knowledge and guidance
 
@@ -302,6 +321,5 @@ treating past conclusions as current. Load only relevant skills and references.
 
 ## Claude Code notes
 
-Use host-native tools and relevant skills. For Codex session recovery, consult the
-primary checkout's `LOCAL.md`. Preserve explicitly requested `/loop` invocations.
-Memory holds durable preferences, not progress claims.
+Use host-native tools and relevant skills. Preserve explicitly requested `/loop`
+invocations. Memory holds durable preferences, not progress claims.
