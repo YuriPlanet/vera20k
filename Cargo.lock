@@ -3113,6 +3113,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha1 0.10.6",
+ "smol_str",
  "swash",
  "sys-locale",
  "thiserror 2.0.18",

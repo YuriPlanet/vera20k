@@ -36,6 +36,10 @@ fn palette_bytes() -> Vec<u8> {
     )
 }
 
+fn palette() -> crate::assets::pal_file::Palette {
+    crate::assets::pal_file::Palette::from_bytes(&palette_bytes()).unwrap()
+}
+
 fn baseline_rows() -> impl Iterator<Item = &'static Value> {
     native()["cases"].as_array().unwrap().iter().filter(|row| {
         matches!(
@@ -385,7 +389,7 @@ fn built(row: &Value, zoom: f32) -> (Vec<SpriteInstance>, TacticalViewport) {
         row["input"]["planning"].as_bool().unwrap_or(false),
         Some(&sim),
         rules.as_ref(),
-        Some(&palette_bytes()),
+        Some(&palette()),
         &HouseColorMap::new(),
         0,
         view,
@@ -403,7 +407,7 @@ pub(super) fn workload_fixture(
     Option<RuleSet>,
     TargetLineState,
     TacticalViewport,
-    Vec<u8>,
+    crate::assets::pal_file::Palette,
 ) {
     let row = match kind {
         SelectedLineKind::Move => baseline_rows().find(|row| {
@@ -434,7 +438,7 @@ pub(super) fn workload_fixture(
             .attack_target
             .set_for_test(Some(crate::sim::combat::TargetKind::Entity(20_001)));
     }
-    (sim, rules, state, view, palette_bytes())
+    (sim, rules, state, view, palette())
 }
 
 fn words(row: &Value) -> Vec<u16> {
@@ -551,7 +555,7 @@ fn original_unit_attack_line_pixels_and_read_only_coordinate_queries() {
             false,
             Some(&sim),
             rules.as_ref(),
-            Some(&palette_bytes()),
+            Some(&palette()),
             &HouseColorMap::new(),
             0,
             view,
@@ -823,7 +827,7 @@ fn move_line_query_leaves_the_simulation_dummy_unchanged() {
         false,
         Some(&sim),
         None,
-        Some(&palette_bytes()),
+        Some(&palette()),
         &HouseColorMap::new(),
         0,
         view,

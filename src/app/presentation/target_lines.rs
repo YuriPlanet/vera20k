@@ -119,7 +119,7 @@ pub(crate) fn build_target_line_instances(
     planning_active: bool,
     sim: Option<&Simulation>,
     rules: Option<&RuleSet>,
-    palette_bytes: Option<&[u8]>,
+    palette: Option<&crate::assets::pal_file::Palette>,
     house_colors: &HouseColorMap,
     wall_ms: u32,
     viewport: TacticalViewport,
@@ -193,16 +193,9 @@ pub(crate) fn build_target_line_instances(
     }
     let colors = line_state
         .is_selected_action_active(sim.session().binary_frame())
-        .then(|| {
-            palette_bytes.and_then(|bytes| crate::assets::pal_file::Palette::from_bytes(bytes).ok())
-        })
+        .then_some(palette)
         .flatten()
-        .map(|palette| {
-            [
-                action_line_color(&palette, 3),
-                action_line_color(&palette, 8),
-            ]
-        });
+        .map(|palette| [action_line_color(palette, 3), action_line_color(palette, 8)]);
     let mut control = rules
         .map(|rules| super::control_links::prepare(sim, rules, house_colors, wall_ms, viewport))
         .unwrap_or_default();

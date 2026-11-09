@@ -37,6 +37,7 @@ use crate::rules::effect_asset_catalog::available_effect_anim_frame_count;
 use crate::rules::house_colors::{HouseColorIndex, HouseColorRamps};
 use crate::rules::projectile_type::ProjectileType;
 use crate::rules::ruleset::RuleSet;
+use smol_str::StrExt;
 
 #[path = "sprite_atlas_loading.rs"]
 mod loading;
@@ -73,7 +74,7 @@ fn register_effect_anim_frames(
     for frame in 0..raw_count {
         needed.insert(ShpSpriteKey {
             palette_context,
-            type_id: anim_type.to_string(),
+            type_id: anim_type.into(),
             facing: 0,
             frame,
             house_color: HouseColorIndex(0),
@@ -185,7 +186,7 @@ fn collect_building_make_asset_requests(
         for frame in 0..raw_count {
             needed.insert(ShpSpriteKey {
                 palette_context: ShpPaletteContext::Legacy,
-                type_id: make_key.clone(),
+                type_id: make_key.as_str().into(),
                 facing: 0,
                 frame,
                 house_color: *color,
@@ -295,7 +296,7 @@ fn insert_building_anim_frame_keys(
     for frame in 0..count.max(1) {
         needed.insert(ShpSpriteKey {
             palette_context,
-            type_id: anim_type.to_string(),
+            type_id: anim_type.into(),
             facing: 0,
             frame,
             house_color: match palette_context {
@@ -395,7 +396,7 @@ pub fn projectile_key(
     };
     ShpSpriteKey {
         palette_context,
-        type_id: type_id.to_ascii_uppercase(),
+        type_id: type_id.to_ascii_uppercase_smolstr(),
         facing: 0,
         frame,
         house_color: if palette_context == ShpPaletteContext::BulletFirer {
@@ -412,7 +413,7 @@ pub fn projectile_key(
 pub(crate) fn tiled_anim_key(type_id: &str, frame: u16) -> ShpSpriteKey {
     ShpSpriteKey {
         palette_context: ShpPaletteContext::AnimPalette,
-        type_id: type_id.to_string(),
+        type_id: type_id.into(),
         facing: 0,
         frame,
         house_color: HouseColorIndex(0),
@@ -467,8 +468,9 @@ pub(crate) fn building_art_palette_context(art: &art_data::ArtEntry) -> ShpPalet
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ShpSpriteKey {
     pub palette_context: ShpPaletteContext,
-    /// Object type ID from rules.ini (e.g., "E1", "GAPOWR").
-    pub type_id: String,
+    /// Object type ID from rules.ini (e.g., "E1", "GAPOWR"). Every drawn
+    /// object builds keys each frame, and a name this short stays inline.
+    pub type_id: smol_str::SmolStr,
     /// Facing direction (0–255). Collapsed to 0 for structures.
     pub facing: u8,
     /// Absolute SHP frame index.
@@ -781,7 +783,7 @@ impl SpriteAtlas {
     pub(crate) fn infantry_air_shadow(&self) -> Option<&ShpSpriteEntry> {
         self.get(&ShpSpriteKey {
             palette_context: ShpPaletteContext::GlobalAnim,
-            type_id: INFANTRY_AIR_SHADOW_SHP.to_string(),
+            type_id: INFANTRY_AIR_SHADOW_SHP.into(),
             facing: 0,
             frame: INFANTRY_AIR_SHADOW_FRAME,
             house_color: HouseColorIndex(0),
@@ -1261,7 +1263,7 @@ pub(crate) fn collect_fogged_sprite_keys(
                     if let Some(bib) = art.and_then(|art| art.bib_shape.as_deref()) {
                         keys.insert(ShpSpriteKey {
                             palette_context: context,
-                            type_id: bib.to_ascii_uppercase(),
+                            type_id: bib.to_ascii_uppercase_smolstr(),
                             facing: 0,
                             frame,
                             house_color: color,
@@ -1275,7 +1277,7 @@ pub(crate) fn collect_fogged_sprite_keys(
             };
             keys.insert(ShpSpriteKey {
                 palette_context: context,
-                type_id: name.to_string(),
+                type_id: name.into(),
                 facing: 0,
                 frame,
                 house_color: if context == ShpPaletteContext::AnimPalette {
@@ -1393,7 +1395,7 @@ fn insert_anim_remap_frame_keys(
         for frame in 0..*frame_count {
             needed.insert(ShpSpriteKey {
                 palette_context: *context,
-                type_id: type_id.clone(),
+                type_id: type_id.as_str().into(),
                 facing: 0,
                 frame,
                 house_color: *color,
@@ -1522,7 +1524,7 @@ fn insert_object_keys(
     let mut insert = |frame: u16| {
         let key = ShpSpriteKey {
             palette_context: ShpPaletteContext::Legacy,
-            type_id: type_str.to_string(),
+            type_id: type_str.into(),
             facing: 0,
             frame,
             house_color: color_idx,
@@ -2084,7 +2086,7 @@ pub(crate) fn prepare_sprite_atlas(
     needed.extend(additional_keys.iter().cloned());
     for key in additional_keys {
         let source = object_sources
-            .entry((key.palette_context.image_kind(), key.type_id.clone()))
+            .entry((key.palette_context.image_kind(), key.type_id.to_string()))
             .or_insert_with(|| {
                 load_shp_source(
                     asset_manager,
@@ -2212,7 +2214,7 @@ pub(crate) fn prepare_sprite_atlas(
                     for frame in 0..count {
                         needed.insert(ShpSpriteKey {
                             palette_context: building_art_palette_context(entry),
-                            type_id: name.clone(),
+                            type_id: name.as_str().into(),
                             facing: 0,
                             frame,
                             house_color: *house_color,
@@ -2328,7 +2330,7 @@ pub(crate) fn prepare_sprite_atlas(
                 for frame in 0..count {
                     needed.insert(ShpSpriteKey {
                         palette_context,
-                        type_id: upper.clone(),
+                        type_id: upper.as_str().into(),
                         facing: 0,
                         frame,
                         house_color: *color,
@@ -2465,7 +2467,7 @@ pub(crate) fn prepare_sprite_atlas(
                     for frame in 0..frame_count {
                         needed.insert(ShpSpriteKey {
                             palette_context: ShpPaletteContext::GlobalAnim,
-                            type_id: shp_name.to_string(),
+                            type_id: shp_name.into(),
                             facing: 0,
                             frame,
                             house_color: HouseColorIndex(0),
@@ -2505,7 +2507,7 @@ pub(crate) fn prepare_sprite_atlas(
             Some((file, frame_count)) if frame_count > INFANTRY_AIR_SHADOW_FRAME => {
                 needed.insert(ShpSpriteKey {
                     palette_context: ShpPaletteContext::GlobalAnim,
-                    type_id: INFANTRY_AIR_SHADOW_SHP.to_string(),
+                    type_id: INFANTRY_AIR_SHADOW_SHP.into(),
                     facing: 0,
                     frame: INFANTRY_AIR_SHADOW_FRAME,
                     house_color: HouseColorIndex(0),
@@ -2542,7 +2544,7 @@ pub(crate) fn prepare_sprite_atlas(
     let mut contextual = Vec::new();
     for key in &needed {
         if key.palette_context == ShpPaletteContext::GlobalAnim
-            && effects.type_ids.contains(&key.type_id)
+            && effects.type_ids.contains(key.type_id.as_str())
         {
             let mut global = key.clone();
             global.house_color = HouseColorIndex(0);
@@ -2711,7 +2713,7 @@ pub(crate) fn prepare_sprite_atlas(
         if !same_source {
             let file = if projectile {
                 projectile_files
-                    .get(&key.type_id)
+                    .get(key.type_id.as_str())
                     .map(|(file, _)| file.as_str())
             } else {
                 shp_files
@@ -2721,7 +2723,7 @@ pub(crate) fn prepare_sprite_atlas(
             // Object key collection already decoded this exact source for
             // Infantry admission or Structure/Unit shadow-frame registration.
             // Reuse it instead of decoding the same file a second time.
-            let mut source = match object_sources.remove(&(kind, key.type_id.clone())) {
+            let mut source = match object_sources.remove(&(kind, key.type_id.to_string())) {
                 Some(decoded) => decoded.map(ShpRasterSource::Decoded),
                 None => find_shp_source(
                     asset_manager,
@@ -3610,7 +3612,7 @@ fn register_custom_harvest_frames(
         );
         needed.extend((0..count).map(|frame| ShpSpriteKey {
             palette_context: ShpPaletteContext::Harvest,
-            type_id: anim.to_owned(),
+            type_id: anim.into(),
             facing: 0,
             frame,
             house_color: HouseColorIndex(0),
@@ -3714,7 +3716,7 @@ fn render_harvest_overlay_frames(
         sprites.push(RenderedShpSprite {
             key: ShpSpriteKey {
                 palette_context: crate::render::sprite_atlas::ShpPaletteContext::Legacy,
-                type_id: "OREGATH".to_string(),
+                type_id: "OREGATH".into(),
                 facing: 0,
                 frame: frame_idx as u16,
                 house_color: hc,

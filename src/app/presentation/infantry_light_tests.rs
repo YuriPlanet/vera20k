@@ -152,7 +152,7 @@ fn assert_shp_light(
                 (
                     ShpSpriteKey {
                         palette_context: ShpPaletteContext::Legacy,
-                        type_id: "E1".to_owned(),
+                        type_id: "E1".into(),
                         facing: 0,
                         frame,
                         house_color: HouseColorIndex(0),

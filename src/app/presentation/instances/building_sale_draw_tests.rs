@@ -110,7 +110,7 @@ fn retail_gate_make_body_uses_native_gate_and_selling_reflections() {
             (
                 ShpSpriteKey {
                     palette_context: ShpPaletteContext::Legacy,
-                    type_id: "GAGATE_A_MAKE".to_owned(),
+                    type_id: "GAGATE_A_MAKE".into(),
                     facing: 0,
                     frame,
                     house_color: crate::rules::house_colors::NO_REMAP,
@@ -283,7 +283,7 @@ fn an_opening_gate_draws_without_the_buildngz_zshape_or_extra_light() {
             (
                 ShpSpriteKey {
                     palette_context: ShpPaletteContext::Legacy,
-                    type_id: "GAGATE_A".to_owned(),
+                    type_id: "GAGATE_A".into(),
                     facing: 0,
                     frame,
                     house_color: crate::rules::house_colors::NO_REMAP,

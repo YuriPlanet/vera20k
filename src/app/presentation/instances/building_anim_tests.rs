@@ -54,7 +54,7 @@ fn fixture_with_anim_keys(
             entries.insert(
                 ShpSpriteKey {
                     palette_context: ShpPaletteContext::AnimScheme,
-                    type_id: name.to_string(),
+                    type_id: name.into(),
                     facing: 0,
                     frame: 3,
                     house_color: HouseColorIndex(1),
@@ -74,7 +74,7 @@ fn fixture_with_anim_keys(
             if !anim_keys.is_empty() {
                 let mut shadow_key = ShpSpriteKey {
                     palette_context: ShpPaletteContext::AnimScheme,
-                    type_id: name.to_string(),
+                    type_id: name.into(),
                     facing: 0,
                     frame: 3,
                     house_color: HouseColorIndex(1),
@@ -236,7 +236,7 @@ fn material_fixture(name: &str, keys: &str) -> (Simulation, RuleSet, u64, u64, S
     let atlas = SpriteAtlas::from_test_entries(HashMap::from([(
         ShpSpriteKey {
             palette_context: ShpPaletteContext::AnimScheme,
-            type_id: name.to_string(),
+            type_id: name.into(),
             facing: 0,
             frame: 0,
             house_color: HouseColorIndex(1),
@@ -588,7 +588,7 @@ fn building_slot_draws_a_nonempty_shadow_when_the_body_has_no_atlas_entry() {
         type_id: sim
             .interner()
             .resolve(sim.anim(anim).unwrap().type_id())
-            .to_string(),
+            .into(),
         facing: 0,
         frame: 23,
         house_color: HouseColorIndex(1),

@@ -266,14 +266,13 @@ fn tactical_world_tip_text_for_viewer(
     // registrations. Share the normal click owner, including live admission
     // and foundation fallback, instead of keeping a tooltip object pointer.
     let sim = view.simulation();
-    let order = crate::app::presentation::instances::tactical_entity_encounter_order(sim);
     let picked = crate::app::input::entity_pick::pick_entity_at_point(
         crate::app::input::entity_pick::PresentedWorld {
             sim,
             rules: Some(rules),
             translucent_viewer,
         },
-        &order,
+        sim.display_layers().ordered_ids(),
         Some(view.fog()),
         Some(view.interner().resolve(viewer)),
         world.0,
