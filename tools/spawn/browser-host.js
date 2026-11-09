@@ -6,7 +6,7 @@
 import '/network.js';
 import '/lobby.js';
 import init, {
-  import_file, import_spawn_file, prepare_audio, set_lifecycle_callback, spawn_leave, start_spawn,
+  fonts_ready, import_file, import_spawn_file, prepare_audio, set_lifecycle_callback, spawn_leave, start_spawn,
 } from '/pkg/vera20k.js';
 
 const params = new URLSearchParams(location.search);
@@ -57,6 +57,7 @@ try {
   import_spawn_file('spawnmap.ini', new Uint8Array(await (await fetch(`/e2e/p${source}/spawnmap.ini`)).arrayBuffer()));
   const spawn = await (await fetch(`/e2e/p${source}/spawn.ini`)).text();
   note('info', [`host imported ${files.length} retail files; starting the spawn`]);
+  await fonts_ready();
   start_spawn(document.querySelector('canvas'), (status) => note('status', [status]), spawn);
 } catch (error) {
   note('error', [`host failed: ${error}`]);
