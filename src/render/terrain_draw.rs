@@ -9,12 +9,14 @@
 //! Terrain edits use dependency waves, in which an edit replays the earlier
 //! edits it overlaps per pixel where it can do so exactly. Read-only Bullet
 //! edits, and read-write intervals that would need more waves, draw in command
-//! order against the live depth test. WebGL2, without that path, reduces
+//! order against the live depth test, and opaque ordinary bodies can join such
+//! an interval (`draw_interval_tail`). WebGL2, without that path, reduces
 //! read-only edits to the last admitted body and subsequent shadows in four
-//! passes. Ordinary draw families are fences.
+//! passes. Other ordinary draw families are fences.
 
 use super::batch::{
-    BatchRenderer, BatchTexture, CameraUniform, SPRITE_INSTANCE_ATTRIBUTES, SpriteInstance,
+    BatchRenderer, BatchTexture, CameraUniform, SHADOW_COUNT_FORMAT, SPRITE_INSTANCE_ATTRIBUTES,
+    SpriteInstance,
 };
 use super::tactical_draw_plan::RenderZPolicy;
 
@@ -574,7 +576,7 @@ impl TerrainDrawRenderer {
                                 },
                             }),
                             Some(wgpu::ColorTargetState {
-                                format: wgpu::TextureFormat::R8Unorm,
+                                format: SHADOW_COUNT_FORMAT,
                                 blend: shadow.then_some(wgpu::BlendState {
                                     color: add,
                                     alpha: add,
@@ -844,7 +846,7 @@ impl TerrainDrawRenderer {
             resource: wgpu::BindingResource::TextureView(view),
         };
         let shadow_counts = self.depth.as_ref().map(|gpu| {
-            let counts = scratch(wgpu::TextureFormat::R8Unorm);
+            let counts = scratch(SHADOW_COUNT_FORMAT);
             let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("Terrain depth-tested shadow counts"),
                 layout: &gpu.counts_layout,
@@ -897,9 +899,8 @@ impl TerrainDrawRenderer {
         }
     }
 
-    /// Whether read-write intervals needing two or more waves draw against
-    /// the live depth test.
-    #[cfg(test)]
+    /// Whether edits can draw against the live depth test: read-write
+    /// intervals needing two or more waves, and [`Self::draw_interval_tail`].
     pub(crate) fn depth_tested_edits(&self) -> bool {
         self.depth.is_some()
     }
@@ -962,32 +963,9 @@ impl TerrainDrawRenderer {
         let mut stats = TerrainBatchStats::default();
         let mut tail = None;
         for draw in commands {
-            assert!(
-                matches!(
-                    draw.render_z,
-                    RenderZPolicy::ReadOnly | RenderZPolicy::ReadWrite
-                ),
-                "destination edits require an explicit native depth policy"
-            );
-            // Missing images stay absent and cannot manufacture dependencies.
-            // The resolver is a stable frame-local view through every wave.
-            if atlas(draw.atlas_slot).is_none() {
-                continue;
-            }
-            let instance = &instances[draw.index as usize];
-            let Some(rect) = piece_scissor(instance, self.camera, tactical) else {
+            let Some((command, wraps)) = self.admit_edit(draw, atlas, instances, tactical) else {
                 continue;
             };
-            let command = TerrainCommand::new(draw, rect);
-            let mut wraps = false;
-            if self.depth.is_some() {
-                let low = candidate_range(instance, self.camera)[0];
-                // Above 65535 nothing is admitted; only negative rows wrap.
-                if low > 65535 {
-                    continue;
-                }
-                wraps = low < 0;
-            }
             if draw.render_z == RenderZPolicy::ReadOnly {
                 if self.batches.stats().pieces != 0 {
                     stats.accumulate(self.draw_read_write(
@@ -1047,6 +1025,82 @@ impl TerrainDrawRenderer {
         (stats, tail)
     }
 
+    /// One interval of destination edits and opaque bodies in parent order,
+    /// in a single pass against the live depth test, leaving its shadow
+    /// resolve as the tail. A body restarts its pixels' shadow counts as a
+    /// body edit does (`fs_counted`), so the words snapshot and resolve leave
+    /// what the original sequence of stores and halvings leaves. VERA
+    /// scheduling only: `draw_body` records the caller's body `u32`.
+    pub(crate) fn draw_interval_tail<'a>(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        color: &wgpu::TextureView,
+        depth: &wgpu::TextureView,
+        batch: &BatchRenderer,
+        atlas: &impl Fn(usize) -> Option<&'a BatchTexture>,
+        buffer: &wgpu::Buffer,
+        instances: &[SpriteInstance],
+        draws: &[IntervalDraw],
+        tactical: [u32; 4],
+        draw_body: impl FnMut(&mut wgpu::RenderPass<'_>, u32),
+    ) -> (TerrainBatchStats, Option<LiveTail>) {
+        let steps: Vec<_> = draws
+            .iter()
+            .filter_map(|&draw| match draw {
+                IntervalDraw::Body(body) => Some(DepthStep::Body(body)),
+                IntervalDraw::Edit(edit) => self
+                    .admit_edit(edit, atlas, instances, tactical)
+                    .map(|(command, wraps)| DepthStep::Edit(command, wraps)),
+            })
+            .collect();
+        let mut tail = None;
+        let stats = self.draw_depth_run(
+            encoder,
+            color,
+            depth,
+            batch,
+            atlas,
+            buffer,
+            steps.iter().copied(),
+            draw_body,
+            &mut tail,
+        );
+        (stats, tail)
+    }
+
+    /// The scheduled form of an edit, and whether it also draws its wrapped
+    /// variant; `None` when it can draw nothing.
+    fn admit_edit<'a>(
+        &self,
+        draw: DestinationEditCommand,
+        atlas: &impl Fn(usize) -> Option<&'a BatchTexture>,
+        instances: &[SpriteInstance],
+        tactical: [u32; 4],
+    ) -> Option<(TerrainCommand, bool)> {
+        assert!(
+            matches!(
+                draw.render_z,
+                RenderZPolicy::ReadOnly | RenderZPolicy::ReadWrite
+            ),
+            "destination edits require an explicit native depth policy"
+        );
+        // Missing images stay absent and cannot manufacture dependencies.
+        // The resolver is a stable frame-local view through every wave.
+        atlas(draw.atlas_slot)?;
+        let instance = &instances[draw.index as usize];
+        let rect = piece_scissor(instance, self.camera, tactical)?;
+        let mut wraps = false;
+        if self.depth.is_some() {
+            let low = candidate_range(instance, self.camera)[0];
+            // Above 65535 nothing is admitted; only negative rows wrap.
+            if low > 65535 {
+                return None;
+            }
+            wraps = low < 0;
+        }
+        Some((TerrainCommand::new(draw, rect), wraps))
+    }
+
     /// The pending read-write interval. One wave, its overlaps replayed
     /// inside it, keeps its snapshot and edit (one pass and a tail); an
     /// interval needing more waves draws in one pass against the live depth
@@ -1064,8 +1118,17 @@ impl TerrainDrawRenderer {
     ) -> TerrainBatchStats {
         let stats = if self.batches.stats().waves > 1 && !self.depth_commands.is_empty() {
             let commands = std::mem::take(&mut self.depth_commands);
-            let stats =
-                self.draw_depth_run(encoder, color, depth, batch, atlas, buffer, &commands, tail);
+            let stats = self.draw_depth_run(
+                encoder,
+                color,
+                depth,
+                batch,
+                atlas,
+                buffer,
+                edit_steps(&commands),
+                no_bodies,
+                tail,
+            );
             self.depth_commands = commands;
             stats
         } else {
@@ -1090,7 +1153,8 @@ impl TerrainDrawRenderer {
         batch: &BatchRenderer,
         atlas: &impl Fn(usize) -> Option<&'texture BatchTexture>,
         buffer: &wgpu::Buffer,
-        commands: &[(TerrainCommand, bool)],
+        steps: impl Iterator<Item = DepthStep> + Clone,
+        mut draw_body: impl FnMut(&mut wgpu::RenderPass<'_>, u32),
         tail: &mut Option<LiveTail>,
     ) -> TerrainBatchStats {
         let mut passes = 0;
@@ -1143,7 +1207,15 @@ impl TerrainDrawRenderer {
             pass.set_bind_group(0, batch.camera_bind_group(), &[]);
             pass.set_vertex_buffer(0, buffer.slice(..));
             let mut bound_atlas = None;
-            for (command, wraps) in commands {
+            for step in steps.clone() {
+                let (command, wraps) = match step {
+                    DepthStep::Edit(command, wraps) => (command, wraps),
+                    DepthStep::Body(body) => {
+                        draw_body(&mut pass, body);
+                        bound_atlas = None;
+                        continue;
+                    }
+                };
                 let draw = command.draw;
                 if bound_atlas != Some(draw.atlas_slot) {
                     let texture =
@@ -1165,7 +1237,7 @@ impl TerrainDrawRenderer {
                 pass.set_pipeline(pipeline);
                 pass.draw(0..6, draw.index..draw.index + 1);
                 // The two variants admit disjoint rows of the same piece.
-                if *wraps {
+                if wraps {
                     pass.set_pipeline(wrapped);
                     pass.draw(0..6, draw.index..draw.index + 1);
                 }
@@ -1173,10 +1245,14 @@ impl TerrainDrawRenderer {
         }
         self.submission.note_closed_passes(encoder, 1);
         passes += 1;
-        let shadows: Vec<_> = commands
-            .iter()
-            .filter(|(command, _)| command.draw.piece == TerrainPiece::Shadow)
-            .map(|(command, _)| command.rect)
+        let shadows: Vec<_> = steps
+            .clone()
+            .filter_map(|step| match step {
+                DepthStep::Edit(command, _) if command.draw.piece == TerrainPiece::Shadow => {
+                    Some(command.rect)
+                }
+                _ => None,
+            })
             .collect();
         if !shadows.is_empty() {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1203,7 +1279,9 @@ impl TerrainDrawRenderer {
             *tail = Some(LiveTail(Tail::Shadows(shadows)));
         }
         TerrainBatchStats {
-            pieces: commands.len(),
+            pieces: steps
+                .filter(|step| matches!(step, DepthStep::Edit(..)))
+                .count(),
             waves: 1,
             passes,
             tile_dependencies: 0,
@@ -1261,7 +1339,17 @@ impl TerrainDrawRenderer {
         let stats = if self.read_only.is_some() {
             self.reduce_read_only(encoder, color, depth, batch, atlas, buffer, &commands, tail)
         } else {
-            self.draw_depth_run(encoder, color, depth, batch, atlas, buffer, &commands, tail)
+            self.draw_depth_run(
+                encoder,
+                color,
+                depth,
+                batch,
+                atlas,
+                buffer,
+                edit_steps(&commands),
+                no_bodies,
+                tail,
+            )
         };
         commands.clear();
         self.read_only_commands = commands;
@@ -1637,6 +1725,34 @@ impl TerrainDrawRenderer {
         self.submission.note_closed_passes(encoder, 1);
         1
     }
+}
+
+/// One draw of [`TerrainDrawRenderer::draw_interval_tail`], in parent order.
+#[derive(Clone, Copy)]
+pub(crate) enum IntervalDraw {
+    Edit(DestinationEditCommand),
+    /// An opaque body the caller records, by its own number.
+    Body(u32),
+}
+
+/// One draw of a depth-tested interval; an edit is flagged where it may have
+/// negative candidates and also draws its wrapped variant.
+#[derive(Clone, Copy)]
+enum DepthStep {
+    Edit(TerrainCommand, bool),
+    Body(u32),
+}
+
+fn edit_steps(
+    commands: &[(TerrainCommand, bool)],
+) -> impl Iterator<Item = DepthStep> + Clone + use<'_> {
+    commands
+        .iter()
+        .map(|&(command, wraps)| DepthStep::Edit(command, wraps))
+}
+
+fn no_bodies(_: &mut wgpu::RenderPass<'_>, _: u32) {
+    unreachable!("an edit interval holds only edits");
 }
 
 /// The draws a destination edit leaves for the live colour and depth after

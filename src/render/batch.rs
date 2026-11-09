@@ -29,6 +29,8 @@ pub(crate) const ZDEPTH_SHADER: &str = include_str!("zdepth_shader.wgsl");
 /// WGSL per-pixel Z-tested SHP shader: native row Z from the gradient table,
 /// optional BUILDNGZ z-shape subtraction, `frag_depth` on the shared axis.
 pub(crate) const ZSPRITE_SHADER: &str = include_str!("zsprite_shader.wgsl");
+/// The per-pixel shadow counts of a depth-tested edit interval.
+pub(crate) const SHADOW_COUNT_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
 
 /// WGSL voxel-sprite shader: byte → (palette | house_ramp) → fx pipeline.
 /// Atlas is R8Uint (palette indices); palette + per-house RGB ramp are
@@ -656,6 +658,10 @@ pub struct BatchRenderer {
     /// building-body leaves (`0x004958d0` / `0x004990e0`) with the BUILDNGZ
     /// z-shape bound at group 2.
     zsprite_write_pipeline: wgpu::RenderPipeline,
+    /// The same two inside a depth-tested edit interval, read then write:
+    /// each also restarts its pixels' shadow count (`fs_counted`). Absent on
+    /// WebGL2, which has no such interval.
+    zsprite_counted_pipelines: Option<[wgpu::RenderPipeline; 2]>,
     /// Bind group layout for the z-shape texture (group 2 of the zsprite
     /// pipelines): one `R8Unorm` texture read with `textureLoad`.
     zshape_bind_group_layout: wgpu::BindGroupLayout,
@@ -1228,51 +1234,78 @@ impl BatchRenderer {
                 ],
                 immediate_size: 0,
             });
-        let make_zsprite_pipeline = |label: &str, depth_write_enabled: bool| {
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(label),
-                layout: Some(&zsprite_pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &zsprite_shader,
-                    entry_point: Some("vs_main"),
-                    buffers: &[Some(wgpu::VertexBufferLayout {
-                        array_stride: INSTANCE_STRIDE,
-                        step_mode: wgpu::VertexStepMode::Instance,
-                        attributes: &instance_attrs,
-                    })],
-                    compilation_options: Default::default(),
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &zsprite_shader,
-                    entry_point: Some("fs_main"),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: surface_format,
-                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                    compilation_options: Default::default(),
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    ..Default::default()
-                },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: wgpu::TextureFormat::Depth32Float,
-                    depth_write_enabled: Some(depth_write_enabled),
-                    // Sprite leaves test `z < zbuf` (strict).
-                    depth_compare: Some(wgpu::CompareFunction::Less),
-                    stencil: wgpu::StencilState::default(),
-                    bias: wgpu::DepthBiasState::default(),
-                }),
-                multisample: wgpu::MultisampleState::default(),
-                multiview_mask: None,
-                cache: None,
-            })
+        let zsprite_color = wgpu::ColorTargetState {
+            format: surface_format,
+            blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+            write_mask: wgpu::ColorWrites::ALL,
         };
-        let zsprite_read_pipeline: wgpu::RenderPipeline =
-            make_zsprite_pipeline("ZSprite Pipeline (read-only)", false);
-        let zsprite_write_pipeline: wgpu::RenderPipeline =
-            make_zsprite_pipeline("ZSprite Pipeline (read + write)", true);
+        let make_zsprite_pipeline =
+            |label: &str,
+             fragment: &str,
+             targets: &[Option<wgpu::ColorTargetState>],
+             depth_write_enabled: bool| {
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some(label),
+                    layout: Some(&zsprite_pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &zsprite_shader,
+                        entry_point: Some("vs_main"),
+                        buffers: &[Some(wgpu::VertexBufferLayout {
+                            array_stride: INSTANCE_STRIDE,
+                            step_mode: wgpu::VertexStepMode::Instance,
+                            attributes: &instance_attrs,
+                        })],
+                        compilation_options: Default::default(),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &zsprite_shader,
+                        entry_point: Some(fragment),
+                        targets,
+                        compilation_options: Default::default(),
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        ..Default::default()
+                    },
+                    depth_stencil: Some(wgpu::DepthStencilState {
+                        format: wgpu::TextureFormat::Depth32Float,
+                        depth_write_enabled: Some(depth_write_enabled),
+                        // Sprite leaves test `z < zbuf` (strict).
+                        depth_compare: Some(wgpu::CompareFunction::Less),
+                        stencil: wgpu::StencilState::default(),
+                        bias: wgpu::DepthBiasState::default(),
+                    }),
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview_mask: None,
+                    cache: None,
+                })
+            };
+        let plain_target = [Some(zsprite_color.clone())];
+        let zsprite_read_pipeline: wgpu::RenderPipeline = make_zsprite_pipeline(
+            "ZSprite Pipeline (read-only)",
+            "fs_main",
+            &plain_target,
+            false,
+        );
+        let zsprite_write_pipeline: wgpu::RenderPipeline = make_zsprite_pipeline(
+            "ZSprite Pipeline (read + write)",
+            "fs_main",
+            &plain_target,
+            true,
+        );
+        let zsprite_counted_pipelines = (!crate::render::gpu::webgl_fallback(device)).then(|| {
+            let targets = [
+                Some(zsprite_color.clone()),
+                Some(wgpu::ColorTargetState {
+                    format: SHADOW_COUNT_FORMAT,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                }),
+            ];
+            [false, true].map(|write| {
+                make_zsprite_pipeline("ZSprite Pipeline (counted)", "fs_counted", &targets, write)
+            })
+        });
 
         // Bind group layout for the unit-atlas R8Uint texture (voxel sprite path).
         // Single texture entry, no sampler — sampled via textureLoad with integer coords.
@@ -1405,6 +1438,7 @@ impl BatchRenderer {
             overlay_pipeline,
             zsprite_read_pipeline,
             zsprite_write_pipeline,
+            zsprite_counted_pipelines,
             zshape_bind_group_layout,
             default_zshape_bind_group,
             zdepth_pipeline,
@@ -2403,14 +2437,48 @@ impl BatchRenderer {
         count: u32,
         write: bool,
     ) {
-        if count == 0 {
-            return;
-        }
-        render_pass.set_pipeline(if write {
+        let pipeline = if write {
             &self.zsprite_write_pipeline
         } else {
             &self.zsprite_read_pipeline
-        });
+        };
+        self.draw_zsprites(render_pass, pipeline, texture, zshape, buffer, start, count);
+    }
+
+    /// [`Self::draw_zsprite_range`] of opaque bodies inside a depth-tested
+    /// edit interval, whose pass also has the shadow counts attached.
+    pub(crate) fn draw_zsprite_counted_range(
+        &self,
+        render_pass: &mut wgpu::RenderPass<'_>,
+        texture: &BatchTexture,
+        zshape: &wgpu::BindGroup,
+        buffer: &wgpu::Buffer,
+        start: u32,
+        count: u32,
+        write: bool,
+    ) {
+        let pipelines = self
+            .zsprite_counted_pipelines
+            .as_ref()
+            .expect("depth-tested intervals have counted pipelines");
+        let pipeline = &pipelines[usize::from(write)];
+        self.draw_zsprites(render_pass, pipeline, texture, zshape, buffer, start, count);
+    }
+
+    fn draw_zsprites(
+        &self,
+        render_pass: &mut wgpu::RenderPass<'_>,
+        pipeline: &wgpu::RenderPipeline,
+        texture: &BatchTexture,
+        zshape: &wgpu::BindGroup,
+        buffer: &wgpu::Buffer,
+        start: u32,
+        count: u32,
+    ) {
+        if count == 0 {
+            return;
+        }
+        render_pass.set_pipeline(pipeline);
         render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
         render_pass.set_bind_group(1, &texture.bind_group, &[]);
         render_pass.set_bind_group(2, zshape, &[]);

@@ -14,7 +14,9 @@
 // stores its Z and only counts (its colour write is masked). Shadow496250 then
 // halves the packed word once per counted shadow (terrain_depth_resolve.wgsl).
 // A read-only interval's pipelines mask the Z store, so every piece tests the
-// Z the interval began with, as the original leaves do.
+// Z the interval began with, as the original leaves do. An opaque SHP body may
+// sit between these edits (zsprite_shader.wgsl `fs_counted`): it stores like a
+// body here, and later pieces test the Z it stored, as in parent order.
 struct DepthTestedOutput {
     @location(0) color: vec4f,
     @location(1) shadows: vec4f,
