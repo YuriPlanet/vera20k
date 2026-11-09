@@ -77,6 +77,20 @@ A new language goes into the game once every line is translated. When it does, d
 your copy from the settings folder. A copy there replaces the one in the game, so any
 new lines would show in English.
 
+## Movie subtitles and names on the sidebar
+
+Two more files can sit next to your language file, with your language's code in their
+names. Both are optional, and the game reads them from the same folder.
+
+- **`vera20k.<code>.subtitles.txt`** holds the subtitles for the game's movies. Copy the
+  game's own `subtitlemd.txt`, translate the text in it, and save it as UTF-16 with a
+  byte order mark, as the game's file is saved.
+- **`vera20k.<code>.cameos`** holds the names drawn on the sidebar's pictures, which are
+  part of each picture. Draw your names on copies of the game's 60x48 cameos, then
+  make this file with `python -m tools.language_assets cameos`; the top of
+  [its script](../../tools/language_assets.py) explains how. The file keeps only the
+  difference from the game's own name rows, so it holds none of the game's art.
+
 ## Keep a language up to date
 
 When the English text changes, the person who changes it also updates every language

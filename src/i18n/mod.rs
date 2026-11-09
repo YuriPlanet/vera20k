@@ -40,6 +40,12 @@
 //! the game's string table: the chosen language's text replaces the game
 //! files' ([`apply`]), for players whose game files are in another language.
 //!
+//! A language can also bring its movie subtitles and the names drawn on its
+//! cameos, in files beside its text: `vera20k.<tag>.subtitles.txt`, in the
+//! game's `subtitlemd.txt` format ([`subtitle_file`]), and
+//! `vera20k.<tag>.cameos` ([`cameo_labels`]). Each is optional and only
+//! changes what the screen shows.
+//!
 //! Until the player picks a language (`[VERA] Language=`), VERA follows the
 //! system's preferred languages. The pseudo-language [`PSEUDO_LANGUAGE`]
 //! rewrites and lengthens every text, VERA's and the game's, so a screen
@@ -67,6 +73,10 @@ use icu_locale_core::LanguageIdentifier;
 use icu_plurals::{PluralCategory, PluralOperands, PluralRules};
 
 use crate::assets::csf_file::CsfFile;
+
+pub(crate) mod cameo_labels;
+
+use cameo_labels::CameoLabel;
 
 mod shipped {
     include!(concat!(env!("OUT_DIR"), "/shipped_languages.rs"));
@@ -151,6 +161,10 @@ struct Language {
     strings: HashMap<String, String>,
     /// Its texts read right to left ([`reads_right_to_left`]).
     right_to_left: bool,
+    /// Its movie subtitles, a `subtitlemd.txt` of its own.
+    subtitles: Option<Arc<[u8]>>,
+    /// The names it draws on cameos, by lower-case file name.
+    cameo_labels: HashMap<String, Arc<CameoLabel>>,
 }
 
 impl Language {
@@ -166,7 +180,21 @@ impl Language {
             name: contents.name.unwrap_or_else(|| tag.to_owned()),
             right_to_left: reads_right_to_left(strings.values().map(String::as_str)),
             strings,
+            subtitles: None,
+            cameo_labels: HashMap::new(),
         }
+    }
+
+    /// With the files beside its text: `dir`'s, else those VERA ships.
+    fn with_companions(mut self, dir: Option<&Path>) -> Self {
+        self.subtitles = companion(&self.tag, "subtitles.txt", dir, shipped::SUBTITLES);
+        if let Some(file) = companion(&self.tag, "cameos", dir, shipped::CAMEO_LABELS) {
+            match cameo_labels::parse(&file) {
+                Some(labels) => self.cameo_labels = labels,
+                None => log::warn!("vera20k.{}.cameos is damaged; skipped", self.tag),
+            }
+        }
+        self
     }
 
     /// The pseudo-language, made from English.
@@ -180,6 +208,8 @@ impl Language {
                 .map(|(key, text)| (key.clone(), pseudo(text)))
                 .collect(),
             right_to_left: false,
+            subtitles: None,
+            cameo_labels: HashMap::new(),
         }
     }
 
@@ -204,6 +234,23 @@ impl Language {
             .or_else(|| self.strings.get(key))
             .map(String::as_str)
     }
+}
+
+/// `vera20k.<tag>.<suffix>` from `dir`, else the copy VERA ships.
+fn companion(
+    tag: &str,
+    suffix: &str,
+    dir: Option<&Path>,
+    shipped: &[(&str, &[u8])],
+) -> Option<Arc<[u8]>> {
+    dir.and_then(|dir| std::fs::read(dir.join(format!("vera20k.{tag}.{suffix}"))).ok())
+        .map(Arc::from)
+        .or_else(|| {
+            shipped
+                .iter()
+                .find(|(known, _)| known.eq_ignore_ascii_case(tag))
+                .map(|(_, file)| Arc::from(*file))
+        })
 }
 
 fn plural_rules(tag: &str) -> PluralRules {
@@ -417,7 +464,7 @@ fn languages_with_source(
         let Ok(text) = std::fs::read_to_string(&path) else {
             continue;
         };
-        let language = Arc::new(Language::from_file(&tag, &text));
+        let language = Arc::new(Language::from_file(&tag, &text).with_companions(Some(source_dir)));
         match languages
             .iter()
             .position(|known| known.tag.eq_ignore_ascii_case(&tag))
@@ -440,7 +487,7 @@ fn catalog() -> std::sync::RwLockReadGuard<'static, Catalog> {
 fn languages(settings_dir: Option<&Path>) -> Vec<Arc<Language>> {
     let mut languages: Vec<Arc<Language>> = shipped::FILES
         .iter()
-        .map(|(tag, text)| Arc::new(Language::from_file(tag, text)))
+        .map(|(tag, text)| Arc::new(Language::from_file(tag, text).with_companions(settings_dir)))
         .collect();
     if let Some(dir) = settings_dir {
         for (tag, path) in settings_files(dir) {
@@ -463,7 +510,7 @@ fn languages(settings_dir: Option<&Path>) -> Vec<Arc<Language>> {
             if !report.complete() {
                 log::info!("{report}");
             }
-            let language = Arc::new(Language::from_file(&tag, &text));
+            let language = Arc::new(Language::from_file(&tag, &text).with_companions(Some(dir)));
             match languages
                 .iter()
                 .position(|known| known.tag.eq_ignore_ascii_case(&tag))
@@ -568,6 +615,22 @@ pub fn select(tag: &str) -> bool {
 /// The language in use's tag, such as `en` or `zh-CN`.
 pub fn selected_language() -> String {
     catalog().selected.tag.clone()
+}
+
+/// The language in use's own movie subtitles, when it has them, in the
+/// game's `subtitlemd.txt` format.
+pub fn subtitle_file() -> Option<Arc<[u8]>> {
+    catalog().selected.subtitles.clone()
+}
+
+/// The name the language in use draws on cameo file `file` (`GTNKICON.SHP`),
+/// when it has one.
+pub fn cameo_label(file: &str) -> Option<Arc<CameoLabel>> {
+    catalog()
+        .selected
+        .cameo_labels
+        .get(&file.to_ascii_lowercase())
+        .cloned()
 }
 
 /// Whether the language `tag` reads right to left: most of its file's texts
@@ -1242,6 +1305,29 @@ mod tests {
         let mut catalog = Catalog::new(vec![english, language(selected, file)]);
         catalog.selected = catalog.languages[1].clone();
         catalog
+    }
+
+    /// A language's subtitles and cameo names load from the files beside its
+    /// text in the settings folder, and a damaged cameo file only loses those.
+    #[test]
+    fn a_languages_companion_files_load_from_beside_its_text() {
+        let dir = std::env::temp_dir().join(format!("vera-i18n-beside-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("vera20k.xx.ini"), "[Language]\nName=Test\n").unwrap();
+        std::fs::write(dir.join("vera20k.yy.ini"), "[Language]\nName=Other\n").unwrap();
+        std::fs::write(dir.join("vera20k.xx.subtitles.txt"), b"cues").unwrap();
+        let canvas = vec![1u8; cameo_labels::CAMEO_WIDTH * cameo_labels::CAMEO_HEIGHT];
+        let labels = cameo_labels::test_support::label_file("icon.shp", 40, &canvas, &canvas);
+        std::fs::write(dir.join("vera20k.xx.cameos"), labels).unwrap();
+        std::fs::write(dir.join("vera20k.yy.cameos"), b"damaged").unwrap();
+
+        let loaded = languages(Some(&dir));
+        let find = |tag: &str| loaded.iter().find(|language| language.tag == tag).unwrap();
+        assert_eq!(find("xx").subtitles.as_deref(), Some(&b"cues"[..]));
+        assert!(find("xx").cameo_labels.contains_key("icon.shp"));
+        assert_eq!(find("yy").subtitles, None);
+        assert!(find("yy").cameo_labels.is_empty());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// A value is never read for names: a player called `{count}` keeps the

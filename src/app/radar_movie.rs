@@ -200,11 +200,7 @@ pub(crate) fn enqueue_file(state: &mut AppState, stem: &str, pause_simulation: b
         Ok(surface) => {
             // BinkMovie_Open 0x00432750 resolves cues when the clip is admitted.
             let header = &surface.file().header;
-            let subtitles = state
-                .process_assets
-                .manager()
-                .and_then(|assets| assets.get_ref(movie_subtitles::SUBTITLE_FILE))
-                .and_then(|file| movie_subtitles::movie_subtitles(file, stem))
+            let subtitles = movie_subtitles::cues_for_movie(state.process_assets.manager(), stem)
                 .and_then(|cues| SubtitleTrack::new(cues, header.fps_num, header.fps_den));
             log::info!(
                 "Radar movie admitted: {file_name}, source={}, pause={pause_simulation}",

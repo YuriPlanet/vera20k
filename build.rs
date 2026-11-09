@@ -130,6 +130,22 @@ fn shipped_languages() {
         ));
     }
     code.push_str("];\n");
+    // The optional files beside a language's text, for the languages that
+    // have them (src/i18n/mod.rs).
+    for (constant, suffix) in [("SUBTITLES", "subtitles.txt"), ("CAMEO_LABELS", "cameos")] {
+        code.push_str(&format!(
+            "pub(super) const {constant}: &[(&str, &[u8])] = &[\n"
+        ));
+        for tag in &tags {
+            let file = format!("{DIRECTORY}/vera20k.{tag}.{suffix}");
+            if std::path::Path::new(&file).exists() {
+                code.push_str(&format!(
+                    "    ({tag:?}, include_bytes!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/{file}\")) as &[u8]),\n"
+                ));
+            }
+        }
+        code.push_str("];\n");
+    }
     let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo sets OUT_DIR"));
     std::fs::write(out.join("shipped_languages.rs"), code).expect("write shipped_languages.rs");
 }
