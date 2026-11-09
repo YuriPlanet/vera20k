@@ -25,7 +25,7 @@ use crate::app::AppState;
 use crate::app::types::ScrollDir;
 use crate::map::terrain;
 
-/// Arrow-key scroll distance in world pixels per frame.
+/// Arrow-key scroll distance in world pixels per scroll step.
 ///
 /// gamemd's main tick reads one flat constant for every arrow key. This path has
 /// no coast ramp and no `ScrollRate` term — that machinery belongs to mouse edge
@@ -35,7 +35,7 @@ const KEY_SCROLL_DISTANCE: f32 = 21.0;
 
 /// Shift scales the arrow-scroll distance by 2.5 and the product goes through
 /// the same truncating float-to-long as the rest of the scroll math, so the
-/// boosted step is 52 px per frame rather than 52.5.
+/// boosted step is 52 px rather than 52.5.
 const KEY_SCROLL_SHIFT_MULTIPLIER: f32 = 2.5;
 
 /// Ctrl replaces the distance with the map's longer side in cells, shifted left
@@ -261,8 +261,12 @@ impl PendingCameraScroll {
     }
 
     fn is_idle(&self) -> bool {
-        self.world_pixels == (0.0, 0.0)
-            && (self.focus.rate_bits == 0 || self.focus.target == [0, 0])
+        self.world_pixels == (0.0, 0.0) && !self.focus_running()
+    }
+
+    /// A cinematic pan owns the view; each game frame replaces it.
+    fn focus_running(&self) -> bool {
+        self.focus.target != [0, 0] && self.focus.rate_bits != 0
     }
 
     /// Mouse693060 rejects tactical text while Tactical+D8's focus rate is
@@ -344,8 +348,7 @@ impl PendingCameraScroll {
         if admission.replay_blocked {
             return current;
         }
-        let focus_active =
-            admission.scenario_started && self.focus.target != [0, 0] && self.focus.rate_bits != 0;
+        let focus_active = admission.scenario_started && self.focus_running();
         let advance_focus = self.last_ai_frame != admission.frame && focus_active;
         self.last_ai_frame = admission.frame;
         if advance_focus {
@@ -384,6 +387,23 @@ const MAX_ZOOM: f32 = 4.0;
 const ZOOM_STEP: f32 = 1.15;
 
 // ---------------------------------------------------------------------------
+// Scroll clock — a deliberate difference from gamemd.
+// ---------------------------------------------------------------------------
+//
+// gamemd moves the view a fixed distance per Main_Tick: mouse scrolling from the
+// input poll at 0x55D8AB (-> 0x692F30), arrow keys from 0x55DD42..0x55DD96. The
+// map therefore scrolls faster at a faster GameSpeed. VERA keeps every distance
+// but takes them on a wall-clock step of its own, so the scroll speed is the same
+// at every game speed, offline and online. One step is one radar-timer unit,
+// 16 ms: the interval of GameSpeed 1, whose offline scroll speed is the one every
+// speed now has. Only movement left the game frame; Main_Tick's poll still writes
+// the right-drag latch.
+
+/// The most scroll steps one pass may owe, 128 ms of scrolling: enough to hold
+/// the speed through slow frames, while a stall cannot jump the view far.
+const MAX_SCROLL_CATCH_UP_STEPS: u32 = 8;
+
+// ---------------------------------------------------------------------------
 // Edge auto-scroll — gamemd's CoastLevel ramp.
 // ---------------------------------------------------------------------------
 //
@@ -394,7 +414,7 @@ const ZOOM_STEP: f32 = 1.15;
 // at the edge and decays at the same cadence once it leaves; and a speed table
 // indexed by `8 - coast`, capped by the player's `[Options] ScrollRate`.
 
-/// Raw per-frame scroll distances before the rules multiplier, indexed by
+/// Raw per-step scroll distances before the rules multiplier, indexed by
 /// `8 - CoastLevel`. Read verbatim out of the running image this session.
 ///
 /// Index 0 is unreachable in a stock game: the cap below forces the index to at
@@ -447,6 +467,8 @@ pub(crate) struct EdgeScrollState {
     /// Radar-timer stamp of the last coast change. `None` matches gamemd's
     /// zero-delay start, where the very first step is allowed immediately.
     last_coast_change: Option<u32>,
+    /// Radar-timer stamp of the last pass that settled its scroll steps.
+    last_scroll_step: Option<u32>,
 }
 
 impl Default for EdgeScrollState {
@@ -456,6 +478,7 @@ impl Default for EdgeScrollState {
             coast_level: 0,
             octant: 0,
             last_coast_change: None,
+            last_scroll_step: None,
         }
     }
 }
@@ -464,6 +487,31 @@ impl EdgeScrollState {
     /// Current radar-timer reading (16 ms units).
     pub(crate) fn radar_timer(&self) -> u32 {
         (self.epoch.elapsed().as_millis() as u32) >> RADAR_TIMER_MS_SHIFT
+    }
+
+    /// Take the scroll steps a pass at `now` owes: one per radar-timer unit
+    /// since the last pass. Every pass stamps the clock, so time the camera
+    /// could not move is never owed. While `view_held`, each game frame
+    /// rewrites the view, so a step between frames would draw and then snap
+    /// back; only the frame's own step runs, as in gamemd.
+    pub(crate) fn take_scroll_steps(
+        &mut self,
+        now: u32,
+        admitted: bool,
+        view_held: bool,
+        game_frame: bool,
+    ) -> u32 {
+        let elapsed = self
+            .last_scroll_step
+            .replace(now)
+            .map_or(1, |stamp| now.wrapping_sub(stamp));
+        if !admitted {
+            0
+        } else if view_held {
+            u32::from(game_frame)
+        } else {
+            elapsed.min(MAX_SCROLL_CATCH_UP_STEPS)
+        }
     }
 
     fn timer_expired(&self, now: u32) -> bool {
@@ -657,7 +705,7 @@ fn edge_scroll_step_with_context(
     };
 
     // Truncating float-to-long, matching gamemd's chop rounding mode: the stock
-    // multiplier turns the table into 1, 2, 4, 8, 13, 17, 22, 26, 31 px/frame.
+    // multiplier turns the table into 1, 2, 4, 8, 13, 17, 22, 26, 31 px/step.
     let distance =
         (f64::from(EDGE_SCROLL_SPEED_TABLE[index as usize]) * scroll_multiplier).trunc() as f32;
 
@@ -866,7 +914,7 @@ fn window_mouse_pixels(source_distance: f32, resolution_scale: f32) -> f32 {
 }
 
 /// The stock rate multiplies the displacement by 1/4: a 100 px drag moves
-/// the camera 25 px per admitted game frame.
+/// the camera 25 px per scroll step.
 const RIGHT_DRAG_RATE_BIAS: u32 = 1;
 
 /// Distance from a screen border, in pixels, inside which an anchor makes a
@@ -1044,6 +1092,12 @@ impl TacticalMouseState {
         Some(cancel)
     }
 
+    /// The engaged right drag still holds the mouse: a scroll step pans. Only
+    /// `poll_right_drag` engages it.
+    fn right_pan_active(&self) -> bool {
+        self.right_drag_owns_frame() && self.right_pan_engaged
+    }
+
     /// True while the right button owns the per-frame mouse block. The left
     /// button is tested first in the original, so a band box in progress keeps
     /// the pan from running.
@@ -1086,8 +1140,8 @@ impl TacticalMouseState {
 /// value — the two cursor-warping methods have no in-game UI and ship disabled).
 ///
 /// The displacement is measured from the **anchor**, not from the previous
-/// frame, so the gesture behaves like a joystick: the further the cursor sits
-/// from the press point, the faster the map slides, every frame the button is
+/// step, so the gesture behaves like a joystick: the further the cursor sits
+/// from the press point, the faster the map slides, every step the button is
 /// held. The original uses a chopped reciprocal multiply, not division.
 /// Native identity and executable vectors: tools/input_oracle/README.md.
 fn right_drag_pan_step(
@@ -1158,30 +1212,37 @@ fn right_drag_axis_distance(displacement: i32, scroll_rate: u32) -> i32 {
     (quotient - i64::from(reciprocal_shortfall) * displacement.signum()) as i32
 }
 
-/// Poll the right-drag owner and return a request in world pixels. Committing
-/// and clamping the request belongs to the later Tactical__AI/pre-follow seam.
-fn poll_right_drag_pan(state: &mut AppState) -> (f32, f32) {
+/// One admitted input poll of the right-drag owner: 0x692F30 -> 0x693440. It
+/// alone writes the latch, so a press released between two polls stays a click.
+fn latch_right_drag(state: &mut AppState) {
     let resolution_scale = state.tactical_zoom().map_or(1.0, |zoom| zoom.scale());
     let cursor = (
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );
-    match state.match_state.input.tactical_mouse.poll_right_drag(
+    let poll = state.match_state.input.tactical_mouse.poll_right_drag(
         cursor,
         system_drag_metrics_px(),
         state.match_state.input.selection_state.is_band_box_active(),
         resolution_scale,
-    ) {
-        RightDragPoll::Idle => return (0.0, 0.0),
-        RightDragPoll::CancelBandBox => {
-            state.match_state.input.selection_state.cancel_drag();
-            return (0.0, 0.0);
-        }
-        RightDragPoll::Pan => {}
+    );
+    if poll == RightDragPoll::CancelBandBox {
+        state.match_state.input.selection_state.cancel_drag();
+    }
+}
+
+/// One scroll step of an engaged right-drag pan, as a request in world pixels.
+/// Committing and clamping it belongs to the later Tactical__AI/pre-follow seam.
+fn right_drag_pan_request(state: &AppState) -> (f32, f32) {
+    if !state.match_state.input.tactical_mouse.right_pan_active() {
+        return (0.0, 0.0);
     }
     let (dx, dy) = right_drag_pan_step(
         state.match_state.input.tactical_mouse.right_anchor,
-        cursor,
+        (
+            state.match_state.input.cursor_x,
+            state.match_state.input.cursor_y,
+        ),
         state.render_width() as f32,
         state.render_height() as f32,
         state
@@ -1198,7 +1259,7 @@ fn poll_right_drag_pan(state: &mut AppState) -> (f32, f32) {
     )
 }
 
-/// Arrow-key scroll distance for this frame, in world pixels.
+/// Arrow-key scroll distance for one scroll step, in world pixels.
 ///
 /// Shift is tested before Ctrl in the original, so Shift wins when both are
 /// held. The Ctrl distance is derived from the map's longer side; with no map
@@ -1221,16 +1282,21 @@ fn keyboard_scroll_distance(state: &AppState) -> f32 {
     }
 }
 
-/// Main_Tick's keyboard requests run after logic (0x55DD42..0x55DD96), and
-/// remain pending until the next Tactical__AI commit with that frame's mouse.
-pub(crate) fn queue_keyboard_scroll(state: &mut AppState) {
-    if !state.match_state.match_diagnostics.is_replay_playback()
+/// The simulation has locked tactical input; a replay's camera stays free.
+fn scroll_input_locked(state: &AppState) -> bool {
+    !state.match_state.match_diagnostics.is_replay_playback()
         && state
             .match_state
             .sim_runtime
             .as_ref()
             .is_some_and(|runtime| runtime.simulation.session().input_locked())
-    {
+}
+
+/// One scroll step of the arrow keys. Main_Tick's keyboard requests run after
+/// logic (0x55DD42..0x55DD96), and remain pending until the next Tactical__AI
+/// commit with that frame's mouse.
+pub(crate) fn queue_keyboard_scroll(state: &mut AppState) {
+    if scroll_input_locked(state) {
         return;
     }
     let held = |arrow| {
@@ -1263,22 +1329,64 @@ pub(crate) fn queue_keyboard_scroll(state: &mut AppState) {
         .request(movement);
 }
 
-/// Sample one native mouse input poll, returning world-pixel movement without
-/// committing the view. Main_Tick calls input before logic (0x55D8AB); captured
-/// right drag and uncaptured edge/coast are mutually exclusive in 0x692F30.
+/// The scroll steps this pass owes (see the scroll clock above). `admitted` is
+/// the pass's lifecycle gate, `frames_running` says game frames are running,
+/// whatever this pass's timing, and `game_frame` says one runs in this pass.
+pub(crate) fn take_scroll_steps(
+    input: &mut crate::app::input::state::MatchInputState,
+    admitted: bool,
+    frames_running: bool,
+    game_frame: bool,
+) -> u32 {
+    let view_held = frames_running
+        && (input.follow_target.is_some() || input.pending_camera_scroll.focus_running());
+    let now = input.edge_scroll.radar_timer();
+    input
+        .edge_scroll
+        .take_scroll_steps(now, admitted, view_held, game_frame)
+}
+
+/// The radar-timer reading of each of the `steps` steps a pass at `now` owes,
+/// oldest first, so the coast ramps once per step as it would over that time.
+fn owed_step_stamps(now: u32, steps: u32) -> impl Iterator<Item = u32> {
+    (0..steps).rev().map(move |back| now.wrapping_sub(back))
+}
+
+/// Sample this pass's mouse scrolling, returning world-pixel movement without
+/// committing the view: Main_Tick's input poll (0x55D8AB) writes the right-drag
+/// latch when `input_poll` says this pass is one, then `steps` scroll steps
+/// accumulate. `None` means no step was owed.
+pub(crate) fn sample_mouse_scroll(
+    state: &mut AppState,
+    input_poll: bool,
+    steps: u32,
+) -> Option<(f32, f32)> {
+    if input_poll && !scroll_input_locked(state) {
+        latch_right_drag(state);
+    }
+    (steps > 0).then(|| {
+        let now = state.match_state.input.edge_scroll.radar_timer();
+        owed_step_stamps(now, steps).fold((0.0, 0.0), |request, stamp| {
+            let step = mouse_scroll_step(state, stamp);
+            (request.0 + step.0, request.1 + step.1)
+        })
+    })
+}
+
+/// One native mouse input poll taken as one scroll step.
 pub(crate) fn poll_mouse_scroll(state: &mut AppState) -> (f32, f32) {
-    if !state.match_state.match_diagnostics.is_replay_playback()
-        && state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .is_some_and(|runtime| runtime.simulation.session().input_locked())
-    {
+    sample_mouse_scroll(state, true, 1).unwrap_or_default()
+}
+
+/// One scroll step of the mouse at radar-timer reading `now`, in world pixels.
+/// Captured right drag and uncaptured edge/coast are mutually exclusive in
+/// 0x692F30.
+fn mouse_scroll_step(state: &mut AppState, now: u32) -> (f32, f32) {
+    if scroll_input_locked(state) {
         return (0.0, 0.0);
     }
     let sw = state.render_width() as f32;
     let sh = state.render_height() as f32;
-    let right_drag = poll_right_drag_pan(state);
 
     // gamemd's edge scroll early-returns while any tactical mouse button holds
     // the capture, so the map is frozen for the whole of a band-box or
@@ -1288,7 +1396,6 @@ pub(crate) fn poll_mouse_scroll(state: &mut AppState) -> (f32, f32) {
         && !state.match_state.input.minimap_press_active()
         && !touch_owns_pointer(&state.match_state.input)
     {
-        let now = state.match_state.input.edge_scroll.radar_timer();
         let scroll_rate = state
             .match_state
             .match_presentation
@@ -1331,7 +1438,7 @@ pub(crate) fn poll_mouse_scroll(state: &mut AppState) -> (f32, f32) {
             dy / state.match_state.input.zoom_level,
         );
     }
-    right_drag
+    right_drag_pan_request(state)
 }
 
 /// Tactical__AI commits the accumulated request before follow (0x6D26F9),
@@ -2505,6 +2612,70 @@ mod tests {
             })
             .collect();
         assert_eq!(peaks, vec![26.0, 22.0, 17.0, 13.0, 8.0, 4.0, 2.0]);
+    }
+
+    /// A slow pass owes the steps it missed up to the cap, time the camera
+    /// could not move is not owed, and a view follow or a cinematic pan holds
+    /// moves only with the game frame.
+    #[test]
+    fn scroll_steps_owe_slow_passes_but_not_time_out_of_play() {
+        let mut clock = EdgeScrollState::default();
+        assert_eq!(clock.take_scroll_steps(100, true, false, false), 1);
+        assert_eq!(clock.take_scroll_steps(100, true, false, true), 0);
+        assert_eq!(clock.take_scroll_steps(103, true, false, false), 3);
+        assert_eq!(
+            clock.take_scroll_steps(112, true, false, false),
+            8,
+            "the speed holds past the cap"
+        );
+        assert_eq!(clock.take_scroll_steps(200, false, false, false), 0);
+        assert_eq!(
+            clock.take_scroll_steps(201, true, false, false),
+            1,
+            "time in a menu is not owed"
+        );
+        assert_eq!(clock.take_scroll_steps(202, true, true, false), 0);
+        assert_eq!(clock.take_scroll_steps(203, true, true, true), 1);
+    }
+
+    /// The steps a slow pass owes ramp the coast as they would over as many
+    /// short passes.
+    #[test]
+    fn owed_steps_ramp_the_coast_like_short_passes() {
+        let step = |st: &mut EdgeScrollState, stamp: u32| {
+            edge_scroll_step(st, (0.0, 300.0), VIEW_W, VIEW_H, DEFAULT_SCROLL_RATE, stamp).0
+        };
+        let (mut short, mut slow) = (state(), state());
+        let short_passes: Vec<f32> = (0..8).map(|tick| step(&mut short, tick)).collect();
+        let slow_pass: Vec<f32> = owed_step_stamps(7, 8)
+            .map(|stamp| step(&mut slow, stamp))
+            .collect();
+        assert_eq!(slow_pass, short_passes);
+    }
+
+    /// Follow and a cinematic pan hold the view only while game frames rewrite
+    /// it. With none to come, as after a recording ends, it still scrolls.
+    #[test]
+    fn a_held_view_scrolls_once_no_game_frame_can_run() {
+        for follow in [true, false] {
+            let steps = |frames_running| {
+                let mut input = crate::app::input::state::MatchInputState::new(Default::default());
+                if follow {
+                    input.follow_target = Some(1);
+                } else {
+                    assert!(input.pending_camera_scroll.focus_on(
+                        (100., 200.),
+                        [8192, 4096, 0],
+                        2,
+                        (640., 480.),
+                        0.8,
+                    ));
+                }
+                take_scroll_steps(&mut input, true, frames_running, false)
+            };
+            assert_eq!(steps(true), 0, "held between frames, follow={follow}");
+            assert_eq!(steps(false), 1, "no frame to rewrite it, follow={follow}");
+        }
     }
 
     #[test]
