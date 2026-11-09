@@ -2619,13 +2619,18 @@ impl Simulation {
                     | Some(crate::map::entities::EntityCategory::Aircraft) => {
                         // Vehicle/aircraft transports unload through the Unload
                         // mission (`UnitClass::Mission_Unload @ 0x0073D630`
-                        // transport branch; Aircraft slot `0x004151E0`).
-                        let is_transport = self
-                            .substrate
-                            .entities
-                            .get(*transport_id)
-                            .and_then(|t| self.object_type(t.type_ref(), rules))
-                            .is_some_and(|obj| obj.passengers > 0);
+                        // transport branch; Aircraft slot `0x004151E0`). An
+                        // aircraft needs only a loaded hold (+0x114, its
+                        // What_Action `0x00417DCD..0x00417DDA`), a Carryall's
+                        // cargo included.
+                        let is_transport = category
+                            == Some(crate::map::entities::EntityCategory::Aircraft)
+                            || self
+                                .substrate
+                                .entities
+                                .get(*transport_id)
+                                .and_then(|t| self.object_type(t.type_ref(), rules))
+                                .is_some_and(|obj| obj.passengers > 0);
                         if !is_transport {
                             return false;
                         }

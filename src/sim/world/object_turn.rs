@@ -1291,6 +1291,8 @@ impl Simulation {
             );
         }
         sim.aircraft_crash_smoke(stable_id, rules);
+        // Aircraft415136..415184, the last block of AircraftClass::AI.
+        sim.carryall_carry_cargo(stable_id, rules, overlay_registry, object_ctx.effects);
         Ok(outcome)
     }
 }

@@ -64,6 +64,7 @@ pub(crate) mod action {
     /// YRpp `Repair`: entering a Grinder or a repair depot.
     pub(crate) const REPAIR: u8 = 0x0B;
     pub(crate) const SABOTAGE: u8 = 0x10;
+    pub(crate) const TOTE: u8 = 0x11;
     pub(crate) const GUARD_AREA: u8 = 0x1A;
     pub(crate) const DAMAGE: u8 = 0x1C;
     pub(crate) const GREPAIR: u8 = 0x1D;
@@ -144,6 +145,7 @@ pub(crate) fn native_action(kind: CursorFeedbackKind, selected_count: usize) -> 
         Kind::Enter => ENTER,
         Kind::Grind => REPAIR,
         Kind::NoEnter => NO_ENTER,
+        Kind::Tote => TOTE,
         Kind::EngineerDamage => DAMAGE,
         Kind::RepairAction(true) => GREPAIR,
         Kind::RepairAction(false) => NO_GREPAIR,

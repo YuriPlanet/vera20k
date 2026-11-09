@@ -913,10 +913,106 @@ fn unit_receive(
             Some(from) => unit_docking(sim, unit, from, payload, rules, effects),
             None => RadioResponse::None,
         },
-        // 7 and 0x15: the service arms have no represented sender.
-        RadioMessage::DockingComplete | RadioMessage::DockNow => RadioResponse::None,
+        RadioMessage::HoldStill => unit_hold_still(sim, unit, sender, payload, rules, effects),
+        RadioMessage::WantRide => unit_want_ride(sim, unit, rules),
+        // 0x15: the service arm has no represented sender.
+        RadioMessage::DockNow => RadioResponse::None,
         _ => foot_receive(sim, unit, sender, msg, payload, rules, effects),
     }
+}
+
+/// HOLD_STILL, Unit case 7 (`0x0073750A..0x00737587`), a Carryall's order to
+/// the Unit it will lift: the Foot arm first (Techno's `0x006F4C6F` TETHERs
+/// the sender, which TETHERs back), then the destination (vt+0x480(NULL, 1))
+/// and Target (vt+0x3C8) dropped, Sleep queued (vt+0x1E8(0, 0)) and the
+/// navigation list emptied (`0x004DA1C0`). A Unit still untethered, or with
+/// no contact 0, HELLOs the sender and TETHERs its contact. ROGER.
+fn unit_hold_still(
+    sim: &mut Simulation,
+    unit: u64,
+    sender: Option<u64>,
+    payload: RadioPayload,
+    rules: &RuleSet,
+    effects: FrameEffects<'_>,
+) -> RadioResponse {
+    let _ = foot_receive(
+        sim,
+        unit,
+        sender,
+        RadioMessage::HoldStill,
+        payload,
+        rules,
+        effects,
+    );
+    let _ =
+        sim.assign_destination_represented(unit, None, rules, effects.overlay_registry(), effects);
+    let _ = sim.assign_target_represented(unit, None, rules, effects.overlay_registry(), effects);
+    let _ = sim.mission_queue_exact(
+        unit,
+        MissionId::from_known(MissionType::Sleep),
+        0,
+        sim.session.binary_frame(),
+        &LiveReadyInputProvider { rules },
+    );
+    let Some(entity) = sim.substrate.entities.get_mut(unit) else {
+        return RadioResponse::Roger;
+    };
+    entity.navigation.clear_nav_list();
+    if entity.tether.partner().is_none() || entity.radio_contacts.slot(0).is_none() {
+        if let Some(from) = sender {
+            transmit(
+                sim,
+                unit,
+                from,
+                RadioMessage::Hello,
+                RadioPayload::default(),
+                rules,
+                effects,
+            );
+        }
+        crate::sim::radio::transmit_to_contact(sim, unit, RadioMessage::Tether, rules, effects);
+    }
+    RadioResponse::Roger
+}
+
+/// WANT_RIDE, Unit case 0x24 (`0x0073745C..0x00737507`), a Carryall's
+/// question whether it may lift this Unit: 0 when warped out (vt+0x1D4);
+/// NEGATORY under a bridge (its vt+0x4C coordinate's cell has a bridge,
+/// `+0x140 & 0x100`, and ShouldBeOnBridge vt+0xBC(0) is false), on Unload
+/// (Get_Mission 0x10), tethered (`+0x418`) or in a tube (`+0x684` not -1);
+/// otherwise ROGER.
+fn unit_want_ride(sim: &Simulation, unit: u64, rules: &RuleSet) -> RadioResponse {
+    let Some(entity) = sim.substrate.entities.get(unit) else {
+        return RadioResponse::None;
+    };
+    if entity.is_warped_out() {
+        return RadioResponse::None;
+    }
+    let in_tube = entity.low_bridge_tube_state.is_some();
+    if let Some(terrain) = sim.resolved_terrain.as_ref()
+        && let Ok(coord) = sim.navigation_target_coordinate(NavTargetRef::object(unit), None, rules)
+    {
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+        let under_bridge = cells.flags(cells.lookup_world(coord.x, coord.y)) & 0x100 != 0
+            && !crate::sim::movement::ground_pose::navigation_should_be_on_bridge(
+                &cells,
+                coord,
+                crate::sim::movement::ground_pose::position_world_coord(&entity.position),
+                entity.on_bridge(),
+                in_tube,
+            )
+            .unwrap_or(false);
+        if under_bridge {
+            return RadioResponse::Negatory;
+        }
+    }
+    if entity.mission.effective() == MissionId::from_known(MissionType::Unload)
+        || entity.tether.partner().is_some()
+        || in_tube
+    {
+        return RadioResponse::Negatory;
+    }
+    RadioResponse::Roger
 }
 
 /// DOCKING, `UnitClass::Receive_Radio` case 0x0E (`0x007377D8..0x00737A95`),
@@ -1360,10 +1456,12 @@ struct AircraftHold {
 /// the type has `Passengers=` (`+0x5E0`) above its cargo (`+0x114`,
 /// `0x00419397`); the rest take the Foot path.
 ///
-/// RESIDUAL: no retail aircraft type is a Carryall
-/// (`retail_fly_aircraft_take_no_radio_passengers`):
-/// - 8 for a Carryall on Move holding a passenger (`0x004194C5..`);
-/// - 0x21 (`0x0041918C`), which nothing sends.
+/// Message 8 (`0x004194C5..0x0041951F`): a `Carryall=` type on Move
+/// (Get_Mission) and tethered (`+0x418`) refuses it, NEGATORY, from its
+/// cargo's head (`+0x118`) or its NavCom (`+0x5A4`), so the Unit it flies to
+/// stays tethered (`aircraft::carryall`); otherwise the Foot path.
+///
+/// 0x21 (`0x0041918C`), which nothing sends, takes the Foot path.
 fn aircraft_receive(
     sim: &mut Simulation,
     aircraft: u64,
@@ -1390,6 +1488,17 @@ fn aircraft_receive(
             .cargo()
             .map_or(0, |cargo| cargo.count() as i32),
     };
+    let holds_release = transport.carryall
+        && entity.mission.effective() == MissionId::from_known(MissionType::Move)
+        && entity.tether.partner().is_some()
+        && sender.is_some_and(|sender| {
+            entity
+                .passenger_role
+                .cargo()
+                .and_then(|cargo| cargo.passengers().first())
+                == Some(&sender)
+                || entity.navigation.nav_com() == Some(NavTargetRef::object(sender))
+        });
     let target = entity.attack_target.target().is_some();
     match msg {
         // 0x00419109: half its type's Ammo or more and a Target, it does not
@@ -1432,9 +1541,7 @@ fn aircraft_receive(
             );
             foot_receive(sim, aircraft, sender, msg, payload, rules, effects)
         }
-        RadioMessage::RequestClearance if !transport.carryall => {
-            foot_receive(sim, aircraft, sender, msg, payload, rules, effects)
-        }
+        RadioMessage::RequestClearance if holds_release => RadioResponse::Negatory,
         RadioMessage::CanDock if transport.passengers <= transport.cargo => {
             foot_receive(sim, aircraft, sender, msg, payload, rules, effects)
         }
@@ -1443,7 +1550,7 @@ fn aircraft_receive(
         }
         RadioMessage::CanEnter => aircraft_can_enter_radio(sim, aircraft, sender, rules),
         RadioMessage::DockNow => aircraft_dock_now(sim, aircraft, sender, rules, effects),
-        RadioMessage::RequestClearance | RadioMessage::CanDock => RadioResponse::None,
+        RadioMessage::CanDock => RadioResponse::None,
         _ => foot_receive(sim, aircraft, sender, msg, payload, rules, effects),
     }
 }
@@ -1467,6 +1574,13 @@ fn aircraft_refuses_radio(entity: &crate::sim::game_entity::GameEntity) -> bool 
 /// CAN_LOAD, Aircraft41946B: any nonzero signed capacity admits the allied
 /// sender query. Capacity and CargoClass count alone decide 1 versus 10;
 /// size, locomotor and passenger category belong to the caller's gates.
+///
+/// Ares 3.0: a transport whose driver was killed answers 0 first
+/// (AircraftClass_ReceivedRadioCommand_QueryEnterAsPassenger_KillDriver
+/// 10048CF0, hook 0x41946B -> 0x4190DD), and below `Passengers=` a sender of
+/// a type `Passengers.Allowed`/`.Disallowed` refuses is NEGATORY
+/// (AircraftClass_ReceivedRadioCommand_SpecificPassengers 10048D10, hook
+/// 0x41949F; IsPassengerAllowed 1003DD60).
 fn aircraft_can_enter_radio(
     sim: &Simulation,
     aircraft: u64,
@@ -1484,6 +1598,10 @@ fn aircraft_can_enter_radio(
     let Some(object) = sim.entity_object_type(transport, rules) else {
         return RadioResponse::None;
     };
+    #[cfg(feature = "ares")]
+    if transport.driver_killed() {
+        return RadioResponse::None;
+    }
     if aircraft_refuses_radio(transport)
         || object.passengers == 0
         || !crate::sim::combat::combat_weapon::is_ally_by_object(
@@ -1500,10 +1618,18 @@ fn aircraft_can_enter_radio(
         .cargo()
         .map_or(0, |cargo| cargo.count() as i32);
     if count >= object.passengers {
-        RadioResponse::Negatory
-    } else {
-        RadioResponse::Roger
+        return RadioResponse::Negatory;
     }
+    #[cfg(feature = "ares")]
+    if let Some(from_type) = sim.entity_object_type(passenger, rules)
+        && !object
+            .techno_combat()
+            .movement()
+            .passenger_allowed(from_type.category, &from_type.id)
+    {
+        return RadioResponse::Negatory;
+    }
+    RadioResponse::Roger
 }
 
 /// DOCK_NOW, Aircraft419300: close at exact capacity, then a qualifying
@@ -1921,7 +2047,7 @@ fn techno_receive(
         RadioMessage::Break => techno_over_out(sim, techno, sender, payload, rules, effects),
         // 0x006F4C6F (7, 9, 0x16): TETHER back to the sender, then the Radio
         // receiver; ROGER.
-        RadioMessage::DockingComplete | RadioMessage::TetherBack | RadioMessage::PrepareToDock => {
+        RadioMessage::HoldStill | RadioMessage::TetherBack | RadioMessage::PrepareToDock => {
             if let Some(from) = sender {
                 transmit(
                     sim,
@@ -3530,5 +3656,143 @@ mod tests {
             assert!(!object.carryall, "{name}");
             assert_eq!(object.passengers, 0, "{name}");
         }
+    }
+
+    /// CAN_LOAD of an aircraft with `Passengers=` (`0x0041946B`), as the
+    /// click asks it (`0x0051EE1A`): ROGER for an ally below the count,
+    /// NEGATORY at it, 0 for a house the owner is not allied with.
+    #[test]
+    fn an_aircraft_transport_answers_can_load_by_count() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::sim::passenger::{PassengerCargo, PassengerRole};
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+            "[AircraftTypes]\n0=SHAD\n[SHAD]\nStrength=200\nPassengers=2\n\
+             [InfantryTypes]\n0=E1\n[E1]\nStrength=100\nSize=1\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::with_seed(31);
+        let own = sim.intern("Americans");
+        let enemy = sim.intern("Russians");
+        let plane_type = sim.intern("SHAD");
+        let mut plane = GameEntity::new_at_frame_zero_for_test(
+            1,
+            10,
+            10,
+            128,
+            128,
+            own,
+            Health::new(200),
+            plane_type,
+            EntityCategory::Aircraft,
+            0,
+            5,
+            false,
+        );
+        plane.passenger_role = PassengerRole::transport(PassengerCargo::new(2, 0.0));
+        sim.substrate.entities.insert(plane);
+        let gi_type = sim.intern("E1");
+        for (id, owner) in [(2, own), (3, enemy)] {
+            sim.substrate
+                .entities
+                .insert(GameEntity::new_at_frame_zero_for_test(
+                    id,
+                    11,
+                    10,
+                    128,
+                    128,
+                    owner,
+                    Health::new(100),
+                    gi_type,
+                    EntityCategory::Infantry,
+                    0,
+                    5,
+                    false,
+                ));
+        }
+
+        assert_eq!(
+            super::can_load_query(&sim, 1, 2, &rules),
+            RadioResponse::Roger
+        );
+        assert!(crate::sim::passenger::can_enter_transport(
+            &sim, &rules, 2, 1
+        ));
+        assert_eq!(
+            super::can_load_query(&sim, 1, 3, &rules),
+            RadioResponse::None
+        );
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .passenger_role
+            .cargo_mut()
+            .unwrap()
+            .set_passengers_for_test(vec![90, 91]);
+        assert_eq!(
+            super::can_load_query(&sim, 1, 2, &rules),
+            RadioResponse::Negatory
+        );
+    }
+
+    /// Ares 3.0 10048D10 (hook 0x41949F): below `Passengers=`, a sender of a
+    /// type the aircraft's `Passengers.Disallowed` lists is NEGATORY.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_aircraft_transport_refuses_a_disallowed_passenger() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::sim::passenger::{PassengerCargo, PassengerRole};
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+            "[AircraftTypes]\n0=SHAD\n[SHAD]\nStrength=200\nPassengers=2\n\
+             Passengers.Disallowed=E2\n\
+             [InfantryTypes]\n0=E1\n1=E2\n[E1]\nStrength=100\n[E2]\nStrength=100\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::with_seed(31);
+        let own = sim.intern("Americans");
+        let plane_type = sim.intern("SHAD");
+        let mut plane = GameEntity::new_at_frame_zero_for_test(
+            1,
+            10,
+            10,
+            128,
+            128,
+            own,
+            Health::new(200),
+            plane_type,
+            EntityCategory::Aircraft,
+            0,
+            5,
+            false,
+        );
+        plane.passenger_role = PassengerRole::transport(PassengerCargo::new(2, 0.0));
+        sim.substrate.entities.insert(plane);
+        for (id, name) in [(2, "E1"), (3, "E2")] {
+            let gi_type = sim.intern(name);
+            sim.substrate
+                .entities
+                .insert(GameEntity::new_at_frame_zero_for_test(
+                    id,
+                    11,
+                    10,
+                    128,
+                    128,
+                    own,
+                    Health::new(100),
+                    gi_type,
+                    EntityCategory::Infantry,
+                    0,
+                    5,
+                    false,
+                ));
+        }
+        assert_eq!(
+            super::can_load_query(&sim, 1, 2, &rules),
+            RadioResponse::Roger
+        );
+        assert_eq!(
+            super::can_load_query(&sim, 1, 3, &rules),
+            RadioResponse::Negatory
+        );
     }
 }

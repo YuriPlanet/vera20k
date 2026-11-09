@@ -1186,16 +1186,16 @@ fn aircraft_landed(
 ///   rulesmd.ini type sets `IsDropship`, so it takes state 2 (`0x0041530C`).
 ///   Both arms fall into the epilogue at `0x0041525A` (one
 ///   `RandomRanged(0, 2)` draw).
-/// - State 3 early-out: `+0x418 != 0` returns before the hold test
-///   (`0x004154BB`..`0x004154C3`); its writer and meaning are UNCHECKED and
-///   VERA does not represent it.
+/// - State 3 early-out: tethered (`+0x418`, [`crate::sim::radio::tether`]) it
+///   returns the epilogue before the hold test (`0x004154BB`..`0x004154C3`).
 /// - States 1 and 4 are written at `0x0041541F`, inside the NavCom arm
 ///   (residual below).
 /// - State 2 (`0x00415480`): locomotor `Is_Moving` (`+0x10`, `0x0041549D`)
 ///   false → state 3 (`0x004154A4`); `return 1` either way (`0x004154B1`),
 ///   NO epilogue draw while it polls.
 /// - State 3 (`0x004154BB`..): cargo empty → `Enter_Idle_Mode` (vtable
-///   `+0x484` = `0x004176F0`); a non-carryall pops the cargo head
+///   `+0x484` = `0x004176F0`); a Carryall drops its cargo; any other pops the
+///   cargo head
 ///   (`RemoveFirstPassenger @ 0x00473430`), leaves its own cell list, ejects
 ///   through vtable `+0x100` = `0x00415B10` (see [`eject_from_aircraft`]),
 ///   re-enters, and — when that emptied the hold — goes idle in the same
@@ -1206,16 +1206,15 @@ fn aircraft_landed(
 /// already empty on state-3 entry, and `0x004155A2`, the ejection just
 /// emptied it) is `aircraft::idle_entry`'s.
 ///
-/// RESIDUAL: the transport tether. The last ejection leaves the aircraft in
-/// radio contact with the passenger (`Transmit_Message(HELLO)` `0x00415C2E`,
-/// then `UNLOADED` `0x00415C3F`, which `TechnoClass::Receive_Radio @
-/// 0x006F4AB0` answers with TETHER `0x18`), so `In_Radio_Contact` steers the
-/// first idle pass to Enter (7); `AircraftClass::Mission_Enter @ 0x00419C80`
-/// then idles in states 6/7 until the passenger's first cell step breaks the
-/// tether (UNLOAD `8` -> UNTETHER + OVER_OUT), after which Enter_Idle_Mode
-/// re-runs without contact and lands on Guard. VERA keeps no tether, so the
-/// aircraft takes Guard at once. Dormant in retail (no aircraft carries
-/// passengers, above).
+/// The transport tether: each ejection leaves the aircraft in radio contact
+/// with the passenger (`Transmit_Message(HELLO)` `0x00415C2E`, then UNLOAD
+/// `0x00415C3F`, which `TechnoClass::Receive_Radio @ 0x006F4AB0` answers with
+/// TETHER `0x18`), so state 3 waits until the passenger's first cell step
+/// breaks the tether (radio 8 -> UNTETHER + OVER_OUT) before the next one
+/// leaves. After the last one `In_Radio_Contact` steers the idle pass to
+/// Enter (7); `AircraftClass::Mission_Enter @ 0x00419C80` idles in states 6/7
+/// until that break, after which Enter_Idle_Mode re-runs without contact and
+/// lands on Guard.
 ///
 /// RESIDUAL: the NavCom arms are not ported. A landed aircraft compares its
 /// NavCom with its own coordinate (`0x0041522A..0x0041524E`) and takes state
@@ -1225,14 +1224,15 @@ fn aircraft_landed(
 /// transport ordered to unload while it has a NavCom. Dormant in retail
 /// (above).
 ///
-/// RESIDUAL: the team join of each passenger ejected here
-/// (`0x0041556A..0x00415587`) is not ported; the vehicle arm's
-/// (`0x0073DC0C..0x0073DC19`) is. Unlike that arm it is gated on the
-/// passenger's own team (`+0x5D4` at `0x00415574`) and its `+0x424` byte
-/// before the aircraft's team adds it (`TeamClass::Add_Member`), so a
-/// passenger that left its team as it boarded is not added either. Trigger:
-/// an aircraft transport unloads a passenger that kept a team. Effect: it
-/// is not added to the aircraft's team. Dormant in retail (above).
+/// Each passenger ejected here joins the aircraft's team
+/// (`0x0041556A..0x00415587`, `TeamClass::Add_Member`). Unlike the vehicle
+/// arm (`0x0073DC0C..0x0073DC19`) it is gated on the passenger's own team
+/// (`+0x5D4` at `0x00415574`), so a passenger that left its team as it
+/// boarded (a reinforcement's keeps it) is not added, and on its
+/// IsOnCarryall byte (`+0x424`), which the ejection's success has cleared.
+///
+/// A `Carryall=` type takes the drop instead of the ejection
+/// (`0x004154E7..0x00415506`, `aircraft::carryall`).
 pub(crate) fn mission_unload(
     sim: &mut Simulation,
     id: u64,
@@ -1263,14 +1263,22 @@ pub(crate) fn mission_unload(
             // `eject_from_aircraft` reveals each passenger at the aircraft's
             // own height (the landed-aircraft route), so a still aircraft at
             // altitude would leave its cargo in the air. Dormant in retail
-            // (see the doc above).
+            // (see the doc above). A Carryall, which rests at its loaded
+            // landing base and sets its cargo on the ground itself
+            // (`aircraft::carryall`), takes the native test alone.
             if crate::sim::movement::motion_query::is_moving(entity) != Some(true)
-                && aircraft_landed(entity, sim.resolved_terrain.as_ref())
+                && (aircraft_landed(entity, sim.resolved_terrain.as_ref())
+                    || sim.is_carryall(id, rules))
                 && let Some(entity) = sim.substrate.entities.get_mut(id)
             {
                 entity.mission.set_handler_state(AIR_STATE_EJECT);
             }
             1
+        }
+        // `0x004154BB..0x004154C3`: tethered to the last passenger out, it
+        // waits for that passenger's first cell step (radio 8) to release it.
+        AIR_STATE_EJECT if entity.tether.partner().is_some() => {
+            unload_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id)
         }
         AIR_STATE_EJECT => {
             if entity.passenger_role.passenger_count() == 0 {
@@ -1281,19 +1289,52 @@ pub(crate) fn mission_unload(
                     overlay_registry,
                     effects,
                 );
+            } else if sim.is_carryall(id, rules) {
+                // `0x004154E7..0x00415500`: a Carryall sets its cargo down
+                // between its Mark(UP) and Mark(DOWN).
+                sim.foot_mark_remove(id, rules, overlay_registry, effects);
+                sim.carryall_unload(id, rules, overlay_registry, effects);
+                sim.foot_mark_put(id, rules, overlay_registry, effects);
             } else {
                 let ejected = eject_from_aircraft(sim, rules, overlay_registry, id, effects);
+                // `0x00415544..0x00415548`: one that left is no Carryall's
+                // cargo (IsOnCarryall `+0x424`).
+                if let Some(pax) = ejected.and_then(|pax| sim.substrate.entities.get_mut(pax)) {
+                    pax.on_carryall.set(false);
+                    // Ares 3.0 AircraftClass_Mi_Unload_Blocked (10048B30,
+                    // hook 0x415544) clears Transporter (`+0x11C`) too. Its
+                    // refusal arm re-adds the passenger and enters idle mode,
+                    // as VERA's escape below does in every build.
+                    #[cfg(feature = "ares")]
+                    pax.passenger_role.clear_transporter();
+                }
+                // `0x0041556A..0x00415587`: a passenger that kept a team joins
+                // the aircraft's (`TeamClass::Add_Member(passenger, 0)`).
+                // Natively that Add_Member runs on the aircraft's team even
+                // when it has none; VERA skips it then.
+                if let Some(pax_id) = ejected
+                    && sim
+                        .substrate
+                        .entities
+                        .get(pax_id)
+                        .is_some_and(|pax| !pax.is_on_carryall())
+                    && sim.team_script_vm.team_for_member(pax_id).is_some()
+                    && let Some((team, _)) = sim.team_script_vm.team_for_member(id)
+                {
+                    sim.team_add_member(team, pax_id, false, rules, overlay_registry, effects);
+                }
                 let hold_empty = sim
                     .substrate
                     .entities
                     .get(id)
                     .is_some_and(|entity| entity.passenger_role.passenger_count() == 0);
-                // `!ejected`: VERA's bounded escape from a refused ejection
-                // (native loses the passenger and keeps ejecting the rest;
-                // see [`eject_from_aircraft`]). The hold keeps the passenger
-                // and the mission leaves through the same empty-hold exit, so
-                // this dispatch's epilogue draw is the last one.
-                if hold_empty || !ejected {
+                // `ejected` empty: VERA's bounded escape from a refused
+                // ejection (native loses the passenger and keeps ejecting the
+                // rest; see [`eject_from_aircraft`]). The hold keeps the
+                // passenger and the mission leaves through the same
+                // empty-hold exit, so this dispatch's epilogue draw is the
+                // last one.
+                if hold_empty || ejected.is_none() {
                     crate::sim::aircraft::enter_idle_mode_for(
                         sim,
                         id,
@@ -1351,19 +1392,20 @@ const AIRCRAFT_EXIT_SCAN: [usize; 9] = [4, 5, 3, 7, 1, 0, 6, 2, 4];
 /// `[AircraftTypes]` entry carries passengers; DRIFT — native loses the unit): the passenger goes back to the cargo head
 /// (cargo departure restoration), this returns `false`, and the caller leaves Unload for
 /// Guard through the empty-hold exit, so nothing retries and no further
-/// epilogue draws happen. Returns `true` when the passenger left the hold. On
+/// epilogue draws happen. Returns the passenger that left the hold. On
 /// success: `Queue_Mission(Move)` (`0x00415C05`), `Set_Destination(scan
-/// cell, 1)` (`0x00415C21`), then the radio handshake described on
-/// tether residual on [`mission_unload`]'s idle mode. No `LeaveTransportSound`
-/// on this path.
+/// cell, 1)` (`0x00415C21`), then HELLO and UNLOAD (9), which tether the
+/// aircraft to it ([`mission_unload`]). No `LeaveTransportSound` on this
+/// path.
 fn eject_from_aircraft(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     aircraft_id: u64,
     effects: FrameEffects<'_>,
-) -> bool {
+) -> Option<u64> {
     let mut picked_up = false;
+    let mut passenger = None;
     let ejected = depart_cargo_head(
         sim,
         rules,
@@ -1383,6 +1425,7 @@ fn eject_from_aircraft(
             if sim.substrate.entities.get(pax_id).is_none() {
                 return Err(DepartureFailure::MissingPassenger);
             }
+            passenger = Some(pax_id);
 
             let mut index = 8usize;
             let mut scan_cell: Option<(u16, u16)> = None;
@@ -1447,6 +1490,27 @@ fn eject_from_aircraft(
             {
                 log::warn!("Unload destination {pax_id}: {cause}");
             }
+            // `0x00415C27..0x00415C3F`: HELLO to the passenger, and on ROGER
+            // UNLOAD (9) to the first contact, whose Techno arm (`0x006F4C6F`)
+            // tethers both ends until the passenger's first cell step.
+            if crate::sim::radio::transmit(
+                sim,
+                aircraft_id,
+                pax_id,
+                crate::sim::radio::RadioMessage::Hello,
+                crate::sim::radio::RadioPayload::default(),
+                rules,
+                effects,
+            ) == crate::sim::radio::RadioResponse::Roger
+            {
+                crate::sim::radio::transmit_to_contact(
+                    sim,
+                    aircraft_id,
+                    crate::sim::radio::RadioMessage::TetherBack,
+                    rules,
+                    effects,
+                );
+            }
             Ok(())
         },
         effects,
@@ -1462,7 +1526,7 @@ fn eject_from_aircraft(
             effects,
         );
     }
-    ejected
+    passenger.filter(|_| ejected)
 }
 
 #[cfg(test)]

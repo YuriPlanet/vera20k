@@ -365,6 +365,12 @@ pub struct GameEntity {
     /// [`MissionOnly`]: crate::sim::aircraft::MissionOnly
     #[serde(default)]
     pub mission_only: crate::sim::aircraft::MissionOnly,
+    /// Foot `+0x424` IsOnCarryall, an [`OnCarryall`] that
+    /// `sim::aircraft::carryall` owns.
+    ///
+    /// [`OnCarryall`]: crate::sim::aircraft::carryall::OnCarryall
+    #[serde(default)]
+    pub(crate) on_carryall: crate::sim::aircraft::carryall::OnCarryall,
     /// The type facts the removal paths read (Limbo's dirty-rect branch and
     /// `Occupier=`), a [`RemovalFacts`] that `world::lifecycle` owns.
     ///
@@ -1675,6 +1681,12 @@ impl GameEntity {
         self.mission_only.get()
     }
 
+    /// Foot `+0x424` IsOnCarryall: a Carryall carries this object
+    /// (`sim::aircraft::carryall`).
+    pub const fn is_on_carryall(&self) -> bool {
+        self.on_carryall.get()
+    }
+
     /// AircraftUnlimbo4143A8..4143F2, only after Foot placement succeeds.
     /// GetWeapon(0) uses the same tier/slot authority as production combat.
     pub(crate) fn retain_aircraft_unlimbo_control(
@@ -2243,6 +2255,7 @@ impl GameEntity {
             lifecycle: ObjectLifecycle::default(),
             in_playfield: Default::default(),
             mission_only: Default::default(),
+            on_carryall: Default::default(),
             removal_facts: Default::default(),
             kill_record: Default::default(),
             foot_air: foot_air::FootAirState::new(stable_id),

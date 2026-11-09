@@ -94,6 +94,12 @@ pub enum EntryClickAction {
     Grind,
     /// Action 0x1F.
     NoEnter,
+    /// Action 0x11, a Carryall over a Unit it may lift
+    /// (`aircraft::carryall`).
+    Tote,
+    /// Action 0, which orders nothing: a Carryall's Tote over a Unit still
+    /// in its war factory (`0x00417E7D..0x00417EF3`).
+    Nothing,
 }
 
 /// The base action (`TechnoClass::What_Action_OnObject`) the entry rows
@@ -532,6 +538,12 @@ impl Simulation {
     ///   both ([`Self::engineer_building_action`]); its other building rows
     ///   have their own owners.
     /// - The passenger rows: [`Self::passenger_click_action`].
+    /// - A Carryall's Tote rung ([`Self::carryall_tote_action`]) runs for base
+    ///   action Select over an allied Unit; Aircraft ClickedAction
+    ///   (`0x00417BD0`) sends Tote as Move with the Unit as destination.
+    ///   RESIDUAL: the rung also runs for base action 0, which
+    ///   [`EntryBaseAction`] does not tell apart from the others; an
+    ///   Aircraft over an allied Unit answers Select.
     /// - An Aircraft's depot row (`0x00417DF6..0x00417E78`) runs for a human
     ///   player's (House `0x0050B6F0`) base action Select over a `UnitRepair=`
     ///   building (`+0x16A9`) and answers NoEnter; Aircraft ClickedAction
@@ -604,6 +616,17 @@ impl Simulation {
                 })
             }
             EntityCategory::Aircraft => {
+                // The Tote rung (`0x00417D06..0x00417D75`) for base Select.
+                if select && let Some(tote) = self.carryall_tote_action(actor_id, target_id, rules)
+                {
+                    use crate::sim::aircraft::carryall::CarryallTote;
+                    return match tote {
+                        CarryallTote::Tote => Some(EntryClickAction::Tote),
+                        CarryallTote::Nothing => Some(EntryClickAction::Nothing),
+                        #[cfg(feature = "ares")]
+                        CarryallTote::Kept => None,
+                    };
+                }
                 let target_obj = self.object_type(target.type_ref(), rules)?;
                 if !select
                     || !self.house_is_human_player(actor.owner())
