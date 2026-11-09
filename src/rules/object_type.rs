@@ -1883,11 +1883,6 @@ pub struct ObjectType {
     /// produced type. Only VehicleTypes may be cloned as vehicles.
     pub cloned_as: Option<String>,
 
-    /// DynamicPatcher `Script=` name bound to this TechnoType. VERA retains
-    /// the binding only (see `sim::world::world_spawn::techno_script`); it does
-    /// not run the C# script. Stock builds leave it unset.
-    pub script: Option<String>,
-
     /// Exit coordinate for produced units, in leptons relative to building origin.
     /// Parsed from `ExitCoord=X,Y,Z` in rules.ini. 256 leptons = 1 cell.
     /// Used by spawn logic to place newly built units near the correct factory exit.
@@ -5414,11 +5409,6 @@ impl ObjectType {
             },
             cloned_as: if crate::rules::ARES_ENABLED {
                 section.read_name("ClonedAs", 0x20).map(str::to_owned)
-            } else {
-                None
-            },
-            script: if crate::rules::ARES_ENABLED || crate::rules::PHOBOS_ENABLED {
-                section.read_name("Script", 0x40).map(str::to_owned)
             } else {
                 None
             },

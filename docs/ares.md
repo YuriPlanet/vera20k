@@ -151,21 +151,6 @@ Supported extensions:
   a missing `Nums` entry means one passenger. `NoManualUnload`,
   `NoManualEnter` and `Passengers.Allowed` admission remain unmodelled.
 
-## MO DynamicPatcher `Script=` skeleton (not an Ares feature)
-
-DynamicPatcher is a .NET/Roslyn injector: `Script=<name>` on a TechnoType binds
-to a C# class compiled from `DynamicPatcher/Scripts/<name>.cs`, and those
-scripts call hard-coded `gamemd.exe` addresses. VERA cannot execute them. The
-INI-facing half is retained as an extensible skeleton: `Script=` is read into
-`ObjectType::script` in Ares/Phobos builds, parsed into a known/unknown binding
-by `sim::world::world_spawn::techno_script`, and offered a `Constructed` event
-at the spawn funnel. `Update`, `Fire` and `Destroyed` are reserved hook points.
-
-No handlers are installed, so every dispatch answers `Unimplemented` and leaves
-`Simulation` untouched — no per-entity script state enters saves or state
-hashes. `techno_script::install` is the extension point for adding a native
-implementation of one script at a time. `GBIONIonShowScript` (MO's
-`[GBION] Script=GBIONIonShowScript`) is the first registered binding.
 - [Superweapon money](ares-superweapon-money.md)
 - [UnitDelivery](ares-unit-delivery.md)
 - [Weapon beam, bolt and wave visuals](ares-weapon-visuals.md): `Beam.*`,
