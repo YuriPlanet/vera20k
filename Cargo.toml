@@ -102,6 +102,8 @@ raw-window-handle = "0.6"
 # `Win32_UI_WindowsAndMessaging` covers ClipCursor/GetClipCursor/GetClientRect;
 # `Win32_Graphics_Gdi` adds ClientToScreen (maps the client rect into screen coords).
 windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi"] }
+# Atlas keys carry an object type name. Already built through winit.
+smol_str = "0.2"
 # bytemuck enables safe transmutation of structs to GPU-friendly byte slices.
 bytemuck = { version = "1", features = ["derive"] }
 

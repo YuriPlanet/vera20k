@@ -20,6 +20,7 @@ use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::vision::{
     FoggedDrawKind, FoggedObjectFootprintRecord, FoggedObjectId, FrozenBuilding,
 };
+use smol_str::StrExt;
 
 pub(crate) fn build_fogged_instances(state: &AppState) -> ObjectLayerPass {
     let (Some(runtime), Some(atlas)) = (
@@ -156,7 +157,7 @@ fn frozen_building_pieces(
         palette_context: art.map_or(ShpPaletteContext::SelectedScheme, |art| {
             crate::render::sprite_atlas::building_art_palette_context(art)
         }),
-        type_id: name.to_string(),
+        type_id: name.into(),
         facing: 0,
         frame,
         house_color,
@@ -215,7 +216,7 @@ fn frozen_building_pieces(
     {
         let key = ShpSpriteKey {
             palette_context: crate::render::sprite_atlas::building_art_palette_context(art),
-            type_id: bib.to_ascii_uppercase(),
+            type_id: bib.to_ascii_uppercase_smolstr(),
             facing: 0,
             frame,
             house_color,
@@ -242,7 +243,7 @@ fn frozen_building_pieces(
         let context = crate::render::sprite_atlas::frozen_anim_palette_context(config);
         let key = ShpSpriteKey {
             palette_context: context,
-            type_id: name.to_string(),
+            type_id: name.into(),
             facing: 0,
             frame,
             house_color: if context == ShpPaletteContext::AnimPalette {

@@ -36,7 +36,7 @@ impl UnitShadowPose {
     pub(crate) fn key(&self, type_id: &str) -> crate::render::unit_atlas::UnitSpriteKey {
         use crate::render::unit_atlas::{GROUNDED_SHADOW_FRAME_FLAG, UnitSpriteKey, VxlLayer};
         UnitSpriteKey {
-            type_id: type_id.to_owned(),
+            type_id: type_id.into(),
             turret_index: 0,
             facing: self.facing,
             layer: VxlLayer::Shadow,

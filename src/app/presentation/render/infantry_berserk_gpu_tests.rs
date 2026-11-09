@@ -517,7 +517,7 @@ fn render_original_body_pixels(
             let entry = atlas
                 .get(&ShpSpriteKey {
                     palette_context: ShpPaletteContext::Legacy,
-                    type_id: "E1".to_string(),
+                    type_id: "E1".into(),
                     facing: 0,
                     frame,
                     house_color,

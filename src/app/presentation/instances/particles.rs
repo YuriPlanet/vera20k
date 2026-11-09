@@ -288,7 +288,7 @@ pub(super) fn build_particle_instance(
     };
     let key = ShpSpriteKey {
         palette_context: ShpPaletteContext::Particle,
-        type_id: image.to_owned(),
+        type_id: image.into(),
         facing: 0,
         frame,
         house_color: HouseColorIndex(0),

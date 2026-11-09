@@ -1080,6 +1080,7 @@ impl App {
                     tile_atlas: None,
                     unit_atlas: None,
                     palette_set: None,
+                    surface_palette: Default::default(),
                     sprite_atlas: None,
                     atlas_growth: Default::default(),
                     overlay_atlas: None,

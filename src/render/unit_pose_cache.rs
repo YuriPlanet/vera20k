@@ -52,7 +52,7 @@ pub struct VxlPoseFrameCache {
     /// `VOXELS.VPL`, parsed on the first pose.
     vpl: Option<Option<VplFile>>,
     /// Each posed type's voxel model, parsed on its first pose.
-    models: BTreeMap<String, Option<UnitModel>>,
+    models: BTreeMap<smol_str::SmolStr, Option<UnitModel>>,
     /// Image-file models shared by voxel debris and bullets. These keys are
     /// retained image-load attempts, unlike the rules type keys in `models`.
     image_models: BTreeMap<String, ImageModel>,

@@ -358,7 +358,7 @@ pub(crate) fn build_display_effect_instances(
     // Particles have independent AIR registrations, including live bodies
     // detached from a System. The store owns their lifetime; Display supplies
     // every encounter, never this frame-local lookup's iteration/hash order.
-    let particles: HashMap<_, _> = sim
+    let particles: crate::util::lookup_hash::LookupMap<_, _> = sim
         .particle_systems()
         .display_particles()
         .map(|(system, particle)| (particle.stable_id(), (system, particle)))
@@ -390,6 +390,11 @@ pub(crate) fn build_display_effect_instances(
         .collect::<Vec<_>>();
     let local_owner = input.local_owner;
     for &stable_id in sim.display_layers().ordered_ids() {
+        // One ID namespace (`Simulation::allocate_stable_id`): most members
+        // are entities, drawn already, so spare them the lookups below.
+        if sim.entities().contains(stable_id) {
+            continue;
+        }
         if let Some(light) = sim.building_spotlight(stable_id, local_owner, input.rules) {
             super::particles::build_spotlight_instance(
                 input,
@@ -536,7 +541,7 @@ pub(crate) fn build_display_effect_instances(
             } else {
                 crate::render::sprite_atlas::ShpPaletteContext::GlobalAnim
             },
-            type_id: type_name.to_string(),
+            type_id: type_name.into(),
             facing: 0,
             frame,
             house_color: remap_color.unwrap_or(HouseColorIndex(0)),

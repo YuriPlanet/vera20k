@@ -21,7 +21,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::components::Position;
 use crate::ui::main_menu_dialogs::options::HealthBarMode;
 use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 /// Authentic pip counts for unit health bars.
 const UNIT_PIPS_VEHICLE: u32 = 17; // vehicles + aircraft
 const UNIT_PIPS_INFANTRY: u32 = 8;
@@ -338,7 +338,7 @@ pub(crate) fn control_group_status_labels(
     ignore_visibility: bool,
     rules: Option<&RuleSet>,
 ) -> Vec<(u64, char)> {
-    let mut slot_by_id = HashMap::new();
+    let mut slot_by_id = crate::util::lookup_hash::LookupMap::default();
     for (slot, members) in control_groups.iter().take(10).enumerate() {
         for &stable_id in members {
             // Simulation derives this unique membership from each entity's
@@ -353,9 +353,9 @@ pub(crate) fn control_group_status_labels(
         return Vec::new();
     }
 
-    crate::app::presentation::instances::tactical_entity_encounter_order(sim)
-        .into_iter()
-        .filter_map(|stable_id| {
+    sim.display_layers()
+        .ordered_ids()
+        .filter_map(|&stable_id| {
             let slot = *slot_by_id.get(&stable_id)?;
             let entity = sim.entities().get(stable_id)?;
             if entity.sinking.is_active()

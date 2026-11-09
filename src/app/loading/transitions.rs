@@ -211,6 +211,7 @@ pub(crate) fn install_world_presentation(
     // Both voxel caches resolve model images through the replaced RuleSet.
     *state.renderer.vxl_pose_frame_cache.borrow_mut() = Default::default();
     state.match_state.match_presentation.palette_set = assets.palette_set;
+    state.match_state.match_presentation.surface_palette = Default::default();
     state.match_state.match_presentation.sprite_atlas = assets.sprite_atlas;
     state.match_state.match_presentation.overlay_atlas = assets.overlay_atlas;
     state.match_state.match_presentation.bridge_atlas = assets.bridge_atlas;

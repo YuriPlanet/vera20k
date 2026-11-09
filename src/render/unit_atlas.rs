@@ -97,8 +97,9 @@ pub enum PoseTilt {
 /// remap architecture — N players no longer multiply atlas size.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UnitSpriteKey {
-    /// Object type ID from rules.ini (e.g., "HTNK").
-    pub type_id: String,
+    /// Object type ID from rules.ini (e.g., "HTNK"). Every drawn object builds
+    /// and clones keys each frame, and a name this short stays inline.
+    pub type_id: smol_str::SmolStr,
     /// Selected gun model for Turret/Barrel (and a transient crash composite).
     /// Body and Shadow keys always use zero, so gun changes share the hull.
     pub turret_index: i32,
@@ -194,7 +195,7 @@ pub struct UnitAtlas {
     entries: LookupMap<UnitSpriteKey, UnitSpriteEntry>,
     /// HVA frame counts per (type_id, layer, turret_index). Missing entries have 1 frame.
     /// A draw takes its HVA frame as `Foot+0x538` modulo the model's count.
-    pub frame_counts: BTreeMap<(String, VxlLayer, i32), u32>,
+    pub frame_counts: BTreeMap<(smol_str::SmolStr, VxlLayer, i32), u32>,
     /// Palette indices of every resident sprite; native shadow masks are
     /// composed from them.
     rendered_cache: Vec<CachedUnitSprite>,
@@ -730,7 +731,7 @@ fn insert_unit_layer_keys(
             for slope_type in slope_range.clone() {
                 for &barrel_pitch in pitches {
                     needed.insert(UnitSpriteKey {
-                        type_id: type_id.to_string(),
+                        type_id: type_id.into(),
                         turret_index,
                         facing,
                         layer,
@@ -766,7 +767,7 @@ pub(crate) fn unit_barrel_pitches(fire_angle: i32) -> Vec<i8> {
 
 fn seed_unit_variant_keys(
     needed: &mut HashSet<UnitSpriteKey>,
-    frame_counts: &mut BTreeMap<(String, VxlLayer, i32), u32>,
+    frame_counts: &mut BTreeMap<(smol_str::SmolStr, VxlLayer, i32), u32>,
     variant: &str,
     is_ground_vehicle: bool,
     asset_manager: &AssetManager,
@@ -781,7 +782,7 @@ fn seed_unit_variant_keys(
     let shadow = rules.and_then(|rules| ShadowModel::for_type(rules, variant));
     let mut shadow_frames = 1;
     for (layer, turret_index) in layers {
-        let frame_key = (variant.to_string(), layer, turret_index);
+        let frame_key = (variant.into(), layer, turret_index);
         let num_frames = *frame_counts.entry(frame_key).or_insert_with(|| {
             detect_hva_frame_count(asset_manager, variant, layer, turret_index, rules)
         });
@@ -841,7 +842,7 @@ fn seed_unit_variant_keys(
     }
 }
 
-type UnitFrameCounts = BTreeMap<(String, VxlLayer, i32), u32>;
+type UnitFrameCounts = BTreeMap<(smol_str::SmolStr, VxlLayer, i32), u32>;
 
 /// Every unit sprite key the voxel models in `demand` can draw, with their
 /// HVA frame counts.
@@ -1137,7 +1138,7 @@ impl UnitRasterWork {
                         rendered.extend(legacy_shadow);
                         rendered.push(sprite);
                     }
-                    None => *failed.entry(key.type_id.clone()).or_default() += 1,
+                    None => *failed.entry(key.type_id.to_string()).or_default() += 1,
                 }
             }
         }
@@ -1362,7 +1363,7 @@ impl UnitModel {
                 return None;
             }
             return Some(Self {
-                type_id: type_id.to_string(),
+                type_id: type_id.into(),
                 body: None,
                 guns: vec![guns],
                 shadow: None,
@@ -1376,7 +1377,7 @@ impl UnitModel {
             .map(|(turret, barrel)| GunParts { turret, barrel })
             .collect();
         Some(Self {
-            type_id: type_id.to_string(),
+            type_id: type_id.into(),
             body: Some(body),
             guns,
             shadow: rules.and_then(|rules| ShadowModel::for_type(rules, type_id)),

@@ -138,11 +138,8 @@ impl PickSource for PresentedWorld<'_> {
         self.sim.entities()
     }
     fn screen_position(&self, entity: &crate::sim::game_entity::GameEntity) -> (f32, f32) {
-        let pose = crate::app::presentation::render_pose::RenderPose::read(
-            entity,
-            self.sim.session().binary_frame(),
-        );
-        (pose.screen[0], pose.screen[1] - pose.visual_lift)
+        let (x, y) = crate::render::locomotor_visual::screen_position(entity);
+        (x, y - f32::from(entity.ion_blast_lift_pixels()))
     }
     fn first_ground_cell_object(&self, cell: (u16, u16)) -> Option<CellObjectMember> {
         self.sim.first_ground_cell_object(cell)

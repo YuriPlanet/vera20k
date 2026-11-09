@@ -267,19 +267,29 @@ pub(super) fn build_world_instances(
             .as_ref()
             .map(|input| instances::shp_visitor(input, &display_order));
         let mut bullets = instances::projectile_visitor(state, &display_order);
-        for &id in runtime.view().display_layers().ordered_ids() {
+        let view = runtime.view();
+        for (layer, id) in view.display_layers().members_in_order() {
             let objects = &mut planned_objects;
+            // Every object store shares one ID namespace
+            // (`Simulation::allocate_stable_id`): a member found here is
+            // neither debris nor a Bullet.
+            let Some(entity) = view.entities().get(id) else {
+                if let Some(visit) = debris.as_mut() {
+                    visit(objects, id);
+                }
+                if let Some(visit) = bullets.as_mut() {
+                    visit(objects, id);
+                }
+                continue;
+            };
+            let Some(band) = instances::layer_draw_band(layer) else {
+                continue;
+            };
             if let Some(visit) = units.as_mut() {
-                visit(objects, id);
-            }
-            if let Some(visit) = debris.as_mut() {
-                visit(objects, id);
+                visit(objects, entity, band);
             }
             if let Some(visit) = shp.as_mut() {
-                visit(objects, id);
-            }
-            if let Some(visit) = bullets.as_mut() {
-                visit(objects, id);
+                visit(objects, entity);
             }
         }
     }
@@ -912,6 +922,7 @@ pub(super) fn build_ui_instances(
         let sim = &runtime.simulation;
         for (id, entity) in sim.entities().iter_sorted() {
             if entity.health.current() != 0
+                && entity.airstrike.links_to(id)
                 && let Some(coords) =
                     sim.airstrike_designation_coordinates(id, &runtime.resources.rules)
             {
@@ -951,9 +962,9 @@ pub(super) fn build_ui_instances(
             .map(|rt| &rt.simulation),
         state.rules(),
         state
-            .process_assets
-            .manager()
-            .and_then(|assets| assets.get_ref("palette.pal")),
+            .match_state
+            .match_presentation
+            .surface_palette(state.process_assets.manager()),
         &state.match_state.match_presentation.house_color_map,
         wall_ms,
         view,
