@@ -33,7 +33,7 @@ use swash::text::{Category, Codepoint as _};
 
 use crate::assets::fnt_file::{FntFile, FntGlyph};
 
-use super::fonts::{NOTO_SANS, TextClass};
+use super::fonts::{TextClass, noto_sans};
 use super::pixels;
 
 /// Cyrillic and Greek letters, each with the Latin letter of the same shape
@@ -93,9 +93,19 @@ const NOTO_SIZE: f32 = 13.0;
 const NOTO_WEIGHT: f32 = 300.0;
 const NOTO_WIDTH_PERCENT: f32 = 80.0;
 
+/// The file of `tools/unifont_cjk.py`'s output.
+pub(super) const UNIFONT_CJK_FILE: &str = "Unifont-CJK-15.bin";
+
 /// `tools/unifont_cjk.py`'s output: per glyph a little-endian code point,
-/// then [`CJK_SIDE`] big-endian rows whose top bit is the left column.
-const UNIFONT_CJK: &[u8] = include_bytes!("../fonts/Unifont-CJK-15.bin");
+/// then [`CJK_SIDE`] big-endian rows whose top bit is the left column. The
+/// browser build fetches it before the game starts
+/// ([`super::web_fonts::preloaded`]).
+fn unifont_cjk() -> &'static [u8] {
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    return include_bytes!("../fonts/Unifont-CJK-15.bin");
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    super::web_fonts::preloaded(UNIFONT_CJK_FILE)
+}
 /// GAME.FNT's hanzi box, and Unifont's glyphs trimmed to it.
 const CJK_SIDE: usize = 15;
 const CJK_RECORD: usize = 2 + 2 * CJK_SIDE;
@@ -124,7 +134,7 @@ pub(crate) fn glyphs(fnt: &FntFile, baseline_row: u32) -> Vec<(u16, FntGlyph)> {
         })
         .collect();
     let top = baseline_row as i32 + CJK_DESCENT - CJK_SIDE as i32;
-    for record in UNIFONT_CJK.chunks_exact(CJK_RECORD) {
+    for record in unifont_cjk().chunks_exact(CJK_RECORD) {
         let codepoint = u16::from_le_bytes([record[0], record[1]]);
         if fnt.draws(codepoint) {
             continue;
@@ -153,7 +163,7 @@ fn noto_glyphs(
     baseline: f32,
     taken: &HashSet<u16>,
 ) -> Vec<(u16, FntGlyph)> {
-    let Some(font) = swash::FontRef::from_index(NOTO_SANS, 0) else {
+    let Some(font) = swash::FontRef::from_index(noto_sans(), 0) else {
         return Vec::new();
     };
     let coords: Vec<_> = font

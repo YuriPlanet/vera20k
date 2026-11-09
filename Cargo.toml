@@ -115,12 +115,15 @@ log = { workspace = true }
 
 # --- UI text ---
 # Layout of every interface string: shaping (harfrust), bidirectional text,
-# line breaking (ICU4X, with the word dictionaries `complex-scripts` adds for
-# Thai, Lao, Khmer and Burmese, which put no spaces between words) and font
-# fallback by script. Only VERA's bundled fonts are registered: fontique's
-# `system` feature (CoreText, DirectWrite, fontconfig) stays off. See
-# src/render/text_engine/mod.rs.
-parley = { version = "0.12", default-features = false, features = ["std", "complex-scripts"] }
+# line breaking (ICU4X) and font fallback by script. Only VERA's bundled fonts
+# are registered: fontique's `system` feature (CoreText, DirectWrite,
+# fontconfig) stays off. See src/render/text_engine/mod.rs.
+# `complex-scripts` stays off: its word dictionaries for Thai, Lao, Khmer and
+# Burmese, which put no spaces between words, add about 3 MB to every build
+# (1.9 MB of the browser download). Without them a run of those scripts too
+# long for its line breaks where the line runs out, at a grapheme cluster
+# (`OverflowWrap::Anywhere` in text_engine), sometimes inside a word.
+parley = { version = "0.12", default-features = false, features = ["std"] }
 # Glyph outlines for the runs parley shapes, through the same skrifa parley
 # reads them with; VERA draws them as whole pixels itself
 # (src/render/text_engine/pixels.rs).
@@ -297,3 +300,18 @@ incremental = true
 inherits = "release"
 lto = "fat"
 codegen-units = 1
+
+# The browser package (tools/wasm/build.py's default), which every player
+# downloads: optimized for size across every crate as one unit, without the
+# function names only a debugger reads. Optimization levels keep simulation
+# results (Rust has no fast-math; Wasm integer and float operations are
+# exact). Measured on 2026-11-09 with sim-bench built for wasm32-wasip1 under
+# Node (match scenario, amazon.mmx, 900 ticks, about 6,000 objects), each with
+# the same final hash: opt-level 3 took 143.5 ms a tick in an 8.2 MB binary,
+# "s" 162.2 ms in 5.7 MB and "z" 203.9 ms in 5.3 MB.
+[profile.wasm]
+inherits = "release"
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+strip = true

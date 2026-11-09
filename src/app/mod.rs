@@ -167,9 +167,10 @@ pub(crate) use state::{AppState, PlatformState, reset_scenario_exit_runtime};
 pub struct App {
     state: Option<AppState>,
     pending_initialization: Option<initialize::InitializationJob>,
-    shell_capture: Option<crate::app::diagnostics::shell_capture::ShellCaptureSession>,
+    shell_capture:
+        hidden_run::DesktopRun<crate::app::diagnostics::shell_capture::ShellCaptureSession>,
     /// A tactical capture or a map picture, which the app drives itself.
-    hidden_run: Option<hidden_run::HiddenRun>,
+    hidden_run: hidden_run::DesktopRun<hidden_run::HiddenRun>,
     /// Render admission for hidden captures; service events may wake earlier.
     capture_render_not_before: Option<Instant>,
     /// Retained until `resumed()` so the profile's pre-window Video read can
@@ -229,8 +230,8 @@ impl App {
         Self {
             state: None,
             pending_initialization: None,
-            shell_capture: None,
-            hidden_run: None,
+            shell_capture: hidden_run::DesktopRun::NONE,
+            hidden_run: hidden_run::DesktopRun::NONE,
             capture_render_not_before: None,
             startup_options,
             spawn_request: None,
@@ -248,10 +249,10 @@ impl App {
         Self {
             state: None,
             pending_initialization: None,
-            shell_capture: Some(
+            shell_capture: hidden_run::DesktopRun::new(
                 crate::app::diagnostics::shell_capture::ShellCaptureSession::new(request),
             ),
-            hidden_run: None,
+            hidden_run: hidden_run::DesktopRun::NONE,
             capture_render_not_before: None,
             startup_options: crate::app::frontend::startup_options::RetailStartupOptions::default(),
             spawn_request: None,
@@ -269,8 +270,8 @@ impl App {
         Self {
             state: None,
             pending_initialization: None,
-            shell_capture: None,
-            hidden_run: Some(hidden_run::HiddenRun::Capture(Box::new(
+            shell_capture: hidden_run::DesktopRun::NONE,
+            hidden_run: hidden_run::DesktopRun::new(hidden_run::HiddenRun::Capture(Box::new(
                 crate::app::diagnostics::tactical_capture::session::TacticalCaptureSession::new(
                     request,
                 ),
@@ -291,8 +292,8 @@ impl App {
         Self {
             state: None,
             pending_initialization: None,
-            shell_capture: None,
-            hidden_run: Some(hidden_run::HiddenRun::Picture(Box::new(
+            shell_capture: hidden_run::DesktopRun::NONE,
+            hidden_run: hidden_run::DesktopRun::new(hidden_run::HiddenRun::Picture(Box::new(
                 crate::app::map_picture::session::MapPictureSession::new(request),
             ))),
             capture_render_not_before: None,

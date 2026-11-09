@@ -35,14 +35,31 @@ use crate::util::save_codec;
 /// layouts. A change in what an unchanged field means renames that field. The
 /// top bit is always set; the hand-kept counter used before stayed far below
 /// it, so those saves read as another layout.
+///
+/// The browser build takes the same id from the build instead
+/// (`VERA20K_SNAPSHOT_LAYOUT`, which tools/wasm/build.py sets from
+/// `src/bin/snapshot-layout.rs`), so the tracing code stays out of the
+/// package every player downloads.
 fn snapshot_layout() -> u32 {
-    static LAYOUT: OnceLock<u32> = OnceLock::new();
-    *LAYOUT.get_or_init(|| {
-        let description = save_codec::layout::describe::<GameSnapshot>()
-            .unwrap_or_else(|error| panic!("cannot describe the snapshot layout: {error}"));
-        let digest = crate::util::sha256::sha256_bytes(description.as_bytes());
-        u32::from_le_bytes([digest[0], digest[1], digest[2], digest[3]]) | 0x8000_0000
-    })
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    {
+        env!("VERA20K_SNAPSHOT_LAYOUT")
+            .parse()
+            .expect("VERA20K_SNAPSHOT_LAYOUT is a snapshot layout id")
+    }
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    {
+        static LAYOUT: OnceLock<u32> = OnceLock::new();
+        *LAYOUT.get_or_init(traced_snapshot_layout)
+    }
+}
+
+/// [`snapshot_layout`], traced from the saved types.
+pub fn traced_snapshot_layout() -> u32 {
+    let description = save_codec::layout::describe::<GameSnapshot>()
+        .unwrap_or_else(|error| panic!("cannot describe the snapshot layout: {error}"));
+    let digest = crate::util::sha256::sha256_bytes(description.as_bytes());
+    u32::from_le_bytes([digest[0], digest[1], digest[2], digest[3]]) | 0x8000_0000
 }
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";

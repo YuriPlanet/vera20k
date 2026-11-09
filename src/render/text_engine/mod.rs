@@ -12,8 +12,8 @@
 //!   game's files, those drawn letters alone.
 //! - Behind it, the bundled Noto fonts ([`fonts`]) for what it lacks, such as
 //!   Arabic and Thai: shaped as vector fonts, so letters join and marks
-//!   stack. The browser build fetches all but Noto Sans the first time text
-//!   needs one ([`web_fonts`]).
+//!   stack. The browser build fetches them: Noto Sans before the game
+//!   starts, the others the first time text needs one ([`web_fonts`]).
 //!
 //! Every glyph, GAME.FNT's own too, draws as hard pixels on the line's native
 //! grid ([`pixels`]), so a glyph off that grid, squeezed narrower or shrunk
@@ -26,7 +26,7 @@ mod fnt_fill;
 pub(crate) mod fnt_font;
 pub(crate) mod fonts;
 mod pixels;
-mod web_fonts;
+pub(crate) mod web_fonts;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -1104,11 +1104,15 @@ mod tests {
             assert!(line.width <= 75.0, "{line:?}");
             assert!(text.is_char_boundary(line.start) && line.end > line.start);
         }
-        // Thai breaks at word boundaries from the dictionary, never before a
-        // combining vowel or tone mark.
+        // Thai has no word dictionary (Cargo.toml's parley): a run breaks
+        // where its line runs out, never before a combining vowel or tone
+        // mark.
         let text = "ภาษาไทยไม่มีช่องว่างระหว่างคำ";
         let shaped = engine.shape(text, 60, Fit::NONE);
         assert!(shaped.lines.len() >= 2);
+        for line in &shaped.lines {
+            assert!(line.width <= 60.0, "{line:?}");
+        }
         for line in &shaped.lines[1..] {
             let first = text[line.start..].chars().next().unwrap() as u32;
             assert!(

@@ -138,7 +138,8 @@ fn shipped_languages() {
 /// fetches the bundled fonts it leaves out when text first needs one
 /// (src/render/text_engine/web_fonts.rs): every font file's name, the start
 /// of its SHA-256, which versions its URL, and the code points its character
-/// map gives a glyph, as sorted inclusive ranges.
+/// map gives a glyph, as sorted inclusive ranges; then the glyph tables'
+/// names and versions.
 fn font_coverage() {
     const DIRECTORY: &str = "src/render/fonts";
     println!("cargo::rerun-if-changed={DIRECTORY}");
@@ -160,6 +161,24 @@ fn font_coverage() {
             code.push_str(&format!("({start:#x}, {end:#x}),"));
         }
         code.push_str("]),\n");
+    }
+    code.push_str("];\n");
+    // Glyph tables that are not fonts (`Unifont-CJK-15.bin`), with the same
+    // URL versions.
+    let mut tables: Vec<String> = std::fs::read_dir(DIRECTORY)
+        .expect("read src/render/fonts")
+        .filter_map(|entry| {
+            let name = entry.expect("read src/render/fonts entry").file_name();
+            let name = name.into_string().ok()?;
+            name.ends_with(".bin").then_some(name)
+        })
+        .collect();
+    tables.sort();
+    code.push_str("pub(super) const TABLES: &[(&str, &str)] = &[\n");
+    for file in &tables {
+        let data = std::fs::read(format!("{DIRECTORY}/{file}")).expect("read a glyph table");
+        let version = &sha256::sha256_hex(&data)[..16];
+        code.push_str(&format!("    ({file:?}, {version:?}),\n"));
     }
     code.push_str("];\n");
     let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo sets OUT_DIR"));

@@ -5,7 +5,7 @@ import re
 import tempfile
 import unittest
 
-from tools.wasm.build import package_host, validate_proxy_url
+from tools.wasm.build import package_fonts, package_host, validate_proxy_url
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -67,6 +67,14 @@ class WasmBuildTests(unittest.TestCase):
             page = (root / 'output' / 'index.html').read_text(encoding='utf-8')
             self.assertIn('<span id="build">Build v1 · fast · single player</span>', page)
             self.assertNotIn('Unpackaged page', page)
+
+    def test_package_carries_the_files_the_engine_fetches_before_starting(self):
+        # src/render/text_engine/web_fonts.rs PRELOADS: the engine embeds neither.
+        with tempfile.TemporaryDirectory() as directory:
+            fonts = Path(directory) / 'fonts'
+            package_fonts(fonts)
+            for name in ('NotoSans-VF.ttf', 'Unifont-CJK-15.bin', 'OFL-Unifont.txt'):
+                self.assertTrue((fonts / name).is_file(), name)
 
 
 if __name__ == '__main__':
