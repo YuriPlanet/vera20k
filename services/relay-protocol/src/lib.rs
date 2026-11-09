@@ -59,7 +59,7 @@ const TICKET_DOMAIN: &[u8] = b"VERA20k relay ticket v2\0";
 const KEY_DOMAIN: &[u8] = b"VERA20k relay packet key v2\0";
 const COOKIE_DOMAIN: &[u8] = b"VERA20k relay source v2\0";
 const INGRESS_PER_SECOND: u64 = 16_384;
-// Room for the lobby's 256 sessions and an hour's 512 new guests, whose tickets
+// Room for the lobby's 320 sessions and an hour's 640 new guests, whose tickets
 // live 300 seconds, each at their own rate. A handshake costs a few HMACs.
 const HANDSHAKES_PER_SECOND: u64 = 8192;
 const PLAYER_HANDSHAKES_PER_SECOND: u64 = 8;
@@ -2173,10 +2173,10 @@ mod tests {
         );
 
         // Distinct players still share the relay-wide budget, which outlasts
-        // the lobby's 256 sessions and an hour's 512 new guests.
+        // the lobby's 320 sessions and an hour's 640 new guests.
         let mut server = RelayServer::new(key.clone(), 1);
         let players = HANDSHAKES_PER_SECOND / PLAYER_HANDSHAKES_PER_SECOND;
-        assert!(players >= 768);
+        assert!(players >= 960);
         for player in 1..=players + 1 {
             let mut id = [0; 16];
             id[..8].copy_from_slice(&player.to_le_bytes());

@@ -53,7 +53,7 @@ Each player gets eight handshakes/second, admitted or not, enough for paired
 old/new routes during renewal; Leave acknowledgements, which need no admission,
 share that budget. Leave for a room the relay no longer holds also has a
 relay-wide 512/second. Only permitted handshakes count toward the relay's
-8,192/second, room for the lobby's 256 sessions and an hour's 512 new guests each
+8,192/second, room for the lobby's 320 sessions and an hour's 640 new guests each
 at their own rate. A Pull that reads the journal spends its sender's own
 256/second before it reads. Relay-wide input of 16,384 datagrams/second, and
 ordering output of as many packets, count only datagrams that authenticate and pass their sender's
