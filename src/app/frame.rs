@@ -710,12 +710,9 @@ impl App {
         // The window presents with Fifo, so a 120/144 Hz panel renders that
         // many frames for a simulation that advances far less often. Hold the
         // frame slot to the configured rate (60 focused, 15 unfocused).
-        // The top slider position leaves simulation pacing uncapped; holding
-        // presentation at 60 fps would then bottleneck the only thread that
-        // advances it. Below the top speed, cap the display refresh.
-        let (game_speed, _) =
-            crate::app::match_runtime::sim_tick::local_pacing_inputs(state);
-        if shell_capture.is_none() && game_speed < 5 {
+        // Rendering stays at the display cap regardless of game speed: the
+        // slider controls simulation ticks per second, not frames.
+        if shell_capture.is_none() {
             crate::app::present_cap::pace_frame(state.platform.window.has_focus());
         }
         // Publish the player's colour-vision matrix before any early-return
