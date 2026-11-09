@@ -141,18 +141,37 @@ pub(crate) struct BridgeRecalcCatalog {
     wood_bridge_start: Option<u16>,
 }
 
+/// Map a saved TMP variant to an index inside the registered file list.
+/// A save records the variant the live session selected; a later asset or
+/// theater change can leave fewer registered files than that session had.
+/// Refusing the whole save over a presentation-only variant loses the game
+/// state, so the last registered file stands in for an out-of-range variant.
+fn variant_slot(len: usize, variant: u8) -> Option<(usize, bool)> {
+    let requested = usize::from(variant);
+    if requested < len {
+        return Some((requested, false));
+    }
+    len.checked_sub(1).map(|last| (last, true))
+}
+
 impl BridgeRecalcCatalog {
     fn file(&self, tile: u16, variant: u8) -> Result<&ResidentBridgeTmp, BridgeRecalcCatalogError> {
-        self.files
-            .get(&tile)
-            .ok_or(BridgeRecalcCatalogError::Uncached {
-                tile: i32::from(tile),
-            })?
-            .get(usize::from(variant))
-            .ok_or_else(|| BridgeRecalcCatalogError::Unavailable {
+        let files = self.files.get(&tile).ok_or(BridgeRecalcCatalogError::Uncached {
+            tile: i32::from(tile),
+        })?;
+        let (index, fell_back) = variant_slot(files.len(), variant).ok_or_else(|| {
+            BridgeRecalcCatalogError::Unavailable {
                 tile,
-                reason: format!("missing registered TMP file {variant}"),
-            })?
+                reason: format!("no registered TMP files for saved variant {variant}"),
+            }
+        })?;
+        if fell_back {
+            log::warn!(
+                "recalc tile {tile}: saved variant {variant} exceeds {} registered; using the last",
+                files.len()
+            );
+        }
+        files[index]
             .as_deref()
             .map_err(Clone::clone)
     }
@@ -774,5 +793,29 @@ impl LoadCellRecalcEffects for RejectUnadmittedEffects {
         _: &TerrainTileAnimation,
     ) -> Result<(), Self::Error> {
         Err("runtime bridge Recalc requires an unadmitted terrain animation")
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::variant_slot;
+
+    #[test]
+    fn an_in_range_saved_variant_keeps_its_slot() {
+        assert_eq!(variant_slot(4, 2), Some((2, false)));
+        assert_eq!(variant_slot(1, 0), Some((0, false)));
+    }
+
+    #[test]
+    fn an_out_of_range_saved_variant_falls_back_to_the_last_file() {
+        assert_eq!(variant_slot(2, 2), Some((1, true)));
+        assert_eq!(variant_slot(2, 200), Some((1, true)));
+    }
+
+    #[test]
+    fn a_tile_with_no_registered_files_has_no_slot() {
+        assert_eq!(variant_slot(0, 0), None);
+        assert_eq!(variant_slot(0, 9), None);
     }
 }
