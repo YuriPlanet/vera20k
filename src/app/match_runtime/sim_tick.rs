@@ -901,7 +901,14 @@ pub(crate) struct RuntimePassDecision {
     pub(crate) tick_lane: TickLane,
     pub(crate) admitted_by_pacer: bool,
     pub(crate) tactical_mutation: bool,
+    /// Main_Tick's input poll, which writes the right-drag latch.
     pub(crate) scroll_input: bool,
+    /// The camera may take the scroll steps its own clock owes this pass
+    /// (`input::camera`): `scroll_input`'s lifecycle without the pacer's timing.
+    pub(crate) camera_scroll: bool,
+    /// Game frames are running, whatever this pass's timing. Only then do
+    /// Follow and a cinematic pan rewrite the view.
+    pub(crate) frames_running: bool,
 }
 
 /// Decide one in-game runtime pass from raw predicates. This is the single
@@ -921,6 +928,8 @@ pub(crate) fn decide_runtime_pass(inputs: RuntimePassInputs) -> RuntimePassDecis
             admitted_by_pacer: false,
             tactical_mutation: true,
             scroll_input: true,
+            camera_scroll: true,
+            frames_running: true,
         };
     }
     // The session owner (`MatchSession`) carries no network service-only
@@ -934,16 +943,24 @@ pub(crate) fn decide_runtime_pass(inputs: RuntimePassInputs) -> RuntimePassDecis
         false,
     );
     let pacer_admitted = service.simulation && inputs.pacer_timing_admits;
-    let run_sim = !inputs.focus_frozen
-        && !super::scenario_pause::blocks_main_tick(inputs.session_mode, inputs.scenario_paused)
-        && inputs.startup_admitted
-        && !inputs.network_wait
-        && (inputs.frame_stepping || pacer_admitted);
+    let scenario_blocks =
+        super::scenario_pause::blocks_main_tick(inputs.session_mode, inputs.scenario_paused);
+    let frame_gate =
+        !inputs.focus_frozen && !scenario_blocks && inputs.startup_admitted && !inputs.network_wait;
+    let run_sim = frame_gate && (inputs.frame_stepping || pacer_admitted);
     let tick_lane = if inputs.paused && inputs.session_mode.is_network() {
         TickLane::NetworkModal
     } else {
         TickLane::Ordinary
     };
+    let input_gate = inputs.window_active
+        && inputs.startup_admitted
+        && service.tactical_mutation
+        && !inputs.network_dialog_open;
+    // VERA's developer-pause camera and the existing network policy.
+    let input_between_frames =
+        (inputs.paused && !inputs.menu_open) || inputs.session_mode.is_network();
+    let scroll_input = input_gate && (run_sim || input_between_frames);
     RuntimePassDecision {
         run_sim,
         tick_lane,
@@ -951,17 +968,13 @@ pub(crate) fn decide_runtime_pass(inputs: RuntimePassInputs) -> RuntimePassDecis
         tactical_mutation: service.tactical_mutation && !inputs.network_dialog_open,
         // Main_Tick polls GScreen input at 0x55D8AB. ThrottleFrame's offline
         // modes 0/5 skip its extra poll at 0x55E253, so a redraw during that
-        // wait must neither scroll nor latch a right drag. Native executions:
+        // wait must not latch a right drag. Native executions:
         // tools/input_oracle/fast_scroll.json (throttle_cases).
-        // Retain VERA's developer-pause camera and existing network policy;
-        // no network session can be launched yet, so the latter is not parity.
-        scroll_input: inputs.window_active
-            && inputs.startup_admitted
-            && service.tactical_mutation
-            && !inputs.network_dialog_open
-            && (run_sim
-                || (inputs.paused && !inputs.menu_open)
-                || inputs.session_mode.is_network()),
+        scroll_input,
+        // Scroll steps run between game frames too. A scenario pause is the
+        // stop that remains: Main_Tick returns before input (0x55D830..0x55D859).
+        camera_scroll: input_gate && (!scenario_blocks || input_between_frames),
+        frames_running: frame_gate && !inputs.paused,
     }
 }
 
@@ -1219,10 +1232,13 @@ fn advance_in_game_runtime_mode(
         decision.admitted_by_pacer = matches!(mode, RuntimeAdvanceMode::WallClock { .. });
     }
     if replaying {
-        decision.run_sim &= state.match_state.match_diagnostics.playback_can_advance();
+        let can_advance = state.match_state.match_diagnostics.playback_can_advance();
+        decision.run_sim &= can_advance;
+        decision.frames_running &= can_advance;
         decision.tactical_mutation = false;
         // Camera remains available when the last recorded frame is frozen.
         decision.scroll_input = state.platform.window_active && !state.focus_freeze_active();
+        decision.camera_scroll = decision.scroll_input;
     }
     if frame_stepping {
         state.diag.debug_frame_step_requested = false;
@@ -1231,11 +1247,21 @@ fn advance_in_game_runtime_mode(
         }
     }
 
+    // Scrolling runs on the camera's own clock so its speed never follows the
+    // game speed. A diagnostic step is one exact poll and reads no wall clock.
+    let scroll_steps = match mode {
+        RuntimeAdvanceMode::WallClock { .. } => crate::app::input::camera::take_scroll_steps(
+            &mut state.match_state.input,
+            decision.camera_scroll,
+            decision.frames_running,
+            decision.run_sim,
+        ),
+        RuntimeAdvanceMode::ExactOneStep => u32::from(decision.scroll_input),
+    };
     // Sample the gesture once, before simulation. Apply its request at the
     // native Tactical__AI/pre-follow seam, after this frame's bounds writers.
-    let mouse_scroll = decision
-        .scroll_input
-        .then(|| crate::app::input::camera::poll_mouse_scroll(state));
+    let mouse_scroll =
+        crate::app::input::camera::sample_mouse_scroll(state, decision.scroll_input, scroll_steps);
     if decision.run_sim {
         // One Main_Tick, one tactical composite (RenderFrame 0x0055D8F2),
         // however many frames debug speed runs in this pass.
@@ -1375,7 +1401,7 @@ fn advance_in_game_runtime_mode(
     if decision.run_sim && main_tick_pumps_audio {
         pump_audio_service(state, music_now_ms);
     }
-    if decision.scroll_input {
+    for _ in 0..scroll_steps {
         crate::app::input::camera::queue_keyboard_scroll(state);
     }
     if decision.tactical_mutation || replaying {
