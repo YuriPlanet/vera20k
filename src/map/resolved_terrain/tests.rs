@@ -5150,7 +5150,7 @@ fn destroyable_cliff_a_collapses_old_sparse_footprint_then_stamps_two_halves() {
     grid.test_install_destroyable_cliff_catalog(100);
 
     let mutation = grid
-        .collapse_destroyable_cliff_terrain(4, 1, |_, _| {})
+        .collapse_destroyable_cliff_terrain(4, 1, None, |_, _| {})
         .expect("family-A destroyable cliff");
 
     assert_eq!(mutation.family, DestroyableCliffFamily::A);
@@ -5183,6 +5183,47 @@ fn destroyable_cliff_a_collapses_old_sparse_footprint_then_stamps_two_halves() {
             assert_eq!(cell.bridge_facts, BridgeCellFacts::default());
         }
     }
+}
+
+#[test]
+fn destroyable_cliff_collapse_turns_land_under_a_higher_neighbour_to_rock() {
+    use crate::rules::terrain_rules::{LandType, LandTypeSemantics, SpeedCostProfile};
+    let mut cells = Vec::new();
+    for ry in 0..6u16 {
+        for rx in 0..8u16 {
+            let mut cell = make_test_cell(rx, ry);
+            cell.level = 1;
+            if (1..7).contains(&rx) && (1..5).contains(&ry) {
+                let sub_tile = (ry - 1) * 6 + (rx - 1);
+                if ![0, 5, 18, 23].contains(&sub_tile) {
+                    cell.final_tile_index = 100;
+                    cell.final_sub_tile = sub_tile as u8;
+                }
+            }
+            cells.push(cell);
+        }
+    }
+    // (3, 0) stands four levels over the stamped (3, 1)'s final Level 1.
+    cells[3].level = 5;
+    let mut grid = ResolvedTerrainGrid::from_cells(8, 6, cells);
+    grid.test_install_destroyable_cliff_catalog(100);
+    let rock = LandTypeSemantics {
+        buildable: false,
+        ground_blocked: true,
+        speed_costs: SpeedCostProfile::ZERO,
+    };
+
+    grid.collapse_destroyable_cliff_terrain(4, 2, Some(&rock), |_, _| {})
+        .expect("family-A destroyable cliff");
+
+    let behind = grid.cell(3, 1).unwrap();
+    assert_eq!(behind.land_type, LandType::Rock.as_index());
+    assert_eq!(behind.base_land_type, LandType::Rock.as_index());
+    assert!(behind.ground_walk_blocked);
+    assert_eq!(behind.zone_type, zone_class::IMPASSABLE);
+    let open = grid.cell(3, 3).unwrap();
+    assert_eq!(open.land_type, LandType::Clear.as_index());
+    assert!(!open.ground_walk_blocked);
 }
 
 #[test]
@@ -5228,7 +5269,7 @@ fn destroyable_cliff_origin_recovery_accepts_every_present_a_and_b_subtile() {
             );
 
             let mutation = grid
-                .collapse_destroyable_cliff_terrain(selected.0, selected.1, |_, _| {})
+                .collapse_destroyable_cliff_terrain(selected.0, selected.1, None, |_, _| {})
                 .expect("present sparse subtile selects its family");
 
             assert_eq!(mutation.family, family);

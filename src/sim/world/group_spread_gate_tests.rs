@@ -147,6 +147,76 @@ fn a_run_on_coordinates_no_cell_token_expresses_keeps_its_records() {
     }
 }
 
+/// `0x0064D27A` takes a member's probe ray from vt+0x4C, its head while it
+/// moves, against the anchor's source cell. The third member stands at
+/// (15, 16) heading to (16, 16): its ray is diagonal, not straight down.
+#[test]
+fn a_moving_member_takes_its_probe_ray_from_its_head() {
+    use crate::sim::command::CommandEnvelope;
+    use crate::sim::components::DriveCoord;
+    use crate::sim::movement::track_process::TrackFamily;
+    let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+        "[VehicleTypes]\n0=PLANNER\n[PLANNER]\nStrength=100\nSpeed=8\nSpeedType=Track\nMovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+    );
+    let owner = sim.interner.intern("Americans");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
+    sim.session.set_current_house_for_test(Some(owner));
+    let actors: Vec<_> = [(15, 15), (16, 15), (15, 16)]
+        .into_iter()
+        .map(|(x, y)| {
+            sim.spawn_object_with_overlay_registry(
+                "PLANNER",
+                "Americans",
+                x,
+                y,
+                0,
+                &rules,
+                &registry,
+            )
+            .unwrap()
+        })
+        .collect();
+    let mut commands: Vec<_> = actors
+        .iter()
+        .map(|actor| {
+            CommandEnvelope::new(
+                owner,
+                1,
+                Command::Move {
+                    entity_id: *actor,
+                    target_rx: 19,
+                    target_ry: 17,
+                },
+            )
+        })
+        .collect();
+    let loco = sim
+        .substrate
+        .entities
+        .get_mut(actors[2])
+        .unwrap()
+        .locomotor
+        .as_mut()
+        .unwrap();
+    assert!(loco.ensure_installed_track_state());
+    assert!(loco.store_track_head(TrackFamily::Drive, Some(DriveCoord::cell(16, 16, 0))));
+    sim.adjust_staged_megamission_destinations(&mut commands, &rules, Some(&registry));
+    let destination = |command: &CommandEnvelope| match command.payload {
+        Command::Move {
+            target_rx,
+            target_ry,
+            ..
+        } => (target_rx, target_ry),
+        _ => unreachable!(),
+    };
+    assert_eq!(destination(&commands[1]), (20, 17));
+    // Straight down from its Location the first probe would be (19, 18).
+    assert_eq!(destination(&commands[2]), (20, 18));
+}
+
 #[test]
 fn planning_flags_use_the_production_group_destination_distributor() {
     use crate::sim::command::{CommandEnvelope, MegaMissionRecord};

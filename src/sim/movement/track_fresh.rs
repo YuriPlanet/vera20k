@@ -1115,6 +1115,21 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<(), String> {
+        self.scatter_blocked_track_list(id, cell, cell, rules, registry, frame_effects)
+    }
+
+    /// The same call with the deck flag read from `deck_cell` and the
+    /// objects taken from `list_cell`, which only the chain arm separates
+    /// (`0x004B1EC0..0x004B1F43`).
+    pub(super) fn scatter_blocked_track_list(
+        &mut self,
+        id: u64,
+        deck_cell: (i16, i16),
+        list_cell: (i16, i16),
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> Result<(), String> {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return Ok(());
         };
@@ -1122,12 +1137,12 @@ impl Simulation {
             return Ok(());
         };
         let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
-        let native = cells.lookup(cell);
+        let native = cells.lookup(deck_cell);
         let level = i32::from(cells.ground_fields(native).0 as i8);
         let location = ground_pose::position_world_coord(&actor.position);
         let deck = cells.flags(native) & 0x100 != 0
             && (location.z / GROUND_LEVEL_HEIGHT_LEPTONS - level).abs() > 2;
-        self.scatter_cell_contacts(cell, deck, true, rules, registry, frame_effects)
+        self.scatter_cell_contacts(list_cell, deck, true, rules, registry, frame_effects)
     }
 
     /// `CellClass::Scatter_Objects(null, 1, no_kidding, deck)` on `cell`

@@ -927,6 +927,11 @@ fn retail_dustbowl_shot_down_rocketeer_falls_and_leaves_no_body() {
 /// and `[RocketeerSequence]`) and an area warhead to shoot it down with;
 /// `armed` gives the Rocketeer the shooter's gun.
 fn rocketeer_rules_armed(armed: bool) -> crate::rules::ruleset::RuleSet {
+    rocketeer_rules(if armed { "Primary=CrashGun\n" } else { "" })
+}
+
+/// [`rocketeer_rules_armed`] with `extra` as more `[JUMPJET]` keys.
+fn rocketeer_rules(extra: &str) -> crate::rules::ruleset::RuleSet {
     use crate::rules::ini_parser::IniFile;
     let art = IniFile::from_str(
         "[ROCK]\nSequence=RocketeerSequence\nFireUp=2\n\
@@ -950,7 +955,7 @@ fn rocketeer_rules_armed(armed: bool) -> crate::rules::ruleset::RuleSet {
          [SHOOTER]\nStrength=100\nPrimary=CrashGun\n\
          [CrashGun]\nDamage=150\nRange=6\nWarhead=CrashWH\n\
          [CrashWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
-            if armed { "Primary=CrashGun\n" } else { "" }
+            extra
         )),
         &art,
     )
@@ -971,7 +976,19 @@ fn rocketeer_crash_fixture(
     use crate::map::entities::EntityCategory;
     use crate::sim::house_state::HouseState;
     use crate::util::fixed_math::SimFixed;
-    let rules = rocketeer_rules_armed(input["armed"].as_bool().unwrap_or(false));
+    let rules = rocketeer_rules(&format!(
+        "{}{}",
+        if input["armed"].as_bool().unwrap_or(false) {
+            "Primary=CrashGun\n"
+        } else {
+            ""
+        },
+        if input["jumpjet_turn"].as_bool().unwrap_or(false) {
+            "JumpJetTurn=yes\n"
+        } else {
+            ""
+        },
+    ));
     let mut sim = super::Simulation::with_seed(0);
     sim.scenario_rng = crate::sim::rng::SimRng::new(31);
     install_common_raw_terrain(&mut sim, 70, 70, 0, None);
@@ -1112,6 +1129,59 @@ fn rocketeer_crash_fixture(
     reveal(&mut sim, shooter, 40, 40);
     sim.resolve_type_handles(&rules);
     (sim, rules, shooter)
+}
+
+/// Update's facing tail (`0x0054D60D..0x0054D692`): hovering in state 2 with a
+/// TarCom, a `JumpJetTurn=` infantryman's locomotor Facing takes the direction
+/// to it (`0x005F3DB0`) and PrimaryFacing keeps its own. Without the key the
+/// locomotor Facing keeps its heading, which PrimaryFacing copies.
+#[test]
+fn a_hovering_jumpjet_turn_infantryman_aims_his_locomotor_at_his_target() {
+    for jumpjet_turn in [true, false] {
+        let input = serde_json::json!({
+            "doing": 0,
+            "jumpjet_turn": jumpjet_turn,
+            "owner": {"phase": 2, "moving": true},
+        });
+        let (mut sim, rules, shooter) = rocketeer_crash_fixture(&input);
+        let entity = sim.substrate.entities.get_mut(1).unwrap();
+        entity
+            .attack_target
+            .set_for_test(Some(crate::sim::combat::TargetKind::Entity(shooter)));
+        // Holding over its own coordinate: a destination elsewhere re-opens
+        // the cruise (`0x0054BEE7`) and starts a turn.
+        let here = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+        let runtime = entity
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .jumpjet_runtime_mut()
+            .unwrap();
+        *runtime = runtime.clone().with_destination_for_test(here);
+        sim.tick_jumpjet_cruise_one(1, &rules, None, crate::sim::world::FrameEffects::default())
+            .unwrap();
+        let frame = sim.session.binary_frame();
+        let entity = sim.substrate.entities.get(1).unwrap();
+        let toward = crate::sim::movement::turret::facing_toward_target(
+            entity,
+            &crate::sim::combat::TargetKind::Entity(shooter),
+            &sim,
+        )
+        .unwrap();
+        assert_ne!(toward, 0x4000);
+        let flight = entity
+            .locomotor
+            .as_ref()
+            .unwrap()
+            .jumpjet_runtime()
+            .unwrap()
+            .flight();
+        assert_eq!(
+            flight.facing().current(frame),
+            if jumpjet_turn { toward } else { 0x4000 }
+        );
+        assert_eq!(entity.body_facing_current(frame), 0x4000);
+    }
 }
 
 /// Kill Rocketeer 1 through the production receiver: one lethal direct hit.

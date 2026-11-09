@@ -401,3 +401,132 @@ fn power_off_matches_original_execution() {
     }
     assert_eq!(rows, 49);
 }
+
+/// Run_AStar `0x004CBBA0` starts at Foot vt+0x4C (`0x004DBDF0`): a Hover whose
+/// route ran out short of its live head searches from the head's cell, so the
+/// new route holds no step back onto the head.
+#[test]
+fn a_route_search_starts_at_the_cell_of_the_live_head() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::components::{DriveCoord, NavTargetRef};
+    use crate::sim::movement::FindPathResult;
+    use crate::sim::movement::movement_tick::FootPathRequest;
+    use crate::sim::world::{FrameEffects, Simulation};
+
+    let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=HOVR\n[HOVR]\nStrength=300\nArmor=heavy\nSpeed=8\n\
+         MovementZone=Amphibious\nSpeedType=Hover\n\
+         Locomotor={4A582742-9839-11d1-B709-00A024DDAFD1}\n",
+    ))
+    .expect("hover rules");
+    let mut sim = Simulation::with_seed(7);
+    crate::sim::arena_fixture::supply_native_map(&mut sim);
+    let id = sim
+        .spawn_object("HOVR", "Americans", 10, 10, 64, &rules)
+        .expect("spawn hover");
+    assert!(sim.set_unit_destination(
+        id,
+        NavTargetRef::cell(14, 10),
+        &rules,
+        true,
+        FrameEffects::default(),
+    ));
+    sim.process_hover_locomotor(id, &rules, None, FrameEffects::default())
+        .expect("first step");
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .navigation
+        .path_replay_mut()
+        .set_directions_for_test(Vec::new());
+
+    let request = FootPathRequest::track(
+        &sim.substrate.entities,
+        id,
+        DriveCoord::cell(14, 10, 0),
+        0,
+        sim.playfield_bounds(),
+    )
+    .expect("live hover");
+    let found = sim
+        .foot_find_path(&request, &rules, None, FrameEffects::default())
+        .expect("searches");
+
+    assert_ne!(found, FindPathResult::Failed);
+    let directions = sim
+        .substrate
+        .entities
+        .get(id)
+        .unwrap()
+        .navigation
+        .path_replay()
+        .remaining_directions()
+        .to_vec();
+    assert_eq!(directions.len(), 3, "from the head at (11,10) to (14,10)");
+}
+
+/// The Foot setter restarts an expired movement timer ahead of a Hover
+/// Move_To (0x004D95B3..0x004D9601), so Path_And_Arrival's gate
+/// (0x00516621..0x00516645) refuses the search inside the order. Its tail
+/// zeroes the timer (0x004D96F0..0x004D9707) and the next Process searches.
+#[test]
+fn an_order_leaves_the_first_search_to_the_next_process() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::components::NavTargetRef;
+    use crate::sim::world::{FrameEffects, Simulation};
+
+    let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=HOVR\n[HOVR]\nStrength=300\nArmor=heavy\nSpeed=8\n\
+         MovementZone=Amphibious\nSpeedType=Hover\n\
+         Locomotor={4A582742-9839-11d1-B709-00A024DDAFD1}\n",
+    ))
+    .expect("hover rules");
+    let mut sim = Simulation::with_seed(7);
+    crate::sim::arena_fixture::supply_native_map(&mut sim);
+    let id = sim
+        .spawn_object("HOVR", "Americans", 10, 10, 64, &rules)
+        .expect("spawn hover");
+
+    assert!(sim.set_unit_destination(
+        id,
+        NavTargetRef::cell(14, 10),
+        &rules,
+        true,
+        FrameEffects::default(),
+    ));
+
+    let entity = sim.substrate.entities.get(id).unwrap();
+    let hover = entity.locomotor.as_ref().unwrap().hover_runtime().unwrap();
+    assert_eq!(hover.head, None, "the order alone takes no step");
+    assert!(
+        entity
+            .navigation
+            .path_replay()
+            .remaining_directions()
+            .is_empty(),
+        "and finds no route"
+    );
+    let frame = sim.session.binary_frame() as i32;
+    assert!(
+        entity
+            .navigation
+            .path_runtime()
+            .movement_timer()
+            .expired(frame),
+        "the setter's tail leaves the next Process free to search"
+    );
+
+    sim.process_hover_locomotor(id, &rules, None, FrameEffects::default())
+        .expect("hover process");
+
+    let entity = sim.substrate.entities.get(id).unwrap();
+    let hover = entity.locomotor.as_ref().unwrap().hover_runtime().unwrap();
+    let head = hover.head.expect("Process admitted the first cell");
+    assert_eq!((head.x / 256, head.y / 256), (11, 10));
+    assert_eq!(
+        entity.navigation.path_replay().remaining_directions().len(),
+        3,
+        "ProcessMovement consumed the first of the four steps"
+    );
+}

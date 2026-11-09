@@ -8330,8 +8330,8 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
         for rx in 0..5i32 {
             for _ in 0..2 {
                 let type_index = expected_rng.next_range_u32_inclusive(0, 2) as usize;
-                let jitter_x = expected_rng.next_range_u32_inclusive(0, 16) as i32 - 8;
-                let jitter_y = expected_rng.next_range_u32_inclusive(0, 24) as i32 - 12;
+                let jitter_y = expected_rng.next_range_u32_inclusive(0, 16) as i32 - 8;
+                let jitter_x = expected_rng.next_range_u32_inclusive(0, 24) as i32 - 12;
                 let delay = expected_rng.next_range_u32_inclusive(0, 2) as u16;
                 let rate = expected_rng.next_range_u32_inclusive(1, 3) as u16;
                 expected_spawns.push((

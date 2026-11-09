@@ -130,11 +130,9 @@ impl ZoneMap {
     /// Look up the zone ID for a cell at the given layer in the reduced
     /// PathGrid zone labels, not native GetZoneID (that is
     /// [`ZoneGrid::get_zone_id_native`]). The bridge layer reads a redirect
-    /// table built at zone rebuild, not the live cells. RESIDUAL (#904):
-    /// `ZoneGrid::can_reach` (miner routing, zone_search, move-order
-    /// recovery) still answers through it. Trigger: a structural cell with no
-    /// matching high record, or an inactive deck. Effect: its answer can
-    /// differ from GetZoneID's. Frequency: bridge cells only.
+    /// table built at zone rebuild, not the live cells. Only a search without
+    /// blocker counts reads it, through [`ZoneGrid::can_reach`]; Foot routing,
+    /// miners and move orders answer through `can_reach_native`.
     ///
     /// For bridge-layer queries on a structural cell, returns the ground zone
     /// selected by the matching high-bridge record. Nonstructural cells a high
