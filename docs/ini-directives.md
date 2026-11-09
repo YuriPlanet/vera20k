@@ -47,8 +47,8 @@ Strength=250
   `[VehicleTypes]`, `[InfantryTypes]`, `[Animations]`, `[Warheads]` and
   `[SuperWeaponTypes]`). `allocate_explicit_family` walks the physical entries
   and reads each appended occurrence's own stored value with the native
-  32-byte `ReadString` cut and trim, so MO's `gbionrules.ini` registers
-  `GBION`, `LUNR_UR` and all of its custom art. Only Ares/Phobos builds take
+  32-byte `ReadString` cut and trim, so a mod's custom rules file registers
+  its custom vehicles, infantry and art. Only Ares/Phobos builds take
   this path; stock YR still walks unique key names. RESIDUAL: `[WeaponTypes]`
   and `[Projectiles]` are not explicit registries in VERA (they are allocated
   by reference), so their `+=` entries are not read as a registry list; game

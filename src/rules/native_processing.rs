@@ -6666,8 +6666,8 @@ impl RulesPassProcessor {
         // list with GetKeyName and reads each value through ReadString's
         // 32-byte buffer; a name lookup returns one winner for the whole list,
         // so each appended occurrence takes its own stored value with the same
-        // cut and trim. Other keys keep the native name lookup. MO's
-        // gbionrules.ini registers all of its custom vehicles, infantry,
+        // cut and trim. Other keys keep the native name lookup. A mod's
+        // custom rules file registers all of its custom vehicles, infantry,
         // animations, warheads and superweapons this way. Stock YR has no such
         // lists, so the gate leaves its registry walk byte-for-byte unchanged.
         if crate::rules::ARES_ENABLED || crate::rules::PHOBOS_ENABLED {

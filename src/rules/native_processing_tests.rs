@@ -1923,18 +1923,18 @@ fn map_overrides_union_type_registries_by_value() {
 }
 
 /// Ares/Phobos `+=name` registry appends: every physical `+` occurrence
-/// allocates its own type in file order, next to numbered entries. MO's
-/// gbionrules.ini registers GBION, LUNR_UR and all of its custom art this way.
+/// allocates its own type in file order, next to numbered entries. A mod's
+/// custom rules file registers its custom types and art this way.
 #[cfg(any(feature = "ares", feature = "phobos"))]
 #[test]
 fn append_key_registers_every_ares_list_entry() {
     let root = IniFile::from_str(
-        "[VehicleTypes]\n0=MTNK\n+=GBION\n+=SECOND\n\
+        "[VehicleTypes]\n0=MTNK\n+=CUSTOM\n+=SECOND\n\
          [InfantryTypes]\n0=E1\n+=LUNR_UR\n\
-         [Animations]\n+=GBIONP\n+=GBIONWHA\n\
-         [Warheads]\n+=GBIONWaveWH\n\
-         [SuperWeaponTypes]\n+=GBIONBlueLight\n\
-         [MTNK]\nStrength=100\n[GBION]\nStrength=3500\n[SECOND]\nStrength=200\n\
+         [Animations]\n+=CUSTOMP\n+=CUSTOMWHA\n\
+         [Warheads]\n+=CUSTOMWaveWH\n\
+         [SuperWeaponTypes]\n+=CUSTOMBlueLight\n\
+         [MTNK]\nStrength=100\n[CUSTOM]\nStrength=3500\n[SECOND]\nStrength=200\n\
          [E1]\nStrength=100\n[LUNR_UR]\nStrength=100\n",
     );
     let rules = RulesLayerStack::new(root)
@@ -1943,7 +1943,7 @@ fn append_key_registers_every_ares_list_entry() {
         .into_projection_discarding_native_receipt();
     assert_eq!(
         rules.section("VehicleTypes").unwrap().registry_ids(),
-        vec!["MTNK", "GBION", "SECOND"]
+        vec!["MTNK", "CUSTOM", "SECOND"]
     );
     assert_eq!(
         rules.section("InfantryTypes").unwrap().registry_ids(),
@@ -1951,15 +1951,15 @@ fn append_key_registers_every_ares_list_entry() {
     );
     assert_eq!(
         rules.section("Animations").unwrap().registry_ids(),
-        vec!["GBIONP", "GBIONWHA"]
+        vec!["CUSTOMP", "CUSTOMWHA"]
     );
     assert_eq!(
         rules.section("Warheads").unwrap().registry_ids(),
-        vec!["GBIONWaveWH"]
+        vec!["CUSTOMWaveWH"]
     );
     assert_eq!(
         rules.section("SuperWeaponTypes").unwrap().registry_ids(),
-        vec!["GBIONBlueLight"]
+        vec!["CUSTOMBlueLight"]
     );
 }
 
@@ -1968,7 +1968,7 @@ fn append_key_registers_every_ares_list_entry() {
 #[cfg(not(any(feature = "ares", feature = "phobos")))]
 #[test]
 fn append_key_is_inert_for_stock_registry_walk() {
-    let root = IniFile::from_str("[VehicleTypes]\n0=MTNK\n+=GBION\n+=SECOND\n");
+    let root = IniFile::from_str("[VehicleTypes]\n0=MTNK\n+=CUSTOM\n+=SECOND\n");
     let rules = RulesLayerStack::new(root)
         .process()
         .unwrap()
@@ -1980,16 +1980,16 @@ fn append_key_is_inert_for_stock_registry_walk() {
     );
 }
 
-/// MO's non-official `gbionrules.ini` registers its custom types with `+=`
-/// and then relies on Ares/Phobos per-type keys being read for them. Before
-/// the append-key fix none of these sections reached a type reader at all.
+/// A mod's custom rules file registers its types with `+=` and then relies
+/// on Ares/Phobos per-type keys being read for them. Before the append-key
+/// fix none of these sections reached a type reader at all.
 #[cfg(feature = "ares")]
 #[test]
 fn appended_mo_type_reads_ares_and_phobos_extensions() {
     let root = IniFile::from_str(
-        "[VehicleTypes]\n+=GBION\n[InfantryTypes]\n+=LUNR_UR\n\
+        "[VehicleTypes]\n+=CUSTOM\n[InfantryTypes]\n+=LUNR_UR\n\
          [BuildingTypes]\n+=GAWEAP2\n\
-         [GBION]\nPassengers=3\nSizeLimit=1\nOpenTopped=yes\n\
+         [CUSTOM]\nPassengers=3\nSizeLimit=1\nOpenTopped=yes\n\
          InitialPayload.Types=LUNR_UR\nInitialPayload.Nums=3\n\
          Insignia.Rookie=USFLAG\nInsignia.Veteran=USFLAG1\nInsignia.Elite=USFLAG2\n\
          Cloneable=no\n\
@@ -1998,19 +1998,19 @@ fn appended_mo_type_reads_ares_and_phobos_extensions() {
     );
     let processed = RulesLayerStack::new(root).process().unwrap();
     let rules = RuleSet::from_processed_rules(&processed).unwrap();
-    let gbion = rules.object("GBION").expect("+= registered vehicle");
-    assert_eq!(gbion.initial_payload, vec![("LUNR_UR".to_owned(), 3)]);
-    assert_eq!(gbion.passengers, 3);
-    assert!(gbion.open_topped);
-    assert!(!gbion.cloneable, "Cloneable=no is read");
+    let custom = rules.object("CUSTOM").expect("+= registered vehicle");
+    assert_eq!(custom.initial_payload, vec![("LUNR_UR".to_owned(), 3)]);
+    assert_eq!(custom.passengers, 3);
+    assert!(custom.open_topped);
+    assert!(!custom.cloneable, "Cloneable=no is read");
     let facility = rules.object("GAWEAP2").expect("+= registered building");
     assert!(facility.cloning_facility);
     assert!(facility.cloneable, "Cloneable defaults to yes");
     #[cfg(feature = "phobos")]
     {
-        assert_eq!(gbion.phobos_insignia.base.images[0], ["USFLAG.shp"]);
-        assert_eq!(gbion.phobos_insignia.base.images[1], ["USFLAG1.shp"]);
-        assert_eq!(gbion.phobos_insignia.base.images[2], ["USFLAG2.shp"]);
+        assert_eq!(custom.phobos_insignia.base.images[0], ["USFLAG.shp"]);
+        assert_eq!(custom.phobos_insignia.base.images[1], ["USFLAG1.shp"]);
+        assert_eq!(custom.phobos_insignia.base.images[2], ["USFLAG2.shp"]);
     }
 }
 

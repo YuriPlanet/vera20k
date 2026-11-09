@@ -79,7 +79,7 @@ Supported extensions:
   to 10 by a lookup table, but Ares replaces it with a `CellSpreadEnumerator`
   capped at 0x100 and reveals an octagonal field for any `Sight > 10`
   ([`vision::REVEAL_RADIUS_MAX`](../src/sim/vision/mod.rs)). A radius-30
-  source (MO's `[GBION]`) therefore lights ~2521 cells instead of the retail
+  source (a mod's custom unit) therefore lights ~2521 cells instead of the retail
   309. Reveal admission, source/aircraft/Techno walks and the fog buffer all
   clamp to `REVEAL_RADIUS_MAX` instead of 10 in Ares builds; default builds
   keep the retail 10.
@@ -137,8 +137,8 @@ Supported extensions:
 - [House survival](ares-house-survival.md)
 - [Superweapon building gates](ares-superweapon-building-gates.md)
 - [`+=` type registry appends](ini-directives.md): Ares/Phobos builds walk the
-  physical entries of the explicit type registries, so MO's `gbionrules.ini`
-  registers appended vehicles, infantry, animations, warheads and
+  physical entries of the explicit type registries, so a mod's custom rules
+  file registers appended vehicles, infantry, animations, warheads and
   superweapons before their own sections are read.
 - [Vehicle cloning](https://ares-developers.github.io/Ares-docs/new/buildings/factoriesandcloning.html):
   `CloningFacility=yes` yards produce one free copy of each cloneable vehicle

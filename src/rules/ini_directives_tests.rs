@@ -202,10 +202,10 @@ fn ini_directives_include_list_keeps_stored_entry_order() {
 
 #[test]
 fn ini_directives_ares_append_entries_load_each_own_file_in_order() {
-    // MO 3.3.6 rulesmo.ini writes every `[#include]` entry as `+=name`. All
+    // A mod's root rules file writes every `[#include]` entry as `+=name`. All
     // four share the `+` key, so a CRC name lookup used to return only the
     // final name and drop the other three files.
-    let root = "[#include]\n+=ai.ini\n+=gbionrules.ini\n+=hidden.ini\n+=health.ini\n";
+    let root = "[#include]\n+=ai.ini\n+=customrules.ini\n+=hidden.ini\n+=health.ini\n";
     let mut reads = Vec::new();
     let result = process_directives(
         IniFile::from_str(root),
@@ -219,9 +219,9 @@ fn ini_directives_ares_append_entries_load_each_own_file_in_order() {
     .unwrap();
     assert_eq!(
         reads,
-        ["ai.ini", "gbionrules.ini", "hidden.ini", "health.ini"]
+        ["ai.ini", "customrules.ini", "hidden.ini", "health.ini"]
     );
-    for name in ["ai.ini", "gbionrules.ini", "hidden.ini", "health.ini"] {
+    for name in ["ai.ini", "customrules.ini", "hidden.ini", "health.ini"] {
         assert_eq!(text(&result.ini, "Unit", name).as_deref(), Some("yes"));
     }
     assert!(result.diagnostics.is_empty());
