@@ -253,8 +253,8 @@ fn smooth_corner(
     let sum = at.x + at.y;
     corner.blend = saturate((sum + pixel - 1.75) / (2.0 * pixel));
     let sharp = e < i
-        && (!smooth_eq(pf, pb) && !smooth_eq(ph, pd)
-            || smooth_eq(pe, pi) && !smooth_eq(pf, i4) && !smooth_eq(ph, i5)
+        && ((!smooth_eq(pf, pb) && !smooth_eq(ph, pd))
+            || (smooth_eq(pe, pi) && !smooth_eq(pf, i4) && !smooth_eq(ph, i5))
             || smooth_eq(pe, pg)
             || smooth_eq(pe, pc));
     if sharp {
