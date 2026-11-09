@@ -2476,19 +2476,75 @@ pub(crate) fn is_alt_held(state: &AppState) -> bool {
     state.match_state.input.hotkey_modifiers.alt_key()
 }
 
-/// [`selected_stable_ids_in_order`] of `state`'s world and ledger. It walks
-/// every object, so a draw reads it once and hands it to its consumers.
+/// [`selected_stable_ids_in_order`] of `state`'s world and ledger. That walks
+/// every object, so a draw reads this once and hands it to its consumers, and
+/// while the ledger stands as the frame's reconciliation left it
+/// ([`CommittedSelection`]) the ledger is the answer and nothing is walked.
 pub(crate) fn selected_in_order(state: &AppState) -> Vec<u64> {
-    selected_stable_ids_in_order(
-        state
-            .match_state
-            .sim_runtime
+    let input = &state.match_state.input;
+    let sim = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .map(|rt| &rt.simulation);
+    let read = || {
+        selected_stable_ids_in_order(
+            sim,
+            state.rules(),
+            &input.selection_order,
+            input.selection_order_pending,
+        )
+    };
+    if let Some(sim) = sim
+        && !input.selection_order_pending
+        && input
+            .selection_committed
             .as_ref()
-            .map(|rt| &rt.simulation),
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
-    )
+            .is_some_and(|committed| committed.holds(sim, state.rules(), &input.selection_order))
+    {
+        debug_assert!(
+            !crate::sim::live_read_check_enabled() || input.selection_order == read(),
+            "the committed selection ledger differs from the selected objects"
+        );
+        return input.selection_order.clone();
+    }
+    read()
+}
+
+/// The ledger a frame's reconciliation committed, with the world it read: the
+/// rules' serial and the world's revision. Selected bits and object lifetimes
+/// change only inside a frame, which moves the revision, so while both hold
+/// and the ledger is still this one, it lists exactly the selected objects.
+#[derive(Debug)]
+pub(crate) struct CommittedSelection {
+    rules: Option<u64>,
+    revision: u64,
+    order: Vec<u64>,
+}
+
+impl CommittedSelection {
+    fn of(
+        sim: &crate::sim::world::Simulation,
+        rules: Option<&crate::rules::ruleset::RuleSet>,
+        order: &[u64],
+    ) -> Self {
+        Self {
+            rules: rules.map(crate::rules::ruleset::RuleSet::serial),
+            revision: sim.revision(),
+            order: order.to_vec(),
+        }
+    }
+
+    fn holds(
+        &self,
+        sim: &crate::sim::world::Simulation,
+        rules: Option<&crate::rules::ruleset::RuleSet>,
+        order: &[u64],
+    ) -> bool {
+        self.revision == sim.revision()
+            && self.rules == rules.map(crate::rules::ruleset::RuleSet::serial)
+            && self.order == order
+    }
 }
 
 /// Read the player-side selection vector in native order. While a selection
@@ -2655,6 +2711,7 @@ fn reconcile_selection_order_for_sim(
         input.selection_order_pending,
         logic_selects,
     );
+    input.selection_committed = (!pending).then(|| CommittedSelection::of(sim, rules, &order));
     input.selection_order = order;
     input.selection_order_pending = pending;
 }
@@ -3072,6 +3129,34 @@ mod item83_selection_order_tests {
         assert_eq!(read(&[20, 999, 40], true), [20, 40]);
         assert!(read(&[], true).is_empty());
         assert!(selected_stable_ids_in_order(None, Some(&rules), &[10], false).is_empty());
+    }
+
+    /// The per-draw read trusts the ledger only as a frame's reconciliation
+    /// left it: an edited ledger, other rules, a later frame or another world
+    /// end that.
+    #[test]
+    fn committed_selection_holds_for_its_ledger_rules_and_frame_only() {
+        let (mut sim, rules) = mixed_selection_fixture();
+        let mut input = crate::app::input::state::MatchInputState::new(Default::default());
+        super::reconcile_selection_order_for_sim(&mut input, &sim, Some(&rules), &[]);
+        let ledger = input.selection_order.clone();
+        assert_eq!(ledger, [30, 10, 20, 50]);
+        let committed = input.selection_committed.as_ref().unwrap();
+        assert!(committed.holds(&sim, Some(&rules), &ledger));
+        assert!(!committed.holds(&sim, Some(&rules), &ledger[1..]));
+        assert!(!committed.holds(&sim, None, &ledger));
+        sim.advance_app_frame(
+            &[],
+            RuleSet::empty_for_test(),
+            None,
+            67,
+            crate::sim::world::TickLane::Ordinary,
+            crate::sim::world::FrameEffects::empty(),
+        )
+        .unwrap();
+        assert!(!committed.holds(&sim, Some(&rules), &ledger));
+        super::selection_navigation::reset_for_world_replacement(&mut input);
+        assert!(input.selection_committed.is_none());
     }
 
     /// The game's own Selects (TechnoClass::Select vt+0x14C from Logic, e.g.

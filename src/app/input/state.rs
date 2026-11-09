@@ -256,6 +256,9 @@ pub(crate) struct MatchInputState {
     pub(crate) selection_order: Vec<u64>,
     /// A queued selection command has not yet reached the simulation tick.
     pub(crate) selection_order_pending: bool,
+    /// The ledger as the last frame's reconciliation committed it; the
+    /// per-draw read trusts it while it holds.
+    pub(crate) selection_committed: Option<crate::app::input::dispatch::CommittedSelection>,
     /// Existing selection paths speak by default; held TypeSelect batches
     /// temporarily suppress and restore this latch.
     pub(crate) selection_voice_enabled: bool,
@@ -454,6 +457,7 @@ impl MatchInputState {
             selection_state: crate::sim::selection::SelectionState::new(),
             selection_order: Vec::new(),
             selection_order_pending: false,
+            selection_committed: None,
             selection_voice_enabled: true,
             queued_order_mode: crate::app::types::OrderMode::Move,
             last_control_group_press: None,
