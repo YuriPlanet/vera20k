@@ -28,7 +28,7 @@ pub(crate) struct ProjectedLine {
 impl LineTrailSegment {
     /// VERA's absolute pixel frame carries the same +15 row bias as all world
     /// layers. Native556C00 passes the camera-relative projection unchanged;
-    /// Surface4BEAC0 adds the clip origin. No motion interpolation enters history.
+    /// Surface4BEAC0 adds the clip origin.
     pub(crate) fn project(self, camera: [i32; 2]) -> ProjectedLine {
         let project = |coord: ProjectileCoord| {
             let (x, y) = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);

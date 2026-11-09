@@ -61,7 +61,7 @@ const BOUNCE_SHADOW_FLAGS: u32 = 0x2601;
 /// GetHeight (vtable +1C8, Object5F5F40, called at 42310A) measures the stored
 /// Location against Map578080's ground there, and anims never set OnBridge.
 /// A free anim stores its absolute coordinate, so this takes the drawn
-/// (possibly interpolated) one; an attached anim stores its owner-relative
+/// one; an attached anim stores its owner-relative
 /// coordinate (SetOwnerObject424B50), which GetHeight reads unchanged.
 pub(super) fn anim_bounce_drop_px(
     sim: &crate::sim::world::Simulation,

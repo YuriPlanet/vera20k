@@ -4,7 +4,6 @@
 
 use crate::app::diagnostics::core_load::CoreLoadSampler;
 use crate::app::diagnostics::state::RenderTimingMeter;
-use crate::app::presentation::interpolation::SimulationReadout;
 use crate::app::presentation::render::RenderPhases;
 use crate::i18n::{tr, tr_fill};
 use crate::sim::frame_profile::PHASE_COUNT;
@@ -83,7 +82,7 @@ pub(super) struct MatchSample {
 #[derive(Default)]
 pub(super) struct Shown {
     pub(super) frame_ms: f32,
-    pub(super) simulation: Option<SimulationReadout>,
+    pub(super) tps: Option<f32>,
     pub(super) units: Option<usize>,
     /// The costliest areas first: their labels and percent of the window's
     /// wall time.
@@ -120,7 +119,7 @@ impl PanelStats {
         &mut self,
         now: Instant,
         frame_ms: f32,
-        simulation: Option<SimulationReadout>,
+        tps: Option<f32>,
         sample: Option<MatchSample>,
         gpu_ms: Option<f32>,
     ) {
@@ -135,7 +134,7 @@ impl PanelStats {
         self.sim_baseline = sample.map(|sample| sample.profile);
         self.shown = Shown {
             frame_ms,
-            simulation,
+            tps,
             units: sample.map(|sample| sample.units),
             areas: wall.map_or_else(Vec::new, |wall| most_cpu(wall, sim_spans.as_ref(), &render)),
             core_loads: self.cores.sample(),
@@ -254,8 +253,8 @@ fn first_row(shown: &Shown) -> String {
     } else {
         tr_fill("VERA:FpsPanelFps", &[("fps", &"--")])
     };
-    if let Some(simulation) = shown.simulation {
-        let tps = format!("{:.0}", simulation.tps);
+    if let Some(tps) = shown.tps {
+        let tps = format!("{tps:.0}");
         let sim = tr_fill("VERA:FpsPanelSim", &[("tps", &tps)]);
         row.push_str(&format!("{DOT}{sim}"));
     }
@@ -290,11 +289,6 @@ fn thousands(value: usize) -> String {
 mod tests {
     use super::*;
 
-    const READOUT: SimulationReadout = SimulationReadout {
-        tps: 30.0,
-        sampling: true,
-    };
-
     fn text(part: &Part) -> &str {
         match part {
             Part::Text(text, _) => text,
@@ -306,7 +300,7 @@ mod tests {
     fn panel_rows_read_rates_costliest_areas_and_cores() {
         let shown = Shown {
             frame_ms: 1000.0 / 60.0,
-            simulation: Some(READOUT),
+            tps: Some(30.0),
             units: Some(12_345),
             areas: vec![
                 ("VERA:CpuObjects", 38.4),
@@ -365,7 +359,7 @@ mod tests {
     fn every_panel_label_has_english_text() {
         let rows = rows_of(Shown {
             frame_ms: f32::NAN,
-            simulation: Some(READOUT),
+            tps: Some(30.0),
             areas: SIM_AREAS
                 .iter()
                 .chain(&RENDER_AREAS)

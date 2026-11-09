@@ -1630,11 +1630,7 @@ pub(crate) fn clear_loading_state(state: &mut AppState) {
 }
 
 fn reset_loading_presentation(state: &mut AppState) {
-    state.match_state.match_presentation.interpolation.clear();
-    state
-        .renderer
-        .performance_overlay
-        .set_simulation_readout(None);
+    state.renderer.performance_overlay.clear_simulation_rate();
     state.frontend.loading_screen_atlas = None;
     state.frontend.loading_progress = LoadingProgressState::standard_skirmish();
 }

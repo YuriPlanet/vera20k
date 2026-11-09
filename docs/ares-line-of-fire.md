@@ -74,7 +74,7 @@ an Ares build: their only callers sit inside the code the hooks above skip.
 
 `AnimLength` and Ares' own facing conversion of a rotating bullet,
 `0x3FFF - ftol(angle * 65535/2pi)`, which can pick a neighbouring facing at
-bucket edges (`projectile_shp_frame_with_velocity`, `1001A840`, hook
+bucket edges (`projectile_shp_frame`, `1001A840`, hook
 `468000`): with `AnimLength` above one each facing owns that many frames,
 stepped every `AnimRate` frames; `AnimRate=0` would divide by zero in the
 DLL, VERA keeps the facing's first frame.

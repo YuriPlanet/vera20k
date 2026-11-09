@@ -2067,14 +2067,6 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         | HotkeyCommand::LockCursor
         | HotkeyCommand::FullScreen
         | HotkeyCommand::StringKeys => run_window_command(state, command),
-        HotkeyCommand::RenderInterpolation => {
-            let enabled = state.match_state.match_presentation.interpolation.toggle();
-            state.persistence.options_profile.render_interpolation = enabled;
-            log::info!(
-                "Render interpolation prototype: {}",
-                if enabled { "ON" } else { "OFF" }
-            );
-        }
     }
 }
 
@@ -5938,10 +5930,9 @@ mod control_group_tests {
             )
         };
 
-        let ground_anchor =
-            crate::app::presentation::instances::interpolated_screen_position_entity(
-                sim.entities().get(27).expect("retained ORCA"),
-            );
+        let ground_anchor = crate::app::presentation::instances::entity_screen_position(
+            sim.entities().get(27).expect("retained ORCA"),
+        );
         let selected_ground = render(&sim, &groups, None);
         assert_eq!(selected_ground.len(), 1);
         let selected_ground = selected_ground.get(&27).expect("ORCA's admitted label");
@@ -5958,10 +5949,9 @@ mod control_group_tests {
             aircraft.selection.set_selected_for_test(false);
             aircraft.position.set_exact_z_leptons_for_test(Some(1500));
         }
-        let airborne_anchor =
-            crate::app::presentation::instances::interpolated_screen_position_entity(
-                sim.entities().get(27).expect("retained ORCA"),
-            );
+        let airborne_anchor = crate::app::presentation::instances::entity_screen_position(
+            sim.entities().get(27).expect("retained ORCA"),
+        );
         let hovered_airborne = render(&sim, &groups, Some(27));
         assert_eq!(hovered_airborne.len(), 1);
         let hovered_airborne = hovered_airborne.get(&27).expect("hovered ORCA's label");
@@ -6247,10 +6237,9 @@ mod control_group_tests {
         );
         let house_colors = crate::map::houses::HouseColorMap::new();
         let house_color_ramps = crate::rules::house_colors::HouseColorRamps::default();
-        let group_member_anchor =
-            crate::app::presentation::instances::interpolated_screen_position_entity(
-                sim.entities().get(17).expect("assigned test unit"),
-            );
+        let group_member_anchor = crate::app::presentation::instances::entity_screen_position(
+            sim.entities().get(17).expect("assigned test unit"),
+        );
         let fixture_clip = [
             group_member_anchor.0.floor() as i32 - 100,
             group_member_anchor.1.floor() as i32 - 100,

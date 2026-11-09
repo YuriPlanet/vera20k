@@ -114,7 +114,6 @@ impl TargetLineState {
 /// Build selected unit action-line instances from live simulation state.
 /// The psychic detection line's dashed stores carry their A gate for the GPU.
 #[allow(clippy::too_many_arguments)]
-#[cfg(test)]
 pub(crate) fn build_target_line_instances(
     line_state: &TargetLineState,
     planning_active: bool,
@@ -124,33 +123,7 @@ pub(crate) fn build_target_line_instances(
     house_colors: &HouseColorMap,
     wall_ms: u32,
     viewport: TacticalViewport,
-    after_entity: Option<&mut dyn FnMut(u64, &mut Vec<SpriteInstance>)>,
-) -> Vec<SpriteInstance> {
-    build_target_line_instances_sampled(
-        line_state,
-        planning_active,
-        sim,
-        rules,
-        palette_bytes,
-        house_colors,
-        wall_ms,
-        viewport,
-        after_entity,
-        None,
-    )
-}
-
-pub(crate) fn build_target_line_instances_sampled(
-    line_state: &TargetLineState,
-    planning_active: bool,
-    sim: Option<&Simulation>,
-    rules: Option<&RuleSet>,
-    palette_bytes: Option<&[u8]>,
-    house_colors: &HouseColorMap,
-    wall_ms: u32,
-    viewport: TacticalViewport,
     mut after_entity: Option<&mut dyn FnMut(u64, &mut Vec<SpriteInstance>)>,
-    interpolation: Option<&super::interpolation::RenderInterpolation>,
 ) -> Vec<SpriteInstance> {
     let Some(sim) = sim else {
         return Vec::new();
@@ -193,7 +166,6 @@ pub(crate) fn build_target_line_instances_sampled(
         let Some(line) = action_line_endpoints(entity, sim, Some(*rules), cells.as_ref()) else {
             return;
         };
-        let line = sample_action_line(line, entity, sim, interpolation);
         let owner = sim.interner().resolve(entity.owner());
         let color = house_colors.get(owner).copied().unwrap_or(NO_REMAP);
         let rgb = crate::render::palette_light::house_color_rgb(&rules.house_color_ramps, color);
@@ -232,23 +204,13 @@ pub(crate) fn build_target_line_instances_sampled(
             ]
         });
     let mut control = rules
-        .map(|rules| {
-            super::control_links::prepare(
-                sim,
-                rules,
-                house_colors,
-                wall_ms,
-                viewport,
-                interpolation,
-            )
-        })
+        .map(|rules| super::control_links::prepare(sim, rules, house_colors, wall_ms, viewport))
         .unwrap_or_default();
     if colors.is_none() && control.is_empty() && after_entity.is_none() && psychic.is_none() {
         return Vec::new();
     }
     let line_for = |entity: &GameEntity| {
         selected_action_line_for_entity(entity, sim, rules, cells.as_ref()).map(|line| {
-            let line = sample_action_line(line, entity, sim, interpolation);
             ProjectedActionLine {
                 start: project(line.start),
                 end: project(line.end),
@@ -293,38 +255,6 @@ pub(crate) fn build_target_line_instances_sampled(
         .filter_map(line_for)
         .collect::<Vec<_>>();
     build_selected_action_line_instances(&lines, colors, viewport)
-}
-
-fn sample_action_line(
-    mut line: SelectedActionLine,
-    entity: &GameEntity,
-    sim: &Simulation,
-    interpolation: Option<&super::interpolation::RenderInterpolation>,
-) -> SelectedActionLine {
-    let Some(cache) = interpolation else {
-        return line;
-    };
-    let offset = cache.entity_offset(entity, sim.session().binary_frame());
-    line.start.x += offset[0];
-    line.start.y += offset[1];
-    let target = match line.kind {
-        SelectedLineKind::Attack => entity.attack_target.target(),
-        SelectedLineKind::Move => entity
-            .navigation
-            .nav_queue()
-            .last()
-            .copied()
-            .or(entity.navigation.nav_com())
-            .map(TargetKind::from),
-    };
-    if let Some(TargetKind::Entity(id)) = target
-        && let Some(target) = sim.entities().get(id)
-    {
-        let offset = cache.entity_offset(target, sim.session().binary_frame());
-        line.end.x += offset[0];
-        line.end.y += offset[1];
-    }
-    line
 }
 
 /// Foot4DC340, an enemy Foot's psychic detection line: two clipped 3x3 boxes
@@ -551,7 +481,6 @@ pub(crate) struct TacticalViewport {
 /// owners retain foundation offsets and native ground/slope/bridge semantics.
 /// No RNG draws, timer writes, detach calls, Z reads or Z writes occur here.
 /// Evidence: tools/procedural_drawing_oracle/rally.{py,json,meta.json}.
-#[cfg(test)]
 pub(crate) fn build_factory_rally_line_instances(
     sim: Option<&Simulation>,
     rules: Option<&RuleSet>,
@@ -559,26 +488,6 @@ pub(crate) fn build_factory_rally_line_instances(
     house_color_map: &HouseColorMap,
     local_owner: Option<&str>,
     viewport: TacticalViewport,
-) -> [Vec<SpriteInstance>; 2] {
-    build_factory_rally_line_instances_sampled(
-        sim,
-        rules,
-        selected_ids,
-        house_color_map,
-        local_owner,
-        viewport,
-        None,
-    )
-}
-
-pub(crate) fn build_factory_rally_line_instances_sampled(
-    sim: Option<&Simulation>,
-    rules: Option<&RuleSet>,
-    selected_ids: &[u64],
-    house_color_map: &HouseColorMap,
-    local_owner: Option<&str>,
-    viewport: TacticalViewport,
-    interpolation: Option<&super::interpolation::RenderInterpolation>,
 ) -> [Vec<SpriteInstance>; 2] {
     use crate::map::resolved_terrain::NativeCellQuery;
     use crate::sim::movement::ground_pose::{
@@ -636,18 +545,6 @@ pub(crate) fn build_factory_rally_line_instances_sampled(
                 0
             },
         );
-        if let Some(cache) = interpolation
-            && let Some(TargetKind::Entity(id)) = entity.archive_target()
-            && let Some(entity) = sim.entities().get(id)
-        {
-            let sampled = cache.entity_coord(
-                entity,
-                sim.session().binary_frame(),
-                [target.x, target.y, target.z],
-            );
-            target.x = sampled[0];
-            target.y = sampled[1];
-        }
         let start = project(object_get_coords(entity, Some(terrain)));
         let end = project(target);
         let tint = rally_tint_for_owner(owner, house_color_map, &rules.house_color_ramps);

@@ -20,8 +20,7 @@ use super::{
     LOCK_CURSOR_LABEL, LauncherButton, LauncherCheckboxId, LauncherComboId, LauncherCue,
     LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId, MOUSE_WHEEL_ZOOM_HELP,
     MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL, OptionsDialogState,
-    PERFORMANCE_STATS_HELP, PERFORMANCE_STATS_LABEL, PhysicalControlFrame,
-    RENDER_INTERPOLATION_HELP, RENDER_INTERPOLATION_LABEL, RIGHT_CLICK_ORDERS_HELP,
+    PERFORMANCE_STATS_HELP, PERFORMANCE_STATS_LABEL, PhysicalControlFrame, RIGHT_CLICK_ORDERS_HELP,
     RIGHT_CLICK_ORDERS_LABEL, SET_WINDOW_SIZE_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL,
     SHOW_STRING_KEYS_HELP, SHOW_STRING_KEYS_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_INTRO_HELP,
     SKIP_INTRO_LABEL, SMOOTH_ONLINE_MENUS_HELP, SMOOTH_ONLINE_MENUS_LABEL, SMOOTH_SIDEBAR_HELP,
@@ -580,7 +579,6 @@ impl OptionsDialogState {
             LauncherCheckboxId::FullScreen => FULL_SCREEN_LABEL,
             LauncherCheckboxId::OriginalShape => ORIGINAL_SHAPE_LABEL,
             LauncherCheckboxId::YrOriginalStyle => YR_ORIGINAL_STYLE_LABEL,
-            LauncherCheckboxId::RenderInterpolation => RENDER_INTERPOLATION_LABEL,
             LauncherCheckboxId::MouseWheelZoom => MOUSE_WHEEL_ZOOM_LABEL,
             LauncherCheckboxId::RightClickOrders => RIGHT_CLICK_ORDERS_LABEL,
             LauncherCheckboxId::LockCursor => LOCK_CURSOR_LABEL,
@@ -652,7 +650,6 @@ impl OptionsDialogState {
             LauncherCheckboxId::FullScreen => self.values.full_screen,
             LauncherCheckboxId::OriginalShape => self.values.original_shape,
             LauncherCheckboxId::YrOriginalStyle => self.values.yr_original_style,
-            LauncherCheckboxId::RenderInterpolation => self.values.render_interpolation,
             LauncherCheckboxId::MouseWheelZoom => self.values.mouse_wheel_zoom,
             LauncherCheckboxId::RightClickOrders => self.values.right_click_orders,
             LauncherCheckboxId::LockCursor => self.values.lock_cursor,
@@ -902,9 +899,6 @@ impl OptionsDialogState {
                 LauncherCheckboxId::OriginalShape => LauncherStatusHelp::Vera(ORIGINAL_SHAPE_HELP),
                 LauncherCheckboxId::YrOriginalStyle => {
                     LauncherStatusHelp::Vera(YR_ORIGINAL_STYLE_HELP)
-                }
-                LauncherCheckboxId::RenderInterpolation => {
-                    LauncherStatusHelp::Vera(RENDER_INTERPOLATION_HELP)
                 }
                 LauncherCheckboxId::MouseWheelZoom => {
                     LauncherStatusHelp::Vera(MOUSE_WHEEL_ZOOM_HELP)
@@ -1581,7 +1575,6 @@ mod tests {
         for (id, help) in [
             (FullScreen, FULL_SCREEN_HELP),
             (OriginalShape, ORIGINAL_SHAPE_HELP),
-            (RenderInterpolation, RENDER_INTERPOLATION_HELP),
             (YrOriginalStyle, YR_ORIGINAL_STYLE_HELP),
         ] {
             assert_eq!(at(checkbox(&layout, id)), text(help), "{id:?}");
@@ -1948,11 +1941,6 @@ mod tests {
                 OriginalShape,
                 ORIGINAL_SHAPE_LABEL,
                 LauncherOptionsEvent::OriginalShapeChanged,
-            ),
-            (
-                RenderInterpolation,
-                RENDER_INTERPOLATION_LABEL,
-                LauncherOptionsEvent::RenderInterpolationChanged,
             ),
             (
                 YrOriginalStyle,
