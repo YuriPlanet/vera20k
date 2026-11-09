@@ -3764,11 +3764,18 @@ fn sequenced_lost_first_uplink_is_resent_until_the_subscription_pushes() {
         {
             subscribed = Some(step);
         }
+        // Each step counts as 16 ms but takes far less over real UDP, so on a busy
+        // machine the loop could run out before its packets cross loopback.
+        std::thread::sleep(Duration::from_millis(1));
     }
     let (dropped, subscribed) = (dropped.unwrap(), subscribed.unwrap());
-    // Spec §6.0: resent every RTO (100 ms without a sample) until a PACK.
+    // Spec §6.0: resent every RTO until a PACK. Here that is three times the first
+    // RTT sample, capped by the 250 ms heartbeat (16 steps), and a packet arriving
+    // a step or more late inflates the sample. So this only bounds the recovery,
+    // at about a second; the UPLINK tests in the relay protocol's `link/uplink.rs`
+    // pin the exact schedule with a fake clock.
     assert!(
-        subscribed - dropped <= 8,
+        subscribed - dropped <= 64,
         "subscribed {} steps after the lost UPLINK",
         subscribed - dropped
     );
