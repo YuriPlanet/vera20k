@@ -3763,9 +3763,10 @@ fn queue_stop_for_selected(state: &mut AppState) {
         _ => false,
     };
     if qualifies && state.match_state.input.planning.active() {
-        crate::app::input::planning_mode::refuse(
+        crate::app::input::planning_mode::refuse_clicked_event(
             state,
             crate::app::input::planning_mode::PlanningRefusal::Stop,
+            1,
         );
         return;
     }
@@ -3907,9 +3908,10 @@ fn queue_scatter_for_selected(state: &mut AppState) {
                 })
             });
         if eligible {
-            crate::app::input::planning_mode::refuse(
+            crate::app::input::planning_mode::refuse_clicked_event(
                 state,
                 crate::app::input::planning_mode::PlanningRefusal::Scatter,
+                1,
             );
         }
         return;
@@ -4051,9 +4053,10 @@ fn queue_deploy_undeploy_for_selected(state: &mut AppState) {
     // Planning Mode that reaches639FD0 and the NoDeploy refusal at638238,
     // rather than executing an immediate deployment or adding a mission.
     if !commands.is_empty() && state.match_state.input.planning.active() {
-        crate::app::input::planning_mode::refuse(
+        crate::app::input::planning_mode::refuse_clicked_event(
             state,
             crate::app::input::planning_mode::PlanningRefusal::Deploy,
+            commands.len(),
         );
         return;
     }
