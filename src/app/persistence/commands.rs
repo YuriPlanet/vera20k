@@ -249,6 +249,8 @@ fn prepare_save<'a>(
     )
     // Save_Game's VocClass::SaveStaticSounds (`0x00751620`): the map's
     // retained coordinate sounds, so a load can restart its ambient loops.
+    // RESIDUAL: the audio owner keeps the list, so a session with no sound
+    // device saves none and a later load with sound stays quiet there.
     .with_static_sounds(
         state
             .audio
