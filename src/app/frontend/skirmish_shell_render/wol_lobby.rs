@@ -497,7 +497,6 @@ pub(crate) fn paint_wol_lobby_children(
 /// VERA's Players trackbar and Allow spectators box in a Create Game box,
 /// painted after the box as its other checkboxes are.
 pub(super) fn paint_room_limits(
-    state: &AppState,
     atlas: &crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas,
     controls: &mut Vec<SpriteInstance>,
     labels: &mut Vec<PaintLabel<'_>>,
@@ -651,15 +650,7 @@ pub(crate) fn paint_wol_lobby_popup(
                 ));
             }
             if let (Some(picker), Some(room)) = (&create.room, &layout.room) {
-                paint_room_limits(
-                    state,
-                    atlas,
-                    &mut paint.controls,
-                    &mut labels,
-                    picker,
-                    room,
-                    scale,
-                );
+                paint_room_limits(atlas, &mut paint.controls, &mut labels, picker, room, scale);
             }
             if let (Some(ranked), Some(rect)) = (create.ranked, layout.ranked) {
                 paint_control(

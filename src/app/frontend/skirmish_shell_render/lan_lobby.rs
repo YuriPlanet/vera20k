@@ -60,7 +60,6 @@ fn paint_create_box(
     }
     let mut controls = Vec::new();
     super::wol_lobby::paint_room_limits(
-        state,
         atlas,
         &mut controls,
         &mut labels,

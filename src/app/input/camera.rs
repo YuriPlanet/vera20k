@@ -1504,15 +1504,6 @@ impl ViewDistanceTier {
         1.0 / self.scale()
     }
 
-    pub(crate) const fn name(self) -> &'static str {
-        match self {
-            Self::Small => "Small view",
-            Self::Default => "Default view",
-            Self::Large => "Large view",
-            Self::Huge => "Huge view",
-        }
-    }
-
     /// The tier whose zoom is closest to `zoom`; a save or a mid-animation
     /// value keeps the cycle anchored to a known step.
     fn nearest(zoom: f32) -> Self {
@@ -2969,13 +2960,12 @@ fn view_distance_tiers_match_the_1280_reference_and_clamp_at_the_ends() {
         (1.5, 1920, 1200),
     ];
     for (tier, (scale, width, height)) in ViewDistanceTier::ALL.into_iter().zip(expected) {
-        assert_eq!(tier.scale(), scale, "{}", tier.name());
-        assert_eq!((1280.0 * tier.scale()) as u32, width, "{}", tier.name());
-        assert_eq!((800.0 * tier.scale()) as u32, height, "{}", tier.name());
+        assert_eq!(tier.scale(), scale, "{tier:?}");
+        assert_eq!((1280.0 * tier.scale()) as u32, width, "{tier:?}");
+        assert_eq!((800.0 * tier.scale()) as u32, height, "{tier:?}");
         assert!(
             (tier.zoom() - 1.0 / tier.scale()).abs() < f32::EPSILON,
-            "{}",
-            tier.name()
+            "{tier:?}"
         );
     }
     assert_eq!(ViewDistanceTier::Small.smaller(), ViewDistanceTier::Small);

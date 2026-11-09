@@ -1867,7 +1867,7 @@ mod tests {
             session.options.bases = false;
             session.options.unit_count = 0;
 
-            let result = apply_explicit_skirmish_launch_session(
+            apply_explicit_skirmish_launch_session(
                 &mut sim,
                 &map,
                 &roster,

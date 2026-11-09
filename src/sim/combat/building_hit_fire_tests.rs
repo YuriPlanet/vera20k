@@ -171,7 +171,9 @@ fn sparky_attached_fire_survives_save_and_healing_then_uses_owner_expiry() {
             .expect("owner expiry defers Anim retirement");
         assert_eq!(fire.owner_entity(), None);
         assert!(fire.runtime().inactive);
-        restored.visit_anim(id, &rules, None, FrameEffects::default());
+        restored
+            .visit_anim(id, &rules, None, FrameEffects::default())
+            .unwrap();
         restored.process_pending_delete();
         assert!(restored.anim(id).is_none());
         assert_eq!(restored.display_layers().layer_of(id), None);

@@ -25,9 +25,8 @@ use super::{
     SHOW_STRING_KEYS_HELP, SHOW_STRING_KEYS_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_INTRO_HELP,
     SKIP_INTRO_LABEL, SMOOTH_ONLINE_MENUS_HELP, SMOOTH_ONLINE_MENUS_LABEL, SMOOTH_SIDEBAR_HELP,
     SMOOTH_SIDEBAR_LABEL, Setting, SidebarSize, TERRAIN_DEFORMATION_HELP,
-    TERRAIN_DEFORMATION_LABEL, VERA_ICON_HELP, VERA_ICON_LABEL, WOL_TEST_SERVICE_HELP,
-    WOL_TEST_SERVICE_LABEL, YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL,
-    Zoom,
+    TERRAIN_DEFORMATION_LABEL, VERA_ICON_HELP, VERA_ICON_LABEL, YR_ORIGINAL_STYLE_HELP,
+    YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
 };
 use std::borrow::Cow;
 
@@ -591,7 +590,6 @@ impl OptionsDialogState {
             LauncherCheckboxId::HdMapPreviews => HD_MAP_PREVIEWS_LABEL,
             LauncherCheckboxId::ShiftQueue => SHIFT_QUEUE_LABEL,
             LauncherCheckboxId::TerrainDeformation => TERRAIN_DEFORMATION_LABEL,
-            LauncherCheckboxId::WolTestService => WOL_TEST_SERVICE_LABEL,
             LauncherCheckboxId::PerformanceStats => PERFORMANCE_STATS_LABEL,
             LauncherCheckboxId::ShowStringKeys => SHOW_STRING_KEYS_LABEL,
             LauncherCheckboxId::SkipIntro => SKIP_INTRO_LABEL,
@@ -664,7 +662,6 @@ impl OptionsDialogState {
             LauncherCheckboxId::HdMapPreviews => self.values.hd_map_previews,
             LauncherCheckboxId::ShiftQueue => self.values.shift_queue,
             LauncherCheckboxId::TerrainDeformation => self.values.terrain_deformation,
-            LauncherCheckboxId::WolTestService => self.values.wol_test_service,
             LauncherCheckboxId::PerformanceStats => self.values.performance_stats,
             LauncherCheckboxId::ShowStringKeys => self.values.show_string_keys,
             LauncherCheckboxId::SkipIntro => self.values.skip_intro,
@@ -913,9 +910,6 @@ impl OptionsDialogState {
                 LauncherCheckboxId::ShiftQueue => LauncherStatusHelp::Vera(SHIFT_QUEUE_HELP),
                 LauncherCheckboxId::TerrainDeformation => {
                     LauncherStatusHelp::Vera(TERRAIN_DEFORMATION_HELP)
-                }
-                LauncherCheckboxId::WolTestService => {
-                    LauncherStatusHelp::Vera(WOL_TEST_SERVICE_HELP)
                 }
                 LauncherCheckboxId::PerformanceStats => {
                     LauncherStatusHelp::Vera(PERFORMANCE_STATS_HELP)
@@ -2089,18 +2083,8 @@ mod tests {
     }
 
     #[test]
-    fn the_developer_page_cannot_toggle_the_diagnostic_wol_test_service() {
+    fn the_developer_page_boxes_send_their_events() {
         let mut state = state();
-        state.values.wol_test_service = true;
-        for category in Category::ALL {
-            assert!(
-                page(category)
-                    .checkboxes
-                    .iter()
-                    .all(|(id, _)| *id != LauncherCheckboxId::WolTestService),
-                "{category:?}"
-            );
-        }
         // The Developer page holds FPS, String Keys and Skip Startup Logo only.
         let layout = page(Category::Developer);
         for (id, event) in [
@@ -2124,7 +2108,6 @@ mod tests {
                 [LauncherOptionsEvent::Cue(LauncherCue::Checkbox), event]
             );
         }
-        assert!(state.shell_checkbox_checked(LauncherCheckboxId::WolTestService));
     }
 
     #[test]

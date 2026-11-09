@@ -105,6 +105,7 @@ pub(crate) struct CameoClick {
 /// drop a placement with a non-NULL product (`0x006AADC9..0x006AADF8`),
 /// including another category's building. The queued-copy arm has no prefix. Source:
 /// tools/sidebar_oracle/cameo_order.md, ready-building histories.
+#[cfg(test)]
 pub(crate) fn cameo_click(
     queue: &[QueueItemView],
     category: ProductionCategory,
@@ -286,6 +287,7 @@ pub(crate) fn cancel_names_clicked_type(order: Option<CameoOrder>) -> bool {
 /// ordinary PRODUCE event, so `FactoryClass::StartProduction`'s own
 /// `[General] MaximumQueuedObjects=` check still refuses the extras, exactly as
 /// repeated fast clicks would.
+#[cfg(test)]
 pub(crate) fn shift_queue_repeat(
     category: ProductionCategory,
     own: Option<BuildQueueState>,

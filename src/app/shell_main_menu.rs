@@ -234,10 +234,6 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
             crate::app::input::camera::reset_view_distance(self);
         }
     }
-    fn store_wol_test_service(&mut self, wol_test_service: bool) {
-        // The next Internet visit picks its provider from it.
-        self.persistence.options_profile.wol_test_service = wol_test_service;
-    }
     fn store_house_color_strength(&mut self, strength: u8) {
         // Baked into a battle's colour tables when it loads, like the
         // sprite atlas that reads them; Options' accept writes it out.

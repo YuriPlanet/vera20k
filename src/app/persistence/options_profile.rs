@@ -193,8 +193,8 @@ pub(crate) struct RetailOptionsProfile {
     /// Off by default.
     pub(crate) terrain_deformation: bool,
     /// `[VERA] WolTestService=`: Internet answers from VERA's stand-in WOL
-    /// service instead of showing `TXT_APIMISSING`: the Options page's
-    /// developer box. Off by default; no real service exists yet.
+    /// service instead of showing `TXT_APIMISSING`. No Options page offers it.
+    /// Off by default; no real service exists yet.
     pub(crate) wol_test_service: bool,
     /// `[VERA] SoloSkirmish=`: Start accepts a skirmish that has fewer than two
     /// sides for an undisturbed test match — either no AI row enabled, or every
