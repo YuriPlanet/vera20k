@@ -61,31 +61,70 @@ pub(crate) fn labels(
 /// error, not a desync, so the box says so and points at the log instead of
 /// the checksum box's own out-of-sync text.
 pub(crate) fn vera_body(state: &AppState) -> Option<String> {
+    let mut body = reason(state)?;
+    if state.match_state.frame_stopped
+        && let Some(path) = crate::util::logging::log_file()
+    {
+        body.push_str("\n\n");
+        body.push_str(&crate::i18n::tr_fill(
+            "VERA:LogFileDetails",
+            &[("path", &path.display())],
+        ));
+    }
+    Some(body)
+}
+
+fn reason(state: &AppState) -> Option<String> {
     if state.match_state.frame_stopped {
-        let mut body = crate::i18n::tr("VERA:MatchInternalError");
-        if let Some(path) = crate::util::logging::log_file() {
-            body.push_str("\n\n");
-            body.push_str(&crate::i18n::tr_fill(
-                "VERA:LogFileDetails",
-                &[("path", &path.display())],
-            ));
-        }
-        return Some(body);
+        return Some(crate::i18n::tr("VERA:MatchInternalError"));
     }
     match interruption(state)? {
         NetworkInterruption::NewerClientRequired => Some(crate::i18n::tr_fill(
             "VERA:MatchNeedsNewerVera",
             &[("url", &crate::app::shell_wol::RELEASES_URL)],
         )),
-        NetworkInterruption::ConnectionFailed
-            if state.match_state.session_mode()
-                == crate::app::match_runtime::session::SessionMode::Wol =>
-        {
+        NetworkInterruption::ConnectionFailed if online(state) => {
             Some(crate::i18n::tr("VERA:GameServerConnectionFailed"))
         }
         NetworkInterruption::StartMismatch => Some(crate::i18n::tr("VERA:MatchStartMismatch")),
         NetworkInterruption::StartCancelled => Some(crate::i18n::tr("VERA:MatchStartCancelled")),
         _ => None,
+    }
+}
+
+fn online(state: &AppState) -> bool {
+    state.match_state.session_mode() == crate::app::match_runtime::session::SessionMode::Wol
+}
+
+/// VERA: the box closes with the match, so its reason also waits for the
+/// chat the player lands in.
+fn hold_chat_line(state: &mut AppState) {
+    if !online(state) {
+        return;
+    }
+    let line = reason(state).or_else(|| {
+        let ((key, _), _) = labels(state);
+        let csf = state.process_assets.csf.as_ref()?;
+        Some(csf.get(key)?.to_string())
+    });
+    if let Some(line) = line {
+        crate::app::shell_wol::hold_problem_line(state, line);
+    }
+}
+
+/// VERA: Quit on the wait of a match the relay never started shows no box.
+pub(crate) fn hold_quit_line(state: &mut AppState) {
+    let never_started = state
+        .match_state
+        .live_network
+        .as_ref()
+        .and_then(|live| live.delivery_counters())
+        .is_some_and(|counters| !counters.started);
+    if online(state) && never_started {
+        crate::app::shell_wol::hold_problem_line(
+            state,
+            crate::i18n::tr("VERA:MatchStartCancelled"),
+        );
     }
 }
 
@@ -163,6 +202,7 @@ pub(crate) fn take_acknowledged(state: &mut AppState) -> bool {
     {
         return false;
     }
+    hold_chat_line(state);
     state.match_state.network_failure = None;
     if state.frontend.shell_controller.top_id() == Some(DIALOG) {
         state.frontend.shell_controller.pop();

@@ -65,6 +65,7 @@ impl App {
     /// Quit Game's leave: a frame suspended in Wait_For_Players finishes its
     /// tail before the result-8 return.
     pub(super) fn leave_network_wait_to_main_menu(state: &mut AppState) {
+        crate::app::match_runtime::network_failure::hold_quit_line(state);
         if state
             .match_state
             .sim_runtime
