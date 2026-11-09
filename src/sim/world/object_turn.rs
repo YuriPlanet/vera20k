@@ -879,6 +879,9 @@ impl Simulation {
         // viewers once until the ally graph changes (`vision::RevealViewers`).
         let clients = self.fog_viewers();
         self.reveal_viewers.begin(clients);
+        // Its garrisonable civilian buildings walk the Houses for the
+        // Civilian-side one once between them (`CivilianSideHouse`).
+        self.civilian_house_memo.begin();
         let walked = self.try_for_each_live_object::<super::FrameAdvanceError>(|sim, stable_id| {
             #[cfg(feature = "debug-tools")]
             let debug_before = sim
@@ -900,6 +903,7 @@ impl Simulation {
         });
         self.fog.settle_plane_writes();
         self.reveal_viewers.end();
+        self.civilian_house_memo.end();
         self.finish_batched_path_searches();
         self.finish_batched_scans();
         walked?;
