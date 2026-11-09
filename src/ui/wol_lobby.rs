@@ -41,6 +41,8 @@ pub(crate) const PAGE_BUTTON: u16 = 0x5C2;
 /// The online page's Quick Match: the welcome's control.
 pub(crate) const QUICK_MATCH: u16 = crate::ui::wol_shell::QUICK_MATCH;
 pub(crate) const BACK: u16 = 0x686;
+/// VERA's sidebar button under Options; no retail control has this id.
+pub(crate) const CHAT_TRANSLATION: u16 = 0x7E00;
 pub(crate) const REFRESH: u16 = 0x55D;
 pub(crate) const EMOTE: u16 = 0x3ED;
 pub(crate) const LOBBIES: u16 = 0x53D;
@@ -106,8 +108,9 @@ pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
 
 /// The normal VERA lobby keeps core play and Options. It has no welcome
 /// `0x10E`, so its third row is that page's Quick Match (`0x6E0`, its caption
-/// and tooltip) and Options moves to the fourth. The retail page above remains
-/// the owner for legacy service diagnostics.
+/// and tooltip) and Options moves to the fourth, with VERA's Chat Translation
+/// under it. The retail page above remains the owner for legacy service
+/// diagnostics.
 const ONLINE_PAGE: MenuPageSpec = MenuPageSpec {
     stacked: &[
         button(CREATE, 111, "GUI:CreateGame", "STT:LobbyButtonNew"),
@@ -119,6 +122,12 @@ const ONLINE_PAGE: MenuPageSpec = MenuPageSpec {
             "STT:WOLWelcomeQuickMatch",
         ),
         button(OPTIONS, 193, "GUI:WOLOptions", "STT:WOLLobbyOptions"),
+        button(
+            CHAT_TRANSLATION,
+            222,
+            crate::ui::wol_chat_translation::TITLE_KEY,
+            crate::ui::wol_chat_translation::BUTTON_HELP_KEY,
+        ),
     ],
     ..PAGE
 };
@@ -531,6 +540,8 @@ pub(crate) enum WolLobbyAction {
     ObserverChanged(bool),
     /// `0x61F`: WOL Options `0x2BC`.
     Options,
+    /// The online page's Chat Translation page.
+    ChatTranslation,
     /// `0x5C2`: the page dialog `0xCF` (`0x0078BA3E`).
     Page,
     /// The online page's Quick Match: the Quick Match runner `0x0079FC40`.
@@ -880,6 +891,7 @@ impl WolLobbyState {
                 WolLobbyAction::ObserverChanged(self.observer)
             }
             OPTIONS => WolLobbyAction::Options,
+            CHAT_TRANSLATION if self.modern => WolLobbyAction::ChatTranslation,
             PAGE_BUTTON => WolLobbyAction::Page,
             QUICK_MATCH if self.modern => WolLobbyAction::QuickMatch,
             BUDDY | CLAN | TOURNAMENT | NEWS => WolLobbyAction::Unported(control),
@@ -981,7 +993,10 @@ mod tests {
         let mut lobby = WolLobbyState::new(false, true);
         let layout = WolLobbyLayout::new(800, 600, lobby.page_spec());
         let controls: Vec<_> = layout.page.buttons.iter().map(|button| button.id).collect();
-        assert_eq!(controls, [CREATE, JOIN, QUICK_MATCH, OPTIONS, BACK]);
+        assert_eq!(
+            controls,
+            [CREATE, JOIN, QUICK_MATCH, OPTIONS, CHAT_TRANSLATION, BACK]
+        );
         let retail = WolLobbyLayout::new(800, 600, &PAGE);
         assert_eq!(layout.control_rect(QUICK_MATCH), retail.control_rect(BUDDY));
         assert_eq!(layout.control_rect(OPTIONS), retail.control_rect(CLAN));

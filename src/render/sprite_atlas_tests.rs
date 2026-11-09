@@ -2387,7 +2387,7 @@ fn refreshed_sprites_upload_to_a_growth_page_and_leave_resident_ones_in_place() 
                     mip_level_count: 1,
                     sample_count: 1,
                     dimension: wgpu::TextureDimension::D2,
-                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                    format: wgpu::TextureFormat::Rgba8Unorm,
                     usage: wgpu::TextureUsages::TEXTURE_BINDING,
                     view_formats: &[],
                 },

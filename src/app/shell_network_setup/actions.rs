@@ -228,9 +228,19 @@ fn trackbar(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()
         match control {
             SPEED => {
                 options.game_speed =
-                    crate::ui::skirmish_shell::game_speed_from_visual_position(value)
+                    crate::ui::shell::game_speed::SpeedContext::Network.stored_speed(value)
             }
-            CREDITS => options.starting_credits = value,
+            CREDITS => {
+                let credits = state
+                    .frontend
+                    .skirmish_shell_state
+                    .trackbar_bounds
+                    .credits_from_visual_position(value);
+                if options.starting_credits == credits {
+                    return Ok(());
+                }
+                options.starting_credits = credits;
+            }
             UNITS => options.unit_count = value,
             _ => anyhow::bail!("unknown setup slider"),
         }

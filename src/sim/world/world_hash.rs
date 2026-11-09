@@ -718,6 +718,9 @@ impl Simulation {
         self.real_cell_bridge_flags_0x1180.hash(hasher);
         b"dynamic-terrain-cells-v2".hash(hasher);
         self.dynamic_terrain_cells.hash_simulation(hasher);
+        if let Some(terrain) = &self.resolved_terrain {
+            terrain.hash_burrowing_permissions(hasher);
+        }
         self.hash_overlay_grid(hasher);
         self.hash_crate_authority(hasher);
         self.hash_smudge_grid(hasher);
@@ -1153,6 +1156,9 @@ impl Simulation {
             house.is_defeated().hash(hasher);
             if house.is_to_die() {
                 b"house-flag-to-die-v1".hash(hasher);
+            }
+            if house.civilians_evacuated() {
+                b"house-civilians-evacuated-v1".hash(hasher);
             }
             house.has_won().hash(hasher);
             house.has_lost().hash(hasher);

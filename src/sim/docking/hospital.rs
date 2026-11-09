@@ -78,6 +78,7 @@ pub(super) fn mission_repair(
                 //EVA itself is further gated by the app's radar admission.
                 sim.sound_events.emit(SimSoundEvent::UnitRepaired {
                     owner: building.owner(),
+                    owner_admitted: true,
                     radar: crate::sim::radar::RadarEventRequest::new(
                         crate::sim::radar::RadarEventType::UnitRepaired,
                         building.position.rx(),
@@ -96,6 +97,9 @@ pub(super) fn mission_repair(
                         },
                     ));
                 }
+                // MissionRepair44B9A3 plays after radar/EVA and before the
+                // patient is removed from cargo at44B9B7.
+                effects.flush_sound(sim, rules);
             }
             //44B9A8/44B9E0: pop first, call the existing443C60 exit,
             //ignore its return. A blocked exit is not an absorber retry.

@@ -230,7 +230,9 @@ relay pacing off; other bits zero), then HMAC-SHA256 over the first35 bytes with
 domain `VERA20k relay ordering certificate v2\0`. Every grant of one match carries
 the same version and flags; clients reject a renewal whose pacing differs. The signed
 mask includes all human sources (including observers); AI has no source. FPS
-follows launch speed `[60,45,30,20,15,12,10]`. The certificate lasts24 hours;
+follows launch speed `[60,45,30,20,15,12,10]` for stored settings 0–6;
+VERA's setting 8 selects 90 FPS. Setting 7 is not a selectable setup speed.
+The certificate lasts24 hours;
 every UDP control still needs a live authenticated short-lived ticket. The relay
 binds the first matching startup agreement to this roster/clock and starts once
 every remaining signed source is ready. A source that never becomes ready leaves
@@ -347,12 +349,15 @@ earlier chunks the service re-reads to check a finished upload.
 Canonical options are limited to 24 KiB, choice objects use the exact canonical
 slot schema, and unknown request/option fields are rejected. The actor also caps
 pending requests/parsed bodies at 128/4 MiB and individual events at 64 KiB. Active
-sessions, guest profiles and public-room membership are capped at 256. Per-address
-limits key on the client's network: an IPv4 address, or an IPv6 /64, with the
-enclosing /48 as the range. New guest entries are limited to 40/hour per address,
-64/hour per range and 256/hour globally, and one range holds at most 64 active
-sessions (503 `network_full`), with the existing sign-in and ingress limits also
-applied. One name can be taken 30 times in 5 minutes; refused entries do not count. These are service admission limits, not gameplay timers.
+sessions, guest profiles and public-room membership are capped at 256, of which
+guests hold at most 192 so that accounts always fit. When guests hold them all, a
+new guest from a smaller range replaces the longest-silent guest of the largest
+range, unless that guest is in a match, and is otherwise refused (503
+`service_full`). Per-address limits key on the client's network: an IPv4 address,
+or an IPv6 /64, with the enclosing /48 as the range. New guest entries are limited
+to 40/hour per address, 64/hour per range and 512/hour globally, and one range holds
+at most 32 active sessions (503 `network_full`), with the existing sign-in and
+ingress limits also applied. One name can be taken 30 times in 5 minutes; refused entries do not count. These are service admission limits, not gameplay timers.
 Clients verify and install into a
 local cache, preserve existing installed maps, and still require user readiness.
 Generated maps transfer the `.SED` bytes as the map and the separate native PCX
@@ -455,7 +460,8 @@ gets the same finish again without it.
 `POST /v1/translate` accepts exactly `{text,target}` from a v4 bearer and returns
 `{text}`: `text` translated into `target`, a language tag such as `en` or `zh-Hans`.
 A reply can start with a short bracketed note, in that language, naming the language
-it was translated from.
+it was translated from. It can also carry `source`, that language's tag, when it is one
+of the translation targets; clients hide a translation whose `source` the player reads.
 `text` is non-blank and at most 2048 UTF-8 bytes, the chat limit. Clients translate
 received chat only after the player opts in, and always keep the original visible.
 A deployment without a translator, a failed model call or one taking over 10 seconds,
@@ -595,8 +601,9 @@ password. Every request below is a `POST` with a JSON body; a refusal's
 - `/v1/accounts/forget` `{name,sign_in_token}` returns 200 and drops that remembered
   sign-in.
 - `/v1/accounts/delete` `{name,password}` returns 200, deletes the account with its
-  email, remembered sign-ins and ranked games, signs out its player and mails the owner;
-  anyone may then take the name. A wrong password counts as at `/v1/sessions` (403
+  email, remembered sign-ins, ratings and standings, signs out its player and mails the
+  owner; anyone may then take the name. Records of its ranked games stay 90 days for
+  disputes, and no profile names it. A wrong password counts as at `/v1/sessions` (403
   `wrong_password`, the lock), and a name without an account returns 404 `no_account`.
 
 At `/v1/sessions` an account's name needs its `password` or a `sign_in_token`, never
@@ -690,7 +697,8 @@ after it. An ended season keeps its final standings.
 indexes the ten badges, lowest first, and is `null` before the player's first ranked game;
 `rank` is `null` when they are unranked in the running season, and `ranked` is how many
 players it ranks. `games` holds their 20 newest rated games, each
-`{ended,season,sides,size,map,mode,teams,won,os,change}`, their own team first in `teams`; `trend`
+`{ended,season,sides,size,map,mode,teams,won,os,change}`, their own team first in `teams`,
+where `null` stands for a player whose account has since been deleted; `trend`
 their OS after each of their 200 newest rated games, oldest first, each `{ended,season,os}`;
 and `seasons` their final standing in each ended season they played, newest first, each
 `{season,rank,total,os,badge,wins,losses,disconnects}`. A name without an account answers

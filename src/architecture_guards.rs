@@ -1783,6 +1783,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
     // lives in the cited native caller, which the Rust caller ports.
     const PINNED_SETTERS: &[(&str, &str, &str)] = &[
         (
+            "map/resolved_terrain/deformation.rs",
+            "set_terrain_deformation",
+            "VERA's own switch with no native member: whether a grid may deform, set by the \
+             simulation from the scenario's [CombatDamage] TerrainDeformation=",
+        ),
+        (
             "net/global.rs",
             "set_timing",
             "Set_Timing (0x00540C60) forwards its timing to the global channel's +0x28..+0x30 \
@@ -1809,6 +1815,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "rules/object_type.rs",
             "set_secret_lab",
             "runs only inside RuleSet's load",
+        ),
+        (
+            "rules/personal_rules.rs",
+            "set_terrain_deformation",
+            "VERA's own switch with no native member: the Options page's Terrain Deformation \
+             box, which the app passes in for the rules the next scenario reads",
         ),
         (
             "rules/superweapon_type.rs",

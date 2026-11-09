@@ -1752,6 +1752,7 @@ pub(crate) fn mission_repair(
                 let building = sim.substrate.entities.get(depot)?;
                 sim.sound_events.emit(SimSoundEvent::UnitRepaired {
                     owner: building.owner(),
+                    owner_admitted: false,
                     radar: crate::sim::radar::RadarEventRequest::new(
                         crate::sim::radar::RadarEventType::UnitRepaired,
                         building.position.rx(),

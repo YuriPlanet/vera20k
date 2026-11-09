@@ -9,6 +9,8 @@
 //! sim/ only — never render/ui/audio/net.
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
+mod civilian_tests;
 pub mod contacts;
 pub mod receive;
 mod tether;
@@ -420,10 +422,6 @@ impl RadioMessage {
 pub enum RadioResponse {
     None = 0,
     Roger = 1,
-    /// "Come aboard": an aircraft's answer to DOCK_NOW (`0x0041938E`), on
-    /// which a docking aircraft boards its contact
-    /// (`AircraftClass::Mission_Enter`, `0x0041A02C..0x0041A058`).
-    Attach = 0x05, // name inferred
     Negatory = 0x0A,
     /// DOCKING echoed back: a transport answers it once it has taken the
     /// sender as its own destination (Unit `0x00737955`, `0x00737984`). The
@@ -435,6 +433,10 @@ pub enum RadioResponse {
     Queued = 0x17,
     InsufficientFunds = 0x20,
     RepairComplete = 0x21,
+    /// Aircraft DOCK_NOW returns the literal 5, including for a null sender
+    /// (`AircraftClass::Receive_Radio @ 0x0041938E`). Its callers distinguish
+    /// it from ROGER; no additional meaning is inferred from the number.
+    Code5 = 5,
 }
 
 impl RadioResponse {
@@ -479,7 +481,7 @@ fn message_codes_match_wire_opcodes() {
 fn response_codes_match_wire_opcodes() {
     assert_eq!(RadioResponse::None.code(), 0);
     assert_eq!(RadioResponse::Roger.code(), 1);
-    assert_eq!(RadioResponse::Attach.code(), 0x05);
+    assert_eq!(RadioResponse::Code5.code(), 5);
     assert_eq!(RadioResponse::Negatory.code(), 0x0A);
     assert_eq!(RadioResponse::AlreadyThere.code(), 0x14);
     assert_eq!(RadioResponse::Queued.code(), 0x17);

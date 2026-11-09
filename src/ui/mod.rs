@@ -32,6 +32,7 @@ pub mod sw_sidebar;
 pub mod tooltips;
 pub(crate) mod wol_buddy;
 pub(crate) mod wol_chat;
+pub(crate) mod wol_chat_translation;
 pub(crate) mod wol_lobby;
 pub(crate) mod wol_account;
 pub mod wol_login;

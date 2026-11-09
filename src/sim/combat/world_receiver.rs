@@ -13,6 +13,9 @@ use crate::sim::world::{FrameEffects, Simulation};
 #[path = "area_rocker.rs"]
 mod area_rocker;
 
+#[path = "building_hit_fire.rs"]
+mod building_hit_fire;
+
 /// FootClass::AI `0x004DA554..0x004DA635`: after the whole Techno AI and
 /// before locomotor Process, read this Foot's current cell and synchronously
 /// enter its concrete ReceiveDamage. Unit/Infantry/Aircraft call Foot at
@@ -1388,6 +1391,18 @@ pub(crate) fn commit_entities(
             }
             BuildingReceivePrelude::Continue => {}
         }
+        // Building4422C1 captures its footprint through Object5F5B90 before
+        // the complete Techno receiver. Keep that old layout if callbacks
+        // change the type; the hit-fire loop reads the live anchor/dimensions.
+        // Stock Foundation is a small value; defer its cell allocation until
+        // a yellow/red result actually reaches the loop.
+        let building_foundation = world
+            .substrate
+            .entities
+            .get(target_id)
+            .filter(|target| target.category() == EntityCategory::Structure)
+            .and_then(|target| world.interner.object_type(target.type_ref(), rules))
+            .map(|kind| kind.foundation.clone());
         // `UnitClass::ReceiveDamage 0x00737CB6..0x00737D2E`: a unit still
         // inside its war factory returns 0 before FootClass::ReceiveDamage.
         // Ares 3.0 UnitClass_ReceiveDamage_ShipyardRepair (1005D5E0, hook
@@ -2061,25 +2076,37 @@ pub(crate) fn commit_entities(
         if matches!(
             receive_state,
             damage::DamageState::Yellow | damage::DamageState::Red
-        ) && sound_enabled
-            && let Some(target) = world.substrate.entities.get(target_id)
+        ) && let Some(target) = world.substrate.entities.get(target_id)
             && target.category() == EntityCategory::Structure
             && target.lifecycle.object_alive()
-            && world
-                .interner
-                .object_type(target.type_ref(), rules)
-                .is_some_and(|object| object.damage_sound().is_none())
-            && let Some(sound_id) = rules.general.building_damage_sound()
         {
-            let coordinate =
-                crate::sim::movement::ground_pose::position_world_coord(&target.position);
-            world.sound_events.emit(SimSoundEvent::VocAtCoord {
-                sound_id: sound_id.to_owned(),
-                coordinate,
-                //4426E1 PUSH0 before750E20 at442706 (same executed owner).
-                flags: 0,
-            });
-            run.effects().flush_sound(world, rules);
+            if sound_enabled
+                && world
+                    .interner
+                    .object_type(target.type_ref(), rules)
+                    .is_some_and(|object| object.damage_sound().is_none())
+                && let Some(sound_id) = rules.general.building_damage_sound()
+            {
+                let coordinate =
+                    crate::sim::movement::ground_pose::position_world_coord(&target.position);
+                world.sound_events.emit(SimSoundEvent::VocAtCoord {
+                    sound_id: sound_id.to_owned(),
+                    coordinate,
+                    //4426E1 PUSH0 before750E20 at442706 (same executed owner).
+                    flags: 0,
+                });
+                run.effects().flush_sound(world, rules);
+            }
+            if let Some(foundation) = building_foundation.as_ref() {
+                building_hit_fire::spawn(
+                    world,
+                    run,
+                    rules,
+                    target_id,
+                    event.warhead_ref,
+                    foundation,
+                );
+            }
         }
 
         // `BuildingClass::ReceiveDamage`'s retaliation block
@@ -4675,6 +4702,10 @@ mod ifv_area_receipt_tests;
 #[cfg(test)]
 #[path = "nuke_maker_tests.rs"]
 mod nuke_maker_tests;
+
+#[cfg(test)]
+#[path = "building_hit_fire_tests.rs"]
+mod building_hit_fire_tests;
 
 #[cfg(all(test, feature = "phobos"))]
 #[path = "phobos_bullet_init_tests.rs"]

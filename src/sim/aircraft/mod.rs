@@ -29,6 +29,7 @@ pub mod paradrop_mission;
 mod patrol_mission;
 mod retreat_mission;
 pub(crate) mod spyplane_mission;
+mod trailer;
 
 #[cfg(test)]
 mod ai_head_tests;
@@ -38,6 +39,8 @@ mod dock_cycle_tests;
 mod release_tests;
 #[cfg(test)]
 mod team_strike_tests;
+#[cfg(test)]
+mod trailer_tests;
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;

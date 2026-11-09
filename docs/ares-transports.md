@@ -65,7 +65,7 @@ Convert.Deploy=DEPLOYED
   (Guard 100489D0, 0x416CF4); a refused drop destroys the Carryall
   (DestroyCargo 100488C0, 0x416C4D). A paradropped passenger loses Transporter
   and IsOnCarryall (Paradrop_Carryall 10048B80, 0x415DF6).
-- Aircraft passengers over the stock CAN_LOAD arm (`aircraft_can_load`,
+- Aircraft passengers over the stock CAN_LOAD arm (`aircraft_can_enter_radio`,
   `sim/radio/receive.rs`): a driverless transport answers 0
   (QueryEnterAsPassenger_KillDriver 10048CF0, 0x41946B) and one whose
   `Passengers.Allowed`/`.Disallowed` refuses the sender NEGATORY

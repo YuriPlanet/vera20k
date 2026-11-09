@@ -1163,6 +1163,15 @@ impl Simulation {
         if sim.tick_ship_sinking(stable_id, rules, overlay_registry, object_ctx.effects) {
             return Ok(outcome);
         }
+        // Aircraft414ED0..414F42 emits after sinking, before the off-map
+        // removal below. Its independent child survives that removal.
+        sim.emit_aircraft_trailer(stable_id, rules, object_ctx.effects)
+            .map_err(|cause| super::FrameAdvanceError {
+                tick: sim.session.tick(),
+                binary_frame: sim.session.binary_frame(),
+                entity_id: stable_id,
+                cause,
+            })?;
         // Infantry51BDE7..51BF80 follows the Foot tail: rate-zero fire
         // cancellation, its second Ready/Commence, Fear, firing51BF59,
         // sequencer51BF6A and locomotion actions51BF7B. Inline FireAt

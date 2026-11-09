@@ -19,7 +19,7 @@ use super::combos::{apply_combo_selection, combo_open};
 use super::player_name::selected_player_rows;
 use super::{
     SkirmishAiRowType, SkirmishComboId, SkirmishComboItem, SkirmishCountryChoice,
-    SkirmishShellState, combo_items, game_speed_visual_position, selected_combo_item,
+    SkirmishShellState, combo_items, selected_combo_item,
 };
 
 /// One row's Side, Color, Start and Team picks.
@@ -116,11 +116,12 @@ impl SkirmishSavedSetup {
             let range = bounds.range(id);
             (range.min..=range.max).contains(&value)
         };
-        let speed = game_speed_visual_position(self.game_speed);
+        let speed =
+            crate::ui::shell::game_speed::SpeedContext::Offline.visual_position(self.game_speed);
         if fits(SkirmishTrackbarId::GameSpeed0x529, speed) {
             state.game_speed = self.game_speed;
         }
-        if fits(SkirmishTrackbarId::Credits0x511, self.credits) {
+        if bounds.accepts_credits(self.credits) {
             state.starting_credits = self.credits;
         }
         if fits(SkirmishTrackbarId::UnitCount0x50c, self.unit_count) {

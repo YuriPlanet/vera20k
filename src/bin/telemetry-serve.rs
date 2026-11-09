@@ -445,7 +445,9 @@ fn main() -> Result<(), String> {
             snapshot.session = Some(SessionContext {
                 map_name: sim.session().map_name().to_owned(),
                 game_mode: sim.session().game_mode().as_str().to_owned(),
-                game_speed: sim.session().game_options().game_speed.clamp(0, 6) as u8,
+                game_speed: vera20k::sim::game_options::clamp_game_speed(
+                    sim.session().game_options().game_speed,
+                ),
                 local_owner: sim
                     .session()
                     .current_house()

@@ -1,10 +1,11 @@
 //! Client-side in-game Options (0xBBB) state: the six [Options] values plus the
 //! transient interaction state the overlay needs. App/ui-level only — never sim/.
 //!
-//! Values are stored in gamemd's INTERNAL representation: GameSpeed/ScrollRate are
-//! 0..6 with 0 = fastest (the dialog slider position is `6 - value`); DetailLevel
-//! is 0..2 direct. Defaults match gamemd OptionsClass::SetDefaults.
+//! Stored native values remain unchanged. GameSpeed adds VERA's value 8 for
+//! 90 ticks/s; ScrollRate stays 0..6. DetailLevel is 0..2 direct.
 
+use super::game_speed::{MAX_POSITION, SpeedContext};
+use super::in_game_options::control;
 use crate::ui::shell::trackbar::{thumb_left, trackbar_position_from_x};
 use crate::ui::skirmish_shell::RectPx;
 
@@ -16,8 +17,10 @@ pub const OPTIONS_DETAIL_MAX: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InGameOptionsState {
-    /// Internal GameSpeed 0..6 (0 = fastest). Slider position is `6 - game_speed`.
+    /// Internal GameSpeed, projected to a slider by `speed_context`.
     pub game_speed: u32,
+    /// Display ordering only; simulation speed remains owned by GameOptions.
+    pub speed_context: SpeedContext,
     /// Internal ScrollRate 0..6 (0 = fastest). Slider position is `6 - scroll_rate`.
     pub scroll_rate: u32,
     /// DetailLevel 0..2 (direct). Hidden in 0xBBB but carried for persistence.
@@ -41,6 +44,7 @@ impl Default for InGameOptionsState {
         // DetailLevel 2, UnitActionLines 1, ShowHidden 0, ToolTips 1.
         Self {
             game_speed: 3,
+            speed_context: SpeedContext::Offline,
             scroll_rate: 3,
             detail_level: 2,
             unit_action_lines: true,
@@ -55,12 +59,31 @@ impl Default for InGameOptionsState {
 }
 
 impl InGameOptionsState {
+    pub fn slider_position(&self, id: u16) -> u32 {
+        match id {
+            control::GAME_SPEED => self
+                .speed_context
+                .visual_position(self.game_speed as i32)
+                .max(0) as u32,
+            control::SCROLL_RATE => speed_slider_pos(self.scroll_rate),
+            _ => 0,
+        }
+    }
+
     /// Reset the transient interaction state when the overlay (re)opens; gamemd
     /// recreates the dialog each open, and init decides the GameSpeed row.
     pub fn on_open(&mut self, game_speed_hidden: bool) {
         self.buttons = Default::default();
         self.dragging_slider = None;
         self.game_speed_hidden = game_speed_hidden;
+    }
+}
+
+pub const fn slider_max(id: u16) -> u32 {
+    if id == control::GAME_SPEED {
+        MAX_POSITION as u32
+    } else {
+        OPTIONS_SPEED_MAX
     }
 }
 
@@ -78,9 +101,8 @@ pub fn speed_from_slider_pos(pos: u32) -> u32 {
 /// Control-local thumb left for BBB's plain rail. Active 4E1FE0 sends 4AC=0
 /// at 4E207F..2089 / 4E2128..2132, disabling the default 50px plaque.
 /// Native 61DA52..61DA79 and 61E486..61E4A8 project using range, not range+1.
-pub fn plain_trackbar_thumb_left(position: u32, rect: RectPx) -> i32 {
-    let range = OPTIONS_SPEED_MAX as i32;
-    thumb_left(position.min(OPTIONS_SPEED_MAX) as i32, rect.w, 0, range)
+pub fn plain_trackbar_thumb_left(position: u32, rect: RectPx, maximum: u32) -> i32 {
+    thumb_left(position.min(maximum) as i32, rect.w, 0, maximum as i32)
 }
 
 /// Quantized position for BBB's plain rail. Native 61DC00..61DC58 uses
@@ -122,7 +144,7 @@ mod tests {
         assert_eq!((positions.len(), pointers.len()), (7, 209));
         for sample in positions {
             let position = sample["position"].as_u64().unwrap() as u32;
-            let left = plain_trackbar_thumb_left(position, rect);
+            let left = plain_trackbar_thumb_left(position, rect, OPTIONS_SPEED_MAX);
             assert_eq!(left, sample["thumb_left"].as_i64().unwrap() as i32);
             assert_eq!(left + 12, sample["thumb_right"].as_i64().unwrap() as i32);
         }
@@ -134,7 +156,7 @@ mod tests {
                 sample["position"].as_i64().unwrap() as i32,
                 "x={x}"
             );
-            let left = plain_trackbar_thumb_left(position as u32, rect);
+            let left = plain_trackbar_thumb_left(position as u32, rect, OPTIONS_SPEED_MAX);
             assert_eq!(left, sample["thumb_left"].as_i64().unwrap() as i32, "x={x}");
         }
     }

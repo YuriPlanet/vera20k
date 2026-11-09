@@ -46,6 +46,7 @@ pub(crate) fn render_multiplayer_setup(
         crate::app::frontend::preview_zoom::close(state);
         let (progress_meter, texts) =
             crate::app::loading::pump::transfer_progress_draws(state, completed, total)?;
+        let smooth_art = state.smooth_online_menus();
         let layout = crate::app::input::multiplayer_setup::layout(state);
         let atlas = state
             .frontend
@@ -76,6 +77,7 @@ pub(crate) fn render_multiplayer_setup(
             ShellFrameOverlay {
                 progress_meter,
                 texts,
+                smooth_art,
                 ..Default::default()
             },
             ShellFrameCursor::Hidden,
@@ -203,7 +205,10 @@ pub(crate) fn render_multiplayer_setup(
     }
     let mut controls = Vec::new();
     let mut texts = Vec::new();
-    let mut overlay = ShellFrameOverlay::default();
+    let mut overlay = ShellFrameOverlay {
+        smooth_art: state.smooth_online_menus(),
+        ..Default::default()
+    };
     let text = |value: &str, rect: RectPx, align: ShellAlign, rgb: [f32; 3], depth: f32| {
         shell_text::draw_in_rect_scaled(
             font,
@@ -832,9 +837,6 @@ pub(crate) fn render_multiplayer_setup(
         overlay,
         ShellFrameCursor::Visible,
     )?;
-    if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
-        ui.statics.commit_presented();
-    }
     state.platform.window.request_redraw();
     Ok(())
 }
@@ -960,9 +962,22 @@ fn push_trackbar(
         scale,
     );
     if bar.id != DIFFICULTY {
+        let value = match bar.id {
+            SPEED => {
+                let context = crate::ui::shell::game_speed::SpeedContext::Network;
+                context.value_text(context.stored_speed(bar.value))
+            }
+            CREDITS => state
+                .frontend
+                .skirmish_shell_state
+                .trackbar_bounds
+                .credits_from_visual_position(bar.value)
+                .to_string(),
+            _ => bar.range.stepped(bar.value).to_string(),
+        };
         texts.push(shell_text::draw_in_rect_scaled(
             &state.renderer.bit_font,
-            &bar.range.stepped(bar.value).to_string(),
+            &value,
             rect_to_text_rect(crate::ui::shell::trackbar::value_text_rect(rect, scale)),
             if view.enabled(bar.id) {
                 SHELL_LABEL_TEXT_RGB

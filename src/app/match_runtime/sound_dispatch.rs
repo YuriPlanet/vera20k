@@ -110,12 +110,12 @@ fn collect_eva_object(
 /// at most once, in producer order; its result gates the caller's EVA line.
 /// That ordering belongs to the caller, not to radar events.
 ///
-/// RESIDUAL: five events are fed by both kinds of site and keep the PlayerPtr
+/// RESIDUAL: four events are fed by both kinds of site and keep the PlayerPtr
 /// test: CannotDeployHere (IsHumanPlayer in `UnitClass::Deploy` `0x007394E6`,
 /// after the `DeploysInto=` building refuses the cell), UnderAttack (building
 /// arm `0x004F9407`), HouseEva (Robot Tank, GoOnline / GoOffline, crate
-/// upgrades), Repairing (ToggleRepair `0x004470A4`) and UnitRepaired (the
-/// hospital's owner, `0x0044B93F`). Trigger: a campaign `PlayerControl=` house
+/// upgrades) and Repairing (ToggleRepair `0x004470A4`). Trigger: a campaign
+/// `PlayerControl=` house
 /// that is not the player owns a building, a `DeploysInto=` unit or a Robot
 /// Tank, or picks up a crate; effect: that line stays silent. No retail
 /// campaign reaches it. Only ALL01 (Alliance: two ORCA teams; British:
@@ -953,10 +953,17 @@ pub(super) fn dispatch_sim_sound_events(
                     type_override: None,
                 }
             }
-            SimSoundEvent::UnitRepaired { owner, radar } => {
-                // MissionRepair44BD96's local+41A test precedes its type8
-                // radar insertion44BDB2; admission gates the voice44BDC5.
-                if !owner_is_local(sim.interner(), owner, local_owner_name) || !admit_radar(radar) {
+            SimSoundEvent::UnitRepaired {
+                owner,
+                owner_admitted,
+                radar,
+            } => {
+                // Hospital44B93F already admitted House50B6F0. Depot44BD96
+                // defers its local+41A test; both radar insertions gate EVA
+                // (44B973/44BDC5). Do not discard an admitted campaign house.
+                if (!owner_admitted && !owner_is_local(sim.interner(), owner, local_owner_name))
+                    || !admit_radar(radar)
+                {
                     continue;
                 }
                 GameSoundEvent::Eva {
@@ -2313,14 +2320,21 @@ mod tests {
     }
 
     #[test]
-    fn depot_eva_uses_the_local_listener_and_existing_radar_admission() {
+    fn depot_and_hospital_eva_use_their_native_listener_and_radar_admission() {
+        use crate::sim::house_state::HouseState;
         use crate::sim::radar::{RadarEventRequest, RadarEventType};
         let rules = dispatch_rules();
         let mut sim = Simulation::new();
         let local = sim.intern("Local");
         let remote = sim.intern("Remote");
-        let repaired = |owner, rx| SimSoundEvent::UnitRepaired {
+        let controlled = sim.intern("Alliance");
+        let mut house = HouseState::new(controlled, 0, None, false, 0, 10);
+        house.set_player_control_for_test(true);
+        sim.houses_mut_for_test().register(house);
+        assert!(sim.house_is_human_player(controlled));
+        let repaired = |owner, rx, owner_admitted| SimSoundEvent::UnitRepaired {
             owner,
+            owner_admitted,
             radar: RadarEventRequest::new(RadarEventType::UnitRepaired, rx, 7),
         };
         let repair_type = sim.intern("GAPOWR");
@@ -2328,7 +2342,9 @@ mod tests {
         let mut output = SoundEventQueue::new();
         dispatch_sim_sound_events(
             [
-                repaired(remote, 5),
+                repaired(remote, 5, false),
+                repaired(controlled, 6, false),
+                repaired(controlled, 8, true),
                 SimSoundEvent::Repairing {
                     owner: local,
                     type_id: repair_type,
@@ -2337,8 +2353,8 @@ mod tests {
                     owner: local,
                     event: "EVA_InsufficientFunds",
                 },
-                repaired(local, 99),
-                repaired(local, 5),
+                repaired(local, 99, false),
+                repaired(local, 5, false),
             ],
             &sim,
             &rules,
@@ -2353,6 +2369,7 @@ mod tests {
         assert_eq!(
             admitted,
             [
+                (RadarEventType::UnitRepaired, 8),
                 (RadarEventType::UnitRepaired, 99),
                 (RadarEventType::UnitRepaired, 5)
             ]
@@ -2363,7 +2380,12 @@ mod tests {
                 .iter()
                 .map(GameSoundEvent::sound_id)
                 .collect::<Vec<_>>(),
-            ["EVA_Repairing", "EVA_InsufficientFunds", "EVA_UnitRepaired"],
+            [
+                "EVA_UnitRepaired",
+                "EVA_Repairing",
+                "EVA_InsufficientFunds",
+                "EVA_UnitRepaired"
+            ],
         );
     }
 
@@ -3979,6 +4001,7 @@ mod tests {
         dispatch_sim_sound_events(
             [SimSoundEvent::UnitRepaired {
                 owner: local,
+                owner_admitted: false,
                 radar,
             }],
             &sim,

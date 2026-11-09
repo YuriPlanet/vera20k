@@ -112,6 +112,8 @@ cargo run --release --bin vera20k
 การตั้งค่าเสียง กราฟิก และการควบคุมจะบันทึกไว้ใน `VERA.INI` กฎการเล่นมาจากการตั้งค่าล็อบบี้
 ม็อด หรือแผนที่
 
+[คู่มือการทำม็อด](docs/modding.md)อธิบายวิธีสร้างม็อดของคุณเอง
+
 ## สนับสนุนโครงการ
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="สนับสนุน VERA20K ผ่าน PayPal" height="23"></a>
