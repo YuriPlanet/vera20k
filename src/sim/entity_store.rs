@@ -543,6 +543,19 @@ impl EntityStore {
         self.stored().map(|(id, _)| id).collect()
     }
 
+    /// The stored ids of the entities whose category `keep` selects, in
+    /// ascending stable_id order, chosen by the category column without
+    /// loading an entity.
+    pub(crate) fn ids_of_categories(&self, keep: impl Fn(EntityCategory) -> bool) -> Vec<u64> {
+        self.ids
+            .iter()
+            .zip(&self.categories)
+            .zip(&self.entities)
+            .filter(|&((_, &category), entity)| entity.is_some() && keep(category))
+            .map(|((&id, _), _)| id)
+            .collect()
+    }
+
     /// The ids of the stored entities `keep` selects, in ascending stable_id
     /// order. `keep` runs on worker threads ([`crate::sim::parallel`]), so it
     /// only reads.
