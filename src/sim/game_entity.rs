@@ -2492,7 +2492,7 @@ impl GameEntity {
     /// ObjectClass `+0x8D` IsFallingDown. `ObjectClass::Paradrop`
     /// (`0x005F5940`) raises it at `0x005F5965`, and `ObjectClass::AI`
     /// clears it when the fall grounds (`0x005F3F86`).
-    pub(crate) fn is_falling_down(&self) -> bool {
+    pub fn is_falling_down(&self) -> bool {
         self.fall.falling()
     }
 
@@ -2625,7 +2625,7 @@ impl GameEntity {
 
     /// Put a fixture into a fall where it is, with a FallRate of 0.
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn set_falling_down_for_test(&mut self, falling: bool) {
+    pub fn set_falling_down_for_test(&mut self, falling: bool) {
         self.fall.set_falling_for_test(falling);
     }
 

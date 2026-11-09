@@ -124,6 +124,23 @@ fn a_floating_hover_draws_its_shadow_on_the_ground_below_its_body() {
     assert_eq!(pose.slope, 0);
 }
 
+/// A falling Drive Unit (a paradropped vehicle) keeps the same inherited
+/// Shadow_Point (Drive's ILocomotion `+0x30` is `0x0055A8C0`), so its shadow
+/// lies on the ground below it instead of under its body.
+#[test]
+fn a_falling_vehicle_draws_its_shadow_on_the_ground_below_its_body() {
+    let terrain = crate::map::resolved_terrain::test_flat_ground_grid(32);
+    let mut tank = hover_on_ramp(&terrain, "MTNK", 80);
+    tank.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
+    assert!(!has_lifted_unit_shadow(&tank));
+    tank.set_falling_down_for_test(true);
+    assert!(has_lifted_unit_shadow(&tank));
+    let pose = lifted_unit_shadow_pose(&tank, &terrain, 0).unwrap();
+    let (x, y) = crate::render::locomotor_visual::screen_position(&tank);
+    let drop = crate::util::native_x87::adjust_for_z_standard(80);
+    assert_eq!(pose.anchor, [x, y + drop as f32]);
+}
+
 /// Either angle at the double 0.005 gate (`0x00513F53..0x00513F7F`) keys the
 /// draw -1 and tilts the level facing matrix, even for an unpowered Hover
 /// resting on a ramp; binary32 0.005 lies just under that gate. The tilt is
