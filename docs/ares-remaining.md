@@ -48,7 +48,6 @@ first; the Ares part is then small. None of them is reachable with retail YR dat
 |---|---|---|
 | Carryall totes: `Carryall.Allowed`, `Carryall.SizeLimit` (0x417D75, 0x416E37) | The Carryall tote: AircraftClass::Receive_Radio message 8 for a `Carryall=` type (0x4194C5), the Tote action, Mission_Move_Carryall 0x416D50 | No `Carryall=` type |
 | `Passengers.Allowed`/`Disallowed` on aircraft (0x41949F, 10048D10) | Aircraft passengers: the transport arms of AircraftClass::Receive_Radio 0x4190B0 (0xE admission 0x4193B7, 0xF answer 0x41946B, 0x15) and an aircraft hold. Retail transports SHAD and HIND are Jumpjet VehicleTypes and already work | No AircraftType has `Passengers=` |
-| `DigIn`, `DigOut`, `DigInSound`, `DigOutSound` (0x728EF0, 0x7292CF, 0x7293DA, 0x7297C4, 0x7299A9) | TunnelLocomotionClass (the subterranean locomotor) | No subterranean type |
 | `Assaulter.Level` (0x457DB7, 10016FD0) and KillOccupants' assaulter arm (0x4586CA) | The stock `Assaulter=` arms: CanBeOccupiedBy 0x457DAD..0x457DD3 and the assault at 0x522A09..0x522A45 | No assaulter infantry |
 | Visceroid merge (0x739F21, 1004C530) | UnitClass::UpdateVisceroid, called from UnitClass::AI 0x7360C0 | Visceroids spawn only when a mod enables tiberium damage |
 | `NoSelfGuardArea` (0x51E748) | The healer's self-GuardArea arm of the infantry input ladder (0x51E710..0x51E748) | Healers never self-guard |
@@ -243,11 +242,6 @@ unit art.
 | `0x4C850B` | `10062120` | Exception_Dialog | `Misc/Debug.cpp` |
 | `0x534A4D` | `10062140` | Theater_Init_ResetLogStatus | `Misc/Debug.cpp` |
 | `0x687C56` | `10062130` | INIClass_ReadScenario_ResetLogStatus | `Misc/Debug.cpp` |
-| `0x525C28` | `10065550` | INIClass_Parse_IniSectionIncludes_CopySection1 | `Misc/IniSectionIncludes.cpp` |
-| `0x525CA5` | `100655B0` | INIClass_Parse_IniSectionIncludes_PreProcess1 | `Misc/IniSectionIncludes.cpp` |
-| `0x525DDB` | `100655E0` | INIClass_Parse_IniSectionIncludes_PreProcess2 | `Misc/IniSectionIncludes.cpp` |
-| `0x525E44` | `10065580` | INIClass_Parse_IniSectionIncludes_CopySection2 | `Misc/IniSectionIncludes.cpp` |
-| `0x5260D9` | `10065610` | INIClass_Parse_Override | `Misc/IniSectionIncludes.cpp` |
 | `0x55403D` | `1002F850` | LoadProgressMgr_Draw_SkipShadowOnNullString3 | `Ext/Side/Hooks.cpp` |
 | `0x642B36` | `1002F870` | ProgressScreenClass_GetLoadTextColor | `Ext/Side/Hooks.cpp` |
 | `0x642B91` | `1002F870` | ProgressScreenClass_GetSideColor | `Ext/Side/Hooks.cpp` |
@@ -263,8 +257,6 @@ unit art.
 | `0x6CF350` | `1006C440` | SwizzleManagerClass_ConvertNodes | `Misc/Swizzle.cpp` |
 | `0x6A9A43` | `1005E300` | StripClass_Draw_DrawPCX | `Misc/Cameos.cpp` |
 | `0x712045` | `1005E480` | TechnoTypeClass_GetCameo | `Misc/Cameos.cpp` |
-| `0x525D23` | `100652F0` | INIClass_Parse_IteratorChar2 | `Misc/IniIteratorChar.cpp` |
-| `0x5260A2` | `10065280` | INIClass_Parse_IteratorChar1 | `Misc/IniIteratorChar.cpp` |
 | `0x533058` | `10002A80` | CommandClassCallback_Register | `Ares.Commands.cpp` |
 | `0x685659` | `100057F0` | Scenario_ClearClasses | `Ares.Ext.cpp` |
 | `0x6BC0CD` | `10005820` | LoadRA2MD | `Ares.GlobalControls.cpp` |

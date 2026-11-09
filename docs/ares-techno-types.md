@@ -210,9 +210,10 @@ nothing consumes them:
 
 - `Carryall.Allowed`, `Carryall.SizeLimit`: VERA has no Carryall tote
   (hooks 0x417D75, 0x416E37); retail has no carryall.
-- `DigIn`, `DigOut`, `DigInSound`, `DigOutSound`: the Tunnel locomotor is
-  not ported. `Assaulter.Level`: the stock `Assaulter=` arm of
-  CanBeOccupiedBy (hook 0x457DB7) is not ported.
+- `Assaulter.Level`: the stock `Assaulter=` arm of CanBeOccupiedBy (hook
+  0x457DB7) is not ported.
+- `DigIn`, `DigOut`, `DigInSound`, `DigOutSound` are now consumed
+  ([ares-subterranean.md](ares-subterranean.md)).
 - `Convert.Deploy` and `InitialPayload.Types`/`.Nums` are now consumed
   ([ares-transports.md](ares-transports.md)).
 - `CanBeReversed`, `ReversedAs` and `Unsellable` are now consumed

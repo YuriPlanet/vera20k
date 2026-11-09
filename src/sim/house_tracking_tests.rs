@@ -767,7 +767,7 @@ fn a_captured_human_construction_yard_cancels_placement() {
         sim.spawn_object_at_height(kind, "Americans", rx, 10, 0, 0, &rules)
             .unwrap()
     });
-    let mut capture = |sim: &mut Simulation, id, to| {
+    let capture = |sim: &mut Simulation, id, to| {
         sim.lifecycle_outputs.clear_for_test();
         sim.change_owner_with_rules(id, to, &rules, None, FrameEffects::default());
         sim.lifecycle_outputs

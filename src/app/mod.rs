@@ -54,6 +54,7 @@ pub(crate) mod chrono_screen;
 mod cncnet;
 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
 mod browser_lifecycle;
+#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
 pub(crate) use cncnet::SpawnAction;
 pub(crate) mod commander_feedback;
 mod cooperative_round;

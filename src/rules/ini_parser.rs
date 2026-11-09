@@ -32,6 +32,14 @@ pub mod ini_value;
 #[path = "ini_directives.rs"]
 pub mod directives;
 
+/// Ares's `+` keys, `[Child]:[Base]` sections and later-wins keys, which an
+/// Ares launch adds to every INI text load.
+#[cfg(feature = "ares")]
+#[path = "ini_ares_syntax.rs"]
+mod ares_syntax;
+
+use std::borrow::Cow;
+
 use self::ini_value::strtrim_ascii;
 
 const READ_LINE_PAYLOAD: usize = 511;
@@ -361,6 +369,11 @@ pub struct IniFile {
     /// None denotes a compatibility projection, including saved reader views.
     #[serde(skip)]
     fresh_section_index: Option<Vec<(i32, usize)>>,
+    /// The next Ares `+` key number. Only loads read it, so a saved INI,
+    /// which nothing loads into again, does not keep it.
+    #[cfg(feature = "ares")]
+    #[serde(skip)]
+    next_iterator_key: i32,
 }
 
 impl<'de> serde::Deserialize<'de> for IniFile {
@@ -378,6 +391,8 @@ impl<'de> serde::Deserialize<'de> for IniFile {
             sections: saved.sections,
             first_section,
             fresh_section_index: None,
+            #[cfg(feature = "ares")]
+            next_iterator_key: 0,
         })
     }
 }
@@ -388,6 +403,8 @@ impl IniFile {
             sections: Vec::new(),
             first_section: HashMap::new(),
             fresh_section_index: None,
+            #[cfg(feature = "ares")]
+            next_iterator_key: 0,
         }
     }
 
@@ -416,9 +433,11 @@ impl IniFile {
     /// reaches it without an LF, and `LoadFromStraw` discards the line read
     /// on that call: a last line without a line feed is not loaded.
     /// Executed controls: tools/storage_oracle/ini_crc (`unterminated_last_*`).
-    /// RESIDUAL: loading into an INI that already holds sections (the
-    /// `0x00525BFA` arm, e.g. loose `*.PKT` files at `0x00699B58`) puts that
-    /// last entry before testing the flag; VERA has no such merge load.
+    /// Loading into an INI that already holds sections (the `0x00525BFA` arm)
+    /// puts that last entry before testing the flag. An Ares build loads its
+    /// included files that way (`IniFile::merge_load`). RESIDUAL: loose
+    /// `*.PKT` map catalogs merge that way too (`0x00699B58`); VERA reads them
+    /// as fresh files.
     pub fn from_bytes(data: &[u8]) -> Result<Self, RulesError> {
         let complete = data
             .iter()
@@ -428,43 +447,40 @@ impl IniFile {
         Ok(Self::from_str(&text))
     }
 
+    /// `LoadFromStraw` (`0x00525A60`) into an empty INI. An Ares launch
+    /// hooks this reader for every INI it loads, so an Ares build adds
+    /// Ares's syntax here.
     #[expect(
         clippy::should_implement_trait,
         reason = "infallible constructor; FromStr would force a Result on every caller"
     )]
     pub fn from_str(text: &str) -> Self {
+        #[cfg(feature = "ares")]
+        let ini = ares_syntax::load_fresh(text);
+        #[cfg(not(feature = "ares"))]
+        let ini = Self::load_fresh(text);
+        ini
+    }
+
+    #[cfg(not(feature = "ares"))]
+    fn load_fresh(text: &str) -> Self {
         let mut ini = Self::empty();
         let mut current_section = None;
-
-        for physical_line in text.split('\n') {
-            // Straw::ReadLine removes every CR byte while consuming the line.
-            // Most lines end in the one CR of a CRLF pair and hold no other.
-            let line = physical_line.strip_suffix('\r').unwrap_or(physical_line);
-            let without_carriage_returns = if line.contains('\r') {
-                std::borrow::Cow::Owned(line.replace('\r', ""))
-            } else {
-                std::borrow::Cow::Borrowed(line)
-            };
-            if without_carriage_returns.is_empty() {
-                continue;
+        for line in read_lines(text) {
+            match lex_line(&line) {
+                Some(NativeLine::Header { name, .. }) => {
+                    let index = ini.sections.len();
+                    ini.sections.push(IniSection::new(name.to_string()));
+                    ini.first_section.entry(name.to_string()).or_insert(index);
+                    current_section = Some(index);
+                }
+                Some(NativeLine::Entry { key, value }) => {
+                    if let Some(index) = current_section {
+                        ini.sections[index].insert_initial(key, value);
+                    }
+                }
+                None => {}
             }
-
-            // Straw::ReadLine stores at most 511 payload bytes and consumes the
-            // remainder through LF. The discarded tail is never a second line.
-            // A character takes at least one byte, so shorter text is whole.
-            let chunk_end = if without_carriage_returns.len() <= READ_LINE_PAYLOAD {
-                without_carriage_returns.len()
-            } else {
-                without_carriage_returns
-                    .char_indices()
-                    .nth(READ_LINE_PAYLOAD)
-                    .map_or(without_carriage_returns.len(), |(index, _)| index)
-            };
-            let buffered = &without_carriage_returns[..chunk_end];
-            // NUL occupies a buffer byte, but subsequent C-string operations
-            // make the rest of that physical line invisible to the loader.
-            let visible = buffered.split_once('\0').map_or(buffered, |(head, _)| head);
-            Self::parse_line(&mut ini, &mut current_section, visible);
         }
 
         // Retail provenance: INI lexical loading — `INIClass__LoadFromStraw` @ `0x00525A60`.
@@ -485,6 +501,15 @@ impl IniFile {
         ini
     }
 
+    /// `ReadCCFile` of an Ares `[#include]` or Phobos `$Include` file into
+    /// the INI that lists it: `LoadFromStraw`'s merge arm, with an Ares
+    /// launch's parser hooks. Returns the file's own entries of section `list`.
+    #[cfg(feature = "ares")]
+    fn merge_load(&mut self, data: &[u8], list: &str) -> IniSection {
+        ares_syntax::load_into(self, data, list)
+    }
+
+    #[cfg(any(not(feature = "ares"), test, feature = "test-support"))]
     fn discard_entryless_sections(&mut self) {
         self.fresh_section_index = None;
         self.sections.retain(|section| section.entry_count() != 0);
@@ -497,44 +522,6 @@ impl IniFile {
             self.first_section
                 .entry(section.name.clone())
                 .or_insert(index);
-        }
-    }
-
-    fn parse_line(ini: &mut Self, current_section: &mut Option<usize>, raw_line: &str) {
-        let line = strtrim_ascii(raw_line);
-        if line.is_empty() {
-            return;
-        }
-
-        if line.starts_with('[')
-            && let Some(end) = line.find(']')
-        {
-            let name = &line[1..end];
-            let index = ini.sections.len();
-            ini.sections.push(IniSection::new(name.to_string()));
-            ini.first_section.entry(name.to_string()).or_insert(index);
-            *current_section = Some(index);
-            return;
-        }
-
-        // Semicolon truncation happens before the first-equals split, and
-        // only a cut line is trimmed whole (`0x00525F3A`): otherwise the key
-        // and value are trimmed alone, so `strtrim`'s trailing bound applies
-        // to the value's own leading run. `#` has no comment meaning in the
-        // active parser.
-        let payload = raw_line
-            .split_once(';')
-            .map_or(raw_line, |(head, _)| strtrim_ascii(head));
-        let Some((key, value)) = payload.split_once('=') else {
-            return;
-        };
-        let key = strtrim_ascii(key);
-        let value = strtrim_ascii(value);
-        if key.is_empty() || value.is_empty() {
-            return;
-        }
-        if let Some(index) = *current_section {
-            ini.sections[index].insert_initial(key, value);
         }
     }
 
@@ -671,8 +658,10 @@ impl IniFile {
         ini
     }
 
-    /// Compatibility overlay: later exact keys replace earlier ones. This is
-    /// also the include extension's policy, not native PutString528660 parity.
+    /// Compatibility overlay: later exact keys replace earlier ones. Without
+    /// Ares this is also the include extension's policy, not native
+    /// PutString528660 parity; an Ares build loads includes through
+    /// `IniFile::merge_load`.
     /// Residual: overlapping loose PKT files (699B58) can retain a cached
     /// duplicate pair across insertion, then change selection on a later sort.
     /// That separate map-catalog merge needs native index/capacity/cache history
@@ -851,16 +840,109 @@ fn ini_name_crc(name: &str) -> i32 {
     crate::assets::mix_hash::crc_engine(&bytes[..end]) as i32
 }
 
+/// One visible line as `LoadFromStraw` (`0x00525A60`) reads it.
+enum NativeLine<'a> {
+    /// `[name]`, and the text after that first `]`, where Ares reads a base.
+    Header {
+        name: &'a str,
+        #[cfg(feature = "ares")]
+        tail: &'a str,
+    },
+    Entry {
+        key: &'a str,
+        value: &'a str,
+    },
+}
+
+/// The visible text of each nonempty physical line, as `Straw::ReadLine`
+/// stores it for `LoadFromStraw`.
+fn read_lines(text: &str) -> impl Iterator<Item = Cow<'_, str>> {
+    text.split('\n').filter_map(|physical_line| {
+        // Straw::ReadLine removes every CR byte while consuming the line.
+        // Most lines end in the one CR of a CRLF pair and hold no other.
+        let line = physical_line.strip_suffix('\r').unwrap_or(physical_line);
+        let line = if line.contains('\r') {
+            Cow::Owned(line.replace('\r', ""))
+        } else {
+            Cow::Borrowed(line)
+        };
+        if line.is_empty() {
+            return None;
+        }
+        // Straw::ReadLine stores at most 511 payload bytes and consumes the
+        // remainder through LF. The discarded tail is never a second line.
+        // A character takes at least one byte, so shorter text is whole.
+        let chunk_end = if line.len() <= READ_LINE_PAYLOAD {
+            line.len()
+        } else {
+            line.char_indices()
+                .nth(READ_LINE_PAYLOAD)
+                .map_or(line.len(), |(index, _)| index)
+        };
+        // NUL occupies a buffer byte, but subsequent C-string operations
+        // make the rest of that physical line invisible to the loader.
+        let visible = line[..chunk_end].find('\0').unwrap_or(chunk_end);
+        Some(match line {
+            Cow::Borrowed(line) => Cow::Borrowed(&line[..visible]),
+            Cow::Owned(mut line) => {
+                line.truncate(visible);
+                Cow::Owned(line)
+            }
+        })
+    })
+}
+
+/// Both `LoadFromStraw` arms classify a line alike.
+fn lex_line(raw_line: &str) -> Option<NativeLine<'_>> {
+    let line = strtrim_ascii(raw_line);
+    if line.is_empty() {
+        return None;
+    }
+    if line.starts_with('[')
+        && let Some(end) = line.find(']')
+    {
+        return Some(NativeLine::Header {
+            name: &line[1..end],
+            #[cfg(feature = "ares")]
+            tail: &line[end + 1..],
+        });
+    }
+    // Semicolon truncation happens before the first-equals split, and
+    // only a cut line is trimmed whole (`0x00525F3A`): otherwise the key
+    // and value are trimmed alone, so `strtrim`'s trailing bound applies
+    // to the value's own leading run. `#` has no comment meaning in the
+    // active parser.
+    let payload = raw_line
+        .split_once(';')
+        .map_or(raw_line, |(head, _)| strtrim_ascii(head));
+    let (key, value) = payload.split_once('=')?;
+    let key = strtrim_ascii(key);
+    let value = strtrim_ascii(value);
+    if key.is_empty() || value.is_empty() {
+        return None;
+    }
+    Some(NativeLine::Entry { key, value })
+}
+
 /// SectionIndex::FindPair52B620 and FindINIEntryIndexPair52B6D0 use the
 /// same signed midpoint search, returning the first equal pair visited.
 fn find_crc_index_value<T>(pairs: &[(i32, T)], crc: i32) -> Option<&T> {
+    find_crc_index_slot(pairs, crc).map(|slot| &pairs[slot].1)
+}
+
+/// The slot [`find_crc_index_value`] answers from.
+fn find_crc_index_slot<T>(pairs: &[(i32, T)], crc: i32) -> Option<usize> {
+    let mut start = 0;
     let mut remaining = pairs;
     while !remaining.is_empty() {
         let middle = remaining.len() / 2;
         match remaining[middle].0.cmp(&crc) {
-            std::cmp::Ordering::Equal => return Some(&remaining[middle].1),
+            std::cmp::Ordering::Equal => return Some(start + middle),
             std::cmp::Ordering::Greater => remaining = &remaining[..middle],
-            std::cmp::Ordering::Less => remaining = &remaining[middle + 1..],
+            std::cmp::Ordering::Less => {
+                start += middle + 1;
+                remaining = &remaining[middle + 1..];
+            }
         }
     }
     None

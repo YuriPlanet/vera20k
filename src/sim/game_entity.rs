@@ -1381,6 +1381,17 @@ impl GameEntity {
         owned_by_current_house: bool,
         query: crate::sim::cloak_disguise::VisualCharacterQuery,
     ) -> u8 {
+        // FootClass::VisualCharacter (`0x004DA4E0`) takes a nonzero answer of
+        // the locomotor's first: Tunnel's (`0x007291D0`) is Ripple (4), or
+        // Hidden (5) for a forced query, while it travels underground.
+        if self
+            .locomotor
+            .as_ref()
+            .and_then(|locomotor| locomotor.tunnel_runtime())
+            .is_some_and(crate::sim::movement::tunnel_movement::TunnelRuntime::underground)
+        {
+            return 4 + u8::from(query.forced());
+        }
         let stage = self.building_cloak_stage();
         if stage != 0 {
             return crate::sim::cloak_disguise::building_stage_visual_character(

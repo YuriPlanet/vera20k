@@ -504,6 +504,7 @@ impl CameoStrips {
         self.redraw_until = redraw_until;
     }
 
+    #[cfg(test)]
     pub(crate) fn scroll_rows(&self) -> [usize; 4] {
         self.scroll_rows
     }

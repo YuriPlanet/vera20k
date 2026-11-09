@@ -15,8 +15,7 @@ use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::movement::infantry_entry::{InfantryEntryArgs, InfantryEntryClass};
 use crate::sim::world::{
-    FrameEffects, PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest, Simulation,
-    UninitContext,
+    FrameEffects, PlacementEvidence, RevealOutcome, RevealRequest, Simulation, UninitContext,
 };
 use crate::util::lepton;
 

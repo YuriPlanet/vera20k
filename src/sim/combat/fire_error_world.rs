@@ -1000,8 +1000,21 @@ impl FireQuery for WorldQuery<'_, '_> {
         })
     }
 
+    /// Every retail locomotor answers Ok; Tunnel's (`0x0072A1C0`) answers
+    /// FIRE_MOVING while its State is set.
     fn locomotor_can_fire(&mut self) -> FireError {
-        FireError::Ok
+        let digging = self
+            .subject
+            .firer
+            .locomotor
+            .as_ref()
+            .and_then(|locomotor| locomotor.tunnel_runtime())
+            .is_some_and(crate::sim::movement::tunnel_movement::TunnelRuntime::blocks_fire);
+        if digging {
+            FireError::Moving
+        } else {
+            FireError::Ok
+        }
     }
 
     fn jumpjet_locomotor(&mut self) -> bool {

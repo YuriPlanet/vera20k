@@ -42,29 +42,6 @@ fn source_cell(
     Ok(((point.x / 256) as i16, (point.y / 256) as i16))
 }
 
-fn source_on_bridge(
-    sim: &Simulation,
-    cells: &NativeCellQuery<'_>,
-    id: u64,
-) -> Result<bool, String> {
-    let actor = sim
-        .substrate
-        .entities
-        .get(id)
-        .ok_or("retired burrowing Unit")?;
-    if actor.low_bridge_tube_state.is_some() {
-        return Ok(false);
-    }
-    let navigation = foot_coordinate::navigation_coordinate(actor, Some(cells.terrain()))?;
-    ground_pose::navigation_should_be_on_bridge(
-        cells,
-        navigation,
-        ground_pose::position_world_coord(&actor.position),
-        actor.on_bridge(),
-        actor.low_bridge_tube_state.is_some(),
-    )
-}
-
 fn target_cell(
     sim: &Simulation,
     cells: &NativeCellQuery<'_>,
@@ -82,22 +59,6 @@ fn height(sim: &Simulation, cells: &NativeCellQuery<'_>, id: u64) -> Result<i32,
         .get(id)
         .ok_or("retired burrowing Unit")?;
     Ok(air_movement::queried_flight_height(actor, Some(cells)))
-}
-
-fn allows_burrowing(
-    sim: &Simulation,
-    cells: &NativeCellQuery<'_>,
-    cell: NativeCellIdentity,
-) -> bool {
-    cell_allows_burrowing(
-        cells,
-        cell,
-        sim.playfield_bounds(),
-        Some(BurrowingContents {
-            occupancy: &sim.substrate.occupancy,
-            terrain_objects: sim.terrain_objects.cell_index(),
-        }),
-    )
 }
 
 fn zone_id(
@@ -320,9 +281,28 @@ fn commit_route(
 }
 
 impl Simulation {
+    /// CellClass::PassesTileAndOccupancyChecks486FF0 on a live Cell with the
+    /// game's building and terrain-object lists: the burrowing setter, the
+    /// planner and the Tunnel locomotor ask it.
+    pub(crate) fn cell_allows_burrowing(
+        &self,
+        cells: &NativeCellQuery<'_>,
+        cell: NativeCellIdentity,
+    ) -> bool {
+        cell_allows_burrowing(
+            cells,
+            cell,
+            self.playfield_bounds(),
+            Some(BurrowingContents {
+                occupancy: &self.substrate.occupancy,
+                terrain_objects: self.terrain_objects.cell_index(),
+            }),
+        )
+    }
+
     /// Unit741E8E..7422D7, before the ordinary queue clear/Foot setter tail.
-    /// All eight admitted ILocomotion tables' +98 slots are the false leaf
-    /// Locomotion4B4C80, so742314's extra queue-prepend arm is not entered.
+    /// Both of its exits reach742314's queue-prepend arm, which only a
+    /// surfacing Tunnel enters (`Simulation::set_unit_destination`).
     pub(super) fn burrowing_setter_destination(
         &mut self,
         id: u64,
@@ -373,7 +353,7 @@ impl Simulation {
                 &cells,
                 Some((rules, &self.interner)),
             )?;
-            if cells.flags(current) & 0x100 != 0 && !source_on_bridge(self, &cells, id)? {
+            if cells.flags(current) & 0x100 != 0 && !self.foot_should_be_on_bridge(id)? {
                 //742023 retains Cell+24 across GetZoneID, then rereads it as
                 // FNPC's seed. This one call uses the type's row, not Normal.
                 let zone = zone_id(self, &cells, cells.coord(current), movement, false)?;
@@ -408,13 +388,13 @@ impl Simulation {
                     .as_ref()
                     .ok_or("burrowing setter requires map cells")?,
             );
-            let on_bridge = source_on_bridge(self, &cells, id)?;
+            let on_bridge = self.foot_should_be_on_bridge(id)?;
             let from = source_cell(self, &cells, id)?;
-            let from_burrowable = allows_burrowing(self, &cells, cells.lookup(from));
+            let from_burrowable = self.cell_allows_burrowing(&cells, cells.lookup(from));
             let to = target_cell(self, &cells, requested)?;
             let target_cell = cells.lookup(to);
             let target_bridge = cells.flags(target_cell) & 0x100 != 0;
-            let to_burrowable = allows_burrowing(self, &cells, target_cell);
+            let to_burrowable = self.cell_allows_burrowing(&cells, target_cell);
             let actor_height = height(self, &cells, id)?; //742194 is unconditional.
             if on_bridge && target_bridge {
                 //7421C0/7421D5 use tolerance3; the inactive same-record
@@ -475,15 +455,15 @@ impl Simulation {
                 .as_ref()
                 .ok_or("burrowing planner requires map cells")?,
         );
-        let source_bridge = source_on_bridge(self, &cells, id)?;
+        let source_bridge = self.foot_should_be_on_bridge(id)?;
         let from = source_cell(self, &cells, id)?;
-        let from_burrowable = allows_burrowing(self, &cells, cells.lookup(from));
+        let from_burrowable = self.cell_allows_burrowing(&cells, cells.lookup(from));
         //744835 asks GetHeight only if the source predicate failed.
         let underground = from_burrowable || height(self, &cells, id)? < 0;
         let to = target_cell(self, &cells, requested)?;
         let target_cell = cells.lookup(to);
         let target_bridge = cells.flags(target_cell) & 0x100 != 0;
-        let to_burrowable = allows_burrowing(self, &cells, target_cell);
+        let to_burrowable = self.cell_allows_burrowing(&cells, target_cell);
         let original = RouteTarget::Original(requested);
         let fallback = match (source_bridge, underground, target_bridge, to_burrowable) {
             //7448CA: bridge to bridge. The second N1 uses EA's zone.
