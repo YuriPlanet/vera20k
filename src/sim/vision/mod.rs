@@ -827,6 +827,7 @@ impl FogState {
 
     /// Apply every plane's waiting writes once the object pass ends.
     pub(crate) fn settle_plane_writes(&mut self) {
+        let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::VISION);
         self.by_owner.settle();
     }
 

@@ -2404,6 +2404,7 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> damage_consequences::DamageCommitReceipt {
+        let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::FIRING);
         #[cfg(test)]
         if let crate::sim::combat::world_fire::FireVisit::Building { id, shot } = &visit
             && crate::sim::combat::receiver_fixture::substitute_building_fire(

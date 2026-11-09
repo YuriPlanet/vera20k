@@ -251,6 +251,7 @@ impl Simulation {
         rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
     ) {
+        let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::TARGETING);
         let (Some(terrain), Some(_)) = (self.resolved_terrain.as_ref(), self.scan_batch.as_ref())
         else {
             return;

@@ -527,6 +527,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> Result<TubeObjectTurn, FrameAdvanceError> {
+        let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::MOVEMENT);
         let mut turn = TubeObjectTurn::default();
         self.complete_pending_order(id, rules, registry, effects);
         let Some(terrain) = self.resolved_terrain.as_ref() else {

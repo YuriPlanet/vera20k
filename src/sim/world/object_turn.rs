@@ -247,6 +247,7 @@ impl Simulation {
         rules: &RuleSet,
         ctx: techno_ai::ObjectAiCtx<'_>,
     ) -> Result<LocomotorProcess, super::FrameAdvanceError> {
+        let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::MOVEMENT);
         let overlay_registry = ctx.overlay_registry;
         use crate::rules::locomotor_type::LocomotorKind;
         let admitted = self.substrate.entities.get(stable_id).and_then(|entity| {
@@ -854,6 +855,8 @@ impl Simulation {
             .entities
             .get(stable_id)
             .is_some_and(|entity| entity.category() == EntityCategory::Structure);
+        let _building_area = was_structure
+            .then(|| crate::sim::frame_profile::area(crate::sim::frame_profile::phase::BUILDINGS));
         let mut ai = sim.object_ai_visit_one_with_effects(stable_id, rules, object_ctx);
         if let Some(error) = ai.frame_error.take() {
             return Err(error);

@@ -120,7 +120,7 @@ impl FrameStep {
             Self::TeamScript => phase::TEAM_AI,
             Self::LightningStorm => phase::SUPERWEAPONS,
             Self::Radiation => phase::RADIATION,
-            Self::LogicVector => phase::OBJECTS,
+            Self::LogicVector => phase::UNIT_AI,
             Self::Wakes => phase::WAKES,
             Self::Vision => phase::VISION,
             Self::TerrainNavigation => phase::COMBAT,
@@ -252,7 +252,11 @@ impl Simulation {
         };
         for step in LOGIC_STEPS {
             self.enter_frame_step(step);
-            self.run_logic_step(step, inputs, request, &mut frame)?;
+            match frame_clock.as_mut() {
+                Some(clock) if step == FrameStep::LogicVector => clock
+                    .split_object_pass(|| self.run_logic_step(step, inputs, request, &mut frame))?,
+                _ => self.run_logic_step(step, inputs, request, &mut frame)?,
+            }
             if let (Some(clock), Some(slot)) = (frame_clock.as_mut(), step.profile_slot()) {
                 clock.stamp(slot);
             }
