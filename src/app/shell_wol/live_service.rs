@@ -2225,9 +2225,10 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             service.player_id = player_id;
             state.frontend.wol_account.nickname = nickname;
             state.frontend.wol_account.password.clear();
+            // The operator's welcome is the only one: the game has none of its own.
             let motd = motd
                 .filter(|motd| !motd.trim().is_empty())
-                .unwrap_or_else(|| super::service::vera_motd(state));
+                .unwrap_or_default();
             service_event(state, WolServiceEvent::Login(Ok(WolLoginAccepted { motd })));
         }
         http::Response::LoginFailed { attempt, code } if attempt == service.auth_attempt => {
