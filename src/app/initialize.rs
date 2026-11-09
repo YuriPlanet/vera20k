@@ -677,6 +677,12 @@ impl App {
             // Without it the splash goes up now and the load is spent inside
             // its hold. A present that did not reach the screen stays unarmed
             // for the frame loop to retry.
+            // No AppState exists yet, so publish the persisted mode here:
+            // the first splash must present through the same filter as the
+            // frame loop that follows.
+            gpu.set_color_vision_matrix(crate::app::state::color_vision_matrix_for(
+                options_profile.color_vision,
+            ));
             let splash = startup_splash.as_mut().filter(|_| !play_startup);
             match startup_splash::render_and_present(
                 &gpu,

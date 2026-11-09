@@ -707,6 +707,13 @@ impl App {
         mut hidden_run: Option<&mut crate::app::hidden_run::HiddenRun>,
         pass: FramePass,
     ) -> Result<FrameRenderOutcome> {
+        // Publish the player's colour-vision matrix before any early-return
+        // present and before synchronous loading repaints: all of them encode
+        // through the shared filter on GpuContext, not just the frame's tail.
+        state
+            .renderer
+            .gpu
+            .set_color_vision_matrix(state.color_vision_matrix());
         // The glyph atlas empties or grows only between frames, while no
         // instance built from it is waiting to draw.
         state
@@ -1596,6 +1603,15 @@ impl App {
             .and_then(|output| output.phases)
             .map(|phases| (phases, Instant::now()));
         state.renderer.gpu.timer.end_frame(&mut encoder);
+        // VERA's colour-vision filter is the last draw of every presented
+        // frame, so the world, sidebar, menus, overlays and software cursor
+        // are all covered. Every screenshot and capture readback above is
+        // encoded earlier in this command buffer and stays uncorrected.
+        // Synchronous loading repaints call the same GpuContext helper.
+        state
+            .renderer
+            .gpu
+            .encode_color_vision(&mut encoder, &output.texture);
         let submission = state
             .renderer
             .gpu

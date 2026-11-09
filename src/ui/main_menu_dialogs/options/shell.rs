@@ -8,9 +8,10 @@
 //! one column at the places retail's first band uses.
 
 use super::{
-    CHECK_FOR_UPDATES_HELP, CHECK_FOR_UPDATES_LABEL, CONTROLS_LABEL, CUSTOM_END_GAME_BANNER_HELP,
-    CUSTOM_END_GAME_BANNER_LABEL, CUSTOM_END_GAME_MOVIE_HELP, CUSTOM_END_GAME_MOVIE_LABEL,
-    CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL, Category, DETAILED_EVA_TEXT_HELP,
+    CHECK_FOR_UPDATES_HELP, CHECK_FOR_UPDATES_LABEL, COLOR_VISION_HELP, COLOR_VISION_LABEL,
+    CONTROLS_LABEL, CUSTOM_END_GAME_BANNER_HELP, CUSTOM_END_GAME_BANNER_LABEL,
+    CUSTOM_END_GAME_MOVIE_HELP, CUSTOM_END_GAME_MOVIE_LABEL, CUSTOM_END_GAME_SCORE_HELP,
+    CUSTOM_END_GAME_SCORE_LABEL, Category, ColorVisionMode, DETAILED_EVA_TEXT_HELP,
     DETAILED_EVA_TEXT_LABEL, DEVELOPER_OPTIONS_LABEL, DISPLAY_AUTO_LABEL, DISPLAY_HELP,
     DISPLAY_LABEL, DisplayTarget, FULL_SCREEN_HELP, FULL_SCREEN_LABEL, HAS_CHECK_FOR_UPDATES,
     HAS_SET_WINDOW_SIZE, HD_MAP_PREVIEWS_HELP, HD_MAP_PREVIEWS_LABEL, HD_RADAR_HELP,
@@ -699,6 +700,11 @@ impl OptionsDialogState {
         self.values.health_bars
     }
 
+    /// The Colour Vision face's text: the retained choice.
+    pub(crate) fn shell_selected_color_vision(&self) -> ColorVisionMode {
+        self.values.color_vision
+    }
+
     /// The Display list's rows, top to bottom: Auto, then every screen the
     /// window layer reported. Auto is first so a profile whose saved screen is
     /// gone still shows a picked row.
@@ -786,6 +792,13 @@ impl OptionsDialogState {
                 let selected = choices
                     .iter()
                     .position(|mode| *mode == self.values.health_bars);
+                (choices.len(), selected)
+            }
+            LauncherComboId::ColorVision => {
+                let choices = ColorVisionMode::choices();
+                let selected = choices
+                    .iter()
+                    .position(|mode| *mode == self.values.color_vision);
                 (choices.len(), selected)
             }
             LauncherComboId::Language => {
@@ -942,6 +955,7 @@ impl OptionsDialogState {
                     LauncherComboId::Sidebar => SIDEBAR_HELP,
                     LauncherComboId::Display => DISPLAY_HELP,
                     LauncherComboId::HealthBars => HEALTH_BARS_HELP,
+                    LauncherComboId::ColorVision => COLOR_VISION_HELP,
                     LauncherComboId::Language => LANGUAGE_HELP,
                 })
             })
@@ -981,6 +995,12 @@ impl OptionsDialogState {
                 LauncherComboId::HealthBars => {
                     match row.and_then(|row| HealthBarMode::choices().get(row).copied()) {
                         Some(mode) => self.select_health_bars(mode),
+                        None => self.open_combo = None,
+                    }
+                }
+                LauncherComboId::ColorVision => {
+                    match row.and_then(|row| ColorVisionMode::choices().get(row).copied()) {
+                        Some(mode) => self.select_color_vision(mode),
                         None => self.open_combo = None,
                     }
                 }
@@ -1075,6 +1095,7 @@ fn list_caption(id: LauncherComboId) -> String {
         LauncherComboId::Sidebar => SIDEBAR_LABEL,
         LauncherComboId::Display => DISPLAY_LABEL,
         LauncherComboId::HealthBars => HEALTH_BARS_LABEL,
+        LauncherComboId::ColorVision => COLOR_VISION_LABEL,
         LauncherComboId::Language => LANGUAGE_LABEL,
     })
 }

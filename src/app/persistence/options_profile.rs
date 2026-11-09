@@ -234,6 +234,11 @@ pub(crate) struct RetailOptionsProfile {
     /// value. Defaults to the native rule. Client presentation only: the
     /// simulation never reads it, and the profile writer round-trips the value.
     pub(crate) health_bars: crate::ui::main_menu_dialogs::options::HealthBarMode,
+    /// `[VERA] ColorVisionMode=`: the whole-viewport colour-vision filter, as
+    /// a [`ColorVisionMode`](crate::ui::main_menu_dialogs::options::ColorVisionMode)
+    /// value. `Off` keeps the retail image. Client presentation only: the
+    /// final frame pass reads it live, and the simulation never sees it.
+    pub(crate) color_vision: crate::ui::main_menu_dialogs::options::ColorVisionMode,
     /// `[VERA] Translate*=`: what received online chat is translated into, and
     /// where. The lobby's Chat Translation page and the `/translate` chat
     /// command change it, and write it alone
@@ -344,6 +349,7 @@ impl Default for RetailOptionsProfile {
             custom_end_game_score: false,
             custom_end_game_movie: false,
             health_bars: crate::ui::main_menu_dialogs::options::HealthBarMode::Vanilla,
+            color_vision: crate::ui::main_menu_dialogs::options::ColorVisionMode::Off,
             chat_translation: Default::default(),
             language: None,
             skipped_update: String::new(),
@@ -367,7 +373,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 30],
+    pub(crate) vera: [(&'static str, String); 31],
 }
 
 impl RetailOptionsLoad {
@@ -607,6 +613,12 @@ impl RetailOptionsProfile {
             self.health_bars = crate::ui::main_menu_dialogs::options::HealthBarMode::from_ini_value(
                 vera.read_int("HealthBars", self.health_bars.ini_value()),
             );
+            // Absent keeps the current value; a value this build does not know
+            // reads as Off instead of enabling a filter with no matrix.
+            self.color_vision =
+                crate::ui::main_menu_dialogs::options::ColorVisionMode::from_ini_value(
+                    vera.read_int("ColorVisionMode", self.color_vision.ini_value()),
+                );
             let chat = &mut self.chat_translation;
             if let Some(value) = vera.read_name("TranslateChat", 16) {
                 chat.set_language(crate::ui::chat_translation::ChatLanguage::from_tag(value));
@@ -793,6 +805,7 @@ impl RetailOptionsProfile {
                     "ShowStringKeys",
                     format_bool(self.show_string_keys).to_string(),
                 ),
+                ("ColorVisionMode", self.color_vision.ini_value().to_string()),
             ],
         }
     }
@@ -1950,6 +1963,42 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
                     .health_bars,
                 expected,
                 "HealthBars={value} survives the profile writer"
+            );
+        }
+    }
+
+    /// `[VERA] ColorVisionMode=` is the whole-viewport filter: zero is the
+    /// retail image and the default, and a value this build does not know
+    /// reads as Off, so a hand-edited INI never enables an unknown matrix.
+    #[test]
+    fn color_vision_modes_read_and_round_trip() {
+        use crate::ui::main_menu_dialogs::options::ColorVisionMode;
+
+        let startup = RetailStartupOptions::default();
+        assert_eq!(
+            load_snapshot(&startup, b"").retained_profile.color_vision,
+            ColorVisionMode::Off
+        );
+        for (value, expected) in [
+            (0, ColorVisionMode::Off),
+            (1, ColorVisionMode::Generic),
+            (2, ColorVisionMode::Deuteranopia),
+            (3, ColorVisionMode::Protanopia),
+            (4, ColorVisionMode::Tritanopia),
+            (7, ColorVisionMode::Off),
+            (-1, ColorVisionMode::Off),
+        ] {
+            let input = format!("[VERA]\nColorVisionMode={value}\nUnowned=keep\n");
+            let profile = load_snapshot(&startup, input.as_bytes()).retained_profile;
+            assert_eq!(profile.color_vision, expected, "ColorVisionMode={value}");
+            let written = String::from_utf8(profile.transform_settings(input.as_bytes())).unwrap();
+            assert!(written.contains("Unowned=keep"), "{written}");
+            assert_eq!(
+                load_snapshot(&startup, written.as_bytes())
+                    .retained_profile
+                    .color_vision,
+                expected,
+                "ColorVisionMode={value} survives the profile writer"
             );
         }
     }
