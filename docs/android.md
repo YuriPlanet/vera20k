@@ -83,6 +83,12 @@ inside the 72 dp safe zone, and `res/mipmap-anydpi-v26/ic_launcher_<name>.xml`
 pairs it with a median-colour background, so every launcher mask crops the icon
 correctly. `res/values/ic_launcher_backgrounds.xml` holds those colours.
 
+The same artwork is the Android 12+ splash icon: each entry's theme
+(`Theme.Vera20k.RetailSplash` / `Theme.Vera20k.VeraSplash`, declared per alias)
+names its own foreground, so the launch window matches the icon the player
+tapped. Before Android 12 the launch window is the shared `splash_background`
+artwork, which both entries use.
+
 Regenerate after either source image changes:
 
 ```powershell

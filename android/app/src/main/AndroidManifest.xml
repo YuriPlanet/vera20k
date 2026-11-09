@@ -63,6 +63,7 @@
             android:enabled="true"
             android:icon="@mipmap/ic_launcher_retail"
             android:roundIcon="@mipmap/ic_launcher_retail"
+            android:theme="@style/Theme.Vera20k.RetailSplash"
             android:label="VERA20K">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -81,6 +82,7 @@
             android:enabled="false"
             android:icon="@mipmap/ic_launcher_vera"
             android:roundIcon="@mipmap/ic_launcher_vera"
+            android:theme="@style/Theme.Vera20k.VeraSplash"
             android:label="VERA20K">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
