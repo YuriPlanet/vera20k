@@ -96,7 +96,7 @@ impl Simulation {
         if let Some(building) = self.substrate.entities.get_mut(building_id) {
             building.ares_raid.owner_before_raid = Some(owner);
         }
-        self.announce_engineer_capture(building_id, occupier_owner, rules);
+        self.announce_building_capture(building_id, occupier_owner, rules);
         self.change_owner_with_rules(building_id, occupier_owner, rules, registry, effects);
     }
 

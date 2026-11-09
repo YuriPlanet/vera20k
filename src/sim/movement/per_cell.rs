@@ -999,7 +999,8 @@ impl Simulation {
     ///   `UndeploysInto=` only on the 4x4 Construction Yards and the 2x2
     ///   YAREFN, so the arm falls through to the building receiver. With such
     ///   a type, an infantryman in its cell would take it over (tag event,
-    ///   Detach_All, ChangeOwner `0x00519A27`, Techno `+0x338`, GotHijacked)
+    ///   Detach_All, ChangeOwner `0x00519A27` with announce=1, so
+    ///   `announce_building_capture`, Techno `+0x338`, GotHijacked)
     ///   and one stopped short would re-issue Set_Destination(NavCom)
     ///   (`0x00519AFA`), with early returns that skip the reveal
     ///   (`0x0051A8D7`).
