@@ -971,11 +971,22 @@ impl Simulation {
                     }
                     let location =
                         crate::sim::movement::ground_pose::object_location(entity, Some(terrain));
+                    //64D27A reads the probe ray's origin through vt+0x4C. An
+                    // error names a state native has no outcome for (a Tube
+                    // member is filtered above, a Foot always has a
+                    // locomotor), where the Location is the Head_To fallback.
+                    let navigation = self
+                        .foot_navigation_coordinate(entity_id)
+                        .unwrap_or(location);
                     members.push(group_destination::GroupDestinationMember {
                         command_index,
                         entity_id,
                         coord: [location.x, location.y, location.z],
                         source_cell: (entity.position.rx() as i16, entity.position.ry() as i16),
+                        navigation_cell: (
+                            crate::util::lepton::lepton_to_cell(navigation.x),
+                            crate::util::lepton::lepton_to_cell(navigation.y),
+                        ),
                     });
                 }
                 let mut member_target: Option<GroupMemberTarget> = None;
