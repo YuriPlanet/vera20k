@@ -2,12 +2,16 @@ package org.vera20k
 
 import android.app.Activity
 import android.app.ActivityManager.TaskDescription
+import android.app.AlarmManager
 import android.app.NativeActivity
+import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Process
+import android.os.SystemClock
 import android.provider.DocumentsContract
 import java.io.File
 import java.io.IOException
@@ -58,8 +62,27 @@ class VeraActivity : NativeActivity() {
         startActivityForResult(intent, REQUEST_PICK_FOLDER)
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
+    /**
+     * Ends the process with the task.
+     *
+     * winit builds one event loop per process, so this activity cannot serve a
+     * second task: a relaunch inside a surviving process calls `android_main`
+     * again and exits on the spot, which the player sees as a splash flash and
+     * a crash. A task can also lose its activity without the player swiping it —
+     * applying the new launcher icon disables the alias that hosted it — so the
+     * process follows its activity and the next tap is a cold start.
+     *
+     * Every configuration change is listed in `configChanges`, so reaching here
+     * means the activity is really going away.
+     */
+    override fun onDestroy() {
+        super.onDestroy()
+        if (isFinishing) {
+            Process.killProcess(Process.myPid())
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {        super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != REQUEST_PICK_FOLDER) return
         val tree = if (resultCode == Activity.RESULT_OK) data?.data else null
         // An empty string, not null: the native side reads it as "cancelled"
@@ -91,18 +114,55 @@ class VeraActivity : NativeActivity() {
      * (`vera20k::util::app_icon`).
      */
     fun applyAppIcon(veraIcon: Boolean) {
-        val enabled = if (veraIcon) LAUNCHER_VERA else LAUNCHER_RETAIL
-        val disabled = if (veraIcon) LAUNCHER_RETAIL else LAUNCHER_VERA
-        packageManager.setComponentEnabledSetting(
-            ComponentName(this, enabled),
-            PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-            PackageManager.DONT_KILL_APP,
+        // Rust calls this from the engine's own thread; enabling, disabling and
+        // finishing an activity all belong to Android's main thread.
+        runOnUiThread { applyAppIconOnUi(veraIcon) }
+    }
+
+    private fun applyAppIconOnUi(veraIcon: Boolean) {
+        val wanted = if (veraIcon) LAUNCHER_VERA else LAUNCHER_RETAIL
+        val other = if (veraIcon) LAUNCHER_RETAIL else LAUNCHER_VERA
+        val wantedName = ComponentName(this, wanted)
+        val otherName = ComponentName(this, other)
+        val enabled = PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+        val disabled = PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+        // Already in effect: touching the components would still tear down the
+        // task, because disabling the alias that launched it removes the task.
+        if (packageManager.getComponentEnabledSetting(wantedName) == enabled &&
+            packageManager.getComponentEnabledSetting(otherName) == disabled
+        ) {
+            updateTaskDescription(veraIcon)
+            return
+        }
+        packageManager.setComponentEnabledSetting(wantedName, enabled, PackageManager.DONT_KILL_APP)
+        packageManager.setComponentEnabledSetting(otherName, disabled, PackageManager.DONT_KILL_APP)
+        // Disabling the alias that launched this task removes the task, and a
+        // surviving process cannot serve another one (winit builds a single
+        // event loop per process). End it, and let the system open the app again
+        // through the alias that now owns the icon: the player is in a full
+        // screen game, so a short restart is the only way to show the change.
+        val restart = Intent(this, VeraActivity::class.java).apply {
+            component = wantedName
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        }
+        val pending = PendingIntent.getActivity(
+            this,
+            0,
+            restart,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_CANCEL_CURRENT,
         )
-        packageManager.setComponentEnabledSetting(
-            ComponentName(this, disabled),
-            PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-            PackageManager.DONT_KILL_APP,
+        // `setWindow` needs no exact-alarm permission; it fires within ~a second.
+        getSystemService(AlarmManager::class.java).setWindow(
+            AlarmManager.ELAPSED_REALTIME_WAKEUP,
+            SystemClock.elapsedRealtime() + 500,
+            500,
+            pending,
         )
+        Process.killProcess(Process.myPid())
+    }
+
+    /** The app switcher's picture and label for the chosen icon. */
+    private fun updateTaskDescription(veraIcon: Boolean) {
         // The adaptive icon is an XML drawable, which decodes to no bitmap; the
         // foreground PNG is the same artwork the launcher composites.
         val icon = BitmapFactory.decodeResource(
