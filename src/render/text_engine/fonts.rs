@@ -29,13 +29,18 @@
 //! starts, and each of the others the first time text needs a character from
 //! it ([`super::web_fonts`]): they would add some 30 MB to the engine every
 //! player downloads, and kept apart a browser keeps them across its updates.
+//!
+//! An installer's build (`language_folder`, build.rs) embeds only Noto Sans
+//! and reads each of the others from the languages folder the first time text
+//! needs a character from it, so a font can be removed after the build. Other
+//! builds embed them all.
 
 /// One bundled font file.
 pub(crate) struct BundledFont {
     /// Its name in `src/render/fonts`, and in the browser package's
     /// `pkg/fonts`.
     pub(crate) file: &'static str,
-    /// Its bytes; `None` in the browser build for a font it fetches.
+    /// Its bytes; `None` in a build that fetches it ([`super::web_fonts`]).
     pub(crate) data: Option<&'static [u8]>,
     /// Native pixels to move this font's glyphs down from the shared
     /// baseline, so its ink sits where GAME.FNT's does.
@@ -49,9 +54,15 @@ macro_rules! font {
     ($file:literal, $shift:expr) => {
         BundledFont {
             file: $file,
-            #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+            #[cfg(not(any(
+                language_folder,
+                all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")
+            )))]
             data: Some(include_bytes!(concat!("../fonts/", $file))),
-            #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+            #[cfg(any(
+                language_folder,
+                all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")
+            ))]
             data: None,
             baseline_shift: $shift,
         }

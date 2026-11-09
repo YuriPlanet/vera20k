@@ -7,8 +7,8 @@
 # The AppImage keeps its files in ~/.local/share/VERA20k and finds or asks for
 # the Yuri's Revenge folder on its first launch (src/app/app_bundle.rs). It holds
 # only the program, which uses the system's ALSA, Vulkan and window libraries.
-# README.txt and the licenses are in usr/share/doc/vera20k, every language but
-# English in usr/share/vera20k/languages.
+# README.txt and the licenses are in usr/share/doc/vera20k, the languages folder
+# in usr/share/vera20k.
 set -euo pipefail
 package="$1"
 output="$2"

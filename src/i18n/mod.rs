@@ -489,8 +489,8 @@ fn languages(settings_dir: Option<&Path>) -> Vec<Arc<Language>> {
     languages_from(installed_language_dir().as_deref(), settings_dir)
 }
 
-/// The folder of languages an installer put with the running game.
-fn installed_language_dir() -> Option<PathBuf> {
+/// The folder of languages and fonts an installer put with the running game.
+pub(crate) fn installed_language_dir() -> Option<PathBuf> {
     packaged_language_dir(std::env::current_exe().ok()?.parent()?)
 }
 

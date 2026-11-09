@@ -1,7 +1,7 @@
 # VERA's interface fonts
 
 The fonts VERA draws its interface text with (`src/render/text_engine/`), all
-under the SIL Open Font License 1.1, which lets them ship inside the program
+under the SIL Open Font License 1.1, which lets them ship with the program
 and must travel with them. The Noto fonts are taken unmodified: `OFL.txt`
 (Noto Sans's copy; every Noto Sans family carries the same licence) covers the
 Noto Sans families and `OFL-CJK.txt` Noto Sans CJK. `Unifont-CJK-15.bin` comes
