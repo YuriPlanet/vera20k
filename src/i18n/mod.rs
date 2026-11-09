@@ -2,11 +2,14 @@
 //!
 //! Every text VERA draws itself comes from a language file,
 //! `vera20k.<tag>.ini`, where `<tag>` is a BCP 47 language tag such as `en`,
-//! `zh-CN` or `pt-BR`. The files beside this module ship inside VERA (build.rs
-//! lists them, so shipping a language is adding its file); a file of that
-//! name in the settings folder adds a language, or replaces a shipped one
-//! while it is being written. `vera20k --check-language <file>` lists what a
-//! file leaves untranslated ([`check`]).
+//! `zh-CN` or `pt-BR`. VERA ships the files beside this module (build.rs lists
+//! them, so shipping a language is adding its file). They are compiled in,
+//! except in the installers' builds: those compile in only English, and each
+//! installer puts the rest in a folder of its own ([`packaged_language_dir`]),
+//! so a language can be removed after the build by deleting its files. A file
+//! of that name in the settings folder adds a language, or replaces a shipped
+//! one while it is being written. `vera20k --check-language <file>` lists what
+//! a file leaves untranslated ([`check`]).
 //!
 //! The format, UTF-8:
 //!
@@ -185,10 +188,11 @@ impl Language {
         }
     }
 
-    /// With the files beside its text: `dir`'s, else those VERA ships.
-    fn with_companions(mut self, dir: Option<&Path>) -> Self {
-        self.subtitles = companion(&self.tag, "subtitles.txt", dir, shipped::SUBTITLES);
-        if let Some(file) = companion(&self.tag, "cameos", dir, shipped::CAMEO_LABELS) {
+    /// With the files beside its text: from the first of `dirs` that has
+    /// each, else those compiled into VERA.
+    fn with_companions(mut self, dirs: &[&Path]) -> Self {
+        self.subtitles = companion(&self.tag, "subtitles.txt", dirs, shipped::SUBTITLES);
+        if let Some(file) = companion(&self.tag, "cameos", dirs, shipped::CAMEO_LABELS) {
             match cameo_labels::parse(&file) {
                 Some(labels) => self.cameo_labels = labels,
                 None => log::warn!("vera20k.{}.cameos is damaged; skipped", self.tag),
@@ -236,14 +240,17 @@ impl Language {
     }
 }
 
-/// `vera20k.<tag>.<suffix>` from `dir`, else the copy VERA ships.
+/// `vera20k.<tag>.<suffix>` from the first of `dirs` that has it, else the
+/// copy compiled into VERA.
 fn companion(
     tag: &str,
     suffix: &str,
-    dir: Option<&Path>,
+    dirs: &[&Path],
     shipped: &[(&str, &[u8])],
 ) -> Option<Arc<[u8]>> {
-    dir.and_then(|dir| std::fs::read(dir.join(format!("vera20k.{tag}.{suffix}"))).ok())
+    let file = format!("vera20k.{tag}.{suffix}");
+    dirs.iter()
+        .find_map(|dir| std::fs::read(dir.join(&file)).ok())
         .map(Arc::from)
         .or_else(|| {
             shipped
@@ -464,16 +471,9 @@ fn languages_with_source(
         let Ok(text) = std::fs::read_to_string(&path) else {
             continue;
         };
-        let language = Arc::new(Language::from_file(&tag, &text).with_companions(Some(source_dir)));
-        match languages
-            .iter()
-            .position(|known| known.tag.eq_ignore_ascii_case(&tag))
-        {
-            Some(index) => {
-                log::info!("vera20k.{tag}.ini in the checkout replaces the loaded one");
-                languages[index] = language;
-            }
-            None => languages.push(language),
+        let language = Arc::new(Language::from_file(&tag, &text).with_companions(&[source_dir]));
+        if place_language(&mut languages, language) {
+            log::info!("vera20k.{tag}.ini in the checkout replaces the loaded one");
         }
     }
     languages
@@ -483,24 +483,55 @@ fn catalog() -> std::sync::RwLockReadGuard<'static, Catalog> {
     CATALOG.read().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// The shipped languages, those in `settings_dir`, and the pseudo-language.
+/// The languages compiled in, those an installer put with the game, those in
+/// `settings_dir`, and the pseudo-language.
 fn languages(settings_dir: Option<&Path>) -> Vec<Arc<Language>> {
+    languages_from(installed_language_dir().as_deref(), settings_dir)
+}
+
+/// The folder of languages an installer put with the running game.
+fn installed_language_dir() -> Option<PathBuf> {
+    packaged_language_dir(std::env::current_exe().ok()?.parent()?)
+}
+
+/// Where each installer puts the languages that are not compiled in, from the
+/// folder holding the game's program: beside it on Windows, in the app bundle's
+/// Resources on macOS, in the AppImage's `usr/share/vera20k` on Linux. The
+/// last two are sealed, so there a language is removed before packaging.
+fn packaged_language_dir(program_dir: &Path) -> Option<PathBuf> {
+    [
+        "languages",
+        "../Resources/languages",
+        "../share/vera20k/languages",
+    ]
+    .into_iter()
+    .map(|place| program_dir.join(place))
+    .find(|dir| dir.is_dir())
+}
+
+/// [`languages`], from `installed_dir` and `settings_dir`. A file in a later
+/// place replaces the language of its tag, and keeps that language's other
+/// files unless its own folder has them.
+fn languages_from(installed_dir: Option<&Path>, settings_dir: Option<&Path>) -> Vec<Arc<Language>> {
+    let companion_dirs: Vec<&Path> = settings_dir.into_iter().chain(installed_dir).collect();
+    let load = |tag: &str, text: &str| {
+        Arc::new(Language::from_file(tag, text).with_companions(&companion_dirs))
+    };
     let mut languages: Vec<Arc<Language>> = shipped::FILES
         .iter()
-        .map(|(tag, text)| Arc::new(Language::from_file(tag, text).with_companions(settings_dir)))
+        .map(|(tag, text)| load(tag, text))
         .collect();
+    if let Some(dir) = installed_dir {
+        for (tag, path) in settings_files(dir) {
+            if let Some(text) = read_language_file(&path) {
+                place_language(&mut languages, load(&tag, &text));
+            }
+        }
+    }
     if let Some(dir) = settings_dir {
         for (tag, path) in settings_files(dir) {
-            let text = match std::fs::read(&path).map(String::from_utf8) {
-                Ok(Ok(text)) => text,
-                Ok(Err(_)) => {
-                    log::warn!("{} is not UTF-8 text; skipped", path.display());
-                    continue;
-                }
-                Err(error) => {
-                    log::warn!("Could not read {}: {error}", path.display());
-                    continue;
-                }
+            let Some(text) = read_language_file(&path) else {
+                continue;
             };
             // The log tells a translator what the file still lacks.
             let name = path
@@ -510,28 +541,53 @@ fn languages(settings_dir: Option<&Path>) -> Vec<Arc<Language>> {
             if !report.complete() {
                 log::info!("{report}");
             }
-            let language = Arc::new(Language::from_file(&tag, &text).with_companions(Some(dir)));
-            match languages
-                .iter()
-                .position(|known| known.tag.eq_ignore_ascii_case(&tag))
-            {
-                Some(index) => {
-                    log::info!("vera20k.{tag}.ini in the settings folder replaces the shipped one");
-                    languages[index] = language;
-                }
-                None => {
-                    log::info!(
-                        "Language {tag} ({}) from the settings folder",
-                        language.name
-                    );
-                    languages.push(language);
-                }
+            let language = load(&tag, &text);
+            if place_language(&mut languages, language.clone()) {
+                log::info!("vera20k.{tag}.ini in the settings folder replaces the shipped one");
+            } else {
+                log::info!(
+                    "Language {tag} ({}) from the settings folder",
+                    language.name
+                );
             }
         }
     }
     let pseudo = Language::pseudo(&languages[0]);
     languages.push(Arc::new(pseudo));
     languages
+}
+
+/// A language file's text, or `None` and a warning in the log.
+fn read_language_file(path: &Path) -> Option<String> {
+    match std::fs::read(path).map(String::from_utf8) {
+        Ok(Ok(text)) => Some(text),
+        Ok(Err(_)) => {
+            log::warn!("{} is not UTF-8 text; skipped", path.display());
+            None
+        }
+        Err(error) => {
+            log::warn!("Could not read {}: {error}", path.display());
+            None
+        }
+    }
+}
+
+/// Add `language`, in the place of the one of its tag when there is one, and
+/// say whether there was.
+fn place_language(languages: &mut Vec<Arc<Language>>, language: Arc<Language>) -> bool {
+    match languages
+        .iter()
+        .position(|known| known.tag.eq_ignore_ascii_case(&language.tag))
+    {
+        Some(index) => {
+            languages[index] = language;
+            true
+        }
+        None => {
+            languages.push(language);
+            false
+        }
+    }
 }
 
 /// `vera20k.<tag>.ini` files in `dir`, by tag.
@@ -1328,6 +1384,68 @@ mod tests {
         assert_eq!(find("yy").subtitles, None);
         assert!(find("yy").cameo_labels.is_empty());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// An installer's folder brings a language and its other files, a copy of
+    /// its text in the settings folder replaces only the text, and deleting
+    /// the files takes the language out of the game.
+    #[test]
+    fn an_installed_language_can_be_replaced_and_removed() {
+        let root = std::env::temp_dir().join(format!("vera-i18n-installed-{}", std::process::id()));
+        let installed = root.join("languages");
+        let settings = root.join("settings");
+        std::fs::create_dir_all(&installed).unwrap();
+        std::fs::create_dir_all(&settings).unwrap();
+        let installed_text = installed.join("vera20k.xx.ini");
+        let settings_text = settings.join("vera20k.xx.ini");
+        std::fs::write(&installed_text, "[Language]\nName=Installed\n").unwrap();
+        std::fs::write(installed.join("vera20k.xx.subtitles.txt"), b"cues").unwrap();
+        let load = || {
+            languages_from(Some(&installed), Some(&settings))
+                .into_iter()
+                .find(|language| language.tag == "xx")
+        };
+
+        let language = load().expect("the installed language");
+        assert_eq!(language.name, "Installed");
+        assert_eq!(language.subtitles.as_deref(), Some(&b"cues"[..]));
+
+        std::fs::write(&settings_text, "[Language]\nName=Mine\n").unwrap();
+        let language = load().expect("the player's copy");
+        assert_eq!(language.name, "Mine");
+        assert_eq!(language.subtitles.as_deref(), Some(&b"cues"[..]));
+
+        std::fs::remove_file(&settings_text).unwrap();
+        std::fs::remove_file(&installed_text).unwrap();
+        assert!(load().is_none());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// The game finds the language folder of each installer's layout, and
+    /// none where there is no folder.
+    #[test]
+    fn each_installers_language_folder_is_found() {
+        let root = std::env::temp_dir().join(format!("vera-i18n-layouts-{}", std::process::id()));
+        for (program, folder) in [
+            ("windows", "windows/languages"),
+            (
+                "VERA20K.app/Contents/MacOS",
+                "VERA20K.app/Contents/Resources/languages",
+            ),
+            ("AppDir/usr/bin", "AppDir/usr/share/vera20k/languages"),
+        ] {
+            let program = root.join(program);
+            let folder = root.join(folder);
+            std::fs::create_dir_all(&program).unwrap();
+            assert_eq!(packaged_language_dir(&program), None);
+            std::fs::create_dir_all(&folder).unwrap();
+            let found = packaged_language_dir(&program).expect("the folder");
+            assert_eq!(
+                found.canonicalize().unwrap(),
+                folder.canonicalize().unwrap()
+            );
+        }
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     /// A value is never read for names: a player called `{count}` keeps the

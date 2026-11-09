@@ -94,6 +94,22 @@ names. Both are optional, and the game reads them from the same folder.
 Vietnamese has both. They and the letters in `vera20k.vi.letters` come from the language
 pack credited at the top of [its language file](vera20k.vi.ini).
 
+## Where the languages are after installing
+
+The game has English built in. An installed game keeps every other language in a
+`languages` folder, as the same files that are in this folder:
+
+| System | Folder |
+| --- | --- |
+| Windows | `languages`, next to `vera20k.exe` |
+| macOS | `Contents/Resources/languages` inside `VERA20K.app` |
+| Linux | `usr/share/vera20k/languages` inside the AppImage |
+
+On Windows, delete a language's files from that folder to take it out of the game. The
+next update puts it back. The macOS app and the Linux AppImage are sealed when they are
+made, so for those, delete the files from the `languages` folder that
+[`languages.sh`](../../.github/release/languages.sh) makes before packaging.
+
 ## Keep a language up to date
 
 When the English text changes, the person who changes it also updates every language

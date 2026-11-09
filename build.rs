@@ -101,10 +101,14 @@ fn source_location() {
 
 /// The language files VERA ships (`src/i18n/vera20k.<tag>.ini`), which
 /// src/i18n/mod.rs compiles in: shipping a language is adding its file.
-/// English, which holds every label, comes first.
+/// English, which holds every label, comes first. An installer's build sets
+/// `VERA20K_LANGUAGE_FOLDER` and compiles in only English: the installer puts
+/// the others in a folder (.github/release/languages.sh), where they can be
+/// removed after the build.
 fn shipped_languages() {
     const DIRECTORY: &str = "src/i18n";
     println!("cargo::rerun-if-changed={DIRECTORY}");
+    println!("cargo::rerun-if-env-changed=VERA20K_LANGUAGE_FOLDER");
     let mut tags: Vec<String> = std::fs::read_dir(DIRECTORY)
         .expect("read src/i18n")
         .filter_map(|entry| {
@@ -123,6 +127,9 @@ fn shipped_languages() {
         Some("en"),
         "src/i18n needs vera20k.en.ini"
     );
+    if std::env::var_os("VERA20K_LANGUAGE_FOLDER").is_some() {
+        tags.truncate(1);
+    }
     let mut code = String::from("pub(super) const FILES: &[(&str, &str)] = &[\n");
     for tag in &tags {
         code.push_str(&format!(
