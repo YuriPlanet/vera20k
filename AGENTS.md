@@ -24,8 +24,9 @@ What it is for, in the order that decides when two of these pull apart:
    a Rust-native architecture.
 3. **It runs big battles.** **20,000 units and 30 players**, also on older PCs. Where a
    player cannot notice the difference, speed wins over gamemd's execution order.
-4. **Mods work from data.** What the original, Ares and Phobos let a modder set in INI
-   files works here.
+4. **It adds to the original.** Ares and Phobos features, and new ones only VERA has,
+   are wanted, built so a modder or a player switches them on and tunes them from INI
+   files or the Options screen. The original stays the default.
 5. **Playing online is easy.** A match starts from inside the game, and an older
    version is told plainly when it can no longer join.
 
