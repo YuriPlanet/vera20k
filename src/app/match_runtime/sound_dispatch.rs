@@ -240,10 +240,6 @@ pub(super) fn dispatch_sim_sound_events(
                 sound_id: sim.interner().resolve(deploy_sound_id).to_string(),
                 source: Some(anim_world_sound_source(world)),
             },
-            SimSoundEvent::LeaveTransport { sound_id, world } => GameSoundEvent::LeaveTransport {
-                sound_id: sim.interner().resolve(sound_id).to_string(),
-                source: Some(anim_world_sound_source(world)),
-            },
             SimSoundEvent::EntityUndeployed {
                 undeploy_sound_id,
                 world,
@@ -448,13 +444,34 @@ pub(super) fn dispatch_sim_sound_events(
                 let ares_handler = sw.ares_eva().is_some();
                 #[cfg(not(feature = "ares"))]
                 let ares_handler = false;
-                let cue = if ares_handler
+                let mut cue = if ares_handler
                     || sw.kind == crate::rules::superweapon_type::SuperWeaponKind::ForceShield
                 {
                     SuperWeaponLaunchCue::default()
                 } else {
                     superweapon_launch_cue(sw.kind, &rules.general, sw.start_sound.as_deref())
                 };
+                // Cases 0, 7, 9 and 11 play their cue through
+                // `VocClass::PlayAtCoord @ 0x00750E20` with flags 0
+                // (`0x006CDCAE`/`0x006CDDE9`, `0x006CCE28`, `0x006CD8D3`,
+                // `0x006CD7BF`): a retained request the sound pump re-pans
+                // and stops out of earshot, not a one-shot. ForceShield's
+                // `PlayAt` cue is not dispatched here.
+                // It follows the case's EVA line (the silo arm of case 0
+                // has them the other way round, `0x006CDDE9`/`0x006CDE01`).
+                let retained_cue =
+                    cue.positional
+                        .then(|| cue.sound_id.take())
+                        .flatten()
+                        .map(|sound_id| {
+                            let coordinate = [world.x, world.y, world.z];
+                            GameSoundEvent::VocAtCoord {
+                                sound_id,
+                                coordinate,
+                                flags: 0,
+                                source: SoundSource::from_coordinate(coordinate),
+                            }
+                        });
                 // The EVA column is picked for the *listening* client's
                 // side, not the launcher's: `VoxClass::PlayEVA` takes
                 // only the event name; the consumer resolves the side.
@@ -469,30 +486,32 @@ pub(super) fn dispatch_sim_sound_events(
                     .flatten()
                     .filter(|_| local_owner_name.is_some() && !sim.local_player_defeated())
                     .map(str::to_string);
-                let activated = (cue.sound_id.is_some() || eva_event.is_some()).then(|| {
-                    GameSoundEvent::SuperWeaponActivated {
-                        sound_id: cue.sound_id.unwrap_or_default(),
-                        source: cue.positional.then(|| anim_world_sound_source(world)),
-                        eva_event,
-                    }
+                // What is left of the cue is its EVA line, with no position.
+                let activated = eva_event.map(|line| GameSoundEvent::SuperWeaponActivated {
+                    sound_id: String::new(),
+                    source: None,
+                    eva_event: Some(line),
                 });
                 // The player's tail ([`launch_drops_ready_line`]): after
                 // the case's line, the queued Ready line is dropped.
                 if let Some(ready) = launch_drops_ready_line(sw.kind).filter(|_| !ares_handler)
                     && owner_is_local(sim.interner(), owner, local_owner_name)
                 {
-                    if let Some(activated) = activated {
-                        output.push(activated);
+                    for event in activated.into_iter().chain(retained_cue) {
+                        output.push(event);
                     }
                     output.push(GameSoundEvent::EvaRemove {
                         event: ready.to_string(),
                     });
                     continue;
                 }
-                let Some(activated) = activated else {
+                if let Some(activated) = activated {
+                    output.push(activated);
+                }
+                let Some(retained_cue) = retained_cue else {
                     continue;
                 };
-                activated
+                retained_cue
             }
             SimSoundEvent::RadarEvent { radar } => {
                 // A type-13 event from `SuperClass::Launch` case 1
@@ -2830,15 +2849,25 @@ mod tests {
                     .drain()
                     .into_iter()
                     .flat_map(|event| match event {
+                        // The cue is a retained 750E20 request at the target
+                        // with flags 0 (`PUSH 0` at each Launch site), never
+                        // a one-shot riding on the EVA event.
                         GameSoundEvent::SuperWeaponActivated {
                             eva_event,
                             sound_id,
-                            ..
-                        } => eva_event
+                            source: None,
+                        } if sound_id.is_empty() => eva_event
                             .map(|line| format!("eva {line}"))
                             .into_iter()
-                            .chain((!sound_id.is_empty()).then(|| format!("play {sound_id}")))
-                            .collect::<Vec<_>>(),
+                            .collect(),
+                        GameSoundEvent::VocAtCoord {
+                            sound_id,
+                            coordinate,
+                            flags: 0,
+                            ..
+                        } if coordinate == [40 * 256 + 128, 40 * 256 + 128, 0] => {
+                            vec![format!("play {sound_id}")]
+                        }
                         GameSoundEvent::EvaRemove { event } => vec![format!("remove {event}")],
                         other => panic!("{other:?}"),
                     })
@@ -2853,8 +2882,8 @@ mod tests {
                     }
                 }
                 if section == "nuke_launch" {
-                    // Case 0 plays DigSound before its line (`0x006CDDE9`,
-                    // `0x006CDE01`); the one launch event carries both.
+                    // Case 0's silo arm plays DigSound before its line
+                    // (`0x006CDDE9`, `0x006CDE01`); VERA keeps one order.
                     lines.sort();
                     native.sort();
                 }

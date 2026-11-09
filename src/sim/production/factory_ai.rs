@@ -41,7 +41,8 @@
 //! - A placed object plays the building type's `CreateUnitSound=`
 //!   (`+0xE74`, read at `0x004607C8..0x004607F8`) at the building
 //!   (`0x00450198`); among retail types only the Cloning Vats set it, which
-//!   have no `Factory=`.
+//!   have no `Factory=`. `HouseClass::Place_Production` plays the same key
+//!   for a player's delivery (`0x004FB50D`), also unported.
 //! - The try-later branch also copies an uninitialised stack word into the
 //!   timer's middle field (`+0x554`, `0x004501F1`), which no reader uses.
 //! - Mobile products leave through [`exit_produced_object`], the same

@@ -320,8 +320,9 @@ impl SoundPlaybackInputs<'_> {
                     // not reach the raw audio-bag fallback.
                     if !sound_id.is_empty() && registry.get(sound_id).is_some() {
                         match source {
-                            // `VocClass::PlayAtCoord @ 0x00750E20` /
-                            // `PlayAt @ 0x007509E0` at the target coordinate.
+                            // A one-shot `VocClass::PlayAt @ 0x007509E0` at
+                            // the target coordinate. Launch's 750E20 cues
+                            // arrive as `VocAtCoord`.
                             Some(source) => {
                                 if let Some(gain) = gain_for(sound_id, Some(*source)) {
                                     let _ =
