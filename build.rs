@@ -6,6 +6,7 @@ fn main() {
     multiplayer_build_identity();
     source_location();
     shipped_languages();
+    font_coverage();
 
     // Build scripts run on the host; inspect Cargo's target for cross-builds.
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").expect("Cargo sets target OS");
@@ -131,6 +132,115 @@ fn shipped_languages() {
     code.push_str("];\n");
     let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo sets OUT_DIR"));
     std::fs::write(out.join("shipped_languages.rs"), code).expect("write shipped_languages.rs");
+}
+
+/// What each font in `src/render/fonts` draws, for the browser build, which
+/// fetches the bundled fonts it leaves out when text first needs one
+/// (src/render/text_engine/web_fonts.rs): every font file's name, the start
+/// of its SHA-256, which versions its URL, and the code points its character
+/// map gives a glyph, as sorted inclusive ranges.
+fn font_coverage() {
+    const DIRECTORY: &str = "src/render/fonts";
+    println!("cargo::rerun-if-changed={DIRECTORY}");
+    let mut files: Vec<String> = std::fs::read_dir(DIRECTORY)
+        .expect("read src/render/fonts")
+        .filter_map(|entry| {
+            let name = entry.expect("read src/render/fonts entry").file_name();
+            let name = name.into_string().ok()?;
+            (name.ends_with(".ttf") || name.ends_with(".otf")).then_some(name)
+        })
+        .collect();
+    files.sort();
+    let mut code = String::from("pub(super) const FONTS: &[(&str, &str, &[(u32, u32)])] = &[\n");
+    for file in &files {
+        let data = std::fs::read(format!("{DIRECTORY}/{file}")).expect("read a bundled font");
+        let version = &sha256::sha256_hex(&data)[..16];
+        code.push_str(&format!("    ({file:?}, {version:?}, &["));
+        for (start, end) in mapped_ranges(&data) {
+            code.push_str(&format!("({start:#x}, {end:#x}),"));
+        }
+        code.push_str("]),\n");
+    }
+    code.push_str("];\n");
+    let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo sets OUT_DIR"));
+    std::fs::write(out.join("font_coverage.rs"), code).expect("write font_coverage.rs");
+}
+
+/// The code points `font`'s Unicode character map gives a glyph other than
+/// glyph 0, as sorted inclusive ranges: from its format-12 subtable where it
+/// has one, else its format-4 one, as fonts ship them both for the same
+/// characters. A font without either maps nothing.
+fn mapped_ranges(font: &[u8]) -> Vec<(u32, u32)> {
+    let u16_at = |at: usize| u16::from_be_bytes([font[at], font[at + 1]]);
+    let u32_at =
+        |at: usize| u32::from_be_bytes([font[at], font[at + 1], font[at + 2], font[at + 3]]);
+    let Some(cmap) = (0..usize::from(u16_at(4)))
+        .map(|table| 12 + 16 * table)
+        .find(|&record| &font[record..record + 4] == b"cmap")
+        .map(|record| u32_at(record + 8) as usize)
+    else {
+        return Vec::new();
+    };
+    let mut best: Option<(u16, usize)> = None;
+    for subtable in 0..usize::from(u16_at(cmap + 2)) {
+        let record = cmap + 4 + 8 * subtable;
+        let unicode = match u16_at(record) {
+            0 => true,
+            3 => matches!(u16_at(record + 2), 1 | 10),
+            _ => false,
+        };
+        let at = cmap + u32_at(record + 4) as usize;
+        let format = u16_at(at);
+        if unicode && matches!(format, 4 | 12) && best.is_none_or(|(known, _)| known < format) {
+            best = Some((format, at));
+        }
+    }
+    let mut codepoints = Vec::new();
+    match best {
+        Some((12, at)) => {
+            for group in 0..u32_at(at + 12) as usize {
+                let group = at + 16 + 12 * group;
+                let (start, end, glyph) = (u32_at(group), u32_at(group + 4), u32_at(group + 8));
+                codepoints.extend((start..=end).filter(|&cp| glyph + (cp - start) != 0));
+            }
+        }
+        Some((_, at)) => {
+            let segments = usize::from(u16_at(at + 6) / 2);
+            let ends = at + 14;
+            let starts = ends + 2 * segments + 2;
+            let deltas = starts + 2 * segments;
+            let offsets = deltas + 2 * segments;
+            for segment in 0..segments {
+                let (start, end) = (u16_at(starts + 2 * segment), u16_at(ends + 2 * segment));
+                let delta = u16_at(deltas + 2 * segment);
+                let offset = usize::from(u16_at(offsets + 2 * segment));
+                for cp in start..=end {
+                    let glyph = if offset == 0 {
+                        cp.wrapping_add(delta)
+                    } else {
+                        match u16_at(offsets + 2 * segment + offset + 2 * usize::from(cp - start)) {
+                            0 => 0,
+                            glyph => glyph.wrapping_add(delta),
+                        }
+                    };
+                    if glyph != 0 {
+                        codepoints.push(u32::from(cp));
+                    }
+                }
+            }
+        }
+        None => {}
+    }
+    codepoints.sort_unstable();
+    codepoints.dedup();
+    let mut ranges: Vec<(u32, u32)> = Vec::new();
+    for cp in codepoints {
+        match ranges.last_mut() {
+            Some((_, end)) if *end + 1 == cp => *end = cp,
+            _ => ranges.push((cp, cp)),
+        }
+    }
+    ranges
 }
 
 /// The game's icon and version details, which Explorer, the Start menu and

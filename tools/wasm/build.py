@@ -84,6 +84,17 @@ def package_host(stage, destination, network, lan=False, label=None):
             (destination / name).unlink(missing_ok=True)
 
 
+def package_fonts(destination):
+    """Copy the bundled fonts and their licences to `pkg/fonts/`. The browser engine embeds only
+    Noto Sans and fetches each other font from there the first time text needs one
+    (src/render/text_engine/web_fonts.rs)."""
+    shutil.rmtree(destination, ignore_errors=True)
+    destination.mkdir()
+    for source in sorted((ROOT / 'src/render/fonts').iterdir()):
+        if source.suffix in ('.ttf', '.otf') or (source.name.startswith('OFL') and source.suffix == '.txt'):
+            shutil.copyfile(source, destination / source.name)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--profile', choices=['fast', 'release'], default='fast')
@@ -122,6 +133,7 @@ def main():
         # Only generated public files; retail data never enters the package.
         package_host(stage, destination, args.network, args.lan, build_label(args.profile, args.network, args.lan, args.threads))
         shutil.copytree(stage / 'pkg', destination / 'pkg', dirs_exist_ok=True)
+        package_fonts(destination / 'pkg' / 'fonts')
     serve = 'python3 tools/wasm/serve.py' if args.threads else 'python3 -m http.server 8000 --bind 127.0.0.1 --directory target/wasm-dist'
     print(f'Browser build: {destination}\nServe with: {serve}')
 

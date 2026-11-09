@@ -12,7 +12,8 @@
 //!   game's files, those drawn letters alone.
 //! - Behind it, the bundled Noto fonts ([`fonts`]) for what it lacks, such as
 //!   Arabic and Thai: shaped as vector fonts, so letters join and marks
-//!   stack.
+//!   stack. The browser build fetches all but Noto Sans the first time text
+//!   needs one ([`web_fonts`]).
 //!
 //! Every glyph, GAME.FNT's own too, draws as hard pixels on the line's native
 //! grid ([`pixels`]), so a glyph off that grid, squeezed narrower or shrunk
@@ -25,6 +26,7 @@ mod fnt_fill;
 pub(crate) mod fnt_font;
 pub(crate) mod fonts;
 mod pixels;
+mod web_fonts;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -154,8 +156,14 @@ pub(crate) struct TextEngine {
     /// Blob id and face index to slot.
     slot_of: HashMap<(u64, u32), u16>,
     coords: Vec<Vec<i16>>,
-    /// Family names: the bundled fallback order.
-    bundled_stack: Vec<String>,
+    /// Family names in the bundled fallback order, each with its font's
+    /// place in [`fonts::bundled`].
+    bundled_stack: Vec<(usize, String)>,
+    /// The bundled fonts this build fetches that are not registered yet
+    /// ([`web_fonts`]): place and baseline shift.
+    unfetched: Vec<(usize, f32)>,
+    /// [`web_fonts::arrivals`] when the engine last registered what arrived.
+    arrivals_seen: usize,
     /// GAME.FNT's family at each width a [`Fit`] narrows to, as designed
     /// first ([`fnt_font`]).
     original_families: Vec<(f32, String)>,
@@ -172,6 +180,12 @@ pub(crate) struct TextEngine {
 /// Cached layouts kept before the cache starts over.
 const LAYOUT_CACHE_LIMIT: usize = 8192;
 
+/// How many fonts the browser build has fetched ([`web_fonts`]): text drawn
+/// before one arrived may draw differently after.
+pub(crate) fn fetched_fonts() -> usize {
+    web_fonts::arrivals()
+}
+
 /// GAME.FNT's family for `fit` among [`TextEngine::original_families`]: the
 /// face narrowed to its width.
 fn original_family(families: &[(f32, String)], fit: Fit) -> Option<&str> {
@@ -184,6 +198,15 @@ fn original_family(families: &[(f32, String)], fit: Fit) -> Option<&str> {
 
 impl TextEngine {
     pub(crate) fn new(gpu: Option<(&wgpu::Device, &wgpu::Queue, &BatchRenderer)>) -> Self {
+        Self::with_fonts(gpu, fonts::bundled())
+    }
+
+    /// The engine with `bundled`'s fonts in their fallback order; one without
+    /// bytes is registered once [`web_fonts`] has fetched it.
+    fn with_fonts(
+        gpu: Option<(&wgpu::Device, &wgpu::Queue, &BatchRenderer)>,
+        bundled: impl IntoIterator<Item = fonts::BundledFont>,
+    ) -> Self {
         let mut engine = Self {
             fonts: FontContext {
                 collection: parley::fontique::Collection::new(
@@ -200,6 +223,8 @@ impl TextEngine {
             slot_of: HashMap::new(),
             coords: vec![Vec::new()],
             bundled_stack: Vec::new(),
+            unfetched: Vec::new(),
+            arrivals_seen: 0,
             original_families: Vec::new(),
             original_slot: None,
             layouts: HashMap::new(),
@@ -208,15 +233,70 @@ impl TextEngine {
             locale: None,
             right_to_left: false,
         };
-        for font in fonts::bundled() {
-            let blob = Blob::new(Arc::new(font.data));
-            for family in engine.register(blob, font.baseline_shift, false) {
-                if !engine.bundled_stack.contains(&family) {
-                    engine.bundled_stack.push(family);
+        for (place, font) in bundled.into_iter().enumerate() {
+            match font.data {
+                Some(data) => {
+                    engine.add_bundled(place, Blob::new(Arc::new(data)), font.baseline_shift);
                 }
+                None => engine.unfetched.push((place, font.baseline_shift)),
             }
         }
+        engine.add_fetched_fonts();
         engine
+    }
+
+    /// Register bundled font `place` behind the bundled fonts before it.
+    fn add_bundled(&mut self, place: usize, blob: Blob<u8>, baseline_shift: f32) {
+        for family in self.register(blob, baseline_shift, false) {
+            if !self.bundled_stack.iter().any(|(_, known)| *known == family) {
+                let at = self
+                    .bundled_stack
+                    .partition_point(|&(before, _)| before <= place);
+                self.bundled_stack.insert(at, (place, family));
+            }
+        }
+    }
+
+    /// Register the waiting fonts [`web_fonts`] has fetched since the engine
+    /// last looked, and lay text out again with them.
+    fn add_fetched_fonts(&mut self) {
+        let arrivals = web_fonts::arrivals();
+        if arrivals == self.arrivals_seen {
+            return;
+        }
+        self.arrivals_seen = arrivals;
+        let waiting = self.unfetched.len();
+        for (place, baseline_shift) in std::mem::take(&mut self.unfetched) {
+            match web_fonts::fetched(place) {
+                Some(blob) => self.add_bundled(place, blob, baseline_shift),
+                None => self.unfetched.push((place, baseline_shift)),
+            }
+        }
+        if self.unfetched.len() != waiting {
+            self.clear_layouts();
+        }
+    }
+
+    /// Fetch the waiting fonts `text` draws from: for each character GAME.FNT
+    /// lacks, the first bundled font that maps it.
+    fn fetch_fonts_for(&self, text: &str) {
+        for c in text.chars() {
+            if let Some(place) = web_fonts::owner(c)
+                && self.unfetched.iter().any(|&(waiting, _)| waiting == place)
+                && !self.original_draws(c)
+            {
+                web_fonts::fetch(place);
+            }
+        }
+    }
+
+    /// Whether GAME.FNT, first in the fallback order, draws `c`.
+    fn original_draws(&self, c: char) -> bool {
+        self.original_slot.is_some_and(|slot| {
+            let slot = &self.slots[usize::from(slot)];
+            swash::FontRef::from_index(slot.data.as_ref(), slot.index as usize)
+                .is_some_and(|font| font.charmap().map(c) != 0)
+        })
     }
 
     /// The engine without GAME.FNT (no game files yet, or a damaged
@@ -307,12 +387,18 @@ impl TextEngine {
     /// Shape `text` at `fit`, wrapping at `max_width` native pixels (0: one
     /// line per paragraph). Cached.
     pub(crate) fn shape(&mut self, text: &str, max_width: u32, fit: Fit) -> Arc<ShapedText> {
+        if !self.unfetched.is_empty() {
+            self.add_fetched_fonts();
+        }
         if let Some(shaped) = self
             .layouts
             .get(&(max_width, fit))
             .and_then(|layouts| layouts.get(text))
         {
             return Arc::clone(shaped);
+        }
+        if !self.unfetched.is_empty() {
+            self.fetch_fonts_for(text);
         }
         crate::render::text_audit::laid_out(text);
         let shaped = Arc::new(self.shape_uncached(text, max_width, fit));
@@ -398,7 +484,7 @@ impl TextEngine {
         stack.extend(
             self.bundled_stack
                 .iter()
-                .map(|family| FontFamilyName::Named(Cow::Borrowed(family.as_str()))),
+                .map(|(_, family)| FontFamilyName::Named(Cow::Borrowed(family.as_str()))),
         );
         let locale = self
             .locale
@@ -1042,5 +1128,54 @@ mod tests {
             assert_eq!(&text[pair[0].end..pair[1].start], " ");
         }
         assert_eq!(shaped.lines.last().unwrap().end, text.len());
+    }
+
+    /// The bundled fonts with `file`'s bytes held back, as the browser build
+    /// holds them, and its place and bytes.
+    fn waiting_for(file: &str) -> ([fonts::BundledFont; 21], usize, &'static [u8]) {
+        let mut bundled = fonts::bundled();
+        let place = bundled.iter().position(|font| font.file == file).unwrap();
+        let data = bundled[place].data.take().unwrap();
+        (bundled, place, data)
+    }
+
+    /// A font fetched for text draws it once it arrives, in its place in the
+    /// fallback order.
+    #[test]
+    fn a_fetched_font_draws_the_text_that_asked_for_it() {
+        let (bundled, thai, data) = waiting_for("NotoSansThai-VF.ttf");
+        let mut engine = TextEngine::with_fonts(None, bundled);
+        let text = "สวัสดี";
+        let before = engine.shape(text, 0, Fit::NONE);
+        assert!(web_fonts::asked_for(thai));
+        assert!(before.lines[0].glyphs.iter().all(|glyph| glyph.id == 0));
+
+        web_fonts::arrive_for_test(thai, data.to_vec());
+        let after = engine.shape(text, 0, Fit::NONE);
+        assert!(after.lines[0].glyphs.iter().all(|glyph| glyph.id != 0));
+        let places: Vec<usize> = engine
+            .bundled_stack
+            .iter()
+            .map(|&(place, _)| place)
+            .collect();
+        assert!(places.contains(&thai) && places.is_sorted(), "{places:?}");
+    }
+
+    /// Hanzi GAME.FNT draws, its own or drawn in its style, fetch no font.
+    #[test]
+    fn characters_game_fnt_draws_fetch_nothing() {
+        use crate::render::bit_font::{BITMAP_ROWS, CELL_HEIGHT};
+        let (bundled, cjk, _) = waiting_for("NotoSansCJKsc-Regular.otf");
+        let mut engine = TextEngine::with_fonts(None, bundled);
+        engine.set_original_font(fnt_font::FntFont::build(
+            &FntFile::blank(CELL_HEIGHT, BITMAP_ROWS),
+            BASELINE as u32,
+            None,
+        ));
+        // Retail GAME.FNT lacks 语, which VERA draws in its style.
+        engine.shape("语", 0, Fit::NONE);
+        assert!(!web_fonts::asked_for(cjk));
+        engine.shape("的", 0, Fit::NONE);
+        assert!(web_fonts::asked_for(cjk));
     }
 }

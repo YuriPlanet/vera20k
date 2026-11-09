@@ -52,6 +52,13 @@ db2bc1c62fae2df814edff7705ddb560d47d742274ed9947b7ddf1a6cb1c17b6  NotoSansThai-V
 
 How each script is sized against GAME.FNT is in `text_engine/fonts.rs`.
 
+The browser build embeds `NotoSans-VF.ttf` and `Unifont-CJK-15.bin` only.
+`tools/wasm/build.py` copies the `.ttf` and `.otf` files and their licences to
+the package's `pkg/fonts/`, and the engine fetches each other font from there
+the first time text needs a character that GAME.FNT lacks and that font is
+the first to draw (`text_engine/web_fonts.rs`); `build.rs` reads which
+characters each font draws from its character map.
+
 ## Unifont-CJK-15.bin
 
 Pixel Chinese, Japanese and Korean characters for the interface, which draws
