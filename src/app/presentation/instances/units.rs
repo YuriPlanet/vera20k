@@ -1897,6 +1897,13 @@ fn unit_shadow_admitted(
     entity.category() == EntityCategory::Unit
         && !entity.sinking.is_active()
         && (band == EntityDrawBand::Ground || has_lifted_unit_shadow(entity))
+        // Foot4DB0D0 asks the locomotor's Is_To_Have_Shadow (0x004DB0FB):
+        // Tunnel's (0x0072A060) refuses while it sinks, travels and rises.
+        && entity
+            .locomotor
+            .as_ref()
+            .and_then(|locomotor| locomotor.tunnel_runtime())
+            .is_none_or(crate::sim::movement::tunnel_movement::TunnelRuntime::has_shadow)
         && techno_shadow_admitted(entity, no_shadow)
 }
 

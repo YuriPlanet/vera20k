@@ -111,7 +111,7 @@ as Ares in both builds); **residual** (gameplay, but its host is unported);
 | `0x718871` | `1005D420` | An amphibious or WaterBeach MovementZone floats after a chrono warp | ported: `teleport_chrono::chrono_post_warp_validation` (no test: chrono fixture) |
 | `0x71AA52` | `1005D470` | IsAlive cleared before a warped-out object's UnInit | n/a: crash guard for a garrison pointer |
 | `0x71AF2B` | `1005D460` | Unwarpable temporal targets | ported earlier (`temporal`) |
-| `0x72920C` | `1005D500` | A tunneller without a destination stops | residual: no Tunnel locomotor port; no retail type uses it |
+| `0x72920C` | `1005D500` | A tunneller without a destination stops | ported: `tunnel_process::tunnel_pre_dig_in` |
 | `0x730DB0` | `1005CAF0` | The Guard key orders only the player's own controllable objects | ported: `world_commands::area_guard_key_command` (no test) |
 | `0x730EE5` | `1005D110` | The Stop key skips berserk objects | ported: `app::input::dispatch::stop_qualifies` (no test) |
 | `0x737CE4` | `1005D5E0` | A ship in its naval yard takes damage | ported: `world_receiver` via `production_spawn::unit_war_factory_contact` (no test) |

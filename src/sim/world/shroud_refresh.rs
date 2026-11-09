@@ -243,11 +243,12 @@ impl Simulation {
     /// `MapClass::IsFogged @ 0x005865E0` is `xor al, al; ret 4`, so it never
     /// deselects. Without a player house or map nothing is asked.
     ///
-    /// Three movement steps run it, each with its own owner test:
+    /// Four movement steps run it, each with its own owner test:
     /// - Foot's `PerCellProcess` (`0x004D8DA7..0x004D8DF5`), on every Unit
     ///   and Infantry cell arrival, and Fly's `Horizontal_Step`
     ///   (`0x004CF55D..0x004CF5EC`) ask `0x0050B6F0`
-    ///   ([`Self::house_is_human_player`]);
+    ///   ([`Self::house_is_human_player`]), as does Tunnel's `Process`
+    ///   (`0x007290F6..0x0072918F`);
     /// - Jumpjet's `Process` (`0x0054B07D..0x0054B10C`) compares the owner
     ///   with PlayerPtr (`0x00A83D4C`).
     ///

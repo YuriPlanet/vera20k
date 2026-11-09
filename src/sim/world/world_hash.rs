@@ -2717,6 +2717,10 @@ fn hash_locomotor_payload(
             10u8.hash(hasher);
             state.hash(hasher);
         }
+        LocomotorRuntimePayload::Tunnel(state) => {
+            11u8.hash(hasher);
+            state.hash(hasher);
+        }
     }
 }
 

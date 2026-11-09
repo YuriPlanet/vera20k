@@ -180,6 +180,7 @@ pub enum LocomotorRuntimePayload {
     Ship(ShipRuntime),
     Fly(super::super::fly_height::FlyRuntime),
     Jumpjet(super::super::jumpjet_movement::JumpjetRuntime),
+    Tunnel(super::super::tunnel_movement::TunnelRuntime),
 }
 
 impl LocomotorRuntimePayload {
@@ -195,6 +196,9 @@ impl LocomotorRuntimePayload {
             LocomotorKind::Ship => Self::Ship(ShipRuntime::at_binary_frame(binary_frame)),
             LocomotorKind::Fly => Self::Fly(Default::default()),
             LocomotorKind::Jumpjet => Self::Jumpjet(Default::default()),
+            LocomotorKind::Tunnel => Self::Tunnel(
+                super::super::tunnel_movement::TunnelRuntime::constructed(binary_frame),
+            ),
         }
     }
 }

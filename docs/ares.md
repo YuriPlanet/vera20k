@@ -56,6 +56,9 @@ Supported extensions:
 - [EVA voice tags and Side selection](ares-eva.md)
 - [Per-type promotion sounds](ares-promotion-sounds.md)
   (`Promote.VeteranSound`, `Promote.EliteSound`)
+- [Subterranean dig effects](ares-subterranean.md) (`DigIn`, `DigOut`,
+  `DigInSound`, `DigOutSound`) on the stock Tunnel locomotor, which every
+  build ports for mods that select it
 - [Finite infantry ammo](../src/sim/ammo.rs): Ares' Infantry reload dispatch
   runs through the shared Techno reload owner before the scatter/fire suffix,
   and per-weapon `Ammo` shares one count across admission, debit and reload
@@ -252,6 +255,8 @@ Supported extensions:
   [remaining work](ares-remaining.md).
 - [INI Include and inheritance](ini-directives.md). The read-only `asset ini-expand` probe works
   in every build.
+- [INI syntax](ares-ini-syntax.md): `+=` keys, `[Child]:[Base]` sections and later-wins
+  repeated keys in every INI load, with included files loaded into the INI that lists them.
 - [Extended authored House ally lists](../tools/input_oracle/ares_allies_reader.md).
 
 ## VERA20K porting credits

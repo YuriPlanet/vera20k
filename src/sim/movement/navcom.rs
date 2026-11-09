@@ -265,6 +265,12 @@ impl NavigationState {
         self.nav_queue.clear();
     }
 
+    /// Insert at the NavQueue's front (`DynamicVectorClass` growth then a
+    /// `memmove` up and a store at index 0, `0x0074231E..0x00742374`).
+    pub(crate) fn push_nav_queue_front(&mut self, target: NavTargetRef) {
+        self.nav_queue.insert(0, target);
+    }
+
     /// Take the NavQueue's oldest entry.
     pub(crate) fn pop_nav_queue_front(&mut self) -> Option<NavTargetRef> {
         (!self.nav_queue.is_empty()).then(|| self.nav_queue.remove(0))
@@ -993,7 +999,9 @@ impl crate::sim::world::Simulation {
     ///   ([`teleport_stop_moving`](super::teleport_movement::teleport_stop_moving));
     /// - Fly `0x004CCFD0` (`Simulation::fly_stop_moving`), which re-targets a
     ///   moving aircraft through its own class setter;
-    /// - Rocket `0x006633C0`, an empty body (`RET 4`).
+    /// - Rocket `0x006633C0`, an empty body (`RET 4`);
+    /// - Tunnel `0x00728C00` (`Simulation::tunnel_stop_moving`), which
+    ///   re-targets an owner travelling underground far from its destination.
     ///
     /// The Jumpjet's needs the map and, for a failed search, the rules; the
     /// Fly's needs the rules. A world without them leaves the owner as it
@@ -1028,6 +1036,7 @@ impl crate::sim::world::Simulation {
                 }
             }
             LocomotorKind::Rocket => {}
+            LocomotorKind::Tunnel => self.tunnel_stop_moving(id, rules, registry, frame_effects),
         }
         Ok(())
     }

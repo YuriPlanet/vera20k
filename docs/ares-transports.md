@@ -84,11 +84,11 @@ and the reader test in `rules::ares_techno_type`.
 | Hook | Ares.dll | Name | Disposition |
 |---|---|---|---|
 | `457DB7` | `10016FD0` | BuildingClass_CanBeOccupied_SpecificAssaulters | residual: `Assaulter.Level` refines the stock `Assaulter=` arm of CanBeOccupiedBy (0x457DAD..0x457DD3), and the assault itself (AddGarrisonOccupant 0x522A09..0x522A45: occupants killed, the assaulter scatters) is not ported in either build; porting them changes default builds. No retail infantry is an assaulter |
-| `728EF0` | `10047DD0` | TunnelLocomotionClass_ILocomotion_Process_Dig | residual: `DigIn`/`DigOut`/`DigInSound`/`DigOutSound` (PlayDigEffects 100443E0) need the Tunnel locomotor, which VERA does not have (TS legacy, unused by retail YR) |
-| `7292CF` | `10047DF0` | TunnelLocomotionClass_sub_7291F0_Dig | residual: as 0x728EF0 (also the dig timer write) |
-| `7293DA` | `10047E20` | TunnelLocomotionClass_sub_729370_Dig | residual: as 0x728EF0 |
-| `7297C4` | `10047E40` | TunnelLocomotionClass_sub_729580_Dig | residual: as 0x728EF0 |
-| `7299A9` | `10047E60` | TunnelLocomotionClass_sub_7298F0_Dig | residual: as 0x728EF0 |
+| `728EF0` | `10047DD0` | TunnelLocomotionClass_ILocomotion_Process_Dig | ported ([ares-subterranean.md](ares-subterranean.md)) |
+| `7292CF` | `10047DF0` | TunnelLocomotionClass_sub_7291F0_Dig | ported ([ares-subterranean.md](ares-subterranean.md)) |
+| `7293DA` | `10047E20` | TunnelLocomotionClass_sub_729370_Dig | ported: sits in ProcessDiggingIn (0x00729370), which nothing calls ([ares-subterranean.md](ares-subterranean.md)) |
+| `7297C4` | `10047E40` | TunnelLocomotionClass_sub_729580_Dig | ported ([ares-subterranean.md](ares-subterranean.md)) |
+| `7299A9` | `10047E60` | TunnelLocomotionClass_sub_7298F0_Dig | ported ([ares-subterranean.md](ares-subterranean.md)) |
 
 The Carryall and aircraft-passenger hooks are listed in
 [ares-techno-hooks.md](ares-techno-hooks.md).
