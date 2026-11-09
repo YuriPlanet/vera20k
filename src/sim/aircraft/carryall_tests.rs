@@ -118,6 +118,9 @@ fn carryall_totes_an_allied_tank_and_sets_it_down() {
     let cargo = fx.sim.substrate.entities.get(tank).unwrap();
     assert!(cargo.lifecycle.in_limbo());
     assert!(cargo.is_on_carryall());
+    // `AircraftClass::Draw_It` draws it under the Carryall (`0x0041461D`).
+    assert_eq!(fx.sim.carryall_drawn_cargo(carryall, &fx.rules), Some(tank));
+    assert_eq!(fx.sim.carryall_drawn_cargo(tank, &fx.rules), None);
 
     fx.order(Command::Move {
         entity_id: carryall,
@@ -137,6 +140,7 @@ fn carryall_totes_an_allied_tank_and_sets_it_down() {
     );
     let cargo = fx.sim.substrate.entities.get(tank).unwrap();
     assert!(!cargo.is_on_carryall());
+    assert_eq!(fx.sim.carryall_drawn_cargo(carryall, &fx.rules), None);
     assert!(
         cargo.position.rx().abs_diff(21) <= 1 && cargo.position.ry().abs_diff(15) <= 1,
         "set down at the Move's cell: {:?}",

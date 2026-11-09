@@ -31,15 +31,8 @@
 //! No AI or team script orders a tote: gamemd reads `+0xDFC` only in the
 //! AircraftClass functions above and FlyLocomotion's landing (`0x004CEC14`).
 //!
-//! RESIDUAL (presentation): the cargo is not drawn while carried.
-//! `AircraftClass::Draw_It @ 0x004144B0` draws the first passenger of a
-//! Carryall through its Draw_It (vt+0x114) at the aircraft's point plus the
-//! Fly locomotor's Draw_Point (`0x0041463A..0x00414653`), before the
-//! aircraft's own body; `UnitClass::DrawIt @ 0x0073CEC0` lowers a carried
-//! Unit 14 pixels (`0x0073CEFC`), and its voxel shadow (`0x0073C36C`,
-//! `0x0073C73A`) and `TechnoClass_DrawSHP`'s (`0x00706481`, `0x00706559`)
-//! read IsOnCarryall too. Trigger: any tote. Effect: the vehicle vanishes
-//! while carried and reappears where it is set down.
+//! The client draws the cargo under its Carryall
+//! ([`Simulation::carryall_drawn_cargo`], `app::presentation::instances::units`).
 //!
 //! Ares 3.0 gates both Tote rungs with `Carryall.Allowed`/`Carryall.SizeLimit`
 //! ([`Simulation::ares_carryall_can_lift`]).
@@ -368,6 +361,22 @@ impl Simulation {
             )
         };
         allied(a, b) && allied(b, a)
+    }
+
+    /// The cargo `AircraftClass::Draw_It @ 0x004144B0` draws before its own
+    /// shadow and body (`0x0041461D..0x00414653`): a `Carryall=` aircraft's
+    /// first passenger (`+0x118`).
+    pub fn carryall_drawn_cargo(&self, aircraft: u64, rules: &RuleSet) -> Option<u64> {
+        if !self.is_carryall(aircraft, rules) {
+            return None;
+        }
+        let hold = self
+            .substrate
+            .entities
+            .get(aircraft)?
+            .passenger_role
+            .cargo()?;
+        hold.passengers().first().copied()
     }
 
     /// Mission_Move_Carryall's tote rung ([`CarryallMoveHost::tote_target`]).

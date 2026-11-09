@@ -1023,11 +1023,11 @@ pub(crate) fn embedded_shp_shadow_piece(
     instance.z_gradient = pack_z_gradient(ZGradient::Flat, false);
     instance.zshape_origin = [0.0, 0.0];
 
-    // RESIDUAL: Carryall child drawing raises this point another 14 pixels
-    // when Techno+424 is set (706481/706559, Aircraft pickup store417297).
-    // That rendering belongs to the existing unported Aircraft Carryall
-    // mechanism; retail Carryall is on VehicleType HIND. Ordinary ground
-    // Units use constructor6F2FF3's zero, without render-owned carryall state.
+    // RESIDUAL: a carried object (Techno+424, set by the Carryall pickup
+    // 417297) raises this point another 14 pixels (706481/706559). The
+    // Carryall's cargo draw (units.rs) covers voxel Units only, so an SHP
+    // cargo is not drawn and nothing here reads the flag. Trigger: a mod
+    // Carryall lifting an SHP vehicle.
     Some(ObjectPieceInstance {
         render_z: policy.render_z,
         target: ObjectTexture::SpriteAtlasEdit(
