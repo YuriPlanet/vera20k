@@ -3047,8 +3047,10 @@ impl Simulation {
                 for &(cell_x, cell_y) in &mutation.animation_cells {
                     for _ in 0..2 {
                         let type_index = self.scenario_rng.next_range_u32_inclusive(0, 2) as usize;
-                        let jitter_x = self.scenario_rng.next_range_u32_inclusive(0, 16) as i32 - 8;
-                        let jitter_y =
+                        // 0x0058173A..0x005817C1, 0x00581E40..0x00581EC7: the
+                        // first draw offsets Y, the second X.
+                        let jitter_y = self.scenario_rng.next_range_u32_inclusive(0, 16) as i32 - 8;
+                        let jitter_x =
                             self.scenario_rng.next_range_u32_inclusive(0, 24) as i32 - 12;
                         let level = self
                             .resolved_terrain
@@ -5738,7 +5740,15 @@ impl Simulation {
                     entity.stable_id()
                 );
             }
-            if !entity.lifecycle.cell_marked() || entity.passenger_role.is_inside_transport() {
+            if !entity.lifecycle.cell_marked()
+                || entity.passenger_role.is_inside_transport()
+                // A Jumpjet's hold and cruise move it with no Mark pair
+                // (0x0054D0FF..0x0054D134), so one flown onto a cliff answers
+                // Ground with no list entry, in gamemd too.
+                || entity.locomotor.as_ref().is_some_and(|locomotor| {
+                    locomotor.active_kind() == crate::rules::locomotor_type::LocomotorKind::Jumpjet
+                })
+            {
                 continue;
             }
             // A marked Foot sits where its Mark put it: the Mark owner's own
