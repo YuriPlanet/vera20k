@@ -292,6 +292,7 @@ fn engine_platform_and_process_reads_have_pinned_files() {
                 "map/source/cache.rs",
                 "net/live_commands/sequenced.rs",
                 "net/udp.rs",
+                "net/web_socket.rs",
                 "util/logging.rs",
                 "util/logging_telemetry.rs",
                 // The browser file system's modification times.
@@ -458,6 +459,8 @@ fn engine_per_client_reads_have_pinned_callers() {
         (
             "house_is_human_player",
             &[
+                // What_Action's Tote rung (0x00417CC0): the clicked action.
+                ("sim/aircraft/carryall.rs", 1),
                 ("sim/building_art.rs", 2),
                 ("sim/building_entry.rs", 1),
                 ("sim/building_power.rs", 2),
@@ -470,6 +473,8 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/flashing.rs", 1),
                 ("sim/infantry.rs", 1),
                 ("sim/movement/per_cell.rs", 1),
+                // Process's deselect over the player's shroud (0x007290F6).
+                ("sim/movement/tunnel_process.rs", 1),
                 ("sim/passenger.rs", 1),
                 ("sim/production/can_build.rs", 1),
                 ("sim/production/production_repair.rs", 1),
@@ -1848,6 +1853,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "TAction 76 stores the signed +0x90 dword unchanged (0x006DF364)",
         ),
         (
+            "sim/aircraft/carryall.rs",
+            "set",
+            "Foot+0x424, written by the pickup (0x00417297), the drop (0x00416C66) and an \
+             ordinary aircraft unload (0x00415548)",
+        ),
+        (
             "sim/ammo.rs",
             "set_dock",
             "the +0x6CC writers and PointerExpired's clear",
@@ -1978,6 +1989,16 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "sim/movement/teleport_movement.rs",
             "set_warping_in",
             "Techno+0x271, cleared by TimerCheck's expiry and state 7",
+        ),
+        (
+            "sim/movement/tunnel_movement.rs",
+            "set_state",
+            "TunnelLocomotionClass+0x18, written directly by its members in tunnel_process.rs",
+        ),
+        (
+            "sim/movement/tunnel_movement.rs",
+            "set_destination",
+            "TunnelLocomotionClass+0x1C, written directly by its members in tunnel_process.rs",
         ),
         (
             "sim/object_fall.rs",
