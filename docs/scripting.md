@@ -82,8 +82,8 @@ it is `[0, 0, 0]`, so a script that damages `anchor` cannot hit its owner.
 `width` in `laser` counts 1-pixel rings, not pixels. Retail beams use 1..=5; a
 wider beam, such as a 40-ring extraction column, is drawn by fading linearly
 across every ring it asks for instead of halving to black after a handful.
-`laser_rgb` takes the explicit-colour path, which draws 1..=5 rings and ignores
-`width`.
+`laser_rgb` takes the explicit-colour arm, which always draws the same few
+pixels of line and ignores `width`.
 
 `damage` and `detonate` differ in exactly one way: `detonate` also plays the
 warhead's own presentation. Use `detonate` unless the effect must be silent.
