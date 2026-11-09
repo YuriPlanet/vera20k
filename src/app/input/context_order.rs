@@ -2208,7 +2208,6 @@ pub(crate) fn try_queue_context_order(
                     crate::app::input::entity_pick::PresentedWorld {
                         sim,
                         rules: Some(&resources.rules),
-                        interpolation: &state.match_state.match_presentation.interpolation,
                         translucent_viewer,
                     },
                     world_x,

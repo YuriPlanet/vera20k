@@ -143,11 +143,6 @@ impl App {
         state.audio.mute_for_restore(restoring, sound, voice);
         let mut attempts = 0;
         loop {
-            if result.last_frame_completed {
-                // Observe each catch-up frame, so interpolation keeps
-                // consecutive endpoints instead of snapping at the jump.
-                crate::app::presentation::interpolation::prepare(state, false);
-            }
             let before = state.match_state.sim_runtime.as_ref().map(|runtime| {
                 (
                     runtime.simulation.session().tick(),
@@ -760,7 +755,10 @@ impl App {
             .match_state
             .match_diagnostics
             .begin_presentation_observation();
-        crate::app::presentation::interpolation::prepare(state, hidden_run.is_some());
+        crate::app::diagnostics::performance_overlay::observe_simulation(
+            state,
+            hidden_run.is_some(),
+        );
         let tooltip_ms = crate::app::input::tooltips::update(state);
         // `Init_Game` plays the startup logo (`0x0052C5E2`) before it presents
         // the splash (`0x0052C5F3`): the splash waits while a movie owns the

@@ -571,26 +571,15 @@ pub(crate) fn render_game(
     {
         let sim = runtime.view().simulation();
         let rules = &runtime.resources.rules;
-        let interpolation = &state.match_state.match_presentation.interpolation;
         state
             .match_state
             .match_presentation
             .electric_bolts
             .follow_owners(|owner| {
                 let point = crate::sim::combat::electric_bolt::owner_source(sim, rules, owner)?;
-                let [x, y, z] = interpolation
-                    .sample_draw_point(
-                        crate::app::presentation::interpolation::PointKind::BoltSource,
-                        owner.unit,
-                        crate::app::presentation::interpolation::PointPose::new(
-                            [point.x, point.y, point.z],
-                            0,
-                            None,
-                        ),
-                        sim.session().binary_frame(),
-                    )
-                    .coord;
-                Some(crate::sim::projectile::ProjectileCoord::new(x, y, z))
+                Some(crate::sim::projectile::ProjectileCoord::new(
+                    point.x, point.y, point.z,
+                ))
             });
     }
     let presentation = &mut state.match_state.match_presentation;
@@ -642,21 +631,7 @@ pub(crate) fn render_game(
             .airstrike_shades
             .step(&ui.tactical_line_calls, &main);
         presentation.line_trails.composite(
-            |id| {
-                let sim = sim?;
-                let bullet = sim.projectiles().get(id)?;
-                Some(
-                    presentation
-                        .interpolation
-                        .sample_point(
-                            crate::app::presentation::interpolation::PointKind::Bullet,
-                            id,
-                            crate::app::presentation::interpolation::PointPose::bullet(bullet),
-                            sim.session().binary_frame(),
-                        )
-                        .projectile_coord(),
-                )
-            },
+            |id| Some(sim?.projectiles().get(id)?.position()),
             |owner, coord| {
                 if !translucent_fog || sandbox {
                     return true;

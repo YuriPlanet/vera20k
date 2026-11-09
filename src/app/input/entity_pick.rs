@@ -118,7 +118,6 @@ impl PickWorld for &crate::sim::world::Simulation {
 pub(crate) struct PresentedWorld<'a> {
     pub sim: &'a crate::sim::world::Simulation,
     pub rules: Option<&'a RuleSet>,
-    pub interpolation: &'a crate::app::presentation::interpolation::RenderInterpolation,
     /// [`crate::app::presentation::instances::translucent_fog_viewer`].
     pub translucent_viewer: Option<InternedId>,
 }
@@ -139,9 +138,10 @@ impl PickSource for PresentedWorld<'_> {
         self.sim.entities()
     }
     fn screen_position(&self, entity: &crate::sim::game_entity::GameEntity) -> (f32, f32) {
-        let pose = self
-            .interpolation
-            .sample_entity(entity, self.sim.session().binary_frame());
+        let pose = crate::app::presentation::render_pose::RenderPose::read(
+            entity,
+            self.sim.session().binary_frame(),
+        );
         (pose.screen[0], pose.screen[1] - pose.visual_lift)
     }
     fn first_ground_cell_object(&self, cell: (u16, u16)) -> Option<CellObjectMember> {
@@ -171,7 +171,6 @@ pub(crate) fn presented<'a>(
     PresentedWorld {
         sim,
         rules: state.rules(),
-        interpolation: &state.match_state.match_presentation.interpolation,
         translucent_viewer: crate::app::presentation::instances::translucent_fog_viewer(state, sim),
     }
 }
@@ -1687,7 +1686,6 @@ mod tests {
     /// band preflight registers it whatever the fog mode (`0x006D9CE0`).
     #[test]
     fn a_building_frozen_in_fog_of_war_refuses_the_pick_on_its_cell() {
-        use crate::app::presentation::interpolation::RenderInterpolation;
         use crate::sim::world::Simulation;
 
         let mut sim = Simulation::new();
@@ -1714,7 +1712,6 @@ mod tests {
             crate::sim::occupancy::CellListInsertion::AppendBuilding,
         );
         sim.resubmit_entity_display_for_test(1);
-        let native = RenderInterpolation::new(false);
         for (fog_of_war, fogged) in [(true, false), (true, true), (false, true)] {
             sim.session_mut_for_test()
                 .game_options_mut_for_test()
@@ -1763,7 +1760,6 @@ mod tests {
                 let source = PresentedWorld {
                     sim: &sim,
                     rules: None,
-                    interpolation: &native,
                     translucent_viewer,
                 };
                 let (bx, by) = source.screen_position(sim.entities().get(1).unwrap());
@@ -1797,7 +1793,6 @@ mod tests {
         use crate::app::presentation::instances::{
             TacticalEntityPurpose, tactical_entity_admission, translucent_fog_conceals,
         };
-        use crate::app::presentation::interpolation::RenderInterpolation;
         use crate::sim::world::Simulation;
 
         let mut sim = Simulation::new();
@@ -1849,7 +1844,6 @@ mod tests {
             sim.resubmit_entity_display_for_test(id);
         }
         let all: Vec<u64> = cases.iter().map(|case| case.0).collect();
-        let native = RenderInterpolation::new(false);
         for (id, _, owner, retail, translucent) in cases {
             let entity = sim.entities().get(id).unwrap();
             assert_eq!(!translucent_fog_conceals(&sim, viewer, entity), translucent);
@@ -1873,7 +1867,6 @@ mod tests {
                 let source = PresentedWorld {
                     sim: &sim,
                     rules: None,
-                    interpolation: &native,
                     translucent_viewer,
                 };
                 let case = format!("{id} {translucent_viewer:?}");
@@ -2065,8 +2058,7 @@ mod tests {
             let mut cloak = CloakRuntime::new(0);
             cloak.set_state_for_test(cloak_state);
             entity.cloak = Some(cloak);
-            let world =
-                crate::app::presentation::instances::interpolated_screen_position_entity(&entity);
+            let world = crate::app::presentation::instances::entity_screen_position(&entity);
             sim.entities_mut_for_test().insert(entity);
             sim.resubmit_entity_display_for_test(1);
             let order = crate::app::presentation::instances::tactical_entity_encounter_order(&sim);

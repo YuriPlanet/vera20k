@@ -1022,38 +1022,6 @@ impl TechnoExtras {
         self.scale.retain(|pip| viewport.contains(pip));
         self.self_heal = self.self_heal.take().filter(|pip| viewport.contains(pip));
     }
-
-    /// Move every owned adornment with the prototype's painted body. Native
-    /// status generation and its material/selection/health semantics stay intact.
-    pub(crate) fn translate_for_interpolation(&mut self, offset: [f32; 2]) {
-        for instance in self
-            .bomb_clock
-            .iter_mut()
-            .chain(self.wrench.iter_mut())
-            .chain(self.rank.iter_mut())
-            .chain(self.background.iter_mut())
-            .chain(self.shield_background.iter_mut())
-            .chain(self.fills.iter_mut())
-            .chain(self.scale.iter_mut())
-            .chain(self.self_heal.iter_mut())
-            .chain(self.group.rectangles.iter_mut())
-            .chain(self.group.text.iter_mut())
-            .chain(self.talk_bubble.iter_mut())
-        {
-            instance.position[0] += offset[0];
-            instance.position[1] += offset[1];
-        }
-        for text in &mut self.digital_text {
-            for instance in text.rectangles.iter_mut().chain(text.text.iter_mut()) {
-                instance.position[0] += offset[0];
-                instance.position[1] += offset[1];
-            }
-        }
-        for (_, instance) in &mut self.digital_shapes {
-            instance.position[0] += offset[0];
-            instance.position[1] += offset[1];
-        }
-    }
 }
 
 fn keep_health_pips_screen_size<'a>(

@@ -1,4 +1,4 @@
-//! Shared helpers for instance builders — depth sorting, interpolation, visibility.
+//! Shared helpers for instance builders — depth sorting, visibility.
 //!
 //! These utilities are used by the unit, SHP, and overlay instance builders.
 //! Split from `presentation::instances` to keep files under the 600-line limit.
@@ -485,13 +485,8 @@ pub(crate) fn apply_shape_z_adjust(depth: f32, z_adjust_px: i32, world_height: f
 /// which is the single owner of the answer. Callers must NOT apply a height
 /// offset of their own on top — doing that in two places is what used to lift
 /// aircraft twice.
-/// Despite its legacy name, this is not the experimental render interpolation:
-/// native comparisons retain this current-state anchor. Live rendering and
-/// picking use `presentation::interpolation` with explicit client state.
 #[cfg(test)]
-pub(crate) fn interpolated_screen_position_entity(
-    entity: &crate::sim::game_entity::GameEntity,
-) -> (f32, f32) {
+pub(crate) fn entity_screen_position(entity: &crate::sim::game_entity::GameEntity) -> (f32, f32) {
     crate::render::locomotor_visual::screen_position(entity)
 }
 
@@ -1132,8 +1127,8 @@ mod tests {
         );
         hidden_mobile.lifecycle.set_in_limbo_for_test(false);
         hidden_building.lifecycle.set_in_limbo_for_test(false);
-        let mobile_anchor = interpolated_screen_position_entity(&hidden_mobile);
-        let building_anchor = interpolated_screen_position_entity(&hidden_building);
+        let mobile_anchor = entity_screen_position(&hidden_mobile);
+        let building_anchor = entity_screen_position(&hidden_building);
         sim.entities_mut_for_test().insert(hidden_mobile);
         sim.entities_mut_for_test().insert(hidden_building);
         sim.entities_mut_for_test()

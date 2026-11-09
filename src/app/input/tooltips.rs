@@ -234,16 +234,15 @@ fn tactical_world_tip_text(
     world: (f32, f32),
     cursor_coordinates: bool,
 ) -> String {
-    tactical_world_tip_text_sampled(view, rules, csf, world, cursor_coordinates, None, None)
+    tactical_world_tip_text_for_viewer(view, rules, csf, world, cursor_coordinates, None)
 }
 
-fn tactical_world_tip_text_sampled(
+fn tactical_world_tip_text_for_viewer(
     view: crate::sim::runtime::SimView<'_>,
     rules: &crate::rules::ruleset::RuleSet,
     csf: Option<&crate::assets::csf_file::CsfFile>,
     world: (f32, f32),
     cursor_coordinates: bool,
-    interpolation: Option<&crate::app::presentation::interpolation::RenderInterpolation>,
     translucent_viewer: Option<crate::sim::intern::InternedId>,
 ) -> String {
     let Some((terrain, viewer)) = view.resolved_terrain().zip(view.session().current_house())
@@ -268,12 +267,10 @@ fn tactical_world_tip_text_sampled(
     // and foundation fallback, instead of keeping a tooltip object pointer.
     let sim = view.simulation();
     let order = crate::app::presentation::instances::tactical_entity_encounter_order(sim);
-    let native = crate::app::presentation::interpolation::RenderInterpolation::new(false);
     let picked = crate::app::input::entity_pick::pick_entity_at_point(
         crate::app::input::entity_pick::PresentedWorld {
             sim,
             rules: Some(rules),
-            interpolation: interpolation.unwrap_or(&native),
             translucent_viewer,
         },
         &order,
@@ -476,13 +473,12 @@ fn tactical_tip_text(state: &AppState) -> String {
     );
     let translucent_viewer =
         crate::app::presentation::instances::translucent_fog_viewer(state, view.simulation());
-    tactical_world_tip_text_sampled(
+    tactical_world_tip_text_for_viewer(
         view,
         rules,
         state.process_assets.csf.as_ref(),
         world,
         input.cursor_coordinates,
-        Some(&state.match_state.match_presentation.interpolation),
         translucent_viewer,
     )
 }
@@ -1486,7 +1482,7 @@ mod tests {
                 .as_ref()
                 .is_some_and(|cloak| cloak.is_fully_cloaked())
         );
-        let world = crate::app::presentation::instances::interpolated_screen_position_entity(
+        let world = crate::app::presentation::instances::entity_screen_position(
             sim.entities().get(entity_id).unwrap(),
         );
 

@@ -687,9 +687,6 @@ lifting, interrupted fade and Wave cleanup through ordinary commands. For a
 shot-in-progress image, copy the profile with `ticks = 20` and remove commands
 at or after step 20. Run the same map/profile/config bytes before and after the
 change, then use `tools.map_observation compare` on the completed captures.
-These exact-step captures disable render interpolation: they check ordinary
-output and cleanup, while the production interpolation regression covers an
-interpolated foldback that reproduces the scanline overflow.
 
 The [Dolphin Sonic profile](map_observation.sonic-wave.example.json) uses a
 stock DLPH, enemy CARRIER and a distant enemy survivor. Extract the physical

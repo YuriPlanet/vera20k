@@ -178,13 +178,6 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // Presentation only: the next EVA text line reads it.
         self.persistence.options_profile.detailed_eva_text = enabled;
     }
-    fn store_render_interpolation(&mut self, enabled: bool) {
-        self.persistence.options_profile.render_interpolation = enabled;
-        self.match_state
-            .match_presentation
-            .interpolation
-            .set_enabled(enabled);
-    }
     fn store_lock_cursor(&mut self, locked: bool) {
         // Saved, and applied at once: the window holds or frees the pointer.
         self.persistence.options_profile.lock_cursor = locked;
