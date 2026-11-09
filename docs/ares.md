@@ -56,6 +56,9 @@ Supported extensions:
 - [EVA voice tags and Side selection](ares-eva.md)
 - [Per-type promotion sounds](ares-promotion-sounds.md)
   (`Promote.VeteranSound`, `Promote.EliteSound`)
+- [Subterranean dig effects](ares-subterranean.md) (`DigIn`, `DigOut`,
+  `DigInSound`, `DigOutSound`) on the stock Tunnel locomotor, which every
+  build ports for mods that select it
 - [Finite infantry ammo](../src/sim/ammo.rs): Ares' Infantry reload dispatch
   runs through the shared Techno reload owner before the scatter/fire suffix,
   and per-weapon `Ammo` shares one count across admission, debit and reload

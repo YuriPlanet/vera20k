@@ -79,6 +79,11 @@ pub(crate) fn ready_state_for(
         LocomotorKind::Jumpjet => Some(jumpjet(locomotor)),
         LocomotorKind::Walk => Some(walk(entity, locomotor)),
         LocomotorKind::Hover => Some(hover(locomotor)),
+        LocomotorKind::Tunnel => locomotor
+            .tunnel_runtime()
+            .map(|runtime| LocomotorReadyState::Tunnel {
+                state: runtime.state().raw(),
+            }),
         // Fly and Rocket have no readiness inputs: the Unit and Infantry
         // readiness branches in `sim::mission::readiness` never see them, and
         // aircraft readiness decides from its mission plus two flags. Their
