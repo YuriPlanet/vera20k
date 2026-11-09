@@ -115,6 +115,7 @@
 //! - rules/ is depended on by: sim/, map/, render/, app/, audio/, ui/, net/
 //! - rules/ does NOT depend on (outside tests): sim/, render/, ui/, audio/, net/
 
+pub mod aircraft_trailer;
 pub mod airstrike;
 pub(crate) mod threat_coefficients;
 #[cfg(feature = "phobos")]
@@ -313,6 +314,8 @@ mod mirage_disguise_tests;
 pub mod move_sound_tests;
 #[cfg(test)]
 mod path_delay_rules_tests;
+#[cfg(test)]
+mod allow_shrouded_subterannean_moves_tests;
 #[cfg(test)]
 mod read_double_percent_tests;
 #[cfg(any(test, feature = "test-support"))]

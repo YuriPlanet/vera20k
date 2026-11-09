@@ -786,15 +786,13 @@ impl Simulation {
     ///   ([`Self::jumpjet_move_to`]), Hover ([`hover_move_to`]), Walk
     ///   ([`set_walk_destination_coord`]) or Tunnel
     ///   ([`Self::tunnel_move_to`]) — unless Foot+0x6AC skips it once.
+    /// - The `MovementZone=Subterannean` arm (`0x00742097..0x007422D7`,
+    ///   Type+D2C read71608A) uses the shared burrowing planner7447B0 and
+    ///   existing NavQueue before the ordinary Foot setter.
     /// - A surfacing Tunnel queues the destination and holds its own Cell
-    ///   (`0x007422F7`), and the Tunnel arm ([`Self::unit_tunnel_arm`]) may
-    ///   put a Drive over the Tunnel for a short trip.
-    /// - RESIDUAL, dormant on retail data: the `MovementZone=Subterannean`
-    ///   arm (`0x00742097..0x007422D7`, TechnoType `+0xD2C`, which
-    ///   TechnoTypeClass::ReadINI sets at `0x0071608A`), whose planner
-    ///   `0x007447B0` fills the NavQueue and heads for its first post. No
-    ///   retail rules, mode or map file names that zone. A mod Tunnel unit with
-    ///   that zone takes the ordinary arm instead.
+    ///   (`0x007422F7`), and the Tunnel-locomotor arm
+    ///   ([`Self::unit_tunnel_arm`], `0x007427C0..0x00742C14`) may put a
+    ///   Drive over the Tunnel for a short trip.
     ///
     /// Returns false for a receiver without a represented Move_To or a
     /// refused destination. Foot4D9628 calls the destination's +4C coordinate
@@ -1069,6 +1067,11 @@ impl Simulation {
                 }
             }
         }
+        let requested_clear = clear_queue;
+        let (burrowing_destination, clear_queue) = self
+            .burrowing_setter_destination(id, destination, clear_queue, rules)
+            .unwrap_or_else(|cause| panic!("Unit {id} burrowing destination: {cause}"));
+        destination = burrowing_destination;
         // Native7422F4/7423CA clears NavQueue after the Enter arm, before
         // the UnitRepair/Bunker tail. A false flag preserves non-NULL requests for
         // Enter's pop; the modified-NULL arm7423CA clears the queue regardless.
@@ -1077,10 +1080,11 @@ impl Simulation {
         {
             unit.navigation.clear_nav_queue();
         }
-        // 0x007422F7..0x00742395: after that clear, a locomotor that is
-        // surfacing (vt+0x98, Tunnel `0x0072A1E0`) queues the destination at
-        // the NavQueue's front and takes the Cell under its Location instead.
-        if clear_queue
+        // 0x007422F7..0x00742395: after that clear (or the burrowing
+        // planner, which jumps here past it at 0x007422D0), a locomotor that
+        // is surfacing (vt+0x98, Tunnel `0x0072A1E0`) queues the destination
+        // at the NavQueue's front and takes the Cell under its Location.
+        if requested_clear
             && let Some(requested) = destination
             && let Some(unit) = self.substrate.entities.get_mut(id)
             && unit

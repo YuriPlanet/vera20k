@@ -368,10 +368,8 @@ impl Simulation {
                 check_height: false,
                 check_occupancy: false,
                 target_cell: None,
-                options: NearbySearchOptions {
-                    reject_any_overlay: false,
-                    require_burrowable: true,
-                },
+                require_burrowable: true,
+                options: NearbySearchOptions::default(),
             },
         )
     }
@@ -696,44 +694,12 @@ impl Simulation {
         self.tunnel_set_state(id, TunnelState::DiggingOut);
     }
 
-    /// `CellClass::PassesTileAndOccupancyChecks @ 0x00486FF0`, whether a
-    /// digger may surface or dig at `cell`: any cell outside the playfield
-    /// passes; otherwise its tile type must allow burrowing
-    /// (`AllowBurrowing=`), it must be flat with no bridge bits (`+0x140 &
-    /// 0x500`), and no building or terrain object may stand in it.
-    pub(crate) fn cell_allows_burrowing(&self, cell: (i16, i16)) -> bool {
-        let Some(terrain) = self.resolved_terrain.as_ref() else {
-            return true;
-        };
-        if !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
-            (i32::from(cell.0), i32::from(cell.1)),
-            self.playfield_bounds(),
-            Some(terrain),
-        ) {
-            return true;
-        }
-        let identity = terrain.native_cell_identity(cell);
-        let Some(data) = terrain.cell(cell.0 as u16, cell.1 as u16) else {
-            return true;
-        };
-        if terrain.tile_denies_burrowing(data.final_tile_index)
-            || data.slope_type != 0
-            || terrain.native_cell_flags(identity) & 0x500 != 0
-        {
-            return false;
-        }
-        let (x, y) = (cell.0 as u16, cell.1 as u16);
-        self.substrate
-            .occupancy
-            .first_category_on_layer(
-                x,
-                y,
-                super::locomotor::MovementLayer::Ground,
-                crate::map::entities::EntityCategory::Structure,
-                &self.substrate.entities,
-            )
-            .is_none()
-            && self.terrain_objects.members_at((x, y)).next().is_none()
+    /// The burrow test at the Cell `cell` names, on the map's canonical cells.
+    pub(crate) fn tunnel_cell_allows_burrowing(&self, cell: (i16, i16)) -> bool {
+        self.resolved_terrain.as_ref().is_none_or(|terrain| {
+            let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+            self.cell_allows_burrowing(&cells, cells.lookup(cell))
+        })
     }
 
     /// `UnitClass::AStarAttempt @ 0x00746000`, whether a Tunnel Unit digs to
@@ -805,8 +771,8 @@ impl Simulation {
             crate::sim::pathfinding::zone_map::ZoneQueryCell::Copied(to),
             false,
             to_bridge,
-            Some(crate::rules::locomotor_type::MovementZone::Normal),
             rules,
+            Some(crate::rules::locomotor_type::MovementZone::Normal),
         )
         .map_or(true, |cost| cost > 15)
     }
@@ -814,7 +780,8 @@ impl Simulation {
     /// The Unit setter's Tunnel arm (`0x007427C0..0x00742C14`), after its
     /// Teleporter arm: a Unit whose active locomotor is an idle Tunnel at
     /// height 0 keeps it when the trip is one to dig ([`Self::tunnel_should_dig`])
-    /// between two cells that allow burrowing ([`Self::cell_allows_burrowing`])
+    /// between two cells that allow burrowing ([`Self::cell_allows_burrowing`],
+    /// CellClass `0x00486FF0`)
     /// to a destination off any bridge. Otherwise a fresh Drive suspends the
     /// Tunnel (`0x00742833..0x00742BE3`) and drives the trip; the FootClass::AI
     /// tail ends that Drive once it may end. Tunnel has no IPiggyback, so the
@@ -863,8 +830,8 @@ impl Simulation {
         });
         let digs = !on_bridge
             && !to_bridge
-            && self.cell_allows_burrowing(from)
-            && self.cell_allows_burrowing(to)
+            && self.tunnel_cell_allows_burrowing(from)
+            && self.tunnel_cell_allows_burrowing(to)
             && self.tunnel_should_dig(id, from, to, rules);
         if digs {
             return;

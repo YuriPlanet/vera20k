@@ -278,6 +278,8 @@ fn find_nearby_pre_fill_start_rect(
         ),
         allow_bridge_cells: true,
         check_height: false,
+        require_burrowable: false,
+        burrowing_contents: None,
         check_occupancy: false,
         radius_cap: map_owned_radius_cap(playfield_bounds.base, header.height as i32),
         target_cell: None,
@@ -288,7 +290,6 @@ fn find_nearby_pre_fill_start_rect(
         entities: None,
         zone_grid: None,
         playfield_bounds: Some(playfield_bounds),
-        burrowable: None,
     };
     find_nearby_passable_cell((i32::from(seed_rx), i32::from(seed_ry)), &query, 0)
 }
@@ -330,6 +331,8 @@ pub fn find_nearby_start_rect(
         ),
         allow_bridge_cells: true,
         check_height: false,
+        require_burrowable: false,
+        burrowing_contents: None,
         check_occupancy: false,
         radius_cap: map_owned_radius_cap(bounds.base, size_height),
         target_cell: None,
@@ -342,7 +345,6 @@ pub fn find_nearby_start_rect(
         entities: None,
         zone_grid: None,
         playfield_bounds: Some(bounds),
-        burrowable: None,
     };
     find_nearby_passable_cell(
         (i32::from(seed_rx), i32::from(seed_ry)),

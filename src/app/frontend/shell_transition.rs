@@ -73,6 +73,8 @@ pub(crate) enum ShellSlideKind {
     WolOptions,
     /// Dialog 0xD6 — the shell's Sound Options, run from WOL Options.
     WolSoundOptions,
+    /// VERA's Chat Translation page, over the hidden lobby.
+    WolChatTranslation,
     /// Dialog 0x112 — the WOL auto-login query after a dialog login.
     WolAutoLoginQuery,
     /// Dialog 0xFE — the WOL locale page during the connect.
@@ -131,6 +133,7 @@ impl ShellSlideKind {
             ShellSlideKind::WolLobby => 0x0113,
             ShellSlideKind::WolOptions => 0x02BC,
             ShellSlideKind::WolSoundOptions => 0x00D6,
+            ShellSlideKind::WolChatTranslation => crate::ui::wol_chat_translation::DIALOG.0,
             ShellSlideKind::WolAutoLoginQuery => 0x0112,
             ShellSlideKind::WolLocale => 0x00FE,
             ShellSlideKind::WolMyInformation => 0x0114,
@@ -252,6 +255,9 @@ pub(crate) enum ShellExitThen {
     /// commits and writes (Main Menu `0x5CB`; state 0x12 recreates `0xE2`) or
     /// commits and runs the Keyboard page (`0x5CE`).
     Options(crate::ui::main_menu_dialogs::options::LauncherParentResult),
+    /// VERA's Esc menu chose Options: the page it asked over slides out and
+    /// `0xD5` runs, as for the Main Menu's own Options.
+    ShellMenuOptions(ShellSlideKind),
     /// Keyboard `0xA3` Back or Cancel: `0x005FBEF0` tears it down with its
     /// slide, then the bindings save or reload and a new `0xD5` is built.
     KeyboardClose(crate::app::input::keyboard::KeyboardExit),
@@ -315,6 +321,11 @@ pub(crate) enum ShellExitThen {
     WolOptionsOpen,
     /// `0x2BC` closed with OK (the staged values) or Cancel (`None`).
     WolOptionsClose(Option<crate::ui::wol_options::WolPreferences>),
+    /// The online lobby's Chat Translation: it slides out and the page opens.
+    WolChatTranslationOpen,
+    /// The Chat Translation page closed with OK (its settings) or Cancel
+    /// (`None`).
+    WolChatTranslationClose(Option<crate::ui::chat_translation::ChatTranslationSettings>),
     /// `0x2BC` Sound Options (`0x63A`): it slides out and `0xD6` runs.
     WolSoundOptionsOpen,
     /// `0xD6` Back (`0x686`): `0x2BC` shows again.
@@ -350,6 +361,7 @@ impl ShellExitThen {
             Self::CampaignBack | Self::CampaignStart(_) => ShellSlideKind::Campaign,
             Self::LoadSavedGameBack => ShellSlideKind::LoadSavedGame,
             Self::Options(_) => ShellSlideKind::Options,
+            Self::ShellMenuOptions(page) => *page,
             Self::KeyboardClose(_) => ShellSlideKind::Keyboard,
             Self::LanBack | Self::LanCreate { .. } | Self::LanJoinAccepted(_) => {
                 ShellSlideKind::LanLobby
@@ -368,7 +380,9 @@ impl ShellExitThen {
             | Self::WolLobbyRunner(_)
             | Self::WolLobbyHide
             | Self::WolCreateAccepted { .. }
-            | Self::WolOptionsOpen => ShellSlideKind::WolLobby,
+            | Self::WolOptionsOpen
+            | Self::WolChatTranslationOpen => ShellSlideKind::WolLobby,
+            Self::WolChatTranslationClose(_) => ShellSlideKind::WolChatTranslation,
             Self::WolOptionsClose(_) | Self::WolSoundOptionsOpen => ShellSlideKind::WolOptions,
             Self::WolSoundOptionsBack => ShellSlideKind::WolSoundOptions,
             Self::WolAutoLoginClose(_) => ShellSlideKind::WolAutoLoginQuery,
@@ -661,6 +675,7 @@ impl<'a> ShellLifecycleReducer<'a> {
             | ShellSlideKind::WolLobby
             | ShellSlideKind::WolOptions
             | ShellSlideKind::WolSoundOptions
+            | ShellSlideKind::WolChatTranslation
             | ShellSlideKind::WolAutoLoginQuery
             | ShellSlideKind::WolLocale
             | ShellSlideKind::WolMyInformation
@@ -871,13 +886,20 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
     // `0x0052DDAB`); state 0x12 builds a new `0xE2` when it closes. Its
     // Keyboard page `0xA3` runs after `0xD5` is destroyed (`0x0055FD06`) and
     // slides like it. The Exit confirmation (state 6) and the quit after it
-    // (state 7) run without a family dialog.
+    // (state 7) run without a family dialog. VERA's Esc menu asks over the
+    // showing dialog, which stays the target.
     if let Some(dialog) = state.frontend.keyboard_dialog.as_ref() {
         return (dialog.parent == crate::ui::shell::keyboard::KeyboardParent::Launcher)
             .then_some(ShellSlideKind::Keyboard)
             .filter(|kind| crate::ui::shell::slide::is_slide_eligible(kind.dialog_id()));
     }
-    if state.frontend.shell_message_box.is_some() || state.frontend.quit_cascade.is_some() {
+    if state
+        .frontend
+        .shell_message_box
+        .as_ref()
+        .is_some_and(|message_box| !message_box.keeps_page())
+        || state.frontend.quit_cascade.is_some()
+    {
         return None;
     }
     // Only the native page slides; the assetless fallback does not.
@@ -932,6 +954,11 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
             _ => return None,
         }
     } else if state.frontend.shell_route.wol_lobby() {
+        // VERA's page, like 0x2BC, runs over the hidden lobby.
+        if crate::app::shell_wol::chat_translation::page(state).is_some() {
+            let kind = ShellSlideKind::WolChatTranslation;
+            return crate::ui::shell::slide::is_slide_eligible(kind.dialog_id()).then_some(kind);
+        }
         // 0x2BC and its 0xD6 run over the hidden lobby.
         if let Some(crate::app::shell_wol::WolPage::Options(page)) =
             state.frontend.wol.as_ref().map(|visit| &visit.page)
@@ -1139,6 +1166,7 @@ pub(crate) fn render_shell_first_paint_slide(
         | ShellSlideKind::WolLobby
         | ShellSlideKind::WolOptions
         | ShellSlideKind::WolSoundOptions
+        | ShellSlideKind::WolChatTranslation
         | ShellSlideKind::WolAutoLoginQuery
         | ShellSlideKind::WolLocale
         | ShellSlideKind::WolMyInformation
@@ -1526,7 +1554,7 @@ mod tests {
         let column = ShellSlideKind::WolLobby.column(9, Some(lobby.page_spec()));
         assert_eq!(
             (column.top_buttons, column.bottom_button, column.top_panel),
-            (4, true, false)
+            (5, true, false)
         );
         assert_eq!(ShellSlideKind::WolWelcome.column(9, None).top_buttons, 6);
         let retail = ShellSlideKind::WolLobby.column(9, None);

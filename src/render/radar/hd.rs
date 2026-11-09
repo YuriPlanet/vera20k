@@ -93,10 +93,13 @@ impl HdRadar {
     }
 
     /// Upload the HD terrain where its revision changed.
-    pub fn refresh(&mut self, queue: &wgpu::Queue, (words, revision): (&[u16], u64)) {
-        if revision != self.revision {
+    /// Upload `words` if they changed, returning whether they did.
+    pub fn refresh(&mut self, queue: &wgpu::Queue, (words, revision): (&[u16], u64)) -> bool {
+        let changed = revision != self.revision;
+        if changed {
             self.textures.write_words(queue, words);
             self.revision = revision;
         }
+        changed
     }
 }

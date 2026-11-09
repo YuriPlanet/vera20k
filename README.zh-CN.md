@@ -115,6 +115,8 @@ VERA20K 的开发者都是你们的朋友。我们希望把庞大的中国红警
 
 声音、画面和操作设置保存在 `VERA.INI` 中。游戏规则由大厅设置、模组或地图决定。
 
+[模组制作指南](docs/modding.md)介绍了如何制作自己的模组。
+
 ## 支持项目
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="通过 PayPal 支持 VERA20K" height="23"></a>

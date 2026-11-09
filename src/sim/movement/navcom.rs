@@ -276,10 +276,16 @@ impl NavigationState {
         (!self.nav_queue.is_empty()).then(|| self.nav_queue.remove(0))
     }
 
+    /// Unit7447B0 appends route posts, then returns the first through the
+    /// same queue owner. Entries retain their native order and duplicates.
+    pub(crate) fn append_nav_queue(&mut self, target: NavTargetRef) {
+        self.nav_queue.push(target);
+    }
+
     /// Append to a fixture's NavQueue.
     #[cfg(any(test, feature = "test-support"))]
     pub fn push_nav_queue_for_test(&mut self, target: NavTargetRef) {
-        self.nav_queue.push(target);
+        self.append_nav_queue(target);
     }
 
     /// Keep only the NavQueue entries `keep` accepts.
@@ -295,6 +301,12 @@ impl NavigationState {
     /// `Foot+0x6B1`, the list's loop flag.
     pub(crate) fn nav_list_loops(&self) -> bool {
         self.nav_list_loops
+    }
+
+    /// Unit741F40..741FB6 prepends a moving Drive's next destination without
+    /// Queue_Navigation_List's self-reference or empty-list loop rewrites.
+    pub(crate) fn prepend_nav_list(&mut self, target: NavTargetRef) {
+        self.nav_list.insert(0, target);
     }
 
     /// Queue_Navigation_List's list writes (`0x004DA0F1..0x004DA157`): the

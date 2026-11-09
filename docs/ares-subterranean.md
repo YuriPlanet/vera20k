@@ -86,10 +86,6 @@ origin.
 
 ## Not covered
 
-- `MovementZone=Subterannean`'s own Unit-setter arm and planner
-  (`0x00742097`, `0x007447B0`), its click-order flags (`0x004D785F`,
-  `0x004D7A3B`, `0x004DE3DB`) and its `Find_Path` flag (`0x004D3AD0`). A
-  Tunnel unit with that zone takes the ordinary arms.
 - Reinforcements that arrive underground (`0x0065E010`, an all-Tunnel team)
   and a Tunnel infantryman's move orders.
 - The dig tilt and depth drawing (`Draw_Matrix 0x00729B40`, `Z_Adjust

@@ -193,11 +193,11 @@ pub(super) fn launch(
                     footprint: NearbyFootprint::SINGLE,
                     allow_bridge_cells: false,
                     check_height: false,
+                    require_burrowable: false,
                     check_occupancy: false,
                     target_cell: None,
                     options: NearbySearchOptions {
                         reject_any_overlay: false,
-                        require_burrowable: false,
                     },
                 },
             )

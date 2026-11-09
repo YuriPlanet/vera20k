@@ -59,7 +59,7 @@ pub struct GlyphEntry {
     pub uv_size: [f32; 2],
     pub pixel_width: f32,
     pub(crate) glyph_id: u16,
-    /// Drawn on the full-cell CJK grid ([`crate::render::text_engine::fonts::is_cjk_sized`]).
+    /// Drawn on the full-cell CJK grid ([`crate::i18n::is_cjk_sized`]).
     pub(crate) cjk: bool,
 }
 
@@ -70,7 +70,7 @@ impl GlyphEntry {
             uv_size: [0.0; 2],
             pixel_width: pixel_width as f32,
             glyph_id,
-            cjk: crate::render::text_engine::fonts::is_cjk_sized(u32::from(codepoint)),
+            cjk: crate::i18n::is_cjk_sized(u32::from(codepoint)),
         }
     }
 }
@@ -849,8 +849,7 @@ impl BitFont {
                 // deferred glyph changes subsequent native line boundaries.
                 let deferred_byte = chars[i - 1].0;
                 // Hanzi break between any two; anything else was a word.
-                split_word |=
-                    !crate::render::text_engine::fonts::is_cjk_sized(chars[i - 1].1 as u32);
+                split_word |= !crate::i18n::is_cjk_sized(chars[i - 1].1 as u32);
                 lines.push(LineSpan {
                     start_byte: line_start_byte,
                     end_byte: deferred_byte,

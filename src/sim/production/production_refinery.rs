@@ -28,11 +28,9 @@ const FREE_UNIT_FACING_FALLBACK: u8 = 0xA0;
 const FREE_UNIT_FALLBACK_ATTEMPTS: [NearbySearchOptions; 2] = [
     NearbySearchOptions {
         reject_any_overlay: true,
-        require_burrowable: false,
     },
     NearbySearchOptions {
         reject_any_overlay: false,
-        require_burrowable: false,
     },
 ];
 

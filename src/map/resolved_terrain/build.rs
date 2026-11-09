@@ -267,6 +267,7 @@ impl ResolvedTerrainGrid {
                 clear_tile_id: 0,
                 water_tiles: crate::map::rmg::tiles::TileIds::from_keys(&Default::default()),
                 tile_registry_len: None,
+                tile_burrowing_permissions: None,
                 dummy_accepts_smudge: false,
                 high_bridge_rim_tiles: None,
                 bridge_set_start: None,
@@ -276,7 +277,6 @@ impl ResolvedTerrainGrid {
                 deformation_catalog: None,
                 deformation_enabled: false,
                 bridge_recalc_catalog: None,
-                burrow_denied_tiles: Default::default(),
                 allocation_caches: Default::default(),
             };
             grid.bind_asset_catalogs(
@@ -977,6 +977,7 @@ impl ResolvedTerrainGrid {
             clear_tile_id: 0,
             water_tiles: crate::map::rmg::tiles::TileIds::from_keys(&Default::default()),
             tile_registry_len: None,
+            tile_burrowing_permissions: None,
             dummy_accepts_smudge: false,
             high_bridge_rim_tiles: None,
             bridge_set_start: None,
@@ -986,7 +987,6 @@ impl ResolvedTerrainGrid {
             deformation_catalog: None,
             deformation_enabled: false,
             bridge_recalc_catalog: None,
-            burrow_denied_tiles: Default::default(),
             allocation_caches: Default::default(),
         };
         grid.bind_asset_catalogs(

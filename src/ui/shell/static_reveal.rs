@@ -383,11 +383,14 @@ impl PresentedKind1Static {
         }
     }
 
-    /// The latest recomposition was presented.
-    pub(crate) fn commit_presented(&mut self) {
-        if let Some(receipt) = self.pending.take() {
-            self.reveal.record_presented(receipt);
-        }
+    /// The latest recomposition was presented. Returns whether it showed a
+    /// new step of the reveal.
+    pub(crate) fn commit_presented(&mut self) -> bool {
+        let Some(receipt) = self.pending.take() else {
+            return false;
+        };
+        self.reveal.record_presented(receipt);
+        true
     }
 
     /// The reveal ran to completion and its final paint is on screen.
@@ -490,9 +493,10 @@ impl DialogStatics {
         }
     }
 
-    pub(crate) fn commit_presented(&mut self) {
+    /// Returns whether the presented frame showed a new status-line step.
+    pub(crate) fn commit_presented(&mut self) -> bool {
         self.heading.commit_presented();
-        self.status_line.commit_presented();
+        self.status_line.commit_presented()
     }
 
     /// Both reveals ran to completion and their last paints are on screen.
@@ -770,6 +774,22 @@ pub(crate) mod tests {
         );
         statics.commit_presented();
         counts
+    }
+
+    /// The frame loop hears of a status-line step only when a present showed
+    /// one, so the draw limit eases just for those.
+    #[test]
+    fn commit_reports_only_a_new_status_line_step() {
+        let t0 = Instant::now();
+        let mut statics = DialogStatics::default();
+        statics.hover("Help", t0);
+        statics.show("Choose Map", t0);
+        statics.paint(t0, false);
+        assert!(statics.commit_presented());
+        statics.paint(t0, false);
+        assert!(!statics.commit_presented(), "no timer came due");
+        statics.paint(t0 + Duration::from_millis(15), false);
+        assert!(statics.commit_presented());
     }
 
     #[test]

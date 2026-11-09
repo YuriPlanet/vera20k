@@ -8,6 +8,8 @@
 pub enum RmgConstructionPhase {
     BridgeRepairHut,
     NeutralTech,
+    /// VERA extension: a civilian building of the urban stage.
+    Urban,
 }
 
 /// Whether a generated constructor survived placement and entered MapFile.

@@ -1262,11 +1262,11 @@ impl Simulation {
                 footprint: NearbyFootprint::new(search.footprint.0, search.footprint.1),
                 allow_bridge_cells: search.allow_bridge_cells,
                 check_height: search.check_height,
+                require_burrowable: false,
                 check_occupancy: search.check_occupancy,
                 target_cell: Some(search.target),
                 options: NearbySearchOptions {
                     reject_any_overlay: search.reject_any_overlay,
-                    require_burrowable: false,
                 },
             },
         )?;

@@ -7,7 +7,6 @@
 
 use super::audio::{AudioVolume, AudioVolumeOperations, apply_volume};
 use crate::app::persistence::options_profile::RetailOptionsProfile;
-use crate::ui::chat_translation::ChatLanguage;
 use crate::ui::main_menu_dialogs::options::{
     DisplayTarget, HealthBarMode, LauncherCue, LauncherOptionsEvent, LauncherOptionsLabels,
     LauncherOptionsPacked, LauncherOptionsValues, LauncherParentResult, OptionsDialogState,
@@ -42,6 +41,7 @@ pub(crate) fn launcher_values_from_profile(
         vera_icon: profile.vera_icon,
         hd_radar: profile.hd_radar,
         smooth_sidebar: profile.smooth_sidebar,
+        smooth_online_menus: profile.smooth_online_menus,
         hd_map_previews: profile.hd_map_previews,
         shift_queue: profile.shift_queue,
         terrain_deformation: profile.terrain_deformation,
@@ -55,7 +55,6 @@ pub(crate) fn launcher_values_from_profile(
         detailed_eva_text: profile.detailed_eva_text,
         sidebar: profile.sidebar,
         health_bars: profile.health_bars,
-        translate_chat: profile.translate_chat,
         // The slider's position is the stored level less the retail strength,
         // so gamemd's own bands sit at the left end.
         house_color_position: profile
@@ -109,6 +108,8 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     /// Move the window to the picked screen, or hand it back to the system.
     fn set_display(&mut self, display: DisplayTarget);
     fn set_full_screen(&mut self, full_screen: bool);
+    /// Put the window back as a launch opens it.
+    fn restore_launch_window(&mut self);
     fn store_original_shape(&mut self, original_shape: bool);
     fn store_yr_original_style(&mut self, yr_original_style: bool);
     fn store_render_interpolation(&mut self, enabled: bool);
@@ -121,13 +122,12 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_hd_radar(&mut self, enabled: bool);
     /// Draw the sidebar's art from lightly smoothed xBR copies (`[VERA] SmoothSidebar=`).
     fn store_smooth_sidebar(&mut self, enabled: bool);
+    /// Smooth the online client's enlarged art (`[VERA] SmoothOnlineMenus=`).
+    fn store_smooth_online_menus(&mut self, enabled: bool);
     /// Show VERA's own map pictures in the setup screens (`[VERA] HdMapPreviews=`).
     fn store_hd_map_previews(&mut self, enabled: bool);
     /// Switch VERA's interface to the language `tag` names (`[VERA] Language=`).
     fn store_language(&mut self, tag: String);
-    /// The language received online chat is translated into, or `None` for
-    /// off (`[VERA] TranslateChat=`).
-    fn store_chat_translation(&mut self, language: Option<ChatLanguage>);
     fn store_shift_queue(&mut self, shift_queue: bool);
     /// Let explosions dent the ground from the next game on
     /// (`[VERA] TerrainDeformation=`).
@@ -163,12 +163,10 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::HealthBarModeSelected(mode) => operations.store_health_bars(mode),
         LauncherOptionsEvent::DisplaySelected(display) => operations.set_display(display),
         LauncherOptionsEvent::LanguageSelected(tag) => operations.store_language(tag),
-        LauncherOptionsEvent::ChatTranslationSelected(language) => {
-            operations.store_chat_translation(language);
-        }
         LauncherOptionsEvent::FullScreenChanged(full_screen) => {
             operations.set_full_screen(full_screen);
         }
+        LauncherOptionsEvent::SetWindowSizeRequested => operations.restore_launch_window(),
         LauncherOptionsEvent::OriginalShapeChanged(original_shape) => {
             operations.store_original_shape(original_shape);
         }
@@ -189,6 +187,9 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::HdRadarChanged(enabled) => operations.store_hd_radar(enabled),
         LauncherOptionsEvent::SmoothSidebarChanged(enabled) => {
             operations.store_smooth_sidebar(enabled);
+        }
+        LauncherOptionsEvent::SmoothOnlineMenusChanged(enabled) => {
+            operations.store_smooth_online_menus(enabled);
         }
         LauncherOptionsEvent::HdMapPreviewsChanged(enabled) => {
             operations.store_hd_map_previews(enabled);

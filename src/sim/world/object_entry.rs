@@ -624,7 +624,7 @@ impl Simulation {
     /// locomotor's +1C, whose eight active retail receivers are all the
     /// side-effect-free constant-zero55ABF0 leaf. Tunnel's (`0x0072A090`)
     /// answers 7 for a cell that refuses burrowing
-    /// ([`Simulation::cell_allows_burrowing`]), and the Unit receiver returns
+    /// (CellClass `0x00486FF0`), and the Unit receiver returns
     /// that 7 at once (`0x0073F3B3..0x0073F3CD`); Infantry's does not ask.
     /// Every arm the Unit receiver leaves by before that call answers 7 too,
     /// except direction 8's (`0x0073F218`), which never reaches it, so the
@@ -660,7 +660,7 @@ impl Simulation {
                 .locomotor
                 .as_ref()
                 .is_some_and(|locomotor| locomotor.tunnel_runtime().is_some())
-            && !self.cell_allows_burrowing(cell)
+            && !self.tunnel_cell_allows_burrowing(cell)
         {
             return Ok(7);
         }

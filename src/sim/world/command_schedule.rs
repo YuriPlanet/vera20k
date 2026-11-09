@@ -488,7 +488,7 @@ impl Simulation {
     pub fn projected_in_game_options_speed(&self) -> Option<u8> {
         let mut projected = u8::try_from(self.session.game_options().game_speed)
             .ok()
-            .filter(|speed| *speed <= crate::sim::game_options::IN_GAME_OPTIONS_MAX_SPEED);
+            .filter(|speed| crate::sim::game_options::is_selectable_game_speed(*speed));
         let execute_tick = self.session.tick().saturating_add(1);
         let queued: Vec<_> = self
             .queued_command_entries()
@@ -514,7 +514,7 @@ impl Simulation {
                         | (true, Command::LiveGameSpeed { speed }) => speed,
                         _ => continue,
                     };
-                    if *speed <= crate::sim::game_options::IN_GAME_OPTIONS_MAX_SPEED {
+                    if crate::sim::game_options::is_selectable_game_speed(*speed) {
                         projected = Some(*speed);
                     }
                 }
@@ -1194,17 +1194,23 @@ pub(super) trait FormationCommand {
     fn set_formation_destination(&mut self, destination: (i16, i16));
 }
 
+/// The destination rewrite of the group spread `0x0064CDA0`.
 fn write_formation_destination(
     record: &mut crate::sim::command::CommandRecord,
     destination: (i16, i16),
 ) {
-    let token = crate::sim::command::MegaMissionTarget::Cell {
+    // VERA untrusted-command security deviation: the getter `0x006E6E20` can
+    // project a raw token to coordinates no Cell token expresses. The record
+    // keeps its own token, as a run of one does, so the order cannot end the
+    // game on every machine.
+    let Ok((token, _)) = crate::sim::command::MegaMissionTarget::Cell {
         x: destination.0,
         y: destination.1,
     }
-    .token()
-    .expect("Cell target token");
-    record.payload_mut()[12..16].copy_from_slice(&token.0.to_le_bytes());
+    .token() else {
+        return;
+    };
+    record.payload_mut()[12..16].copy_from_slice(&token.to_le_bytes());
 }
 
 impl FormationCommand for Command {

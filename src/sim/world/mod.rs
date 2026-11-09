@@ -88,6 +88,8 @@ mod aircraft_move;
 pub(crate) use aircraft_move::tests::fixture as aircraft_search_fixture;
 mod building_working_sound;
 pub use building_working_sound::working_sound_building;
+#[cfg(test)]
+mod civilian_evacuation_tests;
 pub(crate) mod damage_consequences;
 pub mod display_layers;
 mod display_registry;
@@ -898,11 +900,13 @@ pub enum SimSoundEvent {
         owner: InternedId,
         type_id: InternedId,
     },
-    /// Depot MissionRepair44BDB2 reaches CreateRadarEvent8 after a service
-    /// request completes. The app resolves the local-owner+41A gate and
-    /// existing client radar admission before playing EVA_UnitRepaired.
+    /// MissionRepair reaches CreateRadarEvent8 after a service completes.
+    /// Hospital44B93F already admits House50B6F0; depot44BD96 leaves the
+    /// local-owner+41A gate to the app. Both use its existing radar admission
+    /// before EVA_UnitRepaired.
     UnitRepaired {
         owner: InternedId,
+        owner_admitted: bool,
         radar: RadarEventRequest,
     },
     /// `BuildingClass::ChangeOwner @ 0x00448260` announce block

@@ -104,7 +104,8 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
             return;
         }
         // The shell error card is main-menu only.
-        Some(ModalPage::ShellError | ModalPage::NetworkFailure) | None => {}
+        Some(ModalPage::ShellError | ModalPage::NetworkFailure | ModalPage::ShellMessageBox)
+        | None => {}
     }
     // Paused in-game Options overlay owns the mouse: route press/release/checkbox/
     // Back here and CONSUME the click so it never reaches the tactical viewport or
@@ -921,7 +922,7 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
             crate::app::input::keyboard::cursor_moved(state);
             return;
         }
-        Some(ModalPage::ShellError) | None => {}
+        Some(ModalPage::ShellError | ModalPage::ShellMessageBox) | None => {}
     }
     // Paused in-game Options overlay: drive a live slider drag (visual/stored only —
     // cadence applies on close, KD-8) and swallow the move so it can't begin a
@@ -2095,6 +2096,7 @@ pub(crate) fn run_window_command(state: &mut AppState, command: HotkeyCommand) {
             if let Some(dialog) = state.frontend.options_dialog.as_mut() {
                 dialog.sync_performance_stats(shown);
             }
+            crate::app::App::shell_menu_follow_performance_stats(state, shown);
             log::info!(
                 "Performance stats: {}",
                 if shown { "shown" } else { "hidden" }

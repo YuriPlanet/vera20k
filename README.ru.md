@@ -122,6 +122,8 @@ Ghidra, затем переносят его поведение на Rust и п�
 Настройки звука, графики и управления сохраняются в `VERA.INI`. Правила игры задаются
 настройками лобби, модами или картами.
 
+Как сделать собственный мод, объясняется в [руководстве по созданию модов](docs/modding.md).
+
 ## Поддержка проекта
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="Поддержать VERA20K через PayPal" height="23"></a>

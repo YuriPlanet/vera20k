@@ -174,12 +174,6 @@ impl NearbyFootprint {
 pub struct NearbySearchOptions {
     /// Reject any candidate cell that carries an overlay (ore, gems, walls).
     pub reject_any_overlay: bool,
-    /// FNPC's burrowing argument: each candidate must pass CellClass's
-    /// burrow test (`0x00486FF0`, called at `0x0056DE5F` after the height
-    /// gate and before the bridge filter). Only
-    /// [`Simulation::nearby_passable_cell`](crate::sim::world::Simulation::nearby_passable_cell)
-    /// supplies the test ([`NearbyQuery::burrowable`]).
-    pub require_burrowable: bool,
 }
 
 /// FNPC query — mirrors the engine `Find_Nearby_Passable_Cell` caller args.
@@ -200,6 +194,9 @@ pub struct NearbyQuery<'a> {
     /// stays within one level of the seed cell, with a four-level correction for a
     /// candidate that carries a bridge. Both free-unit placement attempts set it.
     pub check_height: bool,
+    /// Native independent tenth argument, checked after the height gate.
+    pub require_burrowable: bool,
+    pub(crate) burrowing_contents: Option<crate::sim::cell_rect::BurrowingContents<'a>>,
     /// When set, each candidate also runs `check_occupancy_rect(.., reservation_arg = -1)`.
     pub check_occupancy: bool,
     /// Radius cap the caller supplies. The engine's own expression is
@@ -220,9 +217,6 @@ pub struct NearbyQuery<'a> {
     /// check's later corner test. Absent bounds reject every candidate: there is
     /// no rectangular substitute.
     pub playfield_bounds: Option<crate::sim::cell_rect::PlayfieldBounds>,
-    /// The burrow test the caller asked for
-    /// ([`NearbySearchOptions::require_burrowable`]), or `None`.
-    pub burrowable: Option<&'a dyn Fn((i16, i16)) -> bool>,
 }
 
 /// A surviving FNPC candidate. `direct` (kept for tests) records only the
@@ -574,12 +568,34 @@ fn candidate_passes(
     cx: i32,
     cy: i32,
 ) -> bool {
-    if !cell_is_in_playfield_height_aware_in_query(
-        (cx, cy),
-        q.playfield_bounds,
-        q.resolved_terrain,
-        q.native_cells,
-    ) {
+    //56DDAF retains this pointer across rectangle/height queries before
+    //56DE5F calls486FF0. A Dummy can be restamped by those intervening calls.
+    let canonical = if q.require_burrowable && q.native_cells.is_none() {
+        q.resolved_terrain
+            .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
+    } else {
+        None
+    };
+    let burrow_cell = if q.require_burrowable {
+        let Some(cells) = q.native_cells.or(canonical.as_ref()) else {
+            return false;
+        };
+        let cell = cells.lookup((cx as i16, cy as i16));
+        if !crate::sim::cell_rect::retained_cell_is_in_playfield(cell, q.playfield_bounds, cells) {
+            return false;
+        }
+        Some((cells, cell))
+    } else {
+        None
+    };
+    if burrow_cell.is_none()
+        && !cell_is_in_playfield_height_aware_in_query(
+            (cx, cy),
+            q.playfield_bounds,
+            q.resolved_terrain,
+            q.native_cells,
+        )
+    {
         return false;
     }
 
@@ -621,8 +637,13 @@ fn candidate_passes(
         return false;
     }
 
-    if let Some(burrowable) = q.burrowable
-        && !burrowable((cx as i16, cy as i16))
+    if let Some((cells, cell)) = burrow_cell
+        && !crate::sim::cell_rect::cell_allows_burrowing(
+            cells,
+            cell,
+            q.playfield_bounds,
+            q.burrowing_contents,
+        )
     {
         return false;
     }
@@ -740,11 +761,12 @@ fn cell_to_u16(cell: (i32, i32)) -> Option<(u16, u16)> {
 /// pushes besides the seed. Every static caller loads `g_Map` as ECX, so
 /// [`Simulation::nearby_passable_cell`] supplies the map itself.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct NearbyArgs {
+pub struct NearbyArgs {
     pub passability: PassabilityArgs,
     pub footprint: NearbyFootprint,
     pub allow_bridge_cells: bool,
     pub check_height: bool,
+    pub require_burrowable: bool,
     pub check_occupancy: bool,
     pub target_cell: Option<(i32, i32)>,
     pub options: NearbySearchOptions,
@@ -760,11 +782,11 @@ impl NearbyArgs {
             footprint,
             allow_bridge_cells: true,
             check_height: false,
+            require_burrowable: false,
             check_occupancy: false,
             target_cell: None,
             options: NearbySearchOptions {
                 reject_any_overlay: false,
-                require_burrowable: false,
             },
         }
     }
@@ -877,7 +899,7 @@ impl crate::sim::world::Simulation {
     /// zone grids, the playfield, the radius cap from the map's Size
     /// ([`map_owned_radius_cap`]) and the current frame for the no-target
     /// pick. `None` when nothing passes or the map size is unknown.
-    pub(crate) fn nearby_passable_cell(
+    pub fn nearby_passable_cell(
         &self,
         seed: (i32, i32),
         args: NearbyArgs,
@@ -888,17 +910,28 @@ impl crate::sim::world::Simulation {
         {
             return answer;
         }
-        let burrowable = |cell| self.cell_allows_burrowing(cell);
         let (width, height) = self.map_size_diamond()?;
+        let native_cells = if args.require_burrowable {
+            self.resolved_terrain
+                .as_ref()
+                .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
+        } else {
+            None
+        };
         find_nearby_passable_cell_with_options(
             seed,
             &NearbyQuery {
-                native_cells: None,
+                native_cells: native_cells.as_ref(),
                 raw_occupation: Some(&self.substrate.raw_cell_occupation),
                 passability: args.passability,
                 footprint: args.footprint,
                 allow_bridge_cells: args.allow_bridge_cells,
                 check_height: args.check_height,
+                require_burrowable: args.require_burrowable,
+                burrowing_contents: Some(crate::sim::cell_rect::BurrowingContents {
+                    occupancy: &self.substrate.occupancy,
+                    terrain_objects: self.terrain_objects.cell_index(),
+                }),
                 check_occupancy: args.check_occupancy,
                 radius_cap: map_owned_radius_cap(width, height),
                 target_cell: args.target_cell,
@@ -909,10 +942,6 @@ impl crate::sim::world::Simulation {
                 entities: Some(&self.substrate.entities),
                 zone_grid: self.zone_grid.as_ref(),
                 playfield_bounds: self.playfield_bounds(),
-                burrowable: args
-                    .options
-                    .require_burrowable
-                    .then_some(&burrowable as &dyn Fn((i16, i16)) -> bool),
             },
             args.options,
             // The frame counter is committed late, so during an advance it
@@ -1014,6 +1043,7 @@ impl crate::sim::world::Simulation {
                 footprint: NearbyFootprint::SINGLE,
                 allow_bridge_cells: false,
                 check_height: true,
+                require_burrowable: false,
                 check_occupancy: false,
                 target_cell: None,
                 options,
@@ -1119,6 +1149,8 @@ mod tests {
             footprint: NearbyFootprint::SINGLE,
             allow_bridge_cells: true,
             check_height: false,
+            require_burrowable: false,
+            burrowing_contents: None,
             check_occupancy: false,
             radius_cap: RADIUS_HARD_CAP,
             target_cell: None,
@@ -1129,7 +1161,6 @@ mod tests {
             entities: None,
             zone_grid: None,
             playfield_bounds: Some(covering_bounds()),
-            burrowable: None,
         }
     }
 
@@ -1707,7 +1738,6 @@ mod tests {
         );
         let rejecting = NearbySearchOptions {
             reject_any_overlay: true,
-            require_burrowable: false,
         };
         let found = find_nearby_passable_cell_with_options((2, 2), &q, rejecting, 0)
             .expect("clear ground exists on the next ring");

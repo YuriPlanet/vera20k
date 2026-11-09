@@ -129,7 +129,7 @@ the desktop implementations. A browser build without `wasm` is rejected.
   uses an offscreen sRGB frame and a canvas presentation pass. Browser texture
   uploads do not block waiting for GPU completion.
 - Without a WebGPU adapter the browser build falls back to WebGL2. WebGL2 has
-  no storage buffers, compute, fragment atomics or reinterpreting texture views,
+  no storage buffers, compute or reinterpreting texture views,
   so the renderers that use them select render-target equivalents there
   (`render::webgl`, `gpu::webgl_fallback`); every other device keeps its path.
   A native test translates its shaders to GLSL ES 3.00, and

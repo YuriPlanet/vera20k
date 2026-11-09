@@ -280,6 +280,11 @@ pub fn status_help_key_for_random_map_setup(control: RandomMapSetupControl) -> &
         C::Save0x6c3 => "STT:GenerateButtonSaveMap",
         C::Delete0x6c4 => "STT:GenerateButtonDeleteMap",
         C::Cancel0x5c0 => "STT:GenerateButtonCancel",
+        C::AdvancedToggle => "VERA:RandomMapAdvancedHelp",
+        C::Advanced(super::super::layout::AdvancedField::PlateauSize) => {
+            "VERA:RandomMapPlateauSizeHelp"
+        }
+        C::Advanced(_) => "VERA:RandomMapAdvancedSliderHelp",
     }
 }
 

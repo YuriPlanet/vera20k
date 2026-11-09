@@ -5,6 +5,7 @@
 //! ruleset converts this processed output into gameplay definitions. Failed passes
 //! preserve already-constructed registry state rather than rolling back.
 
+use crate::rules::aircraft_trailer::AircraftTrailer;
 use crate::rules::ares_armor::{AresWarheadVerses, ArmorCatalog};
 use crate::rules::ares_prerequisites::GenericPrerequisites;
 use crate::rules::armor::ArmorId;
@@ -1132,8 +1133,34 @@ impl ProcessedRulesLayers {
                 "invalid retained Country parent",
             ));
         }
+        let animations = families
+            .get(&RulesTypeFamily::Animation)
+            .map_or(&[][..], Vec::as_slice);
+        let animation_keys: HashSet<_> = (0..animations.len())
+            .map(|index| {
+                anim_type_runtime_key(
+                    animations
+                        .iter()
+                        .map(|member| member.native_stored_id.as_str()),
+                    index,
+                )
+                .expect("existing AnimType slot")
+                .to_ascii_uppercase()
+            })
+            .collect();
         for (&family, members) in &registry.families {
             for member in members {
+                if (family != RulesTypeFamily::Aircraft
+                    && member.aircraft_trailer != AircraftTrailer::default())
+                    || member
+                        .aircraft_trailer
+                        .animation()
+                        .is_some_and(|name| !animation_keys.contains(&name.to_ascii_uppercase()))
+                {
+                    return Err(RulesError::InvalidSavedState(
+                        "Aircraft trailer is outside its type family or AnimType registry",
+                    ));
+                }
                 if (family == RulesTypeFamily::Infantry) != member.infantry_sequence_bank.is_some()
                     || member
                         .infantry_sequence_bank
@@ -1569,6 +1596,17 @@ impl ProcessedRulesLayers {
             .map(|member| (member.native_stored_id.as_str(), member.infantry_pips))
     }
 
+    /// InfantryType+EC1 after every admitted own-ID ReadINI52455F call.
+    pub(crate) fn infantry_civilian_states(&self) -> impl Iterator<Item = (&str, bool)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .get(&RulesTypeFamily::Infantry)
+            .into_iter()
+            .flatten()
+            .map(|member| (member.native_stored_id.as_str(), member.infantry_civilian))
+    }
+
     /// Each InfantryType's fixed-ART reads after every reached pass.
     pub(crate) fn infantry_art_states(&self) -> impl Iterator<Item = (&str, InfantryArt)> {
         self.native_type_construction_trace
@@ -1884,6 +1922,11 @@ impl ProcessedRulesLayers {
                     )
                 })
             })
+    }
+
+    /// AircraftType+E00/+E04 retained by each admitted fixed-ART read.
+    pub(crate) fn aircraft_trailer_states(&self) -> impl Iterator<Item = (&str, &AircraftTrailer)> {
+        self.member_states(RulesTypeFamily::Aircraft, |member| &member.aircraft_trailer)
     }
 
     /// TechnoRead712170 and ReadTypeData679A10 visit each concrete object
@@ -2209,6 +2252,7 @@ impl ProcessedRulesLayers {
             &str,
             bool,
             bool,
+            bool,
             &[String],
             &[String],
             &[NativeF64Bits; 11],
@@ -2226,6 +2270,7 @@ impl ProcessedRulesLayers {
                     &*member.native_stored_id,
                     member.warhead_anim.conventional,
                     member.warhead_anim.em_effect,
+                    member.warhead_anim.sparky,
                     member.warhead_anim.anim_list.as_slice(),
                     member.warhead_anim.debris_types.as_slice(),
                     &member.warhead_verses,
@@ -2726,6 +2771,12 @@ impl ProcessedRulesLayers {
             .psychic_reveal()
     }
 
+    /// ReadAudioVisual66B673..66B74E: current Unit, Infantry, Aircraft
+    /// extra body light, in signed milliunits, retained with RulesClass.
+    pub(crate) fn class_extra_lights(&self) -> [i32; 3] {
+        self.native_registry_state().rules_class_extra_lights
+    }
+
     /// ReadAudioVisual6693AC/6693F6/66AA93 fixed Voc bindings. RulesClass
     /// keeps these scalars through type reset, RMG and Save674730/Load675210.
     pub(crate) fn ui_sounds(&self) -> [Option<&str>; 3] {
@@ -2937,6 +2988,13 @@ impl ProcessedRulesLayers {
         self.native_type_construction_trace
             .registry_state()
             .rules_attack_cursor_on_disguise
+    }
+
+    /// Rules+17EF, retained ReadGeneral66EB03..66EB1C boolean.
+    pub(crate) fn allow_shrouded_subterannean_moves(&self) -> bool {
+        self.native_type_construction_trace
+            .registry_state()
+            .rules_allow_shrouded_subterannean_moves
     }
 
     /// Rules+1866, retained by AudioVisual66B7A7..66B7D2 through the
@@ -4304,6 +4362,10 @@ pub(crate) struct NativeRulesRegistryState {
     rules_shroud_rate: NativeF64Bits,
     #[serde(default = "crate::rules::ruleset::default_fog_rate")]
     rules_fog_rate: NativeF64Bits,
+    /// Unit/Infantry/Aircraft at +17D4/+17D8/+17DC. Constructor665650
+    /// stores zero at667703..66770F; ReadAudioVisual66B673..66B74E updates
+    /// them even when an admitted section omits their keys.
+    rules_class_extra_lights: [i32; 3],
     // Ctor665946/66594C/6659AC=-1; fixed Voc IDs represented by canonical names.
     rules_global_sounds: GlobalSoundReferences,
     rules_difficulty_rows: [crate::rules::ruleset::DifficultyRules; 3],
@@ -4324,6 +4386,7 @@ pub(crate) struct NativeRulesRegistryState {
     rules_maximum_cheer_rate: i32,
     rules_talk_bubble_time: i32,
     rules_attack_cursor_on_disguise: bool,
+    rules_allow_shrouded_subterannean_moves: bool,
     rules_spotlight: crate::rules::ruleset::SpotlightRules,
     rules_ammo_crate_damage: i32,
     rules_tiberium_explosion_damage: i32,
@@ -4416,6 +4479,11 @@ impl Default for NativeRulesRegistryState {
             rules_shroud_grow: general.shroud_grow,
             rules_shroud_rate: general.shroud_rate,
             rules_fog_rate: general.fog_rate,
+            rules_class_extra_lights: [
+                general.extra_unit_light,
+                general.extra_infantry_light,
+                general.extra_aircraft_light,
+            ],
             rules_global_sounds: GlobalSoundReferences::default(),
             rules_difficulty_rows: general.difficulty_rows,
             rules_land: Default::default(),
@@ -4436,6 +4504,7 @@ impl Default for NativeRulesRegistryState {
             rules_maximum_cheer_rate: crate::rules::ruleset::DEFAULT_MAXIMUM_CHEER_RATE,
             rules_talk_bubble_time: general.talk_bubble_time,
             rules_attack_cursor_on_disguise: general.attack_cursor_on_disguise,
+            rules_allow_shrouded_subterannean_moves: general.allow_shrouded_subterannean_moves(),
             rules_spotlight: general.spotlight,
             // Rules665CD4=700; pointer fields665A18/665A24/666BD5 start null.
             rules_ammo_crate_damage: 100,
@@ -4488,6 +4557,13 @@ impl NativeRulesRegistryState {
             rules_powerups: self.rules_powerups.clone(),
             rules_land: self.rules_land.clone(),
             rules_global_sounds: self.rules_global_sounds.clone(),
+            rules_class_extra_lights: self.rules_class_extra_lights,
+            // ReadCrateRules66BA08 retains the same process scalar on a
+            // failed root lookup, including prospective RMG agreement.
+            rules_crate: CrateRules {
+                heal_crate_sound: self.rules_crate.heal_crate_sound.clone(),
+                ..CrateRules::default()
+            },
             ..Self::default()
         }
     }
@@ -4872,6 +4948,7 @@ impl NativeRulesRegistryState {
             rules_shroud_grow: self.rules_shroud_grow,
             rules_shroud_rate: self.rules_shroud_rate,
             rules_fog_rate: self.rules_fog_rate,
+            rules_class_extra_lights: self.rules_class_extra_lights,
             rules_global_sounds: self.rules_global_sounds,
             rules_difficulty_rows: self.rules_difficulty_rows,
             rules_land: self.rules_land,
@@ -4891,6 +4968,7 @@ impl NativeRulesRegistryState {
             rules_maximum_cheer_rate: self.rules_maximum_cheer_rate,
             rules_talk_bubble_time: self.rules_talk_bubble_time,
             rules_attack_cursor_on_disguise: self.rules_attack_cursor_on_disguise,
+            rules_allow_shrouded_subterannean_moves: self.rules_allow_shrouded_subterannean_moves,
             rules_spotlight: self.rules_spotlight,
             rules_ammo_crate_damage: self.rules_ammo_crate_damage,
             rules_tiberium_explosion_damage: self.rules_tiberium_explosion_damage,
@@ -5039,6 +5117,9 @@ struct SelectAnimRulesState {
 struct WarheadAnimReadState {
     conventional: bool,
     em_effect: bool,
+    /// WarheadCtor75CF77 starts false. ReadINI75D576..75D58A reads the
+    /// current byte; Save75E2D1/Load75E0F0 retain it in the 1D0-byte object.
+    sparky: bool,
     anim_list: Vec<String>,
     /// `DebrisTypes=` (+18C, `0x0075DAF5`): ReadString128, then each `strtok`
     /// token's non-null VoxelAnimType replaces the list.
@@ -5168,6 +5249,9 @@ struct ProcessedType {
     /// ObjectTypeCtor5F713A starts +1F0 at -1. Each successful inherited
     /// ObjectTypeRead5F938B..5F93D5 retains a fixed Voc binding on bad input.
     object_crush_sound: Option<String>,
+    /// AircraftTypeRead41CCEF..41CD4E. Mandatory saved history: final Rules
+    /// text cannot recover an empty ART read's previously bound AnimType.
+    aircraft_trailer: AircraftTrailer,
     /// OverlayCtor5FE265 starts at1; OverlayRead5FE8A6..5FE8C3 retains
     /// the full signed dword through each fixed-ART Image-section read.
     overlay_damage_levels: i32,
@@ -5262,6 +5346,10 @@ struct ProcessedType {
     /// Missing type sections skip the whole reader; missing keys do not.
     #[serde(default)]
     infantry_pips: InfantryPips,
+    /// InfantryTypeCtor5237A1 clears+EC1; ReadINI52454A..524564 uses
+    /// the current byte as Civilian's default on each reached own-ID body.
+    #[serde(default)]
+    infantry_civilian: bool,
     #[serde(default)]
     infantry_infiltration: InfantryInfiltration,
     /// Infantry ctor `0x00523788`/`0x005236D7..0x005236F9` and the fixed-ART
@@ -5918,6 +6006,7 @@ impl ProcessedType {
             body: IniSection::new(native_stored_id.clone()),
             object_image: ObjectImageState::new(&native_stored_id),
             object_crush_sound: None,
+            aircraft_trailer: AircraftTrailer::default(),
             overlay_damage_levels: 1,
             overlay_explodes: false,
             overlay_cell_anim: None,
@@ -5959,6 +6048,7 @@ impl ProcessedType {
             is_gattling: false,
             gattling_stages: Default::default(),
             infantry_pips: InfantryPips::default(),
+            infantry_civilian: false,
             infantry_infiltration: InfantryInfiltration::default(),
             infantry_art: InfantryArt::default(),
             infantry_sequence_bank: None,
@@ -6185,6 +6275,9 @@ struct RulesPassProcessor {
     rules_shroud_grow: bool,
     rules_shroud_rate: NativeF64Bits,
     rules_fog_rate: NativeF64Bits,
+    /// Same retained RulesClass triple as NativeRulesRegistryState; this
+    /// processor receives and returns its sole ownership with each pass.
+    rules_class_extra_lights: [i32; 3],
     // Ctor665946/66594C/6659AC=-1; fixed Voc IDs represented by canonical names.
     rules_global_sounds: GlobalSoundReferences,
     rules_difficulty_rows: [crate::rules::ruleset::DifficultyRules; 3],
@@ -6205,6 +6298,7 @@ struct RulesPassProcessor {
     rules_maximum_cheer_rate: i32,
     rules_talk_bubble_time: i32,
     rules_attack_cursor_on_disguise: bool,
+    rules_allow_shrouded_subterannean_moves: bool,
     rules_spotlight: crate::rules::ruleset::SpotlightRules,
     rules_ammo_crate_damage: i32,
     rules_tiberium_explosion_damage: i32,
@@ -6276,6 +6370,7 @@ impl RulesPassProcessor {
             rules_shroud_grow: registry_state.rules_shroud_grow,
             rules_shroud_rate: registry_state.rules_shroud_rate,
             rules_fog_rate: registry_state.rules_fog_rate,
+            rules_class_extra_lights: registry_state.rules_class_extra_lights,
             rules_global_sounds: registry_state.rules_global_sounds,
             rules_difficulty_rows: registry_state.rules_difficulty_rows,
             rules_land: registry_state.rules_land,
@@ -6294,6 +6389,8 @@ impl RulesPassProcessor {
             rules_maximum_cheer_rate: registry_state.rules_maximum_cheer_rate,
             rules_talk_bubble_time: registry_state.rules_talk_bubble_time,
             rules_attack_cursor_on_disguise: registry_state.rules_attack_cursor_on_disguise,
+            rules_allow_shrouded_subterannean_moves: registry_state
+                .rules_allow_shrouded_subterannean_moves,
             rules_spotlight: registry_state.rules_spotlight,
             rules_ammo_crate_damage: registry_state.rules_ammo_crate_damage,
             rules_tiberium_explosion_damage: registry_state.rules_tiberium_explosion_damage,
@@ -6514,7 +6611,7 @@ impl RulesPassProcessor {
         // ReadCrateRules @ 0x0066B900 allocates its three crate images and
         // UnitCrateType as it reads them, between scalars that allocate none.
         let mut crate_rules = std::mem::take(&mut self.crate_rules);
-        crate_rules.apply_pass(pass, |section, key| {
+        crate_rules.apply_pass(pass, fixed_sounds, |section, key| {
             let family = if key == "UnitCrateType" {
                 RulesTypeFamily::Vehicle
             } else {
@@ -7116,6 +7213,12 @@ impl RulesPassProcessor {
         let Some(section) = pass.section("General") else {
             return;
         };
+        // RulesClass::ReadGeneral66D530, original66EB03..66EB1C:
+        // ReadBool5295F0 uses the current byte; Type reset6686C0 retains it.
+        self.rules_allow_shrouded_subterannean_moves = section.read_bool(
+            "AllowShroudedSubteranneanMoves",
+            self.rules_allow_shrouded_subterannean_moves,
+        );
         // ReadGeneral0066FDB1..0066FDD9 / ReadINI_IntVector00475D70:
         // exact key, 512-byte string, comma tokens through CRT atoi; an
         // absent/empty read keeps the prior vector. Counts are raw frames.
@@ -8476,6 +8579,7 @@ impl RulesPassProcessor {
                 if family == RulesTypeFamily::Infantry {
                     let member = &mut self.families.get_mut(&family).unwrap()[index];
                     member.infantry_pips.apply_pass(&raw);
+                    member.infantry_civilian = raw.read_bool("Civilian", member.infantry_civilian);
                     member.infantry_infiltration.apply_pass(&raw);
                 }
                 // ObjectType ReadINI (`0x005F92F8..0x005F933B`) reads Image
@@ -8932,15 +9036,20 @@ impl RulesPassProcessor {
                         }
                     }
                     RulesTypeFamily::Aircraft => {
-                        // Trailer's ART section is +1F8 (0x0041CCB5). Only
-                        // the allocation is kept: VERA ports no reader of the
-                        // aircraft's Trailer pointer.
-                        let _ = self.resolve_fixed_art_reference(
+                        // AircraftTypeRead41CCEF..41CD4E uses current Rules
+                        // Image+1F8, not ART Image's visual redirect. The Anim
+                        // sweep already ran; allocation here must not read ART.
+                        let animation = self.resolve_fixed_art_reference(
                             fixed_art,
                             &image,
                             "Trailer",
                             RulesTypeFamily::Animation,
                         );
+                        let trailer = &mut self.family_mut(family)[index].aircraft_trailer;
+                        let spawn_delay = fixed_art
+                            .section_or_empty(&image)
+                            .read_int("SpawnDelay", trailer.spawn_delay());
+                        trailer.apply_read(animation, spawn_delay);
                     }
                     RulesTypeFamily::Vehicle => {
                         let member = &mut self.families.get_mut(&family).unwrap()[index];
@@ -9715,6 +9824,9 @@ impl RulesPassProcessor {
                 // original reader uses the live field as its ReadBool default.
                 let current = &mut self.family_mut(RulesTypeFamily::Warhead)[index].warhead_anim;
                 current.conventional = raw.read_bool("Conventional", current.conventional);
+                // WarheadTypeClass::ReadINI75D576..75D58A: the current
+                // +14A byte is the default, including malformed values.
+                current.sparky = raw.read_bool("Sparky", current.sparky);
                 // Ares 3.0 WarheadTypeClass_LoadFromINI_ListLength (1005C080,
                 // hook 0x75D660) reads AnimList, DebrisMaximums (WarheadType's
                 // int list) and DebrisTypes here through ParseList (shared
@@ -10342,6 +10454,8 @@ impl RulesPassProcessor {
     }
 
     fn allocate_audio_visual_references(&mut self, pass: &IniFile, fixed_sounds: &SoundRegistry) {
+        use crate::util::native_x87::MaskedX87Chop53 as X87;
+
         let Some(section) = pass.section("AudioVisual") else {
             return;
         };
@@ -10370,6 +10484,21 @@ impl RulesPassProcessor {
             section.read_double_bits("AmbientChangeRate", self.rules_ambient_change_rate);
         self.rules_ambient_change_step =
             section.read_double_bits("AmbientChangeStep", self.rules_ambient_change_step);
+        // Original ReadAudioVisual66B673..66B74E divides each current
+        // signed integer by1000 BEFORE widening the ReadDouble default.
+        // Every reached section performs this conversion, even if a key
+        // is omitted. Math_ftol7C5F00 stores the low32 bits after *1000;
+        // unlike the Building light reader, there is no added0.1 bias.
+        for (key, current) in ["ExtraUnitLight", "ExtraInfantryLight", "ExtraAircraftLight"]
+            .into_iter()
+            .zip(&mut self.rules_class_extra_lights)
+        {
+            let value = section.read_double(key, f64::from(*current / 1000));
+            *current = X87::ftol_i32_low_masked(X87::mul(
+                X87::load_f64(NativeF64Bits::from_bits(value.to_bits())),
+                X87::load_i32(1000),
+            ));
+        }
         // AudioVisual66B77D..66B7A7, after Gravity, retains the RGB default.
         self.rules_line_trail_override = section.read_color_rgb(
             "LineTrailColorOverride",
@@ -10398,17 +10527,19 @@ impl RulesPassProcessor {
             #[cfg(not(feature = "ares"))]
             let _ = resolved;
         }
-        for key in ["TreeFire", "OnFire"] {
-            let resolved = self.resolve_list_from(section, key, RulesTypeFamily::Animation, 0x80);
-            #[cfg(feature = "ares")]
-            if key == "TreeFire"
-                && let Some(tree_fire) = resolved
-            {
-                self.ares_global_controls.forest_fire.tree_fire = tree_fire;
-            }
-            #[cfg(not(feature = "ares"))]
-            let _ = resolved;
+        let tree_fire =
+            self.resolve_list_from(section, "TreeFire", RulesTypeFamily::Animation, 0x80);
+        #[cfg(feature = "ares")]
+        if let Some(tree_fire) = tree_fire {
+            self.ares_global_controls.forest_fire.tree_fire = tree_fire;
         }
+        #[cfg(not(feature = "ares"))]
+        let _ = tree_fire;
+        // ReadAudioVisual66B0E4..66B1CF: ReadString128 and comma-only
+        // strtok replace OnFire with the resolved Anim pointers. Empty
+        // reads retain the vector; null tokens are omitted without padding.
+        let on_fire = self.resolve_list_from(section, "OnFire", RulesTypeFamily::Animation, 0x80);
+        self.rules_type_references.read_list("OnFire", on_fire);
         let _ = self.resolve_scalar_from(section, "Smoke", RulesTypeFamily::Animation, 0x80);
         let _ = self.resolve_scalar_from(section, "Smoke", RulesTypeFamily::Animation, 0x80);
         for key in ["SmallFire", "LargeFire"] {
@@ -10598,6 +10729,7 @@ impl RulesPassProcessor {
                     rules_shroud_grow: self.rules_shroud_grow,
                     rules_shroud_rate: self.rules_shroud_rate,
                     rules_fog_rate: self.rules_fog_rate,
+                    rules_class_extra_lights: self.rules_class_extra_lights,
                     rules_global_sounds: self.rules_global_sounds,
                     rules_difficulty_rows: self.rules_difficulty_rows,
                     rules_land: self.rules_land,
@@ -10616,6 +10748,8 @@ impl RulesPassProcessor {
                     rules_maximum_cheer_rate: self.rules_maximum_cheer_rate,
                     rules_talk_bubble_time: self.rules_talk_bubble_time,
                     rules_attack_cursor_on_disguise: self.rules_attack_cursor_on_disguise,
+                    rules_allow_shrouded_subterannean_moves: self
+                        .rules_allow_shrouded_subterannean_moves,
                     rules_spotlight: self.rules_spotlight,
                     rules_ammo_crate_damage: self.rules_ammo_crate_damage,
                     rules_tiberium_explosion_damage: self.rules_tiberium_explosion_damage,

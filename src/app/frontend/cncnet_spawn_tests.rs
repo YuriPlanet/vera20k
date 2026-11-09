@@ -893,6 +893,23 @@ fn relay_gateway_is_an_optional_websocket_origin() {
 }
 
 #[test]
+fn ninety_tick_relay_launch_keeps_the_hosts_speed_and_starting_credits() {
+    let text = network_spawn(2, 1, &relay_section_at(1, 0b11, 90)).replacen(
+        "[Settings]\n",
+        "[Settings]\nGameSpeed=8\nCredits=100000\n",
+        1,
+    );
+    let request = SpawnRequest::parse(&text).unwrap();
+    assert_eq!(request.game_speed, 8);
+    let network = parse_network(&text);
+    assert_eq!(network.session.options.game_speed, 8);
+    assert_eq!(network.session.options.starting_credits, 100000);
+    assert!(SpawnRequest::parse(&text.replace("GameSpeed=8", "GameSpeed=1")).is_err());
+    assert!(SpawnRequest::parse(&text.replace("GameSpeed=8", "GameSpeed=7")).is_err());
+    assert!(SpawnRequest::parse(&SKIRMISH.replace("GameSpeed=1", "GameSpeed=8")).is_ok());
+}
+
+#[test]
 fn relay_clock_names_the_game_speed_and_admission_is_bounded() {
     let text = network_spawn(2, 1, &relay_section(1, 0b11));
     let request = SpawnRequest::parse(&text).unwrap();
