@@ -438,10 +438,17 @@ A game whose online match reached play adds `network_quality` to that match's
 `network:{gaps,repair_pulls,command_round_trip_ms,max_jitter_reserve_ms,underruns,`
 `underrun_wait_ms,max_underrun_wait_ms,link},`
 `performance:{tick_ms_p50,tick_ms_p99,fps_p50,fps_p5,unfocused_seconds},`
-`pacing:{slowdowns,slowed_by,slowed_seconds},outcome:{desync_frame,reconnects}}`.
+`pacing:{slowdowns,slowed_by,slowed_seconds},outcome:{desync_frame,reconnects,started,failure,start_hash}}`.
 Times are seconds, or milliseconds where the name says so; `command_round_trip_ms`
 is `{mean,max,samples}` or null, `tick_ms_p50`, `tick_ms_p99`, `fps_p50`, `fps_p5` and
 `desync_frame` may be null, and `slowed_by` lists the House each relay slowdown named.
+`started` says the relay's clock for the match started. `failure` is null, or names the
+error that ended the match on this game: `agreement_mismatch`, `start_cancelled`, `modified_retry`,
+`invalid_cursor`, `refused`, `history_expired`, `invalid_timeline`, `desync`, `unavailable`,
+`queue_full`, `newer_client_required` or `local_error`. `start_hash` is null once the
+relay's clock started; before that it maps each part of the start this game offered the
+relay to 16 hex digits, so two games' reports of one match differ in the part that differs.
+Games before these fields send none of them.
 `fps_p50` and `fps_p5` read the presents of a moving picture: one that stands between
 frames is not drawn again, and the present after it starts a new interval.
 `underruns` counts the waits for a frame due but not yet received; `underrun_wait_ms`

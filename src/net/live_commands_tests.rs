@@ -3623,14 +3623,21 @@ fn sequenced_unsent_batch_retries_when_the_relay_route_recovers() {
     );
 }
 
-fn sequenced_pair() -> (
+type SequencedPair = (
     [Simulation; 2],
     RuleSet,
     u64,
     Vec<Boundary>,
     UdpSocket,
     crate::net::udp::test_support::RelayServer,
-) {
+);
+
+fn sequenced_pair() -> SequencedPair {
+    sequenced_pair_with_second_hash_offset(0)
+}
+
+/// `offset` makes the second game's start agreement differ from the first's.
+fn sequenced_pair_with_second_hash_offset(offset: u64) -> SequencedPair {
     use crate::net::udp::{
         OrderingCertificate, RelayTicket, relay_peer_endpoint,
         test_support::{RelayServer, SecretKey, derive_packet_key},
@@ -3661,16 +3668,19 @@ fn sequenced_pair() -> (
     }
     .sign(&key)
     .unwrap();
-    let agreement = StartupAgreement::new(
-        [(0, 0), (1, 1)],
-        [0, 1],
-        73,
-        10,
-        30,
-        NonZeroU32::new(1).unwrap(),
-        worlds[0].state_hash(),
-    )
-    .unwrap();
+    let world_hash = worlds[0].state_hash();
+    let agreement = |source: u8| {
+        StartupAgreement::new(
+            [(0, 0), (1, 1)],
+            [0, 1],
+            73,
+            10,
+            30,
+            NonZeroU32::new(1).unwrap(),
+            world_hash.wrapping_add(u64::from(source) * offset),
+        )
+        .unwrap()
+    };
     let boundaries: Vec<_> = (0..2u8)
         .map(|source| {
             let ticket = RelayTicket {
@@ -3700,7 +3710,7 @@ fn sequenced_pair() -> (
                 .unwrap();
             Boundary::new(
                 LiveCommandSession::new(
-                    agreement.clone(),
+                    agreement(source),
                     wire,
                     source as i8,
                     73,
@@ -3712,6 +3722,69 @@ fn sequenced_pair() -> (
         })
         .collect();
     (worlds, rules, actor, boundaries, socket, relay)
+}
+
+/// The relay answers a second game with a different start agreement by an
+/// error it counts nowhere, so that game's report has to name it.
+#[test]
+fn sequenced_agreement_mismatch_names_itself_in_the_match_report() {
+    use crate::net::udp::test_support::MAX_DATAGRAM;
+
+    let (mut worlds, rules, _, boundaries, socket, mut relay) =
+        sequenced_pair_with_second_hash_offset(1);
+    let counters = |boundary: &Boundary| boundary.live.borrow().delivery_counters().unwrap();
+    let mut now_ms = 16_000;
+    for _ in 0..200 {
+        now_ms += 16;
+        let unix = 100 + (now_ms - 16_000) / 1000;
+        relay.advance_clock(now_ms, unix);
+        for (world, boundary) in worlds.iter_mut().zip(&boundaries) {
+            boundary.now.set((now_ms >> 4) as u32);
+            boundary.live.borrow_mut().service_pending_commands(
+                &mut world.network_command_queues(),
+                (now_ms >> 4) as u32,
+            );
+        }
+        let mut replies = Vec::new();
+        let mut bytes = [0; MAX_DATAGRAM + 1];
+        while let Ok((length, std::net::SocketAddr::V4(source))) = socket.recv_from(&mut bytes) {
+            replies.extend(
+                relay
+                    .process_at(source, &bytes[..length], unix, now_ms)
+                    .unwrap_or_default(),
+            );
+        }
+        for packet in replies {
+            socket.send_to(&packet.bytes, packet.endpoint).unwrap();
+        }
+        for (world, boundary) in worlds.iter_mut().zip(&boundaries) {
+            let effects = FrameEffects::empty().with_network_commands(boundary);
+            // This match is meant to fail; its report is what is checked.
+            if world.pending_network_wait() {
+                let _ = world.resume_network_wait(&rules, None, effects);
+            } else {
+                let _ = world.advance_app_frame(&[], &rules, None, 33, TickLane::Ordinary, effects);
+            }
+        }
+        if boundaries
+            .iter()
+            .any(|boundary| counters(boundary).failure.is_some())
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let mut failures: Vec<_> = boundaries
+        .iter()
+        .map(|boundary| counters(boundary).failure)
+        .collect();
+    failures.sort_unstable();
+    assert_eq!(failures, [None, Some("agreement_mismatch")]);
+    assert!(
+        boundaries
+            .iter()
+            .all(|boundary| !counters(boundary).started)
+    );
 }
 
 #[test]

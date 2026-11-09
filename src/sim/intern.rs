@@ -217,6 +217,15 @@ impl StringInterner {
     pub fn is_empty(&self) -> bool {
         self.to_str.is_empty()
     }
+
+    /// Folds every name in ID order, ignoring case, for the diagnostic that
+    /// compares two clients' interners. Not part of the state hash.
+    pub(crate) fn fold_names(&self, hasher: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        for name in &self.to_str {
+            name.to_ascii_uppercase().hash(hasher);
+        }
+    }
 }
 
 impl Default for StringInterner {
