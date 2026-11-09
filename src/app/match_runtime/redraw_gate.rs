@@ -129,6 +129,7 @@ pub(crate) fn still_frame(
         .active()
         .map(|tip| (tip.id, tip.x, tip.y));
     let panel_due = state.renderer.performance_overlay.readings_due(clock.at);
+    let fonts = crate::render::text_engine::fetched_fonts();
     match page {
         ScreenPage::InGameShell(menu) if state.match_state.live_network.is_none() => {
             Some(StillFrame::Menu {
@@ -144,6 +145,7 @@ pub(crate) fn still_frame(
                             browser.description_edit.focused && browser.caret_blink_on()
                         }),
                 panel_due,
+                fonts,
             })
         }
         ScreenPage::Battlefield => {
@@ -174,6 +176,7 @@ pub(crate) fn still_frame(
                 talk_bubble: presentation.talk_bubble.shown(clock.wall_ms),
                 atlas_growths: presentation.atlas_growth.published(),
                 panel_due,
+                fonts,
             })
         }
         _ => None,
@@ -300,6 +303,9 @@ pub(crate) enum StillFrame {
         caret: bool,
         /// Whether the shown performance panel has new figures.
         panel_due: bool,
+        /// Fonts the browser build fetched, which text may now draw with
+        /// ([`crate::render::text_engine::fetched_fonts`]).
+        fonts: usize,
     },
     /// The battlefield with its sidebar and HUD.
     Battlefield {
@@ -323,6 +329,7 @@ pub(crate) enum StillFrame {
         atlas_growths: u64,
         /// Whether the shown performance panel has new figures.
         panel_due: bool,
+        fonts: usize,
     },
 }
 
@@ -550,6 +557,7 @@ mod tests {
             tooltip: None,
             caret,
             panel_due: false,
+            fonts: 0,
         }
     }
 
@@ -566,6 +574,7 @@ mod tests {
             talk_bubble: bubble,
             atlas_growths: 0,
             panel_due: false,
+            fonts: 0,
         }
     }
 

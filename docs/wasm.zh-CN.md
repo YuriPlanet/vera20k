@@ -16,6 +16,8 @@ python3 tools/wasm/build.py
 
 构建工具使用 `--target wasm32-unknown-unknown --no-default-features --features wasm`，按现有 `fast` profile 将客户端库构建为 `cdylib`，再将绑定代码和不含游戏资源的宿主页面打包到 `target/wasm-dist/`。可加 `--profile release` 使用 release 优化。工具会检查绑定 CLI 与 lockfile 的版本是否一致，并为引擎设置 8 MiB 的 Wasm 栈。桌面版的产物类型、默认 feature 和构建命令保持不变。
 
+界面自带的字体中，浏览器版引擎只内嵌 Noto Sans。其余字体（Noto Sans CJK 及 19 种文字的字体，约 28 MB）连同许可证复制到 `pkg/fonts/`，引擎在文字首次需要只有某个字体才有的字符时（例如聊天里的泰文名字），从自身文件旁边获取该字体。托管该包的站点也必须提供这个目录。
+
 可选联机版的构建命令：
 
 ```sh
