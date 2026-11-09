@@ -83,10 +83,36 @@ fn cameo_draw_state_darkens_where_draw_does_not_decide_retention() {
     assert!(at_limit.at_build_limit);
     // The ready-factory query asks the limit itself (`CanBuild(type, 1, 1)`),
     // so its null answer comes first; both arms draw the same overlay.
+    let factories = FactoryRoster::of(&sim, &rules, owner);
     assert_eq!(
-        sidebar_state(&sim, &rules, owner, limit),
+        sidebar_state(&sim, &rules, owner, factories.as_ref(), limit),
         Some(BuildDisabledReason::NoReadyFactory)
     );
+}
+
+/// The sidebar's batch asks every type's FindFactory of one roster of the
+/// house's factories. Each answer is the one the type gets when asked alone,
+/// with the yard online and with it offline.
+#[test]
+fn every_build_option_is_the_one_its_type_gets_alone() {
+    let (mut sim, rules, owner, yard) = draw_state_world();
+    for offline in [false, true] {
+        if offline {
+            sim.substrate
+                .entities
+                .get_mut(yard)
+                .unwrap()
+                .set_temporal_for_test(TemporalState::warped_by_for_test(yard));
+        }
+        let batch = all_build_options_for_owner(&sim, &rules, "H");
+        for id in &rules.building_ids {
+            let alone = build_option_for_owner(&sim, &rules, Some(owner), id).unwrap();
+            assert!(batch.contains(&alone), "{id} offline={offline}: {alone:?}");
+        }
+        let plain = sim.interner.get("Plain").unwrap();
+        let plain = batch.iter().find(|option| option.type_id == plain).unwrap();
+        assert_eq!(plain.enabled, !offline);
+    }
 }
 
 /// Ares 3.0 BuildingClass_UpdateConstructionOptions_ExcludeDisabled

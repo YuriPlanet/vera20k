@@ -162,6 +162,13 @@ pub(super) fn build_world_instances(
     bracket_palette: Option<[u16; 2]>,
     hover: Option<crate::app::input::entity_pick::HoverObject>,
 ) -> WorldInstances {
+    // The draw before hands its tile list back (`render_game`).
+    let terrain_buffer = std::mem::take(
+        &mut state
+            .match_state
+            .match_presentation
+            .cached_terrain_instances,
+    );
     // Terrain tiles use the selected TMP owner exactly. A sparse/null cell in
     // a positive suffix remains absent instead of borrowing pristine UVs.
     let uv_fn_closure;
@@ -199,9 +206,12 @@ pub(super) fn build_world_instances(
                 .sim_runtime
                 .as_ref()
                 .and_then(|rt| rt.view().resolved_terrain()),
+            terrain_buffer,
         )
     } else {
-        crate::render::terrain_instances::TerrainInstances { normal: Vec::new() }
+        crate::render::terrain_instances::TerrainInstances {
+            normal: terrain_buffer,
+        }
     };
 
     // Map overlays and walls remain in the fixed per-cell draw plan. Terrain
@@ -856,7 +866,7 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
                         .as_deref()
                         .and_then(|owner| view.interner().get(owner)),
                     view.fog(),
-                    view.house_alliances().as_map(),
+                    view.house_alliances(),
                     full_visibility,
                     view.session().game_mode_nonzero(),
                     Some(&runtime.resources.rules),

@@ -406,7 +406,7 @@ impl MinimapRenderer {
         binary_frame: u32,
         local_owner: Option<InternedId>,
         fog: &FogState,
-        alliances: &crate::map::houses::HouseAllianceMap,
+        alliances: &crate::sim::house_diplomacy::HouseAlliances,
         full_visibility: bool,
         game_mode_nonzero: bool,
         rules: Option<&RuleSet>,
@@ -560,28 +560,44 @@ impl MinimapRenderer {
             )
         });
         self.stores.clear();
+        // An undisguised object's pixel takes its owner's colour, the same
+        // for every pixel of that house in this update.
+        let mut owner_colors: Vec<(InternedId, [u8; 4])> = Vec::new();
         for entry in winners {
             let Some(entity) = entities.get(entry.stable_id) else {
                 continue;
             };
-            let owner_allied_with_observer = local_owner.is_some_and(|observer| {
-                entity.owner() == observer
-                    || interner.is_some_and(|interner| {
-                        crate::map::houses::is_allied_with(
-                            alliances,
-                            interner.resolve(entity.owner()),
-                            interner.resolve(observer),
-                        )
-                    })
-            });
-            let color = radar_entity_owner_color(
-                entity,
-                interner,
-                house_colors,
-                ramps,
-                local_owner,
-                owner_allied_with_observer,
-            );
+            let disguised = entity.disguise.as_ref().is_some_and(|d| d.is_disguised());
+            let color = match owner_colors
+                .iter()
+                .find(|(owner, _)| !disguised && *owner == entity.owner())
+            {
+                Some(&(_, color)) => color,
+                None => {
+                    // Radar655F48 asks the disguise's house, and with it
+                    // whether the owner allies the observer, only of a
+                    // disguised object.
+                    let owner_allied_with_observer = disguised
+                        && local_owner.is_some_and(|observer| {
+                            entity.owner() == observer
+                                || interner.is_some_and(|interner| {
+                                    alliances.is_allied(interner, entity.owner(), observer)
+                                })
+                        });
+                    let color = radar_entity_owner_color(
+                        entity,
+                        interner,
+                        house_colors,
+                        ramps,
+                        local_owner,
+                        owner_allied_with_observer,
+                    );
+                    if !disguised {
+                        owner_colors.push((entity.owner(), color));
+                    }
+                    color
+                }
+            };
             let color = if radar_combat_flash_inverts(entity, local_owner, binary_frame, rules) {
                 crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION
                     .invert_rgba8(color)

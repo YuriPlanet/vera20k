@@ -374,6 +374,8 @@ pub(crate) fn reset_for_world_replacement(input: &mut crate::app::input::state::
     input.category_navigation.candidates.clear();
     input.selection_order.clear();
     input.selection_order_pending = false;
+    // The committed ledger named the outgoing world's objects.
+    input.selection_committed = None;
 }
 
 fn category_key(kind: CategoryNavigationKind, category: u8) -> &'static str {

@@ -395,43 +395,43 @@ pub(crate) fn build_display_effect_instances(
         if sim.entities().contains(stable_id) {
             continue;
         }
-        if let Some(light) = sim.building_spotlight(stable_id, local_owner, input.rules) {
-            super::particles::build_spotlight_instance(
-                input,
-                stable_id,
-                light,
-                &context,
-                ground_objects,
-                ground_order,
-            );
-            continue;
-        }
-        if let Some(system) = sim.particle_systems().get(stable_id) {
-            super::particles::build_particle_system_instance(
-                input,
-                system,
-                &context,
-                ground_objects,
-                ground_order,
-            );
-            continue;
-        }
-        if let Some(&(system, particle)) = particles.get(&stable_id) {
-            super::particles::build_particle_instance(
-                input,
-                system,
-                particle,
-                &context,
-                ground_objects,
-                ground_order,
-                &mut observations,
-            );
-            continue;
-        }
-        let Some(atlas) = input.atlas else {
+        // An id names one kind of object, so the order of these tests picks
+        // no winner: Anims and Terrain objects, the many, are asked first.
+        let Some(anim) = sim.anim(stable_id) else {
+            if sim.terrain_objects().objects().contains_key(&stable_id) {
+                continue;
+            }
+            if let Some(light) = sim.building_spotlight(stable_id, local_owner, input.rules) {
+                super::particles::build_spotlight_instance(
+                    input,
+                    stable_id,
+                    light,
+                    &context,
+                    ground_objects,
+                    ground_order,
+                );
+            } else if let Some(system) = sim.particle_systems().get(stable_id) {
+                super::particles::build_particle_system_instance(
+                    input,
+                    system,
+                    &context,
+                    ground_objects,
+                    ground_order,
+                );
+            } else if let Some(&(system, particle)) = particles.get(&stable_id) {
+                super::particles::build_particle_instance(
+                    input,
+                    system,
+                    particle,
+                    &context,
+                    ground_objects,
+                    ground_order,
+                    &mut observations,
+                );
+            }
             continue;
         };
-        let Some(anim) = sim.anim(stable_id) else {
+        let Some(atlas) = input.atlas else {
             continue;
         };
         // Paradrop creates a retained Anim, whose GetCoords resolves its

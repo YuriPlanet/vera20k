@@ -174,6 +174,9 @@ pub(crate) struct MatchPresentationState {
     // -- Reusable per-frame scratch buffers (avoid allocation each frame) --
     /// Cell body instance scratch vec — cleared and refilled each frame.
     pub(crate) cached_cell_body_instances: Vec<crate::render::batch::SpriteInstance>,
+    /// The ground tile list of the last draw, handed back so the next draw
+    /// fills the same allocation.
+    pub(crate) cached_terrain_instances: Vec<crate::render::batch::SpriteInstance>,
     /// Animated power bar — segment-by-segment transition matching original PowerClass.
     pub(crate) power_bar_anim: crate::ui::sidebar::PowerBarAnimState,
     /// Persistent flash + mode state for in-game sidebar gadgets. Ticked from

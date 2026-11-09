@@ -1069,6 +1069,7 @@ impl App {
                     theater_ext: "tem".to_string(),
                     target_lines: startup_target_lines,
                     cached_cell_body_instances: Vec::new(),
+                    cached_terrain_instances: Vec::new(),
                     terrain_grid: None,
                     overlays: Default::default(),
                     terrain_objects: Vec::new(),

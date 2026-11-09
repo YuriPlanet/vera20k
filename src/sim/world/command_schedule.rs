@@ -407,22 +407,25 @@ impl Simulation {
     /// next ingress without retaining a second membership list.
     /// Native731060 stores parameter-1; digit0 registers parameter10.
     pub fn projected_control_groups(&self) -> [Vec<u64>; 10] {
-        let mut objects: Vec<_> = self
-            .substrate
-            .entities
-            .iter_sorted()
-            .map(|(_, entity)| (entity, entity.control_group()))
-            .collect();
-        for command in self.queued_commands() {
-            if let Command::AssignControlGroup { group, entity_ids } = command.payload {
-                let selected = entity_ids.into_iter().collect();
-                for (entity, current) in &mut objects {
-                    *current = self.assigned_control_group(entity, *current, group, &selected);
+        // The queued assignments, in queue order; usually none. Each object's
+        // group follows from its own stored group and these alone.
+        let assignments: Vec<(i32, std::collections::HashSet<u64>)> = self
+            .queued_commands()
+            .filter_map(|command| match command.payload {
+                Command::AssignControlGroup { group, entity_ids } => {
+                    Some((group, entity_ids.into_iter().collect()))
                 }
-            }
-        }
+                _ => None,
+            })
+            .collect();
         let mut slots = std::array::from_fn(|_| Vec::new());
-        for (entity, group) in objects {
+        for (_, entity) in self.substrate.entities.iter_sorted() {
+            let group =
+                assignments
+                    .iter()
+                    .fold(entity.control_group(), |current, (group, selected)| {
+                        self.assigned_control_group(entity, current, *group, selected)
+                    });
             if (0..10).contains(&group) {
                 slots[((group + 1) % 10) as usize].push(entity.stable_id());
             }

@@ -147,7 +147,7 @@ pub(super) fn radar_pixel_candidate_eligible(
     houses: &crate::sim::houses::Houses,
     local_owner: Option<InternedId>,
     fog: &FogState,
-    alliances: &crate::map::houses::HouseAllianceMap,
+    alliances: &crate::sim::house_diplomacy::HouseAlliances,
     full_visibility: bool,
     game_mode_nonzero: bool,
     rules: Option<&RuleSet>,
@@ -163,15 +163,6 @@ pub(super) fn radar_pixel_candidate_eligible(
         .and_then(|(rules, interner)| interner.object_type(entity.type_ref(), rules));
 
     if let Some(local_owner) = local_owner {
-        // RenderCellPixel: `PlayerPtr->Is_Ally_ByObject(object)` (`0x00655E09`).
-        let friendly = entity.owner() == local_owner
-            || interner.is_some_and(|interner| {
-                crate::map::houses::is_allied_with(
-                    alliances,
-                    interner.resolve(local_owner),
-                    interner.resolve(entity.owner()),
-                )
-            });
         if !full_visibility {
             let (rx, ry) = pixel_cell.unwrap_or((entity.position.rx(), entity.position.ry()));
             let owner_is_human =
@@ -183,7 +174,13 @@ pub(super) fn radar_pixel_candidate_eligible(
         // RenderCellPixel @ 0x00655DFF tests RadarInvisible before the later
         // Insignificant/RadarVisible branch. RadarVisible cannot rescue a
         // hostile RadarInvisible object.
-        if object.is_some_and(|object| object.radar_invisible) && !friendly {
+        // `PlayerPtr->Is_Ally_ByObject(object)` (`0x00655E09`), asked only of
+        // a RadarInvisible object: nothing else in this test reads it.
+        if object.is_some_and(|object| object.radar_invisible)
+            && entity.owner() != local_owner
+            && !interner
+                .is_some_and(|interner| alliances.is_allied(interner, local_owner, entity.owner()))
+        {
             return false;
         }
     }

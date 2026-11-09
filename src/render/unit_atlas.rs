@@ -242,7 +242,9 @@ enum VoxelModel<'a> {
     Turret(&'a str),
 }
 
-/// The voxel model of every object in the world, keyed by its rules type.
+/// The voxel models the world's objects draw with, keyed by rules type, each
+/// once however many objects share it: an object's model follows from its
+/// type, whether it is voxel, and its class.
 /// Buildings keep that identity too: their native loader resolves separate
 /// TurretAnim turret/barrel slots, and the draw consumes their own metadata.
 fn world_voxel_models<'a>(
@@ -251,17 +253,24 @@ fn world_voxel_models<'a>(
     interner: Option<&'a crate::sim::intern::StringInterner>,
 ) -> impl Iterator<Item = VoxelModel<'a>> + 'a {
     use crate::map::entities::EntityCategory;
+    let mut asked = crate::util::lookup_hash::LookupSet::default();
     entities.values().filter_map(move |entity| {
+        let voxel = entity.is_voxel();
+        let category = entity.category();
+        if !voxel && category != EntityCategory::Structure {
+            return None;
+        }
+        let aircraft = category == EntityCategory::Aircraft;
+        if !asked.insert((entity.type_ref(), voxel, aircraft)) {
+            return None;
+        }
         let type_str = interner.map_or("", |i| i.resolve(entity.type_ref()));
-        if entity.is_voxel() {
-            return Some(if entity.category() == EntityCategory::Aircraft {
+        if voxel {
+            return Some(if aircraft {
                 VoxelModel::Air(type_str)
             } else {
                 VoxelModel::Ground(type_str)
             });
-        }
-        if entity.category() != EntityCategory::Structure {
-            return None;
         }
         let obj = rules?.object(type_str)?;
         (obj.turret_anim_is_voxel && obj.turret_anim.is_some())
@@ -271,8 +280,8 @@ fn world_voxel_models<'a>(
 
 /// Whether `atlas` — None while no unit atlas exists — already holds every
 /// voxel model the world draws, so no refresh is needed. This runs on every
-/// tick with a spawn, death or Limbo, so it allocates nothing and stops at
-/// the first miss.
+/// tick with a spawn, death or Limbo, so it asks once for each model and
+/// stops at the first miss.
 pub fn atlas_covers_world(
     atlas: Option<&UnitAtlas>,
     entities: &crate::sim::entity_store::EntityStore,

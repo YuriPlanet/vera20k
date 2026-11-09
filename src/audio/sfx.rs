@@ -2845,10 +2845,9 @@ impl SfxPlayer {
     }
 
     /// The identity one owner's handle names, live or kept.
-    pub fn handle_sound_id(&self, owner: u64) -> Option<String> {
+    pub fn handle_sound_id(&self, owner: u64) -> Option<&str> {
         self.arbiter
             .handle_sound_key(HandleOwner::Positional(owner))
-            .map(str::to_owned)
     }
 
     /// Number of live sound events — native `g_LiveSoundEventCount @

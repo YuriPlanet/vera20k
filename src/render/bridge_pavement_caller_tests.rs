@@ -95,6 +95,7 @@ fn retail_pavement_live_damage_changes_actual_terrain_pixels() {
             tile.height as f32,
             Some(&uv),
             sim.resolved_terrain(),
+            Vec::new(),
         );
         assert_eq!(*selected.borrow(), [expected]);
         assert_eq!(instances.normal.len(), 1);
