@@ -121,6 +121,8 @@ pub mod tunnel_movement;
 mod tunnel_process;
 #[cfg(test)]
 mod tunnel_tests;
+#[cfg(test)]
+mod tunnel_probe_tests;
 mod track_speed;
 pub(crate) mod track_turn;
 mod walk_admission;

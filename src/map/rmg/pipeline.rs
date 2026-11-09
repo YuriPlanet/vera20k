@@ -616,8 +616,10 @@ pub fn run_pipeline(
     #[cfg(feature = "ares")]
     for event in &mut construction_trace.events {
         if event.phase == RmgConstructionPhase::UrbanAreas
-            && let crate::map::rmg::RmgConstructionOutcome::Emitted { entity_index, .. } =
-                &mut event.outcome
+            && let crate::map::construction_trace::RmgConstructionOutcome::Emitted {
+                entity_index,
+                ..
+            } = &mut event.outcome
         {
             *entity_index += towns;
         }
