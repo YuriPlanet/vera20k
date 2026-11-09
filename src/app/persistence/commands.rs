@@ -246,6 +246,16 @@ fn prepare_save<'a>(
         state.match_state.session.local_player_name(),
         state.audio.theme.saved_slots(),
         presentation.radar_movies.scenario_hold(),
+    )
+    // Save_Game's VocClass::SaveStaticSounds (`0x00751620`): the map's
+    // retained coordinate sounds, so a load can restart its ambient loops.
+    .with_static_sounds(
+        state
+            .audio
+            .sfx_player
+            .as_ref()
+            .map(crate::audio::sfx::SfxPlayer::saved_static_sounds)
+            .unwrap_or_default(),
     );
     let resources = crate::sim::snapshot::scenario_resources::SavedScenarioResourcesRef::capture(
         &runtime.resources,

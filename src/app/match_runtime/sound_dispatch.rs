@@ -372,20 +372,12 @@ pub(super) fn dispatch_sim_sound_events(
                 coordinate,
                 flags,
             } => {
-                // Original750B32 uses arithmetic coord>>8 for the shroud
-                // cell. Preserve direct Location XYZ; do not recenter it.
+                let coordinate = [coordinate.x, coordinate.y, coordinate.z];
                 GameSoundEvent::VocAtCoord {
                     sound_id,
-                    coordinate: [coordinate.x, coordinate.y, coordinate.z],
+                    coordinate,
                     flags,
-                    source: SoundSource::new(
-                        crate::util::lepton::absolute_leptons_to_screen(
-                            coordinate.x,
-                            coordinate.y,
-                            coordinate.z,
-                        ),
-                        ((coordinate.x >> 8) as u16, (coordinate.y >> 8) as u16),
-                    ),
+                    source: SoundSource::from_coordinate(coordinate),
                 }
             }
             SimSoundEvent::VocStopAtCoord { coordinate, flags } => GameSoundEvent::VocStopAtCoord {

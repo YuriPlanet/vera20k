@@ -54,6 +54,7 @@ use crate::rules::sound_ini::EvaSide;
 use crate::rules::sound_ini::{
     EvaPriority, EvaRegistry, EvaType, SoundEntry, SoundRegistry, VOLUME_SCALE, control, sound_type,
 };
+use crate::sim::snapshot::scenario_resources::SavedStaticSound;
 use crate::util::native_x87::X87Chop53;
 
 mod observation;
@@ -1677,6 +1678,51 @@ impl SfxPlayer {
             if request.coordinate == coordinate && request.flags & flags != 0 {
                 let owner = HandleOwner::Coordinate(request.id);
                 self.detach_animation_sound(owner);
+            }
+        }
+    }
+
+    /// `VocClass::SaveStaticSounds @ 0x00751620`: every retained node's sound
+    /// and Coord, in list order. A node whose handle names no sound any more
+    /// (native writes no usable index for it) is left out.
+    pub(crate) fn saved_static_sounds(&self) -> Vec<SavedStaticSound> {
+        self.coordinate_requests
+            .iter()
+            .filter_map(|request| {
+                let owner = HandleOwner::Coordinate(request.id);
+                Some(SavedStaticSound {
+                    sound_id: self.arbiter.handle_sound_key(owner)?.to_owned(),
+                    coordinate: request.coordinate,
+                })
+            })
+            .collect()
+    }
+
+    /// `VocClass::LoadStaticSounds @ 0x00751710`, after its clear
+    /// ([`Self::stop_all`]): each saved node whose sound is still registered
+    /// and loopable (`AudioEventClass::IsLoopable @ 0x00406650`) is retained
+    /// again with flags 0 and depth 0 and played at its Coord. Flags 0 means
+    /// StopAtCoord750F40 no longer matches a restored node, as in gamemd.
+    ///
+    /// RESIDUAL: native plays it at once (`VocClass::PlayAt @ 0x007509E0`).
+    /// The listener is not restored yet here, so the node starts on the next
+    /// sound service through 750D40, which skips an `attack` sample; heard
+    /// once per load on a loop that has one and is in earshot.
+    pub(crate) fn restore_static_sounds(
+        &mut self,
+        saved: &[SavedStaticSound],
+        registry: &SoundRegistry,
+    ) {
+        for node in saved {
+            if entry_facts(&node.sound_id, registry).is_loopable() {
+                self.play_sound_at_coord(
+                    &node.sound_id,
+                    node.coordinate,
+                    0,
+                    SoundSource::from_coordinate(node.coordinate),
+                    None,
+                    registry,
+                );
             }
         }
     }
