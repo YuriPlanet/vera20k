@@ -2631,12 +2631,13 @@ pub(crate) fn load_map_initial_with_assets(
         // VERA: the theater's civilian buildings, for an opted-in Urban
         // Presence; the same list the setup dialog's preview generated with.
         if options.urban_enabled {
-            settings.urban_types = crate::map::rmg::tech_catalog::resolve_urban(
+            settings.vera_urban = crate::map::rmg::tech_catalog::resolve_vera_urban(
                 generated_rules.native.rules(),
                 owner.fixed_art(),
                 &tech_types,
                 theater.extension,
                 theater_name,
+                options.seed_u16(),
                 |file| asset_manager.contains(file),
             );
         }

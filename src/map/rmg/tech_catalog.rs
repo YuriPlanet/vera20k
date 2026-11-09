@@ -27,56 +27,170 @@ pub fn resolve(names: &[String], art: &IniFile) -> Vec<TechType> {
         .collect()
 }
 
-/// VERA extension: the civilian buildings the urban stage may place on a
-/// theater, in `[BuildingTypes]` order.
+/// VERA extension: the urban pass's lists for an opted-in Urban Presence on
+/// a theater.
 ///
-/// A candidate is a building infantry can garrison (`CanBeOccupied=yes`:
-/// houses, city blocks, farms) that is not capturable and not a neutral tech
-/// building, with a foundation of at most twelve cells, and whose body art
-/// exists on this theater: `has_file` answers for the names
-/// [`crate::rules::art_data::building_body_shp_candidates`] tries, so a
-/// building drawn only in other theaters is left out.
-pub fn resolve_urban(
+/// Structures are the theater's main civilian buildings: civilian types
+/// (`CA`/`CT`/`CI`) that are not capturable and not neutral tech buildings,
+/// of at least 2x2 and at most thirty cells, whose body art exists on this
+/// theater (`has_file` answers for the names
+/// [`crate::rules::art_data::building_body_shp_candidates`] tries) and whose
+/// `Name=` reads as no wall, fence or street prop: authored maps set those
+/// apart from the blocks they line. A survey of 2,576 authored towns found
+/// each mostly of one style family (the name without its number), so the list
+/// is a main family drawn from `seed` by family size, then a second one; the
+/// main family leads, inside the eighteen entries the pass may reuse.
+/// The foots are Ares' default `[Urban]` lists, kept where the Rules define
+/// the type.
+pub fn resolve_vera_urban(
     rules: &crate::rules::ruleset::RuleSet,
     art: &IniFile,
     tech: &[TechType],
     theater_ext: &str,
     theater_name: &str,
+    seed: u16,
     has_file: impl Fn(&str) -> bool,
-) -> Vec<TechType> {
-    const MAX_FOOTPRINT_CELLS: usize = 12;
+) -> crate::map::rmg::phases::urban_areas::UrbanCatalog {
+    use crate::map::rmg::phases::urban_areas::{UrbanCatalog, UrbanFoot, UrbanStructure};
+    const SET_APART: [&str; 18] = [
+        "wall",
+        "fence",
+        "gate",
+        "corner",
+        "middle",
+        "gum",
+        "barricade",
+        "hedge",
+        "light",
+        "lamp",
+        "pole",
+        "sign",
+        "barrel",
+        "dumpster",
+        "mail",
+        "booth",
+        "flag",
+        "bench",
+    ];
+    const INFANTRY: [&str; 6] = ["CIV1", "CIV2", "CIV3", "CIVA", "CIVB", "CIVC"];
+    const VEHICLES: [&str; 8] = [
+        "TRUCKA", "TRUCKB", "COP", "EUROC", "SUVW", "SUVB", "FTRK", "AMBU",
+    ];
+
     let registry = rules.art();
-    rules
-        .building_ids
-        .iter()
-        .filter_map(|id| {
-            let object = rules.object(id)?;
-            if !object.can_be_occupied
-                || object.capturable
-                || tech.iter().any(|tech| tech.name.eq_ignore_ascii_case(id))
-            {
-                return None;
-            }
-            let footprint = footprint_for(art, id);
-            if footprint.len() > MAX_FOOTPRINT_CELLS {
-                return None;
-            }
-            let image_id = registry.resolve_effective_image_id(id, &object.image);
-            let drawn = crate::rules::art_data::building_body_shp_candidates(
-                Some(registry),
-                &object.image,
-                &image_id,
-                theater_ext,
-                theater_name,
-            )
+    let mut families: Vec<(String, Vec<UrbanStructure>)> = Vec::new();
+    for id in &rules.building_ids {
+        let Some(object) = rules.object(id) else {
+            continue;
+        };
+        let upper = id.to_ascii_uppercase();
+        if !(upper.starts_with("CA") || upper.starts_with("CT") || upper.starts_with("CI"))
+            || object.capturable
+            || tech.iter().any(|tech| tech.name.eq_ignore_ascii_case(id))
+        {
+            continue;
+        }
+        let name = object
+            .name
+            .as_deref()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if SET_APART.iter().any(|word| name.contains(word)) {
+            continue;
+        }
+        let footprint = footprint_for(art, id);
+        let (w, h) = footprint
             .iter()
-            .any(|file| has_file(file));
-            drawn.then(|| TechType {
-                name: id.clone(),
-                footprint,
+            .fold((0, 0), |(w, h), &(dx, dy)| (w.max(dx + 1), h.max(dy + 1)));
+        if w < 2 || h < 2 || footprint.len() > 30 {
+            continue;
+        }
+        let image_id = registry.resolve_effective_image_id(id, &object.image);
+        let drawn = crate::rules::art_data::building_body_shp_candidates(
+            Some(registry),
+            &object.image,
+            &image_id,
+            theater_ext,
+            theater_name,
+        )
+        .iter()
+        .any(|file| has_file(file));
+        if !drawn {
+            continue;
+        }
+        // A letter after the number marks one piece of a composite landmark
+        // (`CASTL05A`..`H`), which only reads whole: leave the pieces out.
+        let bytes = upper.as_bytes();
+        let end = bytes.len();
+        if end >= 2 && bytes[end - 1].is_ascii_alphabetic() && bytes[end - 2].is_ascii_digit() {
+            continue;
+        }
+        // The family: the name without its number.
+        let family = upper
+            .trim_end_matches(|c: char| c.is_ascii_digit())
+            .to_string();
+        let entry = UrbanStructure {
+            name: id.clone(),
+            footprint: Some(footprint),
+        };
+        match families.iter_mut().find(|(name, _)| *name == family) {
+            Some((_, members)) => members.push(entry),
+            None => families.push((family, vec![entry])),
+        }
+    }
+
+    // A main family of at least three types, drawn by family size; then more
+    // families, the same way, until the list holds a dozen types (authored
+    // towns mix about three, the main one most of the time).
+    const MAIN_FAMILY_TYPES: usize = 3;
+    const LIST_TYPES: usize = 12;
+    let mut rng = crate::map::rmg::RmgRng::new(seed ^ 0x5EED);
+    let mut structures = Vec::new();
+    let mut draw = |families: &mut Vec<(String, Vec<UrbanStructure>)>, min: usize| {
+        let eligible: Vec<usize> = (0..families.len())
+            .filter(|&index| families[index].1.len() >= min)
+            .collect();
+        let total: i32 = eligible
+            .iter()
+            .map(|&index| families[index].1.len() as i32)
+            .sum();
+        if total == 0 {
+            return None;
+        }
+        let mut pick = rng.uniform(0, total - 1);
+        for &index in &eligible {
+            let size = families[index].1.len() as i32;
+            if pick < size {
+                return Some(families.remove(index).1);
+            }
+            pick -= size;
+        }
+        None
+    };
+    if let Some(main) = draw(&mut families, MAIN_FAMILY_TYPES).or_else(|| draw(&mut families, 1)) {
+        structures.extend(main);
+    }
+    while structures.len() < LIST_TYPES {
+        match draw(&mut families, 1) {
+            Some(more) => structures.extend(more),
+            None => break,
+        }
+    }
+    let feet = |names: &[&str]| {
+        names
+            .iter()
+            .filter(|name| rules.object(name).is_some())
+            .map(|name| UrbanFoot {
+                name: (*name).to_string(),
+                known: true,
             })
-        })
-        .collect()
+            .collect()
+    };
+    UrbanCatalog {
+        structures,
+        infantry: feet(&INFANTRY),
+        vehicles: feet(&VEHICLES),
+    }
 }
 
 /// Resolve the Ares `[Urban]` lists of `settings` against the processed Rules
