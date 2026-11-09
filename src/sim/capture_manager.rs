@@ -782,7 +782,6 @@ impl Simulation {
         )
     }
 
-    /// `CaptureManagerClass::CaptureUnit @ 0x00471D40`.
     /// The announce=1 that CaptureUnit (`0x00471DAE`) and FreeUnit
     /// (`0x004720D5`) pass to the target's ChangeOwner (vt+0x3D4). Only
     /// `BuildingClass::ChangeOwner @ 0x00448260` reads it: radar event 10 and
@@ -804,6 +803,7 @@ impl Simulation {
         }
     }
 
+    /// `CaptureManagerClass::CaptureUnit @ 0x00471D40`.
     pub(crate) fn capture_unit(
         &mut self,
         controller_id: u64,

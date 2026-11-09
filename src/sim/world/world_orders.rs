@@ -1414,10 +1414,12 @@ impl Simulation {
     /// reads `this->Owner` (the OLD owner) there. The engineer capture site
     /// (`InfantryClass::PerCellProcess 0x00519F79 PUSH 1`) passes
     /// announce=true, and so do mind control's two (`CaptureManagerClass::
-    /// CaptureUnit 0x00471DAE`, `FreeUnit 0x004720D5`); the other callers
-    /// that can reach a building pass 0 (abandon `0x004582E6`/`0x00458316`,
-    /// house transfer `0x0050D2A3`/`0x0050D2F0`, trigger actions
-    /// `0x006E0B33`/`0x006E0C03`/`0x006E0C6A`). Native gates: the old or the new owner is the local
+    /// CaptureUnit 0x00471DAE`, `FreeUnit 0x004720D5`) and the unported
+    /// infantry takeover of a 1x1 `UndeploysInto=` building (`0x00519A27`,
+    /// see `infantry_per_cell_process`). The remaining callers that can reach
+    /// a building pass 0 (abandon `0x004582E6`/`0x00458316`, house transfer
+    /// `0x0050D2A3`/`0x0050D2F0`, trigger actions `0x006E0B33`/`0x006E0C03`/
+    /// `0x006E0C6A`). Native gates: the old or the new owner is the local
     /// player (`0x004483C6`/`0x004483D1 CALL 0x0050B6F0`) and the new
     /// owner's type is not `MultiplayPassive` (`0x004483E1 HouseType+0x1A6`).
     /// The sim has no local player, so it pre-filters on a human-controlled
