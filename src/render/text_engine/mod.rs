@@ -1104,11 +1104,15 @@ mod tests {
             assert!(line.width <= 75.0, "{line:?}");
             assert!(text.is_char_boundary(line.start) && line.end > line.start);
         }
-        // Thai breaks at word boundaries from the dictionary, never before a
-        // combining vowel or tone mark.
+        // Thai has no word dictionary (Cargo.toml's parley): a run breaks
+        // where its line runs out, never before a combining vowel or tone
+        // mark.
         let text = "ภาษาไทยไม่มีช่องว่างระหว่างคำ";
         let shaped = engine.shape(text, 60, Fit::NONE);
         assert!(shaped.lines.len() >= 2);
+        for line in &shaped.lines {
+            assert!(line.width <= 60.0, "{line:?}");
+        }
         for line in &shaped.lines[1..] {
             let first = text[line.start..].chars().next().unwrap() as u32;
             assert!(

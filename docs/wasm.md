@@ -23,7 +23,7 @@ The helper builds the client library as a `cdylib` with
 packages its bindings and an asset-free host into `target/wasm-dist/`. By default
 it uses the `wasm` profile, which players download: optimized for size, fat LTO,
 one codegen unit and no symbol names; it takes several times as long to build
-(on 2026-11-09 the single-player Wasm was 19.5 MB, 6.5 MB compressed with brotli, against 45.6 MB and 10.3 MB with `fast`). Use `--profile fast` while editing, or `--profile release`. It
+(on 2026-11-09 the single-player Wasm was 16.5 MB, 4.6 MB compressed with brotli, against 45.6 MB and 10.3 MB with `fast`). Use `--profile fast` while editing, or `--profile release`. It
 checks that the binding CLI matches the lockfile and sets an 8 MiB Wasm stack
 for the engine. It also builds `src/bin/snapshot-layout.rs` for the host first:
 the browser engine compiles in the saved-game layout id
