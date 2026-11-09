@@ -12,13 +12,25 @@ don't apply to you. Where the two differ, the README wins.
 
 VERA20k is a cross-platform Rust reimplementation of the Command & Conquer:
 Yuri's Revenge engine (`gamemd.exe`), using original retail rules and assets.
-The goal is to reproduce native gameplay behavior through a Rust-native architecture,
-while scaling to **20,000 units and 30 players**. VERA20k must build and run on Linux,
-macOS and Windows; keep architecture and dependencies compatible.
+It must build and run on Linux, macOS and Windows, and its browser preview must keep
+compiling; keep architecture and dependencies compatible.
+
+What it is for, in the order that decides when two of these pull apart:
+
+1. **It works.** No crash, no desync, and a match that starts. A fault players hit in
+   a released build comes before other work.
+2. **It plays like the original.** With nothing turned on, a player sees and gets what
+   `gamemd.exe` gives: native code and retail data establish what to reproduce, through
+   a Rust-native architecture.
+3. **It runs big battles.** **20,000 units and 30 players**, also on older PCs. Where a
+   player cannot notice the difference, speed wins over gamemd's execution order.
+4. **Mods work from data.** What the original, Ares and Phobos let a modder set in INI
+   files works here.
+5. **Playing online is easy.** A match starts from inside the game, and an older
+   version is told plainly when it can no longer join.
 
 Development follows complete gameplay mechanisms and their required dependencies,
-with clear ownership of state and shared logic. Native executable behavior and
-retail data establish what the implementation must reproduce.
+with clear ownership of state and shared logic.
 
 This contract governs Codex and Claude. Use engineering judgment; skills are optional
 specialized help. Specific user instructions override workflow defaults.
@@ -97,6 +109,35 @@ gamemd never reads the RA2 base INIs in `ini/`. A branch gated on a key the reta
 leave unset is dormant, not unreachable. Check retail data with a gamemd-exact parse,
 not grep. When INI values decide an outcome, test through the production reader on
 retail INIs. Details: [retail INI reference](src/rules/mod.rs).
+
+## Stability, extensions and online play
+
+Outside data never stops the game: clamp or refuse values from INI files, maps, saves
+and the network, never `unwrap`, `expect` or index on them, and carry on wherever
+gamemd would. When something fails for a player, say in the game what happened and
+what they can do, not only in the log.
+
+Stock play stays as gamemd plays it. What an extension (Ares, Phobos, NPatch, VeraX)
+or a VERA feature adds to play stays off until a player option, a build feature or an
+INI key from a mod or map turns it on; a bug gamemd itself has stays unless the
+maintainer asks for an opt-in fix (`npbug`). A change in or beside a
+[capability](docs/capabilities.md) compiles with it on as well as off
+(`python -m tools.capability_tests build <name>`; `focus <name>` runs its tests).
+
+An extension behavior is a hook into gamemd: cite the hook address, the stock
+instructions it replaces and where it resumes, with the extension's source. Stock code
+the hook skips does not run; code it resumes into still does. Read its keys with the
+extension's own reader rules and defaults. Extensions mix: none assumes another is
+absent or re-owns its state
+([cross-extension rule](docs/npatch.md#cross-extension-compatibility)).
+
+VERA's own features come from data too: a new rule or game mode is INI keys a modder
+or map can set, documented under `docs/`, not names in the code.
+
+Online play reaches players on other versions. A change to what game, relay and lobby
+exchange keeps [Networking](docs/Networking.md) current and says in its PR what a
+released game, a mixed room and a rollback do with it: the older side is refused with
+a message or the feature stays off, and nothing hangs or crashes.
 
 ## Architecture and delivery
 
@@ -189,10 +230,10 @@ when they are not ported. Behavior invented where a native body exists is a reco
 residual with a reason, never a silent default. Deferring required loop or
 determinism/authority/lifecycle work cannot close that loop.
 
-Delegate independent work with clear ownership. Changes to gameplay behavior get one
-read-only critic before their PR; [review.md](.agents/skills/_shared/review.md) holds
-the critic rules. Keep a concise [checkpoint](.agents/skills/_shared/handoff.md) for
-sustained work.
+Delegate independent work with clear ownership. Changes to gameplay behavior or online
+play get one read-only critic before their PR;
+[review.md](.agents/skills/_shared/review.md) holds the critic rules. Keep a concise
+[checkpoint](.agents/skills/_shared/handoff.md) for sustained work.
 
 ## Git and validation
 
