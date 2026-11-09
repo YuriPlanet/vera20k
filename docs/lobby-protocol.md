@@ -13,7 +13,7 @@ persistent state is created.
 `POST /v1/sessions` accepts exactly
 `{nickname,protocol:4,password?,remember?,sign_in_token?}` and returns
 `{player_id,nickname,token,expires_at}`, plus `motd` while an operator welcome is set:
-text the game prints in the chat lobby in place of its own welcome, one line per `\n`.
+text the game prints in the chat lobby, one line per `\n`. Without it the game prints no welcome.
 A client names its player's language in `Vera-Language: <tag>`, a BCP 47 tag of two or
 three letters and at most three subtags such as `zh-CN`; the operator's welcome, notice
 and maintenance message then come in that language when the operator wrote it: the

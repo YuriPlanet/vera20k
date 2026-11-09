@@ -39,7 +39,6 @@ pub(crate) struct ShpInputs<'a> {
     pub voxel_images: &'a std::cell::RefCell<crate::render::voxel_image_cache::VoxelImageCache>,
     /// Renders a building gun's depth-tested image; None draws the atlas's.
     pub depth_tested_images: Option<super::units::DepthTestedImages<'a>>,
-    pub interpolation: &'a crate::app::presentation::interpolation::RenderInterpolation,
     pub camera: [f32; 2],
     pub render_size: [u32; 2],
     pub zoom: f32,
@@ -102,7 +101,6 @@ pub(crate) fn shp_inputs<'a>(
         unit_atlas: presentation.unit_atlas.as_ref(),
         voxel_images: &presentation.voxel_images,
         depth_tested_images: super::units::DepthTestedImages::of(state),
-        interpolation: &presentation.interpolation,
         camera,
         render_size: [state.render_width(), state.render_height()],
         zoom: state.match_state.input.zoom_level,
@@ -187,12 +185,13 @@ pub(crate) fn shp_visitor<'a>(
         // point — body, bib, anims, turret, and the row they sort on — wants that
         // lifted anchor. See `locomotor_visual::BUILDING_ART_LIFT_PX`. The screen
         // bounds use this same anchor, before any turret pitch cache is touched.
-        // One fresh sample for this read-only entity draw. Reuse it for the
+        // One fresh read for this read-only entity draw. Reuse it for the
         // anchor, infantry direction and building gun instead of reading the
         // complete pose again for each field. Never retain it across draws.
-        let render_pose = input
-            .interpolation
-            .sample_entity(entity, sim.session().binary_frame());
+        let render_pose = crate::app::presentation::render_pose::RenderPose::read(
+            entity,
+            sim.session().binary_frame(),
+        );
         let (sx, sy) = {
             let [x, y] = render_pose.screen;
             if entity.category() == EntityCategory::Structure {
@@ -2102,7 +2101,7 @@ pub(crate) fn resolve_object_shp_frame(
     binary_frame: u32,
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
 ) -> Option<u16> {
-    let facing = crate::app::presentation::interpolation::pose(state, entity, binary_frame).body;
+    let facing = crate::app::presentation::render_pose::body_draw_facing(entity, binary_frame);
     resolve_object_shp_frame_with_facing(
         state.match_state.sim_runtime.as_ref(),
         state.rules(),
@@ -2114,7 +2113,7 @@ pub(crate) fn resolve_object_shp_frame(
 }
 
 /// The draw already owns a fresh pose. Other callers still use the wrapper
-/// above, which reads its own sample and retains same-frame mutation checks.
+/// above, which reads its own facing.
 fn resolve_object_shp_frame_with_facing(
     runtime: Option<&crate::sim::runtime::SimRuntime>,
     rules: Option<&crate::rules::ruleset::RuleSet>,

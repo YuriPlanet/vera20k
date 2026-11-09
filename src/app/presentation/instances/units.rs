@@ -373,7 +373,7 @@ const fn display_binary_frame_for_committed_session(committed_binary_frame: u32)
 }
 
 /// Aircraft4145FD and Foot4DAF5E each add the locomotor's Draw_Point.
-/// Keep this body point separate from the physical/interpolated entity anchor.
+/// Keep this body point separate from the physical entity anchor.
 fn aircraft_body_anchor(
     sim: &crate::sim::world::Simulation,
     entity: &crate::sim::game_entity::GameEntity,
@@ -559,14 +559,11 @@ pub(crate) fn unit_visitor<'a>(
                     (None, None) => return None,
                 };
                 let render_pose = shadow_render_pose.unwrap_or_else(|| {
-                    crate::app::presentation::interpolation::pose(
-                        state,
+                    crate::app::presentation::render_pose::RenderPose::read(
                         entity,
                         sim.session().binary_frame(),
                     )
                 });
-                let native_anchor = crate::render::locomotor_visual::screen_position(entity);
-                let sx = sx + render_pose.screen[0] - native_anchor.0;
                 let sy = render_pose.screen[1] - render_pose.visual_lift;
                 // Common visibility, passenger, limbo, and DrawState admission is shared below.
                 let pos = &entity.position;
@@ -588,8 +585,7 @@ pub(crate) fn unit_visitor<'a>(
                 ) else {
                     return None;
                 };
-                // Interpolate continuous attitude, including the last interval back
-                // to level. Native admission/type/model choice is left unchanged.
+                // Native admission/type/model choice is left unchanged.
                 let object_type = state
                     .rules()
                     .and_then(|rules| sim.interner().object_type(entity.type_ref(), rules));
@@ -1057,14 +1053,7 @@ pub(crate) fn unit_visitor<'a>(
                         state,
                         entity,
                         &overlay,
-                        {
-                            let arm =
-                                harvest_arm_screen_position(entity, sim.session().binary_frame());
-                            (
-                                arm.0 + render_pose.screen[0] - native_anchor.0,
-                                arm.1 + render_pose.screen[1] - native_anchor.1,
-                            )
-                        },
+                        harvest_arm_screen_position(entity, sim.session().binary_frame()),
                         pos.z(),
                         tint,
                         palette_light.brightness(),
@@ -1131,7 +1120,6 @@ pub(crate) fn unit_visitor<'a>(
                         sim.session().binary_frame(),
                         render_pose.screen,
                         render_pose.body,
-                        &state.match_state.match_presentation.interpolation,
                     );
                     let mut planned = PlannedObjectInstance::object(parent, pieces);
                     if let Some(rules) = state.rules() {
@@ -1181,7 +1169,7 @@ struct CarriedDraw {
 /// What one object's draw leaves for its Display member's tail and for the
 /// cargo it carries.
 struct DrawnBody {
-    render_pose: crate::app::presentation::interpolation::RenderPose,
+    render_pose: crate::app::presentation::render_pose::RenderPose,
     /// The body point after the Fly Draw_Point ([`aircraft_body_anchor`]).
     body_point: [f32; 2],
     band: EntityDrawBand,
@@ -2256,7 +2244,7 @@ fn emit_lifted_unit_shadow(
 
 struct AircraftDrawSample {
     shadow: Option<crate::render::aircraft_shadow::AircraftShadowPose>,
-    pose: crate::app::presentation::interpolation::RenderPose,
+    pose: crate::app::presentation::render_pose::RenderPose,
 }
 
 fn aircraft_draw_sample(
@@ -2277,19 +2265,12 @@ fn aircraft_draw_sample(
     let terrain = view.resolved_terrain()?;
     let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
     let frame = view.session().binary_frame();
-    let (sampled, xyz) = state
-        .match_state
-        .match_presentation
-        .interpolation
-        .sample_entity_and_coord(
-            entity,
-            frame,
-            [
-                xy[0],
-                xy[1],
-                crate::sim::movement::ground_pose::object_world_z_leptons(entity, Some(terrain)),
-            ],
-        );
+    let pose = crate::app::presentation::render_pose::RenderPose::read(entity, frame);
+    let xyz = [
+        xy[0],
+        xy[1],
+        crate::sim::movement::ground_pose::object_world_z_leptons(entity, Some(terrain)),
+    ];
     // Keep the pose even if this locomotor has no shadow. The old path had
     // already read it here; a later admitted body need not request it again.
     let shadow = entity.locomotor.as_ref().and_then(|locomotor| {
@@ -2299,16 +2280,13 @@ fn aircraft_draw_sample(
                 on_bridge: entity.on_bridge(),
                 locomotor: locomotor.active_kind(),
                 is_dropship: object.is_dropship(),
-                primary_facing: sampled.body,
-                secondary_facing: sampled.turret,
+                primary_facing: pose.body,
+                secondary_facing: pose.turret,
             },
             |coord| super::foot_depth::depth_cell(terrain, None, None, coord),
         )
     });
-    Some(AircraftDrawSample {
-        shadow,
-        pose: sampled,
-    })
+    Some(AircraftDrawSample { shadow, pose })
 }
 
 fn emit_aircraft_shadow_sprite(
@@ -3282,7 +3260,7 @@ mod tests {
                 .snap(input["secondary"].as_u64().unwrap() as u16, 0);
             assert_eq!(
                 crate::render::vxl_raster::voxel_facing_step_u16(
-                    crate::app::presentation::interpolation::body_draw_facing(&entity, 0)
+                    crate::app::presentation::render_pose::body_draw_facing(&entity, 0)
                 ) * 8,
                 native_key as u8,
                 "{input}"

@@ -16,12 +16,17 @@
 //! before the game starts instead ([`preload`]): the host awaits
 //! `fonts_ready()` (`crate::web`) first.
 //!
-//! Other builds embed every font, so nothing is fetched there.
+//! An installer's build leaves the same fonts out, but for Noto Sans and
+//! Unifont's table, and fetches them from the languages folder
+//! ([`crate::i18n::installed_language_dir`]): at once, so the text that asks
+//! for a font draws from it. Other builds embed every font, so nothing is
+//! fetched there.
 #![cfg_attr(
     not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")),
     allow(dead_code)
 )]
 
+use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, OnceLock, PoisonError};
 
@@ -90,8 +95,13 @@ pub(super) fn fetched(place: usize) -> Option<Blob<u8>> {
     })
 }
 
-/// Fetch bundled font `place`, unless it was asked for already.
-pub(super) fn fetch(place: usize) {
+/// Fetch bundled font `place`, unless it was asked for already: from the
+/// browser package, or elsewhere from `folder`.
+#[cfg_attr(
+    all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"),
+    allow(unused_variables)
+)]
+pub(super) fn fetch(place: usize, folder: Option<&Path>) {
     {
         let mut fetches = FETCHES.lock().unwrap_or_else(PoisonError::into_inner);
         if fetches.iter().any(|&(known, _)| known == place) {
@@ -99,8 +109,19 @@ pub(super) fn fetch(place: usize) {
         }
         fetches.push((place, Fetch::Pending));
     }
+    let file = fonts::bundled()[place].file;
     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-    browser::fetch(place, fonts::bundled()[place].file, BUNDLED[place].0);
+    browser::fetch(place, file, BUNDLED[place].0);
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    {
+        let bytes = folder.and_then(|folder| std::fs::read(folder.join(file)).ok());
+        if bytes.is_none() {
+            log::warn!(
+                "The font {file} is not in the languages folder; its characters stay undrawn"
+            );
+        }
+        arrive(place, file, bytes);
+    }
 }
 
 /// Bundled font `place`'s bytes have come, or `None` if fetching it failed.

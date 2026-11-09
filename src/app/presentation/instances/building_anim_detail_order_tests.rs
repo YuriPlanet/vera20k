@@ -182,7 +182,6 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
         let mut parents = Vec::new();
         build_display_effect_instances(
             &DisplayEffectInputs {
-                interpolation: None,
                 sim: &sim,
                 rules: &rules,
                 camera,

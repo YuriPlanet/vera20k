@@ -29,7 +29,8 @@ PACKAGE_FILES = {
 }
 SIGNED_FILES = {"vera20k.exe", "uninstaller.exe"}
 LANGUAGES = "languages"
-LANGUAGE_FILE = re.compile(r"vera20k\.[A-Za-z0-9-]+\.(?:ini|subtitles\.txt|cameos)")
+LANGUAGE_FILE = re.compile(
+    r"vera20k\.[A-Za-z0-9-]+\.(?:ini|subtitles\.txt|cameos)|NotoSans[A-Za-z]+-[A-Za-z]+\.(?:ttf|otf)")
 UNINSTALLER_NAME = re.compile(r"uninst-7\.1\.0-[0-9a-f]{10}\.e(?:32|64)", re.IGNORECASE)
 # Compiler.Compile.NotifyError calls Shared.CommonFunc.GetExceptMessage, which
 # adds the final period before ISCC writes the compiler error to stderr JSONL.

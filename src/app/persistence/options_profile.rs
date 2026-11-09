@@ -136,10 +136,6 @@ pub(crate) struct RetailOptionsProfile {
     /// own string-table key. Off by default; a start with it on shows the
     /// texts until the hotkey asks for keys.
     pub(crate) show_string_keys: bool,
-    /// `[VERA] RenderInterpolation=`: client-only motion smoothing. Off by
-    /// default, so new profiles draw the original tick-stepped motion; it never
-    /// changes the simulation rate or saves.
-    pub(crate) render_interpolation: bool,
     /// `[VERA] MouseWheelZoom=`: let the mouse wheel change the battle's
     /// view distance. Off by default; this is a local camera preference.
     pub(crate) mouse_wheel_zoom: bool,
@@ -329,7 +325,6 @@ impl Default for RetailOptionsProfile {
             yr_original_style: false,
             skip_intro: false,
             show_string_keys: false,
-            render_interpolation: false,
             mouse_wheel_zoom: false,
             right_click_orders: false,
             lock_cursor: false,
@@ -373,7 +368,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 31],
+    pub(crate) vera: [(&'static str, String); 30],
 }
 
 impl RetailOptionsLoad {
@@ -574,8 +569,6 @@ impl RetailOptionsProfile {
             let legacy_skip = vera.read_bool("SkipStartupLogo", self.skip_intro);
             self.skip_intro = vera.read_bool("SkipIntro", legacy_skip);
             self.show_string_keys = vera.read_bool("ShowStringKeys", self.show_string_keys);
-            self.render_interpolation =
-                vera.read_bool("RenderInterpolation", self.render_interpolation);
             self.mouse_wheel_zoom = vera.read_bool("MouseWheelZoom", self.mouse_wheel_zoom);
             self.right_click_orders = vera.read_bool("RightClickOrders", self.right_click_orders);
             self.lock_cursor = vera.read_bool("LockCursor", self.lock_cursor);
@@ -763,10 +756,6 @@ impl RetailOptionsProfile {
                     format_bool(self.custom_end_game_movie).to_string(),
                 ),
                 (
-                    "RenderInterpolation",
-                    format_bool(self.render_interpolation).to_string(),
-                ),
-                (
                     "MouseWheelZoom",
                     format_bool(self.mouse_wheel_zoom).to_string(),
                 ),
@@ -845,6 +834,7 @@ impl RetailOptionsProfile {
             VERA_SECTION,
             &[
                 "RA2Look",
+                "RenderInterpolation",
                 "SoundDefaultsApplied",
                 "SkipStartupLogo",
                 "WindowX",
@@ -1840,7 +1830,7 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
                 .retained_profile
                 .mouse_wheel_zoom
         );
-        let input = b"[VERA]\nMouseWheelZoom=yes\nRenderInterpolation=no\nUnowned=keep\n";
+        let input = b"[VERA]\nMouseWheelZoom=yes\nUnowned=keep\n";
         let mut profile = load_snapshot(&startup, input).retained_profile;
         assert!(profile.mouse_wheel_zoom);
         let written = profile.transform_settings(input);
@@ -1853,7 +1843,6 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         let written = profile.transform_settings(&written);
         let reloaded = load_snapshot(&startup, &written).retained_profile;
         assert!(!reloaded.mouse_wheel_zoom);
-        assert!(!reloaded.render_interpolation);
         assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
     }
 
@@ -1882,29 +1871,6 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
                 .right_click_orders
         );
         assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
-    }
-
-    #[test]
-    fn render_interpolation_preference_uses_the_existing_vera_profile_transaction() {
-        let startup = RetailStartupOptions::default();
-        assert!(
-            !load_snapshot(&startup, b"")
-                .retained_profile
-                .render_interpolation
-        );
-        for (value, expected) in [("yes", true), ("no", false)] {
-            let input = format!("[VERA]\nRenderInterpolation={value}\nUnowned=keep\n");
-            let profile = load_snapshot(&startup, input.as_bytes()).retained_profile;
-            assert_eq!(profile.render_interpolation, expected);
-            let written = profile.transform_settings(input.as_bytes());
-            assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
-            assert_eq!(
-                load_snapshot(&startup, &written)
-                    .retained_profile
-                    .render_interpolation,
-                expected
-            );
-        }
     }
 
     /// `[VERA] CommanderFeedback=` is the talking-head switch. It defaults to
@@ -2062,26 +2028,22 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
     }
 
     #[test]
-    fn original_yr_style_and_render_interpolation_round_trip_independently() {
+    fn original_yr_style_round_trips_and_retired_keys_are_dropped() {
         let startup = RetailStartupOptions::default();
         for style in [false, true] {
-            for interpolation in [false, true] {
-                let input = format!(
-                    "[VERA]\nYROriginalStyle={}\nRenderInterpolation={}\nRA2Look=yes\nUnowned=keep\n",
-                    format_bool(style),
-                    format_bool(interpolation),
-                );
-                let profile = load_snapshot(&startup, input.as_bytes()).retained_profile;
-                assert_eq!(profile.yr_original_style, style);
-                assert_eq!(profile.render_interpolation, interpolation);
-                let written = profile.transform_settings(input.as_bytes());
-                let text = String::from_utf8_lossy(&written);
-                assert!(!text.contains("RA2Look="));
-                assert!(text.contains("Unowned=keep"));
-                let reloaded = load_snapshot(&startup, &written).retained_profile;
-                assert_eq!(reloaded.yr_original_style, style);
-                assert_eq!(reloaded.render_interpolation, interpolation);
-            }
+            let input = format!(
+                "[VERA]\nYROriginalStyle={}\nRenderInterpolation=yes\nRA2Look=yes\nUnowned=keep\n",
+                format_bool(style),
+            );
+            let profile = load_snapshot(&startup, input.as_bytes()).retained_profile;
+            assert_eq!(profile.yr_original_style, style);
+            let written = profile.transform_settings(input.as_bytes());
+            let text = String::from_utf8_lossy(&written);
+            assert!(!text.contains("RA2Look="));
+            assert!(!text.contains("RenderInterpolation="));
+            assert!(text.contains("Unowned=keep"));
+            let reloaded = load_snapshot(&startup, &written).retained_profile;
+            assert_eq!(reloaded.yr_original_style, style);
         }
     }
 

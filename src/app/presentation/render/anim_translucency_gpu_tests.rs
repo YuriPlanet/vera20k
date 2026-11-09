@@ -251,7 +251,6 @@ fn retail_smkpuff_effect_builder_matches_original_translucency() {
                 let mut parents = Vec::new();
                 build_display_effect_instances(
                     &DisplayEffectInputs {
-                        interpolation: None,
                         sim: &sim,
                         rules: &rules,
                         camera: view_camera,

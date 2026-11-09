@@ -5,7 +5,7 @@
 //! can continue using `crate::app::presentation::instances::*`.
 //!
 //! ## Sub-modules
-//! - `helpers` — depth sorting, interpolation, visibility checks
+//! - `helpers` — depth sorting, visibility checks
 //! - `units` — voxel unit instance generation (turrets, harvest overlays)
 //! - `shp` — SHP building/infantry instances (building anims, bibs)
 //! - `overlays` — map overlays, AnimClass objects, fog snapshots

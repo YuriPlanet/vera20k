@@ -150,7 +150,6 @@ fn emit_with_lighting(
     let mut out = Vec::new();
     build_display_effect_instances(
         &DisplayEffectInputs {
-            interpolation: None,
             sim,
             rules,
             camera,

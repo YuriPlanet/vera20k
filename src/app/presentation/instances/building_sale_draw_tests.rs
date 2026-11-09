@@ -1,7 +1,6 @@
 //! A building's sale as `BuildingClass::DrawIt @ 0x0043D290` draws it, read
 //! through a retail GAWEAP's production sale.
 use super::*;
-use crate::app::presentation::interpolation::RenderInterpolation;
 use crate::app::presentation::render::draw_plan_lowering::{NativeDisplayOrder, ObjectTexture};
 use crate::sim::building_construction::BuildingUp;
 use crate::sim::command::{Command, CommandEnvelope};
@@ -199,7 +198,6 @@ fn gate_piece(
     use crate::render::batch::DepthAxis;
     use crate::render::voxel_image_cache::VoxelImageCache;
     use std::cell::RefCell;
-    let interpolation = RenderInterpolation::new(false);
     let lighting = CellLightGrid::new();
     let voxel_images = RefCell::new(VoxelImageCache::default());
     let input = ShpInputs {
@@ -209,7 +207,6 @@ fn gate_piece(
         unit_atlas: None,
         voxel_images: &voxel_images,
         depth_tested_images: None,
-        interpolation: &interpolation,
         camera: [-1000.0, -1000.0],
         render_size: [5000, 5000],
         zoom: 1.0,

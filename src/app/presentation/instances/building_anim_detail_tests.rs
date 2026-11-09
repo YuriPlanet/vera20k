@@ -200,7 +200,6 @@ fn emit(
     let mut parents = Vec::new();
     build_display_effect_instances(
         &DisplayEffectInputs {
-            interpolation: None,
             sim,
             rules,
             camera,

@@ -229,7 +229,6 @@ fn retail_parachute_canopy_uses_each_attached_house_remap_in_gpu_pixels() {
     let lighting = CellLightGrid::new();
     let hidden = BTreeSet::new();
     let input = DisplayEffectInputs {
-        interpolation: None,
         sim: &sim,
         rules: &rules,
         camera: view_camera,
