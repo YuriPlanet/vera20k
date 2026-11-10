@@ -101,8 +101,9 @@ const CAMERA_COMMANDS: [CommandMetadata; 4] = [
 
 /// VERA's built-in keys, with their default keys in the binding owner
 /// (`hotkeys::VERA_DEFAULT_KEYS`). Each name is the Options page's label for
-/// the same setting; each category literal is [`VERA_CATEGORY_KEY`].
-const SHORTCUT_COMMANDS: [CommandMetadata; 5] = [
+/// the same setting, but Ferry's, which has no setting; each category literal
+/// is [`VERA_CATEGORY_KEY`].
+const SHORTCUT_COMMANDS: [CommandMetadata; 6] = [
     command!(
         HotkeyCommand::PerformanceStats,
         "PerformanceStats",
@@ -141,6 +142,14 @@ const SHORTCUT_COMMANDS: [CommandMetadata; 5] = [
         "VERA:LayoutEdit",
         "VERA:HotkeyCategory",
         "VERA:LayoutEditDesc",
+        None
+    ),
+    command!(
+        HotkeyCommand::Ferry,
+        "Ferry",
+        "VERA:Ferry",
+        "VERA:HotkeyCategory",
+        "VERA:FerryDesc",
         None
     ),
 ];

@@ -895,7 +895,7 @@ pub(super) fn build_ui_instances(
     cursor: &crate::app::input::cursor::CursorTargets,
 ) -> UiInstances {
     let (software_cursor, software_cursor_draw) = build_software_cursor_instances(state, cursor);
-    let drag = match &state.match_state.match_presentation.selection_overlay {
+    let mut drag = match &state.match_state.match_presentation.selection_overlay {
         Some(o) => o.build_drag_rect(
             &state.match_state.input.selection_state,
             state.match_state.input.camera_x,
@@ -903,6 +903,26 @@ pub(super) fn build_ui_instances(
         ),
         None => Vec::new(),
     };
+    // VERA ferry: the routes' dots, from world pixels back to the screen (the
+    // inverse of `sim_tick::screen_point_to_world`), kept to the battlefield
+    // so none is drawn over the sidebar.
+    if let Some(overlay) = &state.match_state.match_presentation.selection_overlay {
+        let input = &state.match_state.input;
+        let (left, top, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+        let (left, top) = (left as f32, top as f32);
+        let (right, bottom) = (left + width as f32, top + height as f32);
+        let screen: Vec<(f32, f32)> = crate::app::input::ferry::marks(state)
+            .into_iter()
+            .map(|(x, y)| {
+                (
+                    (x - input.camera_x) * input.zoom_level,
+                    (y - input.camera_y) * input.zoom_level,
+                )
+            })
+            .filter(|&(x, y)| (left..right).contains(&x) && (top..bottom).contains(&y))
+            .collect();
+        drag.extend(overlay.build_ferry_dots(&screen, input.camera_x, input.camera_y));
+    }
 
     let placement_preview = build_placement_preview(state);
 

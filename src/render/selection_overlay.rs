@@ -24,6 +24,11 @@ const DRAG_RECT_DEPTH: f32 = 0.001;
 /// Thickness of the drag rectangle outline in pixels (1px = RA2 original style).
 const DRAG_RECT_THICKNESS: f32 = 1.0;
 
+/// VERA ferry route dots: half the square's side in screen pixels, and its
+/// colour.
+const FERRY_DOT_HALF: f32 = 1.5;
+const FERRY_DOT_TINT: [f32; 3] = [0.4, 0.9, 1.0];
+
 /// Manages textures and rendering for selection overlays.
 pub struct SelectionOverlay {
     /// Solid color texture for drag rectangle lines.
@@ -625,6 +630,36 @@ impl SelectionOverlay {
     /// Physical PIPBRD.SHP selected-background frames 0/1.
     pub fn pipbrd(&self) -> Option<&CenteredShapeStrip> {
         self.pipbrd.as_ref()
+    }
+
+    /// VERA ferry order (`app::input::ferry`): one dot at each given screen
+    /// point, in the band box's batch and coordinate frame (screen pixels
+    /// plus the camera offset). Each is a light blue square on a black one.
+    pub fn build_ferry_dots(
+        &self,
+        screen_points: &[(f32, f32)],
+        camera_x: f32,
+        camera_y: f32,
+    ) -> Vec<SpriteInstance> {
+        let square = |(x, y): (f32, f32), half: f32, tint: [f32; 3]| SpriteInstance {
+            position: [camera_x + x.round() - half, camera_y + y.round() - half],
+            size: [half * 2.0, half * 2.0],
+            uv_origin: [0.0, 0.0],
+            uv_size: [1.0, 1.0],
+            depth: DRAG_RECT_DEPTH,
+            tint,
+            alpha: 1.0,
+            ..Default::default()
+        };
+        screen_points
+            .iter()
+            .flat_map(|&point| {
+                [
+                    square(point, FERRY_DOT_HALF + 1.0, [0.0, 0.0, 0.0]),
+                    square(point, FERRY_DOT_HALF, FERRY_DOT_TINT),
+                ]
+            })
+            .collect()
     }
 
     /// Build sprite instances for the selection drag rectangle outline.

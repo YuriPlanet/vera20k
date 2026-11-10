@@ -20,15 +20,16 @@ const VK_SPACE: u16 = 0x20;
 const VK_DELETE: u16 = 0x2e;
 
 /// VERA's own commands that come with a key: Performance Stats Ctrl+Alt+F, Lock
-/// Cursor to Window Ctrl+Alt+L, Full Screen Alt+Enter, String Keys Ctrl+Alt+K
-/// and Edit Layout Ctrl+Alt+E. Retail `KEYBOARDMD.INI` binds none of these
-/// keys.
-const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 5] = [
+/// Cursor to Window Ctrl+Alt+L, Full Screen Alt+Enter, String Keys Ctrl+Alt+K,
+/// Edit Layout Ctrl+Alt+E and Ferry J. Retail `KEYBOARDMD.INI` binds none of
+/// these keys.
+const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 6] = [
     (HotkeyCommand::PerformanceStats, CTRL_BIT | ALT_BIT | 0x46),
     (HotkeyCommand::LockCursor, CTRL_BIT | ALT_BIT | 0x4c),
     (HotkeyCommand::FullScreen, ALT_BIT | 0x0d),
     (HotkeyCommand::StringKeys, CTRL_BIT | ALT_BIT | 0x4b),
     (HotkeyCommand::LayoutEdit, CTRL_BIT | ALT_BIT | 0x45),
+    (HotkeyCommand::Ferry, 0x4a),
 ];
 /// VeraX AutoLoad's Ctrl+D.
 #[cfg(feature = "verax")]
@@ -102,6 +103,10 @@ pub(crate) enum HotkeyCommand {
     /// drags the interface's parts (`input::layout_edit`). It comes with a
     /// default key like the four above but works in a match only.
     LayoutEdit,
+    /// In a match: arm the ferry order's drop click for the selected
+    /// transports (`input::ferry`). It comes with a default key like the
+    /// five above.
+    Ferry,
     /// VeraX: load the selection into nearby transports. Registered in the
     /// `vera20k` keyboard category with the Ctrl+D default.
     AutoLoad,
@@ -918,8 +923,9 @@ mod tests {
             writeln!(ini, "{}={key}", row["ini_name"].as_str().unwrap()).unwrap();
         }
         let loaded = HotkeyBindings::reload_from_ini_bytes(Some(ini.as_bytes()));
-        // The 87 retail rows, plus VERA's four default keys above 0x256.
-        assert_eq!(loaded.by_key.len(), 92);
+        // The 87 retail rows, plus VERA's default keys: Ferry's J below
+        // them and five chords above 0x256.
+        assert_eq!(loaded.by_key.len(), 93);
         for (index, metadata) in catalog::retail_commands().iter().enumerate() {
             assert_eq!(
                 loaded.command_at(0x200 + index as u16),
@@ -927,6 +933,7 @@ mod tests {
             );
         }
         let saved = loaded.to_ini_string();
+        ini.insert_str("[Hotkey]\n".len(), "Ferry=74\n");
         ini.push_str("FullScreen=1037\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n");
         assert_eq!(saved, ini);
         let reloaded = HotkeyBindings::reload_from_ini_bytes(Some(saved.as_bytes()));
@@ -1035,9 +1042,9 @@ mod tests {
         assert_eq!(startup.first_key(HotkeyCommand::Delete), Some(46));
         let serialized = startup.to_ini_string();
         #[cfg(feature = "verax")]
-        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nStopObject=83\nAutoLoad=580\nFullScreen=1037\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n";
+        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFerry=74\nStopObject=83\nAutoLoad=580\nFullScreen=1037\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n";
         #[cfg(not(feature = "verax"))]
-        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nStopObject=83\nFullScreen=1037\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n";
+        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFerry=74\nStopObject=83\nFullScreen=1037\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n";
         assert_eq!(serialized, expected);
         let mut reloaded = HotkeyBindings::reload_from_ini_bytes(Some(serialized.as_bytes()));
         assert_eq!(reloaded.command_at(46), None);
@@ -1227,6 +1234,8 @@ mod tests {
             (HotkeyCommand::FullScreen, 0x40d),
             (HotkeyCommand::StringKeys, 0x64b),
             (HotkeyCommand::LayoutEdit, 0x645),
+            // Retail leaves J unbound.
+            (HotkeyCommand::Ferry, 0x4a),
         ] {
             assert_eq!(bindings.first_key(command), Some(key), "{command:?}");
         }

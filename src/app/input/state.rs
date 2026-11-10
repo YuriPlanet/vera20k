@@ -236,6 +236,8 @@ pub(crate) struct MatchInputState {
     /// Hybrid held/tap state for the retail TypeSelect command.
     pub(crate) type_select: crate::app::types::TypeSelectInputState,
     pub(crate) planning: crate::app::input::planning_mode::PlanningInputState,
+    /// VERA ferry order: the armed drop click and the local routes.
+    pub(crate) ferry: super::ferry::FerryState,
     pub(crate) category_navigation:
         crate::app::input::dispatch::selection_navigation::CategoryNavigation,
     /// Original CursorCheat toggle A8F7D8, consumed by tactical tooltips.
@@ -494,6 +496,7 @@ impl MatchInputState {
             last_cheer_frame: -100,
             type_select: crate::app::types::TypeSelectInputState::default(),
             planning: Default::default(),
+            ferry: Default::default(),
             category_navigation: Default::default(),
             cursor_coordinates: false,
             retail_screenshot_requested: false,
@@ -828,6 +831,7 @@ impl MatchInputState {
     /// owned by ordinary press/release delivery, not this bounded receipt.
     pub(crate) fn clear_command_latches(&mut self) {
         self.type_select.clear_held();
+        self.ferry.disarm();
         // A command-latch clear does not end the local planning mode. Keep
         // its physical release owner so an input lock cannot strand paths.
         self.queued_order_mode = crate::app::types::OrderMode::Move;

@@ -17,6 +17,7 @@ pub(crate) mod diplomacy;
 pub(crate) mod restate;
 pub(crate) mod dispatch;
 pub(crate) mod entity_pick;
+pub(crate) mod ferry;
 pub(crate) mod gadget_input;
 pub(crate) mod layout_edit;
 pub(crate) mod hotkeys;
