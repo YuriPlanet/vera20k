@@ -71,7 +71,7 @@ DontScore=yes              ; ... as does any DontScore/Insignificant type
 |---|---|---|---|
 | (helper) | `10076660` | Helpers::Alex::getCellSpreadItems | ported: the in-air FootClass pass and half distance |
 | (helper) | `10062980` | EMPulse::EnableEMPEffect2 | ported: team, reselection, spawn and slave updates |
-| (helper) | `10062650` | EMPulse::DisableEMPEffect2 | ported: spawn and slave updates |
+| (helper) | `10062650` | EMPulse::DisableEMPEffect2 | ported: spawn and slave updates; its Foot recovery is the EMP tail's owner |
 | (helper) | `10063070` | EMPulse::updateSpawnManager | ported |
 | `6EB432` | `1003A180` | TeamClass_AttackedBy_Retaliate | ported |
 | `506306` | `10023860` | HouseClass_FindPlaceToBuild_Evaluate | ported (default builds keep the ordinary key for `CloakGenerator=`) |

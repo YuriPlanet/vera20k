@@ -153,7 +153,7 @@ pub(crate) use detonation_anim::projectile_impact_cell;
 pub(crate) use effects::DeathEffects;
 pub use effects::{
     CombatLightRequest, ExplosionEffect, ScreenShakeUpdate, SmudgeSpawnRequest,
-    TiberiumReductionRequest, UnderAttackEvent, UnitLostEvent,
+    TiberiumReductionRequest, UnderAttackEvent, UnderAttackLine, UnitLostEvent,
 };
 pub use in_range::can_fire_at_target;
 pub use in_range::{MaplessTarget, can_fire_at_target_in_query, mapless_in_range};

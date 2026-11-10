@@ -589,6 +589,11 @@ impl Simulation {
             owner: entity.owner(),
             victim_type: entity.type_ref(),
             own_alert: true,
+            line: if notify_house {
+                crate::sim::combat::UnderAttackLine::House { allies: true }
+            } else {
+                crate::sim::combat::UnderAttackLine::OreMiner
+            },
         };
         if notify_house {
             self.notify_house_under_attack(event, rules, registry, effects);
