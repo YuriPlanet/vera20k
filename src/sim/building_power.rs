@@ -171,6 +171,39 @@ impl Simulation {
         }
         true
     }
+
+    /// The Ares temporal factory refreshes
+    /// ([`ObjectSubstrate::set_building_online_for_temporal`]), in the order
+    /// the latch changed, before the factory sweep. A building already gone
+    /// from storage is skipped: its Limbo has refreshed the queues since.
+    ///
+    /// Residual (sim order): natively the refresh runs inside the warp or
+    /// release. Trigger: a factory warped or released by a Temporal weapon
+    /// or an Ares ChronoWarp. Effect: until this sweep, the factory's
+    /// queue keeps its hold state from before; the sweep itself sees the
+    /// refreshed one. Frequency: each such warp and release. Risk: a
+    /// queue order or another refresh in between reads the old hold.
+    ///
+    /// [`ObjectSubstrate::set_building_online_for_temporal`]: crate::sim::world::ObjectSubstrate::set_building_online_for_temporal
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_refresh_temporal_factories(
+        &mut self,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) {
+        for id in std::mem::take(&mut self.substrate.ares_temporal_factory_refresh) {
+            let Some(entity) = self.substrate.entities.get(id) else {
+                continue;
+            };
+            let owner = entity.owner();
+            if let Some(category) = self
+                .object_type(entity.type_ref(), rules)
+                .and_then(crate::sim::production::factory_category_for_building)
+            {
+                crate::sim::production::update_factory_queue(self, rules, owner, category, effects);
+            }
+        }
+    }
 }
 
 impl crate::sim::world::ObjectSubstrate {
@@ -181,6 +214,16 @@ impl crate::sim::world::ObjectSubstrate {
     /// Temporal must not call the normal toggles: these force stores have no
     /// factory, light, Stuff or EVA callbacks.
     ///
+    /// Ares 3.0 BuildingClass_Disable_Temporal_Factories and
+    /// _Enable_Temporal_Factories (both `10013FA0`, hooks `0x004521C8` and
+    /// `0x00452218`, right after the latch) add one:
+    /// BuildingExt::UpdateFactoryQueues `10013250` runs the owner's
+    /// `HouseClass::Update_FactoriesQueues @ 0x00509140` for the building's
+    /// `Factory=` type. VERA-only: the building is queued for the next
+    /// factory sweep ([`Simulation::ares_refresh_temporal_factories`]), as
+    /// TemporalClass::LetGo's callers hold the substrate apart from the
+    /// Simulation.
+    ///
     /// [`AnimObject::set_temporal_erase`]: crate::sim::anim_class::AnimObject::set_temporal_erase
     pub(crate) fn set_building_online_for_temporal(&mut self, id: u64, online: bool) {
         let Some(entity) = self.entities.get_mut(id) else {
@@ -190,6 +233,8 @@ impl crate::sim::world::ObjectSubstrate {
             return;
         }
         entity.building_online.temporal(online);
+        #[cfg(feature = "ares")]
+        self.ares_temporal_factory_refresh.push(id);
         let slots = *entity.building_art.anim_slots();
         for slot in slots.into_iter().flatten() {
             if let Some(anim) = self.anims.get_mut(slot) {

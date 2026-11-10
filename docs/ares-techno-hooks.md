@@ -91,8 +91,6 @@ Every `HasSpotlight=` Techno gets its BuildingLight at TechnoClass::Unlimbo
   cursor and order rungs have no single per-class What_Action entry to gate.
   Effect: a deactivated selection still shows and sends its stock actions,
   which IsControllable already refuses for most orders.
-- Bridge occupation-bit memory (0x7441B6/0x744216): needs a per-Unit
-  flag; units can still leave a stale 0x20 bit near bridges.
 - Init_1's capture manager and parasite for any weapon slot and the
   parasite slot hooks (0x629804, 0x62A020, 0x62A7B1); the gunner temporal
   swap (0x74642C, 0x74653C); small visceroid merging
@@ -295,8 +293,8 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 | `741206` | UnitClass_CanFire | `1004BC80` | ported: moving IFV fires unless its gunner weapon is Temporal |
 | `741613` | UnitClass_ApproachTarget_OmniCrusher | `1004BC10` | ported earlier |
 | `7418AA` | UnitClass_CrushCell_CrushDamage | `1004BCE0` | ported earlier |
-| `7441B6` | UnitClass_MarkOccupationBits | `1004BFF0` | residual: bridge occupation bit memory |
-| `744216` | UnitClass_UnmarkOccupationBits | `1004C3E0` | residual: bridge occupation bit memory |
+| `7441B6` | UnitClass_MarkOccupationBits | `1004BFF0` | ported: `track_host::track_raw_mark_at` records the marked plane (`GameEntity::ares_alt_occupation`) |
+| `744216` | UnitClass_UnmarkOccupationBits | `1004C3E0` | ported: `track_host::track_raw_mark_at` also clears the recorded plane; VERA's retail bridge crossings and collapses mark and clear one plane, so it matters only for a deck-high Unit over a Cell without the bridge bit |
 | `74642C` | UnitClass_ReceiveGunner | `1004C110` | residual: gunner temporal swap |
 | `74653C` | UnitClass_RemoveGunner | `1004C2A0` | residual: gunner temporal swap |
 | `746B89` | UnitClass_GetUIName | `1004BF20` | ported earlier |

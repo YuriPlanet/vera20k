@@ -93,7 +93,9 @@
 //!   later real callback can resume its system hold. Forced promotion uses
 //!   the shared held-start Resume owner. Temporal pause/release themselves
 //!   make no queue callback: warp alone keeps producing, while release alone
-//!   preserves a hold caused by another building's loss. GoOffline/GoOnline's
+//!   preserves a hold caused by another building's loss. Ares adds that
+//!   callback (hooks `0x004521C8`, `0x00452218`), run at the next factory
+//!   sweep (`Simulation::ares_refresh_temporal_factories`). GoOffline/GoOnline's
 //!   independent +660 owner is called by map input and trigger61/62.
 //!   Not wired:
 //!   - `HouseClass::CanBuild`'s upgrade-prerequisite scan

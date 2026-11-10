@@ -80,14 +80,11 @@ Stock gaps found in passing, with no Ares dependency:
 
 ## Smaller gameplay residuals
 
-The chain docs' other gameplay residuals. Retail data can reach the first three in an
-Ares build; the rest need a mod key or are dormant on retail data.
+The chain docs' other gameplay residuals. They need a mod key or are dormant on retail
+data.
 
 | Residual | Hooks | Where |
 |---|---|---|
-| Computer threat maps: Ares changes the threat index `(130*Y)/4 + X/4 + 131` only for the `0x56BC50` callers, not the inline readers; VERA's one `house_threat` index needs a per-caller split | `0x56BC54` (`1005D4A0`) | [ares-bugfixes.md](ares-bugfixes.md) |
-| Bridge occupation bits: Ares remembers which bit a Unit marked, so unmarking clears the same one; without it a cell near a bridge can keep a stale 0x20 bit and stay blocked. Needs a per-Unit flag | `0x7441B6`, `0x744216` | [ares-techno-hooks.md](ares-techno-hooks.md) |
-| Temporal warp and release of a factory do not refresh the factory queues (TemporalClass::LetGo runs from about 15 call sites without Rules); a warped yard or factory keeps its queue until another refresh | `0x4521C8`, `0x452218` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
 | Activate/Deactivate's factory queue refresh and sound mutex | `0x70FBE0`, `0x70FC90` | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | ShouldDisableCameo's replacement (BuildLimitRemaining less the queue, the AirportBound limit also taking BuildLimit, a usable factory); queue admission keeps the stock CheckBuildLimit | `0x50B370` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
 | Serial AI queues (`AllowParallelAIQueues=no`); the default changes nothing | `0x4502F4`, `0x4CA07A`, the four KickOutUnit hooks (`0x443CCA`, `0x444119`, `0x444131`, `0x44531F`) | [ares-building-house-hooks.md](ares-building-house-hooks.md) |

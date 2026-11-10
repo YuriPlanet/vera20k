@@ -79,9 +79,6 @@ cites each hook.
 
 - The storage pips (0x44D755, 0x709B4E; ares-tiberium.md). The storage
   itself is ported in `sim::ares_tiberium_storage`.
-- Temporal start and release refreshing the factory queues (0x4521C8,
-  0x452218): TemporalClass::LetGo runs from many call sites without Rules.
-  A warped yard or factory keeps its queue until another refresh.
 - Per-docker airfield reload timers and `ReloadRate` (0x44C844).
 - An upgrade's ProduceCash timer is not started at Put (0x4409F4); the
   Update hook starts it one frame longer. The payout and
@@ -136,9 +133,9 @@ DLL removed are not listed.
 | `44E855` | BuildingClass_PowerProduced_EMP | `10014440` | ported: an EMP'd plant outputs no power (`power_system`) |
 | `4509B4` | BuildingClass_UpdateRepair_Funds | `10014630` | ported earlier |
 | `451A54` | BuildingClass_PlayAnim_NeedsEngineer | `10014400` | ported: same for a new slot anim (`building_art`) |
-| `4521C8` | BuildingClass_Disable_Temporal_Factories | `10013FA0` | residual: Temporal start refreshing the factory queues (kept with its release twin) |
+| `4521C8` | BuildingClass_Disable_Temporal_Factories | `10013FA0` | ported: `ObjectSubstrate::set_building_online_for_temporal` queues the refresh, run before the factory sweep (`Simulation::ares_refresh_temporal_factories`) |
 | `452210` | BuildingClass_Enable_TogglePower | `10013FB0` | ported: a Temporal release restores it instead of forcing the latch on |
-| `452218` | BuildingClass_Enable_Temporal_Factories | `10013FA0` | residual: Temporal release refreshing the factory queues: LetGo (0x71ABC0) runs from ~15 rule-less call sites |
+| `452218` | BuildingClass_Enable_Temporal_Factories | `10013FA0` | ported: with `4521C8`. LetGo (0x71ABC0) runs from ~15 rule-less call sites, so the refresh waits for the sweep; a queue order in between reads the old hold |
 | `452287` | BuildingClass_GoOnline_TogglePower | `10014090` | ported: GoOnline records TogglePower_HasPower (`building_power`) |
 | `452393` | BuildingClass_GoOffline_TogglePower | `10014070` | ported: GoOffline records it |
 | `454BF7` | BuildingClass_UpdatePowered_NeedsEngineer | `100145F0` | ported: same in the power update (`update_building_anim_power`) |
