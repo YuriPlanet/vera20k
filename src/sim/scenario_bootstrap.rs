@@ -2241,12 +2241,21 @@ const UNHOLY_BASE_UNIT_FALLBACK_START_RADIUS: i32 = 3;
 /// the remaining entries were still tried (`0x005CB472`, `0x005CB499`,
 /// `0x005CB50F..0x005CB52B`). Returns the units placed and that answer.
 ///
+/// The Scenario RNG takes one constructor draw per entry before its placement,
+/// then the fallback's ring draws (one 0..7 direction per ring, four per
+/// jitter probe).
+///
+/// A `BaseUnit=` name that is no vehicle type is skipped, as the Battle
+/// lookup skips it: gamemd's list holds UnitTypes only
+/// (`UnitTypeClass::FindOrAllocate @ 0x007480D0` allocates an empty one for
+/// such a name), and VERA has no such type to build.
+///
 /// RESIDUAL: gamemd calls entry 0's Unlimbo directly, without the fallback's
-/// playfield and occupant tests and at height 0 (`0x005CB4E6`); this admits
-/// that cell as the fallback admits its seed cell, at the cell's level.
-/// Trigger: an Unholy Alliance start whose base cell plus (3, 3) is off the
-/// playfield or raised. Effect: the first base unit takes a ring cell where
-/// gamemd may put it on that cell. Frequency: rare; LAN and online only.
+/// playfield test (`0x00578460`); this admits that cell as the fallback
+/// admits its seed cell. Trigger: an Unholy Alliance start whose base cell
+/// plus (3, 3) is off the playfield. Effect: the first base unit takes a ring
+/// cell where gamemd may put it on that cell. Frequency: rare; LAN and
+/// online only.
 fn place_unholy_base_units(
     sim: &mut Simulation,
     owner: &str,
@@ -2260,6 +2269,12 @@ fn place_unholy_base_units(
     let mut placed = 0;
     let mut complete = true;
     for (index, type_id) in rules.general.base_unit_types.iter().enumerate().rev() {
+        if rules
+            .object_in_category(crate::rules::object_type::ObjectCategory::Vehicle, type_id)
+            .is_none()
+        {
+            continue;
+        }
         let stable_id = if index == 0 {
             place_unholy_first_base_unit(
                 sim,
@@ -2309,19 +2324,15 @@ fn place_unholy_first_base_unit(
     resolved_terrain: &ResolvedTerrainGrid,
     overlay_registry: Option<&OverlayTypeRegistry>,
 ) -> Option<u64> {
-    let category = rules.object(type_id)?.category;
-    let initial_z = resolved_terrain
-        .cell(base_rx, base_ry)
-        .map_or(0, |cell| cell.level);
-    let stable_id = sim.construct_object_limbo_at_height(
+    let (stable_id, category) = construct_starting_object(
+        sim,
         type_id,
         owner,
         base_rx,
         base_ry,
         STARTING_MCV_FACING,
-        initial_z,
         rules,
-        crate::sim::world::FrameEffects::default(),
+        resolved_terrain,
     )?;
     // `ADD CX,3` / `ADD AX,3` at `0x005CB4B0..0x005CB4B4`, 16-bit.
     let (rx, ry) = (base_rx.wrapping_add(3), base_ry.wrapping_add(3));
@@ -2522,22 +2533,15 @@ fn place_starting_object_near_base(
     resolved_terrain: &ResolvedTerrainGrid,
     overlay_registry: Option<&OverlayTypeRegistry>,
 ) -> Option<u64> {
-    let category = rules.object(type_id)?.category;
-    let initial_z = resolved_terrain
-        .cell(base_rx, base_ry)
-        .map_or(0, |cell| cell.level);
-    // Active retail constructs one Techno before exact/fallback Unlimbo. The
-    // one constructor draw therefore precedes every placement-search draw and
-    // remains spent even when every attempt fails.
-    let stable_id = sim.construct_object_limbo_at_height(
+    let (stable_id, category) = construct_starting_object(
+        sim,
         type_id,
         owner,
         base_rx,
         base_ry,
         facing,
-        initial_z,
         rules,
-        crate::sim::world::FrameEffects::default(),
+        resolved_terrain,
     )?;
     unlimbo_starting_object_near_base(
         sim,
@@ -2552,6 +2556,37 @@ fn place_starting_object_near_base(
         resolved_terrain,
         overlay_registry,
     )
+}
+
+/// One starting object constructed in limbo, with its category. Active
+/// retail constructs the Techno before any Unlimbo, so its one constructor
+/// draw precedes every placement-search draw and stays spent when every
+/// attempt fails.
+fn construct_starting_object(
+    sim: &mut Simulation,
+    type_id: &str,
+    owner: &str,
+    base_rx: u16,
+    base_ry: u16,
+    facing: u8,
+    rules: &RuleSet,
+    resolved_terrain: &ResolvedTerrainGrid,
+) -> Option<(u64, crate::rules::object_type::ObjectCategory)> {
+    let category = rules.object(type_id)?.category;
+    let initial_z = resolved_terrain
+        .cell(base_rx, base_ry)
+        .map_or(0, |cell| cell.level);
+    let stable_id = sim.construct_object_limbo_at_height(
+        type_id,
+        owner,
+        base_rx,
+        base_ry,
+        facing,
+        initial_z,
+        rules,
+        crate::sim::world::FrameEffects::default(),
+    )?;
+    Some((stable_id, category))
 }
 
 /// The exact Unlimbo at the base cell, then the ring fallback
