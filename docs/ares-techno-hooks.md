@@ -95,8 +95,7 @@ Every `HasSpotlight=` Techno gets its BuildingLight at TechnoClass::Unlimbo
   flag; units can still leave a stale 0x20 bit near bridges.
 - Init_1's capture manager and parasite for any weapon slot and the
   parasite slot hooks (0x629804, 0x62A020, 0x62A7B1); the gunner temporal
-  swap (0x74642C, 0x74653C); grinder
-  reverse engineering (0x5198AD, 0x73A1BC); small visceroid merging
+  swap (0x74642C, 0x74653C); small visceroid merging
   (0x739F21, a raw type swap); Hover DeployToLand (0x513EAA, 0x514A21,
   0x514DFE); NoSelfGuardArea (0x51E748: the healer's self arm it skips is
   not ported); the Occupier+VehicleThief expiry
@@ -193,11 +192,11 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 | `41946B` | AircraftClass_ReceivedRadioCommand_QueryEnterAsPassenger_KillDriver | `10048CF0` | ported: [ares-transports.md](ares-transports.md) |
 | `41949F` | AircraftClass_ReceivedRadioCommand_SpecificPassengers | `10048D10` | ported: [ares-transports.md](ares-transports.md) |
 | `41BE80` | ObjectClass_DrawRadialIndicator | `10049A70` | residual: radial indicators for all technos (presentation) |
-| `41D5AE` | AirstrikeClass_PointerGotInvalid_AirstrikeAbortSound | `10048DE0` | residual: per-type airstrike abort voice (audio) |
-| `41D940` | AirstrikeClass_Fire_AirstrikeAttackVoice | `10048D60` | residual: per-type airstrike attack voice (audio) |
+| `41D5AE` | AirstrikeClass_PointerGotInvalid_AirstrikeAbortSound | `10048DE0` | ported: `sim::airstrike` |
+| `41D940` | AirstrikeClass_Fire_AirstrikeAttackVoice | `10048D60` | ported: `sim::airstrike` |
 | `446EE2` | BuildingClass_Place_InitialPayload | `10048EB0` | ported: [ares-transports.md](ares-transports.md) |
 | `44A03C` | BuildingClass_Mi_Selling_Transfer | `10048E90` | ported earlier |
-| `4566B0` | BuildingClass_GetRangeOfRadial_Radius | `10048E60` | residual: RadialIndicatorRadius (presentation) |
+| `4566B0` | BuildingClass_GetRangeOfRadial_Radius | `10048E60` | ported: the building radius (`rules::object_type`); other technos' indicators are 0x41BE80 |
 | `471C96` | CaptureManagerClass_CanCapture | `10048ED0` | ported earlier |
 | `4D718C` | FootClass_Put_InitialPayload | `100491B0` | ported: [ares-transports.md](ares-transports.md) |
 | `4D85E4` | FootClass_UpdatePosition_TiberiumDamage | `10049280` | ported earlier |
@@ -214,7 +213,7 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 | `514A21` | HoverLocomotionClass_ILocomotion_Process_DeployToLand | `10049550` | residual: Hover DeployToLand landing |
 | `514DFE` | HoverLocomotionClass_ILocomotion_MoveTo_DeployToLand | `10049510` | residual: Hover DeployToLand landing |
 | `519675` | InfantryClass_UpdatePosition_BeforeInfantrySpecific | `10049820` | ported earlier |
-| `5198AD` | InfantryClass_UpdatePosition_EnteredGrinder | `100498D0` | residual: grinder reverse engineering |
+| `5198AD` | InfantryClass_UpdatePosition_EnteredGrinder | `100498D0` | ported: `sim::reverse_engineering` (ares-reverse-engineering.md) |
 | `51CE9A` | InfantryClass_Idle | `10049740` | ported earlier |
 | `51E748` | InfantryClass_GetActionOnObject_NoSelfGuardArea | `10049710` | residual: NoSelfGuardArea (stock self Area Guard arm unported) |
 | `51E7BF` | InfantryClass_GetActionOnObject_CanCapture | `10049690` | ported earlier |
@@ -234,7 +233,7 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 | `6F3283` | TechnoClass_CanScatter_KillDriver | `10049F90` | ported earlier |
 | `6F407D` | TechnoClass_Init_1 | `1004A530` | ported earlier: Temporal slot; capture manager and parasite of any slot are residual |
 | `6F4103` | TechnoClass_Init_2 | `1004A870` | equivalent: skips the stock managers; Init_1 replaces them |
-| `6F526C` | TechnoClass_DrawExtras_PowerOff | `10049FE0` | residual: power-off and wrench markers (presentation) |
+| `6F526C` | TechnoClass_DrawExtras_PowerOff | `10049FE0` | ported in part: the wrench gate (`app/presentation/ui_overlays.rs`); residual: the power-off marker (presentation) |
 | `6F6A58` | TechnoClass_DrawHealthBar_HidePips_KillDriver | `1004A260` | ported earlier |
 | `6F6AC9` | TechnoClass_Remove | `1004B140` | ported earlier |
 | `6F826E` | TechnoClass_CanAutoTargetObject_CivilianEnemy | `10049D00` | ported earlier |
@@ -264,7 +263,7 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 | `702E64` | TechnoClass_RegisterDestruction_Bounty | `1004B100` | ported earlier |
 | `707B19` | TechnoClass_PointerGotInvalid_SpawnCloakOwner | `1004A910` | ported: cloaking carrier keeps its spawns |
 | `7087EB` | TechnoClass_ShouldRetaliate_KillDriver | `1004B2D0` | ported earlier |
-| `7090A8` | TechnoClass_SelectFiringVoice | `1004B1D0` | residual: firing voice choice (audio, Main RNG) |
+| `7090A8` | TechnoClass_SelectFiringVoice | `1004B1D0` | ported: `sim::world::selection_voice` |
 | `7091D6` | TechnoClass_CanPassiveAquire_KillDriver | `10049F70` | ported earlier |
 | `709D38` | TechnoClass_DrawPipscale_Passengers | `1004A280` | residual: passenger pip frames (presentation) |
 | `70BE80` | TechnoClass_ShouldSelfHealOneStep | `1004B2F0` | ported earlier |
@@ -289,7 +288,7 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 | `739ADA` | UnitClass_SimpleDeploy_Height | `1004C380` | ported: airborne simple deployer deploys; InAir only for DeployToLand |
 | `739B8A` | UnitClass_SimpleDeploy_Facing | `1004C2D0` | ported: simple deployer turns to DeployDir first |
 | `739F21` | UnitClass_UpdatePosition_Visceroid | `1004C530` | residual: small visceroids merge |
-| `73A1BC` | UnitClass_UpdatePosition_EnteredGrinder | `1004C460` | residual: grinder reverse engineering and hijacker refund |
+| `73A1BC` | UnitClass_UpdatePosition_EnteredGrinder | `1004C460` | ported: `sim::reverse_engineering`, with the hijacker refund (ares-reverse-engineering.md) |
 | `73DE90` | UnitClass_Mi_Unload_SimpleDeployer | `1004C070` | ported: [ares-transports.md](ares-transports.md) |
 | `740031` | UnitClass_GetActionOnObject_NoManualUnload | `1004BEF0` | ported earlier |
 | `74031A` | UnitClass_GetActionOnObject_NoManualEnter | `1004BEA0` | ported earlier |
