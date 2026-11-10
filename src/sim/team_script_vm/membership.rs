@@ -547,21 +547,34 @@ impl Simulation {
         // same order. Another house's object can neither win nor move the
         // best key: the unit search's own house test fails it, and for an
         // infantryman or aircraft `Can_Add` refuses it, before any write.
+        // Nor can an object of a type the search cannot take: a unit not of
+        // the entry's type fails the search's own type test, and `Can_Add`
+        // (`0x006EA610`) refuses an infantryman or aircraft of no entry's
+        // type, also before any write. VERA reads such an object's type and
+        // nothing more.
         let entities = &self.substrate.entities;
         let candidates = entities
             .owned_ids(team.owner, class)
             .iter()
             .filter_map(|&id| entities.get(id).map(|entity| (id, entity)))
+            .filter(|(_, entity)| {
+                let member_type = member_type_identity(entity);
+                if class == EntityCategory::Unit {
+                    member_type == entry.member_type
+                } else {
+                    entries.iter().any(|entry| entry.member_type == member_type)
+                }
+            })
             .map(|(id, entity)| RecruitCandidate {
                 id,
                 xy: position_world_xy(&entity.position),
                 // gamemd.exe Recruit6EAA90 reads Techno+214, including
                 // authored campaign groups (6EAC7A for Infantry).
                 group: entity.object_group(),
-                // The unit search's own house and type test; every object
-                // walked is the team's house's.
-                matches: class != EntityCategory::Unit
-                    || member_type_identity(entity) == entry.member_type,
+                // The unit search's own house and type test: every object
+                // weighed is the team's house's, and a unit of the entry's
+                // type.
+                matches: true,
             });
         let winner = recruit_pick(candidates, origin, group, recruiter, |id| {
             self.team_can_add(team_id, id, false, rules).is_some()
