@@ -1023,8 +1023,14 @@ mod drag_tests {
         // A battlefield a layout sets in from the frame's corner clamps to
         // its own rectangle.
         let moved = (168, 32, 632, 568);
-        assert_eq!(clamp_tactical_drag_endpoint(10.0, 5.0, moved), (168.0, 32.0));
-        assert_eq!(clamp_tactical_drag_endpoint(950.0, 650.0, moved), (799.0, 599.0));
+        assert_eq!(
+            clamp_tactical_drag_endpoint(10.0, 5.0, moved),
+            (168.0, 32.0)
+        );
+        assert_eq!(
+            clamp_tactical_drag_endpoint(950.0, 650.0, moved),
+            (799.0, 599.0)
+        );
 
         let mut selection = SelectionState::new();
         selection.begin_drag(100.0, 100.0);
@@ -1091,6 +1097,31 @@ pub(crate) fn sidebar_scroll_command(state: &mut AppState, action: WheelAction) 
     else {
         return;
     };
+    // VERA: over a grid of build pictures the side's layout added, the wheel
+    // scrolls that grid, a row a notch; anywhere else it scrolls the
+    // sidebar's own strip as the original does.
+    let (x, y) = state.sidebar_frame().point_to_layout(
+        state.match_state.input.cursor_x,
+        state.match_state.input.cursor_y,
+    );
+    let over = current_sidebar_view(state).and_then(|view| {
+        view.added_grids
+            .iter()
+            .find(|grid| grid.rect.contains(x, y))
+            .copied()
+    });
+    if let Some(grid) = over {
+        let scroll = &mut state.match_state.match_presentation.added_grid_scroll;
+        if scroll.len() <= grid.part {
+            scroll.resize(grid.part + 1, 0);
+        }
+        scroll[grid.part] = if action == WheelAction::SidebarDown {
+            (grid.scroll_rows + 1).min(grid.max_scroll_rows)
+        } else {
+            grid.scroll_rows.saturating_sub(1)
+        };
+        return;
+    }
     let presentation = &mut state.match_state.match_presentation;
     presentation.sidebar_projection.queue_scroll(
         presentation.active_sidebar_tab,

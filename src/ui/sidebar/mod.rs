@@ -24,6 +24,7 @@ pub use power_bar_anim::PowerBarAnimState;
 pub(crate) use sidebar_view::ArmedSidebarEntry;
 #[cfg(test)]
 pub(crate) use sidebar_view::build_sidebar_view;
+pub(crate) use sidebar_view::append_added_grids;
 pub(crate) use sidebar_view::build_sidebar_view_with_spec;
 pub(crate) use sidebar_view::{CameoFactoryStatus, ObjectCameoDrawInputs, draw_object_cameo};
 
@@ -275,6 +276,33 @@ pub struct SidebarLayout {
     pub side2_tile_count: usize,
 }
 
+/// A grid of build pictures a layout adds beside the sidebar's own: one
+/// tab's strip from `scroll_rows` rows down, in `rows` rows of `columns`,
+/// its first picture at `origin` in the sidebar's layout pixels. `part` is
+/// the grid's place in the layout's list of added parts.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AddedGrid {
+    pub part: usize,
+    pub tab: SidebarTab,
+    pub origin: [f32; 2],
+    pub columns: usize,
+    pub rows: usize,
+    pub scroll_rows: usize,
+}
+
+/// Where a view holds an added grid's cameos: `len` items from `first`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AddedGridView {
+    pub part: usize,
+    pub first: usize,
+    pub len: usize,
+    /// The grid's whole area, for the wheel.
+    pub rect: Rect,
+    /// The row it shows first, and the last row it can start at.
+    pub scroll_rows: usize,
+    pub max_scroll_rows: usize,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SidebarView {
     pub panel_rect: Rect,
@@ -286,7 +314,10 @@ pub struct SidebarView {
     pub scroll_rows: usize,
     pub max_scroll_rows: usize,
     pub tabs: Vec<SidebarTabButton>,
+    /// The cameos of the sidebar's own grid, then those of each grid a
+    /// layout adds ([`Self::added_grids`]).
     pub items: Vec<SidebarItem>,
+    pub added_grids: Vec<AddedGridView>,
     /// Repair button (toggle mode). Rendered from the per-theme atlas's
     /// `repair_frames[frame_index]`. Hit-test routes to
     /// `SidebarAction::ToggleRepairMode`.

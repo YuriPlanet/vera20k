@@ -1015,6 +1015,7 @@ impl App {
                     sidebar_layout_spec,
                     match_layouts: crate::ui::match_layout::MatchLayoutFile::none(),
                     added_parts: Default::default(),
+                    added_grid_scroll: Vec::new(),
                     tooltips: startup_tooltips,
                     tooltip_epoch: Instant::now(),
                     // The Constructor `0x005D39D0` (from Session's static

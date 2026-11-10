@@ -664,7 +664,9 @@ impl MatchLayoutFile {
                 .iter()
                 .map(|part| match &part.kind {
                     AddedKind::Button { command, .. } => known(command),
-                    AddedKind::Text { .. } | AddedKind::Group { .. } => true,
+                    AddedKind::Text { .. }
+                    | AddedKind::Group { .. }
+                    | AddedKind::CameoGrid { .. } => true,
                 })
                 .collect();
             if keep.iter().all(|&keep| keep) {
@@ -940,8 +942,13 @@ fn read_layout(
                 problem(section, key, LayoutProblemKind::UnknownPart);
                 continue;
             };
-            // A group holds buttons and texts, not other groups.
-            if in_groups && matches!(defined[index].1.kind, AddedKind::Group { .. }) {
+            // A group holds buttons and texts, not other groups, and build
+            // pictures draw only in the sidebar.
+            let kind = &defined[index].1.kind;
+            let grid = matches!(kind, AddedKind::CameoGrid { .. });
+            if (in_groups && (grid || matches!(kind, AddedKind::Group { .. })))
+                || (grid && holder != Holder::Side)
+            {
                 problem(section, key, LayoutProblemKind::NotYet);
                 continue;
             }
@@ -1131,8 +1138,8 @@ fn read_field_part(
 }
 
 /// A section for a part the original does not have: with `Type=Button`,
-/// `Type=Text`, `Type=Row` or `Type=Column` it is a part the layout adds. A
-/// row's or a column's `Parts=` names go to `children`. `None` when it has no `Type=`
+/// `Type=Text`, `Type=Row`, `Type=Column` or `Type=CameoGrid` it is a part
+/// the layout adds. A row's or a column's `Parts=` names go to `children`. `None` when it has no `Type=`
 /// this version knows, `Some(None)` when it has one but cannot be built
 /// (its problem is reported), else the part, in the battlefield until a
 /// `Parts=` list says where it goes.
@@ -1159,15 +1166,41 @@ fn read_added_part(
     } else {
         None
     };
-    if !(button || text || group.is_some()) {
+    let grid = kind.eq_ignore_ascii_case("CameoGrid");
+    if !(button || text || grid || group.is_some()) {
         return None;
     }
     let is = |key: &str, name: &str| key.eq_ignore_ascii_case(name);
     let mut place = PartBox::WHOLE;
     let (mut command, mut label, mut value, mut art) = (None, None, None, None);
     let mut gap = 0;
+    let (mut tab, mut columns, mut rows) = (None, None, 2);
     for key in section.keys() {
         if is(key, "Type") {
+        } else if grid && is(key, "Tab") {
+            // The four tabs, by the names of the tab commands' strips.
+            tab = word(key).and_then(|name| {
+                crate::ui::sidebar::SidebarTab::all()
+                    .into_iter()
+                    .zip(GRID_TABS)
+                    .find(|(_, known)| known.eq_ignore_ascii_case(name))
+                    .map(|(tab, _)| tab)
+            });
+        } else if grid && (is(key, "Columns") || is(key, "Rows")) {
+            let most = if is(key, "Columns") { 8 } else { 60 };
+            match number_in(section, key, 1, most) {
+                Ok((number, clamped)) => {
+                    if is(key, "Columns") {
+                        columns = Some(number as usize);
+                    } else {
+                        rows = number as usize;
+                    }
+                    if let Some(kind) = clamped {
+                        problem(key, kind);
+                    }
+                }
+                Err(kind) => problem(key, kind),
+            }
         } else if group.is_some() && is(key, "Gap") {
             match number_in(section, key, 0, 8192) {
                 Ok((number, clamped)) => {
@@ -1239,6 +1272,13 @@ fn read_added_part(
     }
     let kind = if let Some(column) = group {
         AddedKind::Group { column, gap }
+    } else if grid {
+        // A grid shows one tab; without a tab it has nothing to show.
+        let Some(tab) = tab else {
+            problem("Tab", LayoutProblemKind::UnknownValue);
+            return Some(None);
+        };
+        AddedKind::CameoGrid { tab, columns, rows }
     } else if button {
         let Some(command) = command else {
             problem("Command", LayoutProblemKind::UnknownCommand);
@@ -1263,6 +1303,9 @@ fn read_added_part(
         place,
     }))
 }
+
+/// The four tabs' names for a cameo grid's `Tab=`, in the tabs' order.
+const GRID_TABS: [&str; 4] = ["Building", "Defense", "Infantry", "Vehicle"];
 
 /// The list that names an added part: the sidebar's, the battlefield's, or
 /// the `Parts=` of a row or a column the layout adds, by that group's name.
@@ -1870,6 +1913,118 @@ mod tests {
     }
 
     #[test]
+    fn a_layout_adds_a_grid_of_build_pictures_for_a_tab() {
+        let file = MatchLayoutFile::from_bytes(
+            b"[Layouts]\nGDI=Wide\n\
+              [Wide.Side]\nParts=Credits,Top,Radar,Middle,Cameos,Power,More,Lost\n\
+              [Wide.Field]\nParts=Messages,Timers,Banner,Powers,Stray\n\
+              [Wide.More]\nType=CameoGrid\nTab=building\nColumns=3\nRows=1\nX=0\nY=500\n\
+              [Wide.Lost]\nType=CameoGrid\nRows=2\n\
+              [Wide.Stray]\nType=CameoGrid\nTab=Vehicle\n",
+        );
+        let problems: Vec<_> = file
+            .problems()
+            .iter()
+            .map(|problem| (problem.place(), problem.kind.clone()))
+            .collect();
+        assert_eq!(
+            problems,
+            [
+                // A grid needs a tab, and draws only in the sidebar.
+                (
+                    "[Wide.Lost] Tab".to_owned(),
+                    LayoutProblemKind::UnknownValue
+                ),
+                (
+                    "[Wide.Side] Parts".to_owned(),
+                    LayoutProblemKind::UnknownPart
+                ),
+                ("[Wide.Field] Parts".to_owned(), LayoutProblemKind::NotYet),
+                ("[Wide.Stray]".to_owned(), LayoutProblemKind::NotListed),
+            ]
+        );
+        let added = file.for_side(Some("GDI")).unwrap().added();
+        assert_eq!(added.len(), 1);
+        assert_eq!(
+            added[0].kind,
+            AddedKind::CameoGrid {
+                tab: SidebarTab::Building,
+                columns: Some(3),
+                rows: 1
+            }
+        );
+
+        // Five buildings: the sidebar's own grid shows them all, and the
+        // added grid, scrolled past its end, shows its last row of three.
+        let spec = SidebarChromeLayoutSpec::for_theme(SidebarTheme::Allied);
+        let (options, interner) = options(5);
+        let strips = CameoStrips::layout_fixture(&options, &[], &[]);
+        let mut view = build_sidebar_view_with_spec(
+            spec,
+            800.0,
+            600.0,
+            SidebarTab::Building,
+            0,
+            0,
+            0,
+            Some([32.0, 28.0]),
+            &[],
+            &options,
+            &[],
+            None,
+            Some(&interner),
+            &[],
+            &SidebarGadgetState::new(),
+            Some([52.0, 32.0]),
+            Some([52.0, 32.0]),
+            Some([46.0, 25.0]),
+            Some([46.0, 25.0]),
+            [Some([72.0, 18.0]); 2],
+            &strips,
+        );
+        let own = view.items.clone();
+        assert_eq!(own.len(), 5);
+        let [x, y, _, _] = added[0].rect_in([632, 0, 168, 600], [189, 50]);
+        crate::ui::sidebar::append_added_grids(
+            &mut view,
+            spec,
+            &[crate::ui::sidebar::AddedGrid {
+                part: 0,
+                tab: SidebarTab::Building,
+                origin: [x as f32, y as f32],
+                columns: 3,
+                rows: 1,
+                scroll_rows: 9,
+            }],
+            &[],
+            &options,
+            &[],
+            None,
+            Some(&interner),
+            &[],
+            &strips,
+        );
+        // The sidebar's own cameos are as they were, and the grid's follow.
+        assert_eq!(view.items[..5], own[..]);
+        let grid = view.added_grids[0];
+        assert_eq!(
+            (grid.first, grid.len, grid.scroll_rows, grid.max_scroll_rows),
+            (5, 2, 1, 1)
+        );
+        let places: Vec<_> = view.items[5..]
+            .iter()
+            .map(|item| (item.rect.x, item.rect.y, item.type_id.clone()))
+            .collect();
+        assert_eq!(
+            places,
+            [
+                (632.0, 500.0, own[3].type_id.clone()),
+                (695.0, 500.0, own[4].type_id.clone()),
+            ]
+        );
+    }
+
+    #[test]
     fn the_sample_layout_reads_cleanly_and_does_what_it_says() {
         let file = MatchLayoutFile::from_bytes(
             crate::test_fixture::text("docs/examples/veraui.ini").as_bytes(),
@@ -1919,7 +2074,16 @@ mod tests {
         assert_eq!(layout.side2_tile_count, 2);
         // Two buttons and the match clock sit in the band's empty half.
         let added = file.for_side(Some("Nod")).unwrap().added();
-        assert_eq!(added.len(), 4);
+        assert_eq!(added.len(), 5);
+        // A grid for the infantry tab, three rows of three.
+        assert_eq!(
+            added[2].kind,
+            AddedKind::CameoGrid {
+                tab: SidebarTab::Infantry,
+                columns: Some(3),
+                rows: 3
+            }
+        );
         // A row of the two buttons, then the clock, both in the sidebar.
         assert_eq!(
             (added[0].holder, added[1].holder),
@@ -1939,7 +2103,7 @@ mod tests {
             }
         );
         assert!(
-            added[2..]
+            added[3..]
                 .iter()
                 .all(|part| part.holder == Holder::Group(0))
         );
