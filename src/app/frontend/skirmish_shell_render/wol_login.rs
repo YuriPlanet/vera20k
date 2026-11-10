@@ -380,21 +380,6 @@ pub(crate) fn paint_wol_account_form(
         ShellAlign::NONE,
         SHELL_LABEL_TEXT_RGB,
     ));
-    let mut checkboxes = Vec::new();
-    if let (Some(checked), Some(rect)) = (form.remember, layout.remember) {
-        paint_control(
-            &mut checkboxes,
-            &atlas.control_chrome(),
-            ControlPaint::Checkbox { rect, checked },
-            scale,
-        );
-        labels.push(plain(
-            csf_label(state, "VERA:RememberPassword"),
-            crate::ui::skirmish_shell::checkbox_text_rect(rect, scale),
-            ShellAlign::V_CENTER,
-            SHELL_LABEL_TEXT_RGB,
-        ));
-    }
     let buttons = [
         ModalButton {
             rect: layout.ok,
@@ -420,9 +405,7 @@ pub(crate) fn paint_wol_account_form(
         scale,
         POPUP_DEPTHS,
     );
-    // Paint order is draw order: the box first, then its checkbox.
     paint.controls = draw.sprites;
-    paint.controls.extend(checkboxes);
     paint.texts = draw.text;
     let caret_visible = form.caret_visible(Instant::now());
     for (field, (_, rect)) in form.fields.iter().zip(&layout.fields) {

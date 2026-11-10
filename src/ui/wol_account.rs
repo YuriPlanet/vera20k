@@ -476,17 +476,14 @@ impl WolAccountForm {
         FIRST_FIELD + index as u16
     }
 
-    /// The control under a point of `layout`: OK, Cancel, Remember password
-    /// or a field.
+    /// The control under a point of a popup's `layout`: OK, Cancel or a
+    /// field.
     pub(crate) fn control_at(layout: &WolAccountFormLayout, x: i32, y: i32) -> Option<u16> {
         if layout.ok.contains(x, y) {
             return Some(FORM_OK);
         }
         if layout.cancel.contains(x, y) {
             return Some(FORM_CANCEL);
-        }
-        if layout.remember.is_some_and(|rect| rect.contains(x, y)) {
-            return Some(FORM_REMEMBER);
         }
         layout
             .fields

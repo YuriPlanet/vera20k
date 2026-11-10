@@ -11,9 +11,7 @@ use crate::ui::main_menu_dialogs::options::LauncherCue;
 use crate::ui::shell::combobox::{ComboPopup, ComboPress};
 use crate::ui::shell::modal::WolAccountFormLayout;
 use crate::ui::skirmish_shell::{COMBO_DROPDOWN_ROW_H, COMBO_FACE_H};
-use crate::ui::wol_account::{
-    AccountDone, AccountFormAction, FORM_CANCEL, FORM_REMEMBER, WolAccountForm,
-};
+use crate::ui::wol_account::{AccountDone, AccountFormAction, FORM_CANCEL, WolAccountForm};
 use crate::ui::wol_login::*;
 use winit::keyboard::KeyCode;
 
@@ -61,7 +59,6 @@ pub(crate) fn account_form_layout(state: &AppState) -> Option<WolAccountFormLayo
     Some(crate::ui::shell::modal::wol_account_form_layout_on(
         POPUP_AREA,
         form.fields.len(),
-        form.remember.is_some(),
         login_layout(state).page.scale,
     ))
 }
@@ -444,8 +441,7 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
     state.platform.window.request_redraw();
 }
 
-/// The popup over the page takes the pointer. Remember password toggles on
-/// a press on its box, as the Create Game box's checkboxes.
+/// The popup over the page takes the pointer.
 fn account_mouse(
     state: &mut AppState,
     rects: &WolAccountFormLayout,
@@ -454,10 +450,6 @@ fn account_mouse(
     y: i32,
 ) {
     let over = WolAccountForm::control_at(rects, x, y);
-    let scale = login_layout(state).page.scale;
-    let on_box = rects.remember.is_some_and(|rect| {
-        crate::ui::skirmish_shell::checkbox_icon_rect(rect, scale).contains(x, y)
-    });
     let (press, action) = with_login(state, |login, _, _| {
         let form = login.account.as_mut()?;
         Some(if !pressed {
@@ -466,16 +458,6 @@ fn account_mouse(
                 .release(over)
                 .and_then(|control| form.activate(control));
             (Press::Nothing, action)
-        } else if over == Some(FORM_REMEMBER) {
-            form.buttons.press(None);
-            if on_box {
-                (
-                    Press::Cue(LauncherCue::Checkbox),
-                    form.activate(FORM_REMEMBER),
-                )
-            } else {
-                (Press::Nothing, None)
-            }
         } else if form.press(over) {
             (Press::Button, None)
         } else {
