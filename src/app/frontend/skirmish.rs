@@ -2336,6 +2336,61 @@ mod tests {
         }
     }
 
+    /// Unholy Alliance's base-unit callback (`0x005CB440`): every house gets
+    /// one unit per `BaseUnit=` entry, whatever its Owner. The last entry
+    /// takes the base cell (the fallback's seed cell), the middle one a ring-3
+    /// cell and entry 0 the base cell plus (3, 3). The seed keeps the middle
+    /// unit's ring draw off that diagonal cell.
+    #[test]
+    fn unholy_alliance_starts_every_house_with_one_unit_per_base_unit_entry() {
+        let mut sim = Simulation::with_seed(1);
+        let mut session = test_session();
+        session.mode = SkirmishLaunchMode::stock(4).expect("stock Unholy Alliance row");
+        session.options.bases = true;
+        session.options.unit_count = 0;
+        let terrain = test_terrain(64, 64);
+        let starts = test_in_playfield_launch_starts();
+        let map = test_map_with_starts(&starts);
+        let rules = RuleSet::from_ini(&launch_fixture_ini(
+            "[General]\nBaseUnit=AMCV,SMCV,PCV\n[VehicleTypes]\n1=AMCV\n2=SMCV\n3=PCV\n\
+             [AMCV]\nOwner=Americans\n[SMCV]\nOwner=Russians\n[PCV]\nOwner=YuriCountry\n",
+        ))
+        .expect("unholy rules parse");
+
+        let result = apply_explicit_skirmish_launch_session(
+            &mut sim,
+            &map,
+            &roster_with_neutral_and_playable(),
+            &rules,
+            &terrain,
+            &launch_descriptor(&session),
+        );
+
+        assert_eq!(result.spawned_mcvs, 6);
+        for owner in ["Player", "Computer1"] {
+            let base =
+                crate::sim::house_state::house_state_for_owner(sim.houses(), owner, sim.interner())
+                    .and_then(|house| house.base_center())
+                    .expect("the house has a base cell");
+            let cell_of = |type_id: &str| {
+                sim.entities()
+                    .values()
+                    .find(|entity| {
+                        sim.interner().resolve(entity.owner()) == owner
+                            && sim.interner().resolve(entity.type_ref()) == type_id
+                    })
+                    .map(|entity| (entity.position.rx(), entity.position.ry()))
+            };
+            assert_eq!(cell_of("PCV"), Some(base), "{owner}");
+            assert_eq!(cell_of("AMCV"), Some((base.0 + 3, base.1 + 3)), "{owner}");
+            let smcv = cell_of("SMCV").expect("the middle base unit is placed");
+            let ring = (i32::from(smcv.0) - i32::from(base.0))
+                .abs()
+                .max((i32::from(smcv.1) - i32::from(base.1)).abs());
+            assert_eq!(ring, 3, "{owner}");
+        }
+    }
+
     /// `Post_Map_Init` calls `Generate_Starting_Units` at `0x00686937` before
     /// the AI grant loop at `0x006869BE`, so the Hard multiplier applies to the
     /// balance that already includes the credited leftover budget.
