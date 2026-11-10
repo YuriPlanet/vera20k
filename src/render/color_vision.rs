@@ -405,6 +405,9 @@ mod tests {
         // `concat!` keeps this test's own source from matching itself if the
         // scan is ever widened to include `src/render`.
         const PRESENT: &str = concat!("output.present", "(");
+        // The frame loop presents through the hand-off thread
+        // (`GpuContext::hand_off_frame`), the loading repaints directly.
+        const HAND_OFF: &str = concat!("hand_off_frame", "(");
         const ENCODE: &str = concat!("encode_color_vision", "(");
 
         fn visit(dir: &std::path::Path, checked: &mut usize) {
@@ -422,7 +425,10 @@ mod tests {
                     .lines()
                     .filter(|line| !line.trim_start().starts_with("//"))
                     .collect();
-                let presents = lines.iter().filter(|line| line.contains(PRESENT)).count();
+                let presents = lines
+                    .iter()
+                    .filter(|line| line.contains(PRESENT) || line.contains(HAND_OFF))
+                    .count();
                 if presents == 0 {
                     continue;
                 }
