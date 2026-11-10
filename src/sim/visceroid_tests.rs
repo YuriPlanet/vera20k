@@ -103,7 +103,9 @@ impl VisceroidScene {
 /// Two small visceroids side by side: the first one's update finds the
 /// other in a neighbour cell and sends it over (vt+0x480(this, 1)), and
 /// Can_Enter_Cell lets it into that cell (`0x0073F5B5`); gamemd never merges
-/// them, so both are still small visceroids, in one cell.
+/// them, so both are still small visceroids, in one cell. Ares merges them
+/// (`1004C530`, hook `0x00739F21`).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn small_visceroids_seek_each_other_and_stay_small() {
     let Some(mut scene) = two_small_visceroids() else {
@@ -124,4 +126,36 @@ fn small_visceroids_seek_each_other_and_stay_small() {
     for id in [scene.first, scene.second] {
         assert_eq!(scene.type_name(id).as_deref(), Some("VISC_SML"));
     }
+}
+
+/// Ares `UnitClass_UpdatePosition_Visceroid @ 1004C530` (hook `0x00739F21`):
+/// the seeker arriving on the other small visceroid leaves the game, and the
+/// other becomes a large visceroid at its full Strength.
+#[cfg(feature = "ares")]
+#[test]
+fn small_visceroids_merge_into_a_large_one() {
+    let Some(mut scene) = two_small_visceroids() else {
+        return;
+    };
+    assert_eq!(
+        scene.rules.general.large_visceroid.as_deref(),
+        Some("VISC_LRG")
+    );
+    scene.step();
+    let seeker = scene.seeker().expect("one visceroid heads for the other");
+    let target = if seeker == scene.first {
+        scene.second
+    } else {
+        scene.first
+    };
+    for _ in 0..150 {
+        scene.step();
+        if scene.type_name(seeker).is_none() {
+            break;
+        }
+    }
+    assert_eq!(scene.type_name(seeker), None, "the seeker merged");
+    assert_eq!(scene.type_name(target).as_deref(), Some("VISC_LRG"));
+    let large = scene.sim.substrate.entities.get(target).unwrap();
+    assert_eq!(large.health.current(), 500);
 }

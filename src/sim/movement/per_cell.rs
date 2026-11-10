@@ -362,6 +362,12 @@ impl Simulation {
         // 0x0073A31F..0x0073A5EA, before the Ready/Commence below: a tethered
         // unit on Enter arriving north-adjacent to its dock sends DOCK_NOW.
         if reason == PerCellReason::Arrival {
+            // Ares 3.0 1004C530 (hook 0x739F21): a small visceroid arriving
+            // on the one it seeks merges into it and ends here.
+            #[cfg(feature = "ares")]
+            if self.ares_visceroid_merge(id, rules, registry, effects) {
+                return;
+            }
             // 0x00739F21..0x00739F59 come first: a `PoweredUnit=` type whose
             // house has no powered center goes offline off a building.
             self.powered_unit_arrival(id, rules, effects);

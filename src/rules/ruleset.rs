@@ -2090,6 +2090,11 @@ pub struct GeneralRules {
     /// death spawns it (`10049280` -> `TechnoExt::SpawnVisceroid @ 100468B0`).
     #[cfg(feature = "ares")]
     pub small_visceroid: Option<String>,
+    /// `[General] LargeVisceroid=` (`Rules+0x10`), read the same way just
+    /// before it (ReadString returning at `0x0066E677`). Ares' visceroid
+    /// merge makes two small ones this type (`1004C530`).
+    #[cfg(feature = "ares")]
+    pub large_visceroid: Option<String>,
 
     // -- Movement delay timers --
     /// Retained [AI] PathDelay double, in minutes (Rules+1760).
@@ -3046,6 +3051,8 @@ impl Default for GeneralRules {
             tiberium_transmogrify: 0,
             #[cfg(feature = "ares")]
             small_visceroid: None,
+            #[cfg(feature = "ares")]
+            large_visceroid: None,
             // PathDelay=.01 min = 0.6 sec = 9 ticks at 15 Hz.
             path_delay: 0.016,
             // BlockagePathDelay=60 frames (directly in frames, not minutes).
@@ -4381,9 +4388,11 @@ impl GeneralRules {
             #[cfg(feature = "ares")]
             tiberium_transmogrify: general
                 .read_int("TiberiumTransmogrify", defaults.tiberium_transmogrify),
-            // The ordered Process owner publishes it (`RulesTypeReferences`).
+            // The ordered Process owner publishes them (`RulesTypeReferences`).
             #[cfg(feature = "ares")]
             small_visceroid: None,
+            #[cfg(feature = "ares")]
+            large_visceroid: None,
             path_delay,
             blockage_path_delay_ticks,
             // ReadGeneral670235..670267 uses the same475D70 signed vector

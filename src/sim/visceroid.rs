@@ -21,7 +21,7 @@
 //!   direction resets (`0x0073730E..0x00737419`).
 //!
 //! gamemd has no merge: two small visceroids come together and stay small.
-//! Ares merges them (`sim::visceroid::ares_merge`, hook `0x00739F21`).
+//! Ares merges them ([`Simulation::ares_visceroid_merge`], hook `0x00739F21`).
 
 use crate::map::entities::EntityCategory;
 use crate::rules::overlay_types::OverlayTypeRegistry;
@@ -209,6 +209,69 @@ impl Simulation {
         };
         self.foot_can_enter(id, cells.lookup(narrow(target)), args, rules, registry)
             .is_ok_and(|code| code == 0)
+    }
+
+    /// Ares 3.0 `UnitClass_UpdatePosition_Visceroid @ 1004C530` (hook
+    /// `0x00739F21`, Per_Cell_Process's arrival arm right after
+    /// Contact_With_Whom): a small visceroid whose NavCom (`+0x5A4`) is
+    /// another small visceroid Unit, arriving in that one's cell (both
+    /// GetCoords), makes it the `[General] LargeVisceroid=` type at that
+    /// type's Strength ([`Self::store_techno_type`]), refreshes its cell's
+    /// threat (`TechnoClass::UpdateThreatInCell`) and leaves the game itself
+    /// (UnInit, no death or kill); Per_Cell_Process ends there
+    /// (`0x0073B0A5`). Answers whether it merged.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_visceroid_merge(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        let small = |sim: &Self, entity: &crate::sim::game_entity::GameEntity| {
+            entity.category() == EntityCategory::Unit
+                && sim
+                    .object_type(entity.type_ref(), rules)
+                    .is_some_and(|object| object.small_visceroid)
+        };
+        let Some(entity) = self.substrate.entities.get(id).filter(|e| small(self, e)) else {
+            return false;
+        };
+        let Some(large) = rules.general.large_visceroid.as_deref().and_then(|name| {
+            rules.object_in_category(crate::rules::object_type::ObjectCategory::Vehicle, name)
+        }) else {
+            return false;
+        };
+        let Some(other) = entity
+            .navigation
+            .nav_com()
+            .and_then(NavTargetRef::object_id)
+            .filter(|&other| {
+                self.substrate
+                    .entities
+                    .get(other)
+                    .is_some_and(|e| small(self, e))
+            })
+        else {
+            return false;
+        };
+        let terrain = self.resolved_terrain.as_ref();
+        let cell = |id: u64| {
+            self.substrate.entities.get(id).map(|entity| {
+                let coord = crate::sim::movement::ground_pose::object_get_coords(entity, terrain);
+                (coord.x >> 8, coord.y >> 8)
+            })
+        };
+        if cell(id) != cell(other) {
+            return false;
+        }
+        self.store_techno_type(other, large, rules);
+        self.refresh_spatial_threat(other, rules, None);
+        self.uninit_with_context(
+            id,
+            crate::sim::world::UninitContext::new(rules, registry).with_effects(effects),
+        );
+        true
     }
 
     fn set_idle_wander(&mut self, id: u64, direction: i32) {

@@ -174,6 +174,13 @@ const POINTERS: &[(&str, PublishPointer)] = &[
     ("EMPulseWarhead", |rules, id| {
         rules.general.empulse_warhead = named(id);
     }),
+    // ReadGeneral's LargeVisceroid (ReadString returning at `0x0066E677`,
+    // UnitType FindOrAllocate), just before SmallVisceroid; Ares' visceroid
+    // merge reads it.
+    #[cfg(feature = "ares")]
+    ("LargeVisceroid", |rules, id| {
+        rules.general.large_visceroid = named(id);
+    }),
     // ReadGeneral's SmallVisceroid (ReadString returning at `0x0066E6B0`,
     // UnitType FindOrAllocate); Ares' tiberium death visceroid reads it.
     #[cfg(feature = "ares")]
