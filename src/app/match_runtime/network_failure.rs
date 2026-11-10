@@ -57,7 +57,7 @@ pub(crate) fn labels(
 /// game server rather than "the other system". A start the relay refused says
 /// why, so the players can do something about it.
 ///
-/// VERA-only: a frame that failed in a network match (`frame_stopped`) is an
+/// VERA-only: a frame that failed (`frame_stopped`, in any match) is an
 /// error, not a desync, so the box says so and points at the log instead of
 /// the checksum box's own out-of-sync text.
 pub(crate) fn vera_body(state: &AppState) -> Option<String> {
