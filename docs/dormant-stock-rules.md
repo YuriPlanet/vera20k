@@ -56,3 +56,33 @@ silent for a carrier in limbo).
 Not represented: an Aircraft or Building carrying the bomb, and a healer Unit, which answers
 Select over itself first. Code: `sim::bomb` (`bomb_detonate_action`, `execute_detonate_event`),
 `app::input::context_order::self_detonates`.
+
+## Visceroids
+
+```ini
+[General]
+SmallVisceroid=VISC_SML  ; retail names both types but defines neither
+LargeVisceroid=VISC_LRG
+
+[VehicleTypes]
+900=VISC_SML
+
+[VISC_SML]
+SmallVisceroid=yes   ; UnitType key, default no
+; or LargeVisceroid=yes
+```
+
+A Unit whose type sets `SmallVisceroid=` or `LargeVisceroid=` runs `UnitClass::UpdateVisceroid
+@ 0x00737180` in its AI, after firing and turning (`0x0073666B..0x00736685`):
+
+- its idle frames cycle: below Stage value 90, a value `% 30 == 29` takes a new
+  `RandomRanged(0, 2) * 30`; at 90 or more, a value `% 5 == 4` restarts at one and the update
+  ends there (Scenario draws);
+- while it moves, nothing more;
+- a small one sends the first small visceroid Unit it finds on the ground of a neighbouring cell
+  (N first) over to itself, unless that one already has a destination or a target;
+- with no destination or target it wanders a cell at a time, keeping its direction
+  (`+0x6D4`) on a `RandomRanged(0, 2)` other than 0.
+
+gamemd has no merge: two small visceroids come together and stay small. Code: `sim::visceroid`,
+called from the Unit AI in `world::object_turn`.

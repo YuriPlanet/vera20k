@@ -1263,6 +1263,8 @@ impl Simulation {
             );
             outcome.bridge_state_changed |= receipt.bridge_state_changed;
             outcome.destroyed_structure |= receipt.structure_destroyed;
+            // Unit73666B..736685: a visceroid's UpdateVisceroid737180.
+            sim.unit_update_visceroid(stable_id, rules, overlay_registry, object_ctx.effects);
             // UnitAI736689 Reload+424 follows FireAtTarget/Facing and
             // precedes the second Ready/Commence. Aircraft/Infantry have
             // no corresponding ordinary Reload dispatch here. The native
