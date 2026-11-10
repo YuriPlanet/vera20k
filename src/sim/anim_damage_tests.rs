@@ -384,9 +384,7 @@ fn attached_heal_anim_weapon_never_damages_nearby_objects() {
          [WeaponTypes]\n0=ComancheHeal\n\
          [ComancheHeal]\nDamage=0\nWarhead=ComancheHealWH\nAreaFire=yes\n",
     );
-    let art = IniFile::from_str(
-        "[COMARING]\nRate=400\nEnd=4\nDamage=1\nWeapon=ComancheHeal\n",
-    );
+    let art = IniFile::from_str("[COMARING]\nRate=400\nEnd=4\nDamage=1\nWeapon=ComancheHeal\n");
     let processed = crate::rules::native_processing::RulesLayerStack::new(ini)
         .process_with_fixed_art(&art)
         .unwrap();
@@ -394,6 +392,7 @@ fn attached_heal_anim_weapon_never_damages_nearby_objects() {
     let mut registry = crate::rules::art_data::ArtRegistry::from_ini(&art);
     registry.bind_anim_frame_count_for_test("COMARING", 4);
     rules.install_art_data(registry);
+    #[cfg(feature = "ares")]
     let cfg = rules.art().anim_runtime_config("COMARING").unwrap();
     #[cfg(feature = "ares")]
     assert_eq!(
@@ -401,9 +400,10 @@ fn attached_heal_anim_weapon_never_damages_nearby_objects() {
         Some("ComancheHeal"),
         "the animation's Weapon= must survive rule processing"
     );
-    assert!(
+    assert_eq!(
         rules.weapon("ComancheHeal").is_some(),
-        "a weapon referenced only by an animation must still be allocated"
+        cfg!(feature = "ares"),
+        "only Ares reads the explicit WeaponTypes list"
     );
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
     sim.intern_rule_type_ids(&rules);
@@ -436,10 +436,13 @@ fn attached_heal_anim_weapon_never_damages_nearby_objects() {
     });
     let health = sim.entities().get(target).unwrap().health.current();
     let warheads: Vec<_> = visits.iter().map(|v| v["warhead"].clone()).collect();
+    #[cfg(feature = "ares")]
     assert_eq!(
         health, 1000,
         "the healing aura must not damage nearby objects (warheads: {warheads:?})"
     );
+    #[cfg(not(feature = "ares"))]
+    assert!(health < 1000, "stock animations use FlameDamage2");
     #[cfg(feature = "ares")]
     {
         assert!(!warheads.is_empty(), "the aura must still fire its weapon");
@@ -448,4 +451,6 @@ fn attached_heal_anim_weapon_never_damages_nearby_objects() {
             "the healing warhead must be used, not the FlameDamage2 fallback: {warheads:?}"
         );
     }
+    #[cfg(not(feature = "ares"))]
+    assert!(warheads.iter().all(|warhead| warhead == "FALLBACK"));
 }

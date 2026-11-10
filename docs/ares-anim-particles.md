@@ -10,6 +10,13 @@ them.
 
 Focused tests: `sim::ares_anim_type_tests`, `sim::particles::ares_gas_tests`.
 
+Declare animation-only weapons in the rules `[WeaponTypes]` list. Ares registers
+that list before the type bodies (`0x679A15`, `1002B2FF..1002B34D`), so the
+animation's `Weapon=` lookup can resolve them on that rules pass. Unregistered
+names retain the previous reference, and `none` clears it. This includes healing
+auras whose weapon has a zero-damage warhead. See the
+[Ares animation documentation](https://ares-developers.github.io/Ares-docs/new/animations.html).
+
 | Key or hook | Ares.dll | Reader / behaviour | Status |
 | --- | --- | --- | --- |
 | `MakeInfantryOwner` | `1000A4B0` | Valueable<OwnerHouseKind>, Invoker | ported earlier (`art_data`, `destruction_effects`) |
