@@ -149,7 +149,7 @@ SizeLimit=15              ; the largest Size= that may enter
 | `0x64B704` | `1006A5F0` | sub_64B660_PayloadSize | ported: `net::event_packet::event_payload_len` answers 10 for 0x60 (GetEventPayloadSize `1006A130`); 0x61 has no raiser |
 | `0x64BE83` | `1006A620` | sub_64BDD0_PayloadSize1 | ported: as above, the one payload table serves both directions |
 | `0x64C314` | `1006A660` | sub_64BDD0_PayloadSize2 | ported: as above |
-| `0x4586CA` | `10017220` | BuildingClass_KillOccupiers_EachOccupierKilled | residual: inside KillOccupants' assaulter arm, which VERA does not represent (`sim::passenger`); the all-killed hook `0x458729` is ported |
+| `0x4586CA` | `10017220` | BuildingClass_KillOccupiers_EachOccupierKilled | ported: `passenger::garrison_eject::kill_building_occupants` runs evalRaidStatus before each assaulted occupant's kill; the vector still holds them all there, so only the all-killed hook `0x458729` can return a raided building |
 | `0x43C326` | `100174E0` | BuildingClass_ReceivedRadioCommand_QueryCanEnter_Tunnel | ported: `sim::radio::receive::can_load`, IsPassengerAllowed included |
 | `0x43C716` | `100176B0` | BuildingClass_ReceivedRadioCommand_RequestCompleteEnter_Tunnel | ported: `sim::radio::receive` DOCK_NOW |
 | `0x44351A` | `100172F0` | BuildingClass_ActionOnObject_Tunnel | residual: the absorbers' click arm it extends is not in VERA |

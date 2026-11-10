@@ -989,6 +989,7 @@ impl Simulation {
             crate::sim::passenger::garrison_eject::kill_building_occupants(
                 self,
                 id,
+                None,
                 UninitContext::new(rules, registry).with_effects(frame_effects),
             );
         }

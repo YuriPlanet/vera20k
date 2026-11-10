@@ -291,9 +291,15 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
         }
     }
     // Muzzle animations `TechnoClass::Fire_At` constructs
-    // (`sim::world::damage_consequences`, `combat::fire_coord`).
+    // (`sim::world::damage_consequences`, `combat::fire_coord`), and the
+    // assault anim at each occupant KillOccupants (`0x004586B7`) kills.
     for weapon in rules.weapons_iter() {
-        for name in weapon.anim.iter().chain(&weapon.occupant_anim) {
+        for name in weapon
+            .anim
+            .iter()
+            .chain(&weapon.occupant_anim)
+            .chain(&weapon.assault_anim)
+        {
             insert(name);
         }
     }

@@ -67,6 +67,9 @@ pub(crate) fn stage_megamission<T: Clone>(
 
 /// Native selected-object Scatter event.
 pub const SCATTER_OPCODE: u8 = 0x07;
+/// DETONATE, a player's click on its own bomb's lone selected carrier
+/// (`FootClass::ClickedAction_Object` action 0x37, `0x004D7616`).
+pub const DETONATE_OPCODE: u8 = 0x0a;
 /// IDLE6, issued by StopCommand730EA0 through ClickedEvent6FFE00.
 pub const IDLE_OPCODE: u8 = 0x06;
 /// Selected-object DEPLOY, issued by the D key through ClickedEvent6FFE00.
@@ -875,6 +878,33 @@ impl ScatterRecord {
 
     pub fn decode(record: &CommandRecord) -> Option<Self> {
         if record.opcode() != SCATTER_OPCODE {
+            return None;
+        }
+        Some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            entity_id: record.object_target_id()?,
+        })
+    }
+}
+
+/// DETONATE10 carries the carrier's object token, as SCATTER7
+/// (`EventClass` constructor `0x004C65E0`, called at `0x004D762E`). Its
+/// house byte is the bomb's house (`+0x28`), not the clicking player's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DetonateRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub entity_id: i32,
+}
+
+impl DetonateRecord {
+    pub fn write_into(self, record: &mut CommandRecord) {
+        record.write_object_target(DETONATE_OPCODE, self.house_id, self.frame, self.entity_id);
+    }
+
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        if record.opcode() != DETONATE_OPCODE {
             return None;
         }
         Some(Self {

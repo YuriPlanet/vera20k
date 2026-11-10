@@ -512,6 +512,8 @@ impl Simulation {
                 // visit, so every factory observes the wallet after that
                 // object's repair. The tank-bunker install runs in the
                 // bunker's Repair mission.
+                #[cfg(feature = "ares")]
+                self.ares_refresh_temporal_factories(rules, effects);
                 production::step_factories(self);
                 #[cfg(any(test, feature = "test-support"))]
                 self.trace_house_ai_activation_order(
