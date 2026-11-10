@@ -363,6 +363,10 @@ pub struct ChooseMapModalLayout {
     pub dialog: RectPx,
     pub mode_list: RectPx,
     pub map_list: RectPx,
+    /// VERA: the search box between the Game Map heading and the map list,
+    /// framed like the list. `0x6B` has none; its list starts where the box
+    /// does and is one row longer.
+    pub map_search: RectPx,
     pub use_map_button: RectPx,
     pub cancel_button: RectPx,
     pub create_random_map_button: RectPx,
@@ -828,19 +832,38 @@ fn opponent_scrollbar_rect(rows: &SkirmishRowRects) -> RectPx {
     )
 }
 
+/// VERA: the search box's height, and how far it pushes the map list's top
+/// down: the box, both frames and a one-pixel gap, less the room the heading
+/// leaves above the list.
+const MAP_SEARCH_H: i32 = 17;
+const MAP_SEARCH_LIST_SHIFT: i32 = 13;
+
 pub fn compute_choose_map_modal_layout(screen_w: u32, screen_h: u32) -> ChooseMapModalLayout {
     let screen_w = screen_w as i32;
     let screen_h = screen_h as i32;
     let panel = right_panel_rects(screen_w, screen_h);
     let use_map_base = dlu_rect(425, 122, 108, 23);
     let create_random_map_base = dlu_rect(425, 149, 108, 23);
+    // `0x6B`'s map list window; VERA's search box takes its top.
+    let map_list = crate::ui::shell::geom::child_window(225, 78, 130, 211);
 
     ChooseMapModalLayout {
         scale: ShellScale::RETAIL,
         screen: RectPx::new(0, 0, screen_w, screen_h),
         dialog: RectPx::new(0, 0, screen_w, screen_h),
         mode_list: crate::ui::shell::geom::child_window(77, 78, 130, 211),
-        map_list: crate::ui::shell::geom::child_window(225, 78, 130, 211),
+        map_list: RectPx::new(
+            map_list.x,
+            map_list.y + MAP_SEARCH_LIST_SHIFT,
+            map_list.w,
+            map_list.h - MAP_SEARCH_LIST_SHIFT,
+        ),
+        map_search: RectPx::new(
+            map_list.x,
+            map_list.y + MAP_SEARCH_LIST_SHIFT - MAP_SEARCH_H - 4,
+            map_list.w,
+            MAP_SEARCH_H,
+        ),
         use_map_button: snap_button_biased_truncate(
             screen_w,
             screen_h,
@@ -1381,6 +1404,7 @@ impl ScaledRects for ChooseMapModalLayout {
             dialog: self.dialog.scaled_rects(scale),
             mode_list: self.mode_list.scaled_rects(scale),
             map_list: self.map_list.scaled_rects(scale),
+            map_search: self.map_search.scaled_rects(scale),
             use_map_button: self.use_map_button.scaled_rects(scale),
             cancel_button: self.cancel_button.scaled_rects(scale),
             create_random_map_button: self.create_random_map_button.scaled_rects(scale),
@@ -1904,7 +1928,8 @@ mod tests {
         assert_eq!(layout.screen, RectPx::new(0, 0, 800, 600));
         assert_eq!(layout.dialog, RectPx::new(0, 0, 800, 600));
         assert_eq!(layout.mode_list, RectPx::new(116, 127, 196, 344));
-        assert_eq!(layout.map_list, RectPx::new(338, 127, 196, 344));
+        // VERA: the search box takes the top 13 px of `0x6B`'s 344 px list.
+        assert_eq!(layout.map_list, RectPx::new(338, 140, 196, 331));
         assert_eq!(layout.use_map_button, RectPx::new(644, 199, 156, 42));
         assert_eq!(
             layout.create_random_map_button,
@@ -1915,6 +1940,8 @@ mod tests {
         assert_eq!(layout.select_engagement, RectPx::new(120, 33, 386, 20));
         assert_eq!(layout.game_type_heading, RectPx::new(116, 98, 195, 16));
         assert_eq!(layout.game_map_heading, RectPx::new(338, 98, 195, 16));
+        // The box and its frame sit between the heading and the list's frame.
+        assert_eq!(layout.map_search, RectPx::new(338, 119, 196, 17));
         assert_eq!(layout.status_help, RectPx::new(10, 578, 456, 21));
         assert_eq!(layout.preview, RectPx::new(644, 37, 144, 112));
     }
@@ -1926,7 +1953,7 @@ mod tests {
         assert_eq!(layout.screen, RectPx::new(0, 0, 1024, 768));
         assert_eq!(layout.dialog, RectPx::new(0, 0, 1024, 768));
         assert_eq!(layout.mode_list, RectPx::new(116, 127, 196, 344));
-        assert_eq!(layout.map_list, RectPx::new(338, 127, 196, 344));
+        assert_eq!(layout.map_list, RectPx::new(338, 140, 196, 331));
         assert_eq!(layout.use_map_button, RectPx::new(756, 283, 156, 42));
         assert_eq!(
             layout.create_random_map_button,

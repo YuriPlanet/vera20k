@@ -329,6 +329,7 @@ fn build_skirmish_shell_instances(
                 push_choose_map_modal_control_instances(
                     &mut instances,
                     atlas,
+                    font,
                     choose_map_layout,
                     interior,
                     shell,

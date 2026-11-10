@@ -239,6 +239,7 @@ pub(super) fn push_choose_map_background_instances(
 pub(super) fn push_choose_map_modal_control_instances(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
+    font: &crate::render::bit_font::BitFont,
     layout: &ChooseMapModalLayout,
     interior: BackdropInteriorPaint,
     shell: &SkirmishShellState,
@@ -268,6 +269,29 @@ pub(super) fn push_choose_map_modal_control_instances(
         interior.paints_solid_fill(),
         layout.scale,
     );
+    // VERA: the search box wears the list's frame, with a caret after its
+    // text. It has no focus to lose, so the caret does not blink.
+    if interior.paints_solid_fill() {
+        push_solid_rect(
+            out,
+            atlas,
+            layout.map_search,
+            SHELL_MODAL_PANEL_RGB,
+            SHELL_DROPDOWN_DEPTH - 0.00010,
+        );
+    }
+    super::list::paint_list_frame(out, atlas, layout.map_search);
+    if let Some(caret) =
+        super::text::map_search_caret_rect(font, &modal.search, layout.map_search, layout.scale)
+    {
+        push_solid_rect(
+            out,
+            atlas,
+            caret,
+            SHELL_LABEL_TEXT_RGB,
+            SHELL_DROPDOWN_DEPTH - 0.00012,
+        );
+    }
     // While a slide runs the column replaces the buttons and the preview
     // static is validate-only (`0x00606800`).
     if !steady {

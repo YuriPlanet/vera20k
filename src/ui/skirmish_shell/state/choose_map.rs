@@ -898,9 +898,10 @@ mod tests {
             &layout,
         );
         let geometry = modal.map_geometry(&layout);
-        assert_eq!(geometry.visible_rows, 18, "surface 345 px tall: 18 rows");
+        // VERA: 17 rows, one fewer than `0x6B`, under the search box.
+        assert_eq!(geometry.visible_rows, 17, "surface 332 px tall: 17 rows");
         assert_eq!(modal.highlighted_filtered_index, Some(25));
-        assert_eq!(modal.map_top_index, 22, "40 rows - 18 visible");
+        assert_eq!(modal.map_top_index, 23, "40 rows - 17 visible");
         let modal = ChooseMapModalState::open(
             crate::ui::skirmish_shell::ChooseMapContext::Skirmish,
             standard.id,
@@ -1260,7 +1261,8 @@ mod tests {
         );
         modal.filtered_record_indices = (0..60).collect();
         let maps = modal.map_geometry(&layout);
-        assert_eq!(maps.row(0), RectPx::new(339, 128, 175, 19));
+        // VERA: the map rows start 13 px lower, under the search box.
+        assert_eq!(maps.row(0), RectPx::new(339, 141, 175, 19));
         assert_eq!(maps.scrollbar.map(|bar| bar.x), Some(514));
         let lines = crate::ui::shell::list::list_frame_lines(layout.mode_list);
         let left = lines.iter().map(|(r, _)| r.x).min();
