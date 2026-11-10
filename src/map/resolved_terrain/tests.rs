@@ -3886,6 +3886,37 @@ NoUseTileLandType=no
 }
 
 #[test]
+fn a_tmp_ramp_byte_past_the_slope_tables_is_flat_ground() {
+    let tile = |ramp_type| TmpTile {
+        height: 0,
+        terrain_type: 14,
+        ramp_type,
+        radar_left: [0, 0, 0],
+        radar_right: [0, 0, 0],
+        pixels: Vec::new(),
+        depth: Vec::new(),
+        pixel_width: 60,
+        pixel_height: 30,
+        relative_extra_y: 0,
+        offset_x: 0,
+        offset_y: 0,
+        has_damaged_data: false,
+    };
+    let mut last_slope = TileMetadata::default();
+    merge_tmp_metadata(&mut last_slope, &tile(20));
+    assert_eq!(last_slope.slope_type, 20);
+    assert!(last_slope.has_ramp);
+    for ramp_type in [21, 255] {
+        let mut metadata = TileMetadata::default();
+        merge_tmp_metadata(&mut metadata, &tile(ramp_type));
+        assert_eq!(metadata.slope_type, 0, "ramp byte {ramp_type}");
+        assert!(!metadata.has_ramp);
+        // Every ground-height read takes the stored slope.
+        assert!(crate::util::lepton::ground_height_leptons(0, metadata.slope_type, 0, 0).is_ok());
+    }
+}
+
+#[test]
 fn gsi_04_04_rules_backed_land_type_uses_canonical_tmp_conversion() {
     let terrain_rules =
         TerrainRules::from_ini(&IniFile::from_str("[Rough]\nBuildable=yes\nTrack=75%\n"));

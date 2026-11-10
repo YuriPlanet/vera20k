@@ -364,9 +364,12 @@ impl App {
                     );
                     Self::drive_scenario_exit(state, scenario_now_ms);
                 }
+                // A stopped frame leaves no exit or outcome to drive: Stop
+                // always returns to the shell, or the box would reopen.
                 if matches!(state.frontend.screen, GameScreen::InGame)
-                    && state.match_state.scenario_exit.is_none()
-                    && state.match_state.scenario_outcome.is_none()
+                    && (frame_stopped
+                        || (state.match_state.scenario_exit.is_none()
+                            && state.match_state.scenario_outcome.is_none()))
                 {
                     // ProcessNetwork6475F0 clears GameActive at64826F;
                     // Main_Game55D347 returns directly to shell cleanup.
