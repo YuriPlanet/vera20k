@@ -1,7 +1,7 @@
 //! `0x10F`'s left-side children on the shared control owners: the two
 //! labels, the nickname combo (face `0x00617250` with its NewEdit), the
 //! `ES_PASSWORD` NewEdit, the Remember checkbox and the combo's drop list;
-//! VERA online's page has its welcome, its username NewEdit and the lobby's
+//! VERA online's page has its welcome, its sign-in form and the lobby's
 //! counts in their place, and its popups over them. The WOL page compositor
 //! draws them over its own backdrop and chrome.
 
@@ -27,7 +27,7 @@ use crate::ui::wol_account::{FORM_CANCEL, FORM_OK, WolAccountForm};
 use crate::ui::wol_login::{WolLoginLayout, WolLoginState};
 use crate::util::time::Instant;
 
-/// VERA online's welcome line and counts, beside the shell's yellow captions.
+/// VERA online's status line and counts, beside the shell's yellow captions.
 const ONLINE_TEXT_RGB: [f32; 3] = [0.80, 0.80, 0.80];
 /// An info panel sits over the page art, under the page's popups.
 const INFO_FILL_DEPTH: f32 = shell_paint::CHROME_DEPTH - 0.00001;
@@ -75,61 +75,79 @@ pub(crate) fn paint_wol_login_children(
         )
     };
     let label = |key: &str| csf_label(state, key);
-    if let Some(online) = layout.online {
-        // VERA online: the welcome, the username field and the counts, in
-        // their panel.
-        push_info_panel(&mut paint.controls, atlas, online.panel);
+    if let (Some(online), Some(form)) = (layout.online, login.form.as_ref()) {
+        // VERA online: the welcome, the sign-in form and the counts, straight
+        // over the art.
         let centred = ShellAlign::H_CENTER;
-        for (value, rect, align, rgb) in [
-            (
-                label("VERA:OnlineWelcome"),
-                online.heading,
-                centred,
-                SHELL_LABEL_TEXT_RGB,
-            ),
-            (
-                label("VERA:OnlineWelcomeText"),
-                online.text,
-                centred,
-                ONLINE_TEXT_RGB,
-            ),
-            (
-                label("VERA:Username"),
-                online.name_label,
-                ShellAlign::NONE,
-                SHELL_LABEL_TEXT_RGB,
-            ),
-        ] {
-            paint
-                .texts
-                .push(text(&value, rect, align, rgb, SHELL_CONTROL_TEXT_DEPTH));
-        }
-        let name_text = scale.derive_rect(online.name, |rect| {
-            RectPx::new(rect.x + 2, rect.y, rect.w - 1, rect.h + 1)
-        });
-        push_new_edit_instances(
-            &mut paint.controls,
-            atlas,
-            font,
-            &login.nickname,
-            NewEditPaint {
-                frame: scale.derive_rect(online.name, |rect| {
-                    RectPx::new(rect.x - 2, rect.y - 2, rect.w + 5, rect.h + 5)
-                }),
-                text: name_text,
-                background: None,
-                frame_depth: SHELL_EDIT_FRAME_DEPTH,
-                caret_depth: SHELL_EDIT_CARET_DEPTH,
-                // A popup over the page holds the caret.
-                caret_visible: login.account.is_none() && login.caret_visible(now),
-            },
-            scale,
-        );
+        let caption = ShellAlign(ShellAlign::H_RIGHT.0 | ShellAlign::V_CENTER.0);
         paint.texts.push(text(
-            &login.nickname.painted_text(),
-            name_text,
-            ShellAlign::V_CENTER,
+            &label("VERA:OnlineWelcome"),
+            online.heading,
+            centred,
             SHELL_LABEL_TEXT_RGB,
+            SHELL_CONTROL_TEXT_DEPTH,
+        ));
+        // A popup over the page holds the caret.
+        let caret_visible = login.account.is_none() && form.caret_visible(now);
+        for (field, (caption_rect, edit)) in form.fields.iter().zip(online.fields) {
+            paint.texts.push(text(
+                &label(field.label),
+                caption_rect,
+                caption,
+                SHELL_LABEL_TEXT_RGB,
+                SHELL_CONTROL_TEXT_DEPTH,
+            ));
+            let edit_text = scale.derive_rect(edit, |rect| {
+                RectPx::new(rect.x + 2, rect.y, rect.w - 1, rect.h + 1)
+            });
+            push_new_edit_instances(
+                &mut paint.controls,
+                atlas,
+                font,
+                &field.edit,
+                NewEditPaint {
+                    frame: scale.derive_rect(edit, |rect| {
+                        RectPx::new(rect.x - 2, rect.y - 2, rect.w + 5, rect.h + 5)
+                    }),
+                    text: edit_text,
+                    background: None,
+                    frame_depth: SHELL_EDIT_FRAME_DEPTH,
+                    caret_depth: SHELL_EDIT_CARET_DEPTH,
+                    caret_visible: caret_visible && field.edit.focused,
+                },
+                scale,
+            );
+            paint.texts.push(text(
+                &field.edit.painted_text(),
+                edit_text,
+                ShellAlign::V_CENTER,
+                SHELL_LABEL_TEXT_RGB,
+                SHELL_CONTROL_TEXT_DEPTH,
+            ));
+        }
+        if let Some(checked) = form.remember {
+            paint_control(
+                &mut paint.controls,
+                &atlas.control_chrome(),
+                ControlPaint::Checkbox {
+                    rect: online.remember,
+                    checked,
+                },
+                scale,
+            );
+            paint.texts.push(text(
+                &label("VERA:RememberPassword"),
+                crate::ui::skirmish_shell::checkbox_text_rect(online.remember, scale),
+                ShellAlign::V_CENTER,
+                SHELL_LABEL_TEXT_RGB,
+                SHELL_CONTROL_TEXT_DEPTH,
+            ));
+        }
+        paint.texts.push(text(
+            &form.status,
+            online.status,
+            centred,
+            ONLINE_TEXT_RGB,
             SHELL_CONTROL_TEXT_DEPTH,
         ));
         for ((key, count), rect) in state.frontend.login_info.counts().zip(online.counts) {
@@ -307,8 +325,7 @@ pub(super) fn push_info_panel(
 }
 
 /// VERA online's popups on Red Alert 2's box art, as the online Create Game
-/// box: a caption and edit per field, Login's Remember password box, OK and
-/// Cancel, and the status line.
+/// box: a caption and edit per field, OK and Cancel, and the status line.
 pub(crate) fn paint_wol_account_form(
     state: &AppState,
     form: &WolAccountForm,

@@ -35,10 +35,10 @@ pub enum WolTarget {
     /// The online login page, its counts set in place; nothing is read or
     /// sent.
     ModernLoginPage,
-    /// Login's popup over it, a username and password typed and Remember
+    /// Its sign-in form with a username and password typed and Remember
     /// password ticked; nothing is sent.
     ModernLogin,
-    /// The page's username field with a typed username; nothing is sent.
+    /// Its sign-in form with a username alone, a guest's; nothing is sent.
     ModernUsername,
     /// Create Account's popup, filled in; nothing is sent.
     ModernCreateAccount,
@@ -1402,15 +1402,32 @@ impl WolCapture {
                             "the online login page did not open on its own"
                         );
                         self.event(frame, "the online login page");
-                        if target == WolTarget::ModernUsername {
-                            App::handle_wol_key(state, None, true, Some("Player"));
+                        if matches!(target, WolTarget::ModernUsername | WolTarget::ModernLogin) {
+                            let online = layout.online.context("the online sign-in form")?;
+                            let typed: &[&str] = if target == WolTarget::ModernLogin {
+                                &["Player", "s3cret-pw"]
+                            } else {
+                                &["Player"]
+                            };
+                            account_type(state, typed);
+                            if target == WolTarget::ModernLogin {
+                                welcome_click(
+                                    state,
+                                    crate::ui::skirmish_shell::checkbox_icon_rect(
+                                        online.remember,
+                                        layout.page.scale,
+                                    ),
+                                );
+                            }
                             let login = login_mut(state)?;
                             ensure!(
                                 login.online_name() == "Player"
-                                    && login.button_enabled(crate::ui::wol_login::PLAY),
-                                "the typed username did not enable Play"
+                                    && login.button_enabled(crate::ui::wol_login::PLAY)
+                                    && login.form.as_ref().and_then(|form| form.remember)
+                                        == Some(target == WolTarget::ModernLogin),
+                                "the typed sign-in did not enable Play"
                             );
-                            self.event(frame, "the username typed");
+                            self.event(frame, "the sign-in form filled in");
                         } else if target != WolTarget::ModernLoginPage {
                             self.account_popup(state, frame, target, &layout)?;
                         }
@@ -4919,8 +4936,8 @@ impl WolCapture {
             && state.frontend.shell_first_paint_slide.is_none())
     }
 
-    /// Login, Create Account, Forgot Password or Delete Account over the
-    /// online login page. The lobby's answers come in place, so nothing reaches the
+    /// Create Account, Forgot Password or Delete Account over the online
+    /// login page. The lobby's answers come in place, so nothing reaches the
     /// live lobby.
     fn account_popup(
         &mut self,
@@ -4930,34 +4947,15 @@ impl WolCapture {
         layout: &crate::ui::wol_login::WolLoginLayout,
     ) -> Result<()> {
         use crate::ui::wol_account::{AccountFormAction, AccountRequest, FORM_OK, FormKind};
-        use crate::ui::wol_login::{CREATE_ACCOUNT, DELETE_ACCOUNT, FORGOT_PASSWORD, LOGIN};
+        use crate::ui::wol_login::{CREATE_ACCOUNT, DELETE_ACCOUNT, FORGOT_PASSWORD};
         const PASSWORD: &str = "s3cret-pw";
         let control = match target {
-            WolTarget::ModernLogin => LOGIN,
             WolTarget::ModernForgotPassword => FORGOT_PASSWORD,
             WolTarget::ModernDeleteAccount => DELETE_ACCOUNT,
             _ => CREATE_ACCOUNT,
         };
         welcome_click(state, button(layout, control)?);
         match target {
-            WolTarget::ModernLogin => {
-                account_type(state, &["Player", PASSWORD]);
-                let remember = crate::app::shell_wol::account_form_layout(state)
-                    .and_then(|rects| rects.remember)
-                    .context("Remember password")?;
-                welcome_click(
-                    state,
-                    crate::ui::skirmish_shell::checkbox_icon_rect(remember, layout.page.scale),
-                );
-                ensure!(
-                    login_mut(state)?
-                        .account
-                        .as_ref()
-                        .is_some_and(|form| form.remember == Some(true)),
-                    "Remember password did not tick"
-                );
-                self.event(frame, "Login: username and password typed, Remember ticked");
-            }
             WolTarget::ModernForgotPassword => {
                 account_type(state, &["Player"]);
                 let form = login_mut(state)?

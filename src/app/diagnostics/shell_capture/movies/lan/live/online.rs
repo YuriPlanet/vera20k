@@ -753,7 +753,13 @@ impl LiveRoundFlow {
                 if rendered == PresentedShell::WolLogin
                     && MoviesCapture::slide_settled(state, ShellSlideKind::WolLogin) =>
             {
-                // The page's field starts from the last username: replace it.
+                // The page's form starts from the last username: replace it.
+                let username = crate::app::shell_wol::login_layout(state)
+                    .online
+                    .context("the online sign-in form")?
+                    .fields[0]
+                    .1;
+                click(state, username);
                 App::handle_wol_key(state, Some(KeyCode::Home), true, None);
                 for _ in 0..32 {
                     App::handle_wol_key(state, Some(KeyCode::Delete), true, None);

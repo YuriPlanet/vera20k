@@ -623,19 +623,18 @@ or `sign_in_token` for a name without an account returns 404 `no_account`; other
 that name enters as a guest. A lobby without accounts set up refuses a password with
 503 `accounts_unavailable`.
 
-VERA20k's online login page welcomes the player and has a username field, which starts
-from the last name signed in. Play, or Enter, signs in under that name: with this
-computer's remembered sign-in when it is that account's, and as a guest otherwise. Under
-the field the page shows the players online and the last 24 hours' games (`GET
-/v1/stats`, read each time the page opens), leaving out a count of none. Every other
-button opens a popup that starts from the field's name. Login asks for the name and
-password, with Remember password. Create Account asks for the name, email and password,
+VERA20k's online login page is its sign-in form: a username, which starts from the last
+name signed in, a password and Remember password. Play, or Enter, signs in: a username
+alone enters as a guest, and with its password as that account. Under the form the page
+shows the players online and the last 24 hours' games (`GET /v1/stats`, read each time
+the page opens), leaving out a count of none. Every other button opens a popup that
+starts from the form's username. Create Account asks for the name, email and password,
 then the mailed code, and signs in. Forgot Password asks for the name and mails its
 code, then asks for it and a new password, and signs in. Delete Account asks for the name
 and its password, then says the account is deleted and forgets a remembered sign-in of
 it. A remembered sign-in lives in `Account.json` beside `VERA.INI` as `{name,
-sign_in_token}` per lobby, readable only by its owner; Play then needs no password for
-that name, and Login's popup opens on it with a masked password.
+sign_in_token}` per lobby, readable only by its owner; the form then opens on the name
+with a masked password, and Play needs none.
 Unticking Remember password forgets it here and at the lobby, and so does a password
 sign-in of that name or a remembered sign-in of another account. A `wrong_password` or
 `no_account` answer to it forgets it too. Signing in under another name leaves it.

@@ -64,9 +64,10 @@ impl AppState {
         // that page resolves every frame.
         if let Some(visit) = self.frontend.wol.as_mut()
             && let crate::app::shell_wol::WolPage::Login(login) = &mut visit.page
-            && let Some(form) = login.account.as_mut()
         {
-            form.refresh_text();
+            for form in login.form.iter_mut().chain(login.account.iter_mut()) {
+                form.refresh_text();
+            }
         }
     }
 

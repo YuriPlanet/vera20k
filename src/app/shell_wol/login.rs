@@ -159,17 +159,8 @@ fn form_action(state: &mut AppState, action: AccountFormAction) {
         AccountFormAction::Send(request) => {
             service::request(state, WolServiceRequest::Account(request));
         }
-        AccountFormAction::SignIn { sign_in, remember } => {
-            if let Some(action) = with_login(state, |login, globals, _| {
-                login.sign_in(sign_in, remember, globals)
-            }) {
-                dispatch(state, action);
-            }
-        }
-        AccountFormAction::ForgetSignIn => {
-            with_login(state, |login, _, _| login.forget_remembered());
-            dispatch(state, WolLoginAction::ForgetSignIn);
-        }
+        // Only the page's own form signs in or forgets a sign-in.
+        AccountFormAction::SignIn { .. } | AccountFormAction::ForgetSignIn => {}
         AccountFormAction::Close => {
             with_login(state, |login, _, _| login.account = None);
         }
@@ -231,16 +222,24 @@ pub(super) fn update_geometry(state: &mut AppState) {
         return;
     };
     let scale = layout.page.scale;
-    // VERA online: the username is a NewEdit, not the combo's edit child.
-    let text = match layout.online {
-        Some(online) => online.name,
-        None => layout.nickname_text_rect(),
-    };
+    let text = layout.nickname_text_rect();
     login
         .nickname
         .scroll_to_caret((scale.base_rect(text).w - 3).max(0) as u32, |value| {
             font.text_width(value)
         });
+    // VERA online: the page's sign-in form.
+    if let Some(form) = login.form.as_mut()
+        && let Some(&(_, edit)) = layout
+            .online
+            .as_ref()
+            .and_then(|online| online.fields.get(form.focused))
+        && let Some(focused) = form.focused_edit_mut()
+    {
+        focused.scroll_to_caret((scale.base_rect(edit).w - 3).max(0) as u32, |value| {
+            font.text_width(value)
+        });
+    }
     login.password.scroll_to_caret(
         (scale.base_rect(layout.password).w - 3).max(0) as u32,
         |value| font.text_width(value),
@@ -359,7 +358,24 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
         state.platform.window.request_redraw();
         return;
     }
+    // VERA online: a control of the page's sign-in form, not a button.
+    let form_control = over
+        .filter(|control| layout.online.is_some() && layout.page.button_rect(*control).is_none());
+    let on_box = layout.online.is_some_and(|online| {
+        crate::ui::skirmish_shell::checkbox_icon_rect(online.remember, scale).contains(x, y)
+    });
+    let mut forgot = None;
     let press = with_login(state, |login, globals, credentials| {
+        if let Some(control) = form_control {
+            login.buttons.press(None);
+            let (toggled, action) = login.press_form(control, on_box, globals);
+            forgot = action;
+            return if toggled {
+                Press::Cue(LauncherCue::Checkbox)
+            } else {
+                Press::Nothing
+            };
+        }
         if let Some(popup) = combo_popup(login, &layout) {
             let press = login.popup.press_list(popup, x, y, Instant::now());
             if let ComboPress::Pick(row) = press {
@@ -420,6 +436,10 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
         // Owner-draw buttons play GUIMainButtonSound on the press.
         Some(Press::Button) => App::play_main_menu_button_sound(state),
         _ => {}
+    }
+    update_geometry(state);
+    if let Some(action) = forgot {
+        dispatch(state, action);
     }
     state.platform.window.request_redraw();
 }
