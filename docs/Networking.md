@@ -244,6 +244,10 @@ modern online ordering above is an intentional adaptation.
 - Ordinary waits use the private response maximum from `542450`; primary-global
   acknowledgement history is excluded. The native optional extra channel at
   manager `+50` remains an unimplemented dependency.
+- The LAN application message's name field holds 19 bytes and a terminator. An
+  online name may be 24 characters, so VERA writes the first 19 bytes of a longer
+  name and receivers match a sender by that same prefix (together with its
+  endpoint, as before). LAN names are at most 19 and travel unchanged.
 - Setup Back retains transport history within a lobby visit. A fresh post-match
   visit resets queues, sequence history, observations and lobby timing while
   retaining the portable socket bindings.
