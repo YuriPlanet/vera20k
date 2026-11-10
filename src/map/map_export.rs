@@ -1,7 +1,8 @@
 //! VERA extension: write a generated map as a multiplayer `.map` text
 //! (`.yrm` on disk), in the sections [`crate::map::map_file::MapFile`]
 //! parses back: `[Basic]`, `[Map]`, the map's own INI sections (lighting),
-//! `[Waypoints]`, `[Terrain]`, the object lists and the three packs.
+//! `[Waypoints]`, `[Terrain]`, the object lists, the three packs and an
+//! optional `[Preview]` thumbnail.
 //!
 //! gamemd has no map writer; the formats are the ones its readers take
 //! (`ReadIsoMapPack5` 0x0056BB93, the overlay packs, `[Terrain]` and
@@ -22,13 +23,22 @@ const NO_OVERLAY: u8 = 0xFF;
 /// `[Terrain]` and `[Waypoints]` key radix under `NewINIFormat=4`.
 const CELL_RADIX: u32 = 1000;
 
+/// A map thumbnail for `[Preview]` / `[PreviewPack]`: `width * height` RGBA
+/// pixels, rows top down.
+pub struct ExportPreview<'a> {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: &'a [u8],
+}
+
 /// The `.map` text of `map` as a standard multiplayer map named `name` for
-/// `min_players..=max_players`.
+/// `min_players..=max_players`, with `preview` as its Choose Map thumbnail.
 pub fn multiplayer_map_text(
     map: &MapFile,
     name: &str,
     min_players: u32,
     max_players: u32,
+    preview: Option<ExportPreview<'_>>,
 ) -> String {
     let mut out = String::new();
     let name: String = name
@@ -61,6 +71,32 @@ pub fn multiplayer_map_text(
             writeln!(out, "{key}={value}").unwrap();
         }
         out.push('\n');
+    }
+
+    // The thumbnail `DecodePreviewPackToSurface @ 0x00641B00` reads: the
+    // `Size` rect's last two fields, and 24-bit RGB rows through LZO blocks.
+    if let Some(preview) = preview
+        && preview.width > 0
+        && preview.rgba.len() == preview.width as usize * preview.height as usize * 4
+    {
+        writeln!(
+            out,
+            "[Preview]
+Size=0,0,{},{}
+",
+            preview.width, preview.height
+        )
+        .unwrap();
+        let rgb: Vec<u8> = preview
+            .rgba
+            .chunks_exact(4)
+            .flat_map(|pixel| [pixel[0], pixel[1], pixel[2]])
+            .collect();
+        push_pack(
+            &mut out,
+            "PreviewPack",
+            &crate::util::lzo::compress_chunks(&rgb, PACK_BLOCK),
+        );
     }
 
     let mut waypoints: Vec<_> = map.waypoints.iter().collect();

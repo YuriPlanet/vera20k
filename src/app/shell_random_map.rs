@@ -1070,12 +1070,20 @@ impl App {
         ) else {
             return false;
         };
-        let seed = state
+        let modal = state
             .frontend
             .skirmish_shell_state
             .random_map_setup_modal
-            .as_ref()
-            .map_or(0, |modal| modal.options.seed_u16());
+            .as_ref();
+        let seed = modal.map_or(0, |modal| modal.options.seed_u16());
+        // The dialog's own preview becomes the file's Choose Map thumbnail.
+        let preview = modal
+            .and_then(|modal| modal.generated_preview.as_ref())
+            .map(|image| crate::map::map_export::ExportPreview {
+                width: image.width,
+                height: image.height,
+                rgba: &image.rgba,
+            });
         let dir = &config.paths.ra2_dir;
         let Some((path, number)) = (1..1000)
             .map(|number| {
@@ -1096,8 +1104,13 @@ impl App {
             format!("Random Map {seed} ({number})")
         };
         let players = generated.start_waypoints.len().max(2) as u32;
-        let text =
-            crate::map::map_export::multiplayer_map_text(&generated.map_file, &name, 2, players);
+        let text = crate::map::map_export::multiplayer_map_text(
+            &generated.map_file,
+            &name,
+            2,
+            players,
+            preview,
+        );
         match crate::util::file_system::write(&path, text) {
             Ok(()) => {
                 log::info!("random map: exported {}", path.display());

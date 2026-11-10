@@ -800,8 +800,29 @@ mod tests {
             &GenerationObjects::tech(&[]),
         );
         let map = &generated.map_file;
-        let text = crate::map::map_export::multiplayer_map_text(map, "Exported", 2, 4);
+        let thumbnail: Vec<u8> = (0..6 * 4 * 4).map(|byte| byte as u8 | 3).collect();
+        let text = crate::map::map_export::multiplayer_map_text(
+            map,
+            "Exported",
+            2,
+            4,
+            Some(crate::map::map_export::ExportPreview {
+                width: 6,
+                height: 4,
+                rgba: &thumbnail,
+            }),
+        );
         let read = crate::map::map_file::MapFile::from_bytes(text.as_bytes()).expect("parses");
+        let shown = crate::map::preview::decode_preview_image_from_ini(&read.ini)
+            .expect("the thumbnail decodes")
+            .expect("the map carries a thumbnail");
+        assert_eq!((shown.width, shown.height), (6, 4));
+        let rgb = |rgba: &[u8]| -> Vec<u8> {
+            rgba.chunks_exact(4)
+                .flat_map(|p| [p[0], p[1], p[2]])
+                .collect()
+        };
+        assert_eq!(rgb(&shown.rgba), rgb(&thumbnail));
 
         assert_eq!(read.basic.name.as_deref(), Some("Exported"));
         assert_eq!(read.header.theater, map.header.theater);
