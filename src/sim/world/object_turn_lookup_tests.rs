@@ -1,0 +1,123 @@
+//! What an object's turn looks up in the entity store (VERA-only costs; the
+//! turn's results are covered by the tests of each step).
+
+use super::*;
+use crate::sim::arena_fixture::{clear_ground_ini, rival_arena};
+
+/// A tank and a power plant of one house on the flat arena.
+fn scene() -> (Simulation, RuleSet, u64, u64) {
+    let rules = RuleSet::from_ini(&clear_ground_ini(
+        "[VehicleTypes]\n0=MTNK\n[BuildingTypes]\n0=GAPOWR\n\
+         [MTNK]\nStrength=300\nSpeed=6\n[GAPOWR]\nStrength=750\n",
+    ))
+    .unwrap();
+    let mut sim = rival_arena(&rules, 0x0B1);
+    let tank = sim
+        .spawn_object("MTNK", "Americans", 10, 10, 0, &rules)
+        .expect("tank");
+    let plant = sim
+        .spawn_object("GAPOWR", "Americans", 16, 16, 0, &rules)
+        .expect("power plant");
+    sim.resolve_type_handles(&rules);
+    (sim, rules, tank, plant)
+}
+
+/// The store's lookups by id during `turn`, and those its id index answered.
+fn lookups_during(sim: &mut Simulation, turn: impl FnOnce(&mut Simulation)) -> (u64, u64) {
+    let before = sim.substrate.entities.lookups();
+    turn(sim);
+    let after = sim.substrate.entities.lookups();
+    (after.0 - before.0, after.1 - before.1)
+}
+
+/// A turn looks its own object up by id through the store's focused slot:
+/// the id index answers next to none of an idle tank's lookups of itself.
+#[test]
+fn a_turn_finds_its_own_object_without_the_id_index() {
+    let (mut sim, rules, tank, _) = scene();
+    let (lookups, hashed) = lookups_during(&mut sim, |sim| {
+        sim.advance_live_object_turn(tank, &rules, techno_ai::ObjectAiCtx::default())
+            .unwrap();
+    });
+    assert!(
+        hashed <= 8,
+        "the id index answered {hashed} of the turn's {lookups} lookups"
+    );
+}
+
+/// The sound owner's view of a turn: what was delivered, and whose looping
+/// sound was updated.
+#[derive(Default)]
+struct Heard {
+    delivered: std::cell::Cell<usize>,
+    updated: std::cell::RefCell<Vec<u64>>,
+}
+
+impl crate::sim::world::SoundBoundary for Heard {
+    fn consume(&self, _: &Simulation, _: &RuleSet, events: &[crate::sim::world::SimSoundEvent]) {
+        self.delivered.set(events.len());
+    }
+
+    fn delivered(&self) -> usize {
+        self.delivered.get()
+    }
+
+    fn update_looping_sound(
+        &self,
+        _: &Simulation,
+        owner: u64,
+        _: crate::sim::anim_class::AnimWorldCoord,
+    ) {
+        self.updated.borrow_mut().push(owner);
+    }
+}
+
+/// After its own AI a building's turn takes none of the Foot and class tails
+/// but what reaches it: it still updates its looping sound and commits, which
+/// delivers the smudge grid's pending dirt, and it looks itself up for
+/// little else.
+#[test]
+fn a_buildings_turn_keeps_its_deliveries_and_takes_no_foot_tail() {
+    // The same scene twice, with smudge dirt nothing has delivered yet: one
+    // runs the building's AI alone, the other its whole turn.
+    let prepared = || {
+        let (mut sim, rules, _, plant) = scene();
+        let mut smudges = crate::sim::smudge_grid::SmudgeGrid::new(32, 32);
+        smudges.test_force_set(3, 4, Default::default());
+        sim.smudge_grid = Some(smudges);
+        sim.dirty_cells.clear_tactical_for_test();
+        (sim, rules, plant)
+    };
+    let pending = |sim: &mut Simulation| sim.smudge_grid.as_mut().unwrap().drain_dirty();
+
+    let (mut ai_only, rules, plant) = prepared();
+    let heard = Heard::default();
+    let ctx = techno_ai::ObjectAiCtx {
+        effects: crate::sim::world::FrameEffects::for_sound(&heard),
+        overlay_registry: None,
+    };
+    let (ai_lookups, _) = lookups_during(&mut ai_only, |sim| {
+        sim.object_ai_visit_one_with_effects(plant, &rules, ctx);
+    });
+    assert!(heard.updated.borrow().is_empty());
+    assert_eq!(pending(&mut ai_only), [(3, 4)]);
+
+    let (mut sim, rules, plant) = prepared();
+    let heard = Heard::default();
+    let ctx = techno_ai::ObjectAiCtx {
+        effects: crate::sim::world::FrameEffects::for_sound(&heard),
+        overlay_registry: None,
+    };
+    let (turn_lookups, _) = lookups_during(&mut sim, |sim| {
+        sim.advance_live_object_turn(plant, &rules, ctx).unwrap();
+    });
+    assert_eq!(*heard.updated.borrow(), [plant]);
+    assert_eq!(heard.delivered.get(), sim.sound_events.len());
+    assert!(pending(&mut sim).is_empty());
+    assert!(sim.dirty_cells.tactical_for_test().contains(&(3, 4)));
+    let tail = turn_lookups - ai_lookups;
+    assert!(
+        tail <= 12,
+        "the building looked itself up {tail} times after its AI"
+    );
+}

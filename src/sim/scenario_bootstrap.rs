@@ -1591,8 +1591,10 @@ fn apply_resolved_skirmish_launch_session(
     // construction-yard pass also runs with Bases off.
     #[cfg(feature = "ares")]
     let visit_houses = true;
+    // Unholy Alliance's own base-unit callback has no Bases test.
+    let unholy = session.mode.class == crate::skirmish_modes::MpModeClass::Unholy;
     #[cfg(not(feature = "ares"))]
-    let visit_houses = session.options.bases;
+    let visit_houses = session.options.bases || unholy;
     if visit_houses {
         for (slot_idx, waypoint) in assignments {
             let Some(slot) = slots.get(*slot_idx) else {
@@ -1624,7 +1626,23 @@ fn apply_resolved_skirmish_launch_session(
                 &sim.interner,
             )
             .and_then(|house| house.base_center());
-            if session.options.bases {
+            if unholy {
+                let (placed, complete) = place_unholy_base_units(
+                    sim,
+                    &slot.owner_name,
+                    waypoint.rx,
+                    waypoint.ry,
+                    bounds,
+                    rules,
+                    resolved_terrain,
+                    overlay_registry,
+                );
+                spawned_mcvs += placed;
+                if !complete {
+                    // The callback fails (0x005CB523..0x005CB52B).
+                    continue;
+                }
+            } else if session.options.bases {
                 // Ares 3.0 1001F0B0 (hook 0x5D7048): a WithConst country's
                 // house starts with a construction yard instead.
                 #[cfg(feature = "ares")]
@@ -2207,6 +2225,145 @@ fn place_starting_mcv(
     )
 }
 
+/// The first ring of Unholy Alliance's fallback placement (`PUSH 3` at
+/// `0x005CB4F8`).
+const UNHOLY_BASE_UNIT_FALLBACK_START_RADIUS: i32 = 3;
+
+/// Unholy Alliance's base-unit callback (`0x005CB440`, the mode vtable's
+/// `+0xC8` slot at `0x007EE8DC`), in place of the Battle one: the house gets
+/// one unit of every `[General] BaseUnit=` type, last entry first
+/// (`0x005CB44A..0x005CB453`, `0x005CB51A`), with no Owner test and no Bases
+/// test. Entry 0 unlimbos at the base cell plus (3, 3), facing 0
+/// (`0x005CB4B0..0x005CB4EA`). The other entries, and entry 0 when that
+/// fails, go through `Try_Unlimbo_Object_At_Or_Near_Cell @ 0x00688ED0` at the
+/// base cell from ring 3 (`0x005CB4F4..0x005CB506`). A unit that cannot be
+/// built or finds no cell is deleted and the callback answers false, after
+/// the remaining entries were still tried (`0x005CB472`, `0x005CB499`,
+/// `0x005CB50F..0x005CB52B`). Returns the units placed and that answer.
+///
+/// The Scenario RNG takes one constructor draw per entry before its placement,
+/// then the fallback's ring draws (one 0..7 direction per ring, four per
+/// jitter probe).
+///
+/// A `BaseUnit=` name that is no vehicle type is skipped, as the Battle
+/// lookup skips it: gamemd's list holds UnitTypes only
+/// (`UnitTypeClass::FindOrAllocate @ 0x007480D0` allocates an empty one for
+/// such a name), and VERA has no such type to build.
+///
+/// RESIDUAL: gamemd calls entry 0's Unlimbo directly, without the fallback's
+/// playfield test (`0x00578460`); this admits that cell as the fallback
+/// admits its seed cell. Trigger: an Unholy Alliance start whose base cell
+/// plus (3, 3) is off the playfield. Effect: the first base unit takes a ring
+/// cell where gamemd may put it on that cell. Frequency: rare; LAN and
+/// online only.
+fn place_unholy_base_units(
+    sim: &mut Simulation,
+    owner: &str,
+    base_rx: u16,
+    base_ry: u16,
+    bounds: NativeStartBounds,
+    rules: &RuleSet,
+    resolved_terrain: &ResolvedTerrainGrid,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+) -> (u32, bool) {
+    let mut placed = 0;
+    let mut complete = true;
+    for (index, type_id) in rules.general.base_unit_types.iter().enumerate().rev() {
+        if rules
+            .object_in_category(crate::rules::object_type::ObjectCategory::Vehicle, type_id)
+            .is_none()
+        {
+            continue;
+        }
+        let stable_id = if index == 0 {
+            place_unholy_first_base_unit(
+                sim,
+                type_id,
+                owner,
+                base_rx,
+                base_ry,
+                bounds,
+                rules,
+                resolved_terrain,
+                overlay_registry,
+            )
+        } else {
+            place_starting_object_near_base(
+                sim,
+                type_id,
+                owner,
+                base_rx,
+                base_ry,
+                STARTING_MCV_FACING,
+                UNHOLY_BASE_UNIT_FALLBACK_START_RADIUS,
+                bounds,
+                rules,
+                resolved_terrain,
+                overlay_registry,
+            )
+        };
+        if stable_id.is_some() {
+            placed += 1;
+        } else {
+            complete = false;
+        }
+    }
+    (placed, complete)
+}
+
+/// Entry 0 of [`place_unholy_base_units`]: the base cell plus (3, 3), then
+/// the shared fallback at the base cell.
+fn place_unholy_first_base_unit(
+    sim: &mut Simulation,
+    type_id: &str,
+    owner: &str,
+    base_rx: u16,
+    base_ry: u16,
+    bounds: NativeStartBounds,
+    rules: &RuleSet,
+    resolved_terrain: &ResolvedTerrainGrid,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+) -> Option<u64> {
+    let (stable_id, category) = construct_starting_object(
+        sim,
+        type_id,
+        owner,
+        base_rx,
+        base_ry,
+        STARTING_MCV_FACING,
+        rules,
+        resolved_terrain,
+    )?;
+    // `ADD CX,3` / `ADD AX,3` at `0x005CB4B0..0x005CB4B4`, 16-bit.
+    let (rx, ry) = (base_rx.wrapping_add(3), base_ry.wrapping_add(3));
+    if unlimbo_starting_object_at(
+        sim,
+        stable_id,
+        category,
+        rx,
+        ry,
+        STARTING_MCV_FACING,
+        rules,
+        resolved_terrain,
+        overlay_registry,
+    ) {
+        return Some(stable_id);
+    }
+    unlimbo_starting_object_near_base(
+        sim,
+        stable_id,
+        category,
+        base_rx,
+        base_ry,
+        STARTING_MCV_FACING,
+        UNHOLY_BASE_UNIT_FALLBACK_START_RADIUS,
+        bounds,
+        rules,
+        resolved_terrain,
+        overlay_registry,
+    )
+}
+
 /// Ares 3.0 MPGameMode_SpawnBaseUnit_BuildConst (1001F0B0, hook 0x5D7048,
 /// in `MultiplayerGameMode::Create_Starting_Base_Unit @ 0x005D7030`): with
 /// its country's `StartInMultiplayer.WithConst=` the house's base unit is the
@@ -2376,22 +2533,15 @@ fn place_starting_object_near_base(
     resolved_terrain: &ResolvedTerrainGrid,
     overlay_registry: Option<&OverlayTypeRegistry>,
 ) -> Option<u64> {
-    let category = rules.object(type_id)?.category;
-    let initial_z = resolved_terrain
-        .cell(base_rx, base_ry)
-        .map_or(0, |cell| cell.level);
-    // Active retail constructs one Techno before exact/fallback Unlimbo. The
-    // one constructor draw therefore precedes every placement-search draw and
-    // remains spent even when every attempt fails.
-    let stable_id = sim.construct_object_limbo_at_height(
+    let (stable_id, category) = construct_starting_object(
+        sim,
         type_id,
         owner,
         base_rx,
         base_ry,
         facing,
-        initial_z,
         rules,
-        crate::sim::world::FrameEffects::default(),
+        resolved_terrain,
     )?;
     unlimbo_starting_object_near_base(
         sim,
@@ -2406,6 +2556,37 @@ fn place_starting_object_near_base(
         resolved_terrain,
         overlay_registry,
     )
+}
+
+/// One starting object constructed in limbo, with its category. Active
+/// retail constructs the Techno before any Unlimbo, so its one constructor
+/// draw precedes every placement-search draw and stays spent when every
+/// attempt fails.
+fn construct_starting_object(
+    sim: &mut Simulation,
+    type_id: &str,
+    owner: &str,
+    base_rx: u16,
+    base_ry: u16,
+    facing: u8,
+    rules: &RuleSet,
+    resolved_terrain: &ResolvedTerrainGrid,
+) -> Option<(u64, crate::rules::object_type::ObjectCategory)> {
+    let category = rules.object(type_id)?.category;
+    let initial_z = resolved_terrain
+        .cell(base_rx, base_ry)
+        .map_or(0, |cell| cell.level);
+    let stable_id = sim.construct_object_limbo_at_height(
+        type_id,
+        owner,
+        base_rx,
+        base_ry,
+        facing,
+        initial_z,
+        rules,
+        crate::sim::world::FrameEffects::default(),
+    )?;
+    Some((stable_id, category))
 }
 
 /// The exact Unlimbo at the base cell, then the ring fallback
@@ -2424,24 +2605,17 @@ fn unlimbo_starting_object_near_base(
     resolved_terrain: &ResolvedTerrainGrid,
     overlay_registry: Option<&OverlayTypeRegistry>,
 ) -> Option<u64> {
-    let initial_z = resolved_terrain
-        .cell(base_rx, base_ry)
-        .map_or(0, |cell| cell.level);
-    if starting_object_cell_placeable(sim, resolved_terrain, base_rx, base_ry, category)
-        && sim
-            .reveal_constructed_object_at_height_with_overlay_context(
-                stable_id,
-                base_rx,
-                base_ry,
-                facing,
-                initial_z,
-                PlacementEvidence::EvaluateMark,
-                rules,
-                overlay_registry,
-                crate::sim::world::FrameEffects::default(),
-            )
-            .is_some()
-    {
+    if unlimbo_starting_object_at(
+        sim,
+        stable_id,
+        category,
+        base_rx,
+        base_ry,
+        facing,
+        rules,
+        resolved_terrain,
+        overlay_registry,
+    ) {
         return Some(stable_id);
     }
 
@@ -2469,25 +2643,18 @@ fn unlimbo_starting_object_near_base(
                     ry = jittered.1;
                 }
 
-                if (rx, ry) == (base_rx, base_ry)
-                    || !starting_object_cell_placeable(sim, resolved_terrain, rx, ry, category)
-                {
-                    continue;
-                }
-                let z = resolved_terrain.cell(rx, ry).map_or(0, |cell| cell.level);
-                if sim
-                    .reveal_constructed_object_at_height_with_overlay_context(
+                if (rx, ry) != (base_rx, base_ry)
+                    && unlimbo_starting_object_at(
+                        sim,
                         stable_id,
+                        category,
                         rx,
                         ry,
                         facing,
-                        z,
-                        PlacementEvidence::EvaluateMark,
                         rules,
+                        resolved_terrain,
                         overlay_registry,
-                        crate::sim::world::FrameEffects::default(),
                     )
-                    .is_some()
                 {
                     return Some(stable_id);
                 }
@@ -2497,6 +2664,37 @@ fn unlimbo_starting_object_near_base(
 
     sim.discard_constructed_limbo(stable_id, rules, crate::sim::world::FrameEffects::default());
     None
+}
+
+/// One starting-object Unlimbo at a cell the placement admits, at the cell's
+/// level.
+fn unlimbo_starting_object_at(
+    sim: &mut Simulation,
+    stable_id: u64,
+    category: crate::rules::object_type::ObjectCategory,
+    rx: u16,
+    ry: u16,
+    facing: u8,
+    rules: &RuleSet,
+    resolved_terrain: &ResolvedTerrainGrid,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+) -> bool {
+    if !starting_object_cell_placeable(sim, resolved_terrain, rx, ry, category) {
+        return false;
+    }
+    let z = resolved_terrain.cell(rx, ry).map_or(0, |cell| cell.level);
+    sim.reveal_constructed_object_at_height_with_overlay_context(
+        stable_id,
+        rx,
+        ry,
+        facing,
+        z,
+        PlacementEvidence::EvaluateMark,
+        rules,
+        overlay_registry,
+        crate::sim::world::FrameEffects::default(),
+    )
+    .is_some()
 }
 
 #[derive(Debug, Clone)]

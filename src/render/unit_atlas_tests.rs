@@ -973,3 +973,11 @@ fn kirov_direct_matrix_requires_hva_and_wraps_its_native_frame() {
         "the explicit debris no-HVA caller still uses the same raster owner"
     );
 }
+
+#[test]
+fn live_growth_leaves_one_core_to_the_running_match() {
+    // A 2015 laptop: two cores, four threads.
+    assert_eq!(RasterCores::BesideMatch.workers(4), 3);
+    assert_eq!(RasterCores::BesideMatch.workers(1), 1);
+    assert_eq!(RasterCores::All.workers(4), 4);
+}
