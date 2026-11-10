@@ -38,7 +38,7 @@ pub(crate) fn command_named(name: &str) -> Option<ButtonCommand> {
 const BUTTON_PAD: [i32; 2] = [5, 2];
 
 /// One added part as this frame shows it.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub(crate) struct Placed {
     /// Its place in the layout's list.
     pub index: usize,
@@ -48,6 +48,11 @@ pub(crate) struct Placed {
     pub rect: [i32; 4],
     pub text: String,
     pub button: bool,
+    /// A button's picture now, when its `Art=` file was found: frame 0, or
+    /// frame 1 while the button is held down.
+    pub picture: Option<crate::render::sidebar_chrome::SidebarChromeEntry>,
+    /// Whether the button is held down.
+    pub pressed: bool,
 }
 
 /// What a text part shows now.
@@ -111,19 +116,35 @@ pub(crate) fn placed(state: &AppState) -> Vec<Placed> {
     ];
     let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
     let field = [x as i32, y as i32, width as i32, height as i32];
+    let art = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
+        .map(|atlas| &atlas.layout_art);
+    let gadgets = &state.match_state.match_presentation.in_game_gadgets;
     parts
         .iter()
         .enumerate()
         .map(|(index, part)| {
-            let (text, button) = match &part.kind {
-                AddedKind::Button { label, .. } => (label_text(state, label), true),
-                AddedKind::Text { value } => (value_text(state, *value), false),
+            let pressed = gadgets.layout_button_pressed(index);
+            let (text, button, picture) = match &part.kind {
+                AddedKind::Button {
+                    label, art: name, ..
+                } => {
+                    let picture = name
+                        .as_deref()
+                        .and_then(|name| art?.frames(name))
+                        .map(|frames| *frames[usize::from(pressed)]);
+                    (label_text(state, label), true, picture)
+                }
+                AddedKind::Text { value } => (value_text(state, *value), false, None),
             };
             let pad = if button { BUTTON_PAD } else { [0, 0] };
-            let natural = [
-                font.text_width(&text) as i32 + 2 * pad[0],
-                font.cell_height() as i32 + 2 * pad[1],
-            ];
+            // A picture is as big as its file draws it; words as their text.
+            let natural = match picture {
+                Some(picture) => picture.pixel_size.map(|v| v as i32),
+                None => [
+                    font.text_width(&text) as i32 + 2 * pad[0],
+                    font.cell_height() as i32 + 2 * pad[1],
+                ],
+            };
             let area = match part.holder {
                 Holder::Side => side,
                 Holder::Field => field,
@@ -134,6 +155,8 @@ pub(crate) fn placed(state: &AppState) -> Vec<Placed> {
                 rect: part.rect_in(area, natural),
                 text,
                 button,
+                picture,
+                pressed,
             }
         })
         .collect()
@@ -189,9 +212,35 @@ pub(crate) fn clicked(state: &mut AppState, index: usize, right: bool) {
     }
 }
 
-/// The quads of the parts in `holder`: for a white-texture lane a button's
-/// box (a black fill inside a one-pixel frame in `tint`) and the black a
-/// text over the battlefield stands on, and every part's text. `camera` is
+/// The picture quads of the buttons in `holder` that have one, for a lane
+/// drawn with the sidebar's picture atlas. A picture is not stretched: it
+/// draws at its own size from the part's corner.
+pub(crate) fn pictures(state: &AppState, holder: Holder, camera: [f32; 2]) -> Vec<SpriteInstance> {
+    placed(state)
+        .into_iter()
+        .filter(|part| part.holder == holder)
+        .filter_map(|part| {
+            let picture = part.picture?;
+            Some(SpriteInstance {
+                position: [
+                    part.rect[0] as f32 + camera[0],
+                    part.rect[1] as f32 + camera[1],
+                ],
+                size: picture.pixel_size,
+                uv_origin: picture.uv_origin,
+                uv_size: picture.uv_size,
+                tint: [1.0, 1.0, 1.0],
+                alpha: 1.0,
+                ..Default::default()
+            })
+        })
+        .collect()
+}
+
+/// The quads of the parts in `holder` that have no picture: for a
+/// white-texture lane a button's box (a black fill inside a one-pixel frame
+/// in `tint`, the two swapped while it is held down) and the black a text
+/// over the battlefield stands on, and every such part's text. `camera` is
 /// what the lane's shader subtracts.
 pub(crate) fn instances(
     state: &AppState,
@@ -203,7 +252,7 @@ pub(crate) fn instances(
     let (mut boxes, mut texts) = (Vec::new(), Vec::new());
     for part in placed(state)
         .into_iter()
-        .filter(|part| part.holder == holder)
+        .filter(|part| part.holder == holder && part.picture.is_none())
     {
         let [x, y, width, height] = part.rect.map(|v| v as f32);
         let pad = if part.button { BUTTON_PAD } else { [0, 0] };
@@ -216,9 +265,15 @@ pub(crate) fn instances(
             alpha: 1.0,
             ..Default::default()
         };
+        // A held button shows its label dark on the side's colour.
+        let (fill, ink) = if part.pressed {
+            (tint, [0.0; 3])
+        } else {
+            ([0.0; 3], tint)
+        };
         if part.button {
             boxes.push(quad(x, y, width, height, tint));
-            boxes.push(quad(x + 1.0, y + 1.0, width - 2.0, height - 2.0, [0.0; 3]));
+            boxes.push(quad(x + 1.0, y + 1.0, width - 2.0, height - 2.0, fill));
         } else if holder == Holder::Field {
             // Over the battlefield a text stands on black, one pixel out on
             // every side, as the timers' and the messages' text does.
@@ -230,7 +285,7 @@ pub(crate) fn instances(
             y + pad[1] as f32,
             1.0,
             0.0,
-            tint,
+            ink,
             camera,
         ));
     }

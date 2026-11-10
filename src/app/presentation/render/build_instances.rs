@@ -1254,6 +1254,16 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         .as_ref()
         .map(|v| build_sidebar_chrome_instances(state, v))
         .unwrap_or_default();
+    // The pictures of the buttons the side's layout adds to the sidebar draw
+    // over its own pictures, from the same atlas.
+    chrome.extend(crate::app::presentation::layout_parts::pictures(
+        state,
+        crate::ui::added_parts::Holder::Side,
+        [
+            state.match_state.input.camera_x,
+            state.match_state.input.camera_y,
+        ],
+    ));
     // The bottom bar draws into a surface of its own.
     let mut command_bar = view
         .as_ref()

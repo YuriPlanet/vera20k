@@ -6,10 +6,9 @@ parts, leave parts out, change how many columns of build pictures it has and how
 is, place the messages, the timers, the banner and the tooltips, and add buttons and
 text of your own. Without the file the game looks exactly as the original does.
 
-This is part of a larger plan. Later versions will give added buttons pictures, let a
-layout use the original pieces more than once and let parts arrange themselves. The
-keys on this page keep their meaning when that comes, so a layout you write now keeps
-working.
+This is part of a larger plan. Later versions will let a layout use the original
+pieces more than once and let parts arrange themselves. The keys on this page keep
+their meaning when that comes, so a layout you write now keeps working.
 
 ## Where the file goes
 
@@ -354,17 +353,20 @@ the battlefield.
 | --- | --- |
 | `Type` | `Button` or `Text` |
 | `Command` | For a button: what a click does. See [Commands](#commands) |
-| `Label` | For a button: the words on it. The name of a line in the game's string table shows that line's text. Without `Label` the button shows its command's name |
+| `Label` | For a button without a picture: the words on it. The name of a line in the game's string table shows that line's text. Without `Label` the button shows its command's name |
+| `Art` | For a button: its picture, an SHP file like `mybutton.shp`. Frame 0 is the button and frame 1 the button held down. It uses the sidebar's palette (`sidebar.pal`), as the command bar's buttons do |
 | `Value` | For a text: what it shows. See [Values](#values) |
 | `Hold` | The corner or edge of `Side` or `Field` the part is measured from: the nine words of [On the battlefield](#on-the-battlefield). `TopLeft` if you leave it out |
 | `X`, `Y` | How far in from there the part sits |
-| `Width`, `Height` | The part's size. Left out, it is as big as its words |
+| `Width`, `Height` | The part's size. Left out, it is as big as its words or its picture. A picture is never stretched |
 
 - In `Side` the numbers are sidebar pixels and the part scales with the Sidebar size
   option. In `Field` they are screen pixels.
-- An added part is drawn over the original parts, in the colour of the side's text. A
-  button is a framed box with its label in it. It has no picture yet. A text on the
-  battlefield stands on black, like the timers.
+- An added part is drawn over the original parts. Words are in the colour of the
+  side's text. A button without a picture is a framed box with its label in it, and a
+  text on the battlefield stands on black, like the timers.
+- Put a button's picture file in your mod's folder, or name one of the game's own, like
+  `button06.shp`. If the file isn't found the button shows its label instead.
 - A part with a section but in no `Parts=` list isn't shown.
 - A new part needs a name of its own: not `Money`, `Radar` or another original part's.
 
@@ -405,7 +407,7 @@ out or write the original value. Any other value is skipped, and the game tells 
 | `Type` on an original part, or a new part of an original kind | The kind of part: `Battlefield`, `Panel`, `Radar`, `CameoGrid`, `Tabs` or `PowerBar`. A layout can only add a `Button` or a `Text` | The part's own kind |
 | `Hold` | The edge or corner of its parent a part is measured from, for the sidebar's own parts and `Field` | `TopLeft`. `Top` for `Money` |
 | `Width`, `Height` | A part's size, for the sidebar's own parts, `Bar` and `Field`. `Rest` means what is left | `Width=Rest` and `Height=32` for `Bar`, `Rest` for both on `Field`, `Height=Rest` for `Cameos` |
-| `Art` | The pictures a part draws | None yet: replace the picture files instead |
+| `Art` on an original part | The pictures an original part draws | None yet: replace the picture files instead |
 | `CellWidth`, `CellHeight` | The size of one build picture | 60, 48 |
 | `Command`, `Value` on an original part | A new command for an original button, or a new value for the money number | The part's own |
 

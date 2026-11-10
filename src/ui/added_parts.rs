@@ -71,11 +71,14 @@ impl TextValue {
 /// What an added part is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AddedKind {
-    /// A box with `label` in it that gives `command`: a hotkey's name from
-    /// the keyboard file or a command-bar button's from `uimd.ini`.
+    /// A button that gives `command`: a hotkey's name from the keyboard file
+    /// or a command-bar button's from `uimd.ini`. It shows the picture `art`
+    /// names (frame 0, and frame 1 while held down), or without one a box
+    /// with `label` in it.
     Button {
         command: String,
         label: String,
+        art: Option<String>,
     },
     Text {
         value: TextValue,

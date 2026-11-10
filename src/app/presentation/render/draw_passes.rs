@@ -1224,6 +1224,17 @@ pub(super) fn dispatch_draw_passes(
             "outcome_text",
         );
     }
+    // VERA: the pictures of the buttons a layout adds over the battlefield,
+    // from the sidebar's picture atlas, after the tactical view's own last
+    // draw: screen-fixed, clipped to the view, and zoomed with the frame.
+    draw_pooled_ui_passthrough(
+        &mut pass,
+        &state.renderer.batch_renderer,
+        pool,
+        crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
+            .map(|atlas| &atlas.texture),
+        "layout_field_art",
+    );
 
     // Original4F4480's53BAE0 gate skips tactical redraw during ChronoScreen,
     // but sidebar/UI still follow. Surface stores therefore precede chrome.

@@ -935,6 +935,15 @@ fn upload_to_gpu(
         super_timer_fill.extend(boxes);
         super_timer_text.extend(texts);
     }
+    // Their pictures come from the sidebar's atlas and zoom with the frame.
+    let layout_field_art = crate::app::presentation::layout_parts::pictures(
+        state,
+        crate::ui::added_parts::Holder::Field,
+        [
+            state.match_state.input.camera_x,
+            state.match_state.input.camera_y,
+        ],
+    );
 
     // GScreenClass_DrawText's Phobos build description, the tactical view's
     // top-right identity box; empty outside Phobos builds.
@@ -1035,6 +1044,7 @@ fn upload_to_gpu(
 
     // Residual effects keep their existing uploads and pass ownership.
     pool.upload("cell_sparkles", &world.cell_sparkles);
+    pool.upload("layout_field_art", &layout_field_art);
     pool.upload("super_timer_fill", &super_timer_fill);
     pool.upload("super_timer_text", &super_timer_text);
     pool.upload("build_text_fill", &build_text_fill);
