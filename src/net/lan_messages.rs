@@ -501,8 +501,7 @@ impl LanMessage {
 
     fn with_name(kind: LanMessageKind, name: &str) -> Result<Self, LanMessageError> {
         let mut message = Self::zeroed(kind);
-        let narrow = narrow_utf16_c_string(name.encode_utf16());
-        message.put_text(NAME_OFFSET, NAME_LEN, &narrow, "name")?;
+        message.put_text(NAME_OFFSET, NAME_LEN, &narrow_wire_name(name), "name")?;
         Ok(message)
     }
 
@@ -551,6 +550,23 @@ impl LanMessage {
     fn put_u32(&mut self, offset: usize, value: u32) {
         self.bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
     }
+}
+
+/// The bytes the name field carries for `name`: narrowed like every native
+/// producer, then cut to the field's 19 bytes. VERA-only cut: an online name
+/// may be 24 characters where a LAN name is already at most 19, and a name the
+/// field cannot hold must not fail the message (a loading report that fails
+/// ends that player's load).
+fn narrow_wire_name(name: &str) -> Vec<u8> {
+    let mut narrow = narrow_utf16_c_string(name.encode_utf16());
+    narrow.truncate(NAME_LEN - 1);
+    narrow
+}
+
+/// Whether a received message's name is the one `name` is sent as: receivers
+/// compare the same cut prefix [`narrow_wire_name`] writes, ASCII case folded.
+pub fn wire_name_matches(name: &str, received: &[u8]) -> bool {
+    narrow_wire_name(name).eq_ignore_ascii_case(received)
 }
 
 fn c_string(bytes: &[u8]) -> &[u8] {
