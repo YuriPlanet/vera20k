@@ -8584,12 +8584,32 @@ impl RulesPassProcessor {
                         });
                 }
                 // Ares AnimTypeClass_LoadFromINI (1000A4B0, hooks 0x4287DC /
-                // 0x4287E9) runs after the original body.
+                // 0x4287E9) runs after the original body. Its WeaponType Find
+                // allocates nothing because the stock game already built the
+                // whole WeaponType array from [WeaponTypes]. VERA instead grows
+                // that family only when a reached reader names a weapon, so a
+                // weapon referenced solely by an animation's Weapon= (MO's
+                // COMARING -> ComancheHeal) stays unresolved. The anim's
+                // Damage= then falls back to FlameDamage2 and burns the owner's
+                // own war factory. Allocate it here; the weapon sweep later in
+                // this pass reads its section normally.
                 #[cfg(feature = "ares")]
-                if let Some(weapon) =
-                    self.resolve_existing_type_from(section, "Weapon", RulesTypeFamily::Weapon)
                 {
-                    references.weapon = weapon;
+                    if let Some(weapon) = self.resolve_existing_type_from(
+                        section,
+                        "Weapon",
+                        RulesTypeFamily::Weapon,
+                    ) {
+                        references.weapon = weapon;
+                    } else if let Some(name) = section.read_name("Weapon", 2048)
+                        && !is_native_none_type_name(name)
+                    {
+                        references.weapon = self
+                            .find_or_allocate(RulesTypeFamily::Weapon, name)
+                            .map(|index| {
+                                self.resolved_type_key(RulesTypeFamily::Weapon, index)
+                            });
+                    }
                 }
                 self.family_mut(RulesTypeFamily::Animation)[index].anim_references = references;
             }
