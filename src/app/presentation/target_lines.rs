@@ -462,6 +462,13 @@ fn compose_dense_action_lines(
 /// Integer logical viewport plus VERA's presentation-only zoom. Native rally
 /// 6DA9D0 and action7049C0 operate in unzoomed surface pixels. Scaling happens
 /// after rasterization, independently of their native clipping/projection.
+///
+/// `camera` is the world point at the battlefield's corner, gamemd's tactical
+/// position, and `clip` the battlefield on its surface. The match's view
+/// (`tactical_world_viewport`) is in the battlefield's own pixels, its clip
+/// at 0, 0: wherever a layout puts the battlefield on the frame is in the
+/// camera, so the owners' native projections and the emitted positions,
+/// surface pixel plus camera, need no offset of their own.
 #[derive(Clone, Copy)]
 pub(crate) struct TacticalViewport {
     pub camera: [i32; 2],
@@ -726,10 +733,11 @@ fn target_laser_draws_at<'a>(
     let (Some(points), Some(palette)) = (attack_line_points(entity, sim, rules), palette()) else {
         return draws;
     };
-    // 6D2140 then +886FA4 on y, as Foot4DC060 projects its endpoints.
+    // 6D2140 then +886FA4 on y, as Foot4DC060 projects its endpoints. The
+    // original's battlefield has no x offset to add; a layout's may.
     let [start, end] = points.map(|p| {
         [
-            p.x as i32 - view.camera[0],
+            p.x as i32 - view.camera[0] + view.clip[0],
             p.y as i32 - view.camera[1] + view.clip[1],
         ]
     });

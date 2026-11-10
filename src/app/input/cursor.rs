@@ -145,7 +145,7 @@ pub(crate) fn current_cursor_feedback_kind(
     if current_sidebar_view_hit(state) {
         return state.match_state.input.sidebar_cursor();
     }
-    let (x, y) = state.match_state.input.cursor_px();
+    let (x, y) = crate::app::presentation::super_timers::cursor_in_view(state);
     if state
         .match_state
         .match_presentation

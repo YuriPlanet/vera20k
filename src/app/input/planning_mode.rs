@@ -576,37 +576,27 @@ pub(crate) fn hover_native_screen(state: &AppState) -> Option<[i32; 2]> {
     if !state.match_state.input.planning.active() {
         return None;
     }
-    let (width, height) = crate::app::input::camera::tactical_viewport_size(state);
-    let (x, y) = (
-        state.match_state.input.cursor_x,
-        state.match_state.input.cursor_y,
-    );
-    if x < 0. || y < 0. || x >= width as f32 || y >= height as f32 {
+    if !crate::app::input::camera::cursor_over_battlefield(state) {
         return None;
     }
     Some(cursor_native_screen(state))
 }
 
 fn cursor_native_screen(state: &AppState) -> [i32; 2] {
-    let (x, y, _, _) = crate::app::input::camera::tactical_viewport_px(state);
-    input_native_screen(&state.match_state.input, [x as i32, y as i32])
+    input_native_screen(&state.match_state.input)
 }
 
-fn input_native_screen(
-    input: &crate::app::input::state::MatchInputState,
-    origin: [i32; 2],
-) -> [i32; 2] {
-    // Match the overlay's rounded camera and logical clip origin, using the
-    // shared inverse view transform before quantizing its native hit point.
+fn input_native_screen(input: &crate::app::input::state::MatchInputState) -> [i32; 2] {
+    // Match the overlay's rounded camera, using the shared inverse view
+    // transform before quantizing its native hit point. The camera is the
+    // world point at the frame's corner, so the cursor's frame pixel needs
+    // no battlefield origin.
     let point = crate::app::match_runtime::sim_tick::screen_point_to_world_with_camera(
         (input.cursor_x, input.cursor_y),
         (input.camera_x.round(), input.camera_y.round()),
         input.zoom_level,
     );
-    [
-        point.0.floor() as i32 - origin[0],
-        point.1.floor() as i32 - origin[1],
-    ]
+    [point.0.floor() as i32, point.1.floor() as i32]
 }
 
 /// PlanMgr 0x0063A8E0 on the left release: connect at an admitted hover
@@ -748,12 +738,11 @@ mod tests {
             input.camera_x = x - 100.25;
             input.camera_y = y - 80.75;
             input.zoom_level = zoom;
-            let origin = [13, 17];
             // Forward projection mirrors the render viewport, including its
-            // rounded camera and logical clip origin.
-            input.cursor_x = (x as i32 - input.camera_x.round() as i32 + origin[0]) as f32 * zoom;
-            input.cursor_y = (y as i32 - input.camera_y.round() as i32 + origin[1]) as f32 * zoom;
-            let point = input_native_screen(&input, origin);
+            // rounded camera.
+            input.cursor_x = (x as i32 - input.camera_x.round() as i32) as f32 * zoom;
+            input.cursor_y = (y as i32 - input.camera_y.round() as i32) as f32 * zoom;
+            let point = input_native_screen(&input);
             let node = sim.planning_hover_node(local, &[], point);
             assert!(node.is_some(), "zoom {zoom}");
             let connect = sim

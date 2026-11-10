@@ -59,11 +59,9 @@ pub(crate) fn build_instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<Spr
         return (Vec::new(), Vec::new());
     }
     let (view_width, _) = crate::app::input::camera::tactical_viewport_size(state);
-    // Screen-space lanes add back the world camera the UI shader subtracts.
-    let camera = [
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-    ];
+    // Screen-space lanes add back the world camera the UI shader subtracts,
+    // and the battlefield's corner: `place` works in the view's own pixels.
+    let camera = crate::app::input::camera::battlefield_lane_camera(state);
     let font = &state.renderer.bit_font;
     let text = description();
     let text_width = font.text_width(&text) as i32;

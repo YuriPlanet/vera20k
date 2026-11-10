@@ -1019,11 +1019,18 @@ pub(crate) fn tactical_world_viewport(
     tactical: [u32; 4],
     zoom: Option<&crate::render::upscale_pass::WorldZoomPass>,
 ) -> crate::app::presentation::target_lines::TacticalViewport {
+    let clip = zoom
+        .map_or(tactical, |zoom| zoom.world_clip(tactical))
+        .map(|v| v as i32);
+    // The view is in the battlefield's own pixels: its camera is the world
+    // point at the battlefield's corner, the stored camera (the frame
+    // corner's) in by the clip's corner, and its clip starts at 0, 0.
     crate::app::presentation::target_lines::TacticalViewport {
-        camera: camera.map(|v| v.round() as i32),
-        clip: zoom
-            .map_or(tactical, |zoom| zoom.world_clip(tactical))
-            .map(|v| v as i32),
+        camera: [
+            camera[0].round() as i32 + clip[0],
+            camera[1].round() as i32 + clip[1],
+        ],
+        clip: [0, 0, clip[2], clip[3]],
         zoom: 1.,
     }
 }

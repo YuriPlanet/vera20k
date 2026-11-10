@@ -76,7 +76,9 @@ pub(crate) fn projectile_visitor<'a>(
     let terrain = sim.resolved_terrain()?;
     let rules = &rt.resources.rules;
     let input = &state.match_state.input;
-    let (_, _, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+    // Draw admission measures from the camera, the frame's corner, so it
+    // takes the centring size: the battlefield and its offset on both sides.
+    let (width, height) = crate::app::input::camera::tactical_centring_size(state);
     let width = width as f32 / input.zoom_level;
     let height = height as f32 / input.zoom_level;
     let axis = super::helpers::depth_axis(state);

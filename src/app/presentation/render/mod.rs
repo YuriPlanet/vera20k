@@ -837,15 +837,21 @@ pub(crate) fn render_game(
 
 /// The tactical surface object-layer DSurface stores address: logical
 /// (unzoomed) pixels from the floored camera, clipped to the tactical rect.
+///
+/// Its camera is the world point at the battlefield's corner, as gamemd's
+/// tactical position is: the surface-line owners project to client points
+/// from it and add the clip's corner for the surface point. The stored camera
+/// is the frame corner's, so it comes in by the battlefield's corner.
 pub(crate) fn tactical_surface_line_viewport(
     state: &AppState,
 ) -> crate::render::surface_line::SurfaceLineViewport {
     let z = state.match_state.input.zoom_level;
     let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(state);
+    let origin = crate::app::input::camera::tactical_origin_world(state);
     crate::render::surface_line::SurfaceLineViewport {
         camera: [
-            state.match_state.input.camera_x,
-            state.match_state.input.camera_y,
+            state.match_state.input.camera_x + origin.0,
+            state.match_state.input.camera_y + origin.1,
         ]
         .map(|v| v.floor() as i32),
         clip: [x, y, w, h].map(|v| (v as f32 / z) as i32),
@@ -933,7 +939,7 @@ fn upload_to_gpu(
         if presentation.chrono_screen.overrides_tactical_draw() {
             Vec::new()
         } else {
-            let (width, height) = crate::app::input::camera::tactical_viewport_size(state);
+            let (left, top, width, height) = crate::app::input::camera::tactical_viewport_px(state);
             presentation.flying_credits.borrow().build_instances(
                 &state.renderer.bit_font,
                 [
@@ -941,7 +947,7 @@ fn upload_to_gpu(
                     state.match_state.input.camera_y,
                 ],
                 state.match_state.input.zoom_level,
-                [width, height],
+                [left, top, width, height],
             )
         }
     };

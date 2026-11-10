@@ -386,10 +386,8 @@ pub(crate) fn instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<SpriteIns
     let (frame, label) = result_view(outcome_kind, campaign);
     let (width, height) = crate::app::input::camera::tactical_viewport_size(state);
     let view = [width as i32, height as i32];
-    let camera = [
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-    ];
+    // The banner is centred in the battlefield's own pixels.
+    let camera = crate::app::input::camera::battlefield_lane_camera(state);
     if let Some(quad) = active_art(state).and_then(|art| art.fit_quad(view, camera)) {
         return (vec![quad], Vec::new());
     }
