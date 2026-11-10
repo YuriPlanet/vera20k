@@ -223,6 +223,7 @@ pub(crate) fn install_world_presentation(
     // the world's first frame.
     state.match_state.match_presentation.sidebar_layout_spec =
         crate::app::presentation::sidebar_render::sidebar_layout_spec(state);
+    crate::app::presentation::sidebar_render::refresh_added_parts(state);
     #[cfg(feature = "phobos")]
     {
         state

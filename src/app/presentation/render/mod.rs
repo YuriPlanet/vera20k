@@ -917,8 +917,24 @@ fn upload_to_gpu(
 
     // TacticalClass::Draw's timer lines, which follow the PixelFX sparkles;
     // built before the pool borrow (they step the Supers' blinks).
-    let (super_timer_fill, super_timer_text) =
+    let (mut super_timer_fill, mut super_timer_text) =
         crate::app::presentation::super_timers::build_super_timer_instances(state);
+    // The buttons and texts the side's layout adds over the battlefield
+    // share the timers' lanes: white boxes, then text, inside its clip.
+    {
+        let theme = crate::app::presentation::sidebar_render::current_sidebar_theme(state);
+        let (boxes, texts) = crate::app::presentation::layout_parts::instances(
+            state,
+            crate::ui::added_parts::Holder::Field,
+            crate::render::sidebar_text::native_radar_outline_color(theme),
+            [
+                state.match_state.input.camera_x,
+                state.match_state.input.camera_y,
+            ],
+        );
+        super_timer_fill.extend(boxes);
+        super_timer_text.extend(texts);
+    }
 
     // GScreenClass_DrawText's Phobos build description, the tactical view's
     // top-right identity box; empty outside Phobos builds.

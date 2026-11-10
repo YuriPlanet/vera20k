@@ -45,6 +45,10 @@ pub(crate) const ID_CAMEO_BASE: u16 = 1000;
 const SCROLL_FLAGS: u16 = 0x0055;
 /// VERA-only local timer list; outside the native cameo/control ID ranges.
 const ID_TIMER_DOCK: u16 = 0x0200;
+/// The buttons a layout adds (`presentation::layout_parts`): one id each, in
+/// the layout's order, below the tooltip ids at 999.
+const ID_LAYOUT_BASE: u16 = 0x0300;
+const LAYOUT_BUTTONS_MAX: usize = 0xE0;
 /// The single in-game gadget list (ListId uniqueness is app-owned).
 const IN_GAME_LIST: ListId = ListId(1);
 
@@ -92,6 +96,9 @@ pub(crate) struct InGameGadgets {
     pub minimap: Option<GadgetHandle>,
     pub command_bar: Option<[GadgetHandle; 12]>,
     timer_dock: Option<GadgetHandle>,
+    /// The layout's added parts, a gadget for each: grown to fit and never
+    /// shrunk, with every part that is no button disabled.
+    layout_buttons: Vec<GadgetHandle>,
 }
 
 impl InGameGadgets {
@@ -106,11 +113,17 @@ impl InGameGadgets {
             minimap: None,
             command_bar: None,
             timer_dock: None,
+            layout_buttons: Vec::new(),
         }
     }
 
     fn is_cameo(&self, h: GadgetHandle) -> bool {
         self.cameos.contains(&h)
+    }
+
+    /// Whether `h` is a button the side's layout added.
+    pub(crate) fn is_layout_button(&self, h: GadgetHandle) -> bool {
+        self.layout_buttons.contains(&h)
     }
 
     /// Cancel the retained driver's pointer gesture after the display loses
@@ -260,14 +273,62 @@ fn sync_gadgets(state: &mut AppState, view: &SidebarView) {
         .super_timer_dock
         .toggle_rect()
         .map(|rect| {
-            // The dock keeps its areas in the battlefield's own pixels.
-            let (left, top) = crate::app::input::camera::tactical_origin_px(state);
+            // The dock keeps its areas in the pixels of the timers' box, the
+            // battlefield's own in the original interface.
+            let [left, top, _, _] = crate::app::presentation::field_parts::rect(
+                state,
+                crate::ui::field_layout::FieldPart::Timers,
+            );
             GadgetRect::new(rect.x + left, rect.y + top, rect.w, rect.h)
         });
     sync_timer_dock(
         &mut state.match_state.match_presentation.in_game_gadgets,
         rect,
     );
+    sync_layout_buttons(state);
+}
+
+/// The buttons the side's layout adds take clicks where they are drawn: one
+/// gadget per added part, at the list's head like the timer dock so a button
+/// over the battlefield comes before the full-tactical catcher. A text part
+/// keeps its place in the pool with a disabled gadget.
+fn sync_layout_buttons(state: &mut AppState) {
+    let placed = crate::app::presentation::layout_parts::placed(state);
+    let rects: Vec<Option<GadgetRect>> = placed
+        .iter()
+        .take(LAYOUT_BUTTONS_MAX)
+        .map(|part| {
+            part.button.then(|| {
+                let [x, y, width, height] =
+                    crate::app::presentation::layout_parts::click_rect(state, part);
+                GadgetRect::new(x, y, width, height)
+            })
+        })
+        .collect();
+    sync_layout_button_rects(
+        &mut state.match_state.match_presentation.in_game_gadgets,
+        &rects,
+    );
+}
+
+/// [`sync_layout_buttons`] for the added parts' click areas this frame:
+/// `None` for a part that takes no click.
+fn sync_layout_button_rects(gadgets: &mut InGameGadgets, rects: &[Option<GadgetRect>]) {
+    let zero = GadgetRect::new(0, 0, 0, 0);
+    while gadgets.layout_buttons.len() < rects.len() {
+        let id = ID_LAYOUT_BASE + gadgets.layout_buttons.len() as u16;
+        let handle = gadgets
+            .list
+            .add_head(GadgetSpec::button(zero, id, ToggleKind::Plain));
+        gadgets.layout_buttons.push(handle);
+    }
+    for (index, &handle) in gadgets.layout_buttons.iter().enumerate() {
+        let rect = rects.get(index).copied().flatten();
+        if let Some(gadget) = gadgets.list.get_mut(handle) {
+            gadget.rect = rect.unwrap_or(zero);
+            gadget.is_disabled = rect.is_none();
+        }
+    }
 }
 
 /// Reuse the ordinary gadget capture/cancel/release owner. Head insertion puts
@@ -661,6 +722,13 @@ fn apply_gadget_result(state: &mut AppState, view: &SidebarView, result: u16) {
             .match_presentation
             .super_timer_dock
             .toggle(),
+        _ if (ID_LAYOUT_BASE..ID_LAYOUT_BASE + LAYOUT_BUTTONS_MAX as u16).contains(&id) => {
+            crate::app::presentation::layout_parts::clicked(
+                state,
+                usize::from(id - ID_LAYOUT_BASE),
+                (result & RESULT_RIGHT) != 0,
+            );
+        }
         _ if (ID_TAB_BASE..ID_TAB_BASE + 4).contains(&id) => {
             let tab = SidebarTab::all()[(id - ID_TAB_BASE) as usize];
             crate::app::input::dispatch::apply_sidebar_action(state, SidebarAction::SelectTab(tab));
@@ -793,6 +861,59 @@ mod tests {
         assert!(gadgets.focus.sticky.is_none());
         sync_timer_dock(&mut gadgets, None);
         assert!(gadgets.list.get(button).unwrap().is_disabled);
+    }
+
+    /// A layout's button over the battlefield takes the click before the
+    /// tactical catcher and gives its own id; a text part takes none.
+    #[test]
+    fn a_layout_button_takes_its_click_ahead_of_tactical_orders() {
+        let mut gadgets = InGameGadgets::new();
+        let tactical = gadgets.list.add_tail(GadgetSpec::click_region(
+            GadgetRect::new(0, 0, 800, 600),
+            TACTICAL_REGION_FLAGS,
+        ));
+        // The layout's first part is a text, its second a button.
+        sync_layout_button_rects(
+            &mut gadgets,
+            &[None, Some(GadgetRect::new(20, 100, 60, 17))],
+        );
+        let click = |gadgets: &mut InGameGadgets, x: i32, y: i32| {
+            let mut input = GadgetInput {
+                queued_key: KEY_LMB_DOWN,
+                event_x: x,
+                event_y: y,
+                mouse_x: x,
+                mouse_y: y,
+                left_held: true,
+                ..Default::default()
+            };
+            tick(
+                &mut gadgets.list,
+                &mut gadgets.focus,
+                &input,
+                &mut gadgets.out,
+            );
+            let pressed = gadgets.out.consumed_by.or(gadgets.focus.sticky);
+            input.queued_key = KEY_LMB_UP;
+            input.left_held = false;
+            let result = tick(
+                &mut gadgets.list,
+                &mut gadgets.focus,
+                &input,
+                &mut gadgets.out,
+            );
+            (pressed, result)
+        };
+        let (pressed, result) = click(&mut gadgets, 30, 108);
+        assert!(pressed.is_some_and(|handle| gadgets.is_layout_button(handle)));
+        assert_eq!(result, (ID_LAYOUT_BASE + 1) | RESULT_BUTTON);
+        // Beside it the battlefield still takes the press.
+        let (pressed, _) = click(&mut gadgets, 300, 300);
+        assert_eq!(pressed, Some(tactical));
+        // A layout without the button leaves its gadget disabled.
+        sync_layout_button_rects(&mut gadgets, &[None, None]);
+        let (pressed, _) = click(&mut gadgets, 30, 108);
+        assert_eq!(pressed, Some(tactical));
     }
 
     #[test]

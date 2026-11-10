@@ -1364,6 +1364,19 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
             ),
         );
     }
+    // The buttons and texts the side's layout adds to the sidebar. A
+    // button's box rides the white lane of the cameo's hover outline: over
+    // the chrome and the cameos, under the text.
+    let (layout_boxes, layout_texts) = crate::app::presentation::layout_parts::instances(
+        state,
+        crate::ui::added_parts::Holder::Side,
+        ready_tint,
+        [
+            state.match_state.input.camera_x,
+            state.match_state.input.camera_y,
+        ],
+    );
+    text_layers.status.extend(layout_texts);
     state.renderer.bit_font.set_raster(frame_raster);
 
     // Preserve the pixels actually drawn online for a possible pre-due loss.
@@ -1397,7 +1410,11 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         smooth_chrome,
         smooth_command_bar,
         cameo: cameo_layers.cameo,
-        cameo_hover: cameo_layers.hover,
+        cameo_hover: {
+            let mut hover = cameo_layers.hover;
+            hover.extend(layout_boxes);
+            hover
+        },
         unavailable: cameo_layers.unavailable,
         flash: cameo_layers.flash,
         gclock: cameo_layers.gclock,
