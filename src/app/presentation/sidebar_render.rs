@@ -585,15 +585,23 @@ fn shows_alt_cameo(
         }
 }
 
+/// Whether the minimap is drawn and takes clicks: the layout has the radar,
+/// and the radar is online (or has no housing animation, the legacy
+/// fallback).
+pub(crate) fn minimap_shown(state: &AppState) -> bool {
+    let presentation = &state.match_state.match_presentation;
+    presentation
+        .sidebar_layout_spec
+        .shows(crate::ui::sidebar::SidebarPart::Radar)
+        && presentation
+            .radar_anim
+            .as_ref()
+            .is_none_or(|ra| ra.is_minimap_visible())
+}
+
 pub(crate) fn is_cursor_over_minimap(state: &AppState) -> bool {
     // Minimap interaction disabled when radar is not online.
-    let minimap_visible: bool = state
-        .match_state
-        .match_presentation
-        .radar_anim
-        .as_ref()
-        .is_none_or(|ra| ra.is_minimap_visible());
-    if !minimap_visible {
+    if !minimap_shown(state) {
         return false;
     }
     let Some(minimap) = &state.match_state.match_presentation.minimap else {

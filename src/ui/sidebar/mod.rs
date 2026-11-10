@@ -19,7 +19,7 @@ mod sidebar_view;
 use crate::sim::production::ProductionCategory;
 
 pub use frame::{BOTTOM_STRIP_HEIGHT_PX, SIDEBAR_WIDTH_PX, SidebarFrame};
-pub use layout_spec::{SidebarChromeLayoutSpec, SidebarTheme};
+pub use layout_spec::{SidebarChromeLayoutSpec, SidebarPart, SidebarTheme};
 pub use power_bar_anim::PowerBarAnimState;
 pub(crate) use sidebar_view::ArmedSidebarEntry;
 #[cfg(test)]
@@ -42,6 +42,20 @@ impl Rect {
     pub fn contains(&self, px: f32, py: f32) -> bool {
         px >= self.x && px < self.x + self.w && py >= self.y && py < self.y + self.h
     }
+
+    /// This rect for a part the layout has, and an empty one in its place for
+    /// a part it leaves out: nothing hits it and nothing is drawn in it.
+    pub fn shown(self, shown: bool) -> Self {
+        if shown {
+            self
+        } else {
+            Self {
+                w: 0.0,
+                h: 0.0,
+                ..self
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -58,6 +72,7 @@ pub fn radar_minimap_rect_with_spec(screen_w: f32, spec: SidebarChromeLayoutSpec
         w: spec.radar_width,
         h: spec.radar_height,
     }
+    .shown(spec.shows(SidebarPart::Radar))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -354,6 +369,7 @@ pub fn power_bar_rect(layout: &SidebarLayout, spec: SidebarChromeLayoutSpec) -> 
         w: 8.0,
         h: layout.cameo_grid_bottom - layout.cameo_grid_top,
     }
+    .shown(spec.shows(SidebarPart::Power))
 }
 
 /// Native R-DN/R-UP anchors (`6ABD30`), with actual SHP canvas hit sizes.
@@ -367,14 +383,16 @@ pub fn scroll_button_rects(
     let [uw, uh] = up_size.unwrap_or([0.0, 0.0]);
     let x = layout.strip_x + spec.scroll_x;
     let y = layout.cameo_grid_bottom + spec.scroll_y;
+    let shown = spec.shows(SidebarPart::Cameos);
     (
-        Rect { x, y, w: dw, h: dh },
+        Rect { x, y, w: dw, h: dh }.shown(shown),
         Rect {
             x: x + spec.scroll_pitch,
             y,
             w: uw,
             h: uh,
-        },
+        }
+        .shown(shown),
     )
 }
 

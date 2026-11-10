@@ -109,9 +109,9 @@ impl ArmedSidebarEntry {
     }
 }
 use super::{
-    CAMEO_COLUMNS, Rect, SidebarAction, SidebarChromeLayoutSpec, SidebarItem, SidebarScrollButton,
-    SidebarTab, SidebarTabButton, SidebarToggleButton, SidebarView, compute_layout_with_spec,
-    scroll_button_rects,
+    CAMEO_COLUMNS, Rect, SidebarAction, SidebarChromeLayoutSpec, SidebarItem, SidebarPart,
+    SidebarScrollButton, SidebarTab, SidebarTabButton, SidebarToggleButton, SidebarView,
+    compute_layout_with_spec, scroll_button_rects,
 };
 
 #[cfg(test)]
@@ -226,6 +226,9 @@ pub(crate) fn build_sidebar_view_with_spec(
 
     // 6ABD30 positions the four SBGadgets with the side-specific tab pitch.
     // Their actual SHP canvas determines size (`69DE00`), not the pitch.
+    // A part the layout leaves out keeps its place with an empty rect, so
+    // nothing hits it; the chrome builder skips its picture.
+    let shows = |part| layout_spec.shows(part);
     let [tab_w, tab_h] = tab_button_size.unwrap_or([0.0, 0.0]);
     let tabs: Vec<SidebarTabButton> = SidebarTab::all()
         .into_iter()
@@ -237,7 +240,8 @@ pub(crate) fn build_sidebar_view_with_spec(
                 y: layout.tabs_y,
                 w: tab_w,
                 h: tab_h,
-            },
+            }
+            .shown(shows(SidebarPart::Tabs)),
             active: tab == active_tab,
             disabled: gadget_state.tab_disabled[idx],
             frame_index: gadget_state.tab_frame(idx, tab == active_tab),
@@ -259,13 +263,15 @@ pub(crate) fn build_sidebar_view_with_spec(
         y: side1_y_local + layout_spec.repair_y,
         w: repair_w,
         h: repair_h,
-    };
+    }
+    .shown(shows(SidebarPart::Repair));
     let sell_rect = Rect {
         x: layout.side1_x + layout_spec.sell_x,
         y: side1_y_local + layout_spec.sell_y,
         w: sell_w,
         h: sell_h,
-    };
+    }
+    .shown(shows(SidebarPart::Sell));
     let repair_button = SidebarToggleButton {
         rect: repair_rect,
         action: SidebarAction::ToggleRepairMode,
@@ -298,7 +304,8 @@ pub(crate) fn build_sidebar_view_with_spec(
                 y: layout.top_y + layout_spec.top_buttons[i][1],
                 w,
                 h,
-            },
+            }
+            .shown(shows([SidebarPart::Diplomacy, SidebarPart::Options][i])),
             disabled: false,
             frame_index: gadget_state.top_button_frame(i),
         }
@@ -322,7 +329,13 @@ pub(crate) fn build_sidebar_view_with_spec(
     let scroll_rows = scroll_rows.min(max_scroll_rows);
 
     let visible_items = scroll_rows * CAMEO_COLUMNS;
-    let max_visible = visible_rows * CAMEO_COLUMNS;
+    // Without the strip no cameo is laid out; its retained order and scroll
+    // row stay as they are.
+    let max_visible = if shows(SidebarPart::Cameos) {
+        visible_rows * CAMEO_COLUMNS
+    } else {
+        0
+    };
     let items: Vec<SidebarItem> = all_entries
         .into_iter()
         .skip(visible_items)

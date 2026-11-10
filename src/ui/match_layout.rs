@@ -18,7 +18,7 @@
 //! - Part of ui/ — reads the rules/ INI store; no app/ or render/.
 
 use crate::rules::ini_parser::{IniFile, IniSection};
-use crate::ui::sidebar::SidebarChromeLayoutSpec;
+use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarPart};
 
 /// The file's name in the game folder or a mod MIX.
 pub const FILE_NAME: &str = "VERAUI.INI";
@@ -191,7 +191,6 @@ const STOCK_PARTS: &[StockPart] = &[
             ("Hold", Some("Right")),
             ("Width", Some("168")),
             ("Height", Some("Rest")),
-            ("Parts", Some("Credits,Top,Radar,Middle,Cameos,Power")),
             UNMOVED[0],
             UNMOVED[1],
             ART_KEY,
@@ -219,7 +218,6 @@ const STOCK_PARTS: &[StockPart] = &[
             ("Hold", Some("TopLeft")),
             ("Width", None),
             ("Height", None),
-            ("Parts", Some("Money")),
             ART_KEY,
         ],
     },
@@ -245,7 +243,6 @@ const STOCK_PARTS: &[StockPart] = &[
             ("Hold", Some("TopLeft")),
             ("Width", None),
             ("Height", None),
-            ("Parts", Some("Diplomacy,Options")),
             ART_KEY,
         ],
     },
@@ -289,7 +286,6 @@ const STOCK_PARTS: &[StockPart] = &[
             ("Hold", Some("TopLeft")),
             ("Width", None),
             ("Height", None),
-            ("Parts", Some("Repair,Sell,Tabs")),
             ART_KEY,
         ],
     },
@@ -441,18 +437,67 @@ impl std::fmt::Display for LayoutProblem {
     }
 }
 
-/// One layout of the file: the numbers it changes on the side's original.
+/// The word a `Parts=` list uses for "no parts"; the INI store drops a key
+/// with no value.
+const NO_PARTS: &str = "None";
+
+/// One of the sidebar's panels: the sidebar itself (`None`) or a part that
+/// holds parts.
+type Panel = Option<SidebarPart>;
+
+/// A panel's section name: `Side` for the sidebar itself.
+fn panel_of(section_part: &str) -> Option<Panel> {
+    if section_part.eq_ignore_ascii_case("Side") {
+        return Some(None);
+    }
+    SidebarPart::STOCK_ORDER
+        .into_iter()
+        .find(|part| part.name().eq_ignore_ascii_case(section_part))
+        .filter(|&part| stock_children(Some(part)).next().is_some())
+        .map(Some)
+}
+
+/// The parts a panel holds in the original interface, in draw order.
+fn stock_children(panel: Panel) -> impl Iterator<Item = SidebarPart> {
+    SidebarPart::STOCK_ORDER
+        .into_iter()
+        .filter(move |part| part.panel() == panel)
+}
+
+/// One layout of the file: the numbers and part lists it changes on the
+/// side's original.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct MatchLayout {
     numbers: Vec<(Number, f32)>,
+    /// Each panel whose `Parts=` the layout writes, with its parts in order.
+    parts: Vec<(Panel, Vec<SidebarPart>)>,
 }
 
 impl MatchLayout {
-    /// Write this layout's numbers over the side's original sidebar table.
+    /// Write this layout's numbers and part lists over the side's original
+    /// sidebar table.
     pub fn apply_to_sidebar(&self, spec: &mut SidebarChromeLayoutSpec) {
         for &(number, value) in &self.numbers {
             *number.slot(spec) = value;
         }
+        if self.parts.is_empty() {
+            return;
+        }
+        // A panel's own list, else the original's; a part goes with its panel.
+        let children = |panel: Panel| -> Vec<SidebarPart> {
+            self.parts
+                .iter()
+                .rev()
+                .find(|(listed, _)| *listed == panel)
+                .map_or_else(
+                    || stock_children(panel).collect(),
+                    |(_, parts)| parts.clone(),
+                )
+        };
+        let mut order = children(None)
+            .into_iter()
+            .flat_map(|part| std::iter::once(part).chain(children(Some(part))));
+        spec.parts = std::array::from_fn(|_| order.next());
     }
 }
 
@@ -622,8 +667,18 @@ fn read_layout(
             problem(name, "", LayoutProblemKind::UnknownPart);
             continue;
         };
+        let panel = panel_of(part);
         for key in section.keys() {
-            if let Some(number) = stock
+            if let (Some(panel), true) = (panel, key.eq_ignore_ascii_case("Parts")) {
+                let (listed, unknown, elsewhere) = part_list(section, key, panel);
+                if unknown {
+                    problem(name, key, LayoutProblemKind::UnknownPart);
+                }
+                if elsewhere {
+                    problem(name, key, LayoutProblemKind::NotYet);
+                }
+                read.parts.push((panel, listed));
+            } else if let Some(number) = stock
                 .numbers
                 .iter()
                 .find(|number| number.key.eq_ignore_ascii_case(key))
@@ -651,6 +706,34 @@ fn read_layout(
         }
     }
     Some(read)
+}
+
+/// A panel's `Parts=`: the parts it names that the original holds in that
+/// panel, in the order written and each once, then whether it named something
+/// that is no part at all, and a part that belongs to another panel (moving a
+/// part between panels comes with a later version).
+fn part_list(section: &IniSection, key: &str, panel: Panel) -> (Vec<SidebarPart>, bool, bool) {
+    let mut listed = Vec::new();
+    let (mut unknown, mut elsewhere) = (false, false);
+    let names = section.read_list(key, LIST_CAPACITY).unwrap_or_default();
+    for name in names.into_iter().map(str::trim) {
+        if name.is_empty() || name.eq_ignore_ascii_case(NO_PARTS) {
+            continue;
+        }
+        let part = SidebarPart::STOCK_ORDER
+            .into_iter()
+            .find(|part| part.name().eq_ignore_ascii_case(name));
+        match part {
+            Some(part) if part.panel() == panel => {
+                if !listed.contains(&part) {
+                    listed.push(part);
+                }
+            }
+            Some(_) => elsewhere = true,
+            None => unknown = true,
+        }
+    }
+    (listed, unknown, elsewhere)
 }
 
 /// A key's value as a whole number: ReadInt's result, for text that is
@@ -689,7 +772,7 @@ mod tests {
     use crate::ui::sidebar::cameo_order::CameoStrips;
     use crate::ui::sidebar::gadget_flash::SidebarGadgetState;
     use crate::ui::sidebar::{
-        SidebarTab, SidebarTheme, SidebarView, build_sidebar_view_with_spec,
+        SidebarTab, SidebarTheme, SidebarView, build_sidebar_view_with_spec, power_bar_rect,
         radar_minimap_rect_with_spec,
     };
 
@@ -720,9 +803,9 @@ mod tests {
             &SidebarGadgetState::new(),
             Some([52.0, 32.0]),
             Some([52.0, 32.0]),
-            None,
-            None,
-            [None; 2],
+            Some([46.0, 25.0]),
+            Some([46.0, 25.0]),
+            [Some([72.0, 18.0]); 2],
             &CameoStrips::default(),
         );
         (spec, view)
@@ -819,6 +902,64 @@ mod tests {
         // A missing layout and one from a newer version leave the side alone.
         assert!(file.for_side(Some("Nod")).is_none());
         assert!(file.for_side(Some("ThirdSide")).is_none());
+    }
+
+    #[test]
+    fn a_layout_leaves_parts_out_and_keeps_the_rest_in_its_order() {
+        let file = MatchLayoutFile::from_bytes(
+            b"[Layouts]\nGDI=Bare\nNod=NoButtons\n\
+              [Bare.Side]\nParts=Radar,Cameos,Middle\n\
+              [Bare.Middle]\nParts=tabs\n\
+              [Bare.Top]\nParts=Options,Sell,Clock\n\
+              [NoButtons.Top]\nParts=None\n",
+        );
+        // Clock is no part, and Sell belongs to another panel.
+        let problems: Vec<_> = file
+            .problems()
+            .iter()
+            .map(|problem| (problem.place(), problem.kind.clone()))
+            .collect();
+        assert_eq!(
+            problems,
+            [
+                (
+                    "[Bare.Top] Parts".to_owned(),
+                    LayoutProblemKind::UnknownPart
+                ),
+                ("[Bare.Top] Parts".to_owned(), LayoutProblemKind::NotYet),
+            ]
+        );
+
+        use SidebarPart::*;
+        let (stock_spec, stock) = sidebar(SidebarTheme::Allied, None);
+        let (spec, view) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI")));
+        // The strip's part Top is not in Side's list, so its Options goes too.
+        assert_eq!(
+            spec.parts_in_order().collect::<Vec<_>>(),
+            [Radar, Cameos, Middle, Tabs]
+        );
+        // A part that stays keeps its place; one left out takes no click.
+        assert_eq!(view.tabs, stock.tabs);
+        assert_eq!(view.scroll_down_button.rect, stock.scroll_down_button.rect);
+        assert_eq!(
+            radar_minimap_rect_with_spec(800.0, spec),
+            radar_minimap_rect_with_spec(800.0, stock_spec)
+        );
+        for left_out in [
+            view.repair_button.rect,
+            view.sell_button.rect,
+            view.top_buttons[0].rect,
+            view.top_buttons[1].rect,
+            power_bar_rect(&view.layout, spec),
+        ] {
+            assert_eq!((left_out.w, left_out.h), (0.0, 0.0));
+        }
+        assert!(stock.repair_button.rect.w > 0.0 && stock.top_buttons[1].rect.w > 0.0);
+
+        // `None` empties a panel that stays.
+        let (spec, _) = sidebar(SidebarTheme::Soviet, file.for_side(Some("Nod")));
+        assert!(spec.shows(Top) && !spec.shows(Diplomacy) && !spec.shows(Options));
+        assert!(spec.shows(Credits) && spec.shows(Money) && spec.shows(Power));
     }
 
     #[test]
