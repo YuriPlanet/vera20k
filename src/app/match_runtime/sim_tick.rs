@@ -1621,6 +1621,23 @@ fn advance_one_simulation_frame(
         // Carried out of the sim borrow so the census can read `state` freely below.
         let mut census_tick: Option<u64> = None;
         let fps_panel_shown = state.renderer.performance_overlay.is_visible();
+        // docs/sim-thread.md: a frame that can run without the lent client
+        // owners takes what it reads from them now and records its writes.
+        let deferred = super::deferred_effects::DeferredClientEffects::applies(
+            state,
+            replaying,
+            state.match_state.match_diagnostics.observes_commands(),
+            initial_save.is_some(),
+        )
+        .then(|| {
+            super::deferred_effects::DeferredClientEffects::take(
+                state.match_state.input.planning.active(),
+                state.audio.sfx_player.as_mut(),
+                &state.process_assets,
+                &state.match_state.scenario_outcome,
+                defer_verdict_to_clip,
+            )
+        });
         if let Some((rt, frame_checksums)) = state.match_state.sim_runtime.tick_parts() {
             let sim = &mut rt.simulation;
             let native_frame = sim.session().binary_frame();
@@ -1741,44 +1758,77 @@ fn advance_one_simulation_frame(
                      text: crate::sim::bounty::BountyText| {
                         flying_credits.borrow_mut().admit(sim, rules, text);
                     };
-                let boundary = super::frame_effects::FrameClientBoundary::new(
-                    playback,
-                    local_owner_name.as_deref(),
-                    &mut state.match_state.match_audio.sound_events,
-                    &mut admit_radar,
-                )
-                .with_tactical_radar(&mut set_tactical_radar)
-                .with_planning(
-                    &mut state.match_state.input.planning,
-                    &mut state.match_state.input.selection_state,
-                )
-                .with_network_session(&mut state.match_state.session)
-                .with_frame_checksums(frame_checksums)
-                .with_live_network(state.match_state.live_network.as_mut())
-                .with_logic_frame_rate(logic_frame_rate)
-                .with_scenario_pause(
-                    &mut state.match_state.match_presentation.scenario_pause,
-                    &elapsed_clock,
-                    session_mode,
-                    other_local_pause,
-                )
-                .with_outcome_wait(&mut state.match_state.scenario_outcome)
-                .with_deferred_verdict(defer_verdict_to_clip)
-                .with_eva_text(detailed_eva_text.then_some(&prefix_eva_text));
-                let effects = FrameEffects::for_sound(&boundary)
-                    .with_tactical_radar(&boundary)
-                    .with_local_planning(&boundary)
-                    .with_network_commands(&boundary)
-                    .with_production_strip(&production_visits, &clear_production_request)
-                    .with_before_logic(&before_logic);
+                let boundary;
+                let record_clear = |type_id| {
+                    if let Some(deferred) = &deferred {
+                        deferred.record(
+                            super::deferred_effects::DeferredEffect::ProductionRequestCleared(
+                                type_id,
+                            ),
+                        );
+                    }
+                };
                 #[cfg(feature = "ares")]
-                let effects = effects.with_bounty_text(&queue_bounty);
-                // Recorded completion owns outcome timing during playback;
-                // a local audio wait cannot add a frame or change its hash.
-                let effects = if replaying {
+                let record_bounty =
+                    |_: &crate::sim::world::Simulation,
+                     _: &crate::rules::ruleset::RuleSet,
+                     text: crate::sim::bounty::BountyText| {
+                        if let Some(deferred) = &deferred {
+                            deferred.record(super::deferred_effects::DeferredEffect::Bounty(text));
+                        }
+                    };
+                let effects = if let Some(deferred) = &deferred {
+                    // Sound plays from the frame tail; network, replay, the
+                    // initial save and command logs never reach this path.
+                    let effects = FrameEffects::empty()
+                        .with_tactical_radar(deferred)
+                        .with_local_planning(deferred)
+                        .with_production_strip(&production_visits, &record_clear)
+                        .with_outcome_wait(deferred);
+                    #[cfg(feature = "ares")]
+                    let effects = effects.with_bounty_text(&record_bounty);
                     effects
                 } else {
-                    effects.with_outcome_wait(&boundary)
+                    boundary = super::frame_effects::FrameClientBoundary::new(
+                        playback,
+                        local_owner_name.as_deref(),
+                        &mut state.match_state.match_audio.sound_events,
+                        &mut admit_radar,
+                    )
+                    .with_tactical_radar(&mut set_tactical_radar)
+                    .with_planning(
+                        &mut state.match_state.input.planning,
+                        &mut state.match_state.input.selection_state,
+                    )
+                    .with_network_session(&mut state.match_state.session)
+                    .with_frame_checksums(frame_checksums)
+                    .with_live_network(state.match_state.live_network.as_mut())
+                    .with_logic_frame_rate(logic_frame_rate)
+                    .with_scenario_pause(
+                        &mut state.match_state.match_presentation.scenario_pause,
+                        &elapsed_clock,
+                        session_mode,
+                        other_local_pause,
+                    )
+                    .with_outcome_wait(&mut state.match_state.scenario_outcome)
+                    .with_deferred_verdict(defer_verdict_to_clip)
+                    .with_eva_text(detailed_eva_text.then_some(&prefix_eva_text));
+                    let effects = FrameEffects::for_sound(&boundary)
+                        .with_tactical_radar(&boundary)
+                        .with_local_planning(&boundary)
+                        .with_network_commands(&boundary)
+                        .with_production_strip(&production_visits, &clear_production_request)
+                        .with_before_logic(&before_logic);
+                    #[cfg(feature = "ares")]
+                    let effects = effects.with_bounty_text(&queue_bounty);
+                    // Recorded completion owns outcome timing during playback;
+                    // a local audio wait cannot add a frame or change its hash.
+                    let effects = if replaying {
+                        effects
+                    } else {
+                        effects.with_outcome_wait(&boundary)
+                    };
+                    effects
                 };
                 let effects = if observing_commands {
                     effects.with_command_applied(&command_applied)
@@ -2082,6 +2132,11 @@ fn advance_one_simulation_frame(
             {
                 log.record_tick(tick_result.tick, admitted_commands, tick_result.state_hash);
             }
+        }
+        // The client writes a deferred frame recorded, in order, now that the
+        // world is no longer borrowed.
+        if let Some(deferred) = deferred {
+            deferred.apply(state);
         }
         if frame_committed {
             state

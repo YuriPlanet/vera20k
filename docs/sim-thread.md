@@ -74,95 +74,56 @@ identical frame by frame.
   Phase 1's `SimHost` closes this. Presentation then gets only a shared
   view and cannot reach the runtime mutably.
 
-### Phase 1: a `SimHost` owns everything a tick touches
+### Phase 1: a tick that borrows no app state
 
 The host lives as long as the process, like the thread it becomes. Several
 owners a tick reaches are process globals in gamemd, so they survive launch
 and load: the checksum ring `B04474` is one. A host that lived and died with
 each scenario could not hold them.
 
-Each mid-tick owner moves according to who else uses it. Its calls never
-become post-tick events.
+Moving every client owner into the host does not work: the sound player,
+the network transport and the input state are shared with menus, the lobby
+and the UI. Instead, a tick that runs on the simulation thread takes what it
+reads from those owners before it starts. It records what it writes, and the
+main thread applies the record in order afterwards
+(`app/match_runtime/deferred_effects.rs`):
 
-- **Only the tick uses it: move it into the host.**
-  - Done: the checksum history (`FrameChecksumState`).
-  - Next: the live command transport (`LiveCommandSession`). Waits and
-    pacing also service it before the tick, so it goes with the frame
-    loop's network service.
-- **Session and UI code write it as well: the tick gets a value, not the
-  owner.**
-  - Latency fudge (`MatchSession::latency_fudge`): the lobby, LAN start,
-    cooperative rounds and the latency event all write it.
-- **The whole client shares it: needs a thread-safe handle.** The sound
-  player (`SfxPlayer`) also plays menu and UI sound. Two parts need care:
-  - The tick's synchronous prefix delivery and the outcome wait's "voices
-    active" poll need an audio handle the simulation thread can call.
-  - Playback draws the process Main RNG. That is outside lockstep, so only
-    the order of presentation draws can change.
-- **Input owns it: mirror what the tick reads.** The tick reads two things:
-  - the planning flag and nodes that `leave_planning` reads;
-  - the selection that defeat clears.
+- **Sound** is not delivered mid-tick. The frame tail already plays every
+  sound fact the tick left undelivered, and refreshes looping sound
+  positions.
+- **The radar availability cue, the production strip's request clear and
+  Ares bounty text** are recorded, then applied in order after the tick.
+- **Planning Mode**: the flag is taken before the tick. Leaving it issues
+  the same PLANCOMMIT (`planning_mode::plan_commit_command`), and the main
+  thread leaves its own planner after the tick.
+- **The outcome-voice wait** polls a copy of the wait with the voice state
+  taken before the tick. It moves only wall time.
+- **Scenario pause and resume effects** go to the frame tail's
+  `apply_trigger_effects`, as on the headless path.
 
-  It returns the command it builds and hands the input reset back to the
-  main thread.
-- **The scenario pause clock and the outcome-voice wait** are per-match
-  client clocks the tick drives. They move with the host, but the wait also
-  needs the audio handle above.
+Only presentation order moves: sounds and the radar cue follow the tick
+instead of interleaving with it. Network frames (the `Queue_AI` exchange),
+replay playback, a campaign's initial save and command observation still
+need the lent owners. Those frames stay on the borrowing path
+(`DeferredClientEffects::applies`).
 
-The main thread talks to the host through:
-
-- `submit(commands)`;
-- `outputs()`: the per-tick `SimFrameOutput` remainder, screen shake, camera,
-  HUD and radar events;
-- `request(query)`, for input queries that need live state.
-
-`SimHost` still runs on the main thread in this phase. Done when every
-owner above has moved or has its handle, and every `write_sim` route has
-its own operation.
-
-Progress:
+Done:
 
 - [x] `MatchState::sim_runtime` is the process-lifetime `SimHost`
   (`app/match_runtime/sim_host.rs`), holding `Option<SimRuntime>`.
   - Reads take `runtime()`.
-  - Every write names its route through `write_sim(SimWrite::…)`; nothing
-    else compiles.
-  - The tick takes its parts together through `tick_parts()`.
+  - Every write names its route through `write_sim(SimWrite::…)`.
+  - The tick takes its parts through `tick_parts()`.
 - [x] The checksum history moved from `MatchSession` into the host.
-- [ ] The live command transport.
-- [ ] An audio handle for the sound prefix and the outcome wait.
-- [ ] The planning and selection mirror.
-- [ ] The scenario pause clock and the outcome wait.
-- [ ] An operation of its own for each route.
-
-The routes as first assigned (`git grep "write_sim(SimWrite::"`):
-
-| Route | Sites | What they do |
-|---|---|---|
-| `Command` | 21 | Issue local commands from input, encoded from live reads: stop, guard, scatter, production, superweapons, placement, planning, diplomacy, cheer, options. Also the order and selection voices and Phobos selection flash. |
-| `Debug` | 21 | Debug tools, cheat flags, the trainer, frame profiling, and the capture harnesses under `app/diagnostics`. |
-| `Lifecycle` | 19 | Install, take or restore the runtime; retire the scenario and its rules; campaign carry-over and stage; replay startup; input delay. |
-| `Network` | 8 | Departures and kicks (`destroy_connection`), received events, EventClass queue service, timing install, initial-wait interrupt. |
-| `Tick` | 2 | `advance_one_simulation_frame` and scenario pause service. |
-| `Presentation` | 2 | Radar-terrain marks and lighting events: handoff state, neither saved nor hashed. |
-| `Rules` | 1 | Multiplayer country projection into the bound `RuleSet`. |
-
-When the simulation runs elsewhere, these writes change gameplay state
-outside the command stream and must keep their frame:
-
-- `destroy_connection` calls `flag_house_to_die` directly. This happens on
-  a frame-0 loss or a WOL tournament leave.
-- `deploy_voice_request` clears a unit's deploy-voice suppression
-  (Techno+0x4F8) at input time.
-- Phobos selection flash writes each selected unit's flash countdown.
-- `ScenarioServiceInput::apply` pauses, resumes or expires the scenario,
-  or applies a chrono screen effect, between ticks. It is recorded in the
-  replay.
-- The trainer applies debug tools.
-
-Order and selection voices draw the process Main RNG at input time. That
-does not touch lockstep, but a read-only view cannot serve them. They need
-the host or their own draw handle.
+- [x] Deferred client effects, opt-in through
+  `VERA20K_DEFERRED_TICK_EFFECTS=1`. In a hidden 1v29 client run, the state
+  hashes at every common tick from 1 to 9000 are identical with and without
+  it.
+- [x] The radar terrain updates per changed cell instead of redrawing its
+  whole surface.
+  - In a hidden 1v29 client run at 600–800 objects, frame time fell from
+    22.9 ms to 14.5 ms and render time from 10.5 ms to 3.7 ms.
+  - The tick is now most of each frame.
 
 ### Phase 2: a presentation frame for the hot draw path
 

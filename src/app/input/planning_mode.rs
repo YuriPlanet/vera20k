@@ -15,6 +15,14 @@ use crate::sim::world::{
 use winit::event::ElementState;
 use winit::keyboard::KeyCode;
 
+/// The local house's PLANCOMMIT that leaving Planning Mode issues
+/// (Planning__EndMode ->637A10), stamped for the current tick.
+pub(crate) fn plan_commit_command(sim: &Simulation) -> Option<CommandEnvelope> {
+    let owner = sim.session().current_house()?;
+    let record = sim.encode_plan_commit_record(owner)?;
+    Some(CommandEnvelope::synchronized(record, sim.session().tick()))
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct PlanningInputState {
     active: bool,
@@ -92,11 +100,7 @@ impl PlanningInputState {
         let commit = if active {
             None
         } else {
-            sim.and_then(|sim| {
-                let owner = sim.session().current_house()?;
-                let record = sim.encode_plan_commit_record(owner)?;
-                Some(CommandEnvelope::synchronized(record, sim.session().tick()))
-            })
+            sim.and_then(plan_commit_command)
         };
         // Planning__EndMode clears AC4CCC and AC4BF0 (0x00637A52..0x00637A5E).
         if !active {
