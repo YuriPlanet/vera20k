@@ -65,8 +65,14 @@ pub(super) enum FramePass {
 /// including the command bar beneath the tactical viewport.
 fn shake_central_rect(state: &AppState, target: &wgpu::Texture) -> [u32; 4] {
     let source_height = state.render_height();
+    // The strip spans what the column leaves: left of it, right of a column
+    // on the left, or the whole frame under a floating one.
     let sidebar_frame = state.sidebar_frame();
-    let central_source_width = sidebar_frame.column().0;
+    let (_, _, tactical_width, _) = sidebar_frame.tactical_rect();
+    let (central_source_x, central_source_width) = (
+        sidebar_frame.tactical_rect().0,
+        tactical_width.min(state.render_width()),
+    );
 
     if let Some(geometry) = state
         .renderer
@@ -75,20 +81,21 @@ fn shake_central_rect(state: &AppState, target: &wgpu::Texture) -> [u32; 4] {
         .map(|pass| pass.geometry())
     {
         let (frame_width, frame_height) = geometry.frame_size();
-        let central_width = central_source_width
-            .saturating_mul(geometry.percent)
-            .saturating_div(100);
+        let scaled = |source: u32| source.saturating_mul(geometry.percent).saturating_div(100);
+        let central_x = scaled(central_source_x).min(frame_width);
+        let central_width = scaled(central_source_width);
         [
-            geometry.origin.0,
+            geometry.origin.0 + central_x,
             geometry.origin.1,
-            central_width.min(frame_width),
+            central_width.min(frame_width - central_x),
             frame_height.min(target.height().saturating_sub(geometry.origin.1)),
         ]
     } else {
+        let central_x = central_source_x.min(target.width());
         [
+            central_x,
             0,
-            0,
-            central_source_width.min(target.width()),
+            central_source_width.min(target.width() - central_x),
             source_height.min(target.height()),
         ]
     }

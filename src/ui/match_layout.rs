@@ -18,7 +18,7 @@
 //! - Part of ui/ — reads the rules/ INI store; no app/ or render/.
 
 use crate::rules::ini_parser::{IniFile, IniSection};
-use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarPart};
+use crate::ui::sidebar::{Edge, SidebarChromeLayoutSpec, SidebarPart};
 
 /// The file's name in the game folder or a mod MIX.
 pub const FILE_NAME: &str = "VERAUI.INI";
@@ -39,6 +39,7 @@ const LIST_CAPACITY: usize = 0x800;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Number {
     SideWidth,
+    SideHeight,
     CreditsX,
     CreditsY,
     MoneyX,
@@ -83,6 +84,7 @@ impl Number {
     fn slot(self, spec: &mut SidebarChromeLayoutSpec) -> &mut f32 {
         match self {
             Self::SideWidth => &mut spec.sidebar_width,
+            Self::SideHeight => &mut spec.side_height,
             Self::CreditsX => &mut spec.credits_x,
             Self::CreditsY => &mut spec.credits_y,
             Self::MoneyX => &mut spec.money_x,
@@ -189,11 +191,16 @@ const STOCK_PARTS: &[StockPart] = &[
     },
     StockPart {
         name: "Side",
-        // The battlefield and the bottom bar take what the sidebar leaves.
-        numbers: &[size("Width", Number::SideWidth, 16)],
+        // The battlefield and the bar take what the sidebar leaves. Its
+        // width counts on the left or the right edge, its height on the top
+        // or the bottom; `Rest` is the other one, the screen's own.
+        numbers: &[
+            size("Width", Number::SideWidth, 16),
+            size("Height", Number::SideHeight, 16),
+        ],
         fixed: &[
             ("Type", Some("Panel")),
-            ("Hold", Some("Right")),
+            ("Width", Some("Rest")),
             ("Height", Some("Rest")),
             UNMOVED[0],
             UNMOVED[1],
@@ -205,7 +212,6 @@ const STOCK_PARTS: &[StockPart] = &[
         numbers: &[],
         fixed: &[
             ("Type", Some("Panel")),
-            ("Hold", Some("Bottom")),
             ("Width", Some("Rest")),
             ("Height", Some("32")),
             ("Parts", None),
@@ -393,6 +399,8 @@ pub enum LayoutProblemKind {
     Clamped {
         used: i32,
     },
+    /// A yes-or-no key with another word.
+    NotYesOrNo,
     /// A documented key this version cannot change yet.
     NotYet,
 }
@@ -439,6 +447,9 @@ impl std::fmt::Display for LayoutProblem {
             LayoutProblemKind::Clamped { used } => {
                 write!(f, "{place}: out of range, {used} is used")
             }
+            LayoutProblemKind::NotYesOrNo => {
+                write!(f, "{place}: not yes or no; the original value is kept")
+            }
             LayoutProblemKind::NotYet => write!(
                 f,
                 "{place}: cannot be changed yet; the original value is kept"
@@ -481,6 +492,12 @@ pub struct MatchLayout {
     numbers: Vec<(Number, f32)>,
     /// Each panel whose `Parts=` the layout writes, with its parts in order.
     parts: Vec<(Panel, Vec<SidebarPart>)>,
+    /// `[Side] Hold=` and `Float=`, `[Bar] Hold=`, and whether the screen's
+    /// `Parts=` has the bar; `None` keeps the original's.
+    side_edge: Option<Edge>,
+    side_floats: Option<bool>,
+    bar_edge: Option<Edge>,
+    has_bar: Option<bool>,
 }
 
 impl MatchLayout {
@@ -490,6 +507,13 @@ impl MatchLayout {
         for &(number, value) in &self.numbers {
             *number.slot(spec) = value;
         }
+        let places = &mut spec.places;
+        places.side = self.side_edge.unwrap_or(places.side);
+        places.side_floats = self.side_floats.unwrap_or(places.side_floats);
+        places.bar = match self.has_bar {
+            Some(false) => None,
+            _ => self.bar_edge.or(places.bar).or(Some(Edge::Bottom)),
+        };
         if self.parts.is_empty() {
             return;
         }
@@ -661,7 +685,24 @@ fn read_layout(
                         None => problem(name, key, LayoutProblemKind::NotANumber),
                     }
                 } else if key.eq_ignore_ascii_case("Parts") {
-                    if !same_list(section, key, SCREEN_PARTS) {
+                    // The battlefield and the sidebar stay; the bar may go.
+                    let names: Vec<_> = section
+                        .read_list(key, LIST_CAPACITY)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(str::trim)
+                        .collect();
+                    let has = |part: &str| names.iter().any(|name| name.eq_ignore_ascii_case(part));
+                    if names.iter().any(|name| {
+                        !SCREEN_PARTS
+                            .split(',')
+                            .any(|part| name.eq_ignore_ascii_case(part))
+                    }) {
+                        problem(name, key, LayoutProblemKind::UnknownPart);
+                    }
+                    if has("Field") && has("Side") {
+                        read.has_bar = Some(has("Bar"));
+                    } else {
                         problem(name, key, LayoutProblemKind::NotYet);
                     }
                 } else {
@@ -679,7 +720,11 @@ fn read_layout(
         };
         let panel = panel_of(part);
         for key in section.keys() {
-            if let (Some(panel), true) = (panel, key.eq_ignore_ascii_case("Parts")) {
+            if let Some(read_place) = read_place(&mut read, section, part, key) {
+                if let Err(kind) = read_place {
+                    problem(name, key, kind);
+                }
+            } else if let (Some(panel), true) = (panel, key.eq_ignore_ascii_case("Parts")) {
                 let (listed, unknown, elsewhere) = part_list(section, key, panel);
                 if unknown {
                     problem(name, key, LayoutProblemKind::UnknownPart);
@@ -693,6 +738,14 @@ fn read_layout(
                 .iter()
                 .find(|number| number.key.eq_ignore_ascii_case(key))
             {
+                // A size may say its word instead of a number (`Rest`).
+                let word = stock.fixed.iter().any(|(fixed, accepted)| {
+                    fixed.eq_ignore_ascii_case(key)
+                        && accepted.is_some_and(|accepted| same_list(section, key, accepted))
+                });
+                if word {
+                    continue;
+                }
                 let Some(value) = whole_number(section, key) else {
                     problem(name, key, LayoutProblemKind::NotANumber);
                     continue;
@@ -716,6 +769,52 @@ fn read_layout(
         }
     }
     Some(read)
+}
+
+/// The keys that say where the sidebar and the bar sit: `[Side] Hold=` (any
+/// edge) and `Float=`, and `[Bar] Hold=` (`Top` or `Bottom`). `None` for any
+/// other key; an edge the panel cannot sit on yet is refused as not yet.
+fn read_place(
+    read: &mut MatchLayout,
+    section: &IniSection,
+    part: &str,
+    key: &str,
+) -> Option<Result<(), LayoutProblemKind>> {
+    let side = part.eq_ignore_ascii_case("Side");
+    let bar = part.eq_ignore_ascii_case("Bar");
+    if side && key.eq_ignore_ascii_case("Float") {
+        return Some(match section.read_bool_value(key) {
+            Some(floats) => {
+                read.side_floats = Some(floats);
+                Ok(())
+            }
+            None => Err(LayoutProblemKind::NotYesOrNo),
+        });
+    }
+    if !(side || bar) || !key.eq_ignore_ascii_case("Hold") {
+        return None;
+    }
+    let word = section.read_name(key, NAME_CAPACITY).unwrap_or_default();
+    let edge = [
+        ("Left", Edge::Left),
+        ("Right", Edge::Right),
+        ("Top", Edge::Top),
+        ("Bottom", Edge::Bottom),
+    ]
+    .into_iter()
+    .find(|(name, _)| name.eq_ignore_ascii_case(word))
+    .map(|(_, edge)| edge);
+    Some(match edge {
+        Some(edge) if side => {
+            read.side_edge = Some(edge);
+            Ok(())
+        }
+        Some(edge @ (Edge::Top | Edge::Bottom)) if bar => {
+            read.bar_edge = Some(edge);
+            Ok(())
+        }
+        _ => Err(LayoutProblemKind::NotYet),
+    })
 }
 
 /// A panel's `Parts=`: the parts it names that the original holds in that
@@ -898,7 +997,7 @@ mod tests {
     fn a_broken_file_keeps_the_original_and_names_each_line() {
         let file = MatchLayoutFile::from_bytes(
             b"[Layouts]\nGDI=Broken\nNod=Missing\nThirdSide=Future\n\
-              [Broken]\nParts=Side,Field\nColour=red\n\
+              [Broken]\nParts=Side,Clock,Field,Bar\nColour=red\n\
               [Broken.Radar]\nMapWidth=wide\nMapHeight=0\nHold=Left\nSpeed=3\n\
               [Broken.Cameos]\nRowHeight=1\nCellHeight=30\nColumns=0\n\
               [Broken.Clock]\nX=4\n\
@@ -912,7 +1011,7 @@ mod tests {
             .map(|problem| (problem.place(), problem.kind.clone()))
             .collect();
         let expected = [
-            ("[Broken] Parts", NotYet),
+            ("[Broken] Parts", UnknownPart),
             ("[Broken] Colour", UnknownKey),
             ("[Broken.Radar] MapWidth", NotANumber),
             ("[Broken.Radar] MapHeight", Clamped { used: 1 }),
@@ -1041,30 +1140,121 @@ mod tests {
     }
 
     #[test]
+    fn a_layout_puts_the_sidebar_and_the_bar_on_other_edges() {
+        let file = MatchLayoutFile::from_bytes(
+            b"[Layouts]\nGDI=Lefty\nNod=Over\n\
+              [Lefty.Side]\nHold=left\n[Lefty.Bar]\nHold=Top\n\
+              [Over]\nParts=Field,Side\n[Over.Side]\nFloat=yes\nHold=Middle\n\
+              [Over.Bar]\nHold=Left\n[Over.Radar]\nFloat=maybe\n",
+        );
+        // A sidebar in the middle and a bar on the left are not there yet,
+        // and only the sidebar can float.
+        let problems: Vec<_> = file
+            .problems()
+            .iter()
+            .map(|problem| (problem.place(), problem.kind.clone()))
+            .collect();
+        assert_eq!(
+            problems,
+            [
+                ("[Over.Side] Hold".to_owned(), LayoutProblemKind::NotYet),
+                ("[Over.Bar] Hold".to_owned(), LayoutProblemKind::NotYet),
+                (
+                    "[Over.Radar] Float".to_owned(),
+                    LayoutProblemKind::UnknownKey
+                ),
+            ]
+        );
+
+        let (spec, view) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI")));
+        let frame = SidebarFrame::native(800, 600).with_places(spec.places);
+        // The sidebar's parts follow it to the left edge, and the battlefield
+        // starts beside it and under the bar.
+        assert_eq!((view.panel_rect.x, view.tabs[0].rect.x), (0.0, 26.0));
+        assert_eq!(radar_minimap_rect_with_spec(800.0, spec).x, 16.0);
+        assert_eq!(frame.tactical_rect(), (168, 32, 632, 568));
+
+        // A floating sidebar and no bar leave the battlefield the whole frame.
+        let (spec, _) = sidebar(SidebarTheme::Soviet, file.for_side(Some("Nod")));
+        let frame = SidebarFrame::native(800, 600).with_places(spec.places);
+        assert_eq!(frame.tactical_rect(), (0, 0, 800, 600));
+        assert_eq!(frame.column(), (632, 0, 168, 600));
+        assert!(!frame.has_bar());
+    }
+
+    #[test]
+    fn a_layout_lays_the_sidebar_along_the_bottom_as_a_band() {
+        let file = MatchLayoutFile::from_bytes(
+            b"[Layouts]\nGDI=Low\n[Low.Side]\nHold=Bottom\nWidth=Rest\nHeight=160\n\
+              [Low.Cameos]\nX=336\nY=0\nColumns=6\n[Low.Power]\nX=320\nY=0\n",
+        );
+        assert!(file.problems().is_empty(), "{:?}", file.problems());
+        let mut spec = SidebarChromeLayoutSpec::for_theme(SidebarTheme::Allied);
+        file.for_side(Some("GDI"))
+            .unwrap()
+            .apply_to_sidebar(&mut spec);
+        let frame = SidebarFrame::native(800, 600)
+            .with_band_height(spec.side_height as u32)
+            .with_places(spec.places);
+        assert_eq!(frame.column(), (0, 440, 800, 160));
+        assert_eq!(frame.tactical_rect(), (0, 0, 800, 408));
+        // The parts lay out in the band: it starts at the screen's left
+        // edge, and its rows are the ones that fit in its own height.
+        let (width, height) = frame.layout_screen();
+        let layout = crate::ui::sidebar::compute_layout_with_spec(spec, width, height, 0);
+        assert_eq!((layout.sidebar_x, layout.strip_x), (0.0, 336.0));
+        assert_eq!(layout.side2_tile_count, (160 - 33) / 50);
+        assert_eq!(spec.side_width(width), 800.0);
+    }
+
+    #[test]
     fn the_sample_layout_reads_cleanly_and_does_what_it_says() {
         let file = MatchLayoutFile::from_bytes(
             crate::test_fixture::text("docs/examples/veraui.ini").as_bytes(),
         );
         assert!(file.problems().is_empty(), "{:?}", file.problems());
-        for (side, theme) in [("GDI", SidebarTheme::Allied), ("Nod", SidebarTheme::Soviet)] {
-            let (_, stock) = sidebar(theme, None);
-            let (_, view) = sidebar(theme, file.for_side(Some(side)));
-            assert_eq!(
-                view.repair_button.rect.x, stock.sell_button.rect.x,
-                "{side}"
-            );
-            assert_eq!(
-                view.sell_button.rect.x, stock.repair_button.rect.x,
-                "{side}"
-            );
-            // The tabs run right to left over the same four places.
-            let places = |view: &SidebarView| -> Vec<f32> {
-                view.tabs.iter().map(|tab| tab.rect.x).collect()
-            };
-            let mut reversed = places(&stock);
-            reversed.reverse();
-            assert_eq!(places(&view), reversed, "{side}");
-        }
+        // The Allies' is mirrored: the sidebar on the left, the bar on top,
+        // Repair and Sell swapped, and the tabs right to left over the same
+        // four places.
+        let (_, stock) = sidebar(SidebarTheme::Allied, None);
+        let (spec, view) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI")));
+        let frame = SidebarFrame::native(800, 600).with_places(spec.places);
+        assert_eq!(frame.tactical_rect(), (168, 32, 632, 568));
+        let from_side = |view: &SidebarView, x: f32| x - view.panel_rect.x;
+        assert_eq!(
+            from_side(&view, view.repair_button.rect.x),
+            from_side(&stock, stock.sell_button.rect.x)
+        );
+        assert_eq!(
+            from_side(&view, view.sell_button.rect.x),
+            from_side(&stock, stock.repair_button.rect.x)
+        );
+        let places = |view: &SidebarView| -> Vec<f32> {
+            view.tabs
+                .iter()
+                .map(|tab| from_side(view, tab.rect.x))
+                .collect()
+        };
+        let mut reversed = places(&stock);
+        reversed.reverse();
+        assert_eq!(places(&view), reversed);
+        // The Soviets' lies along the bottom, two rows of cameos beside the
+        // middle panel beside the radar.
+        let mut spec = SidebarChromeLayoutSpec::for_theme(SidebarTheme::Soviet);
+        file.for_side(Some("Nod"))
+            .unwrap()
+            .apply_to_sidebar(&mut spec);
+        let frame = SidebarFrame::native(800, 600)
+            .with_band_height(spec.side_height as u32)
+            .with_places(spec.places);
+        assert_eq!(frame.tactical_rect(), (0, 0, 800, 408));
+        let (width, height) = frame.layout_screen();
+        let layout = crate::ui::sidebar::compute_layout_with_spec(spec, width, height, 0);
+        assert_eq!(
+            (layout.radar_x, layout.side1_x, layout.strip_x),
+            (0.0, 168.0, 336.0)
+        );
+        assert_eq!(layout.side2_tile_count, 2);
         // Yuri's is wider, three cameos to a row, with an empty top strip.
         let (spec, view) = sidebar_with(SidebarTheme::Yuri, file.for_side(Some("ThirdSide")), 4);
         assert_eq!((view.panel_rect.w, spec.columns()), (232.0, 3));

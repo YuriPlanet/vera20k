@@ -1228,6 +1228,7 @@ pub(super) fn dispatch_draw_passes(
     // Original4F4480's53BAE0 gate skips tactical redraw during ChronoScreen,
     // but sidebar/UI still follow. Surface stores therefore precede chrome.
     drop(pass);
+    let bar_under = state.sidebar_frame().places().bar == Some(crate::ui::sidebar::Edge::Bottom);
     state
         .match_state
         .match_presentation
@@ -1237,6 +1238,7 @@ pub(super) fn dispatch_draw_passes(
             encoder,
             state.renderer.game_frame_texture(),
             [tac_x, tac_y, tac_w, tac_h],
+            bar_under,
         );
     let page_draw = crate::app::frontend::skirmish_shell_render::in_match_page_draw(state);
     let mut pass = begin_main_load_pass(encoder, view, frame_depth);

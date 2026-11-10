@@ -604,7 +604,7 @@ pub struct GameEntity {
     /// unmark also clears. Only `Simulation::track_raw_mark_at` writes it.
     #[cfg(feature = "ares")]
     #[serde(default)]
-    pub(crate) ares_alt_occupation: Option<bool>,
+    ares_alt_occupation: Option<bool>,
     /// Ares TechnoExt::SuperWeapon (+0xA0), the Super attached to this
     /// Techno: SW_HunterSeeker::Activate's launch source on its seeker and
     /// SW_EMPulse::Activate's firing Super on each cannon. The entity owns
@@ -1145,6 +1145,25 @@ impl GameEntity {
     #[cfg(feature = "ares")]
     pub(crate) fn end_ares_drop_pod(&mut self) {
         self.ares_drop_pod = None;
+    }
+
+    /// The plane this Unit's last raw mark chose (TechnoExt `AltOccupation`),
+    /// `true` for the deck, while that mark stands.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_alt_occupation(&self) -> Option<bool> {
+        self.ares_alt_occupation
+    }
+
+    /// A raw mark (vt+0xF0) records the plane it chose.
+    #[cfg(feature = "ares")]
+    pub(crate) fn mark_ares_alt_occupation(&mut self, on_deck: bool) {
+        self.ares_alt_occupation = Some(on_deck);
+    }
+
+    /// The unmark reads the recorded plane and forgets it.
+    #[cfg(feature = "ares")]
+    pub(crate) fn take_ares_alt_occupation(&mut self) -> Option<bool> {
+        self.ares_alt_occupation.take()
     }
 
     #[cfg(feature = "ares")]

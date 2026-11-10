@@ -220,7 +220,7 @@ pub(crate) fn build_sidebar_view_with_spec(
     let panel_rect = Rect {
         x: layout.sidebar_x,
         y: 0.0,
-        w: layout_spec.sidebar_width,
+        w: layout_spec.side_width(screen_w),
         h: screen_h,
     };
     let low_power = power_produced < power_drained;

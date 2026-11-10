@@ -1,11 +1,12 @@
 # Interface layout (`veraui.ini`)
 
-A mod can lay out the sidebar with a file named `veraui.ini`: move its parts, leave
-parts out, change how many columns of build pictures it has and how wide it is. Without
-the file the game looks exactly as the original does.
+A mod can lay out the match screen with a file named `veraui.ini`: put the sidebar on
+any edge of the screen, put the command bar on top or leave it out, move the sidebar's
+parts, leave parts out, and change how many columns of build pictures it has and how
+big it is. Without the file the game looks exactly as the original does.
 
 This is part of a larger plan. Later versions will let a layout add buttons and text
-and put the sidebar on another edge of the screen. The keys on this page keep their
+and place the messages and timers on the battlefield. The keys on this page keep their
 meaning when that comes, so a layout you write now keeps working.
 
 ## Where the file goes
@@ -19,15 +20,19 @@ The file only changes what you see. Online players don't need the same file, and
 isn't one of the files a match compares. Packed inside an archive it is part of that
 archive, which a match does compare like every other file in a mod's folder.
 
-An older VERA20k doesn't read the file and shows the original sidebar. If your mod
-needs its layout, say so with `Needs=` in the mod's
+An older VERA20k doesn't read the file, or skips the keys it doesn't know and tells
+the player. If your mod needs its layout, say so with `Needs=` in the mod's
 [`mod.ini`](modding.md#modini).
 
-[`docs/examples/veraui.ini`](examples/veraui.ini) is a sample you can copy. With the
-original pictures it swaps Repair with Sell and Diplomacy with Options and runs the tabs
-from right to left for the Allies and the Soviets. For Yuri it shows a wider sidebar
-with three columns of build pictures and no top buttons, which needs wider pictures of
-your own to look finished.
+[`docs/examples/veraui.ini`](examples/veraui.ini) is a sample you can copy. It has
+three layouts, all with the original pictures:
+
+- The Allies get a mirrored screen: the sidebar on the left, the command bar on top,
+  Repair swapped with Sell, Diplomacy with Options, and the tabs from right to left.
+- The Soviets get the sidebar along the bottom of the screen, with its panels side by
+  side.
+- Yuri gets a wider sidebar with three columns of build pictures and no top buttons,
+  which needs wider pictures of your own to look finished.
 
 ## A small example
 
@@ -72,16 +77,91 @@ you change.
 Each part you change gets a section named after the layout and the part, with a dot
 between them: `[Mine.Radar]`.
 
-The layout's own section, `[Mine]`, holds one key:
+The layout's own section, `[Mine]`, holds two keys:
 
 | Key | Meaning |
 | --- | --- |
-| `Version=1` | The version of this format the layout was written for. Leave it at 1, or leave the section out. |
-
-## The parts and where they sit
+| `Version=1` | The version of this format the layout was written for. Leave it at 1, or leave it out. |
+| `Parts=Field,Side,Bar` | The big parts of the screen. See [The screen](#the-screen). |
 
 All numbers are pixels of the original sidebar, which is 168 wide. The Sidebar size
 option in the game makes the whole interface bigger, your layout included.
+
+## The screen
+
+The screen has three big parts:
+
+| Part | What it is |
+| --- | --- |
+| `Field` | The battlefield |
+| `Side` | The sidebar |
+| `Bar` | The command bar: the row of buttons along the bottom of the original screen |
+
+The sidebar takes its edge of the screen first. The command bar takes the top or the
+bottom of what is left, and the battlefield gets the rest.
+
+| Part | Key | Meaning | Original |
+| --- | --- | --- | --- |
+| `Side` | `Hold` | The edge the sidebar sits on: `Left`, `Right`, `Top` or `Bottom` | `Right` |
+| `Side` | `Width` | How wide a sidebar on the left or the right is. 16 or more | 168 |
+| `Side` | `Height` | How tall a sidebar on the top or the bottom is. 16 or more | 168 |
+| `Side` | `Float` | `yes` lays the sidebar over the battlefield: the battlefield and the command bar then use the whole screen under it | `no` |
+| `Bar` | `Hold` | The edge the command bar sits on: `Top` or `Bottom` | `Bottom` |
+
+This puts the sidebar on the left and the command bar on top:
+
+```ini
+[Mine.Side]
+Hold=Left
+
+[Mine.Bar]
+Hold=Top
+```
+
+A screen without the command bar leaves it out of the layout's `Parts=`:
+
+```ini
+[Mine]
+Parts=Field,Side
+```
+
+The buttons are gone then, but their hotkeys still work. `Field` and `Side` can't be
+left out yet.
+
+### A sidebar on the top or the bottom
+
+On the left or the right the sidebar is as tall as the screen and `Width` wide. On the
+top or the bottom it is as wide as the screen and `Height` tall.
+
+Its parts don't rearrange themselves. Each one still sits where its `X` and `Y` say,
+measured from the sidebar's top-left corner, so a sidebar along the bottom needs new
+places for the parts that would hang below it:
+
+```ini
+[Mine.Side]
+Hold=Bottom
+Height=160
+
+[Mine.Middle]
+X=168
+Y=0
+
+[Mine.Cameos]
+X=336
+Y=0
+
+[Mine.Power]
+X=336
+Y=0
+```
+
+The money, the top buttons and the radar stay in the first 168 pixels. The panel with
+Repair, Sell and the tabs moves beside them, and the build pictures beside that. The
+sidebar shows as many rows of build pictures as fit in its height: two here.
+
+Where no part draws, the sidebar is black. Wider pictures of your own fill it.
+
+## The parts and where they sit
 
 `X` and `Y` say where a part's top-left corner is, measured from the top-left corner of
 the part it is inside. When you move a part, the parts inside it move with it.
@@ -107,14 +187,13 @@ Some parts have more keys:
 
 | Part | Key | Meaning | Allied | Soviet, Yuri |
 | --- | --- | --- | --- | --- |
-| `Side` | `Width` | How wide the sidebar is. The battlefield and the bar along the bottom take what is left. 16 or more | 168 | 168 |
 | `Radar` | `MapX`, `MapY` | Where the map picture sits inside the radar frame | 16, 1 | 19, 2 |
 | `Radar` | `MapWidth`, `MapHeight` | The size of the map picture | 140, 108 | 140, 108 |
 | `Tabs` | `Step` | From the left edge of one tab to the left edge of the next. A number below zero runs the tabs from right to left | 29 | 32 |
 | `Cameos` | `Columns` | How many build pictures are in a row. 1 to 8 | 2 | 2 |
 | `Cameos` | `CellX`, `CellY` | Where the first build picture sits, measured from the part's top-left corner | 22, 1 | 22, 1 |
 | `Cameos` | `ColumnWidth` | From the left edge of one column to the left edge of the next | 63 | 64 |
-| `Cameos` | `RowHeight` | From the top of one row to the top of the next. It also decides how many rows fit on the screen. 16 or more | 50 | 50 |
+| `Cameos` | `RowHeight` | From the top of one row to the top of the next. It also decides how many rows fit in the sidebar. 16 or more | 50 | 50 |
 | `Cameos` | `Footer` | The height kept free under the last row, for the scroll buttons | 33 | 25 |
 | `Cameos` | `ScrollX`, `ScrollY` | Where the scroll-down button sits: from the part's left edge, and down from the bottom of the last row | 39, 7 | 39, 7 |
 | `Cameos` | `ScrollStep` | From the left edge of the scroll-down button to the left edge of the scroll-up button | 46 | 45 |
@@ -174,17 +253,17 @@ out or write the original value. Any other value is skipped, and the game tells 
 | Key | What it is for | Original value |
 | --- | --- | --- |
 | `Type` | The kind of part: `Battlefield`, `Panel`, `Radar`, `CameoGrid`, `Tabs`, `PowerBar`, `Button` or `Text` | The part's own kind |
-| `Hold` | The edge or corner of its parent a part is measured from | `TopLeft`. `Top` for `Money`, `Right` for `Side`, `Bottom` for `Bar` |
-| `Width`, `Height` | A part's size, for every part but the `Width` of `Side`. `Rest` means what is left | `Height=Rest` for `Side`, `Width=Rest` and `Height=32` for `Bar`, `Rest` for both on `Field`, `Height=Rest` for `Cameos` |
-| `Parts` on the layout itself | The parts of the whole screen | `Parts=Field,Side,Bar` |
+| `Hold` | The edge or corner of its parent a part is measured from, for every part but `Side` and `Bar` | `TopLeft`. `Top` for `Money` |
+| `Width`, `Height` | A part's size, for every part but `Side`. `Rest` means what is left | `Width=Rest` and `Height=32` for `Bar`, `Rest` for both on `Field`, `Height=Rest` for `Cameos` |
 | `Art` | The pictures a part draws | None yet: replace the picture files instead |
 | `CellWidth`, `CellHeight` | The size of one build picture | 60, 48 |
 | `Command` | What a button does | None yet |
 | `Value` | What a text part shows | None yet |
 
-Three parts can't be moved at all yet: `Field` (the battlefield), `Side` (the sidebar)
-and `Bar` (the bar along the bottom of the screen). A layout also can't add a part: a
-section for a part that isn't in the table above is skipped.
+The three big parts hold on to their edges: they have no `X` or `Y`. The command bar
+can't stand on the left or the right, and its buttons can't be changed here yet. A
+layout also can't add a part: a section for a part that isn't in the tables above is
+skipped.
 
 ## If you make a mistake
 
@@ -211,3 +290,6 @@ other INI files they do count.
 In a build with [Phobos](phobos.md), a side's
 [`Sidebar.GDIPositions=`](phobos-sidebar-gdi.md) still picks whether the side starts
 from the Allied or the Soviet numbers. The layout's numbers then go on top.
+
+Phobos' own column of superweapon buttons stays at the left edge of the screen. With
+the sidebar on the left the two overlap; a later version lets a layout place it.

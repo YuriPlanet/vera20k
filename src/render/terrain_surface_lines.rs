@@ -116,7 +116,9 @@ fn raster_draw(
                 viewport.clip,
                 logical_size,
                 logical_size[0],
-                viewport.z_origin_y,
+                // A wave's rows are surface rows. Its depth goes by the same
+                // origin as the line stores', which take the clip's row off.
+                viewport.z_origin_y.wrapping_sub(viewport.clip[1]),
                 |pixel| {
                     use crate::render::wave_geometry::{WaveBlend, WavePolygon};
                     let source = pixel
