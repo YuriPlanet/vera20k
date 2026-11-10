@@ -42,6 +42,7 @@ const BUTTON_PAD: [i32; 2] = [5, 2];
 pub(crate) struct Placed {
     /// Its place in the layout's list.
     pub index: usize,
+    /// The sidebar or the battlefield: for a group's part, its group's.
     pub holder: Holder,
     /// `x, y, width, height`: frame pixels in the battlefield, the
     /// sidebar's layout pixels in the sidebar.
@@ -53,6 +54,8 @@ pub(crate) struct Placed {
     pub picture: Option<crate::render::sidebar_chrome::SidebarChromeEntry>,
     /// Whether the button is held down.
     pub pressed: bool,
+    /// A row or a column: it places its parts and draws nothing itself.
+    pub group: bool,
 }
 
 /// What a text part shows now.
@@ -99,7 +102,8 @@ fn label_text(state: &AppState, label: &str) -> String {
         .to_owned()
 }
 
-/// Every added part of the local side's layout, where this frame shows it.
+/// Every added part of the local side's layout, where this frame shows it,
+/// one for each part in the layout's order.
 pub(crate) fn placed(state: &AppState) -> Vec<Placed> {
     let parts = &state.match_state.match_presentation.added_parts;
     if parts.is_empty() {
@@ -119,7 +123,8 @@ pub(crate) fn placed(state: &AppState) -> Vec<Placed> {
     let art = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
         .map(|atlas| &atlas.layout_art);
     let gadgets = &state.match_state.match_presentation.in_game_gadgets;
-    parts
+    // Each part's own content and size first, at no place yet.
+    let mut placed: Vec<Placed> = parts
         .iter()
         .enumerate()
         .map(|(index, part)| {
@@ -135,38 +140,94 @@ pub(crate) fn placed(state: &AppState) -> Vec<Placed> {
                     (label_text(state, label), true, picture)
                 }
                 AddedKind::Text { value } => (value_text(state, *value), false, None),
+                AddedKind::Group { .. } => (String::new(), false, None),
             };
             let pad = if button { BUTTON_PAD } else { [0, 0] };
             // A picture is as big as its file draws it; words as their text.
-            let natural = match picture {
-                Some(picture) => picture.pixel_size.map(|v| v as i32),
-                None => [
+            let natural = match (&part.kind, picture) {
+                (AddedKind::Group { .. }, _) => [0, 0],
+                (_, Some(picture)) => picture.pixel_size.map(|v| v as i32),
+                (_, None) => [
                     font.text_width(&text) as i32 + 2 * pad[0],
                     font.cell_height() as i32 + 2 * pad[1],
                 ],
             };
-            let area = match part.holder {
-                Holder::Side => side,
-                Holder::Field => field,
-            };
             Placed {
                 index,
                 holder: part.holder,
-                rect: part.rect_in(area, natural),
+                rect: [0, 0, natural[0], natural[1]],
                 text,
                 button,
                 picture,
                 pressed,
+                group: matches!(part.kind, AddedKind::Group { .. }),
             }
         })
-        .collect()
+        .collect();
+    // A row or a column is as big as its parts, one after another.
+    let mut in_group = vec![[0; 2]; parts.len()];
+    for (group, part) in parts.iter().enumerate() {
+        let AddedKind::Group { column, gap } = part.kind else {
+            continue;
+        };
+        let members: Vec<usize> = (0..parts.len())
+            .filter(|&index| parts[index].holder == Holder::Group(group))
+            .collect();
+        let sizes: Vec<[i32; 2]> = members
+            .iter()
+            .map(|&index| {
+                let [_, _, width, height] = placed[index].rect;
+                [
+                    parts[index].place.width.unwrap_or(width),
+                    parts[index].place.height.unwrap_or(height),
+                ]
+            })
+            .collect();
+        let wrap = if column {
+            part.place.height
+        } else {
+            part.place.width
+        };
+        let (places, whole) = crate::ui::added_parts::flow(&sizes, column, gap, wrap);
+        placed[group].rect = [0, 0, whole[0], whole[1]];
+        for ((&index, place), size) in members.iter().zip(places).zip(sizes) {
+            in_group[index] = place;
+            placed[index].rect = [0, 0, size[0], size[1]];
+        }
+    }
+    // The parts the sidebar and the battlefield hold take their places
+    // there; a group's parts follow their group.
+    for (index, part) in parts.iter().enumerate() {
+        let area = match part.holder {
+            Holder::Side => side,
+            Holder::Field => field,
+            Holder::Group(_) => continue,
+        };
+        let [_, _, width, height] = placed[index].rect;
+        placed[index].rect = part.rect_in(area, [width, height]);
+    }
+    for (index, part) in parts.iter().enumerate() {
+        let Holder::Group(group) = part.holder else {
+            continue;
+        };
+        let (holder, [x, y, _, _]) = (placed[group].holder, placed[group].rect);
+        let [_, _, width, height] = placed[index].rect;
+        placed[index].holder = holder;
+        placed[index].rect = [
+            x + in_group[index][0],
+            y + in_group[index][1],
+            width,
+            height,
+        ];
+    }
+    placed
 }
 
 /// The frame-pixel rectangle a placed part takes clicks in.
 pub(crate) fn click_rect(state: &AppState, placed: &Placed) -> [i32; 4] {
     let [x, y, width, height] = placed.rect;
     match placed.holder {
-        Holder::Field => placed.rect,
+        Holder::Field | Holder::Group(_) => placed.rect,
         Holder::Side => {
             let rect = state
                 .sidebar_frame()
@@ -196,7 +257,7 @@ pub(crate) fn clicked(state: &mut AppState, index: usize, right: bool) {
         .get(index)
         .and_then(|part| match &part.kind {
             AddedKind::Button { command, .. } => command_named(command),
-            AddedKind::Text { .. } => None,
+            AddedKind::Text { .. } | AddedKind::Group { .. } => None,
         });
     match command {
         Some(ButtonCommand::Bar(id)) => {
@@ -218,7 +279,7 @@ pub(crate) fn clicked(state: &mut AppState, index: usize, right: bool) {
 pub(crate) fn pictures(state: &AppState, holder: Holder, camera: [f32; 2]) -> Vec<SpriteInstance> {
     placed(state)
         .into_iter()
-        .filter(|part| part.holder == holder)
+        .filter(|part| part.holder == holder && !part.group)
         .filter_map(|part| {
             let picture = part.picture?;
             Some(SpriteInstance {
@@ -252,7 +313,7 @@ pub(crate) fn instances(
     let (mut boxes, mut texts) = (Vec::new(), Vec::new());
     for part in placed(state)
         .into_iter()
-        .filter(|part| part.holder == holder && part.picture.is_none())
+        .filter(|part| part.holder == holder && part.picture.is_none() && !part.group)
     {
         let [x, y, width, height] = part.rect.map(|v| v as f32);
         let pad = if part.button { BUTTON_PAD } else { [0, 0] };
