@@ -398,10 +398,7 @@ pub(crate) fn on_open(state: &mut AppState) {
     crate::app::input::in_game_options::on_open(state);
     let options = &state.match_state.match_presentation.in_game_options;
     let (context, game_speed_shown) = (options.speed_context, !options.game_speed_hidden);
-    let speed_position = u8::try_from(
-        options.slider_position(crate::ui::shell::in_game_options::control::GAME_SPEED),
-    )
-    .unwrap_or(0);
+    let speed_position = u8::try_from(options.game_speed_position()).unwrap_or(0);
     let csf = state.process_assets.csf.as_ref();
     let label = |key: &str, fallback: &str| crate::i18n::label(csf, key, fallback);
     let speed_names = (0..=crate::ui::shell::game_speed::MAX_POSITION)

@@ -89,17 +89,6 @@ impl AbortReturnInput {
         Ok(input)
     }
 
-    /// Open the in-game menu, press Game Controls and stop on BBB.
-    pub(super) fn begin_game_controls(
-        state: &mut AppState,
-        route: &mut Vec<Value>,
-        frame: u32,
-    ) -> Result<Self> {
-        let mut input = Self::begin_choosing(state, route, frame, None)?;
-        input.menu_press = PauseMenuButton::GameControls;
-        Ok(input)
-    }
-
     pub(super) fn begin_choosing(
         state: &mut AppState,
         route: &mut Vec<Value>,
@@ -300,17 +289,6 @@ impl AbortReturnInput {
                     MouseButton::Left,
                     ElementState::Released,
                 );
-                if self.menu_press == PauseMenuButton::GameControls {
-                    ensure!(
-                        state.match_state.match_presentation.in_game_menu
-                            == InGameMenuState::Options,
-                        "physical Game Controls release did not open BBB"
-                    );
-                    route.push(json!({"frame": frame, "action": "Game Controls release"}));
-                    MoviesCapture::restore_neutral_pointer(state);
-                    self.phase = AbortInputPhase::Queued;
-                    return Ok(true);
-                }
                 if self.surrender.is_some() {
                     ensure!(
                         state.match_state.match_presentation.in_game_menu

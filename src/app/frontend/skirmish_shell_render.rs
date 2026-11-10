@@ -12,11 +12,10 @@ use draw_order::{
     random_map_setup_semantic_draw_order, skirmish_shell_semantic_draw_order,
     validation_modal_semantic_draw_order,
 };
-mod in_game_options;
 mod in_game_shell;
 pub(crate) use in_game_shell::{
     current_in_game_shell_layout, in_game_shell_cursor, in_game_shell_size,
-    native_in_game_shell_active, render_in_game_options_shell,
+    native_in_game_shell_active,
 };
 mod pause_menu;
 pub(crate) use pause_menu::render_pause_menu_shell;

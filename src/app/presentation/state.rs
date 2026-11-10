@@ -265,11 +265,6 @@ pub(crate) struct MatchPresentationState {
     /// queues an authoritative transition on close; `sim_speed_tps` is its local
     /// presentation readout. App/ui-level.
     pub(crate) in_game_options: crate::ui::shell::in_game_options_state::InGameOptionsState,
-    /// Laid-out 0xBBB anchor cached by the overlay render pass each frame it draws,
-    /// so the paused mouse handler hit-tests the exact rects that were rendered
-    /// (the sidebar-anchored button Y is render-derived; see KD-6). None until the
-    /// overlay first renders.
-    pub(crate) in_game_options_anchor: Option<crate::ui::shell::layout::InGameOptionsAnchor>,
 }
 
 impl MatchPresentationState {

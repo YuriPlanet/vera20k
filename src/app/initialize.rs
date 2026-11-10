@@ -1044,7 +1044,6 @@ impl App {
                     restate_text: String::new(),
                     saved_game_browser: None,
                     in_game_options: startup_in_game_options,
-                    in_game_options_anchor: None,
                     combat_lights: Default::default(),
                     screen_shake: Default::default(),
                     line_trails: Default::default(),

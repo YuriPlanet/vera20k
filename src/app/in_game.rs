@@ -109,7 +109,6 @@ impl App {
         // A match's 0xCF ends with the game: its pump 0x00623120 stops the
         // loop once Main_Tick reports the game over (0x0062314E..0x00623157).
         crate::app::shell_wol::page::close_page_dialog(state);
-        state.match_state.match_presentation.in_game_options_anchor = None;
         state.match_state.match_presentation.pause_menu_interaction = Default::default();
         state.match_state.match_presentation.abort_buttons = Default::default();
         state.match_state.match_presentation.surrender_buttons = Default::default();
@@ -345,16 +344,6 @@ impl App {
         {
             return;
         }
-        // Escape and Back leave Options the same way — apply and persist the
-        // touched `[Options]` values, then return to the menu — so the two
-        // cannot disagree about what was saved.
-        if current == InGameMenuState::Options {
-            crate::app::persistence::options::accept_in_game_options(state);
-            log::info!(
-                "In-game Options closed at {} tps",
-                state.match_state.sim_speed_tps
-            );
-        }
         Self::enter_in_game_menu_state(state, current.on_escape());
     }
 
@@ -458,15 +447,6 @@ impl App {
         }
         if next == InGameMenuState::AbortConfirm {
             crate::app::input::abort::on_open(state);
-        }
-
-        // Leaving Options: drop the cached `0xBBB` hit-test anchor so the
-        // overlay's own mouse handler cannot claim clicks aimed at the menu.
-        if previous == InGameMenuState::Options {
-            state.match_state.match_presentation.in_game_options_anchor = None;
-        }
-        if next == InGameMenuState::Options {
-            crate::app::input::in_game_options::on_open(state);
         }
 
         // An open modal is the pause (`MatchState::paused`); any transition

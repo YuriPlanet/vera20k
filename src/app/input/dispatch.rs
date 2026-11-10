@@ -185,8 +185,6 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
             == crate::ui::pause_menu::InGameMenuState::Menu
         {
             crate::app::input::pause_menu::mouse(state, button, pressed);
-        } else {
-            crate::app::input::in_game_options::in_game_options_mouse(state, button, pressed);
         }
         return;
     }
@@ -1042,8 +1040,6 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
             == crate::ui::pause_menu::InGameMenuState::Menu
         {
             crate::app::input::pause_menu::cursor_moved(state);
-        } else {
-            crate::app::input::in_game_options::in_game_options_drag(state);
         }
         return;
     }
