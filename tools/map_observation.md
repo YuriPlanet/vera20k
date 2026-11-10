@@ -1134,9 +1134,10 @@ remains exact: no radar masks, channel tolerances or skipped pixels are applied.
 
 The [retail opening profile](map_observation.sidebar-opening.example.json)
 uses stock AnyTown and ordinary MCV deployment/production before clicking the GI.
-Numeric command handles belong to that seeded launch; rediscover them with a
-zero-step observation after population changes. Pass absolute profile/contract
-paths to the wrapper.
+Its commands name the MCV and the building types (profile v3), so they do not
+depend on that launch's numeric handles, and its cursor rests over the sidebar,
+where no unit can pass under it. Pass absolute profile/contract paths to the
+wrapper.
 
 A v2 profile may opt in to `observe_sidebar_steps: [0, 1, 100]`. Each listed
 capture completed step records the local retained sidebar view: tabs, ordered
