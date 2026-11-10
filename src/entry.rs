@@ -245,6 +245,8 @@ fn run_with(
         Ok(result) => result?,
         Err(panic) => {
             app.save_replay_after_panic();
+            // resume_unwind skips the hook: a worker's panic gets its box here.
+            crate::app::system_dialog::report_reraised_panic(&*panic);
             std::panic::resume_unwind(panic);
         }
     }
