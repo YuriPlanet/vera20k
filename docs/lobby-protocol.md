@@ -623,15 +623,19 @@ or `sign_in_token` for a name without an account returns 404 `no_account`; other
 that name enters as a guest. A lobby without accounts set up refuses a password with
 503 `accounts_unavailable`.
 
-VERA20k's online login page has only its buttons, and each button opens a popup. Login
-asks for the name and password, with Remember password, and Play as Guest for the name
-alone, with no password or remembered sign-in; Enter on the page opens Login. Create
-Account asks for the name, email and password, then the mailed code, and signs in. Forgot
-Password asks for the name and mails its code, then asks for it and a new password, and
-signs in. Delete Account asks for the name and its password, then says the account is
-deleted and forgets a remembered sign-in of it. A remembered sign-in lives in
-`Account.json` beside `VERA.INI` as `{name, sign_in_token}` per lobby, readable only by
-its owner; Login's popup then opens on the name with a masked password.
+VERA20k's online login page welcomes the player and has a username field, which starts
+from the last name signed in. Play, or Enter, signs in under that name: with this
+computer's remembered sign-in when it is that account's, and as a guest otherwise. Under
+the field the page shows the players online and the last 24 hours' games (`GET
+/v1/stats`, read each time the page opens), leaving out a count of none. Every other
+button opens a popup that starts from the field's name. Login asks for the name and
+password, with Remember password. Create Account asks for the name, email and password,
+then the mailed code, and signs in. Forgot Password asks for the name and mails its
+code, then asks for it and a new password, and signs in. Delete Account asks for the name
+and its password, then says the account is deleted and forgets a remembered sign-in of
+it. A remembered sign-in lives in `Account.json` beside `VERA.INI` as `{name,
+sign_in_token}` per lobby, readable only by its owner; Play then needs no password for
+that name, and Login's popup opens on it with a masked password.
 Unticking Remember password forgets it here and at the lobby, and so does a password
 sign-in of that name or a remembered sign-in of another account. A `wrong_password` or
 `no_account` answer to it forgets it too. Signing in under another name leaves it.

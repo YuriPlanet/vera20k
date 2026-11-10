@@ -1948,6 +1948,10 @@ impl ApplicationHandler for App {
                 (self.shell_capture.is_none() && self.hidden_run.is_none())
                     .then(|| crate::app::map_library::poll(state))
                     .flatten(),
+                // Nor the login page's counts.
+                (self.shell_capture.is_none() && self.hidden_run.is_none())
+                    .then(|| crate::app::shell_wol::login_info::poll(state))
+                    .flatten(),
                 (self.shell_capture.is_none() && self.hidden_run.is_none())
                     .then(|| crate::app::map_picture::poll(state))
                     .flatten(),

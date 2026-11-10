@@ -1159,6 +1159,7 @@ impl App {
                 frontend_rules: startup_rules,
                 shell_preview_overlay_registry: None,
                 map_library: Default::default(),
+                login_info: Default::default(),
                 map_pictures: Default::default(),
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                 updater: Default::default(),

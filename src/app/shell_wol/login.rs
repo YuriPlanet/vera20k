@@ -102,6 +102,9 @@ pub(super) fn open(state: &mut AppState) {
         WolLoginState::open(&mut state.frontend.wol_account, &visit.credentials)
     };
     visit.page = WolPage::Login(Box::new(login));
+    if visit.provider == super::WolProvider::Online {
+        super::login_info::refresh(state);
+    }
     open_login_art(state);
     let _ = App::ensure_skirmish_shell_chrome(state);
     state.frontend.shell_controller.reset_to(DIALOG, true);
@@ -228,7 +231,11 @@ pub(super) fn update_geometry(state: &mut AppState) {
         return;
     };
     let scale = layout.page.scale;
-    let text = layout.nickname_text_rect();
+    // VERA online: the username is a NewEdit, not the combo's edit child.
+    let text = match layout.online {
+        Some(online) => online.name,
+        None => layout.nickname_text_rect(),
+    };
     login
         .nickname
         .scroll_to_caret((scale.base_rect(text).w - 3).max(0) as u32, |value| {

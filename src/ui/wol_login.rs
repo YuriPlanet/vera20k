@@ -18,7 +18,7 @@ use crate::ui::shell::geom::{
 use crate::ui::shell::layout::status_line_rect;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::skirmish_shell::{COMBO_FACE_H, SavedSeedDescriptionEdit};
-use crate::ui::wol_account::{AccountSignIn, WolAccountForm, valid_name};
+use crate::ui::wol_account::{AccountSignIn, FieldKind, NAME_LIMIT, WolAccountForm, valid_name};
 
 pub(crate) const DIALOG: DialogId = DialogId(0x010F);
 pub(crate) const LOGIN: u16 = 0x0539;
@@ -28,13 +28,14 @@ pub(crate) const BACK: u16 = 0x0686;
 pub(crate) const NICKNAME: u16 = 0x0628;
 pub(crate) const PASSWORD: u16 = 0x072C;
 pub(crate) const REMEMBER: u16 = 0x072D;
-/// VERA's online page puts Play as Guest and Create Account where gamemd's
-/// Forget Account and Manage Account stand, and Forgot Password and Delete
-/// Account below them. Not gamemd controls: the ids only name their rects.
+/// VERA's online page puts Play where gamemd's Login stands, Login and
+/// Create Account where its Forget Account and Manage Account stand, and
+/// Forgot Password and Delete Account below them. Not gamemd controls: the
+/// ids only name their rects.
 pub(crate) const CREATE_ACCOUNT: u16 = 0x7FF0;
 pub(crate) const FORGOT_PASSWORD: u16 = 0x7FF1;
 pub(crate) const DELETE_ACCOUNT: u16 = 0x7FF2;
-pub(crate) const PLAY_AS_GUEST: u16 = 0x7FF3;
+pub(crate) const PLAY: u16 = 0x7FF3;
 /// EM_LIMITTEXT / CB_LIMITTEXT at `0x0079A925..0x0079A94E`.
 pub(crate) const NICKNAME_LIMIT: usize = 9;
 pub(crate) const PASSWORD_LIMIT: usize = 8;
@@ -83,23 +84,26 @@ pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
     },
 };
 
-/// The online sign-in opens the visit: Login (an account) and Play as Guest,
-/// then Create Account, Forgot Password and Delete Account, each opening its
-/// popup (docs/lobby-protocol.md "Accounts"), and Back leaves WOL with the
-/// welcome Main Menu's help. The fourth and fifth take My Info's stacked
-/// places (`wol_my_info`). The page's left side shows its art alone, without
-/// gamemd's fields.
+/// The online sign-in opens the visit: Play signs in under the page's
+/// username, then Login (an account), Create Account, Forgot Password and
+/// Delete Account, each opening its popup (docs/lobby-protocol.md
+/// "Accounts"), and Back leaves WOL with the welcome Main Menu's help. The
+/// fourth and fifth take My Info's stacked places (`wol_my_info`). The
+/// page's left side welcomes the player and holds the username field
+/// ([`WolOnlineLoginLayout`]).
 const ONLINE_PAGE: MenuPageSpec = MenuPageSpec {
     stacked: &[
         MenuPageButtonSpec {
-            tooltip_key: "VERA:LoginHelp",
+            id: PLAY,
+            csf_key: "VERA:Play",
+            tooltip_key: "VERA:PlayHelp",
+            result: None,
             ..PAGE.stacked[0]
         },
         MenuPageButtonSpec {
-            id: PLAY_AS_GUEST,
-            csf_key: "VERA:PlayAsGuest",
-            tooltip_key: "VERA:PlayAsGuestHelp",
-            ..PAGE.stacked[1]
+            dlu_top: PAGE.stacked[1].dlu_top,
+            tooltip_key: "VERA:LoginHelp",
+            ..PAGE.stacked[0]
         },
         MenuPageButtonSpec {
             id: CREATE_ACCOUNT,
@@ -184,9 +188,10 @@ impl std::fmt::Debug for WolAccountGlobals {
     }
 }
 
-/// The online page signs in through its popups: an account's username and
-/// password, or a guest's username alone (docs/lobby-protocol.md
-/// "Accounts"); native diagnostics retain gamemd's WOL credential page.
+/// The online page signs in under its username field, as a guest or with
+/// this computer's remembered sign-in, or through Login's popup with an
+/// account's username and password (docs/lobby-protocol.md "Accounts");
+/// native diagnostics retain gamemd's WOL credential page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LoginPolicy {
     Legacy,
@@ -369,10 +374,10 @@ impl WolLoginState {
         state
     }
 
-    /// VERA online: the buttons open their popups, which start from the last
-    /// username. `remembered` is the account this computer signs in to
-    /// without its password; it fills an empty username, and Login's popup
-    /// starts from it. Otherwise `last`, the name of the last successful
+    /// VERA online: the page's username field starts from the last
+    /// username, and so do the popups its buttons open. `remembered` is the
+    /// account this computer signs in to without its password; it fills an
+    /// empty username. Otherwise `last`, the name of the last successful
     /// sign-in (`[VERA] OnlineName=`), fills it, as the WOL persona file's
     /// LastValid fills an empty nickname at WOL entry
     /// (`0x0077B322..0x0077B399`). VERA: online visits never read that
@@ -389,9 +394,14 @@ impl WolLoginState {
         {
             globals.nickname = name.to_owned();
         }
+        let mut nickname = edit(false);
+        if valid_name(&globals.nickname) {
+            nickname.set_units_limited(globals.nickname.encode_utf16(), NAME_LIMIT);
+        }
+        nickname.focused = true;
         Self {
             policy: LoginPolicy::Online,
-            nickname: edit(false),
+            nickname,
             password: edit(true),
             rows: Vec::new(),
             remember_checked: false,
@@ -410,6 +420,7 @@ impl WolLoginState {
     pub(crate) fn button_enabled(&self, control: u16) -> bool {
         match control {
             LOGIN => self.login_enabled,
+            PLAY => valid_name(&self.online_name()),
             FORGET => self.policy == LoginPolicy::Legacy && self.forget_enabled,
             MANAGE if self.policy == LoginPolicy::Online => false,
             _ => true,
@@ -418,6 +429,11 @@ impl WolLoginState {
 
     fn typed_nickname(&self) -> String {
         self.nickname.narrow_text(NICKNAME_LIMIT + 1)
+    }
+
+    /// VERA online: the page's username field as typed.
+    pub(crate) fn online_name(&self) -> String {
+        self.nickname.narrow_text(NAME_LIMIT + 1)
     }
 
     /// Only the two NewEdits take focus: owner-draw buttons hand it back
@@ -526,7 +542,10 @@ impl WolLoginState {
     }
 
     /// Activate a right-panel button. Disabled windows take no click. VERA
-    /// online: every button but Back opens its popup.
+    /// online: Play signs in under the page's username, with this computer's
+    /// remembered sign-in when it is that account's and as a guest
+    /// otherwise; every other button but Back opens its popup, which starts
+    /// from that username.
     pub(crate) fn activate(
         &mut self,
         control: u16,
@@ -535,19 +554,34 @@ impl WolLoginState {
         if !self.button_enabled(control) {
             return None;
         }
-        // The popups start from the last username.
-        let last = globals.nickname.clone();
+        let last = match self.policy {
+            LoginPolicy::Online => self.online_name(),
+            LoginPolicy::Legacy => globals.nickname.clone(),
+        };
         let last = last.as_str();
         let form = match control {
+            PLAY => {
+                let remember = self.remembers(last);
+                let sign_in = AccountSignIn {
+                    name: last.to_owned(),
+                    password: String::new(),
+                };
+                return Some(self.sign_in(sign_in, remember, globals));
+            }
             LOGIN if self.policy == LoginPolicy::Online => {
+                // An empty field leaves Login the remembered account.
                 let remembered = self.remembered.as_deref();
-                WolAccountForm::sign_in(remembered.unwrap_or(last), remembered)
+                let name = if valid_name(last) {
+                    last
+                } else {
+                    remembered.unwrap_or(last)
+                };
+                WolAccountForm::sign_in(name, remembered)
             }
             LOGIN => return Some(WolLoginAction::Close(LOGIN)),
             BACK => return Some(WolLoginAction::Close(2)),
             MANAGE => return Some(WolLoginAction::Manage),
             FORGET => return self.forget(globals),
-            PLAY_AS_GUEST => WolAccountForm::guest(last),
             CREATE_ACCOUNT => WolAccountForm::register(last),
             FORGOT_PASSWORD => WolAccountForm::forgot(last),
             DELETE_ACCOUNT => WolAccountForm::delete(last),
@@ -577,9 +611,9 @@ impl WolLoginState {
             .is_some_and(|known| known.eq_ignore_ascii_case(name))
     }
 
-    /// VERA online: Login's or Play as Guest's popup signs in, as gamemd's
-    /// Login closes the page with the account globals set. A guest's
-    /// password is empty, as is the remembered sign-in's.
+    /// VERA online: Play or Login's popup signs in, as gamemd's Login closes
+    /// the page with the account globals set. A guest's password is empty,
+    /// as is the remembered sign-in's.
     pub(crate) fn sign_in(
         &mut self,
         sign_in: AccountSignIn,
@@ -635,8 +669,14 @@ impl WolLoginState {
         globals: &mut WolAccountGlobals,
         credentials: &[WolCredential],
     ) {
-        // VERA online: the page has no fields; its popups take the text.
+        // VERA online: the one field takes a lobby name's characters.
         if self.policy == LoginPolicy::Online {
+            for unit in text.encode_utf16() {
+                if FieldKind::Name.admits(unit) {
+                    self.nickname
+                        .insert_unit_filtered(unit, NAME_LIMIT, true, &[]);
+                }
+            }
             return;
         }
         for unit in text.encode_utf16() {
@@ -672,11 +712,21 @@ impl WolLoginState {
         credentials: &[WolCredential],
     ) -> Option<WolLoginAction> {
         if self.policy == LoginPolicy::Online {
-            // VERA online: Enter is Login's click; the page has no fields.
-            return match key {
-                WolEditKey::Enter => self.activate(LOGIN, globals),
-                _ => None,
-            };
+            // VERA online: Enter is Play's click; the page has one field.
+            if key == WolEditKey::Enter {
+                return self.activate(PLAY, globals);
+            }
+            let edit = &mut self.nickname;
+            match key {
+                WolEditKey::Backspace => edit.backspace(),
+                WolEditKey::Delete => edit.delete(),
+                WolEditKey::Left => edit.left(),
+                WolEditKey::Right => edit.right(),
+                WolEditKey::Home => edit.home(),
+                WolEditKey::End => edit.end(),
+                WolEditKey::Tab { .. } | WolEditKey::Enter => {}
+            }
+            return None;
         }
         match key {
             WolEditKey::Tab { .. } => {
@@ -753,12 +803,35 @@ pub(crate) struct WolLoginLayout {
     /// The password NewEdit after its init inset (`0x00614CCF`).
     pub(crate) password: RectPx,
     pub(crate) remember: RectPx,
+    /// VERA online: the left side in place of gamemd's fields.
+    pub(crate) online: Option<WolOnlineLoginLayout>,
 }
 
 /// VERA online: the account popups centre on the page's left side, in the
 /// shell's authored 800x600 units, clear of the art's frame and the button
 /// column, not on the whole page.
 pub(crate) const POPUP_AREA: RectPx = RectPx::new(36, 36, 560, 504);
+
+/// VERA online: the page's left side over its art: the welcome heading and
+/// its line, the username caption and field on gamemd's nickname row, and
+/// the lobby's activity below.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct WolOnlineLoginLayout {
+    pub(crate) heading: RectPx,
+    /// Up to two wrapped rows.
+    pub(crate) text: RectPx,
+    pub(crate) name_label: RectPx,
+    /// The username NewEdit's window.
+    pub(crate) name: RectPx,
+    /// One row per count.
+    pub(crate) counts: [RectPx; 2],
+}
+
+/// The welcome and the counts span [`POPUP_AREA`]'s width; the rows are the
+/// shell font's 19 pixels.
+const ONLINE_HEADING: RectPx = RectPx::new(36, 150, 560, 19);
+const ONLINE_TEXT: RectPx = RectPx::new(96, 177, 440, 38);
+const ONLINE_COUNTS: [RectPx; 2] = [RectPx::new(36, 300, 560, 19), RectPx::new(36, 321, 560, 19)];
 
 impl WolLoginLayout {
     pub(crate) fn page_spec(&self) -> &'static MenuPageSpec {
@@ -771,6 +844,7 @@ impl WolLoginLayout {
 
     pub(crate) fn tooltip_key(&self, control: u16) -> Option<&'static str> {
         match self.policy {
+            LoginPolicy::Online if control == NICKNAME => Some("VERA:PlayHelp"),
             LoginPolicy::Online => ONLINE_PAGE.button(control).map(|spec| spec.tooltip_key),
             LoginPolicy::Legacy => tooltip_key(control),
         }
@@ -837,17 +911,31 @@ impl WolLoginLayout {
                 password.h - 2,
             )),
             remember: px(child_window(196, 207, 213, 13)),
+            // The username takes gamemd's nickname caption and row, as a
+            // NewEdit of the password's size.
+            online: (policy == LoginPolicy::Online).then(|| WolOnlineLoginLayout {
+                heading: px(ONLINE_HEADING),
+                text: px(ONLINE_TEXT),
+                name_label: px(child_window(49, 148, 119, 11)),
+                name: px(RectPx::new(
+                    password.x + 1,
+                    combo.y + 1,
+                    password.w - 2,
+                    password.h - 2,
+                )),
+                counts: ONLINE_COUNTS.map(px),
+            }),
         }
     }
 
     /// The child under `(x, y)`, buttons first (template order otherwise).
-    /// The online page has only its buttons.
+    /// The online page has its buttons and the username field.
     pub(crate) fn control_at(&self, x: i32, y: i32) -> Option<u16> {
         if let Some(button) = self.page.buttons.iter().find(|b| b.rect.contains(x, y)) {
             return Some(button.id);
         }
-        if self.policy == LoginPolicy::Online {
-            return None;
+        if let Some(online) = self.online {
+            return online.name.contains(x, y).then_some(NICKNAME);
         }
         [
             (REMEMBER, self.remember),
@@ -1080,7 +1168,7 @@ mod tests {
     }
 
     #[test]
-    fn online_buttons_open_their_popups_from_the_last_username() {
+    fn online_buttons_open_their_popups_from_the_typed_username() {
         use crate::ui::wol_account::{AccountFormAction, FORM_OK, FormKind};
         let mut globals = WolAccountGlobals {
             nickname: "Boris".into(),
@@ -1090,22 +1178,34 @@ mod tests {
         };
         let mut login = WolLoginState::open_online(&mut globals, Some("Tanya"), None);
         assert!(globals.password.is_empty() && !globals.remember);
-        // The page takes no text: its popups do.
-        login.insert_text("x", &mut globals, &[]);
-        assert_eq!(globals.nickname, "Boris");
-        for (button, kind, name) in [
-            (PLAY_AS_GUEST, FormKind::Guest, "Boris"),
-            (CREATE_ACCOUNT, FormKind::Register, "Boris"),
-            (FORGOT_PASSWORD, FormKind::Forgot, "Boris"),
-            (DELETE_ACCOUNT, FormKind::Delete, "Boris"),
-            // Login starts from the remembered account.
-            (LOGIN, FormKind::SignIn, "Tanya"),
+        // The field starts from the last username and takes a name's
+        // characters only.
+        assert_eq!(login.online_name(), "Boris");
+        login.insert_text(" 2!", &mut globals, &[]);
+        assert_eq!(login.online_name(), "Boris2");
+        for (button, kind) in [
+            (CREATE_ACCOUNT, FormKind::Register),
+            (FORGOT_PASSWORD, FormKind::Forgot),
+            (DELETE_ACCOUNT, FormKind::Delete),
+            (LOGIN, FormKind::SignIn),
         ] {
             assert!(login.button_enabled(button));
             assert_eq!(login.activate(button, &mut globals), None);
             let form = login.account.as_ref().unwrap();
-            assert_eq!((form.kind, form.fields[0].text().as_str()), (kind, name));
+            assert_eq!(
+                (form.kind, form.fields[0].text().as_str()),
+                (kind, "Boris2")
+            );
         }
+        // An empty field leaves Login the remembered account, and Play
+        // nothing to sign in under.
+        for _ in 0.."Boris2".len() {
+            login.edit_key(WolEditKey::Backspace, &mut globals, &[]);
+        }
+        assert!(!login.button_enabled(PLAY));
+        assert_eq!(login.edit_key(WolEditKey::Enter, &mut globals, &[]), None);
+        assert_eq!(login.activate(LOGIN, &mut globals), None);
+        assert_eq!(login.account.as_ref().unwrap().fields[0].text(), "Tanya");
         // Login's popup signs in with the remembered sign-in: no password.
         let Some(AccountFormAction::SignIn { sign_in, remember }) =
             login.account.as_mut().unwrap().activate(FORM_OK)
@@ -1122,9 +1222,43 @@ mod tests {
             ("Tanya", "")
         );
         assert!(globals.remember);
-        // Enter is Login's click.
-        assert_eq!(login.edit_key(WolEditKey::Enter, &mut globals, &[]), None);
-        assert_eq!(login.account.as_ref().unwrap().kind, FormKind::SignIn);
+    }
+
+    #[test]
+    fn play_signs_in_as_a_guest_or_with_the_remembered_sign_in() {
+        // A name this computer does not remember enters as a guest; Enter
+        // is Play's click.
+        let mut globals = WolAccountGlobals::default();
+        let mut login = WolLoginState::open_online(&mut globals, Some("Tanya"), Some("Boris"));
+        assert_eq!(login.online_name(), "Tanya");
+        for _ in 0.."Tanya".len() {
+            login.edit_key(WolEditKey::Backspace, &mut globals, &[]);
+        }
+        login.insert_text("Boris", &mut globals, &[]);
+        assert_eq!(
+            login.edit_key(WolEditKey::Enter, &mut globals, &[]),
+            Some(WolLoginAction::Close(LOGIN))
+        );
+        assert_eq!(
+            (globals.nickname.as_str(), globals.password.as_str()),
+            ("Boris", "")
+        );
+        assert!(!globals.remember);
+        // The remembered account signs in without its password, in any case.
+        let mut login = WolLoginState::open_online(&mut globals, Some("Tanya"), None);
+        for _ in 0.."Boris".len() {
+            login.edit_key(WolEditKey::Backspace, &mut globals, &[]);
+        }
+        login.insert_text("tanya", &mut globals, &[]);
+        assert_eq!(
+            login.activate(PLAY, &mut globals),
+            Some(WolLoginAction::Close(LOGIN))
+        );
+        assert_eq!(
+            (globals.nickname.as_str(), globals.password.as_str()),
+            ("tanya", "")
+        );
+        assert!(globals.remember);
     }
 
     #[test]
@@ -1172,7 +1306,7 @@ mod tests {
     }
 
     #[test]
-    fn online_page_offers_play_as_guest_and_the_account_buttons() {
+    fn online_page_offers_play_the_username_field_and_the_account_buttons() {
         let layout = WolLoginLayout::new(800, 600, LoginPolicy::Online);
         let native = WolLoginLayout::new(800, 600, LoginPolicy::Legacy);
         assert_eq!(
@@ -1183,8 +1317,8 @@ mod tests {
                 .map(|button| button.id)
                 .collect::<Vec<_>>(),
             [
+                PLAY,
                 LOGIN,
-                PLAY_AS_GUEST,
                 CREATE_ACCOUNT,
                 FORGOT_PASSWORD,
                 DELETE_ACCOUNT,
@@ -1192,7 +1326,11 @@ mod tests {
             ]
         );
         assert_eq!(
-            layout.page.button_rect(PLAY_AS_GUEST),
+            layout.page.button_rect(PLAY),
+            native.page.button_rect(LOGIN)
+        );
+        assert_eq!(
+            layout.page.button_rect(LOGIN),
             native.page.button_rect(FORGET)
         );
         assert_eq!(
@@ -1209,16 +1347,33 @@ mod tests {
             Some(RectPx::new(644, 367, 156, 42))
         );
         assert_eq!(
-            layout.page_spec().button(PLAY_AS_GUEST).unwrap().csf_key,
-            "VERA:PlayAsGuest"
+            layout.page_spec().button(PLAY).unwrap().csf_key,
+            "VERA:Play"
         );
         assert_eq!(layout.tooltip_key(LOGIN), Some("VERA:LoginHelp"));
         assert_eq!(layout.tooltip_key(BACK), Some("STT:WOLWelcomeBack"));
-        // No fields: the left side holds no control.
+        // The username field stands on gamemd's nickname row, the size of
+        // its password field; the rest of the left side holds no control.
+        let online = layout.online.unwrap();
+        assert!(native.online.is_none());
+        assert_eq!(online.name, RectPx::new(295, 240, 209, 22));
+        assert_eq!(online.name_label, native.labels[0].1);
+        assert_eq!(
+            layout.control_at(online.name.x + 1, online.name.y + 1),
+            Some(NICKNAME)
+        );
         assert_eq!(
             layout.control_at(native.password.x + 1, native.password.y + 1),
             None
         );
+        // The welcome, the field and the counts stand in that order, clear
+        // of the button column and the status line.
+        assert!(online.heading.y + online.heading.h <= online.text.y);
+        assert!(online.text.y + online.text.h < online.name.y);
+        assert!(online.name.y + online.name.h < online.counts[0].y);
+        assert!(online.counts[0].y + online.counts[0].h <= online.counts[1].y);
+        assert!(online.counts[1].y + online.counts[1].h < layout.status_help.y);
+        assert!(online.heading.x + online.heading.w < layout.page.right_panel.top.x);
     }
 
     #[test]

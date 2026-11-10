@@ -1,9 +1,9 @@
 //! VERA: the online login page's popups (docs/lobby-protocol.md
-//! "Accounts"): Login's username and password, Play as Guest's username,
-//! Create Account and the mailed code that confirms it, Forgot Password's
-//! username and then its code and new password, and Delete Account's
-//! username and password. gamemd has no such dialog; they use the online
-//! Create Game box's art, field column, checkbox rows and buttons.
+//! "Accounts"): Login's username and password, Create Account and the mailed
+//! code that confirms it, Forgot Password's username and then its code and
+//! new password, and Delete Account's username and password. gamemd has no
+//! such dialog; they use the online Create Game box's art, field column,
+//! checkbox rows and buttons.
 
 use crate::i18n::tr_fill;
 use crate::ui::shell::button::ShellButtonInteraction;
@@ -132,7 +132,7 @@ impl FieldKind {
         }
     }
 
-    fn admits(self, unit: u16) -> bool {
+    pub(crate) fn admits(self, unit: u16) -> bool {
         let Ok(byte) = u8::try_from(unit) else {
             return false;
         };
@@ -150,8 +150,6 @@ pub(crate) enum FormKind {
     /// Login: an account's username and password, or this computer's
     /// remembered sign-in, and Remember password.
     SignIn,
-    /// Play as Guest: a username alone.
-    Guest,
     Register,
     Verify,
     /// Forgot Password's first step: the account whose email gets a code.
@@ -200,8 +198,8 @@ impl AccountField {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum AccountFormAction {
     Send(AccountRequest),
-    /// Login or Play as Guest: sign in to the lobby. The password is empty
-    /// for a guest and for this computer's remembered sign-in.
+    /// Login: sign in to the lobby. The password is empty for this
+    /// computer's remembered sign-in.
     SignIn {
         sign_in: AccountSignIn,
         remember: bool,
@@ -403,17 +401,6 @@ impl WolAccountForm {
         }
     }
 
-    /// Play as Guest, its username prefilled.
-    pub(crate) fn guest(name: &str) -> Self {
-        let mut form = Self::with_fields(
-            FormKind::Guest,
-            vec![AccountField::new(FieldKind::Name, "VERA:Username")],
-            StatusText::new("VERA:GuestPrompt"),
-        );
-        form.prefill_name(name);
-        form
-    }
-
     /// Create Account, its username prefilled.
     pub(crate) fn register(name: &str) -> Self {
         let mut form = Self::with_fields(
@@ -566,11 +553,11 @@ impl WolAccountForm {
             }
             FormKind::Delete => (valid_name(&name) && valid_password(&password))
                 .then_some(AccountRequest::Delete { name, password }),
-            FormKind::SignIn | FormKind::Guest | FormKind::Deleted => None,
+            FormKind::SignIn | FormKind::Deleted => None,
         }
     }
 
-    /// Login's or Play as Guest's sign-in, when its fields are right.
+    /// Login's sign-in, when its fields are right.
     fn sign_in_action(&self) -> Option<AccountFormAction> {
         let name = self.text(FieldKind::Name);
         let password = match self.kind {
@@ -578,7 +565,6 @@ impl WolAccountForm {
             FormKind::SignIn => {
                 Some(self.text(FieldKind::Password)).filter(|p| valid_password(p))?
             }
-            FormKind::Guest => String::new(),
             _ => return None,
         };
         valid_name(&name).then(|| AccountFormAction::SignIn {
@@ -590,7 +576,7 @@ impl WolAccountForm {
     pub(crate) fn ok_enabled(&self) -> bool {
         match self.kind {
             FormKind::Deleted => true,
-            FormKind::SignIn | FormKind::Guest => self.sign_in_action().is_some(),
+            FormKind::SignIn => self.sign_in_action().is_some(),
             _ => !self.busy && self.request().is_some(),
         }
     }
@@ -656,9 +642,7 @@ impl WolAccountForm {
     pub(crate) fn activate(&mut self, control: u16) -> Option<AccountFormAction> {
         match control {
             FORM_OK if self.kind == FormKind::Deleted => Some(AccountFormAction::Close),
-            FORM_OK if matches!(self.kind, FormKind::SignIn | FormKind::Guest) => {
-                self.sign_in_action()
-            }
+            FORM_OK if self.kind == FormKind::SignIn => self.sign_in_action(),
             FORM_OK => {
                 let request = self.request().filter(|_| !self.busy)?;
                 match &request {
@@ -781,7 +765,7 @@ impl WolAccountForm {
                     name: self.name.clone(),
                 })
             }
-            FormKind::SignIn | FormKind::Guest | FormKind::Deleted => None,
+            FormKind::SignIn | FormKind::Deleted => None,
         }
     }
 }
@@ -982,13 +966,6 @@ mod tests {
             "nothing remembered to forget"
         );
         assert_eq!(form.remember, Some(false));
-        // A guest signs in by name alone.
-        let mut guest = WolAccountForm::guest("");
-        guest.insert_text("Boris");
-        assert_eq!(
-            guest.edit_key(WolEditKey::Enter),
-            sign_in("Boris", "", false)
-        );
     }
 
     #[test]

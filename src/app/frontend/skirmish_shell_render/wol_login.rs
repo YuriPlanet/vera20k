@@ -1,8 +1,9 @@
 //! `0x10F`'s left-side children on the shared control owners: the two
 //! labels, the nickname combo (face `0x00617250` with its NewEdit), the
 //! `ES_PASSWORD` NewEdit, the Remember checkbox and the combo's drop list;
-//! VERA online's page has none of them, only its popups over the art. The
-//! WOL page compositor draws them over its own backdrop and chrome.
+//! VERA online's page has its welcome, its username NewEdit and the lobby's
+//! counts in their place, and its popups over them. The WOL page compositor
+//! draws them over its own backdrop and chrome.
 
 use super::controls::{
     ControlPaint, NewEditPaint, dropdown_scroll_part, paint_control, push_new_edit_caret,
@@ -23,9 +24,11 @@ use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::list::list_frame_lines;
 use crate::ui::shell::modal::WolAccountFormLayout;
 use crate::ui::wol_account::{FORM_CANCEL, FORM_OK, WolAccountForm};
-use crate::ui::wol_login::{LoginPolicy, WolLoginLayout, WolLoginState};
+use crate::ui::wol_login::{WolLoginLayout, WolLoginState};
 use crate::util::time::Instant;
 
+/// VERA online's welcome line and counts, beside the shell's yellow captions.
+const ONLINE_TEXT_RGB: [f32; 3] = [0.80, 0.80, 0.80];
 /// An info panel sits over the page art, under the page's popups.
 const INFO_FILL_DEPTH: f32 = shell_paint::CHROME_DEPTH - 0.00001;
 const INFO_FRAME_DEPTH: f32 = shell_paint::CHROME_DEPTH - 0.00002;
@@ -71,11 +74,74 @@ pub(crate) fn paint_wol_login_children(
             scale.factor(),
         )
     };
-    // VERA online: the page has no fields; its popups take the text.
-    if login.policy == LoginPolicy::Online {
+    let label = |key: &str| csf_label(state, key);
+    if let Some(online) = layout.online {
+        // VERA online: the welcome, the username field and the counts.
+        let centred = ShellAlign::H_CENTER;
+        for (value, rect, align, rgb) in [
+            (
+                label("VERA:OnlineWelcome"),
+                online.heading,
+                centred,
+                SHELL_LABEL_TEXT_RGB,
+            ),
+            (
+                label("VERA:OnlineWelcomeText"),
+                online.text,
+                centred,
+                ONLINE_TEXT_RGB,
+            ),
+            (
+                label("VERA:Username"),
+                online.name_label,
+                ShellAlign::H_RIGHT,
+                SHELL_LABEL_TEXT_RGB,
+            ),
+        ] {
+            paint
+                .texts
+                .push(text(&value, rect, align, rgb, SHELL_CONTROL_TEXT_DEPTH));
+        }
+        let name_text = scale.derive_rect(online.name, |rect| {
+            RectPx::new(rect.x + 2, rect.y, rect.w - 1, rect.h + 1)
+        });
+        push_new_edit_instances(
+            &mut paint.controls,
+            atlas,
+            font,
+            &login.nickname,
+            NewEditPaint {
+                frame: scale.derive_rect(online.name, |rect| {
+                    RectPx::new(rect.x - 2, rect.y - 2, rect.w + 5, rect.h + 5)
+                }),
+                text: name_text,
+                background: None,
+                frame_depth: SHELL_EDIT_FRAME_DEPTH,
+                caret_depth: SHELL_EDIT_CARET_DEPTH,
+                // A popup over the page holds the caret.
+                caret_visible: login.account.is_none() && login.caret_visible(now),
+            },
+            scale,
+        );
+        paint.texts.push(text(
+            &login.nickname.painted_text(),
+            name_text,
+            ShellAlign::V_CENTER,
+            SHELL_LABEL_TEXT_RGB,
+            SHELL_CONTROL_TEXT_DEPTH,
+        ));
+        for ((key, count), rect) in state.frontend.login_info.counts().zip(online.counts) {
+            let value = crate::i18n::fill(&label(key), &[("count", &count)]);
+            paint.texts.push(text(
+                &value,
+                rect,
+                centred,
+                ONLINE_TEXT_RGB,
+                SHELL_CONTROL_TEXT_DEPTH,
+            ));
+        }
         return paint;
     }
-    let label = |key: &str| csf_label(state, key);
     for (key, rect) in &layout.labels {
         paint.texts.push(text(
             &label(key),
