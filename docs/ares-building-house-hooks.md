@@ -77,14 +77,15 @@ cites each hook.
 
 ## Residuals
 
-- Refinery and house tiberium storage (0x4F9610, 0x73E4A2, 0x522D75,
-  0x441B30, 0x44D755, 0x709B4E; `Refinery.UseStorage`, ares-tiberium.md).
+- The storage pips (0x44D755, 0x709B4E; ares-tiberium.md). The storage
+  itself is ported in `sim::ares_tiberium_storage`.
 - Temporal start and release refreshing the factory queues (0x4521C8,
   0x452218): TemporalClass::LetGo runs from many call sites without Rules.
   A warped yard or factory keeps its queue until another refresh.
 - Per-docker airfield reload timers and `ReloadRate` (0x44C844).
-- ProduceCash payout replacement and `ProduceCashDisplay` (0x43FD2C,
-  0x4482BD, 0x4409F4), as ares-building-types.md says.
+- An upgrade's ProduceCash timer is not started at Put (0x4409F4); the
+  Update hook starts it one frame longer. The payout and
+  `ProduceCashDisplay` are ported in `sim::credit_income`.
 - Ares serial AI queues (`AllowParallelAIQueues=no`, 0x4502F4, 0x4CA07A and
   the four KickOutUnit hooks); the default changes nothing.
 - ShouldDisableCameo's replacement (0x50B370): queue admission keeps the
@@ -114,9 +115,9 @@ DLL removed are not listed.
 | Hook | Name | Ares.dll | Disposition |
 |---|---|---|---|
 | `43CA80` | BuildingClass_ReceivedRadioCommand_DockUnloadCell | `10014540` | ported earlier |
-| `43FD2C` | BuildingClass_Update_ProduceCash | `100146E0` | residual: Ares' ProduceCash payout replacement (ares-building-types.md) |
+| `43FD2C` | BuildingClass_Update_ProduceCash | `100146E0` | ported: `credit_income::produce_cash_step` |
 | `44019D` | BuildingClass_Update_Battery | `10014690` | ported earlier |
-| `4409F4` | BuildingClass_Put_ProduceCash | `10014490` | residual: Ares' ProduceCash payout replacement and `ProduceCashDisplay` (ares-building-types.md) |
+| `4409F4` | BuildingClass_Put_ProduceCash | `10014490` | ported in part: the upgrade's factory plans (`building_upgrades`); residual: the upgrade's cash timer is not started at Put (`delay`), so the Update hook starts it (`delay + 1`) |
 | `440C08` | BuildingClass_Put_AIBaseNormal | `10014460` | ported earlier |
 | `44266B` | BuildingClass_ReceiveDamage_Destroyed | `10014520` | ported: a damage-killed building runs `building_death_announcement` after DestructionEffects ([ares-warhead-residuals.md](ares-warhead-residuals.md)) |
 | `444D26` | BuildingClass_KickOutUnit_ArmoryExitBug | `10014100` | ported: an Armory's exit takes the Hospital post (`production_queue::ExitProducer`) |
@@ -124,12 +125,12 @@ DLL removed are not listed.
 | `4467D6` | BuildingClass_Place_NeedsEngineer | `100143C0` | ported: unengineered NeedsEngineer counts as Powered at the opening (`anim_power_policy`) |
 | `446E9F` | BuildingClass_Place_FreeUnit_Mission | `10014390` | ported: a non-harvester FreeUnit is born on Area_Guard (`production_refinery`) |
 | `447A63` | BuildingClass_QueueImageAnim_Sell | `100144E0` | ported earlier |
-| `4482BD` | BuildingClass_ChangeOwnership_ProduceCash | `10013D40` | residual: Ares' ProduceCash payout replacement (ares-building-types.md) |
+| `4482BD` | BuildingClass_ChangeOwnership_ProduceCash | `10013D40` | ported: `credit_income::produce_cash_on_owner_change` |
 | `44840B` | BuildingClass_ChangeOwnership_Tech | `10013E40` | ported earlier |
 | `44BB1B` | BuildingClass_Mi_Repair_Promote | `10014170` | not applicable: null-trainee guard of the Armory promotion arm, which VERA does not port |
 | `44C844` | BuildingClass_MissionRepair_Reload | `10014190` | residual: per-docker reload timers and TechnoType `ReloadRate` at airfields; VERA keeps the stock dock reload |
 | `44D4CA` | BuildingClass_Mi_Missile_NoReport | `10014130` | ported earlier |
-| `44D755` | BuildingClass_GetPipFillLevel_Tiberium | `10013FD0` | residual: pip fill of building/house tiberium storage (Refinery.UseStorage; VERA keeps no storage) |
+| `44D755` | BuildingClass_GetPipFillLevel_Tiberium | `10013FD0` | residual: storage pips (ares-tiberium.md) |
 | `44D760` | BuildingClass_Destroyed_UnitLost | `10013F10` | ported: building `EVA.Lost` (`combat::ares_building_lost_event`) |
 | `44D8A1` | BuildingClass_UnloadPassengers_Unload | `100145B0` | ported: Hospital/Armory Mission_Unload kicks out the first passenger (`building_missions::mission_unload`) |
 | `44E855` | BuildingClass_PowerProduced_EMP | `10014440` | ported: an EMP'd plant outputs no power (`power_system`) |
@@ -147,7 +148,7 @@ DLL removed are not listed.
 | `4A8FF5` | MapClass_CanBuildingTypeBePlacedHere_Ignore | `10014890` | ported: a NoBaseNormal delivery still serves BuildOffAlly (`is_within_build_area`) |
 | `51E4ED` | InfantryClass_GetActionOnObject_EngineerRepairable | `10014850` | ported earlier |
 | `51FA82` | InfantryClass_GetActionOnCell_EngineerRepairable | `10014810` | not applicable: the fogged-building arm of What_Action_OnCell (0x51F953..0x51FAAB) is not ported |
-| `709B4E` | TechnoClass_DrawPipscale_SkipSkipTiberium | `100148B0` | residual: tiberium pips on refineries with storage (same storage residual) |
+| `709B4E` | TechnoClass_DrawPipscale_SkipSkipTiberium | `100148B0` | residual: storage pips (ares-tiberium.md) |
 | `7376D9` | UnitClass_ReceivedRadioCommand_DockUnload_Facing | `10014970` | ported earlier |
 | `73DF66` | UnitClass_Mi_Unload_DockUnload_Facing | `10014910` | ported earlier |
 
@@ -189,15 +190,15 @@ DLL removed are not listed.
 
 | Hook | Name | Ares.dll | Disposition |
 |---|---|---|---|
-| `441B30` | BuildingClass_Destroy_Refinery | `10023DA0` | residual: refinery spill on destruction (storage residual) |
+| `441B30` | BuildingClass_Destroy_Refinery | `10023DA0` | ported: `sim::ares_tiberium_storage` (ares-tiberium.md) |
 | `4F62FF` | HouseClass_CTOR_FixNameOverflow | `10023FF0` | equivalent: no fixed UIName buffer (`HouseUiName`) |
 | `4F645F` | HouseClass_CTOR_FixSideIndices | `10024030` | equivalent: houses take their Country's side for any index (`resolve_house_side_index`); map houses take it again in ReadINI (0x500B40) |
 | `4F7870` | HouseClass_CanBuild | `10024090` | ported earlier |
 | `4F8440` | HouseClass_Update_TogglePower | `10024B40` | ported earlier |
 | `4F8B08` | HouseClass_Update_DamageDelay | `100247A0` | ported earlier |
-| `4F8C23` | HouseClass_Update_SilosNeededEVA | `10024AE0` | residual: `Message.SilosNeeded` line (presentation; VERA keeps no silo storage) |
+| `4F8C23` | HouseClass_Update_SilosNeededEVA | `10024AE0` | ported: the EVA line (`sim::house_eva`); residual: the `Message.SilosNeeded` text (presentation) |
 | `4F8EBD` | HouseClass_Update_HasBeenDefeated | `10024990` | ported earlier |
-| `4F9610` | HouseClass_GiveTiberium_Storage | `10024290` | residual: refinery/house tiberium storage (ares-tiberium.md) |
+| `4F9610` | HouseClass_GiveTiberium_Storage | `10024290` | ported: `sim::ares_tiberium_storage` (ares-tiberium.md) |
 | `4FC731` | HouseClass_DestroyAll_ReturnStructures | `10024150` | ported earlier |
 | `4FF563` | HouseClass_RegisterTechnoLoss_StatCounters_KeepAlive | `100245D0` | ported earlier |
 | `4FF71B` | HouseClass_RegisterTechnoGain_StatCounters_KeepAlive | `10024580` | ported earlier |
@@ -211,8 +212,8 @@ DLL removed are not listed.
 | `508EBC` | HouseClass_Radar_Update_CheckEligible | `10024550` | ported earlier |
 | `508F91` | HouseClass_SpySat_Update_CheckEligible | `10024620` | ported earlier |
 | `50965E` | HouseClass_CanInstantiateTeam | `100240D0` | ported: a factory admits a TaskForce entry only within BuildLimit unless AllowBypassBuildLimit (`ai_team_creation`) |
-| `522D75` | InfantryClass_Slave_UnloadAt_Storage | `10024B60` | residual: slave miner unload into storage (storage residual) |
-| `73E4A2` | UnitClass_Mi_Unload_Storage | `10024BC0` | residual: harvester unload into storage (storage residual) |
+| `522D75` | InfantryClass_Slave_UnloadAt_Storage | `10024B60` | ported: `sim::ares_tiberium_storage` (ares-tiberium.md) |
+| `73E4A2` | UnitClass_Mi_Unload_Storage | `10024BC0` | ported: `sim::ares_tiberium_storage` (ares-tiberium.md) |
 
 ### House/Hooks.100.cpp
 

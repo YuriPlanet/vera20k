@@ -20,9 +20,11 @@ on purpose are in [ares-skipped-hooks.md](ares-skipped-hooks.md).
   [ares-attach-effect.md](ares-attach-effect.md)). `ares-src/report/ini_coverage.tsv` is
   not exhaustive; use the key scan under Tools.
 - Hooks: Ares 3.0 installs 1448 (`report/hooks.tsv` also lists 234 0.A hooks that 3.0
-  removed). The engine source cites 937; the chain docs give 407 more a disposition
-  (ported elsewhere, equivalent, not applicable, skipped or residual); 104 are
-  untouched, listed at the end.
+  removed). The engine source cites 982; the chain docs give 392 more a disposition
+  (ported elsewhere, equivalent, not applicable, skipped or residual); 74 are
+  untouched, listed at the end. A residual disposition is still a gap: every
+  residual in the chain docs is gathered on this page, the gameplay ones under
+  [Smaller gameplay residuals](#smaller-gameplay-residuals).
 - Tests at the commit that adds this page (RA2_DIR set to a retail install):
   - core `--features ares`: 8468 passed, 2 failed in the last full run; one of the two, the
     WithConst test, was a fixture expectation fixed afterwards and passes in a focused rerun
@@ -76,12 +78,78 @@ Stock gaps found in passing, with no Ares dependency:
 | Tunnels | The tunnel pips (10044C90) | [ares-building-hooks.md](ares-building-hooks.md) |
 | Ares ParticleSystemExt | Ares' own Smoke/Spark/Railgun particle simulation with its own random draws | [ares-anim-particles.md](ares-anim-particles.md) |
 
+## Smaller gameplay residuals
+
+The chain docs' other gameplay residuals. Retail data can reach the first three in an
+Ares build; the rest need a mod key or are dormant on retail data.
+
+| Residual | Hooks | Where |
+|---|---|---|
+| Computer threat maps: Ares changes the threat index `(130*Y)/4 + X/4 + 131` only for the `0x56BC50` callers, not the inline readers; VERA's one `house_threat` index needs a per-caller split | `0x56BC54` (`1005D4A0`) | [ares-bugfixes.md](ares-bugfixes.md) |
+| Bridge occupation bits: Ares remembers which bit a Unit marked, so unmarking clears the same one; without it a cell near a bridge can keep a stale 0x20 bit and stay blocked. Needs a per-Unit flag | `0x7441B6`, `0x744216` | [ares-techno-hooks.md](ares-techno-hooks.md) |
+| Temporal warp and release of a factory do not refresh the factory queues (TemporalClass::LetGo runs from about 15 call sites without Rules); a warped yard or factory keeps its queue until another refresh | `0x4521C8`, `0x452218` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
+| Activate/Deactivate's factory queue refresh and sound mutex | `0x70FBE0`, `0x70FC90` | [ares-techno-hooks.md](ares-techno-hooks.md) |
+| ShouldDisableCameo's replacement (BuildLimitRemaining less the queue, the AirportBound limit also taking BuildLimit, a usable factory); queue admission keeps the stock CheckBuildLimit | `0x50B370` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
+| Serial AI queues (`AllowParallelAIQueues=no`); the default changes nothing | `0x4502F4`, `0x4CA07A`, the four KickOutUnit hooks (`0x443CCA`, `0x444119`, `0x444131`, `0x44531F`) | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
+| Per-docker airfield reload timers and TechnoType `ReloadRate`; VERA keeps the stock dock reload | `0x44C844` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
+| An upgrade's ProduceCash timer is not started at Put, so the Update hook starts it one frame longer | `0x4409F4` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
+| Flying carriers: spawned aircraft keep their launch Z, and the spawn manager aims them at its cell | `0x414338`, `0x6B783B` | [ares-techno-hooks.md](ares-techno-hooks.md) |
+| Paradrop canopy: the dropped type's own `Parachute.Anim` before the Country's and Side's | `0x5F5ADD` (`10047C80`) | [ares-side-defaults.md](ares-side-defaults.md) |
+| Capture manager and parasite on any weapon slot (TechnoClass Init_1), with the parasite slot hooks | `0x6F407D`, `0x629804`, `0x62A020`, `0x62A7B1` | [ares-techno-hooks.md](ares-techno-hooks.md) |
+| Gunner temporal swap | `0x74642C`, `0x74653C` | [ares-techno-hooks.md](ares-techno-hooks.md) |
+| Hover `DeployToLand` landing | `0x513EAA`, `0x514A21`, `0x514DFE` | [ares-techno-hooks.md](ares-techno-hooks.md) |
+| Occupier + VehicleThief destination expiry | `0x4D9A83` | [ares-techno-hooks.md](ares-techno-hooks.md) |
+| Infantry `DamageSparks` parse order | `0x5240BD` | [ares-techno-hooks.md](ares-techno-hooks.md) |
+| The PermaDisguise arm of `InfantryClass::ClearDisguise` has no Rust caller | `0x5227A3` | [ares-combat-sim-hooks.md](ares-combat-sim-hooks.md) |
+| `GarrisonedIn` is not kept: a garrisoned infantryman's skipped death anim, its release on Limbo and Unlimbo | `0x518434`, `0x51DF38`, `0x51DFFD` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
+| A map house section's `Degrades=` | `0x50114D` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
+| A repacked MCV that is still unplaced skips the conversion tail | `0x449FF8` | [ares-bugfixes.md](ares-bugfixes.md) |
+| UnInit announces expiry only when Limbo fails; VERA keeps both broadcasts and their order | `0x5F6612` | [ares-bugfixes.md](ares-bugfixes.md) |
+| Expired Flamer/Scorch anims make no SmallFire/LargeFire anims (needs `MapClass::GetRandomCoordsNear`); retail sets neither key | `0x4250C9`, `0x42511B`, `0x42513F` | [ares-anim-particles.md](ares-anim-particles.md) |
+| Dormant on retail data: Doggie, the `DeathAnims=` owner, Mission_Guard's superweapon gate, the ICBM crate's Ares Nuke type, a bullet damage anim's MakeInfantryOwner outside Phobos | `0x51F628`, `0x518CB3`, `0x51ABD7`, `0x5200C1`, `0x51849A`, `0x449716`, `0x6CEEB0`, `0x469C4E` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
+| Superweapon money: charge-drain activation with `Money.Amount` | none | [ares-superweapon-money.md](ares-superweapon-money.md) |
+| UnitDelivery: `Deliver.Buildups`; the placement order and RNG are VERA's, and the delivered facing is 0 where Ares derives it from the cell | none | [ares-unit-delivery.md](ares-unit-delivery.md) |
+| AttachEffect: `TemporalHidesAnim` and the airborne half-distance collection | none | [ares-attach-effect.md](ares-attach-effect.md) |
+| Country power plants: a house with no candidate is a fatal error natively (`0x1001DEF6`); VERA splices nothing | none | [ares-country-powerplants.md](ares-country-powerplants.md) |
+| With Phobos too: Phobos `SuperWeaponSidebar.*Houses` keep the 0x80 buffer | `0x4750EC`, `0x475107` | [ares-bugfixes.md](ares-bugfixes.md) |
+
+Input rungs, besides the deactivated actions above
+([ares-techno-hooks.md](ares-techno-hooks.md),
+[ares-building-house-hooks.md](ares-building-house-hooks.md)):
+- the heal cursor and action over objects (`0x51E710`, `0x73FDBD`);
+- an Ivan entering an allied Grinder without Ctrl (`0x51EB48`; VERA answers IvanBomb);
+- the structure and defense tab hotkeys, the cameo click and the ready-building strip
+  asking for a usable factory (`0x535DB6`, `0x535E76`, `0x6AB312`, `0x6A9822`);
+- `SuperGapRadiusInCells` multiples of 256: the stock What_Action (`0x004472AA`)
+  reads the char, VERA the int.
+
+Equivalence notes that need no port stay in their chain docs: INI `+` numbering and
+section caching ([ares-ini-syntax.md](ares-ini-syntax.md)), the random map's urban
+receiver and Main draws ([ares-rmg.md](ares-rmg.md)), the country picks and flags
+([ares-country-presentation.md](ares-country-presentation.md)), and the side theme and
+dialog caching ([ares-side-defaults.md](ares-side-defaults.md)).
+
 ## Presentation and UI not ported
 
 - Unit art: WaterImage and the SHP facings and change-type draws (Ext/Techno/Hooks.Art.cpp),
   AlphaImage lights (Ext/Techno/Hooks.Alpha.cpp), `NoSpawnAlt` (Ext/TechnoType/Hooks.Art.cpp),
-  PCX cameos (Misc/Cameos.cpp), the ore-gather anim under EMP, the load-screen colours
-  (Ext/Side/Hooks.cpp). Listed at the end.
+  the ore-gather anim under EMP, the load-screen colours (Ext/Side/Hooks.cpp). Listed at
+  the end. PCX cameos are ported ([ares-pcx-cameos.md](ares-pcx-cameos.md)), but that doc
+  cites neither of their hooks (`0x6A9A43`, `0x712045`), so both stay in the list.
+- Technos: the radial indicators of non-buildings (`0x41BE80`), the power-off marker
+  (`0x6F526C`), passenger pip frames (`0x709D38`), the damage spark and smoke
+  particle-system lists (`DamageSparksParticleSystems`, `DamageSmokeParticleSystems`;
+  `0x6FAD49`, `0x702894`) and the `Pip=`/`OccupyPip=` colours (`0x4748A0`). See
+  [ares-techno-hooks.md](ares-techno-hooks.md) and [ares-bugfixes.md](ares-bugfixes.md).
+- Sidebar and screens: the observer strip art (`0x6AA0CA`, `0x6AA164`;
+  [ares-country-presentation.md](ares-country-presentation.md)), the Money superweapon
+  tooltip (`0x6A932B`), `SW.TimerVisibility` (`0x6D49D1`), and the campaign load-screen
+  text colour (`0x686D7F`; [ares-combat-sim-hooks.md](ares-combat-sim-hooks.md)).
+- Palettes and draw order: an anim's `CustomPalette` (`0x4232CE`), a ParticleType's
+  `Palette` (`0x62D015`) and the Ground layer's per-frame sort (`0x551A30`). See
+  [ares-anim-particles.md](ares-anim-particles.md) and [ares-bugfixes.md](ares-bugfixes.md).
+- Audio: the move sound under a Magnetron (`0x4DAA68`, `0x7101CF`), the amphibious
+  water sound (`0x51D799`), and loose WAV samples and extra audio bags (`0x4016F0`).
 - The Ares campaign menu (uimd.ini `[UISettings]` `CampaignList`, `Campaign1`..`Campaign4`,
   the campaign keys `DebugOnly`/`HoverSound`/`Summary`) and unlimited player colours
   (`[Colors] Count` above 8). Ares' defaults match the engine. See
@@ -163,9 +231,9 @@ Retail INIs for retail tests: run the repo's `extract-ini` into `ini/` and set `
 
 ## Untouched hooks
 
-These 104 Ares 3.0 hooks have no citation in the engine or in another chain doc (the
-hook script above skips this page). Most are the random map generator, DLL plumbing and
-unit art.
+These 74 Ares 3.0 hooks have no citation in the engine or in another chain doc (the
+hook script above skips this page). Most are DLL plumbing, unit art and the alpha
+lights.
 
 | Hook | Ares.dll | Name | Source |
 |---|---|---|---|
@@ -188,7 +256,6 @@ unit art.
 | `0x4A1D70` | `1005F660` | Checksummer_Add_float | `Misc/Checksum.cpp` |
 | `0x4A1D90` | `1005F640` | Checksummer_Add_double | `Misc/Checksum.cpp` |
 | `0x52E9AA` | `1005F680` | Frontend_WndProc_Checksum | `Misc/Checksum.cpp` |
-| `0x64DEA0` | `1005F6E0` | Multiplay_LogToSYNC_NOMPDEBUG | `Misc/Checksum.cpp` |
 | `0x6516F0` | `1005F720` | Multiplay_LogToSync_MPDEBUG | `Misc/Checksum.cpp` |
 | `0x73B4A0` | `100481E0` | UnitClass_DrawVXL_WaterType | `Ext/Techno/Hooks.Art.cpp` |
 | `0x73C5FC` | `10048190` | UnitClass_DrawSHP_WaterType | `Ext/Techno/Hooks.Art.cpp` |
@@ -239,7 +306,6 @@ unit art.
 | `0x6A9A43` | `1005E300` | StripClass_Draw_DrawPCX | `Misc/Cameos.cpp` |
 | `0x712045` | `1005E480` | TechnoTypeClass_GetCameo | `Misc/Cameos.cpp` |
 | `0x533058` | `10002A80` | CommandClassCallback_Register | `Ares.Commands.cpp` |
-| `0x685659` | `100057F0` | Scenario_ClearClasses | `Ares.Ext.cpp` |
 | `0x6BC0CD` | `10005820` | LoadRA2MD | `Ares.GlobalControls.cpp` |
 | `0x5FACDF` | `10006030` | Options_LoadFromINI | `Ares.UISettings.cpp` |
 | `0x73D219` | `10053E50` | UnitClass_Draw_OreGatherAnim | `Ext/WarheadType/Hooks.EMP.cpp` |
