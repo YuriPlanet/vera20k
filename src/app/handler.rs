@@ -925,13 +925,26 @@ impl ApplicationHandler for App {
             return;
         }
 
+        // A pause's end resyncs the held keys and gameplay modifiers; every
+        // event passes here, so the frame after the pause sees it.
+        let paused = state.match_state.paused();
+        let key_edge = match &event {
+            WindowEvent::KeyboardInput { event, .. } => match event.physical_key {
+                PhysicalKey::Code(code) => Some((code, event.state.is_pressed())),
+                _ => None,
+            },
+            _ => None,
+        };
+        state
+            .match_state
+            .input
+            .track_pause(paused, state.platform.live_modifiers, key_edge);
         // Key edges own the modifier views on every screen, including utility
         // cards that consume command input. A release there must not stay held
         // after returning to the shell or entering another match.
         if let WindowEvent::KeyboardInput { event, .. } = &event
             && let PhysicalKey::Code(code) = event.physical_key
         {
-            let paused = state.match_state.paused();
             crate::app::input::hotkeys::record_modifier_key(
                 &mut state.platform.held_modifier_keys,
                 &mut state.platform.live_modifiers,
