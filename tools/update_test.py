@@ -352,7 +352,17 @@ def play(game: Game, scenario: str, version: str, attended: bool) -> None:
     if scenario != "update":
         # Long enough for an update that was not refused to have replaced it.
         time.sleep(10)
-    subprocess.run(game.stop, capture_output=True)
+    if platform() == "windows":
+        table = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "Get-CimInstance Win32_Process | Sort-Object ProcessId | "
+             "ForEach-Object { '{0} <- {1} {2}' -f $_.ProcessId,$_.ParentProcessId,$_.Name }"],
+            capture_output=True, text=True, timeout=120)
+        print(f"--- DIAG processes (pid <- parent name) before taskkill, {scenario}:\n{table.stdout}{table.stderr}",
+              flush=True)
+        time.sleep(4)
+    stopped = subprocess.run(game.stop, capture_output=True, text=True)
+    print(f"--- DIAG taskkill said:\n{stopped.stdout}{stopped.stderr}", flush=True)
     time.sleep(2)
     after = sha256(game.program)
     if scenario == "update":

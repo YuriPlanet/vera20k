@@ -31,34 +31,26 @@ jobs:
           gh run download 42857214415 --repo "$GITHUB_REPOSITORY" -n windows-x64-update-programs -D .
           tar -xf update-programs.tar
           ls -la release update-programs/newest-release update-programs/newest-release/installer
-      - name: Update v0.2.9 to the dev build, watched
-        shell: pwsh
+      # The Release workflow's two update-test steps, as it runs them.
+      - name: Update the installed older build to this dev build
+        shell: bash
+        timeout-minutes: 8
+        env:
+          VERSION: '0.3.0'
         run: |
-          $release = (Get-ChildItem release | Select-Object -First 1).FullName
-          $installed = (Get-ChildItem update-programs/newest-release/installer | Select-Object -First 1).FullName
-          $arguments = @('-u', '-m', 'tools.update_test', 'run', '--key', 'update-programs/key/signing-key.pem',
-            '--release', $release, '--installed', $installed, '--version', '0.3.0',
-            '--program', 'update-programs/newest-release/vera20k.exe', '--scenario', 'update')
-          $harness = Start-Process python -ArgumentList $arguments -RedirectStandardOutput harness.out `
-            -RedirectStandardError harness.err -PassThru -WindowStyle Hidden
-          for ($i = 0; $i -lt 150; $i++) {
-            $os = Get-CimInstance Win32_OperatingSystem
-            "=== $(Get-Date -Format HH:mm:ss) t=$($i * 4)s freeMB=$([int]($os.FreePhysicalMemory / 1024)) commitFreeMB=$([int]($os.FreeVirtualMemory / 1024)) procs=$((Get-Process).Count) harnessExited=$($harness.HasExited)"
-            Get-Process | Where-Object { $_.ProcessName -match 'vera20k|setup|python|is-|unins' } | ForEach-Object {
-              "  proc $($_.ProcessName) pid=$($_.Id) wsMB=$([int]($_.WorkingSet64 / 1MB)) cpu=$([int]$_.CPU) threads=$($_.Threads.Count) started=$($_.StartTime.ToString('HH:mm:ss'))"
-            }
-            Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 3 | ForEach-Object {
-              "  top $($_.ProcessName) pid=$($_.Id) wsMB=$([int]($_.WorkingSet64 / 1MB))"
-            }
-            Get-Content harness.out -Tail 2 -ErrorAction SilentlyContinue | ForEach-Object { "  harness: $_" }
-            Get-ChildItem $env:TEMP -Directory -Filter 'vera20k-update-test-*' -ErrorAction SilentlyContinue | ForEach-Object {
-              Get-ChildItem $_.FullName -Recurse -Filter *.log -ErrorAction SilentlyContinue | ForEach-Object {
-                "  --- $($_.FullName.Substring($env:TEMP.Length)) size=$($_.Length)"
-                Get-Content $_.FullName -Tail 8 -ErrorAction SilentlyContinue | ForEach-Object { "      $_" }
-              }
-            }
-            if ($harness.HasExited -and $i -gt 3) { break }
-            Start-Sleep 4
-          }
-          "=== harness output"
-          Get-Content harness.out, harness.err -ErrorAction SilentlyContinue
+          set -euo pipefail
+          release=(release/*)
+          python -m tools.update_test run --key update-programs/key/signing-key.pem \
+            --release "${release[0]}" --version "$VERSION" --program "update-programs/older/vera20k.exe"
+      - name: Update the newest release to this dev build
+        shell: bash
+        timeout-minutes: 8
+        env:
+          VERSION: '0.3.0'
+        run: |
+          set -euo pipefail
+          release=(release/*)
+          installed=(update-programs/newest-release/installer/*)
+          python -m tools.update_test run --key update-programs/key/signing-key.pem \
+            --release "${release[0]}" --installed "${installed[0]}" --version "$VERSION" \
+            --program "update-programs/newest-release/vera20k.exe" --scenario update
