@@ -13,6 +13,7 @@ pub(crate) mod digital_display;
 pub(crate) mod electric_bolts;
 pub(crate) mod field_parts;
 pub(crate) mod layout_parts;
+pub(crate) mod player_layout;
 pub(crate) mod fire_effects;
 #[cfg(feature = "ares")]
 pub(crate) mod flying_credits;

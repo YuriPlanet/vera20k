@@ -108,6 +108,12 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
         Some(ModalPage::ShellError | ModalPage::NetworkFailure | ModalPage::ShellMessageBox)
         | None => {}
     }
+    // VERA: in the layout edit mode the mouse moves the interface's parts and
+    // reaches nothing else in the match.
+    if crate::app::input::layout_edit::active(state) && !state.match_state.paused() {
+        crate::app::input::layout_edit::mouse(state, button, pressed);
+        return;
+    }
     // Paused in-game Options overlay owns the mouse: route press/release/checkbox/
     // Back here and CONSUME the click so it never reaches the tactical viewport or
     // a gadget (no unit orders behind the overlay). KD-6.
@@ -925,6 +931,11 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
             return;
         }
         Some(ModalPage::ShellError | ModalPage::ShellMessageBox) | None => {}
+    }
+    // VERA: a part grabbed in the layout edit mode follows the cursor.
+    if crate::app::input::layout_edit::active(state) && !state.match_state.paused() {
+        crate::app::input::layout_edit::cursor_moved(state);
+        return;
     }
     // Paused in-game Options overlay: drive a live slider drag (visual/stored only —
     // cadence applies on close, KD-8) and swallow the move so it can't begin a
@@ -2102,6 +2113,9 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         | HotkeyCommand::LockCursor
         | HotkeyCommand::FullScreen
         | HotkeyCommand::StringKeys => run_window_command(state, command),
+        // VERA: the mouse drags the interface's parts until the key comes
+        // again.
+        HotkeyCommand::LayoutEdit => crate::app::input::layout_edit::toggle(state),
     }
 }
 

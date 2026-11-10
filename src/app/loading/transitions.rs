@@ -85,7 +85,7 @@ pub(crate) fn fallback_map_load_result() -> init::MapLoadResult {
             bridge_atlas: None,
             sidebar_cameo_atlas: None,
             sidebar_chrome: None,
-            match_layouts: crate::ui::match_layout::MatchLayoutFile::none(),
+            match_layout_ini: None,
             #[cfg(feature = "phobos")]
             sw_sidebar_ui: crate::rules::phobos_sw_sidebar::SuperWeaponSidebarUi::default(),
             #[cfg(feature = "phobos")]
@@ -218,12 +218,9 @@ pub(crate) fn install_world_presentation(
     state.match_state.match_presentation.bridge_atlas = assets.bridge_atlas;
     state.match_state.match_presentation.sidebar_cameo_atlas = assets.sidebar_cameo_atlas;
     state.match_state.match_presentation.sidebar_chrome = assets.sidebar_chrome;
-    state.match_state.match_presentation.match_layouts = assets.match_layouts;
-    // The side's layout sizes the sidebar, and with it the battlefield, from
-    // the world's first frame.
-    state.match_state.match_presentation.sidebar_layout_spec =
-        crate::app::presentation::sidebar_render::sidebar_layout_spec(state);
-    crate::app::presentation::sidebar_render::refresh_added_parts(state);
+    // The side's layout, the mod's with the player's own over it, sizes the
+    // sidebar, and with it the battlefield, from the world's first frame.
+    crate::app::presentation::player_layout::install(state, assets.match_layout_ini);
     #[cfg(feature = "phobos")]
     {
         state

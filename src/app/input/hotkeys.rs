@@ -20,13 +20,15 @@ const VK_SPACE: u16 = 0x20;
 const VK_DELETE: u16 = 0x2e;
 
 /// VERA's own commands that come with a key: Performance Stats Ctrl+Alt+F, Lock
-/// Cursor to Window Ctrl+Alt+L, Full Screen Alt+Enter and String Keys Ctrl+Alt+K.
-/// Retail `KEYBOARDMD.INI` binds none of these keys.
-const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 4] = [
+/// Cursor to Window Ctrl+Alt+L, Full Screen Alt+Enter, String Keys Ctrl+Alt+K
+/// and Edit Layout Ctrl+Alt+E. Retail `KEYBOARDMD.INI` binds none of these
+/// keys.
+const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 5] = [
     (HotkeyCommand::PerformanceStats, CTRL_BIT | ALT_BIT | 0x46),
     (HotkeyCommand::LockCursor, CTRL_BIT | ALT_BIT | 0x4c),
     (HotkeyCommand::FullScreen, ALT_BIT | 0x0d),
     (HotkeyCommand::StringKeys, CTRL_BIT | ALT_BIT | 0x4b),
+    (HotkeyCommand::LayoutEdit, CTRL_BIT | ALT_BIT | 0x45),
 ];
 /// VeraX AutoLoad's Ctrl+D.
 #[cfg(feature = "verax")]
@@ -96,6 +98,10 @@ pub(crate) enum HotkeyCommand {
     /// Swap the interface between each label's text and its string-table key
     /// while the Developer page's String Keys box is ticked.
     StringKeys,
+    /// In a match: turn the layout edit mode on or off, in which the mouse
+    /// drags the interface's parts (`input::layout_edit`). It comes with a
+    /// default key like the four above but works in a match only.
+    LayoutEdit,
     /// VeraX: load the selection into nearby transports. Registered in the
     /// `vera20k` keyboard category with the Ctrl+D default.
     AutoLoad,
@@ -913,7 +919,7 @@ mod tests {
         }
         let loaded = HotkeyBindings::reload_from_ini_bytes(Some(ini.as_bytes()));
         // The 87 retail rows, plus VERA's four default keys above 0x256.
-        assert_eq!(loaded.by_key.len(), 91);
+        assert_eq!(loaded.by_key.len(), 92);
         for (index, metadata) in catalog::retail_commands().iter().enumerate() {
             assert_eq!(
                 loaded.command_at(0x200 + index as u16),
@@ -921,7 +927,7 @@ mod tests {
             );
         }
         let saved = loaded.to_ini_string();
-        ini.push_str("FullScreen=1037\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n");
+        ini.push_str("FullScreen=1037\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n");
         assert_eq!(saved, ini);
         let reloaded = HotkeyBindings::reload_from_ini_bytes(Some(saved.as_bytes()));
         assert_eq!(reloaded.by_key, loaded.by_key);
@@ -1029,9 +1035,9 @@ mod tests {
         assert_eq!(startup.first_key(HotkeyCommand::Delete), Some(46));
         let serialized = startup.to_ini_string();
         #[cfg(feature = "verax")]
-        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nStopObject=83\nAutoLoad=580\nFullScreen=1037\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n";
+        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nStopObject=83\nAutoLoad=580\nFullScreen=1037\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n";
         #[cfg(not(feature = "verax"))]
-        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nStopObject=83\nFullScreen=1037\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n";
+        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nStopObject=83\nFullScreen=1037\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n";
         assert_eq!(serialized, expected);
         let mut reloaded = HotkeyBindings::reload_from_ini_bytes(Some(serialized.as_bytes()));
         assert_eq!(reloaded.command_at(46), None);
@@ -1220,6 +1226,7 @@ mod tests {
             (HotkeyCommand::LockCursor, 0x64c),
             (HotkeyCommand::FullScreen, 0x40d),
             (HotkeyCommand::StringKeys, 0x64b),
+            (HotkeyCommand::LayoutEdit, 0x645),
         ] {
             assert_eq!(bindings.first_key(command), Some(key), "{command:?}");
         }

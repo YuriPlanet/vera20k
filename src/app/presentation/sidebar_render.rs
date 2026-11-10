@@ -160,18 +160,21 @@ pub(crate) fn sidebar_layout_spec(state: &AppState) -> crate::ui::sidebar::Sideb
     spec
 }
 
+/// The local player's side by its `[Sides]` name, as `[Layouts]` names it.
+pub(crate) fn local_side_name(state: &AppState) -> Option<&str> {
+    let rules = state.rules()?;
+    let side = u8::try_from(current_sidebar_side(state)).ok()?;
+    rules.side_name(crate::rules::ruleset::SideIdx(side))
+}
+
 /// The `veraui.ini` layout of the local player's side, if the file gives it
 /// one.
 fn side_layout(state: &AppState) -> Option<&crate::ui::match_layout::MatchLayout> {
-    let side_name = state.rules().and_then(|rules| {
-        let side = u8::try_from(current_sidebar_side(state)).ok()?;
-        rules.side_name(crate::rules::ruleset::SideIdx(side))
-    });
     state
         .match_state
         .match_presentation
         .match_layouts
-        .for_side(side_name)
+        .for_side(local_side_name(state))
 }
 
 /// The grids of build pictures the local side's layout adds to the sidebar,

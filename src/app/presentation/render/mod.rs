@@ -912,8 +912,16 @@ fn upload_to_gpu(
     // A4 in-game tooltip: built before the pool borrow (it reads &AppState);
     // fill (darken texture) + text (GAME.FNT atlas), drawn after the chat
     // overlay and before the software cursor (O10).
-    let (tooltip_fill, tooltip_border, tooltip_text) =
+    let (mut tooltip_fill, mut tooltip_border, mut tooltip_text) =
         crate::app::input::tooltips::build_tooltip_instances(state);
+    // The layout edit mode's outlines and names share the tooltip's lanes:
+    // over the whole frame, sidebar included.
+    {
+        let (fills, borders, texts) = crate::app::input::layout_edit::instances(state);
+        tooltip_fill.extend(fills);
+        tooltip_border.extend(borders);
+        tooltip_text.extend(texts);
+    }
 
     // TacticalClass::Draw's timer lines, which follow the PixelFX sparkles;
     // built before the pool borrow (they step the Supers' blinks).
