@@ -2322,6 +2322,18 @@ mod tests {
         };
         assert_eq!(credits("Player"), Some(10_000));
         assert_eq!(credits("Computer1"), Some(10_000));
+
+        // The base unit (`0x005D708B`) and the extra units (`0x00688F90`,
+        // `0x0068927F`) all Unlimbo with facing 0.
+        let frame = sim.session().binary_frame();
+        for entity in sim.entities().values() {
+            assert_eq!(
+                entity.body_facing_byte(frame),
+                0,
+                "{} must start facing north",
+                sim.interner().resolve(entity.type_ref())
+            );
+        }
     }
 
     /// `Post_Map_Init` calls `Generate_Starting_Units` at `0x00686937` before

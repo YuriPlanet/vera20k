@@ -2172,7 +2172,12 @@ pub fn launch_alliance_map(
     alliances
 }
 
-pub const STARTING_MCV_FACING: u8 = 64;
+/// The Unlimbo facing of every starting object, the base unit and the extra
+/// units alike: north. `MultiplayerGameMode::Create_Starting_Base_Unit @
+/// 0x005D7030` pushes 0 at `0x005D708B`, and the fallback both callbacks share
+/// (`Try_Unlimbo_Object_At_Or_Near_Cell @ 0x00688ED0`) pushes 0 at
+/// `0x00688F90` (the seed cell) and `0x0068927F` (the ring cells).
+pub const STARTING_MCV_FACING: u8 = 0;
 pub const STARTING_MCV_FALLBACK_MAX_RADIUS: i32 = 31;
 pub const STARTING_EXTRA_UNIT_FALLBACK_START_RADIUS: i32 = 4;
 
