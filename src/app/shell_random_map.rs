@@ -1745,6 +1745,7 @@ impl App {
             }
             // The sliders act on press and never arm a release.
             Control::Advanced(_) => {}
+            Control::FairStartsToggle => modal.toggle_fair_starts(),
             Control::Generate0x620 => {
                 modal.reroll_derived_for_generate(&settings, &mut main);
                 modal.begin_generate();
@@ -1946,6 +1947,7 @@ mod tests {
             vegetation: 62,
             urban_presence: 2,
             urban_enabled: false,
+            fair_starts: false,
             ..Default::default()
         };
         let prepared = prepare_random_map_generation(
@@ -2011,6 +2013,7 @@ mod tests {
             vegetation: 30,
             urban_presence: 40,
             urban_enabled: false,
+            fair_starts: false,
             seed: 4242,
             ..Default::default()
         };

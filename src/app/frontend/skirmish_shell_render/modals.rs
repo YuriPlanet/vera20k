@@ -605,10 +605,15 @@ pub(super) fn push_random_map_setup_modal_control_instances(
         (layout.delete, RandomMapSetupControl::Delete0x6c4),
         (layout.cancel, RandomMapSetupControl::Cancel0x5c0),
         (layout.advanced, RandomMapSetupControl::AdvancedToggle),
+        (layout.fair_starts, RandomMapSetupControl::FairStartsToggle),
     ]
     .into_iter()
     .filter(|(_, control)| {
-        steady && (*control != RandomMapSetupControl::AdvancedToggle || modal.extended)
+        let vera = matches!(
+            control,
+            RandomMapSetupControl::AdvancedToggle | RandomMapSetupControl::FairStartsToggle
+        );
+        steady && (!vera || modal.extended)
     }) {
         push_right_panel_button_shp(
             out,

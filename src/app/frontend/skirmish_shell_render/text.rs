@@ -1040,10 +1040,29 @@ pub(super) fn push_random_map_setup_modal_text_draws(
                 RandomMapSetupControl::AdvancedToggle,
             )
         },
+        if modal.options.fair_starts {
+            (
+                "VERA:RandomMapFairStartsOn",
+                "Fair Starts: On",
+                layout.fair_starts,
+                RandomMapSetupControl::FairStartsToggle,
+            )
+        } else {
+            (
+                "VERA:RandomMapFairStartsOff",
+                "Fair Starts: Off",
+                layout.fair_starts,
+                RandomMapSetupControl::FairStartsToggle,
+            )
+        },
     ]
     .into_iter()
     .filter(|(_, _, _, control)| {
-        !sliding && (*control != RandomMapSetupControl::AdvancedToggle || modal.extended)
+        let vera = matches!(
+            control,
+            RandomMapSetupControl::AdvancedToggle | RandomMapSetupControl::FairStartsToggle
+        );
+        !sliding && (!vera || modal.extended)
     }) {
         push_text_draw(
             out,

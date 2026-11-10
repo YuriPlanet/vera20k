@@ -171,6 +171,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         vegetation: 30,
         urban_presence: 40,
         urban_enabled: false,
+        fair_starts: false,
         seed: 4242,
         description: "Unit 2 lifecycle".into(),
         ..Default::default()
