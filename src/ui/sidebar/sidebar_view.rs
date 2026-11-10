@@ -233,7 +233,7 @@ pub(crate) fn build_sidebar_view_with_spec(
         .map(|(idx, tab)| SidebarTabButton {
             tab,
             rect: Rect {
-                x: layout.sidebar_x + layout_spec.tab_x + idx as f32 * layout_spec.tab_pitch,
+                x: layout.side1_x + layout_spec.tab_x + idx as f32 * layout_spec.tab_pitch,
                 y: layout.tabs_y,
                 w: tab_w,
                 h: tab_h,
@@ -255,13 +255,13 @@ pub(crate) fn build_sidebar_view_with_spec(
     let [sell_w, sell_h] = sell_button_size.unwrap_or([0.0, 0.0]);
     let side1_y_local = layout.side1_y;
     let repair_rect = Rect {
-        x: layout.sidebar_x + layout_spec.repair_x,
+        x: layout.side1_x + layout_spec.repair_x,
         y: side1_y_local + layout_spec.repair_y,
         w: repair_w,
         h: repair_h,
     };
     let sell_rect = Rect {
-        x: layout.sidebar_x + layout_spec.sell_x,
+        x: layout.side1_x + layout_spec.sell_x,
         y: side1_y_local + layout_spec.sell_y,
         w: sell_w,
         h: sell_h,
@@ -294,8 +294,8 @@ pub(crate) fn build_sidebar_view_with_spec(
         let [w, h] = top_button_sizes[i].unwrap_or([0.0, 0.0]);
         SidebarScrollButton {
             rect: Rect {
-                x: layout.sidebar_x + layout_spec.top_button_x + 72.0 * i as f32,
-                y: layout_spec.top_button_y,
+                x: layout.top_x + layout_spec.top_buttons[i][0],
+                y: layout.top_y + layout_spec.top_buttons[i][1],
                 w,
                 h,
             },
@@ -331,9 +331,9 @@ pub(crate) fn build_sidebar_view_with_spec(
         .map(|(idx, (entry, display_name))| {
             let row = idx / CAMEO_COLUMNS;
             let col = idx % CAMEO_COLUMNS;
-            let x = (layout.sidebar_x
+            let x = (layout.strip_x
                 + layout_spec.cameo_inset_x
-                + col as f32 * (layout_spec.cameo_width + layout_spec.cameo_gap_x))
+                + col as f32 * layout_spec.cameo_column_pitch)
                 .round();
             let y = (grid_top + row as f32 * row_height).round();
             SidebarItem {

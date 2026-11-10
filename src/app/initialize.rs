@@ -1013,6 +1013,7 @@ impl App {
                     sidebar_projection: Default::default(),
                     active_sidebar_tab: SidebarTab::default_active_tab(),
                     sidebar_layout_spec,
+                    match_layouts: crate::ui::match_layout::MatchLayoutFile::none(),
                     tooltips: startup_tooltips,
                     tooltip_epoch: Instant::now(),
                     // The Constructor `0x005D39D0` (from Session's static

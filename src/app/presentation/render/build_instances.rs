@@ -1346,6 +1346,7 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
             crate::app::presentation::sidebar_text::build_sidebar_credits_instances(
                 &state.renderer.bit_font,
                 v,
+                state.match_state.match_presentation.sidebar_layout_spec,
                 crate::app::presentation::sidebar_text::credits_tint(theme),
                 [
                     state.match_state.input.camera_x,
@@ -1358,9 +1359,13 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
 
     // Preserve the pixels actually drawn online for a possible pre-due loss.
     // This is display history, separate from ongoing internal minimap updates.
+    // The radar housing's corner, where `build_radar_anim_instance` draws it.
+    let spec = state.match_state.match_presentation.sidebar_layout_spec;
     let origin = [
-        state.match_state.input.camera_x + state.sidebar_frame().layout_left(),
-        state.match_state.input.camera_y + 48.0,
+        state.match_state.input.camera_x
+            + state.sidebar_frame().layout_left()
+            + spec.radar_housing_x,
+        state.match_state.input.camera_y + spec.radar_housing_y,
     ];
     let presentation = &mut state.match_state.match_presentation;
     if let (Some(radar), Some(mm)) = (
@@ -1432,7 +1437,7 @@ fn build_radar_anim_instance(state: &AppState) -> Vec<SpriteInstance> {
 
     vec![SpriteInstance {
         position: [
-            state.match_state.input.camera_x + layout.sidebar_x,
+            state.match_state.input.camera_x + layout.radar_x,
             state.match_state.input.camera_y + layout.radar_y,
         ],
         size: [ra.width as f32, ra.height as f32],

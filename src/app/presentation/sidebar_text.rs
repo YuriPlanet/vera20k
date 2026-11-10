@@ -17,18 +17,27 @@
 
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
-use crate::ui::sidebar::SidebarView;
+use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarView};
 // Generic credit glyph generation is render-owned (F06); this module keeps
 // only the sidebar-view adapter below. Re-exported for existing callers.
 pub use crate::render::sidebar_text::{build_credits_instances, credits_tint};
-/// Per-frame wrapper over [`build_credits_instances`] taking the sidebar view.
+/// Per-frame wrapper over [`build_credits_instances`] taking the sidebar view
+/// and the layout table's place for the counter.
 pub fn build_sidebar_credits_instances(
     font: &BitFont,
     view: &SidebarView,
+    spec: SidebarChromeLayoutSpec,
     tint: [f32; 3],
     camera_offset: [f32; 2],
 ) -> Vec<SpriteInstance> {
-    build_credits_instances(font, view.credits, view.panel_rect, tint, camera_offset)
+    build_credits_instances(
+        font,
+        view.credits,
+        view.panel_rect,
+        spec.money_offset(),
+        tint,
+        camera_offset,
+    )
 }
 
 #[cfg(test)]
@@ -37,6 +46,9 @@ mod tests {
     use crate::render::bit_font::CHAR_SPACING;
     use crate::render::bit_font::tests::make_test_font;
     use crate::ui::sidebar::Rect;
+
+    /// The stock place of the counter: the layout table's `money_offset`.
+    const STOCK: [f32; 2] = [0.0, 2.0];
 
     /// Digit widths standing in for the GAME.FNT table: deliberately unequal so
     /// a proportional/system-font layout cannot reproduce the advances.
@@ -65,7 +77,8 @@ mod tests {
     #[test]
     fn credits_render_through_the_retail_font_glyph_table() {
         let font = digit_font();
-        let inst = build_credits_instances(&font, 1250, panel(), [1.0, 1.0, 0.0], [0.0, 0.0]);
+        let inst =
+            build_credits_instances(&font, 1250, panel(), STOCK, [1.0, 1.0, 0.0], [0.0, 0.0]);
 
         // One quad per digit — no shadow pass, no outline pass.
         assert_eq!(inst.len(), 4, "expected exactly one quad per digit");
@@ -100,14 +113,14 @@ mod tests {
             w: 167.0,
             h: 600.0,
         };
-        let inst = build_credits_instances(&font, 1, rect, [1.0, 1.0, 0.0], [0.0, 0.0]);
+        let inst = build_credits_instances(&font, 1, rect, STOCK, [1.0, 1.0, 0.0], [0.0, 0.0]);
         // 167/2 = 83, 4/2 = 2 → 100 + 81. Float halving would give 100 + 81.5.
         assert_eq!(inst[0].position[0], 181.0);
         assert_eq!(inst[0].position[0].fract(), 0.0);
 
         // A fractional panel origin still resolves to a whole pixel.
         let skewed = Rect { x: 100.4, ..rect };
-        let inst = build_credits_instances(&font, 1, skewed, [1.0, 1.0, 0.0], [0.0, 0.0]);
+        let inst = build_credits_instances(&font, 1, skewed, STOCK, [1.0, 1.0, 0.0], [0.0, 0.0]);
         assert_eq!(inst[0].position[0].fract(), 0.0);
     }
 
@@ -146,7 +159,13 @@ mod tests {
             &crate::ui::sidebar::cameo_order::CameoStrips::default(),
         );
         let font = digit_font();
-        let inst = build_sidebar_credits_instances(&font, &view, [1.0, 1.0, 0.0], [0.0, 0.0]);
+        let inst = build_sidebar_credits_instances(
+            &font,
+            &view,
+            SidebarChromeLayoutSpec::stock(),
+            [1.0, 1.0, 0.0],
+            [0.0, 0.0],
+        );
 
         assert_eq!(inst.len(), 4, "one quad per digit of the displayed total");
         for q in &inst {

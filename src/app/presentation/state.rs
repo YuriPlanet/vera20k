@@ -191,8 +191,11 @@ pub(crate) struct MatchPresentationState {
     pub(crate) sidebar_projection: crate::app::sidebar_projection::SidebarProjectionState,
     /// Active tab for the custom in-game sidebar.
     pub(crate) active_sidebar_tab: SidebarTab,
-    /// Native side-specific geometry in physical render pixels.
+    /// The side's sidebar geometry in sidebar pixels: the original's, with
+    /// the numbers the side's `veraui.ini` layout changes.
     pub(crate) sidebar_layout_spec: SidebarChromeLayoutSpec,
+    /// The game folder's `veraui.ini` as this match read it.
+    pub(crate) match_layouts: crate::ui::match_layout::MatchLayoutFile,
     /// Shared tooltip service (study S1) — the model is clock-injected; only
     /// `input::tooltips` reads the wall clock.
     pub(crate) tooltips: crate::ui::tooltips::TooltipService,
