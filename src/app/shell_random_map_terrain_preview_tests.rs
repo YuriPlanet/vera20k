@@ -87,8 +87,8 @@ fn generated_tree_color_survives_progress_and_thumbnail_persistence() {
         crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
     );
     let format = crate::render::native_surface_format::RGB565;
-    let mut rng = crate::sim::rng::MainRng::new(0x0401_599d);
-    let mut main = crate::app::state::process_main_draws(None, &mut rng);
+    let rng = crate::sim::rng::MainRng::new(0x0401_599d);
+    let mut main = crate::app::state::process_main_draws(None, &rng);
     let mut selectors = crate::map::tile_variant_selector::TileVariantSelectorCache::default();
     let mut selected = None;
     let mut final_colors = Vec::new();

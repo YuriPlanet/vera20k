@@ -9670,10 +9670,7 @@ fn radar_terrain_dirty_marks_deduplicate_and_clear() {
     sim.dirty_cells.mark_radar([(3, 3)]);
     sim.dirty_cells.mark_radar([(3, 3), (4, 4)]);
     assert_eq!(sim.dirty_cells.radar(), [(1, 1), (2, 2), (3, 3), (4, 4)]);
-    assert!(
-        sim.dirty_cells
-            .acknowledge_radar(sim.dirty_cells.radar_generation())
-    );
+    assert!(!sim.dirty_cells.take_radar().is_empty());
     sim.dirty_cells.mark_radar([(1, 1)]);
     assert_eq!(sim.dirty_cells.radar(), [(1, 1)]);
 }

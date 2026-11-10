@@ -238,16 +238,24 @@ fn present(
     presentations: &mut [Presented],
 ) -> crate::app::presentation::render::minimap_transaction::MinimapPresentationCommit {
     let before = scene.sim().state_hash();
-    let commit = crate::app::presentation::render::minimap_transaction::present_minimap_frame(
-        &mut scene.runtime,
-        |runtime| {
-            let view = runtime.view();
-            let (cells, generation) = view.radar_terrain_dirty();
-            let colors = HouseColorMap::new();
-            let overlay_colors = HashMap::new();
-            let mut consumed = None;
-            for (index, presented) in presentations.iter_mut().enumerate() {
-                let current = presented.minimap.update_unit_dots(
+    // As a client frame does: move the simulation's marks into each
+    // minimap's own backlog, then draw from the backlog.
+    let cells = scene.runtime.take_radar_terrain_dirty();
+    for presented in presentations.iter_mut() {
+        presented
+            .minimap
+            .queue_radar_terrain_cells(cells.iter().copied());
+    }
+    let runtime = &scene.runtime;
+    let view = runtime.view();
+    let colors = HouseColorMap::new();
+    let overlay_colors = HashMap::new();
+    let mut first = None;
+    for presented in presentations.iter_mut() {
+        let commit = crate::app::presentation::render::minimap_transaction::present_minimap_frame(
+            &mut presented.minimap,
+            |minimap| {
+                Ok::<_, std::convert::Infallible>(minimap.update_unit_dots(
                     &gpu.device,
                     &gpu.queue,
                     view.entities(),
@@ -267,29 +275,30 @@ fn present(
                     Some(&runtime.resources.overlay_registry),
                     &overlay_colors,
                     view.resolved_terrain(),
-                    cells,
-                    generation,
                     None,
-                );
-                if index == 0 {
-                    consumed = current;
-                } else {
-                    assert_eq!(
-                        current, consumed,
-                        "both target formats consume the same batch"
-                    );
-                }
-            }
-            Ok::<_, std::convert::Infallible>(consumed)
-        },
-    )
-    .unwrap();
+                ))
+            },
+        )
+        .unwrap();
+        match first {
+            None => first = Some(commit),
+            Some(first) => assert_eq!(commit, first, "both target formats consume the same batch"),
+        }
+    }
     assert_eq!(
         scene.sim().state_hash(),
         before,
         "presentation/ack preserves simulation/RNG"
     );
-    commit
+    first.expect("at least one presentation")
+}
+
+fn backlogs_empty(presentations: &mut [Presented]) -> bool {
+    presentations.iter_mut().all(|presented| {
+        AsMut::<crate::render::radar::RadarTerrainBacklog>::as_mut(&mut presented.minimap)
+            .cells()
+            .is_empty()
+    })
 }
 
 #[test]
@@ -349,7 +358,7 @@ fn retail_authored_ore_spread_reaches_uploaded_minimap() {
         !grown.is_empty(),
         "ordinary first frame creates ore without supplied queues/RNG/timers"
     );
-    let (dirty, generation) = scene.runtime.view().radar_terrain_dirty();
+    let dirty = scene.sim().radar_terrain_dirty_cells().to_vec();
     for cell in &grown {
         assert!(
             dirty.contains(cell),
@@ -357,9 +366,10 @@ fn retail_authored_ore_spread_reaches_uploaded_minimap() {
         );
     }
     let commit = present(&gpu, &mut scene, &mut presentations);
-    assert_eq!(commit.consumed_generation, Some(generation));
+    assert!(commit.consumed_generation.is_some());
     assert!(commit.acknowledged);
-    assert!(scene.runtime.view().radar_terrain_dirty().0.is_empty());
+    assert!(scene.sim().radar_terrain_dirty_cells().is_empty());
+    assert!(backlogs_empty(&mut presentations));
     let hash = scene.sim().state_hash();
     for presented in &mut presentations {
         let surface = presented.minimap.native_radar_terrain.as_ref().unwrap();
@@ -477,7 +487,7 @@ fn retail_ore_depletion_reaches_uploaded_minimap_and_acknowledges_once() {
             );
             let entity = view.entities().get(miner).unwrap();
             assert_eq!((entity.position.rx(), entity.position.ry()), ORE);
-            let (cells, generation) = scene.runtime.view().radar_terrain_dirty();
+            let cells = scene.sim().radar_terrain_dirty_cells().to_vec();
             // Partial reduction itself is tactical-only, but fresh sight
             // notifications (original5865F0) independently enqueue radar cells
             // during this unpresented HARV journey. Consume that real pending
@@ -488,14 +498,14 @@ fn retail_ore_depletion_reaches_uploaded_minimap_and_acknowledges_once() {
             let pending = !cells.is_empty();
             let commit = present(&gpu, &mut scene, &mut presentations);
             if pending {
-                assert_eq!(commit.consumed_generation, Some(generation));
+                assert!(commit.consumed_generation.is_some());
                 assert!(
                     commit.acknowledged,
                     "the pending terrain upload is acknowledged"
                 );
                 assert!(
-                    scene.runtime.view().radar_terrain_dirty().0.is_empty(),
-                    "the successful upload retires the runtime's actual batch"
+                    backlogs_empty(&mut presentations),
+                    "the successful upload retires the drained batch"
                 );
             } else {
                 assert_eq!(commit.consumed_generation, None);

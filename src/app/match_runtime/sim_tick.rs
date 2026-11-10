@@ -760,8 +760,8 @@ pub(crate) fn pump_audio_service(state: &mut AppState, now_ms: u64) {
         state.frontend.loading_session.as_ref(),
     );
     let mut main = crate::app::state::process_main_draws(
-        state.match_state.sim_runtime.as_mut(),
-        &mut state.frontend.frontend_main_rng,
+        state.match_state.sim_runtime.as_ref(),
+        &state.frontend.frontend_main_rng,
     );
     state.audio.service_audio(
         now_ms,
