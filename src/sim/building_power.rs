@@ -191,7 +191,7 @@ impl Simulation {
         rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
-        for id in std::mem::take(&mut self.substrate.ares_temporal_factory_refresh) {
+        for id in self.substrate.take_ares_temporal_factory_refresh() {
             let Some(entity) = self.substrate.entities.get(id) else {
                 continue;
             };
@@ -233,9 +233,9 @@ impl crate::sim::world::ObjectSubstrate {
             return;
         }
         entity.building_online.temporal(online);
-        #[cfg(feature = "ares")]
-        self.ares_temporal_factory_refresh.push(id);
         let slots = *entity.building_art.anim_slots();
+        #[cfg(feature = "ares")]
+        self.queue_ares_temporal_factory_refresh(id);
         for slot in slots.into_iter().flatten() {
             if let Some(anim) = self.anims.get_mut(slot) {
                 anim.set_temporal_erase(!online);
