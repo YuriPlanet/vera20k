@@ -1,9 +1,14 @@
 package org.vera20k
 
 import android.app.Activity
+import android.app.ActivityManager.TaskDescription
 import android.app.NativeActivity
+import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Process
 import android.provider.DocumentsContract
 import java.io.File
 import java.io.IOException
@@ -31,6 +36,10 @@ class VeraActivity : NativeActivity() {
 
         /** What the engine opens directly; a folder without these is not RA2. */
         val REQUIRED_ARCHIVES = listOf("ra2md.mix", "ra2.mix")
+
+        /** The two launcher entries; exactly one is enabled at a time. */
+        const val LAUNCHER_RETAIL = "org.vera20k.LauncherRetail"
+        const val LAUNCHER_VERA = "org.vera20k.LauncherVera"
     }
 
     /**
@@ -48,6 +57,26 @@ class VeraActivity : NativeActivity() {
             )
         }
         startActivityForResult(intent, REQUEST_PICK_FOLDER)
+    }
+
+    /**
+     * Ends the process with the task.
+     *
+     * winit builds one event loop per process, so this activity cannot serve a
+     * second task: a relaunch inside a surviving process calls `android_main`
+     * again and exits on the spot, which the player sees as a splash flash and
+     * a crash. A task can also lose its activity without the player swiping it —
+     * applying the new launcher icon disables the alias that hosted it — so the
+     * process follows its activity and the next tap is a cold start.
+     *
+     * Every configuration change is listed in `configChanges`, so reaching here
+     * means the activity is really going away.
+     */
+    override fun onDestroy() {
+        super.onDestroy()
+        if (isFinishing) {
+            Process.killProcess(Process.myPid())
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -72,6 +101,68 @@ class VeraActivity : NativeActivity() {
     private external fun nativeConfigForImport(directory: String): String
 
     fun cancelImport(): Boolean = AssetImportJob.cancelActive()
+
+    /**
+     * Shows the icon the Options page's VERA Icon box selected.
+     *
+     * A launcher icon is a resource compiled into the package, so the only way
+     * to change it at run time is to enable one `activity-alias` and disable the
+     * other. The app switcher takes the same bitmap from the task description.
+     * Called from Rust at start-up and whenever the box is toggled
+     * (`vera20k::util::app_icon`).
+     */
+    fun applyAppIcon(veraIcon: Boolean) {
+        // Rust calls this from the engine's own thread; enabling, disabling and
+        // finishing an activity all belong to Android's main thread.
+        runOnUiThread { applyAppIconOnUi(veraIcon) }
+    }
+
+    private fun applyAppIconOnUi(veraIcon: Boolean) {
+        val wanted = if (veraIcon) LAUNCHER_VERA else LAUNCHER_RETAIL
+        val other = if (veraIcon) LAUNCHER_RETAIL else LAUNCHER_VERA
+        val wantedName = ComponentName(this, wanted)
+        val otherName = ComponentName(this, other)
+        val enabled = PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+        val disabled = PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+        // Already in effect: touching the components would still tear down the
+        // task, because disabling the alias that launched it removes the task.
+        if (packageManager.getComponentEnabledSetting(wantedName) == enabled &&
+            packageManager.getComponentEnabledSetting(otherName) == disabled
+        ) {
+            updateTaskDescription(veraIcon)
+            return
+        }
+        packageManager.setComponentEnabledSetting(wantedName, enabled, PackageManager.DONT_KILL_APP)
+        packageManager.setComponentEnabledSetting(otherName, disabled, PackageManager.DONT_KILL_APP)
+        // Disabling the alias that launched this task already removed it, and a
+        // surviving process cannot serve another one (winit builds a single
+        // event loop per process). Close deliberately instead of leaving a
+        // headless process, and the next tap on the new icon is a cold start.
+        //
+        // Restarting the app for the player would need a background activity
+        // start, which Android refuses once this process is no longer in front;
+        // the alarm-and-relaunch approach only worked while the app still held
+        // the foreground.
+        finishAndRemoveTask()
+        Process.killProcess(Process.myPid())
+    }
+
+    /** The app switcher's picture and label for the chosen icon. */
+    private fun updateTaskDescription(veraIcon: Boolean) {
+        // The adaptive icon is an XML drawable, which decodes to no bitmap; the
+        // foreground PNG is the same artwork the launcher composites.
+        val icon = BitmapFactory.decodeResource(
+            resources,
+            if (veraIcon) {
+                R.mipmap.ic_launcher_vera_foreground
+            } else {
+                R.mipmap.ic_launcher_retail_foreground
+            },
+        ) ?: return
+        setTaskDescription(
+            TaskDescription(applicationInfo.loadLabel(packageManager).toString(), icon),
+        )
+    }
 
     private var copiedBytes = 0L
     private var reportedBytes = 0L
