@@ -94,17 +94,18 @@ pub(crate) fn ordered_assault(extra: &str) -> Option<AssaultScene> {
 }
 
 impl AssaultScene {
-    /// Step until the bunker holds nobody, at most 300 frames.
-    pub(crate) fn run_until_cleared(&mut self) {
-        for _ in 0..300 {
+    /// Step until the bunker holds nobody, at most `frames` frames; answers
+    /// whether it emptied.
+    pub(crate) fn run_until_cleared(&mut self, frames: usize) -> bool {
+        for _ in 0..frames {
             let commands = self.sim.take_due_commands();
             self.sim
                 .advance_tick(&commands, Some(&self.rules), Some(&self.grid), None, 33);
             if self.occupant_count() == 0 {
-                return;
+                return true;
             }
         }
-        panic!("Boris never cleared the bunker");
+        false
     }
 
     pub(crate) fn occupant_count(&self) -> u32 {
@@ -127,13 +128,14 @@ impl AssaultScene {
 /// game, the bunker stays Russian and empty, and Boris stays out, alive.
 /// gamemd books the kills the wrong way round (`0x004586D6` calls the
 /// assaulter's Record_The_Kill with the occupant as the killer): the
-/// Russians score two kills, the Americans two losses.
+/// Russians score two kills, the Americans two losses. Ares books them to
+/// Boris (`1005C510`).
 #[test]
 fn an_assaulter_kills_the_occupants_of_an_enemy_building() {
     let Some(mut scene) = ordered_assault("") else {
         return;
     };
-    scene.run_until_cleared();
+    assert!(scene.run_until_cleared(300), "Boris clears the bunker");
     let sim = &scene.sim;
     for &occupant in &scene.occupants {
         assert!(
@@ -156,6 +158,30 @@ fn an_assaulter_kills_the_occupants_of_an_enemy_building() {
         .filter(|(_, anim)| sim.interner.resolve(anim.type_id()) == "UCBLOOD")
         .count();
     assert_eq!(splashes, 2);
-    assert_eq!(scene.stats("Russians"), (2, 0));
-    assert_eq!(scene.stats("Americans"), (0, 2));
+    #[cfg(not(feature = "ares"))]
+    let (russians, americans) = ((2, 0), (0, 2));
+    #[cfg(feature = "ares")]
+    let (russians, americans) = ((0, 2), (2, 0));
+    assert_eq!(scene.stats("Russians"), russians);
+    assert_eq!(scene.stats("Americans"), americans);
+}
+
+/// Ares `Assaulter.Level` (`10016FD0`, hook `0x00457DB7`): a bunker of
+/// level 1 refuses a level-0 assaulter, who is turned away at its door
+/// (the conscripts inside keep shooting him) and kills nobody.
+#[cfg(feature = "ares")]
+#[test]
+fn a_higher_assaulter_level_keeps_the_assaulter_out() {
+    let Some(mut scene) = ordered_assault("[NABNKR]\nAssaulter.Level=1\n") else {
+        return;
+    };
+    assert!(!scene.run_until_cleared(150));
+    assert_eq!(scene.occupant_count(), 2);
+    let sim = &scene.sim;
+    assert!(
+        !sim.substrate
+            .anims
+            .iter()
+            .any(|(_, anim)| sim.interner.resolve(anim.type_id()) == "UCBLOOD")
+    );
 }

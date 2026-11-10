@@ -240,8 +240,10 @@ Supported extensions:
   the ProduceCash rework with `ProduceCashDisplay`, and `SecretLab.*`.
 - [Transports and payloads](ares-transports.md): `InitialPayload.*`,
   `Convert.Deploy`, Hospital/Armory eviction on sale and capture, Carryall
-  totes (`Carryall.Allowed`, `Carryall.SizeLimit` and the 3.0 drop hooks) and
-  `Passengers.Allowed`/`.Disallowed` on aircraft transports.
+  totes (`Carryall.Allowed`, `Carryall.SizeLimit` and the 3.0 drop hooks),
+  `Passengers.Allowed`/`.Disallowed` on aircraft transports, and
+  `Assaulter.Level` over the stock assault
+  ([dormant-stock-rules.md](dormant-stock-rules.md#assaulters)).
 - [Warhead, AI and techno residuals](ares-warhead-residuals.md): airborne
   victims of the curtain, EMP and AttachEffect, PoweredBy team, spawn and slave
   updates, `TeamRetaliate`, `AIInnerBase`, `EVA.Lost`, EMP on Fly and Jumpjet

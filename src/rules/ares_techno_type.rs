@@ -307,7 +307,8 @@ pub(crate) struct ResidualTypeRules {
     /// `.DescentSpeed` and `.EmergeSpeed` (+0x3B4..+0x3D4, Nullable<int>,
     /// unset; else the RulesExt values).
     hunter_seeker: [Option<i32>; 5],
-    /// `Assaulter.Level` (+0x42C, Valueable<int>, 0).
+    /// `Assaulter.Level` (+0x42C, Valueable<int>, 0), consumed through
+    /// [`AresTechnoTypeRules::assaulter_level`].
     assaulter_level: i32,
     /// `NoSelfGuardArea` (+0x4C8, false).
     no_self_guard_area: bool,
@@ -1261,6 +1262,15 @@ impl AresTechnoTypeRules {
     #[cfg(feature = "ares")]
     pub(crate) fn carryall_size_limit(&self) -> Option<i32> {
         self.residual.carryall_size_limit
+    }
+
+    /// `Assaulter.Level` (+0x42C): an assaulter takes a building whose type's
+    /// level is not negative and at most his own
+    /// (BuildingClass_CanBeOccupied_SpecificAssaulters, Ares.dll 10016FD0,
+    /// hook 0x457DB7; `passenger::can_dock_occupier_garrison`).
+    #[cfg(feature = "ares")]
+    pub(crate) fn assaulter_level(&self) -> i32 {
+        self.residual.assaulter_level
     }
 
     /// `Unsellable.Get(UnitsUnsellable)`: a unit of this type cannot be sold

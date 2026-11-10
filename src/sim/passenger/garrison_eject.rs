@@ -375,7 +375,7 @@ fn eject_garrison_passengers_at_edges(
 /// Record_The_Kill (vt+0xE0) with the occupant as the killer
 /// (`0x004586CA..0x004586D9`). gamemd swaps the two there: the assaulter is
 /// booked as lost to each occupant he kills, and the occupant earns the
-/// experience.
+/// experience. Ares fixes the swap (`1005C510`, hook `0x004586D6`).
 pub(crate) fn kill_building_occupants(
     sim: &mut Simulation,
     building_id: u64,
@@ -405,8 +405,27 @@ pub(crate) fn kill_building_occupants(
                     context.rules(),
                 );
             }
+            // Ares 3.0 100136C0 (hook 0x4586CA): evalRaidStatus; the vector
+            // still holds every occupant here, so it returns nothing yet.
+            #[cfg(feature = "ares")]
+            sim.ares_eval_raid_status(
+                building_id,
+                context.rules(),
+                context.registry(),
+                context.effects(),
+            );
+            // Ares 3.0 1005C510 (hook 0x4586D6) books the occupant as killed
+            // by the assaulter, as it is UnInit next.
+            #[cfg(feature = "ares")]
+            sim.record_the_kill(
+                id,
+                crate::sim::combat::KillSource::Techno(Some(assaulter)),
+                crate::sim::combat::KillCallback::Terminal,
+                context,
+            );
             // The assaulter lives on: a callback that leaves its victim
             // alive.
+            #[cfg(not(feature = "ares"))]
             sim.record_the_kill(
                 assaulter,
                 crate::sim::combat::KillSource::Techno(Some(id)),

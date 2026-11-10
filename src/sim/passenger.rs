@@ -979,7 +979,14 @@ pub fn can_dock_occupier_garrison(
         return false;
     }
     if !passenger_obj.occupier {
-        return assaulter_admitted(passenger, building, passenger_obj, occupants, sim);
+        return assaulter_admitted(
+            passenger,
+            building,
+            passenger_obj,
+            building_obj,
+            occupants,
+            sim,
+        );
     }
     let passive = owner_is_multiplay_passive(building.owner(), &sim.houses);
     let red_health = is_at_or_below_red_hp(
@@ -1024,21 +1031,34 @@ pub fn can_dock_occupier_garrison(
 /// (`HouseClass::Is_Ally_ByObject @ 0x004F9A90`, asked by the building's
 /// house) while it holds any occupant (vt+0x408). Red health, a full
 /// building and mind control are not asked here.
+///
+/// Ares 3.0 `BuildingClass_CanBeOccupied_SpecificAssaulters @ 10016FD0`
+/// (hook `0x00457DB7`, past the `+0xEB5` test) adds the building type's
+/// `Assaulter.Level`: not negative, and at most the assaulter type's.
 fn assaulter_admitted(
     passenger: &GameEntity,
     building: &GameEntity,
     passenger_obj: &ObjectType,
+    building_obj: &ObjectType,
     occupants: &BuildingOccupants,
     sim: &Simulation,
 ) -> bool {
-    passenger_obj.assaulter
+    let assaultable = passenger_obj.assaulter
         && !crate::sim::combat::combat_weapon::is_ally_by_object(
             Some(&sim.house_alliances),
             &sim.interner,
             building.owner(),
             passenger.owner(),
         )
-        && occupants.count() != 0
+        && occupants.count() > 0;
+    #[cfg(feature = "ares")]
+    let assaultable = assaultable && {
+        let level = building_obj.techno_combat().assaulter_level();
+        level >= 0 && level <= passenger_obj.techno_combat().assaulter_level()
+    };
+    #[cfg(not(feature = "ares"))]
+    let _ = building_obj;
+    assaultable
 }
 
 /// [`can_dock_occupier_garrison`] by id, as `CanBeOccupiedBy`'s callers that
