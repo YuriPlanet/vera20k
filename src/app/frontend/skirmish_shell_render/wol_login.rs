@@ -76,7 +76,9 @@ pub(crate) fn paint_wol_login_children(
     };
     let label = |key: &str| csf_label(state, key);
     if let Some(online) = layout.online {
-        // VERA online: the welcome, the username field and the counts.
+        // VERA online: the welcome, the username field and the counts, in
+        // their panel.
+        push_info_panel(&mut paint.controls, atlas, online.panel);
         let centred = ShellAlign::H_CENTER;
         for (value, rect, align, rgb) in [
             (
@@ -94,7 +96,7 @@ pub(crate) fn paint_wol_login_children(
             (
                 label("VERA:Username"),
                 online.name_label,
-                ShellAlign::H_RIGHT,
+                ShellAlign::NONE,
                 SHELL_LABEL_TEXT_RGB,
             ),
         ] {

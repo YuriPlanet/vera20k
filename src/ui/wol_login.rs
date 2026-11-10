@@ -812,11 +812,12 @@ pub(crate) struct WolLoginLayout {
 /// column, not on the whole page.
 pub(crate) const POPUP_AREA: RectPx = RectPx::new(36, 36, 560, 504);
 
-/// VERA online: the page's left side over its art: the welcome heading and
-/// its line, the username caption and field on gamemd's nickname row, and
-/// the lobby's activity below.
+/// VERA online: the page's left side over its art, one framed panel with a
+/// single centred column: the welcome heading and its line, the username
+/// caption over its field, and the lobby's activity below.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct WolOnlineLoginLayout {
+    pub(crate) panel: RectPx,
     pub(crate) heading: RectPx,
     /// Up to two wrapped rows.
     pub(crate) text: RectPx,
@@ -827,11 +828,18 @@ pub(crate) struct WolOnlineLoginLayout {
     pub(crate) counts: [RectPx; 2],
 }
 
-/// The welcome and the counts span [`POPUP_AREA`]'s width; the rows are the
-/// shell font's 19 pixels.
-const ONLINE_HEADING: RectPx = RectPx::new(36, 150, 560, 19);
-const ONLINE_TEXT: RectPx = RectPx::new(96, 177, 440, 38);
-const ONLINE_COUNTS: [RectPx; 2] = [RectPx::new(36, 300, 560, 19), RectPx::new(36, 321, 560, 19)];
+/// The panel centres in [`POPUP_AREA`], in the shell's authored 800x600
+/// units; its rows are the shell font's 19 pixels, 16 clear of the frame at
+/// the sides, and the field is the size of gamemd's password field.
+const ONLINE_PANEL: RectPx = RectPx::new(96, 178, 440, 220);
+const ONLINE_HEADING: RectPx = RectPx::new(112, 194, 408, 19);
+const ONLINE_TEXT: RectPx = RectPx::new(112, 219, 408, 38);
+const ONLINE_NAME_LABEL: RectPx = RectPx::new(212, 270, 209, 19);
+const ONLINE_NAME: RectPx = RectPx::new(212, 292, 209, 22);
+const ONLINE_COUNTS: [RectPx; 2] = [
+    RectPx::new(112, 338, 408, 19),
+    RectPx::new(112, 359, 408, 19),
+];
 
 impl WolLoginLayout {
     pub(crate) fn page_spec(&self) -> &'static MenuPageSpec {
@@ -911,18 +919,12 @@ impl WolLoginLayout {
                 password.h - 2,
             )),
             remember: px(child_window(196, 207, 213, 13)),
-            // The username takes gamemd's nickname caption and row, as a
-            // NewEdit of the password's size.
             online: (policy == LoginPolicy::Online).then(|| WolOnlineLoginLayout {
+                panel: px(ONLINE_PANEL),
                 heading: px(ONLINE_HEADING),
                 text: px(ONLINE_TEXT),
-                name_label: px(child_window(49, 148, 119, 11)),
-                name: px(RectPx::new(
-                    password.x + 1,
-                    combo.y + 1,
-                    password.w - 2,
-                    password.h - 2,
-                )),
+                name_label: px(ONLINE_NAME_LABEL),
+                name: px(ONLINE_NAME),
                 counts: ONLINE_COUNTS.map(px),
             }),
         }
@@ -1352,12 +1354,14 @@ mod tests {
         );
         assert_eq!(layout.tooltip_key(LOGIN), Some("VERA:LoginHelp"));
         assert_eq!(layout.tooltip_key(BACK), Some("STT:WOLWelcomeBack"));
-        // The username field stands on gamemd's nickname row, the size of
-        // its password field; the rest of the left side holds no control.
+        // The username field is the size of gamemd's password field; the
+        // rest of the left side holds no control.
         let online = layout.online.unwrap();
         assert!(native.online.is_none());
-        assert_eq!(online.name, RectPx::new(295, 240, 209, 22));
-        assert_eq!(online.name_label, native.labels[0].1);
+        assert_eq!(
+            (online.name.w, online.name.h),
+            (native.password.w, native.password.h)
+        );
         assert_eq!(
             layout.control_at(online.name.x + 1, online.name.y + 1),
             Some(NICKNAME)
@@ -1366,14 +1370,27 @@ mod tests {
             layout.control_at(native.password.x + 1, native.password.y + 1),
             None
         );
-        // The welcome, the field and the counts stand in that order, clear
-        // of the button column and the status line.
-        assert!(online.heading.y + online.heading.h <= online.text.y);
-        assert!(online.text.y + online.text.h < online.name.y);
-        assert!(online.name.y + online.name.h < online.counts[0].y);
-        assert!(online.counts[0].y + online.counts[0].h <= online.counts[1].y);
-        assert!(online.counts[1].y + online.counts[1].h < layout.status_help.y);
-        assert!(online.heading.x + online.heading.w < layout.page.right_panel.top.x);
+        // One column on the popups' centre line, inside the panel: the
+        // welcome, the caption over its field, then the counts.
+        let centre = |rect: RectPx| 2 * rect.x + rect.w;
+        let rows = [
+            online.heading,
+            online.text,
+            online.name_label,
+            online.name,
+            online.counts[0],
+            online.counts[1],
+        ];
+        for (index, row) in rows.iter().enumerate() {
+            // The field is an odd 209 wide: centred to the pixel.
+            assert!((centre(*row) - centre(POPUP_AREA)).abs() <= 1, "{row:?}");
+            assert!(online.panel.x < row.x && row.x + row.w < online.panel.x + online.panel.w);
+            assert!(online.panel.y < row.y && row.y + row.h < online.panel.y + online.panel.h);
+            if let Some(next) = rows.get(index + 1) {
+                assert!(row.y + row.h <= next.y, "{row:?} {next:?}");
+            }
+        }
+        assert_eq!(centre(online.panel), centre(POPUP_AREA));
     }
 
     #[test]
