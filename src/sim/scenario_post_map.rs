@@ -54,6 +54,41 @@ pub(crate) enum ScenarioPostMapStep {
     SpecialAllies,
 }
 
+#[cfg(test)]
+thread_local! {
+    /// A test's one read of the simulation before the Special-House pass
+    /// ([`observe_before_special_allies`]).
+    static BEFORE_SPECIAL_ALLIES: std::cell::RefCell<Option<Box<dyn FnOnce(&Simulation)>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Run `load` and have `observe` read the simulation once, right before the
+/// first Special-House pass inside it
+/// ([`Simulation::ally_special_house_with_every_house`]), which walks every
+/// starting unit's sight again. `None` when `load` reaches no such pass.
+#[cfg(test)]
+pub(crate) fn observe_before_special_allies<R: 'static, T>(
+    observe: impl FnOnce(&Simulation) -> R + 'static,
+    load: impl FnOnce() -> T,
+) -> (T, Option<R>) {
+    let seen = std::rc::Rc::new(std::cell::RefCell::new(None));
+    let sink = std::rc::Rc::clone(&seen);
+    BEFORE_SPECIAL_ALLIES.with_borrow_mut(|hook| {
+        assert!(hook.is_none(), "nested Special-House observers");
+        *hook = Some(Box::new(move |sim| *sink.borrow_mut() = Some(observe(sim))));
+    });
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            BEFORE_SPECIAL_ALLIES.with_borrow_mut(|hook| *hook = None);
+        }
+    }
+    let reset = Reset;
+    let result = load();
+    drop(reset);
+    (result, seen.take())
+}
+
 impl Simulation {
     /// Commit the post-map authority cone in native-observable order.
     ///
@@ -155,6 +190,13 @@ impl Simulation {
             #[cfg(any(test, feature = "test-support"))]
             {
                 skirmish_order[3] = Some(ScenarioPostMapStep::SpecialAllies);
+            }
+            #[cfg(test)]
+            {
+                let observe = BEFORE_SPECIAL_ALLIES.with_borrow_mut(Option::take);
+                if let Some(observe) = observe {
+                    observe(self);
+                }
             }
             self.ally_special_house_with_every_house(&input);
         }
@@ -315,6 +357,17 @@ impl Simulation {
     /// target and announcement tail (`0x004F9C1F..0x004F9C28`). Outside the
     /// scope a single-live-House Special would be refused by the
     /// leaves-no-enemy gate, which no native start is.
+    ///
+    /// That arm keeps `Make_Ally`'s sight brackets (`0x004F9B9A`, and
+    /// `0x004F9C2A..0x004F9C31` jumps to `0x004F9F46`). The starting units
+    /// already stand (`Generate_Starting_Units @ 0x005D6D80`, called at
+    /// `0x00686937`), so each admitted call releases (`Map 0x004ADEE0`,
+    /// ReReveal `0x0070B1D0`) and re-admits (`Map 0x004ADCD0`, UpdateReveal
+    /// `0x0070AF50`) the sight of every discovered Techno of the player on
+    /// the player's map. `MapCell 0x004A9CA0` recomputes both edge frames on
+    /// every call (`0x004A9D09`, `0x004A9D41`), so a starting unit's cells
+    /// leave the pass with the frames its whole footprint gives, not the
+    /// ones its Unlimbo's own walk stored.
     fn ally_special_house_with_every_house(&mut self, input: &ScenarioPostMapInput<'_>) {
         let Some(special) = input
             .rules

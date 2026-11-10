@@ -725,19 +725,47 @@ fn retail_goldst_initial_scenario() -> crate::headless_scenario::HeadlessScenari
     scenario
 }
 
+/// [`retail_goldst_initial_scenario`], with its starting AMCV held to the
+/// oracle's rows ([`assert_retail_goldst_initial_amcv`]) where the oracle
+/// read them: after the unit's Unlimbo, which is all the oracle ran, and
+/// before `ScenarioClass::Post_Map_Init @ 0x00686890` allies the Special
+/// house (`0x006869D2..0x00686ACE`). Each `HouseClass::Make_Ally @
+/// 0x004F9B70` that loop admits walks the unit's footprint twice more (`Map
+/// 0x004ADEE0` at `0x004F9B9A`, `Map 0x004ADCD0` at `0x004F9F4F`), and
+/// `MapCell 0x004A9CA0` recomputes both edge frames on every call
+/// (`0x004A9D09`, `0x004A9D41`). The finished load therefore caches the
+/// frames the whole footprint gives, while the rows keep each cell's fog
+/// frame from its one visit, when the cells after it in the walk had no
+/// `+0x140` bit 2 yet. Returns the finished load, the unit and the witness
+/// cells.
+fn retail_goldst_scenario_checked_after_unlimbo() -> (
+    crate::headless_scenario::HeadlessScenario,
+    u64,
+    Vec<(u16, u16)>,
+) {
+    let (scenario, checked) = crate::sim::scenario_post_map::observe_before_special_allies(
+        assert_retail_goldst_initial_amcv,
+        retail_goldst_initial_scenario,
+    );
+    let (id, witnesses) = checked.expect("a Battle load allies the Special house");
+    (scenario, id, witnesses)
+}
+
 /// Normal production GoldSt Battle initialization, before any frame or draw.
 /// Original6F6D27/5678E0/4A9CA0 plus6F6D61/567DA0 observations are retained
 /// by the existing procedural drawing oracle. Its original scene supplies a
 /// cropped physical map and bounded successful placement, not whole-map boot;
-/// this joins only the selected source and eight pre-presentation Cell states.
+/// this joins only the selected source and eight pre-presentation Cell states,
+/// read after the Unlimbo as the oracle read them.
 #[test]
 #[ignore = "requires RA2_DIR with installed retail RA2/YR assets and stock GoldSt.mmx"]
 fn retail_goldst_initial_amcv_matches_native_before_presentation() {
-    let scenario = retail_goldst_initial_scenario();
-    let _ = assert_retail_goldst_initial_amcv(scenario.sim());
+    let _ = retail_goldst_scenario_checked_after_unlimbo();
 }
 
-/// Shared native1777 prerequisites, before either normal-map experiment runs.
+/// Shared native1777 prerequisites of both normal-map experiments, for the
+/// load as the starting AMCV's Unlimbo left it
+/// ([`retail_goldst_scenario_checked_after_unlimbo`]).
 fn assert_retail_goldst_initial_amcv(sim: &Simulation) -> (u64, Vec<(u16, u16)>) {
     use serde_json::json;
     let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
@@ -858,13 +886,15 @@ fn assert_retail_goldst_initial_amcv(sim: &Simulation) -> (u64, Vec<(u16, u16)>)
         );
     }
     // No refresh, terrain edits, visibility hooks, commands or presentation
-    // ran between normal load and these producer/cache observations.
+    // ran between the unit's Unlimbo and these producer/cache observations.
     (id, witnesses)
 }
 
 /// Ordinary runtime Move -> two Unit arrivals -> Stop/idle on stock GoldSt.
-/// Native1777 supplies the initial prerequisites; the independently executed
-/// moving corpus supplies event-relative Drive/Unit cache and Cell witnesses.
+/// Native1777 supplies the initial prerequisites, read after the Unlimbo
+/// ([`retail_goldst_scenario_checked_after_unlimbo`]); the independently
+/// executed moving corpus supplies event-relative Drive/Unit cache and Cell
+/// witnesses for the moves, which run from the finished load.
 /// Prepared native startup timing is not a whole-match timing golden.
 #[test]
 #[ignore = "requires RA2_DIR with installed retail RA2/YR assets and stock GoldSt.mmx"]
@@ -988,8 +1018,7 @@ fn retail_goldst_amcv_sight_follows_arrivals_then_survives_stop() {
         }
     }
 
-    let mut scene = retail_goldst_initial_scenario();
-    let (id, mut selected) = assert_retail_goldst_initial_amcv(scene.sim());
+    let (mut scene, id, mut selected) = retail_goldst_scenario_checked_after_unlimbo();
     let owner = scene.sim().session.current_house().unwrap();
     let cache = &scene.sim().fog.sight_admissions_for_test()[&(id, owner)];
     let left = *cache.cells.iter().min().unwrap();
