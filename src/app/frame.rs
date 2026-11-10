@@ -112,13 +112,6 @@ fn apply_screen_shake(
 }
 
 impl App {
-    /// Service the match runtime for one pass: the outcome voice wait, the
-    /// scenario exit cascade, the quit cascade, the audio pump and, when
-    /// admitted, each simulation advance due by now (only the first without
-    /// `catch_up_allowed`). Shared by the render pass and the
-    /// hidden-window service loop in `about_to_wait`, so the world keeps the
-    /// same cadence whether or not a frame is drawn. Returns quit state and
-    /// the pre-Logic Main_Tick admission for its later consumers.
     /// Move the simulation's pending radar-terrain marks into the minimap's
     /// backlog. Without a minimap they stay with the simulation, as before.
     fn drain_radar_terrain_marks(state: &mut AppState) {
@@ -131,6 +124,13 @@ impl App {
         }
     }
 
+    /// Service the match runtime for one pass: the outcome voice wait, the
+    /// scenario exit cascade, the quit cascade, the audio pump and, when
+    /// admitted, each simulation advance due by now (only the first without
+    /// `catch_up_allowed`). Shared by the render pass and the
+    /// hidden-window service loop in `about_to_wait`, so the world keeps the
+    /// same cadence whether or not a frame is drawn. Returns quit state and
+    /// the pre-Logic Main_Tick admission for its later consumers.
     pub(super) fn service_match_runtime(
         state: &mut AppState,
         event_loop: &ActiveEventLoop,
