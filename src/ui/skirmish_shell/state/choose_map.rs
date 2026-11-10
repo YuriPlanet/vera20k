@@ -1351,15 +1351,17 @@ mod tests {
             &[],
             &layout,
         );
+        // VERA: both lists are 20 px wider, the game types to the left and
+        // the maps to the right.
         assert_eq!(
             modal.mode_geometry(&layout).row(0),
-            RectPx::new(117, 128, 195, 19)
+            RectPx::new(97, 128, 215, 19)
         );
         modal.filtered_record_indices = (0..60).collect();
         let maps = modal.map_geometry(&layout);
         // VERA: the map rows start 20 px lower, under the search box.
-        assert_eq!(maps.row(0), RectPx::new(339, 148, 175, 19));
-        assert_eq!(maps.scrollbar.map(|bar| bar.x), Some(514));
+        assert_eq!(maps.row(0), RectPx::new(339, 148, 195, 19));
+        assert_eq!(maps.scrollbar.map(|bar| bar.x), Some(534));
         let lines = crate::ui::shell::list::list_frame_lines(layout.mode_list);
         let left = lines.iter().map(|(r, _)| r.x).min();
         let right = lines.iter().map(|(r, _)| r.x + r.w - 1).max();
@@ -1367,7 +1369,7 @@ mod tests {
         let bottom = lines.iter().map(|(r, _)| r.y + r.h - 1).max();
         assert_eq!(
             (left, right, top, bottom),
-            (Some(115), Some(313), Some(126), Some(472))
+            (Some(95), Some(313), Some(126), Some(472))
         );
     }
 

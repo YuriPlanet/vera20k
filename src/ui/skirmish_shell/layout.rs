@@ -843,6 +843,19 @@ fn opponent_scrollbar_rect(rows: &SkirmishRowRects) -> RectPx {
 const MAP_SEARCH_H: i32 = 17;
 const MAP_SEARCH_LIST_SHIFT: i32 = MAP_SEARCH_H + 3;
 
+/// VERA: both lists and their headings are 20 px (a tenth) wider than
+/// `0x6B`'s, for long map names. The game-type column grows to the left and
+/// the map column to the right, so the gap between them stays.
+const LIST_WIDEN: i32 = 20;
+
+fn widen_left(rect: RectPx) -> RectPx {
+    RectPx::new(rect.x - LIST_WIDEN, rect.y, rect.w + LIST_WIDEN, rect.h)
+}
+
+fn widen_right(rect: RectPx) -> RectPx {
+    RectPx::new(rect.x, rect.y, rect.w + LIST_WIDEN, rect.h)
+}
+
 pub fn compute_choose_map_modal_layout(screen_w: u32, screen_h: u32) -> ChooseMapModalLayout {
     let screen_w = screen_w as i32;
     let screen_h = screen_h as i32;
@@ -852,13 +865,13 @@ pub fn compute_choose_map_modal_layout(screen_w: u32, screen_h: u32) -> ChooseMa
     // VERA: one slot (27 dialog units) under Create Random Map.
     let favorite_base = dlu_rect(425, 176, 108, 23);
     // `0x6B`'s map list window; VERA's search box takes its top.
-    let map_list = crate::ui::shell::geom::child_window(225, 78, 130, 211);
+    let map_list = widen_right(crate::ui::shell::geom::child_window(225, 78, 130, 211));
 
     ChooseMapModalLayout {
         scale: ShellScale::RETAIL,
         screen: RectPx::new(0, 0, screen_w, screen_h),
         dialog: RectPx::new(0, 0, screen_w, screen_h),
-        mode_list: crate::ui::shell::geom::child_window(77, 78, 130, 211),
+        mode_list: widen_left(crate::ui::shell::geom::child_window(77, 78, 130, 211)),
         map_list: RectPx::new(
             map_list.x,
             map_list.y + MAP_SEARCH_LIST_SHIFT,
@@ -895,8 +908,8 @@ pub fn compute_choose_map_modal_layout(screen_w: u32, screen_h: u32) -> ChooseMa
             screen_h,
         ),
         select_engagement: dlu_rect(80, 20, 257, 12),
-        game_type_heading: dlu_rect(77, 60, 130, 10),
-        game_map_heading: dlu_rect(225, 60, 130, 10),
+        game_type_heading: widen_left(dlu_rect(77, 60, 130, 10)),
+        game_map_heading: widen_right(dlu_rect(225, 60, 130, 10)),
         status_help: choose_map_status_help_rect(screen_w, screen_h),
         preview: right_static(
             AnchorRule::RightAnchor,
@@ -1940,9 +1953,10 @@ mod tests {
 
         assert_eq!(layout.screen, RectPx::new(0, 0, 800, 600));
         assert_eq!(layout.dialog, RectPx::new(0, 0, 800, 600));
-        assert_eq!(layout.mode_list, RectPx::new(116, 127, 196, 344));
+        // VERA: 20 px wider than `0x6B`'s 196, to the left.
+        assert_eq!(layout.mode_list, RectPx::new(96, 127, 216, 344));
         // VERA: the search box takes the top 20 px of `0x6B`'s 344 px list.
-        assert_eq!(layout.map_list, RectPx::new(338, 147, 196, 324));
+        assert_eq!(layout.map_list, RectPx::new(338, 147, 216, 324));
         assert_eq!(layout.use_map_button, RectPx::new(644, 199, 156, 42));
         assert_eq!(
             layout.create_random_map_button,
@@ -1951,10 +1965,10 @@ mod tests {
         assert_eq!(layout.cancel_button, RectPx::new(644, 535, 156, 42));
         assert_eq!(layout.title, RectPx::new(635, 3, 163, 17));
         assert_eq!(layout.select_engagement, RectPx::new(120, 33, 386, 20));
-        assert_eq!(layout.game_type_heading, RectPx::new(116, 98, 195, 16));
-        assert_eq!(layout.game_map_heading, RectPx::new(338, 98, 195, 16));
+        assert_eq!(layout.game_type_heading, RectPx::new(96, 98, 215, 16));
+        assert_eq!(layout.game_map_heading, RectPx::new(338, 98, 215, 16));
         // The box's top is the game-type list's; its frame meets the map list's.
-        assert_eq!(layout.map_search, RectPx::new(338, 127, 196, 17));
+        assert_eq!(layout.map_search, RectPx::new(338, 127, 216, 17));
         assert_eq!(layout.favorite_button, RectPx::new(644, 283, 156, 42));
         assert_eq!(layout.status_help, RectPx::new(10, 578, 456, 21));
         assert_eq!(layout.preview, RectPx::new(644, 37, 144, 112));
@@ -1966,8 +1980,9 @@ mod tests {
 
         assert_eq!(layout.screen, RectPx::new(0, 0, 1024, 768));
         assert_eq!(layout.dialog, RectPx::new(0, 0, 1024, 768));
-        assert_eq!(layout.mode_list, RectPx::new(116, 127, 196, 344));
-        assert_eq!(layout.map_list, RectPx::new(338, 147, 196, 324));
+        // VERA: 20 px wider than `0x6B`'s 196, to the left.
+        assert_eq!(layout.mode_list, RectPx::new(96, 127, 216, 344));
+        assert_eq!(layout.map_list, RectPx::new(338, 147, 216, 324));
         assert_eq!(layout.use_map_button, RectPx::new(756, 283, 156, 42));
         assert_eq!(
             layout.create_random_map_button,
@@ -1976,8 +1991,8 @@ mod tests {
         assert_eq!(layout.cancel_button, RectPx::new(756, 619, 156, 42));
         assert_eq!(layout.title, RectPx::new(747, 87, 163, 17));
         assert_eq!(layout.select_engagement, RectPx::new(120, 33, 386, 20));
-        assert_eq!(layout.game_type_heading, RectPx::new(116, 98, 195, 16));
-        assert_eq!(layout.game_map_heading, RectPx::new(338, 98, 195, 16));
+        assert_eq!(layout.game_type_heading, RectPx::new(96, 98, 215, 16));
+        assert_eq!(layout.game_map_heading, RectPx::new(338, 98, 215, 16));
         assert_eq!(layout.status_help, RectPx::new(122, 662, 456, 21));
         assert_eq!(layout.preview, RectPx::new(756, 121, 144, 112));
     }
