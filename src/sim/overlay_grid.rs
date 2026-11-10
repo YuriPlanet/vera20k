@@ -2759,19 +2759,25 @@ IsRubble=yes
     }
 
     /// RecalcAttributes' early overlay branch (`0x0047D31E..0x0047D53E`):
-    /// rubble on a cell with a neighbour four levels up is Rock, as at load.
+    /// under `CliffBackImpassability=2`, rubble on a cell with a neighbour four
+    /// levels up is Rock, as at load. Rules without the key hold the
+    /// constructor's 0, which skips the test (`0x0047D386..0x0047D393`).
     #[test]
     fn rubble_behind_a_cliff_takes_rock_land_at_runtime() {
         use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
         use crate::rules::ini_parser::IniFile;
         use crate::rules::terrain_rules::LandType;
 
-        let ini = IniFile::from_str(
-            "[OverlayTypes]\n0=RUBBLE\n[Clear]\nTrack=100%\n[Rock]\nTrack=0%\n\
-             [RUBBLE]\nIsRubble=yes\n",
-        );
-        let registry = OverlayTypeRegistry::from_ini(&ini, None);
-        let land_beside_level = |level: u8| {
+        let registry_with = |general: &str| {
+            let ini = IniFile::from_str(&format!(
+                "{general}[OverlayTypes]\n0=RUBBLE\n[Clear]\nTrack=100%\n[Rock]\nTrack=0%\n\
+                 [RUBBLE]\nIsRubble=yes\n",
+            ));
+            OverlayTypeRegistry::from_ini(&ini, None)
+        };
+        let mode_two = registry_with("[General]\nCliffBackImpassability=2\n");
+        let no_key = registry_with("");
+        let land_beside_level = |registry: &OverlayTypeRegistry, level: u8| {
             let cells = (0..3)
                 .flat_map(|y| (0..3).map(move |x| (x, y)))
                 .map(|(x, y)| {
@@ -2785,11 +2791,12 @@ IsRubble=yes
             let mut terrain = ResolvedTerrainGrid::from_cells(3, 3, cells);
             let mut overlay_grid = OverlayGrid::new(3, 3);
             overlay_grid.place_overlay(1, 1, 0, 0);
-            recalc_overlay_passability(&mut overlay_grid, &mut terrain, &registry, 1, 1);
+            recalc_overlay_passability(&mut overlay_grid, &mut terrain, registry, 1, 1);
             terrain.cell(1, 1).expect("cell").land_type
         };
-        assert_eq!(land_beside_level(3), LandType::Clear.as_index());
-        assert_eq!(land_beside_level(4), LandType::Rock.as_index());
+        assert_eq!(land_beside_level(&mode_two, 3), LandType::Clear.as_index());
+        assert_eq!(land_beside_level(&mode_two, 4), LandType::Rock.as_index());
+        assert_eq!(land_beside_level(&no_key, 4), LandType::Clear.as_index());
     }
 
     #[test]

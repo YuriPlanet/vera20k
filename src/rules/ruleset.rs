@@ -889,8 +889,9 @@ pub struct GeneralRules {
     /// house at `MaxIQLevels` (`0x004FC0FF`), and a human house's MakeAlly
     /// (`0x004F9C5F`), run Computer_Paranoid. Retail yes.
     pub paranoid: bool,
-    /// Low byte of `CliffBackImpassability=` in `[General]`.
-    /// Byte 0 skips the scan; only byte 2 can write Rock. Default 2 in standard YR.
+    /// Low byte of `CliffBackImpassability=` in `[General]`, as
+    /// `read_cliff_back_impassability` reads it. Byte 0 skips the scan; only
+    /// byte 2 can write Rock.
     pub cliff_back_impassability: u8,
     /// `[General] TunnelSpeed=` (`Rules+0x20`): ReadDouble at `0x0066EDA9`
     /// over the constructor's 1.0 (`0x00665685..0x00665688`); retail 1. The
@@ -3079,7 +3080,7 @@ impl Default for GeneralRules {
             iq_auto_crush: 2,
             iq_sell_back: 2,
             credit_reserve: 1000,
-            cliff_back_impassability: 2,
+            cliff_back_impassability: read_cliff_back_impassability(None),
             lightning_storm_duration: 900,
             lightning_damage: 200,
             lightning_deferment: 250,
@@ -3520,10 +3521,19 @@ pub(crate) fn ambient_change_terms(rate: f64, step: f64) -> (bool, i32, i32) {
     )
 }
 
-/// `[General] CliffBackImpassability=` as `CellClass::RecalcAttributes`
-/// (`0x0047D2B0`) compares it: a byte, 2 unless the key is set.
+/// `[General] CliffBackImpassability=` (`Rules+0x664`, a byte): ReadInt in
+/// RulesClass::ReadGeneral (`0x0066D530`, `0x0066F1CB..0x0066F1E6`) over the
+/// constructor's 0 (`0x00665F3B`), keeping the low byte. Retail RULESMD sets 2.
+/// The early overlay branch of `CellClass::RecalcAttributes` (`0x0047D2B0`)
+/// skips its neighbour test when the byte is 0 (`0x0047D386..0x0047D393`) and
+/// writes Rock only when it is 2 (`0x0047D52F..0x0047D53E`).
+///
+/// Residual: gamemd constructs RulesClass once, in Init_Game (`0x0052BA60`,
+/// call at `0x0052BAD1`), so rules that never set the key keep the byte of the
+/// scenario played before. VERA starts every scenario at 0. No retail rules
+/// omit the key.
 pub(crate) fn read_cliff_back_impassability(general: Option<&IniSection>) -> u8 {
-    general.map_or(2, |general| general.read_int("CliffBackImpassability", 2)) as u8
+    general.map_or(0, |general| general.read_int("CliffBackImpassability", 0)) as u8
 }
 
 impl GeneralRules {
@@ -13514,6 +13524,26 @@ CellSpread=0
                 "raw INI integer {raw}"
             );
         }
+    }
+
+    /// The RulesClass constructor (`0x00665650`) stores 0 at `Rules+0x664`
+    /// (`0x00665F3B`), and RulesClass::ReadGeneral (`0x0066D530`) hands ReadInt
+    /// that byte as its default (`0x0066F1CB..0x0066F1E6`). Retail RULESMD
+    /// sets 2, which the overlay registry reads from the processed rules too.
+    #[test]
+    fn cliff_back_rule_without_the_key_keeps_the_constructors_zero() {
+        assert_eq!(GeneralRules::default().cliff_back_impassability, 0);
+        let other_key = IniFile::from_str("[General]\nTreeStrength=200\n");
+        assert_eq!(
+            GeneralRules::from_ini(&other_key).cliff_back_impassability,
+            0
+        );
+        assert_eq!(read_cliff_back_impassability(None), 0);
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else {
+            return;
+        };
+        assert_eq!(retail.general.cliff_back_impassability, 2);
+        assert!(retail.overlay_registry().cliff_back_rock().is_some());
     }
 
     #[test]
