@@ -7,8 +7,8 @@ is, place the messages, the timers, the banner and the tooltips, and add buttons
 text of your own. Without the file the game looks exactly as the original does.
 
 This is part of a larger plan. Later versions will let a layout use the original
-pieces more than once and let parts arrange themselves. The keys on this page keep
-their meaning when that comes, so a layout you write now keeps working.
+pieces more than once. The keys on this page keep their meaning when that comes, so a
+layout you write now keeps working.
 
 ## Where the file goes
 
@@ -351,7 +351,7 @@ the battlefield.
 
 | Key | Meaning |
 | --- | --- |
-| `Type` | `Button` or `Text` |
+| `Type` | `Button` or `Text`. `Row` and `Column` are [below](#rows-and-columns) |
 | `Command` | For a button: what a click does. See [Commands](#commands) |
 | `Label` | For a button without a picture: the words on it. The name of a line in the game's string table shows that line's text. Without `Label` the button shows its command's name |
 | `Art` | For a button: its picture, an SHP file like `mybutton.shp`. Frame 0 is the button and frame 1 the button held down. It uses the sidebar's palette (`sidebar.pal`), as the command bar's buttons do |
@@ -369,6 +369,58 @@ the battlefield.
   `button06.shp`. If the file isn't found the button shows its label instead.
 - A part with a section but in no `Parts=` list isn't shown.
 - A new part needs a name of its own: not `Money`, `Radar` or another original part's.
+
+### Rows and columns
+
+A `Row` or a `Column` holds buttons and texts and places them one after another, so
+they need no `X` and `Y` of their own:
+
+```ini
+[Mine.Field]
+Parts=Messages,Timers,Banner,Powers,Orders
+
+[Mine.Orders]
+Type=Row
+Hold=Bottom
+Y=4
+Gap=2
+Parts=StopAll,GuardAll,Spread
+
+[Mine.StopAll]
+Type=Button
+Command=Stop
+Art=button08.shp
+
+[Mine.GuardAll]
+Type=Button
+Command=Guard
+Art=button06.shp
+
+[Mine.Spread]
+Type=Button
+Command=ScatterObject
+Label=Scatter
+```
+
+This puts three buttons side by side, in the middle of the battlefield's bottom edge.
+
+| Key | Meaning |
+| --- | --- |
+| `Type` | `Row` places its parts from left to right, `Column` from top to bottom |
+| `Parts` | The buttons and texts it holds, in order |
+| `Gap` | The pixels between one part and the next. 0 if you leave it out |
+| `Hold`, `X`, `Y` | Where the row or column sits in `Side` or `Field`, as for a button |
+| `Width` on a row, `Height` on a column | Starts a new line when the next part would pass it |
+
+- A part goes in one list only: the row's or column's, not also `Side`'s or `Field`'s.
+- Inside a row or column a part's own `Hold`, `X` and `Y` aren't used. `Width` and
+  `Height` still size it.
+- A row or column can't hold another row or column yet.
+
+With a row you can build a command bar of your own. Leave the original out with
+`Parts=Field,Side` on the layout, and use the bar's own pictures: `button00.shp` to
+`button10.shp` are `Team01`, `Team02`, `Team03`, `TypeSelect`, `Deploy`, `AttackMove`,
+`Guard`, `Beacon`, `Stop`, `PlanningMode` and `Cheer`.
 
 ### Commands
 
@@ -404,7 +456,7 @@ out or write the original value. Any other value is skipped, and the game tells 
 
 | Key | What it is for | Original value |
 | --- | --- | --- |
-| `Type` on an original part, or a new part of an original kind | The kind of part: `Battlefield`, `Panel`, `Radar`, `CameoGrid`, `Tabs` or `PowerBar`. A layout can only add a `Button` or a `Text` | The part's own kind |
+| `Type` on an original part, or a new part of an original kind | The kind of part: `Battlefield`, `Panel`, `Radar`, `CameoGrid`, `Tabs` or `PowerBar`. A layout can only add a `Button`, a `Text`, a `Row` or a `Column` | The part's own kind |
 | `Hold` | The edge or corner of its parent a part is measured from, for the sidebar's own parts and `Field` | `TopLeft`. `Top` for `Money` |
 | `Width`, `Height` | A part's size, for the sidebar's own parts, `Bar` and `Field`. `Rest` means what is left | `Width=Rest` and `Height=32` for `Bar`, `Rest` for both on `Field`, `Height=Rest` for `Cameos` |
 | `Art` on an original part | The pictures an original part draws | None yet: replace the picture files instead |
@@ -413,8 +465,9 @@ out or write the original value. Any other value is skipped, and the game tells 
 
 The three big parts hold on to their edges: they have no `X` or `Y`. The command bar
 can't stand on the left or the right, and its buttons can't be changed here yet. A
-layout can add [buttons and text](#adding-buttons-and-text) but no other kind of part
-yet, and a section that is neither an original part nor one of those is skipped.
+layout can add [buttons, text, rows and columns](#adding-buttons-and-text) but no
+other kind of part yet, and a section that is neither an original part nor one of
+those is skipped.
 
 ## If you make a mistake
 

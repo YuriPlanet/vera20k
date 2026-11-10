@@ -659,24 +659,44 @@ impl MatchLayoutFile {
     /// loader asks them once the file is read.
     pub fn check_commands(&mut self, known: impl Fn(&str) -> bool) {
         for layout in &mut self.layouts {
-            let (kept, refused): (Vec<_>, Vec<_>) =
-                layout
-                    .added
-                    .iter()
-                    .cloned()
-                    .partition(|part| match &part.kind {
-                        AddedKind::Button { command, .. } => known(command),
-                        AddedKind::Text { .. } => true,
-                    });
-            if refused.is_empty() {
+            let keep: Vec<bool> = layout
+                .added
+                .iter()
+                .map(|part| match &part.kind {
+                    AddedKind::Button { command, .. } => known(command),
+                    AddedKind::Text { .. } | AddedKind::Group { .. } => true,
+                })
+                .collect();
+            if keep.iter().all(|&keep| keep) {
                 continue;
             }
-            self.problems
-                .extend(refused.into_iter().map(|part| LayoutProblem {
-                    section: part.section,
-                    key: "Command".to_owned(),
-                    kind: LayoutProblemKind::UnknownCommand,
-                }));
+            // A group's parts name it by its place in the list, which moves
+            // up by the parts left out before it.
+            let mut next = 0;
+            let moved: Vec<usize> = keep
+                .iter()
+                .map(|&keep| {
+                    let place = next;
+                    next += usize::from(keep);
+                    place
+                })
+                .collect();
+            let mut kept = Vec::with_capacity(next);
+            for (index, part) in layout.added.iter().enumerate() {
+                if keep[index] {
+                    let mut part = part.clone();
+                    if let Holder::Group(group) = part.holder {
+                        part.holder = Holder::Group(moved[group]);
+                    }
+                    kept.push(part);
+                } else {
+                    self.problems.push(LayoutProblem {
+                        section: part.section.clone(),
+                        key: "Command".to_owned(),
+                        kind: LayoutProblemKind::UnknownCommand,
+                    });
+                }
+            }
             layout.added = kept.into();
         }
     }
@@ -734,7 +754,7 @@ fn read_layout(
     let mut read = MatchLayout::default();
     // Names a holder's `Parts=` lists that the original does not have, each
     // with the line that lists it, and the sections that define such parts.
-    let mut listed: Vec<(Holder, String, String, String)> = Vec::new();
+    let mut listed: Vec<(ListedIn, String, String, String)> = Vec::new();
     let mut defined: Vec<(String, AddedPart)> = Vec::new();
     let names = ini.section_names();
     for (position, &name) in names.iter().enumerate() {
@@ -796,8 +816,21 @@ fn read_layout(
             .find(|stock| stock.name.eq_ignore_ascii_case(part))
         else {
             // A section with a `Type=` this version can add is a new part.
-            match read_added_part(section, name, |key, kind| problem(name, key, kind)) {
-                Some(Some(added)) => defined.push((part.to_owned(), added)),
+            let mut children = Vec::new();
+            match read_added_part(section, name, &mut children, |key, kind| {
+                problem(name, key, kind)
+            }) {
+                Some(Some(added)) => {
+                    listed.extend(children.into_iter().map(|child| {
+                        (
+                            ListedIn::Group(part.to_owned()),
+                            child,
+                            name.to_owned(),
+                            "Parts".to_owned(),
+                        )
+                    }));
+                    defined.push((part.to_owned(), added));
+                }
                 Some(None) => {}
                 None => problem(name, "", LayoutProblemKind::UnknownPart),
             }
@@ -818,7 +851,7 @@ fn read_layout(
                         Some(part) => shown[part as usize] = true,
                         None if word.eq_ignore_ascii_case(NO_PARTS) || word.is_empty() => {}
                         None => listed.push((
-                            Holder::Field,
+                            ListedIn::Field,
                             word.to_owned(),
                             name.to_owned(),
                             key.to_owned(),
@@ -833,7 +866,7 @@ fn read_layout(
                     listed.extend(
                         unknown
                             .into_iter()
-                            .map(|word| (Holder::Side, word, name.to_owned(), key.to_owned())),
+                            .map(|word| (ListedIn::Side, word, name.to_owned(), key.to_owned())),
                     );
                 } else if !unknown.is_empty() {
                     problem(name, key, LayoutProblemKind::UnknownPart);
@@ -878,18 +911,43 @@ fn read_layout(
         }
     }
     // A listed name is a part once a section defines it; each part is added
-    // once, where its first list puts it.
-    let mut added = Vec::new();
-    for (holder, word, section, key) in listed {
-        match defined
-            .iter()
-            .position(|(part, _)| part.eq_ignore_ascii_case(&word))
-        {
-            Some(index) => {
-                let (_, part) = defined.remove(index);
-                added.push(AddedPart { holder, ..part });
+    // once, where its first list puts it. The sidebar's and the
+    // battlefield's lists come first, so a group has its place in the list
+    // before the parts it holds.
+    let mut added: Vec<AddedPart> = Vec::new();
+    let mut names: Vec<String> = Vec::new();
+    for in_groups in [false, true] {
+        for (list, word, section, key) in &listed {
+            let holder = match list {
+                ListedIn::Side if !in_groups => Holder::Side,
+                ListedIn::Field if !in_groups => Holder::Field,
+                ListedIn::Group(group) if in_groups => {
+                    // A group that no list names shows none of its parts.
+                    match names
+                        .iter()
+                        .position(|name| name.eq_ignore_ascii_case(group))
+                    {
+                        Some(index) => Holder::Group(index),
+                        None => continue,
+                    }
+                }
+                _ => continue,
+            };
+            let Some(index) = defined
+                .iter()
+                .position(|(part, _)| part.eq_ignore_ascii_case(word))
+            else {
+                problem(section, key, LayoutProblemKind::UnknownPart);
+                continue;
+            };
+            // A group holds buttons and texts, not other groups.
+            if in_groups && matches!(defined[index].1.kind, AddedKind::Group { .. }) {
+                problem(section, key, LayoutProblemKind::NotYet);
+                continue;
             }
-            None => problem(&section, &key, LayoutProblemKind::UnknownPart),
+            let (name, part) = defined.remove(index);
+            names.push(name);
+            added.push(AddedPart { holder, ..part });
         }
     }
     for (_, part) in defined {
@@ -1072,30 +1130,66 @@ fn read_field_part(
     true
 }
 
-/// A section for a part the original does not have: with `Type=Button` or
-/// `Type=Text` it is a part the layout adds. `None` when it has no `Type=`
+/// A section for a part the original does not have: with `Type=Button`,
+/// `Type=Text`, `Type=Row` or `Type=Column` it is a part the layout adds. A
+/// row's or a column's `Parts=` names go to `children`. `None` when it has no `Type=`
 /// this version knows, `Some(None)` when it has one but cannot be built
 /// (its problem is reported), else the part, in the battlefield until a
 /// `Parts=` list says where it goes.
 fn read_added_part(
     section: &IniSection,
     name: &str,
+    children: &mut Vec<String>,
     mut problem: impl FnMut(&str, LayoutProblemKind),
 ) -> Option<Option<AddedPart>> {
     let word = |key: &str| section.read_name(key, NAME_CAPACITY).map(str::trim);
     let type_key = section
         .keys()
         .find(|key| key.eq_ignore_ascii_case("Type"))?;
-    let button = match word(type_key)? {
-        kind if kind.eq_ignore_ascii_case("Button") => true,
-        kind if kind.eq_ignore_ascii_case("Text") => false,
-        _ => return None,
+    let kind = word(type_key)?;
+    let (button, text) = (
+        kind.eq_ignore_ascii_case("Button"),
+        kind.eq_ignore_ascii_case("Text"),
+    );
+    // A row or a column: `Some(column)`.
+    let group = if kind.eq_ignore_ascii_case("Row") {
+        Some(false)
+    } else if kind.eq_ignore_ascii_case("Column") {
+        Some(true)
+    } else {
+        None
     };
+    if !(button || text || group.is_some()) {
+        return None;
+    }
     let is = |key: &str, name: &str| key.eq_ignore_ascii_case(name);
     let mut place = PartBox::WHOLE;
     let (mut command, mut label, mut value, mut art) = (None, None, None, None);
+    let mut gap = 0;
     for key in section.keys() {
         if is(key, "Type") {
+        } else if group.is_some() && is(key, "Gap") {
+            match number_in(section, key, 0, 8192) {
+                Ok((number, clamped)) => {
+                    gap = number;
+                    if let Some(kind) = clamped {
+                        problem(key, kind);
+                    }
+                }
+                Err(kind) => problem(key, kind),
+            }
+        } else if group.is_some() && is(key, "Parts") {
+            // The buttons and texts the group holds, in the order it places
+            // them.
+            children.extend(
+                section
+                    .read_list(key, LIST_CAPACITY)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(str::trim)
+                    .filter(|child| !child.is_empty() && !child.eq_ignore_ascii_case(NO_PARTS))
+                    .map(str::to_owned),
+            );
         } else if is(key, "X") || is(key, "Y") {
             match number_in(section, key, -8192, 8192) {
                 Ok((number, clamped)) => {
@@ -1133,7 +1227,7 @@ fn read_added_part(
             command = word(key).filter(|name| !name.is_empty());
         } else if button && is(key, "Label") {
             label = word(key);
-        } else if !button && is(key, "Value") {
+        } else if text && is(key, "Value") {
             value = word(key).and_then(TextValue::named);
         } else if button && is(key, "Art") {
             art = word(key).filter(|name| !name.is_empty());
@@ -1143,7 +1237,9 @@ fn read_added_part(
             problem(key, LayoutProblemKind::UnknownKey);
         }
     }
-    let kind = if button {
+    let kind = if let Some(column) = group {
+        AddedKind::Group { column, gap }
+    } else if button {
         let Some(command) = command else {
             problem("Command", LayoutProblemKind::UnknownCommand);
             return Some(None);
@@ -1166,6 +1262,14 @@ fn read_added_part(
         kind,
         place,
     }))
+}
+
+/// The list that names an added part: the sidebar's, the battlefield's, or
+/// the `Parts=` of a row or a column the layout adds, by that group's name.
+enum ListedIn {
+    Side,
+    Field,
+    Group(String),
 }
 
 /// Keys of the format a piece over the battlefield cannot take yet.
@@ -1696,6 +1800,76 @@ mod tests {
     }
 
     #[test]
+    fn a_layout_lines_buttons_up_in_a_row() {
+        let mut file = MatchLayoutFile::from_bytes(
+            b"[Layouts]\nGDI=Hud\n\
+              [Hud.Field]\nParts=Messages,Timers,Banner,Powers,Bad,Orders\n\
+              [Hud.Bad]\nType=Button\nCommand=Levitate\n\
+              [Hud.Orders]\nType=row\nHold=Bottom\nY=4\nGap=2\nParts=Halt,Fly,Guard,Orders,Ghost\n\
+              [Hud.Halt]\nType=Button\nCommand=Stop\n\
+              [Hud.Fly]\nType=Button\nCommand=Levitate\n\
+              [Hud.Guard]\nType=Button\nCommand=Guard\n\
+              [Hud.Stray]\nType=Column\nParts=Lone\n\
+              [Hud.Lone]\nType=Text\nValue=Time\n",
+        );
+        file.check_commands(|name| !name.eq_ignore_ascii_case("Levitate"));
+        let problems: Vec<_> = file
+            .problems()
+            .iter()
+            .map(|problem| (problem.place(), problem.kind.clone()))
+            .collect();
+        assert_eq!(
+            problems,
+            [
+                // A row can't hold itself, and Ghost has no section.
+                (
+                    "[Hud.Orders] Parts".to_owned(),
+                    LayoutProblemKind::UnknownPart
+                ),
+                (
+                    "[Hud.Orders] Parts".to_owned(),
+                    LayoutProblemKind::UnknownPart
+                ),
+                // A column no list names shows nothing, nor does its text.
+                ("[Hud.Stray]".to_owned(), LayoutProblemKind::NotListed),
+                ("[Hud.Lone]".to_owned(), LayoutProblemKind::NotListed),
+                (
+                    "[Hud.Bad] Command".to_owned(),
+                    LayoutProblemKind::UnknownCommand
+                ),
+                (
+                    "[Hud.Fly] Command".to_owned(),
+                    LayoutProblemKind::UnknownCommand
+                ),
+            ]
+        );
+        // The row and its two real buttons are left, and the buttons still
+        // name the row after the refused button before it is gone.
+        let added = file.for_side(Some("GDI")).unwrap().added();
+        assert_eq!(added.len(), 3);
+        assert_eq!(
+            added[0].kind,
+            AddedKind::Group {
+                column: false,
+                gap: 2
+            }
+        );
+        assert_eq!(added[0].holder, Holder::Field);
+        assert!(
+            added[1..]
+                .iter()
+                .all(|part| part.holder == Holder::Group(0))
+        );
+        // Three buttons 52 wide would sit centred, 4 up from the bottom.
+        let (places, whole) = crate::ui::added_parts::flow(&[[52, 32]; 3], false, 2, None);
+        assert_eq!(
+            added[0].rect_in([0, 0, 632, 568], whole),
+            [236, 532, 160, 32]
+        );
+        assert_eq!(places[2], [108, 0]);
+    }
+
+    #[test]
     fn the_sample_layout_reads_cleanly_and_does_what_it_says() {
         let file = MatchLayoutFile::from_bytes(
             crate::test_fixture::text("docs/examples/veraui.ini").as_bytes(),
@@ -1745,13 +1919,29 @@ mod tests {
         assert_eq!(layout.side2_tile_count, 2);
         // Two buttons and the match clock sit in the band's empty half.
         let added = file.for_side(Some("Nod")).unwrap().added();
-        assert_eq!(added.len(), 3);
-        assert!(added.iter().all(|part| part.holder == Holder::Side));
+        assert_eq!(added.len(), 4);
+        // A row of the two buttons, then the clock, both in the sidebar.
         assert_eq!(
-            added[2].kind,
+            (added[0].holder, added[1].holder),
+            (Holder::Side, Holder::Side)
+        );
+        assert_eq!(
+            added[0].kind,
+            AddedKind::Group {
+                column: false,
+                gap: 4
+            }
+        );
+        assert_eq!(
+            added[1].kind,
             AddedKind::Text {
                 value: TextValue::Time
             }
+        );
+        assert!(
+            added[2..]
+                .iter()
+                .all(|part| part.holder == Holder::Group(0))
         );
         // Yuri's is wider, three cameos to a row, with an empty top strip.
         let (spec, view) = sidebar_with(SidebarTheme::Yuri, file.for_side(Some("ThirdSide")), 4);

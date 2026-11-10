@@ -5,6 +5,9 @@
 //! the battlefield (`Field`) and gives it a section with `Type=`. The fixed
 //! lists a part may name are the original's own: a command is one a key or a
 //! command-bar button gives, a value is something the player may see.
+//!
+//! A third kind, a row or a column, holds buttons and texts and places them
+//! one after another, so they need no places of their own.
 
 use crate::ui::field_layout::PartBox;
 
@@ -15,6 +18,9 @@ pub enum Holder {
     Side,
     /// The battlefield: frame pixels, as its own pieces are placed.
     Field,
+    /// A row or a column the layout added, by its place in the layout's
+    /// list: the part sits where that group's flow puts it.
+    Group(usize),
 }
 
 /// A value a text part can show.
@@ -83,6 +89,48 @@ pub enum AddedKind {
     Text {
         value: TextValue,
     },
+    /// A row (or a column) of buttons and texts, `gap` pixels apart. A row
+    /// with a width starts a new line when the next part would pass it; a
+    /// column with a height starts a new column.
+    Group {
+        column: bool,
+        gap: i32,
+    },
+}
+
+/// Where a group's parts sit, one after another from its corner, and how big
+/// the group is with them. `sizes` are the parts' own sizes in order. A row
+/// runs right and wraps down past `wrap` wide; a column runs down and wraps
+/// right past `wrap` tall. Parts in a line share its top (a column's, its
+/// left) edge.
+pub fn flow(
+    sizes: &[[i32; 2]],
+    column: bool,
+    gap: i32,
+    wrap: Option<i32>,
+) -> (Vec<[i32; 2]>, [i32; 2]) {
+    // Along the flow and across it: x and y for a row, y and x for a column.
+    let (along, across) = if column { (1, 0) } else { (0, 1) };
+    let mut places = Vec::with_capacity(sizes.len());
+    let (mut at, mut line_start, mut line_thick, mut longest) = (0i32, 0i32, 0i32, 0i32);
+    for size in sizes {
+        let passes = wrap.is_some_and(|wrap| at > 0 && at + size[along] > wrap);
+        if passes {
+            line_start += line_thick + gap;
+            (at, line_thick) = (0, 0);
+        }
+        let mut place = [0; 2];
+        place[along] = at;
+        place[across] = line_start;
+        places.push(place);
+        longest = longest.max(at + size[along]);
+        line_thick = line_thick.max(size[across]);
+        at += size[along] + gap;
+    }
+    let mut whole = [0; 2];
+    whole[along] = longest;
+    whole[across] = line_start + line_thick;
+    (places, whole)
 }
 
 /// One part a layout adds.
@@ -144,5 +192,28 @@ mod tests {
         assert_eq!(corner.rect_in(field, [40, 13]), [714, 581, 80, 13]);
         assert_eq!(TextValue::named("credits"), Some(TextValue::Credits));
         assert_eq!(TextValue::named("Gold"), None);
+    }
+
+    #[test]
+    fn a_group_places_its_parts_one_after_another_and_wraps() {
+        let sizes = [[52, 32], [40, 17], [52, 32]];
+        // A row runs right, its parts 4 apart, as tall as its tallest part.
+        assert_eq!(
+            flow(&sizes, false, 4, None),
+            (vec![[0, 0], [56, 0], [100, 0]], [152, 32])
+        );
+        // A column runs down.
+        assert_eq!(
+            flow(&sizes, true, 2, None),
+            (vec![[0, 0], [0, 34], [0, 53]], [52, 85])
+        );
+        // A row 100 wide starts a new line when the next part would pass it.
+        assert_eq!(
+            flow(&sizes, false, 4, Some(100)),
+            (vec![[0, 0], [56, 0], [0, 36]], [96, 68])
+        );
+        // A part wider than the row still gets a line of its own.
+        assert_eq!(flow(&[[120, 10]], false, 4, Some(100)).1, [120, 10]);
+        assert_eq!(flow(&[], false, 4, None), (vec![], [0, 0]));
     }
 }
