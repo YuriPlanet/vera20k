@@ -473,6 +473,8 @@ pub(crate) fn paint_wol_verify(
 /// the buttons, edits and list here keep the shell's control art.
 pub(crate) struct InMatchPageDraw {
     controls: Option<(wgpu::Buffer, u32)>,
+    /// The shell chrome the controls sample, as it stood when this was built.
+    chrome: Option<crate::render::batch::BatchTexture>,
     texts: Vec<(
         crate::render::shell_text::ScissorRect,
         Option<(wgpu::Buffer, u32)>,
@@ -525,6 +527,11 @@ pub(crate) fn in_match_page_draw(state: &AppState) -> Option<InMatchPageDraw> {
         batch.create_instance_buffer(gpu, &shifted)
     };
     let texts = paint.texts.iter();
+    let chrome = state
+        .frontend
+        .skirmish_shell_chrome
+        .as_ref()
+        .map(|atlas| atlas.texture.clone());
     if raster.is_some() {
         window_ui.set_page_texts(
             texts
@@ -536,11 +543,13 @@ pub(crate) fn in_match_page_draw(state: &AppState) -> Option<InMatchPageDraw> {
         );
         return Some(InMatchPageDraw {
             controls: screen(&paint.controls),
+            chrome,
             texts: Vec::new(),
         });
     }
     Some(InMatchPageDraw {
         controls: screen(&paint.controls),
+        chrome,
         texts: texts
             .map(|text| (text.scissor, screen(&text.instances)))
             .collect(),
@@ -548,14 +557,18 @@ pub(crate) fn in_match_page_draw(state: &AppState) -> Option<InMatchPageDraw> {
 }
 
 impl InMatchPageDraw {
-    pub(crate) fn draw<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, state: &'a AppState) {
-        let batch = &state.renderer.batch_renderer;
-        let (width, height) = (state.render_width(), state.render_height());
-        if let (Some((buffer, count)), Some(atlas)) = (
-            &self.controls,
-            state.frontend.skirmish_shell_chrome.as_ref(),
-        ) {
-            batch.draw_with_buffer_ui_passthrough(pass, &atlas.texture, buffer, *count);
+    /// Draw the page into `pass`: the controls from the chrome, then each
+    /// text from `text_atlas` in its own scissor of the `size` frame.
+    pub(crate) fn draw<'a>(
+        &'a self,
+        pass: &mut wgpu::RenderPass<'a>,
+        batch: &'a crate::render::batch::BatchRenderer,
+        text_atlas: &'a crate::render::batch::BatchTexture,
+        size: (u32, u32),
+    ) {
+        let (width, height) = size;
+        if let (Some((buffer, count)), Some(chrome)) = (&self.controls, self.chrome.as_ref()) {
+            batch.draw_with_buffer_ui_passthrough(pass, chrome, buffer, *count);
         }
         for (scissor, buffer) in &self.texts {
             let Some((buffer, count)) = buffer else {
@@ -569,12 +582,7 @@ impl InMatchPageDraw {
                 continue;
             }
             pass.set_scissor_rect(x, y, w, h);
-            batch.draw_with_buffer_ui_passthrough(
-                pass,
-                state.renderer.bit_font.atlas(),
-                buffer,
-                *count,
-            );
+            batch.draw_with_buffer_ui_passthrough(pass, text_atlas, buffer, *count);
         }
         pass.set_scissor_rect(0, 0, width, height);
     }

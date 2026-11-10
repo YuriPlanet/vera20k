@@ -6,6 +6,7 @@
 //! ## Dependency rules
 //! - Internal to `presentation::render` — only called from mod.rs via `dispatch_draw_passes()`.
 
+use super::paint_state::PaintState;
 use crate::app::AppState;
 use crate::app::presentation::instances::{CellBodyAtlas, CellBodyDraw};
 use crate::app::presentation::sidebar_render::{begin_main_load_pass, begin_main_pass};
@@ -83,17 +84,16 @@ pub(super) struct DrawPassData<'a> {
 /// content blit, viewport rectangle, and generated-content boundary are the
 /// final retained radar writes in that order.
 fn draw_sidebar_surface(
-    state: &mut AppState,
+    state: &mut PaintState<'_>,
     encoder: &mut wgpu::CommandEncoder,
     data: &DrawPassData<'_>,
 ) {
-    encode_radar_pictures(state, encoder);
     // The column's text draws here only where its pixels are the window's.
     let text_in_surface = matches!(
-        crate::app::presentation::sidebar_surface::column_text(state),
+        state.column_text(),
         crate::app::presentation::sidebar_surface::ColumnText::Surface(_)
     );
-    let side_index = crate::app::presentation::sidebar_render::current_sidebar_side(state);
+    let side_index = state.sidebar_side();
     let presentation = &state.match_state.match_presentation;
     let chrome = presentation
         .sidebar_chrome
@@ -327,7 +327,7 @@ fn draw_sidebar_surface(
 /// (`RadarClass::Update @ 0x00656EC0`), then the housing's paints
 /// (`RadarClass::Draw @ 0x00653100`), whose retained online draw samples it.
 /// Every frame encodes them, sidebar drawn or not, so neither waits a frame.
-fn encode_radar_pictures(state: &mut AppState, encoder: &mut wgpu::CommandEncoder) {
+pub(super) fn encode_radar_pictures(state: &mut AppState, encoder: &mut wgpu::CommandEncoder) {
     let renderer = &state.renderer;
     let presentation = &mut state.match_state.match_presentation;
     if let Some(minimap) = presentation.minimap.as_mut() {
@@ -355,11 +355,13 @@ fn encode_radar_pictures(state: &mut AppState, encoder: &mut wgpu::CommandEncode
 /// railings, native Ground parents, particles and upper-layer bodies, then
 /// debug and UI. World blitters sample the shared ABuffer. A bridge body split stays within its unit parent.
 pub(super) fn dispatch_draw_passes(
-    state: &mut AppState,
+    state: &mut PaintState<'_>,
     encoder: &mut wgpu::CommandEncoder,
     view: &wgpu::TextureView,
     data: &DrawPassData<'_>,
 ) {
+    // The in-match page, built while the frame was collected.
+    let page_draw = state.take_page_draw();
     // The posed voxel images the world draws sample.
     state.renderer.vxl_pose_frame_cache.borrow_mut().encode(
         &state.renderer.gpu.device,
@@ -389,7 +391,7 @@ pub(super) fn dispatch_draw_passes(
     // Keep the native surface boundary independent of chrome coverage. The
     // ordinary sidebar now uses the resolved stock side archive, real source
     // canvas heights, and one pixel per source pixel in every theme.
-    let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(state);
+    let (x, y, w, h) = state.tactical_viewport_px();
     let [tac_x, tac_y, tac_w, tac_h] = state
         .renderer
         .world_zoom_pass
@@ -1097,7 +1099,7 @@ pub(super) fn dispatch_draw_passes(
     // Resolve wheel zoom once, after every world/depth/destination operation.
     // Timers, sidebar, messages and cursor then draw in frame pixels.
     drop(pass);
-    let (tac_x, tac_y, tac_w, tac_h) = crate::app::input::camera::tactical_viewport_px(state);
+    let (tac_x, tac_y, tac_w, tac_h) = state.tactical_viewport_px();
     let view = if let Some(zoom) = state.renderer.world_zoom_pass.as_ref() {
         composite_world_with_drag_rect(
             &state.renderer.gpu.device,
@@ -1175,7 +1177,7 @@ pub(super) fn dispatch_draw_passes(
     // A zoomed match draws the battlefield's screen-fixed text, with its
     // boxes, at the window's pixels after the zoom (`window_ui`); their
     // layers are left out of the frame.
-    let text_in_frame = crate::app::presentation::window_ui::battlefield_raster(state).is_none();
+    let text_in_frame = state.battlefield_raster().is_none();
     // --- Step 10.6: timer lines ---
     // TacticalClass::Draw's Scenario, Super and blackout timers
     // (`0x006D4941..0x006D4B25`) follow the sparkles: black boxes, then text,
@@ -1212,7 +1214,7 @@ pub(super) fn dispatch_draw_passes(
         &mut pass,
         &state.renderer.batch_renderer,
         pool,
-        crate::app::presentation::outcome_banner::texture(state),
+        state.outcome_banner_texture(),
         "outcome_shape",
     );
     if text_in_frame {
@@ -1238,7 +1240,6 @@ pub(super) fn dispatch_draw_passes(
             state.renderer.game_frame_texture(),
             [tac_x, tac_y, tac_w, tac_h],
         );
-    let page_draw = crate::app::frontend::skirmish_shell_render::in_match_page_draw(state);
     let mut pass = begin_main_load_pass(encoder, view, frame_depth);
 
     // --- Screen-fixed UI: sidebar, messages, tooltips, cursor — UI camera (zoom=1.0) ---
@@ -1256,9 +1257,7 @@ pub(super) fn dispatch_draw_passes(
     }
     // The column's text, where its copy would resample it, over the copy
     // within the column (`sidebar_surface::column_text`).
-    if let crate::app::presentation::sidebar_surface::ColumnText::Frame(_) =
-        crate::app::presentation::sidebar_surface::column_text(state)
-    {
+    if let crate::app::presentation::sidebar_surface::ColumnText::Frame(_) = state.column_text() {
         let (x, y, width, height) = state.sidebar_frame().column();
         pass.set_scissor_rect(x, y, width, height);
         for key in crate::app::presentation::sidebar_surface::TEXT_LAYERS {
@@ -1277,7 +1276,7 @@ pub(super) fn dispatch_draw_passes(
     #[cfg(feature = "phobos")]
     {
         let presentation = &state.match_state.match_presentation;
-        let chrome = crate::app::presentation::sidebar_render::current_sidebar_chrome(state);
+        let chrome = state.sidebar_chrome();
         draw_pooled_ui(
             &mut pass,
             &state.renderer.batch_renderer,
@@ -1363,7 +1362,12 @@ pub(super) fn dispatch_draw_passes(
     }
     // State 7's 0xCF window over the live battlefield (0x0077D840).
     if let Some(page) = page_draw.as_ref() {
-        page.draw(&mut pass, state);
+        page.draw(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            state.renderer.bit_font.atlas(),
+            (state.render_width(), state.render_height()),
+        );
     }
 
     // --- Step 10.7: build description ---

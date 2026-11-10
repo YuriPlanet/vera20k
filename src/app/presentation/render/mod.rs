@@ -48,6 +48,8 @@ mod status_gpu_tests;
 #[cfg(test)]
 mod target_laser_gpu_tests;
 pub(crate) use draw_passes::draw_software_cursor;
+pub(crate) mod paint_state;
+pub(crate) use paint_state::{PaintState, PaintView};
 #[cfg(test)]
 pub(crate) use draw_passes::{draw_bridge_shadows, draw_pooled_cell_bodies};
 pub(crate) mod draw_plan_lowering;
@@ -270,22 +272,49 @@ pub(crate) fn render_game(
     times: GameRenderTimes,
     cadence: crate::app::presentation::tactical_composite::CompositeCadence,
 ) -> Result<GameRenderOutput> {
-    let frame = collect_game(state, encoder, times, cadence)?;
-    Ok(paint_game(state, encoder, frame))
+    let (frame, view) = collect_game(state, encoder, times, cadence)?;
+    let mut paint = PaintState::from_parts(
+        &mut state.renderer,
+        paint_state::paint_art!(state.match_state.match_presentation),
+        view,
+    );
+    let painted = paint_game(&mut paint, encoder, frame);
+    Ok(painted.finish(&mut state.match_state.match_presentation))
+}
+
+/// A painted game frame: its output, and the two instance lists the next
+/// frame's builders take back as their buffers.
+pub(crate) struct PaintedGame {
+    output: GameRenderOutput,
+    cell_bodies: Vec<crate::render::batch::SpriteInstance>,
+    terrain: Vec<crate::render::batch::SpriteInstance>,
+}
+
+impl PaintedGame {
+    /// Hand the kept lists back to `presentation` and return the output.
+    pub(crate) fn finish(
+        self,
+        presentation: &mut crate::app::presentation::state::MatchPresentationState,
+    ) -> GameRenderOutput {
+        presentation.cached_cell_body_instances = self.cell_bodies;
+        presentation.cached_terrain_instances = self.terrain;
+        self.output
+    }
 }
 
 /// The reading half of a game frame. Every read of the simulation, every
 /// step of the presentation state, every process Main draw and every sound
 /// request of the draw happens here, in the order the single pass made them.
 /// Its own GPU work is the frame setup the instance builders read back
-/// (cameras, the world zoom) and the shroud's recompose, recorded into
-/// `encoder` ahead of [`paint_game`]'s passes.
+/// (cameras, the world zoom), and the shroud's recompose and the radar's
+/// pictures, recorded into `encoder` ahead of [`paint_game`]'s passes: each
+/// draws into its own texture from its own buffers.
 pub(crate) fn collect_game(
     state: &mut AppState,
     encoder: &mut wgpu::CommandEncoder,
     times: GameRenderTimes,
     cadence: crate::app::presentation::tactical_composite::CompositeCadence,
-) -> Result<GameFrame> {
+) -> Result<(GameFrame, PaintView)> {
     // Phase accounting for the dashboard's render breakdown and the performance panel's
     // Most CPU row. One clock read per phase boundary; the spans are handed
     // back on `GameRenderOutput` and never written into the world here.
@@ -745,6 +774,10 @@ pub(crate) fn collect_game(
         .collect();
 
     let ion_blasts = crate::app::presentation::ion_blasts::draws(state);
+    // The radar's pictures for this frame, then what the passes ask of the
+    // match beyond the renderer.
+    draw_passes::encode_radar_pictures(state, encoder);
+    let view = PaintView::read(state);
     let finished = render_started.map(|_| Instant::now());
     let spans = render_started.map(|render_started| CollectSpans {
         lead: phase1_started.unwrap().duration_since(render_started),
@@ -761,7 +794,7 @@ pub(crate) fn collect_game(
             .unwrap()
             .duration_since(after_light_records.unwrap()),
     });
-    Ok(GameFrame {
+    let frame = GameFrame {
         world,
         debug,
         ui,
@@ -784,17 +817,18 @@ pub(crate) fn collect_game(
         ion_blasts,
         times,
         spans,
-    })
+    };
+    Ok((frame, view))
 }
 
 /// The drawing half of a game frame: instance uploads, the lights', lines'
 /// and blasts' GPU preparation, and the render passes, from `frame` alone.
 /// It reads no simulation state and steps no presentation state.
 pub(crate) fn paint_game(
-    state: &mut AppState,
+    state: &mut PaintState<'_>,
     encoder: &mut wgpu::CommandEncoder,
     frame: GameFrame,
-) -> GameRenderOutput {
+) -> PaintedGame {
     let GameFrame {
         mut world,
         debug,
@@ -823,7 +857,7 @@ pub(crate) fn paint_game(
 
     // Phase 6: Upload all instances to GPU buffer pool.
     upload_to_gpu(
-        &mut state.renderer,
+        state.renderer,
         encoder,
         &world,
         &debug,
@@ -1011,17 +1045,17 @@ pub(crate) fn paint_game(
                 .unwrap()
                 .duration_since(after_lights.unwrap()),
     });
-    // The next frame's builders take these lists back as their buffers.
-    let presentation = &mut state.match_state.match_presentation;
-    presentation.cached_cell_body_instances = std::mem::take(&mut world.cell_bodies);
-    presentation.cached_terrain_instances = std::mem::take(&mut world.terrain.normal);
-    GameRenderOutput {
-        instance_counts: sidebar.emitted_instance_counts(),
-        sidebar_view: sidebar.view,
-        times,
-        particle_draws: world.particle_draws,
-        phases,
-        software_cursor: ui.software_cursor_draw,
+    PaintedGame {
+        cell_bodies: std::mem::take(&mut world.cell_bodies),
+        terrain: std::mem::take(&mut world.terrain.normal),
+        output: GameRenderOutput {
+            instance_counts: sidebar.emitted_instance_counts(),
+            sidebar_view: sidebar.view,
+            times,
+            particle_draws: world.particle_draws,
+            phases,
+            software_cursor: ui.software_cursor_draw,
+        },
     }
 }
 
