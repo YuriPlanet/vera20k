@@ -525,6 +525,12 @@ impl MatchLayoutFile {
         self.layouts.get((*layout)?)
     }
 
+    /// Whether every side keeps the original interface and nothing was
+    /// refused: no file, or one that names no layout.
+    pub fn is_original(&self) -> bool {
+        self.sides.is_empty() && self.problems.is_empty()
+    }
+
     /// Every refused line, in file order.
     pub fn problems(&self) -> &[LayoutProblem] {
         &self.problems
@@ -762,6 +768,7 @@ mod tests {
             }
         );
         assert!(MatchLayoutFile::none().for_side(Some("GDI")).is_none());
+        assert!(MatchLayoutFile::none().is_original() && !file.is_original());
     }
 
     #[test]
