@@ -4936,6 +4936,13 @@ impl ObjectType {
             // Slot 9's record, which ReadINI fills from the rules INI in this
             // order (`0x00464450..0x00464647`): the two names into `char[16]`,
             // then X, Y, ZAdjust, YSort and the voxel flag.
+            //
+            // RESIDUAL: gamemd copies the normal name into an empty damaged
+            // one in each pass (`0x004644FD`), so the copy from the first pass
+            // stays. Trigger: a later rules layer (mode INI or map) renames
+            // `TurretAnim` and no layer sets `TurretAnimDamaged`; effect: the
+            // damaged building shows the new name here, the first layer's
+            // name in gamemd. No retail type has an SHP turret.
             turret_anim: section.read_name("TurretAnim", 0x10).map(str::to_uppercase),
             turret_anim_damaged: section
                 .read_name("TurretAnimDamaged", 0x10)

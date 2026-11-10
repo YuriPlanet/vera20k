@@ -2309,7 +2309,6 @@ const BUILDING_ANIM_KEYS: &[(&str, &[&str], u8)] = &[
     ("ActiveAnim", &["", "Two", "Three", "Four"], 3),
     ("PreProductionAnim", &[""], 7),
     ("ProductionAnim", &[""], 8),
-    ("TurretAnim", &[""], 9),
     ("SpecialAnim", &["", "Two", "Three", "Four"], 10),
     ("SuperAnim", &["", "Two", "Three", "Four"], 14),
     ("IdleAnim", &[""], 18),
@@ -2341,8 +2340,9 @@ const BUILDING_ANIM_KEYS: &[(&str, &[&str], u8)] = &[
 ///
 /// The PowerUp1..3 loop (`0x00464758..0x00464928`) has no such copy.
 ///
-/// Slot 9 has no ART row: ReadINI fills its record from the rules INI
-/// (`0x00464450..0x00464632`), which [`building_turret_anim_config`] ports.
+/// Slot 9 has no ART key and no row here: ReadINI fills its record from the
+/// rules INI (`0x00464450..0x00464632`), which [`building_turret_anim_config`]
+/// ports, and it has no power-flag reads.
 /// Retail ART declares no `TurretAnim`, and the eight `Turret=yes` types in
 /// RULESMD and the MP mode INIs all set `TurretAnimIsVoxel=true`, so stock
 /// play builds no slot-9 animation by name.
@@ -2358,11 +2358,6 @@ fn parse_building_anims(section: &IniSection, ini: &IniFile) -> Vec<BuildingAnim
             anims.push(power_up_config(first_slot, &record, |name| {
                 parse_building_anim_variant(name.to_owned(), ini)
             }));
-            continue;
-        }
-        if first_slot == 9 {
-            // Rules-owned (`building_turret_anim_config`); the table keeps the
-            // key for the power flags.
             continue;
         }
         let kind: BuildingAnimKind = match base {
@@ -2510,8 +2505,9 @@ pub fn building_turret_anim_config(
 
 /// The slot-9 row of a building whose turret Grand_Opening can build by name
 /// (`0x00446599..0x0044667B`): a `TurretAnim` without `TurretAnimIsVoxel`.
-/// Asset discovery reads it. `Turret=` is not asked: an installed upgrade's
-/// turret passes HasTurret (`0x004527D0`) for a host that has none.
+/// Asset discovery reads it. `Turret=` is not asked, because HasTurret
+/// (`0x004527D0`) also counts an installed upgrade's turret; a name bound for
+/// a building that never builds it costs one lookup.
 pub fn shp_turret_anim_config(
     object: &crate::rules::object_type::ObjectType,
 ) -> Option<BuildingAnimConfig> {

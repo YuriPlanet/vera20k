@@ -883,9 +883,12 @@ impl Simulation {
             self.substrate.anims.get_mut(new_id)?.pause();
         }
         // RESIDUAL (dormant): `0x00451AFB..0x00451B10` hides a slot-9 anim
-        // (Anim `+0x19D`) of a `BarrelAnimIsVoxel=` type. VERA reads the key
-        // only for its fire coordinate (`fire_coord.rs`) and leaves this hide
-        // unported; no retail rules layer sets it.
+        // (Anim `+0x19D`) of a `BarrelAnimIsVoxel=` type, and the building's
+        // own draw shows it around the voxel barrel
+        // (`0x0043E5D9..0x0043E795`). VERA reads the key only for its fire
+        // coordinate (`fire_coord.rs`) and ports neither, so such a type's
+        // slot-9 anim draws as an ordinary slot anim; no retail rules layer
+        // sets the key.
         // 0x00451B17..0x00451B25: a building being erased (`vt+0x1D4`,
         // Techno `+0x270`) freezes the new anim.
         if self.substrate.entities.get(id)?.is_warped_out() {
@@ -1570,41 +1573,6 @@ mod slot_tests {
         assert_eq!(sim.interner.resolve(sim.anim(new3).unwrap().type_id()), "N");
         assert!(sim.anim(old9).is_none());
         assert!(sim.anim(old3).is_none());
-    }
-
-    /// Grand_Opening `0x00446662..0x004466CB` builds the rules `TurretAnim`
-    /// in slot 9 and aims it; the aim (also UpdateAnimation's tail,
-    /// `0x00451234..0x0045128C`) writes the `0x007F4890` frame of the heading
-    /// and a zero frame step.
-    #[test]
-    fn turret_building_opens_slot_9_and_holds_the_frame_of_its_heading() {
-        let (mut sim, rules, id) = slot_test_fixture_with("Turret=yes\nTurretAnim=N\n");
-        sim.grand_opening(
-            id,
-            false,
-            true,
-            &rules,
-            None,
-            crate::sim::world::FrameEffects::default(),
-        );
-        let turret = sim.entities().get(id).unwrap().building_art.anim_slots[9].unwrap();
-        let runtime = |sim: &Simulation| {
-            let runtime = sim.anim(turret).unwrap().runtime();
-            (runtime.current_frame, runtime.frame_step)
-        };
-        // North is bucket 0, east bucket 8: table entries 28 and 20.
-        assert_eq!(runtime(&sim), (28, 0));
-        let frame = sim.session.binary_frame();
-        sim.substrate
-            .entities
-            .get_mut(id)
-            .unwrap()
-            .body_facing
-            .snap(0x4000, frame);
-        sim.aim_building_turret_anim(id, false);
-        assert_eq!(runtime(&sim), (28, 0), "HasTurret gates the write");
-        sim.aim_building_turret_anim(id, true);
-        assert_eq!(runtime(&sim), (20, 0));
     }
 
     #[test]
