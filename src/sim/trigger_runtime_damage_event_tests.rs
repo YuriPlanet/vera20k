@@ -645,7 +645,7 @@ fn retail_damage_scene(route: &Value) -> Option<RetailDamageScene> {
         &rules,
         Some(&map.ini),
     );
-    sim.install_team_ai_registry(&teams, &rules).unwrap();
+    sim.install_team_ai_registry(&teams, &rules);
     let eva =
         EvaRegistry::from_ini(&IniFile::from_bytes(assets.get_ref("EVAMD.INI").unwrap()).unwrap());
     sim.initialize_trigger_definitions(&excerpt, &teams, Some(&eva), None, None);

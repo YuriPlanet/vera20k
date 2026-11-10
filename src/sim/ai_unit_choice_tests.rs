@@ -49,11 +49,7 @@ fn retail_infantry_choice_waits_for_the_retained_corpse_to_finish() {
         sim.session.game_mode_nonzero(),
     )
     .unwrap();
-    assert!(
-        sim.install_team_ai_registry(&registry, &rules)
-            .unwrap()
-            .is_empty()
-    );
+    assert!(sim.install_team_ai_registry(&registry, &rules).is_empty());
     // Installed Ares CanBuild10024090 (hook 0x4F7870) -> PrereqValidate10021B00
     // asks HasFactory for computer houses too, where stock 0x004F7B5C answers
     // them 1 before any factory; the replacement GI needs a real barracks.
@@ -174,8 +170,7 @@ fn a_class_no_team_needs_still_draws_once() {
     let mut sim = Simulation::with_seed(0x4FF210);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules)
-        .expect("clean fixed AIMD installs");
+    sim.install_team_ai_registry(&registry, &rules);
     let owner = sim.interner.intern("Computer");
     sim.houses
         .register(HouseState::new(owner, 0, None, false, 0, 10));

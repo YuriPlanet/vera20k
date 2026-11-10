@@ -291,7 +291,7 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
     }
     let cropped = super::tests::trigger_fixture_map(&body);
     sim.initialize_trigger_definitions(&cropped, &teams, None, None, None);
-    sim.install_team_ai_registry(&teams, &rules).unwrap();
+    sim.install_team_ai_registry(&teams, &rules);
     sim.install_authored_cell_trigger_tags(&cropped);
     sim.classify_map_triggers(&rules);
 

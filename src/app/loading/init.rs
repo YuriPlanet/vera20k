@@ -3737,10 +3737,7 @@ fn load_map_first_step(
         .install_team_ai_registry(
             &team_ai_registry,
             team_ai_rules_at_read.as_ref().unwrap_or(&rules),
-        )
-        .map_err(|refused| {
-            anyhow::anyhow!("active YR aimd.ini failed RuleSet resolution: {refused:?}")
-        })?;
+        );
 
                                                         if let (Some(launch), Some(projection)) = (
                                                             match_launch_descriptor.as_ref(),

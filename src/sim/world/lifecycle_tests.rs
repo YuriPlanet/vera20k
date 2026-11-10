@@ -160,7 +160,7 @@ fn constructor_complete_foot_destructors_match_native_team_gate_and_rng() {
             "[TeamTypes]\n0=TT\n[TT]\nHouse=Americans\nScript=S\nTaskForce=F\nWaypoint=E\nMax=-1\n[ScriptTypes]\n0=S\n[S]\n0=3,4\n[TaskForces]\n0=F\n[F]\n0=1,{typ}\n"
         ));
         let registry = TeamAiIniRegistry::from_sources(&definitions, &IniFile::from_str(""), true);
-        sim.install_team_ai_registry(&registry, &rules).unwrap();
+        sim.install_team_ai_registry(&registry, &rules);
         let team_type = sim.interner.get("TT").unwrap();
         let team = sim
             .with_object_placement_scope(|sim| sim.create_team(team_type, Some(owner), &rules))

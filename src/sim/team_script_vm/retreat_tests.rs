@@ -43,7 +43,7 @@ fn retail_guard_retreat(ramp: bool) {
         .insert_for_test(crate::sim::house_state::HouseState::new(
             owner, 0, None, false, 0, 10,
         ));
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     sim.session.set_binary_frame_for_test(100);
     sim.spawn_object("GAPOWR", "Americans", 5, 5, 0, &rules)
         .unwrap();
