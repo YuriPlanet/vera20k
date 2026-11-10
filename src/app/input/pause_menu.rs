@@ -351,12 +351,15 @@ pub(crate) fn on_open(state: &mut AppState) {
         state.match_state.session.latency_fudge(),
         current_game_speed(state),
     );
-    // A sidebar too short for every page's button opens on one it has.
-    let shown_tabs = current_layout(state).map_or(0, |menu| menu.page_tabs().len());
-    let category = crate::ui::main_menu_dialogs::options::shell::in_game_page(
-        state.match_state.match_presentation.options_page_category,
-        shown_tabs,
-    );
+    // Escape opens on the three volumes, the settings a player most often
+    // reaches for mid-match, whether or not the sidebar has a row for that
+    // page's button. Back from one of the menu's dialogs shows the page it
+    // left (`App::enter_in_game_menu_state` forgets it on the way to play).
+    let category = state
+        .match_state
+        .match_presentation
+        .options_page_category
+        .unwrap_or(Category::Audio);
     let mut dialog = App::launcher_options_from_state(state);
     dialog.select_category(category);
     let opened = dialog.pack();

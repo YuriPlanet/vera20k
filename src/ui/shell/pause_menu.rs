@@ -373,8 +373,9 @@ impl PauseMenuLayout {
     /// A sidebar without a row for every page shows the first ones only. B5's
     /// five buttons leave two rows above Resume in a frame under 503 pixels
     /// high (SIDE2 tiles are 50), so the last page, Audio, has no button
-    /// there; Game Controls still opens Sound. BBA and FF keep a row for the
-    /// relay's button whether or not it shows.
+    /// there: the menu still opens on it, and Game Controls still opens
+    /// Sound. BBA and FF keep a row for the relay's button whether or not it
+    /// shows.
     pub fn add_page_tabs(&mut self) {
         if self.shown_tabs.is_some() {
             return;

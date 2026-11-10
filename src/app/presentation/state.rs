@@ -240,7 +240,8 @@ pub(crate) struct MatchPresentationState {
     pub(crate) internet_pause: crate::app::input::pause_menu::InternetPauseControls,
     /// VERA's Options pages on the in-game menu, while it is open.
     pub(crate) options_page: Option<crate::app::input::pause_menu::InGameOptionsPage>,
-    /// The page they last showed this match, which the next opening returns to.
+    /// The page the menu showed when it left for one of its dialogs, which it
+    /// returns to. `None` from play: Escape opens on the Audio page.
     pub(crate) options_page_category: Option<crate::ui::main_menu_dialogs::options::Category>,
     /// What B6 init (4F1840) made of control712 when the dialog last opened;
     /// its stored results stay for that dialog's lifetime.

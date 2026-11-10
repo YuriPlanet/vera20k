@@ -169,15 +169,6 @@ const ESC_MENU_BUTTON_Y: i32 = ESC_MENU_SIZE_Y + 10;
 /// [`Category::in_game_settings`] says what each page shows.
 const IN_GAME_TABS: [Category; PAGE_TABS] =
     [Category::Gameplay, Category::Display, Category::Audio];
-
-/// The page the in-game menu opens on: `remembered` while its button is one
-/// of the `shown` first tabs, else the first page. A sidebar too short for
-/// every button leaves the last ones out.
-pub(crate) fn in_game_page(remembered: Option<Category>, shown: usize) -> Category {
-    remembered
-        .filter(|page| IN_GAME_TABS.iter().take(shown).any(|tab| tab == page))
-        .unwrap_or(IN_GAME_TABS[0])
-}
 /// The in-game page's first row. 8 DLUs below the main menu's to clear the
 /// frame's top edge at 640x480, and a multiple of 8 so its sliders round to the
 /// same authored heights ([`dlu_rect`] is `y * 13 / 8`).
@@ -1512,10 +1503,10 @@ mod tests {
     }
 
     /// The Audio page holds the three volumes, and a drag on one is heard at
-    /// once. A single-player sidebar at 640x480 has no row for its button, so
-    /// a menu that remembers the page opens on the first one there.
+    /// once. A single-player sidebar at 640x480 has no row for its button;
+    /// the page itself still fits there, for the menu to open on.
     #[test]
-    fn the_in_game_audio_page_previews_volume_and_needs_its_sidebar_row() {
+    fn the_in_game_audio_page_previews_volume_with_or_without_its_button() {
         use LauncherTrackbarId as Slider;
         let layout = in_game((800, 600), Category::Audio, false);
         assert_eq!(
@@ -1538,18 +1529,15 @@ mod tests {
             [LauncherOptionsEvent::SoundPreview(1.0)]
         );
 
-        let short = in_game_menu((640, 480), false);
-        assert_eq!(short.page_tabs().len(), 2);
-        let short_page = in_game((640, 480), Category::Gameplay, false);
-        assert!(
-            !short_page
-                .buttons
-                .iter()
-                .any(|(button, _)| *button == LauncherButton::Category(Category::Audio))
+        let short = in_game((640, 480), Category::Audio, false);
+        assert_eq!(
+            short.buttons.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
+            [
+                LauncherButton::Category(Category::Gameplay),
+                LauncherButton::Category(Category::Display),
+            ]
         );
-        assert_eq!(in_game_page(Some(Category::Audio), 2), Category::Gameplay);
-        assert_eq!(in_game_page(Some(Category::Audio), 3), Category::Audio);
-        assert_eq!(in_game_page(None, 3), Category::Gameplay);
+        assert_eq!(short.trackbars.len(), 3);
     }
 
     /// Each of the main menu's settings is placed on purpose: on an in-game

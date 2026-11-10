@@ -382,6 +382,10 @@ impl App {
         }
         if previous == InGameMenuState::Menu {
             crate::app::input::pause_menu::on_close(state);
+            if !next.is_open() {
+                // Back in play: the next Escape opens on the volumes again.
+                state.match_state.match_presentation.options_page_category = None;
+            }
         }
         let was_open = previous.is_open();
         let will_be_open = next.is_open();
