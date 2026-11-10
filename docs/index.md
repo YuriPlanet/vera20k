@@ -61,4 +61,4 @@ simulation, session and network command owners.
 - [End-game screens](ini-end-game-screens.md): the verdict card, its theme and the score page's own art.
 - [Health-strip modes](health-bars.md): the `[VERA] HealthBars=` client option.
 - [Terrain deformation](terrain-deformation.md): the Options box that lets explosions dent the ground and nukes leave craters.
-- [Stock rules retail leaves off](dormant-stock-rules.md): `Assaulter=` and other gamemd keys only a mod or map switches on.
+- [Stock rules retail leaves off](dormant-stock-rules.md): `Assaulter=`, `CanDetonateTimeBomb=` and other gamemd keys only a mod or map switches on.

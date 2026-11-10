@@ -136,6 +136,14 @@ pub struct CombatDamageDefaults {
     /// `IvanIconFlickerRate=` in frames (`RulesClass+0xFD8`, ReadINI
     /// `0x0066C62B`; constructor 8 at `0x00666BA8`): the bomb clock's blink.
     pub ivan_icon_flicker_rate: i32,
+    /// `CanDetonateTimeBomb=` and `CanDetonateDeathBomb=` (`RulesClass+0xFD4`,
+    /// `+0xFD5`, ReadBool over the current value at `0x0066C545` and
+    /// `0x0066C564`; constructor false at `0x00666B9C`): the lone selected
+    /// carrier of a player's timed or death bomb over itself answers Detonate
+    /// (`TechnoClass::What_Action_OnObject` `0x006FFF8D..0x00700003`;
+    /// `Simulation::bomb_detonate_action`). Retail sets both to no.
+    pub can_detonate_time_bomb: bool,
+    pub can_detonate_death_bomb: bool,
     /// `SplashList=` (`RulesClass+0xBC4`, count `+0xBD0`; constructor empty):
     /// the water explosions. A bouncing debris chunk landing in water below
     /// the deck plays the first (`AnimClass::AI 0x00423DD2`).
@@ -208,6 +216,8 @@ impl CombatDamageDefaults {
             ivan_damage: section.read_int("IvanDamage", 100),
             ivan_timed_delay: section.read_int("IvanTimedDelay", 450),
             ivan_icon_flicker_rate: section.read_int("IvanIconFlickerRate", 8),
+            can_detonate_time_bomb: section.read_bool("CanDetonateTimeBomb", false),
+            can_detonate_death_bomb: section.read_bool("CanDetonateDeathBomb", false),
             splash_list: Vec::new(),
             default_large_grey_smoke_system: None,
             default_small_grey_smoke_system: None,
@@ -249,6 +259,8 @@ impl Default for CombatDamageDefaults {
             ivan_damage: 100,
             ivan_timed_delay: 450,
             ivan_icon_flicker_rate: 8,
+            can_detonate_time_bomb: false,
+            can_detonate_death_bomb: false,
             splash_list: Vec::new(),
             default_large_grey_smoke_system: None,
             default_small_grey_smoke_system: None,

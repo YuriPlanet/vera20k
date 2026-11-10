@@ -32,3 +32,27 @@ Code: `sim::passenger::can_dock_occupier_garrison`, `add_garrison_occupant` and
 `passenger::garrison_eject::kill_building_occupants`. With Ares, `Assaulter.Level` limits
 which buildings an assaulter may take and the kill is booked to him
 ([ares-transports.md](ares-transports.md), [ares-bugfixes.md](ares-bugfixes.md)).
+
+## Detonating a bomb on a click
+
+```ini
+[CombatDamage]
+CanDetonateTimeBomb=no   ; default no; retail no
+CanDetonateDeathBomb=no  ; default no; retail no
+```
+
+Read by `RulesClass::ReadCombatDamage` (`0x0066C545`, `0x0066C564`). With one switched on,
+the player selects a unit carrying a bomb of the player's house alone and clicks it: the cursor
+is the Demolish frames (action 0x37) and the bomb goes off at once
+(`TechnoClass::What_Action_OnObject` `0x006FFF8D..0x00700003`). The unit's owner is not asked,
+so a selected enemy works too. A death bomb only exists with Ares, so stock builds read only
+`CanDetonateTimeBomb`. An Engineer over its own bombed self defuses instead.
+
+The click sends the DETONATE event (opcode 0x0A, the carrier's object token, the bomb's house
+in the header; `FootClass::ClickedAction_Object` `0x004D7616`). Its Execute (`0x004C7823`)
+drops the carrier's planning tokens and sets the bomb off (`BombClass::Detonate @ 0x00438720`,
+silent for a carrier in limbo).
+
+Not represented: an Aircraft or Building carrying the bomb, and a healer Unit, which answers
+Select over itself first. Code: `sim::bomb` (`bomb_detonate_action`, `execute_detonate_event`),
+`app::input::context_order::self_detonates`.
