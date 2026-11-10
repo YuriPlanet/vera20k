@@ -641,6 +641,19 @@ impl MatchLayoutFile {
         self.sides.is_empty() && self.problems.is_empty()
     }
 
+    /// The picture files the layouts' added buttons name (`Art=`), each once.
+    pub fn art_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = Vec::new();
+        for part in self.layouts.iter().flat_map(|layout| layout.added.iter()) {
+            if let AddedKind::Button { art: Some(art), .. } = &part.kind
+                && !names.iter().any(|name| name.eq_ignore_ascii_case(art))
+            {
+                names.push(art.clone());
+            }
+        }
+        names
+    }
+
     /// Leave out every added button whose `Command=` is not `known`, with a
     /// line for each. The command lists belong to the input code, so the
     /// loader asks them once the file is read.
@@ -1080,7 +1093,7 @@ fn read_added_part(
     };
     let is = |key: &str, name: &str| key.eq_ignore_ascii_case(name);
     let mut place = PartBox::WHOLE;
-    let (mut command, mut label, mut value) = (None, None, None);
+    let (mut command, mut label, mut value, mut art) = (None, None, None, None);
     for key in section.keys() {
         if is(key, "Type") {
         } else if is(key, "X") || is(key, "Y") {
@@ -1122,6 +1135,8 @@ fn read_added_part(
             label = word(key);
         } else if !button && is(key, "Value") {
             value = word(key).and_then(TextValue::named);
+        } else if button && is(key, "Art") {
+            art = word(key).filter(|name| !name.is_empty());
         } else if is(key, "Art") || is(key, "Parts") {
             problem(key, LayoutProblemKind::NotYet);
         } else {
@@ -1136,6 +1151,7 @@ fn read_added_part(
         AddedKind::Button {
             command: command.to_owned(),
             label: label.unwrap_or(command).to_owned(),
+            art: art.map(str::to_owned),
         }
     } else {
         let Some(value) = value else {
@@ -1614,7 +1630,7 @@ mod tests {
             b"[Layouts]\nGDI=Hud\n\
               [Hud.Side]\nParts=Credits,Top,Radar,Middle,Cameos,Power,Halt,Missing\n\
               [Hud.Field]\nParts=Messages,Timers,Banner,Powers,Clock,Fly\n\
-              [Hud.Halt]\nType=Button\nCommand=StopObject\nLabel=Stop\nX=10\nY=300\n\
+              [Hud.Halt]\nType=Button\nCommand=StopObject\nLabel=Stop\nArt=button08.shp\nX=10\nY=300\n\
               [Hud.Clock]\ntype=text\nValue=time\nHold=TopRight\nX=6\nY=6\n\
               [Hud.Fly]\nType=Button\nCommand=Levitate\n\
               [Hud.Loose]\nType=Text\nValue=Credits\n\
@@ -1647,6 +1663,7 @@ mod tests {
                 ),
             ]
         );
+        assert_eq!(file.art_names(), ["button08.shp"]);
         let layout = file.for_side(Some("GDI")).unwrap();
         let [halt, clock] = &layout.added()[..] else {
             panic!("two parts are added: {:?}", layout.added());
@@ -1657,6 +1674,7 @@ mod tests {
             AddedKind::Button {
                 command: "StopObject".to_owned(),
                 label: "Stop".to_owned(),
+                art: Some("button08.shp".to_owned()),
             }
         );
         assert_eq!(

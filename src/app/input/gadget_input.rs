@@ -126,6 +126,16 @@ impl InGameGadgets {
         self.layout_buttons.contains(&h)
     }
 
+    /// Whether the layout's added part `index` is a button held down now.
+    pub(crate) fn layout_button_pressed(&self, index: usize) -> bool {
+        self.layout_buttons
+            .get(index)
+            .and_then(|&handle| self.list.get(handle))
+            .is_some_and(|gadget| {
+                matches!(gadget.behavior, GadgetBehavior::Button(button) if button.is_pressed)
+            })
+    }
+
     /// Cancel the retained driver's pointer gesture after the display loses
     /// capture. No delayed release may fire the pre-lock button. Toggle/mode
     /// state is synchronized separately from its existing sidebar owner.
