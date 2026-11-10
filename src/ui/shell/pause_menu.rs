@@ -29,6 +29,10 @@ pub enum PauseMenuButton {
     Resume,
     /// VERA relay control, independent of the native local Options dialog.
     SharedPause,
+    /// VERA's own row for gamemd's in-game Keyboard dialog (A3), which
+    /// gamemd opens from BBB's 0x52C. [`PauseMenuLayout::add_page_tabs`]
+    /// places it under the page buttons where the sidebar has a row for it.
+    Keyboard,
 }
 
 impl PauseMenuButton {
@@ -40,7 +44,7 @@ impl PauseMenuButton {
         Self::Abort,
         Self::Resume,
     ];
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::GameControls,
         Self::Load,
         Self::Save,
@@ -48,6 +52,7 @@ impl PauseMenuButton {
         Self::Abort,
         Self::Resume,
         Self::SharedPause,
+        Self::Keyboard,
     ];
 }
 
@@ -337,7 +342,7 @@ pub const PAGE_TABS: usize = 2;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PauseMenuLayout {
     pub template: PauseMenuTemplate,
-    buttons: [Option<RectPx>; 7],
+    buttons: [Option<RectPx>; 8],
     /// The page buttons' rows, of which [`Self::add_page_tabs`] shows the
     /// first `shown_tabs`.
     page_tabs: [RectPx; PAGE_TABS],
@@ -357,7 +362,7 @@ impl PauseMenuLayout {
         self.template
             .buttons()
             .iter()
-            .chain(std::iter::once(&PauseMenuButton::SharedPause))
+            .chain([&PauseMenuButton::SharedPause, &PauseMenuButton::Keyboard])
             .filter_map(|button| Some((*button, self.button(*button)?)))
     }
 
@@ -376,6 +381,10 @@ impl PauseMenuLayout {
     /// Retail art has the rows: B5's seven end where Resume begins in a
     /// 640x480 frame, the shortest sidebar. BBA and FF keep a row for the
     /// relay's button whether or not it shows.
+    ///
+    /// Keyboard takes the row under the page buttons when one is left. B5
+    /// has none in a frame under 503 pixels high (SIDE2 tiles are 50), where
+    /// the Game Controls page holds the button instead.
     pub fn add_page_tabs(&mut self) {
         if self.shown_tabs.is_some() {
             return;
@@ -396,15 +405,20 @@ impl PauseMenuLayout {
             + usize::from(self.template != PauseMenuTemplate::Offline);
         // 60B000's rows are one button high.
         let rows = usize::try_from((resume.y - controls.y) / controls.h.max(1)).unwrap_or(0);
-        let shown = rows.saturating_sub(1 + below).min(PAGE_TABS);
+        let free = rows.saturating_sub(1 + below);
+        let shown = free.min(PAGE_TABS);
+        let keyboard = free > PAGE_TABS;
         let rows_down = |rect: RectPx, rows: usize| rect.translate(0, rows as i32 * controls.h);
         for button in PauseMenuButton::ALL.iter().filter(|b| moved(*b)) {
             if let Some(rect) = self.buttons[*button as usize].as_mut() {
-                *rect = rows_down(*rect, shown);
+                *rect = rows_down(*rect, shown + usize::from(keyboard));
             }
         }
         self.page_tabs = std::array::from_fn(|tab| rows_down(controls, tab + 1));
         self.shown_tabs = Some(shown);
+        if keyboard {
+            self.buttons[PauseMenuButton::Keyboard as usize] = Some(rows_down(controls, shown + 1));
+        }
     }
 
     /// FF's group heads the Game Options page, which VERA shows on the left of
@@ -444,7 +458,7 @@ pub fn pause_menu_layout(
     button_size: [i32; 2],
     template: PauseMenuTemplate,
 ) -> PauseMenuLayout {
-    let mut buttons = [None; 7];
+    let mut buttons = [None; 8];
     for button in template.buttons() {
         let control = template.control(*button).expect("template button");
         let dlu = control.dlu_rect;
@@ -569,9 +583,10 @@ mod tests {
         }
     }
 
-    /// VERA's page buttons take rows 1 and 2 under Game Controls. The
-    /// template's later buttons and the relay's follow them, Resume stays, and
-    /// B5's seven rows fit above it even at 640x480.
+    /// VERA's page buttons take rows 1 and 2 under Game Controls and
+    /// Keyboard the row after them. The template's later buttons and the
+    /// relay's follow, and Resume stays. B5's own seven rows end at Resume at
+    /// 640x480, so Keyboard has no row there.
     #[test]
     fn page_tabs_stand_under_game_controls_and_move_the_later_buttons_down() {
         use PauseMenuButton::*;
@@ -588,8 +603,10 @@ mod tests {
             let mut b5 = native;
             b5.add_page_tabs();
             b5.add_page_tabs();
-            let tabs = PAGE_TABS as i32;
+            let keyboard = height > 480;
+            let tabs = PAGE_TABS as i32 + i32::from(keyboard);
             assert_eq!(b5.page_tabs(), [row(1), row(2)]);
+            assert_eq!(b5.button(Keyboard), keyboard.then(|| row(3)));
             assert_eq!(b5.button(GameControls), Some(row(0)));
             for (button, at) in [(Load, 1), (Save, 2), (Delete, 3), (Abort, 4)] {
                 assert_eq!(b5.button(button), Some(row(tabs + at)), "{button:?}");
@@ -607,8 +624,10 @@ mod tests {
                 relay_first.add_page_tabs();
                 assert_eq!(tabs_first, relay_first);
                 assert_eq!(tabs_first.page_tabs(), [row(1), row(2)]);
-                assert_eq!(tabs_first.button(Abort), Some(row(3)));
-                assert_eq!(tabs_first.button(SharedPause), Some(row(4)));
+                assert_eq!(tabs_first.button(Keyboard), Some(row(3)));
+                assert_eq!(tabs_first.button(Abort), Some(row(4)));
+                assert_eq!(tabs_first.button(SharedPause), Some(row(5)));
+                assert!(row(6).y <= tabs_first.button(Resume).unwrap().y);
             }
         }
     }

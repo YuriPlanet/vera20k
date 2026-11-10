@@ -150,6 +150,7 @@ pub(crate) const HAS_SET_WINDOW_SIZE: bool = !cfg!(any(
     target_os = "android"
 ));
 pub(crate) const SET_WINDOW_SIZE_LABEL: &str = "VERA:SetWindowSize";
+pub(crate) const SET_WINDOW_SIZE_HELP: &str = "VERA:SetWindowSizeHelp";
 
 /// A button of the dialog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1726,10 +1727,6 @@ impl Category {
                 Setting::Checkbox(Check::ShiftQueue),
                 Setting::Checkbox(Check::MouseWheelZoom),
                 Setting::Checkbox(Check::LockCursor),
-                Setting::Checkbox(Check::DetailedEvaText),
-                Setting::Checkbox(Check::CustomEndGameBanner),
-                Setting::Checkbox(Check::CustomEndGameScore),
-                Setting::Checkbox(Check::CustomEndGameMovie),
             ],
             Self::Display => &[
                 Setting::List(List::Zoom),

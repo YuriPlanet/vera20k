@@ -7,7 +7,7 @@ use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::{App, AppState};
 use crate::ui::main_menu_dialogs::OptionsDialogState;
 use crate::ui::main_menu_dialogs::options::shell::{
-    IN_GAME_LANDING, LauncherOptionsLayout, LauncherStatusHelp,
+    IN_GAME_KEYBOARD_HELP, IN_GAME_LANDING, LauncherOptionsLayout, LauncherStatusHelp,
 };
 use crate::ui::main_menu_dialogs::options::{
     Category, LauncherOptionsEvent, LauncherOptionsPacked, LauncherTrackbarId,
@@ -164,6 +164,7 @@ pub(crate) fn options_page_layout(state: &AppState) -> Option<LauncherOptionsLay
             page.dialog.category(),
             current_template(state) == PauseMenuTemplate::Internet,
             page.game_speed_shown,
+            menu.button(PauseMenuButton::Keyboard).is_none(),
             (
                 state.renderer.gpu.config.width,
                 state.renderer.gpu.config.height,
@@ -444,7 +445,7 @@ pub(crate) fn on_close(state: &mut AppState) {
     }
 }
 
-pub(crate) fn button_states(state: &AppState) -> [PauseMenuButtonState; 7] {
+pub(crate) fn button_states(state: &AppState) -> [PauseMenuButtonState; 8] {
     let interaction = state.match_state.match_presentation.pause_menu_interaction;
     // Native4F17D9..4F1832 applies559C20 eligibility to Load/Delete only, and
     // only in modes0/5; BBA/FF have neither control.
@@ -482,10 +483,11 @@ pub(crate) fn hovered_help(state: &AppState) -> Option<LauncherStatusHelp> {
     if let Some(slider) = presentation.internet_pause.hovered {
         return Some(LauncherStatusHelp::Csf(slider.help()));
     }
-    template
-        .control(presentation.pause_menu_interaction.hovered?)?
-        .help
-        .map(LauncherStatusHelp::Csf)
+    let hovered = presentation.pause_menu_interaction.hovered?;
+    if hovered == PauseMenuButton::Keyboard {
+        return Some(LauncherStatusHelp::Csf(IN_GAME_KEYBOARD_HELP));
+    }
+    template.control(hovered)?.help.map(LauncherStatusHelp::Csf)
 }
 
 fn hit(state: &AppState, layout: &PauseMenuLayout) -> Option<PauseMenuButton> {
@@ -621,6 +623,11 @@ fn activate(state: &mut AppState, button: PauseMenuButton) {
         PauseMenuButton::SharedPause => {
             toggle_multiplayer_pause(state);
         }
+        // BBB's 0x52C: A3 opens over the menu and comes back to it.
+        PauseMenuButton::Keyboard => crate::app::input::keyboard::open(
+            state,
+            crate::ui::shell::keyboard::KeyboardParent::GameControls,
+        ),
     }
 }
 
@@ -772,6 +779,7 @@ mod tests {
             Category::Gameplay,
             false,
             true,
+            false,
             (800, 600),
         );
         let detail = layout

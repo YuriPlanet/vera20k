@@ -21,10 +21,10 @@ use super::{
     LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId, MOUSE_WHEEL_ZOOM_HELP,
     MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL, OptionsDialogState,
     PERFORMANCE_STATS_HELP, PERFORMANCE_STATS_LABEL, PhysicalControlFrame, RIGHT_CLICK_ORDERS_HELP,
-    RIGHT_CLICK_ORDERS_LABEL, SET_WINDOW_SIZE_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL,
-    SHOW_STRING_KEYS_HELP, SHOW_STRING_KEYS_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_INTRO_HELP,
-    SKIP_INTRO_LABEL, SMOOTH_ONLINE_MENUS_HELP, SMOOTH_ONLINE_MENUS_LABEL, SMOOTH_SIDEBAR_HELP,
-    SMOOTH_SIDEBAR_LABEL, Setting, SidebarSize, TERRAIN_DEFORMATION_HELP,
+    RIGHT_CLICK_ORDERS_LABEL, SET_WINDOW_SIZE_HELP, SET_WINDOW_SIZE_LABEL, SHIFT_QUEUE_HELP,
+    SHIFT_QUEUE_LABEL, SHOW_STRING_KEYS_HELP, SHOW_STRING_KEYS_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL,
+    SKIP_INTRO_HELP, SKIP_INTRO_LABEL, SMOOTH_ONLINE_MENUS_HELP, SMOOTH_ONLINE_MENUS_LABEL,
+    SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL, Setting, SidebarSize, TERRAIN_DEFORMATION_HELP,
     TERRAIN_DEFORMATION_LABEL, VERA_ICON_HELP, VERA_ICON_LABEL, YR_ORIGINAL_STYLE_HELP,
     YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
 };
@@ -171,6 +171,9 @@ const IN_GAME_TABS: [Category; PAGE_TABS] = [Category::Gameplay, Category::Displ
 /// The page the in-game menu opens on. It has no tab: the template's own Game
 /// Controls button shows it (`app::input::pause_menu`).
 pub(crate) const IN_GAME_LANDING: Category = Category::Controls;
+/// Retail's status help for the in-game Game Options Keyboard button, which
+/// the in-game menu shows for its own (`app::input::pause_menu`).
+pub(crate) const IN_GAME_KEYBOARD_HELP: &str = "STT:IGGameOptButtonKeyboard";
 /// The in-game page's first row. 8 DLUs below the main menu's to clear the
 /// frame's top edge at 640x480, and a multiple of 8 so its sliders round to the
 /// same authored heights ([`dlu_rect`] is `y * 13 / 8`).
@@ -388,7 +391,8 @@ impl LauncherOptionsLayout {
     /// ordinary children are there. `tabs` are the sidebar rows the menu has
     /// for the pages' buttons (`PauseMenuLayout::page_tabs`). `game_speed`
     /// is whether Game Controls shows its Game Speed row, which gamemd's
-    /// `0xBBB` init decides. `window` is the
+    /// `0xBBB` init decides, and `keyboard` whether it holds the Keyboard
+    /// button, for a sidebar with no row for one. `window` is the
     /// one the match shares, which the zoom list depends on. `internet` leaves
     /// room for FF's own group above the Game Options rows.
     pub(crate) fn in_game(
@@ -397,6 +401,7 @@ impl LauncherOptionsLayout {
         category: Category,
         internet: bool,
         game_speed: bool,
+        keyboard: bool,
         window: (u32, u32),
     ) -> Self {
         let nothing = RectPx::new(0, 0, 0, 0);
@@ -422,8 +427,9 @@ impl LauncherOptionsLayout {
         let mut rows = page_rows(&settings, first_row, px);
         if category == IN_GAME_LANDING {
             // One row of buttons the size of Check for Updates ends the page:
-            // the Esc menu's Set Window Size under its caption, then the two
-            // dialogs gamemd's Game Controls opens.
+            // the Esc menu's Set Window Size under its caption, then the
+            // dialogs gamemd's Game Controls opens. Keyboard is here only
+            // while the sidebar has no row for it.
             let top = rows.end + 3;
             let mut x = ROW_X;
             let mut row = Vec::new();
@@ -432,7 +438,10 @@ impl LauncherOptionsLayout {
                     .push((px(dlu_rect(ROW_X, top, 83, 10)), PageLabel::SetWindowSize));
                 row.push(LauncherButton::SetWindowSize);
             }
-            row.extend([LauncherButton::InGameKeyboard, LauncherButton::InGameSound]);
+            if keyboard {
+                row.push(LauncherButton::InGameKeyboard);
+            }
+            row.push(LauncherButton::InGameSound);
             for button in row {
                 buttons.push((button, px(dlu_rect(x, top + 10, 83, 15))));
                 x += 90;
@@ -994,11 +1003,20 @@ impl OptionsDialogState {
                 LauncherButton::CheckForUpdates => {
                     return Some(LauncherStatusHelp::Vera(CHECK_FOR_UPDATES_HELP));
                 }
-                // The Esc menu has no status line, and retail has no help
-                // for buttons its Game Controls has in the sidebar.
-                LauncherButton::SetWindowSize
-                | LauncherButton::InGameKeyboard
-                | LauncherButton::InGameSound => return None,
+                // The main menu's Esc box has no status line; the in-game
+                // menu has.
+                LauncherButton::SetWindowSize => {
+                    return layout
+                        .in_game
+                        .then_some(LauncherStatusHelp::Vera(SET_WINDOW_SIZE_HELP));
+                }
+                // Retail's strings for the in-game Game Options buttons.
+                LauncherButton::InGameKeyboard => {
+                    return Some(LauncherStatusHelp::Csf(IN_GAME_KEYBOARD_HELP));
+                }
+                LauncherButton::InGameSound => {
+                    return Some(LauncherStatusHelp::Csf("STT:IGGameOptButtonSound"));
+                }
                 LauncherButton::Exit(LauncherParentResult::Keyboard) => KEYBOARD_BUTTON,
                 LauncherButton::Exit(
                     LauncherParentResult::Back | LauncherParentResult::Terminal,
@@ -1026,8 +1044,8 @@ impl OptionsDialogState {
                 LauncherTrackbarId::HouseColorStrength => {
                     LauncherStatusHelp::Vera(HOUSE_COLOR_STRENGTH_HELP)
                 }
-                // 0xBBB has no status help for its sliders.
-                LauncherTrackbarId::GameSpeed => return None,
+                // Retail's string for the Game Options speed slider.
+                LauncherTrackbarId::GameSpeed => LauncherStatusHelp::Csf("STT:GameOptSliderSpeed"),
             });
         }
         if let Some((id, _)) = layout
@@ -1457,6 +1475,7 @@ mod tests {
             category,
             internet,
             true,
+            true,
             (1920, 1080),
         )
     }
@@ -1542,7 +1561,8 @@ mod tests {
                 (LauncherButton::Category(Category::Display), below(2)),
             ]
         );
-        assert_eq!(menu.button(PauseMenuButton::Load), Some(below(3)));
+        assert_eq!(menu.button(PauseMenuButton::Keyboard), Some(below(3)));
+        assert_eq!(menu.button(PauseMenuButton::Load), Some(below(4)));
 
         let display = LauncherButton::Category(Category::Display);
         let rect = button(&layout, display);
@@ -1588,9 +1608,17 @@ mod tests {
             IN_GAME_LANDING,
             false,
             false,
+            false,
             (1920, 1080),
         );
         assert_eq!(sliders(&hidden)[0], Slider::Scroll);
+        assert!(
+            !hidden
+                .buttons
+                .iter()
+                .any(|(id, _)| *id == LauncherButton::InGameKeyboard),
+            "the sidebar has Keyboard"
+        );
 
         let mut dialog = state();
         dialog.set_in_game_controls(
@@ -1674,6 +1702,10 @@ mod tests {
             Setting::Checkbox(Check::HdMapPreviews),
             Setting::Checkbox(Check::SkipIntro),
             Setting::Checkbox(Check::ShowStringKeys),
+            Setting::Checkbox(Check::DetailedEvaText),
+            Setting::Checkbox(Check::CustomEndGameBanner),
+            Setting::Checkbox(Check::CustomEndGameScore),
+            Setting::Checkbox(Check::CustomEndGameMovie),
         ];
         let placed: Vec<Setting> = [IN_GAME_LANDING]
             .iter()

@@ -99,7 +99,7 @@ fn text_draws(
     csf: Option<&CsfFile>,
     theme: SidebarTheme,
     layout: &PauseMenuLayout,
-    states: [PauseMenuButtonState; 7],
+    states: [PauseMenuButtonState; 8],
     help: Option<LauncherStatusHelp>,
     shared_pause_caption: Option<&str>,
 ) -> Vec<ShellTextDraw> {
@@ -112,6 +112,9 @@ fn text_draws(
                 .unwrap_or_default()
         } else if button == PauseMenuButton::Resume && shared_pause_caption.is_some() {
             crate::i18n::tr("VERA:ReturnToGame")
+        } else if button == PauseMenuButton::Keyboard {
+            // BBB's 0x52C caption.
+            caption(csf, "GUI:Keyboard")
         } else {
             let control = layout.template.control(button).expect("template button");
             caption(csf, control.csf_key)
@@ -161,7 +164,7 @@ pub(crate) fn render_pause_menu_shell(
     state: &mut AppState,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
-    buttons: [PauseMenuButtonState; 7],
+    buttons: [PauseMenuButtonState; 8],
 ) -> anyhow::Result<()> {
     let in_game_shell::InGameShellGeometry {
         width,
