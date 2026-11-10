@@ -27,9 +27,6 @@ pub(crate) use sidebar_view::build_sidebar_view;
 pub(crate) use sidebar_view::build_sidebar_view_with_spec;
 pub(crate) use sidebar_view::{CameoFactoryStatus, ObjectCameoDrawInputs, draw_object_cameo};
 
-/// Cameo hit zones are fixed 60×48 (`6A8220`), independent of artwork size.
-pub(crate) const CAMEO_COLUMNS: usize = 2;
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Rect {
     pub x: f32,

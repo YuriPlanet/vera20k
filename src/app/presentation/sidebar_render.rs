@@ -243,6 +243,11 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
             &right_sw_views,
             reuse_sim_inputs,
         );
+    state
+        .match_state
+        .match_presentation
+        .sidebar_projection
+        .set_cameo_columns(spec.columns());
     let reconciled = state
         .match_state
         .match_presentation

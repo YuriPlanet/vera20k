@@ -109,9 +109,9 @@ impl ArmedSidebarEntry {
     }
 }
 use super::{
-    CAMEO_COLUMNS, Rect, SidebarAction, SidebarChromeLayoutSpec, SidebarItem, SidebarPart,
-    SidebarScrollButton, SidebarTab, SidebarTabButton, SidebarToggleButton, SidebarView,
-    compute_layout_with_spec, scroll_button_rects,
+    Rect, SidebarAction, SidebarChromeLayoutSpec, SidebarItem, SidebarPart, SidebarScrollButton,
+    SidebarTab, SidebarTabButton, SidebarToggleButton, SidebarView, compute_layout_with_spec,
+    scroll_button_rects,
 };
 
 #[cfg(test)]
@@ -212,7 +212,8 @@ pub(crate) fn build_sidebar_view_with_spec(
         .collect();
     let scroll_rows = cameo_order.scroll_row(active_tab);
     let total_items = all_entries.len();
-    let total_rows = total_items.div_ceil(CAMEO_COLUMNS);
+    let columns = layout_spec.columns();
+    let total_rows = total_items.div_ceil(columns);
 
     // Native screen capacity is independent of the item count.
     let layout = compute_layout_with_spec(layout_spec, screen_w, screen_h, total_rows);
@@ -292,7 +293,7 @@ pub(crate) fn build_sidebar_view_with_spec(
     );
     // Ordinary local-player branch of 6A6610: both arrows share capacity
     // availability, independent of the current end position.
-    let scroll_disabled = total_items <= layout.side2_tile_count * CAMEO_COLUMNS;
+    let scroll_disabled = total_items <= layout.side2_tile_count * columns;
     // `RadarClass::AddOrRemoveButtons @ 0x00652E50` adds both buttons to the
     // gadget list whenever ToggleSidebar shows the sidebar, which every
     // scenario keeps shown (Init and Action pass 1), so they are always laid out.
@@ -328,11 +329,11 @@ pub(crate) fn build_sidebar_view_with_spec(
     let max_scroll_rows = total_rows.saturating_sub(visible_rows);
     let scroll_rows = scroll_rows.min(max_scroll_rows);
 
-    let visible_items = scroll_rows * CAMEO_COLUMNS;
+    let visible_items = scroll_rows * columns;
     // Without the strip no cameo is laid out; its retained order and scroll
     // row stay as they are.
     let max_visible = if shows(SidebarPart::Cameos) {
-        visible_rows * CAMEO_COLUMNS
+        visible_rows * columns
     } else {
         0
     };
@@ -342,8 +343,8 @@ pub(crate) fn build_sidebar_view_with_spec(
         .take(max_visible)
         .enumerate()
         .map(|(idx, (entry, display_name))| {
-            let row = idx / CAMEO_COLUMNS;
-            let col = idx % CAMEO_COLUMNS;
+            let row = idx / columns;
+            let col = idx % columns;
             let x = (layout.strip_x
                 + layout_spec.cameo_inset_x
                 + col as f32 * layout_spec.cameo_column_pitch)

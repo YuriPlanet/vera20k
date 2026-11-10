@@ -65,6 +65,7 @@ enum Number {
     TabsStep,
     CameosX,
     CameosY,
+    CameosColumns,
     CameosCellX,
     CameosCellY,
     CameosColumnWidth,
@@ -107,6 +108,7 @@ impl Number {
             Self::TabsStep => &mut spec.tab_pitch,
             Self::CameosX => &mut spec.strip_x,
             Self::CameosY => &mut spec.strip_y,
+            Self::CameosColumns => &mut spec.cameo_columns,
             Self::CameosCellX => &mut spec.cameo_inset_x,
             Self::CameosCellY => &mut spec.cameo_inset_y,
             Self::CameosColumnWidth => &mut spec.cameo_column_pitch,
@@ -320,6 +322,13 @@ const STOCK_PARTS: &[StockPart] = &[
         numbers: &[
             place("X", Number::CameosX),
             place("Y", Number::CameosY),
+            // Each visible cameo is a gadget, so a row stays a row.
+            NumberKey {
+                key: "Columns",
+                number: Number::CameosColumns,
+                min: 1,
+                max: 8,
+            },
             place("CellX", Number::CameosCellX),
             place("CellY", Number::CameosCellY),
             place("ColumnWidth", Number::CameosColumnWidth),
@@ -336,7 +345,6 @@ const STOCK_PARTS: &[StockPart] = &[
             ("Width", None),
             ("Height", Some("Rest")),
             ("Parts", None),
-            ("Columns", Some("2")),
             ("CellWidth", Some("60")),
             ("CellHeight", Some("48")),
             ART_KEY,
@@ -769,22 +777,52 @@ fn same_list(section: &IniSection, key: &str, accepted: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::sidebar::cameo_order::CameoStrips;
+    use crate::rules::object_type::ObjectCategory;
+    use crate::sim::intern::StringInterner;
+    use crate::sim::production::{BuildOption, ProductionCategory};
+    use crate::ui::sidebar::cameo_order::{CameoStrips, StripColumns};
     use crate::ui::sidebar::gadget_flash::SidebarGadgetState;
     use crate::ui::sidebar::{
         SidebarTab, SidebarTheme, SidebarView, build_sidebar_view_with_spec, power_bar_rect,
         radar_minimap_rect_with_spec,
     };
 
+    /// `count` buildings to offer, each a cameo of the Building strip.
+    fn options(count: usize) -> (Vec<BuildOption>, StringInterner) {
+        let mut interner = StringInterner::new();
+        let options = (0..count)
+            .map(|i| BuildOption {
+                type_id: interner.intern(&format!("T{i}")),
+                cost: 1,
+                object_category: ObjectCategory::Building,
+                queue_category: ProductionCategory::Building,
+                enabled: true,
+                at_build_limit: false,
+                reason: None,
+            })
+            .collect();
+        (options, interner)
+    }
+
     /// The side's sidebar at 800x600 with `layout` over its original table.
     fn sidebar(
         theme: SidebarTheme,
         layout: Option<&MatchLayout>,
     ) -> (SidebarChromeLayoutSpec, SidebarView) {
+        sidebar_with(theme, layout, 0)
+    }
+
+    /// [`sidebar`] with `count` cameos on its Building strip.
+    fn sidebar_with(
+        theme: SidebarTheme,
+        layout: Option<&MatchLayout>,
+        count: usize,
+    ) -> (SidebarChromeLayoutSpec, SidebarView) {
         let mut spec = SidebarChromeLayoutSpec::for_theme(theme);
         if let Some(layout) = layout {
             layout.apply_to_sidebar(&mut spec);
         }
+        let (options, interner) = options(count);
         let view = build_sidebar_view_with_spec(
             spec,
             800.0,
@@ -795,10 +833,10 @@ mod tests {
             0,
             Some([32.0, 28.0]),
             &[],
-            &[],
+            &options,
             &[],
             None,
-            None,
+            Some(&interner),
             &[],
             &SidebarGadgetState::new(),
             Some([52.0, 32.0]),
@@ -806,14 +844,14 @@ mod tests {
             Some([46.0, 25.0]),
             Some([46.0, 25.0]),
             [Some([72.0, 18.0]); 2],
-            &CameoStrips::default(),
+            &CameoStrips::layout_fixture(&options, &[], &[]),
         );
         (spec, view)
     }
 
     #[test]
     fn a_side_layout_changes_only_the_numbers_it_writes() {
-        // Keys that repeat the original (`Parts`, `type`, `Columns`) are
+        // Keys that repeat the original (`Parts`, `type`, `CellWidth`) are
         // accepted, capitals do not count, and the last line has no break.
         let file = MatchLayoutFile::from_bytes(
             b"[Layouts]\nNod=Steel\nDefault=Plain\n\
@@ -821,7 +859,7 @@ mod tests {
               [Steel.Middle]\nY=170\n\
               [Steel.Tabs]\nStep=40\n\
               [Steel.Radar]\ntype=radar\nMapX=10\nMapWidth=120\n\
-              [Steel.Cameos]\nColumns=2\nRowHeight=60\n\
+              [Steel.Cameos]\nCellWidth=60\nRowHeight=60\n\
               [Plain.Power]\nX=9",
         );
         assert!(file.problems().is_empty(), "{:?}", file.problems());
@@ -860,7 +898,7 @@ mod tests {
             b"[Layouts]\nGDI=Broken\nNod=Missing\nThirdSide=Future\n\
               [Broken]\nParts=Side,Field\nColour=red\n\
               [Broken.Radar]\nMapWidth=wide\nMapHeight=0\nHold=Left\nSpeed=3\n\
-              [Broken.Cameos]\nRowHeight=1\nColumns=3\n\
+              [Broken.Cameos]\nRowHeight=1\nCellHeight=30\nColumns=0\n\
               [Broken.Clock]\nX=4\n\
               [Future]\nVersion=2\n\
               [Future.Radar]\nY=10\n",
@@ -879,7 +917,8 @@ mod tests {
             ("[Broken.Radar] Hold", NotYet),
             ("[Broken.Radar] Speed", UnknownKey),
             ("[Broken.Cameos] RowHeight", Clamped { used: 16 }),
-            ("[Broken.Cameos] Columns", NotYet),
+            ("[Broken.Cameos] CellHeight", NotYet),
+            ("[Broken.Cameos] Columns", Clamped { used: 1 }),
             ("[Broken.Clock]", UnknownPart),
             ("[Layouts] Nod", MissingLayout),
             ("[Future] Version", NewerVersion),
@@ -896,6 +935,7 @@ mod tests {
             SidebarChromeLayoutSpec {
                 radar_height: 1.0,
                 cameo_row_height: 16.0,
+                cameo_columns: 1.0,
                 ..SidebarChromeLayoutSpec::for_theme(SidebarTheme::Allied)
             }
         );
@@ -960,6 +1000,28 @@ mod tests {
         let (spec, _) = sidebar(SidebarTheme::Soviet, file.for_side(Some("Nod")));
         assert!(spec.shows(Top) && !spec.shows(Diplomacy) && !spec.shows(Options));
         assert!(spec.shows(Credits) && spec.shows(Money) && spec.shows(Power));
+    }
+
+    #[test]
+    fn a_layout_sets_the_cameo_columns_for_rows_and_scrolling() {
+        let file = MatchLayoutFile::from_bytes(
+            b"[Layouts]\nGDI=Wide\n[Wide.Cameos]\nColumns=3\nColumnWidth=40\n",
+        );
+        assert!(file.problems().is_empty(), "{:?}", file.problems());
+        let (spec, view) = sidebar_with(SidebarTheme::Allied, file.for_side(Some("GDI")), 7);
+        // Three to a row and 40 apart: the fourth cameo starts the next row.
+        let x: Vec<f32> = view.items.iter().map(|item| item.rect.x).collect();
+        assert_eq!(x[..4], [654.0, 694.0, 734.0, 654.0]);
+        assert_eq!(view.items[3].rect.y, view.items[0].rect.y + 50.0);
+
+        // The strip scrolls in the same rows: with two rows of three showing,
+        // seven cameos leave one more row, where rows of two would leave two.
+        let mut strips = CameoStrips::layout_fixture(&options(7).0, &[], &[]);
+        strips.set_columns(StripColumns::new(spec.columns()));
+        assert!(strips.queue_scroll(SidebarTab::Building, true, 2, 1));
+        strips.step_pending_scroll(2);
+        assert_eq!(strips.scroll_row(SidebarTab::Building), 1);
+        assert!(!strips.queue_scroll(SidebarTab::Building, true, 2, 1));
     }
 
     #[test]

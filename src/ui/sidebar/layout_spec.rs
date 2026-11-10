@@ -153,6 +153,9 @@ pub struct SidebarChromeLayoutSpec {
     /// sidebar + 0x16).
     pub cameo_inset_x: f32,
     pub cameo_inset_y: f32,
+    /// How many cameos a row holds: the original's two (GetVisibleSlotCount
+    /// `0x006AC430` counts 2 * rows).
+    pub cameo_columns: f32,
     /// From one cameo column to the next (`0x006A5090`: 0x3F or 0x40).
     pub cameo_column_pitch: f32,
     pub cameo_width: f32,
@@ -233,6 +236,7 @@ impl SidebarChromeLayoutSpec {
             strip_y: 227.0,
             cameo_inset_x: 22.0,
             cameo_inset_y: 1.0,
+            cameo_columns: 2.0,
             cameo_column_pitch: if allied { 63.0 } else { 64.0 },
             cameo_width: 60.0,
             cameo_height: 48.0,
@@ -249,6 +253,11 @@ impl SidebarChromeLayoutSpec {
 }
 
 impl SidebarChromeLayoutSpec {
+    /// The cameos in one strip row, at least one.
+    pub fn columns(&self) -> usize {
+        (self.cameo_columns as usize).max(1)
+    }
+
     /// Whether the layout has this part.
     pub fn shows(&self, part: SidebarPart) -> bool {
         self.parts.contains(&Some(part))
