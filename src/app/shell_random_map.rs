@@ -10,9 +10,8 @@ pub(super) const RANDOM_MAP_DESCRIPTION_KEY: &str = "TXT_RANDOM_MAP_DESCRIPTION"
 pub(super) const RANDOM_MAP_DESCRIPTION_FALLBACK: &str = "Random Map";
 /// The players slider is the last of the setup dialog's six option rows.
 const SETUP_PLAYERS_ROW: usize = 5;
-/// Matches the rules default the map-load path falls back to; the preview only
-/// needs it because terrain resolution takes it, not because cliffs affect the
-/// image.
+/// Retail's `[General] CliffBackImpassability=`; the preview only needs it
+/// because terrain resolution takes it, not because cliffs affect the image.
 const RANDOM_MAP_PREVIEW_CLIFF_BACK_IMPASSABILITY: u8 = 2;
 /// Where the generated preview is written. The chooser's sentinel row reads this
 /// back, so writing it is what makes the random-map thumbnail appear there.

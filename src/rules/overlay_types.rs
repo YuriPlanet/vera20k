@@ -276,9 +276,12 @@ pub struct OverlayTypeRegistry {
     alpha_images: Vec<String>,
     /// Immutable projection; ProcessedType remains the mutable reader owner.
     images: Vec<ObjectImageState>,
-    /// The Rock row when the scenario's `CliffBackImpassability=` byte is 2,
-    /// which `CellClass::RecalcAttributes` writes on an overlay cell behind a
-    /// cliff (`0x0047D53E`).
+    /// The scenario's `[General] CliffBackImpassability=` byte
+    /// (`read_cliff_back_impassability`): `CellClass::RecalcAttributes`
+    /// (`0x0047D2B0`) reads a cell's CliffBack neighbours unless it is 0.
+    cliff_back_impassability: u8,
+    /// The Rock row when that byte is 2, which the Recalc then writes on an
+    /// overlay cell behind a cliff (`0x0047D53E`).
     cliff_back_rock: Option<crate::rules::terrain_rules::LandTypeSemantics>,
 }
 
@@ -333,16 +336,15 @@ impl OverlayTypeRegistry {
     }
 
     fn from_projected_ini(ini: &IniFile, terrain_rules: &TerrainRules) -> Self {
+        let cliff_back_impassability =
+            crate::rules::ruleset::read_cliff_back_impassability(ini.section("General"));
         let section = match ini.section("OverlayTypes") {
             Some(s) => s,
             None => {
                 log::warn!("[OverlayTypes] section not found in rules.ini");
                 return OverlayTypeRegistry {
-                    names: Vec::new(),
-                    flags: Vec::new(),
-                    alpha_images: Vec::new(),
-                    images: Vec::new(),
-                    cliff_back_rock: None,
+                    cliff_back_impassability,
+                    ..Self::empty()
                 };
             }
         };
@@ -355,11 +357,8 @@ impl OverlayTypeRegistry {
         if names.is_empty() {
             log::warn!("[OverlayTypes] present but empty");
             return OverlayTypeRegistry {
-                names: Vec::new(),
-                flags: Vec::new(),
-                alpha_images: Vec::new(),
-                images: Vec::new(),
-                cliff_back_rock: None,
+                cliff_back_impassability,
+                ..Self::empty()
             };
         }
 
@@ -467,9 +466,8 @@ impl OverlayTypeRegistry {
             flags,
             alpha_images,
             images: Vec::new(),
-            cliff_back_rock: (crate::rules::ruleset::read_cliff_back_impassability(
-                ini.section("General"),
-            ) == 2)
+            cliff_back_impassability,
+            cliff_back_rock: (cliff_back_impassability == 2)
                 .then(|| *terrain_rules.row(LandType::Rock)),
         }
     }
@@ -517,8 +515,15 @@ impl OverlayTypeRegistry {
             flags: Vec::new(),
             alpha_images: Vec::new(),
             images: Vec::new(),
+            cliff_back_impassability: 0,
             cliff_back_rock: None,
         }
+    }
+
+    /// The scenario's `CliffBackImpassability=` byte, which gates the
+    /// CliffBack neighbour reads of every RecalcAttributes.
+    pub(crate) fn cliff_back_impassability(&self) -> u8 {
+        self.cliff_back_impassability
     }
 
     /// The Rock row the early overlay branch of RecalcAttributes writes behind

@@ -62,6 +62,11 @@ fn resolve_real_cell(terrain: &ResolvedTerrainGrid, x: i16, y: i16) -> Option<(u
 /// depend on the visiting order; the order still fixes which missing
 /// neighbour the shared dummy's coordinate retains last. The density lives in
 /// the overlay grid alone, as every runtime density write does.
+///
+/// Residual: with a non-zero `CliffBackImpassability` byte each skipped Recalc
+/// (`0x00568DF4`, after the cell's germination at `0x00568DD8`) also reads
+/// the cell's six CliffBack neighbours through the Map lookup, so gamemd's
+/// pass can leave the dummy at one of those neighbours instead.
 pub fn run_generated_final_cell_attributes(
     terrain: &ResolvedTerrainGrid,
     overlay_grid: &mut OverlayGrid,
