@@ -262,6 +262,8 @@ pub fn usage_text() -> String {
         "  -WIN            No effect: full screen is a choice on the Options page.",
         "  -NOAUDIO        Disable music and sound output.",
         "  -SPAWN          Start an offline CnCNet session from ./spawn.ini.",
+        "  --mod <folder>  Play with the mod in that folder of Mods.",
+        "  --no-mod        Play the original game, whatever config.toml says.",
         "  -? -h /? /h     Show this message.",
         "",
         "Other retail switches are accepted so a launch never fails on them,",

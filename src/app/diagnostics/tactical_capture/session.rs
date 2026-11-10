@@ -1036,6 +1036,17 @@ impl TacticalCaptureSession {
         output: &GameRenderOutput,
     ) -> Result<(bool, Value)> {
         let profile = self.request.profile()?;
+        // The profile seals the original sidebar geometry, which a layout
+        // file in the game folder or a mod MIX would move.
+        ensure!(
+            state
+                .match_state
+                .match_presentation
+                .match_layouts
+                .is_original(),
+            "tactical capture requires the original interface: remove {} from the game files",
+            crate::ui::match_layout::FILE_NAME
+        );
         let sim = state
             .match_state
             .sim_runtime

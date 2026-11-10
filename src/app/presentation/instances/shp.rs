@@ -1731,9 +1731,16 @@ fn emit_building_anims(
         Some(e) => e,
         None => return,
     };
-    for anim in &art_entry.building_anims {
-        let Some(anim_id) = building.building_art.anim_slots()[usize::from(anim.native_slot)]
-        else {
+    // Slot 9 follows the art rows: its record is read from rules
+    // (`0x00464450`), so no art row names it. The turret animation in it
+    // already holds the frame of the building's heading (`0x00451286`).
+    for slot in art_entry
+        .building_anims
+        .iter()
+        .map(|anim| anim.native_slot)
+        .chain(std::iter::once(9))
+    {
+        let Some(anim_id) = building.building_art.anim_slots()[usize::from(slot)] else {
             continue;
         };
         if !slot_admitted(anim_id) {

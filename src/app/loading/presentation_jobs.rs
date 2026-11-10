@@ -44,7 +44,10 @@ impl PreparedManifest {
     ) -> anyhow::Result<(PresentationManifest, PresentationAtlasJob)> {
         let cancel = Arc::new(AtomicBool::new(false));
         let unit = match self.unit_work {
-            Some((work, upload)) => Some((work.spawn(cancel.clone())?, upload)),
+            Some((work, upload)) => Some((
+                work.spawn(cancel.clone(), unit_atlas::RasterCores::All)?,
+                upload,
+            )),
             None => None,
         };
         let sprite = match self

@@ -400,6 +400,12 @@ impl App {
                 SpawnTransport::Relay(_) => {}
             }
         }
+        // The mod this launch asked for is not in use (`app::mods`): end on
+        // the reason, which a start without the mod would bury in a rules
+        // mismatch with the other players.
+        if let Some(reason) = state.frontend.mods.refusal() {
+            anyhow::bail!("{reason}");
+        }
         Self::check_spawn_expectations(state, &request)?;
         state.frontend.external_launch = true;
         state.frontend.external_progress = ExternalLaunchProgress::default();

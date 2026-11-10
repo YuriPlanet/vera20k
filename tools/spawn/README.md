@@ -79,7 +79,11 @@ A launcher can copy `version`, `rules_digest` and `map.source_sha256` into
 `[Settings] ExpectedVersion`, `ExpectedRulesDigest`, `ExpectedMapDigest`.
 `rules_digest` is Battle's. `[Settings] GameMode` selects a stock `MPModesMD.ini`
 row (default 1), and the digest covers that row's INI, so another mode takes its
-digest from the report's `game_modes`. Cooperative plays one mission: the launcher
+digest from the report's `game_modes`. A mod chosen in `config.toml`
+(`[paths] mod`, [modding guide](../../docs/modding.md)) is read by the probe as by
+the launch, so its rules are in the digest; `--mod <folder>` and `--no-mod` choose
+for both. A launch whose mod cannot be used fails, with the reason in its result.
+Cooperative plays one mission: the launcher
 writes its enemy AI houses, and no next mission or progress follows.
 
 Useful log lines: `Direct spawn: source=`, `Direct spawn: every guest answered`,

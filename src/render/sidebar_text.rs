@@ -166,10 +166,6 @@ fn lerp_rgb(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
     ]
 }
 
-/// Anchor row of the credits string on the sidebar surface, in native
-/// (unscaled) pixels. gamemd passes the literal `2`.
-pub const CREDITS_SURFACE_Y: f32 = 2.0;
-
 /// Render depth for the credits glyph quads. Shares the `sidebar_text` layer
 /// with the cameo Ready/queue labels, which is drawn from the GAME.FNT atlas
 /// above every sidebar chrome piece.
@@ -197,11 +193,14 @@ pub fn credits_tint(theme: crate::render::sidebar_chrome::SidebarTheme) -> [f32;
 ///
 /// `panel_rect` is the sidebar surface in screen space — its origin is the
 /// screen-top-left corner of the sidebar column, which is what gamemd measures
-/// `surface_width / 2` and `y = 2` against, in render pixels.
+/// `surface_width / 2` and `y = 2` against, in render pixels. `offset` is the
+/// counter's place from the middle of that surface's top edge, in native
+/// (unscaled) pixels: the layout table's, stock `[0, 2]`.
 pub fn build_credits_instances(
     font: &BitFont,
     credits: i32,
     panel_rect: Rect,
+    offset: [f32; 2],
     tint: [f32; 3],
     camera_offset: [f32; 2],
 ) -> Vec<SpriteInstance> {
@@ -221,8 +220,8 @@ pub fn build_credits_instances(
     // same convention `place_canvas_crop_in_slot` uses for cameo art).
     let text_w = font.text_width(&text) as i32;
     let surface_w = panel_rect.w.round() as i32;
-    let x = panel_rect.x.round() + (surface_w / 2 - text_w / 2) as f32;
-    let y = panel_rect.y.round() + CREDITS_SURFACE_Y;
+    let x = panel_rect.x.round() + (surface_w / 2 - text_w / 2) as f32 + offset[0];
+    let y = panel_rect.y.round() + offset[1];
     font.build_text(&text, x, y, 1.0, CREDITS_DEPTH, tint, camera_offset)
 }
 

@@ -771,9 +771,11 @@ pub(super) enum UnitCrateOutcome {
 /// MCV pre-empt flag; `bases` the lobby Bases byte (`0x00A8B258`).
 ///
 /// A pre-empted pickup asks for the first ownable `BaseUnit=`. Otherwise, a
-/// house with one of the first two `[AI] BuildConst=` types tracked and
-/// neither of the first two `HarvesterUnit=` types tracked gets its first
-/// ownable `HarvesterUnit=`. `[CrateRules] UnitCrateType=` overrides both.
+/// house with one of the first two `[AI] BuildRefinery=` types tracked
+/// (Rules `+0x8E4`, items `+0x8E8`, against House `+0x5500` at
+/// `0x0048208A..0x004820DD`) and neither of the first two `HarvesterUnit=`
+/// types tracked (`0x004820DF..0x00482131`) gets its first ownable
+/// `HarvesterUnit=`. `[CrateRules] UnitCrateType=` overrides both.
 /// With no type yet, draw `RandomRanged(0, UnitTypes.Count - 1)` until a
 /// `CrateGoodie=` type passes: with Bases on, a `BaseUnit=` type is accepted
 /// for a human house or a pre-empted pickup; with Bases off, never.
@@ -809,8 +811,8 @@ pub(super) fn choose_unit_crate_type<'r>(
                 .get(type_id)
                 .map_or(0, |type_id| house.tracking().owned_count(category, type_id))
         };
-        let has_conyard = rules
-            .build_const_types
+        let has_refinery = rules
+            .build_refinery_types
             .iter()
             .take(2)
             .any(|type_id| tracked(EntityCategory::Structure, type_id) > 0);
@@ -819,7 +821,7 @@ pub(super) fn choose_unit_crate_type<'r>(
             .iter()
             .take(2)
             .any(|type_id| tracked(EntityCategory::Unit, type_id) != 0);
-        if has_conyard && !has_harvester {
+        if has_refinery && !has_harvester {
             chosen = first_owner_compatible(
                 rules,
                 &rules.harvester_unit_types,

@@ -270,10 +270,12 @@ pub(crate) struct FrontendState {
     pub(crate) shell_preview_overlay_registry: Option<OverlayTypeRegistry>,
     /// The online map library's catalog and Choose Map's map download.
     pub(crate) map_library: crate::app::map_library::MapLibrary,
-    /// The online login page's lobby counts and news.
+    /// The online login page's lobby counts.
     pub(crate) login_info: crate::app::shell_wol::login_info::LoginInfo,
     /// VERA's own map pictures for the setup screens' previews.
     pub(crate) map_pictures: crate::app::map_picture::MapPictures,
+    /// The mod this run reads on top of the game folder (`app::mods`).
+    pub(crate) mods: crate::app::mods::Mods,
     /// The release check, its main-menu offer and the download (desktop only).
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     pub(crate) updater: crate::app::updater::Updater,
@@ -336,7 +338,7 @@ pub(crate) enum ShellMessageBoxPurpose {
     /// button stops waiting.
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     UpdateCheck,
-    /// The updater's notice (`0xCE`): a failure, or what a check found.
-    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    UpdateNotice,
+    /// An OK notice (`0xCE`): the updater's failure or what its check found,
+    /// or why a mod is not in use (`app::mods`).
+    Notice,
 }

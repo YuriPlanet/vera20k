@@ -426,6 +426,7 @@ pub fn probe(map_name: Option<String>) -> Result<String, JsValue> {
         personal_rules,
         crate::app::frontend::startup_options::RetailStartupOptions::default().media_archive_mode,
         map.as_deref(),
+        None,
     )
     .map_err(error)?;
     serde_json::to_string(&report).map_err(|error| JsValue::from_str(&error.to_string()))

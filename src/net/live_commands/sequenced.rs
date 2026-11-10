@@ -259,6 +259,13 @@ pub enum SequencedError {
     },
     #[error("online ordering service cannot recover this match")]
     Unavailable,
+    /// The transport released the relay route: the relay answered nothing for
+    /// longer than it keeps a silent player's place (`relay_absent`), so this
+    /// game cannot come back to its match.
+    #[error(
+        "no answer from the online game server for ten minutes: this player's place in the match is gone"
+    )]
+    Absent,
     /// The relay closed this match's room before it started: a player left.
     #[error("a player left before the online match started")]
     StartCancelled,
@@ -280,6 +287,7 @@ impl SequencedError {
             Self::InvalidTimeline => "invalid_timeline",
             Self::Desync { .. } => "desync",
             Self::Unavailable => "unavailable",
+            Self::Absent => "absent",
             Self::StartCancelled => "start_cancelled",
             Self::QueueFull => "queue_full",
             Self::NewerClientRequired => "newer_client_required",
@@ -298,9 +306,11 @@ impl SequencedError {
             Self::NewerClientRequired => NetworkInterruption::NewerClientRequired,
             Self::Refused(OrderError::AgreementMismatch) => NetworkInterruption::StartMismatch,
             Self::StartCancelled => NetworkInterruption::StartCancelled,
-            Self::HistoryExpired | Self::InvalidTimeline | Self::Unavailable | Self::Refused(_) => {
-                NetworkInterruption::ConnectionFailed
-            }
+            Self::HistoryExpired
+            | Self::InvalidTimeline
+            | Self::Unavailable
+            | Self::Absent
+            | Self::Refused(_) => NetworkInterruption::ConnectionFailed,
         }
     }
 }
@@ -679,6 +689,16 @@ impl SequencedSession {
                 }
             }
         }
+        // Network silence is recoverable until the relay departs this source
+        // after ten minutes: until then the same stream cursor, unacknowledged
+        // bytes and world wait for the route/lease to return, and neither a
+        // shorter timeout nor peer progress may manufacture an EXIT or fail a
+        // frame. Past it the transport releases the route, and the match ends
+        // here instead of showing Reconnecting for as long as the game stays
+        // open. Before anything below asks the released route to send.
+        if transport.relay_absent() {
+            self.error.get_or_insert(SequencedError::Absent.into());
+        }
         if self.error.is_some() {
             return;
         }
@@ -716,10 +736,6 @@ impl SequencedSession {
         if self.started {
             let _ = transport.poll_uplink();
         }
-        // Network silence is recoverable until the relay departs this source
-        // after ten minutes. Keep the same stream cursor,
-        // unacknowledged bytes and world until the route/lease returns. Neither
-        // a timeout nor peer progress may manufacture an EXIT or fail a frame.
     }
 
     fn service_pause(&mut self, transport: &mut LanUdpTransport, now: u32) {

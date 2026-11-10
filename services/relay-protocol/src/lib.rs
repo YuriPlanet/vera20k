@@ -28,7 +28,7 @@ pub use link::{ClientLinkStats, HopFeedback, LinkState, OrderingGap, ReaderLinkS
 pub use sequenced::federation::{MAX_FEDERATED_RELAYS, sign_federation_roster};
 pub use sequenced::pack::{decode_pack_v2, encode_pack_v2};
 pub use sequenced::{
-    CHECKSUM_INTERVAL, CertificatePacing, ORDERING_BATCH_CAPACITY, ORDERING_CERTIFICATE_LEN,
+    ABSENT_MS, CHECKSUM_INTERVAL, CertificatePacing, ORDERING_BATCH_CAPACITY, ORDERING_CERTIFICATE_LEN,
     ORDERING_CERTIFICATE_V2_LEN, ORDERING_PULL_LIMIT, OrderEntry, OrderError, OrderEvent,
     OrderPace, OrderStatus, OrderingCertificate, is_ordering_certificate_len, paced_rates,
     turn_frames, turn_ms,

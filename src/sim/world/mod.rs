@@ -1628,6 +1628,10 @@ pub struct Simulation {
     /// passes (`vision::RevealViewers`); never serialized or hashed.
     #[serde(skip)]
     pub(crate) reveal_viewers: crate::sim::vision::RevealViewers,
+    /// The Civilian-side House, remembered through the object pass
+    /// (`house_defeat::CivilianSideHouse`); never serialized or hashed.
+    #[serde(skip)]
+    civilian_house_memo: house_defeat::CivilianSideHouse,
     /// Which listeners each pointer expiry reaches (`expiry_listeners`).
     /// Derived from the listener stores; never serialized or hashed.
     #[serde(skip)]
@@ -4613,6 +4617,7 @@ impl Simulation {
         let mut out = Self {
             movement_pass_cache: Default::default(),
             reveal_viewers: Default::default(),
+            civilian_house_memo: Default::default(),
             expiry_listeners: Default::default(),
             path_batch: None,
             scan_batch: None,

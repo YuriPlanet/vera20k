@@ -1849,7 +1849,7 @@ pub(crate) fn reconcile_civilian_garrison_owner_for_building(
     //458313 reads Occupants[0], the earliest admission.
     let first_passenger = occupants.ids().first().copied();
 
-    let Some(civilian_owner) = sim.civilian_side_house(rules) else {
+    let Some(civilian_owner) = sim.civilian_side_house_in_pass(rules) else {
         // A malformed roster can leave the native empty arm passing NULL to
         //ChangeOwner. Preserve the real owner rather than fabricate a house.
         return false;

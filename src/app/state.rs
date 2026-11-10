@@ -197,7 +197,14 @@ impl AppState {
         } else {
             self.persistence.options_profile.sidebar
         };
+        // The side's layout decides how wide the column is.
+        let column_width = self
+            .match_state
+            .match_presentation
+            .sidebar_layout_spec
+            .sidebar_width as u32;
         crate::ui::sidebar::SidebarFrame::new(width, height, size.percent(width, height))
+            .with_column_width(column_width)
     }
 
     /// The zoom pass a match frame goes through: the battlefield and the
@@ -277,6 +284,17 @@ impl AppState {
                     .match_presentation
                     .in_game_menu
                     .draws_over_battlefield())
+    }
+
+    /// The main menu at rest, where a box may ask or tell the player
+    /// something: its page takes input (not sliding, no movie, page or error
+    /// over it), past the splash, with no dialog.
+    pub(crate) fn main_menu_at_rest(&self) -> bool {
+        use crate::app::input::precedence::{InputLayer, ScreenPage, input_layer};
+        input_layer(self) == InputLayer::Screen(ScreenPage::MainMenu)
+            && self.frontend.shell_route == crate::app::shell_route::ShellRoute::MainMenu
+            && self.frontend.startup_splash.is_none()
+            && !self.main_menu_dialog_open()
     }
 
     /// Whether any main-menu modal dialog (exit confirm, options, keyboard)

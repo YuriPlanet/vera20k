@@ -11630,6 +11630,20 @@ impl RuleSet {
         self.object_list[handle.0 as usize].size = size;
     }
 
+    /// Write a type's slot-9 names (`BuildingType +0x11B0`, `+0x11C0`) as the
+    /// native slot corpora do, past ReadINI's empty-damaged copy.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_turret_anim_names_for_test(&mut self, id: &str, normal: &str, damaged: &str) {
+        let name = |name: &str| (!name.is_empty()).then(|| name.to_owned());
+        let object = self
+            .object_list
+            .iter_mut()
+            .find(|object| object.id == id)
+            .unwrap();
+        object.turret_anim = name(normal);
+        object.turret_anim_damaged = name(damaged);
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn art_entry_mut_for_test(
         &mut self,

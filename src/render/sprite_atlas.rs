@@ -2166,7 +2166,12 @@ pub(crate) fn prepare_sprite_atlas(
             let Some(entry) = art_reg.resolve_metadata_entry(type_id, &rules_image) else {
                 continue;
             };
-            for anim in &entry.building_anims {
+            // Slot 9's row is rules-owned (`0x00464450`), so no art row
+            // names a turret animation.
+            let turret = rules
+                .and_then(|rules| rules.object(type_id))
+                .and_then(art_data::shp_turret_anim_config);
+            for anim in entry.building_anims.iter().chain(turret.iter()) {
                 // Original location: `RA2-GAME.EXE-IDB` canon,
                 // `assets.unitShpFrameSelection.ra2yr.json` and
                 // `assets.buildingDrawOffsets.ra2yr.json`: declared
@@ -2179,7 +2184,15 @@ pub(crate) fn prepare_sprite_atlas(
                         .flatten()
                         .map(|variant| (variant.anim_type.as_str(), variant.loop_end)),
                 );
+                // A turret row shows any entry of the 32-frame table
+                // `0x007F4890`, whatever its animation's own LoopEnd.
+                let facing_frames = if anim.native_slot == 9 {
+                    crate::util::direction_tables::DRAGON_FRAME_TABLE.len() as u16
+                } else {
+                    0
+                };
                 for (anim_type, loop_end) in anims {
+                    let loop_end = loop_end.max(facing_frames);
                     register_building_anim(
                         &mut needed,
                         &mut building_anim_counts,

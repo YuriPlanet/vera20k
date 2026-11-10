@@ -9,9 +9,11 @@ use crate::ui::sidebar::command_bar::{CommandBarLayout, spacer_pieces};
 
 pub(crate) fn layout_and_slots(state: &AppState) -> Option<(CommandBarLayout, Vec<Option<usize>>)> {
     let art = &current_sidebar_chrome(state)?.command_bar;
+    let frame = state.sidebar_frame();
     let layout = layout_on_frame(
         art,
-        state.sidebar_frame().layout_size(),
+        frame.layout_size(),
+        frame.column_width(),
         state
             .match_state
             .match_presentation
@@ -26,13 +28,14 @@ pub(crate) fn layout_and_slots(state: &AppState) -> Option<(CommandBarLayout, Ve
 fn layout_on_frame(
     art: &crate::render::sidebar_chrome::CommandBarArt<SidebarChromeEntry>,
     (width, height): (u32, u32),
+    sidebar_width: u32,
     closed: bool,
 ) -> Option<CommandBarLayout> {
     let size = |entry: SidebarChromeEntry| entry.pixel_size.map(|v| v as u32);
     Some(
         CommandBarLayout::new(
             [width, height],
-            crate::ui::sidebar::SIDEBAR_WIDTH_PX,
+            sidebar_width,
             size(art.left_cap[0]?),
             size(art.background?),
             size(art.right_cap?),
@@ -196,7 +199,7 @@ mod tests {
     #[test]
     fn open_bar_reaches_the_left_end_at_wide_frames() {
         let art = bar_art();
-        let layout = layout_on_frame(&art, (1920, 1080), false).unwrap();
+        let layout = layout_on_frame(&art, (1920, 1080), 168, false).unwrap();
         assert_eq!(layout.left_cap.x, 0.0);
         assert_eq!(layout.slot(0).unwrap().x, 28.0);
         assert_eq!(layout.right_cap.x, 1724.0);

@@ -17,6 +17,13 @@
 
 use anyhow::Result;
 
+// On Windows the game allocates through mimalloc instead of the process heap
+// (Cargo.toml, "Windows memory allocator"). Only this program: the tools and
+// the tests keep the system allocator.
+#[cfg(windows)]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 fn main() -> Result<()> {
     if let Some(result) =
         vera20k::app::frontend::launch::try_replay_verify(std::env::args_os().skip(1))
