@@ -331,6 +331,17 @@ fn status_help_key_for_side_item(country: SkirmishCountryChoice) -> Option<&'sta
     }
 }
 
+/// The lobby colour after `color` in list order, wrapping to the first.
+fn next_lobby_color(state: &SkirmishShellState, color: usize) -> usize {
+    usize::from(
+        state
+            .lobby_colors
+            .next_lobby_priority(i32::try_from(color).unwrap_or(-1)),
+    )
+}
+
+/// gamemd names its eight colours and the observer's (`STT:PlayerColor*`);
+/// VERA's extra colours show their swatch and no status line.
 fn status_help_key_for_color_item(item: SkirmishComboItem) -> Option<&'static str> {
     match item {
         SkirmishComboItem::ColorSentinel(-2) => Some("STT:PlayerColorRandom"),
@@ -432,12 +443,13 @@ pub fn apply_action(
         SkirmishShellAction::SelectColor(target) => {
             match target {
                 ColorComboId::Player => {
-                    state.player_color_index = (state.player_color_index + 1) % 8;
+                    state.player_color_index = next_lobby_color(state, state.player_color_index);
                 }
                 ColorComboId::Ai(idx) => {
                     let visible = player_row_visible(state, maps, idx + 1);
-                    if visible && let Some(opponent) = state.opponents.get_mut(idx) {
-                        opponent.color_index = (opponent.color_index + 1) % 8;
+                    if visible && let Some(current) = state.opponents.get(idx) {
+                        let next = next_lobby_color(state, current.color_index);
+                        state.opponents[idx].color_index = next;
                     }
                 }
             }

@@ -13,6 +13,7 @@ here, and a mod that changes the program doesn't.
 | DLL mods and exe patches | Run inside the game | Can't run |
 | Map size | Width plus height up to 512 | Up to 1024 |
 | Players | 8 | Up to 30, on maps made for it |
+| Player colours | 8 | 30, and a mod can [list its own](skirmish-colors.md) |
 | Playing online | With the original game | Only with other VERA20k players |
 
 ## What you can and can't do

@@ -1041,6 +1041,56 @@ fn launch_session_does_not_synthesize_unknown_mode() {
 }
 
 #[test]
+fn colour_combo_lists_the_rules_extra_colours_after_the_eight() {
+    use crate::rules::skirmish_colors::SkirmishColorMode;
+    use SkirmishComboItem::{Color, ColorSentinel};
+
+    let mut shell = controlled_country_shell();
+    shell.lobby_colors = SkirmishColorMode::with_extra_entries(&[21, 22]);
+    let maps = [test_map_entry("map.mmx")];
+    // The first computer row holds red (1); 8 is the observer's, never listed.
+    assert_eq!(
+        combo_items(&shell, &maps, SkirmishComboId::Color(0)),
+        [
+            ColorSentinel(-2),
+            Color(0),
+            Color(2),
+            Color(3),
+            Color(4),
+            Color(5),
+            Color(6),
+            Color(7),
+            Color(9),
+            Color(10),
+        ]
+    );
+
+    // An extra colour is claimed like any other and reaches the launch.
+    apply_combo_selection_for_test(&mut shell, SkirmishComboId::Color(1), Color(10));
+    assert!(!combo_items(&shell, &maps, SkirmishComboId::Color(0)).contains(&Color(10)));
+    shell.player_color_index = 7;
+    apply_action(
+        &mut shell,
+        SkirmishShellAction::SelectColor(ColorComboId::Player),
+        &maps,
+    );
+    assert_eq!(shell.player_color_index, 9);
+    let session = launch_session(&shell, &maps, &stock_skirmish_modes(), false).expect("session");
+    assert_eq!(session.local_slot().color_index, 9);
+    assert_eq!(session.opponents[0].color_index, 10);
+
+    // Rules that list one extra fewer refuse the colour they dropped.
+    shell.lobby_colors = SkirmishColorMode::with_extra_entries(&[21]);
+    assert_eq!(
+        launch_session(&shell, &maps, &stock_skirmish_modes(), false).unwrap_err(),
+        LaunchValidationError::InvalidColorIndex {
+            slot: 1,
+            color_index: 10,
+        }
+    );
+}
+
+#[test]
 fn launch_session_rejects_missing_map_and_bad_color() {
     let mut shell = controlled_country_shell();
     assert_eq!(
