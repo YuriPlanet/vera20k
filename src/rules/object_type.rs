@@ -1126,16 +1126,24 @@ pub struct ObjectType {
     /// uses exact `RadialFireSegments`, ReadInt5276D0 and the current value.
     /// Signed and unclamped: FireAt distinguishes zero, negative and positive.
     pub radial_fire_segments: i32,
-    /// VXL turret model name for buildings (TurretAnim= in rules.ini, e.g., "SAM").
-    /// The engine loads `{TurretAnim}.VXL` + `{TurretAnim}.HVA` as the turret model.
+    /// A building's turret name (`TurretAnim=` in rules, `BuildingType
+    /// +0x11B0`, e.g. "SAM"). With `TurretAnimIsVoxel=` the engine loads
+    /// `{TurretAnim}.VXL` + `{TurretAnim}.HVA` as the turret model; without it
+    /// the name is the building's slot-9 animation
+    /// ([`crate::rules::art_data::building_turret_anim_config`]).
     pub turret_anim: Option<String>,
+    /// Slot 9's name for a damaged building (`+0x11C0`): `TurretAnimDamaged=`
+    /// (`0x004644BC`), or the normal name when that is empty (`0x004644FD`).
+    pub turret_anim_damaged: Option<String>,
     /// Whether the turret anim is a VXL model (TurretAnimIsVoxel=, default false).
-    /// When false, the TurretAnim is an SHP overlay handled by the building anim system.
+    /// When false, the TurretAnim is an SHP animation in the building's slot 9.
     pub turret_anim_is_voxel: bool,
     /// Pixel X offset for building turret placement (TurretAnimX=).
     pub turret_anim_x: i32,
     /// Pixel Y offset for building turret placement (TurretAnimY=).
     pub turret_anim_y: i32,
+    /// `TurretAnimYSort=` (`+0x11EC`, read at `0x0046462D`): slot 9's YSort.
+    pub turret_anim_y_sort: i32,
     /// Z-seed adjustment for a voxel turret's blit (TurretAnimZAdjust=, negative
     /// = nearer the camera). Building vtable `0x7E3EBC+0x2EC` folds it into the
     /// draw Z only when `TurretAnimIsVoxel`; it is not a ground-layer sort key.
@@ -4925,11 +4933,19 @@ impl ObjectType {
             recoil: crate::rules::recoil::RecoilConfig::default(),
             airstrike: crate::rules::airstrike::AirstrikeSettings::default(),
             radial_fire_segments: 0,
+            // Slot 9's record, which ReadINI fills from the rules INI in this
+            // order (`0x00464450..0x00464647`): the two names into `char[16]`,
+            // then X, Y, ZAdjust, YSort and the voxel flag.
             turret_anim: section.read_name("TurretAnim", 0x10).map(str::to_uppercase),
+            turret_anim_damaged: section
+                .read_name("TurretAnimDamaged", 0x10)
+                .or_else(|| section.read_name("TurretAnim", 0x10))
+                .map(str::to_uppercase),
             turret_anim_is_voxel: section.read_bool("TurretAnimIsVoxel", false),
             turret_anim_x: section.read_int("TurretAnimX", 0),
             turret_anim_y: section.read_int("TurretAnimY", 0),
             turret_anim_z_adjust: section.read_int("TurretAnimZAdjust", 0),
+            turret_anim_y_sort: section.read_int("TurretAnimYSort", 0),
             // Native order after TurretAnimIsVoxel (0x00464647): the
             // `BarrelAnimIsVoxel` bool (0x00464661), the VoxelBarrelFile name
             // this port does not read (0x0046467E, retained above), then the

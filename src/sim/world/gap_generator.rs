@@ -228,9 +228,6 @@ impl Simulation {
             .is_operational()
             == operational
         {
-            if operational {
-                self.ensure_shp_turret_anim(id, rules);
-            }
             self.update_building_working_sound(id, rules, frame_effects);
             return;
         }

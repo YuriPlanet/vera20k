@@ -2295,49 +2295,6 @@ pub fn effect_shp_candidates(
     candidates
 }
 
-/// One SHP turret animation carries thirty-two facings, so its frame index is
-/// the turret heading's top five bits (`facing >> 3`).
-pub const SHP_TURRET_FACING_FRAMES: u16 = 32;
-
-/// Slot 9's draw row for a *rules-owned* SHP turret.
-///
-/// `0x00446580..0x004466D5` builds this slot in Grand_Opening, not in
-/// `BuildingTypeClass::ReadINI`: the name comes from the type's own
-/// `TurretAnim=` (the art key of that name is not read for slot 9), and the
-/// anchor is `TurretAnimX`/`TurretAnimY`/`TurretAnimZAdjust` on the same
-/// section. The frame is the turret facing rather than the animation's timer,
-/// so this row exists only to give the presentation the slot, the name and the
-/// offset; [`crate::app::presentation::instances::shp`] supplies the frame.
-///
-/// `None` for a voxel turret (`TurretAnimIsVoxel=yes` — the B8/C0 model path),
-/// for a type without `Turret=`, and when the section names no `TurretAnim`.
-pub fn shp_turret_anim_config(
-    object: &crate::rules::object_type::ObjectType,
-) -> Option<BuildingAnimConfig> {
-    if !object.has_turret || object.turret_anim_is_voxel {
-        return None;
-    }
-    let name = object.turret_anim.clone()?;
-    Some(BuildingAnimConfig {
-        native_slot: 9,
-        anim_type: name,
-        damaged_variant: None,
-        garrisoned_variant: None,
-        kind: BuildingAnimKind::Special,
-        is_primary: true,
-        x: object.turret_anim_x,
-        y: object.turret_anim_y,
-        y_sort: 0,
-        z_adjust: object.turret_anim_z_adjust,
-        loop_start: 0,
-        loop_end: 0,
-        loop_count: 1,
-        rate: 0,
-        start_frame: 0,
-        ping_pong: false,
-    })
-}
-
 /// Generate VXL/HVA filenames for a voxel model.
 pub fn voxel_asset_names(image_id: &str) -> (String, String) {
     let upper: String = image_id.to_uppercase();
@@ -2384,14 +2341,11 @@ const BUILDING_ANIM_KEYS: &[(&str, &[&str], u8)] = &[
 ///
 /// The PowerUp1..3 loop (`0x00464758..0x00464928`) has no such copy.
 ///
-/// RESIDUAL: slot 9's names are read from the rules INI natively
-/// (`0x00464450..0x004645C9`: `TurretAnim`/`TurretAnimDamaged` from the type's
-/// section, `TurretAnimGarrisoned` from its image's), not from ART, and VERA
-/// ports none of Grand_Opening's slot-9 block (`0x00446580..0x004466D5`: for a
-/// `HasTurret @ 0x004527D0` building without `TurretAnimIsVoxel`, a `TurretAnim`
-/// or image-derived name, then a frame from the turret's facing). Dormant in
-/// retail: the eight `Turret=yes` types in RULESMD and the MP mode INIs all set
-/// `TurretAnimIsVoxel=true`, and ART declares no `TurretAnim`.
+/// Slot 9 has no ART row: ReadINI fills its record from the rules INI
+/// (`0x00464450..0x00464632`), which [`building_turret_anim_config`] ports.
+/// Retail ART declares no `TurretAnim`, and the eight `Turret=yes` types in
+/// RULESMD and the MP mode INIs all set `TurretAnimIsVoxel=true`, so stock
+/// play builds no slot-9 animation by name.
 fn parse_building_anims(section: &IniSection, ini: &IniFile) -> Vec<BuildingAnimConfig> {
     let mut anims: Vec<BuildingAnimConfig> = Vec::new();
 
@@ -2404,6 +2358,11 @@ fn parse_building_anims(section: &IniSection, ini: &IniFile) -> Vec<BuildingAnim
             anims.push(power_up_config(first_slot, &record, |name| {
                 parse_building_anim_variant(name.to_owned(), ini)
             }));
+            continue;
+        }
+        if first_slot == 9 {
+            // Rules-owned (`building_turret_anim_config`); the table keeps the
+            // key for the power flags.
             continue;
         }
         let kind: BuildingAnimKind = match base {
@@ -2507,6 +2466,59 @@ fn power_up_config(
         start_frame: normal.start_frame,
         ping_pong: normal.ping_pong,
     }
+}
+
+/// Slot 9's record, which `BuildingTypeClass::ReadINI` fills from the type's
+/// own rules section, not from ART (`0x00464450..0x00464632`): `TurretAnim`
+/// and `TurretAnimDamaged` into `char[16]` (`+0x11B0`, `+0x11C0`), an empty
+/// damaged name taking the normal one (`0x004644FD`), then `TurretAnimX`, `Y`,
+/// `ZAdjust` and `YSort` (`+0x11E0..+0x11EC`). The loop and rate fields keep
+/// their defaults, as for a PowerUp slot: `AnimClass` reads its own type.
+///
+/// RESIDUAL: `TurretAnimGarrisoned` (`0x00464553`, read from the rules section
+/// the type's image names) is not read, so the garrisoned name is the normal
+/// one, as natively without the key (`0x00464594`). Trigger: a garrisonable
+/// building with an SHP turret and that key; effect: an occupied one keeps its
+/// normal turret. No retail type sets it and nothing asks slot 9 for it yet.
+pub fn building_turret_anim_config(
+    object: &crate::rules::object_type::ObjectType,
+) -> BuildingAnimConfig {
+    let empty = IniFile::empty();
+    let variant = |name: &str| parse_building_anim_variant(name.to_owned(), &empty);
+    let named = |name: &str| (!name.is_empty()).then(|| variant(name));
+    let name = object.turret_anim.as_deref().unwrap_or("");
+    let normal = variant(name);
+    BuildingAnimConfig {
+        native_slot: 9,
+        anim_type: normal.anim_type,
+        damaged_variant: object.turret_anim_damaged.as_deref().and_then(named),
+        garrisoned_variant: named(name),
+        kind: BuildingAnimKind::Special,
+        is_primary: true,
+        x: object.turret_anim_x,
+        y: object.turret_anim_y,
+        y_sort: object.turret_anim_y_sort,
+        z_adjust: object.turret_anim_z_adjust,
+        loop_start: normal.loop_start,
+        loop_end: normal.loop_end,
+        loop_count: normal.loop_count,
+        rate: normal.rate,
+        start_frame: normal.start_frame,
+        ping_pong: normal.ping_pong,
+    }
+}
+
+/// The slot-9 row of a building whose turret Grand_Opening can build by name
+/// (`0x00446599..0x0044667B`): a `TurretAnim` without `TurretAnimIsVoxel`.
+/// Asset discovery reads it. `Turret=` is not asked: an installed upgrade's
+/// turret passes HasTurret (`0x004527D0`) for a host that has none.
+pub fn shp_turret_anim_config(
+    object: &crate::rules::object_type::ObjectType,
+) -> Option<BuildingAnimConfig> {
+    (object.category == crate::rules::object_type::ObjectCategory::Building
+        && !object.turret_anim_is_voxel
+        && object.turret_anim.is_some())
+    .then(|| building_turret_anim_config(object))
 }
 
 /// `AddOccupy%d=`/`RemoveOccupy%d=` (`0x0046143C..0x004614C9`): ReadMinMax
@@ -2808,6 +2820,40 @@ mod anim_runtime_metadata_tests {
         assert_eq!(config.expire_anim, None);
     }
 
+    /// ReadINI `0x00464450..0x00464632` fills slot 9's record from the type's
+    /// rules section; ART `TurretAnim` is never read for it.
+    #[test]
+    fn slot_9_row_comes_from_the_rules_section_not_art() {
+        let art_ini = IniFile::from_str("[GUN]\nTurretAnim=ARTTUR\nActiveAnim=GUN_A\n");
+        let rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[BuildingTypes]\n0=GUN\n1=VOX\n\
+                 [GUN]\nStrength=400\nTurretAnim=guntur\nTurretAnimX=5\nTurretAnimY=-12\n\
+                 TurretAnimZAdjust=-30\nTurretAnimYSort=7\n\
+                 [VOX]\nStrength=400\nTurretAnim=SAM\nTurretAnimIsVoxel=yes\n",
+            ),
+            &art_ini,
+        )
+        .unwrap();
+        let gun = rules.object("GUN").unwrap();
+        let row = shp_turret_anim_config(gun).expect("slot 9");
+        assert_eq!((row.native_slot, row.anim_type.as_str()), (9, "GUNTUR"));
+        assert_eq!(
+            row.damaged_variant.as_ref().unwrap().anim_type,
+            "GUNTUR",
+            "an empty TurretAnimDamaged takes the normal name"
+        );
+        assert_eq!((row.x, row.y, row.z_adjust, row.y_sort), (5, -12, -30, 7));
+        assert!(
+            shp_turret_anim_config(rules.object("VOX").unwrap()).is_none(),
+            "a voxel turret has no slot animation to build"
+        );
+        let art = ArtRegistry::from_ini(&art_ini);
+        let rows = &art.get("GUN").unwrap().building_anims;
+        assert!(rows.iter().any(|row| row.native_slot == 3));
+        assert!(rows.iter().all(|row| row.native_slot != 9));
+    }
+
     #[test]
     fn reversed_random_rate_conversion_collapses_to_the_second_endpoint() {
         let ini = IniFile::from_str("[DBRIS1LG]\nRandomRate=220,600\n");
@@ -2818,35 +2864,6 @@ mod anim_runtime_metadata_tests {
                 .unwrap()
                 .random_rate_logic_frames,
             Some((1, 1))
-        );
-    }
-
-    /// Slot 9's name and anchor come from the type's own RULES section
-    /// (`0x00446580..0x004466D5`), which is why the art entry of MO's
-    /// twenty-four non-voxel turret buildings carries no row for it.
-    #[test]
-    fn shp_turret_slot_row_is_built_from_the_rules_section() {
-        let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
-            "[General]\n[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n\
-             [BuildingTypes]\n0=GAGUN\n1=NALASR\n2=NOTURRETANIM\n\
-             [GAGUN]\nStrength=400\nTurret=yes\nTurretAnimIsVoxel=no\n\
-             TurretAnim=gaguntur\nTurretAnimX=5\nTurretAnimY=-12\nTurretAnimZAdjust=-30\n\
-             [NALASR]\nStrength=400\nTurret=yes\nTurretAnimIsVoxel=yes\n\
-             TurretAnim=NASNTYTUR\n\
-             [NOTURRETANIM]\nStrength=400\nTurret=yes\nTurretAnimIsVoxel=no\n",
-        ))
-        .expect("rules");
-        let shp = shp_turret_anim_config(rules.object("GAGUN").expect("GAGUN")).expect("slot 9");
-        assert_eq!(shp.native_slot, 9);
-        assert_eq!(shp.anim_type, "GAGUNTUR", "the native read upper-cases the name");
-        assert_eq!((shp.x, shp.y, shp.z_adjust), (5, -12, -30));
-        assert!(
-            shp_turret_anim_config(rules.object("NALASR").expect("NALASR")).is_none(),
-            "a voxel turret draws the B8/C0 model instead of a slot animation"
-        );
-        assert!(
-            shp_turret_anim_config(rules.object("NOTURRETANIM").expect("type")).is_none(),
-            "without TurretAnim= there is no name to install"
         );
     }
 

@@ -188,7 +188,6 @@ fn emit_admitted(
         sim,
         Some(building.owner()),
         building,
-        None,
         slot_admitted,
         &|_| 0,
         0.0,

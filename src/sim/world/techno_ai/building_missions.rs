@@ -263,6 +263,9 @@ pub(super) fn update_animation(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     // 450F9E..451145, between the step and the ready admission, which it
     // does not touch.
     sim.update_super_weapon_anims(id, rules);
+    // 451234..45128C, the tail before the ready admission: the turret
+    // animation in slot 9 takes its frame from the heading.
+    sim.aim_building_turret_anim(id, has_turret);
 }
 
 ///43FE27's first check requires BState!=0;43FF91's second does not.
