@@ -371,8 +371,8 @@ impl AppState {
 /// to it. In-scenario Load preserves that cell, including outstanding draws.
 /// There is never a separately seeded audio/Theme cursor.
 pub(crate) fn process_main_draws(
-    runtime: Option<&mut crate::sim::runtime::SimRuntime>,
-    frontend: &mut crate::sim::rng::MainRng,
+    runtime: Option<&crate::sim::runtime::SimRuntime>,
+    frontend: &crate::sim::rng::MainRng,
 ) -> crate::sim::rng::MainRngDraws {
     match runtime {
         Some(runtime) => runtime.simulation.presentation_main_draws(),
@@ -391,10 +391,10 @@ mod main_draw_tests {
 
     #[test]
     fn process_main_draws_uses_frontend_only_before_a_world_is_installed() {
-        let mut frontend = MainRng::new(31);
+        let frontend = MainRng::new(31);
         let mut reference = SimRng::new(31);
         {
-            let main = process_main_draws(None, &mut frontend);
+            let main = process_main_draws(None, &frontend);
             assert_eq!(main.next_u32(), reference.next_u32());
             assert_eq!(
                 main.ranged(0, 99),
@@ -403,14 +403,14 @@ mod main_draw_tests {
         }
         assert_eq!(frontend.logical_state(), reference.logical_state());
 
-        let mut runtime = SimRuntime::from_simulation(Simulation::with_seed(42));
+        let runtime = SimRuntime::from_simulation(Simulation::with_seed(42));
         let frontend_before = frontend.logical_state();
         let world_before = runtime.simulation.rng_state();
         let mut world_reference = SimRng::new(42);
         // The installed world remains authoritative when retained behind the
         // shell. There is deliberately no screen/active-frame switch here.
         for _ in 0..2 {
-            let main = process_main_draws(Some(&mut runtime), &mut frontend);
+            let main = process_main_draws(Some(&runtime), &frontend);
             assert_eq!(main.next_u32(), world_reference.next_u32());
         }
         let world_after = runtime.simulation.rng_state();

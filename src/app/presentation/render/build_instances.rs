@@ -844,14 +844,13 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
     let presentation = &mut state.match_state.match_presentation;
     if let (Some(minimap), Some(runtime)) = (
         presentation.minimap.as_mut(),
-        state.match_state.sim_runtime.as_mut(),
+        state.match_state.sim_runtime.as_ref(),
     ) {
-        let transaction = super::minimap_transaction::present_minimap_frame(runtime, |runtime| {
+        let transaction = super::minimap_transaction::present_minimap_frame(minimap, |minimap| {
             // F10 cone: render-feed reads go through SimView getters. The
             // production transaction includes composition, queue upload, and
-            // only then the simulation acknowledgement.
+            // only then the acknowledgement of the minimap's own backlog.
             let view = runtime.view();
-            let (radar_dirty_cells, radar_dirty_generation) = view.radar_terrain_dirty();
             Ok::<_, std::convert::Infallible>(
                 minimap.update_unit_dots(
                     &state.renderer.gpu.device,
@@ -875,8 +874,6 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
                     Some(&runtime.resources.overlay_registry),
                     &presentation.overlay_radar_colors,
                     view.resolved_terrain(),
-                    radar_dirty_cells,
-                    radar_dirty_generation,
                     presentation
                         .beacon_art
                         .as_ref()

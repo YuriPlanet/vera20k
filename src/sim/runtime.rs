@@ -59,6 +59,12 @@ pub struct SimRuntime {
     pub resources: SimResources,
 }
 
+// docs/sim-thread.md moves the runtime onto its own thread; it must stay Send.
+const _: () = {
+    const fn assert_send<T: Send>() {}
+    assert_send::<SimRuntime>();
+};
+
 impl SimRuntime {
     /// Test adapter for an existing simulation with empty resource inputs.
     #[cfg(any(test, feature = "test-support"))]
@@ -132,15 +138,6 @@ impl<'a> SimView<'a> {
         self.simulation.display_layers()
     }
 
-    /// Pending radar-terrain batch for the minimap dirty gate. Presentation
-    /// acknowledges this exact generation only after a completed update.
-    pub fn radar_terrain_dirty(&self) -> (&'a [(u16, u16)], u64) {
-        (
-            self.simulation.dirty_cells.radar(),
-            self.simulation.dirty_cells.radar_generation(),
-        )
-    }
-
     /// Current normalized MapClass LocalSize authority plus the generation of
     /// successful trigger-action-40 writers that rebuilt radar/scroll state.
     pub fn playfield_authority(&self) -> (Option<crate::map::playfield::PlayfieldBounds>, u64) {
@@ -152,12 +149,12 @@ impl<'a> SimView<'a> {
 }
 
 impl SimRuntime {
-    /// Clear the exact radar-terrain batch a completed presentation update read
-    /// ([`DirtyCells::acknowledge_radar`](crate::sim::dirty_cells::DirtyCells::acknowledge_radar)).
-    /// The marks are presentation handoff state, so this consumption cannot
-    /// mutate lockstep state.
-    pub fn acknowledge_radar_terrain_dirty(&mut self, generation: u64) -> bool {
-        self.simulation.dirty_cells.acknowledge_radar(generation)
+    /// Take the pending radar-terrain batch for the client's minimap backlog
+    /// ([`DirtyCells::take_radar`](crate::sim::dirty_cells::DirtyCells::take_radar)).
+    /// The marks are presentation handoff state, not saved or hashed, so
+    /// draining them cannot change lockstep state.
+    pub fn take_radar_terrain_dirty(&mut self) -> Vec<(u16, u16)> {
+        self.simulation.dirty_cells.take_radar()
     }
 
     /// One Ordinary-lane frame for side binaries (parity-digest, sim-bench):

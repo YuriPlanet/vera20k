@@ -43,6 +43,7 @@ Thumbs.db
 /docs/*
 !/docs/capabilities.md
 !/docs/wasm.md
+!/docs/sim-thread.md
 !/docs/ares.md
 !/docs/android.md
 !/docs/ares-side-defaults.md

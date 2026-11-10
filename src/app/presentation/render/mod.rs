@@ -53,10 +53,10 @@ pub(crate) use draw_passes::{draw_bridge_shadows, draw_pooled_cell_bodies};
 pub(crate) mod draw_plan_lowering;
 mod merge_passes;
 pub(crate) mod minimap_transaction;
-pub(crate) mod terrain_picture;
 mod object_stages;
 #[cfg(test)]
 mod object_stages_gpu_tests;
+pub(crate) mod terrain_picture;
 
 use crate::util::time::{Duration, Instant};
 use anyhow::Result;
@@ -586,8 +586,8 @@ pub(crate) fn render_game(
     // trails, even when this composite ran no Logic. Their shared process
     // Main requests happen here once; GPU uploads only read resolved colors.
     let mut main = crate::app::state::process_main_draws(
-        state.match_state.sim_runtime.as_mut(),
-        &mut state.frontend.frontend_main_rng,
+        state.match_state.sim_runtime.as_ref(),
+        &state.frontend.frontend_main_rng,
     );
     let sim = state
         .match_state
@@ -899,7 +899,13 @@ fn upload_to_gpu(
     let (build_text_fill, build_text_text) =
         crate::app::presentation::build_text::build_instances(state);
     state.renderer.bit_font.set_raster(frame_raster);
-    let [message_fill, tooltip_fill, tooltip_border, super_timer_fill, build_text_fill] = [
+    let [
+        message_fill,
+        tooltip_fill,
+        tooltip_border,
+        super_timer_fill,
+        build_text_fill,
+    ] = [
         message_fill,
         tooltip_fill,
         tooltip_border,
@@ -1010,7 +1016,11 @@ fn upload_to_gpu(
     // Sidebar + minimap
     pool.upload_following("minimap", &sidebar.minimap, ui_camera);
     pool.upload_following("viewport_rect", &sidebar.viewport_rect, ui_camera);
-    pool.upload_following("radar_content_boundary", &sidebar.content_boundary, ui_camera);
+    pool.upload_following(
+        "radar_content_boundary",
+        &sidebar.content_boundary,
+        ui_camera,
+    );
     pool.upload_following("sidebar_chrome", &sidebar.chrome, ui_camera);
     pool.upload_following("command_bar", &sidebar.command_bar, ui_camera);
     pool.upload_following("radar_anim", &sidebar.radar_anim, ui_camera);

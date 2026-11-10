@@ -119,6 +119,18 @@ impl App {
     /// hidden-window service loop in `about_to_wait`, so the world keeps the
     /// same cadence whether or not a frame is drawn. Returns quit state and
     /// the pre-Logic Main_Tick admission for its later consumers.
+    /// Move the simulation's pending radar-terrain marks into the minimap's
+    /// backlog. Without a minimap they stay with the simulation, as before.
+    fn drain_radar_terrain_marks(state: &mut AppState) {
+        let match_state = &mut state.match_state;
+        if let (Some(minimap), Some(runtime)) = (
+            match_state.match_presentation.minimap.as_mut(),
+            match_state.sim_runtime.as_mut(),
+        ) {
+            minimap.queue_radar_terrain_cells(runtime.take_radar_terrain_dirty());
+        }
+    }
+
     pub(super) fn service_match_runtime(
         state: &mut AppState,
         event_loop: &ActiveEventLoop,
@@ -1016,14 +1028,22 @@ impl App {
             }
             _ if page == Some(ModalPage::NetworkFailure) => {
                 crate::app::frontend::skirmish_shell_render::render_network_failure(
-                    state, &mut encoder, &output.texture,
+                    state,
+                    &mut encoder,
+                    &output.texture,
                 )?;
             }
             _ if page == Some(ModalPage::NetworkWait)
-                && crate::app::frontend::skirmish_shell_render::connection_shell_drawable(state) =>
+                && crate::app::frontend::skirmish_shell_render::connection_shell_drawable(
+                    state,
+                ) =>
             {
                 // 0xEA is pushed over whatever the game shows, in-game A3 included.
-                crate::app::frontend::skirmish_shell_render::render_connection_shell(state, &mut encoder, &output.texture)?;
+                crate::app::frontend::skirmish_shell_render::render_connection_shell(
+                    state,
+                    &mut encoder,
+                    &output.texture,
+                )?;
             }
             _ if page == Some(ModalPage::Keyboard) => {
                 // The launcher's A3 is a family page, so its entry wave has to be
@@ -1038,12 +1058,14 @@ impl App {
                         &mut encoder,
                         &output.texture,
                     )?,
-                    crate::app::frontend::shell_transition::ShellFirstPaintRenderResult::Rendered {
-                        ..
-                    }
+                    crate::app::frontend::shell_transition::ShellFirstPaintRenderResult::Rendered { .. }
                 );
                 if !slid {
-                    crate::app::frontend::skirmish_shell_render::render_keyboard_shell(state, &mut encoder, &output.texture)?;
+                    crate::app::frontend::skirmish_shell_render::render_keyboard_shell(
+                        state,
+                        &mut encoder,
+                        &output.texture,
+                    )?;
                 }
             }
             _ if screen_page == ScreenPage::FullscreenMovie => {
@@ -1222,7 +1244,9 @@ impl App {
                             .unwrap_or("auto")
                             .to_string();
                         crate::app::frontend::status_screen::render(
-                            state, &mut encoder, &view,
+                            state,
+                            &mut encoder,
+                            &view,
                             &crate::i18n::tr("VERA:Loading"),
                             &crate::i18n::tr_fill("VERA:LoadingMap", &[("map", &map_name_display)]),
                             crate::app::frontend::status_screen::Buttons::NONE,
@@ -1250,7 +1274,9 @@ impl App {
                 let abort = state.match_state.match_presentation.in_game_menu
                     == crate::ui::pause_menu::InGameMenuState::AbortConfirm;
                 crate::app::frontend::status_screen::render(
-                    state, &mut encoder, &view,
+                    state,
+                    &mut encoder,
+                    &view,
                     &crate::i18n::tr(if abort {
                         "VERA:LeaveMissionQuestion"
                     } else {
@@ -1268,12 +1294,21 @@ impl App {
                 //53B460 copies the already-composed surface, before this
                 //frame's world replaces it. The effect owns the retained copy.
                 let chrono_tactical = crate::app::input::camera::tactical_viewport_px(state);
-                state.match_state.match_presentation.chrono_screen.before_frame(
-                    &state.renderer.gpu,
-                    &mut encoder,
-                    state.renderer.game_frame_texture(),
-                    [chrono_tactical.0, chrono_tactical.1, chrono_tactical.2, chrono_tactical.3],
-                );
+                state
+                    .match_state
+                    .match_presentation
+                    .chrono_screen
+                    .before_frame(
+                        &state.renderer.gpu,
+                        &mut encoder,
+                        state.renderer.game_frame_texture(),
+                        [
+                            chrono_tactical.0,
+                            chrono_tactical.1,
+                            chrono_tactical.2,
+                            chrono_tactical.3,
+                        ],
+                    );
                 let times = render::GameRenderTimes {
                     radar_ms: state.radar_presentation_ms(),
                     tooltip_ms,
@@ -1295,6 +1330,10 @@ impl App {
                 } else {
                     crate::app::presentation::tactical_composite::CompositeCadence::PerMainTick
                 };
+                // Drawing reads the simulation and never writes it: the
+                // minimap keeps its own radar-terrain backlog, so the frame
+                // moves the simulation's newly marked cells there first.
+                Self::drain_radar_terrain_marks(state);
                 let game_output = if state.renderer.upscale_pass.is_some() {
                     // Render game to intermediate texture, then upscale to swapchain.
                     let up = state.renderer.upscale_pass.as_ref().unwrap();
@@ -1305,15 +1344,23 @@ impl App {
                     let render_output = result?;
                     state.renderer.copy_game_frame_to(
                         &mut encoder,
-                        state.renderer.upscale_pass.as_ref().unwrap().color_texture(),
+                        state
+                            .renderer
+                            .upscale_pass
+                            .as_ref()
+                            .unwrap()
+                            .color_texture(),
                     );
                     state
-                        .renderer.upscale_pass
+                        .renderer
+                        .upscale_pass
                         .as_ref()
                         .unwrap()
                         .draw(&mut encoder, &view);
                     crate::app::presentation::sidebar_surface::draw_window_copy(
-                        state, &mut encoder, &view,
+                        state,
+                        &mut encoder,
+                        &view,
                     );
                     crate::app::presentation::window_ui::draw_battlefield(
                         state,
@@ -1387,7 +1434,11 @@ impl App {
                     presented_shell = PresentedShell::Score;
                 } else {
                     crate::app::frontend::status_screen::render(
-                        state, &mut encoder, &view, &title, &detail,
+                        state,
+                        &mut encoder,
+                        &view,
+                        &title,
+                        &detail,
                         crate::app::frontend::status_screen::Buttons::BACK_TO_MENU,
                     );
                 }

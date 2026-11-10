@@ -51,7 +51,9 @@ pub(crate) use super::helpers::{minimap_overlay_datum, overlay_classification};
 use super::projection::minimap_screen_point_to_camera_top_left;
 use super::projection::{MinimapPlayfieldProjection, aperture_pixel, generated_primary_copy_frame};
 use super::terrain::NativeRadarTerrainSurface;
-use super::terrain_updates::{RadarTerrainUpdateLayers, stage_radar_terrain_dirty_generation};
+use super::terrain_updates::{
+    RadarTerrainBacklog, RadarTerrainUpdateLayers, stage_radar_terrain_dirty_generation,
+};
 #[cfg(test)]
 use super::tracker::RadarTrackerEntry;
 use super::tracker::{
@@ -139,6 +141,8 @@ pub struct MinimapRenderer {
     /// Last local owner used for fog-aware refresh.
     last_visibility_owner: Option<InternedId>,
     last_radar_terrain_dirty_generation: u64,
+    /// The drained simulation radar marks this minimap has not uploaded yet.
+    radar_terrain_backlog: RadarTerrainBacklog,
     pub(super) playfield_bounds: Option<PlayfieldBounds>,
     installed_playfield_authority: Option<PlayfieldAuthorityStamp>,
     /// Client-local +0x423/discovery cache; never snapshot/hash authority.
@@ -148,6 +152,12 @@ pub struct MinimapRenderer {
     radar_events: ClientRadarEvents,
     /// Client-local `RadarClass+0x14DC..0x14F8` current/previous rectangle.
     pub(super) viewport_state: NativeRadarViewportState,
+}
+
+impl AsMut<RadarTerrainBacklog> for MinimapRenderer {
+    fn as_mut(&mut self) -> &mut RadarTerrainBacklog {
+        &mut self.radar_terrain_backlog
+    }
 }
 
 impl MinimapRenderer {
@@ -225,6 +235,7 @@ impl MinimapRenderer {
             last_fog_generation: u64::MAX,
             last_visibility_owner: None,
             last_radar_terrain_dirty_generation: u64::MAX,
+            radar_terrain_backlog: RadarTerrainBacklog::default(),
             playfield_bounds,
             installed_playfield_authority: Some(PlayfieldAuthorityStamp {
                 bounds: playfield_bounds,
@@ -362,13 +373,20 @@ impl MinimapRenderer {
     /// counters (F10): after a load the fog view generation restarts and the
     /// restored tick may equal the pre-load tick, so equal counters no longer
     /// prove an unchanged view.
+    /// Queue radar terrain cells drained from the simulation for the next
+    /// update (see [`RadarTerrainBacklog`]).
+    pub fn queue_radar_terrain_cells(&mut self, cells: impl IntoIterator<Item = (u16, u16)>) {
+        self.radar_terrain_backlog.extend(cells);
+    }
+
     pub fn mark_stale(&mut self) {
         self.last_sim_tick = u64::MAX;
         self.last_fog_generation = u64::MAX;
-        // The restored sim's radar-terrain dirty generation restarts too. The
-        // next full reconcile derives from restored live CellClass authority;
-        // it never relies on a dirty replay from the abandoned timeline.
+        // The next full reconcile derives from restored live CellClass
+        // authority; it never relies on a dirty replay from the abandoned
+        // timeline, so that timeline's undrawn marks go too.
         self.last_radar_terrain_dirty_generation = u64::MAX;
+        self.radar_terrain_backlog.clear();
         self.uploaded_visibility = None;
         self.installed_playfield_authority = None;
         self.radar_tracker.reset_for_load_or_view();
@@ -415,8 +433,6 @@ impl MinimapRenderer {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         overlay_radar_colors: &HashMap<(u8, u8), [u8; 3]>,
         resolved_terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
-        radar_terrain_dirty_cells: &[(u16, u16)],
-        radar_terrain_dirty_generation: u64,
         beacons: Option<(
             &crate::render::beacon_art::BeaconArt,
             &[crate::render::beacon_art::BeaconDraw],
@@ -431,7 +447,7 @@ impl MinimapRenderer {
         if sim_tick == self.last_sim_tick
             && fog_generation == self.last_fog_generation
             && visibility_owner == self.last_visibility_owner
-            && radar_terrain_dirty_generation == self.last_radar_terrain_dirty_generation
+            && self.radar_terrain_backlog.generation() == self.last_radar_terrain_dirty_generation
         {
             return None;
         }
@@ -446,8 +462,8 @@ impl MinimapRenderer {
             CurrentRadarCellAuthority::new(resolved_terrain, overlay_grid, overlay_registry, rules),
             self.structural_bridge_radar_color,
             overlay_radar_colors,
-            radar_terrain_dirty_cells,
-            radar_terrain_dirty_generation,
+            self.radar_terrain_backlog.cells(),
+            self.radar_terrain_backlog.generation(),
             self.last_radar_terrain_dirty_generation,
         );
         if visibility_owner != self.last_visibility_owner && self.last_sim_tick != u64::MAX {
