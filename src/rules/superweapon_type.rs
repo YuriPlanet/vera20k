@@ -128,7 +128,8 @@ impl SuperWeaponKind {
     /// 1006CFB0 asks each type's HandlesType): SW_ChronoSphere (1006EF00),
     /// SW_ChronoWarp (100700A0), SW_NuclearMissile (10073350),
     /// SW_GeneticMutator (10072080), SW_PsychicDominator (10070980),
-    /// SW_SpyPlane (100757F0), SW_LightningStorm (10072C30). Its handler's
+    /// SW_SpyPlane (100757F0), SW_LightningStorm (10072C30), SW_ParaDrop
+    /// (10073DA0: ParaDrop and AmerParaDrop). Its handler's
     /// Initialize, LoadFromINI,
     /// Activate and Flags replace the stock reads and Launch case; the other
     /// stock Types keep their stock owners in this port.
@@ -143,6 +144,8 @@ impl SuperWeaponKind {
                 | Self::PsychicDominator
                 | Self::SpyPlane
                 | Self::LightningStorm
+                | Self::ParaDrop
+                | Self::AmerParaDrop
         )
     }
 
@@ -365,11 +368,19 @@ impl AresSuperWeaponEva {
                 "EVA_DropPodActivated",
                 "EVA_DropPodDetected",
             ],
-            // SW_SpyPlane::Initialize10075800 names only the ready line.
-            Some(kind) if kind.eq_ignore_ascii_case("SpyPlane") => {
-                self.ready = eva
-                    .entry("EVA_SpyPlaneReady")
-                    .map(|entry| entry.name.clone());
+            // SW_SpyPlane::Initialize10075800 and SW_ParaDrop's (10073DC0)
+            // name only the ready line.
+            Some(kind)
+                if kind.eq_ignore_ascii_case("SpyPlane")
+                    || kind.eq_ignore_ascii_case("ParaDrop")
+                    || kind.eq_ignore_ascii_case("AmerParaDrop") =>
+            {
+                let ready = if kind.eq_ignore_ascii_case("SpyPlane") {
+                    "EVA_SpyPlaneReady"
+                } else {
+                    "EVA_ReinforcementsReady"
+                };
+                self.ready = eva.entry(ready).map(|entry| entry.name.clone());
                 return;
             }
             _ => return,
@@ -1246,6 +1257,9 @@ pub(crate) struct AresSuperWeaponLaunch {
     /// SW_DropPod's fields (LoadFromINI 10071140).
     #[serde(default)]
     drop_pod: AresDropPodRules,
+    /// SW_ParaDrop's planes (Initialize 10073DC0, LoadFromINI 10073F70).
+    #[serde(default)]
+    paradrop: AresParaDropRules,
 }
 
 /// SW_DropPod's SWTypeExt fields: `DropPod.Minimum`/`.Maximum`
@@ -1260,6 +1274,188 @@ pub(crate) struct AresDropPodRules {
     pub(crate) maximum: Option<i32>,
     pub(crate) veterancy: crate::util::native_x87::NativeF64Bits,
     pub(crate) types: Vec<TechnoTypeReference>,
+}
+
+/// One plane of SW_ParaDrop (`ParadropPlane`, 0x1C bytes, kept by value):
+/// `.Aircraft` (Valueable<AircraftTypeClass*> +0, Find; `None` is null),
+/// `.Types` (ValueableVector<TechnoTypeClass*> +4, InfantryTypes and
+/// UnitTypes only) and `.Num` (ValueableVector<int> +0x10), paired with the
+/// types by index.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AresParaDropPlane {
+    pub(crate) aircraft: Option<String>,
+    pub(crate) types: Vec<TechnoTypeReference>,
+    pub(crate) counts: Vec<i32>,
+}
+
+/// A key of SWTypeExt `ParaDrop` (AresMap<AbstractTypeClass*,
+/// vector<ParadropPlane>> +0xB0): null, a SideClass or a HouseTypeClass.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum AresParaDropOwner {
+    /// `ParaDrop.*`, the type's default planes.
+    Default,
+    /// `ParaDrop.<Side>.*`, by the Side's array index.
+    Side(i32),
+    /// `ParaDrop.<Country>.*`, by the Country's stored ID.
+    Country(String),
+}
+
+/// SW_ParaDrop's plane lists, in AresMap insertion order. Initialize
+/// (10073DC0) gives AmerParaDrop a default plane; LoadFromINI (10073F70)
+/// then parses the default, every Side and every Country in place.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AresParaDropRules {
+    lists: Vec<(AresParaDropOwner, Vec<AresParaDropPlane>)>,
+}
+
+#[cfg(feature = "ares")]
+impl AresParaDropPlane {
+    /// ParseParaDrop (inlined in 100739E0) for plane `index` under `base`
+    /// (`ParaDrop[.<Side|Country>]`, then `.PlaneN` for N = index + 1 past
+    /// the first). Keys that are not set keep the plane's values. Once
+    /// `.Types` reads a value (10073C23), `remove_non_paradroppables`
+    /// (100768C0) keeps its InfantryTypes and UnitTypes, `.Num` is read, and
+    /// a missing `.Num` or one of another length empties both lists
+    /// (10073C68). `aircraft` and `types` are the processor's Find reads
+    /// (`None`: absent, empty or, for the plane, unknown).
+    fn read(
+        &mut self,
+        section: &IniSection,
+        base: &str,
+        index: usize,
+        aircraft: &impl Fn(&str) -> Option<Option<String>>,
+        types: &impl Fn(&str) -> Option<Vec<TechnoTypeReference>>,
+    ) {
+        use crate::rules::object_type::ObjectCategory;
+        let base = if index == 0 {
+            base.to_owned()
+        } else {
+            format!("{base}.Plane{}", index + 1)
+        };
+        if let Some(plane) = aircraft(&format!("{base}.Aircraft")) {
+            self.aircraft = plane;
+        }
+        let Some(read) = types(&format!("{base}.Types")) else {
+            return;
+        };
+        self.types = read
+            .into_iter()
+            .filter(|ty| {
+                matches!(
+                    ty.category,
+                    ObjectCategory::Infantry | ObjectCategory::Vehicle
+                )
+            })
+            .collect();
+        match section.read_ares_int_list(&format!("{base}.Num")) {
+            Some(counts) if counts.len() == self.types.len() => self.counts = counts,
+            _ => {
+                self.types.clear();
+                self.counts.clear();
+            }
+        }
+    }
+}
+
+#[cfg(feature = "ares")]
+impl AresParaDropRules {
+    /// The planes kept for `owner`, if LoadFromINI inserted its list.
+    pub(crate) fn planes(&self, owner: &AresParaDropOwner) -> Option<&[AresParaDropPlane]> {
+        self.lists
+            .iter()
+            .find(|(key, _)| match (key, owner) {
+                (AresParaDropOwner::Country(key), AresParaDropOwner::Country(owner)) => {
+                    key.eq_ignore_ascii_case(owner)
+                }
+                _ => key == owner,
+            })
+            .map(|(_, planes)| planes.as_slice())
+    }
+
+    /// AresMap::try_emplace (10073940): the list of `owner` and whether it
+    /// was inserted now.
+    fn try_emplace(&mut self, owner: AresParaDropOwner) -> (&mut Vec<AresParaDropPlane>, bool) {
+        match self.lists.iter().position(|(key, _)| *key == owner) {
+            Some(index) => (&mut self.lists[index].1, false),
+            None => {
+                self.lists.push((owner, Vec::new()));
+                (&mut self.lists.last_mut().expect("just pushed").1, true)
+            }
+        }
+    }
+
+    /// SW_ParaDrop::Initialize (10073DC0) for an AmerParaDrop: one default
+    /// plane with `[General] AmerParaDropInf=`/`AmerParaDropNum=` as Rules
+    /// holds them then (10073DF2 inserts the key, 10073DF9 appends the
+    /// plane).
+    pub(crate) fn initialize_american(
+        &mut self,
+        types: Vec<TechnoTypeReference>,
+        counts: Vec<i32>,
+    ) {
+        self.try_emplace(AresParaDropOwner::Default)
+            .0
+            .push(AresParaDropPlane {
+                aircraft: None,
+                types,
+                counts,
+            });
+    }
+
+    /// SW_ParaDrop::LoadFromINI (10073F70) on one pass of the type's
+    /// section: the default planes (`ParaDrop`, count 1 for a new list),
+    /// then each of `sides` (`ParaDrop.<Side>`, a new list counting as many
+    /// as the default, read once at 1007400B), then each of `countries`
+    /// with its Side index (`ParaDrop.<Country>`, a new list counting as
+    /// many as its Side's). Each goes through GetParadropPlane (100739E0):
+    /// `.Count` (ReadInteger, default the list's size, or the count above
+    /// for a new list) resizes the list, a negative count to none, and each
+    /// plane is parsed in place ([`AresParaDropPlane::read`]). Keys are
+    /// composed in 0x40-byte buffers, which 25-byte type IDs cannot fill.
+    pub(crate) fn read_pass(
+        &mut self,
+        section: &IniSection,
+        sides: &[String],
+        countries: &[(String, i32)],
+        aircraft: impl Fn(&str) -> Option<Option<String>>,
+        types: impl Fn(&str) -> Option<Vec<TechnoTypeReference>>,
+    ) {
+        let mut read = |owner, base: &str, new_count: usize| {
+            let (planes, inserted) = self.try_emplace(owner);
+            let current = if inserted { new_count } else { planes.len() };
+            let count = section.read_int(&format!("{base}.Count"), current as i32);
+            planes.resize(count.max(0) as usize, AresParaDropPlane::default());
+            for (index, plane) in planes.iter_mut().enumerate() {
+                plane.read(section, base, index, &aircraft, &types);
+            }
+            planes.len()
+        };
+        let default_count = read(AresParaDropOwner::Default, "ParaDrop", 1);
+        let mut side_counts = Vec::with_capacity(sides.len());
+        for (index, side) in sides.iter().enumerate() {
+            side_counts.push(read(
+                AresParaDropOwner::Side(index as i32),
+                &format!("ParaDrop.{side}"),
+                default_count,
+            ));
+        }
+        for (country, side) in countries {
+            // `ParaDrop[Sides[SideIndex]].size()`; a Country without a
+            // valid Side indexes past the array natively.
+            let count = usize::try_from(*side)
+                .ok()
+                .and_then(|side| side_counts.get(side).copied())
+                .unwrap_or(0);
+            read(
+                AresParaDropOwner::Country(country.clone()),
+                &format!("ParaDrop.{country}"),
+                count,
+            );
+        }
+    }
 }
 
 /// RulesExt's DropPod globals, read by LoadAfterTypeData (1002A800) after
@@ -1871,6 +2067,10 @@ pub(crate) struct AresHandlerReads {
     pub(crate) emp_pulse_cannons: Option<Vec<String>>,
     /// `DropPod.Types` (TechnoTypeClass::Find, unknown names skipped).
     pub(crate) drop_pod_types: Option<Vec<TechnoTypeReference>>,
+    /// SW_ParaDrop's planes after this pass's Initialize and LoadFromINI
+    /// ([`AresParaDropRules::read_pass`]), which need the Side and Country
+    /// arrays.
+    pub(crate) paradrop: Option<AresParaDropRules>,
 }
 
 #[cfg(feature = "ares")]
@@ -1900,6 +2100,7 @@ impl Default for AresSuperWeaponLaunch {
             lightning: AresLightningRules::default(),
             emp_pulse: AresEMPulseRules::default(),
             drop_pod: AresDropPodRules::default(),
+            paradrop: AresParaDropRules::default(),
         }
     }
 }
@@ -1947,6 +2148,10 @@ impl AresSuperWeaponLaunch {
                 plane,
                 ..AresSpyPlaneRules::default()
             };
+            self.radar_event = false;
+        }
+        if initialized && (is("ParaDrop") || is("AmerParaDrop")) {
+            // SW_ParaDrop::Initialize10073DC0.
             self.radar_event = false;
         }
         if initialized && is("GeneticConverter") {
@@ -2053,6 +2258,10 @@ impl AresSuperWeaponLaunch {
             if let Some(types) = reads.drop_pod_types {
                 drop_pod.types = types;
             }
+        } else if is("ParaDrop") || is("AmerParaDrop") {
+            if let Some(paradrop) = reads.paradrop {
+                self.paradrop = paradrop;
+            }
         } else if is("HunterSeeker") {
             // SW_HunterSeeker::LoadFromINI10072A30 hard-codes it each pass,
             // after the common read (and Initialize10072990 already did).
@@ -2143,6 +2352,12 @@ impl AresSuperWeaponLaunch {
     /// `sim::superweapon::drop_pod`).
     pub(crate) fn drop_pod(&self) -> &AresDropPodRules {
         &self.drop_pod
+    }
+
+    /// SW_ParaDrop's planes, read by its SendParadrop (10074350,
+    /// `sim::superweapon::paradrop`).
+    pub(crate) fn paradrop(&self) -> &AresParaDropRules {
+        &self.paradrop
     }
 
     /// SW.CreateRadarEvent.

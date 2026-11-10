@@ -81,7 +81,7 @@ pub(super) fn launch(
                 SPY_PLANE,
                 MissionType::SpyplaneApproach,
                 (rx, ry),
-                None,
+                super::paradrop::Payload::None,
                 frame_effects,
             );
         }
@@ -131,7 +131,7 @@ pub(super) fn ares_launch(
             plane,
             spy_plane.mission,
             cell,
-            None,
+            super::paradrop::Payload::None,
             frame_effects,
         ) {
             break;
