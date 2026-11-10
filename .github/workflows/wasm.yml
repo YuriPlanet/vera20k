@@ -30,6 +30,7 @@ on:
       - 'src/sim/parallel.rs'
       - 'src/sim/parallel_web.rs'
       - 'src/sim/snapshot.rs'
+      - 'src/render/frame_handoff.rs'
       - 'src/render/frame_readback.rs'
       - 'src/render/text_engine/fnt_fill.rs'
       - 'src/render/text_engine/fonts.rs'
@@ -60,8 +61,11 @@ on:
       - 'src/app/map_library.rs'
       - 'src/app/match_diagnostics.rs'
       - 'src/app/match_runtime/frame_pacer.rs'
+      - 'src/app/match_runtime/sim_tick.rs'
       - 'src/app/persistence/**'
+      - 'src/app/presentation/render/mod.rs'
       - 'src/app/shell_wol/**'
+      - 'src/app/state/platform.rs'
       - 'src/app/window_icon.rs'
 
 # A new push to the same pull request replaces its unfinished run.
