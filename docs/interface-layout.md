@@ -9,8 +9,10 @@ on this page keep their meaning when that comes, so a layout you write now keeps
 
 ## Where the file goes
 
-Put `veraui.ini` in the [game folder](modding.md#the-game-folder), next to
-`rulesmd.ini`, or inside your `expandmdNN.mix`. Restart the game after you change it.
+Put `veraui.ini` in your [mod's folder](modding.md#the-mods-folder), next to its other
+files, or inside the mod's `expandmdNN.mix`. A `veraui.ini` in the
+[game folder](modding.md#the-game-folder) works too, with every mod and without one; the
+mod's own file wins. Restart the game after you change it.
 
 The file only changes what you see. Online players don't need the same file, and it
 isn't one of the files a match compares.

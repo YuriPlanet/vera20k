@@ -41,6 +41,56 @@ const SCORE_BUCKETS_PER_SECOND: i32 = 60;
 #[link(name = "winmm")]
 unsafe extern "system" {
     fn timeGetTime() -> u32;
+    fn timeBeginPeriod(period_ms: u32) -> u32;
+    fn timeEndPeriod(period_ms: u32) -> u32;
+}
+
+/// The timer period gamemd asks Windows for, in milliseconds.
+#[cfg(windows)]
+const WALL_CLOCK_PERIOD_MS: u32 = 1;
+
+/// Windows' 1 ms timer period, held for as long as this value lives.
+///
+/// gamemd holds it for its whole run: the static initializer `0x0040EB90`
+/// builds the global system timer through `0x005D5870`, which calls
+/// `timeBeginPeriod(1)`, and registers `0x0040EBC0` with `atexit`, which ends
+/// it through `0x005D5880` (`timeEndPeriod(1)`). [`wall_clock_ms`] reads
+/// `timeGetTime`, whose default precision "can be five milliseconds or more"
+/// until a period is requested, and since Windows 10 version 2004 a request
+/// by another program no longer covers this one:
+/// learn.microsoft.com/en-us/windows/win32/api/timeapi/nf-timeapi-timegettime
+/// learn.microsoft.com/en-us/windows/win32/api/timeapi/nf-timeapi-timebeginperiod
+/// Other platforms' clocks need no request, so there this holds nothing.
+pub(crate) struct WallClockPeriod {
+    #[cfg(windows)]
+    held: bool,
+}
+
+impl WallClockPeriod {
+    pub(crate) fn hold() -> Self {
+        Self {
+            #[cfg(windows)]
+            held: {
+                // SAFETY: timeBeginPeriod takes a millisecond count by value
+                // and returns TIMERR_NOERROR (0) or TIMERR_NOCANDO.
+                let held = unsafe { timeBeginPeriod(WALL_CLOCK_PERIOD_MS) } == 0;
+                if !held {
+                    log::warn!("Windows refused the {WALL_CLOCK_PERIOD_MS} ms timer period");
+                }
+                held
+            },
+        }
+    }
+}
+
+impl Drop for WallClockPeriod {
+    fn drop(&mut self) {
+        #[cfg(windows)]
+        if self.held {
+            // SAFETY: ends the one successful request above, with its period.
+            unsafe { timeEndPeriod(WALL_CLOCK_PERIOD_MS) };
+        }
+    }
 }
 
 /// Return system uptime for the app's wall-clock consumers.

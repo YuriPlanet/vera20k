@@ -68,6 +68,10 @@ pub struct PathsConfig {
     settings_dir: PathBuf,
     /// Previous profile location, read only during the first VERA.INI import.
     legacy_settings_dir: PathBuf,
+    /// VERA: the folder in [`PathsConfig::mods_dir`] of the mod to play with,
+    /// from `[paths] mod`. The text as written: `app::mods` decides whether
+    /// it names a usable folder, so a wrong name never stops the config load.
+    mod_name: Option<String>,
 }
 
 impl PathsConfig {
@@ -85,6 +89,16 @@ impl PathsConfig {
     /// installation (`map::source::keep_received_map`, `random_map_dir`).
     pub fn downloaded_maps_dir(&self) -> PathBuf {
         self.settings_dir.join("Maps")
+    }
+
+    /// VERA's folder of mods, one subfolder each (docs/modding.md).
+    pub fn mods_dir(&self) -> PathBuf {
+        self.settings_dir.join("Mods")
+    }
+
+    /// The mod folder's name this launch asks for; `None` is the original game.
+    pub fn mod_name(&self) -> Option<&str> {
+        self.mod_name.as_deref().filter(|name| !name.is_empty())
     }
 
     /// VERA's own pictures of maps for the setup screens' previews, by each
@@ -353,6 +367,7 @@ impl GameConfig {
     fn parse(contents: &str) -> Result<Self> {
         let mut ra2_dir = None;
         let mut settings_dir = None;
+        let mut mod_name = None;
         let mut graphics = GraphicsConfig::default();
         let mut gameplay = GameplayConfig::default();
         let mut profile = ProfileConfig::default();
@@ -387,6 +402,7 @@ impl GameConfig {
                 ("paths", "settings_dir") => {
                     parse_string(value).map(|path| settings_dir = Some(PathBuf::from(path)))
                 }
+                ("paths", "mod") => parse_string(value).map(|name| mod_name = Some(name)),
                 ("graphics", "extra_animations") => {
                     parse_bool(value).map(|on| graphics.extra_animations = on)
                 }
@@ -421,6 +437,7 @@ impl GameConfig {
                 legacy_settings_dir: settings_dir.clone().unwrap_or_else(|| ra2_dir.clone()),
                 ra2_dir,
                 settings_dir: settings_dir.map_or_else(default_settings_dir, Ok)?,
+                mod_name,
             },
             graphics,
             gameplay,
@@ -435,6 +452,7 @@ impl GameConfig {
                 legacy_settings_dir: ra2_dir.clone(),
                 ra2_dir,
                 settings_dir: default_settings_dir()?,
+                mod_name: None,
             },
             graphics: GraphicsConfig::default(),
             gameplay: GameplayConfig::default(),
@@ -924,6 +942,19 @@ extra_animations = false
             GameConfig::parse("[paths]\nra2_dir = 'retail'\n[graphics]\ntranslucent_fog = true\n")
                 .unwrap();
         assert!(config.graphics.translucent_fog);
+    }
+
+    #[test]
+    fn the_mod_is_the_paths_key_and_blank_or_absent_is_the_original_game() {
+        let named = |line: &str| {
+            let text = format!("[paths]\nra2_dir = 'retail'\nsettings_dir = 'vera'\n{line}");
+            GameConfig::parse(&text).unwrap().paths
+        };
+        let paths = named("mod = \"Winter War\"\n");
+        assert_eq!(paths.mod_name(), Some("Winter War"));
+        assert_eq!(paths.mods_dir(), Path::new("vera").join("Mods"));
+        assert_eq!(named("mod = ''\n").mod_name(), None);
+        assert_eq!(named("").mod_name(), None);
     }
 
     #[test]

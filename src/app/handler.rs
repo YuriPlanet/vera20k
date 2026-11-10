@@ -559,6 +559,7 @@ impl ApplicationHandler for App {
                 .as_ref()
                 .map(|request| request.retail_dir.as_path()),
             self.spawn_request.is_some() && Self::spawn_hidden_window_requested(),
+            self.mod_switch.as_ref(),
         );
         let result = if capture_dimensions.is_some() {
             result.and_then(super::initialize::InitializationStep::finish_synchronously)
@@ -1958,6 +1959,10 @@ impl ApplicationHandler for App {
                 Self::poll_campaign(state),
                 Self::poll_language_files(state),
                 Self::campaign_score_animation_deadline(state),
+                // Captures replay sealed input; no box tells them of a mod.
+                (self.shell_capture.is_none() && self.hidden_run.is_none())
+                    .then(|| crate::app::mods::poll(state))
+                    .flatten(),
                 // Captures replay sealed input; they never check or ask.
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                 (self.shell_capture.is_none() && self.hidden_run.is_none())
@@ -2197,6 +2202,7 @@ impl ApplicationHandler for App {
         if let Some(state) = self.state.as_mut() {
             crate::app::match_runtime::sim_tick::flush_replay_log(state);
             crate::app::map_picture::stop_for_exit(&mut state.frontend.map_pictures);
+            crate::app::mods::left(state);
         }
         log::logger().flush();
         // A confirmed quit (its cascade's Theme Stop(0), 0x0052E7EC, has run)

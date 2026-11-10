@@ -36,6 +36,9 @@ pub(crate) fn transfer_outgoing_simulation_rules(
 pub(crate) struct ProcessAssets {
     /// Selected at launch, retained even if initial archive loading fails.
     media_archive_mode: MediaArchiveMode,
+    /// The launch's mod folder (`app::mods`): a manager rebuilt after a lost
+    /// lease reads the same files.
+    mod_dir: Option<std::path::PathBuf>,
     /// Launch request and its first resolved names survive a lost asset lease.
     ini_config: crate::util::ini_roots::IniRootConfig,
     selected_ini_roots: Option<crate::util::ini_roots::IniRoots>,
@@ -95,6 +98,7 @@ impl ProcessAssets {
     pub(crate) fn new(media_archive_mode: MediaArchiveMode, load_audio_index: bool) -> Self {
         Self {
             media_archive_mode,
+            mod_dir: None,
             ini_config: Default::default(),
             selected_ini_roots: None,
             personal_rules: Default::default(),
@@ -129,6 +133,11 @@ impl ProcessAssets {
         self
     }
 
+    pub(crate) fn with_mod_dir(mut self, mod_dir: Option<std::path::PathBuf>) -> Self {
+        self.mod_dir = mod_dir;
+        self
+    }
+
     /// The Options page's Terrain Deformation box: the next scenario's rules
     /// read it, and network agreement compares it from now on.
     pub(crate) fn set_terrain_deformation(&mut self, on: bool) {
@@ -144,7 +153,8 @@ impl ProcessAssets {
         &self,
         root: &std::path::Path,
     ) -> anyhow::Result<AssetManager> {
-        let assets = AssetManager::new(root, self.media_archive_mode)?;
+        let assets =
+            AssetManager::with_mod(root, self.mod_dir.as_deref(), self.media_archive_mode)?;
         Ok(if let Some(roots) = &self.selected_ini_roots {
             assets.with_selected_ini_roots(roots.clone())
         } else {
