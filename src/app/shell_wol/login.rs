@@ -102,9 +102,6 @@ pub(super) fn open(state: &mut AppState) {
         WolLoginState::open(&mut state.frontend.wol_account, &visit.credentials)
     };
     visit.page = WolPage::Login(Box::new(login));
-    if visit.provider == super::WolProvider::Online {
-        super::login_info::refresh(state);
-    }
     open_login_art(state);
     let _ = App::ensure_skirmish_shell_chrome(state);
     state.frontend.shell_controller.reset_to(DIALOG, true);

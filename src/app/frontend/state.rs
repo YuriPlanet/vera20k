@@ -271,7 +271,6 @@ pub(crate) struct FrontendState {
     /// The online map library's catalog and Choose Map's map download.
     pub(crate) map_library: crate::app::map_library::MapLibrary,
     /// The online login page's lobby counts and news.
-    pub(crate) login_info: crate::app::shell_wol::login_info::LoginInfo,
     /// VERA's own map pictures for the setup screens' previews.
     pub(crate) map_pictures: crate::app::map_picture::MapPictures,
     /// The release check, its main-menu offer and the download (desktop only).

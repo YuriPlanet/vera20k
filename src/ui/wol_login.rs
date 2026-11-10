@@ -87,8 +87,8 @@ pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
 /// then Create Account, Forgot Password and Delete Account, each opening its
 /// popup (docs/lobby-protocol.md "Accounts"), and Back leaves WOL with the
 /// welcome Main Menu's help. The fourth and fifth take My Info's stacked
-/// places (`wol_my_info`). The page's left side shows the info pane in
-/// place of gamemd's fields.
+/// places (`wol_my_info`). The page's left side shows its art alone, without
+/// gamemd's fields.
 const ONLINE_PAGE: MenuPageSpec = MenuPageSpec {
     stacked: &[
         MenuPageButtonSpec {
@@ -753,31 +753,12 @@ pub(crate) struct WolLoginLayout {
     /// The password NewEdit after its init inset (`0x00614CCF`).
     pub(crate) password: RectPx,
     pub(crate) remember: RectPx,
-    /// VERA online: the info pane in place of the fields.
-    pub(crate) info: Option<WolLoginInfoLayout>,
 }
 
-/// VERA online: the news and rules panels in the shell's authored 800x600
-/// units, over the art, clear of its frame and the right column.
-const INFO_NEWS: RectPx = RectPx::new(36, 36, 560, 312);
-const INFO_RULES: RectPx = RectPx::new(36, 364, 560, 176);
-/// VERA online: the account popups centre on the news and rules they cover,
-/// not on the whole page with its button column.
-pub(crate) const POPUP_AREA: RectPx = RectPx::new(
-    INFO_NEWS.x,
-    INFO_NEWS.y,
-    INFO_NEWS.w,
-    INFO_RULES.y + INFO_RULES.h - INFO_NEWS.y,
-);
-
-/// VERA online: the online page's left side, over its art: the latest news,
-/// with the players-online count on its heading row, above the online
-/// rules.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct WolLoginInfoLayout {
-    pub(crate) news: RectPx,
-    pub(crate) rules: RectPx,
-}
+/// VERA online: the account popups centre on the page's left side, in the
+/// shell's authored 800x600 units, clear of the art's frame and the button
+/// column, not on the whole page.
+pub(crate) const POPUP_AREA: RectPx = RectPx::new(36, 36, 560, 504);
 
 impl WolLoginLayout {
     pub(crate) fn page_spec(&self) -> &'static MenuPageSpec {
@@ -856,10 +837,6 @@ impl WolLoginLayout {
                 password.h - 2,
             )),
             remember: px(child_window(196, 207, 213, 13)),
-            info: (policy == LoginPolicy::Online).then(|| WolLoginInfoLayout {
-                news: px(INFO_NEWS),
-                rules: px(INFO_RULES),
-            }),
         }
     }
 
@@ -1237,28 +1214,24 @@ mod tests {
         );
         assert_eq!(layout.tooltip_key(LOGIN), Some("VERA:LoginHelp"));
         assert_eq!(layout.tooltip_key(BACK), Some("STT:WOLWelcomeBack"));
-        // No fields: the info pane takes the left side, clear of the column.
+        // No fields: the left side holds no control.
         assert_eq!(
             layout.control_at(native.password.x + 1, native.password.y + 1),
             None
         );
-        let info = layout.info.unwrap();
-        assert!(native.info.is_none());
-        assert!(info.news.y + info.news.h < info.rules.y);
-        assert!(info.news.x + info.news.w < layout.page.right_panel.top.x);
-        assert!(info.rules.y + info.rules.h < layout.status_help.y);
     }
 
     #[test]
-    fn account_popups_centre_on_the_news_and_rules_they_cover() {
+    fn account_popups_centre_on_the_page_left_of_the_button_column() {
         use crate::ui::shell::modal::wol_account_form_layout_on;
         for layout in [
             WolLoginLayout::new(800, 600, LoginPolicy::Online),
             WolLoginLayout::responsive(1920, 1080, LoginPolicy::Online),
         ] {
-            let info = layout.info.unwrap();
-            let (left, right) = (info.news.x, info.news.x + info.news.w);
-            let (top, bottom) = (info.news.y, info.rules.y + info.rules.h);
+            let area = layout.page.scale.scale_rect(POPUP_AREA);
+            let (left, right) = (area.x, area.x + area.w);
+            let (top, bottom) = (area.y, area.y + area.h);
+            assert!(right < layout.page.right_panel.top.x, "{area:?}");
             // Login's popup; every account popup is the same box.
             let popup = wol_account_form_layout_on(POPUP_AREA, 2, true, layout.page.scale).dialog;
             assert!(popup.x >= left && popup.x + popup.w <= right, "{popup:?}");

@@ -32,8 +32,7 @@ mod quick_match;
 pub enum WolTarget {
     /// `0x10F` settled after a controlled server list, empty fields.
     LoginSteady,
-    /// The online login page and its info pane, filled in place; nothing is
-    /// read or sent.
+    /// The online login page; nothing is read or sent.
     ModernLoginPage,
     /// Login's popup over it, a username and password typed and Remember
     /// password ticked; nothing is sent.
@@ -1388,22 +1387,13 @@ impl WolCapture {
                 let layout = crate::app::shell_wol::login_layout(state);
                 match self.target {
                     target if target.online_login() => {
-                        use crate::app::shell_wol::login_info::{LobbyStats, News};
-                        // Captures read nothing: the pane shows fixed news.
-                        state.frontend.login_info.set(
-                            Some(LobbyStats {
-                                online: 12,
-                                games_24h: 30,
-                            }),
-                            News::Posts(capture_news()),
-                        );
                         let login = login_mut(state)?;
                         ensure!(
                             login.policy == crate::ui::wol_login::LoginPolicy::Online
                                 && login.account.is_none(),
                             "the online login page did not open on its own"
                         );
-                        self.event(frame, "the online login page and its info pane");
+                        self.event(frame, "the online login page");
                         if target != WolTarget::ModernLoginPage {
                             self.account_popup(state, frame, target, &layout)?;
                         }
@@ -5334,38 +5324,6 @@ fn welcome_click(state: &mut AppState, rect: RectPx) {
     App::handle_wol_mouse_down(state);
     App::handle_wol_mouse_up(state);
     MoviesCapture::restore_neutral_pointer(state);
-}
-
-/// The info pane's posts in the online login captures.
-fn capture_news() -> Vec<crate::app::shell_wol::login_info::NewsPost> {
-    [
-        (
-            "2026-11-03",
-            "The map library on the website, and a leaderboard on the way",
-            "Browse the online map library and send in your own maps. A large team \
-             leaderboard comes next.",
-        ),
-        (
-            "2026-11-01",
-            "VERA20K 0.2.4: automatic updates and rooms for 30 players",
-            "The game now updates itself, runs on Intel Macs, and online rooms seat up to \
-             30 players.",
-        ),
-        (
-            "2026-10-29",
-            "VERA20K 0.2.3: steadier online matches",
-            "Online matches no longer hang on a player who drops, and one busy match can't \
-             freeze the others.",
-        ),
-    ]
-    .map(
-        |(date, title, summary)| crate::app::shell_wol::login_info::NewsPost {
-            date: date.into(),
-            title: title.into(),
-            summary: summary.into(),
-        },
-    )
-    .into()
 }
 
 fn login_mut(state: &mut AppState) -> Result<&mut crate::ui::wol_login::WolLoginState> {

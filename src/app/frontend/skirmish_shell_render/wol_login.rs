@@ -1,8 +1,8 @@
 //! `0x10F`'s left-side children on the shared control owners: the two
 //! labels, the nickname combo (face `0x00617250` with its NewEdit), the
 //! `ES_PASSWORD` NewEdit, the Remember checkbox and the combo's drop list;
-//! on VERA online's page, its info pane in their place and its popups over
-//! it. The WOL page compositor draws them over its own backdrop and chrome.
+//! VERA online's page has none of them, only its popups over the art. The
+//! WOL page compositor draws them over its own backdrop and chrome.
 
 use super::controls::{
     ControlPaint, NewEditPaint, dropdown_scroll_part, paint_control, push_new_edit_caret,
@@ -15,7 +15,6 @@ use super::{
     SHELL_EDIT_CARET_DEPTH, SHELL_EDIT_FRAME_DEPTH, SHELL_LABEL_TEXT_RGB,
 };
 use crate::app::AppState;
-use crate::app::shell_wol::login_info::{Activity, News};
 use crate::render::batch::SpriteInstance;
 use crate::render::shell_paint::{self, ModalButton, PaintLabel};
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
@@ -24,22 +23,14 @@ use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::list::list_frame_lines;
 use crate::ui::shell::modal::WolAccountFormLayout;
 use crate::ui::wol_account::{FORM_CANCEL, FORM_OK, WolAccountForm};
-use crate::ui::wol_login::{WolLoginInfoLayout, WolLoginLayout, WolLoginState};
+use crate::ui::wol_login::{LoginPolicy, WolLoginLayout, WolLoginState};
 use crate::util::time::Instant;
 
-/// The info pane's panels sit over the page art, under its popups.
+/// An info panel sits over the page art, under the page's popups.
 const INFO_FILL_DEPTH: f32 = shell_paint::CHROME_DEPTH - 0.00001;
 const INFO_FRAME_DEPTH: f32 = shell_paint::CHROME_DEPTH - 0.00002;
-/// The panels darken the art behind them, which still shows through.
+/// The panel darkens the art behind it, which still shows through.
 const INFO_FILL_ALPHA: f32 = 0.82;
-const INFO_TITLE_RGB: [f32; 3] = [1.0, 1.0, 1.0];
-const INFO_BODY_RGB: [f32; 3] = [0.80, 0.80, 0.80];
-const INFO_NOTE_RGB: [f32; 3] = [0.60, 0.60, 0.60];
-/// Inside a panel's frame, in the 800x600 shell's pixels.
-const INFO_PAD: i32 = 12;
-/// A post's date column, and a rule's number column.
-const INFO_DATE_W: i32 = 88;
-const INFO_NUMBER_W: i32 = 20;
 
 /// Sprites (skirmish atlas) and texts of `0x10F`'s children; `popup` paints
 /// after everything else.
@@ -80,8 +71,8 @@ pub(crate) fn paint_wol_login_children(
             scale.factor(),
         )
     };
-    if let Some(info) = layout.info {
-        paint_info_pane(&mut paint, state, atlas, info, scale);
+    // VERA online: the page has no fields; its popups take the text.
+    if login.policy == LoginPolicy::Online {
         return paint;
     }
     let label = |key: &str| csf_label(state, key);
@@ -208,145 +199,6 @@ pub(crate) fn paint_wol_login_children(
         }
     }
     paint
-}
-
-/// VERA online's info pane: the news panel, its heading row naming the
-/// lobby's activity on the right, over the online rules panel. Each panel is
-/// a list's frame over the darkened art; posts and rules wrap to at most two
-/// lines, and what does not fit is left out.
-fn paint_info_pane(
-    paint: &mut WolLoginPaint,
-    state: &AppState,
-    atlas: &SkirmishShellChromeAtlas,
-    info: WolLoginInfoLayout,
-    scale: ShellScale,
-) {
-    let font = &state.renderer.bit_font;
-    let line = font.cell_height().round() as i32;
-    let lines = |value: &str, width: i32| {
-        (font.wrap_layout(value, width.max(0) as u32).lines.len() as i32).clamp(1, 2)
-    };
-    // Rects are the 800x600 shell's; the text lays out in them.
-    let mut text = |value: &str, rect: RectPx, align: ShellAlign, rgb: [f32; 3]| {
-        paint.texts.push(shell_text::draw_in_rect_scaled(
-            font,
-            value,
-            rect_to_text_rect(scale.scale_rect(rect)),
-            rgb,
-            align,
-            [0.0; 2],
-            SHELL_CONTROL_TEXT_DEPTH,
-            scale.factor(),
-        ));
-    };
-    let label = |key: &str| csf_label(state, key);
-    let inner = |panel: RectPx| {
-        let panel = scale.base_rect(panel);
-        RectPx::new(
-            panel.x + INFO_PAD,
-            panel.y + INFO_PAD - 2,
-            panel.w - 2 * INFO_PAD,
-            panel.h - 2 * INFO_PAD + 2,
-        )
-    };
-
-    let news = inner(info.news);
-    let heading = RectPx::new(news.x, news.y, news.w, line);
-    text(
-        &label("VERA:LatestNews"),
-        heading,
-        ShellAlign::NONE,
-        SHELL_LABEL_TEXT_RGB,
-    );
-    let login_info = &state.frontend.login_info;
-    if let Some(activity) = login_info.activity() {
-        let (key, count) = match activity {
-            Activity::Online(count) => ("VERA:PlayersOnline", count),
-            Activity::RecentGames(count) => ("VERA:RecentGames", count),
-        };
-        let value = crate::i18n::fill(&label(key), &[("count", &count)]);
-        text(&value, heading, ShellAlign::H_RIGHT, INFO_NOTE_RGB);
-    }
-    let bottom = news.y + news.h;
-    let mut y = heading.y + line + 8;
-    let note = match login_info.news() {
-        News::Loading => Some("VERA:NewsLoading"),
-        News::Posts(posts) if !posts.is_empty() => None,
-        News::Unavailable | News::Posts(_) => Some("VERA:NewsUnavailable"),
-    };
-    if let Some(key) = note {
-        text(
-            &label(key),
-            RectPx::new(news.x, y, news.w, line),
-            ShellAlign::NONE,
-            INFO_NOTE_RGB,
-        );
-    }
-    if let News::Posts(posts) = login_info.news() {
-        let (x, w) = (news.x + INFO_DATE_W, news.w - INFO_DATE_W);
-        for post in posts {
-            let (title, summary) = (lines(&post.title, w), lines(&post.summary, w));
-            if y + line * (title + summary) > bottom {
-                break;
-            }
-            text(
-                &post.date,
-                RectPx::new(news.x, y, INFO_DATE_W, line),
-                ShellAlign::NONE,
-                INFO_NOTE_RGB,
-            );
-            text(
-                &post.title,
-                RectPx::new(x, y, w, line * title),
-                ShellAlign::NONE,
-                INFO_TITLE_RGB,
-            );
-            text(
-                &post.summary,
-                RectPx::new(x, y + line * title, w, line * summary),
-                ShellAlign::NONE,
-                INFO_BODY_RGB,
-            );
-            y += line * (title + summary) + 10;
-        }
-    }
-
-    let rules = inner(info.rules);
-    text(
-        &label("VERA:OnlineRules"),
-        RectPx::new(rules.x, rules.y, rules.w, line),
-        ShellAlign::NONE,
-        SHELL_LABEL_TEXT_RGB,
-    );
-    let (bottom, x, w) = (
-        rules.y + rules.h,
-        rules.x + INFO_NUMBER_W,
-        rules.w - INFO_NUMBER_W,
-    );
-    let mut y = rules.y + line + 8;
-    for (index, rule) in label("VERA:OnlineRulesText").split('\n').enumerate() {
-        let height = line * lines(rule, w);
-        if y + height > bottom {
-            break;
-        }
-        text(
-            &format!("{}.", index + 1),
-            RectPx::new(rules.x, y, INFO_NUMBER_W, line),
-            ShellAlign::NONE,
-            INFO_NOTE_RGB,
-        );
-        text(
-            rule,
-            RectPx::new(x, y, w, height),
-            ShellAlign::NONE,
-            INFO_BODY_RGB,
-        );
-        y += height + 2;
-    }
-
-    for panel in [info.news, info.rules] {
-        push_info_panel(&mut paint.controls, atlas, panel);
-    }
 }
 
 /// A panel's darkened backing and a list's two frame rings around it.

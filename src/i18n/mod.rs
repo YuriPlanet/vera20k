@@ -1584,7 +1584,7 @@ mod tests {
 
     #[test]
     fn the_check_lists_untranslated_texts_missing_forms_and_values() {
-        let file = "[Language]\nName=Русский\n[Strings]\nVERA:CatchingUp[one]=Догоняем\nVERA:PlayersOnline=Игроки\nVERA:Bogus=?\nNoEquals\n";
+        let file = "[Language]\nName=Русский\n[Strings]\nVERA:CatchingUp[one]=Догоняем\nVERA:LobbyPlaying=Играют\nVERA:Bogus=?\nNoEquals\n";
         assert!(!check("russian.ini", file).complete());
         let report = check("vera20k.ru.ini", file);
         assert!(!report.complete());
@@ -1603,7 +1603,7 @@ mod tests {
             report
                 .placeholders
                 .iter()
-                .any(|line| line.contains("VERA:PLAYERSONLINE, needs {count}"))
+                .any(|line| line.contains("VERA:LOBBYPLAYING, needs {count}"))
         );
         assert_eq!(report.unknown.len(), 1);
         assert_eq!(report.problems.len(), 1);
