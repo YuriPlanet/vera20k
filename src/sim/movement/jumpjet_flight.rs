@@ -352,6 +352,10 @@ impl FlightOwnerKind {
 /// Everything the flight kernel reads from or writes to the owner and the map.
 /// Coordinates are world leptons.
 pub(crate) trait JumpjetFlightHost {
+    /// VERA `[JumpjetControls] SmoothFacing=`; off is the original.
+    fn smooth_facing(&self) -> bool {
+        false
+    }
     fn binary_frame(&self) -> u32;
     fn trig(&self) -> &TrigTable;
     fn owner_kind(&self) -> FlightOwnerKind;
@@ -764,6 +768,11 @@ pub(crate) fn update_coordinates_and_altitude(
             Some(toward_target) => {
                 flight.facing.snap(toward_target, frame);
             }
+            // VERA `SmoothFacing=` (a deviation from `0x0054D67B`, off by
+            // default): on the ground the body keeps its own heading, so
+            // State 0 hands that heading to the locomotor and the body then
+            // turns with it instead of snapping to a stale one.
+            None if host.smooth_facing() && phase == STATE_GROUND => {}
             None => host.snap_body_facing(flight.facing.current(frame)),
         }
     }
@@ -1081,7 +1090,8 @@ pub(crate) fn state0_ground(
     // the locomotor facing onto the body (`0x0054D67B..0x0054D692`). So the
     // body first snaps to the locomotor's heading: the link-time `0x4000` on
     // the first take-off, later the heading of the last flight, whatever
-    // `Do_Turn` (`0x0054B6E0`, body only) wrote on the ground since.
+    // `Do_Turn` (`0x0054B6E0`, body only) wrote on the ground since. VERA's
+    // `SmoothFacing=` skips that copy on the ground (Update, above).
     flight.facing.snap(host.body_facing(), frame);
     flight.current_speed_bits = 0;
     flight.target_speed_bits = 0;

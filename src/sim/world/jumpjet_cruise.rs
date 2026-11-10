@@ -302,6 +302,9 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         self.sim.planning_start_actor(self.stable_id, self.rules);
     }
     /// `FacingClass::UpdateFacing @ 0x004C9300` on the body facing (`+0x388`).
+    fn smooth_facing(&self) -> bool {
+        self.rules.general.jumpjet_smooth_facing
+    }
     fn snap_body_facing(&mut self, facing: u16) {
         self.sim
             .substrate
@@ -877,6 +880,10 @@ impl Simulation {
 #[cfg(test)]
 #[path = "jumpjet_cruise_native_tests.rs"]
 mod native_tests;
+
+#[cfg(test)]
+#[path = "jumpjet_smooth_facing_tests.rs"]
+mod smooth_facing_tests;
 
 #[cfg(test)]
 mod tests {
