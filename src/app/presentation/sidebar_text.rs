@@ -22,19 +22,26 @@ use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarView};
 // only the sidebar-view adapter below. Re-exported for existing callers.
 pub use crate::render::sidebar_text::{build_credits_instances, credits_tint};
 /// Per-frame wrapper over [`build_credits_instances`] taking the sidebar view
-/// and the layout table's place for the counter.
+/// and the layout table's place for the counter: centred on the credits
+/// plate, `plate_width` wide, which in the original spans the sidebar.
 pub fn build_sidebar_credits_instances(
     font: &BitFont,
     view: &SidebarView,
     spec: SidebarChromeLayoutSpec,
+    plate_width: f32,
     tint: [f32; 3],
     camera_offset: [f32; 2],
 ) -> Vec<SpriteInstance> {
+    let plate = crate::ui::sidebar::Rect {
+        x: view.panel_rect.x + spec.credits_x,
+        w: plate_width,
+        ..view.panel_rect
+    };
     build_credits_instances(
         font,
         view.credits,
-        view.panel_rect,
-        spec.money_offset(),
+        plate,
+        [spec.money_x, spec.credits_y + spec.money_y],
         tint,
         camera_offset,
     )
@@ -47,7 +54,7 @@ mod tests {
     use crate::render::bit_font::tests::make_test_font;
     use crate::ui::sidebar::Rect;
 
-    /// The stock place of the counter: the layout table's `money_offset`.
+    /// The stock place of the counter: the layout table's money row.
     const STOCK: [f32; 2] = [0.0, 2.0];
 
     /// Digit widths standing in for the GAME.FNT table: deliberately unequal so
@@ -163,6 +170,7 @@ mod tests {
             &font,
             &view,
             SidebarChromeLayoutSpec::stock(),
+            168.0,
             [1.0, 1.0, 0.0],
             [0.0, 0.0],
         );

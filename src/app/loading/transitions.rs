@@ -219,6 +219,10 @@ pub(crate) fn install_world_presentation(
     state.match_state.match_presentation.sidebar_cameo_atlas = assets.sidebar_cameo_atlas;
     state.match_state.match_presentation.sidebar_chrome = assets.sidebar_chrome;
     state.match_state.match_presentation.match_layouts = assets.match_layouts;
+    // The side's layout sizes the sidebar, and with it the battlefield, from
+    // the world's first frame.
+    state.match_state.match_presentation.sidebar_layout_spec =
+        crate::app::presentation::sidebar_render::sidebar_layout_spec(state);
     #[cfg(feature = "phobos")]
     {
         state

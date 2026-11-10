@@ -267,11 +267,6 @@ impl SidebarChromeLayoutSpec {
     pub fn parts_in_order(&self) -> impl Iterator<Item = SidebarPart> + '_ {
         self.parts.iter().flatten().copied()
     }
-
-    /// The credits number's place from the middle of the sidebar's top edge.
-    pub fn money_offset(&self) -> [f32; 2] {
-        [self.credits_x + self.money_x, self.credits_y + self.money_y]
-    }
 }
 
 impl Default for SidebarChromeLayoutSpec {

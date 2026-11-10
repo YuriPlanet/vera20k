@@ -38,6 +38,7 @@ const LIST_CAPACITY: usize = 0x800;
 /// One number of the sidebar's layout table a part key writes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Number {
+    SideWidth,
     CreditsX,
     CreditsY,
     MoneyX,
@@ -81,6 +82,7 @@ enum Number {
 impl Number {
     fn slot(self, spec: &mut SidebarChromeLayoutSpec) -> &mut f32 {
         match self {
+            Self::SideWidth => &mut spec.sidebar_width,
             Self::CreditsX => &mut spec.credits_x,
             Self::CreditsY => &mut spec.credits_y,
             Self::MoneyX => &mut spec.money_x,
@@ -187,11 +189,11 @@ const STOCK_PARTS: &[StockPart] = &[
     },
     StockPart {
         name: "Side",
-        numbers: &[],
+        // The battlefield and the bottom bar take what the sidebar leaves.
+        numbers: &[size("Width", Number::SideWidth, 16)],
         fixed: &[
             ("Type", Some("Panel")),
             ("Hold", Some("Right")),
-            ("Width", Some("168")),
             ("Height", Some("Rest")),
             UNMOVED[0],
             UNMOVED[1],
@@ -783,8 +785,8 @@ mod tests {
     use crate::ui::sidebar::cameo_order::{CameoStrips, StripColumns};
     use crate::ui::sidebar::gadget_flash::SidebarGadgetState;
     use crate::ui::sidebar::{
-        SidebarTab, SidebarTheme, SidebarView, build_sidebar_view_with_spec, power_bar_rect,
-        radar_minimap_rect_with_spec,
+        SidebarFrame, SidebarTab, SidebarTheme, SidebarView, build_sidebar_view_with_spec,
+        power_bar_rect, radar_minimap_rect_with_spec,
     };
 
     /// `count` buildings to offer, each a cameo of the Building strip.
@@ -1022,6 +1024,20 @@ mod tests {
         strips.step_pending_scroll(2);
         assert_eq!(strips.scroll_row(SidebarTab::Building), 1);
         assert!(!strips.queue_scroll(SidebarTab::Building, true, 2, 1));
+    }
+
+    #[test]
+    fn a_layout_sets_the_sidebar_width_the_frame_takes() {
+        let file = MatchLayoutFile::from_bytes(b"[Layouts]\nGDI=Wide\n[Wide.Side]\nWidth=200\n");
+        assert!(file.problems().is_empty(), "{:?}", file.problems());
+        let (spec, view) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI")));
+        assert_eq!((view.panel_rect.x, view.panel_rect.w), (600.0, 200.0));
+        // The frame gives the battlefield and the bottom bar what is left.
+        let frame = SidebarFrame::native(800, 600).with_column_width(spec.sidebar_width as u32);
+        assert_eq!(frame.tactical_size(), (600, 568));
+        assert_eq!(frame.surface_size(), (200, 600));
+        assert_eq!(frame.bar_surface_size(), (600, 32));
+        assert_eq!(frame.layout_left(), view.panel_rect.x);
     }
 
     #[test]
