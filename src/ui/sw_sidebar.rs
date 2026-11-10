@@ -37,6 +37,27 @@ pub struct SwSidebarLayout {
     pub toggle: Option<Rect>,
 }
 
+impl SwSidebarLayout {
+    /// This layout moved `dx` right and `dy` down: `SortButtons` lays it
+    /// out from the view's corner, and the view may start elsewhere.
+    pub fn moved(mut self, dx: i32, dy: i32) -> Self {
+        for column in &mut self.columns {
+            column.x += dx;
+            column.y += dy;
+        }
+        let rects = self
+            .entries
+            .iter_mut()
+            .map(|entry| &mut entry.rect)
+            .chain(&mut self.toggle);
+        for rect in rects {
+            rect.x += dx as f32;
+            rect.y += dy as f32;
+        }
+        self
+    }
+}
+
 /// `SWSidebarClass::AddColumn` capacity: each column holds `firstColumn -
 /// columnIndex` buttons when pyramidal, otherwise `firstColumn`, and creation
 /// stops at `MaxColumns` or when that capacity reaches zero. `SortButtons`

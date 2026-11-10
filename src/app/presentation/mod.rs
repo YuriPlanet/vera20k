@@ -11,6 +11,7 @@ pub(crate) mod detail;
 #[cfg(feature = "phobos")]
 pub(crate) mod digital_display;
 pub(crate) mod electric_bolts;
+pub(crate) mod field_parts;
 pub(crate) mod fire_effects;
 #[cfg(feature = "ares")]
 pub(crate) mod flying_credits;

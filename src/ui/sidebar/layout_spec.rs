@@ -106,6 +106,9 @@ pub struct SidebarChromeLayoutSpec {
     /// The sidebar's height when its layout puts it on the top or the
     /// bottom edge; on the left or the right it is as tall as the screen.
     pub side_height: f32,
+    /// Where the pieces over the battlefield sit: messages, timers, the
+    /// banner, the tooltip and Phobos' superweapon column.
+    pub field: crate::ui::field_layout::FieldLayout,
     /// SIDE2 and SIDE3 canvas heights, taken from the loaded art.
     pub side2_height: f32,
     pub side3_height: f32,
@@ -212,6 +215,7 @@ impl SidebarChromeLayoutSpec {
             places: super::PanelPlaces::ORIGINAL,
             sidebar_width: super::SIDEBAR_WIDTH_PX as f32,
             side_height: super::SIDEBAR_WIDTH_PX as f32,
+            field: crate::ui::field_layout::FieldLayout::ORIGINAL,
             side2_height: 50.0,
             side3_height: 26.0,
             credits_x: 0.0,

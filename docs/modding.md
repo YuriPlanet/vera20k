@@ -31,8 +31,9 @@ here, and a mod that changes the program doesn't.
 - Menus. You can replace their pictures, but you can't move things around.
 - The match screen. You can replace its pictures, and with an
   [interface layout](interface-layout.md) put the sidebar on any edge, put the command
-  bar on top or leave it out, move the sidebar's parts, leave parts out, and change its
-  size and its columns of build pictures. You can't yet add parts.
+  bar on top or leave it out, move the sidebar's parts, leave parts out, change its
+  size and its columns of build pictures, and place the messages, timers, banner and
+  tooltips. You can't yet add parts.
 - Ares and Phobos. Only some of their keys work, and only in a build you make yourself.
   See [More detail](#more-detail).
 - Big conversions such as Mental Omega. They depend on DLL features, so they don't work

@@ -1042,16 +1042,20 @@ fn sync_view(state: &mut AppState) {
         .match_presentation
         .message_list
         .set_typing(typing);
-    // The list spans the tactical viewport: the frame beside the sidebar.
+    // The list spans its box: the tactical viewport, the frame beside the
+    // sidebar, unless the side's layout gives it another.
     // VERA's performance panel holds the viewport's top left while it shows, and the
     // list and its edit line start below it.
-    let (tactical_x, tactical_y, tactical_w, _) =
-        crate::app::input::camera::tactical_viewport_px(state);
+    let [x, y, width, _] = crate::app::presentation::field_parts::rect(
+        state,
+        crate::ui::field_layout::FieldPart::Messages,
+    );
+    let (_, tactical_y, _, _) = crate::app::input::camera::tactical_viewport_px(state);
     let top = state.renderer.performance_overlay.message_top();
     state.match_state.match_presentation.message_list.set_view(
-        tactical_x as i32,
-        tactical_y as i32 + top,
-        tactical_w as i32,
+        x,
+        y.max(tactical_y as i32 + top),
+        width,
     );
 }
 
@@ -1077,6 +1081,13 @@ pub(crate) fn build_message_instances(
         for _ in 0..requests {
             crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
         }
+    }
+    // A layout that leaves the messages out only takes them off the screen.
+    if !crate::app::presentation::field_parts::shows(
+        state,
+        crate::ui::field_layout::FieldPart::Messages,
+    ) {
+        return (Vec::new(), Vec::new());
     }
     message_instances(
         &state.renderer.bit_font,

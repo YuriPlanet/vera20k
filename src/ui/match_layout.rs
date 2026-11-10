@@ -18,6 +18,7 @@
 //! - Part of ui/ — reads the rules/ INI store; no app/ or render/.
 
 use crate::rules::ini_parser::{IniFile, IniSection};
+use crate::ui::field_layout::{FieldLayout, FieldPart, Hold, PartBox};
 use crate::ui::sidebar::{Edge, SidebarChromeLayoutSpec, SidebarPart};
 
 /// The file's name in the game folder or a mod MIX.
@@ -498,6 +499,9 @@ pub struct MatchLayout {
     side_floats: Option<bool>,
     bar_edge: Option<Edge>,
     has_bar: Option<bool>,
+    /// The pieces over the battlefield, the original's where the layout
+    /// says nothing.
+    field: FieldLayout,
 }
 
 impl MatchLayout {
@@ -507,6 +511,7 @@ impl MatchLayout {
         for &(number, value) in &self.numbers {
             *number.slot(spec) = value;
         }
+        spec.field = self.field;
         let places = &mut spec.places;
         places.side = self.side_edge.unwrap_or(places.side);
         places.side_floats = self.side_floats.unwrap_or(places.side_floats);
@@ -711,6 +716,11 @@ fn read_layout(
             }
             continue;
         }
+        if read_field_part(&mut read.field, section, part, |key, kind| {
+            problem(name, key, kind)
+        }) {
+            continue;
+        }
         let Some(stock) = STOCK_PARTS
             .iter()
             .find(|stock| stock.name.eq_ignore_ascii_case(part))
@@ -724,6 +734,18 @@ fn read_layout(
                 if let Err(kind) = read_place {
                     problem(name, key, kind);
                 }
+            } else if part.eq_ignore_ascii_case("Field") && key.eq_ignore_ascii_case("Parts") {
+                // The pieces the battlefield holds; one left out is not shown.
+                let listed = section.read_list(key, LIST_CAPACITY).unwrap_or_default();
+                let mut shown = [false; 4];
+                for word in listed.into_iter().map(str::trim) {
+                    match FieldPart::named(word) {
+                        Some(part) => shown[part as usize] = true,
+                        None if word.eq_ignore_ascii_case(NO_PARTS) => {}
+                        None => problem(name, key, LayoutProblemKind::UnknownPart),
+                    }
+                }
+                read.field.shown = shown;
             } else if let (Some(panel), true) = (panel, key.eq_ignore_ascii_case("Parts")) {
                 let (listed, unknown, elsewhere) = part_list(section, key, panel);
                 if unknown {
@@ -816,6 +838,136 @@ fn read_place(
         _ => Err(LayoutProblemKind::NotYet),
     })
 }
+
+/// A key's whole number kept inside `min..=max`, with the problem to report
+/// when it had to be moved there.
+fn number_in(
+    section: &IniSection,
+    key: &str,
+    min: i32,
+    max: i32,
+) -> Result<(i32, Option<LayoutProblemKind>), LayoutProblemKind> {
+    let value = whole_number(section, key).ok_or(LayoutProblemKind::NotANumber)?;
+    let used = value.clamp(min, max);
+    Ok((
+        used,
+        (used != value).then_some(LayoutProblemKind::Clamped { used }),
+    ))
+}
+
+/// The sections of the pieces over the battlefield: `[Messages]`, `[Timers]`
+/// and `[Banner]` (a box: `Hold`, `X`, `Y`, `Width`, `Height`), `[Powers]`
+/// (`X`, `Y`) and `[Tooltip]` (`Hold`: `Cursor` or a corner, and `X`, `Y`).
+/// `false` for any other part.
+fn read_field_part(
+    field: &mut FieldLayout,
+    section: &IniSection,
+    part: &str,
+    mut problem: impl FnMut(&str, LayoutProblemKind),
+) -> bool {
+    let tooltip = part.eq_ignore_ascii_case("Tooltip");
+    let field_part = FieldPart::named(part);
+    if !tooltip && field_part.is_none() {
+        return false;
+    }
+    let is = |key: &str, name: &str| key.eq_ignore_ascii_case(name);
+    for key in section.keys() {
+        // A place: how far in from the edge the part holds.
+        let place =
+            |slot: &mut i32, problem: &mut dyn FnMut(&str, LayoutProblemKind)| match number_in(
+                section, key, -8192, 8192,
+            ) {
+                Ok((value, clamped)) => {
+                    *slot = value;
+                    if let Some(kind) = clamped {
+                        problem(key, kind);
+                    }
+                }
+                Err(kind) => problem(key, kind),
+            };
+        let hold = || Hold::named(section.read_name(key, NAME_CAPACITY).unwrap_or_default());
+        let boxed: Option<&mut PartBox> = match field_part {
+            Some(FieldPart::Messages) => Some(&mut field.messages),
+            Some(FieldPart::Timers) => Some(&mut field.timers),
+            Some(FieldPart::Banner) => Some(&mut field.banner),
+            Some(FieldPart::Powers) | None => None,
+        };
+        if let Some(part_box) = boxed {
+            if is(key, "X") {
+                place(&mut part_box.x, &mut problem);
+            } else if is(key, "Y") {
+                place(&mut part_box.y, &mut problem);
+            } else if is(key, "Hold") {
+                match hold() {
+                    Some(hold) => part_box.hold = hold,
+                    None => problem(key, LayoutProblemKind::NotYet),
+                }
+            } else if is(key, "Width") || is(key, "Height") {
+                // `Rest` is what is left of the battlefield.
+                let size = if same_list(section, key, "Rest") {
+                    None
+                } else {
+                    match number_in(section, key, 1, 8192) {
+                        Ok((value, clamped)) => {
+                            if let Some(kind) = clamped {
+                                problem(key, kind);
+                            }
+                            Some(value)
+                        }
+                        Err(kind) => {
+                            problem(key, kind);
+                            continue;
+                        }
+                    }
+                };
+                if is(key, "Width") {
+                    part_box.width = size;
+                } else {
+                    part_box.height = size;
+                }
+            } else if FIELD_PART_LATER.iter().any(|later| is(key, later)) {
+                problem(key, LayoutProblemKind::NotYet);
+            } else {
+                problem(key, LayoutProblemKind::UnknownKey);
+            }
+        } else if is(key, "X") {
+            let slot = if tooltip {
+                &mut field.tooltip.x
+            } else {
+                &mut field.powers[0]
+            };
+            place(slot, &mut problem);
+        } else if is(key, "Y") {
+            let slot = if tooltip {
+                &mut field.tooltip.y
+            } else {
+                &mut field.powers[1]
+            };
+            place(slot, &mut problem);
+        } else if tooltip && is(key, "Hold") {
+            if same_list(section, key, "Cursor") {
+                field.tooltip.hold = None;
+            } else {
+                match hold() {
+                    Some(hold) => field.tooltip.hold = Some(hold),
+                    None => problem(key, LayoutProblemKind::NotYet),
+                }
+            }
+        } else if is(key, "Hold")
+            || is(key, "Width")
+            || is(key, "Height")
+            || FIELD_PART_LATER.iter().any(|later| is(key, later))
+        {
+            problem(key, LayoutProblemKind::NotYet);
+        } else {
+            problem(key, LayoutProblemKind::UnknownKey);
+        }
+    }
+    true
+}
+
+/// Keys of the format a piece over the battlefield cannot take yet.
+const FIELD_PART_LATER: [&str; 5] = ["Type", "Art", "Parts", "Command", "Value"];
 
 /// A panel's `Parts=`: the parts it names that the original holds in that
 /// panel, in the order written and each once, then whether it named something
@@ -1208,6 +1360,65 @@ mod tests {
     }
 
     #[test]
+    fn a_layout_places_the_pieces_over_the_battlefield() {
+        let file = MatchLayoutFile::from_bytes(
+            b"[Layouts]\nGDI=Hud\n\
+              [Hud.Field]\nParts=Messages,Timers,Powers\n\
+              [Hud.Messages]\nX=200\nWidth=300\n\
+              [Hud.Timers]\nhold=topright\nY=8\nHeight=120\n\
+              [Hud.Tooltip]\nHold=BottomLeft\nX=8\nY=4\n\
+              [Hud.Powers]\nX=6\nSpeed=2\n\
+              [Hud.Banner]\nHold=Sideways\nWidth=wide\nHeight=Rest\nArt=x.shp\n",
+        );
+        let problems: Vec<_> = file
+            .problems()
+            .iter()
+            .map(|problem| (problem.place(), problem.kind.clone()))
+            .collect();
+        assert_eq!(
+            problems,
+            [
+                (
+                    "[Hud.Powers] Speed".to_owned(),
+                    LayoutProblemKind::UnknownKey
+                ),
+                ("[Hud.Banner] Hold".to_owned(), LayoutProblemKind::NotYet),
+                (
+                    "[Hud.Banner] Width".to_owned(),
+                    LayoutProblemKind::NotANumber
+                ),
+                ("[Hud.Banner] Art".to_owned(), LayoutProblemKind::NotYet),
+            ]
+        );
+        let mut spec = SidebarChromeLayoutSpec::for_theme(SidebarTheme::Allied);
+        assert_eq!(spec.field, FieldLayout::ORIGINAL);
+        file.for_side(Some("GDI"))
+            .unwrap()
+            .apply_to_sidebar(&mut spec);
+        let battlefield = [0, 0, 632, 568];
+        // Messages start 200 in and wrap 300 on; the timers' box is 120 tall
+        // at the top, so they stack up from 128 down at the right edge.
+        assert_eq!(
+            spec.field.part_rect(FieldPart::Messages, battlefield),
+            [200, 0, 300, 568]
+        );
+        assert_eq!(
+            spec.field.part_rect(FieldPart::Timers, battlefield),
+            [0, 8, 632, 120]
+        );
+        assert_eq!(spec.field.part_rect(FieldPart::Powers, battlefield)[0], 6);
+        // The banner is left out, and the broken lines changed nothing of it.
+        assert!(!spec.field.shows(FieldPart::Banner) && spec.field.shows(FieldPart::Timers));
+        assert_eq!(spec.field.banner, PartBox::WHOLE);
+        assert_eq!(
+            spec.field
+                .tooltip
+                .fixed_in([0.0, 0.0, 800.0, 600.0], [86.0, 38.0]),
+            Some([8.0, 558.0])
+        );
+    }
+
+    #[test]
     fn the_sample_layout_reads_cleanly_and_does_what_it_says() {
         let file = MatchLayoutFile::from_bytes(
             crate::test_fixture::text("docs/examples/veraui.ini").as_bytes(),
@@ -1260,5 +1471,17 @@ mod tests {
         assert_eq!((view.panel_rect.w, spec.columns()), (232.0, 3));
         assert_eq!(view.items[3].rect.x, view.items[0].rect.x);
         assert!(spec.shows(SidebarPart::Top) && !spec.shows(SidebarPart::Options));
+        // Its timers stack up in a box at the top of the battlefield, and
+        // its tooltips stay in the screen's bottom-left corner.
+        assert_eq!(
+            spec.field.part_rect(FieldPart::Timers, [0, 0, 568, 568]),
+            [0, 8, 568, 140]
+        );
+        assert_eq!(
+            spec.field
+                .tooltip
+                .fixed_in([0.0, 0.0, 800.0, 600.0], [86.0, 38.0]),
+            Some([8.0, 554.0])
+        );
     }
 }
