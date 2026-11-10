@@ -127,6 +127,22 @@ Done:
 
 ### Phase 2: a presentation frame for the hot draw path
 
+A copy of the whole world is not the frame. Deriving `Clone` on
+`Simulation` is easy, but measured in a 1v7 skirmish on the 30-start map
+at 450–930 objects:
+
+- A copy took 40–60 ms, whatever the object count. About half of that was
+  the resolved terrain cells.
+- With those cells shared copy-on-write, a copy kept until the next tick
+  took about 22 ms, and dropping the previous one took about 25 ms.
+- The mean tick rose from 4.4 ms to 20.7 ms. Every unit step runs
+  `recalc_resident_bridge_cell` → `recalc_cell_attributes`, which writes
+  its cell even when nothing changes, so the terrain is copied on almost
+  every tick.
+
+The frame therefore holds only what drawing reads. Large, rarely changing
+state (terrain, overlays) is shared by revision, not copied each tick.
+
 At the end of each tick, `SimHost` publishes an immutable
 `Arc<PresentationFrame>`. It holds per-object draw records (pose, type,
 owner, health, flags), the display order, anim, particle and projectile
