@@ -154,26 +154,46 @@ pub(crate) fn sidebar_layout_spec(state: &AppState) -> crate::ui::sidebar::Sideb
         spec.side3_height = atlas.side3.pixel_size[1];
     }
     // A mod's `veraui.ini` layout for this side changes the original's numbers.
+    if let Some(layout) = side_layout(state).filter(|_| !map_picture) {
+        layout.apply_to_sidebar(&mut spec);
+    }
+    spec
+}
+
+/// The `veraui.ini` layout of the local player's side, if the file gives it
+/// one.
+fn side_layout(state: &AppState) -> Option<&crate::ui::match_layout::MatchLayout> {
     let side_name = state.rules().and_then(|rules| {
         let side = u8::try_from(current_sidebar_side(state)).ok()?;
         rules.side_name(crate::rules::ruleset::SideIdx(side))
     });
-    if let Some(layout) = state
+    state
         .match_state
         .match_presentation
         .match_layouts
         .for_side(side_name)
+}
+
+/// Keep the buttons and texts the local side's layout adds; none in a map
+/// picture, which is taken with the original interface.
+pub(crate) fn refresh_added_parts(state: &mut AppState) {
+    let map_picture = state.platform.capture_presentation.map_picture;
+    let added = side_layout(state)
         .filter(|_| !map_picture)
-    {
-        layout.apply_to_sidebar(&mut spec);
+        .map(|layout| layout.added().clone());
+    let kept = &mut state.match_state.match_presentation.added_parts;
+    match added {
+        Some(added) if !std::sync::Arc::ptr_eq(&added, kept) => *kept = added,
+        None if !kept.is_empty() => *kept = Default::default(),
+        _ => {}
     }
-    spec
 }
 
 fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
     refresh_radar_animation_source(state);
     let spec = sidebar_layout_spec(state);
     state.match_state.match_presentation.sidebar_layout_spec = spec;
+    refresh_added_parts(state);
     // The sidebar lays out on its own surface (`ui::sidebar::SidebarFrame`).
     let (screen_w, screen_h) = state.sidebar_frame().layout_screen();
     let visible_rows =

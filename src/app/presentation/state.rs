@@ -196,6 +196,8 @@ pub(crate) struct MatchPresentationState {
     pub(crate) sidebar_layout_spec: SidebarChromeLayoutSpec,
     /// The game folder's `veraui.ini` as this match read it.
     pub(crate) match_layouts: crate::ui::match_layout::MatchLayoutFile,
+    /// The buttons and texts the local side's layout adds.
+    pub(crate) added_parts: std::sync::Arc<[crate::ui::added_parts::AddedPart]>,
     /// Shared tooltip service (study S1) — the model is clock-injected; only
     /// `input::tooltips` reads the wall clock.
     pub(crate) tooltips: crate::ui::tooltips::TooltipService,

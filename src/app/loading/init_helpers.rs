@@ -602,7 +602,11 @@ fn read_match_layouts(asset_manager: &AssetManager) -> crate::ui::match_layout::
     let Some((bytes, source)) = asset_manager.get_with_source_ref(FILE_NAME) else {
         return MatchLayoutFile::none();
     };
-    let layouts = MatchLayoutFile::from_bytes(bytes);
+    let mut layouts = MatchLayoutFile::from_bytes(bytes);
+    // A button's command is one the keyboard file or the command bar names.
+    layouts.check_commands(|name| {
+        crate::app::presentation::layout_parts::command_named(name).is_some()
+    });
     log::info!(
         "Interface layouts read from {FILE_NAME} ({source}), {} line(s) refused",
         layouts.problems().len()

@@ -764,6 +764,16 @@ fn named_virtual_key(key: NamedKey) -> Option<u16> {
     })
 }
 
+/// A registered command by its keyboard-file name, without regard to
+/// capitals: what a layout file's `Command=` names. The keyboard file itself
+/// compares exact bytes ([`command_from_name`]).
+pub(crate) fn command_named(name: &str) -> Option<HotkeyCommand> {
+    catalog::registered_commands()
+        .iter()
+        .find(|row| row.ini_name.eq_ignore_ascii_case(name))
+        .map(|row| row.command)
+}
+
 fn command_from_name(name: &str) -> Option<HotkeyCommand> {
     // Reload 533DE4..533E29 walks registered vtable+4 names and compares exact
     // bytes. Numbered commands are registered names, not a permissive grammar.
