@@ -68,6 +68,8 @@ fn particle_draw_flags(detail_level: u32, translucency: u8) -> u32 {
 /// No retained simulation state or alternate projection authority lives here.
 pub(super) struct ParticleDrawContext {
     camera: [f32; 2],
+    /// The surface-line owners' camera, the battlefield corner's.
+    line_camera: [i32; 2],
     viewport: [f32; 2],
     axis: crate::render::batch::DepthAxis,
     point_viewport: crate::render::tactical_compat::TacticalPointViewport,
@@ -84,6 +86,9 @@ impl ParticleDrawContext {
         let logical = |value: u32| (value as f32 / zoom) as i32;
         Self {
             camera,
+            line_camera: crate::app::presentation::render::surface_line_camera(
+                camera, tactical, zoom,
+            ),
             viewport: [width as f32 / zoom, height as f32 / zoom],
             axis,
             point_viewport: crate::render::tactical_compat::TacticalPointViewport {
@@ -167,8 +172,8 @@ pub(super) fn build_spotlight_instance(
     let project = |p: [i32; 3]| {
         let xy = absolute_leptons_to_screen(p[0], p[1], p[2]);
         [
-            xy.0 as i32 - context.camera[0].floor() as i32,
-            xy.1 as i32 - context.camera[1].floor() as i32,
+            xy.0 as i32 - context.line_camera[0],
+            xy.1 as i32 - context.line_camera[1],
         ]
     };
     let beams = light

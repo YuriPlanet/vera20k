@@ -1,7 +1,7 @@
 struct Params {
     width: u32, height: u32, mode: u32, weight: u32,
     amplitude: f32, pad: f32, white_width: u32, white_height: u32,
-    origin_x: u32, origin_y: u32, pad2: vec2<u32>,
+    origin_x: u32, origin_y: u32, field_y: u32, rows: u32,
 }
 @group(0) @binding(0) var snapshot: texture_2d<f32>;
 @group(0) @binding(1) var<uniform> params: Params;
@@ -28,16 +28,19 @@ fn native_trig(angle: f32) -> vec2<f32> {
 @fragment fn fragment(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     let pixel = vec2<i32>(pos.xy) - vec2<i32>(i32(params.origin_x), i32(params.origin_y));
     if (pixel.x < 0 || u32(pixel.x) >= params.width || pixel.y < 0 || u32(pixel.y) >= params.height) { discard; }
+    //The battlefield's rows in the retained column: the original's start at
+    //row 0, a layout's where it puts the battlefield.
+    let field = vec2<i32>(pixel.x, pixel.y - i32(params.field_y));
     if (params.mode == 1u) {
         //53B560 FillRect886FA0 is the tactical rectangle, not the sidebar.
-        if (u32(pixel.x) >= params.white_width || u32(pixel.y) >= params.white_height) { discard; }
+        if (field.y < 0 || u32(field.x) >= params.white_width || u32(field.y) >= params.white_height) { discard; }
         return vec4(1.0);
     }
     if (params.mode == 2u) { return textureLoad(snapshot, pixel, 0); }
-    let rows = i32(params.height) - 32; //retail7F5BFC; command bar survives.
-    if (pixel.y >= rows || rows <= 0) { discard; }
+    let rows = i32(params.rows); //surface height - 32 (retail7F5BFC): the command bar survives.
+    if (field.y < 0 || field.y >= rows || rows <= 0) { discard; }
     let centre = vec2<f32>(f32(params.width / 2u), f32(rows / 2));
-    let local = vec2<f32>(pixel) - centre;
+    let local = vec2<f32>(field) - centre;
     let radial = (1.0 - dot(local, local) / dot(centre, centre)) * 5.0;
     let coeff = native_trig(radial * radial * params.amplitude);
     //Native7C5F00 uses retail0E7F chop; i32 conversion truncates toward0.
@@ -45,7 +48,7 @@ fn native_trig(angle: f32) -> vec2<f32> {
         coeff.x * local.y + coeff.y * local.x,
         coeff.y * local.y - coeff.x * local.x
     ) + centre), vec2(0), vec2(i32(params.width) - 1, rows - 1));
-    let colour = textureLoad(snapshot, sampled, 0);
+    let colour = textureLoad(snapshot, sampled + vec2<i32>(0, i32(params.field_y)), 0);
     let bytes = vec3<u32>(colour.rgb * 255.0 + vec3(0.5));
     var components = vec3<u32>(bytes.r >> 3u, bytes.g >> 2u, bytes.b >> 3u);
     let maximum = vec3<u32>(31u, 63u, 31u);
