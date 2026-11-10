@@ -109,6 +109,9 @@ fn run_with_args(app_bundle: bool, args: impl IntoIterator<Item = OsString>) -> 
         return Ok(print_usage());
     }
 
+    // gamemd's 1 ms Windows timer period, until the event loop returns.
+    let _wall_clock_period = crate::app::match_runtime::frame_pacer::WallClockPeriod::hold();
+
     // Create the OS event loop. This drives the entire application:
     // window events, input, redraws, lifecycle events.
     let mut builder = EventLoop::builder();
