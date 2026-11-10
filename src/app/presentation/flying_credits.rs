@@ -213,15 +213,15 @@ mod tests {
             credits.step();
             credits.build_instances(&font, camera, 1.0, view)
         };
-        let first = composite(&mut credits, camera, [2048, 2048]);
+        let first = composite(&mut credits, camera, [0, 0, 2048, 2048]);
         assert!(!first.is_empty());
         for _ in 0..5 {
             assert_eq!(
-                composite(&mut credits, camera, [2048, 2048])[0].position,
+                composite(&mut credits, camera, [0, 0, 2048, 2048])[0].position,
                 first[0].position
             );
         }
-        let rising = composite(&mut credits, camera, [2048, 2048]);
+        let rising = composite(&mut credits, camera, [0, 0, 2048, 2048]);
         assert_eq!(rising[0].position[1], first[0].position[1] - 1.0);
         assert!(
             rising.iter().all(|glyph| glyph.alpha == 1.0),
@@ -233,7 +233,7 @@ mod tests {
             "a draw between composites does not rise"
         );
         for _ in 0..70 {
-            assert!(composite(&mut credits, [1e6, 1e6], [1, 1]).is_empty());
+            assert!(composite(&mut credits, [1e6, 1e6], [0, 0, 1, 1]).is_empty());
         }
         assert!(credits.live.is_empty(), "offscreen labels still expire");
         credits.admit(&sim, &rules, event);
