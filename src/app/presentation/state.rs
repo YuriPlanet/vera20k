@@ -198,6 +198,9 @@ pub(crate) struct MatchPresentationState {
     pub(crate) match_layouts: crate::ui::match_layout::MatchLayoutFile,
     /// The buttons and texts the local side's layout adds.
     pub(crate) added_parts: std::sync::Arc<[crate::ui::added_parts::AddedPart]>,
+    /// The row each grid of build pictures the layout adds is scrolled to,
+    /// by the grid's place in `added_parts`.
+    pub(crate) added_grid_scroll: Vec<usize>,
     /// Shared tooltip service (study S1) — the model is clock-injected; only
     /// `input::tooltips` reads the wall clock.
     pub(crate) tooltips: crate::ui::tooltips::TooltipService,

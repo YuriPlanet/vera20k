@@ -174,6 +174,55 @@ fn side_layout(state: &AppState) -> Option<&crate::ui::match_layout::MatchLayout
         .for_side(side_name)
 }
 
+/// The grids of build pictures the local side's layout adds to the sidebar,
+/// each where its part's place puts it and at the row the player scrolled it
+/// to.
+fn added_grids(state: &AppState) -> Vec<sidebar::AddedGrid> {
+    use crate::ui::added_parts::{AddedKind, Holder};
+    let presentation = &state.match_state.match_presentation;
+    let spec = presentation.sidebar_layout_spec;
+    let frame = state.sidebar_frame();
+    let (side_width, side_height) = frame.surface_size();
+    let side = [
+        frame.layout_left() as i32,
+        0,
+        side_width as i32,
+        side_height as i32,
+    ];
+    presentation
+        .added_parts
+        .iter()
+        .enumerate()
+        .filter_map(|(part, added)| {
+            let AddedKind::CameoGrid { tab, columns, rows } = added.kind else {
+                return None;
+            };
+            if added.holder != Holder::Side {
+                return None;
+            }
+            let columns = columns.unwrap_or(spec.columns());
+            // The grid is as big as its pictures' places.
+            let natural = [
+                (columns as f32 * spec.cameo_column_pitch) as i32,
+                (rows as f32 * spec.cameo_row_height) as i32,
+            ];
+            let [x, y, _, _] = added.rect_in(side, natural);
+            Some(sidebar::AddedGrid {
+                part,
+                tab,
+                origin: [x as f32, y as f32],
+                columns,
+                rows,
+                scroll_rows: presentation
+                    .added_grid_scroll
+                    .get(part)
+                    .copied()
+                    .unwrap_or(0),
+            })
+        })
+        .collect()
+}
+
 /// Keep the buttons and texts the local side's layout adds; none in a map
 /// picture, which is taken with the original interface.
 pub(crate) fn refresh_added_parts(state: &mut AppState) {
@@ -383,6 +432,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
             .match_presentation
             .sidebar_gadget_state
             .clone(),
+        grids: added_grids(state),
     };
     // The gadget refresh runs this on every service pass, several per game
     // frame; while the inputs, strips and Factory links all hold, the view
@@ -452,6 +502,38 @@ fn build_view(
             .sidebar_projection
             .cameo_strips(),
     );
+    // The grids the side's layout adds follow the sidebar's own in the view,
+    // and each keeps the row it could really scroll to.
+    sidebar::append_added_grids(
+        &mut view,
+        inputs.spec,
+        &inputs.grids,
+        &inputs.sim.queue_items,
+        &inputs.sim.build_options,
+        &inputs.sim.ready_buildings,
+        inputs.armed.as_ref(),
+        state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .map(|rt| &rt.simulation)
+            .map(|sim| sim.interner()),
+        &inputs.supers,
+        state
+            .match_state
+            .match_presentation
+            .sidebar_projection
+            .cameo_strips(),
+    );
+    {
+        let scroll = &mut state.match_state.match_presentation.added_grid_scroll;
+        for grid in &view.added_grids {
+            if scroll.len() <= grid.part {
+                scroll.resize(grid.part + 1, 0);
+            }
+            scroll[grid.part] = grid.scroll_rows;
+        }
+    }
     // The view never substitutes another tab, so the retained active tab needs
     // no write-back: `apply_cameo_transitions` (and the switch itself) is the
     // only writer.

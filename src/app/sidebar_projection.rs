@@ -99,6 +99,9 @@ pub(crate) struct SidebarViewInputs {
     /// The right strip's superweapons.
     pub(crate) supers: Vec<SuperWeaponView>,
     pub(crate) gadgets: SidebarGadgetState,
+    /// The grids of build pictures the side's layout adds, each with the
+    /// row it is scrolled to.
+    pub(crate) grids: Vec<crate::ui::sidebar::AddedGrid>,
 }
 
 impl PartialEq for SidebarViewInputs {
@@ -112,6 +115,7 @@ impl PartialEq for SidebarViewInputs {
             && self.armed == other.armed
             && self.supers == other.supers
             && self.gadgets == other.gadgets
+            && self.grids == other.grids
     }
 }
 

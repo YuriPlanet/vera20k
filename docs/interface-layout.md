@@ -6,9 +6,9 @@ parts, leave parts out, change how many columns of build pictures it has and how
 is, place the messages, the timers, the banner and the tooltips, and add buttons and
 text of your own. Without the file the game looks exactly as the original does.
 
-This is part of a larger plan. Later versions will let a layout use the original
-pieces more than once. The keys on this page keep their meaning when that comes, so a
-layout you write now keeps working.
+This is part of a larger plan. Later versions will let players drag parts in the game
+and keep their own layout. The keys on this page keep their meaning when that comes, so
+a layout you write now keeps working.
 
 ## Where the file goes
 
@@ -30,7 +30,8 @@ three layouts, all with the original pictures:
 - The Allies get a mirrored screen: the sidebar on the left, the command bar on top,
   Repair swapped with Sell, Diplomacy with Options, and the tabs from right to left.
 - The Soviets get the sidebar along the bottom of the screen, with its panels side by
-  side, and two buttons and the match clock of the layout's own.
+  side, and of the layout's own two buttons, the match clock and a second grid of
+  build pictures that always shows the infantry.
 - Yuri gets a wider sidebar with three columns of build pictures and no top buttons,
   which needs wider pictures of your own to look finished. His timers sit at the top
   right of the battlefield and his tooltips stay in a corner of the screen.
@@ -351,7 +352,7 @@ the battlefield.
 
 | Key | Meaning |
 | --- | --- |
-| `Type` | `Button` or `Text`. `Row` and `Column` are [below](#rows-and-columns) |
+| `Type` | `Button` or `Text`. `Row`, `Column` and `CameoGrid` are below |
 | `Command` | For a button: what a click does. See [Commands](#commands) |
 | `Label` | For a button without a picture: the words on it. The name of a line in the game's string table shows that line's text. Without `Label` the button shows its command's name |
 | `Art` | For a button: its picture, an SHP file like `mybutton.shp`. Frame 0 is the button and frame 1 the button held down. It uses the sidebar's palette (`sidebar.pal`), as the command bar's buttons do |
@@ -422,6 +423,40 @@ With a row you can build a command bar of your own. Leave the original out with
 `button10.shp` are `Team01`, `Team02`, `Team03`, `TypeSelect`, `Deploy`, `AttackMove`,
 `Guard`, `Beacon`, `Stop`, `PlanningMode` and `Cheer`.
 
+### More grids of build pictures
+
+A `CameoGrid` shows one tab's build pictures in the sidebar, beside the sidebar's own
+grid:
+
+```ini
+[Mine.Side]
+Parts=Credits,Top,Radar,Middle,Cameos,Power,Troops
+
+[Mine.Troops]
+Type=CameoGrid
+Tab=Infantry
+Columns=3
+Rows=2
+X=336
+Y=1
+```
+
+| Key | Meaning |
+| --- | --- |
+| `Tab` | Whose build pictures it shows: `Building`, `Defense`, `Infantry` or `Vehicle` |
+| `Columns` | How many pictures are in a row, 1 to 8. The sidebar's own number if you leave it out |
+| `Rows` | How many rows it shows, 1 to 60. 2 if you leave it out |
+| `Hold`, `X`, `Y` | Where its first picture sits in `Side`, as for a button |
+
+- It works like the sidebar's own grid: click to build, right-click to hold or cancel,
+  and the same tooltips, clocks and Ready labels.
+- The mouse wheel over the grid scrolls it, one row a notch. It has no scroll buttons.
+- It goes in `Side` only, and it has no background of its own: the pictures draw over
+  whatever is there.
+- Its pictures are spaced as `[Cameos]` says (`ColumnWidth`, `RowHeight`).
+- To show all four tabs at once, add a grid for each. You can then leave `Cameos` out
+  of `Side` and `Tabs` out of `Middle`.
+
 ### Commands
 
 A button gives a command the game already has, as if you pressed its key:
@@ -456,7 +491,7 @@ out or write the original value. Any other value is skipped, and the game tells 
 
 | Key | What it is for | Original value |
 | --- | --- | --- |
-| `Type` on an original part, or a new part of an original kind | The kind of part: `Battlefield`, `Panel`, `Radar`, `CameoGrid`, `Tabs` or `PowerBar`. A layout can only add a `Button`, a `Text`, a `Row` or a `Column` | The part's own kind |
+| `Type` on an original part, or a new part of an original kind | The kind of part: `Battlefield`, `Panel`, `Radar`, `Tabs` or `PowerBar`. A layout can only add a `Button`, a `Text`, a `Row`, a `Column` or a `CameoGrid` | The part's own kind |
 | `Hold` | The edge or corner of its parent a part is measured from, for the sidebar's own parts and `Field` | `TopLeft`. `Top` for `Money` |
 | `Width`, `Height` | A part's size, for the sidebar's own parts, `Bar` and `Field`. `Rest` means what is left | `Width=Rest` and `Height=32` for `Bar`, `Rest` for both on `Field`, `Height=Rest` for `Cameos` |
 | `Art` on an original part | The pictures an original part draws | None yet: replace the picture files instead |
@@ -465,9 +500,9 @@ out or write the original value. Any other value is skipped, and the game tells 
 
 The three big parts hold on to their edges: they have no `X` or `Y`. The command bar
 can't stand on the left or the right, and its buttons can't be changed here yet. A
-layout can add [buttons, text, rows and columns](#adding-buttons-and-text) but no
-other kind of part yet, and a section that is neither an original part nor one of
-those is skipped.
+layout can add [buttons, text, rows, columns and grids of build
+pictures](#adding-buttons-and-text) but no other kind of part yet, and a section that
+is neither an original part nor one of those is skipped.
 
 ## If you make a mistake
 

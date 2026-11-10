@@ -37,11 +37,10 @@ pub(crate) fn command_named(name: &str) -> Option<ButtonCommand> {
 /// A button's padding around its label, on each side.
 const BUTTON_PAD: [i32; 2] = [5, 2];
 
-/// One added part as this frame shows it.
+/// One added part as this frame shows it. [`placed`] gives one for each
+/// part, in the layout's order.
 #[derive(Debug, Clone)]
 pub(crate) struct Placed {
-    /// Its place in the layout's list.
-    pub index: usize,
     /// The sidebar or the battlefield: for a group's part, its group's.
     pub holder: Holder,
     /// `x, y, width, height`: frame pixels in the battlefield, the
@@ -54,7 +53,8 @@ pub(crate) struct Placed {
     pub picture: Option<crate::render::sidebar_chrome::SidebarChromeEntry>,
     /// Whether the button is held down.
     pub pressed: bool,
-    /// A row or a column: it places its parts and draws nothing itself.
+    /// A row or a column, which places its parts and draws nothing itself,
+    /// or a cameo grid, which the sidebar's view draws and clicks.
     pub group: bool,
 }
 
@@ -140,12 +140,16 @@ pub(crate) fn placed(state: &AppState) -> Vec<Placed> {
                     (label_text(state, label), true, picture)
                 }
                 AddedKind::Text { value } => (value_text(state, *value), false, None),
-                AddedKind::Group { .. } => (String::new(), false, None),
+                // A group places its parts; a cameo grid is the sidebar
+                // view's (`ui::sidebar::append_added_grids`).
+                AddedKind::Group { .. } | AddedKind::CameoGrid { .. } => {
+                    (String::new(), false, None)
+                }
             };
             let pad = if button { BUTTON_PAD } else { [0, 0] };
             // A picture is as big as its file draws it; words as their text.
             let natural = match (&part.kind, picture) {
-                (AddedKind::Group { .. }, _) => [0, 0],
+                (AddedKind::Group { .. } | AddedKind::CameoGrid { .. }, _) => [0, 0],
                 (_, Some(picture)) => picture.pixel_size.map(|v| v as i32),
                 (_, None) => [
                     font.text_width(&text) as i32 + 2 * pad[0],
@@ -153,14 +157,16 @@ pub(crate) fn placed(state: &AppState) -> Vec<Placed> {
                 ],
             };
             Placed {
-                index,
                 holder: part.holder,
                 rect: [0, 0, natural[0], natural[1]],
                 text,
                 button,
                 picture,
                 pressed,
-                group: matches!(part.kind, AddedKind::Group { .. }),
+                group: matches!(
+                    part.kind,
+                    AddedKind::Group { .. } | AddedKind::CameoGrid { .. }
+                ),
             }
         })
         .collect();
@@ -257,7 +263,7 @@ pub(crate) fn clicked(state: &mut AppState, index: usize, right: bool) {
         .get(index)
         .and_then(|part| match &part.kind {
             AddedKind::Button { command, .. } => command_named(command),
-            AddedKind::Text { .. } | AddedKind::Group { .. } => None,
+            AddedKind::Text { .. } | AddedKind::Group { .. } | AddedKind::CameoGrid { .. } => None,
         });
     match command {
         Some(ButtonCommand::Bar(id)) => {

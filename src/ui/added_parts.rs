@@ -7,7 +7,8 @@
 //! command-bar button gives, a value is something the player may see.
 //!
 //! A third kind, a row or a column, holds buttons and texts and places them
-//! one after another, so they need no places of their own.
+//! one after another, so they need no places of their own. A fourth, a cameo
+//! grid, shows one tab's build pictures in the sidebar beside its own grid.
 
 use crate::ui::field_layout::PartBox;
 
@@ -95,6 +96,14 @@ pub enum AddedKind {
     Group {
         column: bool,
         gap: i32,
+    },
+    /// A grid of build pictures for one tab, beside the sidebar's own: `rows`
+    /// rows of `columns` pictures (the sidebar's own count when `None`),
+    /// scrolled by the wheel.
+    CameoGrid {
+        tab: crate::ui::sidebar::SidebarTab,
+        columns: Option<usize>,
+        rows: usize,
     },
 }
 
