@@ -1519,6 +1519,7 @@ impl App {
                 MainMenuShellAction::SinglePlayer
                 | MainMenuShellAction::MoviesAndCredits
                 | MainMenuShellAction::Options
+                | MainMenuShellAction::Mods
                 | MainMenuShellAction::Network
                 | MainMenuShellAction::WwOnline
                 | MainMenuShellAction::ExitGame => {
@@ -1662,6 +1663,14 @@ impl App {
             ShellMessageBoxPurpose::Notice => {
                 Self::close_shell_message_box_from_controller(state);
                 state.platform.window.request_redraw();
+            }
+            ShellMessageBoxPurpose::ModRestart(folder) => {
+                Self::close_shell_message_box_from_controller(state);
+                Self::answer_mod_restart(
+                    state,
+                    folder,
+                    result == crate::ui::shell::modal::ModalResult::MessageBox(0),
+                );
             }
         }
     }
@@ -1882,6 +1891,7 @@ impl App {
             }
             ShellExitThen::PlayMovie => Self::play_selected_movie(state),
             ShellExitThen::MovieListBack => Self::open_movies_credits_page(state),
+            ShellExitThen::ModsBack => Self::close_mods_page(state),
             ShellExitThen::SkirmishStart(session) => Self::commit_skirmish_start(state, *session),
             ShellExitThen::SkirmishBack => Self::commit_skirmish_back(state),
             ShellExitThen::CampaignBack => Self::commit_campaign_back(state),
@@ -2168,8 +2178,17 @@ impl App {
             MainMenuShellAction::MoviesAndCredits => {
                 Self::open_movies_credits_page(state);
             }
-            MainMenuShellAction::Network => Self::open_lan_lobby(state),
-            MainMenuShellAction::WwOnline => Self::open_wol_welcome_page(state),
+            // VERA's Mods button.
+            MainMenuShellAction::Mods => Self::open_mods_page(state),
+            // Both lead to a pre-match check, which compares a mod's files.
+            MainMenuShellAction::Network => {
+                state.process_assets.read_mod_files_ahead();
+                Self::open_lan_lobby(state)
+            }
+            MainMenuShellAction::WwOnline => {
+                state.process_assets.read_mod_files_ahead();
+                Self::open_wol_welcome_page(state)
+            }
         }
     }
 

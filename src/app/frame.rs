@@ -1126,6 +1126,17 @@ impl App {
                                 Self::render_shell_error(state, &mut encoder, &view)?;
                             }
                         }
+                        ScreenPage::Mods => {
+                            if crate::app::frontend::mods_render::render_mods_page(
+                                state,
+                                &mut encoder,
+                                &output.texture,
+                            )? {
+                                presented_shell = PresentedShell::Mods;
+                            } else {
+                                Self::render_shell_error(state, &mut encoder, &view)?;
+                            }
+                        }
                         ScreenPage::Campaign => {
                             if crate::app::frontend::campaign_shell_render::render_campaign_page(
                                 state,

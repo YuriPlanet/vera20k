@@ -55,6 +55,8 @@ pub(crate) enum ShellSlideKind {
     MoviesAndCredits,
     /// Dialog 0x129 — movie list (Play Movie and Back).
     MovieList,
+    /// VERA's Mods page, from the main menu's Mods button.
+    Mods,
     /// Dialog 0x102 — offline skirmish setup.
     Skirmish,
     /// Dialog 0x94 — campaign selection.
@@ -124,6 +126,7 @@ impl ShellSlideKind {
             ShellSlideKind::SinglePlayer => 0x0100,
             ShellSlideKind::MoviesAndCredits => 0x0101,
             ShellSlideKind::MovieList => 0x0129,
+            ShellSlideKind::Mods => crate::ui::mods_shell::DIALOG.0,
             ShellSlideKind::Skirmish => 0x0102,
             ShellSlideKind::Campaign => 0x0094,
             ShellSlideKind::LoadSavedGame => 0x00B7,
@@ -154,7 +157,8 @@ impl ShellSlideKind {
     /// The dialog's slide column with the panel's `rows` tile rows. Every
     /// rendered shell has a `slide` table entry, so a miss is a programming
     /// error. Options slides VERA's page buttons under retail's Keyboard.
-    /// Skirmish slides VERA's Save Setup and Load Setup under Choose Map.
+    /// Skirmish slides VERA's Save Setup and Load Setup under Choose Map. The
+    /// main menu slides VERA's Mods under Options where it has a tile.
     pub(crate) fn column(self, rows: u32, page: Option<&MenuPageSpec>) -> SlideColumn {
         let spec = crate::ui::shell::slide::slide_spec_for(self.dialog_id())
             .expect("rendered shell dialog must have a slide column");
@@ -168,6 +172,10 @@ impl ShellSlideKind {
                         .len() as u32
                 }
                 ShellSlideKind::Skirmish => spec.top_buttons + 2,
+                ShellSlideKind::MainMenu => {
+                    let rows = i32::try_from(rows).unwrap_or(i32::MAX);
+                    spec.top_buttons + u32::from(crate::ui::main_menu_shell::mods_button_fits(rows))
+                }
                 _ => spec.top_buttons,
             },
             |page| page.stacked.len() as u32,
@@ -240,6 +248,8 @@ pub(crate) enum ShellExitThen {
     PlayMovie,
     /// Movie list Back (state `0xE` result -1).
     MovieListBack,
+    /// VERA's Mods page Back: the main menu is built again.
+    ModsBack,
     /// Skirmish Start Game (result `0x617`) with the session packed and
     /// resolved when it was pressed.
     SkirmishStart(Box<crate::skirmish_launch::SkirmishLaunchSession>),
@@ -357,6 +367,7 @@ impl ShellExitThen {
             Self::SinglePlayer(_) => ShellSlideKind::SinglePlayer,
             Self::MoviesCredits(_) => ShellSlideKind::MoviesAndCredits,
             Self::PlayMovie | Self::MovieListBack => ShellSlideKind::MovieList,
+            Self::ModsBack => ShellSlideKind::Mods,
             Self::SkirmishStart(_) | Self::SkirmishBack => ShellSlideKind::Skirmish,
             Self::CampaignBack | Self::CampaignStart(_) => ShellSlideKind::Campaign,
             Self::LoadSavedGameBack => ShellSlideKind::LoadSavedGame,
@@ -667,6 +678,7 @@ impl<'a> ShellLifecycleReducer<'a> {
             ShellSlideKind::SinglePlayer
             | ShellSlideKind::MoviesAndCredits
             | ShellSlideKind::MovieList
+            | ShellSlideKind::Mods
             | ShellSlideKind::Campaign
             | ShellSlideKind::LoadSavedGame
             | ShellSlideKind::Options
@@ -929,6 +941,8 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
         ShellSlideKind::MoviesAndCredits
     } else if state.frontend.shell_route.movie_list() {
         ShellSlideKind::MovieList
+    } else if state.frontend.shell_route.mods() {
+        ShellSlideKind::Mods
     } else if state.frontend.shell_route.campaign() {
         ShellSlideKind::Campaign
     } else if state.frontend.shell_route.load_saved_game() {
@@ -1146,6 +1160,9 @@ pub(crate) fn render_shell_first_paint_slide(
                 encoder,
                 destination,
             )?
+        }
+        ShellSlideKind::Mods => {
+            crate::app::frontend::mods_render::render_mods_page(state, encoder, destination)?
         }
         ShellSlideKind::Campaign => {
             crate::app::frontend::campaign_shell_render::render_campaign_page(
@@ -1524,7 +1541,11 @@ mod tests {
             let column = kind.column(9, None);
             (column.top_buttons, column.bottom_button, column.map_button)
         };
-        assert_eq!(top_and_bottom(ShellSlideKind::MainMenu), (5, true, false));
+        // VERA's Mods button slides under Options where the column has a
+        // tile for it; retail 640x480's six rows have none.
+        assert_eq!(top_and_bottom(ShellSlideKind::MainMenu), (6, true, false));
+        assert_eq!(ShellSlideKind::MainMenu.column(6, None).top_buttons, 5);
+        assert_eq!(top_and_bottom(ShellSlideKind::Mods), (2, true, false));
         assert_eq!(
             top_and_bottom(ShellSlideKind::SinglePlayer),
             (3, true, false)

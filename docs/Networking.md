@@ -28,6 +28,17 @@ The HTTPS service supplies match-specific relay credentials before the same load
 and command handoff. Both paths transfer selected authored maps or generated
 seed/preview data and verify build, rules and effective-map agreement before start.
 
+The rules agreement is one digest of the process's rules sources
+(`ProcessAssets::multiplayer_rules_digest`). With a mod in use
+([modding guide](modding.md#the-mods-folder)) it also covers every file in the mod's
+folder but `mod.ini`, by path and content, so players whose copies of a mod differ are
+refused as on any rules difference. The files are read once, starting when the player
+opens Network or Internet. Nothing more is exchanged, and without a mod the digest is the
+same bytes as before. A game from before this is another version and is
+refused by the build check first; a rollback returns to the earlier digest for everyone
+on that build. Quick Match plays the original game: a client with a mod in use ends its
+search with a message that says to pick No mod.
+
 Typing `/translate zh` (or `en`, `zh-tw`, `ja`, `ko`, `de`, `fr`, `es`, `pt`, `ru`,
 `ar`, `th`, `tr`, `sv`) in an online chat edit turns on chat translation, saved as `[VERA] TranslateChat=`;
 `/translate off` stops it. The online lobby's Chat Translation page picks the same

@@ -11,6 +11,7 @@ pub(crate) enum PresentedShell {
     SinglePlayer,
     MoviesAndCredits,
     MovieList,
+    Mods,
     FullscreenMovie,
     CreditsRoll,
     Skirmish,

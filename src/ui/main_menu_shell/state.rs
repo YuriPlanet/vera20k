@@ -11,6 +11,9 @@ use crate::ui::shell::descriptor::DialogId;
 /// The main-menu dialog resource.
 pub const MAIN_MENU_DIALOG: DialogId = DialogId(0x00E2);
 
+/// The Mods button's id in the 0xE2 layout, outside retail's ids.
+pub(crate) const MODS_BUTTON: u16 = 0x7FE0;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MainMenuControlId {
     SinglePlayer0x683,
@@ -18,6 +21,10 @@ pub enum MainMenuControlId {
     Network0x578,
     MoviesAndCredits0x686,
     Options0x55c,
+    /// VERA's Mods button, under Options where the column has room
+    /// ([`super::mods_button_fits`]). Not a retail control: its id only names
+    /// its rect.
+    Mods,
     ExitGame0x3ee,
 }
 
@@ -31,6 +38,7 @@ impl MainMenuControlId {
             Self::Network0x578 => 0x0578,
             Self::MoviesAndCredits0x686 => 0x0686,
             Self::Options0x55c => 0x055C,
+            Self::Mods => MODS_BUTTON,
             Self::ExitGame0x3ee => 0x03EE,
         }
     }
@@ -43,6 +51,7 @@ impl MainMenuControlId {
             0x0578 => Self::Network0x578,
             0x0686 => Self::MoviesAndCredits0x686,
             0x055C => Self::Options0x55c,
+            MODS_BUTTON => Self::Mods,
             0x03EE => Self::ExitGame0x3ee,
             _ => return None,
         })
@@ -57,6 +66,8 @@ pub enum MainMenuShellAction {
     Network,
     MoviesAndCredits,
     Options,
+    /// Opens VERA's Mods page (`ui::mods_shell`).
+    Mods,
     ExitGame,
 }
 
@@ -94,13 +105,14 @@ pub fn action_for_control(id: MainMenuControlId) -> MainMenuShellAction {
         MainMenuControlId::Network0x578 => MainMenuShellAction::Network,
         MainMenuControlId::MoviesAndCredits0x686 => MainMenuShellAction::MoviesAndCredits,
         MainMenuControlId::Options0x55c => MainMenuShellAction::Options,
+        MainMenuControlId::Mods => MainMenuShellAction::Mods,
         MainMenuControlId::ExitGame0x3ee => MainMenuShellAction::ExitGame,
     }
 }
 
 pub fn return_code_for_action(action: MainMenuShellAction) -> Option<i32> {
     match action {
-        MainMenuShellAction::None => None,
+        MainMenuShellAction::None | MainMenuShellAction::Mods => None,
         MainMenuShellAction::SinglePlayer => Some(1),
         MainMenuShellAction::WwOnline => Some(2),
         MainMenuShellAction::Network => Some(3),
@@ -117,6 +129,7 @@ pub fn csf_key_for_control(id: MainMenuControlId) -> &'static str {
         MainMenuControlId::Network0x578 => "GUI:Network",
         MainMenuControlId::MoviesAndCredits0x686 => "GUI:MoviesAndCredits",
         MainMenuControlId::Options0x55c => "GUI:Options",
+        MainMenuControlId::Mods => crate::ui::mods_shell::TITLE_KEY,
         MainMenuControlId::ExitGame0x3ee => "GUI:ExitGame",
     }
 }
@@ -130,6 +143,7 @@ pub fn tooltip_csf_key_for_control(id: MainMenuControlId) -> &'static str {
         MainMenuControlId::Network0x578 => "STT:MainButtonNetwork",
         MainMenuControlId::MoviesAndCredits0x686 => "STT:MainButtonMovies",
         MainMenuControlId::Options0x55c => "STT:MainButtonOptions",
+        MainMenuControlId::Mods => crate::ui::mods_shell::BUTTON_HELP_KEY,
         MainMenuControlId::ExitGame0x3ee => "STT:MainButtonExitGamemd",
     }
 }

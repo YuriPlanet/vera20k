@@ -248,6 +248,117 @@ impl ShellListGeometry {
     }
 }
 
+/// One owner-draw list box of a family page (the movie list `0x129`, VERA's
+/// Mods list): its rows, the subclass selection and the scrollbar's state.
+#[derive(Debug, Clone)]
+pub struct ListBoxState<Row> {
+    pub rows: Vec<Row>,
+    /// Subclass current selection (`-1` = none). Its LB_SETCURSEL handler
+    /// (`0x0061A534..0x0061A5F5`) always returns 0, so the proc's fallback
+    /// `LB_SETCURSEL(0)` never runs: a fresh process opens with nothing
+    /// selected.
+    pub selected: Option<usize>,
+    pub top: usize,
+    /// Previous press for the ListBox class's `CS_DBLCLKS` detection.
+    pub last_press: Option<(Instant, i32, i32)>,
+    /// Scrollbar capture and arrow repeat (`0x0061C690`).
+    pub scroll: ListScrollInteraction,
+}
+
+impl<Row> ListBoxState<Row> {
+    pub fn new(rows: Vec<Row>, selected: Option<usize>) -> Self {
+        Self {
+            rows,
+            selected,
+            top: 0,
+            last_press: None,
+            scroll: ListScrollInteraction::default(),
+        }
+    }
+
+    /// List and scrollbar geometry. The shared geometry takes the paint
+    /// surface, one pixel wider and taller than the `0x744` window, which
+    /// reproduces the retail frames: a scrollbar only above 15 rows, at
+    /// `x + w - 20` and 20 wide, a 202 px thumb for 17 rows.
+    pub fn geometry(&self, list: RectPx, metrics: ListMetrics) -> ShellListGeometry {
+        ShellListGeometry::new(
+            RectPx::new(list.x, list.y, list.w + 1, list.h + 1),
+            self.rows.len(),
+            self.top,
+            metrics,
+        )
+    }
+
+    /// A press on the scrollbar child: capture it, step an arrow or jump the
+    /// track. Returns `false` when the press is not on the scrollbar.
+    pub fn scroll_press(
+        &mut self,
+        list: RectPx,
+        metrics: ListMetrics,
+        x: i32,
+        y: i32,
+        now: Instant,
+    ) -> bool {
+        let geometry = self.geometry(list, metrics);
+        let Some(part) = geometry.scroll_part_at(x, y) else {
+            return false;
+        };
+        self.scroll.press(part, geometry, &mut self.top, y, now);
+        true
+    }
+
+    /// Pointer motion while the scrollbar may hold capture (thumb drag).
+    pub fn scroll_pointer_moved(&mut self, list: RectPx, metrics: ListMetrics, x: i32, y: i32) {
+        let geometry = self.geometry(list, metrics);
+        self.scroll.pointer_moved(geometry, &mut self.top, x, y);
+    }
+
+    /// Arrow auto-repeat; returns whether the list changed.
+    pub fn scroll_poll(
+        &mut self,
+        list: RectPx,
+        metrics: ListMetrics,
+        x: i32,
+        y: i32,
+        now: Instant,
+    ) -> bool {
+        if self.scroll.repeat_at().is_none() {
+            return false;
+        }
+        let geometry = self.geometry(list, metrics);
+        self.scroll.poll(geometry, &mut self.top, x, y, now)
+    }
+
+    /// Whether a press is the second click of a double-click
+    /// ([`is_double_click`]).
+    pub fn is_double_click(
+        &mut self,
+        now: Instant,
+        x: i32,
+        y: i32,
+        limits: (Duration, i32, i32),
+    ) -> bool {
+        is_double_click(&mut self.last_press, now, x, y, limits)
+    }
+
+    /// Row under a pointer press (`0x0061A948`): `client_y / 19 + top`,
+    /// without a border correction, ignoring presses below the last row. The
+    /// scrollbar is its own child window, so presses on it never reach the
+    /// list.
+    pub fn row_at(&self, list: RectPx, metrics: ListMetrics, x: i32, y: i32) -> Option<usize> {
+        if !list.contains(x, y)
+            || self
+                .geometry(list, metrics)
+                .scrollbar
+                .is_some_and(|bar| bar.contains(x, y))
+        {
+            return None;
+        }
+        let row = ((y - list.y) / metrics.row_h) as usize + self.top;
+        (row < self.rows.len()).then_some(row)
+    }
+}
+
 /// Shared 0061C890..0061C8AA scrollbar placement. Both list boxes and
 /// ComboDropWin create the same 0061C690 child; its range is the maximum
 /// top index, not the item count. The paint origin includes the one-pixel inset.

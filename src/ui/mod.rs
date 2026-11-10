@@ -19,6 +19,7 @@ pub mod main_menu_dialogs;
 pub mod main_menu_shell;
 pub mod match_layout;
 pub mod messages;
+pub(crate) mod mods_shell;
 pub mod movies_credits_shell;
 pub(crate) mod multiplayer_setup;
 pub mod pause_menu;

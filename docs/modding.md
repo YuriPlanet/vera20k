@@ -65,9 +65,9 @@ first, and the game folder is never changed.
 | A `Maps` folder of `.yrm` files | Adds your maps to the map list, with or without a mod. Create the folder if it isn't there. Maps you download online go here too. |
 | `vera20k.<language>.ini` | Adds a language, or changes the game's text. See [translating](../src/i18n/README.md). |
 
-`config.toml` is here too. It says where the game folder is and which mod to play. The
-game writes everything else itself, such as `VERA.INI` (your options and hotkeys),
-`saves`, `replays` and `logs`.
+`config.toml` is here too. It says where the game folder is and which mod to play; the
+Mods menu writes the mod for you. The game writes everything else itself, such as
+`VERA.INI` (your options and hotkeys), `saves`, `replays` and `logs`.
 
 Art, sounds and files such as `rulesmd.ini` do nothing directly in this folder. They go
 in a mod's folder. Don't share this folder with anyone, because it holds your online
@@ -92,7 +92,7 @@ game folder works the same from its own folder.
 | An archive named `expandmd50.mix` | Replaces the game's copies of the files inside it. The number can be 00 to 99, and higher numbers win. An archive with the same name as one in the game folder takes that archive's place, so pick a number the game doesn't use unless you mean that. |
 | Maps | Adds them to the map list while the mod is in use. |
 | `veraui.ini` | Lays out the sidebar: where its parts sit, which it has, and how wide it is. See [interface layout](interface-layout.md). |
-| `mod.ini` | Says what the mod is called. Optional. |
+| `mod.ini` | Says what the mod is called, who made it and what it is. Optional. |
 
 #### mod.ini
 
@@ -100,20 +100,33 @@ game folder works the same from its own folder.
 [Mod]
 Name=My Mod
 Version=1.2
+Author=Your name
+About=A heavier Rhino tank and a new snow tank.
+Terms=Free to share. Ask before you reuse the art.
 Needs=0.2.11
 ```
 
 Every line is optional. Save the file as UTF-8. As in the game's own files, `;` starts
-a comment.
+a comment, so don't use one in your text. The game keeps the first 300 characters of a
+line.
 
 - `Name` and `Version` are what the game calls the mod. Without them it uses the
   folder's name.
+- `Author`, `About` and `Terms` show in the Mods menu when the mod is picked: who made
+  it, what it is in a line or two, and what others may do with your work.
 - `Needs` is the oldest VERA20k version that can play the mod. An older game says so and
-  starts without the mod. Leave it out unless the mod uses something a newer version added.
+  plays without the mod, and its Mods menu shows what the mod needs. Leave it out unless
+  the mod uses something a newer version added.
 
 #### Pick a mod
 
-Open `config.toml` and add a `mod` line under `[paths]` with the folder's name:
+Start the game and press **Mods** in the main menu. The list shows the original game as
+**No mod**, then every folder in `Mods`. Pick one and press **Use This Mod**. The game
+restarts with the mod, and the main menu then shows the mod's name. To go back to the
+original game, pick **No mod** the same way. **Open Mods Folder** opens `Mods`.
+
+The menu keeps your choice in `config.toml`, as a `mod` line under `[paths]`, and makes
+the file beside the program if there is none yet. You can write the line yourself:
 
 ```toml
 [paths]
@@ -121,7 +134,8 @@ ra2_dir = "C:/Games/Red Alert 2"
 mod = "MyMod"
 ```
 
-Remove the line to play the original game. There's no mod menu yet.
+A game window of exactly 640x480 has no room for the Mods button. Use a bigger window,
+the line above, or a switch.
 
 A switch after the program's name picks a mod for one start, whatever `config.toml`
 says. Put it on a shortcut to start a mod with one click:
@@ -134,7 +148,8 @@ says. Put it on a shortcut to start a mod with one click:
 #### If a mod doesn't start
 
 - If the folder isn't there, or the mod needs a newer VERA20k, the game starts without
-  the mod and says why in the main menu.
+  the mod and says why in the main menu. To stop the message, open Mods, pick **No mod**
+  and press **Use This Mod**.
 - If the game can't start with a mod, the next start is without it, so you always get
   back to the menu. Start the game once more to try the mod again.
 
@@ -204,8 +219,8 @@ VERA20k adds two things. Open the map in a text editor to set them:
 ### If a change doesn't work
 
 - Restart the game and start a new match. A loaded save keeps the rules it was saved with.
-- Check that the game uses your mod. Near its start, `logs/ra2.log` has a line beginning
-  `Mod in use:`.
+- Check that the game uses your mod. The main menu shows its name, and near its start
+  `logs/ra2.log` has a line beginning `Mod in use:`.
 - Check your spelling. A wrong name is ignored with no error, and capitals count: `Cost=`
   works, `cost=` doesn't.
 - `;` starts a comment. `#` doesn't.
@@ -214,18 +229,24 @@ VERA20k adds two things. Open the map in a text editor to set them:
 ## Playing with others
 
 A match starts only if everyone has the same VERA20k version and build, the same map, and
-the same `rulesmd.ini`, `artmd.ini`, `aimd.ini` and `VERARULES.INI`. Pictures, sounds and
-`veraui.ini` aren't compared, so give everyone the same mod files. Players who don't have your map are
-asked whether to download it when they join your online room.
+the same `rulesmd.ini`, `artmd.ini`, `aimd.ini` and `VERARULES.INI`. With a mod in use,
+everyone also needs the same files in the mod's folder: every file there is compared by
+its name and what it holds, except `mod.ini` and `veraui.ini`. The folder's own name
+doesn't matter, and a file name with letters outside plain English counts only by what
+the file holds. Pictures and sounds you put in the game folder itself aren't compared.
+Players who don't have your map are asked whether to download it when they join your
+online room.
 
-Quick Match pairs you with anyone on the same VERA20k version, so use it with an unchanged
-game. Remove the `mod` line from `config.toml` or start with `--no-mod`, and put `;` in
-front of your changes in `VERARULES.INI`.
+Quick Match pairs you with anyone on the same VERA20k version, so it plays the original
+game. With a mod in use it tells you to pick **No mod** in the Mods menu first. Put `;`
+in front of your changes in `VERARULES.INI` too.
 
 ## Sharing your mod
 
 - Give people your mod's folder, with only the files you made or changed in it. They put
-  it in their own `Mods` folder and pick it. A `VERARULES.INI` goes in their VERA20k folder.
+  it in their own `Mods` folder and pick it in the Mods menu. A `VERARULES.INI` goes in
+  their VERA20k folder.
+- Say in `mod.ini`'s `Terms=` what others may do with your work. The Mods menu shows it.
 - Everyone needs their own copy of the game. Don't share VERA20k together with the game's
   files.
 - If you share a changed VERA20k program, you must share its source code too and give it
