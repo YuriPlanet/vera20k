@@ -222,6 +222,11 @@ pub(crate) struct MatchInputState {
     /// saved nor simulation state and is discarded when pointer focus changes.
     last_cursor_window: Option<(f32, f32)>,
     pub(crate) keys_held: HashSet<KeyCode>,
+    /// Whether the last window event found the match paused, and the keys
+    /// released since then: a pause admits no held-key change, so its end
+    /// applies them ([`Self::track_pause`]).
+    paused_at_last_event: bool,
+    released_while_paused: HashSet<KeyCode>,
     pub(crate) camera_scroll_keys: super::hotkeys::CameraScrollKeys,
     pub(crate) hotkey_bindings: crate::app::input::hotkeys::HotkeyBindings,
     pub(crate) hotkey_modifiers: ModifiersState,
@@ -481,6 +486,8 @@ impl MatchInputState {
             cursor_zoom: None,
             last_cursor_window: None,
             keys_held: HashSet::new(),
+            paused_at_last_event: false,
+            released_while_paused: HashSet::new(),
             camera_scroll_keys: Default::default(),
             hotkey_bindings,
             hotkey_modifiers: ModifiersState::empty(),
@@ -777,6 +784,44 @@ impl MatchInputState {
         self.cancel_tactical_drag();
     }
 
+    /// Follow the pause across window events. While paused (Esc menu, shared
+    /// pause, radar movie) gameplay admits no key or modifier change, so a key
+    /// let go then would stay held after the pause: scrolling by itself, or
+    /// force-fire with no Ctrl down. Nothing more is admitted while paused;
+    /// when the pause ends, the gameplay modifiers take the live ones and
+    /// each key released meanwhile leaves `keys_held`, the scroll keys and
+    /// type-select (without its tap). A key pressed again and still down
+    /// stays held. `key` is this event's physical key edge, if it is one.
+    /// VERA-only: native polls the current keys once its gates lift.
+    pub(crate) fn track_pause(
+        &mut self,
+        paused: bool,
+        live_modifiers: ModifiersState,
+        key: Option<(KeyCode, bool)>,
+    ) {
+        if self.paused_at_last_event && !paused {
+            self.hotkey_modifiers = live_modifiers;
+            for released in std::mem::take(&mut self.released_while_paused) {
+                self.camera_scroll_keys.release(released);
+                self.keys_held.remove(&released);
+                if let Some(scroll) = super::hotkeys::physical_scroll_key(released) {
+                    self.keys_held.remove(&scroll);
+                }
+                if self.type_select.owns_key(released) {
+                    self.type_select.clear_held();
+                }
+            }
+        }
+        self.paused_at_last_event = paused;
+        if paused && let Some((code, pressed)) = key {
+            if pressed {
+                self.released_while_paused.remove(&code);
+            } else {
+                self.released_while_paused.insert(code);
+            }
+        }
+    }
+
     /// KeyboardClear54F720 drains accepted input and Lock/Unlock clear the
     /// command latch. Edges are synchronous in this app, so no second ring
     /// exists; discard only app command latches. Physical key state remains
@@ -849,3 +894,43 @@ mod house_cheer_tests;
 #[cfg(test)]
 #[path = "house_cheer_retail_tests.rs"]
 mod house_cheer_retail_tests;
+
+#[cfg(test)]
+mod pause_resync_tests {
+    use super::*;
+
+    #[test]
+    fn keys_and_modifiers_released_while_paused_are_not_held_after_the_pause() {
+        let mut input = MatchInputState::new(Default::default());
+        let now = crate::util::time::Instant::now();
+        // Held going into the pause: Ctrl, an arrow, a second arrow, T.
+        input.hotkey_modifiers = ModifiersState::CONTROL;
+        input.keys_held.insert(KeyCode::ArrowLeft);
+        input.keys_held.insert(KeyCode::ArrowUp);
+        input.type_select.press(KeyCode::KeyT, now, false);
+        input.track_pause(true, ModifiersState::CONTROL, None);
+        // Released under the Esc menu; the pause itself changes nothing.
+        input.track_pause(
+            true,
+            ModifiersState::empty(),
+            Some((KeyCode::ControlLeft, false)),
+        );
+        input.track_pause(
+            true,
+            ModifiersState::empty(),
+            Some((KeyCode::ArrowLeft, false)),
+        );
+        input.track_pause(true, ModifiersState::empty(), Some((KeyCode::KeyT, false)));
+        assert!(input.keys_held.contains(&KeyCode::ArrowLeft));
+        assert_eq!(input.hotkey_modifiers, ModifiersState::CONTROL);
+        // The first event after the pause applies the live state.
+        input.track_pause(false, ModifiersState::empty(), None);
+        assert!(input.hotkey_modifiers.is_empty());
+        assert!(!input.keys_held.contains(&KeyCode::ArrowLeft));
+        assert!(!input.type_select.held());
+        assert!(
+            input.keys_held.contains(&KeyCode::ArrowUp),
+            "a key still down keeps scrolling"
+        );
+    }
+}
