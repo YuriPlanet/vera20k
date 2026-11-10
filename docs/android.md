@@ -78,6 +78,12 @@ compiled into the package, so Android carries both instead:
 - `res/mipmap-*/ic_launcher_vera.png` from `src/app/vera_icon.png`, the artwork
   the VERA Icon box selects.
 
+The red star is game art, not ours: Command & Conquer, Red Alert and Yuri's
+Revenge are trademarks of Electronic Arts Inc., and the program icon is Red
+Alert 2's red star, owned by Electronic Arts. VERA20k is not affiliated with or
+endorsed by Electronic Arts. `.github/release/README.txt.in` and the Windows
+version resource say the same for the release packages.
+
 Each density also has a `*_foreground.png` on a 108 dp canvas with the artwork
 inside the 72 dp safe zone, and `res/mipmap-anydpi-v26/ic_launcher_<name>.xml`
 pairs it with a median-colour background, so every launcher mask crops the icon
