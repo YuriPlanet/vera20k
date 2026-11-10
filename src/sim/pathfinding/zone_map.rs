@@ -18,6 +18,7 @@
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use super::PathGrid;
 use super::zone_build;
@@ -64,6 +65,11 @@ pub(crate) fn raw_zone_invalid(grid: crate::map::cell_index::CellGrid) -> ZoneId
     }
 }
 
+/// Per-cell bridge-layer redirect: the ground cell whose zone a bridge-layer
+/// query reads, or `None` where the cell has no bridge layer. One table serves
+/// every movement row that uses bridges, so the rows share it.
+pub(crate) type BridgeRedirect = Arc<[Option<(u16, u16)>]>;
+
 /// Sentinel for impassable or unassigned cells.
 pub const ZONE_INVALID: ZoneId = 0;
 
@@ -79,7 +85,7 @@ pub struct ZoneMap {
     /// Per-cell bridge redirect: for bridge cells, the ground endpoint cell
     /// whose zone ID should be returned for bridge-layer queries.
     /// None = no bridges on map. Mirrors gamemd.exe GetZoneID redirect (0x0056d230).
-    bridge_redirect: Option<Vec<Option<(u16, u16)>>>,
+    bridge_redirect: Option<BridgeRedirect>,
     width: u16,
     height: u16,
 }
@@ -96,7 +102,7 @@ impl ZoneMap {
     /// Construct a ZoneMap from pre-computed arrays.
     pub(crate) fn new(
         zone_ids: Vec<ZoneId>,
-        bridge_redirect: Option<Vec<Option<(u16, u16)>>>,
+        bridge_redirect: Option<BridgeRedirect>,
         width: u16,
         height: u16,
     ) -> Self {
@@ -167,7 +173,7 @@ impl ZoneMap {
     }
 
     /// Replace the bridge redirect table.
-    pub(crate) fn set_bridge_redirect(&mut self, redirect: Option<Vec<Option<(u16, u16)>>>) {
+    pub(crate) fn set_bridge_redirect(&mut self, redirect: Option<BridgeRedirect>) {
         self.bridge_redirect = redirect;
     }
 }
@@ -546,23 +552,26 @@ impl ZoneGrid {
         width: u16,
         height: u16,
     ) -> BTreeMap<MovementZone, ZoneMap> {
-        MovementZone::all_ground()
-            .iter()
-            .map(|&mz| {
-                let mut zone_map =
-                    zone_build::build_zone_map_from_base_topology(base, mz, width, height);
-                if mz.can_use_bridges() {
-                    zone_map.set_bridge_redirect(zone_build::build_bridge_redirect(
-                        path_grid,
-                        Some(terrain),
-                        bridge_records,
-                        width,
-                        height,
-                    ));
-                }
-                (mz, zone_map)
-            })
-            .collect()
+        // The redirect reads only the terrain and the bridge records, so one
+        // table serves every row that uses bridges. The rows project
+        // independently; `parallel::map` keeps them in row order.
+        let redirect = zone_build::build_bridge_redirect(
+            path_grid,
+            Some(terrain),
+            bridge_records,
+            width,
+            height,
+        );
+        let rows = MovementZone::all_ground();
+        let maps = crate::sim::parallel::map(rows, |&mz| {
+            let mut zone_map =
+                zone_build::build_zone_map_from_base_topology(base, mz, width, height);
+            if mz.can_use_bridges() {
+                zone_map.set_bridge_redirect(redirect.clone());
+            }
+            zone_map
+        });
+        rows.iter().copied().zip(maps).collect()
     }
 
     pub(crate) fn bridge_inputs_match(
