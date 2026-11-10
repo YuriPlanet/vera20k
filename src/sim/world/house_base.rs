@@ -362,8 +362,14 @@ impl Simulation {
             };
             let (side, difficulty, tech_level) =
                 (house.side_index(), house.difficulty(), house.tech_level());
-            if crate::sim::base_plan_generation::preflight_recalc(rules, &country, side, difficulty)
-                .is_err()
+            if crate::sim::base_plan_generation::preflight_recalc(
+                rules,
+                &country,
+                side,
+                difficulty,
+                self.session.game_options().super_weapons,
+            )
+            .is_err()
             {
                 return false;
             }

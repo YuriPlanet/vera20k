@@ -20,16 +20,21 @@ pub(crate) enum RecalcPreflightError {
     UnknownCountry,
     MissingRefineryDifficulty,
     MissingDefenseDifficulty,
+    NoBuildablePower,
 }
 
-/// Validate only the directly indexed malformed-vector branches before an MCV
-/// can be destructively removed. This is a VERA-internal safety boundary; the
-/// native code performs unchecked DynamicVector indexing.
+/// Validate the directly indexed malformed-vector branches and the lookup
+/// Recalc dereferences unchecked, before an MCV can be destructively removed.
+/// This is a VERA-internal safety boundary: the native code performs
+/// unchecked DynamicVector indexing, and pushes the null result of an empty
+/// or unbuildable `[AI] BuildPower=` list into the plan and reads its type
+/// index. (A null `BuildRefinery=` result is only compared, never read.)
 pub(crate) fn preflight_recalc(
     rules: &RuleSet,
     country_name: &str,
     side_index: i32,
     difficulty: HouseDifficulty,
+    super_weapons: bool,
 ) -> Result<(), RecalcPreflightError> {
     rules
         .country_index(country_name)
@@ -56,6 +61,14 @@ pub(crate) fn preflight_recalc(
     if defense_counts.is_some_and(|counts| counts.get(difficulty.table_index()).is_none()) {
         return Err(RecalcPreflightError::MissingDefenseDifficulty);
     }
+    first_buildable_from_array(
+        rules,
+        &rules.build_power_types,
+        country_name,
+        side_index,
+        super_weapons,
+    )
+    .ok_or(RecalcPreflightError::NoBuildablePower)?;
     Ok(())
 }
 
@@ -76,7 +89,9 @@ pub(crate) fn recalc_base_plan(
     super_weapons: bool,
     scenario_rng: &mut SimRng,
 ) {
-    debug_assert!(preflight_recalc(rules, country_name, side_index, difficulty).is_ok());
+    debug_assert!(
+        preflight_recalc(rules, country_name, side_index, difficulty, super_weapons).is_ok()
+    );
 
     let country = CountryBuildMasks::for_country(rules, country_name);
     let mut eligible: Vec<&ObjectType> = rules
@@ -192,18 +207,21 @@ pub(crate) fn recalc_base_plan(
         country_name,
         side_index,
         super_weapons,
-    )
-    .expect("active Recalc BuildRefinery list resolves a buildable type");
+    );
     let has_harvester = first_owner_compatible_harvester(rules, country.owner_bit()).is_some();
     let duplicate_count = if has_harvester {
         rules.ai_extra_refineries[difficulty.table_index()]
     } else {
         rules.ai_slave_miner_number[difficulty.table_index()].wrapping_sub(1)
     };
-    if let Some(refinery_index) = priority
-        .iter()
-        .take(priority.len().saturating_sub(1))
-        .position(|candidate| candidate.base_plan_type_index == refinery.base_plan_type_index)
+    // 0x005054B0 only compares the BuildRefinery result with each list
+    // entry: a null one (an empty or unbuildable list) matches nothing and
+    // inserts no extra refinery.
+    if let Some(refinery) = refinery
+        && let Some(refinery_index) = priority
+            .iter()
+            .take(priority.len().saturating_sub(1))
+            .position(|candidate| candidate.base_plan_type_index == refinery.base_plan_type_index)
     {
         for _ in 0..duplicate_count.max(0) {
             let insert_after = scenario_rng.next_range_u32_inclusive(
@@ -249,11 +267,9 @@ pub(crate) fn recalc_base_plan(
     // 0x00505B58) and _FullAutoCopy 10023B10 (hook 0x00505C34, EDI = 0 into
     // `cmp ecx,edi` at 0x00505C39) copy the whole list from index 0, so a
     // list shorter than the three hand-copied seeds no longer reads past it.
-    #[cfg(not(feature = "ares"))]
-    assert!(
-        priority.len() >= 3,
-        "active Recalc priority contains its three native seed entries"
-    );
+    // VERA-only without Ares: native hand-copies three seeds and reads past
+    // a shorter list (a country with fewer than three plannable buildings);
+    // VERA copies what the list holds.
     let mut final_values = Vec::with_capacity(priority.len());
     let seeds = priority.len().min(3);
     final_values.extend(
@@ -300,7 +316,9 @@ pub(crate) fn recalc_base_plan(
         let insert_after = scenario_rng
             .next_range_u32_inclusive(3, final_values.len().wrapping_sub(1) as u32)
             as usize;
-        final_values.insert(insert_after + 1, -1);
+        // The draw's bounds swap for a list of three or fewer, where native
+        // inserts past the vector's end; VERA appends there.
+        final_values.insert((insert_after + 1).min(final_values.len()), -1);
     }
 
     plan.rebuild(final_values);
@@ -874,19 +892,80 @@ mod tests {
     fn recalc_preflight_rejects_only_the_selected_missing_vector_branch() {
         let no_vectors = planner_rules("HARV", "Americans", "", "", "", "", "", "", "");
         assert_eq!(
-            preflight_recalc(&no_vectors, "Americans", 0, HouseDifficulty::Hard),
+            preflight_recalc(&no_vectors, "Americans", 0, HouseDifficulty::Hard, true),
             Err(RecalcPreflightError::MissingRefineryDifficulty)
         );
 
         let no_defense = planner_rules("HARV", "Americans", "0,0,0", "1,1,1", "", "", "", "", "");
         assert_eq!(
-            preflight_recalc(&no_defense, "Americans", 0, HouseDifficulty::Hard),
+            preflight_recalc(&no_defense, "Americans", 0, HouseDifficulty::Hard, true),
             Err(RecalcPreflightError::MissingDefenseDifficulty)
         );
         assert_eq!(
-            preflight_recalc(&no_defense, "Americans", 9, HouseDifficulty::Hard),
+            preflight_recalc(&no_defense, "Americans", 9, HouseDifficulty::Hard, true),
             Ok(()),
             "an unknown side inserts zero and does not require a defense vector"
         );
+    }
+
+    #[test]
+    fn recalc_preflight_rejects_a_country_without_a_buildable_power_plant() {
+        let ok = basic_rules("", "");
+        assert_eq!(
+            preflight_recalc(&ok, "Americans", 0, HouseDifficulty::Hard, true),
+            Ok(())
+        );
+        let mut no_power = basic_rules("", "");
+        no_power.build_power_types.clear();
+        assert_eq!(
+            preflight_recalc(&no_power, "Americans", 0, HouseDifficulty::Hard, true),
+            Err(RecalcPreflightError::NoBuildablePower)
+        );
+        // Native only compares the refinery result: no entry, no extra
+        // refineries, and the plan is the same without them.
+        let mut no_refinery = basic_rules("", "");
+        no_refinery.build_refinery_types.clear();
+        assert_eq!(
+            preflight_recalc(&no_refinery, "Americans", 0, HouseDifficulty::Hard, true),
+            Ok(())
+        );
+        let (with, _) = generated_values(&ok, "Americans", 0, HouseDifficulty::Hard, 7);
+        let (without, _) = generated_values(&no_refinery, "Americans", 0, HouseDifficulty::Hard, 7);
+        assert_eq!(values(&with), values(&without));
+    }
+
+    /// No building passes the House TechLevel, so the list is the power plant
+    /// alone: shorter than the three seeds, with base defenses to insert.
+    /// (Ares pads such a list to four with defense nodes instead.)
+    #[cfg(not(feature = "ares"))]
+    #[test]
+    fn recalc_survives_a_list_shorter_than_its_three_seeds() {
+        let rules = planner_rules(
+            "HARV",
+            "Americans,Russians,YuriCountry",
+            "0,0,0",
+            "1,1,1",
+            "2,2,2",
+            "2,2,2",
+            "2,2,2",
+            "",
+            "",
+        );
+        let mut plan = BasePlanState::default();
+        let mut rng = SimRng::new(7);
+        recalc_base_plan(
+            &mut plan,
+            &rules,
+            &TypeTechLevels::default(),
+            "Americans",
+            0,
+            HouseDifficulty::Hard,
+            i32::MIN,
+            true,
+            &mut rng,
+        );
+        let values = values(&plan);
+        assert_eq!(values.len(), 3, "{values:?}");
+        assert_eq!(values.iter().filter(|value| **value == -1).count(), 2);
     }
 }
