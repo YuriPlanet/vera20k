@@ -16,6 +16,12 @@ impl ResolvedTerrainGrid {
     /// `cliff_back_rock` is the Rock row under `CliffBackImpassability=2`, which
     /// that function's early overlay branch writes unconditionally behind a
     /// cliff (`0x0047D31E..0x0047D53E`).
+    ///
+    /// This projects a Recalc's result and runs again as a replay (frame end,
+    /// snapshot rebuild), so it reads no cell through the Map lookup: the
+    /// Recalc's own neighbour reads are [`Self::read_cliff_back_neighbours`].
+    /// A replay tests the neighbours' current levels, which differ from the
+    /// Recalc's only if one changed since.
     pub(crate) fn apply_overlay_attributes(
         &mut self,
         rx: u16,
@@ -34,7 +40,7 @@ impl ResolvedTerrainGrid {
             land_flags.is_some_and(uses_early_recalc_land_branch)
                 && self
                     .index(rx, ry)
-                    .is_some_and(|index| self.authored_load_cell_is_behind_cliff(index))
+                    .is_some_and(|index| self.replayed_cell_is_behind_cliff(index))
         });
         let Some(terrain_cell) = self.cell_mut(rx, ry) else {
             return false;

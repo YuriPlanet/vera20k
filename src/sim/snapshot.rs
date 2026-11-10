@@ -2594,10 +2594,16 @@ mod tests {
         use std::collections::BTreeSet;
 
         fn tiberium_fixture() -> (RuleSet, OverlayTypeRegistry, u8) {
-            let ini = IniFile::from_str(
+            tiberium_fixture_with_general("")
+        }
+
+        /// [`tiberium_fixture`] with `general` added to `[General]`.
+        fn tiberium_fixture_with_general(general: &str) -> (RuleSet, OverlayTypeRegistry, u8) {
+            let ini = IniFile::from_str(&format!(
                 "[General]\n\
                  TiberiumGrows=yes\n\
                  TiberiumSpreads=yes\n\
+                 {general}\
                  [InfantryTypes]\n\
                  [VehicleTypes]\n\
                  [AircraftTypes]\n\
@@ -2617,7 +2623,7 @@ mod tests {
                  GrowthPercentage=1\n\
                  Spread=23\n\
                  SpreadPercentage=1\n",
-            );
+            ));
             let ini = crate::rules::tiberium_type::with_tiberium_image_slots(&ini);
             let rules = RuleSet::from_ini(&ini).expect("post-load tiberium fixture rules");
             let registry = OverlayTypeRegistry::from_ini(&ini, None);
@@ -2919,6 +2925,28 @@ mod tests {
             assert_eq!(
                 class.growth.capacity(),
                 crate::sim::ore_growth::native_tiberium_queue_capacity((8, 8))
+            );
+        }
+
+        /// No load function calls `CellClass::RecalcAttributes`
+        /// (`0x0047D2B0`), and MapClass::Resize's whole-map pass
+        /// (`0x00567110`, through `0x00568BB0`) comes before it reconstructs
+        /// the Dummy (`0x005670E7..0x005670F2`). The rebuild's overlay sweep
+        /// stands for no Recalc, so it leaves the shared Dummy cell where it
+        /// was. Ore cell (0, 5) lacks the neighbours (-1, 5) and (-1, 6).
+        #[test]
+        fn postload_overlay_sweep_reads_no_cell_through_the_dummy() {
+            let (rules, registry, ore_id) =
+                tiberium_fixture_with_general("CliffBackImpassability=2\n");
+            let sim = base_sim_sized(ore_id, 12, &[(0, 5)]);
+            let mut restored = restore_before_map_authority(&sim);
+            restored.effective_shared_cell_dummy().stamp_coord(7, 9);
+            restored
+                .restore_map_authority_after_snapshot_load(&rules, &registry, None)
+                .expect("all map-authority rebuild dependencies");
+            assert_eq!(
+                restored.effective_shared_cell_dummy().snapshot().coord,
+                (7, 9)
             );
         }
 

@@ -989,7 +989,24 @@ impl OverlayGrid {
     /// @ 0x00480630 runs Recalc @ 0x00480969, compares old/new zone at
     /// 0x0048096E..0x00480977, then repairs the graph before its neighbor-count
     /// tail. The caller still owns those callbacks in their native slots.
+    ///
+    /// This is gamemd's own `CellClass::RecalcAttributes` call, so it makes
+    /// the call's CliffBack neighbour reads before projecting the cell.
     pub fn recalculate_runtime_cell(
+        &mut self,
+        terrain: &mut ResolvedTerrainGrid,
+        registry: &OverlayTypeRegistry,
+        cell: (u16, u16),
+    ) -> OverlayRecalcOutcome {
+        terrain.read_cliff_back_neighbours(cell, registry.cliff_back_impassability());
+        self.recalculate_deferred_cell(terrain, registry, cell)
+    }
+
+    /// [`Self::recalculate_runtime_cell`] for a Recalc whose neighbour reads
+    /// its owner already made in their gamemd place: an ordinary Overlay's
+    /// Mark that leaves the projection to its batch
+    /// (`OverlayRecalc::DeferOrdinary`).
+    pub(crate) fn recalculate_deferred_cell(
         &mut self,
         terrain: &mut ResolvedTerrainGrid,
         registry: &OverlayTypeRegistry,
@@ -1042,6 +1059,14 @@ impl OverlayGrid {
 /// finalizer replay and bridge-owned immediate publication. Ordinary runtime
 /// overlay mutations use `OverlayGrid::recalculate_runtime_cell` to keep projection
 /// and downstream notification together.
+///
+/// None of those uses is a gamemd Recalc call. The frame-end pass replays
+/// cells whose Recalc ran inside the mutation. No load function calls
+/// `CellClass::RecalcAttributes`, and MapClass::Resize's whole-map pass
+/// (`0x00567110`, through `0x00568BB0`) comes before it reconstructs the
+/// Dummy (`0x005670E7..0x005670F2`). The generator's own passes
+/// (`0x0059937D`) cover the whole map, not its overlays. So this reads no
+/// cell through the Map lookup and leaves the shared Dummy where it was.
 pub fn recalc_overlay_passability(
     overlay_grid: &mut OverlayGrid,
     resolved_terrain: &mut ResolvedTerrainGrid,
@@ -2797,6 +2822,77 @@ IsRubble=yes
         assert_eq!(land_beside_level(&mode_two, 3), LandType::Clear.as_index());
         assert_eq!(land_beside_level(&mode_two, 4), LandType::Rock.as_index());
         assert_eq!(land_beside_level(&no_key, 4), LandType::Clear.as_index());
+    }
+
+    /// A 3x3 array with RUBBLE as overlay 0 under `cliff_back`, the Dummy cell
+    /// left at (7, 7). Cell (0, 1) lacks three of its six CliffBack
+    /// neighbours: (-1, 1), (2, 3) and (-1, 2), read in that order.
+    fn cliff_back_edge_scene(
+        cliff_back: u8,
+    ) -> (
+        crate::map::resolved_terrain::ResolvedTerrainGrid,
+        OverlayTypeRegistry,
+    ) {
+        use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
+        let registry = OverlayTypeRegistry::from_ini(
+            &crate::rules::ini_parser::IniFile::from_str(&format!(
+                "[General]\nCliffBackImpassability={cliff_back}\n[OverlayTypes]\n0=RUBBLE\n\
+                 [Clear]\nTrack=100%\n[Rock]\nTrack=0%\n[RUBBLE]\nIsRubble=yes\n",
+            )),
+            None,
+        );
+        let cells = (0..3)
+            .flat_map(|y| (0..3).map(move |x| test_flat_cell(x, y)))
+            .collect();
+        let terrain = ResolvedTerrainGrid::from_cells(3, 3, cells);
+        terrain.shared_cell_dummy().stamp_coord(7, 7);
+        (terrain, registry)
+    }
+
+    /// `CellClass::RecalcAttributes` (`0x0047D2B0`) reads the six CliffBack
+    /// neighbours through the Map lookup on every Recalc of a real cell
+    /// unless the rules byte is 0: the early overlay branch at
+    /// `0x0047D386..0x0047D393`, a tile without a body at
+    /// `0x0047D5FF..0x0047D60D`, every other cell at `0x0047DB59..0x0047DB66`.
+    /// A missing neighbour answers with the shared Dummy, stamped with its
+    /// coordinate.
+    #[test]
+    fn a_runtime_recalc_reads_the_cliff_back_neighbours_unless_the_byte_is_zero() {
+        let dummy_after = |cliff_back: u8, overlay: bool| {
+            let (mut terrain, registry) = cliff_back_edge_scene(cliff_back);
+            let mut overlay_grid = OverlayGrid::new(3, 3);
+            if overlay {
+                overlay_grid.place_overlay(0, 1, 0, 0);
+            }
+            overlay_grid.recalculate_runtime_cell(&mut terrain, &registry, (0, 1));
+            terrain.shared_cell_dummy().snapshot().coord
+        };
+        for overlay in [true, false] {
+            assert_eq!(dummy_after(0, overlay), (7, 7));
+            assert_eq!(dummy_after(1, overlay), (-1, 2));
+            assert_eq!(dummy_after(2, overlay), (-1, 2));
+        }
+    }
+
+    /// A replay of an overlay cell's attributes (the frame-end pass, a
+    /// snapshot rebuild, generated-map admission) stands for no gamemd
+    /// Recalc. It gives the land the cell's Recalc gave, Rock here because
+    /// the sixth neighbour stands four levels up, and reads no cell through
+    /// the Map lookup.
+    #[test]
+    fn replaying_an_overlay_recalc_leaves_the_dummy_cell_alone() {
+        use crate::rules::terrain_rules::LandType;
+
+        let (mut terrain, registry) = cliff_back_edge_scene(2);
+        terrain.cell_mut_for_test(1, 0).expect("cell").level = 4;
+        let mut overlay_grid = OverlayGrid::new(3, 3);
+        overlay_grid.place_overlay(0, 1, 0, 0);
+        recalc_overlay_passability(&mut overlay_grid, &mut terrain, &registry, 0, 1);
+        assert_eq!(
+            terrain.cell(0, 1).expect("cell").land_type,
+            LandType::Rock.as_index()
+        );
+        assert_eq!(terrain.shared_cell_dummy().snapshot().coord, (7, 7));
     }
 
     #[test]

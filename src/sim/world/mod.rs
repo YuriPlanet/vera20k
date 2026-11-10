@@ -5182,6 +5182,8 @@ impl Simulation {
     /// Overlay Mark5FC570 ->Recalc47D2B0 completes before its Logic caller
     /// returns. Both the global ore rung and a Terrain AI slot must publish
     /// the path view before the next object; retain render dirty receipts.
+    /// The Recalc's neighbour reads stayed inside each Mark
+    /// (`OverlayRecalc::DeferOrdinary`), so the batch makes none.
     pub(crate) fn publish_tiberium_cells(
         &mut self,
         rules: &RuleSet,
@@ -5193,7 +5195,7 @@ impl Simulation {
         {
             for &cell in cells {
                 if grid.cell(cell.0, cell.1).overlay_id.is_some() {
-                    grid.recalculate_runtime_cell(terrain, registry, cell);
+                    grid.recalculate_deferred_cell(terrain, registry, cell);
                 }
             }
         }
