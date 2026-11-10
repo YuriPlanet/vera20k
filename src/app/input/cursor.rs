@@ -1918,9 +1918,16 @@ fn sidebar_view_hit(frame: crate::ui::sidebar::SidebarFrame, cursor_x: f32, curs
         w: w as f32,
         h: h as f32,
     };
+    // The column's zone is shifted 10 pixels toward the battlefield: left
+    // for the original's column on the right.
     let (x, _, w, h) = frame.column();
+    let toward_battlefield = if frame.places().side == crate::ui::sidebar::Edge::Left {
+        10.0
+    } else {
+        -10.0
+    };
     let panel_rect = crate::ui::sidebar::Rect {
-        x: x as f32 - 10.0,
+        x: x as f32 + toward_battlefield,
         y: 10.0,
         w: w as f32,
         h: h as f32 - 20.0,

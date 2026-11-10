@@ -285,7 +285,7 @@ impl SidebarSurface {
             (
                 &self.bar,
                 frame.bar_surface_size(),
-                [0.0, frame.strip_layout_top()],
+                [frame.bar_layout_left(), frame.strip_layout_top()],
             ),
         ] {
             let uniform = CameraUniform {
@@ -466,8 +466,11 @@ impl SidebarSurface {
     pub(crate) fn composite(&self, pass: &mut wgpu::RenderPass<'_>) {
         let (x, y, width, height) = self.frame.column();
         self.column.surface.draw(pass, None, [x, y, width, height]);
-        let (x, y, width, height) = self.frame.strip();
-        self.bar.surface.draw(pass, None, [x, y, width, height]);
+        // A layout without a bar has no strip to copy into.
+        if self.frame.has_bar() {
+            let (x, y, width, height) = self.frame.strip();
+            self.bar.surface.draw(pass, None, [x, y, width, height]);
+        }
     }
 
     /// Copy both surfaces into the window `view` at its own pixels, over the
@@ -511,7 +514,10 @@ impl SidebarSurface {
         for (part, (x, y), rect) in [
             (&self.column, (frame.frame_left(), 0.0), frame.column()),
             (&self.bar, frame.bar_origin(), frame.strip()),
-        ] {
+        ]
+        .into_iter()
+        .filter(|(_, _, rect)| rect.3 > 0)
+        {
             self.window.place(
                 queue,
                 &part.window_placement,

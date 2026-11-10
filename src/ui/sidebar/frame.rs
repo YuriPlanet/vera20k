@@ -31,6 +31,45 @@ pub const SIDEBAR_WIDTH_PX: u32 = 168;
 /// pixels.
 pub const BOTTOM_STRIP_HEIGHT_PX: u32 = 32;
 
+/// A screen edge a panel sits on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Edge {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+/// Where the sidebar's column and the command bar sit in the frame. The
+/// original's: the column on the right, the bar along the bottom of what the
+/// column leaves, and the battlefield in the rest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PanelPlaces {
+    /// The column's edge: `Left`, or anything else for the right.
+    pub side: Edge,
+    /// The column lies over the battlefield and takes no room from it or
+    /// from the bar.
+    pub side_floats: bool,
+    /// The bar's edge: `Top`, anything else for the bottom, or `None` for a
+    /// layout without a bar.
+    pub bar: Option<Edge>,
+}
+
+impl PanelPlaces {
+    /// The original interface's places.
+    pub const ORIGINAL: Self = Self {
+        side: Edge::Right,
+        side_floats: false,
+        bar: Some(Edge::Bottom),
+    };
+}
+
+impl Default for PanelPlaces {
+    fn default() -> Self {
+        Self::ORIGINAL
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SidebarFrame {
     frame_width: u32,
@@ -40,6 +79,8 @@ pub struct SidebarFrame {
     /// The column's width in sidebar pixels: [`SIDEBAR_WIDTH_PX`] unless the
     /// side's layout gives another.
     column_width: u32,
+    /// Where the side's layout puts the column and the bar.
+    places: PanelPlaces,
     /// Surface pixels per sidebar pixel (`in_window`): 1 unless zoomed.
     draw_scale: u32,
     /// Window pixels per 100 frame pixels: the match zoom, 100 unzoomed.
@@ -53,6 +94,7 @@ impl SidebarFrame {
             frame_height,
             percent: percent.max(100),
             column_width: SIDEBAR_WIDTH_PX,
+            places: PanelPlaces::default(),
             draw_scale: 1,
             zoom_percent: 100,
         }
@@ -69,6 +111,34 @@ impl SidebarFrame {
     /// The column's width in sidebar pixels.
     pub fn column_width(self) -> u32 {
         self.column_width
+    }
+
+    /// This frame with the column and the bar where the side's layout puts
+    /// them.
+    pub fn with_places(self, places: PanelPlaces) -> Self {
+        Self { places, ..self }
+    }
+
+    pub fn places(self) -> PanelPlaces {
+        self.places
+    }
+
+    fn column_on_left(self) -> bool {
+        self.places.side == Edge::Left
+    }
+
+    fn bar_on_top(self) -> bool {
+        self.places.bar == Some(Edge::Top)
+    }
+
+    /// The frame width the column takes from the battlefield and the bar:
+    /// none when it floats over them.
+    fn docked_width_in_frame(self) -> u32 {
+        if self.places.side_floats {
+            0
+        } else {
+            self.width_in_frame()
+        }
     }
 
     /// This frame as a window shows it at `zoom_percent`: the surfaces draw
@@ -110,9 +180,14 @@ impl SidebarFrame {
         self.column_width * self.percent / 100
     }
 
-    /// The bottom strip's height in frame pixels: 32 at Normal.
+    /// The bar's strip height in frame pixels: 32 at Normal, none without a
+    /// bar.
     pub fn strip_height_in_frame(self) -> u32 {
-        BOTTOM_STRIP_HEIGHT_PX * self.percent / 100
+        if self.places.bar.is_some() {
+            BOTTOM_STRIP_HEIGHT_PX * self.percent / 100
+        } else {
+            0
+        }
     }
 
     /// The battlefield: the frame less the column and the strip. A degenerate
@@ -120,12 +195,29 @@ impl SidebarFrame {
     pub fn tactical_size(self) -> (u32, u32) {
         (
             self.frame_width
-                .saturating_sub(self.width_in_frame())
+                .saturating_sub(self.docked_width_in_frame())
                 .max(1),
             self.frame_height
                 .saturating_sub(self.strip_height_in_frame())
                 .max(1),
         )
+    }
+
+    /// The battlefield's place in the frame, in frame pixels: right of a
+    /// column docked on the left and under a bar on top.
+    pub fn tactical_rect(self) -> (u32, u32, u32, u32) {
+        let (width, height) = self.tactical_size();
+        let x = if self.column_on_left() {
+            self.docked_width_in_frame().min(self.frame_width)
+        } else {
+            0
+        };
+        let y = if self.bar_on_top() {
+            self.strip_height_in_frame().min(self.frame_height)
+        } else {
+            0
+        };
+        (x, y, width, height)
     }
 
     /// The frame in sidebar pixels, rounded up so the sidebar and the bar
@@ -146,12 +238,35 @@ impl SidebarFrame {
 
     /// Layout-space x of the column's left edge.
     pub fn layout_left(self) -> f32 {
-        self.layout_size().0 as f32 - self.column_width as f32
+        if self.column_on_left() {
+            0.0
+        } else {
+            self.layout_size().0 as f32 - self.column_width as f32
+        }
     }
 
     /// Layout-space y of the strip's top edge.
     pub fn strip_layout_top(self) -> f32 {
-        self.layout_size().1 as f32 - BOTTOM_STRIP_HEIGHT_PX as f32
+        if self.bar_on_top() {
+            0.0
+        } else {
+            self.layout_size().1 as f32 - BOTTOM_STRIP_HEIGHT_PX as f32
+        }
+    }
+
+    /// Layout-space x of the strip's left edge: past a column docked on the
+    /// left.
+    pub fn bar_layout_left(self) -> f32 {
+        if self.column_on_left() && !self.places.side_floats {
+            self.column_width as f32
+        } else {
+            0.0
+        }
+    }
+
+    /// Whether the layout has the command bar.
+    pub fn has_bar(self) -> bool {
+        self.places.bar.is_some()
     }
 
     /// The sidebar's surface in its own pixels: the column's width and the
@@ -160,14 +275,17 @@ impl SidebarFrame {
         (self.column_width, self.layout_size().1)
     }
 
-    /// The bar's surface in its own pixels: the layout's width left of the
-    /// column, and the strip's native height.
+    /// The bar's surface in its own pixels: the layout's width beside the
+    /// column (all of it when the column floats), and the strip's native
+    /// height.
     pub fn bar_surface_size(self) -> (u32, u32) {
+        let beside = if self.places.side_floats {
+            0
+        } else {
+            self.column_width
+        };
         (
-            self.layout_size()
-                .0
-                .saturating_sub(self.column_width)
-                .max(1),
+            self.layout_size().0.saturating_sub(beside).max(1),
             BOTTOM_STRIP_HEIGHT_PX,
         )
     }
@@ -226,32 +344,62 @@ impl SidebarFrame {
     /// The column's left edge in frame pixels; left of the frame when the
     /// frame is narrower than the column.
     pub fn frame_left(self) -> f32 {
-        self.frame_width as f32 - self.width_in_frame() as f32
+        if self.column_on_left() {
+            0.0
+        } else {
+            self.frame_width as f32 - self.width_in_frame() as f32
+        }
     }
 
     /// The column's part of the frame, in frame pixels: where the sidebar's
     /// surface is shown.
     pub fn column(self) -> (u32, u32, u32, u32) {
+        if self.column_on_left() {
+            let width = self.width_in_frame().min(self.frame_width);
+            return (0, 0, width, self.frame_height);
+        }
         let x = self.frame_width.saturating_sub(self.width_in_frame());
         (x, 0, self.frame_width - x, self.frame_height)
     }
 
-    /// The strip's part of the frame, left of the column, in frame pixels:
-    /// where the bar's surface is shown.
+    /// The strip's part of the frame, beside the column, in frame pixels:
+    /// where the bar's surface is shown. No rows without a bar.
     pub fn strip(self) -> (u32, u32, u32, u32) {
-        let y = self
-            .frame_height
-            .saturating_sub(self.strip_height_in_frame());
-        (0, y, self.column().0, self.frame_height - y)
+        let height = self.strip_height_in_frame();
+        let (y, height) = if !self.has_bar() {
+            (self.frame_height, 0)
+        } else if self.bar_on_top() {
+            (0, height.min(self.frame_height))
+        } else {
+            let y = self.frame_height.saturating_sub(height);
+            (y, self.frame_height - y)
+        };
+        let (column_x, _, column_width, _) = self.column();
+        let (x, width) = if self.places.side_floats {
+            (0, self.frame_width)
+        } else if self.column_on_left() {
+            (column_width, self.frame_width - column_width)
+        } else {
+            (0, column_x)
+        };
+        (x, y, width, height)
     }
 
     /// The frame pixel where the bar's surface pixel (0, 0) lands; above the
     /// frame when the frame is shorter than the strip.
     pub fn bar_origin(self) -> (f32, f32) {
-        (
-            self.x_to_frame(0.0),
-            self.frame_height as f32 - self.strip_height_in_frame() as f32,
-        )
+        // Beside a column docked on the left the bar starts at its edge.
+        let x = if self.column_on_left() && !self.places.side_floats {
+            self.column().2 as f32
+        } else {
+            self.x_to_frame(0.0)
+        };
+        let y = if self.bar_on_top() {
+            0.0
+        } else {
+            self.frame_height as f32 - self.strip_height_in_frame() as f32
+        };
+        (x, y)
     }
 
     /// The frame pixel where layout pixel (0, 0) lands for a surface laid out
@@ -282,9 +430,10 @@ impl SidebarFrame {
     /// A rect of the bar's, in layout space, in frame pixels.
     pub fn bar_rect_to_frame(self, rect: Rect) -> Rect {
         let scale = self.scale();
+        let (origin_x, origin_y) = self.bar_origin();
         Rect {
-            x: self.x_to_frame(rect.x),
-            y: self.bar_origin().1 + (rect.y - self.strip_layout_top()) * scale,
+            x: origin_x + (rect.x - self.bar_layout_left()) * scale,
+            y: origin_y + (rect.y - self.strip_layout_top()) * scale,
             w: rect.w * scale,
             h: rect.h * scale,
         }
@@ -382,6 +531,47 @@ mod tests {
             rect(19.0, 1017.0, 104.0, 64.0)
         );
         assert!(xl.is_sharp());
+    }
+
+    /// A column on the left and a bar on top move the battlefield; a floating
+    /// column and no bar give it the whole frame.
+    #[test]
+    fn the_column_and_the_bar_can_change_edges_or_leave_the_battlefield_whole() {
+        let left = SidebarFrame::native(800, 600).with_places(PanelPlaces {
+            side: Edge::Left,
+            side_floats: false,
+            bar: Some(Edge::Top),
+        });
+        assert_eq!(left.column(), (0, 0, 168, 600));
+        assert_eq!(left.strip(), (168, 0, 632, 32));
+        assert_eq!(left.tactical_rect(), (168, 32, 632, 568));
+        assert_eq!((left.layout_left(), left.frame_left()), (0.0, 0.0));
+        assert_eq!(left.bar_origin(), (168.0, 0.0));
+        // The bar lays out from the column's edge and the frame's top.
+        let button = rect(200.0, 0.0, 52.0, 32.0);
+        assert_eq!(left.bar_rect_to_frame(button), button);
+        assert_eq!(left.bar_surface_size(), (632, 32));
+        // Large scales both from the corner they sit in.
+        let large = SidebarFrame::new(1920, 1080, 150).with_places(left.places());
+        assert_eq!(large.column(), (0, 0, 252, 1080));
+        assert_eq!(large.tactical_rect(), (252, 48, 1668, 1032));
+        assert_eq!(
+            large.bar_rect_to_frame(rect(168.0, 0.0, 1112.0, 32.0)),
+            rect(252.0, 0.0, 1668.0, 48.0)
+        );
+
+        let over = SidebarFrame::native(800, 600).with_places(PanelPlaces {
+            side: Edge::Right,
+            side_floats: true,
+            bar: None,
+        });
+        assert_eq!(over.tactical_rect(), (0, 0, 800, 600));
+        assert_eq!(over.column(), (632, 0, 168, 600));
+        assert_eq!(over.strip().3, 0);
+        // The original's places are the default.
+        let stock = SidebarFrame::native(800, 600);
+        assert_eq!(stock.with_places(PanelPlaces::default()), stock);
+        assert_eq!(stock.tactical_rect(), (0, 0, 632, 568));
     }
 
     #[test]

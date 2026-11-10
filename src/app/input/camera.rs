@@ -1814,8 +1814,7 @@ fn tactical_camera_center(
 /// be opaque that frame.
 ///
 pub(crate) fn tactical_viewport_px(state: &AppState) -> (u32, u32, u32, u32) {
-    let (width, height) = tactical_viewport_size(state);
-    (0, 0, width, height)
+    state.sidebar_frame().tactical_rect()
 }
 
 /// The tactical dimensions of the current match frame: Active YR's frame less

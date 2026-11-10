@@ -99,6 +99,9 @@ pub struct SidebarChromeLayoutSpec {
     /// it, a later part over an earlier one. A part that is not listed is not
     /// drawn and takes no clicks.
     pub parts: [Option<SidebarPart>; 12],
+    /// The edges the sidebar and the command bar sit on, whether the sidebar
+    /// floats over the battlefield, and whether the layout has the bar.
+    pub places: super::PanelPlaces,
     pub sidebar_width: f32,
     /// SIDE2 and SIDE3 canvas heights, taken from the loaded art.
     pub side2_height: f32,
@@ -203,6 +206,7 @@ impl SidebarChromeLayoutSpec {
         Self {
             theme,
             parts,
+            places: super::PanelPlaces::ORIGINAL,
             sidebar_width: super::SIDEBAR_WIDTH_PX as f32,
             side2_height: 50.0,
             side3_height: 26.0,
@@ -253,6 +257,16 @@ impl SidebarChromeLayoutSpec {
 }
 
 impl SidebarChromeLayoutSpec {
+    /// Layout-space x of the sidebar's left edge on a layout screen
+    /// `screen_w` wide: flush with the edge the layout puts it on.
+    pub fn sidebar_x(&self, screen_w: f32) -> f32 {
+        if self.places.side == super::Edge::Left {
+            0.0
+        } else {
+            screen_w - self.sidebar_width
+        }
+    }
+
     /// The cameos in one strip row, at least one.
     pub fn columns(&self) -> usize {
         (self.cameo_columns as usize).max(1)
