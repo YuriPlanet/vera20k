@@ -600,7 +600,7 @@ fn tube_hierarchy_gate_uses_raw_invalid_labels_and_goal_bridge_flag() {
     zones
         .map_mut(MovementZone::Normal)
         .unwrap()
-        .set_bridge_redirect(Some(vec![None, Some((0, 0)), None, None]));
+        .set_bridge_redirect(Some(vec![None, Some((0, 0)), None, None].into()));
     zones.set_hierarchy(level0_hierarchy(vec![1; 4], 2, 2, &[]));
     terrain.cell_mut_for_test(0, 0).unwrap().level = 4;
     {

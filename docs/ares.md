@@ -79,7 +79,8 @@ Supported extensions:
   `MenuText.Status`, `File.Taunt`, `ListIndex`, random/AI selection weights,
   ParentCountry inheritance, and the shell/Co-Op flag and status consumers.
   Observer art is retained but has no renderer yet.
-- [Country paradrop overrides](ares-country-paradrop.md): `ParaDrop.Types`,
+- [Paradrop overrides](ares-country-paradrop.md): the superweapon's own
+  `ParaDrop.*` planes (vehicles too), then the country's `ParaDrop.Types`,
   `.Num`, `.Aircraft` and `Parachute.Anim` in front of the SideExt values.
 - [Country AI power plants](ares-country-powerplants.md): `AI.PowerPlants=`
   and the draw among the plants the AI can build when it splices one.

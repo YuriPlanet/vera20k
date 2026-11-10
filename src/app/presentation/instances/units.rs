@@ -1892,17 +1892,22 @@ fn unit_shadow_admitted(
 /// `(0, AdjustForZ(height))`, so a lifted body's shadow lies on the ground
 /// below it, and Hover's Shadow_Matrix (`0x005142A0`) ends in the base
 /// `0x0055A7D0`, the cell's slope and the facing, as the port draws it.
-/// Every other Unit stays on the ground (height 0, offset 0) and keeps the
-/// flat-ground path.
+/// Drive, Ship and Tunnel keep the same Shadow_Point (`+0x30` of their
+/// ILocomotion tables, Drive's at `0x007E7EAC`), so a Unit on them that is
+/// falling (ObjectClass `+0x8D`, a paradropped vehicle) draws its shadow on
+/// the ground too, and Drive's and Ship's Shadow_Matrix end in the same base
+/// once their slope is stable. Every other Unit stays on the ground (height 0,
+/// offset 0) and keeps the flat-ground path.
 fn has_lifted_unit_shadow(entity: &crate::sim::game_entity::GameEntity) -> bool {
     use crate::rules::locomotor_type::LocomotorKind;
     entity.category() == EntityCategory::Unit
-        && entity.locomotor.as_ref().is_some_and(|l| {
-            matches!(
-                l.active_kind(),
-                LocomotorKind::Jumpjet | LocomotorKind::Hover
-            )
-        })
+        && (entity.is_falling_down()
+            || entity.locomotor.as_ref().is_some_and(|l| {
+                matches!(
+                    l.active_kind(),
+                    LocomotorKind::Jumpjet | LocomotorKind::Hover
+                )
+            }))
 }
 
 fn techno_shadow_admitted(entity: &crate::sim::game_entity::GameEntity, no_shadow: bool) -> bool {

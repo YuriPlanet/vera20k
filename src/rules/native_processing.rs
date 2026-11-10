@@ -8349,6 +8349,63 @@ impl RulesPassProcessor {
                         // ValueableVector<TechnoTypeClass*>, Find.
                         reads.drop_pod_types =
                             self.resolve_existing_techno_type_list_from(&raw, "DropPod.Types");
+                    } else if is("ParaDrop") || is("AmerParaDrop") {
+                        // SW_ParaDrop::Initialize10073DC0 gives an AmerParaDrop
+                        // a default plane of Rules' AmerParaDropInf/Num as
+                        // this pass's ReadGeneral left them. LoadFromINI
+                        // 10073F70 reads Find-only: the plane through
+                        // detail::read (AircraftTypeClass::Find), the types
+                        // through ValueableVector<TechnoTypeClass*> 1000EDD0.
+                        let mut paradrop = self.families[&RulesTypeFamily::SuperWeapon][index]
+                            .super_weapon_launch
+                            .paradrop()
+                            .clone();
+                        if initialized && is("AmerParaDrop") {
+                            let types = self.general_type_lists.paradrop_infantry[0]
+                                .iter()
+                                .map(|id| crate::rules::superweapon_type::TechnoTypeReference {
+                                    category: ObjectCategory::Infantry,
+                                    id: id.clone(),
+                                })
+                                .collect();
+                            let counts = self
+                                .ordinary
+                                .as_ref()
+                                .and_then(|ini| ini.section("General"))
+                                .and_then(|general| general.read_ares_int_list("AmerParaDropNum"))
+                                .unwrap_or_default();
+                            paradrop.initialize_american(types, counts);
+                        }
+                        let sides: Vec<String> = self
+                            .families
+                            .get(&RulesTypeFamily::Side)
+                            .into_iter()
+                            .flatten()
+                            .map(|side| side.native_stored_id.clone())
+                            .collect();
+                        let countries: Vec<(String, i32)> = self
+                            .families
+                            .get(&RulesTypeFamily::Country)
+                            .into_iter()
+                            .flatten()
+                            .map(|country| {
+                                (country.native_stored_id.clone(), country.country_side_index)
+                            })
+                            .collect();
+                        paradrop.read_pass(
+                            &raw,
+                            &sides,
+                            &countries,
+                            |key| {
+                                self.resolve_existing_type_from(
+                                    &raw,
+                                    key,
+                                    RulesTypeFamily::Aircraft,
+                                )
+                            },
+                            |key| self.resolve_existing_techno_type_list_from(&raw, key),
+                        );
+                        reads.paradrop = Some(paradrop);
                     }
                     // 10033670: Nullable<WarheadTypeClass*> through the
                     // Warhead factory, for every type.
