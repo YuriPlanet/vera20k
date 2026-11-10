@@ -40,14 +40,15 @@ pub enum Edge {
     Bottom,
 }
 
-/// Where the sidebar's column and the command bar sit in the frame. The
-/// original's: the column on the right, the bar along the bottom of what the
-/// column leaves, and the battlefield in the rest.
+/// Where the sidebar and the command bar sit in the frame. The original's:
+/// the sidebar a column on the right, the bar along the bottom of what the
+/// sidebar leaves, and the battlefield in the rest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PanelPlaces {
-    /// The column's edge: `Left`, or anything else for the right.
+    /// The sidebar's edge. On `Left` or `Right` it is a column as tall as
+    /// the frame; on `Top` or `Bottom` a band as wide as the frame.
     pub side: Edge,
-    /// The column lies over the battlefield and takes no room from it or
+    /// The sidebar lies over the battlefield and takes no room from it or
     /// from the bar.
     pub side_floats: bool,
     /// The bar's edge: `Top`, anything else for the bottom, or `None` for a
@@ -79,6 +80,9 @@ pub struct SidebarFrame {
     /// The column's width in sidebar pixels: [`SIDEBAR_WIDTH_PX`] unless the
     /// side's layout gives another.
     column_width: u32,
+    /// The band's height in sidebar pixels, for a sidebar on the top or the
+    /// bottom edge.
+    band_height: u32,
     /// Where the side's layout puts the column and the bar.
     places: PanelPlaces,
     /// Surface pixels per sidebar pixel (`in_window`): 1 unless zoomed.
@@ -94,6 +98,7 @@ impl SidebarFrame {
             frame_height,
             percent: percent.max(100),
             column_width: SIDEBAR_WIDTH_PX,
+            band_height: SIDEBAR_WIDTH_PX,
             places: PanelPlaces::default(),
             draw_scale: 1,
             zoom_percent: 100,
@@ -113,6 +118,15 @@ impl SidebarFrame {
         self.column_width
     }
 
+    /// This frame with a band, a sidebar on the top or the bottom edge, as
+    /// tall as the side's layout makes it.
+    pub fn with_band_height(self, band_height: u32) -> Self {
+        Self {
+            band_height: band_height.max(1),
+            ..self
+        }
+    }
+
     /// This frame with the column and the bar where the side's layout puts
     /// them.
     pub fn with_places(self, places: PanelPlaces) -> Self {
@@ -123,21 +137,44 @@ impl SidebarFrame {
         self.places
     }
 
+    /// The frame's own size, in frame pixels.
+    pub fn frame_size(self) -> (u32, u32) {
+        (self.frame_width, self.frame_height)
+    }
+
     fn column_on_left(self) -> bool {
         self.places.side == Edge::Left
+    }
+
+    /// Whether the sidebar is a band along the top or the bottom edge.
+    pub fn is_band(self) -> bool {
+        matches!(self.places.side, Edge::Top | Edge::Bottom)
     }
 
     fn bar_on_top(self) -> bool {
         self.places.bar == Some(Edge::Top)
     }
 
-    /// The frame width the column takes from the battlefield and the bar:
-    /// none when it floats over them.
-    fn docked_width_in_frame(self) -> u32 {
+    /// The frame width and height the sidebar takes from the battlefield
+    /// and the bar: none when it floats over them.
+    fn docked_in_frame(self) -> (u32, u32) {
         if self.places.side_floats {
-            0
+            (0, 0)
+        } else if self.is_band() {
+            (0, self.height_in_frame())
         } else {
-            self.width_in_frame()
+            (self.width_in_frame(), 0)
+        }
+    }
+
+    /// The frame rows a docked band takes above the bar and the battlefield,
+    /// and under them.
+    fn band_rows(self) -> (u32, u32) {
+        let (_, rows) = self.docked_in_frame();
+        match self.places.side {
+            Edge::Top => (rows, 0),
+            Edge::Bottom => (0, rows),
+            Edge::Left | Edge::Right => (0, 0),
         }
     }
 
@@ -175,9 +212,23 @@ impl SidebarFrame {
         self.percent.is_multiple_of(100)
     }
 
-    /// The column's width in frame pixels: 168 at Normal in the original.
+    /// The sidebar's width in frame pixels: a column's 168 at Normal in the
+    /// original, the frame's own for a band.
     pub fn width_in_frame(self) -> u32 {
-        self.column_width * self.percent / 100
+        if self.is_band() {
+            self.frame_width
+        } else {
+            self.column_width * self.percent / 100
+        }
+    }
+
+    /// The sidebar's height in frame pixels: the frame's own for a column.
+    pub fn height_in_frame(self) -> u32 {
+        if self.is_band() {
+            self.band_height * self.percent / 100
+        } else {
+            self.frame_height
+        }
     }
 
     /// The bar's strip height in frame pixels: 32 at Normal, none without a
@@ -190,33 +241,36 @@ impl SidebarFrame {
         }
     }
 
-    /// The battlefield: the frame less the column and the strip. A degenerate
-    /// frame keeps one pixel, so its scissor never drops every tactical draw.
+    /// The battlefield: the frame less the sidebar and the strip. A
+    /// degenerate frame keeps one pixel, so its scissor never drops every
+    /// tactical draw.
     pub fn tactical_size(self) -> (u32, u32) {
+        let (docked_width, docked_height) = self.docked_in_frame();
         (
-            self.frame_width
-                .saturating_sub(self.docked_width_in_frame())
-                .max(1),
+            self.frame_width.saturating_sub(docked_width).max(1),
             self.frame_height
                 .saturating_sub(self.strip_height_in_frame())
+                .saturating_sub(docked_height)
                 .max(1),
         )
     }
 
     /// The battlefield's place in the frame, in frame pixels: right of a
-    /// column docked on the left and under a bar on top.
+    /// column docked on the left, and under a band docked on top and a bar
+    /// on top.
     pub fn tactical_rect(self) -> (u32, u32, u32, u32) {
         let (width, height) = self.tactical_size();
         let x = if self.column_on_left() {
-            self.docked_width_in_frame().min(self.frame_width)
+            self.docked_in_frame().0.min(self.frame_width)
         } else {
             0
         };
-        let y = if self.bar_on_top() {
-            self.strip_height_in_frame().min(self.frame_height)
+        let bar = if self.bar_on_top() {
+            self.strip_height_in_frame()
         } else {
             0
         };
+        let y = (self.band_rows().0 + bar).min(self.frame_height);
         (x, y, width, height)
     }
 
@@ -229,19 +283,21 @@ impl SidebarFrame {
         )
     }
 
-    /// [`Self::layout_size`] as the screen the native layout (`6A5130`) runs
-    /// on.
+    /// The screen the sidebar's native layout (`6A5130`) runs on:
+    /// [`Self::layout_size`], or for a band the layout's width and the
+    /// band's own height, so its rows are counted in the band and measured
+    /// from its top.
     pub fn layout_screen(self) -> (f32, f32) {
-        let (width, height) = self.layout_size();
-        (width as f32, height as f32)
+        let (width, _) = self.layout_size();
+        (width as f32, self.surface_size().1 as f32)
     }
 
-    /// Layout-space x of the column's left edge.
+    /// Layout-space x of the sidebar's left edge.
     pub fn layout_left(self) -> f32 {
-        if self.column_on_left() {
-            0.0
-        } else {
+        if self.places.side == Edge::Right {
             self.layout_size().0 as f32 - self.column_width as f32
+        } else {
+            0.0
         }
     }
 
@@ -269,17 +325,22 @@ impl SidebarFrame {
         self.places.bar.is_some()
     }
 
-    /// The sidebar's surface in its own pixels: the column's width and the
-    /// layout's height.
+    /// The sidebar's surface in its own pixels: a column's width and the
+    /// layout's height, or the layout's width and a band's height.
     pub fn surface_size(self) -> (u32, u32) {
-        (self.column_width, self.layout_size().1)
+        let (width, height) = self.layout_size();
+        if self.is_band() {
+            (width, self.band_height.min(height))
+        } else {
+            (self.column_width, height)
+        }
     }
 
-    /// The bar's surface in its own pixels: the layout's width beside the
-    /// column (all of it when the column floats), and the strip's native
-    /// height.
+    /// The bar's surface in its own pixels: the layout's width beside a
+    /// column (all of it beside a band or when the sidebar floats), and the
+    /// strip's native height.
     pub fn bar_surface_size(self) -> (u32, u32) {
-        let beside = if self.places.side_floats {
+        let beside = if self.places.side_floats || self.is_band() {
             0
         } else {
             self.column_width
@@ -341,46 +402,78 @@ impl SidebarFrame {
         self.percent * self.zoom_percent == 10_000 * self.draw_scale
     }
 
-    /// The column's left edge in frame pixels; left of the frame when the
+    /// The sidebar's left edge in frame pixels; left of the frame when the
     /// frame is narrower than the column.
     pub fn frame_left(self) -> f32 {
-        if self.column_on_left() {
-            0.0
-        } else {
+        if self.places.side == Edge::Right {
             self.frame_width as f32 - self.width_in_frame() as f32
+        } else {
+            0.0
         }
     }
 
-    /// The column's part of the frame, in frame pixels: where the sidebar's
-    /// surface is shown.
+    /// The sidebar's top edge in frame pixels; above the frame when the
+    /// frame is shorter than a band on the bottom.
+    pub fn frame_top(self) -> f32 {
+        if self.places.side == Edge::Bottom {
+            self.frame_height as f32 - self.height_in_frame() as f32
+        } else {
+            0.0
+        }
+    }
+
+    /// The frame pixel where the sidebar's surface pixel (0, 0) lands.
+    pub fn side_origin(self) -> (f32, f32) {
+        (self.frame_left(), self.frame_top())
+    }
+
+    /// The sidebar's part of the frame, in frame pixels: where its surface
+    /// is shown. A column, or a band.
     pub fn column(self) -> (u32, u32, u32, u32) {
-        if self.column_on_left() {
-            let width = self.width_in_frame().min(self.frame_width);
-            return (0, 0, width, self.frame_height);
+        match self.places.side {
+            Edge::Left => {
+                let width = self.width_in_frame().min(self.frame_width);
+                (0, 0, width, self.frame_height)
+            }
+            Edge::Right => {
+                let x = self.frame_width.saturating_sub(self.width_in_frame());
+                (x, 0, self.frame_width - x, self.frame_height)
+            }
+            Edge::Top => {
+                let height = self.height_in_frame().min(self.frame_height);
+                (0, 0, self.frame_width, height)
+            }
+            Edge::Bottom => {
+                let y = self.frame_height.saturating_sub(self.height_in_frame());
+                (0, y, self.frame_width, self.frame_height - y)
+            }
         }
-        let x = self.frame_width.saturating_sub(self.width_in_frame());
-        (x, 0, self.frame_width - x, self.frame_height)
     }
 
-    /// The strip's part of the frame, beside the column, in frame pixels:
-    /// where the bar's surface is shown. No rows without a bar.
+    /// The strip's part of the frame, beside a docked sidebar, in frame
+    /// pixels: where the bar's surface is shown. No rows without a bar.
     pub fn strip(self) -> (u32, u32, u32, u32) {
         let height = self.strip_height_in_frame();
+        let (above, under) = self.band_rows();
         let (y, height) = if !self.has_bar() {
             (self.frame_height, 0)
         } else if self.bar_on_top() {
-            (0, height.min(self.frame_height))
+            let y = above.min(self.frame_height);
+            (y, height.min(self.frame_height - y))
         } else {
-            let y = self.frame_height.saturating_sub(height);
-            (y, self.frame_height - y)
+            let bottom = self.frame_height.saturating_sub(under);
+            let y = bottom.saturating_sub(height);
+            (y, bottom - y)
         };
-        let (column_x, _, column_width, _) = self.column();
-        let (x, width) = if self.places.side_floats {
+        let (x, width) = if self.places.side_floats || self.is_band() {
             (0, self.frame_width)
-        } else if self.column_on_left() {
-            (column_width, self.frame_width - column_width)
         } else {
-            (0, column_x)
+            let (column_x, _, column_width, _) = self.column();
+            if self.column_on_left() {
+                (column_width, self.frame_width - column_width)
+            } else {
+                (0, column_x)
+            }
         };
         (x, y, width, height)
     }
@@ -394,10 +487,11 @@ impl SidebarFrame {
         } else {
             self.x_to_frame(0.0)
         };
+        let (above, under) = self.band_rows();
         let y = if self.bar_on_top() {
-            0.0
+            above as f32
         } else {
-            self.frame_height as f32 - self.strip_height_in_frame() as f32
+            self.frame_height as f32 - under as f32 - self.strip_height_in_frame() as f32
         };
         (x, y)
     }
@@ -416,12 +510,13 @@ impl SidebarFrame {
         self.frame_left() + (x - self.layout_left()) * self.scale()
     }
 
-    /// A rect of the sidebar's, in layout space, in frame pixels.
+    /// A rect of the sidebar's, in layout space, in frame pixels. The
+    /// sidebar's layout measures down from its own top edge.
     pub fn rect_to_frame(self, rect: Rect) -> Rect {
         let scale = self.scale();
         Rect {
             x: self.x_to_frame(rect.x),
-            y: rect.y * scale,
+            y: self.frame_top() + rect.y * scale,
             w: rect.w * scale,
             h: rect.h * scale,
         }
@@ -444,15 +539,18 @@ impl SidebarFrame {
         let scale = self.scale();
         (
             self.layout_left() + (x - self.frame_left()) / scale,
-            y / scale,
+            (y - self.frame_top()) / scale,
         )
     }
 
     /// The layout pixel a whole-layout copy shows at frame pixel (x, y): the
     /// one under its centre, as the copy samples it at the whole sizes. Hit
-    /// tests on whole pixels use it to land where the layout is drawn.
+    /// tests on whole pixels use it to land where the layout is drawn. The
+    /// whole layout starts at the frame's top, wherever the sidebar is.
     pub fn pixel_to_layout(self, x: i32, y: i32) -> (i32, i32) {
-        let (x, y) = self.point_to_layout(x as f32 + 0.5, y as f32 + 0.5);
+        let scale = self.scale();
+        let x = self.layout_left() + (x as f32 + 0.5 - self.frame_left()) / scale;
+        let y = (y as f32 + 0.5) / scale;
         (x.floor() as i32, y.floor() as i32)
     }
 }
@@ -572,6 +670,52 @@ mod tests {
         let stock = SidebarFrame::native(800, 600);
         assert_eq!(stock.with_places(PanelPlaces::default()), stock);
         assert_eq!(stock.tactical_rect(), (0, 0, 632, 568));
+    }
+
+    /// A sidebar on the top or the bottom edge is a band as wide as the
+    /// frame; the bar and the battlefield share what it leaves.
+    #[test]
+    fn a_band_takes_rows_from_the_bar_and_the_battlefield() {
+        let band = |side, bar| {
+            SidebarFrame::native(800, 600)
+                .with_band_height(160)
+                .with_places(PanelPlaces {
+                    side,
+                    side_floats: false,
+                    bar,
+                })
+        };
+        let bottom = band(Edge::Bottom, Some(Edge::Bottom));
+        assert_eq!(bottom.column(), (0, 440, 800, 160));
+        assert_eq!(bottom.strip(), (0, 408, 800, 32));
+        assert_eq!(bottom.tactical_rect(), (0, 0, 800, 408));
+        assert_eq!(bottom.surface_size(), (800, 160));
+        assert_eq!(bottom.bar_surface_size(), (800, 32));
+        // Its layout runs on the band: rows are counted in its own height
+        // and measured from its top.
+        assert_eq!(bottom.layout_screen(), (800.0, 160.0));
+        assert_eq!(bottom.side_origin(), (0.0, 440.0));
+        let radar = rect(16.0, 20.0, 140.0, 108.0);
+        assert_eq!(bottom.rect_to_frame(radar), rect(16.0, 460.0, 140.0, 108.0));
+        assert_eq!(bottom.point_to_layout(16.0, 460.0), (16.0, 20.0));
+        assert_eq!(bottom.bar_origin(), (0.0, 408.0));
+        // A whole-layout surface still starts at the frame's top.
+        assert_eq!(bottom.pixel_to_layout(37, 41), (37, 41));
+
+        let top = band(Edge::Top, Some(Edge::Top));
+        assert_eq!(top.column(), (0, 0, 800, 160));
+        assert_eq!(top.strip(), (0, 160, 800, 32));
+        assert_eq!(top.tactical_rect(), (0, 192, 800, 408));
+        assert_eq!(top.side_origin(), (0.0, 0.0));
+
+        // Large scales the band from its edge.
+        let large = SidebarFrame::new(1920, 1080, 150)
+            .with_band_height(160)
+            .with_places(bottom.places());
+        assert_eq!(large.column(), (0, 840, 1920, 240));
+        assert_eq!(large.strip(), (0, 792, 1920, 48));
+        assert_eq!(large.tactical_rect(), (0, 0, 1920, 792));
+        assert_eq!(large.surface_size(), (1280, 160));
     }
 
     #[test]

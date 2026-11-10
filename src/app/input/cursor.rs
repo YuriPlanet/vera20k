@@ -1918,20 +1918,19 @@ fn sidebar_view_hit(frame: crate::ui::sidebar::SidebarFrame, cursor_x: f32, curs
         w: w as f32,
         h: h as f32,
     };
-    // The column's zone is shifted 10 pixels toward the battlefield: left
-    // for the original's column on the right.
-    let (x, _, w, h) = frame.column();
-    let toward_battlefield = if frame.places().side == crate::ui::sidebar::Edge::Left {
-        10.0
-    } else {
-        -10.0
+    // The sidebar's zone is shifted 10 pixels toward the battlefield (left
+    // for the original's column on the right) and stops 10 pixels short of
+    // both its ends.
+    use crate::ui::sidebar::{Edge, Rect};
+    let (x, y, w, h) = frame.column();
+    let (x, y, w, h) = (x as f32, y as f32, w as f32, h as f32);
+    let (x, y, w, h) = match frame.places().side {
+        Edge::Left => (x + 10.0, y + 10.0, w, h - 20.0),
+        Edge::Right => (x - 10.0, y + 10.0, w, h - 20.0),
+        Edge::Top => (x + 10.0, y + 10.0, w - 20.0, h),
+        Edge::Bottom => (x + 10.0, y - 10.0, w - 20.0, h),
     };
-    let panel_rect = crate::ui::sidebar::Rect {
-        x: x as f32 + toward_battlefield,
-        y: 10.0,
-        w: w as f32,
-        h: h as f32 - 20.0,
-    };
+    let panel_rect = Rect { x, y, w, h };
     strip_rect.contains(cursor_x, cursor_y) || panel_rect.contains(cursor_x, cursor_y)
 }
 
