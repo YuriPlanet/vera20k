@@ -9,8 +9,8 @@ until it is told to do something else. The drop spot is the cell a Move click
 there would send the transport to. A second press of the key, or a right
 click, drops the armed click again.
 
-A ring of light blue dots marks the pick-up circle, a dotted line leads to the
-drop spot and a small ring marks it.
+While the transport is selected, a ring of light blue dots marks its pick-up
+circle, a dotted line leads to the drop spot and a small ring marks it.
 
 - **Loading.** The transport waits at the pick-up spot. Any of your infantry
   and vehicles that comes to a stop inside the circle (4 cells around the
@@ -41,8 +41,9 @@ down inside the circle would board again.
 
 ## What it is and is not
 
-- Any ground vehicle of a type with `Passengers=` can ferry: the amphibious
-  transports, and also land transports. Aircraft cannot.
+- Any vehicle or aircraft of a type with `Passengers=` can ferry: the
+  amphibious transports, land transports such as the Flak Track, and the
+  Nighthawk.
 - The game only sends orders it already has: Enter for the boarding units, an
   ordinary Move for each crossing and the transport's own Unload. Nothing new
   goes over the network, and other players' games need no knowledge of it.

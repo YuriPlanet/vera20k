@@ -425,8 +425,8 @@ fn on_the_way_aboard(sim: &Simulation, id: u64) -> bool {
     })
 }
 
-/// The live transport of a route: the owner's own controllable ground
-/// vehicle of a type with `Passengers=`.
+/// The live transport of a route: the owner's own controllable vehicle or
+/// aircraft of a type with `Passengers=`.
 fn ferry_transport<'a>(
     sim: &'a Simulation,
     rules: &'a RuleSet,
@@ -437,9 +437,11 @@ fn ferry_transport<'a>(
     if !entity.is_alive()
         || entity.death.is_dying()
         || entity.owner() != owner
-        || entity.category() != EntityCategory::Unit
+        || !matches!(
+            entity.category(),
+            EntityCategory::Unit | EntityCategory::Aircraft
+        )
         || entity.passenger_role.is_inside_transport()
-        || entity.movement_layer_or_ground() == MovementLayer::Air
     {
         return None;
     }
@@ -698,13 +700,27 @@ pub(crate) fn frame_pass(state: &mut AppState) {
     }
 }
 
-/// The routes' marks in VERA's world-pixel frame: a ring of dots around each
-/// pick-up circle, a dotted line to the drop spot and a small ring on it.
+/// The marks of the selected transports' routes in VERA's world-pixel frame:
+/// a ring of dots around each pick-up circle, a dotted line to the drop spot
+/// and a small ring on it.
 pub(crate) fn marks(state: &AppState) -> Vec<(f32, f32)> {
     use crate::util::lepton::{
         GROUND_LEVEL_HEIGHT_LEPTONS, LEPTONS_PER_CELL_I32, absolute_leptons_to_screen,
     };
-    let routes = &state.match_state.input.ferry.routes;
+    // Only a selected transport shows its route.
+    let entities = state.sim_view().map(|view| view.simulation().entities());
+    let routes: Vec<&FerryRoute> = state
+        .match_state
+        .input
+        .ferry
+        .routes
+        .iter()
+        .filter(|route| {
+            entities
+                .and_then(|entities| entities.get(route.transport))
+                .is_some_and(|entity| entity.selection.is_selected())
+        })
+        .collect();
     if routes.is_empty() {
         return Vec::new();
     }
