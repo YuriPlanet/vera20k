@@ -141,10 +141,20 @@ fn readers_keep_signed_fields_and_raw_unknown_bytes() {
 #[test]
 fn text_copies_use_fixed_narrow_fields_without_spilling_into_following_fields() {
     assert!(LanMessage::named(LanNamedMessage::Discovery, &"x".repeat(19)).is_ok());
-    assert!(matches!(
-        LanMessage::named(LanNamedMessage::Discovery, &"x".repeat(20)),
-        Err(LanMessageError::TextTooLong { field: "name", .. })
-    ));
+    // A longer name is cut to the field, keeping its terminator (VERA-only:
+    // an online name may be 24 characters).
+    let mut long = LanMessage::named(LanNamedMessage::Discovery, &"x".repeat(24)).unwrap();
+    assert_eq!(long.name_bytes(), "x".repeat(19).as_bytes());
+    assert!(wire_name_matches(&"X".repeat(24), long.name_bytes()));
+    assert!(!wire_name_matches(&"x".repeat(18), long.name_bytes()));
+    assert_eq!(
+        long.put_serial(&[b's'; 23]),
+        Err(LanMessageError::TextTooLong {
+            field: "serial",
+            actual: 23,
+            maximum: 22,
+        })
+    );
     let message = LanMessage::named(LanNamedMessage::Discovery, "éÿ").unwrap();
     assert_eq!(message.name_bytes(), &[0xe9, 0xff]);
     assert_eq!(message.name(), "éÿ");
