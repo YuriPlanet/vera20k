@@ -71,7 +71,7 @@ fn terrain_attack_scene() -> Option<(SimRuntime, u64, u64, u64)> {
         .spawn_object("HTNK", "Russians", 20, 20, 0, &rules)
         .unwrap();
     let registry = TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, false);
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     let owner = sim.interner.get("Russians").unwrap();
     let ty = sim.interner.get("TREE-TEAM").unwrap();
     let team = sim.create_team(ty, Some(owner), &rules).unwrap();
@@ -902,7 +902,7 @@ fn retail_sov01_script17_uses_the_production_script_registry() {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     let vm = &sim.team_script_vm;
     let mut switches = Vec::new();
     for (name, ordinal) in [
@@ -1359,7 +1359,7 @@ fn retail_all01_script59_inputs_fit_the_existing_ammunition_owner() {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     let programs: Vec<_> = sim
         .team_script_vm
         .scripts
@@ -1501,8 +1501,7 @@ fn the_retail_scatter_script_runs_ported_actions() {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules)
-        .expect("retail AIMD installs");
+    sim.install_team_ai_registry(&registry, &rules);
     let vm = &sim.team_script_vm;
     let scripts: Vec<_> = vm
         .scripts
@@ -1810,8 +1809,7 @@ fn the_retail_tech_capture_scripts_run_ported_actions() {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules)
-        .expect("retail AIMD installs");
+    sim.install_team_ai_registry(&registry, &rules);
     let vm = &sim.team_script_vm;
     let capture: Vec<_> = vm
         .scripts

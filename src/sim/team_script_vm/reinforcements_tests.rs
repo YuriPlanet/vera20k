@@ -600,8 +600,7 @@ pub(crate) fn reinforcement_world(
         &IniFile::from_str(""),
         true,
     );
-    sim.install_team_ai_registry(&registry, rules)
-        .expect("resolved native Team inputs install");
+    sim.install_team_ai_registry(&registry, rules);
     let mut waypoints = HashMap::from([(
         4,
         Waypoint {
@@ -1512,7 +1511,7 @@ fn all01_full_transport_inputs_fit_the_selected_retail_cargo_chain() {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     // Literal identities/counts below come from the bound physical map,
     // not from a replicated native transport-selection implementation.
     for (name, expected) in [
@@ -2273,7 +2272,7 @@ fn place_full_team(
     let (_, assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
     let teams = TeamAiIniRegistry::load_retail(&assets, &map.ini, true).unwrap();
     sim.initialize_trigger_definitions(&map, &teams, None, None, None);
-    sim.install_team_ai_registry(&teams, rules).unwrap();
+    sim.install_team_ai_registry(&teams, rules);
     sim.session.install_waypoints(&map.waypoints);
     sim.classify_map_triggers(rules);
     let team_type = sim.interner.get("FULL_MINER").unwrap();

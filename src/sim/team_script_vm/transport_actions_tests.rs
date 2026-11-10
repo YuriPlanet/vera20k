@@ -61,7 +61,7 @@ fn sov02_discovered_battle_fortresses_focus_then_load_after_reload() {
         &mut sim.houses,
         &map.ini,
     );
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     sim.initialize_trigger_definitions(&map, &registry, None, None, None);
     let mut placements: Vec<_> = map
         .entities
@@ -270,8 +270,7 @@ impl Fixture {
         let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
-        sim.install_team_ai_registry(&registry, &rules)
-            .expect("the test AIMD installs");
+        sim.install_team_ai_registry(&registry, &rules);
         Self {
             sim,
             rules,
@@ -474,8 +473,7 @@ fn retail_team_ai() -> Option<(RuleSet, Simulation)> {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules)
-        .expect("retail AIMD installs");
+    sim.install_team_ai_registry(&registry, &rules);
     Some((rules, sim))
 }
 
@@ -763,8 +761,7 @@ impl OracleTeam {
         let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
-        sim.install_team_ai_registry(&registry, &rules)
-            .expect("the row's AIMD installs");
+        sim.install_team_ai_registry(&registry, &rules);
         let deploy = action == 9;
         let place = |sim: &mut Simulation, name: &str, slot: u16, [x, y, z]: [i32; 3]| {
             let (rx, ry) = if deploy {

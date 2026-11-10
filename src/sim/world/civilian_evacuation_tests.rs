@@ -88,7 +88,7 @@ fn full_aircraft_evacuates_the_civilian_passenger_house_after_save_and_polling()
         }
         sim.session.set_current_house_for_test(Some(carrier_owner));
         sim.session.game_options_mut_for_test().short_game = false;
-        sim.install_team_ai_registry(&teams, rules).unwrap();
+        sim.install_team_ai_registry(&teams, rules);
         sim.session.install_waypoints(&map.waypoints);
         sim.initialize_trigger_definitions(&map, &teams, None, None, None);
         sim.classify_map_triggers(rules);

@@ -4515,7 +4515,7 @@ mod tests {
                 [TaskForces]\n0=RESULT-FORCE\n[RESULT-FORCE]\nGroup=-1\n0=1,MTNK\n",
             );
             let registry = TeamAiIniRegistry::from_sources(&IniFile::empty(), &ini, true);
-            sim.install_team_ai_registry(&registry, rules).unwrap();
+            sim.install_team_ai_registry(&registry, rules);
             let ty = sim.interner.get("RESULT-TEAM").unwrap();
             let team = sim.create_team(ty, Some(owner), rules).unwrap();
             let player = sim.session.current_house().unwrap();
