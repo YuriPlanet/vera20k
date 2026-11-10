@@ -936,13 +936,12 @@ pub fn can_enter_transport(
 /// being sold, it stands in the playfield and is not warped out; the
 /// infantryman is an `Occupier=` of the building's house (or the building's
 /// house is `MultiplayPassive=`), the building is neither full nor at red
-/// health, and the infantryman is not mind-controlled.
+/// health, and the infantryman is not mind-controlled. An infantryman that
+/// is no `Occupier=` (`0x00457D56`) may enter only as an `Assaulter=`
+/// ([`assaulter_admitted`]).
 ///
 /// Map5785F0 tests the building's actual GetCoords through the shared
 /// height-aware playfield owner, rather than the navigation rectangle.
-/// RESIDUALS: the `Assaulter=` arm (`0x00457DAD..0x00457DD3`: an
-/// assaulter may enter an occupied building of a house it is not allied
-/// with) is not represented. No retail infantry is an assaulter.
 /// Native tests the current mission `+0xAC` for Construction and Selling
 /// (`0x00457D07..0x00457D19`); `building_up`/`building_down` ask the
 /// effective mission, so a building whose current mission is still -1 with
@@ -979,6 +978,9 @@ pub fn can_dock_occupier_garrison(
     if building.is_warped_out() {
         return false;
     }
+    if !passenger_obj.occupier {
+        return assaulter_admitted(passenger, building, passenger_obj, occupants, sim);
+    }
     let passive = owner_is_multiplay_passive(building.owner(), &sim.houses);
     let red_health = is_at_or_below_red_hp(
         building.health.current(),
@@ -1001,9 +1003,6 @@ pub fn can_dock_occupier_garrison(
     }
     #[cfg(not(feature = "ares"))]
     {
-        if !passenger_obj.occupier {
-            return false;
-        }
         let same_owner = passenger.owner() == building.owner();
         if !same_owner && !passive {
             return false;
@@ -1017,6 +1016,29 @@ pub fn can_dock_occupier_garrison(
         // `0x00457D98`: `TechnoClass::IsMindControlled`.
         !passenger.mind_control.is_mind_controlled()
     }
+}
+
+/// CanBeOccupiedBy's `Assaulter=` arm (`0x00457DAD..0x00457DD3`), for an
+/// infantryman that is no `Occupier=`: an assaulter (`+0xEB5`) may enter a
+/// building of a house that does not count him an ally
+/// (`HouseClass::Is_Ally_ByObject @ 0x004F9A90`, asked by the building's
+/// house) while it holds any occupant (vt+0x408). Red health, a full
+/// building and mind control are not asked here.
+fn assaulter_admitted(
+    passenger: &GameEntity,
+    building: &GameEntity,
+    passenger_obj: &ObjectType,
+    occupants: &BuildingOccupants,
+    sim: &Simulation,
+) -> bool {
+    passenger_obj.assaulter
+        && !crate::sim::combat::combat_weapon::is_ally_by_object(
+            Some(&sim.house_alliances),
+            &sim.interner,
+            building.owner(),
+            passenger.owner(),
+        )
+        && occupants.count() != 0
 }
 
 /// [`can_dock_occupier_garrison`] by id, as `CanBeOccupiedBy`'s callers that
@@ -1350,10 +1372,13 @@ pub(crate) fn board_passenger(
 /// so once ejected its Guard head seeks a bunker again. Answers whether the
 /// infantryman went in.
 ///
-/// RESIDUALS: the `Assaulter=` arm (`0x00522A09..0x00522A45`: the
-/// building's occupants are killed, and the assaulter drops its destination
-/// and scatters) is not represented; no retail infantry is an assaulter.
-/// VERA's passenger also drops its movement and order state.
+/// An `Assaulter=` infantryman that is no `Occupier=` assaults instead
+/// (`0x00522A09..0x00522A45`): the building's occupants are killed
+/// ([`garrison_eject::kill_building_occupants`] with him as the assaulter),
+/// then he drops his destination and scatters from the building's
+/// coordinate ([`Simulation::turn_away_from_building`]). He never goes in.
+///
+/// RESIDUAL: VERA's passenger also drops its movement and order state.
 pub fn add_garrison_occupant(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -1361,38 +1386,43 @@ pub fn add_garrison_occupant(
     building_id: u64,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
-) -> bool {
+) -> Result<bool, crate::sim::world::FrameAdvanceError> {
     let Some(pax) = sim.substrate.entities.get(pax_id) else {
-        return false;
+        return Ok(false);
     };
     let owner = pax.owner();
     let world =
         crate::sim::movement::ground_pose::object_get_coords(pax, sim.resolved_terrain.as_ref())
             .into();
-    let Some(_) = sim
-        .object_type(pax.type_ref(), rules)
-        .filter(|object| object.occupier)
-    else {
-        return false;
+    let Some(object) = sim.object_type(pax.type_ref(), rules) else {
+        return Ok(false);
     };
+    let (occupier, assaulter) = (object.occupier, object.assaulter);
     if !sim
         .substrate
         .entities
         .get(building_id)
         .is_some_and(|building| building.category() == EntityCategory::Structure)
     {
-        return false;
+        return Ok(false);
     }
     let context = UninitContext::new(rules, registry).with_effects(effects);
+    if !occupier {
+        if assaulter {
+            garrison_eject::kill_building_occupants(sim, building_id, Some(pax_id), context);
+            sim.turn_away_from_building(pax_id, building_id, rules, registry, effects)?;
+        }
+        return Ok(false);
+    }
     if sim.techno_limbo_with_context(pax_id, context) != ConcealOutcome::Concealed {
-        return false;
+        return Ok(false);
     }
     let Some(count) = sim.substrate.entities.get_mut(building_id).map(|building| {
         let occupants = building.passenger_role.occupants_mut();
         occupants.add(pax_id);
         occupants.count()
     }) else {
-        return false;
+        return Ok(false);
     };
     if let Some(pax) = sim.substrate.entities.get_mut(pax_id) {
         // Admission and Limbo keep the occupant's TarCom and passive flag.
@@ -1422,7 +1452,7 @@ pub fn add_garrison_occupant(
     {
         pax.building_entry.clear_occupy_seeks();
     }
-    true
+    Ok(true)
 }
 
 /// Gunner caller dispatch to UnitClass +4D4 (746420). Temporal ownership
@@ -1880,6 +1910,9 @@ mod gunner_tests;
 
 #[cfg(test)]
 mod allegiance_tests;
+
+#[cfg(test)]
+pub(crate) mod assault_tests;
 
 #[cfg(test)]
 mod tests {

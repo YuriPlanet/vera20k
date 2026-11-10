@@ -1635,8 +1635,9 @@ impl Simulation {
     /// (vt+0x480(0, 1)) and scatters from the building's coordinate
     /// (vt+0x174(coord, 1, 1)); admitted, the building's Tag hears event 1
     /// ("entered by", `0x00519710..0x00519725`) with him as the actor, and
-    /// he goes in ([`crate::sim::passenger::add_garrison_occupant`],
-    /// `0x0051972D`) with no recheck. Either way the call returns before the
+    /// he goes in, or an assaulter clears it
+    /// ([`crate::sim::passenger::add_garrison_occupant`], `0x0051972D`), with
+    /// no recheck. Either way the call returns before the
     /// Foot body. Answers whether the arm ran.
     fn infantry_per_cell_occupy(
         &mut self,
@@ -1682,7 +1683,7 @@ impl Simulation {
             self.dispatch_object_tag_event(building, 1, Some(id), None, context);
             crate::sim::passenger::add_garrison_occupant(
                 self, rules, id, building, registry, effects,
-            );
+            )?;
             return Ok(true);
         }
         self.turn_away_from_building(id, building, rules, registry, effects)?;
