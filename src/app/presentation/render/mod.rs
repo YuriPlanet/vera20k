@@ -190,16 +190,102 @@ fn render_phases_wanted(state: &AppState) -> bool {
     state.renderer.performance_overlay.is_visible()
 }
 
+/// One game picture's inputs, read on the main thread by [`collect_game`]
+/// and drawn by [`paint_game`]: every instance list, line list and view
+/// value, owned, so the draw holds nothing of the world it was read from.
+pub(crate) struct GameFrame {
+    world: WorldInstances,
+    debug: DebugInstances,
+    ui: UiInstances,
+    sidebar: SidebarInstances,
+    text: ScreenText,
+    /// Each object layer's light records, then the persistent lights.
+    combat_lights: Vec<crate::render::combat_light::CombatLightDrawRecord>,
+    persistent_lights: std::ops::Range<usize>,
+    /// `[General]` spotlight radius, with a match running.
+    spotlight_radius: Option<i32>,
+    world_camera: crate::render::batch::CameraUniform,
+    /// The input camera, in world pixels.
+    camera: [f32; 2],
+    native_z_origin_y: f32,
+    sidebar_frame: crate::ui::sidebar::SidebarFrame,
+    viewport: crate::render::surface_line::SurfaceLineViewport,
+    /// Each shown laser with its detail answer, asked in draw order while
+    /// the frame was collected (the answer reads the shared FPS latch).
+    lasers: Vec<(crate::render::laser::LaserDraw, bool)>,
+    bolt_lines: Vec<crate::render::surface_line::SurfaceLine>,
+    segments: Vec<crate::render::line_trail::LineTrailSegment>,
+    beam_draws: Vec<crate::render::surface_line::SurfaceDraw>,
+    radials: Vec<crate::render::radial_indicator::RadialIndicatorDraw>,
+    tactical_draws: Vec<crate::render::surface_line::SurfaceDraw>,
+    ion_blasts: Vec<crate::render::terrain_draw::IonBlastDraw>,
+    times: GameRenderTimes,
+    /// The collect half's phase spans, when this render measures them.
+    spans: Option<CollectSpans>,
+}
+
+/// The screen-fixed text and boxes of one frame, laid out while it was
+/// collected, and the cameras their uploads follow.
+struct ScreenText {
+    message_fill: Vec<crate::render::batch::SpriteInstance>,
+    message_text: Vec<crate::render::batch::SpriteInstance>,
+    outcome_shape: Vec<crate::render::batch::SpriteInstance>,
+    outcome_text: Vec<crate::render::batch::SpriteInstance>,
+    tooltip_fill: Vec<crate::render::batch::SpriteInstance>,
+    tooltip_border: Vec<crate::render::batch::SpriteInstance>,
+    tooltip_text: Vec<crate::render::batch::SpriteInstance>,
+    super_timer_fill: Vec<crate::render::batch::SpriteInstance>,
+    super_timer_text: Vec<crate::render::batch::SpriteInstance>,
+    build_text_fill: Vec<crate::render::batch::SpriteInstance>,
+    build_text_text: Vec<crate::render::batch::SpriteInstance>,
+    #[cfg(feature = "ares")]
+    bounty_text: Vec<crate::render::batch::SpriteInstance>,
+    /// The software cursor, moved into the window by a zoomed match.
+    software_cursor: Vec<crate::render::batch::SpriteInstance>,
+    ui_camera: [f32; 2],
+    text_camera: [f32; 2],
+}
+
+/// Phase spans of the collect half, in `RenderPhases`' terms.
+#[derive(Debug, Clone, Copy)]
+struct CollectSpans {
+    lead: Duration,
+    world: Duration,
+    debug: Duration,
+    shroud: Duration,
+    ui: Duration,
+    sidebar: Duration,
+    text: Duration,
+    lights: Duration,
+    effects: Duration,
+}
+
 /// Render one in-game frame: terrain, units, overlays, UI, sidebar.
 ///
-/// Orchestrates the 7-phase pipeline described in the module doc.
-/// Each phase is a named function call — see `build_instances` for details.
+/// Two halves. [`collect_game`] reads the world and steps the presentation
+/// state; [`paint_game`] uploads and records the passes from what it read.
 pub(crate) fn render_game(
     state: &mut AppState,
     encoder: &mut wgpu::CommandEncoder,
     times: GameRenderTimes,
     cadence: crate::app::presentation::tactical_composite::CompositeCadence,
 ) -> Result<GameRenderOutput> {
+    let frame = collect_game(state, encoder, times, cadence)?;
+    Ok(paint_game(state, encoder, frame))
+}
+
+/// The reading half of a game frame. Every read of the simulation, every
+/// step of the presentation state, every process Main draw and every sound
+/// request of the draw happens here, in the order the single pass made them.
+/// Its own GPU work is the frame setup the instance builders read back
+/// (cameras, the world zoom) and the shroud's recompose, recorded into
+/// `encoder` ahead of [`paint_game`]'s passes.
+pub(crate) fn collect_game(
+    state: &mut AppState,
+    encoder: &mut wgpu::CommandEncoder,
+    times: GameRenderTimes,
+    cadence: crate::app::presentation::tactical_composite::CompositeCadence,
+) -> Result<GameFrame> {
     // Phase accounting for the dashboard's render breakdown and the performance panel's
     // Most CPU row. One clock read per phase boundary; the spans are handed
     // back on `GameRenderOutput` and never written into the world here.
@@ -430,14 +516,10 @@ pub(crate) fn render_game(
     crate::app::presentation::sidebar_render::prepare_smooth_sidebar(state);
     let sidebar = build_instances::build_sidebar_instances(state);
     let after_sidebar = render_started.map(|_| Instant::now());
-
-    // Phase 6: Upload all instances to GPU buffer pool.
-    upload_to_gpu(state, encoder, &world, &debug, &ui, &sidebar);
-    let after_upload = render_started.map(|_| Instant::now());
-    state
-        .match_state
-        .match_presentation
-        .cached_cell_body_instances = world.cell_bodies;
+    // Phase 6, first part: the screen-fixed text and boxes. Their producers
+    // read the world and step the message reveal and the Supers' blinks.
+    let text = collect_screen_text(state, &ui);
+    let after_text = render_started.map(|_| Instant::now());
 
     // A single immutable upload serves System body slots and the distinct
     // late5FFFA0 vector. Neither phase can rewrite another light's slot.
@@ -456,62 +538,23 @@ pub(crate) fn render_game(
         );
     }
     let persistent_lights = persistent_light_start..combat_lights.len();
-    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
-        state.renderer.combat_light_renderer.set_spotlight_radius(
-            &state.renderer.gpu.queue,
-            runtime.resources.rules.general.spotlight.radius,
-        );
-    }
-    state.renderer.combat_light_renderer.prepare(
-        &state.renderer.gpu,
-        &combat_lights,
-        world_camera.screen_size,
-        [
-            state.match_state.input.camera_x,
-            state.match_state.input.camera_y,
-        ],
-        world_camera.zoom,
-    );
-    let after_lights = render_started.map(|_| Instant::now());
-    let composition_view = state.renderer.combat_light_renderer.composition_view();
+    let spotlight_radius = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .map(|runtime| runtime.resources.rules.general.spotlight.radius);
+    let after_light_records = render_started.map(|_| Instant::now());
     let (_, tactical_y, _, _) = crate::app::input::camera::tactical_viewport_px(state);
     // Shader row coordinates are unscaled world pixels; scissor uses target
     // pixels. Native zoom1 is exact, and scaled views preserve that unit frame.
     let native_z_origin_y = (tactical_y as f32 / z).floor();
-    state
-        .renderer
-        .batch_renderer
-        .update_native_z_origin(&state.renderer.gpu.queue, native_z_origin_y);
     // The sidebar and its bar draw into their own surfaces at the Sidebar
     // size.
     let sidebar_frame = state.sidebar_frame();
-    let renderer = &mut state.renderer;
-    let gpu = &renderer.gpu;
-    if let Some(surface) = renderer.sidebar_surface.as_mut() {
-        surface.set_frame(&gpu.device, &gpu.queue, sidebar_frame);
-    }
-    let surface = renderer.sidebar_surface.get_or_insert_with(|| {
-        crate::app::presentation::sidebar_surface::SidebarSurface::new(
-            &gpu.device,
-            &gpu.queue,
-            gpu.surface_format,
-            &renderer.batch_renderer,
-            sidebar_frame,
-        )
-    });
-    surface.write_cameras(&gpu.queue, renderer.batch_renderer.ui_camera_uniform());
-    surface.prepare_packed(&gpu.device, &renderer.terrain_draw_renderer);
-    state.renderer.terrain_draw_renderer.prepare(
-        &state.renderer.gpu.device,
-        state.renderer.combat_light_renderer.composition_texture(),
-        state
-            .renderer
-            .world_zoom_pass
-            .as_ref()
-            .map_or(&state.renderer.depth_view, |zoom| zoom.depth_view()),
-        state.renderer.batch_renderer.camera_uniform(),
-    );
-    let effects_started = render_started.map(|_| Instant::now());
+    let camera = [
+        state.match_state.input.camera_x,
+        state.match_state.input.camera_y,
+    ];
 
     // Tactical6D4673 -> LineTrail556D40 updates once per actual composite.
     // It reads committed Bullet coordinates even when no simulation tick ran.
@@ -670,7 +713,7 @@ pub(crate) fn render_game(
     #[cfg(feature = "ares")]
     let animated = animated || !presentation.flying_credits.get_mut().is_empty();
     presentation.tactical_composite.record_contents(animated);
-    let bolt_lines = presentation.electric_bolts.shown(viewport.camera);
+    let bolt_lines = presentation.electric_bolts.shown(viewport.camera).to_vec();
     // Uploads consume these resolved commands and cannot take further random draws.
     let tactical_draws = crate::app::presentation::airstrike_lines::composite(
         &ui.tactical_line_calls,
@@ -678,38 +721,185 @@ pub(crate) fn render_game(
         &presentation.airstrike_shades,
         viewport,
     );
-    let segments = presentation.line_trails.shown();
-    let beam_draws = presentation.radiation_beams.shown(viewport.camera);
+    let segments = presentation.line_trails.shown().to_vec();
+    let beam_draws = presentation.radiation_beams.shown(viewport.camera).to_vec();
+    // The surface line raster asks each laser it draws for its detail, in
+    // draw order (`prepare_surface_lines`); the answers are taken here.
+    let lasers = presentation
+        .lasers
+        .draws()
+        .filter(|draw| !effect_hidden(draw.to.x, draw.to.y))
+        .map(|draw| {
+            let high_detail = draw.duration > 0
+                && if matches!(draw.color, crate::render::laser::LaserDrawColor::House(_)) {
+                    let mut detail = presentation.detail.borrow_mut();
+                    detail.frame_rate() >= detail.minimum_frame_rate()
+                        && presentation.in_game_options.detail_level != 0
+                } else {
+                    // General550611 reads only Options.DetailLevel; its
+                    // explicit-color arm never queries or changes FPS policy.
+                    presentation.in_game_options.detail_level != 0
+                };
+            (draw, high_detail)
+        })
+        .collect();
+
+    let ion_blasts = crate::app::presentation::ion_blasts::draws(state);
+    let finished = render_started.map(|_| Instant::now());
+    let spans = render_started.map(|render_started| CollectSpans {
+        lead: phase1_started.unwrap().duration_since(render_started),
+        world: after_world.unwrap().duration_since(phase1_started.unwrap()),
+        debug: after_debug.unwrap().duration_since(after_world.unwrap()),
+        shroud: after_shroud.unwrap().duration_since(after_debug.unwrap()),
+        ui: after_ui.unwrap().duration_since(after_shroud.unwrap()),
+        sidebar: after_sidebar.unwrap().duration_since(after_ui.unwrap()),
+        text: after_text.unwrap().duration_since(after_sidebar.unwrap()),
+        lights: after_light_records
+            .unwrap()
+            .duration_since(after_text.unwrap()),
+        effects: finished
+            .unwrap()
+            .duration_since(after_light_records.unwrap()),
+    });
+    Ok(GameFrame {
+        world,
+        debug,
+        ui,
+        sidebar,
+        text,
+        combat_lights,
+        persistent_lights,
+        spotlight_radius,
+        world_camera,
+        camera,
+        native_z_origin_y,
+        sidebar_frame,
+        viewport,
+        lasers,
+        bolt_lines,
+        segments,
+        beam_draws,
+        radials: radials.draws,
+        tactical_draws,
+        ion_blasts,
+        times,
+        spans,
+    })
+}
+
+/// The drawing half of a game frame: instance uploads, the lights', lines'
+/// and blasts' GPU preparation, and the render passes, from `frame` alone.
+/// It reads no simulation state and steps no presentation state.
+pub(crate) fn paint_game(
+    state: &mut AppState,
+    encoder: &mut wgpu::CommandEncoder,
+    frame: GameFrame,
+) -> GameRenderOutput {
+    let GameFrame {
+        mut world,
+        debug,
+        ui,
+        sidebar,
+        text,
+        combat_lights,
+        persistent_lights,
+        spotlight_radius,
+        world_camera,
+        camera,
+        native_z_origin_y,
+        sidebar_frame,
+        viewport,
+        lasers,
+        bolt_lines,
+        segments,
+        beam_draws,
+        radials,
+        tactical_draws,
+        ion_blasts,
+        times,
+        spans,
+    } = frame;
+    let paint_started = spans.map(|_| Instant::now());
+
+    // Phase 6: Upload all instances to GPU buffer pool.
+    upload_to_gpu(
+        &mut state.renderer,
+        encoder,
+        &world,
+        &debug,
+        &ui,
+        &sidebar,
+        &text,
+    );
+    let after_upload = spans.map(|_| Instant::now());
+
+    if let Some(radius) = spotlight_radius {
+        state
+            .renderer
+            .combat_light_renderer
+            .set_spotlight_radius(&state.renderer.gpu.queue, radius);
+    }
+    state.renderer.combat_light_renderer.prepare(
+        &state.renderer.gpu,
+        &combat_lights,
+        world_camera.screen_size,
+        camera,
+        world_camera.zoom,
+    );
+    let after_lights = spans.map(|_| Instant::now());
+    let composition_view = state.renderer.combat_light_renderer.composition_view();
+    state
+        .renderer
+        .batch_renderer
+        .update_native_z_origin(&state.renderer.gpu.queue, native_z_origin_y);
+    let renderer = &mut state.renderer;
+    let gpu = &renderer.gpu;
+    if let Some(surface) = renderer.sidebar_surface.as_mut() {
+        surface.set_frame(&gpu.device, &gpu.queue, sidebar_frame);
+    }
+    let surface = renderer.sidebar_surface.get_or_insert_with(|| {
+        crate::app::presentation::sidebar_surface::SidebarSurface::new(
+            &gpu.device,
+            &gpu.queue,
+            gpu.surface_format,
+            &renderer.batch_renderer,
+            sidebar_frame,
+        )
+    });
+    surface.write_cameras(&gpu.queue, renderer.batch_renderer.ui_camera_uniform());
+    surface.prepare_packed(&gpu.device, &renderer.terrain_draw_renderer);
+    state.renderer.terrain_draw_renderer.prepare(
+        &state.renderer.gpu.device,
+        state.renderer.combat_light_renderer.composition_texture(),
+        state
+            .renderer
+            .world_zoom_pass
+            .as_ref()
+            .map_or(&state.renderer.depth_view, |zoom| zoom.depth_view()),
+        state.renderer.batch_renderer.camera_uniform(),
+    );
+    let effects_started = spans.map(|_| Instant::now());
+
     let terrain = &mut state.renderer.terrain_draw_renderer;
     let gpu = &state.renderer.gpu;
     terrain.begin_surface_lines();
-    let laser_draws = presentation
-        .lasers
-        .draws()
-        .filter(|draw| !effect_hidden(draw.to.x, draw.to.y));
+    let mut laser_detail = lasers
+        .iter()
+        .filter(|(draw, _)| draw.duration > 0)
+        .map(|&(_, high_detail)| high_detail);
     let surface_effects = terrain.prepare_surface_lines(
         &gpu.device,
         &gpu.queue,
-        laser_draws,
+        lasers.iter().map(|&(draw, _)| draw),
         bolt_lines
             .iter()
             .copied()
             .map(crate::render::surface_line::SurfaceDraw::Line),
-        segments,
-        beam_draws,
-        &radials.draws,
+        &segments,
+        &beam_draws,
+        &radials,
         viewport,
-        |color| {
-            if matches!(color, crate::render::laser::LaserDrawColor::House(_)) {
-                let mut detail = presentation.detail.borrow_mut();
-                detail.frame_rate() >= detail.minimum_frame_rate()
-                    && presentation.in_game_options.detail_level != 0
-            } else {
-                // General550611 reads only Options.DetailLevel; its
-                // explicit-color arm never queries or changes FPS policy.
-                presentation.in_game_options.detail_level != 0
-            }
-        },
+        |_| laser_detail.next().unwrap_or(false),
     );
     let tactical_lines = terrain.prepare_surface_lines(
         &gpu.device,
@@ -762,14 +952,13 @@ pub(crate) fn render_game(
         }
     }
 
-    let ion_blasts = crate::app::presentation::ion_blasts::draws(state);
     state.renderer.terrain_draw_renderer.prepare_ion_blasts(
         &state.renderer.gpu.device,
         &state.renderer.gpu.queue,
         &ion_blasts,
         world_camera.zoom,
     );
-    let after_effects = render_started.map(|_| Instant::now());
+    let after_effects = spans.map(|_| Instant::now());
 
     // Phase 7: Dispatch draw calls in render order.
     draw_passes::dispatch_draw_passes(
@@ -796,43 +985,44 @@ pub(crate) fn render_game(
             smooth_command_bar: sidebar.smooth_command_bar,
         },
     );
-    let finished = render_started.map(|_| Instant::now());
+    let finished = spans.map(|_| Instant::now());
     // The bounded submissions made while recording belong to the hand-off;
     // the frame owner adds its final submission and present.
     let submitted = state.renderer.terrain_draw_renderer.frame_submit_time();
-    let phases = render_started.map(|render_started| RenderPhases {
-        world: after_world.unwrap().duration_since(phase1_started.unwrap()),
-        debug: after_debug.unwrap().duration_since(after_world.unwrap()),
-        shroud: after_shroud.unwrap().duration_since(after_debug.unwrap()),
-        ui: after_ui.unwrap().duration_since(after_shroud.unwrap()),
-        sidebar: after_sidebar.unwrap().duration_since(after_ui.unwrap()),
-        upload: after_upload.unwrap().duration_since(after_sidebar.unwrap()),
-        lights: after_lights.unwrap().duration_since(after_upload.unwrap()),
-        effects: after_effects
-            .unwrap()
-            .duration_since(effects_started.unwrap()),
+    let phases = spans.map(|collect| RenderPhases {
+        world: collect.world,
+        debug: collect.debug,
+        shroud: collect.shroud,
+        ui: collect.ui,
+        sidebar: collect.sidebar,
+        upload: collect.text + after_upload.unwrap().duration_since(paint_started.unwrap()),
+        lights: collect.lights + after_lights.unwrap().duration_since(after_upload.unwrap()),
+        effects: collect.effects
+            + after_effects
+                .unwrap()
+                .duration_since(effects_started.unwrap()),
         draw_calls: finished
             .unwrap()
             .duration_since(after_effects.unwrap())
             .saturating_sub(submitted),
         handoff: submitted,
-        other: phase1_started.unwrap().duration_since(render_started)
+        other: collect.lead
             + effects_started
                 .unwrap()
                 .duration_since(after_lights.unwrap()),
     });
-    state
-        .match_state
-        .match_presentation
-        .cached_terrain_instances = std::mem::take(&mut world.terrain.normal);
-    Ok(GameRenderOutput {
+    // The next frame's builders take these lists back as their buffers.
+    let presentation = &mut state.match_state.match_presentation;
+    presentation.cached_cell_body_instances = std::mem::take(&mut world.cell_bodies);
+    presentation.cached_terrain_instances = std::mem::take(&mut world.terrain.normal);
+    GameRenderOutput {
         instance_counts: sidebar.emitted_instance_counts(),
         sidebar_view: sidebar.view,
         times,
         particle_draws: world.particle_draws,
         phases,
         software_cursor: ui.software_cursor_draw,
-    })
+    }
 }
 
 /// The tactical surface object-layer DSurface stores address: logical
@@ -854,18 +1044,13 @@ pub(crate) fn tactical_surface_line_viewport(
     }
 }
 
-/// Upload all per-frame instance vectors to the GPU buffer pool.
+/// Lay out one frame's screen-fixed text and boxes: messages, the outcome
+/// card, the tooltip, the timer lines and the build description.
 ///
-/// The pool reuses GPU buffers across frames to avoid per-frame allocation.
-/// Buffer names here must match the keys used in `draw_passes::dispatch_draw_passes`.
-fn upload_to_gpu(
-    state: &mut AppState,
-    encoder: &mut wgpu::CommandEncoder,
-    world: &WorldInstances,
-    debug: &DebugInstances,
-    ui: &UiInstances,
-    sidebar: &SidebarInstances,
-) {
+/// Part of the collect half: the producers read the world, and nonsilent
+/// TextLabel72A4A0 advances its raw-wall reveal and requests typing audio
+/// once per successful paint.
+fn collect_screen_text(state: &mut AppState, ui: &UiInstances) -> ScreenText {
     // A zoomed match draws the battlefield's screen-fixed text below, with
     // the boxes and frames behind it, at the window's pixels
     // (`window_ui`): its producers lay out in the frame and emit for the
@@ -951,10 +1136,60 @@ fn upload_to_gpu(
     } else {
         ui_camera
     };
+    ScreenText {
+        message_fill,
+        message_text,
+        outcome_shape,
+        outcome_text,
+        tooltip_fill,
+        tooltip_border,
+        tooltip_text,
+        super_timer_fill,
+        super_timer_text,
+        build_text_fill,
+        build_text_text,
+        #[cfg(feature = "ares")]
+        bounty_text,
+        software_cursor: software_cursor.into_owned(),
+        ui_camera,
+        text_camera,
+    }
+}
 
+/// Upload all per-frame instance vectors to the GPU buffer pool.
+///
+/// The pool reuses GPU buffers across frames to avoid per-frame allocation.
+/// Buffer names here must match the keys used in `draw_passes::dispatch_draw_passes`.
+fn upload_to_gpu(
+    renderer: &mut crate::app::renderer_state::RendererState,
+    encoder: &mut wgpu::CommandEncoder,
+    world: &WorldInstances,
+    debug: &DebugInstances,
+    ui: &UiInstances,
+    sidebar: &SidebarInstances,
+    text: &ScreenText,
+) {
+    let ScreenText {
+        message_fill,
+        message_text,
+        outcome_shape,
+        outcome_text,
+        tooltip_fill,
+        tooltip_border,
+        tooltip_text,
+        super_timer_fill,
+        super_timer_text,
+        build_text_fill,
+        build_text_text,
+        #[cfg(feature = "ares")]
+        bounty_text,
+        software_cursor,
+        ui_camera,
+        text_camera,
+    } = text;
+    let (ui_camera, text_camera) = (*ui_camera, *text_camera);
     // Recorded ahead of every pass that draws them (`InstanceBufferPool::
     // record_uploads`).
-    let renderer = &mut state.renderer;
     let mut pool = renderer
         .instance_pool
         .record_uploads(&renderer.gpu.device, encoder);
