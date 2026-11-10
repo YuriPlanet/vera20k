@@ -707,7 +707,7 @@ impl Simulation {
         if put {
             #[cfg(feature = "ares")]
             if let Some(entity) = substrate.entities.get_mut(id) {
-                entity.ares_alt_occupation = Some(on_deck);
+                entity.mark_ares_alt_occupation(on_deck);
             }
             let raw = &mut substrate.raw_cell_occupation;
             if on_deck {
@@ -723,7 +723,7 @@ impl Simulation {
         if let Some(last) = substrate
             .entities
             .get_mut(id)
-            .and_then(|entity| entity.ares_alt_occupation.take())
+            .and_then(|entity| entity.take_ares_alt_occupation())
         {
             deck |= last;
             ground |= !last;
