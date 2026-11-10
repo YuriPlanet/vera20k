@@ -59,7 +59,8 @@ mod mcv_group_tests;
 /// across the sidebar boundary). A `NotConsumed` click hits no live gadget — only
 /// the legacy dev/pause/producer press path runs; empty-sidebar / off-window
 /// clicks do nothing (gamemd's sidebar-body gadget swallows them, A6). The middle
-/// button has no tactical behavior. Right-press is owned by the tactical catcher
+/// button has no tactical behavior; with VERA's wheel zoom on, its press over
+/// the battlefield resets the view distance. Right-press is owned by the tactical catcher
 /// (viewport-only), so right-clicking dead sidebar chrome no longer deselects —
 /// matching gamemd.
 pub(crate) fn handle_mouse_input(
@@ -187,8 +188,12 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
     if crate::app::input::campaign_input::is_locked(state) {
         return;
     }
-    // The stock tactical handler has no middle-button case.
+    // The stock tactical handler has no middle-button case. VERA's optional
+    // wheel zoom takes a press over the battlefield as its reset.
     if button == MouseButton::Middle {
+        if pressed {
+            crate::app::input::camera::middle_press_resets_view_distance(state);
+        }
         return;
     }
     // MessageList::Input 0x005D4510 ends an open chat edit on the right

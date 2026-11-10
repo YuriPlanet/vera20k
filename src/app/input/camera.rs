@@ -1666,23 +1666,63 @@ pub(crate) fn reset_view_distance(state: &mut AppState) {
     set_view_distance(state, ViewDistanceTier::Default);
 }
 
+/// VERA: a middle-button press over the battlefield puts the wheel's view
+/// distance back to the stock one. gamemd's tactical handler has no
+/// middle-button case and no world zoom, so the press does nothing unless
+/// the player turned wheel zoom on. Returns whether the press was taken.
+pub(crate) fn middle_press_resets_view_distance(state: &mut AppState) -> bool {
+    let viewport = tactical_viewport_size(state);
+    middle_press_view_reset(
+        &mut state.match_state.input,
+        viewport,
+        state.persistence.options_profile.mouse_wheel_zoom,
+    )
+}
+
+/// [`middle_press_resets_view_distance`] for a tactical view of `viewport`
+/// frame pixels and the player's wheel zoom setting.
+fn middle_press_view_reset(
+    input: &mut crate::app::input::state::MatchInputState,
+    viewport: (u32, u32),
+    mouse_wheel_zoom: bool,
+) -> bool {
+    if !mouse_wheel_zoom || !viewport_contains(viewport, (input.cursor_x, input.cursor_y)) {
+        return false;
+    }
+    set_view_distance_in(input, viewport, ViewDistanceTier::Default);
+    true
+}
+
 fn set_view_distance(state: &mut AppState, tier: ViewDistanceTier) {
-    let (width, height) = tactical_viewport_size(state);
+    let viewport = tactical_viewport_size(state);
+    set_view_distance_in(&mut state.match_state.input, viewport, tier);
+}
+
+/// Ease to `tier` around the centre of a tactical view of `viewport` frame
+/// pixels (`animate_zoom` keeps the anchor in place).
+fn set_view_distance_in(
+    input: &mut crate::app::input::state::MatchInputState,
+    (width, height): (u32, u32),
+    tier: ViewDistanceTier,
+) {
     let anchor = [width as f32 / 2.0, height as f32 / 2.0];
-    let zoom = state.match_state.input.zoom_level;
-    state.match_state.input.zoom_anchor_world = [
-        anchor[0] / zoom + state.match_state.input.camera_x,
-        anchor[1] / zoom + state.match_state.input.camera_y,
+    let zoom = input.zoom_level;
+    input.zoom_anchor_world = [
+        anchor[0] / zoom + input.camera_x,
+        anchor[1] / zoom + input.camera_y,
     ];
-    state.match_state.input.zoom_anchor_screen = anchor;
-    state.match_state.input.zoom_target = tier.zoom();
+    input.zoom_anchor_screen = anchor;
+    input.zoom_target = tier.zoom();
 }
 
 /// Whether the cursor is over the battlefield rather than the sidebar column
 /// or the bottom command strip, in the frame pixels the cursor uses.
 pub(crate) fn cursor_over_battlefield(state: &AppState) -> bool {
-    let (width, height) = tactical_viewport_size(state);
-    let (x, y) = state.cursor_position();
+    viewport_contains(tactical_viewport_size(state), state.cursor_position())
+}
+
+/// Whether the frame-pixel point lies inside a tactical view of `viewport`.
+fn viewport_contains((width, height): (u32, u32), (x, y): (f32, f32)) -> bool {
     x >= 0.0 && y >= 0.0 && x < width as f32 && y < height as f32
 }
 
@@ -3164,4 +3204,40 @@ fn cell_centre_shifts_half_a_tile_on_both_axes_from_the_tile_corner() {
         assert_eq!(cx - nw_x, terrain::TILE_WIDTH / 2.0);
         assert_eq!(cy - nw_y, terrain::TILE_HEIGHT / 2.0);
     }
+}
+
+#[cfg(test)]
+#[test]
+fn a_middle_press_resets_the_view_distance_only_with_wheel_zoom_over_the_battlefield() {
+    use crate::app::input::state::MatchInputState;
+    let viewport = (1000, 700);
+    let huge = ViewDistanceTier::Huge.zoom();
+    let zoomed_out = |cursor: (f32, f32)| {
+        let mut input = MatchInputState::new(Default::default());
+        (input.zoom_level, input.zoom_target) = (huge, huge);
+        (input.camera_x, input.camera_y) = (300.0, 200.0);
+        (input.cursor_x, input.cursor_y) = cursor;
+        input
+    };
+
+    // Over the battlefield with the setting on: back to the stock scale,
+    // easing around the tactical view's centre.
+    let mut input = zoomed_out((999.0, 699.0));
+    assert!(middle_press_view_reset(&mut input, viewport, true));
+    assert_eq!(input.zoom_target, 1.0);
+    assert_eq!(input.zoom_level, huge, "the ease is animate_zoom's");
+    assert_eq!(input.zoom_anchor_screen, [500.0, 350.0]);
+    assert_eq!(
+        input.zoom_anchor_world,
+        [500.0 / huge + 300.0, 350.0 / huge + 200.0]
+    );
+
+    // The setting off (stock play), or the cursor on the sidebar column's
+    // first pixel: the press does nothing.
+    let mut input = zoomed_out((500.0, 350.0));
+    assert!(!middle_press_view_reset(&mut input, viewport, false));
+    assert_eq!(input.zoom_target, huge);
+    let mut input = zoomed_out((1000.0, 350.0));
+    assert!(!middle_press_view_reset(&mut input, viewport, true));
+    assert_eq!(input.zoom_target, huge);
 }
