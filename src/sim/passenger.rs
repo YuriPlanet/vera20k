@@ -511,13 +511,13 @@ impl Simulation {
         true
     }
 
-    /// Ares conductAbduction's tail (10054A80), after its Limbo: the
-    /// abductee's Transporter (`+0x11C`) is the abductor, an allied rider of
-    /// an `OpenTopped=` abductor is marked (EnteredOpenTopped `0x00710470`,
-    /// keeping its AI in the logic order), then AddPassenger (vt+0x394).
-    /// CreateInitialPayload's Foot arm (10043C10, `sim::ares_transports`)
-    /// takes the same steps with VocClass::VoicesEnabled cleared around
-    /// AddPassenger (`voices` false). Answers whether the hold took it.
+    /// Ares conductAbduction's tail (10054A80): AddPassenger (vt+0x394), then
+    /// the abductee's Transporter (`+0x11C`) is the abductor, and an allied
+    /// rider of an `OpenTopped=` abductor is marked (EnteredOpenTopped
+    /// `0x00710470`, keeping its AI in the logic order). CreateInitialPayload's
+    /// Foot arm (10043C10, `sim::ares_transports`) takes the same steps with
+    /// VocClass::VoicesEnabled cleared around AddPassenger (`voices` false).
+    /// Answers whether the hold took it.
     #[cfg(feature = "ares")]
     pub(crate) fn ares_abduct_into_hold(
         &mut self,
@@ -528,17 +528,25 @@ impl Simulation {
         voices: bool,
         context: UninitContext<'_>,
     ) -> bool {
-        if let Some(entity) = self.substrate.entities.get_mut(passenger) {
-            entity.passenger_role.set_carrier_link(CarrierLink {
-                transport_id: carrier,
-                open_topped: rider,
-            });
-            entity.passenger_role.transporter = Some(carrier);
+        if !self.add_passenger_voiced(carrier, &[(passenger, size)], voices, context) {
+            return false;
         }
-        if rider {
-            let _ = self.register_open_topped_passenger(passenger);
-        }
-        self.add_passenger_voiced(carrier, &[(passenger, size)], voices, context)
+        // CargoClass::AddPassenger4733A0 limboes its head, and Limbo's Conceal
+        // removes it from the logic order. Native's Unit arm sets Transporter
+        // and InOpenToppedTransport only after that call
+        // (0x0073A740..0x0073A768), and EnteredOpenTopped710470 puts an
+        // open-topped rider back in the live order. Follow that order here:
+        // registering first would be undone by the hold's Limbo, leaving an
+        // `InitialPayload` rider hidden with no AI, so it never fires out of
+        // the transport it was created in.
+        self.mark_boarded_transport_passenger(
+            passenger,
+            carrier,
+            rider,
+            context.rules(),
+            context.effects(),
+        );
+        true
     }
 
     /// Transporter and SetInOpenTransport710470 belong to the arrival
