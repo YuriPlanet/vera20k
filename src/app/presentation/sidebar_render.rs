@@ -137,6 +137,9 @@ pub(crate) fn republish_sidebar_projection(state: &mut AppState) {
 /// it before its first frame (`loading::transitions`).
 pub(crate) fn sidebar_layout_spec(state: &AppState) -> crate::ui::sidebar::SidebarChromeLayoutSpec {
     let theme = current_sidebar_theme(state);
+    // VERA-only: a map picture is taken with the original interface, whose
+    // battlefield its tiles are cut for.
+    let map_picture = state.platform.capture_presentation.map_picture;
     #[cfg(feature = "phobos")]
     let gdi_positions = state.rules().map_or(
         theme == crate::render::sidebar_chrome::SidebarTheme::Allied,
@@ -160,6 +163,7 @@ pub(crate) fn sidebar_layout_spec(state: &AppState) -> crate::ui::sidebar::Sideb
         .match_presentation
         .match_layouts
         .for_side(side_name)
+        .filter(|_| !map_picture)
     {
         layout.apply_to_sidebar(&mut spec);
     }
@@ -721,7 +725,8 @@ pub(crate) fn update_camera_from_minimap_cursor(state: &mut AppState) {
     let (cursor_x, cursor_y) = sidebar_cursor(state);
     let sw = state.render_width() as f32;
     let sh = state.render_height() as f32;
-    let (tactical_w, tactical_h) = crate::app::input::camera::tactical_viewport_size(state);
+    // A view centre becomes a camera position through the centring size.
+    let (tactical_w, tactical_h) = crate::app::input::camera::tactical_centring_size(state);
     let z = state.match_state.input.zoom_level;
     let (cx, cy) = minimap.camera_top_left_for_screen_point_in_rect(
         cursor_x,

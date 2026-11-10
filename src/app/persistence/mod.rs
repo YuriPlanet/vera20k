@@ -651,11 +651,12 @@ impl SaveRepository {
         self.readable_entries().collect()
     }
 
-    /// Whether any compatible save reads: the scan stops at the first one, like
-    /// `LoadOptionsClass__HasLoadableSave` `0x00559C20`.
+    /// Whether any save reads: the scan stops at the first one, like
+    /// `LoadOptionsClass__HasLoadableSave` `0x00559C20`. VERA-only: a save
+    /// another build wrote counts too, because Load lists it (marked, not
+    /// loadable) where gamemd hides it.
     pub(crate) fn has_browser_entry(&self) -> bool {
-        self.readable_entries()
-            .any(|(entry, _)| entry.header.is_compatible())
+        self.readable_entries().next().is_some()
     }
 
     /// SaveInfo681840/559ED0 needs metadata, not the simulation body. Reuse

@@ -837,21 +837,47 @@ pub(crate) fn render_game(
 
 /// The tactical surface object-layer DSurface stores address: logical
 /// (unzoomed) pixels from the floored camera, clipped to the tactical rect.
+///
+/// Its camera is the world point at the battlefield's corner, as gamemd's
+/// tactical position is: the surface-line owners project to client points
+/// from it and add the clip's corner for the surface point. The stored camera
+/// is the frame corner's, so it comes in by the battlefield's corner.
+///
+/// The line and wave stores take their depth from the surface row less the
+/// clip's row, on top of this origin (`4BEF03`). A sprite's depth goes by its
+/// row in the battlefield, so the origin carries the clip's row twice and a
+/// line keeps its depth against the objects wherever a layout puts the
+/// battlefield. The original's clip starts at row 0.
 pub(crate) fn tactical_surface_line_viewport(
     state: &AppState,
 ) -> crate::render::surface_line::SurfaceLineViewport {
     let z = state.match_state.input.zoom_level;
     let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(state);
+    let clip = [x, y, w, h].map(|v| (v as f32 / z) as i32);
     crate::render::surface_line::SurfaceLineViewport {
-        camera: [
-            state.match_state.input.camera_x,
-            state.match_state.input.camera_y,
-        ]
-        .map(|v| v.floor() as i32),
-        clip: [x, y, w, h].map(|v| (v as f32 / z) as i32),
-        z_origin_y: (y as f32 / z) as i32,
+        camera: surface_line_camera(
+            [
+                state.match_state.input.camera_x,
+                state.match_state.input.camera_y,
+            ],
+            [x, y, w, h],
+            z,
+        ),
+        clip,
+        z_origin_y: 2 * clip[1],
         zoom: 1.0,
     }
+}
+
+/// The camera the surface-line owners project from: the floored world point
+/// at the battlefield's corner. `camera` is the stored one, the frame
+/// corner's; `tactical` is the battlefield in frame pixels.
+pub(crate) fn surface_line_camera(camera: [f32; 2], tactical: [u32; 4], zoom: f32) -> [i32; 2] {
+    [
+        camera[0] + tactical[0] as f32 / zoom,
+        camera[1] + tactical[1] as f32 / zoom,
+    ]
+    .map(|v| v.floor() as i32)
 }
 
 /// Upload all per-frame instance vectors to the GPU buffer pool.
@@ -933,7 +959,7 @@ fn upload_to_gpu(
         if presentation.chrono_screen.overrides_tactical_draw() {
             Vec::new()
         } else {
-            let (width, height) = crate::app::input::camera::tactical_viewport_size(state);
+            let (left, top, width, height) = crate::app::input::camera::tactical_viewport_px(state);
             presentation.flying_credits.borrow().build_instances(
                 &state.renderer.bit_font,
                 [
@@ -941,7 +967,7 @@ fn upload_to_gpu(
                     state.match_state.input.camera_y,
                 ],
                 state.match_state.input.zoom_level,
-                [width, height],
+                [left, top, width, height],
             )
         }
     };

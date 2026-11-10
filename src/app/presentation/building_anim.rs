@@ -14,11 +14,14 @@ use crate::sim::production;
 pub(crate) fn sound_listener(state: &AppState) -> crate::audio::sfx::SpatialListener {
     let (tactical_width, tactical_height) =
         crate::app::input::camera::tactical_viewport_size(state);
+    // The listener sits at the battlefield's corner, which a layout may set
+    // in from the frame's corner, where the camera is.
+    let origin = crate::app::input::camera::tactical_origin_world(state);
     crate::audio::sfx::SpatialListener {
         tactical_width: tactical_width as i32,
         tactical_height: tactical_height as i32,
-        origin_x: state.match_state.input.camera_x,
-        origin_y: state.match_state.input.camera_y,
+        origin_x: state.match_state.input.camera_x + origin.0,
+        origin_y: state.match_state.input.camera_y + origin.1,
         zoom: state.match_state.input.zoom_level,
     }
 }

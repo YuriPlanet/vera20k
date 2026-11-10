@@ -174,14 +174,19 @@ pub(crate) fn match_panel(state: &crate::app::AppState) -> Option<MatchPanel<'_>
     if state.frontend.screen != crate::ui::game_screen::GameScreen::InGame {
         return None;
     }
-    // The battlefield is the frame's top left, beside the sidebar column and
-    // above the command bar's strip.
-    let (width, _) = crate::app::input::camera::tactical_viewport_size(state);
+    // The battlefield is the frame beside the sidebar column and the command
+    // bar's strip: its top left in the original, wherever a layout puts it.
+    let (x, y, width, _) = crate::app::input::camera::tactical_viewport_px(state);
     let (scale, (left, top)) = state.tactical_zoom().map_or((1.0, (0, 0)), |zoom| {
         (zoom.percent as f32 / 100.0, zoom.origin)
     });
     Some(MatchPanel {
-        placement: PanelPlacement::top_left(left as f32, top as f32, width as f32 * scale, scale),
+        placement: PanelPlacement::top_left(
+            left as f32 + x as f32 * scale,
+            top as f32 + y as f32 * scale,
+            width as f32 * scale,
+            scale,
+        ),
         simulation: state
             .match_state
             .sim_runtime

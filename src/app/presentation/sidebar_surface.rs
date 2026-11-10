@@ -38,9 +38,10 @@ use crate::ui::sidebar::SidebarFrame;
 /// A part of the sidebar with a surface of its own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SidebarPart {
-    /// The right-hand column.
+    /// The sidebar itself: a column, or a band on the top or the bottom
+    /// edge.
     Column,
-    /// The command bar on the bottom strip.
+    /// The command bar on its strip.
     Bar,
 }
 
@@ -259,7 +260,7 @@ impl SidebarSurface {
         let (scale, sharp) = (frame.copy_scale(), frame.copy_is_sharp());
         self.column
             .surface
-            .place(queue, (frame.frame_left(), 0.0), scale, sharp);
+            .place(queue, frame.side_origin(), scale, sharp);
         self.bar
             .surface
             .place(queue, frame.bar_origin(), scale, sharp);
@@ -285,7 +286,7 @@ impl SidebarSurface {
             (
                 &self.bar,
                 frame.bar_surface_size(),
-                [0.0, frame.strip_layout_top()],
+                [frame.bar_layout_left(), frame.strip_layout_top()],
             ),
         ] {
             let uniform = CameraUniform {
@@ -466,8 +467,11 @@ impl SidebarSurface {
     pub(crate) fn composite(&self, pass: &mut wgpu::RenderPass<'_>) {
         let (x, y, width, height) = self.frame.column();
         self.column.surface.draw(pass, None, [x, y, width, height]);
-        let (x, y, width, height) = self.frame.strip();
-        self.bar.surface.draw(pass, None, [x, y, width, height]);
+        // A layout without a bar has no strip to copy into.
+        if self.frame.has_bar() {
+            let (x, y, width, height) = self.frame.strip();
+            self.bar.surface.draw(pass, None, [x, y, width, height]);
+        }
     }
 
     /// Copy both surfaces into the window `view` at its own pixels, over the
@@ -509,9 +513,12 @@ impl SidebarSurface {
             multiview_mask: None,
         });
         for (part, (x, y), rect) in [
-            (&self.column, (frame.frame_left(), 0.0), frame.column()),
+            (&self.column, frame.side_origin(), frame.column()),
             (&self.bar, frame.bar_origin(), frame.strip()),
-        ] {
+        ]
+        .into_iter()
+        .filter(|(_, _, rect)| rect.3 > 0)
+        {
             self.window.place(
                 queue,
                 &part.window_placement,
@@ -602,13 +609,13 @@ fn place_column_text(
             scale: frame.scale() * window.scale,
             origin: [
                 window.origin[0] + frame.frame_left() * window.scale,
-                window.origin[1],
+                window.origin[1] + frame.frame_top() * window.scale,
             ],
             camera,
         }),
         None => ColumnText::Frame(TextRaster {
             scale: frame.scale(),
-            origin: [camera_x + frame.frame_left(), camera_y],
+            origin: [camera_x + frame.frame_left(), camera_y + frame.frame_top()],
             camera,
         }),
     }

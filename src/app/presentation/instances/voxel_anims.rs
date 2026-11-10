@@ -155,7 +155,9 @@ pub(crate) fn voxel_anim_visitor<'a>(
     }
     let rules = &rt.resources.rules;
     let input = &state.match_state.input;
-    let (_, _, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+    // Draw admission measures from the camera, the frame's corner, so it
+    // takes the centring size: the battlefield and its offset on both sides.
+    let (width, height) = crate::app::input::camera::tactical_centring_size(state);
     let view = DebrisView {
         terrain,
         camera: [input.camera_x, input.camera_y],

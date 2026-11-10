@@ -259,11 +259,13 @@ pub(crate) struct DisplayEffectInputs<'a> {
 }
 
 impl DisplayEffectInputs<'_> {
-    /// Tactical6D2140's view, in world pixels.
+    /// Tactical6D2140's view, in world pixels, for draw admission measured
+    /// from the camera, the frame's corner: the battlefield and its offset on
+    /// both sides (`camera::tactical_centring_size`).
     pub(crate) fn projection_viewport(&self) -> [f32; 2] {
         [
-            self.tactical[2] as f32 / self.zoom,
-            self.tactical[3] as f32 / self.zoom,
+            (self.tactical[2] + 2 * self.tactical[0]) as f32 / self.zoom,
+            (self.tactical[3] + 2 * self.tactical[1]) as f32 / self.zoom,
         ]
     }
 }

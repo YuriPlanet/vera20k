@@ -264,11 +264,16 @@ fn tactical_bounded_entity_encounter_order(
     };
     let zoom = state.match_state.input.zoom_level.max(f32::EPSILON);
     let margin = 32.0 / zoom;
-    let (width_px, height_px) = crate::app::input::camera::tactical_viewport_size(state);
-    let min_x = state.match_state.input.camera_x - margin;
-    let min_y = state.match_state.input.camera_y - margin;
-    let max_x = state.match_state.input.camera_x + width_px as f32 / zoom + margin;
-    let max_y = state.match_state.input.camera_y + height_px as f32 / zoom + margin;
+    // The world rectangle the battlefield shows: from the camera, the
+    // frame's corner, in by the battlefield's own corner.
+    let (left_px, top_px, width_px, height_px) =
+        crate::app::input::camera::tactical_viewport_px(state);
+    let left = state.match_state.input.camera_x + left_px as f32 / zoom;
+    let top = state.match_state.input.camera_y + top_px as f32 / zoom;
+    let min_x = left - margin;
+    let min_y = top - margin;
+    let max_x = left + width_px as f32 / zoom + margin;
+    let max_y = top + height_px as f32 / zoom + margin;
     let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
     let local_owner_id = local_owner
         .as_deref()

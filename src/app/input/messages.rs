@@ -1042,16 +1042,17 @@ fn sync_view(state: &mut AppState) {
         .match_presentation
         .message_list
         .set_typing(typing);
-    // The list spans the tactical viewport: the frame left of the sidebar.
+    // The list spans the tactical viewport: the frame beside the sidebar.
     // VERA's performance panel holds the viewport's top left while it shows, and the
     // list and its edit line start below it.
-    let tactical_w = crate::app::input::camera::tactical_viewport_size(state).0 as i32;
+    let (tactical_x, tactical_y, tactical_w, _) =
+        crate::app::input::camera::tactical_viewport_px(state);
     let top = state.renderer.performance_overlay.message_top();
-    state
-        .match_state
-        .match_presentation
-        .message_list
-        .set_view(0, top, tactical_w);
+    state.match_state.match_presentation.message_list.set_view(
+        tactical_x as i32,
+        tactical_y as i32 + top,
+        tactical_w as i32,
+    );
 }
 
 /// Prepare one successful offline TextLabel paint, using raw wall time for

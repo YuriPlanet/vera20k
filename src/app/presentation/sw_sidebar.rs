@@ -176,7 +176,7 @@ pub(crate) fn plan(
     });
     // Phobos lays the left sidebar out on `DSurface::ViewBounds`, so it stays
     // in native screen pixels and does not scale with the client Sidebar size.
-    let screen_height = state.sidebar_frame().column().3 as i32;
+    let screen_height = state.sidebar_frame().frame_size().1 as i32;
     let owner_mask = owner_house_mask(sim, rules, &owner);
     let selected = select(
         rules,

@@ -9,11 +9,9 @@ use crate::ui::sidebar::command_bar::{CommandBarLayout, spacer_pieces};
 
 pub(crate) fn layout_and_slots(state: &AppState) -> Option<(CommandBarLayout, Vec<Option<usize>>)> {
     let art = &current_sidebar_chrome(state)?.command_bar;
-    let frame = state.sidebar_frame();
     let layout = layout_on_frame(
         art,
-        frame.layout_size(),
-        frame.column_width(),
+        state.sidebar_frame(),
         state
             .match_state
             .match_presentation
@@ -24,24 +22,35 @@ pub(crate) fn layout_and_slots(state: &AppState) -> Option<(CommandBarLayout, Ve
     Some((layout, art.slots[usize::from(multiplayer)].clone()))
 }
 
-/// The bar a match shows on a frame of that many sidebar pixels.
+/// The bar a match shows on `frame`, in its layout space: along the strip the
+/// frame gives it, beside the sidebar's column. `None` without a bar.
 fn layout_on_frame(
     art: &crate::render::sidebar_chrome::CommandBarArt<SidebarChromeEntry>,
-    (width, height): (u32, u32),
-    sidebar_width: u32,
+    frame: crate::ui::sidebar::SidebarFrame,
     closed: bool,
 ) -> Option<CommandBarLayout> {
+    if !frame.has_bar() {
+        return None;
+    }
     let size = |entry: SidebarChromeEntry| entry.pixel_size.map(|v| v as u32);
+    let (width, height) = frame.layout_size();
+    // `new` takes the screen and what the column takes of its width.
+    let beside = width.saturating_sub(frame.bar_surface_size().0);
+    let bottom_strip_top = height as f32 - crate::ui::sidebar::BOTTOM_STRIP_HEIGHT_PX as f32;
     Some(
         CommandBarLayout::new(
             [width, height],
-            sidebar_width,
+            beside,
             size(art.left_cap[0]?),
             size(art.background?),
             size(art.right_cap?),
             !closed,
         )?
-        .flush_left(),
+        .flush_left()
+        .moved(
+            frame.bar_layout_left(),
+            frame.strip_layout_top() - bottom_strip_top,
+        ),
     )
 }
 
@@ -199,7 +208,12 @@ mod tests {
     #[test]
     fn open_bar_reaches_the_left_end_at_wide_frames() {
         let art = bar_art();
-        let layout = layout_on_frame(&art, (1920, 1080), 168, false).unwrap();
+        let layout = layout_on_frame(
+            &art,
+            crate::ui::sidebar::SidebarFrame::native(1920, 1080),
+            false,
+        )
+        .unwrap();
         assert_eq!(layout.left_cap.x, 0.0);
         assert_eq!(layout.slot(0).unwrap().x, 28.0);
         assert_eq!(layout.right_cap.x, 1724.0);

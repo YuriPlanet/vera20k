@@ -669,15 +669,17 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
 
     // Map load hands over a world anchor point; the transition applies the
     // active tactical rectangle and live zoom.
-    let (tactical_width, tactical_height) =
-        crate::app::input::camera::tactical_viewport_size(state);
+    let (tactical_x, tactical_y, tactical_width, tactical_height) =
+        crate::app::input::camera::tactical_viewport_px(state);
+    let (centring_width, centring_height) =
+        crate::app::input::camera::tactical_centring_size(state);
     let (camera_x, camera_y) = crate::app::input::camera::tactical_camera_top_left(
         (
             result.scenario.camera_anchor_x,
             result.scenario.camera_anchor_y,
         ),
-        tactical_width as f32,
-        tactical_height as f32,
+        centring_width as f32,
+        centring_height as f32,
         state.match_state.input.zoom_level,
     );
     crate::app::input::camera::reset_camera_for_new_scenario(state);
@@ -714,8 +716,8 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     state.match_state.input.cancel_minimap_press();
     state.match_state.input.tactical_mouse.reset_for_new_view();
     state.match_state.input.keys_held.clear();
-    state.match_state.input.cursor_x = tactical_width as f32 * 0.5;
-    state.match_state.input.cursor_y = tactical_height as f32 * 0.5;
+    state.match_state.input.cursor_x = tactical_x as f32 + tactical_width as f32 * 0.5;
+    state.match_state.input.cursor_y = tactical_y as f32 + tactical_height as f32 * 0.5;
     state.platform.frame_pacer.reset_for_new_world();
     state
         .match_state

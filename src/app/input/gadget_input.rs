@@ -258,7 +258,12 @@ fn sync_gadgets(state: &mut AppState, view: &SidebarView) {
         .match_state
         .match_presentation
         .super_timer_dock
-        .toggle_rect();
+        .toggle_rect()
+        .map(|rect| {
+            // The dock keeps its areas in the battlefield's own pixels.
+            let (left, top) = crate::app::input::camera::tactical_origin_px(state);
+            GadgetRect::new(rect.x + left, rect.y + top, rect.w, rect.h)
+        });
     sync_timer_dock(
         &mut state.match_state.match_presentation.in_game_gadgets,
         rect,
@@ -320,9 +325,14 @@ fn sync_regions(state: &mut AppState, _view: &SidebarView) {
     // Tactical catcher rect = the play area left of the sidebar panel (the Rust
     // equivalent of gamemd's g_RadarViewport*). Always enabled in-game — we have
     // no in-game map editor (gamemd registers it only when !g_IsMapEditor).
-    let (tactical_width, tactical_height) =
-        crate::app::input::camera::tactical_viewport_size(state);
-    let play_rect = GadgetRect::new(0, 0, tactical_width as i32, tactical_height as i32);
+    let (tactical_x, tactical_y, tactical_width, tactical_height) =
+        crate::app::input::camera::tactical_viewport_px(state);
+    let play_rect = GadgetRect::new(
+        tactical_x as i32,
+        tactical_y as i32,
+        tactical_width as i32,
+        tactical_height as i32,
+    );
     if let Some(th) = state
         .match_state
         .match_presentation
