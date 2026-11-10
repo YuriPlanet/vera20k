@@ -134,7 +134,7 @@ it: ported (the Rust cites both addresses next to the code), equivalent
 | `0x483226` | `1005F970` | CellClass_CrateBeingCollected_Firepower2 | ported with the crate multipliers (`sim::crates::effects`); storing the magnitude into a 1.0 slot is the stock product |
 | `0x523932` | `10041890` | InfantryTypeClass_CTOR_Initialize | zeroes the sequence sound fields the stock constructor left unset; Rust sequences start zeroed |
 | `0x72FA1A` | `1002FA50` | Sides_MixFileYuriFiles1 | `Sidebar.YuriFileNames` picks RADARY/BKGD*Y in `render::sidebar_chrome` (`SidebarArtNames::for_yuri`, with siblings `1002FA60`/`1002FA70`) |
-| `0x6FFF9E` | `10056D70` | TechnoClass_GetActionOnObject_IvanBombsB | skips stock's self-detonate rung, which VERA never represented; Ares' own detonate action stays residual (`sim::bomb`) |
+| `0x6FFF9E` | `10056D70` | TechnoClass_GetActionOnObject_IvanBombsB | skips stock's self-detonate rung; `Simulation::bomb_detonate_action` answers the Ares predicate in its place |
 
 ## Not applicable
 

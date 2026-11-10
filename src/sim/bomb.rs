@@ -975,6 +975,14 @@ impl Simulation {
     /// player's house (`HouseClass::IsHumanPlayer @ 0x0050B6F0`), and Rules
     /// lets that kind go off on a click: a death bomb `CanDetonateDeathBomb=`,
     /// a timed one `CanDetonateTimeBomb=`. Retail sets both to no.
+    ///
+    /// Ares 3.0 answers it at the entry of What_Action instead
+    /// (`TechnoClass_GetActionOnObject_IvanBombsA @ 10056D30`, hook
+    /// `0x006FFEC0`, ahead of the berserk and warp exits; `IvanBombsB @
+    /// 10056D70`, hook `0x006FFF9E`, skips the stock rung):
+    /// `TechnoExt::CanDetonateAttachedBomb @ 100433A0` reads the planting
+    /// weapon's `IvanBomb.CanDetonateTimeBomb`/`.CanDetonateDeathBomb` over the
+    /// Rules keys.
     pub fn bomb_detonate_action(&self, carrier: u64, rules: &RuleSet) -> bool {
         let Some(bomb) = self
             .substrate
@@ -985,12 +993,21 @@ impl Simulation {
             return false;
         };
         let combat = &rules.combat_damage;
-        self.house_is_human_player(bomb.planter_house)
-            && if bomb.is_death_bomb() {
-                combat.can_detonate_death_bomb
-            } else {
-                combat.can_detonate_time_bomb
-            }
+        if !self.house_is_human_player(bomb.planter_house) {
+            return false;
+        }
+        #[cfg(feature = "ares")]
+        return bomb.ares_settings(&self.interner, rules).can_detonate(
+            bomb.is_death_bomb(),
+            combat.can_detonate_time_bomb,
+            combat.can_detonate_death_bomb,
+        );
+        #[cfg(not(feature = "ares"))]
+        if bomb.is_death_bomb() {
+            combat.can_detonate_death_bomb
+        } else {
+            combat.can_detonate_time_bomb
+        }
     }
 
     /// The DETONATE arm of `EventClass::Execute @ 0x004C6CB0`

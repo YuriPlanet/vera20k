@@ -81,7 +81,7 @@ DontScore=yes              ; ... as does any DontScore/Insignificant type
 | `51E748` | `10049710` | InfantryClass_GetActionOnObject_NoSelfGuardArea | residual, below |
 | `687C16` | `100677B0` | CanMakeStuffUp's Rules randomisation | ported: draws and saved values; consumers residual, below |
 | `55AFB3` | `100680F0` | LogicClass_Update_1000 | ported |
-| `6FFEC0` | `10056D30` | TechnoClass_GetActionOnObject_IvanBombsA | residual, below |
+| `6FFEC0` | `10056D30` | TechnoClass_GetActionOnObject_IvanBombsA | ported: `Simulation::bomb_detonate_action`, asked ahead of the berserk and warp exits ([ares-ivan-bomb-abductor.md](ares-ivan-bomb-abductor.md)) |
 
 ## Residuals
 
@@ -101,11 +101,6 @@ DontScore=yes              ; ... as does any DontScore/Insignificant type
   authored Rules. Trigger: `CanMakeStuffUp=yes`, set by no retail INI.
   Effect: the authored values stay in force; the draws, their order and the
   infantry pass match the DLL.
-- The player's Detonate action (`IvanBomb.CanDetonateTimeBomb`,
-  `.CanDetonateDeathBomb`, `TechnoExt::CanDetonateAttachedBomb 100433A0`,
-  `GetDeactivatedAction 10044AD0`): VERA has neither the stock DETONATE
-  event (`0x004C7823`) nor its self-hover action, so there is nothing for
-  the keys to gate (`sim::bomb`).
 - EMP: harvesters, the AI Walk path and mind-controlled victims stay
   unsupported, and announceAttack (`10062150`) is not ported
   ([ares-emp.md](ares-emp.md)).

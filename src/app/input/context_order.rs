@@ -3381,13 +3381,19 @@ pub(super) fn self_detonates(
     selected_ids: &[u64],
     target: u64,
 ) -> bool {
+    // Ares 3.0 IvanBombsA (10056D30, hook 0x6FFEC0) answers before the
+    // berserk and warp exits; the click's berserk and deactivation refusals
+    // let Detonate through (0x51F1D8, 0x7388EB, 0x4D74EC: 10056BF0,
+    // 10056DA0, 1004CBC0).
+    let exits = |entity: &crate::sim::game_entity::GameEntity| {
+        !cfg!(feature = "ares") && (entity.berserk.is_active() || entity.is_warped_out())
+    };
     selected_ids == [target]
         && sim.entities().get(target).is_some_and(|entity| {
             matches!(
                 entity.category(),
                 EntityCategory::Infantry | EntityCategory::Unit
-            ) && !entity.berserk.is_active()
-                && !entity.is_warped_out()
+            ) && !exits(entity)
         })
         && sim.bomb_detonate_action(target, rules)
 }

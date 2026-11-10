@@ -155,8 +155,8 @@ Supported extensions:
   `CloningFacility`.
 - [Ivan bombs, abductors and weapon extras](ares-ivan-bomb-abductor.md):
   `IvanBomb.*` from the planting weapon, `Abductor.*` with `ImmuneToAbduction`,
-  `ApplyDamage` and `ProjectileRange`. The player's Detonate action
-  (`IvanBomb.CanDetonate*`) and `Cursor.Attack*` remain outside this chain.
+  `ApplyDamage`, `ProjectileRange` and the player's Detonate
+  (`IvanBomb.CanDetonate*`). `Cursor.Attack*` remains outside this chain.
 - [Building types](ares-building-types.md): advanced rubble (`Rubble.*`),
   `EngineerRepairable`, urban combat and raidable garrisons (`UC.*`,
   `Bunker.Raidable`, `CanBeOccupiedBy`), `IsPassable`, `EngineerDamage`,
