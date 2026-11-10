@@ -93,8 +93,7 @@ Every `HasSpotlight=` Techno gets its BuildingLight at TechnoClass::Unlimbo
   which IsControllable already refuses for most orders.
 - Init_1's capture manager and parasite for any weapon slot and the
   parasite slot hooks (0x629804, 0x62A020, 0x62A7B1); the gunner temporal
-  swap (0x74642C, 0x74653C); small visceroid merging
-  (0x739F21, a raw type swap); Hover DeployToLand (0x513EAA, 0x514A21,
+  swap (0x74642C, 0x74653C); Hover DeployToLand (0x513EAA, 0x514A21,
   0x514DFE); NoSelfGuardArea (0x51E748: the healer's self arm it skips is
   not ported); the Occupier+VehicleThief expiry
   (0x4D9A83); the infantry DamageSparks parse order (0x5240BD).
@@ -285,7 +284,7 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 | `739956` | UnitClass_Deploy_Transfer | `10048E90` | ported earlier |
 | `739ADA` | UnitClass_SimpleDeploy_Height | `1004C380` | ported: airborne simple deployer deploys; InAir only for DeployToLand |
 | `739B8A` | UnitClass_SimpleDeploy_Facing | `1004C2D0` | ported: simple deployer turns to DeployDir first |
-| `739F21` | UnitClass_UpdatePosition_Visceroid | `1004C530` | residual: small visceroids merge |
+| `739F21` | UnitClass_UpdatePosition_Visceroid | `1004C530` | ported: `Simulation::ares_visceroid_merge`, a raw Type store into `[General] LargeVisceroid` ([ares-tiberium.md](ares-tiberium.md)) |
 | `73A1BC` | UnitClass_UpdatePosition_EnteredGrinder | `1004C460` | ported: `sim::reverse_engineering`, with the hijacker refund (ares-reverse-engineering.md) |
 | `73DE90` | UnitClass_Mi_Unload_SimpleDeployer | `1004C070` | ported: [ares-transports.md](ares-transports.md) |
 | `740031` | UnitClass_GetActionOnObject_NoManualUnload | `1004BEF0` | ported earlier |

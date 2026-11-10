@@ -48,10 +48,7 @@ first; the Ares part is then small. None of them is reachable with retail YR dat
 
 | Ares feature (keys, hooks) | Needs this stock gamemd logic | Retail |
 |---|---|---|
-| `Assaulter.Level` (0x457DB7, 10016FD0) and KillOccupants' assaulter arm (0x4586CA) | The stock `Assaulter=` arms: CanBeOccupiedBy 0x457DAD..0x457DD3 and the assault at 0x522A09..0x522A45 | No assaulter infantry |
-| Visceroid merge (0x739F21, 1004C530) | UnitClass::UpdateVisceroid, called from UnitClass::AI 0x7360C0 | Visceroids spawn only when a mod enables tiberium damage |
 | `NoSelfGuardArea` (0x51E748) | The healer's self-GuardArea arm of the infantry input ladder (0x51E710..0x51E748) | Healers never self-guard |
-| Player Detonate: `IvanBomb.CanDetonateTimeBomb`, `IvanBomb.CanDetonateDeathBomb` (0x6FFEC0) | The DETONATE event (0x4C7823) and the self-hover action | Not set |
 | Gate placement selling walls (0x440709, 100156F0) | BuildingClass::Unlimbo's Gate/WallTower arms that sell the walls under them | No gate over walls |
 | Tunnel entry by an absorber click (0x44351A, 100172F0) | The absorber click that sends radio 0x10 | Ares tunnels are mod-only |
 

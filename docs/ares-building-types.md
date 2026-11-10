@@ -83,8 +83,7 @@ EngineerAlwaysCaptureTech=yes
   `EngineerRepairable` (`0x51FA82`) has no VERA counterpart.
 - `KickOutOfRubble` restores the selection the sim keeps; nothing else of
   the client's selection.
-- The occupant's TechnoExt `GarrisonedIn` (only Ares trenches read it) and
-  the `Assaulter=` arms the original admission already leaves out.
+- The occupant's TechnoExt `GarrisonedIn` (only Ares trenches read it).
 - `SolidHeight`, `SolidLevel`, `SubjectToBuildings` and
   `AlliedSolidTransparency` belong to the
   [line-of-fire chain](ares-line-of-fire.md).

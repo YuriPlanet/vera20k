@@ -90,6 +90,22 @@ impl AresIvanBomb {
         &self.image
     }
 
+    /// `TechnoExt::CanDetonateAttachedBomb @ 100433A0`'s keys: a death bomb's
+    /// `IvanBomb.CanDetonateDeathBomb` (+0xA6), else
+    /// `IvanBomb.CanDetonateTimeBomb` (+0xA4), each over its Rules key.
+    pub(crate) fn can_detonate(
+        &self,
+        death_bomb: bool,
+        rules_time: bool,
+        rules_death: bool,
+    ) -> bool {
+        if death_bomb {
+            self.can_detonate[1].unwrap_or(rules_death)
+        } else {
+            self.can_detonate[0].unwrap_or(rules_time)
+        }
+    }
+
     /// LoadFromINIFile 10055520's reads of these keys, in its order. The
     /// warhead and the two sounds are bound by their own owners.
     pub(crate) fn read(section: &IniSection) -> Self {

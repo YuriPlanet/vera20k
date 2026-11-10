@@ -35,6 +35,12 @@
 //! - Fire legality (`TechnoClass::GetFireError` `0x006FCB8D`, `0x006FCBAD`): a
 //!   BombDisarm weapon needs a bombed target, an IvanBomb weapon an unbombed
 //!   one.
+//! - A player's Detonate: the lone selected carrier of a human player's bomb
+//!   answers Detonate over itself where `[CombatDamage]
+//!   CanDetonateTimeBomb=`/`CanDetonateDeathBomb=` allow its kind, both no in
+//!   retail ([`Simulation::bomb_detonate_action`]); the click sends DETONATE
+//!   with the bomb's house, whose Execute sets it off
+//!   ([`Simulation::execute_detonate_event`]).
 //! - Who sees it (`BombListClass::UpdateAll @ 0x00438BF0`, every frame before
 //!   the object AI): every 46th call, and the second call after an attach, the
 //!   carrier's `+0x68` becomes "the local player owns the planter's house or a
@@ -68,10 +74,6 @@
 //! - The death bomb (kind `+0x30 = 1`: no fuse, clock frame 12) has no native
 //!   writer, so only timed bombs exist in stock builds; Ares PlantBomb writes
 //!   it.
-//! - The player's DETONATE action (`EventClass` `0x004C7823`, behind
-//!   `CanDetonateTimeBomb=`/`CanDetonateDeathBomb=`, both off in stock, and
-//!   Ares's `IvanBomb.CanDetonate*` with its What_Action hooks) is not
-//!   represented.
 //! - Campaign visibility: `HouseClass::IsHumanPlayer @ 0x0050B6F0` also admits
 //!   a house with PlayerControl (`+0x1ED`) in a campaign; the app tests the
 //!   local player's house only, as for the other gated sounds. Trigger: a
@@ -247,6 +249,19 @@ impl Bomb {
     /// `+0x24`: the planter, until its pointer expires.
     pub(crate) fn planter(&self) -> Option<u64> {
         self.planter
+    }
+
+    /// `+0x28`: the planter's house at the attach.
+    pub(crate) fn house(&self) -> InternedId {
+        self.planter_house
+    }
+
+    /// `BombClass::GetType @ 0x004389F0`, the kind `+0x30`: a death bomb (1).
+    fn is_death_bomb(&self) -> bool {
+        #[cfg(feature = "ares")]
+        return self.death_bomb;
+        #[cfg(not(feature = "ares"))]
+        false
     }
 
     /// `BombClass::IsTimerExpired @ 0x00438A70`: a timed bomb (kind 0)
@@ -954,9 +969,77 @@ impl Simulation {
         self.bomb_detonate(carrier, rules, overlay_registry, frame_effects)
     }
 
+    /// The Detonate rung of `TechnoClass::What_Action_OnObject`
+    /// (`0x006FFF8D..0x00700003`), past the lone-selection (`[0xA8ECC8] == 1`)
+    /// and self tests its callers make: `carrier` holds a bomb of a human
+    /// player's house (`HouseClass::IsHumanPlayer @ 0x0050B6F0`), and Rules
+    /// lets that kind go off on a click: a death bomb `CanDetonateDeathBomb=`,
+    /// a timed one `CanDetonateTimeBomb=`. Retail sets both to no.
+    ///
+    /// Ares 3.0 answers it at the entry of What_Action instead
+    /// (`TechnoClass_GetActionOnObject_IvanBombsA @ 10056D30`, hook
+    /// `0x006FFEC0`, ahead of the berserk and warp exits; `IvanBombsB @
+    /// 10056D70`, hook `0x006FFF9E`, skips the stock rung):
+    /// `TechnoExt::CanDetonateAttachedBomb @ 100433A0` reads the planting
+    /// weapon's `IvanBomb.CanDetonateTimeBomb`/`.CanDetonateDeathBomb` over the
+    /// Rules keys.
+    pub fn bomb_detonate_action(&self, carrier: u64, rules: &RuleSet) -> bool {
+        let Some(bomb) = self
+            .substrate
+            .entities
+            .get(carrier)
+            .and_then(|entity| entity.bomb.as_ref())
+        else {
+            return false;
+        };
+        let combat = &rules.combat_damage;
+        if !self.house_is_human_player(bomb.planter_house) {
+            return false;
+        }
+        #[cfg(feature = "ares")]
+        return bomb.ares_settings(&self.interner, rules).can_detonate(
+            bomb.is_death_bomb(),
+            combat.can_detonate_time_bomb,
+            combat.can_detonate_death_bomb,
+        );
+        #[cfg(not(feature = "ares"))]
+        if bomb.is_death_bomb() {
+            combat.can_detonate_death_bomb
+        } else {
+            combat.can_detonate_time_bomb
+        }
+    }
+
+    /// The DETONATE arm of `EventClass::Execute @ 0x004C6CB0`
+    /// (`0x004C7823..0x004C7850`): the event's object as a Techno
+    /// (`TargetClass::As_Techno`) drops its planning tokens
+    /// (`TechnoClass::ClearPlanningTokens`, [`Self::planning_detach_actor`]),
+    /// then its bomb, if any, goes off ([`Self::bomb_detonate`]). The event's
+    /// house and the carrier's owner are not asked. Answers whether a bomb
+    /// went off.
+    pub(crate) fn execute_detonate_event(
+        &mut self,
+        carrier: u64,
+        rules: &RuleSet,
+        overlay_registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> bool {
+        // Every entity in the store is a Techno.
+        let Some(entity) = self.substrate.entities.get(carrier) else {
+            return false;
+        };
+        let armed = entity.bomb.is_some();
+        self.planning_detach_actor(carrier);
+        if !armed {
+            return false;
+        }
+        self.bomb_detonate(carrier, rules, overlay_registry, frame_effects);
+        true
+    }
+
     /// `BombClass::Detonate @ 0x00438720` outside any damage transaction
-    /// ([`apply_area_damage`]): the fuse and Ares's sale detonation. Returns
-    /// whether a bridge changed.
+    /// ([`apply_area_damage`]): the fuse, a player's DETONATE event and
+    /// Ares's sale detonation. Returns whether a bridge changed.
     pub(crate) fn bomb_detonate(
         &mut self,
         carrier: u64,
@@ -1141,3 +1224,7 @@ impl BombBlast {
 #[cfg(test)]
 #[path = "bomb_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "bomb_detonate_tests.rs"]
+pub(crate) mod detonate_tests;

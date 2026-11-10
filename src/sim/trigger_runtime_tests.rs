@@ -1330,14 +1330,17 @@ fn action128_skips_only_passengers_with_a_transporter() {
         None,
         FrameEffects::default()
     ));
-    assert!(add_garrison_occupant(
-        &mut sim,
-        &rules,
-        occupant,
-        bunker,
-        None,
-        FrameEffects::default()
-    ));
+    assert!(
+        add_garrison_occupant(
+            &mut sim,
+            &rules,
+            occupant,
+            bunker,
+            None,
+            FrameEffects::default()
+        )
+        .unwrap()
+    );
     // Full reinforcements load through CargoClass::AddPassenger 0x4733A0,
     // which leaves +0x11C NULL.
     assert!(sim.add_cargo_passenger_chain(

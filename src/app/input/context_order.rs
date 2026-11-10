@@ -2831,6 +2831,17 @@ pub(crate) fn try_queue_context_order(
                     HoverTargetKind::FriendlyUnit | HoverTargetKind::FriendlyStructure
                 )
             });
+            if let Some(target) = hover.as_ref()
+                && self_detonates(sim, &resources.rules, &current_objects, target.stable_id)
+                && let Some(record) = sim.encode_detonate_record(target.stable_id)
+            {
+                queued.push(CommandEnvelope::new(
+                    owner_id,
+                    execute_tick,
+                    Command::SynchronizedRecord { record },
+                ));
+                return finish_order(state, queued, None, rally_announce, None);
+            }
             if context_actions_enabled
                 && let Some(cmd) = self_click_command(
                     sim,
@@ -3348,6 +3359,43 @@ fn self_deploy_is_blocked(
                 .passenger_role
                 .cargo()
                 .is_none_or(|cargo| cargo.is_empty()))
+}
+
+/// Techno What_Action's Detonate rung (`0x006FFF8D..0x00700003`) for the
+/// lone selected (`[0xA8ECC8] == 1`) `target` over itself, past the berserk
+/// and warp exits (`0x006FFEC9`, `0x006FFF03`): its bomb may go off on a
+/// click ([`crate::sim::world::Simulation::bomb_detonate_action`]). The
+/// carrier's owner is not asked: a player may set off a bomb on a selected
+/// enemy. Cursor and click share it; both ask an Engineer's DisarmBomb
+/// first (Infantry `0x0051E462`). The click sends the DETONATE event
+/// (`Simulation::encode_detonate_record`), with no voice.
+///
+/// RESIDUALS: only Infantry and Units are represented. Native also answers
+/// it for an Aircraft or Building carrier, whose class ladders VERA does not
+/// route through this rung, and a player's healer Unit (negative weapon
+/// damage) over itself answers Select first (`0x0073FDF0..0x0073FE3B`).
+/// Shift's ToggleSelect, which native asks after this rung, is asked first.
+pub(super) fn self_detonates(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    selected_ids: &[u64],
+    target: u64,
+) -> bool {
+    // Ares 3.0 IvanBombsA (10056D30, hook 0x6FFEC0) answers before the
+    // berserk and warp exits; the click's berserk and deactivation refusals
+    // let Detonate through (0x51F1D8, 0x7388EB, 0x4D74EC: 10056BF0,
+    // 10056DA0, 1004CBC0).
+    let exits = |entity: &crate::sim::game_entity::GameEntity| {
+        !cfg!(feature = "ares") && (entity.berserk.is_active() || entity.is_warped_out())
+    };
+    selected_ids == [target]
+        && sim.entities().get(target).is_some_and(|entity| {
+            matches!(
+                entity.category(),
+                EntityCategory::Infantry | EntityCategory::Unit
+            ) && !exits(entity)
+        })
+        && sim.bomb_detonate_action(target, rules)
 }
 
 /// The command a click on the one selected object issues when it clicks

@@ -93,8 +93,8 @@ impl RadarAction {
             // Action0 and AttackSupport (0x3B), Self (4), Select (7),
             // ToggleSelect (8), Grind (0xB), Tote (0x11), Damage (0x1C), GRepair (0x1D),
             // NoDeploy (0x1E), NoEnter (0x1F), NoGRepair (0x20), IvanBomb
-            // (0x35), NoIvanBomb (0x36), DisarmBomb (0x39), Demolish (0x40)
-            // and Airstrike (0x47).
+            // (0x35), NoIvanBomb (0x36), Detonate (0x37), DisarmBomb (0x39),
+            // Demolish (0x40) and Airstrike (0x47).
             Kind::Default
             | Kind::Deploy
             | Kind::Select
@@ -109,6 +109,7 @@ impl RadarAction {
             | Kind::IvanBomb
             | Kind::NoIvanBomb
             | Kind::DisarmBomb
+            | Kind::Detonate
             | Kind::WeaponDemolish
             | Kind::AirStrike => return None,
             // The cursor's own modes, never a What_Action answer.

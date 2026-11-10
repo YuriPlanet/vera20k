@@ -52,7 +52,7 @@ as Ares in both builds); **residual** (gameplay, but its host is unported);
 | `0x44A5F0` | `1005C550` | Sale survivors: at most nine re-picks after an Engineer, then none (original loops) | ported: `crew_survival::spawn_sale_crew` |
 | `0x44A8A2` | `1005C530` | A sold building remembers its survivors are out (NoSurvivor) | ported: `production_sell::sell_stage_one` |
 | `0x455E4C` | `1005CB50` | FindRepairBay asks only bays of the unit's Naval kind that are no aircraft pad, and takes only ROGER | ported: `unit_repair_seek` |
-| `0x4586D6` | `1005C510` | KillOccupants registers the killer as the occupants' destroyer (vanilla swapped it) | residual: `KillOccupants(killer)` is reached only by the `Assaulter=` arm, which VERA does not represent; no retail assaulter |
+| `0x4586D6` | `1005C510` | KillOccupants registers the killer as the occupants' destroyer (vanilla swapped it) | ported: `passenger::garrison_eject::kill_building_occupants` books each occupant as killed by the assaulter ([dormant-stock-rules.md](dormant-stock-rules.md#assaulters)) |
 | `0x4692A2` | `1005C630` | The second attacked-by-house event rereads the Tag | equivalent: the tag dispatcher rereads the Tag (`capture_manager`) |
 | `0x4693B0` | `1005C650` | A Unit's ElectricAssault shot charges an Overpowerable building too | ported: `tesla_charging::electric_assault_detonation` |
 | `0x469467` | `1005C600` | Temporal warps a Foot in the Air or Top layer too | ported: `temporal::temporal_detonation` |
