@@ -147,6 +147,7 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
             &sim,
             Some(building.owner()),
             building,
+            None,
             &|anim| {
                 super::super::overlays::slot_anim_admissible(
                     &sim,

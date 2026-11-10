@@ -521,6 +521,20 @@ pub fn tolerant_anim_class_roots(rules: &RuleSet) -> Vec<String> {
             .into_iter()
             .filter(|name| rules.anim_type_names.contains(name)),
     );
+    // A `Turret=yes` type without `TurretAnimIsVoxel=` names slot 9's animation
+    // on its own rules section, so no ART `building_anims` row above reaches
+    // that name and its SHP stays unbound. Grand_Opening would then refuse the
+    // constructor (`animation type [X] has no bound SHP frame count`) and the
+    // turret would never be drawn.
+    roots.extend(
+        rules
+            .all_objects()
+            .filter_map(crate::rules::art_data::shp_turret_anim_config)
+            .map(|config| config.anim_type.to_ascii_uppercase())
+            .filter(|name| rules.anim_type_names.contains(name)),
+    );
+    let mut seen = std::collections::HashSet::new();
+    roots.retain(|name| seen.insert(name.clone()));
     roots
 }
 

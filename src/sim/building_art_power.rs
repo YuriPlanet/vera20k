@@ -37,6 +37,26 @@ impl Simulation {
         self.set_building_anim_slot(id, slot, damaged, false, 0, rules);
     }
 
+    /// until an operational edge happens to dispatch. Complete those slots on
+    /// the ordinary visit; the check is idempotent and only fills empty ones.
+    pub(crate) fn ensure_shp_turret_anim(&mut self, id: u64, rules: &RuleSet) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        if entity.building_art.anim_slots[9].is_some() {
+            return;
+        }
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
+            return;
+        };
+        let damaged = requested_damage_state(
+            entity.health,
+            object.strength,
+            rules.general.condition_yellow,
+        );
+        self.install_shp_turret_anim(id, damaged, rules);
+    }
+
     /// Restore4545D0 clears SuperLowPower20 before ascending visits. Loss4547C0
     /// uses Powered/Light/Effect precedence and marks replay before scalar delete.
     pub(crate) fn apply_building_anim_power(&mut self, id: u64, restoring: bool, rules: &RuleSet) {

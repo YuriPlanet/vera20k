@@ -2295,6 +2295,49 @@ pub fn effect_shp_candidates(
     candidates
 }
 
+/// One SHP turret animation carries thirty-two facings, so its frame index is
+/// the turret heading's top five bits (`facing >> 3`).
+pub const SHP_TURRET_FACING_FRAMES: u16 = 32;
+
+/// Slot 9's draw row for a *rules-owned* SHP turret.
+///
+/// `0x00446580..0x004466D5` builds this slot in Grand_Opening, not in
+/// `BuildingTypeClass::ReadINI`: the name comes from the type's own
+/// `TurretAnim=` (the art key of that name is not read for slot 9), and the
+/// anchor is `TurretAnimX`/`TurretAnimY`/`TurretAnimZAdjust` on the same
+/// section. The frame is the turret facing rather than the animation's timer,
+/// so this row exists only to give the presentation the slot, the name and the
+/// offset; [`crate::app::presentation::instances::shp`] supplies the frame.
+///
+/// `None` for a voxel turret (`TurretAnimIsVoxel=yes` — the B8/C0 model path),
+/// for a type without `Turret=`, and when the section names no `TurretAnim`.
+pub fn shp_turret_anim_config(
+    object: &crate::rules::object_type::ObjectType,
+) -> Option<BuildingAnimConfig> {
+    if !object.has_turret || object.turret_anim_is_voxel {
+        return None;
+    }
+    let name = object.turret_anim.clone()?;
+    Some(BuildingAnimConfig {
+        native_slot: 9,
+        anim_type: name,
+        damaged_variant: None,
+        garrisoned_variant: None,
+        kind: BuildingAnimKind::Special,
+        is_primary: true,
+        x: object.turret_anim_x,
+        y: object.turret_anim_y,
+        y_sort: 0,
+        z_adjust: object.turret_anim_z_adjust,
+        loop_start: 0,
+        loop_end: 0,
+        loop_count: 1,
+        rate: 0,
+        start_frame: 0,
+        ping_pong: false,
+    })
+}
+
 /// Generate VXL/HVA filenames for a voxel model.
 pub fn voxel_asset_names(image_id: &str) -> (String, String) {
     let upper: String = image_id.to_uppercase();
@@ -2775,6 +2818,35 @@ mod anim_runtime_metadata_tests {
                 .unwrap()
                 .random_rate_logic_frames,
             Some((1, 1))
+        );
+    }
+
+    /// Slot 9's name and anchor come from the type's own RULES section
+    /// (`0x00446580..0x004466D5`), which is why the art entry of MO's
+    /// twenty-four non-voxel turret buildings carries no row for it.
+    #[test]
+    fn shp_turret_slot_row_is_built_from_the_rules_section() {
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+            "[General]\n[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n\
+             [BuildingTypes]\n0=GAGUN\n1=NALASR\n2=NOTURRETANIM\n\
+             [GAGUN]\nStrength=400\nTurret=yes\nTurretAnimIsVoxel=no\n\
+             TurretAnim=gaguntur\nTurretAnimX=5\nTurretAnimY=-12\nTurretAnimZAdjust=-30\n\
+             [NALASR]\nStrength=400\nTurret=yes\nTurretAnimIsVoxel=yes\n\
+             TurretAnim=NASNTYTUR\n\
+             [NOTURRETANIM]\nStrength=400\nTurret=yes\nTurretAnimIsVoxel=no\n",
+        ))
+        .expect("rules");
+        let shp = shp_turret_anim_config(rules.object("GAGUN").expect("GAGUN")).expect("slot 9");
+        assert_eq!(shp.native_slot, 9);
+        assert_eq!(shp.anim_type, "GAGUNTUR", "the native read upper-cases the name");
+        assert_eq!((shp.x, shp.y, shp.z_adjust), (5, -12, -30));
+        assert!(
+            shp_turret_anim_config(rules.object("NALASR").expect("NALASR")).is_none(),
+            "a voxel turret draws the B8/C0 model instead of a slot animation"
+        );
+        assert!(
+            shp_turret_anim_config(rules.object("NOTURRETANIM").expect("type")).is_none(),
+            "without TurretAnim= there is no name to install"
         );
     }
 

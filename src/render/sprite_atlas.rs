@@ -2194,6 +2194,27 @@ pub(crate) fn prepare_sprite_atlas(
                     );
                 }
             }
+            // Slot 9 (an SHP turret) is rules-owned, so the art entry of a
+            // turret building normally lists no row for it. Register the SHP's
+            // thirty-two facing frames here anyway: the presentation picks the
+            // frame from the turret heading at draw time.
+            if let Some(turret) = rules
+                .and_then(|rules| rules.object(type_id))
+                .and_then(crate::rules::art_data::shp_turret_anim_config)
+            {
+                register_building_anim(
+                    &mut needed,
+                    &mut building_anim_counts,
+                    &mut shp_files,
+                    asset_manager,
+                    art_reg,
+                    &turret.anim_type,
+                    crate::rules::art_data::SHP_TURRET_FACING_FRAMES - 1,
+                    *house_color,
+                    theater_ext,
+                    theater_name,
+                );
+            }
             // BibShape: ground-level pad SHP (e.g., refinery dock GAREFNBB).
             // Use bib name directly as atlas key so render can look it up.
             if let Some(ref bib) = entry.bib_shape {
