@@ -79,7 +79,6 @@ pub(crate) fn paint_wol_login_children(
         // VERA online: the welcome, the sign-in form and the counts, straight
         // over the art.
         let centred = ShellAlign::H_CENTER;
-        let caption = ShellAlign(ShellAlign::H_RIGHT.0 | ShellAlign::V_CENTER.0);
         paint.texts.push(text(
             &label("VERA:OnlineWelcome"),
             online.heading,
@@ -93,7 +92,7 @@ pub(crate) fn paint_wol_login_children(
             paint.texts.push(text(
                 &label(field.label),
                 caption_rect,
-                caption,
+                ShellAlign::NONE,
                 SHELL_LABEL_TEXT_RGB,
                 SHELL_CONTROL_TEXT_DEPTH,
             ));

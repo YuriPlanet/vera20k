@@ -823,39 +823,41 @@ pub(crate) const POPUP_AREA: RectPx = RectPx::new(36, 36, 560, 504);
 
 /// VERA online: the page's left side, drawn straight over its art: the
 /// welcome heading with the sign-in form's status line right under it,
-/// saying what to do, the form (a caption and field each for the username
-/// and the password, and Remember password under them) and the lobby's
-/// activity below.
+/// saying what to do, the form (a caption over its field each for the
+/// username and the password, and Remember password under them) and the
+/// lobby's activity below.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct WolOnlineLoginLayout {
     pub(crate) heading: RectPx,
     /// Up to two wrapped rows.
     pub(crate) status: RectPx,
-    /// Each field's right-aligned caption and its NewEdit's window.
+    /// Each field's caption and, under it, its NewEdit's window.
     pub(crate) fields: [(RectPx, RectPx); 2],
     pub(crate) remember: RectPx,
     /// One row per count.
     pub(crate) counts: [RectPx; 2],
 }
 
-/// In the shell's authored 800x600 units. The heading, the status line and
-/// the counts centre on [`POPUP_AREA`], whose centre line runs between the
-/// captions and the fields; the fields are the size of gamemd's password
-/// field, and the text rows the shell font's 19 pixels.
-const ONLINE_HEADING: RectPx = RectPx::new(36, 150, 560, 19);
-const ONLINE_STATUS: RectPx = RectPx::new(96, 173, 440, 38);
+/// In the shell's authored 800x600 units: one column on [`POPUP_AREA`]'s
+/// centre line, centred in the art's height too. The heading, the status
+/// line and the counts centre on the line; each field stands under its
+/// caption, as wide as a 24-letter username, with Remember password at the
+/// fields' left edge. The text rows are the shell font's 19 pixels and the
+/// fields as tall as gamemd's password field.
+const ONLINE_HEADING: RectPx = RectPx::new(36, 158, 560, 19);
+const ONLINE_STATUS: RectPx = RectPx::new(96, 181, 440, 38);
 const ONLINE_FIELDS: [(RectPx, RectPx); 2] = [
     (
-        RectPx::new(40, 220, 200, 22),
-        RectPx::new(253, 220, 209, 22),
+        RectPx::new(186, 229, 260, 19),
+        RectPx::new(186, 250, 260, 22),
     ),
     (
-        RectPx::new(40, 254, 200, 22),
-        RectPx::new(253, 254, 209, 22),
+        RectPx::new(186, 280, 260, 19),
+        RectPx::new(186, 301, 260, 22),
     ),
 ];
-const ONLINE_REMEMBER: RectPx = RectPx::new(253, 286, 300, 22);
-const ONLINE_COUNTS: [RectPx; 2] = [RectPx::new(36, 326, 560, 19), RectPx::new(36, 347, 560, 19)];
+const ONLINE_REMEMBER: RectPx = RectPx::new(186, 333, 260, 22);
+const ONLINE_COUNTS: [RectPx; 2] = [RectPx::new(36, 371, 560, 19), RectPx::new(36, 392, 560, 19)];
 
 impl WolLoginLayout {
     pub(crate) fn page_spec(&self) -> &'static MenuPageSpec {
@@ -1357,14 +1359,14 @@ mod tests {
         );
         assert_eq!(layout.tooltip_key(PLAY), Some("VERA:PlayHelp"));
         assert_eq!(layout.tooltip_key(BACK), Some("STT:WOLWelcomeBack"));
-        // The sign-in form's fields are the size of gamemd's password field
-        // and share a column; a caption ends left of its field.
+        // The sign-in form's fields are as tall as gamemd's password field;
+        // each stands under its caption, at the same left edge.
         let online = layout.online.unwrap();
         assert!(native.online.is_none());
         for (index, (caption, edit)) in online.fields.into_iter().enumerate() {
-            assert_eq!((edit.w, edit.h), (native.password.w, native.password.h));
-            assert_eq!(edit.x, online.fields[0].1.x);
-            assert!(caption.x + caption.w < edit.x);
+            assert_eq!(edit.h, native.password.h);
+            assert_eq!((caption.x, caption.w), (edit.x, edit.w));
+            assert!(caption.y + caption.h <= edit.y);
             assert_eq!(
                 layout.control_at(edit.x + 1, edit.y + 1),
                 Some(WolAccountForm::field_id(index))
@@ -1376,12 +1378,14 @@ mod tests {
             Some(FORM_REMEMBER)
         );
         // Top to bottom: the heading, the status line saying what to do, the
-        // two fields, Remember password and the counts, clear of the buttons
-        // and the page's own status line.
+        // two captioned fields, Remember password and the counts, clear of
+        // the buttons and the page's own status line.
         let rows = [
             online.heading,
             online.status,
+            online.fields[0].0,
             online.fields[0].1,
+            online.fields[1].0,
             online.fields[1].1,
             online.remember,
             online.counts[0],
@@ -1394,17 +1398,18 @@ mod tests {
             assert!(row.x + row.w < layout.page.right_panel.top.x, "{row:?}");
             assert!(row.y + row.h < layout.status_help.y, "{row:?}");
         }
-        // The heading, the status line and the counts share the popups'
-        // centre line.
+        // Every row shares the popups' centre line, and the column centres
+        // in the art's height as the popups do.
         let centre = |rect: RectPx| 2 * rect.x + rect.w;
-        for row in [
-            online.heading,
-            online.status,
-            online.counts[0],
-            online.counts[1],
-        ] {
+        for row in rows {
             assert_eq!(centre(row), centre(POPUP_AREA), "{row:?}");
         }
+        let last = online.counts[1];
+        let middle = online.heading.y + last.y + last.h;
+        assert!(
+            (middle - (2 * POPUP_AREA.y + POPUP_AREA.h)).abs() <= 8,
+            "{middle}"
+        );
     }
 
     #[test]
