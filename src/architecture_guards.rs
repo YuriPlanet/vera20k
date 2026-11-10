@@ -461,6 +461,8 @@ fn engine_per_client_reads_have_pinned_callers() {
             &[
                 // What_Action's Tote rung (0x00417CC0): the clicked action.
                 ("sim/aircraft/carryall.rs", 1),
+                // What_Action's Detonate rung (0x006FFF8D): the clicked action.
+                ("sim/bomb.rs", 1),
                 ("sim/building_art.rs", 2),
                 ("sim/building_entry.rs", 1),
                 ("sim/building_power.rs", 2),

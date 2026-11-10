@@ -422,7 +422,7 @@ impl Simulation {
         #[cfg_attr(not(feature = "ares"), allow(unused_mut))]
         let mut cleared = vec![(at, layer)];
         #[cfg(feature = "ares")]
-        if let Some(deck) = entity.ares_alt_occupation {
+        if let Some(deck) = entity.ares_alt_occupation() {
             let last = if deck {
                 MovementLayer::Bridge
             } else {
