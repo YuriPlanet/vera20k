@@ -47,8 +47,8 @@ fn native_trig(angle: f32) -> vec2<f32> {
     let sampled = clamp(vec2<i32>(vec2(
         coeff.x * local.y + coeff.y * local.x,
         coeff.y * local.y - coeff.x * local.x
-    ) + centre), vec2(0), vec2(i32(params.width) - 1, rows - 1));
-    let colour = textureLoad(snapshot, sampled + vec2<i32>(0, i32(params.field_y)), 0);
+    ) + centre), vec2(0), vec2(i32(params.width) - 1, rows - 1)) + vec2<i32>(0, i32(params.field_y));
+    let colour = textureLoad(snapshot, sampled, 0);
     let bytes = vec3<u32>(colour.rgb * 255.0 + vec3(0.5));
     var components = vec3<u32>(bytes.r >> 3u, bytes.g >> 2u, bytes.b >> 3u);
     let maximum = vec3<u32>(31u, 63u, 31u);
