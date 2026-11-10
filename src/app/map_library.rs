@@ -230,10 +230,15 @@ pub(crate) fn append_online_records(state: &mut AppState) {
     if maps.is_empty() {
         return;
     }
+    // A map in the mod folder in use is one the player has, too.
+    let folders: Vec<&std::path::Path> = crate::map::source::mod_dir()
+        .into_iter()
+        .chain([ra2_dir.as_path(), maps_dir.as_path()])
+        .collect();
     append_rows(
         &mut state.frontend.scenario_catalog.records_mut(),
         maps,
-        &[&ra2_dir, &maps_dir],
+        &folders,
     );
 }
 
@@ -242,7 +247,8 @@ fn append_rows(
     maps: &[OnlineMap],
     folders: &[&std::path::Path],
 ) {
-    // Each folder is listed once, the game folder first; names compare
+    // Each folder is listed once, in the order a map lookup reads them (the
+    // mod folder in use, then the game folder); names compare
     // without case, as macOS and Windows file systems do.
     let mut files = std::collections::HashMap::new();
     for path in folders.iter().flat_map(|folder| {

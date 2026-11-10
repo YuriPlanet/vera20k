@@ -521,6 +521,19 @@ pub fn tolerant_anim_class_roots(rules: &RuleSet) -> Vec<String> {
             .into_iter()
             .filter(|name| rules.anim_type_names.contains(name)),
     );
+    // Slot 9's names are on the rules section (`0x00464450..0x004644FD`), so
+    // no art row above reaches them. Unbound, the constructor is refused and
+    // Grand_Opening (`0x00446662`) leaves the turret undrawn.
+    roots.extend(
+        rules
+            .all_objects()
+            .filter_map(crate::rules::art_data::shp_turret_anim_config)
+            .flat_map(|row| {
+                let damaged = row.damaged_variant.map(|variant| variant.anim_type);
+                std::iter::once(row.anim_type).chain(damaged)
+            })
+            .filter(|name| rules.anim_type_names.contains(name)),
+    );
     roots
 }
 

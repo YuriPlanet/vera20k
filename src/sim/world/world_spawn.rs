@@ -3028,7 +3028,8 @@ impl Simulation {
     /// managers' children, the building's live attackers are listed
     /// (`0x00449F23..0x00449FDC`, Techno array order) and the building leaves
     /// the map (vt+0xD4, whose Detach_All clears their targets) for the
-    /// unit's Unlimbo (`0x0044A002`). After its health
+    /// unit's Unlimbo (`0x0044A002`), which faces the building type's
+    /// DeployFacing (`0x00449FED..0x00449FFA`). After its health
     /// (`0x0044A010..0x0044A039`) a building's slave manager moves to it
     /// (SetOwner `0x006AF580` at `0x0044A047`, which frees the unit's own
     /// fresh slaves), the unit takes the building's veterancy
@@ -3048,14 +3049,15 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        let Some((unit_type, owner_id, rx, ry, z, was_selected)) =
+        let Some((unit_type, owner_id, rx, ry, z, was_selected, unlimbo_facing)) =
             self.substrate.entities.get(sid).and_then(|entity| {
                 let type_str = self.interner.resolve(entity.type_ref());
                 let unit_type = production::undeploy_target(rules, type_str)?;
+                let building_type = rules.object(type_str)?;
                 let (rx, ry) = undeploy_unit_cell(
                     entity.position.rx(),
                     entity.position.ry(),
-                    &rules.object(type_str)?.foundation,
+                    &building_type.foundation,
                 );
                 Some((
                     unit_type,
@@ -3064,6 +3066,9 @@ impl Simulation {
                     ry,
                     entity.position.z(),
                     entity.selection.is_selected(),
+                    // Selling449FED..44A002: the unit's Unlimbo direction is
+                    // the building type's DeployFacing (+0xEDC, 0x00465D70).
+                    building_type.deploy_facing,
                 ))
             })
         else {
@@ -3099,7 +3104,7 @@ impl Simulation {
                 &owner,
                 rx,
                 ry,
-                0,
+                unlimbo_facing,
                 z,
                 rules,
                 TechnoConstructorInit::FreshScenario,

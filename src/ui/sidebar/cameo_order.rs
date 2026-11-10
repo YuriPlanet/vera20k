@@ -207,10 +207,30 @@ impl CameoKey {
 /// `Default` is the SidebarClass constructor 6A4E60 and StripClass
 /// constructor 6A80A0 / Init_Clear 6A81B0 state: no entries, TopRow 0, nothing
 /// queued. Their Stage and Unknown_40 drive nothing (Unknown_40 is only -1).
+/// How many cameos a strip row holds: the original's two (GetVisibleSlotCount
+/// `0x006AC430` counts 2 * rows) unless the player's layout says otherwise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct StripColumns(usize);
+
+impl StripColumns {
+    pub(crate) fn new(columns: usize) -> Self {
+        Self(columns.max(1))
+    }
+}
+
+impl Default for StripColumns {
+    fn default() -> Self {
+        Self(2)
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct CameoStrips {
     strips: [Vec<Cameo>; 4],
     scroll_rows: [usize; 4],
+    /// The row width the scroll rules below count in. From the layout on
+    /// every refresh, not saved.
+    columns: StripColumns,
     /// StripClass PendingScroll: rows the scroll arrows queued, negative up.
     /// Presentation only, and not saved: a load starts with none queued.
     pending_scroll: [i32; 4],
@@ -534,7 +554,7 @@ impl CameoStrips {
         let index = tab.tab_index();
         let top = self.scroll_rows[index];
         let rows = rows as i32;
-        if down && (top + visible_rows) * 2 < self.strips[index].len() {
+        if down && (top + visible_rows) * self.columns.0 < self.strips[index].len() {
             self.pending_scroll[index] += rows;
         } else if !down && top != 0 {
             self.pending_scroll[index] -= rows;
@@ -551,6 +571,7 @@ impl CameoStrips {
     /// never shows it. A strip that fits on screen, or has no row left in
     /// the queued direction, drops its queue.
     pub(crate) fn step_pending_scroll(&mut self, visible_rows: usize) {
+        let columns = self.columns.0;
         for ((strip, top), pending) in self
             .strips
             .iter()
@@ -560,7 +581,7 @@ impl CameoStrips {
             if *pending == 0 {
                 continue;
             }
-            if visible_rows * 2 >= strip.len() {
+            if visible_rows * columns >= strip.len() {
                 *pending = 0;
             } else if *pending < 0 {
                 if *top == 0 {
@@ -569,13 +590,19 @@ impl CameoStrips {
                     *pending += 1;
                     *top -= 1;
                 }
-            } else if (*top + visible_rows) * 2 < strip.len() {
+            } else if (*top + visible_rows) * columns < strip.len() {
                 *pending -= 1;
                 *top += 1;
             } else {
                 *pending = 0;
             }
         }
+    }
+
+    /// Take the layout's row width for the scroll rules. A top row past the
+    /// end under a new width is clamped where the view is built.
+    pub(crate) fn set_columns(&mut self, columns: StripColumns) {
+        self.columns = columns;
     }
 
     pub(crate) fn has_pending_scroll(&self) -> bool {
@@ -641,12 +668,13 @@ impl CameoStrips {
     /// `min(position / 2, max(count - slots, 0) / 2)`; an unchanged count
     /// leaves the row alone.
     pub(crate) fn retain(&mut self, visible_rows: usize, mut keep: impl FnMut(CameoId) -> bool) {
-        let visible_slots = visible_rows * 2;
+        let columns = self.columns.0;
+        let visible_slots = visible_rows * columns;
         for (strip, row) in self.strips.iter_mut().zip(&mut self.scroll_rows) {
             let old_count = strip.len();
             #[cfg(feature = "ares")]
-            let top = strip.get(*row * 2).map(|entry| entry.key.clone());
-            let start = *row * 2;
+            let top = strip.get(*row * columns).map(|entry| entry.key.clone());
+            let start = *row * columns;
             let mut old_index = 0;
             let mut new_index = 0;
             let mut first_visible = None;
@@ -666,11 +694,11 @@ impl CameoStrips {
             });
             #[cfg(feature = "ares")]
             if strip.len() != old_count {
-                let last = strip.len().saturating_sub(visible_slots) / 2;
+                let last = strip.len().saturating_sub(visible_slots) / columns;
                 *row = match &top {
                     Some(top) => {
                         cameo_lower_bound(strip.as_slice(), |entry| entry.key.inserts_before(top))
-                            / 2
+                            / columns
                     }
                     None => *row,
                 }
@@ -679,8 +707,10 @@ impl CameoStrips {
             #[cfg(not(feature = "ares"))]
             if strip.len() != old_count {
                 *row = first_visible.map_or(0, |(snapshot_index, retained_index)| {
-                    let shifted = *row as i64 - (snapshot_index as i64 - retained_index as i64) / 2;
-                    let last = (strip.len() as i64 - visible_slots as i64) / 2;
+                    let columns = columns as i64;
+                    let shifted =
+                        *row as i64 - (snapshot_index as i64 - retained_index as i64) / columns;
+                    let last = (strip.len() as i64 - visible_slots as i64) / columns;
                     shifted.min(last).max(0) as usize
                 });
             }

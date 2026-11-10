@@ -1060,30 +1060,53 @@ pub(crate) fn prepare_unit_atlas(
         },
     )
 }
+/// Which logical cores a voxel raster may fill with its workers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RasterCores {
+    /// Map load: no match is running yet, so every core draws.
+    All,
+    /// Live growth: a match is running, so one core stays with it.
+    BesideMatch,
+}
+
+impl RasterCores {
+    /// Worker threads on a machine with `cores` logical cores; never none.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    fn workers(self, cores: usize) -> usize {
+        match self {
+            Self::All => cores,
+            Self::BesideMatch => cores.saturating_sub(1),
+        }
+        .max(1)
+    }
+}
+
 impl UnitRasterWork {
     /// Pure CPU work: all physical files and type metadata were resolved by
     /// prepare_unit_atlas. It owns no simulation, asset manager or GPU handles.
     pub(crate) fn render(self) -> UnitRasterOutput {
-        self.render_cancellable(&std::sync::atomic::AtomicBool::new(false))
+        self.render_cancellable(&std::sync::atomic::AtomicBool::new(false), RasterCores::All)
     }
 
     /// Rasterize on a worker thread, which sends the output once and ends.
     /// Setting `cancelled` stops it between models and poses; the receiver
-    /// may be dropped at any time. Map load and live growth share it.
+    /// may be dropped at any time. Map load and live growth share it, and
+    /// `cores` says which of the two is asking.
     pub(crate) fn spawn(
         self,
         cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        cores: RasterCores,
     ) -> std::io::Result<std::sync::mpsc::Receiver<UnitRasterOutput>> {
         let (sender, receiver) = std::sync::mpsc::channel();
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         {
-            let _ = sender.send(self.render_cancellable(&cancelled));
+            let _ = sender.send(self.render_cancellable(&cancelled, cores));
         }
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         std::thread::Builder::new()
             .name("voxel-atlas-raster".into())
             .spawn(move || {
-                let _ = sender.send(self.render_cancellable(&cancelled));
+                let _ = sender.send(self.render_cancellable(&cancelled, cores));
             })?;
         Ok(receiver)
     }
@@ -1091,11 +1114,15 @@ impl UnitRasterWork {
     pub(crate) fn render_cancellable(
         self,
         cancelled: &std::sync::atomic::AtomicBool,
+        cores: RasterCores,
     ) -> UnitRasterOutput {
         let mut rendered = Vec::new();
         let mut failed = self.failed;
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-        let workers = std::thread::available_parallelism().map_or(1, |n| n.get());
+        let workers = cores.workers(std::thread::available_parallelism().map_or(1, |n| n.get()));
+        // The browser draws on its one thread.
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        let _ = cores;
         for (model, type_keys) in self.models {
             if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
                 break;

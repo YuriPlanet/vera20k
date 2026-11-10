@@ -548,7 +548,31 @@ fn tick_animations_impl(
     tick_dying: bool,
 ) -> Vec<u64> {
     let mut dying_finished: Vec<u64> = Vec::new();
-    let keys: Vec<u64> = entities.keys_sorted();
+    // Only a Unit or an Aircraft is built with an Animation
+    // (`world_spawn::construction`), and an Infantry leaves below whatever it
+    // holds, so the frame-end step reads those two classes alone (VERA-only,
+    // results unchanged). The whole-store walk also reports dying objects
+    // that hold none.
+    let animated = |category| {
+        matches!(
+            category,
+            crate::map::entities::EntityCategory::Unit
+                | crate::map::entities::EntityCategory::Aircraft
+        )
+    };
+    debug_assert!(
+        tick_dying
+            || !crate::sim::touch_log::live_read_check_enabled()
+            || entities
+                .values_of_category(crate::map::entities::EntityCategory::Structure)
+                .all(|entity| entity.animation.is_none()),
+        "a Structure holds an Animation the frame-end step would not advance"
+    );
+    let keys: Vec<u64> = if tick_dying {
+        entities.keys_sorted()
+    } else {
+        entities.ids_of_categories(animated)
+    };
 
     for &id in &keys {
         let Some(entity) = entities.get(id) else {

@@ -163,7 +163,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
             Some(Instant::now() + POLL_INTERVAL)
         }
         Phase::Found { package, offer } => {
-            if main_menu_idle(state) {
+            if state.main_menu_at_rest() {
                 state.frontend.updater.phase = Phase::Offered { package, offer };
                 App::leave_shell_dialog(
                     state,
@@ -319,16 +319,6 @@ pub(crate) fn cancel_check(state: &mut AppState) {
         *asked = false;
     }
     state.platform.window.request_redraw();
-}
-
-/// The offer waits for the main menu at rest: its page takes input (not
-/// sliding, no movie, page or error over it), past the splash, with no dialog.
-fn main_menu_idle(state: &AppState) -> bool {
-    use crate::app::input::precedence::{InputLayer, ScreenPage, input_layer};
-    input_layer(state) == InputLayer::Screen(ScreenPage::MainMenu)
-        && state.frontend.shell_route == crate::app::shell_route::ShellRoute::MainMenu
-        && state.frontend.startup_splash.is_none()
-        && !state.main_menu_dialog_open()
 }
 
 /// The menu has slid out: ask over the empty shell backdrop, as Exit Game
@@ -531,20 +521,5 @@ fn show_failure(state: &mut AppState, version: Version, error: &anyhow::Error) {
 /// An OK box in place of the updater's open one: a failure, or what Check
 /// for Updates found.
 fn show_notice(state: &mut AppState, text: String) {
-    if state.frontend.shell_message_box.is_some() {
-        App::close_shell_message_box_from_controller(state);
-    }
-    let ok = App::csf_label(state, "TXT_OK", "OK");
-    App::open_shell_message_box(
-        state,
-        ShellMessageBox {
-            labels: ShellMessageBoxLabels {
-                title: text,
-                confirm: ok,
-                third: String::new(),
-                cancel: String::new(),
-            },
-            purpose: ShellMessageBoxPurpose::UpdateNotice,
-        },
-    );
+    App::open_shell_notice(state, text);
 }

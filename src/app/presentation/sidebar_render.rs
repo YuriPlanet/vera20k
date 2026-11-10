@@ -131,8 +131,11 @@ pub(crate) fn republish_sidebar_projection(state: &mut AppState) {
     refresh_projection(state, true);
 }
 
-fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
-    refresh_radar_animation_source(state);
+/// The local side's sidebar table: the original's for its theme and position
+/// set, with the loaded art's heights and whatever the side's `veraui.ini`
+/// layout changes. Its width decides the battlefield's, so a new world takes
+/// it before its first frame (`loading::transitions`).
+pub(crate) fn sidebar_layout_spec(state: &AppState) -> crate::ui::sidebar::SidebarChromeLayoutSpec {
     let theme = current_sidebar_theme(state);
     #[cfg(feature = "phobos")]
     let gdi_positions = state.rules().map_or(
@@ -147,6 +150,25 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         spec.side2_height = atlas.side2.pixel_size[1];
         spec.side3_height = atlas.side3.pixel_size[1];
     }
+    // A mod's `veraui.ini` layout for this side changes the original's numbers.
+    let side_name = state.rules().and_then(|rules| {
+        let side = u8::try_from(current_sidebar_side(state)).ok()?;
+        rules.side_name(crate::rules::ruleset::SideIdx(side))
+    });
+    if let Some(layout) = state
+        .match_state
+        .match_presentation
+        .match_layouts
+        .for_side(side_name)
+    {
+        layout.apply_to_sidebar(&mut spec);
+    }
+    spec
+}
+
+fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
+    refresh_radar_animation_source(state);
+    let spec = sidebar_layout_spec(state);
     state.match_state.match_presentation.sidebar_layout_spec = spec;
     // The sidebar lays out on its own surface (`ui::sidebar::SidebarFrame`).
     let (screen_w, screen_h) = state.sidebar_frame().layout_screen();
@@ -230,6 +252,11 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
             &right_sw_views,
             reuse_sim_inputs,
         );
+    state
+        .match_state
+        .match_presentation
+        .sidebar_projection
+        .set_cameo_columns(spec.columns());
     let reconciled = state
         .match_state
         .match_presentation
@@ -572,15 +599,23 @@ fn shows_alt_cameo(
         }
 }
 
+/// Whether the minimap is drawn and takes clicks: the layout has the radar,
+/// and the radar is online (or has no housing animation, the legacy
+/// fallback).
+pub(crate) fn minimap_shown(state: &AppState) -> bool {
+    let presentation = &state.match_state.match_presentation;
+    presentation
+        .sidebar_layout_spec
+        .shows(crate::ui::sidebar::SidebarPart::Radar)
+        && presentation
+            .radar_anim
+            .as_ref()
+            .is_none_or(|ra| ra.is_minimap_visible())
+}
+
 pub(crate) fn is_cursor_over_minimap(state: &AppState) -> bool {
     // Minimap interaction disabled when radar is not online.
-    let minimap_visible: bool = state
-        .match_state
-        .match_presentation
-        .radar_anim
-        .as_ref()
-        .is_none_or(|ra| ra.is_minimap_visible());
-    if !minimap_visible {
+    if !minimap_shown(state) {
         return false;
     }
     let Some(minimap) = &state.match_state.match_presentation.minimap else {

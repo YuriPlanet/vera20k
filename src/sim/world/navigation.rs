@@ -48,14 +48,15 @@ pub(super) fn marked_structure_movement_cells(
 }
 
 /// Structure presence over every marked structure. Consumers are
-/// order-insensitive (cell blocks, sets and presence tests).
+/// order-insensitive (cell blocks, sets and presence tests). The store's
+/// category column picks the structures, so no other object is loaded.
 fn visit_structure_movement_cells(
     entities: &EntityStore,
     interner: &StringInterner,
     rules: &RuleSet,
     mut visit: impl FnMut((u16, u16)),
 ) {
-    for entity in entities.values() {
+    for entity in entities.values_of_category(EntityCategory::Structure) {
         for cell in marked_structure_movement_cells(entity, interner, rules) {
             visit(cell);
         }

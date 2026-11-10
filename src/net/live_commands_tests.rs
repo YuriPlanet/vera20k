@@ -3420,6 +3420,129 @@ fn sequenced_service_ends_a_match_a_newer_relay_keeps_stalling() {
     assert!(unreadable_at(11_000));
 }
 
+/// The relay drops a lapsed ticket unanswered and retires a silent player after
+/// ABSENT_MS, so nothing tells a game that its place is gone. A route that has
+/// heard nothing for that long and 15 seconds more is released and stops
+/// knocking, whatever holds the transport: a one-human match and the score
+/// screen have no ordered session to end.
+#[test]
+fn a_relay_route_silent_past_the_relays_own_limit_is_released() {
+    use crate::net::udp::{
+        RelayTicket,
+        test_support::{MAX_DATAGRAM, SecretKey, derive_packet_key},
+    };
+
+    let key = SecretKey::new([31; 32]);
+    let sink = UdpSocket::bind("127.0.0.1:0").unwrap();
+    sink.set_nonblocking(true).unwrap();
+    let std::net::SocketAddr::V4(address) = sink.local_addr().unwrap() else {
+        unreachable!()
+    };
+    let ticket = RelayTicket {
+        room: [27; 16],
+        player: [1; 16],
+        source: 0,
+        generation: 1,
+        expires: 300,
+        nonce: [3; 16],
+    }
+    .sign(&key)
+    .unwrap();
+    let packet_key = *derive_packet_key(&key, &ticket).expose_for_https();
+    let mut wire = transport();
+    wire.enable_relay(address, &ticket, packet_key, [29; 32])
+        .unwrap();
+    let knocks = |sink: &UdpSocket| {
+        settle_loopback();
+        let mut bytes = [0; MAX_DATAGRAM + 1];
+        std::iter::from_fn(|| sink.recv_from(&mut bytes).ok()).count()
+    };
+    let limit = ((vera20k_relay_protocol::ABSENT_MS + 15_000) / 16) as u32;
+    wire.service(100);
+    assert!(knocks(&sink) > 0);
+    // A sample older than the last one is not 49 days of silence.
+    wire.service(99);
+    wire.service(100 + limit);
+    assert!(!wire.relay_absent() && wire.relay_expires().is_some());
+    assert!(knocks(&sink) > 0);
+    wire.service(100 + limit + 1);
+    assert!(wire.relay_absent() && wire.relay_expires().is_none());
+    knocks(&sink);
+    wire.service(100 + limit + 1_000);
+    assert_eq!(knocks(&sink), 0);
+    // The lobby's reply to a renewal asked before the release is not an error.
+    wire.renew_relay(address, &ticket, packet_key, [29; 32])
+        .unwrap();
+}
+
+/// A started match whose relay goes silent waits for it, showing Reconnecting,
+/// until the transport releases the route; then it ends as absent instead of
+/// waiting for as long as the game stays open.
+#[test]
+fn sequenced_match_ends_as_absent_once_its_silent_relay_route_is_released() {
+    use crate::net::udp::test_support::MAX_DATAGRAM;
+
+    let (mut worlds, rules, _, boundaries, socket, mut relay) = sequenced_pair();
+    let counters = |boundary: &Boundary| boundary.live.borrow().delivery_counters().unwrap();
+    let frame = |worlds: &mut [Simulation; 2], ticks: u32| {
+        for (world, boundary) in worlds.iter_mut().zip(&boundaries) {
+            boundary.now.set(ticks);
+            let effects = FrameEffects::empty().with_network_commands(boundary);
+            if world.pending_network_wait() {
+                let _ = world.resume_network_wait(&rules, None, effects);
+            } else {
+                let _ = world.advance_app_frame(&[], &rules, None, 33, TickLane::Ordinary, effects);
+            }
+        }
+    };
+    let mut now_ms = 16_000;
+    for _ in 0..200 {
+        now_ms += 16;
+        let unix = 100 + (now_ms - 16_000) / 1000;
+        relay.advance_clock(now_ms, unix);
+        for (world, boundary) in worlds.iter_mut().zip(&boundaries) {
+            boundary.now.set((now_ms >> 4) as u32);
+            boundary.live.borrow_mut().service_pending_commands(
+                &mut world.network_command_queues(),
+                (now_ms >> 4) as u32,
+            );
+        }
+        settle_loopback();
+        let mut replies = Vec::new();
+        let mut bytes = [0; MAX_DATAGRAM + 1];
+        while let Ok((length, std::net::SocketAddr::V4(source))) = socket.recv_from(&mut bytes) {
+            replies.extend(
+                relay
+                    .process_at(source, &bytes[..length], unix, now_ms)
+                    .unwrap_or_default(),
+            );
+        }
+        for packet in replies {
+            socket.send_to(&packet.bytes, packet.endpoint).unwrap();
+        }
+        settle_loopback();
+        frame(&mut worlds, (now_ms >> 4) as u32);
+        if boundaries.iter().all(|boundary| counters(boundary).started) {
+            break;
+        }
+    }
+    assert!(boundaries.iter().all(|boundary| counters(boundary).started));
+    // From here the relay answers nothing. The last answer came within the
+    // second before, so a second short of the limit both games still wait.
+    let silent = (now_ms >> 4) as u32;
+    let limit = ((vera20k_relay_protocol::ABSENT_MS + 15_000) / 16) as u32;
+    frame(&mut worlds, silent + limit - 63);
+    for boundary in &boundaries {
+        assert_eq!(counters(boundary).failure, None);
+        assert!(boundary.live.borrow().relay_expires().is_some());
+    }
+    frame(&mut worlds, silent + limit + 1);
+    for boundary in &boundaries {
+        assert_eq!(counters(boundary).failure, Some("absent"));
+        assert!(boundary.live.borrow().relay_expires().is_none());
+    }
+}
+
 #[test]
 fn sequenced_unsent_batch_retries_when_the_relay_route_recovers() {
     use crate::net::udp::{

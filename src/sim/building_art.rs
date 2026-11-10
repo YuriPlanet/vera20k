@@ -448,6 +448,10 @@ impl Simulation {
         if first_opening {
             self.open_super_weapon_anims(id, damaged, garrisoned, rules);
         }
+        // 0x00446580..0x004466D5: the turret animation in slot 9.
+        if first_opening {
+            self.open_turret_anim(id, rules);
+        }
         // 0x004466D5..0x0044676C: the light block Unlimbo shares.
         if first_opening {
             self.light_building(id, rules);
@@ -541,6 +545,10 @@ impl Simulation {
             // PowerUp records belong to the retained BuildingType, including
             // constructor defaults when no ART section was ever reached.
             rules.art().building_power_up_config(slot, record)
+        } else if slot == 9 {
+            // Slot 9's record is read from the rules INI, not ART
+            // (`0x00464450..0x00464632`).
+            crate::rules::art_data::building_turret_anim_config(object)
         } else {
             rules
                 .art()
@@ -697,18 +705,91 @@ impl Simulation {
             //constructor/cycling state stays in -1..=2.
             return;
         }
-        let name = format!("{image}_{}", char::from(b'B'.wrapping_add(next as u8)));
-        // RESIDUAL: a map/mod registering this dynamic type can reach
-        // the unported Rules slot9/SHP turret configuration and binding
-        // mechanism. The selected retail NTIRON_B is unregistered, so
-        // native427CB0 exits before any coordinates/configuration read.
-        self.allocate_building_anim_slot(id, 9, &name, false, 0, None, rules);
+        self.allocate_wall_tower_art(id, &image, next, rules);
         self.substrate
             .entities
             .get_mut(id)
             .unwrap()
             .building_art
             .wall_tower_variant = next;
+    }
+
+    /// The WallTower variant's slot-9 art, `Image_B`, `_C` or `_D`, handed
+    /// straight to451890: PowerUp's request above and Grand_Opening's
+    /// (`0x004465D2..0x00446655`).
+    fn allocate_wall_tower_art(&mut self, id: u64, image: &str, variant: i32, rules: &RuleSet) {
+        let name = format!("{image}_{}", char::from(b'B'.wrapping_add(variant as u8)));
+        // RESIDUAL: nothing binds this dynamic type's SHP, so a map or mod
+        // that registers it gets no drawn art. The selected retail NTIRON_B
+        // is unregistered, so native427CB0 exits before any slot read.
+        self.allocate_building_anim_slot(id, 9, &name, false, 0, None, rules);
+    }
+
+    /// Grand_Opening `0x00446580..0x004466D5`, inside the first-opening
+    /// block. A HasTurret (`0x004527D0`) building without `TurretAnimIsVoxel`
+    /// (`+0x16C5`) builds its slot-9 animation: the WallTower variant's art
+    /// when one is set (`+0x5FC != -1`, after clearing the slot), otherwise
+    /// the rules `TurretAnim` name (`+0x11B0`) when it is not empty. Both go
+    /// straight to451890 with a clear damage flag, so a building that opens
+    /// damaged returns its other slots to their normal names, as natively.
+    /// The block then aims the animation it built.
+    fn open_turret_anim(&mut self, id: u64, rules: &RuleSet) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let Some(object) = self.object_type(entity.type_ref(), rules) else {
+            return;
+        };
+        if object.turret_anim_is_voxel
+            || !entity
+                .building_upgrades()
+                .has_turret(object, rules, &self.interner)
+        {
+            return;
+        }
+        let variant = entity.building_art.wall_tower_variant;
+        if variant != -1 {
+            let image = object.image.clone();
+            self.clear_building_anim_slot(id, 9);
+            self.allocate_wall_tower_art(id, &image, variant, rules);
+        } else if let Some(name) = object.turret_anim.clone() {
+            self.allocate_building_anim_slot(id, 9, &name, false, 0, None, rules);
+        }
+        self.aim_building_turret_anim(id, true);
+    }
+
+    /// A HasTurret building shows its heading on its slot-9 animation: the
+    /// frame is the `0x007F4890` table entry for the 32-step bucket of the
+    /// `+0x388` facing (`FacingClass::Current @ 0x004C93D0`), and the frame
+    /// step is zeroed so the animation neither advances nor ends. Grand_Opening
+    /// (`0x00446680..0x004466CB`) and UpdateAnimation's tail, every frame
+    /// (`0x00451234..0x0045128C`), write it. No RNG draw, timer write or
+    /// detach is involved.
+    ///
+    /// RESIDUAL: the map's building reader writes it too
+    /// (`0x0044FDC5..0x0044FE1D`), and VERA has no call there. Trigger: a
+    /// preset building with a slot-9 animation whose heading the reader set
+    /// after it opened; effect: none once UpdateAnimation runs on the first
+    /// logic frame.
+    ///
+    /// The slot is tested before the caller's HasTurret answer: only a
+    /// building with a slot-9 animation has anything to write.
+    pub(crate) fn aim_building_turret_anim(&mut self, id: u64, has_turret: bool) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let Some(anim_id) = entity.building_art.anim_slots[9] else {
+            return;
+        };
+        if !has_turret {
+            return;
+        }
+        let facing = entity.body_facing_current(self.session.binary_frame());
+        let frame = crate::util::direction_tables::DRAGON_FRAME_TABLE
+            [usize::from(crate::util::direction_tables::step32_from_facing16(facing))];
+        if let Some(anim) = self.substrate.anims.get_mut(anim_id) {
+            anim.hold_at_frame(frame);
+        }
     }
 
     /// Original451890: synchronize other slots, construct new AnimClass, copy
@@ -802,9 +883,12 @@ impl Simulation {
             self.substrate.anims.get_mut(new_id)?.pause();
         }
         // RESIDUAL (dormant): `0x00451AFB..0x00451B10` hides a slot-9 anim
-        // (Anim `+0x19D`) of a `BarrelAnimIsVoxel=` type. VERA reads the key
-        // only for its fire coordinate (`fire_coord.rs`) and leaves this hide
-        // unported; no retail rules layer sets it.
+        // (Anim `+0x19D`) of a `BarrelAnimIsVoxel=` type, and the building's
+        // own draw shows it around the voxel barrel
+        // (`0x0043E5D9..0x0043E795`). VERA reads the key only for its fire
+        // coordinate (`fire_coord.rs`) and ports neither, so such a type's
+        // slot-9 anim draws as an ordinary slot anim; no retail rules layer
+        // sets the key.
         // 0x00451B17..0x00451B25: a building being erased (`vt+0x1D4`,
         // Techno `+0x270`) freezes the new anim.
         if self.substrate.entities.get(id)?.is_warped_out() {
@@ -1368,14 +1452,20 @@ mod body_tests {
 
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn slot_test_fixture() -> (Simulation, RuleSet, u64) {
+    slot_test_fixture_with("")
+}
+
+/// [`slot_test_fixture`] with more keys on the building's rules section.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn slot_test_fixture_with(building_rules: &str) -> (Simulation, RuleSet, u64) {
     use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile};
     let art_ini = IniFile::from_str(
         "[B]\nActiveAnim=N\nActiveAnimDamaged=D\nActiveAnimGarrisoned=G\n[N]\nLoopCount=-1\nRate=150\nRandomRate=450,150\nStopSound=OLDSTOP\n[D]\nLoopCount=-1\nRate=300\nRandomRate=900,300\n[G]\nLoopCount=-1\nRate=450\n",
     );
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
-        &IniFile::from_str(
-            "[BuildingTypes]\n0=B\n[B]\nStrength=100\n[Animations]\n0=N\n1=D\n2=G\n",
-        ),
+        &IniFile::from_str(&format!(
+            "[BuildingTypes]\n0=B\n[B]\nStrength=100\n{building_rules}[Animations]\n0=N\n1=D\n2=G\n"
+        )),
         &art_ini,
     )
     .unwrap();
@@ -1461,21 +1551,10 @@ mod slot_tests {
 
     #[test]
     fn wall_tower_missing_type_releases_slot9_then_uses_shared_damage_refresh() {
-        let (mut sim, mut rules, id) = slot_test_fixture();
-        // Supplied slot metadata makes the old animation constructible;
-        // this tests the real Anim deletion/replacement owner, not native
-        // Rules slot9 reading or a registered WallTower dynamic-name port.
-        let mut registry = rules.art().clone();
-        let entry = registry.get_mut("B").unwrap();
-        let mut turret = entry
-            .building_anims
-            .iter()
-            .find(|config| config.native_slot == 3)
-            .unwrap()
-            .clone();
-        turret.native_slot = 9;
-        entry.building_anims.push(turret);
-        rules.install_art_data(registry);
+        // The rules name makes the old slot-9 animation constructible; this
+        // tests the real Anim deletion/replacement owner, not a registered
+        // WallTower dynamic-name port.
+        let (mut sim, rules, id) = slot_test_fixture_with("TurretAnim=N\n");
         sim.set_building_anim_slot(id, 9, false, false, 0, &rules)
             .unwrap();
         sim.set_building_anim_slot(id, 3, true, false, 0, &rules)
@@ -2039,7 +2118,7 @@ mod native_slot_tests {
             ));
             let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
                 &IniFile::from_str(
-                    "[BuildingTypes]\n0=B\n[B]\nStrength=100\nUpgrades=3\n[Animations]\n0=N\n",
+                    "[BuildingTypes]\n0=B\n[B]\nStrength=100\nUpgrades=3\nTurretAnim=N\n[Animations]\n0=N\n",
                 ),
                 &art_ini,
             )
@@ -2183,6 +2262,15 @@ mod native_slot_tests {
                     ping_pong: false,
                 };
                 config.damaged_variant = (slot["damaged"] == true).then_some(variant);
+                if n == 9 {
+                    // Slot 9's record belongs to the rules type.
+                    let damaged = config.damaged_variant.as_ref();
+                    rules.set_turret_anim_names_for_test(
+                        "B",
+                        &config.anim_type,
+                        damaged.map_or("", |variant| &variant.anim_type),
+                    );
+                }
                 configs.push(config);
             }
             art.get_mut("B").unwrap().building_anims = configs;

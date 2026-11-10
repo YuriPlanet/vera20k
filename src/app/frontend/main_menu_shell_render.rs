@@ -954,8 +954,8 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         ShellMessageBoxPurpose::UpdateOffer(_)
         | ShellMessageBoxPurpose::UpdateProgress
-        | ShellMessageBoxPurpose::UpdateCheck
-        | ShellMessageBoxPurpose::UpdateNotice => atlas.ra2_dialog_background,
+        | ShellMessageBoxPurpose::UpdateCheck => atlas.ra2_dialog_background,
+        ShellMessageBoxPurpose::Notice => atlas.ra2_dialog_background,
         _ => None,
     }
     .or_else(|| atlas.mode_two_dialog_background(None));

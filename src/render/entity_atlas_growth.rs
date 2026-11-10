@@ -105,7 +105,7 @@ impl EntityAtlasGrowth {
                 Some(sim.interner()),
             );
             let cancel = Arc::new(AtomicBool::new(false));
-            match work.spawn(cancel.clone()) {
+            match work.spawn(cancel.clone(), unit_atlas::RasterCores::BesideMatch) {
                 Ok(raster) => {
                     self.unit = Some(Growth {
                         raster,

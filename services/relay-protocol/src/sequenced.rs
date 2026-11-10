@@ -33,9 +33,10 @@ const MAX_FRAME_BATCHES: usize = 32;
 const LOADING_SILENCE_MS: u64 = 60_000;
 // Even a loading source that still answers departs once the room is this old.
 const LOADING_LIMIT_MS: u64 = 180_000;
-// A started source silent this long departs through the stream. A shorter
-// outage keeps its place for the returning player's replay.
-const ABSENT_MS: u64 = 600_000;
+/// A started source silent this long departs through the stream. A shorter
+/// outage keeps its place for the returning player's replay. The game ends its
+/// own match once it has heard nothing for this long (`SequencedError::Absent`).
+pub const ABSENT_MS: u64 = 600_000;
 // A started room ends at its final frame, which pauses postpone, and silence
 // ends an abandoned one. Past this age it is retired anyway: a day of play and
 // as long again paused.

@@ -329,7 +329,9 @@ journals therefore advertise oldest sequence1 throughout the match.
 A short outage never removes a player. Healthy players continue; the returning
 player can replay from its old cursor even after every short hop ticket expired.
 Any authenticated packet, keepalives included, keeps a source's place. A started
-source silent for 10 minutes departs through the stream. Before the start, a
+source silent for 10 minutes departs through the stream (`ABSENT_MS`; a game
+that hears nothing from its relay for that long releases its route, which ends
+a match of two or more players). Before the start, a
 source that never sent Ready departs in frame 1 after 60 seconds of silence,
 counted from its last packet even before the room existed, or once the room is 3
 minutes old, and the others start without it; a Ready source waits. A federated

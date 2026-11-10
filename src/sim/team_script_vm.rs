@@ -1646,6 +1646,8 @@ mod packed_cell_tests;
 #[cfg(test)]
 mod path_threat_input_tests;
 #[cfg(test)]
+mod recruit_candidates_tests;
+#[cfg(test)]
 mod recruit_oracle_tests;
 #[cfg(test)]
 pub(crate) mod reinforcements_tests;

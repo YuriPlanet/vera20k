@@ -1986,3 +1986,69 @@ fn a_rejected_owner_still_enters_the_client_map_once() {
         "a computer house opens no client map"
     );
 }
+
+/// The player's client and a computer house, each with a `Sight=6` tank, on
+/// a mapped arena: `(sim, rules, player, the enemy's tank, the player's)`.
+fn arrival_scene() -> (
+    Simulation,
+    crate::rules::ruleset::RuleSet,
+    InternedId,
+    u64,
+    u64,
+) {
+    use crate::rules::ini_parser::IniFile;
+    let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+        "[General]\n[VehicleTypes]\n0=TANK\n[InfantryTypes]\n[BuildingTypes]\n\
+         [AircraftTypes]\n[TANK]\nStrength=300\nSight=6\n",
+    ))
+    .expect("arrival fixture rules");
+    let mut sim = Simulation::with_seed(7);
+    let player = sim.interner.intern("Player");
+    let enemy = sim.interner.intern("Enemy");
+    sim.session.set_current_house_for_test(Some(player));
+    for (owner, human) in [(player, true), (enemy, false)] {
+        sim.houses
+            .register(HouseState::new(owner, 0, None, human, 0, 10));
+    }
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    let theirs = sim
+        .spawn_object("TANK", "Enemy", 8, 8, 0, &rules)
+        .expect("the computer house's tank");
+    let ours = sim
+        .spawn_object("TANK", "Player", 20, 20, 0, &rules)
+        .expect("the player's tank");
+    (sim, rules, player, theirs, ours)
+}
+
+/// A cell arrival (`ReReveal` then `UpdateReveal`, `0x0073AC5F`/`0x0073AC74`)
+/// reads the reveal settings once for the pair.
+#[test]
+fn an_arrival_reads_the_reveal_settings_once() {
+    let (mut sim, rules, _, theirs, ours) = arrival_scene();
+    for id in [theirs, ours] {
+        let ((), trace) = trace_reveal_calls(|| {
+            sim.refresh_object_sight(id, &rules, 0, FrameEffects::default());
+        });
+        assert_eq!(trace.settings_reads, 1);
+    }
+}
+
+/// `UpdateReveal` derives a footprint only for a source some client's map
+/// admits. An enemy's tank still publishes its geometry on the player's
+/// client (`+0x250/+0x254/+0x260`), and opens none of the player's map.
+#[test]
+fn an_arrival_derives_a_footprint_only_for_an_admitting_map() {
+    let (mut sim, rules, player, theirs, ours) = arrival_scene();
+    for (id, footprints) in [(theirs, 0), (ours, 1)] {
+        let ((), trace) = trace_reveal_calls(|| {
+            sim.refresh_object_sight(id, &rules, 0, FrameEffects::default());
+        });
+        assert_eq!(trace.footprints, footprints);
+        let source = sim.fog.source_sight(id, player).expect("a published cache");
+        assert!(source.latched);
+        assert_eq!(source.radius, 6);
+    }
+    assert!(!sim.fog.is_cell_visible(player, 8, 8));
+    assert!(sim.fog.is_cell_visible(player, 20, 20));
+}
