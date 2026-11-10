@@ -102,6 +102,8 @@ impl App {
         }
         state.match_state.scenario_restart_requested = false;
         state.match_state.debug_pause = false;
+        crate::app::input::pause_menu::on_close(state);
+        state.match_state.match_presentation.options_page_category = None;
         state.match_state.match_presentation.in_game_menu =
             crate::ui::pause_menu::InGameMenuState::Closed;
         // A match's 0xCF ends with the game: its pump 0x00623120 stops the
@@ -338,6 +340,11 @@ impl App {
         use crate::ui::pause_menu::InGameMenuState;
 
         let current = state.match_state.match_presentation.in_game_menu;
+        if current == InGameMenuState::Menu
+            && crate::app::input::pause_menu::close_options_list(state)
+        {
+            return;
+        }
         // Escape and Back leave Options the same way — apply and persist the
         // touched `[Options]` values, then return to the menu — so the two
         // cannot disagree about what was saved.
@@ -372,6 +379,9 @@ impl App {
         }
         if !previous.is_open() && next.is_open() && !Self::state_machine_admits_modal(state) {
             return;
+        }
+        if previous == InGameMenuState::Menu {
+            crate::app::input::pause_menu::on_close(state);
         }
         let was_open = previous.is_open();
         let will_be_open = next.is_open();

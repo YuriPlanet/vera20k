@@ -3,13 +3,18 @@
 //! (72FC60,60B000,60B350,60B7A0).
 
 use crate::app::match_runtime::session::{PauseEventLimiters, SessionMode, WallBucketTimer};
+use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::{App, AppState};
-use crate::ui::main_menu_dialogs::options::{SidebarSize, Zoom};
+use crate::ui::main_menu_dialogs::OptionsDialogState;
+use crate::ui::main_menu_dialogs::options::shell::{LauncherOptionsLayout, LauncherStatusHelp};
+use crate::ui::main_menu_dialogs::options::{
+    Category, LauncherOptionsEvent, LauncherOptionsPacked,
+};
 use crate::ui::pause_menu::InGameMenuState;
-use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::shell::geom::ShellScale;
 use crate::ui::shell::pause_menu::{
-    DisplayList, InternetSlider, PauseMenuButton, PauseMenuButtonState, PauseMenuLayout,
-    PauseMenuTemplate, pause_menu_layout,
+    InternetSlider, PauseMenuButton, PauseMenuButtonState, PauseMenuLayout, PauseMenuTemplate,
+    pause_menu_layout,
 };
 use crate::ui::shell::trackbar::{TrackbarHold, TrackbarPress};
 use crate::ui::skirmish_shell::SavedSeedMode;
@@ -56,112 +61,25 @@ impl InternetPauseControls {
     }
 }
 
-/// VERA's Display group. The Options profile owns the zoom, sidebar size and
-/// shape, and the window owns full screen; the group copies them each frame.
-/// Each applies at once, as on the main menu's Options pages, and the
-/// profile saves them with the rest of its values. The Performance Stats box reads
-/// and switches the performance panel itself, which no profile saves.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub(crate) struct DisplayPauseControls {
-    /// The window's `Zoom::choices`, one list row each.
-    pub(crate) zoom_choices: Vec<Zoom>,
-    pub(crate) zoom: Zoom,
-    /// The main menu's Zoom text for each choice, in list order.
-    pub(crate) zoom_labels: Vec<String>,
-    /// The sizes the battle frame has room for, one list row each.
-    pub(crate) sidebar_choices: Vec<SidebarSize>,
-    /// The size in effect, the one the face shows.
-    pub(crate) sidebar: SidebarSize,
-    pub(crate) full_screen: bool,
-    pub(crate) original_shape: bool,
-    /// The open list, if any, and its row under the pointer.
-    pub(crate) open: Option<DisplayList>,
-    pub(crate) hovered: Option<usize>,
+/// VERA's Options pages on the in-game menu: the main menu's dialog, built
+/// again from the profile each time the menu opens and committed when it
+/// closes. Game Controls and Sound change some of the same values between
+/// those moments, so neither copy outlives the other's turn.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct InGameOptionsPage {
+    pub(crate) dialog: OptionsDialogState,
+    /// What the controls showed at open: only one the player moves writes.
+    opened: LauncherOptionsPacked,
+    /// The profile at open, which the page's live changes write to.
+    opened_profile: RetailOptionsProfile,
 }
 
-/// A row picked from a Display list.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DisplayPick {
-    Zoom(Zoom),
-    Sidebar(SidebarSize),
-}
-
-impl DisplayPauseControls {
-    pub(crate) fn rows(&self, list: DisplayList) -> usize {
-        match list {
-            DisplayList::Zoom => self.zoom_choices.len(),
-            DisplayList::Sidebar => self.sidebar_choices.len(),
-        }
+impl InGameOptionsPage {
+    /// Nothing moved since the menu opened, so closing it leaves VERA.INI as
+    /// it is.
+    fn untouched(&self, profile: &RetailOptionsProfile) -> bool {
+        self.dialog.pack() == self.opened && *profile == self.opened_profile
     }
-
-    /// The row the face shows. A fixed zoom this window can't reach shows
-    /// as the largest step, the one it gives way to.
-    pub(crate) fn selected(&self, list: DisplayList) -> usize {
-        let found = match list {
-            DisplayList::Zoom => self.zoom_choices.iter().position(|&z| z == self.zoom),
-            DisplayList::Sidebar => self.sidebar_choices.iter().position(|&s| s == self.sidebar),
-        };
-        found.unwrap_or(self.rows(list).saturating_sub(1))
-    }
-
-    /// A row's text.
-    pub(crate) fn row_label(&self, list: DisplayList, row: usize) -> String {
-        match list {
-            DisplayList::Zoom => self.zoom_labels.get(row).cloned().unwrap_or_default(),
-            DisplayList::Sidebar => self
-                .sidebar_choices
-                .get(row)
-                .map(|size| size.label())
-                .unwrap_or_default(),
-        }
-    }
-
-    /// A left press while a list is open picks the row under it, if any,
-    /// and closes the list either way. Returns the pick when it differs
-    /// from the shown row.
-    fn pick(&mut self, row: Option<usize>) -> Option<DisplayPick> {
-        self.hovered = None;
-        let list = self.open.take()?;
-        let row = row.filter(|&row| row != self.selected(list))?;
-        match list {
-            DisplayList::Zoom => self.zoom_choices.get(row).map(|&z| DisplayPick::Zoom(z)),
-            DisplayList::Sidebar => self
-                .sidebar_choices
-                .get(row)
-                .map(|&s| DisplayPick::Sidebar(s)),
-        }
-    }
-}
-
-/// Copy the profile's display choices and the window's full screen into the
-/// Display group, with the choices this window and battle frame offer.
-pub(crate) fn sync_display_controls(state: &mut AppState) {
-    let window = (
-        state.renderer.gpu.config.width,
-        state.renderer.gpu.config.height,
-    );
-    let battle = App::match_zoom_geometry(state);
-    let profile = &state.persistence.options_profile;
-    let display = &mut state.match_state.match_presentation.display_pause;
-    display.zoom_choices = Zoom::choices(window.0, window.1);
-    display.zoom_labels = display
-        .zoom_choices
-        .iter()
-        .map(|&zoom| {
-            crate::app::frontend::skirmish_shell_render::zoom_label(
-                zoom,
-                window,
-                profile.original_shape,
-            )
-        })
-        .collect();
-    display.zoom = profile.zoom;
-    display.sidebar_choices = SidebarSize::choices(battle.src_width, battle.src_height);
-    display.sidebar = profile
-        .sidebar
-        .in_effect(battle.src_width, battle.src_height);
-    display.full_screen = profile.full_screen;
-    display.original_shape = profile.original_shape;
 }
 
 /// Fit the match to changed display choices, as a window resize does: the
@@ -169,64 +87,6 @@ pub(crate) fn sync_display_controls(state: &mut AppState) {
 fn refit_match(state: &mut AppState) {
     App::sync_zoom_pass(state);
     crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
-}
-
-fn play_checkbox_sound(state: &mut AppState) {
-    let sound = state
-        .rules()
-        .and_then(|rules| rules.general.gui_checkbox_sound.clone());
-    App::play_shell_ui_sound_by_id(state, sound.as_deref());
-}
-
-/// The Display group's share of a left press; true when it took it. An open
-/// list takes every press, as a combo's list holds the capture.
-fn display_press(state: &mut AppState, layout: &PauseMenuLayout) -> bool {
-    let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
-    let controls = layout.display;
-    let display = &mut state.match_state.match_presentation.display_pause;
-    if let Some(list) = display.open {
-        let row = layout.display_row_at(list, display.rows(list), x, y);
-        if let Some(pick) = display.pick(row) {
-            App::play_skirmish_shell_generic_click_sound(state);
-            let profile = &mut state.persistence.options_profile;
-            match pick {
-                DisplayPick::Zoom(zoom) => profile.zoom = zoom,
-                DisplayPick::Sidebar(size) => profile.sidebar = size,
-            }
-            refit_match(state);
-        }
-        return true;
-    }
-    if let Some(list) = controls.face_at(x, y) {
-        display.open = Some(list);
-        display.hovered = None;
-        App::play_skirmish_shell_generic_click_sound(state);
-        return true;
-    }
-    // Owner6163A0, 6166EE..616708: only the box, not the caption, clicks.
-    let box_at = |rect: RectPx| RectPx::new(rect.x, rect.y, 18, 18).contains(x, y);
-    if box_at(controls.full_screen) {
-        display.full_screen = !display.full_screen;
-        let checked = display.full_screen;
-        App::set_full_screen(state, checked);
-        play_checkbox_sound(state);
-        return true;
-    }
-    if box_at(controls.original_shape) {
-        display.original_shape = !display.original_shape;
-        state.persistence.options_profile.original_shape = display.original_shape;
-        refit_match(state);
-        play_checkbox_sound(state);
-        return true;
-    }
-    if box_at(controls.performance_stats) {
-        // Ctrl+Alt+F's switch: the panel shows or hides at once, over the
-        // menu too, and starts hidden at the next launch.
-        state.renderer.performance_overlay.toggle();
-        play_checkbox_sound(state);
-        return true;
-    }
-    false
 }
 
 /// The template the open in-game menu was created from.
@@ -258,10 +118,111 @@ pub(crate) fn current_layout(state: &AppState) -> Option<PauseMenuLayout> {
         shell.button_size,
         current_template(state),
     );
+    // The menu's Options pages have their buttons under Game Controls.
+    layout.add_page_tabs();
     if multiplayer_control(state).is_some() {
         layout.enable_shared_pause();
     }
+    // FF's group heads the Game Options page and has no place on the others.
+    if let Some(page) = state.match_state.match_presentation.options_page.as_ref() {
+        if page.dialog.category() == Category::Gameplay {
+            layout.raise_internet_group();
+        } else {
+            layout.internet = None;
+        }
+    }
     Some(layout)
+}
+
+/// The Options page showing on the open in-game menu, in the shell's pixels.
+pub(crate) fn options_page_layout(state: &AppState) -> Option<LauncherOptionsLayout> {
+    let page = state.match_state.match_presentation.options_page.as_ref()?;
+    let shell = crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(state)?;
+    let battle = App::match_zoom_geometry(state);
+    let menu = current_layout(state)?;
+    Some(
+        LauncherOptionsLayout::in_game(
+            (shell.width, shell.height),
+            menu.page_tabs(),
+            page.dialog.category(),
+            current_template(state) == PauseMenuTemplate::Internet,
+            (
+                state.renderer.gpu.config.width,
+                state.renderer.gpu.config.height,
+            ),
+        )
+        .with_battle_frame((battle.src_width, battle.src_height)),
+    )
+}
+
+/// What the page's controls did takes effect through the main menu's own
+/// path. A match has to be fitted to a new frame as a window resize does.
+fn run_options_page(state: &mut AppState) {
+    let Some(page) = state.match_state.match_presentation.options_page.as_mut() else {
+        return;
+    };
+    let output = page.dialog.drain_output();
+    let language = output
+        .events
+        .iter()
+        .any(|event| matches!(event, LauncherOptionsEvent::LanguageSelected(_)));
+    let refit = output.events.iter().any(|event| {
+        matches!(
+            event,
+            LauncherOptionsEvent::ZoomSelected(_)
+                | LauncherOptionsEvent::SidebarSelected(_)
+                | LauncherOptionsEvent::OriginalShapeChanged(_)
+                | LauncherOptionsEvent::HdRadarChanged(_)
+                | LauncherOptionsEvent::SmoothSidebarChanged(_)
+        )
+    });
+    for event in output.events {
+        crate::app::persistence::options::launcher::dispatch_launcher_preview_event(state, event);
+    }
+    if refit {
+        refit_match(state);
+    }
+    if language {
+        let labels = App::launcher_options_labels(state);
+        if let Some(page) = state.match_state.match_presentation.options_page.as_mut() {
+            page.dialog.set_labels(labels);
+        }
+    }
+}
+
+/// The pointer over the Options page: `pressed` is the left button's new
+/// state, `None` a move. True when the menu's other controls don't get to see
+/// it: an open list or a held slider has the pointer, or the page has gone.
+fn options_page_pointer(state: &mut AppState, pressed: Option<bool>) -> bool {
+    let Some(layout) = options_page_layout(state) else {
+        return false;
+    };
+    let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
+    let Some(page) = state.match_state.match_presentation.options_page.as_mut() else {
+        return false;
+    };
+    let was_taken = page.dialog.shell_pointer_taken();
+    match pressed {
+        Some(true) => page.dialog.shell_mouse_down(x, y, &layout),
+        Some(false) => page.dialog.shell_mouse_up(x, y, &layout),
+        None => page.dialog.shell_mouse_move(x, y, &layout),
+    }
+    run_options_page(state);
+    was_taken || state.match_state.match_presentation.options_page.is_none()
+}
+
+/// Esc closes the page's open list before anything else hears it.
+pub(crate) fn close_options_list(state: &mut AppState) -> bool {
+    let closed = state
+        .match_state
+        .match_presentation
+        .options_page
+        .as_mut()
+        .is_some_and(|page| page.dialog.shell_close_list());
+    if closed {
+        run_options_page(state);
+    }
+    closed
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -390,10 +351,33 @@ pub(crate) fn on_open(state: &mut AppState) {
         state.match_state.session.latency_fudge(),
         current_game_speed(state),
     );
-    let display = &mut state.match_state.match_presentation.display_pause;
-    display.open = None;
-    display.hovered = None;
-    sync_display_controls(state);
+    // A sidebar too short for every page's button opens on one it has.
+    let shown_tabs = current_layout(state).map_or(0, |menu| menu.page_tabs().len());
+    let category = crate::ui::main_menu_dialogs::options::shell::in_game_page(
+        state.match_state.match_presentation.options_page_category,
+        shown_tabs,
+    );
+    let mut dialog = App::launcher_options_from_state(state);
+    dialog.select_category(category);
+    let opened = dialog.pack();
+    let opened_profile = state.persistence.options_profile.clone();
+    state.match_state.match_presentation.options_page = Some(InGameOptionsPage {
+        dialog,
+        opened,
+        opened_profile,
+    });
+}
+
+/// The menu is closing, or its match ending: what its page holds applies and
+/// is saved before the next page reads those values.
+pub(crate) fn on_close(state: &mut AppState) {
+    let Some(page) = state.match_state.match_presentation.options_page.take() else {
+        return;
+    };
+    state.match_state.match_presentation.options_page_category = Some(page.dialog.category());
+    if !page.untouched(&state.persistence.options_profile) {
+        App::commit_in_game_options_page(state, page.dialog, page.opened);
+    }
 }
 
 pub(crate) fn button_states(state: &AppState) -> [PauseMenuButtonState; 7] {
@@ -414,15 +398,23 @@ pub(crate) fn button_states(state: &AppState) -> [PauseMenuButtonState; 7] {
 }
 
 /// The status-line help for the control under the pointer.
-pub(crate) fn hovered_help(state: &AppState) -> Option<&'static str> {
+pub(crate) fn hovered_help(state: &AppState) -> Option<LauncherStatusHelp> {
     let template = current_template(state);
     let presentation = &state.match_state.match_presentation;
+    if let Some(help) = presentation
+        .options_page
+        .as_ref()
+        .and_then(|page| page.dialog.shell_status_help())
+    {
+        return Some(help);
+    }
     if let Some(slider) = presentation.internet_pause.hovered {
-        return Some(slider.help());
+        return Some(LauncherStatusHelp::Csf(slider.help()));
     }
     template
         .control(presentation.pause_menu_interaction.hovered?)?
         .help
+        .map(LauncherStatusHelp::Csf)
 }
 
 fn hit(state: &AppState, layout: &PauseMenuLayout) -> Option<PauseMenuButton> {
@@ -438,12 +430,10 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
     let Some(layout) = current_layout(state) else {
         return;
     };
-    let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
-    let display = &mut state.match_state.match_presentation.display_pause;
-    if let Some(list) = display.open {
-        display.hovered = layout.display_row_at(list, display.rows(list), x, y);
+    if options_page_pointer(state, None) {
         return;
     }
+    let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
     let over = hit(state, &layout);
     let pause = &mut state.match_state.match_presentation.internet_pause;
     // A held trackbar owns the capture (`0x0061E4DF`): nothing else sees the
@@ -478,7 +468,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         return;
     };
     let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
-    if pressed && display_press(state, &layout) {
+    if options_page_pointer(state, Some(pressed)) {
         return;
     }
     if !pressed
@@ -666,37 +656,52 @@ fn resume_internet_events(state: &mut AppState) {
 mod tests {
     use super::*;
 
+    /// A menu opened and closed with nothing changed leaves VERA.INI alone: a
+    /// capture's stand-in options, for one, must never reach the file.
     #[test]
-    fn display_lists_pick_a_choice_and_close() {
-        // A 1920x1080 window offers Auto, 100%, 150% and 200%; a battle frame
-        // that size has room for all three sidebar sizes.
-        let mut display = DisplayPauseControls {
-            zoom_choices: Zoom::choices(1920, 1080),
-            sidebar_choices: SidebarSize::choices(1920, 1080),
-            open: Some(DisplayList::Zoom),
-            hovered: Some(3),
-            ..Default::default()
+    fn only_a_moved_control_or_live_change_commits_the_page() {
+        use crate::ui::main_menu_dialogs::options::{LauncherOptionsLabels, LauncherTrackbarId};
+        let profile = RetailOptionsProfile::default();
+        let dialog = crate::app::persistence::options::launcher::launcher_dialog_from_profile(
+            &profile,
+            LauncherOptionsLabels::resolve(&|_| None),
+            false,
+            false,
+            true,
+            Vec::new(),
+        );
+        let opened = dialog.pack();
+        let mut page = InGameOptionsPage {
+            dialog,
+            opened,
+            opened_profile: profile.clone(),
         };
-        assert_eq!(
-            display.pick(Some(3)),
-            Some(DisplayPick::Zoom(Zoom::Percent(200)))
+        assert!(page.untouched(&profile));
+
+        page.dialog.select_category(Category::Display);
+        assert!(page.untouched(&profile), "a tab only shows other controls");
+
+        let live = RetailOptionsProfile {
+            shift_queue: !profile.shift_queue,
+            ..profile.clone()
+        };
+        assert!(!page.untouched(&live), "a list or box that applies at once");
+
+        let tab = |row| crate::ui::shell::geom::RectPx::new(653, 227 + row * 25, 125, 25);
+        let layout = LauncherOptionsLayout::in_game(
+            (800, 600),
+            &[tab(1), tab(2), tab(3)],
+            Category::Gameplay,
+            false,
+            (800, 600),
         );
-        assert_eq!((display.open, display.hovered), (None, None));
-        // Picking the shown row, or pressing off the list, changes nothing.
-        display.open = Some(DisplayList::Zoom);
-        assert_eq!(display.pick(Some(0)), None);
-        display.open = Some(DisplayList::Sidebar);
-        assert_eq!(display.pick(None), None);
-        assert_eq!(display.open, None);
-        display.open = Some(DisplayList::Sidebar);
-        assert_eq!(
-            display.pick(Some(2)),
-            Some(DisplayPick::Sidebar(SidebarSize::ExtraLarge))
-        );
-        assert_eq!(display.row_label(DisplayList::Sidebar, 2), "XL");
-        // A fixed zoom past this window's largest step shows that step.
-        display.zoom = Zoom::Percent(300);
-        assert_eq!(display.selected(DisplayList::Zoom), 3);
+        let detail = layout
+            .trackbar_rect(LauncherTrackbarId::Detail)
+            .expect("Visual Details is on this page");
+        let (x, y) = (detail.x + 5, detail.y + detail.h - 3);
+        page.dialog.shell_mouse_down(x, y, &layout);
+        page.dialog.shell_mouse_up(x, y, &layout);
+        assert!(!page.untouched(&profile), "a control the close commits");
     }
 
     #[test]

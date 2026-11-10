@@ -1650,6 +1650,60 @@ impl Category {
             Self::Developer => "VERA:DeveloperPageHelpBrowser",
         }
     }
+
+    /// The category's page on the in-game menu, which has three tabs: what a
+    /// running match can use of all the main menu's categories. Native Game
+    /// Controls (`0xBBB`), a button above those tabs, already has scroll rate,
+    /// target lines, hidden objects, tooltips, Sound Controls and Keyboard.
+    /// The three volumes stand on the Audio page as well, one press from the
+    /// menu, and Sound Controls keeps them with its song list.
+    pub(crate) const fn in_game_settings(self) -> &'static [Setting] {
+        use LauncherCheckboxId as Check;
+        use LauncherComboId as List;
+        use LauncherTrackbarId as Slider;
+        match self {
+            Self::Gameplay => &[
+                Setting::Slider(Slider::Detail),
+                Setting::List(List::HealthBars),
+                Setting::Checkbox(Check::RightClickOrders),
+                Setting::Checkbox(Check::ShiftQueue),
+                Setting::Checkbox(Check::MouseWheelZoom),
+                Setting::Checkbox(Check::LockCursor),
+                Setting::Checkbox(Check::DetailedEvaText),
+                Setting::Checkbox(Check::CustomEndGameBanner),
+                Setting::Checkbox(Check::CustomEndGameScore),
+                Setting::Checkbox(Check::CustomEndGameMovie),
+            ],
+            Self::Display => &[
+                Setting::List(List::Zoom),
+                Setting::List(List::Display),
+                Setting::List(List::Sidebar),
+                Setting::List(List::ColorVision),
+                Setting::List(List::Language),
+                Setting::Checkbox(Check::FullScreen),
+                Setting::Checkbox(Check::OriginalShape),
+                Setting::Checkbox(Check::YrOriginalStyle),
+                Setting::Checkbox(Check::HdRadar),
+                Setting::Checkbox(Check::SmoothSidebar),
+                Setting::Checkbox(Check::PerformanceStats),
+            ],
+            Self::Audio => &[
+                Setting::Slider(Slider::Score),
+                Setting::Slider(Slider::Sound),
+                Setting::Slider(Slider::Voice),
+            ],
+            _ => &[],
+        }
+    }
+
+    /// [`Self::help`] for the page's tab on the in-game menu.
+    pub(crate) const fn in_game_help(self) -> &'static str {
+        match self {
+            Self::Gameplay => "VERA:InGameGameplayHelp",
+            Self::Display => "VERA:InGameDisplayHelp",
+            _ => self.help(),
+        }
+    }
 }
 
 /// One control of a page, named by the id its value and events go through.

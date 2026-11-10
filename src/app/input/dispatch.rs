@@ -2212,6 +2212,9 @@ pub(crate) fn run_window_command(state: &mut AppState, command: HotkeyCommand) {
             if let Some(dialog) = state.frontend.options_dialog.as_mut() {
                 dialog.sync_performance_stats(shown);
             }
+            if let Some(page) = state.match_state.match_presentation.options_page.as_mut() {
+                page.dialog.sync_performance_stats(shown);
+            }
             crate::app::App::shell_menu_follow_performance_stats(state, shown);
             log::info!(
                 "Performance stats: {}",

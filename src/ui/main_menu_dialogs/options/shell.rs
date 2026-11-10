@@ -35,8 +35,10 @@ use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{
     RectPx, ShellScale, center_offset, child_window, dlu_rect, right_panel_rects,
 };
+use crate::ui::shell::in_game_shell;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageSpec};
 use crate::ui::shell::modal::{ModalKind, message_box_base};
+use crate::ui::shell::pause_menu::PAGE_TABS;
 use crate::ui::shell::trackbar::{authored_track, thumb_left_at};
 use crate::ui::skirmish_shell::{COMBO_FACE_H, DropdownMetrics, combo_face_rect};
 
@@ -162,6 +164,27 @@ const ESC_MENU_LIST_Y: i32 = ESC_MENU_Y + 2 * BOX_PITCH + 3;
 /// where a list's face would be.
 const ESC_MENU_SIZE_Y: i32 = ESC_MENU_LIST_Y + LIST_PITCH;
 const ESC_MENU_BUTTON_Y: i32 = ESC_MENU_SIZE_Y + 10;
+/// The in-game menu's pages in the order of their sidebar buttons, which the
+/// menu places (`PauseMenuLayout::add_page_tabs`).
+/// [`Category::in_game_settings`] says what each page shows.
+const IN_GAME_TABS: [Category; PAGE_TABS] =
+    [Category::Gameplay, Category::Display, Category::Audio];
+
+/// The page the in-game menu opens on: `remembered` while its button is one
+/// of the `shown` first tabs, else the first page. A sidebar too short for
+/// every button leaves the last ones out.
+pub(crate) fn in_game_page(remembered: Option<Category>, shown: usize) -> Category {
+    remembered
+        .filter(|page| IN_GAME_TABS.iter().take(shown).any(|tab| tab == page))
+        .unwrap_or(IN_GAME_TABS[0])
+}
+/// The in-game page's first row. 8 DLUs below the main menu's to clear the
+/// frame's top edge at 640x480, and a multiple of 8 so its sliders round to the
+/// same authored heights ([`dlu_rect`] is `y * 13 / 8`).
+const IN_GAME_FIRST_ROW: i32 = FIRST_ROW + 8;
+/// The Game Options page's first row on FF, under the group that heads the page
+/// there (`PauseMenuLayout::raise_internet_group`).
+const IN_GAME_FIRST_ROW_UNDER_FF_GROUP: i32 = IN_GAME_FIRST_ROW + 80;
 
 /// A caption the page paints, by what it names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -193,7 +216,8 @@ pub(crate) struct LauncherOptionsLayout {
     pub(crate) combos: Vec<(LauncherComboId, RectPx)>,
     pub(crate) trackbars: Vec<(LauncherTrackbarId, RectPx)>,
     pub(crate) checkboxes: Vec<(LauncherCheckboxId, RectPx)>,
-    /// The column top to bottom, then the page's own Check for Updates.
+    /// The column top to bottom, then the page's own Check for Updates. On
+    /// the in-game menu, the tabs that stand in for the column.
     pub(crate) buttons: Vec<(LauncherButton, RectPx)>,
     /// The mapping the rects are in: [`ShellScale::RETAIL`] centres the
     /// authored dialog in the window, otherwise the authored dialog is
@@ -204,6 +228,73 @@ pub(crate) struct LauncherOptionsLayout {
     /// A battle's frame in this window at the chosen zoom and shape: the
     /// sidebar list depends on it.
     battle_frame: (u32, u32),
+    /// VERA's in-game menu, whose tabs have their own help
+    /// ([`Category::in_game_help`]).
+    in_game: bool,
+}
+
+/// One page's controls, top to bottom.
+struct PageRows {
+    labels: Vec<(RectPx, PageLabel)>,
+    combos: Vec<(LauncherComboId, RectPx)>,
+    trackbars: Vec<(LauncherTrackbarId, RectPx)>,
+    checkboxes: Vec<(LauncherCheckboxId, RectPx)>,
+    /// Where a further row would start, in DLUs.
+    end: i32,
+}
+
+/// The rows of `settings` from `first_row` DLUs down, each authored rect put
+/// on screen by `px`.
+fn page_rows(settings: &[Setting], first_row: i32, px: impl Fn(RectPx) -> RectPx) -> PageRows {
+    let dlu = |x, y, w, h| px(dlu_rect(x, y, w, h));
+    // The sliders run one pixel wider and taller than the template
+    // (retail stills: 181x22 and 129x22).
+    let slider = |x, y, w, h| px(child_window(x, y, w, h));
+    let mut rows = PageRows {
+        labels: Vec::new(),
+        combos: Vec::new(),
+        trackbars: Vec::new(),
+        checkboxes: Vec::new(),
+        end: first_row,
+    };
+    for &setting in settings {
+        let top = rows.end;
+        match setting {
+            Setting::List(id) => {
+                rows.labels
+                    .push((dlu(ROW_X, top, 120, 10), PageLabel::List(id)));
+                // The chrome atlas keys combo faces on their pixel size:
+                // 180 is the retail resolution list's face.
+                let caption = dlu_rect(ROW_X, top, 0, 0);
+                rows.combos.push((
+                    id,
+                    px(RectPx::new(caption.x, caption.y + 16, 180, COMBO_FACE_H)),
+                ));
+                rows.end += LIST_PITCH;
+            }
+            // Trackbar art exists for retail's windows only: 150 DLUs with
+            // a value plaque (Generate Map's), 120 without (Visual Details').
+            Setting::Slider(id) if id.plaque_reserve() > 0 => {
+                rows.labels
+                    .push((dlu(ROW_X, top, 150, 10), PageLabel::Slider(id)));
+                rows.trackbars.push((id, slider(ROW_X, top + 15, 150, 13)));
+                rows.end += SLIDER_PITCH;
+            }
+            Setting::Slider(id) => {
+                rows.labels
+                    .push((dlu(ROW_X, top, 60, 10), PageLabel::Slider(id)));
+                rows.labels
+                    .push((dlu(ROW_X + 60, top, 60, 10), PageLabel::Step(id)));
+                rows.trackbars.push((id, slider(ROW_X, top + 15, 120, 13)));
+                rows.end += SLIDER_PITCH;
+            }
+            Setting::Checkbox(id) => {
+                rows.checkboxes.push((id, dlu(BOX_X, top, BOX_W, 10)));
+                rows.end += BOX_PITCH;
+            }
+        }
+    }
+    rows
 }
 
 impl LauncherOptionsLayout {
@@ -245,9 +336,6 @@ impl LauncherOptionsLayout {
         };
         let px = |rect: RectPx| scale.scale_rect(rect.translate(offset_x, offset_y));
         let dlu = |x, y, w, h| px(dlu_rect(x, y, w, h));
-        // The sliders run one pixel wider and taller than the template
-        // (retail stills: 181x22 and 129x22).
-        let slider = |x, y, w, h| px(child_window(x, y, w, h));
         // The right-panel children follow the panel, not the dialog centring.
         let panel = if stretch {
             menu_page::compute_responsive_layout(&OPTIONS_PAGE, width as u32, height as u32)
@@ -274,47 +362,16 @@ impl LauncherOptionsLayout {
             (dlu(HEADING.0, HEADING.1, 298, 10), PageLabel::Heading),
             (dlu(2, 355, 303, 12), PageLabel::Blank),
         ];
-        let mut combos = Vec::new();
-        let mut trackbars = Vec::new();
-        let mut checkboxes = Vec::new();
-        let mut top = FIRST_ROW;
-        for &setting in category.settings() {
-            match setting {
-                Setting::List(id) => {
-                    labels.push((dlu(ROW_X, top, 120, 10), PageLabel::List(id)));
-                    // The chrome atlas keys combo faces on their pixel size:
-                    // 180 is the retail resolution list's face.
-                    let caption = dlu_rect(ROW_X, top, 0, 0);
-                    combos.push((
-                        id,
-                        px(RectPx::new(caption.x, caption.y + 16, 180, COMBO_FACE_H)),
-                    ));
-                    top += LIST_PITCH;
-                }
-                // Trackbar art exists for retail's windows only: 150 DLUs with
-                // a value plaque (Generate Map's), 120 without (Visual Details').
-                Setting::Slider(id) if id.plaque_reserve() > 0 => {
-                    labels.push((dlu(ROW_X, top, 150, 10), PageLabel::Slider(id)));
-                    trackbars.push((id, slider(ROW_X, top + 15, 150, 13)));
-                    top += SLIDER_PITCH;
-                }
-                Setting::Slider(id) => {
-                    labels.push((dlu(ROW_X, top, 60, 10), PageLabel::Slider(id)));
-                    labels.push((dlu(ROW_X + 60, top, 60, 10), PageLabel::Step(id)));
-                    trackbars.push((id, slider(ROW_X, top + 15, 120, 13)));
-                    top += SLIDER_PITCH;
-                }
-                Setting::Checkbox(id) => {
-                    checkboxes.push((id, dlu(BOX_X, top, BOX_W, 10)));
-                    top += BOX_PITCH;
-                }
-            }
-        }
+        let rows = page_rows(category.settings(), FIRST_ROW, px);
+        labels.extend(rows.labels);
         // Not retail: the column has no tile left for it, so it sits under the
         // Developer page's boxes, the size of Sound Options' Play and Stop
         // (`0xD6`, MNBTTN type 3).
         if category == Category::Developer && HAS_CHECK_FOR_UPDATES {
-            buttons.push((LauncherButton::CheckForUpdates, dlu(ROW_X, top + 6, 83, 15)));
+            buttons.push((
+                LauncherButton::CheckForUpdates,
+                dlu(ROW_X, rows.end + 6, 83, 15),
+            ));
         }
         Self {
             category,
@@ -322,13 +379,58 @@ impl LauncherOptionsLayout {
             warning: panel.warning_monitor,
             status_help: panel.status_help,
             labels,
-            combos,
-            trackbars,
-            checkboxes,
+            combos: rows.combos,
+            trackbars: rows.trackbars,
+            checkboxes: rows.checkboxes,
             buttons,
             scale,
             screen: (width.max(0) as u32, height.max(0) as u32),
             battle_frame: (width.max(0) as u32, height.max(0) as u32),
+            in_game: false,
+        }
+    }
+
+    /// VERA's in-game menu (`app::input::pause_menu`): a page left of the
+    /// sidebar, on the active-game shell of `size` pixels, placed as gamemd's
+    /// ordinary children are there. `tabs` are the sidebar rows the menu has
+    /// for the pages' buttons (`PauseMenuLayout::page_tabs`), which may be
+    /// fewer than the pages. `window` is the
+    /// one the match shares, which the zoom list depends on. `internet` leaves
+    /// room for FF's own group above the Game Options rows.
+    pub(crate) fn in_game(
+        (width, height): (i32, i32),
+        tabs: &[RectPx],
+        category: Category,
+        internet: bool,
+        window: (u32, u32),
+    ) -> Self {
+        let nothing = RectPx::new(0, 0, 0, 0);
+        let px = |rect: RectPx| in_game_shell::ordinary_child_rect(rect, width, height);
+        let buttons = IN_GAME_TABS
+            .into_iter()
+            .zip(tabs)
+            .map(|(tab, &rect)| (LauncherButton::Category(tab), rect))
+            .collect();
+        let first_row = if internet && category == Category::Gameplay {
+            IN_GAME_FIRST_ROW_UNDER_FF_GROUP
+        } else {
+            IN_GAME_FIRST_ROW
+        };
+        let rows = page_rows(category.in_game_settings(), first_row, px);
+        Self {
+            category,
+            title: nothing,
+            warning: nothing,
+            status_help: in_game_shell::status_line_rect(height),
+            labels: rows.labels,
+            combos: rows.combos,
+            trackbars: rows.trackbars,
+            checkboxes: rows.checkboxes,
+            buttons,
+            scale: ShellScale::RETAIL,
+            screen: window,
+            battle_frame: window,
+            in_game: true,
         }
     }
 
@@ -383,6 +485,7 @@ impl LauncherOptionsLayout {
             scale,
             screen: (width.max(0) as u32, height.max(0) as u32),
             battle_frame: (width.max(0) as u32, height.max(0) as u32),
+            in_game: false,
         }
     }
 
@@ -490,6 +593,12 @@ impl OptionsDialogState {
         self.capture = None;
         self.shell_interaction.pressed_button = None;
         self.shell_interaction.hovered_button = None;
+    }
+
+    /// Whether an open list or a held slider has the pointer, so nothing
+    /// outside the dialog should answer it.
+    pub(crate) fn shell_pointer_taken(&self) -> bool {
+        self.open_combo.is_some() || self.capture.is_some()
     }
 
     /// Close the open list with its close sound. False when none was open.
@@ -848,7 +957,11 @@ impl OptionsDialogState {
         if let Some((id, _)) = layout.buttons.iter().find(|(_, rect)| rect.contains(x, y)) {
             let control = match id {
                 LauncherButton::Category(category) => {
-                    return Some(LauncherStatusHelp::Vera(category.help()));
+                    return Some(LauncherStatusHelp::Vera(if layout.in_game {
+                        category.in_game_help()
+                    } else {
+                        category.help()
+                    }));
                 }
                 LauncherButton::CheckForUpdates => {
                     return Some(LauncherStatusHelp::Vera(CHECK_FOR_UPDATES_HELP));
@@ -1102,6 +1215,9 @@ mod tests {
         DisplayChoice, LauncherCue, LauncherOptionsEvent, LauncherOptionsLabels,
         LauncherOptionsValues,
     };
+    use crate::ui::shell::pause_menu::{
+        PauseMenuButton, PauseMenuLayout, PauseMenuTemplate, pause_menu_layout,
+    };
     use crate::ui::shell::trackbar::TrackbarHold;
 
     fn state() -> OptionsDialogState {
@@ -1272,6 +1388,210 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    /// The menu the in-game page goes with, as the app lays it out: B5, or
+    /// FF for `internet`.
+    fn in_game_menu((width, height): (i32, i32), internet: bool) -> PauseMenuLayout {
+        let mut menu = pause_menu_layout(
+            width,
+            height,
+            in_game_shell::allied_fixture_layout(width, height),
+            [125, 25],
+            if internet {
+                PauseMenuTemplate::Internet
+            } else {
+                PauseMenuTemplate::Offline
+            },
+        );
+        menu.add_page_tabs();
+        menu.raise_internet_group();
+        menu
+    }
+
+    /// A page on the in-game menu in a shell of `size` pixels.
+    fn in_game(size: (i32, i32), category: Category, internet: bool) -> LauncherOptionsLayout {
+        LauncherOptionsLayout::in_game(
+            size,
+            in_game_menu(size, internet).page_tabs(),
+            category,
+            internet,
+            (1920, 1080),
+        )
+    }
+
+    /// Every in-game page fits left of the sidebar and above the status line
+    /// at every shell size, down to the 640x480 minimum, clear of FF's group
+    /// and with authored art for each slider and list.
+    #[test]
+    fn every_in_game_page_fits_beside_the_sidebar() {
+        use crate::render::skirmish_shell_chrome::trackbar_frame_slot;
+        const SIDEBAR_W: i32 = 168;
+        for (size, internet) in [
+            ((640, 480), false),
+            ((640, 480), true),
+            ((800, 600), false),
+            ((1024, 768), false),
+            ((1920, 1080), true),
+        ] {
+            let menu = in_game_menu(size, internet);
+            for category in IN_GAME_TABS {
+                let layout = in_game(size, category, internet);
+                for &(id, rect) in &layout.trackbars {
+                    assert!(
+                        trackbar_frame_slot(id.plaque_reserve() > 0, rect.w, rect.h).is_some(),
+                        "{id:?} on {category:?} at {size:?} is {}x{}",
+                        rect.w,
+                        rect.h
+                    );
+                }
+                for &(id, rect) in &layout.combos {
+                    assert_eq!(rect.w, 180, "{id:?} on {category:?}");
+                }
+                let rects: Vec<RectPx> = layout
+                    .checkboxes
+                    .iter()
+                    .map(|(_, rect)| *rect)
+                    .chain(layout.combos.iter().map(|(_, rect)| *rect))
+                    .chain(layout.trackbars.iter().map(|(_, rect)| *rect))
+                    .chain(
+                        menu.internet
+                            .filter(|_| category == Category::Gameplay)
+                            .map(|internet| internet.group),
+                    )
+                    .collect();
+                for (index, a) in rects.iter().enumerate() {
+                    assert!(
+                        a.x >= 0
+                            && a.y >= 0
+                            && a.x + a.w <= size.0 - SIDEBAR_W
+                            && a.y + a.h <= layout.status_help.y,
+                        "{category:?} at {size:?}: {a:?}"
+                    );
+                    for b in &rects[index + 1..] {
+                        assert!(
+                            disjoint(*a, *b),
+                            "{category:?} at {size:?}: {a:?} overlaps {b:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// The pages' buttons are the sidebar rows the menu keeps under Game
+    /// Controls, Game Options first, and each shows its page.
+    #[test]
+    fn in_game_tabs_stand_in_the_sidebar_and_pick_the_page() {
+        let layout = in_game((800, 600), Category::Gameplay, false);
+        let menu = in_game_menu((800, 600), false);
+        let controls = menu.button(PauseMenuButton::GameControls).unwrap();
+        let below = |rows: i32| controls.translate(0, rows * controls.h);
+        assert_eq!(
+            layout.buttons,
+            [
+                (LauncherButton::Category(Category::Gameplay), below(1)),
+                (LauncherButton::Category(Category::Display), below(2)),
+                (LauncherButton::Category(Category::Audio), below(3)),
+            ]
+        );
+        assert_eq!(menu.button(PauseMenuButton::Load), Some(below(4)));
+
+        let display = LauncherButton::Category(Category::Display);
+        let rect = button(&layout, display);
+        let mut dialog = state();
+        assert_eq!(
+            dialog.shell_status_help_key(rect.x + 2, rect.y + 2, &layout),
+            Some(LauncherStatusHelp::Vera("VERA:InGameDisplayHelp"))
+        );
+        dialog.shell_mouse_down(rect.x + 5, rect.y + 5, &layout);
+        dialog.shell_mouse_up(rect.x + 5, rect.y + 5, &layout);
+        assert_eq!(dialog.category(), Category::Display);
+        assert!(dialog.shell_button_selected(display));
+    }
+
+    /// The Audio page holds the three volumes, and a drag on one is heard at
+    /// once. A single-player sidebar at 640x480 has no row for its button, so
+    /// a menu that remembers the page opens on the first one there.
+    #[test]
+    fn the_in_game_audio_page_previews_volume_and_needs_its_sidebar_row() {
+        use LauncherTrackbarId as Slider;
+        let layout = in_game((800, 600), Category::Audio, false);
+        assert_eq!(
+            layout
+                .trackbars
+                .iter()
+                .map(|(id, _)| *id)
+                .collect::<Vec<_>>(),
+            [Slider::Score, Slider::Sound, Slider::Voice]
+        );
+        let mut dialog = state();
+        dialog.select_category(Category::Audio);
+        let rect = layout.trackbar_rect(Slider::Sound).unwrap();
+        let thumb = dialog.shell_trackbar_thumb_left(Slider::Sound, rect, layout.scale);
+        dialog.shell_mouse_down(rect.x + thumb + 5, rect.y + 10, &layout);
+        dialog.shell_mouse_move(rect.x + rect.w + 200, rect.y + 10, &layout);
+        dialog.shell_mouse_up(rect.x + rect.w + 200, rect.y + 10, &layout);
+        assert_eq!(
+            dialog.drain_output().events,
+            [LauncherOptionsEvent::SoundPreview(1.0)]
+        );
+
+        let short = in_game_menu((640, 480), false);
+        assert_eq!(short.page_tabs().len(), 2);
+        let short_page = in_game((640, 480), Category::Gameplay, false);
+        assert!(
+            !short_page
+                .buttons
+                .iter()
+                .any(|(button, _)| *button == LauncherButton::Category(Category::Audio))
+        );
+        assert_eq!(in_game_page(Some(Category::Audio), 2), Category::Gameplay);
+        assert_eq!(in_game_page(Some(Category::Audio), 3), Category::Audio);
+        assert_eq!(in_game_page(None, 3), Category::Gameplay);
+    }
+
+    /// Each of the main menu's settings is placed on purpose: on an in-game
+    /// page, on native Game Controls above them, or left out because a
+    /// running match can't use it. Game Controls' Sound child has the three
+    /// volumes too, with its song list.
+    #[test]
+    fn every_setting_is_placed_once_for_the_in_game_menu() {
+        use LauncherCheckboxId as Check;
+        use LauncherTrackbarId as Slider;
+        let game_controls = [
+            Setting::Slider(Slider::Scroll),
+            Setting::Checkbox(Check::TargetLines),
+            Setting::Checkbox(Check::ShowHidden),
+            Setting::Checkbox(Check::Tooltips),
+        ];
+        let main_menu_only = [
+            Setting::Slider(Slider::Difficulty),
+            Setting::Slider(Slider::HouseColorStrength),
+            Setting::Checkbox(Check::TerrainDeformation),
+            Setting::Checkbox(Check::VeraIcon),
+            Setting::Checkbox(Check::SmoothOnlineMenus),
+            Setting::Checkbox(Check::HdMapPreviews),
+            Setting::Checkbox(Check::SkipIntro),
+            Setting::Checkbox(Check::ShowStringKeys),
+        ];
+        let placed: Vec<Setting> = IN_GAME_TABS
+            .iter()
+            .flat_map(|category| category.in_game_settings())
+            .copied()
+            .chain(game_controls)
+            .chain(main_menu_only)
+            .collect();
+        for setting in Category::ALL
+            .iter()
+            .flat_map(|category| category.settings())
+        {
+            assert_eq!(
+                placed.iter().filter(|shown| *shown == setting).count(),
+                1,
+                "{setting:?}"
+            );
         }
     }
 

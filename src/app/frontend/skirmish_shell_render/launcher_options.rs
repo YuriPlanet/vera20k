@@ -68,7 +68,7 @@ fn text_draw(
 
 /// The left-side controls, and the right-panel buttons unless a slide draws
 /// the column in their place.
-fn build_controls(
+pub(super) fn build_controls(
     atlas: &SkirmishShellChromeAtlas,
     layout: &LauncherOptionsLayout,
     dialog: &OptionsDialogState,
@@ -159,7 +159,7 @@ fn build_controls(
     out
 }
 
-fn build_text(
+pub(super) fn build_text(
     font: &BitFont,
     layout: &LauncherOptionsLayout,
     dialog: &OptionsDialogState,
@@ -293,7 +293,7 @@ fn build_text(
 }
 
 /// The list that is open, over the page: its backing and frame, then its rows.
-fn build_open_list(
+pub(super) fn build_open_list(
     font: &BitFont,
     atlas: &SkirmishShellChromeAtlas,
     layout: &LauncherOptionsLayout,

@@ -265,33 +265,57 @@ pub(crate) trait LauncherParentOperations {
 /// gamemd-derived: `OptionsClass__ApplyFromLauncherDialog @ 0x0055FAA0`.
 /// Accepted audio setters are unconditional and cue-silent. Detail refresh is
 /// changed-only; action-line refresh is unconditional.
+///
+/// `opened` is VERA's in-game menu's: what its page showed when it opened, so
+/// that only a control the player moved writes. Unlike gamemd's main menu,
+/// which applies once per visit, that page closes every time the menu does,
+/// and Game Controls' three-step Detail would keep turning its Medium to High.
 fn apply_launcher_parent(
     operations: &mut impl LauncherParentOperations,
     packed: LauncherOptionsPacked,
+    opened: Option<LauncherOptionsPacked>,
 ) {
-    let detail_changed = operations.store_detail_level(packed.detail_level);
-    if detail_changed {
+    let moved = |unchanged: &dyn Fn(LauncherOptionsPacked) -> bool| !opened.is_some_and(unchanged);
+    if moved(&|o| o.detail_level == packed.detail_level)
+        && operations.store_detail_level(packed.detail_level)
+    {
         operations.refresh_detail();
     }
-    operations.store_difficulty(packed.difficulty);
-    operations.store_unit_action_lines(packed.unit_action_lines);
-    operations.refresh_unit_action_lines();
-    operations.store_show_hidden(packed.show_hidden);
-    operations.store_tooltips(packed.tooltips);
-    operations.store_scroll_rate(packed.scroll_rate);
-    operations.store_score_volume(packed.score_volume);
-    operations.apply_score_output(packed.score_volume);
-    if packed.score_volume == 0.0 {
-        operations.queue_then_stop_score_zero();
+    if moved(&|o| o.difficulty == packed.difficulty) {
+        operations.store_difficulty(packed.difficulty);
     }
-    operations.store_sound_volume(packed.sound_volume);
-    operations.apply_sound_output(packed.sound_volume);
-    operations.store_voice_volume(packed.voice_volume);
-    operations.apply_voice_output(packed.voice_volume);
+    if moved(&|o| o.unit_action_lines == packed.unit_action_lines) {
+        operations.store_unit_action_lines(packed.unit_action_lines);
+        operations.refresh_unit_action_lines();
+    }
+    if moved(&|o| o.show_hidden == packed.show_hidden) {
+        operations.store_show_hidden(packed.show_hidden);
+    }
+    if moved(&|o| o.tooltips == packed.tooltips) {
+        operations.store_tooltips(packed.tooltips);
+    }
+    if moved(&|o| o.scroll_rate == packed.scroll_rate) {
+        operations.store_scroll_rate(packed.scroll_rate);
+    }
+    if moved(&|o| o.score_volume == packed.score_volume) {
+        operations.store_score_volume(packed.score_volume);
+        operations.apply_score_output(packed.score_volume);
+        if packed.score_volume == 0.0 {
+            operations.queue_then_stop_score_zero();
+        }
+    }
+    if moved(&|o| o.sound_volume == packed.sound_volume) {
+        operations.store_sound_volume(packed.sound_volume);
+        operations.apply_sound_output(packed.sound_volume);
+    }
+    if moved(&|o| o.voice_volume == packed.voice_volume) {
+        operations.store_voice_volume(packed.voice_volume);
+        operations.apply_voice_output(packed.voice_volume);
+    }
 }
 
 /// Consume one completed parent pass: Pack -> Apply -> physical dialog drop ->
-/// result-specific continuation.
+/// result-specific continuation. See [`apply_launcher_parent`] for `opened`.
 ///
 /// gamemd-derived: `OptionsClass__ShowLauncherDialog @ 0x0055FC80` always
 /// applies and destroys the primary before child preparation/route or the one
@@ -300,10 +324,11 @@ pub(crate) fn dispatch_launcher_parent_result(
     operations: &mut impl LauncherParentOperations,
     dialog: OptionsDialogState,
     result: LauncherParentResult,
+    opened: Option<LauncherOptionsPacked>,
 ) {
     let packed = dialog.pack();
     operations.observe_pack(packed);
-    apply_launcher_parent(operations, packed);
+    apply_launcher_parent(operations, packed, opened);
     drop(dialog);
     operations.primary_dropped();
 
@@ -338,6 +363,105 @@ mod tests {
             };
             assert_eq!(launcher_values_from_profile(&profile).health_bars, mode);
         }
+    }
+
+    /// The writes one accepted page makes.
+    #[derive(Default)]
+    struct WriteRecorder(Vec<&'static str>);
+
+    impl LauncherParentOperations for WriteRecorder {
+        fn observe_pack(&mut self, _: LauncherOptionsPacked) {}
+        fn store_detail_level(&mut self, _: i32) -> bool {
+            self.0.push("detail");
+            true
+        }
+        fn refresh_detail(&mut self) {}
+        fn store_difficulty(&mut self, _: i32) {
+            self.0.push("difficulty");
+        }
+        fn store_unit_action_lines(&mut self, _: bool) {
+            self.0.push("target lines");
+        }
+        fn refresh_unit_action_lines(&mut self) {}
+        fn store_show_hidden(&mut self, _: bool) {
+            self.0.push("show hidden");
+        }
+        fn store_tooltips(&mut self, _: bool) {
+            self.0.push("tooltips");
+        }
+        fn store_scroll_rate(&mut self, _: i32) {
+            self.0.push("scroll rate");
+        }
+        fn store_score_volume(&mut self, _: f32) {
+            self.0.push("music");
+        }
+        fn apply_score_output(&mut self, _: f32) {}
+        fn queue_then_stop_score_zero(&mut self) {
+            self.0.push("stop music");
+        }
+        fn store_sound_volume(&mut self, _: f32) {
+            self.0.push("sound");
+        }
+        fn apply_sound_output(&mut self, _: f32) {}
+        fn store_voice_volume(&mut self, _: f32) {
+            self.0.push("voice");
+        }
+        fn apply_voice_output(&mut self, _: f32) {}
+        fn primary_dropped(&mut self) {}
+        fn persist_profile(&mut self) {}
+        fn route_keyboard(&mut self) {}
+        fn reopen_parent(&mut self) {}
+    }
+
+    /// Game Controls' Medium Detail shows as High on the page's two-step
+    /// slider, so closing the page must not write a slider nobody moved, even
+    /// when another control changed. The main menu's accept still writes all.
+    #[test]
+    fn the_in_game_page_writes_only_what_the_player_moved() {
+        let profile = RetailOptionsProfile {
+            detail_level: 1,
+            ..RetailOptionsProfile::default()
+        };
+        let opened = launcher_dialog_from_profile(
+            &profile,
+            LauncherOptionsLabels::resolve(&|_| None),
+            false,
+            false,
+            true,
+            Vec::new(),
+        )
+        .pack();
+        assert_eq!(opened.detail_level, 2);
+
+        let mut untouched = WriteRecorder::default();
+        apply_launcher_parent(&mut untouched, opened, Some(opened));
+        assert!(untouched.0.is_empty());
+
+        let moved = LauncherOptionsPacked {
+            tooltips: !opened.tooltips,
+            score_volume: 0.0,
+            ..opened
+        };
+        let mut page = WriteRecorder::default();
+        apply_launcher_parent(&mut page, moved, Some(opened));
+        assert_eq!(page.0, ["tooltips", "music", "stop music"]);
+
+        let mut accept = WriteRecorder::default();
+        apply_launcher_parent(&mut accept, opened, None);
+        assert_eq!(
+            accept.0,
+            [
+                "detail",
+                "difficulty",
+                "target lines",
+                "show hidden",
+                "tooltips",
+                "scroll rate",
+                "music",
+                "sound",
+                "voice"
+            ]
+        );
     }
 
     #[test]
