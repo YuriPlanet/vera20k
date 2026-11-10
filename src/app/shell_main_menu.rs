@@ -1,5 +1,5 @@
 use super::*;
-use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
+use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::persistence::options::audio::AudioVolumeOperations;
 use crate::util::time::{Duration, Instant};
 
@@ -280,7 +280,7 @@ impl crate::app::persistence::options::launcher::LauncherParentOperations
         // Display4AE450 resamples synchronously, before the next Logic visit
         // can copy a Cell's light into a grapple anim. This local operation
         // never enters Simulation's replay/sync hash.
-        if let Some(runtime) = self.state.match_state.sim_runtime.as_ref()
+        if let Some(runtime) = self.state.match_state.sim_runtime.runtime()
             && let Some(terrain) = runtime.simulation.resolved_terrain()
         {
             let presentation = &mut self.state.match_state.match_presentation;
@@ -569,7 +569,7 @@ impl App {
             .multiplayer_shell_runtime
             .read_multiplayer_settings(&mut state.process_assets);
         let main = crate::app::state::process_main_draws(
-            state.match_state.sim_runtime.as_deref(),
+            state.match_state.sim_runtime.runtime(),
             &state.frontend.frontend_main_rng,
         );
         state
@@ -593,7 +593,7 @@ impl App {
                 .frontend
                 .skirmish_shell_state
                 .refresh_country_catalog(rules);
-        } else if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+        } else if let Some(runtime) = state.match_state.sim_runtime.runtime() {
             state
                 .frontend
                 .skirmish_shell_state

@@ -803,7 +803,7 @@ pub(crate) fn build_tooltip_instances(
     let tint = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .and_then(|runtime| {
             runtime
                 .resources

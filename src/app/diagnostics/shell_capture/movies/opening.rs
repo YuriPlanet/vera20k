@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::app::input::{camera, hotkeys, keyboard};
-use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
+use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::match_runtime::sim_tick::ExactStepReceipt;
 use winit::event::{ElementState, MouseButton};
 use winit::keyboard::{Key, KeyCode, KeyLocation, NamedKey};
@@ -221,7 +221,7 @@ impl OpeningCapture {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("campaign opening has no installed runtime")?
             .simulation;
         if let OpeningTarget::TriggerTrace { tick, .. } = self.target {
@@ -919,7 +919,7 @@ impl OpeningCapture {
                 Some(trace_houses(state)?)
             } else { None },
             "encounter_entities": if matches!(self.target, OpeningTarget::SovietTick(_) | OpeningTarget::SovietNavy(_) | OpeningTarget::SovietGroups(_) | OpeningTarget::SovietFortresses(_)) {
-                let sim = &state.match_state.sim_runtime.as_ref().context("encounter runtime")?.simulation;
+                let sim = &state.match_state.sim_runtime.runtime().context("encounter runtime")?.simulation;
                 Some(sim.entities().iter_sorted().map(|(_, entity)| json!({
                     "id": entity.stable_id(), "type": sim.interner().resolve(entity.type_ref()),
                     "owner": sim.interner().resolve(entity.owner()), "active": entity.is_active(),
@@ -947,7 +947,7 @@ fn installed_frame(state: &AppState) -> Result<(u64, u32)> {
     let session = &state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("load left no installed runtime")?
         .simulation
         .session();
@@ -963,7 +963,7 @@ fn opening_observation(state: &AppState) -> Result<Value> {
     let sim = &state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("opening observation has no runtime")?
         .simulation;
     let viewer = crate::app::input::commands::preferred_local_owner_name(state)
@@ -1255,7 +1255,7 @@ fn armed_player_units(state: &AppState) -> Result<(u64, String, Vec<u64>)> {
     let sim = &state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("campaign runtime")?
         .simulation;
     let viewer = sim.session().current_house().context("campaign player")?;
@@ -1289,7 +1289,7 @@ fn armed_player_units(state: &AppState) -> Result<(u64, String, Vec<u64>)> {
 
 /// The local House's campaign outcome, once Flag_To_Win or Flag_To_Lose set it.
 fn trace_outcome(state: &AppState) -> Option<&'static str> {
-    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     let owner = crate::app::input::commands::preferred_local_owner_name(state)
         .and_then(|name| sim.interner().get(&name))?;
     let house = sim.houses().get(&owner)?;
@@ -1307,7 +1307,7 @@ fn trace_houses(state: &AppState) -> Result<Value> {
     let sim = &state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("trigger trace runtime")?
         .simulation;
     let mut houses = std::collections::BTreeMap::<String, [u32; 4]>::new();

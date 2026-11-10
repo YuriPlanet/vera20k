@@ -4,7 +4,7 @@
 use crate::app::AppState;
 use crate::app::input::dispatch::selected_in_order;
 use crate::app::input::hotkeys::{HotkeyCommand, HotkeyResolution};
-use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
+use crate::app::match_runtime::sim_host::SimWrite;
 use crate::audio::events::{GameSoundEvent, SoundEventQueue};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::CommandEnvelope;
@@ -417,7 +417,7 @@ fn set_active(state: &mut AppState, active: bool, intro_source: Option<bool>) {
     let defeated = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_some_and(|rt| rt.simulation.local_player_defeated());
     let rt = state.match_state.sim_runtime.write_sim(SimWrite::Command);
     let command = state.match_state.input.planning.set_active(
@@ -525,7 +525,7 @@ fn queue_orders_in_sim(
 /// selection may connect to. While a right press holds AC4CB0 it keeps the
 /// node it had at the press (0x00638E60's early return).
 pub(crate) fn hover_node(state: &AppState) -> Option<u64> {
-    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     if let Some(held) = state.match_state.input.planning.right_hover {
         return held.filter(|&node| sim.planning_node_exists(node));
     }
@@ -534,7 +534,7 @@ pub(crate) fn hover_node(state: &AppState) -> Option<u64> {
 
 fn live_hover_node(state: &AppState) -> Option<u64> {
     let point = hover_native_screen(state)?;
-    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     let owner = sim.session().current_house()?;
     // Only a node under the cursor reads the selection, which walks every
     // object: the cursor asks this at every draw.
@@ -563,7 +563,7 @@ pub(crate) fn refuse_press_at_cursor(state: &mut AppState) -> bool {
     let Some(refusal) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .and_then(|rt| rt.simulation.planning_press_refusal(&selected, point))
     else {
         return false;
@@ -619,7 +619,7 @@ pub(crate) fn connect_at_cursor(state: &mut AppState) -> bool {
             state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .is_some_and(|rt| rt.simulation.planning_release_refused(&selected, point))
         });
     };

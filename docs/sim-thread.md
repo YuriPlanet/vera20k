@@ -76,18 +76,40 @@ identical frame by frame.
 
 ### Phase 1: a `SimHost` owns everything a tick touches
 
-Move the mid-tick effect *owners* next to the simulation instead of turning
-their calls into events. A `SimHost` holds:
+The host lives as long as the process, like the thread it becomes. Several
+owners a tick reaches are process globals in gamemd, so they survive launch
+and load: the checksum ring `B04474` is one. A host that lived and died with
+each scenario could not hold them.
 
-- `SimRuntime`;
-- the live network session and the checksum history (`MatchSession`,
-  `LiveCommandSession`);
-- the sound producer: `SfxPlayer` and its `SoundEventQueue`;
-- the outcome-voice wait;
-- the scenario pause clock;
-- the planning input that a defeat leaves.
+Each mid-tick owner moves according to who else uses it. Its calls never
+become post-tick events.
 
-The main thread talks to it through:
+- **Only the tick uses it: move it into the host.**
+  - Done: the checksum history (`FrameChecksumState`).
+  - Next: the live command transport (`LiveCommandSession`). Waits and
+    pacing also service it before the tick, so it goes with the frame
+    loop's network service.
+- **Session and UI code write it as well: the tick gets a value, not the
+  owner.**
+  - Latency fudge (`MatchSession::latency_fudge`): the lobby, LAN start,
+    cooperative rounds and the latency event all write it.
+- **The whole client shares it: needs a thread-safe handle.** The sound
+  player (`SfxPlayer`) also plays menu and UI sound. Two parts need care:
+  - The tick's synchronous prefix delivery and the outcome wait's "voices
+    active" poll need an audio handle the simulation thread can call.
+  - Playback draws the process Main RNG. That is outside lockstep, so only
+    the order of presentation draws can change.
+- **Input owns it: mirror what the tick reads.** The tick reads two things:
+  - the planning flag and nodes that `leave_planning` reads;
+  - the selection that defeat clears.
+
+  It returns the command it builds and hands the input reset back to the
+  main thread.
+- **The scenario pause clock and the outcome-voice wait** are per-match
+  client clocks the tick drives. They move with the host, but the wait also
+  needs the audio handle above.
+
+The main thread talks to the host through:
 
 - `submit(commands)`;
 - `outputs()`: the per-tick `SimFrameOutput` remainder, screen shake, camera,
@@ -95,16 +117,23 @@ The main thread talks to it through:
 - `request(query)`, for input queries that need live state.
 
 `SimHost` still runs on the main thread in this phase. Done when every
-`sim_runtime.as_mut()` outside `SimHost` is gone.
+owner above has moved or has its handle, and every `write_sim` route has
+its own operation.
 
 Progress:
 
-- [x] `MatchState::sim_runtime` holds a `SimHost`
-  (`app/match_runtime/sim_host.rs`). Reads go through `Deref`. Every write
-  names its route through `write_sim(SimWrite::…)`, and nothing else
-  compiles.
-- [ ] Replace each route with operations of its own.
-- [ ] Move the mid-tick effect owners into the host.
+- [x] `MatchState::sim_runtime` is the process-lifetime `SimHost`
+  (`app/match_runtime/sim_host.rs`), holding `Option<SimRuntime>`.
+  - Reads take `runtime()`.
+  - Every write names its route through `write_sim(SimWrite::…)`; nothing
+    else compiles.
+  - The tick takes its parts together through `tick_parts()`.
+- [x] The checksum history moved from `MatchSession` into the host.
+- [ ] The live command transport.
+- [ ] An audio handle for the sound prefix and the outcome wait.
+- [ ] The planning and selection mirror.
+- [ ] The scenario pause clock and the outcome wait.
+- [ ] An operation of its own for each route.
 
 The routes as first assigned (`git grep "write_sim(SimWrite::"`):
 

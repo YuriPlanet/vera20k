@@ -4,7 +4,7 @@
 //! The network thread only queues a bounded request. The game thread checks
 //! the current world/session again before reaching the simulation's owner.
 
-use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
+use crate::app::match_runtime::sim_host::SimWrite;
 use std::collections::VecDeque;
 
 use crate::sim::cheats::{CheatFlags, TrainerAction};
@@ -144,7 +144,7 @@ pub(crate) fn service(state: &mut crate::app::AppState) {
     for command in commands {
         apply(state, command);
     }
-    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+    if let Some(runtime) = state.match_state.sim_runtime.runtime() {
         state.match_state.sandbox_full_visibility = runtime.simulation.debug_reveal_map();
     }
 }
@@ -153,7 +153,7 @@ fn close_unmodified_recording(state: &mut crate::app::AppState) {
     if state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_some_and(|runtime| !runtime.simulation.trainer_modified())
     {
         crate::app::match_runtime::sim_tick::close_replay_segment_for_new_timeline(state);
@@ -164,7 +164,7 @@ fn set_flags(state: &mut crate::app::AppState, flags: CheatFlags) {
     if !state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_some_and(|runtime| runtime.simulation.trainer_available())
     {
         return;
@@ -184,7 +184,7 @@ fn set_flags(state: &mut crate::app::AppState, flags: CheatFlags) {
 }
 
 pub(crate) fn toggle_reveal(state: &mut crate::app::AppState) {
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         return;
     };
     let mut flags = runtime.simulation.cheat_flags();

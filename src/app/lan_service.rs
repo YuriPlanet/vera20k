@@ -6,7 +6,7 @@
 //! explicit VERA transport adaptation; application messages remain the native
 //! 455-byte protocol from5DF9E0/5DFE00/5E00B0.
 
-use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
+use crate::app::match_runtime::sim_host::SimWrite;
 use std::net::{Ipv4Addr, SocketAddrV4};
 
 use super::AppState;
@@ -1841,7 +1841,8 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
     {
         //48D7AA..48D7EF: no source or session check precedes the manager.
         let message = crate::net::lan_messages::ingame::BeaconMessage::decode(&incoming.payload)?;
-        if state.match_state.live_network.is_some() && state.match_state.sim_runtime.is_some() {
+        if state.match_state.live_network.is_some() && state.match_state.sim_runtime.is_installed()
+        {
             super::match_runtime::beacons::receive(state, message.record());
         }
         return Ok(());
@@ -1917,7 +1918,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
             super::input::taunt::receive(state, taunt.byte);
             return Ok(());
         }
-        if let Some(runtime) = &state.match_state.sim_runtime
+        if let Some(runtime) = state.match_state.sim_runtime.runtime()
             && let Some(event) = super::match_runtime::network_match::decode_kick_proposal(
                 &state.match_state.session,
                 &runtime.simulation,
@@ -3275,7 +3276,7 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
     let sim = &state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .ok_or_else(|| anyhow::anyhow!("LAN startup has no constructed world"))?
         .simulation;
     let timing = state
@@ -3603,7 +3604,7 @@ fn drain_match_requests(state: &mut AppState) {
                 }
             }
             NetworkLoadingRequest::ProposeKick { target_source } => {
-                if let Some(runtime) = &state.match_state.sim_runtime
+                if let Some(runtime) = state.match_state.sim_runtime.runtime()
                     && let Some(message) = super::match_runtime::network_match::encode_kick_proposal(
                         &state.match_state.session,
                         &runtime.simulation,
@@ -3625,7 +3626,7 @@ fn drain_match_requests(state: &mut AppState) {
                 }
             }
             NetworkLoadingRequest::Disconnect { source_index, .. } => {
-                if let Some(runtime) = &state.match_state.sim_runtime
+                if let Some(runtime) = state.match_state.sim_runtime.runtime()
                     && let Some(house) = super::match_runtime::network_match::source_house(
                         &state.match_state.session,
                         &runtime.simulation,

@@ -3,7 +3,7 @@
 //! time, packets, commands and simulation advancement stay with the game.
 
 use super::*;
-use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
+use crate::app::match_runtime::sim_host::SimWrite;
 
 mod startup;
 use crate::app::match_runtime::network_match;
@@ -113,7 +113,7 @@ impl FailureCapture {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("failure prefix world")?
             .simulation;
         let house = i32::from(live.peers()[0].house_id());
@@ -164,7 +164,7 @@ impl FailureCapture {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("failure world")?
             .simulation;
         let live = state
@@ -397,7 +397,7 @@ impl FailureCapture {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("survivor world")?
             .simulation;
         let frame = sim.session().binary_frame();
@@ -505,7 +505,7 @@ impl FailureCapture {
             let sim = &state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .context("desync world")?
                 .simulation;
             ensure!(
@@ -600,7 +600,7 @@ impl FailureCapture {
                 && !state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .context("returned desync world")?
                     .simulation
                     .pending_network_wait(),
@@ -655,7 +655,7 @@ impl FailureCapture {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("returned world retained")?
             .simulation;
         let held = self.wait.as_ref().context("Quit held frame")?;

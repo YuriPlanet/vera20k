@@ -59,7 +59,7 @@ pub(crate) fn update_sidebar_gadget_state(state: &mut AppState) {
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation)
     else {
         return;

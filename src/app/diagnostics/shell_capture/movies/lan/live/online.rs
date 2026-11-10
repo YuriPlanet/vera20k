@@ -339,7 +339,7 @@ impl LiveRoundFlow {
         let prefix_frame = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("prefix world")?
             .simulation
             .session()
@@ -409,7 +409,7 @@ impl LiveRoundFlow {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("checkpoint world")?
             .simulation;
         let port = state
@@ -489,7 +489,7 @@ impl LiveRoundFlow {
         let sim = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|runtime| &runtime.simulation);
         let native_frame = sim.map(|sim| sim.session().binary_frame());
         let fps = sim
@@ -1654,7 +1654,7 @@ impl LiveRoundFlow {
                 let scenario_retired = state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .is_none_or(|runtime| !runtime.simulation.session().started());
                 ensure!(
                     visits_retired

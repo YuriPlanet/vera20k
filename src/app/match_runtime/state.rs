@@ -32,9 +32,10 @@ pub(crate) struct MatchState {
     /// LAN visit transport before the match, then discovery metadata while the
     /// same sockets are owned by live_network. Session owns admitted endpoints.
     pub(crate) lan_service: Option<crate::app::lan_service::LanService>,
-    /// The installed simulation. Reads go through `Deref`; writes name a
+    /// The process-lifetime simulation host and its installed runtime, if
+    /// any. Reads take `runtime()`; writes name a
     /// [`SimWrite`](super::sim_host::SimWrite) route.
-    pub(crate) sim_runtime: Option<super::sim_host::SimHost>,
+    pub(crate) sim_runtime: super::sim_host::SimHost,
     /// Match input owner (F12): camera, zoom, cursor, keys, hotkeys.
     pub(crate) input: crate::app::input::state::MatchInputState,
     /// Match presentation owner (F12), part 1: per-match atlases + cursor.
@@ -104,7 +105,7 @@ impl MatchState {
         presentation_pause_for_screen(
             screen,
             self.paused(),
-            self.sim_runtime.as_ref().map(|rt| rt.simulation.session()),
+            self.sim_runtime.runtime().map(|rt| rt.simulation.session()),
         )
     }
     /// Native elapsed-clock intent excludes the relay hold and network
@@ -120,7 +121,7 @@ impl MatchState {
                 .as_ref()
                 .is_some_and(|radar| radar.movie_pause()),
             self.sim_runtime
-                .as_ref()
+                .runtime()
                 .is_some_and(|runtime| runtime.simulation.session().scenario_paused()),
             self.match_presentation.commander_feedback.result_waits(),
         )
@@ -147,7 +148,7 @@ impl MatchState {
         self.live_network
             .as_ref()
             .and_then(|live| live.multiplayer_pause())
-            .zip(self.sim_runtime.as_ref())
+            .zip(self.sim_runtime.runtime())
             .is_some_and(|(pause, runtime)| {
                 multiplayer_pause_reached(
                     pause,
@@ -170,14 +171,14 @@ impl MatchState {
     /// local diagnostic gate; native offline Scenario62C gates all its holds.
     pub(crate) fn main_tick_frozen(&self) -> bool {
         self.sim_runtime
-            .as_ref()
+            .runtime()
             .is_some_and(|rt| rt.simulation.pending_network_failure().is_some())
             || self.debug_pause
             || self.multiplayer_paused()
             || super::scenario_pause::blocks_main_tick(
                 self.session_mode(),
                 self.sim_runtime
-                    .as_ref()
+                    .runtime()
                     .is_some_and(|rt| rt.simulation.session().scenario_paused()),
             )
             || (self.match_presentation.in_game_menu.is_open() && !self.session_mode().is_network())
@@ -189,14 +190,14 @@ impl MatchState {
     pub(crate) fn session_mode(&self) -> super::session::SessionMode {
         held_session_mode(
             &self.session,
-            self.sim_runtime.as_ref().map(|rt| rt.simulation.session()),
+            self.sim_runtime.runtime().map(|rt| rt.simulation.session()),
         )
     }
 
     /// The live scenario's pinned player, including a successfully restored save.
     pub(crate) fn local_player_owner(&self) -> Option<&str> {
         self.sim_runtime
-            .as_ref()
+            .runtime()
             .and_then(|runtime| scenario_local_owner(&runtime.simulation))
     }
 }

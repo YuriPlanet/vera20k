@@ -32,7 +32,7 @@
 //! Saved campaigns retain their Scenario index and incoming carry-over;
 //! their wins enter this same continuation after saved-world admission.
 
-use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
+use crate::app::match_runtime::sim_host::SimWrite;
 use std::collections::VecDeque;
 
 use super::{App, AppState};

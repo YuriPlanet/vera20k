@@ -36,7 +36,7 @@ pub(crate) fn message_now_ms(state: &AppState) -> u64 {
 /// scenario-side priority through69A310 and adds a non-silent4046 row.
 /// MessageDelay's ftol result is in WallClock16ms buckets, not sim frames.
 pub(crate) fn post_trigger_message(state: &mut AppState, csf_key: &str) {
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         return;
     };
     // The selected campaign opening keeps its startup player/country. The
@@ -457,7 +457,7 @@ pub(crate) fn post_ares_superweapon_message(
 pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
     #[cfg(feature = "ares")]
     if let HudMessage::AresSuperWeaponRefused(sw_type) = message {
-        let section = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+        let section = state.match_state.sim_runtime.runtime().and_then(|runtime| {
             runtime
                 .simulation
                 .interner()
@@ -480,7 +480,7 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
         firer,
     } = message
     {
-        let names = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+        let names = state.match_state.sim_runtime.runtime().and_then(|runtime| {
             let interner = runtime.simulation.interner();
             Some((
                 interner.try_resolve(sw_type)?.to_owned(),
@@ -494,7 +494,7 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
     }
     #[cfg(feature = "ares")]
     if let HudMessage::AresTechCaptureLabel(label) = message {
-        let Some(label) = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+        let Some(label) = state.match_state.sim_runtime.runtime().and_then(|runtime| {
             runtime
                 .simulation
                 .interner()
@@ -560,7 +560,7 @@ fn eva_text_product_name(
     let section = state
         .match_state
         .sim_runtime
-        .as_ref()?
+        .runtime()?
         .simulation
         .interner()
         .resolve(type_id);
@@ -720,7 +720,7 @@ fn post_named_house_line(
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|runtime| &runtime.simulation)
     else {
         return;
@@ -771,7 +771,7 @@ pub(crate) fn player_line_rgb(state: &AppState, owner: crate::sim::intern::Inter
     let owner = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|runtime| runtime.simulation.interner().resolve(owner).to_string());
     house_message_rgb(
         owner.as_deref(),

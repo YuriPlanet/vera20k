@@ -1,5 +1,5 @@
 use super::*;
-use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
+use crate::app::match_runtime::sim_host::SimWrite;
 
 /// The random-map seed file the `.SED` launch branch recognises. Written into
 /// VERA's folder for it (`map::source::random_map_dir`), where `map_load`
@@ -1180,7 +1180,7 @@ impl App {
                 (
                     urban_catalog,
                     crate::app::state::process_main_draws(
-                        state.match_state.sim_runtime.as_ref(),
+                        state.match_state.sim_runtime.runtime(),
                         &state.frontend.frontend_main_rng,
                     ),
                 )
@@ -1451,7 +1451,7 @@ impl App {
         // never sees.
         let resolved_terrain = {
             let mut main = crate::app::state::process_main_draws(
-                state.match_state.sim_runtime.as_deref(),
+                state.match_state.sim_runtime.runtime(),
                 &state.frontend.frontend_main_rng,
             );
             let (manager, _, selector_cache) =
@@ -1734,7 +1734,7 @@ impl App {
         let mut open_browser: Option<SavedSeedMode> = None;
         let mut main =
             crate::ui::skirmish_shell::MainRngRanged(crate::app::state::process_main_draws(
-                state.match_state.sim_runtime.as_deref(),
+                state.match_state.sim_runtime.runtime(),
                 &state.frontend.frontend_main_rng,
             ));
         match released.expect("checked equal to pressed control") {

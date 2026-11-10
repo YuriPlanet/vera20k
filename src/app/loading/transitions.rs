@@ -2,7 +2,7 @@
 //!
 //! Extracted from app.rs for file-size limits.
 
-use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
+use crate::app::match_runtime::sim_host::SimWrite;
 use std::collections::{BTreeMap, HashMap};
 
 use crate::app::loading::init;
@@ -31,7 +31,7 @@ pub(crate) fn sync_in_game_options_speed_from_sim(state: &mut AppState) {
     let Some(game_speed) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation)
         .and_then(crate::sim::world::Simulation::projected_in_game_options_speed)
         .map(u32::from)
@@ -147,7 +147,7 @@ pub(crate) fn install_world_presentation(
     state.frontend.shell_preview_overlay_registry = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|runtime| runtime.resources.overlay_registry.clone());
 
     state.match_state.match_presentation.combat_lights.clear();
@@ -171,7 +171,7 @@ pub(crate) fn install_world_presentation(
         .electric_bolts
         .clear_on_load();
     state.match_state.match_presentation.airstrike_shades = Default::default();
-    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+    if let Some(runtime) = state.match_state.sim_runtime.runtime() {
         state
             .match_state
             .match_presentation
@@ -251,7 +251,7 @@ pub(crate) fn install_world_presentation(
         let side = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map_or(-1, |runtime| runtime.simulation.session().scenario_side());
         let pair = state.process_assets.side_dialog_background(side);
         if state.frontend.shell_dialog_background != pair {
@@ -300,7 +300,7 @@ pub(crate) fn install_world_presentation(
     state.match_state.match_presentation.theater_name = map.theater_name;
     state.match_state.match_presentation.theater_ext = map.theater_ext;
 
-    let live = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+    let live = state.match_state.sim_runtime.runtime().and_then(|runtime| {
         runtime
             .view()
             .resolved_terrain()
@@ -324,7 +324,7 @@ pub(crate) fn install_world_presentation(
         .terrain_grid
         .as_ref()
         .map(|grid| {
-            let runtime = state.match_state.sim_runtime.as_deref();
+            let runtime = state.match_state.sim_runtime.runtime();
             let overlay_registry = runtime.map(|runtime| &runtime.resources.overlay_registry);
             let rules = runtime.map(|runtime| &runtime.resources.rules);
             let overlay_data = build_minimap_overlay_data(
@@ -359,7 +359,7 @@ pub(crate) fn install_world_presentation(
         && let Some(rules) = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|runtime| &runtime.resources.rules)
         && let Some(overlay) = state
             .match_state
@@ -389,7 +389,7 @@ pub(crate) fn install_world_presentation(
         && let Some(rules) = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|runtime| &runtime.resources.rules)
         && let Some(overlay) = state
             .match_state
@@ -418,7 +418,7 @@ pub(crate) fn install_world_presentation(
     // its House's (+0x16054).
     state.match_state.match_presentation.beacon_art =
         state.process_assets.manager().and_then(|assets| {
-            let runtime = state.match_state.sim_runtime.as_ref()?;
+            let runtime = state.match_state.sim_runtime.runtime()?;
             let sim = &runtime.simulation;
             let colors = &state.match_state.match_presentation.house_color_map;
             let ramps: Vec<_> = sim
@@ -445,7 +445,7 @@ pub(crate) fn install_world_presentation(
         let grid = state
             .match_state
             .sim_runtime
-            .as_ref()?
+            .runtime()?
             .simulation
             .path_grid()?;
         let shp =
@@ -557,7 +557,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             .frontend
             .random_map_retention
             .discard_pending_mapgen_on_simulation_install();
-    } else if let Some(outgoing) = state.match_state.sim_runtime.take() {
+    } else if let Some(outgoing) = state.match_state.sim_runtime.take_runtime() {
         // The generic fallback drops its resident Simulation. MapGen is
         // process-global in gamemd, so retain its cursor before that drop.
         let continuation = outgoing.simulation.mapgen_continuation_for_fresh_load();
@@ -571,21 +571,24 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             .session
             .retake_mode_from_world(outgoing.simulation.session().game_mode());
     }
-    state.match_state.sim_runtime = incoming.map(|(mut simulation, rules)| {
-        simulation.install_fresh_process_main(&state.frontend.frontend_main_rng);
-        simulation.publish_scenario_started();
-        simulation.batch_path_searches();
-        simulation.batch_target_scans();
-        crate::app::match_runtime::sim_host::SimHost::new(crate::sim::runtime::SimRuntime {
-            simulation,
-            resources: crate::sim::runtime::SimResources {
-                overlay_registry: result.scenario.overlay_registry,
-                terrain_template: result.scenario.resolved_terrain,
-                rules,
-            },
-        })
-    });
-    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+    state
+        .match_state
+        .sim_runtime
+        .install(incoming.map(|(mut simulation, rules)| {
+            simulation.install_fresh_process_main(&state.frontend.frontend_main_rng);
+            simulation.publish_scenario_started();
+            simulation.batch_path_searches();
+            simulation.batch_target_scans();
+            crate::sim::runtime::SimRuntime {
+                simulation,
+                resources: crate::sim::runtime::SimResources {
+                    overlay_registry: result.scenario.overlay_registry,
+                    terrain_template: result.scenario.resolved_terrain,
+                    rules,
+                },
+            }
+        }));
+    if let Some(runtime) = state.match_state.sim_runtime.runtime() {
         state
             .match_state
             .session
@@ -749,7 +752,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
                 state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .map(|rt| &rt.simulation),
                 matches!(state.frontend.screen, GameScreen::Loading),
             );
@@ -772,7 +775,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
                 state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .map(|rt| &rt.simulation),
                 matches!(state.frontend.screen, GameScreen::Loading),
             )

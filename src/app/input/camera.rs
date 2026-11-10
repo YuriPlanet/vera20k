@@ -1271,7 +1271,7 @@ fn keyboard_scroll_distance(state: &AppState) -> f32 {
         let cells = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)
             .map_or(0u32, |sim| {
                 u32::from(sim.fog().width().max(sim.fog().height()))
@@ -1288,7 +1288,7 @@ fn scroll_input_locked(state: &AppState) -> bool {
         && state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .is_some_and(|runtime| runtime.simulation.session().input_locked())
 }
 
@@ -1480,7 +1480,7 @@ pub(crate) fn advance_camera_ai(state: &mut AppState, mouse: (f32, f32), frame: 
             && state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .is_some_and(|runtime| runtime.simulation.session().started()),
         // The ordinary app currently admits the offline session route with
         // native replay flags0. Native playback bit2 is covered by the shared
@@ -1998,7 +1998,7 @@ pub(crate) fn center_view_on_selection(state: &mut AppState) {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation),
         state.rules(),
         &state.match_state.input.selection_order,
@@ -2008,7 +2008,7 @@ pub(crate) fn center_view_on_selection(state: &mut AppState) {
         let Some(sim) = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)
         else {
             return;
@@ -2038,7 +2038,7 @@ pub(crate) fn toggle_follow_target(state: &mut AppState) {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation),
         state.rules(),
         &state.match_state.input.selection_order,
@@ -2082,7 +2082,7 @@ pub(crate) fn update_follow_camera(
     let coord = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation)
         .and_then(|sim| {
             sim.entities()
@@ -2172,7 +2172,7 @@ pub(crate) fn playfield_presentation_authority(
     state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map_or((None, 0), |runtime| runtime.view().playfield_authority())
 }
 
@@ -2197,7 +2197,7 @@ fn clamp_camera_point_for_state(
     let origin = (origin_x as f32 / zoom, origin_y as f32 / zoom);
     let point = (point.0 + origin.0, point.1 + origin.1);
     let to_camera = |corner: (f32, f32)| (corner.0 - origin.0, corner.1 - origin.1);
-    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+    if let Some(runtime) = state.match_state.sim_runtime.runtime() {
         // The radar rectangle enumerates mode-zero cells. Tactical6D8640
         // instead reads the five final MapClass LocalSize fields directly,
         // including its northern headroom. These are distinct consumers of
@@ -2283,7 +2283,7 @@ fn shown_world_rect(area: (f32, f32, f32, f32)) -> (f32, f32, f32, f32) {
 /// has its LocalSize. Pictures of whole maps (`app::map_picture`) are framed
 /// by it.
 pub(crate) fn tactical_view_area(state: &AppState) -> Option<(f32, f32, f32, f32)> {
-    let runtime = state.match_state.sim_runtime.as_ref()?;
+    let runtime = state.match_state.sim_runtime.runtime()?;
     let bounds = runtime.view().playfield_authority().0?;
     Some(shown_world_rect(tactical_scroll_rect(bounds)))
 }

@@ -1,7 +1,7 @@
 //! User save/load requests; input and dialogs only select the operation.
 
 use crate::app::AppState;
-use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
+use crate::app::match_runtime::sim_host::SimWrite;
 
 use std::path::{Path, PathBuf};
 
@@ -60,7 +60,7 @@ pub(crate) fn prepare_initial_campaign_save<'a>(
     let campaign = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_some_and(|runtime| !runtime.simulation.session().game_mode_nonzero());
     state
         .persistence
@@ -125,7 +125,7 @@ fn save(
         &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .ok_or(SaveCommandError::MissingSimulation)?
             .simulation,
         &state.persistence.repository,
@@ -162,7 +162,7 @@ fn prepare_save<'a>(
     let runtime = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .ok_or(SaveCommandError::MissingSimulation)?;
     let map_hash = state
         .match_state
@@ -525,7 +525,7 @@ fn restore_save_file(
                 current_simulation: state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .map(|runtime| &runtime.simulation),
                 frontend_main: &state.frontend.frontend_main_rng,
                 rules_owner,

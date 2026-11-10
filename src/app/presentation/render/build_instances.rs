@@ -204,7 +204,7 @@ pub(super) fn build_world_instances(
             state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .and_then(|rt| rt.view().resolved_terrain()),
             terrain_buffer,
         )
@@ -220,7 +220,7 @@ pub(super) fn build_world_instances(
     let display_order = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| {
             super::draw_plan_lowering::NativeDisplayOrder::from_display(rt.view().display_layers())
         })
@@ -268,7 +268,7 @@ pub(super) fn build_world_instances(
     // building or infantry, or Bullet. A building's voxel turret remains
     // owned by the building display call, in the same contiguous Ground
     // parent instead of an atlas-level tie.
-    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+    if let Some(runtime) = state.match_state.sim_runtime.runtime() {
         let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
         let shp_inputs = instances::shp_inputs(state, local_owner.as_deref());
         let mut units = instances::unit_visitor(state, &display_order);
@@ -304,7 +304,7 @@ pub(super) fn build_world_instances(
         }
     }
     let mut particle_draws = state.diagnostic_presentation_ms().map(|_| Vec::new());
-    let display_inputs = state.match_state.sim_runtime.as_ref().map(|runtime| {
+    let display_inputs = state.match_state.sim_runtime.runtime().map(|runtime| {
         let presentation = &state.match_state.match_presentation;
         let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
         let local_owner = crate::app::input::commands::preferred_local_owner_name(state)
@@ -388,7 +388,7 @@ pub(super) fn build_world_instances(
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation),
         state
             .match_state
@@ -477,14 +477,14 @@ pub(super) fn build_world_instances(
         }
     }
     instances::build_weapon_wave_instances(state, &mut planned_objects, &display_order);
-    if let Some(rt) = state.match_state.sim_runtime.as_ref() {
+    if let Some(rt) = state.match_state.sim_runtime.runtime() {
         instances::assign_tether_redraws(&rt.simulation, &mut planned_objects);
     }
     // VERA's translucent fog lifts the A buffer's near-black concealment, so
     // live enemy objects the local viewer cannot see leave the draw plan fully
     // (body, shadow, attached anim parts and extras) instead of showing through
     // the fog. Terrain, overlays and revealed map art stay visible.
-    if let Some(rt) = state.match_state.sim_runtime.as_ref() {
+    if let Some(rt) = state.match_state.sim_runtime.runtime() {
         let sim = &rt.simulation;
         if let Some(viewer) = instances::translucent_fog_viewer(state, sim) {
             let rules = &rt.resources.rules;
@@ -684,7 +684,7 @@ fn build_smudge_instances(state: &AppState, sw: f32, sh: f32) -> Vec<SpriteInsta
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation),
         state.rules(),
     ) {
@@ -805,7 +805,7 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
             state.overlay_registry(),
             state.rules(),
         );
-        let runtime = state.match_state.sim_runtime.as_deref();
+        let runtime = state.match_state.sim_runtime.runtime();
         let presentation = &mut state.match_state.match_presentation;
         if let (Some(minimap), Some(grid)) = (
             presentation.minimap.as_mut(),
@@ -840,7 +840,7 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
     let presentation = &mut state.match_state.match_presentation;
     if let (Some(minimap), Some(runtime)) = (
         presentation.minimap.as_mut(),
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.runtime(),
     ) {
         let transaction = super::minimap_transaction::present_minimap_frame(minimap, |minimap| {
             // F10 cone: render-feed reads go through SimView getters. The
@@ -991,7 +991,7 @@ pub(super) fn build_ui_instances(
     // attachment, distorting dash spacing and node borders at fractional zoom.
     let mut designations = std::collections::HashMap::new();
     if !state.match_state.input.planning.active()
-        && let Some(runtime) = state.match_state.sim_runtime.as_ref()
+        && let Some(runtime) = state.match_state.sim_runtime.runtime()
     {
         let sim = &runtime.simulation;
         for (id, entity) in sim.entities().iter_sorted() {
@@ -1032,7 +1032,7 @@ pub(super) fn build_ui_instances(
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation),
         state.rules(),
         state
@@ -1055,7 +1055,7 @@ pub(super) fn build_ui_instances(
             state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .map(|rt| &rt.simulation),
             state.rules(),
             &cursor.selected,
@@ -1107,7 +1107,7 @@ pub(crate) fn tactical_world_viewport(
 fn build_beacon_instances(state: &AppState) -> Vec<Vec<SpriteInstance>> {
     let (Some(art), Some(runtime)) = (
         state.match_state.match_presentation.beacon_art.as_ref(),
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.runtime(),
     ) else {
         return Vec::new();
     };

@@ -245,7 +245,7 @@ pub(crate) fn hover_object_at_point(
 /// TacticalPick of a frame, whose target both the cursor's action and the
 /// hover health bar read.
 pub(crate) fn cursor_hover_object(state: &crate::app::AppState) -> Option<HoverObject> {
-    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     let owner = crate::app::input::commands::preferred_local_owner_name(state)?;
     let (world_x, world_y) = crate::app::match_runtime::sim_tick::screen_point_to_world(
         state,

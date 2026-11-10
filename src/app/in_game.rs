@@ -1,7 +1,7 @@
 //! Match-session focus, modal, return, quit and scenario-exit control.
 
 use super::{App, AppState, GameScreen, Instant, ModifiersState};
-use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
+use crate::app::match_runtime::sim_host::SimWrite;
 
 impl App {
     /// Return the live Scenario cursor and header to the multiplayer shell.
@@ -9,7 +9,7 @@ impl App {
         let gameplay_rng = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)
             .map(|simulation| {
                 (
@@ -70,7 +70,7 @@ impl App {
         if state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .is_some_and(|rt| rt.simulation.pending_network_wait())
         {
             crate::app::match_runtime::sim_tick::leave_network_wait(state);
@@ -150,7 +150,7 @@ impl App {
         let game_speed = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map_or(state.persistence.options_profile.game_speed, |runtime| {
                 runtime.simulation.session().game_options().game_speed
             });
@@ -224,7 +224,7 @@ impl App {
         let Some(sim) = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)
         else {
             return false;
@@ -241,7 +241,7 @@ impl App {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .is_some_and(|rt| rt.simulation.pending_outcome_wait().is_some())
     }
 
@@ -482,7 +482,7 @@ impl App {
         let sim = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|runtime| &runtime.simulation);
         let latch = Self::state_machine_admission(
             state.match_state.session_mode().is_nonzero(),
@@ -644,7 +644,7 @@ impl App {
             state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .map(|rt| &rt.simulation)
                 .and_then(|sim| sim.interner().get(owner))
         });
@@ -731,7 +731,7 @@ impl App {
         let eligible = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .is_some_and(|runtime| runtime.simulation.session().game_mode_nonzero())
             && state.match_state.live_network.is_none()
             && !crate::app::cooperative_round::applies(state)

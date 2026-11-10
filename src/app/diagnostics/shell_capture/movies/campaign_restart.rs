@@ -3,7 +3,7 @@
 //! defeat through the Lose movie to the `TXT_TO_REPLAY` box (optionally Yes),
 //! and the sidebar Briefing tab's mission restate 0x10C over that frame.
 use super::*;
-use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
+use crate::app::match_runtime::sim_host::SimWrite;
 use crate::ui::shell::abort::AbortButton;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -150,7 +150,7 @@ impl Mission {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("no live campaign runtime")?
             .simulation;
         Ok(Self {
@@ -1090,7 +1090,7 @@ impl RestartCapture {
                         "the restart did not reinstall the same mission"
                     );
                     if self.target == RestartTarget::AlternateHomeVictory {
-                        let sim = &state.match_state.sim_runtime.as_ref().unwrap().simulation;
+                        let sim = &state.match_state.sim_runtime.runtime().unwrap().simulation;
                         ensure!(
                             sim.session()
                                 .campaign_restart_carry_over()
@@ -1128,7 +1128,7 @@ impl RestartCapture {
                         state
                             .match_state
                             .sim_runtime
-                            .as_ref()
+                            .runtime()
                             .is_some_and(|runtime| runtime.simulation.session().tick() == 0),
                         "restarted first live frame passed tick zero"
                     );
@@ -1153,7 +1153,7 @@ impl RestartCapture {
         Ok(state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("live campaign runtime")?
             .simulation
             .session()
