@@ -42,15 +42,27 @@ jobs:
           release=(release/*)
           python -m tools.update_test run --key update-programs/key/signing-key.pem \
             --release "${release[0]}" --version "$VERSION" --program "update-programs/older/vera20k.exe"
-      - name: Update the newest release to this dev build
+      - name: What the first step left
+        shell: bash
+        run: |
+          ls -laR "$LOCALAPPDATA/VERA20k" || true
+          ls -la "$APPDATA/Microsoft/Windows/Start Menu/Programs" | grep -i vera || true
+          reg query 'HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\{9C9BFC32-A7B8-48ED-A428-72333354BDDB}_is1' || true
+      - name: Update the newest release to this dev build, watched
         shell: bash
         timeout-minutes: 8
         env:
           VERSION: '0.3.0'
         run: |
-          set -euo pipefail
+          set -uo pipefail
           release=(release/*)
           installed=(update-programs/newest-release/installer/*)
-          python -m tools.update_test run --key update-programs/key/signing-key.pem \
-            --release "${release[0]}" --installed "${installed[0]}" --version "$VERSION" \
-            --program "update-programs/newest-release/vera20k.exe" --scenario update
+          (
+            python -u -m tools.update_test run --key update-programs/key/signing-key.pem \
+              --release "${release[0]}" --installed "${installed[0]}" --version "$VERSION" \
+              --program "update-programs/newest-release/vera20k.exe" --scenario update
+            echo "### harness exit $?"
+            touch step2.done
+          ) &
+          pwsh -NoProfile -File .github/diag/watch.ps1
+          wait
