@@ -156,8 +156,8 @@ Parts=Credits,Radar,Middle,Cameos,Power
 Parts=Repair,Tabs
 ```
 
-- The order is the order they are drawn in: where two parts overlap, the later one is on
-  top.
+- The order is the order they are drawn in: where two panels overlap, the later one is
+  on top. Buttons and tabs are always in front of the panels.
 - `Parts=None` keeps a part but empties it: `[Mine.Top]` with `Parts=None` draws the
   strip without its buttons.
 - A list can only name the parts the original holds there. `Sell` can't move from
