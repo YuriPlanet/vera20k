@@ -1075,7 +1075,13 @@ pub(crate) fn state0_ground(
     }
     let frame = host.binary_frame();
     host.set_speed_fraction(ONE);
-    // Takeoff keeps the body's heading, so the link-time 0x4000 never leaks.
+    // `0x0054B9AA..0x0054B9C1`: the locomotor facing takes the body's
+    // (UpdateFacing). `Process` has already run Update this frame
+    // (`0x0054AEF0`, before this dispatch at `0x0054B046`), and Update copies
+    // the locomotor facing onto the body (`0x0054D67B..0x0054D692`). So the
+    // body first snaps to the locomotor's heading: the link-time `0x4000` on
+    // the first take-off, later the heading of the last flight, whatever
+    // `Do_Turn` (`0x0054B6E0`, body only) wrote on the ground since.
     flight.facing.snap(host.body_facing(), frame);
     flight.current_speed_bits = 0;
     flight.target_speed_bits = 0;
