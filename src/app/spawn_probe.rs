@@ -171,20 +171,23 @@ pub(crate) fn build_identity() -> BuildIdentity {
 
 /// Load the process sources as startup does (config INI roots, personal
 /// rules, neutral archives) and report them; `map` is a path to the
-/// launcher's map file.
+/// launcher's map file, and `mod_dir` the folder of the mod the launch would
+/// read (`mods::launch_dir`).
 pub(crate) fn probe(
     config: &crate::util::config::GameConfig,
     personal_rules: crate::rules::personal_rules::PersonalRules,
     media_archive_mode: MediaArchiveMode,
     map: Option<&str>,
+    mod_dir: Option<std::path::PathBuf>,
 ) -> Result<ProbeReport> {
     let root = &config.paths.ra2_dir;
-    let mut assets = AssetManager::new(root, media_archive_mode)
+    let mut assets = AssetManager::with_mod(root, mod_dir.as_deref(), media_archive_mode)
         .and_then(|assets| assets.with_ini_roots(&config.ini))
         .context("could not load the game archives")?;
     let mut process =
         ProcessAssets::new_with_ini_config(media_archive_mode, true, config.ini.clone())
-            .with_personal_rules(personal_rules);
+            .with_personal_rules(personal_rules)
+            .with_mod_dir(mod_dir);
     let (startup_rules, projection) = process
         .initialize_sources_if_needed(&assets)
         .map_err(anyhow::Error::msg)
@@ -403,9 +406,14 @@ fn color_names(
 }
 
 /// Desktop `--probe [--ra2-dir DIR] [--map PATH]`: the game folder comes from
-/// config.toml as for play unless `--ra2-dir` names one.
+/// config.toml as for play unless `--ra2-dir` names one, and the mod from
+/// config.toml unless `--mod` or `--no-mod` chooses.
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-pub(crate) fn run_desktop(ra2_dir: Option<&Path>, map: Option<&Path>) -> Result<ProbeReport> {
+pub(crate) fn run_desktop(
+    ra2_dir: Option<&Path>,
+    map: Option<&Path>,
+    mod_switch: Option<&crate::app::mods::ModSwitch>,
+) -> Result<ProbeReport> {
     let config = crate::util::config::GameConfig::load()?;
     let config = match ra2_dir {
         Some(directory) => config.with_retail_directory(
@@ -430,6 +438,7 @@ pub(crate) fn run_desktop(ra2_dir: Option<&Path>, map: Option<&Path>) -> Result<
         personal_rules,
         crate::app::frontend::startup_options::RetailStartupOptions::default().media_archive_mode,
         map.as_deref(),
+        crate::app::mods::launch_dir(&config.paths, mod_switch),
     )
 }
 

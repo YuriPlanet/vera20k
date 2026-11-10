@@ -10,7 +10,8 @@
 ; folder as ra2_dir and the install folder as settings_dir. Shortcuts start the
 ; program in its install folder, so logs, saves, replays and its VERA.INI stay
 ; there and never touch the game folder, which may be read-only or shared with
-; the original game.
+; the original game. It makes the Mods folder there too, where a player puts
+; their mods (docs/modding.md), with a Start menu shortcut to it.
 ;
 ; A silent install takes the game folder from /GAMEDIR=<folder>, or else uses
 ; the one it would offer.
@@ -126,7 +127,8 @@ english.ReadyChanges=Other changes:
 english.ReadyConfigNew=Create config.toml with the selected game folder.
 english.ReadyConfigExisting=Keep config.toml settings; update the game-folder path.
 english.ReadyExtras=Add an Inno Setup uninstaller and a Start menu shortcut.
-english.ReadyPreserved=Existing saves, replays and personal settings are kept.
+english.ReadyMods=Create a Mods folder for your mods, with a Start menu shortcut to it.
+english.ReadyPreserved=Existing saves, replays, mods and personal settings are kept.
 chinesesimplified.GameDirCaption=《尤里的复仇》文件夹
 chinesesimplified.GameDirDescription=《尤里的复仇》安装在哪里？
 chinesesimplified.GameDirSubCaption=请选择一个安装，或浏览其他文件夹。
@@ -173,7 +175,8 @@ chinesesimplified.ReadyChanges=其他更改：
 chinesesimplified.ReadyConfigNew=创建 config.toml，记录所选游戏文件夹。
 chinesesimplified.ReadyConfigExisting=保留 config.toml 中的设置，仅更新游戏文件夹路径。
 chinesesimplified.ReadyExtras=添加 Inno Setup 卸载程序和开始菜单快捷方式。
-chinesesimplified.ReadyPreserved=保留已有的存档、录像和个人设置。
+chinesesimplified.ReadyMods=创建用于存放模组的 Mods 文件夹，并在开始菜单添加它的快捷方式。
+chinesesimplified.ReadyPreserved=保留已有的存档、录像、模组和个人设置。
 
 [Files]
 Source: "vera20k.exe"; DestDir: "{app}"; Flags: ignoreversion
@@ -185,11 +188,17 @@ Source: "THIRD_PARTY_LICENSES.html"; DestDir: "{app}"; Flags: ignoreversion
 ; files removes it from the game until the next update.
 Source: "languages\*"; DestDir: "{app}\languages"; Flags: ignoreversion
 
+[Dirs]
+; Where a player puts their mods, one folder each. The game makes it too, for
+; the systems without this installer. It is the player's: an uninstall keeps it.
+Name: "{app}\Mods"; Flags: uninsneveruninstall
+
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Icons]
 Name: "{autoprograms}\VERA20K"; Filename: "{app}\vera20k.exe"; WorkingDir: "{app}"
+Name: "{autoprograms}\VERA20K Mods"; Filename: "{app}\Mods"
 Name: "{autodesktop}\VERA20K"; Filename: "{app}\vera20k.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [InstallDelete]
@@ -864,7 +873,8 @@ begin
   else
     ConfigInfo := CustomMessage('ReadyConfigNew');
   AppendReadySection(Result, CustomMessage('ReadyChanges') + NewLine +
-    Space + ConfigInfo + NewLine + Space + CustomMessage('ReadyExtras'), NewLine);
+    Space + ConfigInfo + NewLine + Space + CustomMessage('ReadyExtras') + NewLine +
+    Space + CustomMessage('ReadyMods'), NewLine);
   AppendReadySection(Result, MemoTasksInfo, NewLine);
   AppendReadySection(Result, CustomMessage('ReadyPreserved') + NewLine +
     CustomMessage('GameInstallUntouched'), NewLine);
