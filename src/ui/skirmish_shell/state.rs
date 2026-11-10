@@ -38,7 +38,7 @@ pub use opponent_scroll::{
 pub use choose_map::{
     ChooseMapContext, ChooseMapListPress, ChooseMapModalState, ChooseMapPrompt,
     ChooseMapPromptAnswer, ChooseMapPromptButton, ChooseMapPromptKind, ChooseMapSelection,
-    ONLINE_MAPS_ROW, SEARCH_MAX_CHARS, ai_rows_beyond_limit_occupied,
+    FAVORITES_ROW, ONLINE_MAPS_ROW, SEARCH_MAX_CHARS, favorite_key, ai_rows_beyond_limit_occupied,
 };
 pub(crate) use player_name::CountryMenuCatalog;
 pub use player_name::{

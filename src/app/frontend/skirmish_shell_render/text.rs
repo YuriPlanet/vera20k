@@ -1211,15 +1211,18 @@ pub(super) fn push_choose_map_modal_text_draws(
                 ChooseMapModalButton::Cancel0x5c0,
             ),
             (
-                // VERA: under Online Maps this button stars the map.
-                match modal.favorite_button(state.frontend.scenario_catalog.records()) {
-                    Some(true) => tr("VERA:RemoveFavorite"),
-                    Some(false) => tr("VERA:AddFavorite"),
-                    None if modal.online_maps_selected() => tr("VERA:AddFavorite"),
-                    None => localized_label(state, "GUI:CreateRandomMap", "Create Random Map"),
-                },
+                localized_label(state, "GUI:CreateRandomMap", "Create Random Map"),
                 layout.create_random_map_button,
                 ChooseMapModalButton::CreateRandomMap0x583,
+            ),
+            (
+                // VERA: stars the highlighted map, or takes its star away.
+                match modal.favorite_button(state.frontend.scenario_catalog.records()) {
+                    Some(true) => tr("VERA:RemoveFavorite"),
+                    _ => tr("VERA:AddFavorite"),
+                },
+                layout.favorite_button,
+                ChooseMapModalButton::Favorite,
             ),
         ] {
             let disabled = !modal.button_enabled(button);
@@ -1263,6 +1266,8 @@ pub(super) fn push_choose_map_modal_text_draws(
     {
         let label = if *mode_id == crate::ui::skirmish_shell::ONLINE_MAPS_ROW {
             tr("VERA:OnlineMaps")
+        } else if *mode_id == crate::ui::skirmish_shell::FAVORITES_ROW {
+            tr("VERA:Favorites")
         } else {
             let Some(mode) = mode_by_id(&state.frontend.skirmish_modes, *mode_id) else {
                 continue;
@@ -1303,8 +1308,9 @@ pub(super) fn push_choose_map_modal_text_draws(
                 .records()
                 .get(*record_idx)
                 .map(|record| {
-                    // Starred online maps carry a star.
-                    if modal.is_favorite(record) {
+                    // Starred maps carry a star, except under Favorites,
+                    // where every map is one.
+                    if !modal.favorites_selected() && modal.is_favorite(record) {
                         format!("* {}", record.display_name)
                     } else {
                         record.display_name.clone()
@@ -1331,13 +1337,23 @@ pub(super) fn push_choose_map_modal_text_draws(
             scale.factor(),
         );
     }
-    // VERA: an empty Online Maps list says why, wrapped down the list.
-    if modal.online_maps_selected() && modal.filtered_record_indices.is_empty() {
+    // VERA: an empty Online Maps or Favorites list says why, wrapped down
+    // the list.
+    let empty = if !modal.filtered_record_indices.is_empty() {
+        None
+    } else if modal.online_maps_selected() {
+        Some(crate::app::map_library::empty_online_maps_text(state))
+    } else if modal.favorites_selected() && modal.search.is_empty() {
+        Some(tr("VERA:NoFavorites"))
+    } else {
+        None
+    };
+    if let Some(empty) = empty {
         let row = geometry.row(0);
         push_text_draw(
             out,
             state,
-            &crate::app::map_library::empty_online_maps_text(state),
+            &empty,
             rect_to_text_rect(RectPx::new(
                 row.x + list_text_inset(scale),
                 row.y,

@@ -259,6 +259,8 @@ pub fn status_help_key_for_choose_map_hover(target: ChooseMapHoverTarget) -> Opt
         ChooseMapHoverTarget::Button(ChooseMapModalButton::Cancel0x5c0) => {
             Some("STT:ScenarioButtonCancel")
         }
+        // VERA's button has no status help.
+        ChooseMapHoverTarget::Button(ChooseMapModalButton::Favorite) => None,
     }
 }
 

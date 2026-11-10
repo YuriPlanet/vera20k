@@ -308,6 +308,7 @@ pub(super) fn push_choose_map_modal_control_instances(
             layout.create_random_map_button,
             ChooseMapModalButton::CreateRandomMap0x583,
         ),
+        (layout.favorite_button, ChooseMapModalButton::Favorite),
     ] {
         push_right_panel_button_shp(
             out,
