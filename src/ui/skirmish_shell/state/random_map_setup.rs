@@ -267,6 +267,9 @@ pub struct RandomMapSetupModalState {
     pub advanced_values: Option<[i32; 7]>,
     /// An Advanced slider holding the mouse since a press on it.
     pub advanced_hold: Option<TrackbarHold<AdvancedField>>,
+    /// VERA extension: the generated map on show was written as a map file;
+    /// Export Map rests until the next Generate.
+    pub exported: bool,
 }
 
 /// The Advanced sliders' range, the fields' own clamp (`RmgOptions::normalize`).
@@ -329,6 +332,7 @@ impl RandomMapSetupModalState {
             advanced: false,
             advanced_values: None,
             advanced_hold: None,
+            exported: false,
         };
         modal.normalize_options();
         modal
@@ -389,6 +393,7 @@ impl RandomMapSetupModalState {
                 self.extended && matches!(self.options.map_type, 3 | 4)
             }
             C::AdvancedToggle | C::Advanced(_) => self.extended,
+            C::ExportMap => self.extended && self.generated && !self.exported,
             _ => true,
         }
     }
@@ -718,6 +723,7 @@ impl RandomMapSetupModalState {
     pub fn finish_generate(&mut self, preview: Option<PreviewImage>) {
         self.generating = false;
         self.generated = true;
+        self.exported = false;
         self.saved_seed_buttons_enabled = true;
         if preview.is_some() {
             self.preview_generation = self.preview_generation.wrapping_add(1);

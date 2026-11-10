@@ -788,6 +788,71 @@ mod tests {
         }
     }
 
+    /// VERA extension: the exported `.yrm` text of a generated map parses
+    /// back to the same cells, overlays, objects and starts.
+    #[test]
+    fn exported_map_text_reads_back_the_generated_map() {
+        let generated = generate_map(
+            &options(1, 0),
+            &RmgSettings::default(),
+            &resolved(),
+            &one_by_one(),
+            &GenerationObjects::tech(&[]),
+        );
+        let map = &generated.map_file;
+        let text = crate::map::map_export::multiplayer_map_text(map, "Exported", 2, 4);
+        let read = crate::map::map_file::MapFile::from_bytes(text.as_bytes()).expect("parses");
+
+        assert_eq!(read.basic.name.as_deref(), Some("Exported"));
+        assert_eq!(read.header.theater, map.header.theater);
+        assert_eq!(
+            (read.header.width, read.header.local_width),
+            (map.header.width, map.header.local_width)
+        );
+        let cells = |m: &crate::map::map_file::MapFile| {
+            let mut cells: Vec<_> = m
+                .cells
+                .iter()
+                .map(|c| (c.rx, c.ry, c.tile_index, c.sub_tile, c.z))
+                .collect();
+            cells.sort_unstable();
+            cells
+        };
+        assert!(!map.cells.is_empty());
+        assert_eq!(cells(&read), cells(map));
+        let overlays = |m: &crate::map::map_file::MapFile| {
+            let mut overlays: Vec<_> = m
+                .overlays
+                .iter()
+                .map(|o| (o.rx, o.ry, o.overlay_id, o.frame))
+                .collect();
+            overlays.sort_unstable();
+            overlays
+        };
+        assert!(!map.overlays.is_empty());
+        assert_eq!(overlays(&read), overlays(map));
+        let objects = |m: &crate::map::map_file::MapFile| {
+            let mut objects: Vec<_> = m
+                .entities
+                .iter()
+                .map(|e| (e.type_id.clone(), e.cell_x, e.cell_y, e.facing))
+                .chain(
+                    m.terrain_objects
+                        .iter()
+                        .map(|t| (t.name.clone(), t.rx, t.ry, 0)),
+                )
+                .collect();
+            objects.sort_unstable();
+            objects
+        };
+        assert_eq!(objects(&read), objects(map));
+        assert_eq!(read.waypoints.len(), generated.start_waypoints.len());
+        for (slot, x, y) in &generated.start_waypoints {
+            let waypoint = &read.waypoints[&u32::from(*slot)];
+            assert_eq!((waypoint.rx, waypoint.ry), (*x, *y));
+        }
+    }
+
     #[test]
     fn generate_map_is_deterministic() {
         let resolved = resolved();

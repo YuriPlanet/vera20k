@@ -1040,10 +1040,29 @@ pub(super) fn push_random_map_setup_modal_text_draws(
                 RandomMapSetupControl::AdvancedToggle,
             )
         },
+        if modal.exported {
+            (
+                "VERA:RandomMapExported",
+                "Map Exported",
+                layout.export,
+                RandomMapSetupControl::ExportMap,
+            )
+        } else {
+            (
+                "VERA:RandomMapExport",
+                "Export Map",
+                layout.export,
+                RandomMapSetupControl::ExportMap,
+            )
+        },
     ]
     .into_iter()
     .filter(|(_, _, _, control)| {
-        !sliding && (*control != RandomMapSetupControl::AdvancedToggle || modal.extended)
+        let vera = matches!(
+            control,
+            RandomMapSetupControl::AdvancedToggle | RandomMapSetupControl::ExportMap
+        );
+        !sliding && (!vera || modal.extended)
     }) {
         push_text_draw(
             out,

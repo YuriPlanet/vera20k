@@ -505,6 +505,12 @@ impl RandomMapGenerationRetention {
         self.candidate = Some(generated);
     }
 
+    /// VERA extension: the generated map the open setup dialog shows, for
+    /// Export Map.
+    pub(super) fn candidate(&self) -> Option<&crate::map::rmg::GeneratedMap> {
+        self.candidate.as_ref()
+    }
+
     /// The last Generate's start header (`0x0058B820`'s globals), which a
     /// random map's preview numbers its starts from.
     pub(crate) fn generated_header(&self) -> crate::map::preview::ScenarioStartStaging {
@@ -1053,6 +1059,57 @@ fn draws_preview(point: crate::map::rmg::build::GenerationPoint) -> bool {
 impl App {
     /// The folder of `RandMap.Sed`, `RandMap.img` and the saved seeds
     /// (`map::source::random_map_dir`), never the game folder.
+    /// VERA extension: write the dialog's generated map beside the game's own
+    /// maps as `rmap<seed>.yrm` (a numbered name when that one is taken), so
+    /// Choose Map lists it. False when there is no map, no game folder, or the
+    /// write fails.
+    fn export_generated_map(state: &AppState) -> bool {
+        let (Some(generated), Some(config)) = (
+            state.frontend.random_map_retention.candidate(),
+            state.platform.game_config.as_ref(),
+        ) else {
+            return false;
+        };
+        let seed = state
+            .frontend
+            .skirmish_shell_state
+            .random_map_setup_modal
+            .as_ref()
+            .map_or(0, |modal| modal.options.seed_u16());
+        let dir = &config.paths.ra2_dir;
+        let Some((path, number)) = (1..1000)
+            .map(|number| {
+                let suffix = if number == 1 {
+                    String::new()
+                } else {
+                    format!("_{number}")
+                };
+                (dir.join(format!("rmap{seed}{suffix}.yrm")), number)
+            })
+            .find(|(path, _)| !path.exists())
+        else {
+            return false;
+        };
+        let name = if number == 1 {
+            format!("Random Map {seed}")
+        } else {
+            format!("Random Map {seed} ({number})")
+        };
+        let players = generated.start_waypoints.len().max(2) as u32;
+        let text =
+            crate::map::map_export::multiplayer_map_text(&generated.map_file, &name, 2, players);
+        match crate::util::file_system::write(&path, text) {
+            Ok(()) => {
+                log::info!("random map: exported {}", path.display());
+                true
+            }
+            Err(err) => {
+                log::warn!("random map: could not export {}: {err}", path.display());
+                false
+            }
+        }
+    }
+
     pub(super) fn random_map_dir(state: &AppState) -> Option<std::path::PathBuf> {
         state
             .platform
@@ -1731,6 +1788,7 @@ impl App {
         let mut generate_requested = false;
         let mut accept_requested = false;
         let mut open_browser: Option<SavedSeedMode> = None;
+        let mut export_requested = false;
         let mut main =
             crate::ui::skirmish_shell::MainRngRanged(crate::app::state::process_main_draws(
                 state.match_state.sim_runtime.as_ref(),
@@ -1745,6 +1803,7 @@ impl App {
             }
             // The sliders act on press and never arm a release.
             Control::Advanced(_) => {}
+            Control::ExportMap => export_requested = modal.is_enabled(Control::ExportMap),
             Control::Generate0x620 => {
                 modal.reroll_derived_for_generate(&settings, &mut main);
                 modal.begin_generate();
@@ -1785,6 +1844,18 @@ impl App {
 
         if let Some(mode) = open_browser {
             Self::open_saved_seed_browser(state, mode);
+            return true;
+        }
+        if export_requested {
+            let exported = Self::export_generated_map(state);
+            if let Some(modal) = state
+                .frontend
+                .skirmish_shell_state
+                .random_map_setup_modal
+                .as_mut()
+            {
+                modal.exported = exported;
+            }
             return true;
         }
         if generate_requested {
