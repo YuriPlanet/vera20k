@@ -1351,7 +1351,8 @@ pub(super) fn push_choose_map_modal_text_draws(
         );
     }
     // VERA: the search box over the map list; typing anywhere fills it. An
-    // empty box says so in the disabled colour.
+    // empty box says so in the label colour: the disabled red does not read
+    // over the chooser's background.
     let field = scale.derive_rect(layout.map_search, |rect| {
         RectPx::new(
             rect.x + LIST_TEXT_INSET,
@@ -1363,7 +1364,7 @@ pub(super) fn push_choose_map_modal_text_draws(
     let hint;
     let (search, rgb) = if modal.search.is_empty() {
         hint = tr("VERA:MapSearchHint");
-        (&*hint, SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F)
+        (&*hint, SHELL_LABEL_TEXT_RGB)
     } else {
         let box_w = scale.base_rect(layout.map_search).w;
         let (tail, _) = map_search_tail(&state.renderer.bit_font, &modal.search, box_w);
