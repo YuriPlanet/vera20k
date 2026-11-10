@@ -590,6 +590,15 @@ impl AnimObject {
         self.runtime.current_frame = frame;
     }
 
+    /// A turret building aims its slot-9 anim (`0x004466C5..0x004466CB`,
+    /// `0x00451286..0x0045128C`, `0x0044FE17..0x0044FE1D`): it writes the
+    /// frame (`+0xAC`) and a zero frame step (`+0xC4`), so the stage timer
+    /// keeps running without moving the frame.
+    pub(crate) fn hold_at_frame(&mut self, frame: i32) {
+        self.runtime.current_frame = frame;
+        self.runtime.frame_step = 0;
+    }
+
     /// Hold the current loop until the owning effect explicitly destroys it.
     /// Ares attached animation1005872F stores byte255 at Anim+195.
     pub(crate) fn hold_loops(&mut self) {
