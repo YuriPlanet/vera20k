@@ -97,8 +97,7 @@ Every `HasSpotlight=` Techno gets its BuildingLight at TechnoClass::Unlimbo
   0x514DFE); NoSelfGuardArea (0x51E748: the healer's self arm it skips is
   not ported); the Occupier+VehicleThief expiry
   (0x4D9A83); the infantry DamageSparks parse order (0x5240BD).
-- Dormant in retail: flying carriers (0x414338, 0x6B783B) and paradropped
-  vehicles (0x415CA6).
+- Dormant in retail: flying carriers (0x414338, 0x6B783B).
 - Presentation and audio: the radial indicators of non-buildings
   (0x41BE80; the building GetSensorRange override 0x4566B0 is ported), the
   power-off marker (0x6F526C, whose wrench gate is ported in
@@ -176,7 +175,7 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 | `413FFA` | AircraftClass_Init_TurretROT | `10048AC0` | ported: Aircraft secondary facing TurretROT |
 | `414338` | AircraftClass_Put_SpawnHigh | `10048C10` | residual: spawned aircraft keep their launch Z (flying carriers) |
 | `415544` | AircraftClass_Mi_Unload_Blocked | `10048B30` | ported: [ares-transports.md](ares-transports.md) |
-| `415CA6` | AircraftClass_Paradrop_Units | `10048BA0` | residual: paradropped vehicles fall from the cell centre |
+| `415CA6` | AircraftClass_Paradrop_Units | `10048BA0` | ported: `sim::aircraft::drop_payload` ([ares-country-paradrop.md](ares-country-paradrop.md)) |
 | `415DF6` | AircraftClass_Paradrop_Carryall | `10048B80` | ported: [ares-transports.md](ares-transports.md) |
 | `41668B` | AircraftClass_ReceiveDamage | `10048C50` | ported earlier |
 | `416C3A` | AircraftClass_Carryall_Unload_Facing | `10048920` | ported: [ares-transports.md](ares-transports.md) |

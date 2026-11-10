@@ -20,7 +20,7 @@ on purpose are in [ares-skipped-hooks.md](ares-skipped-hooks.md).
   [ares-attach-effect.md](ares-attach-effect.md)). `ares-src/report/ini_coverage.tsv` is
   not exhaustive; use the key scan under Tools.
 - Hooks: Ares 3.0 installs 1448 (`report/hooks.tsv` also lists 234 0.A hooks that 3.0
-  removed). The engine source cites 982; the chain docs give 392 more a disposition
+  removed). The engine source cites 991; the chain docs give 383 more a disposition
   (ported elsewhere, equivalent, not applicable, skipped or residual); 74 are
   untouched, listed at the end. A residual disposition is still a gap: every
   residual in the chain docs is gathered on this page, the gameplay ones under
