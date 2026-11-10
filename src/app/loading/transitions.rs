@@ -85,6 +85,7 @@ pub(crate) fn fallback_map_load_result() -> init::MapLoadResult {
             bridge_atlas: None,
             sidebar_cameo_atlas: None,
             sidebar_chrome: None,
+            match_layouts: crate::ui::match_layout::MatchLayoutFile::none(),
             #[cfg(feature = "phobos")]
             sw_sidebar_ui: crate::rules::phobos_sw_sidebar::SuperWeaponSidebarUi::default(),
             #[cfg(feature = "phobos")]
@@ -217,6 +218,7 @@ pub(crate) fn install_world_presentation(
     state.match_state.match_presentation.bridge_atlas = assets.bridge_atlas;
     state.match_state.match_presentation.sidebar_cameo_atlas = assets.sidebar_cameo_atlas;
     state.match_state.match_presentation.sidebar_chrome = assets.sidebar_chrome;
+    state.match_state.match_presentation.match_layouts = assets.match_layouts;
     #[cfg(feature = "phobos")]
     {
         state
@@ -700,6 +702,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         message_list.set_width(tactical_width as i32);
     }
     state.match_state.match_presentation.message_list = message_list;
+    crate::app::input::messages::post_layout_problem(state);
     state.match_state.match_presentation.chat = Default::default();
     // Clear_Scene6851F0 -> 534450 resets BeaconManagerClass (53499B).
     // Display Init_Clear4A88C0 clears +11B0..+11B2, not beacon mode +11B4.

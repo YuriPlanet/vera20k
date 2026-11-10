@@ -17,6 +17,7 @@ pub mod game_screen;
 pub(crate) mod lan_shell;
 pub mod main_menu_dialogs;
 pub mod main_menu_shell;
+pub mod match_layout;
 pub mod messages;
 pub mod movies_credits_shell;
 pub(crate) mod multiplayer_setup;

@@ -60,4 +60,5 @@ simulation, session and network command owners.
 - [Colour-vision filter](color-vision-config.md): the `[VERA] ColorVisionMode=` whole-viewport daltonization option.
 - [End-game screens](ini-end-game-screens.md): the verdict card, its theme and the score page's own art.
 - [Health-strip modes](health-bars.md): the `[VERA] HealthBars=` client option.
+- [Interface layout](interface-layout.md): `veraui.ini`, a mod's own places for the sidebar's parts.
 - [Terrain deformation](terrain-deformation.md): the Options box that lets explosions dent the ground and nukes leave craters.

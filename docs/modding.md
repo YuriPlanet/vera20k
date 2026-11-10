@@ -28,7 +28,10 @@ here, and a mod that changes the program doesn't.
 
 **Only partly:**
 
-- Menus and the sidebar. You can replace their pictures, but you can't move things around.
+- Menus. You can replace their pictures, but you can't move things around.
+- The sidebar. You can replace its pictures and move its parts with an
+  [interface layout](interface-layout.md). You can't yet add parts, leave parts out or
+  put the sidebar on another edge.
 - Ares and Phobos. Only some of their keys work, and only in a build you make yourself.
   See [More detail](#more-detail).
 - Big conversions such as Mental Omega. They depend on DLL features, so they don't work
@@ -74,6 +77,7 @@ This is your Red Alert 2: Yuri's Revenge folder, the one with the `.mix` files i
 | A file named the same as a game file, such as `rulesmd.ini` or a `.shp` | Replaces the game's copy. It must be directly in the folder, not in a subfolder. |
 | An archive named `expandmd50.mix` | Replaces the game's copies of the files inside it. The number can be 00 to 99, and higher numbers win. Pick one that no other file uses. |
 | `.yrm` files | Adds your maps to the map list. |
+| `veraui.ini` | Moves the parts of the sidebar. See [interface layout](interface-layout.md). |
 
 Don't change your real game. Copy the whole folder, then open `config.toml` and change
 the `ra2_dir` line to the copy. Use forward slashes, even on Windows. With backslashes
@@ -145,8 +149,8 @@ VERA20k adds two things. Open the map in a text editor to set them:
 ## Playing with others
 
 A match starts only if everyone has the same VERA20k version and build, the same map, and
-the same `rulesmd.ini`, `artmd.ini`, `aimd.ini` and `VERARULES.INI`. Pictures and sounds
-aren't compared, so give everyone the same mod files. Players who don't have your map are
+the same `rulesmd.ini`, `artmd.ini`, `aimd.ini` and `VERARULES.INI`. Pictures, sounds and
+`veraui.ini` aren't compared, so give everyone the same mod files. Players who don't have your map are
 asked whether to download it when they join your online room.
 
 Quick Match pairs you with anyone on the same VERA20k version, so use it with an unchanged
@@ -166,6 +170,7 @@ in `VERARULES.INI`.
 
 - [Personal rules](personal-rules.md): everything about `VERARULES.INI`.
 - [INI profiles](ini-roots.md): use your own rules, art and AI files under other names.
+- [Interface layout](interface-layout.md): move the parts of the sidebar with `veraui.ini`.
 - [Ares](ares.md), [Phobos](phobos.md), [NPatch](npatch.md) and [VeraX](verax.md): what
   each extension covers and how to build VERA20k with it. The official downloads don't
   include them, and no INI file can add them.

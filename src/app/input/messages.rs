@@ -913,6 +913,23 @@ pub(crate) fn post_match_speed(state: &mut AppState, text: &str) {
     post_grey_row(state, text, false, false);
 }
 
+/// VERA: a match whose `veraui.ini` had lines the game could not use says so
+/// once, naming the first; the log lists them all.
+pub(crate) fn post_layout_problem(state: &mut AppState) {
+    let Some(place) = state
+        .match_state
+        .match_presentation
+        .match_layouts
+        .problems()
+        .first()
+        .map(crate::ui::match_layout::LayoutProblem::place)
+    else {
+        return;
+    };
+    let text = crate::i18n::tr_fill("VERA:LayoutFileProblem", &[("where", &place)]);
+    post_grey_row(state, &text, false, false);
+}
+
 pub(super) fn post_command_backpressure(state: &mut AppState) {
     post_grey_row(
         state,

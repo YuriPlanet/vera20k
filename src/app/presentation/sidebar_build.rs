@@ -69,19 +69,39 @@ pub fn build_sidebar_chrome_instances_for_layout(
 ) -> Vec<SpriteInstance> {
     let mut inst = Vec::new();
     let d = 0.00048;
-    let cx = layout.sidebar_x;
     // RadarClass::Draw 653100 and DrawCreditsSHPBackground 6D0E60.
     if let Some(top) = atlas.top_strip_sidebar {
-        push_chrome(&mut inst, top, cx, 16.0, d, camera_offset);
+        push_chrome(&mut inst, top, layout.top_x, layout.top_y, d, camera_offset);
     }
     if let Some(credits) = atlas.top_strip_thin {
-        push_chrome(&mut inst, credits, cx, 0.0, d, camera_offset);
+        push_chrome(
+            &mut inst,
+            credits,
+            layout.credits_x,
+            layout.credits_y,
+            d,
+            camera_offset,
+        );
     }
 
     if static_radar_fallback {
-        push_chrome(&mut inst, atlas.radar, cx, layout.radar_y, d, camera_offset);
+        push_chrome(
+            &mut inst,
+            atlas.radar,
+            layout.radar_x,
+            layout.radar_y,
+            d,
+            camera_offset,
+        );
     }
-    push_chrome(&mut inst, atlas.side1, cx, layout.side1_y, d, camera_offset);
+    push_chrome(
+        &mut inst,
+        atlas.side1,
+        layout.side1_x,
+        layout.side1_y,
+        d,
+        camera_offset,
+    );
     let td = d - 0.00001;
     for tab_btn in tabs {
         let idx = tab_btn.tab.tab_index();
@@ -101,6 +121,7 @@ pub fn build_sidebar_chrome_instances_for_layout(
     }
     // 6A6C30: row count is native capacity; pixel advance is SIDE2's
     // loaded canvas height. SIDE3 and ADDON follow the last actual tile.
+    let cx = layout.strip_x;
     for row in 0..layout.side2_tile_count {
         let y = layout.cameo_grid_top + row as f32 * atlas.side2.pixel_size[1];
         push_chrome(&mut inst, atlas.side2, cx, y, d, camera_offset);
@@ -222,7 +243,7 @@ fn render_power_bar(
     base_depth: f32,
 ) {
     let bar_x: f32 = layout.sidebar_x + spec.power_bar_x;
-    let bar_top: f32 = 227.0;
+    let bar_top: f32 = spec.power_bar_y;
     let tile_h: f32 = spec.power_bar_tile_height;
 
     if tile_h <= 0.0 || anim.max_segments() <= 0 {
