@@ -1041,16 +1041,12 @@ mod tests {
     }
 
     #[test]
-    fn the_sample_layout_reads_cleanly_and_swaps_the_buttons() {
+    fn the_sample_layout_reads_cleanly_and_does_what_it_says() {
         let file = MatchLayoutFile::from_bytes(
             crate::test_fixture::text("docs/examples/veraui.ini").as_bytes(),
         );
         assert!(file.problems().is_empty(), "{:?}", file.problems());
-        for (side, theme) in [
-            ("GDI", SidebarTheme::Allied),
-            ("Nod", SidebarTheme::Soviet),
-            ("ThirdSide", SidebarTheme::Yuri),
-        ] {
+        for (side, theme) in [("GDI", SidebarTheme::Allied), ("Nod", SidebarTheme::Soviet)] {
             let (_, stock) = sidebar(theme, None);
             let (_, view) = sidebar(theme, file.for_side(Some(side)));
             assert_eq!(
@@ -1069,5 +1065,10 @@ mod tests {
             reversed.reverse();
             assert_eq!(places(&view), reversed, "{side}");
         }
+        // Yuri's is wider, three cameos to a row, with an empty top strip.
+        let (spec, view) = sidebar_with(SidebarTheme::Yuri, file.for_side(Some("ThirdSide")), 4);
+        assert_eq!((view.panel_rect.w, spec.columns()), (232.0, 3));
+        assert_eq!(view.items[3].rect.x, view.items[0].rect.x);
+        assert!(spec.shows(SidebarPart::Top) && !spec.shows(SidebarPart::Options));
     }
 }
