@@ -33,7 +33,9 @@ here, and a mod that changes the program doesn't.
   [interface layout](interface-layout.md) put the sidebar on any edge, put the command
   bar on top or leave it out, move the sidebar's parts, leave parts out, change its
   size and its columns of build pictures, place the messages, timers, banner and
-  tooltips, and add buttons and text. You can't yet add other kinds of parts.
+  tooltips, and add buttons, text and more grids of build pictures. Players can drag
+  the parts in a match and keep their own layout. You can't yet add other kinds of
+  parts.
 - Ares and Phobos. Only some of their keys work, and only in a build you make yourself.
   See [More detail](#more-detail).
 - Big conversions such as Mental Omega. They depend on DLL features, so they don't work

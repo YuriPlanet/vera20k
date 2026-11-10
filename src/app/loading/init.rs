@@ -1497,7 +1497,9 @@ pub struct PresentationLoadAssets {
     pub sidebar_cameo_atlas: Option<SidebarCameoAtlas>,
     pub sidebar_chrome: Option<SidebarChromeSet>,
     /// The game folder's `veraui.ini`, read for this match.
-    pub match_layouts: crate::ui::match_layout::MatchLayoutFile,
+    /// The mod's `veraui.ini`, parsed; the match lays the player's own over
+    /// it (`presentation::player_layout`).
+    pub match_layout_ini: Option<crate::rules::ini_parser::IniFile>,
     #[cfg(feature = "phobos")]
     pub sw_sidebar_ui: crate::rules::phobos_sw_sidebar::SuperWeaponSidebarUi,
     /// Phobos `uimd.ini [Sidebar] CenterPauseMenuBackground`, read from the

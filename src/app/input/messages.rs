@@ -930,6 +930,17 @@ pub(crate) fn post_layout_problem(state: &mut AppState) {
     post_grey_row(state, &text, false, false);
 }
 
+/// Tell the player the layout edit mode is on and how to use it, or that it
+/// is off and what they moved is kept.
+pub(crate) fn post_layout_edit(state: &mut AppState, on: bool) {
+    let key = if on {
+        "VERA:LayoutEditHint"
+    } else {
+        "VERA:LayoutEditDone"
+    };
+    post_grey_row(state, &crate::i18n::tr(key), false, false);
+}
+
 pub(super) fn post_command_backpressure(state: &mut AppState) {
     post_grey_row(
         state,

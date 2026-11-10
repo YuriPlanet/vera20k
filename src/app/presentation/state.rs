@@ -194,8 +194,15 @@ pub(crate) struct MatchPresentationState {
     /// The side's sidebar geometry in sidebar pixels: the original's, with
     /// the numbers the side's `veraui.ini` layout changes.
     pub(crate) sidebar_layout_spec: SidebarChromeLayoutSpec,
-    /// The game folder's `veraui.ini` as this match read it.
+    /// The layouts this match uses: the mod's `veraui.ini` with the player's
+    /// own laid over it (`presentation::player_layout`).
     pub(crate) match_layouts: crate::ui::match_layout::MatchLayoutFile,
+    /// The mod's file as the loader parsed it.
+    pub(crate) mod_layout_ini: Option<crate::rules::ini_parser::IniFile>,
+    /// The player's own file's text, as read and as the edit mode changes it.
+    pub(crate) player_layout_text: Vec<u8>,
+    /// The layout edit mode, while it is on (`input::layout_edit`).
+    pub(crate) layout_edit: Option<crate::app::input::layout_edit::LayoutEditState>,
     /// The buttons and texts the local side's layout adds.
     pub(crate) added_parts: std::sync::Arc<[crate::ui::added_parts::AddedPart]>,
     /// The row each grid of build pictures the layout adds is scrolled to,

@@ -6,9 +6,11 @@ parts, leave parts out, change how many columns of build pictures it has and how
 is, place the messages, the timers, the banner and the tooltips, and add buttons and
 text of your own. Without the file the game looks exactly as the original does.
 
-This is part of a larger plan. Later versions will let players drag parts in the game
-and keep their own layout. The keys on this page keep their meaning when that comes, so
-a layout you write now keeps working.
+A player can also [drag the parts in the game](#a-players-own-layout) and keep where
+they put them, on top of any mod's layout.
+
+The keys on this page keep their meaning in later versions, so a layout you write now
+keeps working.
 
 ## Where the file goes
 
@@ -483,6 +485,36 @@ Commands that only work while a key is held, like `CameraUp`, do nothing from a 
 | `Time` | How long the match has run |
 | `Kills` | How many units and buildings you have destroyed |
 | `Losses` | How many you have lost |
+
+## A player's own layout
+
+A player can move the parts in a match without writing a file.
+
+1. In a match, press the **Edit Layout** key: Ctrl+Alt+E, unless you changed it on the
+   keyboard options page. Every part that can move gets an outline and its name.
+2. Drag a part with the left mouse button. It follows the cursor.
+3. Press the key again to finish. Until then the mouse only moves parts.
+
+What can be dragged: the sidebar's `Credits`, `Top`, `Radar`, `Middle`, `Cameos` and
+`Power`; the `Messages`, `Timers` and `Banner` on the battlefield, each by a small
+handle where it sits; and every button, text, row, column and grid of build pictures a
+layout added.
+
+The game keeps what you moved in a `veraui.ini` of your own, in the
+[VERA20k folder](modding.md#the-vera20k-folder). It is the same kind of file as a
+mod's, so you can also write it by hand, with any key on this page.
+
+- Your file is laid over the mod's. It changes only the keys it writes; everything
+  else stays as the mod has it.
+- A side the mod gives a layout keeps that layout, and your changes go under that
+  layout's name: `[Low.Radar]` for a mod's layout called `Low`. With another mod, or
+  without one, those changes simply aren't used.
+- A side the mod leaves as the original gets a layout of your own, named `Own` and the
+  side: `[OwnGDI.Radar]`.
+- To undo a change, delete its section from your file. To undo everything, delete the
+  file.
+- Putting the sidebar or the command bar on another edge isn't done by dragging:
+  write `Hold=` in your file.
 
 ## Not yet
 

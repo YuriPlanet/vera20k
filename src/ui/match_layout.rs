@@ -573,6 +573,8 @@ pub struct MatchLayoutFile {
     /// that layout was refused and the side keeps the original.
     sides: Vec<(String, Option<usize>)>,
     layouts: Vec<MatchLayout>,
+    /// Each layout's name, as `[Layouts]` writes it.
+    names: Vec<String>,
     problems: Vec<LayoutProblem>,
 }
 
@@ -612,6 +614,7 @@ impl MatchLayoutFile {
                 None => {
                     let index = read_layout(ini, layout, side, &mut file.problems).map(|read| {
                         file.layouts.push(read);
+                        file.names.push(layout.to_owned());
                         file.layouts.len() - 1
                     });
                     read.push((layout, index));
@@ -623,16 +626,43 @@ impl MatchLayoutFile {
         file
     }
 
+    /// The mod's file with the player's own laid over it: the player's keys
+    /// change exactly the keys they write, section by section, and add the
+    /// sections the mod's file lacks. A side the mod gives a layout keeps
+    /// that layout: the player's file changes its parts, not which layout
+    /// the side uses. Either file may be missing.
+    pub fn from_layers(mod_file: Option<&IniFile>, player_file: Option<&IniFile>) -> Self {
+        let Some(player_file) = player_file else {
+            return mod_file.map_or_else(Self::none, Self::from_ini);
+        };
+        let mut merged = mod_file.cloned().unwrap_or_else(IniFile::empty);
+        merged.merge(player_file);
+        if let Some(layouts) = mod_file.and_then(|ini| find_section(ini, LAYOUTS_SECTION)) {
+            merged.merge(&IniFile::from_sections([layouts.clone()]));
+        }
+        Self::from_ini(&merged)
+    }
+
     /// The layout `[Layouts]` gives this `[Sides]` name: its own line, else
     /// `Default=`. `None` keeps the original interface.
     pub fn for_side(&self, side: Option<&str>) -> Option<&MatchLayout> {
+        self.layouts.get(self.layout_index(side)?)
+    }
+
+    /// The name of the layout [`Self::for_side`] gives, as the file writes
+    /// it: the section prefix a change to that layout goes under.
+    pub fn layout_name_for_side(&self, side: Option<&str>) -> Option<&str> {
+        self.names.get(self.layout_index(side)?).map(String::as_str)
+    }
+
+    fn layout_index(&self, side: Option<&str>) -> Option<usize> {
         let line = |name: &str| {
             self.sides
                 .iter()
                 .find(|(listed, _)| listed.eq_ignore_ascii_case(name))
         };
         let (_, layout) = side.and_then(line).or_else(|| line(DEFAULT_SIDE))?;
-        self.layouts.get((*layout)?)
+        *layout
     }
 
     /// Whether every side keeps the original interface and nothing was
@@ -2022,6 +2052,58 @@ mod tests {
                 (695.0, 500.0, own[4].type_id.clone()),
             ]
         );
+    }
+
+    #[test]
+    fn a_players_file_changes_only_what_it_writes_over_the_mods() {
+        let mod_file = IniFile::from_str(
+            "[Layouts]\nNod=Low\n[Low.Radar]\nX=4\nY=60\n[Low.Tabs]\nStep=40\n\
+             [Low.Field]\nParts=Messages,Timers,Banner,Powers,Halt\n\
+             [Low.Halt]\nType=Button\nCommand=Stop\nX=10\nY=20\n",
+        );
+        // The player moved the radar and the mod's button, tried to give the
+        // Soviets another layout, and laid out the Allies, whom the mod left
+        // as they were.
+        let player_file = IniFile::from_str(
+            "[Layouts]\nNod=Own\nGDI=OwnGDI\n[Low.Radar]\nY=70\n[Low.Halt]\nX=300\n\
+             [Own.Radar]\nY=1\n[OwnGDI.Timers]\nHold=TopRight\nHeight=100\n",
+        );
+        let file = MatchLayoutFile::from_layers(Some(&mod_file), Some(&player_file));
+        assert!(file.problems().is_empty(), "{:?}", file.problems());
+        assert_eq!(file.layout_name_for_side(Some("Nod")), Some("Low"));
+        let mut soviet = SidebarChromeLayoutSpec::for_theme(SidebarTheme::Soviet);
+        file.for_side(Some("Nod"))
+            .unwrap()
+            .apply_to_sidebar(&mut soviet);
+        // The radar keeps the mod's X and takes the player's Y; the tabs
+        // keep the mod's step.
+        assert_eq!(
+            (
+                soviet.radar_housing_x,
+                soviet.radar_housing_y,
+                soviet.tab_pitch
+            ),
+            (4.0, 70.0, 40.0)
+        );
+        let halt = &file.for_side(Some("Nod")).unwrap().added()[0];
+        assert_eq!((halt.place.x, halt.place.y), (300, 20));
+        // The Allies get the player's own layout.
+        assert_eq!(file.layout_name_for_side(Some("GDI")), Some("OwnGDI"));
+        let mut allied = SidebarChromeLayoutSpec::for_theme(SidebarTheme::Allied);
+        file.for_side(Some("GDI"))
+            .unwrap()
+            .apply_to_sidebar(&mut allied);
+        assert_eq!(
+            allied.field.part_rect(FieldPart::Timers, [0, 0, 632, 568]),
+            [0, 0, 632, 100]
+        );
+        // With no player's file the mod's stands as it is, and with neither
+        // every side keeps the original.
+        assert_eq!(
+            MatchLayoutFile::from_layers(Some(&mod_file), None),
+            MatchLayoutFile::from_ini(&mod_file)
+        );
+        assert!(MatchLayoutFile::from_layers(None, None).is_original());
     }
 
     #[test]
