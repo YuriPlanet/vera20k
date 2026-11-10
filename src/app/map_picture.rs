@@ -208,11 +208,16 @@ fn picture_path(folder: &Path, sha256: &str) -> PathBuf {
 }
 
 /// The folder in `pictures` for the [`PICTURE_VERSION`] pictures of maps
-/// drawn with the art in `ra2_dir`: every build of that version shares it,
-/// and another game folder draws its own. The folders of other versions and
-/// game folders, which this build never shows, are removed.
-fn generation_folder(pictures: &Path, ra2_dir: &Path) -> PathBuf {
-    let key = format!("{PICTURE_VERSION}\0{}", ra2_dir.to_string_lossy());
+/// drawn with the art in `ra2_dir`, under the mod in `mod_dir` when one is in
+/// use: every build of that version shares it, and another game folder or
+/// mod draws its own. The folders of other versions, game folders and mods,
+/// which this run never shows, are removed.
+fn generation_folder(pictures: &Path, ra2_dir: &Path, mod_dir: Option<&Path>) -> PathBuf {
+    let mut key = format!("{PICTURE_VERSION}\0{}", ra2_dir.to_string_lossy());
+    if let Some(mod_dir) = mod_dir {
+        key.push('\0');
+        key.push_str(&mod_dir.to_string_lossy());
+    }
     let name = crate::util::sha256::sha256_hex(key.as_bytes())[..GENERATION_LEN].to_owned();
     for entry in std::fs::read_dir(pictures).into_iter().flatten().flatten() {
         let other = entry.file_name().to_str().is_some_and(|other| {
@@ -307,13 +312,22 @@ mod tests {
         let not_ours = pictures.join("Notes");
         std::fs::create_dir_all(&older).unwrap();
         std::fs::create_dir_all(&not_ours).unwrap();
-        let folder = generation_folder(&pictures, Path::new("/games/yr"));
+        let folder = generation_folder(&pictures, Path::new("/games/yr"), None);
         // Named by the pictures' version 1 and the game folder alone, so
         // every build of that version shows the same pictures.
         assert_eq!(folder, pictures.join("15dae2fa124079a9"));
         assert_ne!(
             folder,
-            generation_folder(&pictures, Path::new("/games/modded"))
+            generation_folder(&pictures, Path::new("/games/modded"), None)
+        );
+        // A mod draws with its own art.
+        assert_ne!(
+            folder,
+            generation_folder(
+                &pictures,
+                Path::new("/games/yr"),
+                Some(Path::new("/mods/a"))
+            )
         );
         assert!(!older.exists(), "another version's pictures stayed");
         assert!(not_ours.exists());

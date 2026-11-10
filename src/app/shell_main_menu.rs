@@ -1171,14 +1171,20 @@ impl App {
                     state.frontend.asset_import.body(&game_files_text, ""),
                 )
             } else {
-                shell_error_card(
+                let (title, mut text) = shell_error_card(
                     CardHost::CURRENT,
                     &state.frontend.startup_files,
                     state.process_assets.manager().is_some(),
                     game_files.as_deref(),
                     crate::util::logging::log_file(),
                     &error,
-                )
+                );
+                // The next start is without the mod (`mods::finish_start`).
+                if let Some(active) = &state.frontend.mods.active {
+                    text.push_str("\n\n");
+                    text.push_str(&crate::app::mods::start_failed_text(&active.title));
+                }
+                (title, text)
             };
         crate::app::frontend::status_screen::render(
             state,
@@ -1652,8 +1658,7 @@ impl App {
                 Self::close_shell_message_box_from_controller(state);
                 crate::app::updater::cancel_check(state);
             }
-            #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-            ShellMessageBoxPurpose::UpdateNotice => {
+            ShellMessageBoxPurpose::Notice => {
                 Self::close_shell_message_box_from_controller(state);
                 state.platform.window.request_redraw();
             }
@@ -2200,6 +2205,26 @@ impl App {
         state.frontend.shell_message_box = Some(message_box);
         Self::raise_shell_message_box(state);
         state.platform.window.request_redraw();
+    }
+
+    /// An OK box that only says `text`, in place of any box already open.
+    pub(crate) fn open_shell_notice(state: &mut AppState, text: String) {
+        if state.frontend.shell_message_box.is_some() {
+            Self::close_shell_message_box_from_controller(state);
+        }
+        let ok = Self::csf_label(state, "TXT_OK", "OK");
+        Self::open_shell_message_box(
+            state,
+            crate::app::frontend::state::ShellMessageBox {
+                labels: crate::ui::main_menu_dialogs::ShellMessageBoxLabels {
+                    title: text,
+                    confirm: ok,
+                    third: String::new(),
+                    cancel: String::new(),
+                },
+                purpose: crate::app::frontend::state::ShellMessageBoxPurpose::Notice,
+            },
+        );
     }
 
     /// Put the open box on top of the controller. A page under the box still
