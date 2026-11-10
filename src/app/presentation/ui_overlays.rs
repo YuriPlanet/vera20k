@@ -635,12 +635,12 @@ pub(crate) fn build_control_group_status_instances(
         return BTreeMap::new();
     };
     let local_owner_id = local_owner.and_then(|name| sim.interner().get(name));
-    let (tactical_width, tactical_height) =
-        crate::app::input::camera::tactical_viewport_size(state);
+    let (tactical_x, tactical_y, tactical_width, tactical_height) =
+        crate::app::input::camera::tactical_viewport_px(state);
     let zoom = state.match_state.input.zoom_level;
     let tactical_clip = [
-        0,
-        0,
+        (tactical_x as f32 / zoom).round() as i32,
+        (tactical_y as f32 / zoom).round() as i32,
         (tactical_width as f32 / zoom).round() as i32,
         (tactical_height as f32 / zoom).round() as i32,
     ];
@@ -755,10 +755,10 @@ pub(crate) fn build_building_status_render_instances(
             ((y - camera[1]) * zoom).round() as i32,
         ];
         //6D94DD..9516's coarse caller bounds precede the actual text clip.
-        if anchor[0] < -360
-            || anchor[0] > tactical_clip[2] + 360
-            || anchor[1] < -180
-            || anchor[1] > tactical_clip[3] + 180
+        if anchor[0] < tactical_clip[0] - 360
+            || anchor[0] > tactical_clip[0] + tactical_clip[2] + 360
+            || anchor[1] < tactical_clip[1] - 180
+            || anchor[1] > tactical_clip[1] + tactical_clip[3] + 180
         {
             continue;
         }
@@ -856,7 +856,7 @@ pub(crate) fn build_building_status_instances(
     else {
         return BuildingStatusTextInstances::default();
     };
-    let (width, height) = crate::app::input::camera::tactical_viewport_size(state);
+    let (left, top, width, height) = crate::app::input::camera::tactical_viewport_px(state);
     let zoom = state.match_state.input.zoom_level;
     build_building_status_render_instances(
         sim,
@@ -871,7 +871,7 @@ pub(crate) fn build_building_status_instances(
             state.match_state.input.camera_y,
         ],
         zoom,
-        [0, 0, width as i32, height as i32],
+        [left as i32, top as i32, width as i32, height as i32],
         rules,
     )
 }

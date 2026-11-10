@@ -363,11 +363,7 @@ pub(super) fn build_world_instances(
     // admitted by the Display/body plan receive commands. Native6D913C and
     //6D9153 run in that parent's slot, before its body at6D916C.
     if let Some(palette) = bracket_palette {
-        let camera = [
-            state.match_state.input.camera_x,
-            state.match_state.input.camera_y,
-        ]
-        .map(|value| value.floor() as i32);
+        let camera = super::tactical_surface_line_viewport(state).camera;
         let mut brackets =
             crate::app::presentation::selection_brackets::build_selection_bracket_lines(
                 state,
@@ -917,7 +913,10 @@ pub(super) fn build_ui_instances(
         [x, y, width, height],
         state.renderer.world_zoom_pass.as_ref(),
     );
-    let camera = view.camera;
+    // The drained action stores go onto the whole logical surface, whose
+    // pixels start at the frame's corner: the view's camera less the
+    // battlefield's corner, which is the stored camera rounded as the view's.
+    let camera = [input.camera_x, input.camera_y].map(|v| v.round() as i32);
     // All path, planning and rally pixels go onto the native world surface.
     // Its camera/clip and the final WorldZoomPass own the scale. Pre-scaling
     // individual spans here would quantize them again on that smaller/larger
@@ -1019,11 +1018,18 @@ pub(crate) fn tactical_world_viewport(
     tactical: [u32; 4],
     zoom: Option<&crate::render::upscale_pass::WorldZoomPass>,
 ) -> crate::app::presentation::target_lines::TacticalViewport {
+    let clip = zoom
+        .map_or(tactical, |zoom| zoom.world_clip(tactical))
+        .map(|v| v as i32);
+    // The view is in the battlefield's own pixels: its camera is the world
+    // point at the battlefield's corner, the stored camera (the frame
+    // corner's) in by the clip's corner, and its clip starts at 0, 0.
     crate::app::presentation::target_lines::TacticalViewport {
-        camera: camera.map(|v| v.round() as i32),
-        clip: zoom
-            .map_or(tactical, |zoom| zoom.world_clip(tactical))
-            .map(|v| v as i32),
+        camera: [
+            camera[0].round() as i32 + clip[0],
+            camera[1].round() as i32 + clip[1],
+        ],
+        clip: [0, 0, clip[2], clip[3]],
         zoom: 1.,
     }
 }

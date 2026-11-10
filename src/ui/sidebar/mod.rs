@@ -18,7 +18,7 @@ mod sidebar_view;
 
 use crate::sim::production::ProductionCategory;
 
-pub use frame::{BOTTOM_STRIP_HEIGHT_PX, SIDEBAR_WIDTH_PX, SidebarFrame};
+pub use frame::{BOTTOM_STRIP_HEIGHT_PX, Edge, PanelPlaces, SIDEBAR_WIDTH_PX, SidebarFrame};
 pub use layout_spec::{SidebarChromeLayoutSpec, SidebarPart, SidebarTheme};
 pub use power_bar_anim::PowerBarAnimState;
 pub(crate) use sidebar_view::ArmedSidebarEntry;
@@ -64,7 +64,7 @@ pub fn radar_minimap_rect_with_spec(screen_w: f32, spec: SidebarChromeLayoutSpec
     // The aperture sits in the radar housing; the GDI/NOD tables move it,
     // which the spec carries.
     Rect {
-        x: screen_w - spec.sidebar_width + spec.radar_housing_x + spec.radar_x,
+        x: spec.sidebar_x(screen_w) + spec.radar_housing_x + spec.radar_x,
         y: spec.radar_housing_y + spec.radar_y,
         w: spec.radar_width,
         h: spec.radar_height,
@@ -336,7 +336,7 @@ pub(crate) fn compute_layout_with_spec(
     let row_height = (spec.cameo_row_height as i32).max(1);
     let rows = ((screen_h as i32 - spec.strip_y as i32 - spec.strip_footer as i32) / row_height)
         .max(0) as usize;
-    let sidebar_x = screen_w - spec.sidebar_width;
+    let sidebar_x = spec.sidebar_x(screen_w);
     SidebarLayout {
         sidebar_x,
         credits_x: sidebar_x + spec.credits_x,

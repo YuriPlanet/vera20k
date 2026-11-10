@@ -27,6 +27,9 @@ const ROW_SEED: i32 = crate::render::native_z::DEFAULT_Z;
 pub(super) fn ion_blast_draws(
     blasts: impl DoubleEndedIterator<Item = ([i32; 3], i32)>,
     camera: [f32; 2],
+    // The battlefield's corner from the frame's, and its size, in world
+    // pixels: points are measured from the camera, the frame's corner.
+    origin: [f32; 2],
     viewport: [f32; 2],
     detail_level: u32,
 ) -> Vec<IonBlastDraw> {
@@ -34,16 +37,17 @@ pub(super) fn ion_blast_draws(
         return Vec::new();
     }
     let clip = [
-        0,
-        0,
+        origin[0] as i32,
+        origin[1] as i32,
         viewport[0] as i32,
         viewport[1] as i32 - CLIP_BOTTOM_ROWS,
     ];
+    let corner = [camera[0] + origin[0], camera[1] + origin[1]];
     blasts
         .rev()
         .filter_map(|([x, y, z], frame)| {
             let (px, py) = crate::util::lepton::absolute_leptons_to_screen(x, y, z);
-            if !super::instances::projection_admitted([px, py], camera, viewport) {
+            if !super::instances::projection_admitted([px, py], corner, viewport) {
                 return None;
             }
             let point = [
@@ -71,9 +75,11 @@ pub(super) fn draws(state: &crate::app::AppState) -> Vec<IonBlastDraw> {
     };
     let input = &state.match_state.input;
     let (_, _, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+    let origin = crate::app::input::camera::tactical_origin_world(state);
     ion_blast_draws(
         runtime.view().simulation().ion_blasts(),
         [input.camera_x, input.camera_y],
+        [origin.0, origin.1],
         [
             width as f32 / input.zoom_level,
             height as f32 / input.zoom_level,

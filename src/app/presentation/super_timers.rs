@@ -337,10 +337,18 @@ impl TimerDock {
     }
 }
 
+/// The cursor in the battlefield's own pixels, where the dock keeps its hit
+/// areas.
+pub(crate) fn cursor_in_view(state: &AppState) -> (i32, i32) {
+    let (x, y) = state.match_state.input.cursor_px();
+    let (left, top) = crate::app::input::camera::tactical_origin_px(state);
+    (x - left, y - top)
+}
+
 /// Consume wheel messages only over the expanded timer ink, before world zoom
 /// or sidebar scrolling. Empty space around the rows stays interactive terrain.
 pub(crate) fn wheel(state: &mut AppState, delta: f32) -> bool {
-    let (x, y) = state.match_state.input.cursor_px();
+    let (x, y) = cursor_in_view(state);
     state
         .match_state
         .match_presentation
@@ -453,11 +461,9 @@ pub(crate) fn build_super_timer_instances(
     let blink_rgb = blink_rgb(rules);
     let now_ms = crate::app::input::tooltips::now_ms(state);
     let (view_w, view_h) = crate::app::input::camera::tactical_viewport_size(state);
-    // Screen-space lanes add back the world camera the UI shader subtracts.
-    let camera = [
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-    ];
+    // Screen-space lanes add back the world camera the UI shader subtracts,
+    // and the battlefield's corner: the dock works in the view's own pixels.
+    let camera = crate::app::input::camera::battlefield_lane_camera(state);
 
     let font = &state.renderer.bit_font;
     let local = sim.session().current_house();

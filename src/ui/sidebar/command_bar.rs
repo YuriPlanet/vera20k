@@ -91,6 +91,23 @@ impl CommandBarLayout {
         })
     }
 
+    /// This layout moved by `(dx, dy)`: `new` lays the bar out from x 0 along
+    /// the screen's bottom, and a layout may put it elsewhere.
+    pub fn moved(self, dx: f32, dy: f32) -> Self {
+        let moved = |rect: Rect| Rect {
+            x: rect.x + dx,
+            y: rect.y + dy,
+            ..rect
+        };
+        Self {
+            bounds: moved(self.bounds),
+            left_cap: moved(self.left_cap),
+            background: moved(self.background),
+            right_cap: moved(self.right_cap),
+            ..self
+        }
+    }
+
     pub fn slot(self, slot: usize) -> Option<Rect> {
         (slot < self.tile_count).then_some(Rect {
             x: self.background.x + slot as f32 * self.background.w,

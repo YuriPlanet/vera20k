@@ -123,7 +123,8 @@ impl FlyingCredits {
         font: &BitFont,
         camera: [f32; 2],
         zoom: f32,
-        viewport: [u32; 2],
+        // The battlefield in frame pixels: left, top, width, height.
+        viewport: [u32; 4],
     ) -> Vec<SpriteInstance> {
         let mut out = Vec::new();
         for record in &self.live {
@@ -137,7 +138,8 @@ impl FlyingCredits {
             // while placing the anchor on the same zoomed map point.
             let x = (x - camera[0]) * zoom;
             let y = (y - camera[1]) * zoom;
-            if x >= 0.0 && y >= 0.0 && x < viewport[0] as f32 && y < viewport[1] as f32 {
+            let [left, top, width, height] = viewport.map(|side| side as f32);
+            if x >= left && y >= top && x < left + width && y < top + height {
                 let rise = (record.life - 70).min(0);
                 let left = x - (font.text_width(&record.text) / 2) as f32;
                 let rgb = crate::render::native_surface_format::RGB565;
@@ -226,7 +228,7 @@ mod tests {
             "native labels do not fade"
         );
         assert_eq!(
-            credits.build_instances(&font, camera, 1.0, [2048, 2048])[0].position,
+            credits.build_instances(&font, camera, 1.0, [0, 0, 2048, 2048])[0].position,
             rising[0].position,
             "a draw between composites does not rise"
         );

@@ -509,8 +509,10 @@ pub(crate) fn unit_visitor<'a>(
         state.render_width() as f32 / z,
         state.render_height() as f32 / z,
     );
-    let (_, _, tactical_width, tactical_height) =
-        crate::app::input::camera::tactical_viewport_px(state);
+    // Draw admission measures from the camera, the frame's corner, so it
+    // takes the centring size: the battlefield and its offset on both sides.
+    let (tactical_width, tactical_height) =
+        crate::app::input::camera::tactical_centring_size(state);
     let unit_viewport = [tactical_width as f32 / z, tactical_height as f32 / z];
     let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
     let local_owner_id = local_owner.as_deref().and_then(|o| sim.interner().get(o));
