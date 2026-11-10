@@ -260,6 +260,9 @@ fn foot_nearby_matches_original_whole_infantry_and_unit_admission() {
 /// projection, GetWeapon, threat owner and class admission. The native selector
 /// controls supply entry replies; separate whole-class controls above establish
 /// the admitted ramp input used here. Coordinates are declared by native rows.
+/// Stock only: Ares 3.0 ThreatPosedEstimates_GetIndex `1005D4A0` (hook
+/// `0x0056BC54`) moves the threat writes these native rows read back.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn retreat_building_selection_matches_original_controls() {
     let rules = synthetic_rules();

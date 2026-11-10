@@ -778,6 +778,11 @@ impl Simulation {
         // length delimiter distinguishes queue boundaries before the ordered
         // IDs are folded (duplicates are intentionally preserved here).
         self.substrate.pending_delete.hash_state(hasher);
+        #[cfg(feature = "ares")]
+        if !self.substrate.ares_temporal_factory_refresh.is_empty() {
+            b"ares-temporal-factory-refresh-v1".hash(hasher);
+            self.substrate.ares_temporal_factory_refresh.hash(hasher);
+        }
         self.load_objects.hash_state(hasher);
         // Path searches waiting for the next frame's batch.
         if let Some(batch) = &self.path_batch {
@@ -2040,6 +2045,11 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     if let Some(pod) = entity.ares_drop_pod() {
         b"ares-drop-pod-v1".hash(hasher);
         pod.hash(hasher);
+    }
+    #[cfg(feature = "ares")]
+    if let Some(alt) = entity.ares_alt_occupation {
+        b"ares-alt-occupation-v1".hash(hasher);
+        alt.hash(hasher);
     }
     // Building+662 and Techno+1C8 (`sim::powered_unit`), folded only
     // while set.

@@ -427,6 +427,9 @@ fn check_vehicle_transport_trip(mut fx: Fixture, carrier_type: &str, passenger_t
 /// astar_mtnk_inputs.json executes the original Foot coefficient-copy body.
 /// This checks the real boarding/Limbo/departure consumers at one frame,
 /// without claiming native equivalence of the whole transport mission.
+/// Stock only: Ares 3.0 ThreatPosedEstimates_GetIndex `1005D4A0` (hook
+/// `0x0056BC54`) moves the nine slots this publication writes.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn vehicle_unload_republishes_threat_and_foot_coefficient_before_movement() {
     use crate::sim::house_state::HouseState;

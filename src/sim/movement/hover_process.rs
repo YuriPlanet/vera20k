@@ -280,7 +280,7 @@ impl Simulation {
         id: u64,
     ) {
         if let Some(head) = substrate.hover_mut(id).and_then(|hover| hover.head.take()) {
-            Self::track_raw_mark_at(substrate, path_grid, resolved_terrain, head, false);
+            Self::track_raw_mark_at(substrate, path_grid, resolved_terrain, id, head, false);
         }
     }
 
@@ -494,6 +494,7 @@ impl Simulation {
                     &mut self.substrate,
                     &self.path_grid,
                     &self.resolved_terrain,
+                    id,
                     location,
                     true,
                 );
@@ -561,6 +562,7 @@ impl Simulation {
                 &mut self.substrate,
                 &self.path_grid,
                 &self.resolved_terrain,
+                id,
                 location,
                 false,
             );
@@ -1274,6 +1276,7 @@ impl Simulation {
                         &mut self.substrate,
                         &self.path_grid,
                         &self.resolved_terrain,
+                        id,
                         head,
                         true,
                     );

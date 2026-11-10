@@ -599,6 +599,12 @@ pub struct GameEntity {
     #[cfg(feature = "ares")]
     #[serde(default)]
     ares_drop_pod: Option<crate::sim::superweapon::drop_pod::DropPodFlight>,
+    /// Ares 3.0 TechnoExt `AltOccupation` (`+0x99`, set at `+0x9A`): whether
+    /// a Unit's last raw mark (vt+0xF0) chose the deck plane, which its next
+    /// unmark also clears. Only `Simulation::track_raw_mark_at` writes it.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) ares_alt_occupation: Option<bool>,
     /// Ares TechnoExt::SuperWeapon (+0xA0), the Super attached to this
     /// Techno: SW_HunterSeeker::Activate's launch source on its seeker and
     /// SW_EMPulse::Activate's firing Super on each cannon. The entity owns
@@ -2303,6 +2309,8 @@ impl GameEntity {
             ares_chronoshifting: false,
             #[cfg(feature = "ares")]
             ares_drop_pod: None,
+            #[cfg(feature = "ares")]
+            ares_alt_occupation: None,
             ares_super_weapon: None,
             ares_super_target: None,
             tesla_charge: Default::default(),

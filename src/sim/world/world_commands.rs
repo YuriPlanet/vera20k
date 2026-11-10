@@ -4418,8 +4418,10 @@ mod tests {
             .as_mut()
             .unwrap()
             .ensure_installed_track_state();
-        // Revealed object: order admission reads the limbo byte.
+        // Revealed object: order admission reads the limbo byte. Its Unlimbo
+        // would have published its threat (`0x006F6ED2`); TANK poses none.
         ge.lifecycle.set_in_limbo_for_test(false);
+        ge.cached_spatial_threat.publish(0);
         sim.substrate.entities.insert(ge);
     }
 
