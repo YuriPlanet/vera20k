@@ -32,13 +32,15 @@ pub struct ExportPreview<'a> {
 }
 
 /// The `.map` text of `map` as a standard multiplayer map named `name` for
-/// `min_players..=max_players`, with `preview` as its Choose Map thumbnail.
+/// `min_players..=max_players`, with `preview` as its Choose Map thumbnail
+/// and `starts` as the `[Header]` the numbered start markers are drawn from.
 pub fn multiplayer_map_text(
     map: &MapFile,
     name: &str,
     min_players: u32,
     max_players: u32,
     preview: Option<ExportPreview<'_>>,
+    starts: Option<&crate::map::preview::PreviewSourceBounds>,
 ) -> String {
     let mut out = String::new();
     let name: String = name
@@ -73,6 +75,25 @@ pub fn multiplayer_map_text(
         out.push('\n');
     }
 
+    // The start header the map list reads for its numbered markers
+    // (`0x00689D64..0x00689E62`): the projected playfield and each start.
+    if let Some(starts) = starts {
+        write!(
+            out,
+            "[Header]\nStartX={}\nStartY={}\nWidth={}\nHeight={}\nNumberStartingPoints={}\n",
+            starts.origin_x,
+            starts.origin_y,
+            starts.width,
+            starts.height,
+            starts.start_points.len(),
+        )
+        .unwrap();
+        for (index, point) in starts.start_points.iter().enumerate() {
+            writeln!(out, "Waypoint{}={},{}", index + 1, point.x, point.y).unwrap();
+        }
+        out.push('\n');
+    }
+
     // The thumbnail `DecodePreviewPackToSurface @ 0x00641B00` reads: the
     // `Size` rect's last two fields, and 24-bit RGB rows through LZO blocks.
     if let Some(preview) = preview
@@ -81,9 +102,7 @@ pub fn multiplayer_map_text(
     {
         writeln!(
             out,
-            "[Preview]
-Size=0,0,{},{}
-",
+            "[Preview]\nSize=0,0,{},{}\n",
             preview.width, preview.height
         )
         .unwrap();

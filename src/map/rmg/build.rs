@@ -801,6 +801,16 @@ mod tests {
         );
         let map = &generated.map_file;
         let thumbnail: Vec<u8> = (0..6 * 4 * 4).map(|byte| byte as u8 | 3).collect();
+        let starts = crate::map::preview::PreviewSourceBounds {
+            origin_x: 3,
+            origin_y: 5,
+            width: 40,
+            height: 30,
+            start_points: vec![
+                crate::map::preview::PreviewStartPoint { x: 10, y: 12 },
+                crate::map::preview::PreviewStartPoint { x: 30, y: 25 },
+            ],
+        };
         let text = crate::map::map_export::multiplayer_map_text(
             map,
             "Exported",
@@ -811,6 +821,14 @@ mod tests {
                 height: 4,
                 rgba: &thumbnail,
             }),
+            Some(&starts),
+        );
+        assert_eq!(
+            crate::map::scenario_menu::preview_source_bounds_from_verified_source(
+                &crate::rules::ini_parser::IniFile::from_str(&text)
+            ),
+            Some(starts.clone()),
+            "the map list reads the start markers back"
         );
         let read = crate::map::map_file::MapFile::from_bytes(text.as_bytes()).expect("parses");
         let shown = crate::map::preview::decode_preview_image_from_ini(&read.ini)

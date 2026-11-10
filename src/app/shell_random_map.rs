@@ -1110,6 +1110,12 @@ impl App {
             2,
             players,
             preview,
+            state
+                .frontend
+                .random_map_retention
+                .generated_header()
+                .preview_source_bounds()
+                .as_ref(),
         );
         match crate::util::file_system::write(&path, text) {
             Ok(()) => {
