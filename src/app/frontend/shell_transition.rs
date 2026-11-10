@@ -55,7 +55,7 @@ pub(crate) enum ShellSlideKind {
     MoviesAndCredits,
     /// Dialog 0x129 — movie list (Play Movie and Back).
     MovieList,
-    /// VERA's Mods page, from the main menu's Mods button.
+    /// VERA's Mods page, from the Mods button of Options.
     Mods,
     /// Dialog 0x102 — offline skirmish setup.
     Skirmish,
@@ -156,9 +156,9 @@ impl ShellSlideKind {
 
     /// The dialog's slide column with the panel's `rows` tile rows. Every
     /// rendered shell has a `slide` table entry, so a miss is a programming
-    /// error. Options slides VERA's page buttons under retail's Keyboard.
-    /// Skirmish slides VERA's Save Setup and Load Setup under Choose Map. The
-    /// main menu slides VERA's Mods under Options where it has a tile.
+    /// error. Options slides VERA's page buttons and its Mods button under
+    /// retail's Keyboard.
+    /// Skirmish slides VERA's Save Setup and Load Setup under Choose Map.
     pub(crate) fn column(self, rows: u32, page: Option<&MenuPageSpec>) -> SlideColumn {
         let spec = crate::ui::shell::slide::slide_spec_for(self.dialog_id())
             .expect("rendered shell dialog must have a slide column");
@@ -172,10 +172,6 @@ impl ShellSlideKind {
                         .len() as u32
                 }
                 ShellSlideKind::Skirmish => spec.top_buttons + 2,
-                ShellSlideKind::MainMenu => {
-                    let rows = i32::try_from(rows).unwrap_or(i32::MAX);
-                    spec.top_buttons + u32::from(crate::ui::main_menu_shell::mods_button_fits(rows))
-                }
                 _ => spec.top_buttons,
             },
             |page| page.stacked.len() as u32,
@@ -248,7 +244,8 @@ pub(crate) enum ShellExitThen {
     PlayMovie,
     /// Movie list Back (state `0xE` result -1).
     MovieListBack,
-    /// VERA's Mods page Back: the main menu is built again.
+    /// VERA's Mods page Back: Options is built again, on the page it was
+    /// left from.
     ModsBack,
     /// Skirmish Start Game (result `0x617`) with the session packed and
     /// resolved when it was pressed.
@@ -1541,10 +1538,7 @@ mod tests {
             let column = kind.column(9, None);
             (column.top_buttons, column.bottom_button, column.map_button)
         };
-        // VERA's Mods button slides under Options where the column has a
-        // tile for it; retail 640x480's six rows have none.
-        assert_eq!(top_and_bottom(ShellSlideKind::MainMenu), (6, true, false));
-        assert_eq!(ShellSlideKind::MainMenu.column(6, None).top_buttons, 5);
+        assert_eq!(top_and_bottom(ShellSlideKind::MainMenu), (5, true, false));
         assert_eq!(top_and_bottom(ShellSlideKind::Mods), (2, true, false));
         assert_eq!(
             top_and_bottom(ShellSlideKind::SinglePlayer),
@@ -1559,14 +1553,19 @@ mod tests {
         // and Load Setup slide under them.
         assert_eq!(top_and_bottom(ShellSlideKind::Skirmish), (4, true, true));
         // Retail `0xD5` slides Keyboard and Network; VERA leaves Network out
-        // and slides its six page buttons under Keyboard.
+        // and slides its six page buttons under Keyboard, then its Mods
+        // button where the build has mods.
         assert_eq!(
             crate::ui::shell::slide::slide_spec_for(DialogId(0x00D5))
                 .unwrap()
                 .top_buttons,
             2
         );
-        assert_eq!(top_and_bottom(ShellSlideKind::Options), (7, true, false));
+        let mods = u32::from(crate::ui::main_menu_dialogs::options::HAS_MODS);
+        assert_eq!(
+            top_and_bottom(ShellSlideKind::Options),
+            (7 + mods, true, false)
+        );
     }
 
     #[test]

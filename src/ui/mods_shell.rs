@@ -1,4 +1,4 @@
-//! VERA's Mods page, opened by the main menu's Mods button; gamemd has none.
+//! VERA's Mods page, opened by the Mods button of Options; gamemd has none.
 //! A family page shaped like the movie list `0x129`: the mods in the `Mods`
 //! folder with the original game first, what the selected one says of itself,
 //! and Use This Mod, Open Mods Folder and Back (docs/modding.md).
@@ -18,7 +18,7 @@ pub(crate) const USE: u16 = 0x7E31;
 pub(crate) const OPEN_FOLDER: u16 = 0x7E32;
 pub(crate) const BACK: u16 = 0x7E33;
 
-/// The main menu button's caption and the page's heading.
+/// The Options button's caption and the page's heading.
 pub(crate) const TITLE_KEY: &str = "VERA:Mods";
 pub(crate) const BUTTON_HELP_KEY: &str = "VERA:ModsHelp";
 /// The caption over the list, and the list's status help.

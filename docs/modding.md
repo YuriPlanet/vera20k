@@ -120,8 +120,8 @@ line.
 
 #### Pick a mod
 
-Start the game and press **Mods** in the main menu. The list shows the original game as
-**No mod**, then every folder in `Mods`. Pick one and press **Use This Mod**. The game
+Start the game, open **Options** and press **Mods**. The list shows the original game
+as **No mod**, then every folder in `Mods`. Pick one and press **Use This Mod**. The game
 restarts with the mod, and the main menu then shows the mod's name. To go back to the
 original game, pick **No mod** the same way. **Open Mods Folder** opens `Mods`.
 
@@ -134,9 +134,6 @@ ra2_dir = "C:/Games/Red Alert 2"
 mod = "MyMod"
 ```
 
-A game window of exactly 640x480 has no room for the Mods button. Use a bigger window,
-the line above, or a switch.
-
 A switch after the program's name picks a mod for one start, whatever `config.toml`
 says. Put it on a shortcut to start a mod with one click:
 
@@ -148,8 +145,8 @@ says. Put it on a shortcut to start a mod with one click:
 #### If a mod doesn't start
 
 - If the folder isn't there, or the mod needs a newer VERA20k, the game starts without
-  the mod and says why in the main menu. To stop the message, open Mods, pick **No mod**
-  and press **Use This Mod**.
+  the mod and says why in the main menu. To stop the message, open Options, press Mods,
+  pick **No mod** and press **Use This Mod**.
 - If the game can't start with a mod, the next start is without it, so you always get
   back to the menu. Start the game once more to try the mod again.
 

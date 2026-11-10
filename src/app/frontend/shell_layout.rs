@@ -174,7 +174,7 @@ pub(crate) fn movie_list_layout(
     }
 }
 
-/// VERA's Mods page, behind the main menu's Mods button.
+/// VERA's Mods page, behind the Mods button of Options.
 pub(crate) fn mods_layout(state: &AppState) -> crate::ui::mods_shell::ModsLayout {
     let (width, height) = shell_screen_size(state);
     if fills_window(state) {

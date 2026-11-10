@@ -1,4 +1,4 @@
-//! VERA's Mods page (`ui::mods_shell`), opened by the main menu's Mods button:
+//! VERA's Mods page (`ui::mods_shell`), opened by the Mods button of Options:
 //! the list of what is in the `Mods` folder, and the buttons that switch to
 //! one after a restart, or open the folder. gamemd has no such page. The list,
 //! the choice and its place in config.toml are `app::mods`'.
@@ -22,8 +22,8 @@ impl App {
             .unwrap_or_default()
     }
 
-    /// The main menu's Mods button: list what `Mods` holds now, with what
-    /// this run uses selected and in view.
+    /// The Mods button of Options, once Options has closed: list what `Mods`
+    /// holds now, with what this run uses selected and in view.
     pub(super) fn open_mods_page(state: &mut AppState) {
         Self::destroy_current_shell_dialog(state);
         let rows = Self::installed_mods(state);
@@ -209,7 +209,8 @@ impl App {
         }
     }
 
-    /// Back: the page is gone and the main menu is built again.
+    /// The page is gone and the route is the main menu's again. Back builds
+    /// Options over it next; a restart leaves from here.
     pub(super) fn close_mods_page(state: &mut AppState) {
         Self::destroy_current_shell_dialog(state);
         state.frontend.mods.page = None;

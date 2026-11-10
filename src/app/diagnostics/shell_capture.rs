@@ -225,7 +225,7 @@ pub enum ShellCaptureCheckpoint {
     /// Back on the movie list: the first frame after its teardown slide,
     /// which must already be the recreated `0x101`'s entry slide at tick 0.
     MovieList0x129BackFirstFrame,
-    /// Main Menu -> Mods: VERA's Mods page settled.
+    /// Main Menu -> Options -> Mods: VERA's Mods page settled.
     ModsSteady,
     /// The Mods page's restart question, after a row and Use This Mod.
     ModsRestartQuestion,

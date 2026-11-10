@@ -1,6 +1,6 @@
 //! Dialog 0xE2 shell layout recovered from gamemd.exe.
 
-use super::state::{MODS_BUTTON, MainMenuControlId};
+use super::state::MainMenuControlId;
 use crate::ui::shell::descriptor::{
     AnchorRule, BgKind, ControlDescriptor, ControlKind, DialogDescriptor, DialogId, HEADING_ANCHOR,
     MONITOR_ANCHOR, RepositionPolicy,
@@ -140,36 +140,14 @@ fn button_ctrl(
     }
 }
 
-/// Whether a right panel of `tile_rows` rows has a free tile for VERA's Mods
-/// button under Options: every column but retail 640x480's, whose six rows
-/// hold the five stacked buttons and Exit. There a mod is chosen with `--mod`
-/// or in config.toml (docs/modding.md). The browser build has no Mods folder,
-/// so no button.
-pub fn mods_button_fits(tile_rows: i32) -> bool {
-    tile_rows > 6 && !cfg!(all(target_arch = "wasm32", target_os = "unknown"))
-}
-
-/// The stacked buttons' DLU tops go on 27 at a time, one tile each.
-const MODS_DLU_TOP: i32 = 233 + 27;
-
 /// Dialog 0xE2 descriptor: the six owner-draw buttons (five stacked + Exit) plus
-/// the 0x694 heading and the 0x71C warning monitor, and VERA's Mods button on
-/// the next tile when `mods` is set. The bottom-anchored version/tooltip
-/// statics keep their bespoke shell helpers for now (no verified resource id;
-/// one-of-a-kind anchors), so they are computed outside this table.
-fn dialog_descriptor(mods: bool) -> DialogDescriptor {
+/// the 0x694 heading and the 0x71C warning monitor. The bottom-anchored
+/// version/tooltip statics keep their bespoke shell helpers for now (no verified
+/// resource id; one-of-a-kind anchors), so they are computed outside this table.
+fn dialog_descriptor() -> DialogDescriptor {
     let snap = AnchorRule::OwnerDrawButtonSnap {
         cell_w: BUTTON_CELL_W,
     };
-    let mods = mods.then(|| {
-        button_ctrl(
-            MODS_BUTTON,
-            MODS_DLU_TOP,
-            snap,
-            crate::ui::mods_shell::TITLE_KEY,
-            crate::ui::mods_shell::BUTTON_HELP_KEY,
-        )
-    });
     DialogDescriptor {
         id: DialogId(0x00E2),
         bg_kind: BgKind::RightPanelShell,
@@ -193,10 +171,6 @@ fn dialog_descriptor(mods: bool) -> DialogDescriptor {
                 "STT:MainButtonMovies",
             ),
             button_ctrl(0x055C, 233, snap, "GUI:Options", "STT:MainButtonOptions"),
-        ]
-        .into_iter()
-        .chain(mods)
-        .chain([
             button_ctrl(
                 0x03EE,
                 330,
@@ -230,8 +204,7 @@ fn dialog_descriptor(mods: bool) -> DialogDescriptor {
                 enabled: true,
                 visible: true,
             },
-        ])
-        .collect(),
+        ],
     }
 }
 
@@ -262,7 +235,7 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> MainMenuShellLayout {
     // by the shared shell pass (contract C7: DLU->pixel once, then include-set
     // re-anchor). The bottom-anchored version/tooltip statics keep their bespoke
     // helpers above.
-    let descriptor = dialog_descriptor(mods_button_fits(right_panel.tile_count));
+    let descriptor = dialog_descriptor();
     let laid = layout_pass(&descriptor, screen_w, screen_h);
     let buttons = descriptor
         .controls
@@ -351,24 +324,26 @@ mod tests {
     }
 
     #[test]
-    fn the_mods_button_takes_the_tile_under_options_where_the_column_has_one() {
-        let mods = |layout: &MainMenuShellLayout| {
+    fn the_menu_holds_retails_six_buttons_at_every_size() {
+        use MainMenuControlId::*;
+        let ids = |layout: MainMenuShellLayout| {
             layout
                 .buttons
                 .iter()
-                .find(|button| button.id == MainMenuControlId::Mods)
-                .map(|button| button.rect)
+                .map(|button| button.id)
+                .collect::<Vec<_>>()
         };
-        assert_eq!(
-            mods(&compute_layout(800, 600)),
-            Some(RectPx::new(644, 409, 156, 42))
-        );
-        // 640x480's six rows end with Exit on the sixth: retail's six buttons.
-        let small = compute_layout(640, 480);
-        assert_eq!(mods(&small), None);
-        assert_eq!(small.buttons.len(), 6);
-        // A fitted window scales the 800x600 column, Mods included.
-        assert!(mods(&compute_responsive_layout(640, 480)).is_some());
+        let retail = [
+            SinglePlayer0x683,
+            WwOnline0x684,
+            Network0x578,
+            MoviesAndCredits0x686,
+            Options0x55c,
+            ExitGame0x3ee,
+        ];
+        assert_eq!(ids(compute_layout(640, 480)), retail);
+        assert_eq!(ids(compute_layout(800, 600)), retail);
+        assert_eq!(ids(compute_responsive_layout(1920, 1080)), retail);
     }
 
     #[test]

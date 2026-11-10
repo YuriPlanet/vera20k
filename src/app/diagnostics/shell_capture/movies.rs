@@ -72,7 +72,7 @@ pub(super) enum MoviesTarget {
     },
     /// Exit Game through the production teardown slide, then state 6.
     ExitConfirm,
-    /// Main Menu -> Mods: VERA's page settled; with `ask`, after a press on
+    /// Main Menu -> Options -> Mods: VERA's page settled; with `ask`, after a press on
     /// a row the run does not play and on Use This Mod.
     Mods {
         ask: bool,
@@ -183,6 +183,9 @@ enum Phase {
     MainMenu,
     Page,
     List,
+    /// Options is opening on the way to the Mods page: its Mods button is
+    /// pressed once it has settled.
+    ModsOptions,
     Mods,
     Credits,
     Movie,
@@ -575,12 +578,12 @@ impl MoviesCapture {
                     }
                     if matches!(self.target, MoviesTarget::Mods { .. }) {
                         self.route
-                            .push(json!({"dialog": 0xe2, "frame": frame, "action": "Mods"}));
+                            .push(json!({"dialog": 0xe2, "frame": frame, "action": "Options"}));
                         App::handle_main_menu_shell_action(
                             state,
-                            crate::ui::main_menu_shell::MainMenuShellAction::Mods,
+                            crate::ui::main_menu_shell::MainMenuShellAction::Options,
                         );
-                        self.phase = Phase::Mods;
+                        self.phase = Phase::ModsOptions;
                         return Ok(());
                     }
                     if matches!(self.target, MoviesTarget::Options0xD5 { .. }) {
@@ -1010,6 +1013,41 @@ impl MoviesCapture {
                     self.route
                         .push(json!({"dialog": 0x100, "frame": frame, "action": "Back returned"}));
                     self.phase = Phase::Settling(SETTLE_FRAMES);
+                }
+            }
+            (Phase::ModsOptions, PresentedShell::Options) => {
+                use crate::ui::main_menu_dialogs::options::{LauncherButton, LauncherParentResult};
+                let showing = state
+                    .frontend
+                    .options_dialog
+                    .as_ref()
+                    .map(|dialog| dialog.category());
+                if let Some(showing) = showing
+                    && state.frontend.shell_exit.is_none()
+                    && Self::slide_settled(state, ShellSlideKind::Options)
+                {
+                    let layout =
+                        crate::app::frontend::shell_layout::launcher_options_layout(state, showing);
+                    let rect = layout
+                        .buttons
+                        .iter()
+                        .find(|(button, _)| {
+                            *button == LauncherButton::Exit(LauncherParentResult::Mods)
+                        })
+                        .map(|(_, rect)| *rect)
+                        .context("D5 Mods button")?;
+                    state.match_state.input.cursor_x = (rect.x + rect.w / 2) as f32;
+                    state.match_state.input.cursor_y = (rect.y + rect.h / 2) as f32;
+                    App::handle_launcher_options_mouse(state, None);
+                    App::handle_launcher_options_mouse(state, Some(true));
+                    App::handle_launcher_options_mouse(state, Some(false));
+                    ensure!(
+                        state.frontend.shell_exit.is_some(),
+                        "Mods did not start the 0xD5 teardown slide"
+                    );
+                    self.route.push(json!({"dialog": 0xd5, "frame": frame,
+                        "action": "Mods through ordinary pointer handler"}));
+                    self.phase = Phase::Mods;
                 }
             }
             (Phase::Mods, PresentedShell::Mods) => {

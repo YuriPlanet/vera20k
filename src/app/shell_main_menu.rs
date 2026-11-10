@@ -402,6 +402,10 @@ impl crate::app::persistence::options::launcher::LauncherParentOperations
             App::open_launcher_options_dialog(self.state);
         }
     }
+
+    fn route_mods(&mut self) {
+        App::open_mods_page(self.state);
+    }
 }
 
 /// The options profile's `[Video]` bytes behind HIRES and TOGGLE, which the
@@ -1338,10 +1342,12 @@ impl App {
         }
         match output.result {
             // 0x0055FD06 tears D5 down before every continuation, including
-            // Keyboard and the final Main Menu return.
+            // Keyboard and the final Main Menu return. VERA's Mods leaves the
+            // same way.
             Some(
                 result @ (crate::ui::main_menu_dialogs::options::LauncherParentResult::Back
-                | crate::ui::main_menu_dialogs::options::LauncherParentResult::Keyboard),
+                | crate::ui::main_menu_dialogs::options::LauncherParentResult::Keyboard
+                | crate::ui::main_menu_dialogs::options::LauncherParentResult::Mods),
             ) => {
                 state.frontend.options_dialog = Some(dialog);
                 Self::leave_shell_dialog(
@@ -1371,17 +1377,18 @@ impl App {
     }
 
     /// `0xD5`'s teardown slide has run: commit the controls (`0x0055FAA0`),
-    /// then write the profile and build `0xE2` (Main Menu, `0x005FAD10`) or
-    /// run the Keyboard page.
+    /// then write the profile and build `0xE2` (Main Menu, `0x005FAD10`), or
+    /// run the Keyboard page or VERA's Mods page.
     pub(super) fn commit_launcher_options_result(
         state: &mut AppState,
         result: crate::ui::main_menu_dialogs::options::LauncherParentResult,
     ) {
-        // The key page is a child of Options: closing it reopens the dialog
-        // on the page the player left. Back and Terminal end the dialog for
-        // good.
+        // The key page and VERA's Mods page are children of Options: closing
+        // one reopens the dialog on the page the player left. Back and
+        // Terminal end the dialog for good.
         state.frontend.options_reopen_at = match result {
-            crate::ui::main_menu_dialogs::options::LauncherParentResult::Keyboard => state
+            crate::ui::main_menu_dialogs::options::LauncherParentResult::Keyboard
+            | crate::ui::main_menu_dialogs::options::LauncherParentResult::Mods => state
                 .frontend
                 .options_dialog
                 .as_ref()
@@ -1519,7 +1526,6 @@ impl App {
                 MainMenuShellAction::SinglePlayer
                 | MainMenuShellAction::MoviesAndCredits
                 | MainMenuShellAction::Options
-                | MainMenuShellAction::Mods
                 | MainMenuShellAction::Network
                 | MainMenuShellAction::WwOnline
                 | MainMenuShellAction::ExitGame => {
@@ -1891,7 +1897,10 @@ impl App {
             }
             ShellExitThen::PlayMovie => Self::play_selected_movie(state),
             ShellExitThen::MovieListBack => Self::open_movies_credits_page(state),
-            ShellExitThen::ModsBack => Self::close_mods_page(state),
+            ShellExitThen::ModsBack => {
+                Self::close_mods_page(state);
+                Self::open_launcher_options_dialog(state);
+            }
             ShellExitThen::SkirmishStart(session) => Self::commit_skirmish_start(state, *session),
             ShellExitThen::SkirmishBack => Self::commit_skirmish_back(state),
             ShellExitThen::CampaignBack => Self::commit_campaign_back(state),
@@ -2178,8 +2187,6 @@ impl App {
             MainMenuShellAction::MoviesAndCredits => {
                 Self::open_movies_credits_page(state);
             }
-            // VERA's Mods button.
-            MainMenuShellAction::Mods => Self::open_mods_page(state),
             // Both lead to a pre-match check, which compares a mod's files.
             MainMenuShellAction::Network => {
                 state.process_assets.read_mod_files_ahead();
