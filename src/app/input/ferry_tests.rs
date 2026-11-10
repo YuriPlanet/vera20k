@@ -2,8 +2,8 @@
 //! trip, and one whole trip through the simulation.
 
 use super::{
-    ARRIVE_CELLS, CHECK_INTERVAL, FerryAction, FerryRoute, FerryState, Leg, QUIET_TICKS,
-    RESEND_TICKS, TransportFacts, route_for, within,
+    ARRIVE_CELLS, CHECK_INTERVAL, DROP_RADIUS_CELLS, FerryAction, FerryRoute, FerryState, Leg,
+    QUIET_TICKS, RESEND_TICKS, TransportFacts, route_for, within,
 };
 use crate::sim::combat::TargetKind;
 use crate::sim::command::{Command, CommandEnvelope};
@@ -158,8 +158,9 @@ fn a_ferry_carries_a_unit_across_the_river_and_comes_back() {
 }
 
 /// A land trip on the flat arena for the other carriers: a Flak Track and a
-/// Nighthawk each take the GI standing in the circle to the drop spot and
-/// come back to load.
+/// Nighthawk each take the GI standing in the circle to the drop zone and
+/// come back to load. A tank stands on the drop spot, so each heads for a
+/// free cell beside it.
 #[test]
 fn a_flak_track_and_a_nighthawk_ferry_too() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
@@ -204,11 +205,24 @@ fn a_flak_track_and_a_nighthawk_ferry_too() {
             route_for(&sim, rules, None, owner, transport, (24, 18), start)
                 .unwrap_or_else(|| panic!("{carrier} takes the route")),
         );
+        let drop = (24, 18);
+        sim.spawn_object("MTNK", "Americans", drop.0, drop.1, 0, rules)
+            .unwrap();
+        sim.resolve_type_handles(rules);
+        let mut crossing_to = None;
         let (mut set_down, mut back) = (false, false);
         for _ in 0..3000 {
             let now = sim.session().tick();
             if now % CHECK_INTERVAL == 0 {
                 for order in ferry.check(&sim, rules, None, owner, now) {
+                    if let Command::Move {
+                        target_rx,
+                        target_ry,
+                        ..
+                    } = order
+                    {
+                        crossing_to.get_or_insert((target_rx, target_ry));
+                    }
                     sim.queue_command(CommandEnvelope::new(owner, now, order));
                 }
             }
@@ -233,6 +247,11 @@ fn a_flak_track_and_a_nighthawk_ferry_too() {
                 break;
             }
         }
+        let crossing_to = crossing_to.expect("a crossing was ordered");
+        assert!(
+            crossing_to != drop && within(crossing_to, drop, DROP_RADIUS_CELLS),
+            "{carrier} crosses to a free cell of the drop zone: {crossing_to:?}"
+        );
         assert!(set_down, "{carrier} set the GI down: {:?}", ferry.routes);
         assert!(back, "{carrier} came back to load: {:?}", ferry.routes);
     }

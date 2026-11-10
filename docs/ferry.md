@@ -10,7 +10,8 @@ there would send the transport to. A second press of the key, or a right
 click, drops the armed click again.
 
 While the transport is selected, a ring of light blue dots marks its pick-up
-circle, a dotted line leads to the drop spot and a small ring marks it.
+circle, a dotted line leads towards the drop spot and a second ring marks the
+drop zone.
 
 - **Loading.** The transport waits at the pick-up spot. Any of your infantry
   and vehicles that comes to a stop inside the circle (4 cells around the
@@ -21,7 +22,11 @@ circle, a dotted line leads to the drop spot and a small ring marks it.
   has been boarding for 75 game frames (5 seconds at 15 frames a second). An
   empty transport keeps waiting. A unit that is on its way but does not get
   aboard holds the transport for at most 300 frames.
-- **Unloading.** At the drop spot it unloads as it does when clicked on
+- **Crossing.** It heads for the free cell nearest the drop spot inside the
+  drop zone (3 cells around the spot): one that holds nothing, that no other
+  ferrying transport is heading for and that it can move to. So several
+  transports, or units already set down, do not block the drop.
+- **Unloading.** Where it stops it unloads as it does when clicked on
   itself. A transport on water first drives to the nearest land, as that
   order always does. If the way out is blocked it tries again.
 - **Returning.** Empty, it moves back to the pick-up spot and loads again.
