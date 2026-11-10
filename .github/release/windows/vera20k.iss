@@ -53,6 +53,13 @@ PrivilegesRequired=lowest
 DefaultDirName={autopf}\VERA20K
 ; An upgrade keeps the folder of the install it replaces, unless its drive is gone.
 UsePreviousAppDir=PreviousDriveExists
+; Setup never closes other programs. By default a silent Setup shuts down every
+; application that Windows' Restart Manager reports as using vera20k.exe,
+; whatever it is: on GitHub's Windows runner that was the runner's own job
+; process (provjobd), which ended the job. The game's updater waits for the game
+; to exit (InitializeSetup); a file still held fails the install, with the
+; reason in Setup's log.
+CloseApplications=no
 DisableProgramGroupPage=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible

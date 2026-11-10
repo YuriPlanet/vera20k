@@ -31,6 +31,36 @@ jobs:
           gh run download 42857214415 --repo "$GITHUB_REPOSITORY" -n windows-x64-update-programs -D .
           tar -xf update-programs.tar
           ls -la release update-programs/newest-release update-programs/newest-release/installer
+      - name: Install Inno Setup
+        shell: pwsh
+        run: .github/release/windows/install-inno.ps1
+      # The run's 0.3.0 installer, recompiled from its own files with this
+      # branch's vera20k.iss.
+      - name: Recompile the installer with this branch's script
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $orig = Get-ChildItem release | Select-Object -First 1
+          $installed = Join-Path $env:RUNNER_TEMP 'pkg-install'
+          $game = (Resolve-Path '.github\release\windows\test-game').Path
+          $p = Start-Process $orig.FullName -Wait -PassThru -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES',
+            '/NORESTART', '/NOICONS', "/DIR=`"$installed`"", "/GAMEDIR=`"$game`"")
+          if ($p.ExitCode -ne 0) { throw "install failed: $($p.ExitCode)" }
+          $pkg = Join-Path $env:RUNNER_TEMP 'pkg'
+          New-Item -ItemType Directory $pkg | Out-Null
+          foreach ($f in 'vera20k.exe', 'config.toml.example', 'README.txt', 'LICENSE-GPL', 'THIRD_PARTY_LICENSES.html') {
+            Copy-Item (Join-Path $installed $f) $pkg
+          }
+          Copy-Item (Join-Path $installed 'languages') $pkg -Recurse
+          $u = Start-Process (Join-Path $installed 'unins000.exe') -Wait -PassThru -ArgumentList @('/VERYSILENT',
+            '/SUPPRESSMSGBOXES', '/NORESTART')
+          "uninstall exit $($u.ExitCode)"
+          New-Item -ItemType Directory release2 | Out-Null
+          $out = (Resolve-Path release2).Path
+          & $env:INNO_SETUP_ISCC --quiet '/DAppVersion=0.3.0' '/DBuild=20261110-170000' "/DPackageDir=$pkg" `
+            "/DOutputDir=$out" "/DOutputBaseFilename=$($orig.BaseName)" '.github\release\windows\vera20k.iss'
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed: $LASTEXITCODE" }
+          Get-ChildItem release, release2 | Format-Table Name, Length
       # The Release workflow's two update-test steps, as it runs them.
       - name: Update the installed older build to this dev build
         shell: bash
@@ -39,15 +69,9 @@ jobs:
           VERSION: '0.3.0'
         run: |
           set -euo pipefail
-          release=(release/*)
+          release=(release2/*)
           python -m tools.update_test run --key update-programs/key/signing-key.pem \
             --release "${release[0]}" --version "$VERSION" --program "update-programs/older/vera20k.exe"
-      - name: What the first step left
-        shell: bash
-        run: |
-          ls -laR "$LOCALAPPDATA/VERA20k" || true
-          ls -la "$APPDATA/Microsoft/Windows/Start Menu/Programs" | grep -i vera || true
-          reg query 'HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\{9C9BFC32-A7B8-48ED-A428-72333354BDDB}_is1' || true
       - name: Update the newest release to this dev build, watched
         shell: bash
         timeout-minutes: 8
@@ -55,7 +79,7 @@ jobs:
           VERSION: '0.3.0'
         run: |
           set -uo pipefail
-          release=(release/*)
+          release=(release2/*)
           installed=(update-programs/newest-release/installer/*)
           (
             python -u -m tools.update_test run --key update-programs/key/signing-key.pem \
