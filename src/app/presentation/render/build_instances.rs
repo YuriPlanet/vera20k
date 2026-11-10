@@ -1195,12 +1195,7 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     });
 
     // Only show minimap when radar is online (or no radar_anim = legacy fallback).
-    let minimap_visible: bool = state
-        .match_state
-        .match_presentation
-        .radar_anim
-        .as_ref()
-        .is_none_or(|ra| ra.is_minimap_visible());
+    let minimap_visible = crate::app::presentation::sidebar_render::minimap_shown(state);
 
     let (minimap, viewport_rect, content_boundary) = if minimap_visible {
         match &mut state.match_state.match_presentation.minimap {
@@ -1340,13 +1335,21 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     // Credits counter shares the GAME.FNT sidebar-text layer: gamemd draws it
     // with the same BitFont on the sidebar surface, in the same packed side
     // text colour as the cameo labels.
-    if let Some(v) = view.as_ref() {
+    let layout_spec = state.match_state.match_presentation.sidebar_layout_spec;
+    if let Some(v) = view
+        .as_ref()
+        .filter(|_| layout_spec.shows(crate::ui::sidebar::SidebarPart::Money))
+    {
         let theme = crate::app::presentation::sidebar_render::current_sidebar_theme(state);
         text_layers.status.extend(
             crate::app::presentation::sidebar_text::build_sidebar_credits_instances(
                 &state.renderer.bit_font,
                 v,
-                state.match_state.match_presentation.sidebar_layout_spec,
+                layout_spec,
+                // The plate is as wide as its picture.
+                crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
+                    .and_then(|atlas| atlas.top_strip_thin)
+                    .map_or(layout_spec.sidebar_width, |plate| plate.pixel_size[0]),
                 crate::app::presentation::sidebar_text::credits_tint(theme),
                 [
                     state.match_state.input.camera_x,
@@ -1433,6 +1436,9 @@ fn build_radar_anim_instance(state: &AppState) -> Vec<SpriteInstance> {
 
     let (sw, sh) = state.sidebar_frame().layout_screen();
     let spec = state.match_state.match_presentation.sidebar_layout_spec;
+    if !spec.shows(crate::ui::sidebar::SidebarPart::Radar) {
+        return Vec::new();
+    }
     let layout = crate::ui::sidebar::compute_layout_with_spec(spec, sw, sh, 0);
 
     vec![SpriteInstance {

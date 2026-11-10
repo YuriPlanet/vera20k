@@ -18,7 +18,7 @@
 //! - Part of ui/ — reads the rules/ INI store; no app/ or render/.
 
 use crate::rules::ini_parser::{IniFile, IniSection};
-use crate::ui::sidebar::SidebarChromeLayoutSpec;
+use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarPart};
 
 /// The file's name in the game folder or a mod MIX.
 pub const FILE_NAME: &str = "VERAUI.INI";
@@ -38,6 +38,7 @@ const LIST_CAPACITY: usize = 0x800;
 /// One number of the sidebar's layout table a part key writes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Number {
+    SideWidth,
     CreditsX,
     CreditsY,
     MoneyX,
@@ -65,6 +66,7 @@ enum Number {
     TabsStep,
     CameosX,
     CameosY,
+    CameosColumns,
     CameosCellX,
     CameosCellY,
     CameosColumnWidth,
@@ -80,6 +82,7 @@ enum Number {
 impl Number {
     fn slot(self, spec: &mut SidebarChromeLayoutSpec) -> &mut f32 {
         match self {
+            Self::SideWidth => &mut spec.sidebar_width,
             Self::CreditsX => &mut spec.credits_x,
             Self::CreditsY => &mut spec.credits_y,
             Self::MoneyX => &mut spec.money_x,
@@ -107,6 +110,7 @@ impl Number {
             Self::TabsStep => &mut spec.tab_pitch,
             Self::CameosX => &mut spec.strip_x,
             Self::CameosY => &mut spec.strip_y,
+            Self::CameosColumns => &mut spec.cameo_columns,
             Self::CameosCellX => &mut spec.cameo_inset_x,
             Self::CameosCellY => &mut spec.cameo_inset_y,
             Self::CameosColumnWidth => &mut spec.cameo_column_pitch,
@@ -185,13 +189,12 @@ const STOCK_PARTS: &[StockPart] = &[
     },
     StockPart {
         name: "Side",
-        numbers: &[],
+        // The battlefield and the bottom bar take what the sidebar leaves.
+        numbers: &[size("Width", Number::SideWidth, 16)],
         fixed: &[
             ("Type", Some("Panel")),
             ("Hold", Some("Right")),
-            ("Width", Some("168")),
             ("Height", Some("Rest")),
-            ("Parts", Some("Credits,Top,Radar,Middle,Cameos,Power")),
             UNMOVED[0],
             UNMOVED[1],
             ART_KEY,
@@ -219,7 +222,6 @@ const STOCK_PARTS: &[StockPart] = &[
             ("Hold", Some("TopLeft")),
             ("Width", None),
             ("Height", None),
-            ("Parts", Some("Money")),
             ART_KEY,
         ],
     },
@@ -245,7 +247,6 @@ const STOCK_PARTS: &[StockPart] = &[
             ("Hold", Some("TopLeft")),
             ("Width", None),
             ("Height", None),
-            ("Parts", Some("Diplomacy,Options")),
             ART_KEY,
         ],
     },
@@ -289,7 +290,6 @@ const STOCK_PARTS: &[StockPart] = &[
             ("Hold", Some("TopLeft")),
             ("Width", None),
             ("Height", None),
-            ("Parts", Some("Repair,Sell,Tabs")),
             ART_KEY,
         ],
     },
@@ -324,6 +324,13 @@ const STOCK_PARTS: &[StockPart] = &[
         numbers: &[
             place("X", Number::CameosX),
             place("Y", Number::CameosY),
+            // Each visible cameo is a gadget, so a row stays a row.
+            NumberKey {
+                key: "Columns",
+                number: Number::CameosColumns,
+                min: 1,
+                max: 8,
+            },
             place("CellX", Number::CameosCellX),
             place("CellY", Number::CameosCellY),
             place("ColumnWidth", Number::CameosColumnWidth),
@@ -340,7 +347,6 @@ const STOCK_PARTS: &[StockPart] = &[
             ("Width", None),
             ("Height", Some("Rest")),
             ("Parts", None),
-            ("Columns", Some("2")),
             ("CellWidth", Some("60")),
             ("CellHeight", Some("48")),
             ART_KEY,
@@ -441,18 +447,67 @@ impl std::fmt::Display for LayoutProblem {
     }
 }
 
-/// One layout of the file: the numbers it changes on the side's original.
+/// The word a `Parts=` list uses for "no parts"; the INI store drops a key
+/// with no value.
+const NO_PARTS: &str = "None";
+
+/// One of the sidebar's panels: the sidebar itself (`None`) or a part that
+/// holds parts.
+type Panel = Option<SidebarPart>;
+
+/// A panel's section name: `Side` for the sidebar itself.
+fn panel_of(section_part: &str) -> Option<Panel> {
+    if section_part.eq_ignore_ascii_case("Side") {
+        return Some(None);
+    }
+    SidebarPart::STOCK_ORDER
+        .into_iter()
+        .find(|part| part.name().eq_ignore_ascii_case(section_part))
+        .filter(|&part| stock_children(Some(part)).next().is_some())
+        .map(Some)
+}
+
+/// The parts a panel holds in the original interface, in draw order.
+fn stock_children(panel: Panel) -> impl Iterator<Item = SidebarPart> {
+    SidebarPart::STOCK_ORDER
+        .into_iter()
+        .filter(move |part| part.panel() == panel)
+}
+
+/// One layout of the file: the numbers and part lists it changes on the
+/// side's original.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct MatchLayout {
     numbers: Vec<(Number, f32)>,
+    /// Each panel whose `Parts=` the layout writes, with its parts in order.
+    parts: Vec<(Panel, Vec<SidebarPart>)>,
 }
 
 impl MatchLayout {
-    /// Write this layout's numbers over the side's original sidebar table.
+    /// Write this layout's numbers and part lists over the side's original
+    /// sidebar table.
     pub fn apply_to_sidebar(&self, spec: &mut SidebarChromeLayoutSpec) {
         for &(number, value) in &self.numbers {
             *number.slot(spec) = value;
         }
+        if self.parts.is_empty() {
+            return;
+        }
+        // A panel's own list, else the original's; a part goes with its panel.
+        let children = |panel: Panel| -> Vec<SidebarPart> {
+            self.parts
+                .iter()
+                .rev()
+                .find(|(listed, _)| *listed == panel)
+                .map_or_else(
+                    || stock_children(panel).collect(),
+                    |(_, parts)| parts.clone(),
+                )
+        };
+        let mut order = children(None)
+            .into_iter()
+            .flat_map(|part| std::iter::once(part).chain(children(Some(part))));
+        spec.parts = std::array::from_fn(|_| order.next());
     }
 }
 
@@ -622,8 +677,18 @@ fn read_layout(
             problem(name, "", LayoutProblemKind::UnknownPart);
             continue;
         };
+        let panel = panel_of(part);
         for key in section.keys() {
-            if let Some(number) = stock
+            if let (Some(panel), true) = (panel, key.eq_ignore_ascii_case("Parts")) {
+                let (listed, unknown, elsewhere) = part_list(section, key, panel);
+                if unknown {
+                    problem(name, key, LayoutProblemKind::UnknownPart);
+                }
+                if elsewhere {
+                    problem(name, key, LayoutProblemKind::NotYet);
+                }
+                read.parts.push((panel, listed));
+            } else if let Some(number) = stock
                 .numbers
                 .iter()
                 .find(|number| number.key.eq_ignore_ascii_case(key))
@@ -651,6 +716,34 @@ fn read_layout(
         }
     }
     Some(read)
+}
+
+/// A panel's `Parts=`: the parts it names that the original holds in that
+/// panel, in the order written and each once, then whether it named something
+/// that is no part at all, and a part that belongs to another panel (moving a
+/// part between panels comes with a later version).
+fn part_list(section: &IniSection, key: &str, panel: Panel) -> (Vec<SidebarPart>, bool, bool) {
+    let mut listed = Vec::new();
+    let (mut unknown, mut elsewhere) = (false, false);
+    let names = section.read_list(key, LIST_CAPACITY).unwrap_or_default();
+    for name in names.into_iter().map(str::trim) {
+        if name.is_empty() || name.eq_ignore_ascii_case(NO_PARTS) {
+            continue;
+        }
+        let part = SidebarPart::STOCK_ORDER
+            .into_iter()
+            .find(|part| part.name().eq_ignore_ascii_case(name));
+        match part {
+            Some(part) if part.panel() == panel => {
+                if !listed.contains(&part) {
+                    listed.push(part);
+                }
+            }
+            Some(_) => elsewhere = true,
+            None => unknown = true,
+        }
+    }
+    (listed, unknown, elsewhere)
 }
 
 /// A key's value as a whole number: ReadInt's result, for text that is
@@ -686,22 +779,52 @@ fn same_list(section: &IniSection, key: &str, accepted: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::sidebar::cameo_order::CameoStrips;
+    use crate::rules::object_type::ObjectCategory;
+    use crate::sim::intern::StringInterner;
+    use crate::sim::production::{BuildOption, ProductionCategory};
+    use crate::ui::sidebar::cameo_order::{CameoStrips, StripColumns};
     use crate::ui::sidebar::gadget_flash::SidebarGadgetState;
     use crate::ui::sidebar::{
-        SidebarTab, SidebarTheme, SidebarView, build_sidebar_view_with_spec,
-        radar_minimap_rect_with_spec,
+        SidebarFrame, SidebarTab, SidebarTheme, SidebarView, build_sidebar_view_with_spec,
+        power_bar_rect, radar_minimap_rect_with_spec,
     };
+
+    /// `count` buildings to offer, each a cameo of the Building strip.
+    fn options(count: usize) -> (Vec<BuildOption>, StringInterner) {
+        let mut interner = StringInterner::new();
+        let options = (0..count)
+            .map(|i| BuildOption {
+                type_id: interner.intern(&format!("T{i}")),
+                cost: 1,
+                object_category: ObjectCategory::Building,
+                queue_category: ProductionCategory::Building,
+                enabled: true,
+                at_build_limit: false,
+                reason: None,
+            })
+            .collect();
+        (options, interner)
+    }
 
     /// The side's sidebar at 800x600 with `layout` over its original table.
     fn sidebar(
         theme: SidebarTheme,
         layout: Option<&MatchLayout>,
     ) -> (SidebarChromeLayoutSpec, SidebarView) {
+        sidebar_with(theme, layout, 0)
+    }
+
+    /// [`sidebar`] with `count` cameos on its Building strip.
+    fn sidebar_with(
+        theme: SidebarTheme,
+        layout: Option<&MatchLayout>,
+        count: usize,
+    ) -> (SidebarChromeLayoutSpec, SidebarView) {
         let mut spec = SidebarChromeLayoutSpec::for_theme(theme);
         if let Some(layout) = layout {
             layout.apply_to_sidebar(&mut spec);
         }
+        let (options, interner) = options(count);
         let view = build_sidebar_view_with_spec(
             spec,
             800.0,
@@ -712,25 +835,25 @@ mod tests {
             0,
             Some([32.0, 28.0]),
             &[],
-            &[],
+            &options,
             &[],
             None,
-            None,
+            Some(&interner),
             &[],
             &SidebarGadgetState::new(),
             Some([52.0, 32.0]),
             Some([52.0, 32.0]),
-            None,
-            None,
-            [None; 2],
-            &CameoStrips::default(),
+            Some([46.0, 25.0]),
+            Some([46.0, 25.0]),
+            [Some([72.0, 18.0]); 2],
+            &CameoStrips::layout_fixture(&options, &[], &[]),
         );
         (spec, view)
     }
 
     #[test]
     fn a_side_layout_changes_only_the_numbers_it_writes() {
-        // Keys that repeat the original (`Parts`, `type`, `Columns`) are
+        // Keys that repeat the original (`Parts`, `type`, `CellWidth`) are
         // accepted, capitals do not count, and the last line has no break.
         let file = MatchLayoutFile::from_bytes(
             b"[Layouts]\nNod=Steel\nDefault=Plain\n\
@@ -738,7 +861,7 @@ mod tests {
               [Steel.Middle]\nY=170\n\
               [Steel.Tabs]\nStep=40\n\
               [Steel.Radar]\ntype=radar\nMapX=10\nMapWidth=120\n\
-              [Steel.Cameos]\nColumns=2\nRowHeight=60\n\
+              [Steel.Cameos]\nCellWidth=60\nRowHeight=60\n\
               [Plain.Power]\nX=9",
         );
         assert!(file.problems().is_empty(), "{:?}", file.problems());
@@ -777,7 +900,7 @@ mod tests {
             b"[Layouts]\nGDI=Broken\nNod=Missing\nThirdSide=Future\n\
               [Broken]\nParts=Side,Field\nColour=red\n\
               [Broken.Radar]\nMapWidth=wide\nMapHeight=0\nHold=Left\nSpeed=3\n\
-              [Broken.Cameos]\nRowHeight=1\nColumns=3\n\
+              [Broken.Cameos]\nRowHeight=1\nCellHeight=30\nColumns=0\n\
               [Broken.Clock]\nX=4\n\
               [Future]\nVersion=2\n\
               [Future.Radar]\nY=10\n",
@@ -796,7 +919,8 @@ mod tests {
             ("[Broken.Radar] Hold", NotYet),
             ("[Broken.Radar] Speed", UnknownKey),
             ("[Broken.Cameos] RowHeight", Clamped { used: 16 }),
-            ("[Broken.Cameos] Columns", NotYet),
+            ("[Broken.Cameos] CellHeight", NotYet),
+            ("[Broken.Cameos] Columns", Clamped { used: 1 }),
             ("[Broken.Clock]", UnknownPart),
             ("[Layouts] Nod", MissingLayout),
             ("[Future] Version", NewerVersion),
@@ -813,6 +937,7 @@ mod tests {
             SidebarChromeLayoutSpec {
                 radar_height: 1.0,
                 cameo_row_height: 16.0,
+                cameo_columns: 1.0,
                 ..SidebarChromeLayoutSpec::for_theme(SidebarTheme::Allied)
             }
         );
@@ -822,16 +947,106 @@ mod tests {
     }
 
     #[test]
-    fn the_sample_layout_reads_cleanly_and_swaps_the_buttons() {
+    fn a_layout_leaves_parts_out_and_keeps_the_rest_in_its_order() {
+        let file = MatchLayoutFile::from_bytes(
+            b"[Layouts]\nGDI=Bare\nNod=NoButtons\n\
+              [Bare.Side]\nParts=Radar,Cameos,Middle\n\
+              [Bare.Middle]\nParts=tabs\n\
+              [Bare.Top]\nParts=Options,Sell,Clock\n\
+              [NoButtons.Top]\nParts=None\n",
+        );
+        // Clock is no part, and Sell belongs to another panel.
+        let problems: Vec<_> = file
+            .problems()
+            .iter()
+            .map(|problem| (problem.place(), problem.kind.clone()))
+            .collect();
+        assert_eq!(
+            problems,
+            [
+                (
+                    "[Bare.Top] Parts".to_owned(),
+                    LayoutProblemKind::UnknownPart
+                ),
+                ("[Bare.Top] Parts".to_owned(), LayoutProblemKind::NotYet),
+            ]
+        );
+
+        use SidebarPart::*;
+        let (stock_spec, stock) = sidebar(SidebarTheme::Allied, None);
+        let (spec, view) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI")));
+        // The strip's part Top is not in Side's list, so its Options goes too.
+        assert_eq!(
+            spec.parts_in_order().collect::<Vec<_>>(),
+            [Radar, Cameos, Middle, Tabs]
+        );
+        // A part that stays keeps its place; one left out takes no click.
+        assert_eq!(view.tabs, stock.tabs);
+        assert_eq!(view.scroll_down_button.rect, stock.scroll_down_button.rect);
+        assert_eq!(
+            radar_minimap_rect_with_spec(800.0, spec),
+            radar_minimap_rect_with_spec(800.0, stock_spec)
+        );
+        for left_out in [
+            view.repair_button.rect,
+            view.sell_button.rect,
+            view.top_buttons[0].rect,
+            view.top_buttons[1].rect,
+            power_bar_rect(&view.layout, spec),
+        ] {
+            assert_eq!((left_out.w, left_out.h), (0.0, 0.0));
+        }
+        assert!(stock.repair_button.rect.w > 0.0 && stock.top_buttons[1].rect.w > 0.0);
+
+        // `None` empties a panel that stays.
+        let (spec, _) = sidebar(SidebarTheme::Soviet, file.for_side(Some("Nod")));
+        assert!(spec.shows(Top) && !spec.shows(Diplomacy) && !spec.shows(Options));
+        assert!(spec.shows(Credits) && spec.shows(Money) && spec.shows(Power));
+    }
+
+    #[test]
+    fn a_layout_sets_the_cameo_columns_for_rows_and_scrolling() {
+        let file = MatchLayoutFile::from_bytes(
+            b"[Layouts]\nGDI=Wide\n[Wide.Cameos]\nColumns=3\nColumnWidth=40\n",
+        );
+        assert!(file.problems().is_empty(), "{:?}", file.problems());
+        let (spec, view) = sidebar_with(SidebarTheme::Allied, file.for_side(Some("GDI")), 7);
+        // Three to a row and 40 apart: the fourth cameo starts the next row.
+        let x: Vec<f32> = view.items.iter().map(|item| item.rect.x).collect();
+        assert_eq!(x[..4], [654.0, 694.0, 734.0, 654.0]);
+        assert_eq!(view.items[3].rect.y, view.items[0].rect.y + 50.0);
+
+        // The strip scrolls in the same rows: with two rows of three showing,
+        // seven cameos leave one more row, where rows of two would leave two.
+        let mut strips = CameoStrips::layout_fixture(&options(7).0, &[], &[]);
+        strips.set_columns(StripColumns::new(spec.columns()));
+        assert!(strips.queue_scroll(SidebarTab::Building, true, 2, 1));
+        strips.step_pending_scroll(2);
+        assert_eq!(strips.scroll_row(SidebarTab::Building), 1);
+        assert!(!strips.queue_scroll(SidebarTab::Building, true, 2, 1));
+    }
+
+    #[test]
+    fn a_layout_sets_the_sidebar_width_the_frame_takes() {
+        let file = MatchLayoutFile::from_bytes(b"[Layouts]\nGDI=Wide\n[Wide.Side]\nWidth=200\n");
+        assert!(file.problems().is_empty(), "{:?}", file.problems());
+        let (spec, view) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI")));
+        assert_eq!((view.panel_rect.x, view.panel_rect.w), (600.0, 200.0));
+        // The frame gives the battlefield and the bottom bar what is left.
+        let frame = SidebarFrame::native(800, 600).with_column_width(spec.sidebar_width as u32);
+        assert_eq!(frame.tactical_size(), (600, 568));
+        assert_eq!(frame.surface_size(), (200, 600));
+        assert_eq!(frame.bar_surface_size(), (600, 32));
+        assert_eq!(frame.layout_left(), view.panel_rect.x);
+    }
+
+    #[test]
+    fn the_sample_layout_reads_cleanly_and_does_what_it_says() {
         let file = MatchLayoutFile::from_bytes(
             crate::test_fixture::text("docs/examples/veraui.ini").as_bytes(),
         );
         assert!(file.problems().is_empty(), "{:?}", file.problems());
-        for (side, theme) in [
-            ("GDI", SidebarTheme::Allied),
-            ("Nod", SidebarTheme::Soviet),
-            ("ThirdSide", SidebarTheme::Yuri),
-        ] {
+        for (side, theme) in [("GDI", SidebarTheme::Allied), ("Nod", SidebarTheme::Soviet)] {
             let (_, stock) = sidebar(theme, None);
             let (_, view) = sidebar(theme, file.for_side(Some(side)));
             assert_eq!(
@@ -850,5 +1065,10 @@ mod tests {
             reversed.reverse();
             assert_eq!(places(&view), reversed, "{side}");
         }
+        // Yuri's is wider, three cameos to a row, with an empty top strip.
+        let (spec, view) = sidebar_with(SidebarTheme::Yuri, file.for_side(Some("ThirdSide")), 4);
+        assert_eq!((view.panel_rect.w, spec.columns()), (232.0, 3));
+        assert_eq!(view.items[3].rect.x, view.items[0].rect.x);
+        assert!(spec.shows(SidebarPart::Top) && !spec.shows(SidebarPart::Options));
     }
 }

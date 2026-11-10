@@ -1,11 +1,12 @@
 # Interface layout (`veraui.ini`)
 
-A mod can move the parts of the sidebar with a file named `veraui.ini`. Without the
-file the game looks exactly as the original does.
+A mod can lay out the sidebar with a file named `veraui.ini`: move its parts, leave
+parts out, change how many columns of build pictures it has and how wide it is. Without
+the file the game looks exactly as the original does.
 
-This is the first step of a larger plan. Later versions will let a layout leave parts
-out, add buttons and text, and put the sidebar on another edge of the screen. The keys
-on this page keep their meaning when that comes, so a layout you write now keeps working.
+This is part of a larger plan. Later versions will let a layout add buttons and text
+and put the sidebar on another edge of the screen. The keys on this page keep their
+meaning when that comes, so a layout you write now keeps working.
 
 ## Where the file goes
 
@@ -17,9 +18,15 @@ mod's own file wins. Restart the game after you change it.
 The file only changes what you see. Online players don't need the same file, and it
 isn't one of the files a match compares.
 
-[`docs/examples/veraui.ini`](examples/veraui.ini) is a sample you can copy. It keeps the
-original pictures, swaps Repair with Sell and Diplomacy with Options, and runs the tabs
-from right to left.
+An older VERA20k doesn't read the file and shows the original sidebar. If your mod
+needs its layout, say so with `Needs=` in the mod's
+[`mod.ini`](modding.md#modini).
+
+[`docs/examples/veraui.ini`](examples/veraui.ini) is a sample you can copy. With the
+original pictures it swaps Repair with Sell and Diplomacy with Options and runs the tabs
+from right to left for the Allies and the Soviets. For Yuri it shows a wider sidebar
+with three columns of build pictures and no top buttons, which needs wider pictures of
+your own to look finished.
 
 ## A small example
 
@@ -70,7 +77,7 @@ The layout's own section, `[Mine]`, holds one key:
 | --- | --- |
 | `Version=1` | The version of this format the layout was written for. Leave it at 1, or leave the section out. |
 
-## Parts you can move
+## The parts and where they sit
 
 All numbers are pixels of the original sidebar, which is 168 wide. The Sidebar size
 option in the game makes the whole interface bigger, your layout included.
@@ -99,9 +106,11 @@ Some parts have more keys:
 
 | Part | Key | Meaning | Allied | Soviet, Yuri |
 | --- | --- | --- | --- | --- |
+| `Side` | `Width` | How wide the sidebar is. The battlefield and the bar along the bottom take what is left. 16 or more | 168 | 168 |
 | `Radar` | `MapX`, `MapY` | Where the map picture sits inside the radar frame | 16, 1 | 19, 2 |
 | `Radar` | `MapWidth`, `MapHeight` | The size of the map picture | 140, 108 | 140, 108 |
 | `Tabs` | `Step` | From the left edge of one tab to the left edge of the next. A number below zero runs the tabs from right to left | 29 | 32 |
+| `Cameos` | `Columns` | How many build pictures are in a row. 1 to 8 | 2 | 2 |
 | `Cameos` | `CellX`, `CellY` | Where the first build picture sits, measured from the part's top-left corner | 22, 1 | 22, 1 |
 | `Cameos` | `ColumnWidth` | From the left edge of one column to the left edge of the next | 63 | 64 |
 | `Cameos` | `RowHeight` | From the top of one row to the top of the next. It also decides how many rows fit on the screen. 16 or more | 50 | 50 |
@@ -114,29 +123,16 @@ Sizes that come from your pictures:
 - A button or a tab is as big as its picture.
 - The rows behind the build pictures repeat at the height of `side2.shp`. If your
   picture isn't 50 tall, give `RowHeight` the same height.
+- A picture is never stretched. A wider sidebar or more columns need wider pictures of
+  your own behind them.
 
-## Not yet
+## Leaving parts out
 
-These keys belong to the format, but this version can't change them. You can leave them
-out or write the original value. Any other value is skipped, and the game tells you.
-
-| Key | What it is for | Original value |
-| --- | --- | --- |
-| `Type` | The kind of part: `Battlefield`, `Panel`, `Radar`, `CameoGrid`, `Tabs`, `PowerBar`, `Button` or `Text` | The part's own kind |
-| `Hold` | The edge or corner of its parent a part is measured from | `TopLeft`. `Top` for `Money`, `Right` for `Side`, `Bottom` for `Bar` |
-| `Width`, `Height` | A part's size. `Rest` means what is left | `Width=168` and `Height=Rest` for `Side`, `Width=Rest` and `Height=32` for `Bar`, `Rest` for both on `Field`, `Height=Rest` for `Cameos` |
-| `Parts` | The parts inside a part, in the order they are drawn | See below |
-| `Art` | The pictures a part draws | None yet: replace the picture files instead |
-| `Columns`, `CellWidth`, `CellHeight` | The number of columns of build pictures, and the size of one | 2, 60, 48 |
-| `Command` | What a button does | None yet |
-| `Value` | What a text part shows | None yet |
-
-The original interface holds its parts like this:
+`Parts=` on a part that holds other parts says which of them it has. A part that isn't
+in the list isn't drawn and takes no clicks, and the parts inside it go with it. The
+original lists are:
 
 ```ini
-[Mine]
-Parts=Field,Side,Bar
-
 [Mine.Side]
 Parts=Credits,Top,Radar,Middle,Cameos,Power
 
@@ -149,6 +145,41 @@ Parts=Diplomacy,Options
 [Mine.Middle]
 Parts=Repair,Sell,Tabs
 ```
+
+This layout has no top strip and no Sell button:
+
+```ini
+[Mine.Side]
+Parts=Credits,Radar,Middle,Cameos,Power
+
+[Mine.Middle]
+Parts=Repair,Tabs
+```
+
+- The order is the order they are drawn in: where two panels overlap, the later one is
+  on top. Buttons and tabs are always in front of the panels.
+- `Parts=None` keeps a part but empties it: `[Mine.Top]` with `Parts=None` draws the
+  strip without its buttons.
+- A list can only name the parts the original holds there. `Sell` can't move from
+  `Middle` to `Top` yet.
+- Leaving a part out only takes it off the screen. The hotkeys for Repair, Sell, the
+  tabs and Options still work, and the radar still goes on and off with its sounds.
+
+## Not yet
+
+These keys belong to the format, but this version can't change them. You can leave them
+out or write the original value. Any other value is skipped, and the game tells you.
+
+| Key | What it is for | Original value |
+| --- | --- | --- |
+| `Type` | The kind of part: `Battlefield`, `Panel`, `Radar`, `CameoGrid`, `Tabs`, `PowerBar`, `Button` or `Text` | The part's own kind |
+| `Hold` | The edge or corner of its parent a part is measured from | `TopLeft`. `Top` for `Money`, `Right` for `Side`, `Bottom` for `Bar` |
+| `Width`, `Height` | A part's size, for every part but the `Width` of `Side`. `Rest` means what is left | `Height=Rest` for `Side`, `Width=Rest` and `Height=32` for `Bar`, `Rest` for both on `Field`, `Height=Rest` for `Cameos` |
+| `Parts` on the layout itself | The parts of the whole screen | `Parts=Field,Side,Bar` |
+| `Art` | The pictures a part draws | None yet: replace the picture files instead |
+| `CellWidth`, `CellHeight` | The size of one build picture | 60, 48 |
+| `Command` | What a button does | None yet |
+| `Value` | What a text part shows | None yet |
 
 Three parts can't be moved at all yet: `Field` (the battlefield), `Side` (the sidebar)
 and `Bar` (the bar along the bottom of the screen). A layout also can't add a part: a
@@ -163,6 +194,7 @@ A mistake in the file never stops the game.
 | A key or a part it doesn't know | Skips it |
 | A value that isn't a whole number | Skips it and keeps the original |
 | A number that is far too big or too small | Uses the nearest number it allows |
+| A `Parts=` list with a name that is no part, or a part held somewhere else | Skips that name and keeps the rest of the list |
 | A layout named in `[Layouts]` that the file doesn't have | Keeps the original interface for that side |
 | A `Version=` newer than the game knows | Keeps the original interface for that side |
 

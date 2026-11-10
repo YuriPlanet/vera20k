@@ -45,6 +45,8 @@ pub(crate) struct SidebarProjectionState {
     /// Retained native strip order, keyed to the local house. `None` is the
     /// scenario-init window (`[0xA8E7AC] != 0`), where insertions are silent.
     cameos: Option<(InternedId, CameoStrips)>,
+    /// The layout's cameo columns, which every strip counts its rows in.
+    cameo_columns: crate::ui::sidebar::cameo_order::StripColumns,
     /// A saved strip replacement must bind its buttons before its first
     /// refreshed view. Cleared by that reconciliation or a fresh seed/reset.
     pending_tab_initialization: bool,
@@ -368,6 +370,9 @@ impl SidebarProjectionState {
                 self.prediction_categories.clear();
             }
             self.cameos = Some((owner, CameoStrips::default()));
+        }
+        if let Some((_, strips)) = self.cameos.as_mut() {
+            strips.set_columns(self.cameo_columns);
         }
         let recalculate_builds = !initialized || self.pending_cameo_recheck == Some(owner);
         self.pending_cameo_recheck = None;
@@ -1130,6 +1135,11 @@ impl SidebarProjectionState {
         self.cameos
             .as_ref()
             .is_some_and(|(_, strips)| strips.redraw_requested(frame))
+    }
+
+    /// The layout's cameo columns, taken by the strips at the next reconcile.
+    pub(crate) fn set_cameo_columns(&mut self, columns: usize) {
+        self.cameo_columns = crate::ui::sidebar::cameo_order::StripColumns::new(columns);
     }
 
     pub(crate) fn set_cameo_frame(&mut self, frame: i32) {

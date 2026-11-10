@@ -29,9 +29,10 @@ here, and a mod that changes the program doesn't.
 **Only partly:**
 
 - Menus. You can replace their pictures, but you can't move things around.
-- The sidebar. You can replace its pictures and move its parts with an
-  [interface layout](interface-layout.md). You can't yet add parts, leave parts out or
-  put the sidebar on another edge.
+- The sidebar. You can replace its pictures, and with an
+  [interface layout](interface-layout.md) move its parts, leave parts out, and change
+  its width and its columns of build pictures. You can't yet add parts or put the
+  sidebar on another edge.
 - Ares and Phobos. Only some of their keys work, and only in a build you make yourself.
   See [More detail](#more-detail).
 - Big conversions such as Mental Omega. They depend on DLL features, so they don't work
@@ -90,7 +91,7 @@ game folder works the same from its own folder.
 | A file named the same as a game file, such as `rulesmd.ini` or a `.shp` | Replaces the game's copy. It must be directly in the mod's folder, not in a subfolder. |
 | An archive named `expandmd50.mix` | Replaces the game's copies of the files inside it. The number can be 00 to 99, and higher numbers win. An archive with the same name as one in the game folder takes that archive's place, so pick a number the game doesn't use unless you mean that. |
 | Maps | Adds them to the map list while the mod is in use. |
-| `veraui.ini` | Moves the parts of the sidebar. See [interface layout](interface-layout.md). |
+| `veraui.ini` | Lays out the sidebar: where its parts sit, which it has, and how wide it is. See [interface layout](interface-layout.md). |
 | `mod.ini` | Says what the mod is called. Optional. |
 
 #### mod.ini
@@ -234,7 +235,7 @@ front of your changes in `VERARULES.INI`.
 
 - [Personal rules](personal-rules.md): everything about `VERARULES.INI`.
 - [INI profiles](ini-roots.md): use your own rules, art and AI files under other names.
-- [Interface layout](interface-layout.md): move the parts of the sidebar with `veraui.ini`.
+- [Interface layout](interface-layout.md): lay out the sidebar with `veraui.ini`.
 - [Ares](ares.md), [Phobos](phobos.md), [NPatch](npatch.md) and [VeraX](verax.md): what
   each extension covers and how to build VERA20k with it. The official downloads don't
   include them, and no INI file can add them.

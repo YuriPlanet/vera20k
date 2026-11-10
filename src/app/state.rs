@@ -197,7 +197,14 @@ impl AppState {
         } else {
             self.persistence.options_profile.sidebar
         };
+        // The side's layout decides how wide the column is.
+        let column_width = self
+            .match_state
+            .match_presentation
+            .sidebar_layout_spec
+            .sidebar_width as u32;
         crate::ui::sidebar::SidebarFrame::new(width, height, size.percent(width, height))
+            .with_column_width(column_width)
     }
 
     /// The zoom pass a match frame goes through: the battlefield and the

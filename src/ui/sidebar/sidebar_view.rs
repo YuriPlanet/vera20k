@@ -109,7 +109,7 @@ impl ArmedSidebarEntry {
     }
 }
 use super::{
-    CAMEO_COLUMNS, Rect, SidebarAction, SidebarChromeLayoutSpec, SidebarItem, SidebarScrollButton,
+    Rect, SidebarAction, SidebarChromeLayoutSpec, SidebarItem, SidebarPart, SidebarScrollButton,
     SidebarTab, SidebarTabButton, SidebarToggleButton, SidebarView, compute_layout_with_spec,
     scroll_button_rects,
 };
@@ -212,7 +212,8 @@ pub(crate) fn build_sidebar_view_with_spec(
         .collect();
     let scroll_rows = cameo_order.scroll_row(active_tab);
     let total_items = all_entries.len();
-    let total_rows = total_items.div_ceil(CAMEO_COLUMNS);
+    let columns = layout_spec.columns();
+    let total_rows = total_items.div_ceil(columns);
 
     // Native screen capacity is independent of the item count.
     let layout = compute_layout_with_spec(layout_spec, screen_w, screen_h, total_rows);
@@ -226,6 +227,9 @@ pub(crate) fn build_sidebar_view_with_spec(
 
     // 6ABD30 positions the four SBGadgets with the side-specific tab pitch.
     // Their actual SHP canvas determines size (`69DE00`), not the pitch.
+    // A part the layout leaves out keeps its place with an empty rect, so
+    // nothing hits it; the chrome builder skips its picture.
+    let shows = |part| layout_spec.shows(part);
     let [tab_w, tab_h] = tab_button_size.unwrap_or([0.0, 0.0]);
     let tabs: Vec<SidebarTabButton> = SidebarTab::all()
         .into_iter()
@@ -237,7 +241,8 @@ pub(crate) fn build_sidebar_view_with_spec(
                 y: layout.tabs_y,
                 w: tab_w,
                 h: tab_h,
-            },
+            }
+            .shown(shows(SidebarPart::Tabs)),
             active: tab == active_tab,
             disabled: gadget_state.tab_disabled[idx],
             frame_index: gadget_state.tab_frame(idx, tab == active_tab),
@@ -259,13 +264,15 @@ pub(crate) fn build_sidebar_view_with_spec(
         y: side1_y_local + layout_spec.repair_y,
         w: repair_w,
         h: repair_h,
-    };
+    }
+    .shown(shows(SidebarPart::Repair));
     let sell_rect = Rect {
         x: layout.side1_x + layout_spec.sell_x,
         y: side1_y_local + layout_spec.sell_y,
         w: sell_w,
         h: sell_h,
-    };
+    }
+    .shown(shows(SidebarPart::Sell));
     let repair_button = SidebarToggleButton {
         rect: repair_rect,
         action: SidebarAction::ToggleRepairMode,
@@ -286,7 +293,7 @@ pub(crate) fn build_sidebar_view_with_spec(
     );
     // Ordinary local-player branch of 6A6610: both arrows share capacity
     // availability, independent of the current end position.
-    let scroll_disabled = total_items <= layout.side2_tile_count * CAMEO_COLUMNS;
+    let scroll_disabled = total_items <= layout.side2_tile_count * columns;
     // `RadarClass::AddOrRemoveButtons @ 0x00652E50` adds both buttons to the
     // gadget list whenever ToggleSidebar shows the sidebar, which every
     // scenario keeps shown (Init and Action pass 1), so they are always laid out.
@@ -298,7 +305,8 @@ pub(crate) fn build_sidebar_view_with_spec(
                 y: layout.top_y + layout_spec.top_buttons[i][1],
                 w,
                 h,
-            },
+            }
+            .shown(shows([SidebarPart::Diplomacy, SidebarPart::Options][i])),
             disabled: false,
             frame_index: gadget_state.top_button_frame(i),
         }
@@ -321,16 +329,22 @@ pub(crate) fn build_sidebar_view_with_spec(
     let max_scroll_rows = total_rows.saturating_sub(visible_rows);
     let scroll_rows = scroll_rows.min(max_scroll_rows);
 
-    let visible_items = scroll_rows * CAMEO_COLUMNS;
-    let max_visible = visible_rows * CAMEO_COLUMNS;
+    let visible_items = scroll_rows * columns;
+    // Without the strip no cameo is laid out; its retained order and scroll
+    // row stay as they are.
+    let max_visible = if shows(SidebarPart::Cameos) {
+        visible_rows * columns
+    } else {
+        0
+    };
     let items: Vec<SidebarItem> = all_entries
         .into_iter()
         .skip(visible_items)
         .take(max_visible)
         .enumerate()
         .map(|(idx, (entry, display_name))| {
-            let row = idx / CAMEO_COLUMNS;
-            let col = idx % CAMEO_COLUMNS;
+            let row = idx / columns;
+            let col = idx % columns;
             let x = (layout.strip_x
                 + layout_spec.cameo_inset_x
                 + col as f32 * layout_spec.cameo_column_pitch)

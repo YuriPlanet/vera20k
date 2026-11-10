@@ -9,7 +9,8 @@
 //! rest. At Normal it is all the frame's own pixels.
 //!
 //! Layout space is that frame in sidebar pixels: the column's left edge at
-//! `layout width - 168`, the strip's top at `layout height - 32`. At Normal it
+//! `layout width - column width` (168 in the original; a layout may give
+//! another), the strip's top at `layout height - 32`. At Normal it
 //! is the frame space itself, so only Large and XL map points and rects
 //! between the two.
 //!
@@ -36,6 +37,9 @@ pub struct SidebarFrame {
     frame_height: u32,
     /// Frame pixels per 100 sidebar pixels: 100 at Normal.
     percent: u32,
+    /// The column's width in sidebar pixels: [`SIDEBAR_WIDTH_PX`] unless the
+    /// side's layout gives another.
+    column_width: u32,
     /// Surface pixels per sidebar pixel (`in_window`): 1 unless zoomed.
     draw_scale: u32,
     /// Window pixels per 100 frame pixels: the match zoom, 100 unzoomed.
@@ -48,9 +52,23 @@ impl SidebarFrame {
             frame_width,
             frame_height,
             percent: percent.max(100),
+            column_width: SIDEBAR_WIDTH_PX,
             draw_scale: 1,
             zoom_percent: 100,
         }
+    }
+
+    /// This frame with the column as wide as the side's layout makes it.
+    pub fn with_column_width(self, column_width: u32) -> Self {
+        Self {
+            column_width: column_width.max(1),
+            ..self
+        }
+    }
+
+    /// The column's width in sidebar pixels.
+    pub fn column_width(self) -> u32 {
+        self.column_width
     }
 
     /// This frame as a window shows it at `zoom_percent`: the surfaces draw
@@ -87,9 +105,9 @@ impl SidebarFrame {
         self.percent.is_multiple_of(100)
     }
 
-    /// The column's width in frame pixels: 168 at Normal.
+    /// The column's width in frame pixels: 168 at Normal in the original.
     pub fn width_in_frame(self) -> u32 {
-        SIDEBAR_WIDTH_PX * self.percent / 100
+        self.column_width * self.percent / 100
     }
 
     /// The bottom strip's height in frame pixels: 32 at Normal.
@@ -128,7 +146,7 @@ impl SidebarFrame {
 
     /// Layout-space x of the column's left edge.
     pub fn layout_left(self) -> f32 {
-        self.layout_size().0 as f32 - SIDEBAR_WIDTH_PX as f32
+        self.layout_size().0 as f32 - self.column_width as f32
     }
 
     /// Layout-space y of the strip's top edge.
@@ -136,17 +154,20 @@ impl SidebarFrame {
         self.layout_size().1 as f32 - BOTTOM_STRIP_HEIGHT_PX as f32
     }
 
-    /// The sidebar's surface in its own pixels: the column's native width and
-    /// the layout's height.
+    /// The sidebar's surface in its own pixels: the column's width and the
+    /// layout's height.
     pub fn surface_size(self) -> (u32, u32) {
-        (SIDEBAR_WIDTH_PX, self.layout_size().1)
+        (self.column_width, self.layout_size().1)
     }
 
     /// The bar's surface in its own pixels: the layout's width left of the
     /// column, and the strip's native height.
     pub fn bar_surface_size(self) -> (u32, u32) {
         (
-            self.layout_size().0.saturating_sub(SIDEBAR_WIDTH_PX).max(1),
+            self.layout_size()
+                .0
+                .saturating_sub(self.column_width)
+                .max(1),
             BOTTOM_STRIP_HEIGHT_PX,
         )
     }

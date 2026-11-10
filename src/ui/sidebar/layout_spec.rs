@@ -12,6 +12,82 @@ pub enum SidebarTheme {
     Yuri,
 }
 
+/// A part of the original sidebar, under the name `veraui.ini` gives it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SidebarPart {
+    /// CREDITS.SHP plate.
+    Credits,
+    /// The credits number, in [`Self::Credits`].
+    Money,
+    /// TOP.SHP strip.
+    Top,
+    /// DIPLOBTN and OPTBTN, in [`Self::Top`].
+    Diplomacy,
+    Options,
+    /// The radar housing and its minimap.
+    Radar,
+    /// SIDE1.
+    Middle,
+    /// Repair, Sell and the four tabs, in [`Self::Middle`].
+    Repair,
+    Sell,
+    Tabs,
+    /// The cameo strip: its SIDE2 rows, cameos, SIDE3, ADDON and scroll
+    /// buttons.
+    Cameos,
+    Power,
+}
+
+impl SidebarPart {
+    /// Every part, in the original's draw order: a panel, then the parts in
+    /// it.
+    pub const STOCK_ORDER: [Self; 12] = [
+        Self::Credits,
+        Self::Money,
+        Self::Top,
+        Self::Diplomacy,
+        Self::Options,
+        Self::Radar,
+        Self::Middle,
+        Self::Repair,
+        Self::Sell,
+        Self::Tabs,
+        Self::Cameos,
+        Self::Power,
+    ];
+
+    /// The panel a part sits in; `None` for a part held by the sidebar
+    /// itself.
+    pub const fn panel(self) -> Option<Self> {
+        match self {
+            Self::Money => Some(Self::Credits),
+            Self::Diplomacy | Self::Options => Some(Self::Top),
+            Self::Repair | Self::Sell | Self::Tabs => Some(Self::Middle),
+            Self::Credits | Self::Top | Self::Radar | Self::Middle | Self::Cameos | Self::Power => {
+                None
+            }
+        }
+    }
+
+    /// The name of the part's `[Layout.Part]` section.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Credits => "Credits",
+            Self::Money => "Money",
+            Self::Top => "Top",
+            Self::Diplomacy => "Diplomacy",
+            Self::Options => "Options",
+            Self::Radar => "Radar",
+            Self::Middle => "Middle",
+            Self::Repair => "Repair",
+            Self::Sell => "Sell",
+            Self::Tabs => "Tabs",
+            Self::Cameos => "Cameos",
+            Self::Power => "Power",
+        }
+    }
+}
+
 /// Every number the sidebar is laid out from, in sidebar pixels. Each part's
 /// place is measured from the part that holds it, as `veraui.ini` writes it
 /// (`ui::match_layout`); [`super::compute_layout_with_spec`] and the view
@@ -19,6 +95,10 @@ pub enum SidebarTheme {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SidebarChromeLayoutSpec {
     pub theme: SidebarTheme,
+    /// The parts the sidebar has, in draw order: a panel before the parts in
+    /// it, a later part over an earlier one. A part that is not listed is not
+    /// drawn and takes no clicks.
+    pub parts: [Option<SidebarPart>; 12],
     pub sidebar_width: f32,
     /// SIDE2 and SIDE3 canvas heights, taken from the loaded art.
     pub side2_height: f32,
@@ -73,6 +153,9 @@ pub struct SidebarChromeLayoutSpec {
     /// sidebar + 0x16).
     pub cameo_inset_x: f32,
     pub cameo_inset_y: f32,
+    /// How many cameos a row holds: the original's two (GetVisibleSlotCount
+    /// `0x006AC430` counts 2 * rows).
+    pub cameo_columns: f32,
     /// From one cameo column to the next (`0x006A5090`: 0x3F or 0x40).
     pub cameo_column_pitch: f32,
     pub cameo_width: f32,
@@ -110,8 +193,16 @@ impl SidebarChromeLayoutSpec {
     /// (allied) position table.
     pub const fn for_theme_and_positions(theme: SidebarTheme, gdi_positions: bool) -> Self {
         let allied = gdi_positions;
+        let stock = SidebarPart::STOCK_ORDER;
+        let mut parts = [None; 12];
+        let mut index = 0;
+        while index < stock.len() {
+            parts[index] = Some(stock[index]);
+            index += 1;
+        }
         Self {
             theme,
+            parts,
             sidebar_width: super::SIDEBAR_WIDTH_PX as f32,
             side2_height: 50.0,
             side3_height: 26.0,
@@ -145,6 +236,7 @@ impl SidebarChromeLayoutSpec {
             strip_y: 227.0,
             cameo_inset_x: 22.0,
             cameo_inset_y: 1.0,
+            cameo_columns: 2.0,
             cameo_column_pitch: if allied { 63.0 } else { 64.0 },
             cameo_width: 60.0,
             cameo_height: 48.0,
@@ -161,9 +253,19 @@ impl SidebarChromeLayoutSpec {
 }
 
 impl SidebarChromeLayoutSpec {
-    /// The credits number's place from the middle of the sidebar's top edge.
-    pub fn money_offset(&self) -> [f32; 2] {
-        [self.credits_x + self.money_x, self.credits_y + self.money_y]
+    /// The cameos in one strip row, at least one.
+    pub fn columns(&self) -> usize {
+        (self.cameo_columns as usize).max(1)
+    }
+
+    /// Whether the layout has this part.
+    pub fn shows(&self, part: SidebarPart) -> bool {
+        self.parts.contains(&Some(part))
+    }
+
+    /// The parts in draw order.
+    pub fn parts_in_order(&self) -> impl Iterator<Item = SidebarPart> + '_ {
+        self.parts.iter().flatten().copied()
     }
 }
 
