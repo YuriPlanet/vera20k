@@ -79,7 +79,8 @@ class VeraActivity : NativeActivity() {
         }
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {        super.onActivityResult(requestCode, resultCode, data)
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != REQUEST_PICK_FOLDER) return
         val tree = if (resultCode == Activity.RESULT_OK) data?.data else null
         // An empty string, not null: the native side reads it as "cancelled"
