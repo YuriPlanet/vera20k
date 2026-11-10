@@ -42,8 +42,10 @@ complete mission loading or all downstream campaign extensions.
 
 Supported extensions:
 
-- [Ordinary ground and tower EMP](ares-emp.md) (bounded human Drive/Walk, unteamed AI Drive and independent powered defensive buildings;
-  team members, spawners and Fly/Jumpjet victims follow in [warhead residuals](ares-warhead-residuals.md))
+- [Ground, airborne and powered-building EMP](ares-emp.md) (every Foot mover but Tunnel, human or AI,
+  miners, falling and mind-controlled victims, independent powered buildings with Radar and SpySat,
+  and the player's miner and base warnings; team members and spawners in
+  [warhead residuals](ares-warhead-residuals.md))
 - [Water and land type conversion](../src/sim/game_entity/type_conversion.rs):
   `Convert.Water` applies over water or beach; `Convert.Land` applies over land
   and bridges. It uses the same in-place conversion owner as script action 68,

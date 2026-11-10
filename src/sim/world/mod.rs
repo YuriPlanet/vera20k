@@ -3315,24 +3315,22 @@ impl Simulation {
         // entering their radar/EVA block. Keep all-owner producer facts for
         // replay, but only the reached local Unit call consumes this prefix.
         // HouseNotify can also warn a local ally of a nonlocal building.
-        let building_warning = self
-            .interner
-            .object_type(event.victim_type, rules)
-            .is_some_and(|object| {
-                object.category == crate::rules::object_type::ObjectCategory::Building
-            });
+        let building_warning = matches!(
+            event.line,
+            crate::sim::combat::UnderAttackLine::House { .. }
+        );
         if building_warning || self.session.current_house() == Some(event.owner) {
             effects.flush_sound(self, rules);
         }
     }
 
     /// `HouseClass::NotifyUnderAttack @ 0x004F93E0` for a building warning,
-    /// plus the `UnitClass::ReceiveDamage 0x00738530` harvester ping.
+    /// plus the ore-miner pings ([`crate::sim::combat::UnderAttackLine`]).
     ///
     /// The victim's own line: the radar diamond (type 4 miner / type 3 base,
     /// `0x004F94E4`/`0x004F9544`) is requested for the victim house; the app
     /// keeps the local-player filter and admits it there. The ally line (`0x004F955D..0x004F95B3`,
-    /// building path only): every *other* human house that the victim house
+    /// a House line reached on every client): every *other* human house that the victim house
     /// lists in its own ally bitfield (`House+0x5788`, read at `0x004F9450`
     /// through `IsAlliedWith`'s one-way rule) hears
     /// `EVA_OurAllyIsUnderAttack` behind `CreateRadarEvent(0x10, cell)`,
@@ -3352,11 +3350,16 @@ impl Simulation {
             let Some(object) = interner.object_type(event.victim_type, rules) else {
                 continue;
             };
-            let structure = object.category == crate::rules::object_type::ObjectCategory::Building;
             // House4F9491..4F94A3: a deployed miner needs both predicates.
-            // Non-building producers have already admitted Harvester= units.
+            // OreMiner producers have already admitted their own victims.
             // Native corpus: tools/spatial_oracle/temporal_house_notice.json.
-            let miner = !structure || (object.undeploys_into.is_some() && object.resource_gatherer);
+            let (miner, allies) = match event.line {
+                crate::sim::combat::UnderAttackLine::OreMiner => (true, false),
+                crate::sim::combat::UnderAttackLine::House { allies } => (
+                    object.undeploys_into.is_some() && object.resource_gatherer,
+                    allies,
+                ),
+            };
             let event_type = if miner {
                 RadarEventType::HarvesterUnderAttack
             } else {
@@ -3371,7 +3374,7 @@ impl Simulation {
                     radar: RadarEventRequest::new(event_type, event.rx, event.ry),
                 });
             }
-            if !structure {
+            if !allies {
                 continue;
             }
             let victim_passive = houses

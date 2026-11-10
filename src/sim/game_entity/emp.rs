@@ -1,4 +1,4 @@
-//! Ares EMP for ground and Fly/Jumpjet victims and independent powered buildings.
+//! Ares EMP for every Foot mover but Tunnel and for independent powered buildings.
 //! The Techno+504 counter and held Anim have one private owner; the existing powered-unit owner keeps +1C8.
 //! Installed Bullet46920B ->100536E0/10062320 and AI6FAF0D ->10053DF0.
 //! Evidence/transport bounds: tools/rules_oracle/ares_emp.{py,json,meta.json};
@@ -121,10 +121,11 @@ mod receiver {
     }
     /// Supported Building dependencies, not a replacement immunity predicate.
     /// Factories/providers and linked/managed effects need their own complete chains.
+    /// A Radar or SpySat provider is supported: House508EBC/508F91 (Ares
+    /// 10024550/10024620) skip an EMPed one, and both effect bodies dirty
+    /// RecheckRadar for it.
     fn ordinary_building(object: &crate::rules::object_type::ObjectType) -> bool {
         !object.has_factory()
-            && !object.radar
-            && !object.spy_sat
             && !object.gap_generator
             && object.super_weapon.is_none()
             && object.super_weapon2.is_none()
@@ -362,11 +363,10 @@ mod receiver {
                 }
             });
         }
-        /// One actual10062320 delivery. Supported victims are human
-        /// Drive/Walk, AI Drive and every Fly/Jumpjet mover (Aircraft
-        /// included), in or out of a team, with or without spawn, slave or
-        /// capture managers; harvesters and the AI Walk path remain explicit
-        /// residuals.
+        /// One actual10062320 delivery. Supported victims are the Foots of
+        /// every mover but Tunnel, human or AI, in or out of a team, with or
+        /// without spawn, slave or capture managers, harvesters, falling and
+        /// mind-controlled ones included, and independent powered buildings.
         fn deliver_ares_emp(
             &mut self,
             target: u64,
@@ -422,11 +422,13 @@ mod receiver {
                 EntityCategory::Unit | EntityCategory::Aircraft => object.organic,
                 EntityCategory::Structure if ordinary_building(object) => {
                     // Installed10062DC0..10062E32: invisible is ineligible;
-                    // ordinary powered Buildings need a positive native drain.
+                    // ordinary powered Buildings need a positive native drain,
+                    // and a Radar (+16A4) type is prone without one.
                     object.invisible_in_game
-                        || !(object.powered
+                        || !((object.powered
                             && crate::sim::power_system::native_building_power_drain(object.power)
                                 > 0)
+                            || object.radar)
                 }
                 _ => return EmpDelivery::Unsupported,
             };
@@ -462,18 +464,18 @@ mod receiver {
             }
             // Restrict the new producer by actual dependency support, not a
             // fabricated immunity. An unsupported victim is observable to tests.
-            // Fly and Jumpjet movers need no recovery mission of their own:
-            // a flying Aircraft crashes (enableEMPEffect10062B40) and the inlined
-            // Threshold in-air arm of10062320 destroys the others.
+            // Native10062320 tests no mover. Every admitted one reaches only
+            // shared owners: Deactivate's Power_Off (Hover's override spins and
+            // settles), the Ares deactivated-Unit stop, Teleport's deactivated
+            // MoveTo refusal1005D3E0, and for a flying Aircraft (a Rocket too)
+            // the crash of enableEMPEffect10062B40 or the inlined Threshold
+            // in-air arm. A falling object keeps falling (ObjectAI5F3F11 tests
+            // no deactivation) and lands offline; a mind-controlled one keeps
+            // its controller. A Tunnel mover's dig and underground states are
+            // not traced under Deactivate.
             let mover = victim.locomotor.as_ref().map(|loco| loco.active_kind());
             if (victim.category() != EntityCategory::Structure
-                && !match mover {
-                    Some(LocomotorKind::Drive | LocomotorKind::Fly | LocomotorKind::Jumpjet) => {
-                        true
-                    }
-                    Some(LocomotorKind::Walk) => self.owner_is_human(victim.owner()),
-                    _ => false,
-                })
+                && matches!(mover, None | Some(LocomotorKind::Tunnel)))
                 || (victim.category() == EntityCategory::Structure
                     && (victim.prism_support_count.count() != 0
                         || victim
@@ -485,9 +487,6 @@ mod receiver {
                                     crate::sim::world::DelayedFire::SupportBeam { .. }
                                 )
                             })))
-                || victim.is_harvester()
-                || victim.is_falling_down()
-                || victim.mind_control.controller().is_some()
             {
                 return EmpDelivery::Unsupported;
             }
@@ -654,6 +653,11 @@ mod receiver {
                 }
                 Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, false);
                 self.set_building_stuff_enabled(target, false, rules);
+                //10062B73..10062B91: a Radar (+16A4) or SpySat (+16A5) type
+                // dirties RecheckRadar (House+5779).
+                if self.ares_emp_radar_provider(target, rules) {
+                    self.power_states.house_mut(owner).recheck_radar();
+                }
             }
             if let Some(entity) = self.substrate.entities.get_mut(target) {
                 entity.emp.last_mission = entity.mission.current().raw();
@@ -731,7 +735,83 @@ mod receiver {
             {
                 manager.suspend_work();
             }
+            self.announce_ares_emp_attack(target, rules, effects);
             false
+        }
+        /// Installed EMPulse::announceAttack10062150, the last call of
+        /// enableEMPEffect10062B40. Its Owner == PlayerPtr test (10062162)
+        /// is the human-house test here: the House Tags NotifyUnderAttack
+        /// raises are state every peer shares, and the app plays the radar
+        /// event and EVA for the local owner alone. In a game with several
+        /// humans native raises those Tags on the victim's client only.
+        /// A gatherer building (Type+5EC) and a Unit Harvester (+E0E) or
+        /// gatherer get CreateRadarEvent(4) at GetMapCoords41BEA0 and
+        /// EVA_OreMinerUnderAttack (100621F9..1006222C); another building
+        /// neither Insignificant (+232) nor BaseNormal=no (+154F) gets
+        /// NotifyUnderAttack4F93E0 for PlayerPtr (100621B3..100621CB),
+        /// which returns at once for a 1x1 undeployer (4F93EB..4F93FB).
+        fn announce_ares_emp_attack(
+            &mut self,
+            target: u64,
+            rules: &RuleSet,
+            effects: FrameEffects<'_>,
+        ) {
+            use crate::sim::combat::{UnderAttackEvent, UnderAttackLine};
+            let Some(entity) = self.substrate.entities.get(target) else {
+                return;
+            };
+            if !self
+                .houses
+                .get(&entity.owner())
+                .is_some_and(|house| house.is_human())
+            {
+                return;
+            }
+            let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
+                return;
+            };
+            let line = match entity.category() {
+                EntityCategory::Structure if object.resource_gatherer => UnderAttackLine::OreMiner,
+                EntityCategory::Structure
+                    if !object.insignificant
+                        && object.base_normal
+                        && !object.is_1x1_with_undeploy() =>
+                {
+                    UnderAttackLine::House { allies: false }
+                }
+                EntityCategory::Unit if object.harvester || object.resource_gatherer => {
+                    UnderAttackLine::OreMiner
+                }
+                _ => return,
+            };
+            // The ore-miner cell is Location's; NotifyUnderAttack's own radar
+            // cell is GetCoords' (the foundation centre, 4F950E).
+            let (rx, ry) = if line == UnderAttackLine::OreMiner {
+                (entity.position.rx(), entity.position.ry())
+            } else {
+                let Some((rx, ry, _, _)) = crate::sim::combat::resolve_target_coords(
+                    &crate::sim::combat::TargetKind::Entity(target),
+                    self,
+                ) else {
+                    return;
+                };
+                (rx, ry)
+            };
+            let event = UnderAttackEvent {
+                rx,
+                ry,
+                owner: entity.owner(),
+                victim_type: entity.type_ref(),
+                // Ares Malicious hook 10053980 reads the global ReceiveDamage
+                // sets (100536A0); outside it the own line plays.
+                own_alert: true,
+                line,
+            };
+            if line == UnderAttackLine::OreMiner {
+                self.submit_under_attack_warning(event, rules, effects);
+            } else {
+                self.notify_house_under_attack(event, rules, effects.overlay_registry(), effects);
+            }
         }
         fn disable_ares_emp(&mut self, target: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
             let building = self
@@ -751,6 +831,10 @@ mod receiver {
                 Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, false);
                 if operational {
                     self.set_building_stuff_enabled(target, true, rules);
+                }
+                //10062840..1006285E: RecheckRadar whatever the power.
+                if self.ares_emp_radar_provider(target, rules) {
+                    self.power_states.house_mut(owner).recheck_radar();
                 }
             }
             if operational
@@ -789,7 +873,20 @@ mod receiver {
                 manager.resume_work(frame);
             }
             self.retire_ares_emp_sparkle(target);
-            self.recover_ares_emp_ai_mission(target, rules);
+            self.recover_ares_emp_foot_mission(
+                target,
+                rules
+                    .ares_emp_ai_recover_mission()
+                    .unwrap_or(MissionType::Hunt),
+                rules,
+            );
+        }
+        fn ares_emp_radar_provider(&self, target: u64, rules: &RuleSet) -> bool {
+            self.substrate
+                .entities
+                .get(target)
+                .and_then(|entity| self.interner.object_type(entity.type_ref(), rules))
+                .is_some_and(|object| object.radar || object.spy_sat)
         }
         /// Installed common TechnoUpdate1004B528..575, before original tint:
         /// an offline Building recovers on its next reached head after power
@@ -820,10 +917,21 @@ mod receiver {
                 house.request_tech_recheck();
             }
         }
-        /// Installed disable100627F0's final1006293A block, after the
-        /// Reactivate/manager/Anim owners. Human control is50B730, not merely
-        /// LocalPlayer. Keep QueueMission5B35E0's same-current and timer guards.
-        fn recover_ares_emp_ai_mission(&mut self, target: u64, rules: &RuleSet) {
+        /// The Foot tail of disable100627F0 (100628B2..10062972), after the
+        /// Reactivate/manager/Anim owners, which PoweredBy's DisableEMPEffect2
+        /// 10062650 repeats with Hunt for `ai_mission`. A driverless Foot
+        /// queues and starts Harmless; a Unit Harvester (+E0E) or gatherer
+        /// (+5EC) queues and starts its saved TechnoExt+14 LastMission, Enter
+        /// for a saved Guard; any other Foot of a house no human controls
+        /// (50B730, not merely LocalPlayer) queues `ai_mission` unstarted.
+        /// Keep QueueMission5B35E0's same-current and timer guards.
+        pub(crate) fn recover_ares_emp_foot_mission(
+            &mut self,
+            target: u64,
+            ai_mission: MissionType,
+            rules: &RuleSet,
+        ) {
+            use crate::sim::mission::MissionId;
             let Some(entity) = self.substrate.entities.get(target) else {
                 return;
             };
@@ -832,27 +940,31 @@ mod receiver {
             if !entity.category().is_foot() {
                 return;
             }
-            // DisableEMP100628C2 precedes the human/AI recovery choice.
-            if entity.driver_killed() {
-                let _ = self.mission_queue_exact(
-                    target,
-                    crate::sim::mission::MissionId::from_known(MissionType::Harmless),
-                    1,
-                    self.session.binary_frame(),
-                    &crate::sim::mission::authority::LiveReadyInputProvider { rules },
-                );
+            let (mission, commence) = if entity.driver_killed() {
+                (MissionId::from_known(MissionType::Harmless), 1)
+            } else if entity.category() == EntityCategory::Unit
+                && self
+                    .interner
+                    .object_type(entity.type_ref(), rules)
+                    .is_some_and(|object| object.harvester || object.resource_gatherer)
+            {
+                //100628DF..10062911: "prevent unloading harvesters from being
+                // irritated".
+                let saved = MissionId::from_raw(entity.emp_last_mission());
+                if saved.known() == Some(MissionType::Guard) {
+                    (MissionId::from_known(MissionType::Enter), 1)
+                } else {
+                    (saved, 1)
+                }
+            } else if !self.owner_is_human(entity.owner()) {
+                (MissionId::from_known(ai_mission), 0)
+            } else {
                 return;
-            }
-            if self.owner_is_human(entity.owner()) {
-                return;
-            }
-            let mission = rules
-                .ares_emp_ai_recover_mission()
-                .unwrap_or(MissionType::Hunt);
+            };
             let _ = self.mission_queue_exact(
                 target,
-                crate::sim::mission::MissionId::from_known(mission),
-                0,
+                mission,
+                commence,
                 self.session.binary_frame(),
                 &crate::sim::mission::authority::LiveReadyInputProvider { rules },
             );
@@ -1931,7 +2043,13 @@ mod receiver {
                     ),
                 });
                 let rng = sim.rng_state();
-                sim.recover_ares_emp_ai_mission(target, &rules);
+                sim.recover_ares_emp_foot_mission(
+                    target,
+                    rules
+                        .ares_emp_ai_recover_mission()
+                        .unwrap_or(MissionType::Hunt),
+                    &rules,
+                );
                 let victim = sim.substrate.entities.get(target).unwrap();
                 let mission = &victim.mission;
                 assert_eq!(
@@ -3105,3 +3223,7 @@ mod receiver {
         }
     }
 }
+
+#[cfg(all(test, feature = "ares"))]
+#[path = "emp_victim_tests.rs"]
+mod victim_tests;

@@ -103,6 +103,7 @@ impl Simulation {
             owner: building.owner(),
             victim_type: building.type_ref(),
             own_alert: malicious,
+            line: crate::sim::combat::UnderAttackLine::House { allies: true },
         });
         // NotifyUnderAttack (`0x0044297B`) ends with its House Tag raise
         // before `0x00442980` asks the source for its House.
