@@ -1274,10 +1274,12 @@ pub(crate) fn cancel_network_loading(state: &mut AppState, text: &str) -> bool {
     if !network_loading_active(state) {
         return false;
     }
-    fail_loading(
+    // No box: the lobby line below is this cancellation's message.
+    fail_loading_with(
         state,
         LoadingFailurePolicy::RetryNetworkShell,
         anyhow::anyhow!(text.to_owned()),
+        false,
     );
     // The failure has reopened the lobby. Native returns without a word;
     // VERA's lobbies say why the load stopped.
@@ -3349,7 +3351,35 @@ fn apply_network_loading_disconnects(
         .collect()
 }
 
+/// What the shell says after a failed load returned to it, for the policies
+/// that go back to the menu or lobby. Native retries the shell without a
+/// word (`0x0052E732`, `0x0052E75F`); VERA-only: the player is told why, as
+/// the skirmish result card already does.
+fn failed_load_notice(policy: LoadingFailurePolicy, err: &anyhow::Error) -> Option<String> {
+    matches!(
+        policy,
+        LoadingFailurePolicy::RetryCampaignShell | LoadingFailurePolicy::RetryNetworkShell
+    )
+    .then(|| {
+        let mut detail = format!("{err:#}");
+        if let Some((end, _)) = detail.char_indices().nth(400) {
+            detail.truncate(end);
+            detail.push('…');
+        }
+        format!("{}\n\n{detail}", crate::i18n::tr("VERA:LoadingFailed"))
+    })
+}
+
 fn fail_loading(state: &mut AppState, policy: LoadingFailurePolicy, err: anyhow::Error) {
+    fail_loading_with(state, policy, err, true);
+}
+
+fn fail_loading_with(
+    state: &mut AppState,
+    policy: LoadingFailurePolicy,
+    err: anyhow::Error,
+    notify: bool,
+) {
     log::warn!("Could not load map: {err:#}");
     let policy = retire_failed_loading_attempt(
         &mut state.frontend.loading_session,
@@ -3372,6 +3402,9 @@ fn fail_loading(state: &mut AppState, policy: LoadingFailurePolicy, err: anyhow:
         // network StartScenario call52E745 follows the same retry at52E75F;
         // GameMode3 re-enters LAN at52DAEF/52E356, so retain its lobby context.
         crate::app::App::return_to_main_menu(state);
+        if notify && let Some(text) = failed_load_notice(policy, &err) {
+            crate::app::App::open_shell_notice(state, text);
+        }
     } else if policy == LoadingFailurePolicy::ReportNativeFailure {
         state.frontend.screen = GameScreen::MissionResult {
             title: crate::i18n::tr("VERA:LoadingFailed"),
