@@ -10,6 +10,7 @@
 //! refresh shows the same values up to 250 ms earlier.
 
 use crate::app::match_runtime::session::SessionMode;
+use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
 use crate::app::presentation::house_ui::HouseUiSources;
 use crate::app::{App, AppState};
 use crate::rules::ruleset::RuleSet;
@@ -459,7 +460,7 @@ pub(crate) fn ally(state: &mut AppState, house: InternedId) {
     let Some(local) = crate::app::input::commands::preferred_local_owner_name(state) else {
         return;
     };
-    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
     let rules = &runtime.resources.rules;

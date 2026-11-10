@@ -32,7 +32,9 @@ pub(crate) struct MatchState {
     /// LAN visit transport before the match, then discovery metadata while the
     /// same sockets are owned by live_network. Session owns admitted endpoints.
     pub(crate) lan_service: Option<crate::app::lan_service::LanService>,
-    pub(crate) sim_runtime: Option<crate::sim::runtime::SimRuntime>,
+    /// The installed simulation. Reads go through `Deref`; writes name a
+    /// [`SimWrite`](super::sim_host::SimWrite) route.
+    pub(crate) sim_runtime: Option<super::sim_host::SimHost>,
     /// Match input owner (F12): camera, zoom, cursor, keys, hotkeys.
     pub(crate) input: crate::app::input::state::MatchInputState,
     /// Match presentation owner (F12), part 1: per-match atlases + cursor.

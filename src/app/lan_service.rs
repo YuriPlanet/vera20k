@@ -6,6 +6,7 @@
 //! explicit VERA transport adaptation; application messages remain the native
 //! 455-byte protocol from5DF9E0/5DFE00/5E00B0.
 
+use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
 use std::net::{Ipv4Addr, SocketAddrV4};
 
 use super::AppState;
@@ -1884,9 +1885,10 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
             //ProcessGlobalPackets48D81A uses the active private endpoint;
             //the packet name is irrelevant. This is not a synchronized EXIT.
             let matched = &mut state.match_state;
-            let destroyed = if let (Some(live), Some(runtime)) =
-                (matched.live_network.as_mut(), matched.sim_runtime.as_mut())
-            {
+            let destroyed = if let (Some(live), Some(runtime)) = (
+                matched.live_network.as_mut(),
+                matched.sim_runtime.write_sim(SimWrite::Network),
+            ) {
                 super::match_runtime::network_match::receive_departure(
                     &mut matched.session,
                     &mut runtime.simulation,
@@ -3407,7 +3409,7 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
     let sim = &mut state
         .match_state
         .sim_runtime
-        .as_mut()
+        .write_sim(SimWrite::Network)
         .expect("constructed world")
         .simulation;
     sim.network_command_queues().install_timing(
@@ -5907,7 +5909,7 @@ fn service_transport(state: &mut AppState, now: u32) -> bool {
         if let Some(service) = state.match_state.lan_service.as_mut() {
             LanService::flush_setup_queue(&mut service.pending_setup, &mut *live.global_mut());
         }
-        if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Network) {
             live.service_pending_commands(&mut runtime.simulation.network_command_queues(), now);
         } else {
             live.service_transport(now);

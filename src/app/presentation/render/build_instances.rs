@@ -805,7 +805,7 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
             state.overlay_registry(),
             state.rules(),
         );
-        let runtime = state.match_state.sim_runtime.as_ref();
+        let runtime = state.match_state.sim_runtime.as_deref();
         let presentation = &mut state.match_state.match_presentation;
         if let (Some(minimap), Some(grid)) = (
             presentation.minimap.as_mut(),

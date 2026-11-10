@@ -1,4 +1,5 @@
 use super::*;
+use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
 use crate::app::persistence::options::audio::AudioVolumeOperations;
 use crate::util::time::{Duration, Instant};
 
@@ -568,7 +569,7 @@ impl App {
             .multiplayer_shell_runtime
             .read_multiplayer_settings(&mut state.process_assets);
         let main = crate::app::state::process_main_draws(
-            state.match_state.sim_runtime.as_ref(),
+            state.match_state.sim_runtime.as_deref(),
             &state.frontend.frontend_main_rng,
         );
         state
@@ -582,7 +583,7 @@ impl App {
         if let Some(rules) = state.frontend.frontend_rules.as_mut() {
             state.process_assets.project_multiplayer_countries(rules);
         }
-        if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Rules) {
             state
                 .process_assets
                 .project_multiplayer_countries(&mut runtime.resources.rules);
@@ -1016,7 +1017,7 @@ impl App {
     pub(crate) fn retire_finished_scenario(state: &mut AppState) {
         // Main_Game48CEBF also retires ScenarioStarted after score Continue;
         // source: original gamemd.exe Main_Game48CCC0 (EBX=0 at48CCD4).
-        if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {
             runtime.simulation.retire_scenario_started();
         }
         // The accepted match owns the socket until either exit path returns

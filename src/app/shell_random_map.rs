@@ -1,4 +1,5 @@
 use super::*;
+use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
 
 /// The random-map seed file the `.SED` launch branch recognises. Written into
 /// VERA's folder for it (`map::source::random_map_dir`), where `map_load`
@@ -1131,7 +1132,7 @@ impl App {
         };
         if map_storage_decision.reinitialize
             && let Some(owner) = native_rules.as_deref_mut()
-            && let Some(runtime) = state.match_state.sim_runtime.as_mut()
+            && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle)
         {
             // The outgoing Simulation can remain resident for shell drawing.
             // Drain its live Rules writes before59A0F0 destroys those Types;
@@ -1274,7 +1275,7 @@ impl App {
                 let resident_simulation = state
                     .match_state
                     .sim_runtime
-                    .as_mut()
+                    .write_sim(SimWrite::Lifecycle)
                     .map(|runtime| &mut runtime.simulation);
                 let frontend = &mut state.frontend;
                 match frontend
@@ -1450,7 +1451,7 @@ impl App {
         // never sees.
         let resolved_terrain = {
             let mut main = crate::app::state::process_main_draws(
-                state.match_state.sim_runtime.as_ref(),
+                state.match_state.sim_runtime.as_deref(),
                 &state.frontend.frontend_main_rng,
             );
             let (manager, _, selector_cache) =
@@ -1733,7 +1734,7 @@ impl App {
         let mut open_browser: Option<SavedSeedMode> = None;
         let mut main =
             crate::ui::skirmish_shell::MainRngRanged(crate::app::state::process_main_draws(
-                state.match_state.sim_runtime.as_ref(),
+                state.match_state.sim_runtime.as_deref(),
                 &state.frontend.frontend_main_rng,
             ));
         match released.expect("checked equal to pressed control") {

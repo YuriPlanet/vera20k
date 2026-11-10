@@ -10,6 +10,7 @@ use super::{
     ActiveEventLoop, App, AppState, GameScreen, Instant, Result, frontend::startup_splash, render,
     sim_tick,
 };
+use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ShellFramePreludeStep {
@@ -125,7 +126,7 @@ impl App {
         let match_state = &mut state.match_state;
         if let (Some(minimap), Some(runtime)) = (
             match_state.match_presentation.minimap.as_mut(),
-            match_state.sim_runtime.as_mut(),
+            match_state.sim_runtime.write_sim(SimWrite::Presentation),
         ) {
             minimap.queue_radar_terrain_cells(runtime.take_radar_terrain_dirty());
         }

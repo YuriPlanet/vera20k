@@ -97,6 +97,44 @@ The main thread talks to it through:
 `SimHost` still runs on the main thread in this phase. Done when every
 `sim_runtime.as_mut()` outside `SimHost` is gone.
 
+Progress:
+
+- [x] `MatchState::sim_runtime` holds a `SimHost`
+  (`app/match_runtime/sim_host.rs`). Reads go through `Deref`. Every write
+  names its route through `write_sim(SimWrite::…)`, and nothing else
+  compiles.
+- [ ] Replace each route with operations of its own.
+- [ ] Move the mid-tick effect owners into the host.
+
+The routes as first assigned (`git grep "write_sim(SimWrite::"`):
+
+| Route | Sites | What they do |
+|---|---|---|
+| `Command` | 21 | Issue local commands from input, encoded from live reads: stop, guard, scatter, production, superweapons, placement, planning, diplomacy, cheer, options. Also the order and selection voices and Phobos selection flash. |
+| `Debug` | 21 | Debug tools, cheat flags, the trainer, frame profiling, and the capture harnesses under `app/diagnostics`. |
+| `Lifecycle` | 19 | Install, take or restore the runtime; retire the scenario and its rules; campaign carry-over and stage; replay startup; input delay. |
+| `Network` | 8 | Departures and kicks (`destroy_connection`), received events, EventClass queue service, timing install, initial-wait interrupt. |
+| `Tick` | 2 | `advance_one_simulation_frame` and scenario pause service. |
+| `Presentation` | 2 | Radar-terrain marks and lighting events: handoff state, neither saved nor hashed. |
+| `Rules` | 1 | Multiplayer country projection into the bound `RuleSet`. |
+
+When the simulation runs elsewhere, these writes change gameplay state
+outside the command stream and must keep their frame:
+
+- `destroy_connection` calls `flag_house_to_die` directly. This happens on
+  a frame-0 loss or a WOL tournament leave.
+- `deploy_voice_request` clears a unit's deploy-voice suppression
+  (Techno+0x4F8) at input time.
+- Phobos selection flash writes each selected unit's flash countdown.
+- `ScenarioServiceInput::apply` pauses, resumes or expires the scenario,
+  or applies a chrono screen effect, between ticks. It is recorded in the
+  replay.
+- The trainer applies debug tools.
+
+Order and selection voices draw the process Main RNG at input time. That
+does not touch lockstep, but a read-only view cannot serve them. They need
+the host or their own draw handle.
+
 ### Phase 2: a presentation frame for the hot draw path
 
 At the end of each tick, `SimHost` publishes an immutable

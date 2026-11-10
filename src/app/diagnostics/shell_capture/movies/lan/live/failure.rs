@@ -3,6 +3,7 @@
 //! time, packets, commands and simulation advancement stay with the game.
 
 use super::*;
+use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
 
 mod startup;
 use crate::app::match_runtime::network_match;
@@ -327,7 +328,7 @@ impl FailureCapture {
         let sim = &mut state
             .match_state
             .sim_runtime
-            .as_mut()
+            .write_sim(SimWrite::Debug)
             .context("observed world retained")?
             .simulation;
         ensure!(!sim.quit_requested(), "failure route executed EXIT");

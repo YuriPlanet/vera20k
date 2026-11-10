@@ -4,6 +4,7 @@
 //! The network thread only queues a bounded request. The game thread checks
 //! the current world/session again before reaching the simulation's owner.
 
+use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
 use std::collections::VecDeque;
 
 use crate::sim::cheats::{CheatFlags, TrainerAction};
@@ -94,7 +95,7 @@ pub(crate) fn reset_session(state: &mut crate::app::AppState) {
     if let Some(server) = state.diag.telemetry_server.as_ref() {
         server.set_debug_session(None);
     }
-    if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+    if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Debug) {
         runtime.simulation.clear_debug_tools();
     }
 }
@@ -121,7 +122,7 @@ pub(crate) fn service(state: &mut crate::app::AppState) {
         && state.match_state.scenario_exit.is_none()
         && state.match_state.scenario_outcome.is_none();
     let context = context(state.match_state.session_mode(), active);
-    let allowed = if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+    let allowed = if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Debug) {
         runtime.simulation.set_debug_session_context(context);
         let logging = runtime.simulation.debug_event_logging();
         runtime.simulation.set_debug_event_logging(logging);
@@ -169,7 +170,7 @@ fn set_flags(state: &mut crate::app::AppState, flags: CheatFlags) {
         return;
     }
     close_unmodified_recording(state);
-    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Debug) else {
         return;
     };
     if let Err(error) = runtime.simulation.set_cheat_flags(flags) {
@@ -192,7 +193,7 @@ pub(crate) fn toggle_reveal(state: &mut crate::app::AppState) {
 }
 
 pub(crate) fn toggle_inspector(state: &mut crate::app::AppState) {
-    if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+    if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Debug) {
         let enabled = !runtime.simulation.debug_event_logging();
         runtime.simulation.set_debug_event_logging(enabled);
     }
@@ -204,7 +205,7 @@ fn apply(state: &mut crate::app::AppState, command: DebugCommand) {
         DebugCommand::SetCheats { flags } => set_flags(state, flags),
         DebugCommand::CheatAction { action } => {
             close_unmodified_recording(state);
-            if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+            if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Debug) {
                 match runtime.simulation.request_trainer_action(action) {
                     Ok(()) => runtime
                         .simulation

@@ -3,6 +3,7 @@
 //! Split from the presentation render path. Part of the app layer — may depend on everything.
 
 use crate::app::AppState;
+use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
 use crate::map::entities::EntityCategory;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::intern::InternedId;
@@ -18,7 +19,7 @@ fn intern_in_sim(state: &mut AppState, s: &str) -> InternedId {
     state
         .match_state
         .sim_runtime
-        .as_mut()
+        .write_sim(SimWrite::Command)
         .map(|rt| &mut rt.simulation)
         .map(|sim| sim.intern(s))
         .unwrap_or_default()
@@ -981,7 +982,7 @@ pub(crate) fn try_schedule_command(
     {
         return None;
     }
-    let runtime = state.match_state.sim_runtime.as_mut()?;
+    let runtime = state.match_state.sim_runtime.write_sim(SimWrite::Command)?;
     schedule_rules_command_in_sim(
         &mut runtime.simulation,
         &runtime.resources.rules,
@@ -1067,7 +1068,7 @@ pub(crate) fn queue_house_cheer(state: &mut AppState) {
     let Some(owner) = preferred_local_owner_name(state) else {
         return;
     };
-    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
     let _ = queue_house_cheer_in_sim(

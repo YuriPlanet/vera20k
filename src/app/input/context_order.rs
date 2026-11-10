@@ -15,6 +15,7 @@ use crate::app::input::dispatch::{
     is_alt_held, is_ctrl_held, is_shift_held, selected_stable_ids_in_order,
 };
 use crate::app::input::entity_pick::{HoverObject, HoverTargetKindWithId, hover_object_at_point};
+use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
 use crate::app::types::{HoverTargetKind, OrderMode};
 use crate::map::entities::EntityCategory;
 use crate::sim::combat::TargetKind;
@@ -1368,7 +1369,7 @@ fn emit_entity_order_voice(
     target: Option<TargetKind>,
 ) {
     if voice_field == "VoiceDeploy" {
-        if let Some(runtime) = state.match_state.sim_runtime.as_mut()
+        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command)
             && let Some(event) = crate::app::match_runtime::sound_dispatch::deploy_order_voice_event(
                 &mut runtime.simulation,
                 &runtime.resources.rules,
@@ -1381,7 +1382,7 @@ fn emit_entity_order_voice(
         return;
     }
     if voice_field == "VoiceSpecialAttack" {
-        if let Some(runtime) = state.match_state.sim_runtime.as_mut()
+        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command)
             && let Some(event) =
                 crate::app::match_runtime::sound_dispatch::default_order_voice_event(
                     &mut runtime.simulation,
@@ -1394,7 +1395,7 @@ fn emit_entity_order_voice(
         }
         return;
     }
-    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
     let Some(id) = runtime.simulation.order_voice_request(
@@ -1495,7 +1496,7 @@ fn finish_order(
             if let Some(sim) = state
                 .match_state
                 .sim_runtime
-                .as_mut()
+                .write_sim(SimWrite::Command)
                 .map(|rt| &mut rt.simulation)
             {
                 accepted = sim.issue_local_commands(encoded);
@@ -2177,7 +2178,7 @@ pub(crate) fn try_queue_context_order(
     let mut planning_cell = None;
     let planning = state.match_state.input.planning.active();
 
-    if let Some(rt) = state.match_state.sim_runtime.as_mut() {
+    if let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Command) {
         let resources = &rt.resources;
         let sim = &mut rt.simulation;
         let execute_tick = sim.session().tick();

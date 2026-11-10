@@ -1,6 +1,7 @@
 //! Successful saved-world adoption and its route-specific presentation state.
 
 use crate::app::AppState;
+use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
 
 /// Apply the validated world/resources and the already-prepared asset bundle.
 /// Recoverable preparation has finished before any outgoing state is cleared.
@@ -91,7 +92,7 @@ pub(crate) fn commit_prepared_load(
     let pause_effects = state
         .match_state
         .sim_runtime
-        .as_mut()
+        .write_sim(SimWrite::Lifecycle)
         .map_or_else(Vec::new, |rt| {
             crate::app::radar_movie::release_saved_scenario_hold(
                 &mut rt.simulation,
@@ -220,7 +221,7 @@ pub(crate) fn commit_prepared_load(
         state
             .match_state
             .sim_runtime
-            .as_mut()
+            .write_sim(SimWrite::Lifecycle)
             .expect("prepared saved game installs a runtime")
             .simulation
             .prepare_fog_view_for(&owner);

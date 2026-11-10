@@ -1,6 +1,7 @@
 //! Match-session focus, modal, return, quit and scenario-exit control.
 
 use super::{App, AppState, GameScreen, Instant, ModifiersState};
+use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
 
 impl App {
     /// Return the live Scenario cursor and header to the multiplayer shell.
@@ -39,7 +40,7 @@ impl App {
     }
 
     pub(super) fn return_to_main_menu(state: &mut AppState) {
-        if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {
             // Main55D283 calls BattleControlTerminated686570 on shell return;
             // its retained Scenario mission counter resets to the ctor's 1.
             runtime
@@ -91,7 +92,7 @@ impl App {
         crate::app::radar_movie::retire(state, wall_ms);
         crate::app::commander_feedback::retire(state);
         crate::app::chrono_screen::retire(state, wall_ms);
-        if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {
             // Main_Game48CCC0 clears ScenarioStarted[A8ED5C] at48CEBF
             // after the match returns (EBX=0 from48CCD4); the restart clears
             // it at686424. The runtime may remain retained, but Tag
@@ -179,7 +180,7 @@ impl App {
         log::info!("Restarting campaign mission {}", startup.scenario());
         // The router clears all four termination bytes before 6863E0: an
         // executed EXIT edge cannot follow the restart into the shell.
-        if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {
             let _ = runtime.simulation.take_executed_exit_owner();
         }
         Self::retire_running_scenario(state);
@@ -651,7 +652,7 @@ impl App {
         let executed_owner = state
             .match_state
             .sim_runtime
-            .as_mut()
+            .write_sim(SimWrite::Lifecycle)
             .map(|rt| &mut rt.simulation)
             .and_then(|sim| sim.take_executed_exit_owner());
         let Some(executed_owner) = executed_owner else {

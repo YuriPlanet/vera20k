@@ -10,6 +10,7 @@
 //! Controlled service events remain available for diagnostics. Both paths
 //! use the same dialog, vote and connection-removal owners here.
 
+use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
 use std::collections::{BTreeMap, VecDeque};
 
 use crate::app::AppState;
@@ -274,7 +275,7 @@ pub(crate) fn post_connection_line(state: &mut AppState, destroyed: ConnectionDe
 /// DestroyConnection(house, 0) (`0x0064C9B1`). Remote sources the relay ended
 /// for silence run DestroyConnection(house, 1) after their EVENT_REMOVEPLAYER.
 pub(crate) fn drain_departures(state: &mut AppState) {
-    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Network) else {
         return;
     };
     let departed = runtime.simulation.take_departed_senders();
@@ -392,7 +393,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkMatchEvent) -> a
             let runtime = state
                 .match_state
                 .sim_runtime
-                .as_mut()
+                .write_sim(SimWrite::Network)
                 .ok_or_else(|| anyhow::anyhow!("no running match"))?;
             let sim = &mut runtime.simulation;
             let owner = sim
@@ -457,7 +458,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkMatchEvent) -> a
             let runtime = state
                 .match_state
                 .sim_runtime
-                .as_mut()
+                .write_sim(SimWrite::Network)
                 .ok_or_else(|| anyhow::anyhow!("no running match"))?;
             let sim = &mut runtime.simulation;
             let owner = sim
@@ -894,7 +895,7 @@ fn kick(state: &mut AppState, source_index: usize, error: ConnectionError) {
         .network_wait
         .stalled
         .retain(|peer| peer.source_index != source_index);
-    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Network) else {
         return;
     };
     if let Some(destroyed) = destroy_connection(
@@ -1230,14 +1231,15 @@ pub(crate) fn service_wait(state: &mut AppState, now_ms: u64) -> WaitPass {
     if let Some(timeout) = state.match_state.network_wait.timeout_action(now) {
         if timeout == WaitTimeout::InitialFailure {
             //649237/649931..649A16: initial expiry returns7; it never kicks.
-            let interrupted = if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
-                state
-                    .match_state
-                    .network_wait
-                    .interrupt_initial_wait(&mut runtime.simulation)
-            } else {
-                false
-            };
+            let interrupted =
+                if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Network) {
+                    state
+                        .match_state
+                        .network_wait
+                        .interrupt_initial_wait(&mut runtime.simulation)
+                } else {
+                    false
+                };
             if interrupted {
                 super::network_failure::show(state);
             }

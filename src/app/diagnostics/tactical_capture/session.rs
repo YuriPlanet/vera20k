@@ -5,6 +5,7 @@
 //! the real renderer, and publishes one transactional final readback. It does
 //! not focus the window, inject desktop input, or grant simulation state.
 
+use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
 use crate::util::time::{Duration, Instant};
 use std::path::Path;
 
@@ -468,7 +469,7 @@ impl TacticalCaptureSession {
                     let sim = state
                         .match_state
                         .sim_runtime
-                        .as_mut()
+                        .write_sim(SimWrite::Debug)
                         .map(|rt| &mut rt.simulation)
                         .context("queue action requires live simulation")?;
                     sim.intern(&type_id)
@@ -492,7 +493,7 @@ impl TacticalCaptureSession {
                     let sim = state
                         .match_state
                         .sim_runtime
-                        .as_mut()
+                        .write_sim(SimWrite::Debug)
                         .map(|rt| &mut rt.simulation)
                         .context("placement action requires live simulation")?;
                     sim.intern(&choice.type_id)

@@ -586,7 +586,7 @@ pub(crate) fn render_game(
     // trails, even when this composite ran no Logic. Their shared process
     // Main requests happen here once; GPU uploads only read resolved colors.
     let mut main = crate::app::state::process_main_draws(
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.as_deref(),
         &state.frontend.frontend_main_rng,
     );
     let sim = state

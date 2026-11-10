@@ -2109,7 +2109,7 @@ pub(crate) fn resolve_object_shp_frame(
 ) -> Option<u16> {
     let facing = crate::app::presentation::render_pose::body_draw_facing(entity, binary_frame);
     resolve_object_shp_frame_with_facing(
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.as_deref(),
         state.rules(),
         type_id,
         entity,

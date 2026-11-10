@@ -7,6 +7,7 @@
 //!
 //! The app owns diagnostic samples and log delivery; gameplay state is read-only.
 
+use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
 use crate::app::{AppState, BUILD_STAMP};
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::SpeedType;
@@ -53,7 +54,7 @@ pub(crate) fn synchronize_observer(state: &mut AppState) {
     let simulation = state
         .match_state
         .sim_runtime
-        .as_mut()
+        .write_sim(SimWrite::Debug)
         .map(|rt| &mut rt.simulation);
     if state
         .diag

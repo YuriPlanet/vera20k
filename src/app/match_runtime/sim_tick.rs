@@ -6,6 +6,7 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
+use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
 #[cfg(feature = "telemetry-dashboard")]
 use crate::util::time::Instant;
 use std::path::Path;
@@ -760,7 +761,7 @@ pub(crate) fn pump_audio_service(state: &mut AppState, now_ms: u64) {
         state.frontend.loading_session.as_ref(),
     );
     let mut main = crate::app::state::process_main_draws(
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.as_deref(),
         &state.frontend.frontend_main_rng,
     );
     state.audio.service_audio(
@@ -1621,7 +1622,7 @@ fn advance_one_simulation_frame(
         // Carried out of the sim borrow so the census can read `state` freely below.
         let mut census_tick: Option<u64> = None;
         let fps_panel_shown = state.renderer.performance_overlay.is_visible();
-        if let Some(rt) = state.match_state.sim_runtime.as_mut() {
+        if let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Tick) {
             let sim = &mut rt.simulation;
             let native_frame = sim.session().binary_frame();
             if !resuming {
@@ -2226,7 +2227,7 @@ fn advance_one_simulation_frame(
                     state.match_state.match_presentation.lasers.update(frame);
                 }
                 LifecycleOutput::LaserCreated(birth) => {
-                    let runtime = state.match_state.sim_runtime.as_ref();
+                    let runtime = state.match_state.sim_runtime.as_deref();
                     let presentation = &mut state.match_state.match_presentation;
                     let colors = &presentation.house_color_map;
                     presentation
@@ -2241,7 +2242,7 @@ fn advance_one_simulation_frame(
                         .create(birth);
                 }
                 LifecycleOutput::RadiationBeamCreated(birth) => {
-                    let runtime = state.match_state.sim_runtime.as_ref();
+                    let runtime = state.match_state.sim_runtime.as_deref();
                     let presentation = &mut state.match_state.match_presentation;
                     let colors = &presentation.house_color_map;
                     presentation

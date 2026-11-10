@@ -7,6 +7,7 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
+use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
 use std::collections::{HashSet, VecDeque};
 
 use winit::event::{ElementState, MouseButton};
@@ -2383,7 +2384,7 @@ fn open_pause_menu(state: &mut AppState) {
         );
         return;
     }
-    if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+    if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) {
         // Queue_Options647040 does not open the dialog. Its accepted local
         // OPTIONS event requests GameState1 at the due EventClass tail.
         let _ = runtime.simulation.queue_options_request();
@@ -2808,7 +2809,7 @@ pub(crate) fn reconcile_selection_order_after_sim(
     #[cfg(feature = "phobos")]
     if state.match_state.match_presentation.show_flash_on_selecting
         && !selected.is_empty()
-        && let Some(runtime) = state.match_state.sim_runtime.as_mut()
+        && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command)
     {
         runtime
             .simulation
@@ -2947,7 +2948,7 @@ fn apply_selection_mutation(
     #[cfg(feature = "phobos")]
     if state.match_state.match_presentation.show_flash_on_selecting
         && !successful_adds.is_empty()
-        && let Some(runtime) = state.match_state.sim_runtime.as_mut()
+        && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command)
     {
         runtime
             .simulation
@@ -3983,7 +3984,7 @@ fn queue_stop_for_selected(state: &mut AppState) {
     }
     // VERA ferry: Stop also ends the selected transports' routes.
     crate::app::input::ferry::stop_selected(state, &selected_ids);
-    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
     for sound in queue_stop_orders(
@@ -4075,7 +4076,7 @@ fn queue_guard_for_selected(state: &mut AppState) {
     if !super::commands::selection_input_has_capacity(state, selected.len()) {
         return;
     }
-    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
     for event in queue_area_guard_orders(
@@ -4129,7 +4130,7 @@ fn queue_scatter_for_selected(state: &mut AppState) {
     if !super::commands::selection_input_has_capacity(state, selected.len()) {
         return;
     }
-    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
     for sound in queue_scatter_orders(&mut runtime.simulation, &runtime.resources.rules, &selected)
@@ -4560,7 +4561,7 @@ fn queue_control_group_assignment(state: &mut AppState, slot: usize, entity_ids:
     let Some(owner) = preferred_local_owner_name(state) else {
         return;
     };
-    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
     let _ = schedule_control_group_assignment(&mut runtime.simulation, &owner, slot, entity_ids);
@@ -4789,7 +4790,7 @@ fn apply_selection_action_line_policy_at_frame(
 
 /// Emit the modeled VoiceSelect side effect for one successful Select call.
 fn emit_selection_voice(state: &mut AppState, entity_id: u64) {
-    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
     if let Some(event) = crate::app::match_runtime::sound_dispatch::selection_voice_event(

@@ -3,6 +3,7 @@
 //! defeat through the Lose movie to the `TXT_TO_REPLAY` box (optionally Yes),
 //! and the sidebar Briefing tab's mission restate 0x10C over that frame.
 use super::*;
+use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
 use crate::ui::shell::abort::AbortButton;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -250,7 +251,7 @@ impl RestartCapture {
             let runtime = state
                 .match_state
                 .sim_runtime
-                .as_mut()
+                .write_sim(SimWrite::Debug)
                 .context("SOV06 runtime")?;
             ensure!(
                 before.map_name.eq_ignore_ascii_case("SOV06LMD.MAP"),
@@ -274,7 +275,7 @@ impl RestartCapture {
                 let runtime = state
                     .match_state
                     .sim_runtime
-                    .as_mut()
+                    .write_sim(SimWrite::Debug)
                     .context("SOV01 runtime")?;
                 ensure!(
                     before.map_name.eq_ignore_ascii_case("SOV01UMD.MAP"),
@@ -516,7 +517,7 @@ impl RestartCapture {
         let runtime = state
             .match_state
             .sim_runtime
-            .as_mut()
+            .write_sim(SimWrite::Debug)
             .context("no live campaign runtime")?;
         ensure!(
             runtime
@@ -1065,7 +1066,7 @@ impl RestartCapture {
                         state
                             .match_state
                             .sim_runtime
-                            .as_mut()
+                            .write_sim(SimWrite::Debug)
                             .unwrap()
                             .simulation
                             .set_campaign_map_stage(0);

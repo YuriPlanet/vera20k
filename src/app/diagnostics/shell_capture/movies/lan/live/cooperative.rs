@@ -18,6 +18,7 @@
 
 use super::*;
 use crate::app::diagnostics::shell_capture::movies::abort_return::AbortReturnInput;
+use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
 
 /// Both players open the menu at this committed frame, so each B6 still
 /// counts two live humans and offers Observe.
@@ -554,7 +555,7 @@ fn flag_humans_won(state: &mut AppState) -> Result<()> {
     let runtime = state
         .match_state
         .sim_runtime
-        .as_mut()
+        .write_sim(SimWrite::Debug)
         .context("live simulation")?;
     ensure!(
         runtime.simulation.dev_trigger_current_house_outcome(

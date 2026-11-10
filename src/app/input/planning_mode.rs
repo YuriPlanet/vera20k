@@ -4,6 +4,7 @@
 use crate::app::AppState;
 use crate::app::input::dispatch::selected_in_order;
 use crate::app::input::hotkeys::{HotkeyCommand, HotkeyResolution};
+use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
 use crate::audio::events::{GameSoundEvent, SoundEventQueue};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::CommandEnvelope;
@@ -418,7 +419,7 @@ fn set_active(state: &mut AppState, active: bool, intro_source: Option<bool>) {
         .sim_runtime
         .as_ref()
         .is_some_and(|rt| rt.simulation.local_player_defeated());
-    let rt = state.match_state.sim_runtime.as_mut();
+    let rt = state.match_state.sim_runtime.write_sim(SimWrite::Command);
     let command = state.match_state.input.planning.set_active(
         active,
         rt.as_ref().map(|rt| &rt.simulation),
@@ -448,7 +449,7 @@ pub(crate) fn queue_orders(
     orders: Vec<CommandEnvelope>,
     clicked_cell: Option<(u16, u16)>,
 ) -> bool {
-    let Some(rt) = state.match_state.sim_runtime.as_mut() else {
+    let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return false;
     };
     let Some(owner) = rt.simulation.session().current_house() else {
@@ -629,7 +630,7 @@ pub(crate) fn connect_at_cursor(state: &mut AppState) -> bool {
     }
     let point = cursor_native_screen(state);
     let mut collected = false;
-    if let Some(rt) = state.match_state.sim_runtime.as_mut()
+    if let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Command)
         && let Some(owner) = rt.simulation.session().current_house()
     {
         for actor in rt.simulation.planning_connect_actors(&selected) {
@@ -657,7 +658,7 @@ pub(crate) fn delete_highlighted(state: &mut AppState) -> bool {
     let Some(node) = state.match_state.input.planning.highlighted_node else {
         return false;
     };
-    let Some(rt) = state.match_state.sim_runtime.as_mut() else {
+    let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return false;
     };
     if !rt.simulation.planning_node_exists(node) {

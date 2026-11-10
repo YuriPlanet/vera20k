@@ -8,6 +8,7 @@ use crate::app::input::multiplayer_setup as setup_input;
 use crate::app::match_runtime::session::{
     NetworkLoadingRequest, NetworkMapMetadata, NetworkVacancy, SessionMode,
 };
+use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
 use crate::app::shell_lan::{self as lobby, LanJoinAcceptance, LanServiceEvent, LanServiceRequest};
 use crate::app::shell_network_setup::{self as setup, NetworkSetupEvent, NetworkSetupRequest};
 use crate::skirmish_launch::*;
@@ -3029,7 +3030,7 @@ impl LanCapture {
                     let runtime = state
                         .match_state
                         .sim_runtime
-                        .as_mut()
+                        .write_sim(SimWrite::Debug)
                         .context("installed co-op runtime")?;
                     let sim = &mut runtime.simulation;
                     let lose = self.target == LanTarget::CoopRetry;

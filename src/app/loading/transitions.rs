@@ -2,6 +2,7 @@
 //!
 //! Extracted from app.rs for file-size limits.
 
+use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
 use std::collections::{BTreeMap, HashMap};
 
 use crate::app::loading::init;
@@ -323,7 +324,7 @@ pub(crate) fn install_world_presentation(
         .terrain_grid
         .as_ref()
         .map(|grid| {
-            let runtime = state.match_state.sim_runtime.as_ref();
+            let runtime = state.match_state.sim_runtime.as_deref();
             let overlay_registry = runtime.map(|runtime| &runtime.resources.overlay_registry);
             let rules = runtime.map(|runtime| &runtime.resources.rules);
             let overlay_data = build_minimap_overlay_data(
@@ -575,14 +576,14 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         simulation.publish_scenario_started();
         simulation.batch_path_searches();
         simulation.batch_target_scans();
-        crate::sim::runtime::SimRuntime {
+        crate::app::match_runtime::sim_host::SimHost::new(crate::sim::runtime::SimRuntime {
             simulation,
             resources: crate::sim::runtime::SimResources {
                 overlay_registry: result.scenario.overlay_registry,
                 terrain_template: result.scenario.resolved_terrain,
                 rules,
             },
-        }
+        })
     });
     if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
         state
@@ -599,7 +600,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     let lighting_events = state
         .match_state
         .sim_runtime
-        .as_mut()
+        .write_sim(SimWrite::Presentation)
         .map(|runtime| runtime.simulation.take_lighting_events());
     install_world_presentation(
         state,
@@ -659,7 +660,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         .match_presentation
         .sidebar_projection
         .start_scenario_credits_counter(owner.as_deref());
-    if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+    if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {
         runtime
             .simulation
             .set_input_delay_ticks(state.match_state.configured_input_delay_ticks);
@@ -757,7 +758,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             // back after Start_Scenario through `0x004C6210`.
             if installed.is_ok()
                 && let Some(record) = prepared.carry_over()
-                && let Some(runtime) = state.match_state.sim_runtime.as_mut()
+                && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle)
             {
                 runtime
                     .simulation
@@ -782,7 +783,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             // A co-op continuation's GameExit tail (`0x00685D7A` victory,
             // `0x0068639A` defeat) restores the record after Start_Scenario.
             if let Some(record) = prepared.carry_over()
-                && let Some(runtime) = state.match_state.sim_runtime.as_mut()
+                && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle)
             {
                 runtime
                     .simulation
@@ -793,7 +794,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         crate::app::match_bootstrap::LoadingStartup::Replay { .. } => {
             state.match_state.startup.clear();
             let playback = match (
-                state.match_state.sim_runtime.as_mut(),
+                state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle),
                 state.match_state.loaded_map_source.as_ref(),
                 state.match_state.loaded_map_hash,
             ) {

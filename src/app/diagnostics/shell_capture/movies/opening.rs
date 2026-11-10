@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::app::input::{camera, hotkeys, keyboard};
+use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
 use crate::app::match_runtime::sim_tick::ExactStepReceipt;
 use winit::event::{ElementState, MouseButton};
 use winit::keyboard::{Key, KeyCode, KeyLocation, NamedKey};
@@ -280,7 +281,7 @@ impl OpeningCapture {
                 state
                     .match_state
                     .sim_runtime
-                    .as_mut()
+                    .write_sim(SimWrite::Debug)
                     .context("trigger trace has no installed runtime")?
                     .simulation
                     .record_trigger_springs(true);
@@ -435,7 +436,7 @@ impl OpeningCapture {
             let sim = &mut state
                 .match_state
                 .sim_runtime
-                .as_mut()
+                .write_sim(SimWrite::Debug)
                 .context("trigger trace lost its runtime")?
                 .simulation;
             let (springs, events) = sim.take_trigger_trace();
@@ -530,7 +531,7 @@ impl OpeningCapture {
         let runtime = state
             .match_state
             .sim_runtime
-            .as_mut()
+            .write_sim(SimWrite::Debug)
             .context("timer replay has no runtime")?;
         let sim = &mut runtime.simulation;
         let count = sim
@@ -727,7 +728,7 @@ impl OpeningCapture {
         let sim = &mut state
             .match_state
             .sim_runtime
-            .as_mut()
+            .write_sim(SimWrite::Debug)
             .context("naval runtime")?
             .simulation;
         let tick = sim.session().tick();

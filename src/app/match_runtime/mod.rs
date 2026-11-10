@@ -12,6 +12,7 @@ pub(crate) mod redraw_gate;
 pub(crate) mod scenario_exit;
 pub(crate) mod scenario_pause;
 pub(crate) mod session;
+pub(crate) mod sim_host;
 pub(crate) mod sim_tick;
 pub(crate) mod sound_dispatch;
 pub(crate) mod state;

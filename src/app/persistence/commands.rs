@@ -1,6 +1,7 @@
 //! User save/load requests; input and dialogs only select the operation.
 
 use crate::app::AppState;
+use crate::app::match_runtime::sim_host::{SimWrite, SimWriteExt};
 
 use std::path::{Path, PathBuf};
 
@@ -558,7 +559,7 @@ fn restore_save_file(
         state
             .match_state
             .sim_runtime
-            .as_mut()
+            .write_sim(SimWrite::Lifecycle)
             .expect("saved world committed")
             .simulation
             .initialize_random_number_system(seed.value);
