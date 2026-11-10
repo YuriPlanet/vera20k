@@ -514,47 +514,9 @@ impl Simulation {
         {
             manager.resume_work(frame);
         }
-        let Some(entity) = self.substrate.entities.get(id) else {
-            return;
-        };
-        if !category.is_foot() {
-            return;
-        }
         // Driverless units go Harmless; harvesters resume their saved
         // mission (Enter for Guard); AI units Hunt.
-        let (mission, commence) = if entity.driver_killed() {
-            (MissionType::Harmless, 1)
-        } else if category == EntityCategory::Unit
-            && self
-                .entity_object_type(entity, rules)
-                .is_some_and(|object| object.harvester || object.resource_gatherer)
-        {
-            let saved = MissionId::from_raw(entity.emp_last_mission());
-            let saved = if saved.known() == Some(MissionType::Guard) {
-                MissionId::from_known(MissionType::Enter)
-            } else {
-                saved
-            };
-            let _ = self.mission_queue_exact(
-                id,
-                saved,
-                1,
-                self.session.binary_frame(),
-                &crate::sim::mission::authority::LiveReadyInputProvider { rules },
-            );
-            return;
-        } else if !self.owner_is_human(entity.owner()) {
-            (MissionType::Hunt, 0)
-        } else {
-            return;
-        };
-        let _ = self.mission_queue_exact(
-            id,
-            MissionId::from_known(mission),
-            commence,
-            self.session.binary_frame(),
-            &crate::sim::mission::authority::LiveReadyInputProvider { rules },
-        );
+        self.recover_ares_emp_foot_mission(id, MissionType::Hunt, rules);
     }
 }
 

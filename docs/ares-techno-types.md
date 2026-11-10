@@ -210,8 +210,6 @@ nothing consumes them:
 
 - `Carryall.Allowed`, `Carryall.SizeLimit`: VERA has no Carryall tote
   (hooks 0x417D75, 0x416E37); retail has no carryall.
-- `Assaulter.Level`: the stock `Assaulter=` arm of CanBeOccupiedBy (hook
-  0x457DB7) is not ported.
 - `DigIn`, `DigOut`, `DigInSound`, `DigOutSound` are now consumed
   ([ares-subterranean.md](ares-subterranean.md)).
 - `Convert.Deploy` and `InitialPayload.Types`/`.Nums` are now consumed

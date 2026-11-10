@@ -126,6 +126,23 @@ pub struct UnderAttackEvent {
     /// skips it for a building hit by a `Malicious=no` warhead; the ally
     /// line and the House Tags still follow.
     pub own_alert: bool,
+    pub line: UnderAttackLine,
+}
+
+/// Which native call raises an [`UnderAttackEvent`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnderAttackLine {
+    /// `HouseClass::NotifyUnderAttack @ 0x004F93E0` for a building: the
+    /// victim house's own line, which picks the ore-miner cue for a deployed
+    /// miner and the base cue otherwise, and, when `allies`, the line its
+    /// human allies hear. Ares announceAttack (10062150) calls it only after
+    /// testing Owner == PlayerPtr, so on the victim's own client alone, where
+    /// the own branch runs: no ally hears it.
+    House { allies: bool },
+    /// `CreateRadarEvent(4)` and `EVA_OreMinerUnderAttack` called by the
+    /// producer itself (Unit `0x00738530`, Temporal `0x0071B04C`, Ares
+    /// announceAttack 10062150), with no siren, ally line or House Tags.
+    OreMiner,
 }
 
 /// `TechnoClass::Death_Announcement @ 0x004D98C0` input: a non-building

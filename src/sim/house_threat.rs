@@ -108,6 +108,33 @@ impl HouseSpatialThreat {
         side + 1 + i32::from(cell.0) / 4 + side * (i32::from(cell.1) / 4)
     }
 
+    /// The padded index `0x0056BC50` answers its callers: Cell UpdateThreat
+    /// (`0x00481884`), Foot PerCellProcess (`0x004D8657`, `0x004D8664`) and
+    /// House AI_BuildThreatMap (`0x005094BE`, `0x0050957C`). The readers
+    /// `0x0056BCD0` and `0x00585F40` and the hierarchy seeds (`0x00581F90`,
+    /// `0x00584550`) inline the stock arithmetic, [`Self::index_for_grid`].
+    ///
+    /// Ares 3.0 ThreatPosedEstimates_GetIndex `1005D4A0` (hook `0x0056BC54`)
+    /// replaces the body for these callers only: -1 when either axis is
+    /// outside `[0, 512)`, else `(130 * Y) / 4 + X / 4 + 131`, the row scaled
+    /// before its division. Off every fourth row the writes then land away
+    /// from the slot the inline readers read for that cell. VERA-only: the
+    /// large-map grid takes its own side and stride for Ares's 512 and 130.
+    fn caller_index(grid: crate::map::cell_index::CellGrid, cell: (i16, i16)) -> i32 {
+        #[cfg(feature = "ares")]
+        {
+            let side = i32::from(grid.side());
+            let stride = side / 4 + 2;
+            let (x, y) = (i32::from(cell.0), i32::from(cell.1));
+            if !(0..side).contains(&x) || !(0..side).contains(&y) {
+                return -1;
+            }
+            stride * y / 4 + x / 4 + stride + 1
+        }
+        #[cfg(not(feature = "ares"))]
+        Self::index_for_grid(grid, cell)
+    }
+
     pub(super) fn values(&self) -> &[i32] {
         &self.0
     }
@@ -140,13 +167,24 @@ impl HouseSpatialThreat {
         self.0.fill(0);
     }
 
+    /// The nine-slot kernel both `0x0056BC50` callers that write apply: Cell
+    /// UpdateThreat through `HouseClass::Adjust_Threat @ 0x004FA2E0`, and
+    /// AI_BuildThreatMap inline (`0x0050954B`, `0x0050959A`).
     pub(super) fn adjust(&mut self, cell: (i16, i16), delta: i32) -> Result<(), String> {
-        let base = Self::index_for_grid(self.grid(), cell);
+        let base = Self::caller_index(self.grid(), cell);
         // Validate dependencies before the first write. Extreme scalar
         // coordinates may alias unrelated native House bytes; no invented zero.
         let first = base - (i32::from(self.grid().side()) / 4 + 3);
         let last = base + (i32::from(self.grid().side()) / 4 + 3);
         if first < 0 || last >= self.0.len() as i32 {
+            // Ares 3.0 HouseClass_SetThreat_Bounds 1005CC10 (hook
+            // 0x004FA2E0) skips Adjust_Threat for its -1 index. VERA-only:
+            // the rebuild's inline kernel, and the rows past 508 whose
+            // scaled index runs off the grid, write outside the grid
+            // natively; both are skipped too.
+            #[cfg(feature = "ares")]
+            return Ok(());
+            #[cfg(not(feature = "ares"))]
             return Err(format!(
                 "native House threat kernel outside retained grid at {cell:?}"
             ));
@@ -408,8 +446,8 @@ impl Simulation {
             return;
         }
         let current = (actor.position.rx() as i16, actor.position.ry() as i16);
-        if HouseSpatialThreat::index_for_grid(self.cell_grid(), old)
-            == HouseSpatialThreat::index_for_grid(self.cell_grid(), current)
+        if HouseSpatialThreat::caller_index(self.cell_grid(), old)
+            == HouseSpatialThreat::caller_index(self.cell_grid(), current)
         {
             return;
         }

@@ -17,6 +17,7 @@ TiberiumHealEnabled=yes        ; TiberiumHeal= types heal in tiberium (no)
 OverlayExplodeThreshold=50     ; Explodes= overlays need this damage (0)
 RepairStopOnInsufficientFunds=no ; a broke human repair stays on (yes)
 SmallVisceroid=VISC_SML        ; stock key: what a tiberium death becomes
+LargeVisceroid=VISC_LRG        ; stock key: what two small ones merge into
 TiberiumTransmogrify=40        ; stock key: its percent chance
 [CombatDamage]
 TiberiumExplosive=yes          ; stock key, now a harvester blast
@@ -96,6 +97,14 @@ Message.SilosNeeded=MSG:Silos  ; read; its print is a client residual
   it (Ares builds only, saved and hashed when false). Retail's
   `TiberiumTransmogrify=40` and `SmallVisceroid=VISC_SML` make this live
   once a mod sets `TiberiumDamageEnabled=yes`.
+- `sim/visceroid.rs`: the merge (`UnitClass_UpdatePosition_Visceroid @
+  1004C530`, hook `0x739F21`, in Per_Cell_Process's arrival arm). gamemd's
+  UpdateVisceroid sends one small visceroid to another and lets it into
+  that one's cell ([dormant-stock-rules.md](dormant-stock-rules.md#visceroids));
+  arriving there, the seeker leaves the game and the other becomes
+  `[General] LargeVisceroid` (published by `RulesTypeReferences`) at full
+  Strength, by a bare Type store: as in Ares, its house's type counts are
+  not moved to the new type.
 - `sim/ares_tiberium.rs`: `CellChainReact` (`10050DD0`), Ares' body for
   the stock RET at `CellChainReaction__Request @ 0x00489270`. A
   `ChainReaction=yes` tiberium cell at density 2+ reacts with

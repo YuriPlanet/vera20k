@@ -83,7 +83,7 @@ and the reader test in `rules::ares_techno_type`.
 
 | Hook | Ares.dll | Name | Disposition |
 |---|---|---|---|
-| `457DB7` | `10016FD0` | BuildingClass_CanBeOccupied_SpecificAssaulters | residual: `Assaulter.Level` refines the stock `Assaulter=` arm of CanBeOccupiedBy (0x457DAD..0x457DD3), and the assault itself (AddGarrisonOccupant 0x522A09..0x522A45: occupants killed, the assaulter scatters) is not ported in either build; porting them changes default builds. No retail infantry is an assaulter |
+| `457DB7` | `10016FD0` | BuildingClass_CanBeOccupied_SpecificAssaulters | ported: `passenger::can_dock_occupier_garrison`'s assaulter arm also asks the building type's `Assaulter.Level` (not negative, at most the infantry type's); the stock arm and the assault are in [dormant-stock-rules.md](dormant-stock-rules.md#assaulters) |
 | `728EF0` | `10047DD0` | TunnelLocomotionClass_ILocomotion_Process_Dig | ported ([ares-subterranean.md](ares-subterranean.md)) |
 | `7292CF` | `10047DF0` | TunnelLocomotionClass_sub_7291F0_Dig | ported ([ares-subterranean.md](ares-subterranean.md)) |
 | `7293DA` | `10047E20` | TunnelLocomotionClass_sub_729370_Dig | ported: sits in ProcessDiggingIn (0x00729370), which nothing calls ([ares-subterranean.md](ares-subterranean.md)) |

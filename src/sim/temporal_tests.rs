@@ -1553,6 +1553,102 @@ fn a_chrono_legionnaire_erases_a_tank() {
     );
 }
 
+/// Retail rules and real orders: a Chrono Legionnaire warps the Americans'
+/// only War Factory while it builds a Grizzly, then walks off and lets it
+/// go. In stock the warp and release make no queue callback and the tank
+/// keeps building. Ares 3.0 BuildingClass_Disable_Temporal_Factories and
+/// _Enable_Temporal_Factories (`10013FA0`, hooks `0x004521C8` and
+/// `0x00452218`) refresh the vehicle queue: with no online factory the warp
+/// suspends it (`0x00509252`), and the release resumes it.
+#[test]
+fn a_warped_war_factory_holds_its_queue_until_released() {
+    use crate::sim::command::{Command, CommandEnvelope};
+    use crate::sim::production::ProductionCategory;
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = retail.rules;
+    let (mut sim, grid) = arena(0x4521C8, &rules);
+    let americans = sim.interner.intern("Americans");
+    sim.houses
+        .get_mut(&americans)
+        .unwrap()
+        .economy_mut()
+        .set_credits_for_test(10_000);
+    spawn(&mut sim, &rules, "GAPOWR", "Americans", 22, 16);
+    let factory = spawn(&mut sim, &rules, "GAWEAP", "Americans", 14, 8);
+    let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
+    let order = |sim: &mut Simulation, command: Command| {
+        let at = sim.session.tick() + 1;
+        sim.queue_command(CommandEnvelope::new(americans, at, command));
+    };
+    let step = |sim: &mut Simulation, frames: usize| {
+        for _ in 0..frames {
+            let commands = sim.take_due_commands();
+            sim.advance_tick(&commands, Some(&rules), Some(&grid), None, 33);
+        }
+    };
+    let queue = |sim: &Simulation| {
+        let view = sim
+            .production
+            .factories()
+            .view(americans, ProductionCategory::Vehicle)
+            .expect("the Grizzly's factory");
+        (view.suspended, view.progress)
+    };
+    let tank = sim.interner.intern("MTNK");
+    order(&mut sim, Command::QueueProduction { type_id: tank });
+    step(&mut sim, 30);
+    let (held, before) = queue(&sim);
+    assert!(!held && before > 0, "the Grizzly builds");
+
+    order(
+        &mut sim,
+        Command::Attack {
+            attacker_id: cleg,
+            target_id: factory,
+        },
+    );
+    for _ in 0..300 {
+        if head_of(&sim, factory) == Some(cleg) {
+            break;
+        }
+        step(&mut sim, 1);
+    }
+    assert_eq!(head_of(&sim, factory), Some(cleg), "the warp starts");
+    step(&mut sim, 2);
+    let (held, warped) = queue(&sim);
+    step(&mut sim, 60);
+    let (_, later) = queue(&sim);
+    assert_eq!(held, cfg!(feature = "ares"), "suspended while warped");
+    assert_eq!(
+        later > warped,
+        !cfg!(feature = "ares"),
+        "builds while warped"
+    );
+
+    order(
+        &mut sim,
+        Command::Move {
+            entity_id: cleg,
+            target_rx: 4,
+            target_ry: 4,
+        },
+    );
+    for _ in 0..300 {
+        if head_of(&sim, factory).is_none() {
+            break;
+        }
+        step(&mut sim, 1);
+    }
+    assert_eq!(head_of(&sim, factory), None, "the walk lets it go");
+    step(&mut sim, 2);
+    let (held, released) = queue(&sim);
+    step(&mut sim, 60);
+    assert!(!held, "resumed on release");
+    assert!(queue(&sim).1 > released, "builds again");
+}
+
 /// The normal loader must bind both General references before Temporal can
 /// construct them. Synthetic temporal fixtures already supplied frame counts,
 /// which hid missing roots in the production asset closure.

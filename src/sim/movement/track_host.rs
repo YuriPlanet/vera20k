@@ -674,13 +674,25 @@ impl Simulation {
             return;
         };
         let coord = position_world_coord(&entity.position);
-        Self::track_raw_mark_at(substrate, path_grid, resolved_terrain, coord, put);
+        Self::track_raw_mark_at(substrate, path_grid, resolved_terrain, id, coord, put);
     }
 
+    /// The Unit `id`'s vt+0xF0 (PUT, `0x007441B0`) or vt+0xF4 (REMOVE,
+    /// `0x00744210`) on `coord`: bit 0x20 on the plane
+    /// [`raw_occupation_plane`](super::foot_mark::raw_occupation_plane)
+    /// selects.
+    ///
+    /// Ares 3.0 UnitClass_MarkOccupationBits `1004BFF0` (hook `0x007441B6`)
+    /// records on the Unit which plane PUT marked, and
+    /// UnitClass_UnmarkOccupationBits `1004C3E0` (hook `0x00744216`) clears
+    /// that plane as well, once, in REMOVE's Cell. PUT needs the structural
+    /// bridge bit and REMOVE only the height, so without it a deck-high Unit
+    /// over a Cell without that bit marks the ground and clears the deck.
     pub(super) fn track_raw_mark_at(
         substrate: &mut ObjectSubstrate,
         path_grid: &Option<Arc<PathGrid>>,
         resolved_terrain: &Option<ResolvedTerrainGrid>,
+        id: u64,
         coord: DriveCoord,
         put: bool,
     ) {
@@ -691,12 +703,39 @@ impl Simulation {
             resolved_terrain.as_ref(),
             path_grid.as_deref(),
         );
+        let on_deck = layer == MovementLayer::Bridge;
+        if put {
+            #[cfg(feature = "ares")]
+            if let Some(entity) = substrate.entities.get_mut(id) {
+                entity.ares_alt_occupation = Some(on_deck);
+            }
+            let raw = &mut substrate.raw_cell_occupation;
+            if on_deck {
+                raw.mark_deck(at.0, at.1, VEHICLE_OCCUPATION_BIT);
+            } else {
+                raw.mark_ground(at.0, at.1, VEHICLE_OCCUPATION_BIT);
+            }
+            return;
+        }
+        #[cfg_attr(not(feature = "ares"), allow(unused_mut))]
+        let (mut deck, mut ground) = (on_deck, !on_deck);
+        #[cfg(feature = "ares")]
+        if let Some(last) = substrate
+            .entities
+            .get_mut(id)
+            .and_then(|entity| entity.ares_alt_occupation.take())
+        {
+            deck |= last;
+            ground |= !last;
+        }
+        #[cfg(not(feature = "ares"))]
+        let _ = id;
         let raw = &mut substrate.raw_cell_occupation;
-        match (put, layer) {
-            (true, MovementLayer::Bridge) => raw.mark_deck(at.0, at.1, VEHICLE_OCCUPATION_BIT),
-            (true, _) => raw.mark_ground(at.0, at.1, VEHICLE_OCCUPATION_BIT),
-            (false, MovementLayer::Bridge) => raw.clear_deck(at.0, at.1, VEHICLE_OCCUPATION_BIT),
-            (false, _) => raw.clear_ground(at.0, at.1, VEHICLE_OCCUPATION_BIT),
+        if deck {
+            raw.clear_deck(at.0, at.1, VEHICLE_OCCUPATION_BIT);
+        }
+        if ground {
+            raw.clear_ground(at.0, at.1, VEHICLE_OCCUPATION_BIT);
         }
     }
 
@@ -898,7 +937,7 @@ impl Simulation {
         put: bool,
     ) {
         for coord in Self::track_occupation_coords(substrate, id, family, supplied) {
-            Self::track_raw_mark_at(substrate, path_grid, resolved_terrain, coord, put);
+            Self::track_raw_mark_at(substrate, path_grid, resolved_terrain, id, coord, put);
         }
     }
 

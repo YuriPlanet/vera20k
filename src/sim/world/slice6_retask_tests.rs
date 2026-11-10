@@ -424,10 +424,18 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
 // only: a temporary control skipping just those two folds in an Ares build
 // gave the default value, every per-frame replay diagnostic field matched
 // the default build's, and every tripwire above stayed green. Control removed.
+// Ares builds now also fold each Unit's TechnoExt AltOccupation (hooks
+// 0x7441B6/0x744216): hash composition only. A temporary control skipping
+// that fold gave the previous value, with every tripwire above green.
+// Control removed. Previous: 0xF21F_9A9D_57BE_D7E7.
+// Both builds now fold each entity's UpdateVisceroid direction (UnitClass+0x6D4,
+// `idle_wander`): hash composition only. A temporary control skipping that fold
+// gave the previous values in both builds. Control removed. Previous:
+// 0x5171_FBD3_06C4_D828 (Ares), 0xD8C3_5827_8CA8_5375 (default).
 const SLICE6_BASELINE_HASH: u64 = if cfg!(feature = "ares") {
-    0xF21F_9A9D_57BE_D7E7
+    0x7D9F_30F7_1CBF_1016
 } else {
-    0xD8C3_5827_8CA8_5375
+    0xCBF9_C392_848C_13BA
 };
 
 #[test]

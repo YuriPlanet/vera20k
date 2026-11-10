@@ -1443,9 +1443,10 @@ fn gsi_04_12_common_raw_occupation_structural_deck_unit_tracks_live_collapse_fla
 
     let _ = sim.object_conceal(2);
 
+    // Ares 3.0 1004C3E0 (hook 0x00744216) clears the recorded ground too.
     assert_eq!(
         sim.substrate.raw_cell_occupation.ground_bits(3, 4),
-        0x20,
+        if cfg!(feature = "ares") { 0 } else { 0x20 },
         "height-only clear still targets deck after the collapsed mark used ground"
     );
     assert_eq!(sim.substrate.raw_cell_occupation.deck_bits(3, 4), 0);
@@ -1509,9 +1510,11 @@ fn gsi_04_12_common_raw_occupation_high_nonstructural_unit_keeps_native_stale_gr
 
     let _ = sim.object_conceal(1);
 
+    // Ares 3.0 UnitClass_UnmarkOccupationBits 1004C3E0 (hook 0x00744216)
+    // also clears the ground plane UnitClass_MarkOccupationBits recorded.
     assert_eq!(
         sim.substrate.raw_cell_occupation.ground_bits(3, 4),
-        0x20,
+        if cfg!(feature = "ares") { 0 } else { 0x20 },
         "height-only clear targets deck even though nonstructural mark used ground"
     );
     assert_eq!(sim.substrate.raw_cell_occupation.deck_bits(3, 4), 0);

@@ -83,8 +83,7 @@ EngineerAlwaysCaptureTech=yes
   `EngineerRepairable` (`0x51FA82`) has no VERA counterpart.
 - `KickOutOfRubble` restores the selection the sim keeps; nothing else of
   the client's selection.
-- The occupant's TechnoExt `GarrisonedIn` (only Ares trenches read it) and
-  the `Assaulter=` arms the original admission already leaves out.
+- The occupant's TechnoExt `GarrisonedIn` (only Ares trenches read it).
 - `SolidHeight`, `SolidLevel`, `SubjectToBuildings` and
   `AlliedSolidTransparency` belong to the
   [line-of-fire chain](ares-line-of-fire.md).
@@ -186,9 +185,11 @@ RulesExt `UnitsUnsellable` with the other `[General]` keys
   Ares builds only, with the type's `GateUpSound`/`GateDownSound` first
   (`sim::gate_runtime`, `10015670`/`100156B0`, hooks `0x44E550`/`0x44E61E`);
   default builds keep them unplayed.
-- `ProduceCashDisplay` (`100117C0`): it rides Ares' replaced ProduceCash
-  payout (`100146E0`, `10013D40`, `10014490`: hooks `0x43FD2C`, `0x4482BD`,
-  `0x4409F4`, with the upgrades' cash timers), which VERA does not port.
+- `ProduceCashDisplay` (`100117C0`) rides Ares' replaced ProduceCash payout
+  (`100146E0`, `10013D40`: hooks `0x43FD2C`, `0x4482BD`, with the upgrades'
+  cash timers), ported in `sim::credit_income`. The upgrade's timer start at
+  Put (`10014490`, hook `0x4409F4`) is not
+  ([ares-building-house-hooks.md](ares-building-house-hooks.md)).
 - `AIInnerBase` (`10023860`, hook `0x506306`) is consumed: it picks the
   inner-base key of `FindBaseBuildingSite` (`sim::ai_base_site`).
 - `IsBaseNormal`'s per-building `NoBaseNormal` (a `Deliver.BaseNormal=no`

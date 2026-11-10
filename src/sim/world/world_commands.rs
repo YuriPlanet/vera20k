@@ -205,6 +205,22 @@ impl Simulation {
         Some(record)
     }
 
+    /// `FootClass::ClickedAction_Object`'s Detonate (0x37) arm
+    /// (`0x004D75F4..0x004D766F`): the DETONATE event on `carrier`, whose
+    /// house byte is its bomb's house (`bomb+0x28`, its ArrayIndex). `None`
+    /// without a bomb.
+    pub fn encode_detonate_record(&self, carrier: u64) -> Option<CommandRecord> {
+        let house = self.substrate.entities.get(carrier)?.bomb.as_ref()?.house();
+        let typed = crate::sim::command::DetonateRecord {
+            house_id: self.command_sender(house)?,
+            frame: self.session.binary_frame() as i32,
+            entity_id: i32::try_from(carrier).ok()?,
+        };
+        let mut record = CommandRecord::decode_exact(&[0; COMMAND_RECORD_LEN]).ok()?;
+        typed.write_into(&mut record);
+        Some(record)
+    }
+
     /// StopCommand730EE7 -> ClickedEvent6FFE34 -> EventCtor4C65E0 emits
     /// IDLE6 with the current issuer and the actor's five-byte object token.
     /// Keep the token even if its actor disappears before dispatch: native
@@ -1049,6 +1065,20 @@ impl Simulation {
                 )
             });
         }
+        // DETONATE stays raw until its handler, which resolves the carrier
+        // late, as Execute does.
+        if crate::sim::command::DetonateRecord::decode(record).is_some() {
+            let owner = self.command_sender_owner(record.house_id())?;
+            return self.houses.contains_key(&owner).then(|| {
+                CommandEnvelope::new(
+                    owner,
+                    execute_tick,
+                    Command::SynchronizedRecord {
+                        record: record.clone(),
+                    },
+                )
+            });
+        }
         if ProductionRecord::decode(record).is_some()
             || PlaceRecord::decode(record).is_some()
             || SpecialPlaceRecord::decode(record).is_some()
@@ -1816,6 +1846,17 @@ impl Simulation {
                         }
                     };
                     return self.execute_archive_event(entity_id, target);
+                }
+                if let Some(event) = crate::sim::command::DetonateRecord::decode(record) {
+                    let Ok(carrier) = u64::try_from(event.entity_id) else {
+                        return false;
+                    };
+                    return self.execute_detonate_event(
+                        carrier,
+                        rules,
+                        overlay_registry,
+                        frame_effects,
+                    );
                 }
                 #[cfg(feature = "ares")]
                 if let Some(event) = crate::sim::command::AresTrenchRedirectRecord::decode(record) {
@@ -4418,8 +4459,10 @@ mod tests {
             .as_mut()
             .unwrap()
             .ensure_installed_track_state();
-        // Revealed object: order admission reads the limbo byte.
+        // Revealed object: order admission reads the limbo byte. Its Unlimbo
+        // would have published its threat (`0x006F6ED2`); TANK poses none.
         ge.lifecycle.set_in_limbo_for_test(false);
+        ge.cached_spatial_threat.publish(0);
         sim.substrate.entities.insert(ge);
     }
 
