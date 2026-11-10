@@ -2,12 +2,13 @@
 
 A mod can lay out the match screen with a file named `veraui.ini`: put the sidebar on
 any edge of the screen, put the command bar on top or leave it out, move the sidebar's
-parts, leave parts out, and change how many columns of build pictures it has and how
-big it is. Without the file the game looks exactly as the original does.
+parts, leave parts out, change how many columns of build pictures it has and how big it
+is, and place the messages, the timers, the banner and the tooltips. Without the file
+the game looks exactly as the original does.
 
-This is part of a larger plan. Later versions will let a layout add buttons and text
-and place the messages and timers on the battlefield. The keys on this page keep their
-meaning when that comes, so a layout you write now keeps working.
+This is part of a larger plan. Later versions will let a layout add buttons and text.
+The keys on this page keep their meaning when that comes, so a layout you write now
+keeps working.
 
 ## Where the file goes
 
@@ -31,7 +32,8 @@ three layouts, all with the original pictures:
 - The Soviets get the sidebar along the bottom of the screen, with its panels side by
   side.
 - Yuri gets a wider sidebar with three columns of build pictures and no top buttons,
-  which needs wider pictures of your own to look finished.
+  which needs wider pictures of your own to look finished. His timers sit at the top
+  right of the battlefield and his tooltips stay in a corner of the screen.
 
 ## A small example
 
@@ -244,6 +246,76 @@ Parts=Repair,Tabs
 - Leaving a part out only takes it off the screen. The hotkeys for Repair, Sell, the
   tabs and Options still work, and the radar still goes on and off with its sounds.
 
+## On the battlefield
+
+The battlefield holds four pieces of its own:
+
+| Part | What it is | Where it sits |
+| --- | --- | --- |
+| `Messages` | The lines of text at the top left: chat, EVA and mission text | Starts at the top-left corner of its box. Lines are as wide as the box |
+| `Timers` | The superweapon and mission timers | Stacks up from the bottom-right corner of its box |
+| `Banner` | The picture or text that says you won or lost | In the middle of its box |
+| `Powers` | [Phobos](phobos.md)' column of superweapon buttons, when a mod turns it on | At the battlefield's left edge |
+
+`Messages`, `Timers` and `Banner` each have a box inside the battlefield. In the
+original the box is the whole battlefield. These keys move and size it:
+
+| Key | Meaning | Original |
+| --- | --- | --- |
+| `Hold` | The corner or edge of the battlefield the box is measured from: `TopLeft`, `Top`, `TopRight`, `Left`, `Middle`, `Right`, `BottomLeft`, `Bottom` or `BottomRight` | `TopLeft` |
+| `X`, `Y` | How far in from there the box starts | 0, 0 |
+| `Width`, `Height` | The box's size. `Rest` is what is left of the battlefield | `Rest` |
+
+These numbers are screen pixels. The Sidebar size option doesn't scale these pieces.
+
+This gives the timers a box 120 tall at the top of the battlefield, 8 pixels down:
+
+```ini
+[Mine.Timers]
+Hold=TopRight
+Y=8
+Height=120
+```
+
+The timers stack up from the box's bottom-right corner, so the first one sits 128
+pixels down at the right edge and the next ones go above it.
+
+This starts the messages 180 pixels in, clear of a sidebar that floats on the left:
+
+```ini
+[Mine.Messages]
+X=180
+```
+
+`Powers` has no box. Its `X` and `Y` move the column right and down from its own place.
+
+The battlefield's `Parts=` says which of the four it has:
+
+```ini
+[Mine.Field]
+Parts=Messages,Timers,Banner,Powers
+```
+
+A piece that isn't in the list isn't drawn. The game still plays its sounds, and the
+chat keys still work.
+
+### Tooltips
+
+`Tooltip` is the small box of text at the cursor. It belongs to the whole screen, so it
+is in no `Parts=` list and can't be left out.
+
+| Key | Meaning | Original |
+| --- | --- | --- |
+| `Hold` | `Cursor`, or a corner or edge of the screen to keep every tooltip in: the same nine words as above | `Cursor` |
+| `X`, `Y` | With `Cursor`: how far right and down from the cursor. With a corner: how far in from it | 12, 16 |
+
+```ini
+[Mine.Tooltip]
+Hold=BottomLeft
+X=8
+Y=8
+```
+
 ## Not yet
 
 These keys belong to the format, but this version can't change them. You can leave them
@@ -252,8 +324,8 @@ out or write the original value. Any other value is skipped, and the game tells 
 | Key | What it is for | Original value |
 | --- | --- | --- |
 | `Type` | The kind of part: `Battlefield`, `Panel`, `Radar`, `CameoGrid`, `Tabs`, `PowerBar`, `Button` or `Text` | The part's own kind |
-| `Hold` | The edge or corner of its parent a part is measured from, for every part but `Side` and `Bar` | `TopLeft`. `Top` for `Money` |
-| `Width`, `Height` | A part's size, for every part but `Side`. `Rest` means what is left | `Width=Rest` and `Height=32` for `Bar`, `Rest` for both on `Field`, `Height=Rest` for `Cameos` |
+| `Hold` | The edge or corner of its parent a part is measured from, for the sidebar's own parts and `Field` | `TopLeft`. `Top` for `Money` |
+| `Width`, `Height` | A part's size, for the sidebar's own parts, `Bar` and `Field`. `Rest` means what is left | `Width=Rest` and `Height=32` for `Bar`, `Rest` for both on `Field`, `Height=Rest` for `Cameos` |
 | `Art` | The pictures a part draws | None yet: replace the picture files instead |
 | `CellWidth`, `CellHeight` | The size of one build picture | 60, 48 |
 | `Command` | What a button does | None yet |
@@ -290,5 +362,5 @@ In a build with [Phobos](phobos.md), a side's
 [`Sidebar.GDIPositions=`](phobos-sidebar-gdi.md) still picks whether the side starts
 from the Allied or the Soviet numbers. The layout's numbers then go on top.
 
-Phobos' own column of superweapon buttons stays at the left edge of the screen. With
-the sidebar on the left the two overlap; a later version lets a layout place it.
+Phobos' own column of superweapon buttons sits at the battlefield's left edge, beside
+a sidebar on the left. A layout moves it with [`Powers`](#on-the-battlefield).
