@@ -822,17 +822,18 @@ pub(crate) struct WolLoginLayout {
 pub(crate) const POPUP_AREA: RectPx = RectPx::new(36, 36, 560, 504);
 
 /// VERA online: the page's left side, drawn straight over its art: the
-/// welcome heading, the sign-in form (a caption and field each for the
-/// username and the password, and Remember password under them), the form's
-/// status line and the lobby's activity below.
+/// welcome heading with the sign-in form's status line right under it,
+/// saying what to do, the form (a caption and field each for the username
+/// and the password, and Remember password under them) and the lobby's
+/// activity below.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct WolOnlineLoginLayout {
     pub(crate) heading: RectPx,
+    /// Up to two wrapped rows.
+    pub(crate) status: RectPx,
     /// Each field's right-aligned caption and its NewEdit's window.
     pub(crate) fields: [(RectPx, RectPx); 2],
     pub(crate) remember: RectPx,
-    /// Up to two wrapped rows.
-    pub(crate) status: RectPx,
     /// One row per count.
     pub(crate) counts: [RectPx; 2],
 }
@@ -841,20 +842,20 @@ pub(crate) struct WolOnlineLoginLayout {
 /// the counts centre on [`POPUP_AREA`], whose centre line runs between the
 /// captions and the fields; the fields are the size of gamemd's password
 /// field, and the text rows the shell font's 19 pixels.
-const ONLINE_HEADING: RectPx = RectPx::new(36, 156, 560, 19);
+const ONLINE_HEADING: RectPx = RectPx::new(36, 150, 560, 19);
+const ONLINE_STATUS: RectPx = RectPx::new(96, 173, 440, 38);
 const ONLINE_FIELDS: [(RectPx, RectPx); 2] = [
     (
-        RectPx::new(40, 196, 200, 22),
-        RectPx::new(253, 196, 209, 22),
+        RectPx::new(40, 220, 200, 22),
+        RectPx::new(253, 220, 209, 22),
     ),
     (
-        RectPx::new(40, 230, 200, 22),
-        RectPx::new(253, 230, 209, 22),
+        RectPx::new(40, 254, 200, 22),
+        RectPx::new(253, 254, 209, 22),
     ),
 ];
-const ONLINE_REMEMBER: RectPx = RectPx::new(253, 262, 300, 22);
-const ONLINE_STATUS: RectPx = RectPx::new(96, 298, 440, 38);
-const ONLINE_COUNTS: [RectPx; 2] = [RectPx::new(36, 350, 560, 19), RectPx::new(36, 371, 560, 19)];
+const ONLINE_REMEMBER: RectPx = RectPx::new(253, 286, 300, 22);
+const ONLINE_COUNTS: [RectPx; 2] = [RectPx::new(36, 326, 560, 19), RectPx::new(36, 347, 560, 19)];
 
 impl WolLoginLayout {
     pub(crate) fn page_spec(&self) -> &'static MenuPageSpec {
@@ -935,9 +936,9 @@ impl WolLoginLayout {
             remember: px(child_window(196, 207, 213, 13)),
             online: (policy == LoginPolicy::Online).then(|| WolOnlineLoginLayout {
                 heading: px(ONLINE_HEADING),
+                status: px(ONLINE_STATUS),
                 fields: ONLINE_FIELDS.map(|(caption, edit)| (px(caption), px(edit))),
                 remember: px(ONLINE_REMEMBER),
-                status: px(ONLINE_STATUS),
                 counts: ONLINE_COUNTS.map(px),
             }),
         }
@@ -1374,15 +1375,15 @@ mod tests {
             layout.control_at(online.remember.x + 1, online.remember.y + 1),
             Some(FORM_REMEMBER)
         );
-        // Top to bottom: the heading, the two fields, Remember password, the
-        // status line and the counts, clear of the buttons and the page's
-        // own status line.
+        // Top to bottom: the heading, the status line saying what to do, the
+        // two fields, Remember password and the counts, clear of the buttons
+        // and the page's own status line.
         let rows = [
             online.heading,
+            online.status,
             online.fields[0].1,
             online.fields[1].1,
             online.remember,
-            online.status,
             online.counts[0],
             online.counts[1],
         ];
