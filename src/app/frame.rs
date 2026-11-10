@@ -111,6 +111,21 @@ fn apply_screen_shake(
     );
 }
 
+/// A collected plain game frame and what the frame owner knows about its
+/// pass, for [`App::paint_beside_step`].
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+struct BesideStepFrame {
+    /// The frame's encoder, holding what the collect half recorded.
+    encoder: wgpu::CommandEncoder,
+    output: crate::render::gpu::GpuFrame,
+    frame: render::GameFrame,
+    paint_view: render::PaintView,
+    runtime_pass: RuntimeServiceResult,
+    picture_clock: crate::app::match_runtime::redraw_gate::PictureClock,
+    draw_started: Instant,
+    catch_up_allowed: bool,
+}
+
 impl App {
     /// Service the match runtime for one pass: the outcome voice wait, the
     /// scenario exit cascade, the quit cascade, the audio pump and, when
@@ -694,6 +709,337 @@ impl App {
         crate::app::input::hardware_cursor::show(state, event_loop, arrow);
     }
 
+    /// Whether the game step after this picture is due already, with nothing
+    /// else for the match service to do first: then the picture can be
+    /// painted while that step runs ([`Self::paint_beside_step`]).
+    ///
+    /// Offline play only: `should_admit` is the pacer's pure answer there,
+    /// as the catch-up loop of `service_match_runtime` reads it. A machine
+    /// that keeps its game speed is never due here, and draws as ever.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    fn step_due_beside_paint(state: &AppState) -> bool {
+        // One core for the step and one for the paint.
+        static TWO_CORES: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        if !*TWO_CORES.get_or_init(|| {
+            std::thread::available_parallelism().is_ok_and(|cores| cores.get() >= 2)
+        }) {
+            return false;
+        }
+        let diagnostics = &state.match_state.match_diagnostics;
+        let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+            return false;
+        };
+        let session = runtime.simulation.session();
+        let plain = state.frontend.screen == GameScreen::InGame
+            && state.match_state.live_network.is_none()
+            && !state.match_state.network_wait.waiting()
+            && !runtime.simulation.pending_network_wait()
+            && !diagnostics.is_replay_playback()
+            && !diagnostics.playback_capture_requested()
+            && !diagnostics.actor_presentation_observer_active()
+            && !state.diag.debug_frame_step_requested
+            && !state.match_state.input.retail_screenshot_requested
+            && !state.platform.redraw_gate.auditing()
+            && state.frontend.quit_cascade.is_none();
+        let running = !state.match_state.paused()
+            && !session.scenario_paused()
+            && !state.focus_freeze_active()
+            && !state.match_state.scenario_restart_requested
+            && !state.match_state.frame_stopped
+            && state.match_state.scenario_exit.is_none()
+            && state.match_state.scenario_outcome.is_none()
+            && !Self::house_outcome_wait_pending(state)
+            && !Self::local_outcome_exit_ready(state)
+            && !crate::app::match_runtime::network_failure::pending(state);
+        if !plain || !running {
+            return false;
+        }
+        let (game_speed, network_fps) =
+            crate::app::match_runtime::sim_tick::local_pacing_inputs(state);
+        state.platform.frame_pacer.should_admit(
+            crate::app::match_runtime::frame_pacer::wall_clock_ms(),
+            game_speed,
+            network_fps,
+            false,
+        )
+    }
+
+    /// Finish a plain game frame beside the game step that is already due.
+    ///
+    /// The picture's collect half is done. This records the window overlays
+    /// that follow the game picture, commits the frame as presented, parks
+    /// the paint half, and runs the next match service: its simulation step
+    /// takes the parked paint and runs it on a second thread while the world
+    /// advances (`sim_tick`). So the pass costs the longer of the paint and
+    /// the step instead of their sum. A service that reaches no step leaves
+    /// the paint parked, and it runs here in line.
+    ///
+    /// The service that ran is the next pass's own: its result is kept in
+    /// `step_ahead`, and that pass draws the stepped world without servicing
+    /// again. One service and one picture per pass, as in the single-thread
+    /// order; only the event loop's turn moves from before the step to after.
+    ///
+    /// The commands reach the driver in the single-thread order: the frame's
+    /// encoder (collect, then paint), then the overlays' buffer, in one
+    /// submission.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    fn paint_beside_step(
+        state: &mut AppState,
+        event_loop: &ActiveEventLoop,
+        collected: BesideStepFrame,
+    ) -> Result<FrameRenderOutcome> {
+        let BesideStepFrame {
+            encoder,
+            output,
+            frame,
+            paint_view,
+            runtime_pass,
+            picture_clock,
+            draw_started,
+            catch_up_allowed,
+        } = collected;
+        let cursor_texture = frame
+            .software_cursor()
+            .and_then(|draw| {
+                crate::app::presentation::ui_overlays::software_cursor_texture(state, draw)
+            })
+            .cloned();
+        // What the frame owner draws over the game picture, in its order.
+        // None of it reads this frame's instance uploads, so it is recorded
+        // here, ahead of the paint, and submitted after it.
+        let mut tail =
+            state
+                .renderer
+                .gpu
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Frame overlays"),
+                });
+        state.renderer.performance_overlay.encode(
+            &state.renderer.gpu,
+            &state.renderer.batch_renderer,
+            &mut tail,
+            &output.texture,
+            &state.renderer.bit_font,
+            crate::app::diagnostics::performance_overlay::match_panel(state),
+        );
+        if let Some(status) = Self::window_status(state) {
+            state.renderer.performance_overlay.encode_status(
+                &state.renderer.gpu,
+                &state.renderer.batch_renderer,
+                &mut tail,
+                &output.texture,
+                &state.renderer.bit_font,
+                &status,
+            );
+        }
+        if let Some(offset_px) = runtime_pass.screen_shake_offset {
+            apply_screen_shake(state, &mut tail, &output.texture, offset_px);
+        }
+        Self::show_os_cursor_only_without_game_cursor(state, event_loop, true);
+        state.renderer.gpu.timer.end_frame(&mut tail);
+        state
+            .renderer
+            .gpu
+            .encode_color_vision(&mut tail, &output.texture);
+
+        // The frame is on its way, as one handed to the hand-off thread is.
+        // The redraw gate's picture is read before the world steps.
+        Self::record_presented_times(state, Instant::now(), draw_started);
+        // No observer watches a plain frame; this closes the pass's
+        // observation as the single-thread order does.
+        let _ = state
+            .match_state
+            .match_diagnostics
+            .commit_presentation_observation();
+        Self::commit_presented_state(
+            state,
+            runtime_pass.screen_shake_offset,
+            false,
+            picture_clock,
+            draw_started,
+        );
+
+        state.renderer.gpu.park_frame(output);
+        state.platform.paint_beside_step = Some(Box::new(render::beside_step::PendingPaint::new(
+            encoder,
+            tail.finish(),
+            frame,
+            paint_view,
+            cursor_texture,
+        )));
+        let next_pass = Self::service_match_runtime(state, event_loop, true, catch_up_allowed);
+        if let Some(pending) = state.platform.paint_beside_step.take() {
+            // No step took it. A match that ended meanwhile has no art left
+            // to paint it from.
+            if state.frontend.screen == GameScreen::InGame
+                && state.match_state.sim_runtime.is_some()
+            {
+                let (view, job) = pending.into_parts();
+                let mut paint = render::PaintState::from_parts(
+                    &mut state.renderer,
+                    render::paint_state::paint_art!(state.match_state.match_presentation),
+                    view,
+                );
+                state.platform.painted_beside_step = job.paint(&mut paint);
+            }
+        }
+        // An unpainted frame gives its surface frame back.
+        drop(state.renderer.gpu.take_parked_frame());
+        if let Some(painted) = state.platform.painted_beside_step.take() {
+            let handoff = painted.handoff;
+            let output = painted
+                .game
+                .finish(&mut state.match_state.match_presentation);
+            if let Some(mut phases) = output.phases {
+                phases.handoff = handoff;
+                #[cfg(feature = "telemetry-dashboard")]
+                state.diag.render_timing.record(phases);
+                state
+                    .renderer
+                    .performance_overlay
+                    .record_render_phases(phases);
+            }
+        }
+        if next_pass.quit_requested {
+            return Ok(FrameRenderOutcome::Unavailable);
+        }
+        state.platform.step_ahead = Some(next_pass);
+        crate::app::loading::pump::after_loading_frame_presented(state, None)?;
+        #[cfg(feature = "telemetry-dashboard")]
+        crate::app::telemetry_capture::publish_if_due(state);
+        Ok(FrameRenderOutcome::Presented)
+    }
+
+    /// The window's status line over a match: replay playback, a network
+    /// recovery, or a multiplayer pause.
+    fn window_status(state: &AppState) -> Option<String> {
+        state
+            .match_state
+            .match_diagnostics
+            .playback_status()
+            .or_else(|| {
+                let live = state.match_state.live_network.as_ref()?;
+                let frame = state
+                    .match_state
+                    .sim_runtime
+                    .as_ref()?
+                    .simulation
+                    .session()
+                    .binary_frame();
+                match live.recovery_status(
+                    crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32,
+                    frame,
+                )? {
+                    crate::net::live_commands::NetworkRecoveryStatus::Reconnecting => {
+                        // The relay drops a lapsed pass, which only the
+                        // lobby can renew: then waiting cannot help.
+                        let lapsed = live.relay_expires().is_some_and(|expires| {
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .is_ok_and(|now| now.as_secs() >= expires)
+                        });
+                        Some(crate::i18n::tr(if lapsed {
+                            "VERA:ReconnectPassLapsed"
+                        } else {
+                            "VERA:Reconnecting"
+                        }))
+                    }
+                    crate::net::live_commands::NetworkRecoveryStatus::CatchingUp { frames } => {
+                        let key = if live.restoring_match() {
+                            "VERA:Rejoining"
+                        } else {
+                            "VERA:CatchingUp"
+                        };
+                        Some(crate::i18n::tr_count(key, frames, &[]))
+                    }
+                }
+            })
+            .or_else(|| {
+                crate::app::input::pause_menu::multiplayer_control(state)?
+                    .status
+                    .map(crate::i18n::tr)
+            })
+    }
+
+    /// Record when a frame went to the driver, for the pacer and the
+    /// network quality figures.
+    fn record_presented_times(state: &mut AppState, presented_at: Instant, draw_started: Instant) {
+        let battlefield = state.frontend.screen == GameScreen::InGame;
+        state
+            .platform
+            .frame_pacer
+            .record_presented(presented_at, battlefield.then_some(draw_started));
+        if battlefield {
+            state
+                .match_state
+                .network_quality
+                .record_present(presented_at);
+        }
+    }
+
+    /// Commit what a presented frame showed: the screenshot cache's and the
+    /// screen shake's offsets, the shell's timer-driven frames, and the
+    /// picture the redraw gate now holds as shown.
+    fn commit_presented_state(
+        state: &mut AppState,
+        screen_shake_offset: Option<[i32; 2]>,
+        capture: bool,
+        picture_clock: crate::app::match_runtime::redraw_gate::PictureClock,
+        draw_started: Instant,
+    ) {
+        state
+            .renderer
+            .retail_screenshot_frame_cache
+            .commit_presented(if state.frontend.screen == GameScreen::InGame {
+                screen_shake_offset.unwrap_or([0, 0])
+            } else {
+                [0, 0]
+            });
+        state
+            .match_state
+            .match_presentation
+            .screen_shake
+            .record_presented(if state.frontend.screen == GameScreen::InGame {
+                screen_shake_offset.unwrap_or([0, 0])
+            } else {
+                [0, 0]
+            });
+        // A family renderer that drew a timer-driven 0x71C frame this pass
+        // advances it now that the frame reached the screen.
+        state.frontend.shell_monitor.commit_presented();
+        state.frontend.shell_page_title.commit_presented();
+        let mut status_step = state.frontend.shell_status_line.commit_presented();
+        if let Some(page) = state.frontend.score_page.as_mut() {
+            page.commit_presented();
+        }
+        if let Some(page) = state.frontend.campaign_score_page.as_mut() {
+            page.commit_presented();
+        }
+        if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
+            status_step |= ui.statics.commit_presented();
+        }
+        let skirmish = &mut state.frontend.skirmish_shell_state;
+        status_step |= skirmish.statics.commit_presented();
+        if let Some(modal) = skirmish.choose_map_modal.as_mut() {
+            status_step |= modal.statics.commit_presented();
+        }
+        if let Some(setup) = skirmish.random_map_setup_modal.as_mut() {
+            status_step |= setup.statics.commit_presented();
+        }
+        let still = crate::app::match_runtime::redraw_gate::still_frame(
+            state,
+            capture,
+            screen_shake_offset,
+            picture_clock,
+        );
+        let limits = crate::app::match_runtime::redraw_gate::draw_limits(state, status_step);
+        state
+            .platform
+            .redraw_gate
+            .record_presented(still, draw_started, limits);
+    }
+
     /// Dispatch rendering based on current GameScreen state.
     pub(super) fn render_frame(
         state: &mut AppState,
@@ -828,12 +1174,17 @@ impl App {
         let catch_up_allowed = !shell_capture
             .as_deref()
             .is_some_and(|capture| capture.observes_every_frame());
-        let runtime_pass = Self::service_match_runtime(
-            state,
-            event_loop,
-            hidden_run.is_none() && !shell_capture_owns_simulation,
-            catch_up_allowed,
-        );
+        // A frame painted beside its next step ran this pass's service then
+        // (`paint_beside_step`): that result stands in for it.
+        let runtime_pass = match state.platform.step_ahead.take() {
+            Some(pass) => pass,
+            None => Self::service_match_runtime(
+                state,
+                event_loop,
+                hidden_run.is_none() && !shell_capture_owns_simulation,
+                catch_up_allowed,
+            ),
+        };
         if runtime_pass.quit_requested {
             return Ok(FrameRenderOutcome::Unavailable);
         }
@@ -1323,15 +1674,55 @@ impl App {
                     );
                     render_output
                 } else {
-                    let render_output = render::render_game(state, &mut encoder, times, cadence)?;
+                    let (frame, paint_view) =
+                        render::collect_game(state, &mut encoder, times, cadence)?;
+                    // A plain frame with a game step already due is painted
+                    // on a second thread while that step runs.
+                    #[cfg(not(all(
+                        feature = "wasm",
+                        target_arch = "wasm32",
+                        target_os = "unknown"
+                    )))]
+                    if shell_capture.is_none()
+                        && hidden_run.is_none()
+                        && !shell_capture_current_frame
+                        && Self::step_due_beside_paint(state)
+                    {
+                        drop(view);
+                        return Self::paint_beside_step(
+                            state,
+                            event_loop,
+                            BesideStepFrame {
+                                encoder,
+                                output,
+                                frame,
+                                paint_view,
+                                runtime_pass,
+                                picture_clock,
+                                draw_started,
+                                catch_up_allowed,
+                            },
+                        );
+                    }
+                    let mut paint = render::PaintState::from_parts(
+                        &mut state.renderer,
+                        render::paint_state::paint_art!(state.match_state.match_presentation),
+                        paint_view,
+                    );
+                    let painted = render::paint_game(&mut paint, &mut encoder, frame);
+                    let render_output = painted.finish(&mut state.match_state.match_presentation);
                     state
                         .renderer
                         .copy_game_frame_to(&mut encoder, &output.texture);
+                    let cursor_texture = render_output.software_cursor.and_then(|draw| {
+                        crate::app::presentation::ui_overlays::software_cursor_texture(state, draw)
+                    });
                     render::draw_software_cursor(
-                        state,
+                        &state.renderer,
+                        cursor_texture,
+                        (state.render_width(), state.render_height()),
                         &mut encoder,
                         &view,
-                        render_output.software_cursor,
                     );
                     render_output
                 };
@@ -1402,52 +1793,7 @@ impl App {
             crate::app::diagnostics::performance_overlay::match_panel(state),
         );
         if state.frontend.screen == GameScreen::InGame {
-            let status = state
-                .match_state
-                .match_diagnostics
-                .playback_status()
-                .or_else(|| {
-                    let live = state.match_state.live_network.as_ref()?;
-                    let frame = state
-                        .match_state
-                        .sim_runtime
-                        .as_ref()?
-                        .simulation
-                        .session()
-                        .binary_frame();
-                    match live.recovery_status(
-                        crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32,
-                        frame,
-                    )? {
-                        crate::net::live_commands::NetworkRecoveryStatus::Reconnecting => {
-                            // The relay drops a lapsed pass, which only the
-                            // lobby can renew: then waiting cannot help.
-                            let lapsed = live.relay_expires().is_some_and(|expires| {
-                                std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .is_ok_and(|now| now.as_secs() >= expires)
-                            });
-                            Some(crate::i18n::tr(if lapsed {
-                                "VERA:ReconnectPassLapsed"
-                            } else {
-                                "VERA:Reconnecting"
-                            }))
-                        }
-                        crate::net::live_commands::NetworkRecoveryStatus::CatchingUp { frames } => {
-                            let key = if live.restoring_match() {
-                                "VERA:Rejoining"
-                            } else {
-                                "VERA:CatchingUp"
-                            };
-                            Some(crate::i18n::tr_count(key, frames, &[]))
-                        }
-                    }
-                })
-                .or_else(|| {
-                    crate::app::input::pause_menu::multiplayer_control(state)?
-                        .status
-                        .map(crate::i18n::tr)
-                });
+            let status = Self::window_status(state);
             if let Some(status) = status {
                 state.renderer.performance_overlay.encode_status(
                     &state.renderer.gpu,
@@ -1627,17 +1973,7 @@ impl App {
                 .performance_overlay
                 .record_render_phases(phases);
         }
-        let battlefield = state.frontend.screen == GameScreen::InGame;
-        state
-            .platform
-            .frame_pacer
-            .record_presented(presented_at, battlefield.then_some(draw_started));
-        if battlefield {
-            state
-                .match_state
-                .network_quality
-                .record_present(presented_at);
-        }
+        Self::record_presented_times(state, presented_at, draw_started);
         if let Some(completed) = state
             .match_state
             .match_diagnostics
@@ -1655,56 +1991,13 @@ impl App {
         // the diagnostic action below may resize the window.
         // https://docs.rs/wgpu/27.0.1/wgpu/struct.Surface.html#method.configure
         drop(view);
-        state
-            .renderer
-            .retail_screenshot_frame_cache
-            .commit_presented(if state.frontend.screen == GameScreen::InGame {
-                runtime_pass.screen_shake_offset.unwrap_or([0, 0])
-            } else {
-                [0, 0]
-            });
-        state
-            .match_state
-            .match_presentation
-            .screen_shake
-            .record_presented(if state.frontend.screen == GameScreen::InGame {
-                runtime_pass.screen_shake_offset.unwrap_or([0, 0])
-            } else {
-                [0, 0]
-            });
-        // A family renderer that drew a timer-driven 0x71C frame this pass
-        // advances it now that the frame reached the screen.
-        state.frontend.shell_monitor.commit_presented();
-        state.frontend.shell_page_title.commit_presented();
-        let mut status_step = state.frontend.shell_status_line.commit_presented();
-        if let Some(page) = state.frontend.score_page.as_mut() {
-            page.commit_presented();
-        }
-        if let Some(page) = state.frontend.campaign_score_page.as_mut() {
-            page.commit_presented();
-        }
-        if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
-            status_step |= ui.statics.commit_presented();
-        }
-        let skirmish = &mut state.frontend.skirmish_shell_state;
-        status_step |= skirmish.statics.commit_presented();
-        if let Some(modal) = skirmish.choose_map_modal.as_mut() {
-            status_step |= modal.statics.commit_presented();
-        }
-        if let Some(setup) = skirmish.random_map_setup_modal.as_mut() {
-            status_step |= setup.statics.commit_presented();
-        }
-        let still = crate::app::match_runtime::redraw_gate::still_frame(
+        Self::commit_presented_state(
             state,
-            shell_capture.is_some() || hidden_run.is_some(),
             runtime_pass.screen_shake_offset,
+            shell_capture.is_some() || hidden_run.is_some(),
             picture_clock,
+            draw_started,
         );
-        let limits = crate::app::match_runtime::redraw_gate::draw_limits(state, status_step);
-        state
-            .platform
-            .redraw_gate
-            .record_presented(still, draw_started, limits);
         if let Some(readback) = pending_gate_audit {
             let pixels = readback.finish(
                 &state.renderer.gpu.device,

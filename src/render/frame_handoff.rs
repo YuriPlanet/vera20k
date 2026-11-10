@@ -205,10 +205,18 @@ impl Drop for FrameHandoff {
 /// otherwise wait for this thread to end.
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 fn run_job(job: Job) {
+    off_main_thread(job);
+}
+
+/// Run GPU work on a thread other than the main one: on macOS inside an
+/// autorelease pool, so the Objective-C objects it autoreleases outside
+/// wgpu's own pools go when it ends, not when the thread does.
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+pub(crate) fn off_main_thread<R>(work: impl FnOnce() -> R) -> R {
     #[cfg(target_os = "macos")]
-    objc2::rc::autoreleasepool(|_| job());
+    return objc2::rc::autoreleasepool(|_| work());
     #[cfg(not(target_os = "macos"))]
-    job();
+    work()
 }
 
 /// The submission of a frame handed over; asking for it waits for that frame.

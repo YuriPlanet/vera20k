@@ -1801,7 +1801,57 @@ fn advance_one_simulation_frame(
                         FrameResume::NetworkLeave => rt.leave_network_wait(effects),
                         FrameResume::OutcomeWait => rt.resume_outcome_wait(effects),
                         FrameResume::None => {
-                            rt.advance_frame(&due_commands, SIM_TICK_MS, tick_lane, effects)
+                            // A game frame parked for this step is painted on
+                            // a second thread while the world advances
+                            // (`render::beside_step`). The paint borrows the
+                            // renderer and the match's art; the step and its
+                            // client callbacks borrow neither.
+                            #[cfg(not(all(
+                                feature = "wasm",
+                                target_arch = "wasm32",
+                                target_os = "unknown"
+                            )))]
+                            let parked = state.platform.paint_beside_step.take();
+                            #[cfg(all(
+                                feature = "wasm",
+                                target_arch = "wasm32",
+                                target_os = "unknown"
+                            ))]
+                            let parked = None::<std::convert::Infallible>;
+                            match parked {
+                                #[cfg(not(all(
+                                    feature = "wasm",
+                                    target_arch = "wasm32",
+                                    target_os = "unknown"
+                                )))]
+                                Some(parked) => {
+                                    use crate::app::presentation::render::{
+                                        beside_step, paint_state,
+                                    };
+                                    let (view, job) = parked.into_parts();
+                                    let (advanced, painted) = beside_step::paint_beside(
+                                        &mut state.renderer,
+                                        paint_state::paint_art!(
+                                            state.match_state.match_presentation
+                                        ),
+                                        view,
+                                        job,
+                                        || {
+                                            rt.advance_frame(
+                                                &due_commands,
+                                                SIM_TICK_MS,
+                                                tick_lane,
+                                                effects,
+                                            )
+                                        },
+                                    );
+                                    state.platform.painted_beside_step = painted;
+                                    advanced
+                                }
+                                _ => {
+                                    rt.advance_frame(&due_commands, SIM_TICK_MS, tick_lane, effects)
+                                }
+                            }
                         }
                     };
                     // VERA-only: a peer's malformed event or a failed checksum

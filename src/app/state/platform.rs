@@ -99,6 +99,18 @@ pub(crate) struct PlatformState {
     /// Whether the next visible pass must draw, or may only service the
     /// match because the presented picture still stands. Presentation-only.
     pub(crate) redraw_gate: crate::app::match_runtime::redraw_gate::RedrawGate,
+    /// A collected game frame waiting for the next game step, which paints
+    /// it on a second thread (`presentation::render::beside_step`).
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    pub(crate) paint_beside_step:
+        Option<Box<crate::app::presentation::render::beside_step::PendingPaint>>,
+    /// That frame once painted, until the frame owner takes its output.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    pub(crate) painted_beside_step:
+        Option<crate::app::presentation::render::beside_step::PaintedFrame>,
+    /// The match service that ran beside that paint: the next pass's own
+    /// service, already done (`App::paint_beside_step`).
+    pub(in crate::app) step_ahead: Option<crate::app::frame::RuntimeServiceResult>,
     /// Loaded GameConfig — missing config.toml falls back to the executable
     /// root; `None` only when config loading or executable-root discovery
     /// fails. Set once at process start from `GameConfig::load()`; not
@@ -179,6 +191,11 @@ impl PlatformState {
             attention_requested: false,
             frame_pacer: LocalFramePacer::new(),
             redraw_gate: crate::app::match_runtime::redraw_gate::RedrawGate::from_environment(),
+            #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+            paint_beside_step: None,
+            #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+            painted_beside_step: None,
+            step_ahead: None,
             game_config,
             capture_client_size,
             capture_presentation: CapturePresentation::default(),

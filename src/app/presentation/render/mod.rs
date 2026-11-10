@@ -48,6 +48,8 @@ mod status_gpu_tests;
 #[cfg(test)]
 mod target_laser_gpu_tests;
 pub(crate) use draw_passes::draw_software_cursor;
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+pub(crate) mod beside_step;
 pub(crate) mod paint_state;
 pub(crate) use paint_state::{PaintState, PaintView};
 #[cfg(test)]
@@ -224,6 +226,16 @@ pub(crate) struct GameFrame {
     times: GameRenderTimes,
     /// The collect half's phase spans, when this render measures them.
     spans: Option<CollectSpans>,
+}
+
+impl GameFrame {
+    /// The frame of the software cursor sprite this frame draws, if any.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    pub(crate) fn software_cursor(
+        &self,
+    ) -> Option<crate::app::presentation::ui_overlays::SoftwareCursorDraw> {
+        self.ui.software_cursor_draw
+    }
 }
 
 /// The screen-fixed text and boxes of one frame, laid out while it was

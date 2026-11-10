@@ -169,6 +169,9 @@ pub struct GpuContext {
     /// The thread frames reach the driver on. First, so it finishes the frame
     /// on its way and ends before the surface and device below drop.
     handoff: super::frame_handoff::FrameHandoff,
+    /// An acquired frame waiting for its paint beside the next game step
+    /// ([`Self::park_frame`]). Before the surface, which it must not outlive.
+    parked: Mutex<Option<GpuFrame>>,
     /// The GPU surface we render to (tied to the window).
     // Loading progress shares the GPU context with asset uploads. Only this
     // owner locks the surface, briefly, to acquire or replace a lost swapchain.
@@ -459,6 +462,7 @@ impl GpuContext {
         let queue = super::frame_handoff::HandoffQueue::new(queue, handoff.waiter());
         Ok(Self {
             handoff,
+            parked: Mutex::new(None),
             surface: Mutex::new(Some(surface)),
             instance,
             window,
@@ -500,14 +504,43 @@ impl GpuContext {
         encoder: wgpu::CommandEncoder,
         frame: GpuFrame,
     ) -> super::frame_handoff::FrameSubmission {
+        self.hand_off_frame_with_tail(encoder, None, frame)
+    }
+
+    /// [`Self::hand_off_frame`] with `tail`, commands recorded apart from
+    /// `encoder` that run after it: both go to the driver in one submission.
+    pub(crate) fn hand_off_frame_with_tail(
+        &self,
+        encoder: wgpu::CommandEncoder,
+        tail: Option<wgpu::CommandBuffer>,
+        frame: GpuFrame,
+    ) -> super::frame_handoff::FrameSubmission {
         let queue = (*self.queue).clone();
         let index = Arc::new(std::sync::OnceLock::new());
         let submitted = Arc::clone(&index);
         self.handoff.send(move || {
-            let _ = submitted.set(queue.submit(std::iter::once(encoder.finish())));
+            let _ = submitted.set(queue.submit(std::iter::once(encoder.finish()).chain(tail)));
             frame.present(&queue);
         });
         super::frame_handoff::FrameSubmission::new(index, self.handoff.waiter())
+    }
+
+    /// Keep `frame`, acquired for a game picture, until its paint takes it
+    /// ([`Self::take_parked_frame`]). A surface gives out one frame at a
+    /// time: should anything else ask for a frame first (a loading repaint
+    /// from inside the match service), [`Self::acquire_frame`] gives it this
+    /// one, and the parked picture is dropped unpainted.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    pub(crate) fn park_frame(&self, frame: GpuFrame) {
+        *self.parked.lock().unwrap_or_else(PoisonError::into_inner) = Some(frame);
+    }
+
+    /// The parked frame, if nothing else took it.
+    pub(crate) fn take_parked_frame(&self) -> Option<GpuFrame> {
+        self.parked
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
     }
 
     /// The time this thread spent blocked on a frame on its way to the driver
@@ -536,6 +569,8 @@ impl GpuContext {
     /// https://docs.rs/winit/0.30.13/winit/application/trait.ApplicationHandler.html#method.suspended
     #[cfg(target_os = "android")]
     pub(crate) fn suspend_surface(&mut self) {
+        // A parked frame holds the surface's texture.
+        drop(self.take_parked_frame());
         self.handoff.waiter().wait();
         drop(
             self.surface
@@ -583,6 +618,8 @@ impl GpuContext {
     /// Called from ApplicationHandler::window_event when WindowEvent::Resized fires.
     /// Ignores zero-sized dimensions (happens during window minimize on some platforms).
     pub fn resize(&mut self, width: u32, height: u32) {
+        // A parked frame holds the surface's texture.
+        drop(self.take_parked_frame());
         if width == 0 || height == 0 {
             return; // Minimized window — skip reconfigure
         }
@@ -622,6 +659,9 @@ impl GpuContext {
         // A surface gives out one frame at a time, and drawing keeps plain
         // queue clones that do not wait for themselves (`HandoffQueue`).
         self.handoff.waiter().wait();
+        if let Some(parked) = self.take_parked_frame() {
+            return Ok(Some(parked));
+        }
         let mut surface = self.surface.lock().unwrap_or_else(PoisonError::into_inner);
         let Some(surface) = surface.as_mut() else {
             return Ok(None);

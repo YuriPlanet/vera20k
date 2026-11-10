@@ -13,7 +13,6 @@ use crate::app::presentation::sidebar_render::{begin_main_load_pass, begin_main_
 use crate::app::presentation::sidebar_surface::{
     SIDEBAR_STREAMS, SidebarPart, SidebarPicture, SidebarRedraw, TEXT_LAYERS, VIEWPORT_OUTLINE,
 };
-use crate::app::presentation::ui_overlays::software_cursor_texture;
 use crate::render::batch::{BatchRenderer, BatchTexture, InstanceBufferPool, SpriteInstance};
 use crate::render::bridge_atlas::BridgeAtlas;
 use crate::render::overlay_atlas::OverlayAtlas;
@@ -1044,34 +1043,26 @@ pub(super) fn dispatch_draw_passes(
         );
     }
     // Phobos placement preview artwork (`0x6D528A`), after the PLACE cells.
-    // The texture lives behind the cache's RefCell borrow, so end this pass
-    // before releasing the guard and recreate it for the following stages.
+    // It draws in its own pass, so end this one and recreate it for the
+    // following stages.
     #[cfg(feature = "phobos")]
     if let Some((buffer, count)) = pool.get("placement_ghost")
         && count > 0
+        && let Some(texture) = state.placement_ghost_texture()
     {
-        {
-            let art = state
-                .match_state
-                .match_presentation
-                .placement_preview_art
-                .borrow();
-            if let Some(texture) = art.current_texture() {
-                drop(pass);
-                draw_placement_ghost_pass(
-                    encoder,
-                    view,
-                    &world_depth,
-                    [tac_x, tac_y, tac_w, tac_h],
-                    &state.renderer.batch_renderer,
-                    texture,
-                    buffer,
-                    count,
-                );
-                pass = begin_main_load_pass(encoder, view, &world_depth);
-                pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
-            }
-        }
+        drop(pass);
+        draw_placement_ghost_pass(
+            encoder,
+            view,
+            &world_depth,
+            [tac_x, tac_y, tac_w, tac_h],
+            &state.renderer.batch_renderer,
+            texture,
+            buffer,
+            count,
+        );
+        pass = begin_main_load_pass(encoder, view, &world_depth);
+        pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
     }
 
     // --- Step 10.5: PixelFX water/ore sparkles ---
@@ -1420,26 +1411,29 @@ pub(super) fn dispatch_draw_passes(
 }
 
 /// An unzoomed match's software cursor, over the window's copy of the frame.
+///
+/// `texture` is the cursor frame's (`software_cursor_texture`), and `size`
+/// the match frame's.
 pub(crate) fn draw_software_cursor(
-    state: &AppState,
+    renderer: &crate::app::renderer_state::RendererState,
+    texture: Option<&BatchTexture>,
+    size: (u32, u32),
     encoder: &mut wgpu::CommandEncoder,
     view: &wgpu::TextureView,
-    cursor: Option<crate::app::presentation::ui_overlays::SoftwareCursorDraw>,
 ) {
-    let Some(texture) = cursor.and_then(|draw| software_cursor_texture(state, draw)) else {
+    let Some(texture) = texture else {
         return;
     };
-    let frame_depth = state
-        .renderer
+    let frame_depth = renderer
         .world_zoom_pass
         .as_ref()
-        .map_or(&state.renderer.depth_view, |zoom| zoom.frame_depth_view());
+        .map_or(&renderer.depth_view, |zoom| zoom.frame_depth_view());
     let mut pass = begin_main_load_pass(encoder, view, frame_depth);
-    pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
+    pass.set_scissor_rect(0, 0, size.0, size.1);
     draw_pooled_ui(
         &mut pass,
-        &state.renderer.batch_renderer,
-        &state.renderer.instance_pool,
+        &renderer.batch_renderer,
+        &renderer.instance_pool,
         Some(texture),
         "software_cursor",
     );

@@ -56,9 +56,6 @@ pub(crate) struct PaintPresentation<'a> {
     pub(crate) sw_sidebar_art: &'a Option<crate::render::sw_sidebar_art::SwSidebarArt>,
     pub(crate) beacon_art: &'a Option<crate::render::beacon_art::BeaconArt>,
     pub(crate) shroud_buffer: &'a Option<crate::render::shroud_buffer::ShroudBuffer>,
-    #[cfg(feature = "phobos")]
-    pub(crate) placement_preview_art:
-        &'a std::cell::RefCell<crate::app::presentation::placement_preview::PlacementPreviewArt>,
     pub(crate) chrono_screen: &'a mut crate::app::chrono_screen::ChronoScreenPresentation,
     pub(crate) minimap: Option<PaintMinimap>,
     pub(crate) radar_anim: Option<PaintRadarAnim>,
@@ -140,6 +137,10 @@ pub(crate) struct PaintView {
     page_draw: Option<crate::app::frontend::skirmish_shell_render::InMatchPageDraw>,
     minimap: Option<PaintMinimap>,
     radar_anim: Option<PaintRadarAnim>,
+    /// Phobos' placement preview art, as `PlacementPreviewArt::current_texture`
+    /// gave it.
+    #[cfg(feature = "phobos")]
+    placement_ghost_texture: Option<BatchTexture>,
 }
 
 impl PaintView {
@@ -163,6 +164,12 @@ impl PaintView {
             page_draw: crate::app::frontend::skirmish_shell_render::in_match_page_draw(state),
             minimap: presentation.minimap.as_ref().map(PaintMinimap::of),
             radar_anim: presentation.radar_anim.as_ref().map(PaintRadarAnim::of),
+            #[cfg(feature = "phobos")]
+            placement_ghost_texture: presentation
+                .placement_preview_art
+                .borrow()
+                .current_texture()
+                .cloned(),
         }
     }
 }
@@ -189,8 +196,6 @@ impl<'a> PaintState<'a> {
             sw_sidebar_art,
             beacon_art,
             shroud_buffer,
-            #[cfg(feature = "phobos")]
-            placement_preview_art,
             chrono_screen,
         } = art;
         let mut view = view;
@@ -212,8 +217,6 @@ impl<'a> PaintState<'a> {
                     sw_sidebar_art,
                     beacon_art,
                     shroud_buffer,
-                    #[cfg(feature = "phobos")]
-                    placement_preview_art,
                     chrono_screen,
                     minimap: view.minimap.take(),
                     radar_anim: view.radar_anim.take(),
@@ -257,6 +260,11 @@ impl<'a> PaintState<'a> {
         self.match_state.view.outcome_banner_texture.as_ref()
     }
 
+    #[cfg(feature = "phobos")]
+    pub(crate) fn placement_ghost_texture(&self) -> Option<&BatchTexture> {
+        self.match_state.view.placement_ghost_texture.as_ref()
+    }
+
     /// The in-match page's draw, once.
     pub(crate) fn take_page_draw(
         &mut self,
@@ -267,7 +275,9 @@ impl<'a> PaintState<'a> {
     /// The sidebar chrome of the frame's side
     /// (`sidebar_render::current_sidebar_chrome`).
     #[cfg(feature = "phobos")]
-    pub(crate) fn sidebar_chrome(&self) -> Option<&crate::render::sidebar_chrome::SidebarChromeAtlas> {
+    pub(crate) fn sidebar_chrome(
+        &self,
+    ) -> Option<&crate::render::sidebar_chrome::SidebarChromeAtlas> {
         self.match_state
             .match_presentation
             .sidebar_chrome
@@ -294,9 +304,6 @@ pub(crate) struct PaintArt<'a> {
     pub(crate) sw_sidebar_art: &'a Option<crate::render::sw_sidebar_art::SwSidebarArt>,
     pub(crate) beacon_art: &'a Option<crate::render::beacon_art::BeaconArt>,
     pub(crate) shroud_buffer: &'a Option<crate::render::shroud_buffer::ShroudBuffer>,
-    #[cfg(feature = "phobos")]
-    pub(crate) placement_preview_art:
-        &'a std::cell::RefCell<crate::app::presentation::placement_preview::PlacementPreviewArt>,
     pub(crate) chrono_screen: &'a mut crate::app::chrono_screen::ChronoScreenPresentation,
 }
 
@@ -320,8 +327,6 @@ macro_rules! paint_art {
             sw_sidebar_art: &$presentation.sw_sidebar_art,
             beacon_art: &$presentation.beacon_art,
             shroud_buffer: &$presentation.shroud_buffer,
-            #[cfg(feature = "phobos")]
-            placement_preview_art: &$presentation.placement_preview_art,
             chrono_screen: &mut $presentation.chrono_screen,
         }
     };

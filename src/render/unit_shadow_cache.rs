@@ -16,6 +16,15 @@ pub(crate) struct UnitShadowPart {
 }
 
 impl UnitAtlas {
+    /// The composed shadow masks. A poisoned lock still holds whole entries.
+    fn shadow_masks(
+        &self,
+    ) -> std::sync::MutexGuard<'_, std::collections::HashMap<UnitSpriteKey, (u32, Vec<u8>)>> {
+        self.shadow_masks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     /// [`Self::prepare_native_shadow_with`] stamping atlas parts at their
     /// anchor offsets.
     #[cfg(test)]
@@ -54,8 +63,7 @@ impl UnitAtlas {
         stamp: impl FnOnce(&mut [u8]) -> bool,
     ) -> bool {
         if self
-            .shadow_masks
-            .borrow()
+            .shadow_masks()
             .get(key)
             .is_some_and(|(filled, _)| *filled == flushes)
         {
@@ -72,8 +80,7 @@ impl UnitAtlas {
             return false;
         };
         self.upload_shadow_pixels(queue, entry, &sprite.palette_indices);
-        self.shadow_masks
-            .borrow_mut()
+        self.shadow_masks()
             .insert(key.clone(), (flushes, sprite.palette_indices));
         true
     }
@@ -81,7 +88,7 @@ impl UnitAtlas {
     /// The pool bytes `key`'s shadow image takes: its composed mask when one
     /// was retained, else its template.
     pub(crate) fn shadow_pool_bytes(&self, key: &UnitSpriteKey) -> Option<u32> {
-        let masks = self.shadow_masks.borrow();
+        let masks = self.shadow_masks();
         let Some((_, mask)) = masks.get(key) else {
             return self.pool_bytes(key);
         };

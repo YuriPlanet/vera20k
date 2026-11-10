@@ -211,8 +211,11 @@ pub struct UnitAtlas {
     /// First eligible composed-body mask for each supported shadow key, with
     /// the image cache's flush count when it was composed: a flush frees it
     /// natively, so an older mask is composed again. Pages are never
-    /// repacked, so an uploaded mask stays where it was written.
-    shadow_masks: std::cell::RefCell<HashMap<UnitSpriteKey, (u32, Vec<u8>)>>,
+    /// repacked, so an uploaded mask stays where it was written. A lock, not
+    /// a cell: the draw passes read this atlas from the paint thread
+    /// (`presentation::render::beside_step`), so it must be shareable. Only
+    /// the instance builders on the main thread take it.
+    shadow_masks: std::sync::Mutex<HashMap<UnitSpriteKey, (u32, Vec<u8>)>>,
     /// Each resident sprite's native pool size
     /// ([`crate::render::voxel_image_cache::sprite_pool_bytes`]).
     pool_bytes: HashMap<UnitSpriteKey, u32>,
