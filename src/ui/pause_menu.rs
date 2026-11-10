@@ -133,7 +133,7 @@ impl InGameMenuState {
             | Self::Diplomacy
             | Self::MissionBriefing
             | Self::Page => self,
-            Self::Keyboard => Self::Options,
+            Self::Keyboard => Self::Menu,
             // ShellMessageBox's callback 0x005D36A0 answers IDCANCEL with
             // result 1: no surrender, state 0.
             Self::Surrender => Self::Closed,

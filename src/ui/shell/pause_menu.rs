@@ -6,11 +6,13 @@
 //! uses60B350 (FF609A25). FF's group box, trackbars and statics take the
 //! ordinary60B7A0 placement. App owns action dispatch.
 //!
-//! VERA shows three of the main menu's Options pages left of every template's
-//! buttons, so their settings change mid-match from the menu Escape opens. The
-//! Options dialog's own `LauncherOptionsLayout::in_game` lays them out; their
-//! buttons take the sidebar rows under Game Controls
-//! ([`PauseMenuLayout::add_page_tabs`]), and FF's group heads the first page.
+//! VERA shows Options pages left of every template's buttons, so their
+//! settings change mid-match from the menu Escape opens. The Options dialog's
+//! own `LauncherOptionsLayout::in_game` lays them out. The menu opens on Game
+//! Controls, which the template's own Game Controls button shows: gamemd
+//! opens those settings as dialog BBB from it. Two more pages have buttons in
+//! the sidebar rows under it ([`PauseMenuLayout::add_page_tabs`]), and FF's
+//! group heads the first of those.
 
 use super::geom::{self, RectPx};
 use super::in_game_shell::{self, InGameShellLayout};
@@ -327,10 +329,10 @@ impl InternetControlsLayout {
     }
 }
 
-/// VERA's Options pages on the in-game menu, one sidebar button each. A
-/// sidebar too short for them all shows the first ones
+/// VERA's Options pages under Game Controls on the in-game menu, one sidebar
+/// button each. A sidebar too short for them all shows the first ones
 /// ([`PauseMenuLayout::add_page_tabs`]).
-pub const PAGE_TABS: usize = 3;
+pub const PAGE_TABS: usize = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PauseMenuLayout {
@@ -370,12 +372,10 @@ impl PauseMenuLayout {
     /// 60B000 puts the template's next buttons in those rows, and here they
     /// stand that many rows lower. Game Controls and Resume keep their places.
     ///
-    /// A sidebar without a row for every page shows the first ones only. B5's
-    /// five buttons leave two rows above Resume in a frame under 503 pixels
-    /// high (SIDE2 tiles are 50), so the last page, Audio, has no button
-    /// there: the menu still opens on it, and Game Controls still opens
-    /// Sound. BBA and FF keep a row for the relay's button whether or not it
-    /// shows.
+    /// A sidebar without a row for every page shows the first ones only.
+    /// Retail art has the rows: B5's seven end where Resume begins in a
+    /// 640x480 frame, the shortest sidebar. BBA and FF keep a row for the
+    /// relay's button whether or not it shows.
     pub fn add_page_tabs(&mut self) {
         if self.shown_tabs.is_some() {
             return;
@@ -569,10 +569,9 @@ mod tests {
         }
     }
 
-    /// VERA's page buttons take the rows under Game Controls. The template's
-    /// later buttons and the relay's follow them and Resume stays. B5 has
-    /// rows for two pages above Resume at 640x480 and for all three in the
-    /// taller frames.
+    /// VERA's page buttons take rows 1 and 2 under Game Controls. The
+    /// template's later buttons and the relay's follow them, Resume stays, and
+    /// B5's seven rows fit above it even at 640x480.
     #[test]
     fn page_tabs_stand_under_game_controls_and_move_the_later_buttons_down() {
         use PauseMenuButton::*;
@@ -589,8 +588,8 @@ mod tests {
             let mut b5 = native;
             b5.add_page_tabs();
             b5.add_page_tabs();
-            let tabs = if height == 480 { 2 } else { PAGE_TABS as i32 };
-            assert_eq!(b5.page_tabs(), &[row(1), row(2), row(3)][..tabs as usize]);
+            let tabs = PAGE_TABS as i32;
+            assert_eq!(b5.page_tabs(), [row(1), row(2)]);
             assert_eq!(b5.button(GameControls), Some(row(0)));
             for (button, at) in [(Load, 1), (Save, 2), (Delete, 3), (Abort, 4)] {
                 assert_eq!(b5.button(button), Some(row(tabs + at)), "{button:?}");
@@ -607,10 +606,9 @@ mod tests {
                 relay_first.enable_shared_pause();
                 relay_first.add_page_tabs();
                 assert_eq!(tabs_first, relay_first);
-                assert_eq!(tabs_first.page_tabs(), [row(1), row(2), row(3)]);
-                assert_eq!(tabs_first.button(Abort), Some(row(4)));
-                assert_eq!(tabs_first.button(SharedPause), Some(row(5)));
-                assert!(row(6).y <= tabs_first.button(Resume).unwrap().y);
+                assert_eq!(tabs_first.page_tabs(), [row(1), row(2)]);
+                assert_eq!(tabs_first.button(Abort), Some(row(3)));
+                assert_eq!(tabs_first.button(SharedPause), Some(row(4)));
             }
         }
     }

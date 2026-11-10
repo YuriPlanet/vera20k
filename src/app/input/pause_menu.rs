@@ -6,9 +6,11 @@ use crate::app::match_runtime::session::{PauseEventLimiters, SessionMode, WallBu
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::{App, AppState};
 use crate::ui::main_menu_dialogs::OptionsDialogState;
-use crate::ui::main_menu_dialogs::options::shell::{LauncherOptionsLayout, LauncherStatusHelp};
+use crate::ui::main_menu_dialogs::options::shell::{
+    IN_GAME_LANDING, LauncherOptionsLayout, LauncherStatusHelp,
+};
 use crate::ui::main_menu_dialogs::options::{
-    Category, LauncherOptionsEvent, LauncherOptionsPacked,
+    Category, LauncherOptionsEvent, LauncherOptionsPacked, LauncherTrackbarId,
 };
 use crate::ui::pause_menu::InGameMenuState;
 use crate::ui::shell::geom::ShellScale;
@@ -63,8 +65,13 @@ impl InternetPauseControls {
 
 /// VERA's Options pages on the in-game menu: the main menu's dialog, built
 /// again from the profile each time the menu opens and committed when it
-/// closes. Game Controls and Sound change some of the same values between
-/// those moments, so neither copy outlives the other's turn.
+/// closes. Sound and Keyboard change some of the same values between those
+/// moments, so neither copy outlives the other's turn.
+///
+/// The page the menu opens on is Game Controls: gamemd's `0xBBB` settings and
+/// the three volumes of its Sound child, with the template's own Game
+/// Controls button as its tab. gamemd opens BBB as a dialog of its own from
+/// that button (4F11B0 writes state 5).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct InGameOptionsPage {
     pub(crate) dialog: OptionsDialogState,
@@ -72,6 +79,10 @@ pub(crate) struct InGameOptionsPage {
     opened: LauncherOptionsPacked,
     /// The profile at open, which the page's live changes write to.
     opened_profile: RetailOptionsProfile,
+    /// Whether BBB's init shows the Game Speed row
+    /// (`in_game_options::on_open`), and where its slider stood at open.
+    game_speed_shown: bool,
+    opened_speed_position: u8,
 }
 
 impl InGameOptionsPage {
@@ -79,6 +90,12 @@ impl InGameOptionsPage {
     /// it is.
     fn untouched(&self, profile: &RetailOptionsProfile) -> bool {
         self.dialog.pack() == self.opened && *profile == self.opened_profile
+    }
+
+    /// The Game Speed position the player moved the slider to, if they did.
+    fn moved_speed_position(&self) -> Option<u8> {
+        let position = self.dialog.trackbar_position(LauncherTrackbarId::GameSpeed);
+        (self.game_speed_shown && position != self.opened_speed_position).then_some(position)
     }
 }
 
@@ -146,6 +163,7 @@ pub(crate) fn options_page_layout(state: &AppState) -> Option<LauncherOptionsLay
             menu.page_tabs(),
             page.dialog.category(),
             current_template(state) == PauseMenuTemplate::Internet,
+            page.game_speed_shown,
             (
                 state.renderer.gpu.config.width,
                 state.renderer.gpu.config.height,
@@ -166,6 +184,11 @@ fn run_options_page(state: &mut AppState) {
         .events
         .iter()
         .any(|event| matches!(event, LauncherOptionsEvent::LanguageSelected(_)));
+    let child = output.events.iter().find_map(|event| match event {
+        LauncherOptionsEvent::InGameKeyboardRequested => Some(InGameMenuState::Keyboard),
+        LauncherOptionsEvent::InGameSoundRequested => Some(InGameMenuState::Sound),
+        _ => None,
+    });
     let refit = output.events.iter().any(|event| {
         matches!(
             event,
@@ -187,6 +210,16 @@ fn run_options_page(state: &mut AppState) {
         if let Some(page) = state.match_state.match_presentation.options_page.as_mut() {
             page.dialog.set_labels(labels);
         }
+    }
+    // BBB's 0x52C and 0x52D: the dialogs open over the menu, which closes
+    // and commits its page on the way, and come back to it.
+    match child {
+        Some(InGameMenuState::Keyboard) => crate::app::input::keyboard::open(
+            state,
+            crate::ui::shell::keyboard::KeyboardParent::GameControls,
+        ),
+        Some(InGameMenuState::Sound) => crate::app::input::sound::open(state),
+        _ => {}
     }
 }
 
@@ -351,23 +384,41 @@ pub(crate) fn on_open(state: &mut AppState) {
         state.match_state.session.latency_fudge(),
         current_game_speed(state),
     );
-    // Escape opens on the three volumes, the settings a player most often
-    // reaches for mid-match, whether or not the sidebar has a row for that
-    // page's button. Back from one of the menu's dialogs shows the page it
+    // Escape opens on Game Controls, the settings a player most often reaches
+    // for mid-match. Back from one of the menu's dialogs shows the page it
     // left (`App::enter_in_game_menu_state` forgets it on the way to play).
     let category = state
         .match_state
         .match_presentation
         .options_page_category
-        .unwrap_or(Category::Audio);
+        .unwrap_or(IN_GAME_LANDING);
+    // BBB's init (4E1FE0, message 0x497) decides the Game Speed row and
+    // reads the speed in effect.
+    crate::app::input::in_game_options::on_open(state);
+    let options = &state.match_state.match_presentation.in_game_options;
+    let (context, game_speed_shown) = (options.speed_context, !options.game_speed_hidden);
+    let speed_position = u8::try_from(
+        options.slider_position(crate::ui::shell::in_game_options::control::GAME_SPEED),
+    )
+    .unwrap_or(0);
+    let csf = state.process_assets.csf.as_ref();
+    let label = |key: &str, fallback: &str| crate::i18n::label(csf, key, fallback);
+    let speed_names = (0..=crate::ui::shell::game_speed::MAX_POSITION)
+        .map(|position| label(context.label_key(context.stored_speed(position)), ""))
+        .collect();
+    let speed_caption = label("GUI:GameSpeed", "Game Speed");
+    let sound_label = label("GUI:Sound", "Sound");
     let mut dialog = App::launcher_options_from_state(state);
+    dialog.set_in_game_controls(speed_caption, speed_names, speed_position, sound_label);
     dialog.select_category(category);
     let opened = dialog.pack();
     let opened_profile = state.persistence.options_profile.clone();
     state.match_state.match_presentation.options_page = Some(InGameOptionsPage {
+        opened_speed_position: dialog.trackbar_position(LauncherTrackbarId::GameSpeed),
         dialog,
         opened,
         opened_profile,
+        game_speed_shown,
     });
 }
 
@@ -378,7 +429,17 @@ pub(crate) fn on_close(state: &mut AppState) {
         return;
     };
     state.match_state.match_presentation.options_page_category = Some(page.dialog.category());
-    if !page.untouched(&state.persistence.options_profile) {
+    // A moved Game Speed is BBB's accepted speed (4E1DE0): the profile and
+    // the match take it, and the commit below writes the profile once.
+    let speed = page.moved_speed_position();
+    if let Some(position) = speed {
+        let options = &mut state.match_state.match_presentation.in_game_options;
+        let stored = options.speed_context.stored_speed(i32::from(position));
+        options.game_speed = u32::try_from(stored).unwrap_or(0);
+        state.persistence.options_profile.game_speed = stored;
+        crate::app::persistence::options::apply_in_game_speed(state);
+    }
+    if speed.is_some() || !page.untouched(&state.persistence.options_profile) {
         App::commit_in_game_options_page(state, page.dialog, page.opened);
     }
 }
@@ -388,10 +449,17 @@ pub(crate) fn button_states(state: &AppState) -> [PauseMenuButtonState; 7] {
     // Native4F17D9..4F1832 applies559C20 eligibility to Load/Delete only, and
     // only in modes0/5; BBA/FF have neither control.
     let has_saves = state.match_state.match_presentation.pause_menu_has_saves;
+    let controls_page = state
+        .match_state
+        .match_presentation
+        .options_page
+        .as_ref()
+        .is_some_and(|page| page.dialog.category() == IN_GAME_LANDING);
     PauseMenuButton::ALL.map(|button| PauseMenuButtonState {
         pressed: interaction.is_pressed(button),
-        // C5 timer highlighting is separate from pointer hover.
-        highlighted: false,
+        // C5 timer highlighting is separate from pointer hover. VERA lights
+        // Game Controls while its page shows, as a tab.
+        highlighted: button == PauseMenuButton::GameControls && controls_page,
         enabled: if button == PauseMenuButton::SharedPause {
             multiplayer_control(state).is_some_and(|control| control.enabled)
         } else {
@@ -522,8 +590,12 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
 
 fn activate(state: &mut AppState, button: PauseMenuButton) {
     match button {
+        // gamemd's 4F11B0 writes state 5 here and BBB opens as its own
+        // dialog. VERA shows BBB's settings as the menu's first page.
         PauseMenuButton::GameControls => {
-            App::enter_in_game_menu_state(state, InGameMenuState::Options)
+            if let Some(page) = state.match_state.match_presentation.options_page.as_mut() {
+                page.dialog.select_category(IN_GAME_LANDING);
+            }
         }
         PauseMenuButton::Resume => {
             resume_internet_events(state);
@@ -678,8 +750,11 @@ mod tests {
             dialog,
             opened,
             opened_profile: profile.clone(),
+            game_speed_shown: true,
+            opened_speed_position: 0,
         };
         assert!(page.untouched(&profile));
+        assert_eq!(page.moved_speed_position(), None);
 
         page.dialog.select_category(Category::Display);
         assert!(page.untouched(&profile), "a tab only shows other controls");
@@ -693,9 +768,10 @@ mod tests {
         let tab = |row| crate::ui::shell::geom::RectPx::new(653, 227 + row * 25, 125, 25);
         let layout = LauncherOptionsLayout::in_game(
             (800, 600),
-            &[tab(1), tab(2), tab(3)],
+            &[tab(1), tab(2)],
             Category::Gameplay,
             false,
+            true,
             (800, 600),
         );
         let detail = layout

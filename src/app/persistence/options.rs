@@ -104,6 +104,23 @@ pub(crate) fn apply_presentation_option_gates(
 ///
 /// Retail provenance: `OptionsClass__ApplyFromInGameDialog @ 0x004E1DE0`.
 fn apply_in_game_options(state: &mut AppState) {
+    apply_in_game_speed(state);
+
+    let options = &state.match_state.match_presentation.in_game_options;
+    apply_presentation_option_gates(
+        &mut state.match_state.match_presentation.target_lines,
+        &mut state.match_state.match_presentation.tooltips,
+        options,
+    );
+    // ScrollRate, DetailLevel (lighting and PixelFX), and ShowHidden are read
+    // directly from the live projection by their existing consumers.
+}
+
+/// The GameSpeed part of `OptionsClass__ApplyFromInGameDialog @ 0x004E1DE0`:
+/// the accepted `in_game_options.game_speed` reaches the frame pacer and,
+/// in a match, the local house's speed event. The in-game menu's Game
+/// Controls page applies its slider through this too.
+pub(crate) fn apply_in_game_speed(state: &mut AppState) {
     state.match_state.sim_speed_tps = crate::app::types::tps_for_game_speed(
         state
             .match_state
@@ -148,15 +165,6 @@ fn apply_in_game_options(state: &mut AppState) {
         // insertion fails. Reflect only the accepted pending/current value.
         crate::app::loading::transitions::sync_in_game_options_speed_from_sim(state);
     }
-
-    let options = &state.match_state.match_presentation.in_game_options;
-    apply_presentation_option_gates(
-        &mut state.match_state.match_presentation.target_lines,
-        &mut state.match_state.match_presentation.tooltips,
-        options,
-    );
-    // ScrollRate, DetailLevel (lighting and PixelFX), and ShowHidden are read
-    // directly from the live projection by their existing consumers.
 }
 
 /// Commit the retained complete profile. A settings error is non-fatal for both

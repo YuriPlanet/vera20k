@@ -120,7 +120,9 @@ fn text_draws(
             font,
             &label,
             button_text_rect(rect, state.pressed),
-            button_text_rgb(theme, state.enabled),
+            // A lit face takes the art's dark label colour, as a disabled
+            // one does: yellow is hard to read on it.
+            button_text_rgb(theme, state.enabled && !state.highlighted),
             ShellAlign::H_CENTER | ShellAlign::V_CENTER,
         ));
     }
@@ -198,8 +200,9 @@ pub(crate) fn render_pause_menu_shell(
     let page = state.match_state.match_presentation.options_page.as_ref();
     if let (Some(page_layout), Some(page)) = (&page_layout, page) {
         let dialog = &page.dialog;
-        // The tabs are the menu's own buttons, on this side's art.
-        for &(tab, rect) in &page_layout.buttons {
+        // The tabs are the menu's own buttons, on this side's art. A page's
+        // own buttons are drawn with its controls below.
+        for &(tab, rect) in page_layout.buttons.iter().filter(|(id, _)| !id.on_page()) {
             let button = PauseMenuButtonState {
                 pressed: dialog.shell_button_pressed(tab),
                 highlighted: dialog.shell_button_selected(tab),

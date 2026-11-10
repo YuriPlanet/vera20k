@@ -168,6 +168,9 @@ pub(crate) fn dispatch_launcher_preview_event(
             operations.set_full_screen(full_screen);
         }
         LauncherOptionsEvent::SetWindowSizeRequested => operations.restore_launch_window(),
+        // The in-game menu opens these dialogs itself (`app::input::pause_menu`).
+        LauncherOptionsEvent::InGameKeyboardRequested
+        | LauncherOptionsEvent::InGameSoundRequested => {}
         LauncherOptionsEvent::OriginalShapeChanged(original_shape) => {
             operations.store_original_shape(original_shape);
         }

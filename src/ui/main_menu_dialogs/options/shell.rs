@@ -167,8 +167,10 @@ const ESC_MENU_BUTTON_Y: i32 = ESC_MENU_SIZE_Y + 10;
 /// The in-game menu's pages in the order of their sidebar buttons, which the
 /// menu places (`PauseMenuLayout::add_page_tabs`).
 /// [`Category::in_game_settings`] says what each page shows.
-const IN_GAME_TABS: [Category; PAGE_TABS] =
-    [Category::Gameplay, Category::Display, Category::Audio];
+const IN_GAME_TABS: [Category; PAGE_TABS] = [Category::Gameplay, Category::Display];
+/// The page the in-game menu opens on. It has no tab: the template's own Game
+/// Controls button shows it (`app::input::pause_menu`).
+pub(crate) const IN_GAME_LANDING: Category = Category::Controls;
 /// The in-game page's first row. 8 DLUs below the main menu's to clear the
 /// frame's top edge at 640x480, and a multiple of 8 so its sliders round to the
 /// same authored heights ([`dlu_rect`] is `y * 13 / 8`).
@@ -384,8 +386,9 @@ impl LauncherOptionsLayout {
     /// VERA's in-game menu (`app::input::pause_menu`): a page left of the
     /// sidebar, on the active-game shell of `size` pixels, placed as gamemd's
     /// ordinary children are there. `tabs` are the sidebar rows the menu has
-    /// for the pages' buttons (`PauseMenuLayout::page_tabs`), which may be
-    /// fewer than the pages. `window` is the
+    /// for the pages' buttons (`PauseMenuLayout::page_tabs`). `game_speed`
+    /// is whether Game Controls shows its Game Speed row, which gamemd's
+    /// `0xBBB` init decides. `window` is the
     /// one the match shares, which the zoom list depends on. `internet` leaves
     /// room for FF's own group above the Game Options rows.
     pub(crate) fn in_game(
@@ -393,11 +396,12 @@ impl LauncherOptionsLayout {
         tabs: &[RectPx],
         category: Category,
         internet: bool,
+        game_speed: bool,
         window: (u32, u32),
     ) -> Self {
         let nothing = RectPx::new(0, 0, 0, 0);
         let px = |rect: RectPx| in_game_shell::ordinary_child_rect(rect, width, height);
-        let buttons = IN_GAME_TABS
+        let mut buttons: Vec<_> = IN_GAME_TABS
             .into_iter()
             .zip(tabs)
             .map(|(tab, &rect)| (LauncherButton::Category(tab), rect))
@@ -407,7 +411,33 @@ impl LauncherOptionsLayout {
         } else {
             IN_GAME_FIRST_ROW
         };
-        let rows = page_rows(category.in_game_settings(), first_row, px);
+        let settings: Vec<Setting> = category
+            .in_game_settings()
+            .iter()
+            .copied()
+            .filter(|setting| {
+                game_speed || *setting != Setting::Slider(LauncherTrackbarId::GameSpeed)
+            })
+            .collect();
+        let mut rows = page_rows(&settings, first_row, px);
+        if category == IN_GAME_LANDING {
+            // One row of buttons the size of Check for Updates ends the page:
+            // the Esc menu's Set Window Size under its caption, then the two
+            // dialogs gamemd's Game Controls opens.
+            let top = rows.end + 3;
+            let mut x = ROW_X;
+            let mut row = Vec::new();
+            if HAS_SET_WINDOW_SIZE {
+                rows.labels
+                    .push((px(dlu_rect(ROW_X, top, 83, 10)), PageLabel::SetWindowSize));
+                row.push(LauncherButton::SetWindowSize);
+            }
+            row.extend([LauncherButton::InGameKeyboard, LauncherButton::InGameSound]);
+            for button in row {
+                buttons.push((button, px(dlu_rect(x, top + 10, 83, 15))));
+                x += 90;
+            }
+        }
         Self {
             category,
             title: nothing,
@@ -657,6 +687,7 @@ impl OptionsDialogState {
             LauncherTrackbarId::HouseColorStrength => {
                 return Cow::Owned(tr(HOUSE_COLOR_STRENGTH_LABEL));
             }
+            LauncherTrackbarId::GameSpeed => &self.game_speed_caption,
         })
     }
 
@@ -667,6 +698,10 @@ impl OptionsDialogState {
             LauncherTrackbarId::Detail => &self.detail_caption,
             LauncherTrackbarId::Difficulty => &self.difficulty_caption,
             LauncherTrackbarId::Scroll => &self.scroll_caption,
+            LauncherTrackbarId::GameSpeed => self
+                .game_speed_names
+                .get(usize::from(self.game_speed_position))
+                .map_or("", String::as_str),
             _ => "",
         }
     }
@@ -714,6 +749,8 @@ impl OptionsDialogState {
                 let (width, height) = self.launch_window_size;
                 Cow::Owned(format!("{width}x{height}"))
             }
+            LauncherButton::InGameKeyboard => Cow::Borrowed(&self.labels.keyboard),
+            LauncherButton::InGameSound => Cow::Borrowed(&self.in_game_sound_label),
         }
     }
 
@@ -957,8 +994,11 @@ impl OptionsDialogState {
                 LauncherButton::CheckForUpdates => {
                     return Some(LauncherStatusHelp::Vera(CHECK_FOR_UPDATES_HELP));
                 }
-                // The Esc menu has no status line.
-                LauncherButton::SetWindowSize => return None,
+                // The Esc menu has no status line, and retail has no help
+                // for buttons its Game Controls has in the sidebar.
+                LauncherButton::SetWindowSize
+                | LauncherButton::InGameKeyboard
+                | LauncherButton::InGameSound => return None,
                 LauncherButton::Exit(LauncherParentResult::Keyboard) => KEYBOARD_BUTTON,
                 LauncherButton::Exit(
                     LauncherParentResult::Back | LauncherParentResult::Terminal,
@@ -986,6 +1026,8 @@ impl OptionsDialogState {
                 LauncherTrackbarId::HouseColorStrength => {
                     LauncherStatusHelp::Vera(HOUSE_COLOR_STRENGTH_HELP)
                 }
+                // 0xBBB has no status help for its sliders.
+                LauncherTrackbarId::GameSpeed => return None,
             });
         }
         if let Some((id, _)) = layout
@@ -1181,6 +1223,12 @@ impl OptionsDialogState {
                 LauncherButton::SetWindowSize => self
                     .pending_events
                     .push(LauncherOptionsEvent::SetWindowSizeRequested),
+                LauncherButton::InGameKeyboard => self
+                    .pending_events
+                    .push(LauncherOptionsEvent::InGameKeyboardRequested),
+                LauncherButton::InGameSound => self
+                    .pending_events
+                    .push(LauncherOptionsEvent::InGameSoundRequested),
             }
         }
     }
@@ -1408,6 +1456,7 @@ mod tests {
             in_game_menu(size, internet).page_tabs(),
             category,
             internet,
+            true,
             (1920, 1080),
         )
     }
@@ -1427,7 +1476,7 @@ mod tests {
             ((1920, 1080), true),
         ] {
             let menu = in_game_menu(size, internet);
-            for category in IN_GAME_TABS {
+            for category in [IN_GAME_LANDING].into_iter().chain(IN_GAME_TABS) {
                 let layout = in_game(size, category, internet);
                 for &(id, rect) in &layout.trackbars {
                     assert!(
@@ -1446,6 +1495,13 @@ mod tests {
                     .map(|(_, rect)| *rect)
                     .chain(layout.combos.iter().map(|(_, rect)| *rect))
                     .chain(layout.trackbars.iter().map(|(_, rect)| *rect))
+                    .chain(
+                        layout
+                            .buttons
+                            .iter()
+                            .filter(|(id, _)| id.on_page())
+                            .map(|(_, rect)| *rect),
+                    )
                     .chain(
                         menu.internet
                             .filter(|_| category == Category::Gameplay)
@@ -1484,10 +1540,9 @@ mod tests {
             [
                 (LauncherButton::Category(Category::Gameplay), below(1)),
                 (LauncherButton::Category(Category::Display), below(2)),
-                (LauncherButton::Category(Category::Audio), below(3)),
             ]
         );
-        assert_eq!(menu.button(PauseMenuButton::Load), Some(below(4)));
+        assert_eq!(menu.button(PauseMenuButton::Load), Some(below(3)));
 
         let display = LauncherButton::Category(Category::Display);
         let rect = button(&layout, display);
@@ -1502,58 +1557,114 @@ mod tests {
         assert!(dialog.shell_button_selected(display));
     }
 
-    /// The Audio page holds the three volumes, and a drag on one is heard at
-    /// once. A single-player sidebar at 640x480 has no row for its button;
-    /// the page itself still fits there, for the menu to open on.
+    /// Game Controls, the page the menu opens on, holds gamemd's Game
+    /// Controls settings with the three volumes, then the window-size,
+    /// Keyboard and Sound buttons. A volume drag is heard at once, a moved
+    /// Game Speed waits for the menu to close, and BBB's init can hide it.
     #[test]
-    fn the_in_game_audio_page_previews_volume_with_or_without_its_button() {
+    fn the_in_game_landing_page_is_game_controls_with_volume_and_its_buttons() {
         use LauncherTrackbarId as Slider;
-        let layout = in_game((800, 600), Category::Audio, false);
-        assert_eq!(
+        let layout = in_game((800, 600), IN_GAME_LANDING, false);
+        let sliders = |layout: &LauncherOptionsLayout| {
             layout
                 .trackbars
                 .iter()
                 .map(|(id, _)| *id)
-                .collect::<Vec<_>>(),
-            [Slider::Score, Slider::Sound, Slider::Voice]
-        );
-        let mut dialog = state();
-        dialog.select_category(Category::Audio);
-        let rect = layout.trackbar_rect(Slider::Sound).unwrap();
-        let thumb = dialog.shell_trackbar_thumb_left(Slider::Sound, rect, layout.scale);
-        dialog.shell_mouse_down(rect.x + thumb + 5, rect.y + 10, &layout);
-        dialog.shell_mouse_move(rect.x + rect.w + 200, rect.y + 10, &layout);
-        dialog.shell_mouse_up(rect.x + rect.w + 200, rect.y + 10, &layout);
+                .collect::<Vec<_>>()
+        };
         assert_eq!(
-            dialog.drain_output().events,
-            [LauncherOptionsEvent::SoundPreview(1.0)]
-        );
-
-        let short = in_game((640, 480), Category::Audio, false);
-        assert_eq!(
-            short.buttons.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
+            sliders(&layout),
             [
-                LauncherButton::Category(Category::Gameplay),
-                LauncherButton::Category(Category::Display),
+                Slider::GameSpeed,
+                Slider::Scroll,
+                Slider::Score,
+                Slider::Sound,
+                Slider::Voice
             ]
         );
-        assert_eq!(short.trackbars.len(), 3);
+        let hidden = LauncherOptionsLayout::in_game(
+            (800, 600),
+            in_game_menu((800, 600), false).page_tabs(),
+            IN_GAME_LANDING,
+            false,
+            false,
+            (1920, 1080),
+        );
+        assert_eq!(sliders(&hidden)[0], Slider::Scroll);
+
+        let mut dialog = state();
+        dialog.set_in_game_controls(
+            "Game Speed".to_owned(),
+            (0..8).map(|speed| format!("speed {speed}")).collect(),
+            3,
+            "Sound".to_owned(),
+        );
+        dialog.select_category(IN_GAME_LANDING);
+        assert!(!dialog.shell_button_selected(LauncherButton::Category(Category::Gameplay)));
+        let packed = dialog.pack();
+        let drag_to_end = |dialog: &mut OptionsDialogState, id| {
+            let rect = layout.trackbar_rect(id).unwrap();
+            let thumb = dialog.shell_trackbar_thumb_left(id, rect, layout.scale);
+            dialog.shell_mouse_down(rect.x + thumb + 5, rect.y + rect.h - 3, &layout);
+            dialog.shell_mouse_move(rect.x + rect.w + 200, rect.y + rect.h - 3, &layout);
+            dialog.shell_mouse_up(rect.x + rect.w + 200, rect.y + rect.h - 3, &layout);
+            dialog.drain_output().events
+        };
+        assert_eq!(
+            drag_to_end(&mut dialog, Slider::Sound),
+            [LauncherOptionsEvent::SoundPreview(1.0)]
+        );
+        let speed_events = drag_to_end(&mut dialog, Slider::GameSpeed);
+        assert_eq!(dialog.trackbar_position(Slider::GameSpeed), 7);
+        assert!(
+            speed_events
+                .iter()
+                .all(|event| *event == LauncherOptionsEvent::Cue(LauncherCue::GenericClick))
+        );
+        assert_eq!(dialog.slider_step(Slider::GameSpeed), "speed 7");
+        assert_eq!(
+            crate::ui::main_menu_dialogs::options::LauncherOptionsPacked {
+                sound_volume: packed.sound_volume,
+                ..dialog.pack()
+            },
+            packed,
+            "the profile pack has no game speed"
+        );
+
+        for (button, event) in [
+            (
+                LauncherButton::InGameKeyboard,
+                LauncherOptionsEvent::InGameKeyboardRequested,
+            ),
+            (
+                LauncherButton::InGameSound,
+                LauncherOptionsEvent::InGameSoundRequested,
+            ),
+        ] {
+            let rect = self::button(&layout, button);
+            dialog.shell_mouse_down(rect.x + 5, rect.y + 5, &layout);
+            dialog.shell_mouse_up(rect.x + 5, rect.y + 5, &layout);
+            assert!(dialog.drain_output().events.contains(&event), "{button:?}");
+        }
+        assert_eq!(
+            dialog.shell_button_label(LauncherButton::InGameSound),
+            "Sound"
+        );
+        assert_eq!(
+            layout
+                .buttons
+                .iter()
+                .any(|(id, _)| *id == LauncherButton::SetWindowSize),
+            HAS_SET_WINDOW_SIZE
+        );
     }
 
-    /// Each of the main menu's settings is placed on purpose: on an in-game
-    /// page, on native Game Controls above them, or left out because a
-    /// running match can't use it. Game Controls' Sound child has the three
-    /// volumes too, with its song list.
+    /// Each of the main menu's settings is placed on purpose: on one in-game
+    /// page, or left out because a running match can't use it.
     #[test]
     fn every_setting_is_placed_once_for_the_in_game_menu() {
         use LauncherCheckboxId as Check;
         use LauncherTrackbarId as Slider;
-        let game_controls = [
-            Setting::Slider(Slider::Scroll),
-            Setting::Checkbox(Check::TargetLines),
-            Setting::Checkbox(Check::ShowHidden),
-            Setting::Checkbox(Check::Tooltips),
-        ];
         let main_menu_only = [
             Setting::Slider(Slider::Difficulty),
             Setting::Slider(Slider::HouseColorStrength),
@@ -1564,11 +1675,11 @@ mod tests {
             Setting::Checkbox(Check::SkipIntro),
             Setting::Checkbox(Check::ShowStringKeys),
         ];
-        let placed: Vec<Setting> = IN_GAME_TABS
+        let placed: Vec<Setting> = [IN_GAME_LANDING]
             .iter()
+            .chain(&IN_GAME_TABS)
             .flat_map(|category| category.in_game_settings())
             .copied()
-            .chain(game_controls)
             .chain(main_menu_only)
             .collect();
         for setting in Category::ALL

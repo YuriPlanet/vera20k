@@ -162,13 +162,21 @@ pub(crate) enum LauncherButton {
     CheckForUpdates,
     /// The Esc menu's Set Window Size: the window goes back to how a launch opens it.
     SetWindowSize,
+    /// The in-game menu's Keyboard, which opens gamemd's in-game `0xA3`.
+    InGameKeyboard,
+    /// The in-game menu's Sound, which opens gamemd's Sound Controls (`0xB8`)
+    /// and its song list.
+    InGameSound,
 }
 
 impl LauncherButton {
     /// Whether it sits among the page's own controls, rather than being one
     /// of the right-hand column's.
     pub(crate) const fn on_page(self) -> bool {
-        matches!(self, Self::CheckForUpdates | Self::SetWindowSize)
+        matches!(
+            self,
+            Self::CheckForUpdates | Self::SetWindowSize | Self::InGameKeyboard | Self::InGameSound
+        )
     }
 }
 
@@ -622,6 +630,11 @@ pub(crate) enum LauncherTrackbarId {
     /// the level minus [`crate::rules::house_colors::STRENGTH_MIN`], so the
     /// retail strength is position 0 and the strongest is position 9.
     HouseColorStrength,
+    /// The in-game menu's Game Speed, the slider of gamemd's Game Controls
+    /// (`0xBBB` control `0x529`). No main-menu page has it and the profile
+    /// pack leaves it out: the menu sets it up with
+    /// [`OptionsDialogState::set_in_game_controls`] and applies it on close.
+    GameSpeed,
 }
 
 impl LauncherTrackbarId {
@@ -630,6 +643,7 @@ impl LauncherTrackbarId {
             Self::Detail => 1,
             Self::Difficulty => 2,
             Self::Scroll => 6,
+            Self::GameSpeed => crate::ui::shell::game_speed::MAX_POSITION as u8,
             Self::Score | Self::Sound | Self::Voice => 10,
             Self::HouseColorStrength => {
                 crate::rules::house_colors::STRENGTH_MAX - crate::rules::house_colors::STRENGTH_MIN
@@ -641,7 +655,7 @@ impl LauncherTrackbarId {
     /// plaque off (`0x4AC` with 0).
     pub(crate) const fn plaque_reserve(self) -> i32 {
         match self {
-            Self::Detail | Self::Difficulty | Self::Scroll => 0,
+            Self::Detail | Self::Difficulty | Self::Scroll | Self::GameSpeed => 0,
             Self::Score | Self::Sound | Self::Voice | Self::HouseColorStrength => 50,
         }
     }
@@ -798,6 +812,10 @@ pub(crate) enum LauncherOptionsEvent {
     ScorePreview(f32),
     SoundPreview(f32),
     VoicePreview(f32),
+    /// The in-game menu's Keyboard and Sound buttons, which that menu routes
+    /// (`app::input::pause_menu`).
+    InGameKeyboardRequested,
+    InGameSoundRequested,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -993,6 +1011,13 @@ pub(crate) struct OptionsDialogState {
     /// Window Size button names. Set by [`Self::set_launch_window_size`]; zero
     /// until then.
     launch_window_size: (u32, u32),
+    /// The in-game menu's Game Speed slider: its position, and the caption
+    /// and one value name per position. Set by [`Self::set_in_game_controls`].
+    game_speed_position: u8,
+    game_speed_caption: String,
+    game_speed_names: Vec<String>,
+    /// The in-game menu's Sound button caption. Set with the speed.
+    in_game_sound_label: String,
     /// The list that is open, if any.
     open_combo: Option<LauncherComboId>,
     launcher_audio_available: bool,
@@ -1070,6 +1095,10 @@ impl OptionsDialogState {
             languages: Vec::new(),
             language: String::new(),
             launch_window_size: (0, 0),
+            game_speed_position: 0,
+            game_speed_caption: String::new(),
+            game_speed_names: Vec::new(),
+            in_game_sound_label: String::new(),
             open_combo: None,
             launcher_audio_available,
             capture: None,
@@ -1141,8 +1170,29 @@ impl OptionsDialogState {
         }
     }
 
+    /// Give the in-game menu's Game Speed slider its caption, the name of
+    /// each position's speed and where it stands, and the Sound button its
+    /// caption. A position past the slider's end shows as its first.
+    pub(crate) fn set_in_game_controls(
+        &mut self,
+        speed_caption: String,
+        speed_names: Vec<String>,
+        speed_position: u8,
+        sound_label: String,
+    ) {
+        self.game_speed_caption = speed_caption;
+        self.game_speed_names = speed_names;
+        self.game_speed_position = if speed_position > LauncherTrackbarId::GameSpeed.maximum() {
+            0
+        } else {
+            speed_position
+        };
+        self.in_game_sound_label = sound_label;
+    }
+
     pub(crate) fn trackbar_position(&self, id: LauncherTrackbarId) -> u8 {
         match id {
+            LauncherTrackbarId::GameSpeed => self.game_speed_position,
             LauncherTrackbarId::Detail => self.values.detail_position,
             LauncherTrackbarId::Difficulty => self.values.difficulty_position,
             LauncherTrackbarId::Scroll => self.values.scroll_position,
@@ -1178,6 +1228,7 @@ impl OptionsDialogState {
             return;
         }
         let slot = match id {
+            LauncherTrackbarId::GameSpeed => &mut self.game_speed_position,
             LauncherTrackbarId::Detail => &mut self.values.detail_position,
             LauncherTrackbarId::Difficulty => &mut self.values.difficulty_position,
             LauncherTrackbarId::Scroll => &mut self.values.scroll_position,
@@ -1203,6 +1254,12 @@ impl OptionsDialogState {
             }
             LauncherTrackbarId::Scroll => {
                 self.scroll_caption = self.labels.scroll_tokens[usize::from(position)].clone();
+                self.pending_events
+                    .push(LauncherOptionsEvent::Cue(LauncherCue::GenericClick));
+            }
+            // 61E609..61E6DD: a changed position plays the cue. The speed
+            // itself applies when the menu closes.
+            LauncherTrackbarId::GameSpeed => {
                 self.pending_events
                     .push(LauncherOptionsEvent::Cue(LauncherCue::GenericClick));
             }
@@ -1651,12 +1708,12 @@ impl Category {
         }
     }
 
-    /// The category's page on the in-game menu, which has three tabs: what a
-    /// running match can use of all the main menu's categories. Native Game
-    /// Controls (`0xBBB`), a button above those tabs, already has scroll rate,
-    /// target lines, hidden objects, tooltips, Sound Controls and Keyboard.
-    /// The three volumes stand on the Audio page as well, one press from the
-    /// menu, and Sound Controls keeps them with its song list.
+    /// The category's page on the in-game menu: what a running match can use
+    /// of all the main menu's categories. Controls is the page the menu opens
+    /// on, under the template's own Game Controls button: the settings of
+    /// gamemd's Game Controls (`0xBBB`) with the three volumes of its Sound
+    /// child, so the ones a player reaches for mid-match are one Escape away.
+    /// Game Options and Display Options have a tab each.
     pub(crate) const fn in_game_settings(self) -> &'static [Setting] {
         use LauncherCheckboxId as Check;
         use LauncherComboId as List;
@@ -1687,10 +1744,15 @@ impl Category {
                 Setting::Checkbox(Check::SmoothSidebar),
                 Setting::Checkbox(Check::PerformanceStats),
             ],
-            Self::Audio => &[
+            Self::Controls => &[
+                Setting::Slider(Slider::GameSpeed),
+                Setting::Slider(Slider::Scroll),
                 Setting::Slider(Slider::Score),
                 Setting::Slider(Slider::Sound),
                 Setting::Slider(Slider::Voice),
+                Setting::Checkbox(Check::TargetLines),
+                Setting::Checkbox(Check::ShowHidden),
+                Setting::Checkbox(Check::Tooltips),
             ],
             _ => &[],
         }
