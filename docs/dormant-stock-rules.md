@@ -84,5 +84,7 @@ A Unit whose type sets `SmallVisceroid=` or `LargeVisceroid=` runs `UnitClass::U
 - with no destination or target it wanders a cell at a time, keeping its direction
   (`+0x6D4`) on a `RandomRanged(0, 2)` other than 0.
 
-gamemd has no merge: two small visceroids come together and stay small. Code: `sim::visceroid`,
-called from the Unit AI in `world::object_turn`.
+Can_Enter_Cell lets a small visceroid into a small visceroid Unit's cell (`0x0073F5B5`), so the
+one sent over drives onto the other. gamemd has no merge: the two then share a cell and stay
+small. With Ares they merge into `LargeVisceroid=` ([ares-tiberium.md](ares-tiberium.md)). Code:
+`sim::visceroid`, called from the Unit AI in `world::object_turn`, and `world::object_entry`.

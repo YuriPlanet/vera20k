@@ -79,6 +79,11 @@ impl VisceroidScene {
             .then(|| self.sim.interner.resolve(entity.type_ref()).to_owned())
     }
 
+    pub(crate) fn cell(&self, id: u64) -> Option<(u16, u16)> {
+        let entity = self.sim.substrate.entities.get(id)?;
+        Some((entity.position.rx(), entity.position.ry()))
+    }
+
     /// The visceroid whose NavCom is the other one.
     pub(crate) fn seeker(&self) -> Option<u64> {
         [(self.first, self.second), (self.second, self.first)]
@@ -96,9 +101,9 @@ impl VisceroidScene {
 }
 
 /// Two small visceroids side by side: the first one's update finds the
-/// other in a neighbour cell and sends it over (vt+0x480(this, 1)); in
-/// gamemd they never merge, so both are still small visceroids a while
-/// later.
+/// other in a neighbour cell and sends it over (vt+0x480(this, 1)), and
+/// Can_Enter_Cell lets it into that cell (`0x0073F5B5`); gamemd never merges
+/// them, so both are still small visceroids, in one cell.
 #[test]
 fn small_visceroids_seek_each_other_and_stay_small() {
     let Some(mut scene) = two_small_visceroids() else {
@@ -111,7 +116,11 @@ fn small_visceroids_seek_each_other_and_stay_small() {
     );
     for _ in 0..150 {
         scene.step();
+        if scene.cell(scene.first) == scene.cell(scene.second) {
+            break;
+        }
     }
+    assert_eq!(scene.cell(scene.first), scene.cell(scene.second));
     for id in [scene.first, scene.second] {
         assert_eq!(scene.type_name(id).as_deref(), Some("VISC_SML"));
     }

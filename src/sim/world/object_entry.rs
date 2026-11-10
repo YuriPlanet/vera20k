@@ -1314,6 +1314,17 @@ fn full_foot_entry<'a>(
                 return Ok(7);
             }
         }
+        //73F5B5..73F5DB: a small visceroid enters the cell of a small
+        //visceroid Unit (0), past the contacted-Building skip and before the
+        //Building branches. The two then share a cell; Ares merges them
+        //(`Simulation::ares_visceroid_merge`).
+        if !infantry
+            && obj.small_visceroid
+            && b.category() == EntityCategory::Unit
+            && bt.small_visceroid
+        {
+            return Ok(0);
+        }
         if b.category() == EntityCategory::Structure {
             if !infantry {
                 //73F57C..5A2: a contacted Building whose458A00 result is
