@@ -15,7 +15,7 @@ use crate::util::time::Instant;
 
 pub(crate) const FORM_OK: u16 = 1;
 pub(crate) const FORM_CANCEL: u16 = 2;
-/// Login's Remember password box.
+/// The sign-in form's Remember password box.
 pub(crate) const FORM_REMEMBER: u16 = 3;
 /// The first field's control id; the others follow. Not gamemd controls:
 /// the ids only name their rects.
@@ -256,12 +256,15 @@ pub(crate) struct WolAccountForm {
     status_text: Option<StatusText>,
     /// A request is out; OK waits for its answer.
     pub(crate) busy: bool,
-    /// Login's Remember password box: whether it is ticked.
+    /// The sign-in form's Remember password box: whether it is ticked.
     pub(crate) remember: Option<bool>,
-    /// Login: the password field holds [`REMEMBERED_PLACEHOLDER`] for this
-    /// computer's remembered sign-in of the typed username, and OK signs in
-    /// with it.
+    /// The sign-in form: the password field holds [`REMEMBERED_PLACEHOLDER`]
+    /// for this computer's remembered sign-in of the typed username, and OK
+    /// signs in with it.
     pub(crate) remembered: bool,
+    /// The sign-in form: the account this computer signs in to without its
+    /// password, until Remember password is unticked on it.
+    remembered_name: Option<String>,
     focus_started_at: Instant,
 }
 
@@ -329,6 +332,7 @@ impl WolAccountForm {
             busy: false,
             remember: None,
             remembered: false,
+            remembered_name: None,
             focus_started_at: Instant::now(),
         };
         form.focus(0);
@@ -346,9 +350,10 @@ impl WolAccountForm {
         }
     }
 
-    /// Login, its username prefilled. When that is `remembered`, the account
-    /// this computer signs in to without its password, the password field
-    /// holds the placeholder and Remember password is ticked.
+    /// The sign-in form, its username prefilled. While the username is
+    /// `remembered`, the account this computer signs in to without its
+    /// password, and no password is typed, the password field holds the
+    /// placeholder and Remember password is ticked.
     pub(crate) fn sign_in(name: &str, remembered: Option<&str>) -> Self {
         let mut form = Self::with_fields(
             FormKind::SignIn,
@@ -359,17 +364,32 @@ impl WolAccountForm {
             StatusText::new("VERA:SignInPrompt"),
         );
         form.remember = Some(false);
+        form.remembered_name = remembered.map(str::to_owned);
         form.prefill_name(name);
-        if valid_name(name) && remembered.is_some_and(|known| known.eq_ignore_ascii_case(name)) {
-            form.fields[1]
+        form.sync_remembered();
+        form
+    }
+
+    /// The sign-in form after its username or password changed: the
+    /// remembered account's name over an empty password brings the
+    /// placeholder, with Remember password ticked, and another name takes it
+    /// away. So a remembered sign-in a slip of the keys dropped comes back.
+    fn sync_remembered(&mut self) {
+        let named = self
+            .remembered_name
+            .as_deref()
+            .is_some_and(|known| known.eq_ignore_ascii_case(&self.text(FieldKind::Name)));
+        if !named {
+            self.drop_placeholder();
+        } else if !self.remembered && self.text(FieldKind::Password).is_empty() {
+            self.fields[1]
                 .edit
                 .set_units_limited(REMEMBERED_PLACEHOLDER, PASSWORD_LIMIT);
-            form.remembered = true;
-            form.remember = Some(true);
+            self.remembered = true;
+            self.remember = Some(true);
+            let status = self.sign_in_status();
+            self.set_status(status);
         }
-        let status = form.sign_in_status();
-        form.set_status(status);
-        form
     }
 
     fn sign_in_status(&self) -> StatusText {
@@ -611,7 +631,7 @@ impl WolAccountForm {
     }
 
     /// The remembered sign-in's placeholder gives way to a typed password,
-    /// or to another username.
+    /// to another username or to an unticked Remember password.
     fn drop_placeholder(&mut self) {
         if !self.remembered {
             return;
@@ -629,13 +649,14 @@ impl WolAccountForm {
     }
 
     /// Remember password's click. Unticked on the remembered sign-in, this
-    /// computer forgets it at once, and Login needs the password.
+    /// computer forgets it at once, and the account needs its password.
     pub(crate) fn toggle_remember(&mut self) -> Option<AccountFormAction> {
         let ticked = self.remember.as_mut()?;
         *ticked = !*ticked;
         if *ticked || !self.remembered {
             return None;
         }
+        self.remembered_name = None;
         self.drop_placeholder();
         self.focus(1);
         self.set_status(StatusText::new("VERA:SignInForgotten"));
@@ -689,7 +710,7 @@ impl WolAccountForm {
             }
             let edit = &mut self.fields[self.focused].edit;
             if edit.insert_unit_filtered(unit, kind.limit(), true, &[]) && kind == FieldKind::Name {
-                self.drop_placeholder();
+                self.sync_remembered();
             }
         }
     }
@@ -709,11 +730,8 @@ impl WolAccountForm {
             });
             return None;
         }
-        if self.remembered
-            && kind == FieldKind::Password
-            && matches!(key, WolEditKey::Backspace | WolEditKey::Delete)
-        {
-            self.drop_placeholder();
+        // The placeholder is no text to edit: a typed password replaces it.
+        if self.remembered && kind == FieldKind::Password {
             return None;
         }
         let edit = &mut self.fields[self.focused].edit;
@@ -727,8 +745,8 @@ impl WolAccountForm {
             WolEditKey::End => edit.end(),
             WolEditKey::Tab { .. } | WolEditKey::Enter => {}
         }
-        if kind == FieldKind::Name && edit.units != before {
-            self.drop_placeholder();
+        if edit.units != before && self.kind == FormKind::SignIn {
+            self.sync_remembered();
         }
         None
     }
@@ -984,6 +1002,42 @@ mod tests {
             "nothing remembered to forget"
         );
         assert_eq!(form.remember, Some(false));
+    }
+
+    #[test]
+    fn the_remembered_sign_in_comes_back_with_its_name_and_an_empty_password() {
+        let remembered = Some(AccountFormAction::SignIn {
+            sign_in: AccountSignIn {
+                name: "Tanya".into(),
+                password: String::new(),
+            },
+            remember: true,
+        });
+        let mut form = WolAccountForm::sign_in("Tanya", Some("Tanya"));
+        // A slip of Backspace in the password leaves it standing.
+        form.edit_key(WolEditKey::Backspace);
+        assert_eq!(form.clone().activate(FORM_OK), remembered);
+        // A typed password replaces it; deleted again, it is back.
+        form.insert_text("x");
+        assert!(!form.remembered && form.fields[1].text() == "x");
+        form.edit_key(WolEditKey::Backspace);
+        assert_eq!(form.clone().activate(FORM_OK), remembered);
+        // So with the username: another name is a guest's, the name typed
+        // back the account's.
+        form.focus(0);
+        form.edit_key(WolEditKey::Backspace);
+        assert!(!form.remembered && form.fields[1].text().is_empty());
+        form.insert_text("a");
+        assert_eq!(form.clone().activate(FORM_OK), remembered);
+        // Unticking Remember password forgets it for good.
+        assert_eq!(
+            form.activate(FORM_REMEMBER),
+            Some(AccountFormAction::ForgetSignIn)
+        );
+        form.focus(0);
+        form.edit_key(WolEditKey::Backspace);
+        form.insert_text("a");
+        assert!(!form.remembered && form.fields[1].text().is_empty());
     }
 
     #[test]

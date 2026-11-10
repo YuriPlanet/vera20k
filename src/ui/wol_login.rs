@@ -1423,7 +1423,7 @@ mod tests {
             let (left, right) = (area.x, area.x + area.w);
             let (top, bottom) = (area.y, area.y + area.h);
             assert!(right < layout.page.right_panel.top.x, "{area:?}");
-            // Login's popup; every account popup is the same box.
+            // Delete Account's popup; every account popup is the same box.
             let popup = wol_account_form_layout_on(POPUP_AREA, 2, layout.page.scale).dialog;
             assert!(popup.x >= left && popup.x + popup.w <= right, "{popup:?}");
             assert!(popup.y >= top && popup.y + popup.h <= bottom, "{popup:?}");

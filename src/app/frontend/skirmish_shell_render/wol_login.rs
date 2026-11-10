@@ -29,7 +29,8 @@ use crate::util::time::Instant;
 
 /// VERA online's status line and counts, beside the shell's yellow captions.
 const ONLINE_TEXT_RGB: [f32; 3] = [0.80, 0.80, 0.80];
-/// An info panel sits over the page art, under the page's popups.
+/// An info panel ([`push_info_panel`]) sits over a page's art, under its
+/// popups.
 const INFO_FILL_DEPTH: f32 = shell_paint::CHROME_DEPTH - 0.00001;
 const INFO_FRAME_DEPTH: f32 = shell_paint::CHROME_DEPTH - 0.00002;
 /// The panel darkens the art behind it, which still shows through.
