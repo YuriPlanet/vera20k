@@ -225,7 +225,8 @@ impl TiberiumTypeRegistry {
             // `TiberiumClass::ReadINI @ 0x00721C3F..0x00721C55` reads `Image=`
             // with default -1 and then leaves `+0xE0..+0xEC` at the
             // constructor's zeros (`0x0072173A..0x0072174C`). gamemd faults on
-            // that null in `OverlayToTiberiumIndex @ 0x005FDD20`; here the
+            // that null when the walk in `OverlayToTiberiumIndex @ 0x005FDD20`
+            // reaches the entry (it returns at the first match); here the
             // entry stays in place (later indices do not move) and is inert.
             ty.inert = !image.usable();
             if ty.inert {
