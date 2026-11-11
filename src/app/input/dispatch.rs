@@ -325,6 +325,8 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                     // The held-drag 4AC380 never starts a band in beacon
                     // mode (4AC3A3).
                     || crate::app::input::beacon::mode_active(state)
+                    // VERA ferry: the armed click names the drop spot.
+                    || state.match_state.input.ferry.armed()
                 {
                     return; // suppress selection drag while a targeting / repair / sell / beacon mode is active
                 }
@@ -525,6 +527,11 @@ fn tactical_left_up(state: &mut AppState) {
             return;
         }
         super::state::TacticalPointerMode::Ordinary => {}
+    }
+    // VERA ferry: the armed click sets the selected transports' route, a
+    // left-button tool in both control schemes like the ones around it.
+    if crate::app::input::ferry::drop_click(state) {
+        return;
     }
     // Planning-node editing stays a left-button tool in both control schemes,
     // like explicit placement and targeting above; ordinary planned missions
@@ -835,7 +842,8 @@ fn cancel_armed_pointer_mode(state: &mut AppState) -> bool {
         );
         return true;
     }
-    false
+    // VERA ferry: the armed drop click is one more mode a right click ends.
+    state.match_state.input.ferry.disarm()
 }
 
 fn handle_tactical_right_click(state: &mut AppState) {
@@ -2180,6 +2188,8 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         HotkeyCommand::FormationLock => {
             crate::app::input::context_order::toggle_formation_lock(state);
         }
+        // VERA: the next left click names the drop spot.
+        HotkeyCommand::Ferry => crate::app::input::ferry::hotkey_pressed(state),
     }
 }
 
@@ -3971,6 +3981,8 @@ fn queue_stop_for_selected(state: &mut AppState) {
     if !super::commands::selection_input_has_capacity(state, selected_ids.len()) {
         return;
     }
+    // VERA ferry: Stop also ends the selected transports' routes.
+    crate::app::input::ferry::stop_selected(state, &selected_ids);
     let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
         return;
     };

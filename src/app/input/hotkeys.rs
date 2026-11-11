@@ -21,10 +21,10 @@ const VK_DELETE: u16 = 0x2e;
 
 /// VERA's own commands that come with a key: Performance Stats Ctrl+Alt+F, Lock
 /// Cursor to Window Ctrl+Alt+L, Full Screen Alt+Enter, String Keys Ctrl+Alt+K,
-/// Edit Layout Ctrl+Alt+E, Formation Line F and Formation Lock O. Retail
-/// `KEYBOARDMD.INI` binds none of these keys but F, which is its Follow;
-/// [`HotkeyBindings::move_follow_off_formation_key`] moves that.
-const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 7] = [
+/// Edit Layout Ctrl+Alt+E, Formation Line F, Formation Lock O and Ferry J.
+/// Retail `KEYBOARDMD.INI` binds none of these keys but F, which is its
+/// Follow; [`HotkeyBindings::move_follow_off_formation_key`] moves that.
+const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 8] = [
     (HotkeyCommand::PerformanceStats, CTRL_BIT | ALT_BIT | 0x46),
     (HotkeyCommand::LockCursor, CTRL_BIT | ALT_BIT | 0x4c),
     (HotkeyCommand::FullScreen, ALT_BIT | 0x0d),
@@ -32,6 +32,7 @@ const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 7] = [
     (HotkeyCommand::LayoutEdit, CTRL_BIT | ALT_BIT | 0x45),
     (HotkeyCommand::FormationLine, FORMATION_LINE_KEY),
     (HotkeyCommand::FormationLock, 0x4f),
+    (HotkeyCommand::Ferry, 0x4a),
 ];
 /// F: Formation Line's default key and retail Follow's.
 const FORMATION_LINE_KEY: u16 = 0x46;
@@ -117,6 +118,10 @@ pub(crate) enum HotkeyCommand {
     /// (`input::formation_lock`). In the `vera20k` keyboard category with
     /// the O default.
     FormationLock,
+    /// In a match: arm the ferry order's drop click for the selected
+    /// transports (`input::ferry`). It comes with a default key like the
+    /// five above.
+    Ferry,
     /// VeraX: load the selection into nearby transports. Registered in the
     /// `vera20k` keyboard category with the Ctrl+D default.
     AutoLoad,
@@ -970,8 +975,8 @@ mod tests {
         }
         let loaded = HotkeyBindings::reload_from_ini_bytes(Some(ini.as_bytes()));
         // The 87 retail rows, plus VERA's five default keys above 0x256 and
-        // the two Formation keys below 0x200.
-        assert_eq!(loaded.by_key.len(), 94);
+        // the two Formation keys and Ferry's J below 0x200.
+        assert_eq!(loaded.by_key.len(), 95);
         for (index, metadata) in catalog::retail_commands().iter().enumerate() {
             assert_eq!(
                 loaded.command_at(0x200 + index as u16),
@@ -982,7 +987,7 @@ mod tests {
         ini.push_str("FullScreen=1037\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n");
         let ini = ini.replacen(
             "[Hotkey]\n",
-            "[Hotkey]\nFormationLine=70\nFormationLock=79\n",
+            "[Hotkey]\nFormationLine=70\nFerry=74\nFormationLock=79\n",
             1,
         );
         assert_eq!(saved, ini);
@@ -1092,9 +1097,9 @@ mod tests {
         assert_eq!(startup.first_key(HotkeyCommand::Delete), Some(46));
         let serialized = startup.to_ini_string();
         #[cfg(feature = "verax")]
-        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nFormationLock=79\nStopObject=83\nAutoLoad=580\nFullScreen=1037\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n";
+        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nFerry=74\nFormationLock=79\nStopObject=83\nAutoLoad=580\nFullScreen=1037\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n";
         #[cfg(not(feature = "verax"))]
-        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nFormationLock=79\nStopObject=83\nFullScreen=1037\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n";
+        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nFerry=74\nFormationLock=79\nStopObject=83\nFullScreen=1037\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n";
         assert_eq!(serialized, expected);
         let mut reloaded = HotkeyBindings::reload_from_ini_bytes(Some(serialized.as_bytes()));
         assert_eq!(reloaded.command_at(46), None);
@@ -1320,6 +1325,8 @@ mod tests {
             (HotkeyCommand::StringKeys, 0x64b),
             (HotkeyCommand::LayoutEdit, 0x645),
             (HotkeyCommand::FormationLock, 0x4f),
+            // Retail leaves J unbound.
+            (HotkeyCommand::Ferry, 0x4a),
         ] {
             assert_eq!(bindings.first_key(command), Some(key), "{command:?}");
         }
