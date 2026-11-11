@@ -4317,10 +4317,20 @@ impl Simulation {
         // The same TechnoClass::Limbo sound cleanup releases the turret
         // rotation loop's `+0x488` handle before the gattling report handle,
         // and re-arms its latch.
-        self.turret_rotate_sound_limbo(stable_id, context.effects(), context.rules());
-        // TechnoClass::Limbo releases the gattling loop and clears the report
-        // latch (`0x006F6C6B`, `0x006F6C76`) ahead of its radio pass.
-        self.gattling_limbo(stable_id, context);
+        // An object already in limbo skips both releases: TechnoClass::Limbo
+        // jumps from its InLimbo test (`0x006F6AC9..0x006F6ACF`) past them to
+        // `0x006F6C93`. The class destructors' own Limbo is such a repeat.
+        let already_in_limbo = self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| entity.lifecycle.in_limbo);
+        if !already_in_limbo {
+            self.turret_rotate_sound_limbo(stable_id, context.effects(), context.rules());
+            // TechnoClass::Limbo releases the gattling loop and clears the
+            // report latch (`0x006F6C6B`, `0x006F6C76`) ahead of its radio pass.
+            self.gattling_limbo(stable_id, context);
+        }
         // RadioLimbo65AA80..65AA99 tests InLimbo before Broadcast(3).
         // CargoAdd4733B0 repeats virtual Limbo after Hospital51A35F's
         // post-conceal HELLO; breaking again loses the repair contact.
@@ -6900,9 +6910,12 @@ impl Simulation {
             // A8E7AC bracket; the ordinary late drain repeats it after UnInit.
             self.notify_pointer_expired(stable_id, context);
             // Building43BD6C..43BD6E then Limbos the building, whatever
-            // GameState holds (repeated under it at 43BF3B, by then a
-            // no-op). After UnInit it returns at the in-limbo guard; a
-            // building destroyed while placed leaves its cells here.
+            // GameState holds. The repeat under it at 43BF3B takes the
+            // in-limbo branch and only reruns the factory-queue update
+            // (`0x00445E14` -> `0x00509140`), which the first call already
+            // settled; it is not ported. After UnInit this call is itself
+            // that repeat; a building destroyed while placed leaves its
+            // cells here.
             self.techno_limbo_with_context(stable_id, context);
             // Building43BDC5 -> ClearAnimSlot451E40(-2) synchronously deletes
             // ordinary21slots, then43BDE0 destroys the distinct eight fire
