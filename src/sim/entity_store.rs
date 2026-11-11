@@ -53,7 +53,7 @@ pub struct EntityStore {
     /// The stored ids in ascending order, one per slot. A removed entity's
     /// slot keeps its id, with no entity, until [`Self::compact`].
     ids: Vec<u64>,
-    /// The entity of each slot. Boxed: an entity is about 3 KB, so insert,
+    /// The entity of each slot. Boxed: an entity is about 2.5 KB, so insert,
     /// remove and compaction move pointers, not entities. serde writes a
     /// `Box<T>` as its `T`.
     entities: Vec<Option<crate::util::shared::Shared<GameEntity>>>,

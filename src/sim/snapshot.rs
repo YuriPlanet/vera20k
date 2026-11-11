@@ -7583,7 +7583,7 @@ mod tests {
         manager.set_current_target_for_test(Some(TargetKind::Entity(target)));
         manager.set_queued_target_for_test(Some(TargetKind::Entity(target)));
         manager.set_mode_for_test(SpawnManagerMode::Launching);
-        parent_entity.spawn_manager = Some(manager);
+        parent_entity.spawn_manager = Some(Box::new(manager));
         sim.substrate.entities.insert(parent_entity);
 
         let mut child_entity = GameEntity::test_default(child, "HORNET", "AMERICANS", 2, 1);

@@ -31,6 +31,7 @@ use crate::sim::passenger::PassengerRole;
 use crate::sim::radio::Contacts;
 use crate::sim::superweapon::invulnerability::InvulnerabilityState;
 use crate::sim::world::ObjectLifecycle;
+use crate::util::sparse::Sparse;
 
 #[cfg(feature = "ares")]
 mod attach_effect;
@@ -94,6 +95,12 @@ pub(crate) struct ObjectGroupCopy {
 /// mechanism's own state is a record its module defines and alone writes
 /// (for example `building_art`, `veterancy`); other code reads it through
 /// getters and changes it through that module's functions.
+///
+/// Every object's turn walks this record, and an object written while a
+/// presentation frame shares it is copied whole (docs/sim-thread.md). Large
+/// state that few objects hold therefore sits behind a pointer: a [`Sparse`]
+/// for a Building's art and damage fires, a `Box` for a manager only some
+/// types construct.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GameEntity {
     /// Bounded optional observations; absent from saves and normal builds.
@@ -578,9 +585,10 @@ pub struct GameEntity {
     pub(crate) ai_placement_timer: crate::sim::production::AiPlacementTimer,
     /// The Building's animation art: its AnimClass slots, their replay
     /// marks, the damaged-art flag, its StorageClass art, the Stuff flag and
-    /// the Grand_Opening guard. `sim::building_art` owns it.
+    /// the Grand_Opening guard. `sim::building_art` owns it. Out of line,
+    /// and kept only once written, which only a Building does.
     #[serde(default)]
-    pub building_art: crate::sim::building_art::BuildingArt,
+    pub building_art: Sparse<crate::sim::building_art::BuildingArt>,
     /// Independent Building+660, owned by sim::building_power.
     #[serde(default)]
     pub(crate) building_online: crate::sim::building_power::BuildingOnline,
@@ -682,11 +690,12 @@ pub struct GameEntity {
     pub(crate) building_light: crate::sim::world::BuildingLight,
     /// The damage-fire transition cache and its eight AnimClass slots
     /// (`BuildingClass+0x5E8`, `+0x5C8..+0x5E4`), a [`DamageFires`] that
-    /// `sim::anim_class` owns.
+    /// `sim::anim_class` owns. Out of line, and kept only once written,
+    /// which only a Building does.
     ///
     /// [`DamageFires`]: crate::sim::anim_class::DamageFires
     #[serde(default)]
-    pub(crate) damage_fires: crate::sim::anim_class::DamageFires,
+    pub(crate) damage_fires: Sparse<crate::sim::anim_class::DamageFires>,
     /// ObjectClass::OnBridge (`Object+0x8C`), an [`OnBridge`] that
     /// `movement::movement_bridge` owns.
     ///
@@ -742,7 +751,7 @@ pub struct GameEntity {
     /// Dreadnought, Boomer, Aircraft Carrier, Destroyer). Mirrors the native
     /// `TechnoClass+0x2D0` manager pointer: present iff `Spawns=` resolved.
     #[serde(default)]
-    pub spawn_manager: Option<crate::sim::spawn_manager::SpawnManagerState>,
+    pub spawn_manager: Option<Box<crate::sim::spawn_manager::SpawnManagerState>>,
     /// A spawned child's SpawnOwner (`TechnoClass+0x2D4`), a [`SpawnOwner`]
     /// that `spawn_manager` owns.
     ///

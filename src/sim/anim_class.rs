@@ -1320,6 +1320,15 @@ impl DamageFires {
     }
 }
 
+/// An object that never lit a fire keeps no slots (`GameEntity::damage_fires`).
+impl crate::util::sparse::SparseDefault for DamageFires {
+    fn sparse_default() -> &'static Self {
+        static DEFAULT: std::sync::LazyLock<DamageFires> =
+            std::sync::LazyLock::new(DamageFires::default);
+        &DEFAULT
+    }
+}
+
 /// The fields `Simulation::visit_anim`'s prefix and gates read, copied in one
 /// lookup of the anim.
 #[derive(Clone, Copy)]

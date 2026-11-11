@@ -550,7 +550,7 @@ mod tests {
         );
         manager.set_current_target_for_test(Some(TargetKind::Entity(6)));
         manager.set_queued_target_for_test(Some(TargetKind::Cell(3, 3)));
-        launcher.spawn_manager = Some(manager);
+        launcher.spawn_manager = Some(Box::new(manager));
         let mut entities = EntityStore::new();
         entities.insert(launcher);
         let mut stores = Stores {

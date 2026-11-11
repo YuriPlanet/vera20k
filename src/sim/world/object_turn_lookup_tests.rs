@@ -45,6 +45,33 @@ fn a_turn_finds_its_own_object_without_the_id_index() {
     );
 }
 
+/// A tank's turn writes none of the state only a Building holds, so its
+/// record keeps no art or damage fires, before a save and after a load. The
+/// power plant's own turn stores its art, which loads back as saved.
+#[test]
+fn a_tanks_turn_and_a_load_store_no_building_state() {
+    use crate::util::save_codec;
+    let (mut sim, rules, tank, plant) = scene();
+    for id in [tank, plant] {
+        sim.advance_live_object_turn(id, &rules, techno_ai::ObjectAiCtx::default())
+            .unwrap();
+    }
+    let reloaded = |id| {
+        let entity = sim.substrate.entities.get(id).unwrap();
+        let bytes = save_codec::serialize(entity).unwrap();
+        let loaded: crate::sim::game_entity::GameEntity = save_codec::deserialize(&bytes).unwrap();
+        (entity, loaded)
+    };
+    let (tank, loaded_tank) = reloaded(tank);
+    for tank in [tank, &loaded_tank] {
+        assert!(!tank.building_art.is_stored());
+        assert!(!tank.damage_fires.is_stored());
+    }
+    let (plant, loaded_plant) = reloaded(plant);
+    assert!(plant.building_art.is_stored());
+    assert_eq!(*loaded_plant.building_art, *plant.building_art);
+}
+
 /// The sound owner's view of a turn: what was delivered, and whose looping
 /// sound was updated.
 #[derive(Default)]

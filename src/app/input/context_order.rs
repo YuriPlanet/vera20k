@@ -8677,7 +8677,7 @@ mod tests {
                 sim.entities_mut_for_test()
                     .get_mut(engineer)
                     .unwrap()
-                    .spawn_manager = Some(SpawnManagerState::for_test(spawn_type, slots));
+                    .spawn_manager = Some(Box::new(SpawnManagerState::for_test(spawn_type, slots)));
             }
             let before = sim.state_hash();
             let actor = serde_json::to_value(sim.entities().get(engineer).unwrap()).unwrap();

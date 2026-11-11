@@ -1249,7 +1249,7 @@ pub(crate) fn drawn_model_id<'a>(
     {
         Cow::Borrowed(interner.resolve(disguise_type))
     } else if let Some(no_spawn_alt_type) =
-        no_spawn_alt_type_id(base_type, no_spawn_alt, entity.spawn_manager.as_ref())
+        no_spawn_alt_type_id(base_type, no_spawn_alt, entity.spawn_manager.as_deref())
     {
         Cow::Owned(no_spawn_alt_type)
     } else if let Some(display_override) = (!no_spawn_alt)

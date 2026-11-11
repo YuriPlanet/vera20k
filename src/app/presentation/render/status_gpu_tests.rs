@@ -1698,7 +1698,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                         "{} original CountDockedSpawns6B7D50",
                         row["name"]
                     );
-                    entity.spawn_manager = Some(manager);
+                    entity.spawn_manager = Some(Box::new(manager));
                 }
                 if object.passengers > 0 || object.max_number_occupants > 0 {
                     use crate::sim::passenger::{PassengerCargo, PassengerRole};
