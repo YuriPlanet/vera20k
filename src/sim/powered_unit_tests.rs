@@ -166,6 +166,14 @@ fn retail_rules_read_the_robot_keys() {
 /// computer `Russians`.
 fn arena(rules: &RuleSet) -> (Simulation, PathGrid) {
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x0050_E0E0);
+    // A loaded match always has an overlay grid, and a Spark particle's
+    // collision query reads it: without one every spark is refused and
+    // retired at once, so an offline tank's spark system is never seen.
+    let (width, height) = {
+        let terrain = sim.resolved_terrain.as_ref().expect("arena terrain");
+        (terrain.width(), terrain.height())
+    };
+    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(width, height));
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     sim.session
