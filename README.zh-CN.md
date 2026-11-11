@@ -18,8 +18,6 @@ VERA20K 是一个由社区主导、对原版引擎 `gamemd.exe` 进行重写的�
 
 VERA20K 由玩家打造、为玩家而做，项目的方向由玩家说了算。
 
-**我们需要更多维护者。** 如果你愿意帮忙审查 PR、指导新贡献者，或负责引擎的某个部分，请在 [Discord](https://discord.gg/kmjRUn5m5F) 或 QQ 群（1097193563）告诉我们。
-
 **别怕提交 PR。** 不必完美，剩下的我们会帮你。
 
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K 遭遇战设置界面和游戏画面" width="100%">
