@@ -5310,10 +5310,13 @@ impl Simulation {
         // reference to the expiring object.
         let drops_contact =
             control == PointerExpiryControl::Uninit && listener.has_live_contact_with(expired_id);
-        let drops_passenger = listener
-            .passenger_role
-            .cargo()
-            .is_some_and(|cargo| cargo.passengers().contains(&expired_id));
+        // `0x007077D8..0x007077E9`: CargoClass::Remove runs only when the
+        // `removed` argument is set, so a cloaking rider stays aboard.
+        let drops_passenger = control == PointerExpiryControl::Uninit
+            && listener
+                .passenger_role
+                .cargo()
+                .is_some_and(|cargo| cargo.passengers().contains(&expired_id));
         // `0x007077EE..0x007077FD`, after the radio and cargo, whatever the
         // control: a child whose SpawnOwner (`+0x2D4`) expires forgets it.
         let drops_spawn_owner = listener.spawn_owner_id.owner() == Some(expired_id);
