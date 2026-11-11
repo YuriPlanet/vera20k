@@ -176,8 +176,8 @@ impl Simulation {
         // InitManagers6F3F40 classifies the owner after construction; it does
         // not manufacture either discovery-history byte. The launch-owned
         // current house is distinct from the notification/viewer binding.
-        let owned_by_current_house = session.current_house() == Some(ge.owner());
-        ge.discovery.classify_owner(owned_by_current_house);
+        let owner_is_playing = session.current_house() == Some(ge.owner());
+        ge.discovery.classify_owner(owner_is_playing);
 
         #[cfg(feature = "ares")]
         ge.initialize_factory_country(houses.get(&ge.owner()).and_then(|house| {

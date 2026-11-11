@@ -2393,137 +2393,143 @@ impl GameEntity {
             drain: Default::default(),
             parasite: crate::sim::combat::parasite::FootParasite::new(construction_frame),
             seldom: crate::util::shared::Shared::new(Seldom {
-            cached_spatial_threat: Default::default(),
-            tracking_facts: Default::default(),
-            house_tracking_latches: Default::default(),
-            #[cfg(feature = "phobos")]
-            phobos_placement: Default::default(),
-            #[cfg(feature = "phobos")]
-            wh_anim_remaining_creation_interval: Default::default(),
-            #[cfg(feature = "debug-tools")]
-            debug_log: None,
-            native_unique_id,
-            native_cloak_displacement: crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO,
-            useless: false,
-            production_start_price: 0,
-            #[cfg(feature = "ares")]
-            attach_effects: Default::default(),
-            #[cfg(feature = "phobos")]
-            phobos_attach_effects: Default::default(),
-            #[cfg(feature = "phobos")]
-            phobos_stat_multipliers: Default::default(),
-            techno_ctor_random_word,
-            #[cfg(feature = "ares")]
-            ares_secret_lab_placed: false,
-            object_group: -1,
-            local_control_group: None,
-            discovery: Default::default(),
-            suppress_deploy_voice: Default::default(),
-            barrel_elevation: crate::sim::movement::FacingClass::new(0, BARREL_ELEVATION_ROT),
-            unit_follower: None,
-            is_unit_follower: false,
-            initial_owner: owner,
-            #[cfg(feature = "ares")]
-            original_factory_country: None,
-            #[cfg(feature = "ares")]
-            ares_wave_weapon_slot: 0,
-            type_facts: crate::sim::world::TypeFacts::new(category),
-            crate_multipliers: Default::default(),
-            sight: crate::sim::vision::SightFacts::new(vision_range),
-            sight_refresh_timers: crate::sim::vision::SightRefreshTimers::at_construction(
-                construction_frame,
-            ),
-            selection: Default::default(),
-            in_logic_vector: Default::default(),
-            mission_only: Default::default(),
-            on_carryall: Default::default(),
-            removal_facts: Default::default(),
-            kill_record: Default::default(),
-            distributed_fire: Default::default(),
-            patrol_post: Default::default(),
-            drop_credit: Default::default(),
-            setter_force_reassign: Default::default(),
-            chrono_warp_delay: Default::default(),
-            #[cfg(feature = "ares")]
-            ares_prism: Default::default(),
-            turret_selection: gunner::TurretSelection::constructed(),
-            radio_contacts: Contacts::default(),
-            tether: crate::sim::radio::Tether::default(),
-            ai_sell_repair: Default::default(),
-            // `TechnoClass` constructor `0x006F2E81..0x006F2E8C`: started
-            // at the construction frame with no duration.
-            rearm_timer: crate::sim::combat::rof::RearmTimer::new(construction_frame as i32),
-            radar_combat_flash: crate::sim::timer::CdTimer::started(construction_frame as i32, 0),
-            turret_anim_frame: Default::default(),
-            weapon_burst: Default::default(),
-            #[cfg(feature = "ares")]
-            ares_chronoshifting: false,
-            #[cfg(feature = "ares")]
-            ares_drop_pod: None,
-            #[cfg(feature = "ares")]
-            ares_alt_occupation: None,
-            tesla_charger: Default::default(),
-            #[cfg(feature = "ares")]
-            powered_by: None,
-            #[cfg(feature = "ares")]
-            radar_jam: Default::default(),
-            #[cfg(feature = "ares")]
-            sensor_array_counter: Default::default(),
-            #[cfg(feature = "ares")]
-            ares_firestorm_wall: Default::default(),
-            #[cfg(feature = "ares")]
-            sonar_timer: Default::default(),
-            runtime_bridge_transition: Default::default(),
-            slave: Default::default(),
-            mega_mission: Default::default(),
-            disguise: Some(DisguiseRuntime::new(construction_frame)),
-            spawn_owner_id: Default::default(),
-            airstrike: Default::default(),
-            mind_control: Default::default(),
-            building_entry: Default::default(),
-            ammo: None,
-            ammo_reload_timer: crate::sim::timer::CdTimer::started(construction_frame as i32, 0),
-            // Infantry get sub-cell 2 (first distinct position) at spawn so
-            // they don't all pile up at cell center when multiple are created.
-            sub_cell: crate::sim::movement::foot_mark::InfantrySpot::new(
-                if category == EntityCategory::Infantry {
-                    Some(2)
-                } else {
-                    None
-                },
-            ),
-            crushable_facts: Default::default(),
-            native_crush_immunity: Default::default(),
-            display_type_override: Default::default(),
-            capture_infantry_type_index: crate::sim::world::CapturedInfantryType::constructed(),
-            #[cfg(feature = "ares")]
-            vehicle_driver: Default::default(),
-            #[cfg(feature = "ares")]
-            bounty_display: Default::default(),
-            #[cfg(feature = "ares")]
-            ares_disable_weapons: Default::default(),
-            #[cfg(feature = "ares")]
-            ares_self_heal_combat: Default::default(),
-            #[cfg(feature = "ares")]
-            display_production_to: Default::default(),
-            idle_wander: Default::default(),
-            #[cfg(feature = "ares")]
-            ares_raid: Default::default(),
-            #[cfg(feature = "ares")]
-            ares_initial_payload: Default::default(),
-            nominal_survivor: false,
-            deploy_attachment: Default::default(),
-            mcv_deploy_pending: Default::default(),
-            foot_retarget_after_stop: Default::default(),
-            suspended_attack_target: Default::default(),
-            base_defense_response: BaseDefenseResponseState::default(),
-            spark_particle_system: Default::default(),
-            fire_particle_system: Default::default(),
-            railgun_particle_system: Default::default(),
-            damage_smoke_system_id: Default::default(),
-            transport_unload_keep_count: Default::default(),
-            #[cfg(feature = "phobos")]
-            shield: None,
+                cached_spatial_threat: Default::default(),
+                tracking_facts: Default::default(),
+                house_tracking_latches: Default::default(),
+                #[cfg(feature = "phobos")]
+                phobos_placement: Default::default(),
+                #[cfg(feature = "phobos")]
+                wh_anim_remaining_creation_interval: Default::default(),
+                #[cfg(feature = "debug-tools")]
+                debug_log: None,
+                native_unique_id,
+                native_cloak_displacement: crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO,
+                useless: false,
+                production_start_price: 0,
+                #[cfg(feature = "ares")]
+                attach_effects: Default::default(),
+                #[cfg(feature = "phobos")]
+                phobos_attach_effects: Default::default(),
+                #[cfg(feature = "phobos")]
+                phobos_stat_multipliers: Default::default(),
+                techno_ctor_random_word,
+                #[cfg(feature = "ares")]
+                ares_secret_lab_placed: false,
+                object_group: -1,
+                local_control_group: None,
+                discovery: Default::default(),
+                suppress_deploy_voice: Default::default(),
+                barrel_elevation: crate::sim::movement::FacingClass::new(0, BARREL_ELEVATION_ROT),
+                unit_follower: None,
+                is_unit_follower: false,
+                initial_owner: owner,
+                #[cfg(feature = "ares")]
+                original_factory_country: None,
+                #[cfg(feature = "ares")]
+                ares_wave_weapon_slot: 0,
+                type_facts: crate::sim::world::TypeFacts::new(category),
+                crate_multipliers: Default::default(),
+                sight: crate::sim::vision::SightFacts::new(vision_range),
+                sight_refresh_timers: crate::sim::vision::SightRefreshTimers::at_construction(
+                    construction_frame,
+                ),
+                selection: Default::default(),
+                in_logic_vector: Default::default(),
+                mission_only: Default::default(),
+                on_carryall: Default::default(),
+                removal_facts: Default::default(),
+                kill_record: Default::default(),
+                distributed_fire: Default::default(),
+                patrol_post: Default::default(),
+                drop_credit: Default::default(),
+                setter_force_reassign: Default::default(),
+                chrono_warp_delay: Default::default(),
+                #[cfg(feature = "ares")]
+                ares_prism: Default::default(),
+                turret_selection: gunner::TurretSelection::constructed(),
+                radio_contacts: Contacts::default(),
+                tether: crate::sim::radio::Tether::default(),
+                ai_sell_repair: Default::default(),
+                // `TechnoClass` constructor `0x006F2E81..0x006F2E8C`: started
+                // at the construction frame with no duration.
+                rearm_timer: crate::sim::combat::rof::RearmTimer::new(construction_frame as i32),
+                radar_combat_flash: crate::sim::timer::CdTimer::started(
+                    construction_frame as i32,
+                    0,
+                ),
+                turret_anim_frame: Default::default(),
+                weapon_burst: Default::default(),
+                #[cfg(feature = "ares")]
+                ares_chronoshifting: false,
+                #[cfg(feature = "ares")]
+                ares_drop_pod: None,
+                #[cfg(feature = "ares")]
+                ares_alt_occupation: None,
+                tesla_charger: Default::default(),
+                #[cfg(feature = "ares")]
+                powered_by: None,
+                #[cfg(feature = "ares")]
+                radar_jam: Default::default(),
+                #[cfg(feature = "ares")]
+                sensor_array_counter: Default::default(),
+                #[cfg(feature = "ares")]
+                ares_firestorm_wall: Default::default(),
+                #[cfg(feature = "ares")]
+                sonar_timer: Default::default(),
+                runtime_bridge_transition: Default::default(),
+                slave: Default::default(),
+                mega_mission: Default::default(),
+                disguise: Some(DisguiseRuntime::new(construction_frame)),
+                spawn_owner_id: Default::default(),
+                airstrike: Default::default(),
+                mind_control: Default::default(),
+                building_entry: Default::default(),
+                ammo: None,
+                ammo_reload_timer: crate::sim::timer::CdTimer::started(
+                    construction_frame as i32,
+                    0,
+                ),
+                // Infantry get sub-cell 2 (first distinct position) at spawn so
+                // they don't all pile up at cell center when multiple are created.
+                sub_cell: crate::sim::movement::foot_mark::InfantrySpot::new(
+                    if category == EntityCategory::Infantry {
+                        Some(2)
+                    } else {
+                        None
+                    },
+                ),
+                crushable_facts: Default::default(),
+                native_crush_immunity: Default::default(),
+                display_type_override: Default::default(),
+                capture_infantry_type_index: crate::sim::world::CapturedInfantryType::constructed(),
+                #[cfg(feature = "ares")]
+                vehicle_driver: Default::default(),
+                #[cfg(feature = "ares")]
+                bounty_display: Default::default(),
+                #[cfg(feature = "ares")]
+                ares_disable_weapons: Default::default(),
+                #[cfg(feature = "ares")]
+                ares_self_heal_combat: Default::default(),
+                #[cfg(feature = "ares")]
+                display_production_to: Default::default(),
+                idle_wander: Default::default(),
+                #[cfg(feature = "ares")]
+                ares_raid: Default::default(),
+                #[cfg(feature = "ares")]
+                ares_initial_payload: Default::default(),
+                nominal_survivor: false,
+                deploy_attachment: Default::default(),
+                mcv_deploy_pending: Default::default(),
+                foot_retarget_after_stop: Default::default(),
+                suspended_attack_target: Default::default(),
+                base_defense_response: BaseDefenseResponseState::default(),
+                spark_particle_system: Default::default(),
+                fire_particle_system: Default::default(),
+                railgun_particle_system: Default::default(),
+                damage_smoke_system_id: Default::default(),
+                transport_unload_keep_count: Default::default(),
+                #[cfg(feature = "phobos")]
+                shield: None,
             }),
         }
     }

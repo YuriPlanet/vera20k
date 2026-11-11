@@ -98,10 +98,7 @@ impl GameEntity {
         selection.current_turret_index = if selection.charge_turret_delay <= 0 {
             0
         } else {
-            (object
-                .turret_count
-                .wrapping_mul(rearm_remaining)
-                / selection.charge_turret_delay)
+            (object.turret_count.wrapping_mul(rearm_remaining) / selection.charge_turret_delay)
                 .clamp(0, object.turret_count - 1)
         };
     }
