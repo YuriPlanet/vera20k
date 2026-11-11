@@ -1592,6 +1592,15 @@ pub struct Simulation {
     /// Ordered Bullet DetonateAtCoord screen-shake writes for this frame.
     #[serde(skip)]
     pub(crate) screen_shake_updates: FrameChannel<crate::sim::combat::ScreenShakeUpdate>,
+    /// Sim-layer script states, keyed by (stable entity id, ScriptId).
+    /// `#[serde(default)]` keeps older saves loadable.
+    #[serde(default)]
+    pub(crate) script_states: crate::sim::scripting::ScriptStateStore,
+    /// Projectile detonations committed this tick, drained by
+    /// `dispatch_script_frame` into `ScriptEvent::BulletDetonated`. A
+    /// one-frame channel: never saved, never hashed.
+    #[serde(skip)]
+    pub(crate) script_bullet_hits: Vec<crate::sim::scripting::BulletHit>,
     /// Persistent ordinary shots. This is authoritative save/hash state, not
     /// the render-side fire-event approximation.
     #[serde(default)]
@@ -4707,6 +4716,8 @@ impl Simulation {
             fire_events: FrameChannel::default(),
             combat_light_requests: FrameChannel::default(),
             screen_shake_updates: FrameChannel::default(),
+            script_states: Default::default(),
+            script_bullet_hits: Vec::new(),
             projectiles: crate::sim::projectile::ProjectileStore::new(),
             #[cfg(feature = "phobos")]
             warhead_anim_runtime: Default::default(),

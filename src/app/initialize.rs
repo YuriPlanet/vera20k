@@ -599,6 +599,27 @@ impl App {
             .as_ref()
             .map(|cfg| u64::from(cfg.gameplay.input_delay_ticks))
             .unwrap_or_else(|| u64::from(crate::util::config::default_input_delay_ticks()));
+        // Scripts must be installed before the first frame. The optional
+        // directory is discovered first; diagnostics are advisory, so a
+        // missing or broken directory never prevents launch.
+        let script_directory = game_config
+            .as_ref()
+            .map(|config| crate::sim::scripting::ScriptDirectory::discover(&config.paths.ra2_dir));
+        if let Some(scripts) = script_directory.as_ref() {
+            if scripts.present {
+                log::info!(
+                    "Script directory {}: {} source(s), {} module(s), {} file(s)",
+                    scripts.root.display(),
+                    scripts.source_count(),
+                    scripts.module_count(),
+                    scripts.files.len()
+                );
+            }
+            for diagnostic in &scripts.diagnostics {
+                log::info!("Script directory: {diagnostic}");
+            }
+        }
+        crate::sim::scripting::install_scripts(script_directory.as_ref());
         let sidebar_layout_spec = SidebarChromeLayoutSpec::stock();
         let mut startup_asset_manager = game_config.as_ref().and_then(|config| {
             startup_asset_or_error(

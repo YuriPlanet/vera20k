@@ -42,6 +42,9 @@ Thumbs.db
 
 /docs/*
 !/docs/capabilities.md
+!/docs/scripting.md
+!/docs/scripts/
+!/docs/scripts.example.json
 !/docs/wasm.md
 !/docs/sim-thread.md
 !/docs/ares.md

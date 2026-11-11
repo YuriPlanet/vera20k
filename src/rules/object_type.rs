@@ -2002,6 +2002,12 @@ pub struct ObjectType {
     /// Parsed from `OpenTopped=yes` in rules.ini.
     pub open_topped: bool,
 
+    /// Scripting extension binding: the `Script=` name declared on this
+    /// TechnoType. VERA stores the name only; `sim::scripting::ScriptRegistry`
+    /// resolves it at dispatch time. An unregistered name is a diagnostic,
+    /// never a load error.
+    pub script: Option<String>,
+
     /// Whether this transport uses the Gunner system (IFV weapon swap).
     /// Parsed from `Gunner=yes` in rules.ini. When a passenger enters, the
     /// transport's active weapon changes based on the passenger's IFVMode.
@@ -5373,6 +5379,10 @@ impl ObjectType {
             size: section.read_double("Size", 1.0),
             size_limit: section.read_double("SizeLimit", 0.0),
             open_topped: section.read_bool("OpenTopped", false),
+            // Read as a plain name; resolving it happens in the sim against
+            // the script directory, so an unknown name never prevents the
+            // type from loading.
+            script: section.read_name("Script", 0x40).map(str::to_owned),
             gunner: false, // Constructor byte; retained reader binds GunnerTurrets::is_gunner.
             ifv_mode: section.read_int("IFVMode", 0),
             // Constructor table; only the ordered Process owner reads it.

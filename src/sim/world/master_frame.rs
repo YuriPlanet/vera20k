@@ -261,6 +261,9 @@ impl Simulation {
                 clock.stamp(slot);
             }
         }
+        // Sim-layer scripts run at one fixed point, after the ordered logic
+        // steps and before the late region.
+        self.dispatch_script_frame(rules, overlay_registry, effects);
         let tail_result = self.run_late_region(inputs, &mut frame, None)?;
         if let Some(clock) = frame_clock.as_mut() {
             clock.stamp(crate::sim::frame_profile::phase::LATE_AI);

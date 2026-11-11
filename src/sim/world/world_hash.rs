@@ -722,6 +722,9 @@ impl Simulation {
         self.hash_particle_systems(hasher);
         self.session.fold_identity(self.houses.order(), hasher);
         self.session.pixel_conversion_bounds().hash(hasher);
+        // Script state is authoritative sim state: it must be in replays and
+        // multiplayer hashes. Appended last so no existing fold changes.
+        self.script_states.checksum().hash(hasher);
     }
 
     /// The fold before the fog digests: clocks, RNG, identities, scripts,

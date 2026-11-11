@@ -35,8 +35,14 @@ pub use tiles::TileIds;
 pub use x87::{Gaussian, TruncF64};
 
 #[cfg(any(test, feature = "test-support"))]
-pub use crate::map::construction_trace::{RmgConstructionEvent, RmgConstructionOutcome};
-pub use crate::map::construction_trace::{RmgConstructionPhase, RmgConstructionTrace};
+pub use crate::map::construction_trace::RmgConstructionEvent;
+// `RmgConstructionOutcome` is defined unconditionally in construction_trace
+// and is matched by the Ares production path in `pipeline.rs`, which is built
+// with --no-default-features --features ares. Leaving it gated behind
+// test-support breaks that shipping configuration.
+pub use crate::map::construction_trace::{
+    RmgConstructionOutcome, RmgConstructionPhase, RmgConstructionTrace,
+};
 use crate::map::map_file::MapFile;
 use crate::rng_continuation::MapGenRngContinuation;
 

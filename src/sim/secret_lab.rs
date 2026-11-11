@@ -246,7 +246,10 @@ mod tests {
                     ini += &format!("{key}={}\n", names.join(","));
                 }
             }
-            ini = registry + &ini;
+            // `Add<&String>`/`Add<String>` are not implemented; append in place
+            // so this compiles for either string alias.
+            registry.push_str(&ini);
+            ini = registry;
             if let Some(overridden) = row["override"].as_array() {
                 let family = overridden[0].as_u64().unwrap() as usize;
                 let (key, prefix) = [
