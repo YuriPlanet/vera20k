@@ -625,20 +625,19 @@ impl Simulation {
             }
             movement::track_turn::TrackProcessEntry::Return => return Ok(outcome),
         }
-        let mut pending_movement = {
-            let current_grid = sim.path_grid_snapshot();
-            movement::movement_tick::begin_movement(
-                &mut sim.substrate.entities,
-                stable_id,
-                current_grid.as_deref(),
-                sim.session.binary_frame(),
-                sim.resolved_terrain.as_ref(),
-                sim.playfield_bounds,
-                &mut sim.interner,
-                rules,
-                &sim.houses,
-            )
-        };
+        // The grid is borrowed in place, beside the other fields: a snapshot
+        // would count a shared handle up and down for every mover's visit.
+        let mut pending_movement = movement::movement_tick::begin_movement(
+            &mut sim.substrate.entities,
+            stable_id,
+            sim.path_grid.as_deref(),
+            sim.session.binary_frame(),
+            sim.resolved_terrain.as_ref(),
+            sim.playfield_bounds,
+            &mut sim.interner,
+            rules,
+            &sim.houses,
+        );
         // Process_Movement's no-queue request and the Process_Track after it.
         // When the active-track Process_Track(0) ends its track, the same
         // Process continues into Process_Movement and Process_Track(1)

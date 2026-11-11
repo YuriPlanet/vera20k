@@ -819,8 +819,11 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             // playable match. Its diagnostics owner blocks every tick/input.
             Ok(())
         }
-        crate::app::match_bootstrap::LoadingStartup::UnverifiedLegacy { .. }
-        | crate::app::match_bootstrap::LoadingStartup::Generic { .. } => {
+        crate::app::match_bootstrap::LoadingStartup::UnverifiedLegacy { session, .. } => {
+            state.match_state.startup.install_legacy(session);
+            Ok(())
+        }
+        crate::app::match_bootstrap::LoadingStartup::Generic { .. } => {
             state.match_state.startup.clear();
             Ok(())
         }

@@ -37,9 +37,9 @@ use crate::sim::world::ObjectSubstrate;
 /// Construction copies the fact, and a later Unlimbo recreates the light from
 /// the copy ([`Self::stamp`]). `BuildingClass::Unlimbo @
 /// 0x00441187` constructs the light after placement succeeds and
-/// `BuildingClass::Limbo` destroys it before the remaining building-count and
-/// base-node teardown; the light exists only for a placed `HasSpotlight=yes`
-/// building.
+/// `BuildingClass::Limbo @ 0x00445D81` UnInits it before the remaining
+/// building-count and base-node teardown, and the frame's drain deletes it;
+/// the building owns one only while placed with `HasSpotlight=yes`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BuildingLight {
     spotlight_capable: bool,
@@ -2282,9 +2282,9 @@ impl Simulation {
             let Some(owner) = self.substrate.entities.get(id).map(|entity| entity.owner()) else {
                 return;
             };
+            // Usually empty, and then no list is allocated.
             let fresh: Vec<_> = self
-                .represented_player_maps()
-                .into_iter()
+                .network_player_maps()
                 .filter(|&viewer| !self.techno_discovered_by_viewer(id, viewer))
                 .collect();
             let Some(viewer) = fresh
@@ -2306,20 +2306,22 @@ impl Simulation {
             self.discover_techno_in_views(id, viewer, context, mask);
             return;
         }
-        for viewer in self.represented_player_maps() {
-            if let Some(cell) = cell_put
-                && !self.session.game_mode_nonzero()
-            {
-                let Some(terrain) = context.terrain().or(self.resolved_terrain.as_ref()) else {
-                    return;
-                };
-                let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
-                if crate::sim::vision::cell_is_shrouded(&self.fog, &cells, viewer, cell) {
-                    continue;
-                }
+        // Outside a network game one map is represented, so no list is built.
+        let Some(viewer) = self.offline_player_map() else {
+            return;
+        };
+        if let Some(cell) = cell_put
+            && !self.session.game_mode_nonzero()
+        {
+            let Some(terrain) = context.terrain().or(self.resolved_terrain.as_ref()) else {
+                return;
+            };
+            let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+            if crate::sim::vision::cell_is_shrouded(&self.fog, &cells, viewer, cell) {
+                return;
             }
-            self.discover_techno(id, viewer, context);
         }
+        self.discover_techno(id, viewer, context);
     }
 
     /// `BuildingClass::Unlimbo @ 0x00440580` calls
@@ -4001,7 +4003,9 @@ impl Simulation {
 
         // ObjectConceal5F4E98 invokes vt+0x11C here, before +81 Limbo is set
         // at5F4E9E (the same byte tested by the5F4D45 entry guard).
-        self.destroy_spotlight_for_parent(stable_id, context);
+        // BuildingClass::Limbo @ 0x00445D81 UnInits the light; its storage
+        // goes at the drain.
+        self.uninit_spotlight_for_parent_limbo(stable_id, context);
         Self::techno_clear_discovery_on_conceal(
             &self.session,
             &mut self.substrate,
@@ -5975,17 +5979,45 @@ impl Simulation {
         if announce_to_bombs {
             Self::bomb_planter_expired(&mut self.substrate, &self.bombs, expired_id);
         }
+        // The three listener families below compare the expired object with
+        // what they hold and write only on a match. A team holds Technos and
+        // the Terrain object that blocks its path, a factory its product and
+        // a house the building it lost, so the end of any other object (a
+        // Bullet, a Particle, a Smudge) matches nothing in them: its
+        // broadcast skips their walks (VERA-only, results unchanged). A debug
+        // build under the live-read check still walks, and asserts that.
+        // RESIDUAL: restore checks no team target and no House+54E0, so a
+        // save edited by hand can make one name such an object. Its end then
+        // leaves the name where the walk cleared it, and a checked debug
+        // build asserts. The game's own saves never hold one; such a team
+        // would wait on an object that no longer exists.
+        let techno = self.substrate.entities.contains(expired_id);
+        let team_object = techno || self.terrain_objects.objects().contains_key(&expired_id);
+        let checked = crate::sim::touch_log::live_read_check_enabled();
         // `TeamClass::PointerExpired @ 0x006EAE60`, each team a listener.
-        self.team_script_vm
-            .pointer_expired(expired_id, control == PointerExpiryControl::Uninit);
-        // FactoryClass::PointerExpired4CA580 is a control-insensitive
-        // listener in Dispatch7258D0. Its only mutation clears a matching
-        // held product; no entity listener consumes that factory pointer.
-        self.production.factories_mut().pointer_expired(expired_id);
-        // `HouseClass::PointerExpired @ 0x004FB9B0`, each house a listener
-        // (`0x004F5FFB`), forgets House+54E0 whatever the control.
-        for house in self.houses.values_mut() {
-            house.forget_lost_building(expired_id);
+        if team_object || checked {
+            let named = self
+                .team_script_vm
+                .pointer_expired(expired_id, control == PointerExpiryControl::Uninit);
+            debug_assert!(
+                team_object || !named,
+                "a team named {expired_id}, which is neither a Techno nor a Terrain object"
+            );
+        }
+        if techno || checked {
+            // FactoryClass::PointerExpired4CA580 is a control-insensitive
+            // listener in Dispatch7258D0. Its only mutation clears a matching
+            // held product; no entity listener consumes that factory pointer.
+            let mut named = self.production.factories_mut().pointer_expired(expired_id);
+            // `HouseClass::PointerExpired @ 0x004FB9B0`, each house a listener
+            // (`0x004F5FFB`), forgets House+54E0 whatever the control.
+            for house in self.houses.values_mut() {
+                named |= house.forget_lost_building(expired_id);
+            }
+            debug_assert!(
+                techno || !named,
+                "a factory or a house named {expired_id}, which is no Techno"
+            );
         }
         let Some((
             expired_target_cell,

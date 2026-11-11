@@ -1529,15 +1529,19 @@ fn self_heal_step(
     );
     #[cfg(not(feature = "ares"))]
     let amount = {
-        let interval = crate::sim::combat::veterancy::self_heal_interval_frames(
-            rules.general.repair_rate_minutes,
-        );
-        i32::from(crate::sim::combat::veterancy::self_heal_eligible(
-            entity,
-            object,
-            session.binary_frame(),
-            interval,
-        ))
+        use crate::sim::combat::veterancy;
+        // The period is an x87 conversion of a rules value, so only an
+        // object past the virtual's ability gate, which answers false
+        // without it, works it out (VERA-only order).
+        i32::from(
+            veterancy::holds_self_heal(entity, object)
+                && veterancy::self_heal_eligible(
+                    entity,
+                    object,
+                    session.binary_frame(),
+                    veterancy::self_heal_interval_frames(rules.general.repair_rate_minutes),
+                ),
+        )
     };
     if amount == 0 {
         return;
@@ -2148,6 +2152,11 @@ fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
+    // The target is read before the house only to spare an object without
+    // one the house lookups; neither test writes (VERA-only order).
+    let Some(target) = entity.attack_target.target() else {
+        return;
+    };
     let house = combat_weapon::controlled_transport_house(
         &sim.substrate.entities,
         rules,
@@ -2158,9 +2167,6 @@ fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     if sim.owner_is_human(house) {
         return;
     }
-    let Some(target) = entity.attack_target.target() else {
-        return;
-    };
     let Some(obj) = sim.interner.object_type(entity.type_ref(), rules) else {
         return;
     };

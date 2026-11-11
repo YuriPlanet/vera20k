@@ -48,11 +48,13 @@
 //! Unlimbo/PerCell/Limbo rather than the lists.
 //!
 //! RESIDUAL: a Jumpjet's hold and cruise leave its lists alone
-//! (`0x0054D0FF..0x0054D134`), so one that sinks below two levels there counts
-//! as listed by that derivation before its next Mark lists it, and
-//! `Simulation::debug_assert_lifecycle_consistent` reports it. Trigger: a
-//! Jumpjet below two levels while it holds or cruises; at a cruise height of
-//! 500 that needs ground three levels higher beneath it before it climbs.
+//! (`0x0054D0FF..0x0054D134`), so one below two levels there counts as listed
+//! by that derivation before its next Mark lists it;
+//! `Simulation::debug_assert_lifecycle_consistent` passes over those two
+//! states. Trigger: a Jumpjet below two levels while it holds or cruises:
+//! ground three levels higher beneath a cruise at 500, a take-off over its
+//! own destination cell (`0x0054BD10`), or a `LandNearby=` re-aim low in its
+//! descent, each until it climbs.
 //! Effect: in a world without an overlay grid, its cell counts toward the
 //! blocker plane before native lists it. Frequency: unmeasured. Risk: a
 //! different hierarchy-gate verdict there, no other state.

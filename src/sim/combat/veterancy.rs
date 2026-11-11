@@ -644,6 +644,13 @@ pub fn self_heal_interval_frames(repair_rate_minutes: f64) -> i32 {
     crate::rules::ruleset::native_minutes_to_frames(repair_rate_minutes)
 }
 
+/// Step 1 of [`self_heal_eligible`], the virtual's ability gate:
+/// `Type->SelfHealing` (`+0xD14`), or a rank that holds `SELF_HEAL`.
+pub fn holds_self_heal(entity: &GameEntity, object: &ObjectType) -> bool {
+    object.self_healing
+        || has_weapon_ability(entity.veterancy.rank_kind(), object, Ability::SelfHeal)
+}
+
 /// The self-heal eligibility virtual, `TechnoClass` vtable slot `0x294` →
 /// `FUN_0070BE80` (slot verified by `read_memory 0x007F4BF4`).
 ///
@@ -665,11 +672,8 @@ pub fn self_heal_eligible(
     frame: u32,
     interval_frames: i32,
 ) -> bool {
-    if !object.self_healing {
-        let rank = entity.veterancy.rank_kind();
-        if !has_weapon_ability(rank, object, Ability::SelfHeal) {
-            return false;
-        }
+    if !holds_self_heal(entity, object) {
+        return false;
     }
     if (frame as i32).checked_rem(interval_frames) != Some(0) {
         return false;
@@ -706,7 +710,7 @@ pub fn ares_self_heal_amount(
         return 0;
     }
     let rank = entity.veterancy.rank_kind();
-    if !object.self_healing && !has_weapon_ability(rank, object, Ability::SelfHeal) {
+    if !holds_self_heal(entity, object) {
         return 0;
     }
     let ext = object.techno_combat().self_healing();
