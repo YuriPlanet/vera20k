@@ -2776,6 +2776,18 @@ impl GameEntity {
             && self.lifecycle.object_alive()
     }
 
+    /// Give a woken object the `owed` visits the live pass counted instead
+    /// of running, the last at `last_frame` (`EntityStore::wake_slot`): what
+    /// an idle visit changes. `TechnoClass::AI_Update`'s `+0xC4` increment
+    /// (`0x006FA646`) once per visit, and for a building UpdateAnimation's
+    /// relight sample (`0x00450A47`).
+    pub(crate) fn settle_sleep(&mut self, owed: u32, last_frame: u32) {
+        self.mission.add_owed_ai_visits(owed);
+        if self.category == EntityCategory::Structure {
+            self.building_art.restamp_tint_sample(last_frame);
+        }
+    }
+
     /// Whether ObjectClass native-alive state is set. This is intentionally
     /// independent from health and the Rust death-sequence state.
     /// `Object+0x90`, IsAlive; see the field.

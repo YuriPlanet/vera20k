@@ -221,6 +221,11 @@ impl SmudgeGrid {
         }
     }
 
+    /// Whether [`Self::drain_dirty`] would return any cell.
+    pub(crate) fn has_dirty(&self) -> bool {
+        !self.dirty_cells.is_empty()
+    }
+
     pub fn drain_dirty(&mut self) -> Vec<(u16, u16)> {
         std::mem::take(&mut self.dirty_cells)
     }

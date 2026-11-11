@@ -140,6 +140,15 @@ impl BuildingArt {
         self.tint_sample.as_ref()
     }
 
+    /// The frame a sleeping building last owed a relight
+    /// (`GameEntity::settle_sleep`). The sleep rule admits only a building
+    /// whose sample already holds its resting inputs.
+    pub(crate) fn restamp_tint_sample(&mut self, frame: u32) {
+        if let Some(sample) = self.tint_sample.as_mut() {
+            sample.frame = frame;
+        }
+    }
+
     /// Building+6E6.
     pub fn damage_state_active(&self) -> bool {
         self.damage_state_active

@@ -83,6 +83,14 @@ pub struct EntityStore {
     /// stored entity's category never changes (a replacement comes through
     /// [`Self::insert`], which copies it). Kept and rebuilt as `owners` is.
     categories: Vec<EntityCategory>,
+    /// VERA-only: each slot's sleep mark ([`SleepCell`]), beside the boxed
+    /// entities so the live object pass passes a sleeping object without
+    /// loading it. Every route to a `&mut GameEntity` settles and clears the
+    /// mark first ([`Self::wake_slot`]), so a sleeping entity is one nothing
+    /// has written since its last turn. Kept through compaction as `owners`
+    /// is; a load starts every object awake. Never saved or hashed: the save
+    /// form and the state hash read a sleeping object as settled.
+    sleep: Vec<SleepCell>,
     /// VERA-only: the stored ids of each owner's objects of each category,
     /// ascending ([`Self::owned_ids`]), for walks that want one house's
     /// objects of one class without loading the others. The entities' owners
@@ -140,6 +148,26 @@ pub struct EntityStore {
     touched: TouchLogs<{ TouchReader::COUNT }>,
 }
 
+/// One slot's sleep mark (sim-scale; results unchanged). An idle object's
+/// turn changes nothing but its per-visit counters until one of its timers
+/// comes due, so the live object pass may count the visit as owed instead of
+/// running it (`Simulation::advance_live_object_pass`).
+#[derive(Debug, Clone, Copy, Default)]
+struct SleepCell {
+    /// The first frame whose turn must run; 0 while awake.
+    wake_at: u32,
+    /// Visits the pass counted instead of running.
+    owed: u32,
+    /// The frame of the last counted visit.
+    last_frame: u32,
+    /// What the sleeper's owner looked like when it fell asleep, for the
+    /// pass to compare (`world::idle_sleep`).
+    note: u8,
+    /// The frame after the last turn that left the object fit to sleep,
+    /// while awake; 0 for none ([`EntityStore::fit_to_sleep`]).
+    fit_until: u32,
+}
+
 /// A product derived from the entities that re-derives from the touch log.
 /// Each reads its own log, so one reader's take leaves the others' intact.
 #[derive(Debug, Clone, Copy)]
@@ -169,6 +197,7 @@ impl Clone for EntityStore {
             lookups: Default::default(),
             owners: self.owners.clone(),
             categories: self.categories.clone(),
+            sleep: self.sleep.clone(),
             owned: self.owned.clone(),
             infantry_registry: self.infantry_registry.clone(),
             foot_registry: self.foot_registry.clone(),
@@ -185,6 +214,112 @@ impl EntityStore {
     /// Take `reader`'s touch log, leaving it empty.
     pub(crate) fn take_touched(&mut self, reader: TouchReader) -> Touched {
         self.touched.take(reader as usize)
+    }
+
+    /// Mark `stable_id` asleep until frame `wake_at` (above 0): the pass may
+    /// count its visits before that frame as owed. Any mutable hand-out wakes
+    /// it first.
+    pub(crate) fn sleep_until(&mut self, stable_id: u64, wake_at: u32, note: u8) {
+        debug_assert!(wake_at != 0, "wake frame 0 means awake");
+        if let Some(slot) = self.slot(stable_id) {
+            let cell = &mut self.sleep[slot as usize];
+            cell.wake_at = wake_at;
+            cell.note = note;
+        }
+    }
+
+    /// `stable_id`'s turn at `frame` left it fit to sleep. Answers whether
+    /// its turn the frame before did too: only then did this whole turn run
+    /// on a resting object, so its samplers hold what a next turn would
+    /// sample. Waking forgets it.
+    pub(crate) fn fit_to_sleep(&mut self, stable_id: u64, frame: u32) -> bool {
+        let Some(slot) = self.slot(stable_id) else {
+            return false;
+        };
+        let cell = &mut self.sleep[slot as usize];
+        let rested = cell.fit_until == frame;
+        cell.fit_until = frame.wrapping_add(1);
+        rested
+    }
+
+    /// `stable_id`'s turn at `frame` left something in progress.
+    pub(crate) fn unfit_to_sleep(&mut self, stable_id: u64) {
+        if let Some(slot) = self.slot(stable_id) {
+            self.sleep[slot as usize].fit_until = 0;
+        }
+    }
+
+    /// The frame `stable_id` sleeps until and its note, if it is asleep.
+    #[inline]
+    pub(crate) fn sleeps_until(&self, stable_id: u64) -> Option<(u32, u8)> {
+        let cell = self.sleep[self.slot(stable_id)? as usize];
+        (cell.wake_at != 0).then_some((cell.wake_at, cell.note))
+    }
+
+    /// Count the visit the pass makes to sleeping `stable_id` at `frame`
+    /// instead of running its turn.
+    pub(crate) fn owe_visit(&mut self, stable_id: u64, frame: u32) {
+        if let Some(slot) = self.slot(stable_id) {
+            let cell = &mut self.sleep[slot as usize];
+            cell.owed = cell.owed.wrapping_add(1);
+            cell.last_frame = frame;
+        }
+    }
+
+    /// The visits sleeping `stable_id` is owed and the frame of the last one,
+    /// which its mission counter and draw cache do not hold yet
+    /// ([`GameEntity::settle_sleep`]).
+    pub(crate) fn owed_visits(&self, stable_id: u64) -> (u32, u32) {
+        self.slot(stable_id).map_or((0, 0), |slot| {
+            let cell = self.sleep[slot as usize];
+            (cell.owed, cell.last_frame)
+        })
+    }
+
+    /// The visits each stored entity is owed, in [`Self::values`] order.
+    pub(crate) fn owed_in_value_order(&self) -> Vec<u32> {
+        self.entities
+            .iter()
+            .zip(&self.sleep)
+            .filter(|(entity, _)| entity.is_some())
+            .map(|(_, cell)| cell.owed)
+            .collect()
+    }
+
+    /// Wake `stable_id`, settling its owed visits.
+    pub(crate) fn wake(&mut self, stable_id: u64) {
+        if let Some(slot) = self.slot(stable_id) {
+            self.wake_slot(slot as usize);
+        }
+    }
+
+    /// Wake every object: for a change that sleeping objects read without
+    /// being written (a house's power, a cell's hidden state).
+    pub(crate) fn wake_all(&mut self) {
+        for slot in 0..self.sleep.len() {
+            self.wake_slot(slot);
+        }
+    }
+
+    /// How many objects are asleep.
+    pub(crate) fn sleeping_count(&self) -> usize {
+        self.sleep.iter().filter(|cell| cell.wake_at != 0).count()
+    }
+
+    /// Clear `slot`'s sleep mark and give its entity the visits it is owed,
+    /// before anything writes it.
+    #[inline]
+    fn wake_slot(&mut self, slot: usize) {
+        let cell = self.sleep[slot];
+        if cell.wake_at == 0 {
+            return;
+        }
+        self.sleep[slot] = SleepCell::default();
+        if cell.owed != 0
+            && let Some(entity) = self.entities[slot].as_deref_mut()
+        {
+            entity.settle_sleep(cell.owed, cell.last_frame);
+        }
     }
 
     /// How many mutable hand-outs the store has made (test builds only).
@@ -215,6 +350,7 @@ impl EntityStore {
             lookups: Default::default(),
             owners: Vec::new(),
             categories: Vec::new(),
+            sleep: Vec::new(),
             owned: LookupMap::default(),
             infantry_registry: Vec::new(),
             foot_registry: Vec::new(),
@@ -260,12 +396,14 @@ impl EntityStore {
             self.entities[slot as usize] = entity;
             self.owners[slot as usize] = owner;
             self.categories[slot as usize] = category;
+            self.sleep[slot as usize] = SleepCell::default();
         } else if self.ids.last().is_none_or(|&last| last < id) {
             self.slot_of.insert(id, self.ids.len() as u32);
             self.ids.push(id);
             self.entities.push(entity);
             self.owners.push(owner);
             self.categories.push(category);
+            self.sleep.push(SleepCell::default());
         } else {
             // An id below the newest: a fixture's, or a removed id stored again.
             let slot = self.ids.partition_point(|&stored| stored < id);
@@ -273,12 +411,14 @@ impl EntityStore {
                 self.entities[slot] = entity;
                 self.owners[slot] = owner;
                 self.categories[slot] = category;
+                self.sleep[slot] = SleepCell::default();
                 self.slot_of.insert(id, slot as u32);
             } else {
                 self.ids.insert(slot, id);
                 self.entities.insert(slot, entity);
                 self.owners.insert(slot, owner);
                 self.categories.insert(slot, category);
+                self.sleep.insert(slot, SleepCell::default());
                 self.reindex_from(slot);
             }
         }
@@ -316,7 +456,9 @@ impl EntityStore {
 
     /// Remove an entity by stable_id. Returns the removed entity if it existed.
     pub fn remove(&mut self, stable_id: u64) -> Option<GameEntity> {
-        let slot = self.slot_of.remove(&stable_id)? as usize;
+        let slot = *self.slot_of.get(&stable_id)? as usize;
+        self.wake_slot(slot);
+        self.slot_of.remove(&stable_id);
         self.refocus();
         let removed = self.entities[slot]
             .take()
@@ -359,6 +501,7 @@ impl EntityStore {
                 self.entities.swap(kept, slot);
                 self.owners.swap(kept, slot);
                 self.categories.swap(kept, slot);
+                self.sleep.swap(kept, slot);
                 kept += 1;
             }
         }
@@ -366,6 +509,7 @@ impl EntityStore {
         self.entities.truncate(kept);
         self.owners.truncate(kept);
         self.categories.truncate(kept);
+        self.sleep.truncate(kept);
         self.reindex_from(0);
     }
 
@@ -384,6 +528,11 @@ impl EntityStore {
     /// store does not hold is remembered as absent. No lookup's answer
     /// changes.
     pub(crate) fn focus(&mut self, stable_id: u64) {
+        // Every writer of `slot_of` re-reads the focused slot, so focusing
+        // the same id again has nothing to look up.
+        if self.focus.0 == stable_id {
+            return;
+        }
         self.focus.0 = stable_id;
         self.refocus();
     }
@@ -426,6 +575,8 @@ impl EntityStore {
     ///
     /// Idempotent. Safe if `stable_id` is absent.
     pub fn clear_radio_contacts_for(&mut self, stable_id: u64) {
+        // The walk below writes every entity.
+        self.wake_all();
         let stored = self.len();
         self.touched.note(stable_id, stored);
         for entity in self.entities.iter_mut().filter_map(Option::as_deref_mut) {
@@ -497,6 +648,7 @@ impl EntityStore {
     pub fn get_mut(&mut self, stable_id: u64) -> Option<&mut GameEntity> {
         let slot = self.slot(stable_id)?;
         self.touched.note(stable_id, self.slot_of.len());
+        self.wake_slot(slot as usize);
         self.entities[slot as usize].as_deref_mut()
     }
 
@@ -514,7 +666,8 @@ impl EntityStore {
             return None;
         }
         self.touched.note(stable_id, self.slot_of.len());
-        Some(entity)
+        self.wake_slot(slot as usize);
+        self.entities[slot as usize].as_deref_mut()
     }
 
     /// Check if an entity exists.
@@ -671,6 +824,7 @@ impl EntityStore {
     /// Iterate all entities mutably in stable_id order.
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut GameEntity> {
         self.touched.note_all();
+        self.wake_all();
         self.entities.iter_mut().filter_map(Option::as_deref_mut)
     }
 
@@ -687,6 +841,7 @@ impl EntityStore {
     ) -> Option<R> {
         let slot = self.slot(holder)?;
         self.touched.note(holder, self.slot_of.len());
+        self.wake_slot(slot as usize);
         let entity = self.entities[slot as usize].as_deref_mut()?;
         let written = write(entity, AnimHolderAuthority(()));
         self.anim_holders
@@ -736,6 +891,9 @@ impl EntityStore {
     /// No-op if the entity is absent or already owned by `new_owner`.
     pub fn change_owner(&mut self, stable_id: u64, new_owner: crate::sim::intern::InternedId) {
         self.touched.note(stable_id, self.len());
+        if let Some(slot) = self.slot(stable_id) {
+            self.wake_slot(slot as usize);
+        }
         if let Some(slot) = self.slot(stable_id)
             && let Some(e) = self.entities[slot as usize].as_deref_mut()
             && e.owner() != new_owner
@@ -800,6 +958,7 @@ impl EntityStore {
             return;
         };
         self.touched.note(stable_id, self.slot_of.len());
+        self.wake_slot(slot as usize);
         let Some(entity) = self.entities[slot as usize].as_deref_mut() else {
             return;
         };
@@ -966,7 +1125,15 @@ impl serde::Serialize for EntityStore {
         // cannot give `collect_map`.
         let mut map = serializer.serialize_map(Some(self.len()))?;
         for (id, entity) in self.stored() {
-            map.serialize_entry(&id, entity)?;
+            // A sleeping entity is saved as its next turn would find it.
+            match self.owed_visits(id) {
+                (0, _) => map.serialize_entry(&id, entity)?,
+                (owed, last_frame) => {
+                    let mut settled = entity.clone();
+                    settled.settle_sleep(owed, last_frame);
+                    map.serialize_entry(&id, &settled)?;
+                }
+            }
         }
         map.end()
     }
@@ -983,6 +1150,7 @@ impl<'de> serde::Deserialize<'de> for EntityStore {
             store.ids.push(id);
             store.owners.push(entity.owner());
             store.categories.push(entity.category());
+            store.sleep.push(SleepCell::default());
             store
                 .entities
                 .push(Some(crate::util::shared::Shared::new(*entity)));

@@ -888,7 +888,17 @@ impl Simulation {
                 .entities
                 .get(stable_id)
                 .and_then(crate::sim::debug_event_log::DebugObservation::capture);
+            // A sleeping object's visit is counted, not run (`idle_sleep`).
+            let check = match sim.visit_sleeper(stable_id, rules, overlay_registry, effects) {
+                super::idle_sleep::SleepVisit::Counted => return Ok(()),
+                super::idle_sleep::SleepVisit::Awake => None,
+                super::idle_sleep::SleepVisit::Check(check) => Some(check),
+            };
             let turn = sim.advance_live_object_turn(stable_id, rules, object_ctx)?;
+            if let Some(check) = check {
+                sim.finish_sleep_check(stable_id, *check);
+            }
+            sim.sleep_after_turn(stable_id, rules);
             #[cfg(feature = "debug-tools")]
             if let Some(before) = debug_before
                 && let Some(entity) = sim.substrate.entities.get_mut(stable_id)
