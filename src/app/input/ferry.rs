@@ -824,15 +824,18 @@ pub(crate) fn armed_click_accepted(state: &AppState) -> Option<bool> {
     armed_preview(state).map(|(_, _, accepted)| accepted)
 }
 
-/// One dot of the ferry's marks in VERA's world-pixel frame.
+/// One dash of the ferry's marks in VERA's world-pixel frame.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct FerryMark {
     pub point: (f32, f32),
+    /// The unit direction the dash lies along: its ring's tangent, or the
+    /// route from the pick-up spot to the drop spot.
+    pub along: (f32, f32),
     /// Part of the preview of a click that would be refused.
     pub refused: bool,
 }
 
-/// The ferry's marks: for each selected transport's route a ring of dots
+/// The ferry's marks: for each selected transport's route a ring of dashes
 /// around its pick-up circle, a dotted line towards the drop spot and a ring
 /// around its drop zone; and, while a drop click is armed, the same rings for
 /// the selected transports and the cell under the cursor.
@@ -877,32 +880,51 @@ pub(crate) fn marks(state: &AppState) -> Vec<FerryMark> {
     let pickup_radius = (PICKUP_RADIUS_CELLS as f32 + 0.5) * cell;
     let drop_radius = (DROP_RADIUS_CELLS as f32 + 0.5) * cell;
     let mut marks = Vec::new();
-    let ring = |marks: &mut Vec<FerryMark>, at: Cell, radius: f32, dots: u32, refused: bool| {
+    let unit = |from: (f32, f32), to: (f32, f32)| {
+        let (dx, dy) = (to.0 - from.0, to.1 - from.1);
+        let length = (dx * dx + dy * dy).sqrt();
+        if length > 0.0 {
+            (dx / length, dy / length)
+        } else {
+            (1.0, 0.0)
+        }
+    };
+    let ring = |marks: &mut Vec<FerryMark>, at: Cell, radius: f32, dashes: u32, refused: bool| {
         let at = centre(at);
-        for dot in 0..dots {
-            let angle = std::f32::consts::TAU * dot as f32 / dots as f32;
+        let on_ring = |angle: f32| {
+            project(
+                at.0 + radius * angle.cos(),
+                at.1 + radius * angle.sin(),
+                at.2,
+            )
+        };
+        for dash in 0..dashes {
+            let angle = std::f32::consts::TAU * dash as f32 / dashes as f32;
+            let point = on_ring(angle);
             marks.push(FerryMark {
-                point: project(
-                    at.0 + radius * angle.cos(),
-                    at.1 + radius * angle.sin(),
-                    at.2,
-                ),
+                point,
+                along: unit(point, on_ring(angle + 0.05)),
                 refused,
             });
         }
     };
     for route in routes {
-        ring(&mut marks, route.pickup, pickup_radius, 40, false);
-        ring(&mut marks, route.drop, drop_radius, 28, false);
+        ring(&mut marks, route.pickup, pickup_radius, 30, false);
+        ring(&mut marks, route.drop, drop_radius, 24, false);
         // The line starts at the circle's edge and ends short of the drop ring.
         let (pickup, drop) = (centre(route.pickup), centre(route.drop));
         let (dx, dy, dz) = (drop.0 - pickup.0, drop.1 - pickup.1, drop.2 - pickup.2);
         let length = (dx * dx + dy * dy).sqrt();
+        let heading = unit(
+            project(pickup.0, pickup.1, pickup.2),
+            project(drop.0, drop.1, drop.2),
+        );
         let mut along = pickup_radius + cell;
         while along < length - drop_radius - cell {
             let t = along / length;
             marks.push(FerryMark {
                 point: project(pickup.0 + dx * t, pickup.1 + dy * t, pickup.2 + dz * t),
+                along: heading,
                 refused: false,
             });
             along += cell;
@@ -910,9 +932,9 @@ pub(crate) fn marks(state: &AppState) -> Vec<FerryMark> {
     }
     if let Some((pickups, clicked, accepted)) = preview {
         for pickup in pickups {
-            ring(&mut marks, pickup, pickup_radius, 40, !accepted);
+            ring(&mut marks, pickup, pickup_radius, 30, !accepted);
         }
-        ring(&mut marks, clicked, drop_radius, 28, !accepted);
+        ring(&mut marks, clicked, drop_radius, 24, !accepted);
     }
     marks
 }

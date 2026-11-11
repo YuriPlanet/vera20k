@@ -932,7 +932,7 @@ pub(super) fn build_ui_instances(
             input.camera_y,
         ));
     }
-    // VERA ferry: the routes' dots, from world pixels back to the screen (the
+    // VERA ferry: the routes' dashes, from world pixels back to the screen (the
     // inverse of `sim_tick::screen_point_to_world`), kept to the battlefield
     // so none is drawn over the sidebar.
     if let Some(overlay) = &state.match_state.match_presentation.selection_overlay {
@@ -942,16 +942,19 @@ pub(super) fn build_ui_instances(
         let (right, bottom) = (left + width as f32, top + height as f32);
         let marks = crate::app::input::ferry::marks(state);
         for refused in [false, true] {
-            let screen: Vec<(f32, f32)> = marks
+            let screen: Vec<((f32, f32), (f32, f32))> = marks
                 .iter()
                 .filter(|mark| mark.refused == refused)
                 .map(|mark| {
                     (
-                        (mark.point.0 - input.camera_x) * input.zoom_level,
-                        (mark.point.1 - input.camera_y) * input.zoom_level,
+                        (
+                            (mark.point.0 - input.camera_x) * input.zoom_level,
+                            (mark.point.1 - input.camera_y) * input.zoom_level,
+                        ),
+                        mark.along,
                     )
                 })
-                .filter(|&(x, y)| (left..right).contains(&x) && (top..bottom).contains(&y))
+                .filter(|&((x, y), _)| (left..right).contains(&x) && (top..bottom).contains(&y))
                 .collect();
             drag.extend(overlay.build_ferry_dots(&screen, refused, input.camera_x, input.camera_y));
         }

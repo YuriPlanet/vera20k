@@ -38,9 +38,11 @@ const FORMATION_DOT: [(f32, f32, f32, f32, f32); 5] = [
     (5.0, 1.0, 1.0, 4.0, FORMATION_DOT_EDGE_ALPHA),
     (1.0, 1.0, 4.0, 4.0, FORMATION_DOT_CORE_ALPHA),
 ];
-/// VERA ferry route dots: half the square's side in screen pixels, and its
-/// colour.
-const FERRY_DOT_HALF: f32 = 1.5;
+/// VERA ferry route dashes: 12 screen pixels long and 2 wide, drawn as six
+/// 2-pixel squares stepped along the dash's direction (a sprite has no
+/// rotation), with no edge, and their colour.
+const FERRY_DASH_SQUARE: f32 = 2.0;
+const FERRY_DASH_SQUARES: u32 = 6;
 const FERRY_DOT_TINT: [f32; 3] = [0.4, 0.9, 1.0];
 /// The dots of an armed drop click that would be refused.
 const FERRY_DOT_REFUSED_TINT: [f32; 3] = [1.0, 0.25, 0.2];
@@ -648,42 +650,42 @@ impl SelectionOverlay {
         self.pipbrd.as_ref()
     }
 
-    /// VERA ferry order (`app::input::ferry`): one dot at each given screen
-    /// point, in the band box's batch and coordinate frame (screen pixels
-    /// plus the camera offset). Each is a light blue square on a black one,
-    /// or a red one for a `refused` click's preview.
+    /// VERA ferry order (`app::input::ferry`): one dash at each given screen
+    /// point, lying along its unit direction, in the band box's batch and
+    /// coordinate frame (screen pixels plus the camera offset). Light blue,
+    /// or red for a `refused` click's preview.
     pub fn build_ferry_dots(
         &self,
-        screen_points: &[(f32, f32)],
+        dashes: &[((f32, f32), (f32, f32))],
         refused: bool,
         camera_x: f32,
         camera_y: f32,
     ) -> Vec<SpriteInstance> {
-        let square = |(x, y): (f32, f32), half: f32, tint: [f32; 3]| SpriteInstance {
-            position: [camera_x + x.round() - half, camera_y + y.round() - half],
-            size: [half * 2.0, half * 2.0],
-            uv_origin: [0.0, 0.0],
-            uv_size: [1.0, 1.0],
-            depth: DRAG_RECT_DEPTH,
-            tint,
-            alpha: 1.0,
-            ..Default::default()
+        let tint = if refused {
+            FERRY_DOT_REFUSED_TINT
+        } else {
+            FERRY_DOT_TINT
         };
-        screen_points
+        let half = (FERRY_DASH_SQUARES - 1) as f32 / 2.0;
+        dashes
             .iter()
-            .flat_map(|&point| {
-                [
-                    square(point, FERRY_DOT_HALF + 1.0, [0.0, 0.0, 0.0]),
-                    square(
-                        point,
-                        FERRY_DOT_HALF,
-                        if refused {
-                            FERRY_DOT_REFUSED_TINT
-                        } else {
-                            FERRY_DOT_TINT
-                        },
-                    ),
-                ]
+            .flat_map(|&((x, y), (dx, dy))| {
+                (0..FERRY_DASH_SQUARES).map(move |square| {
+                    let along = (square as f32 - half) * FERRY_DASH_SQUARE;
+                    SpriteInstance {
+                        position: [
+                            camera_x + (x + dx * along).round() - FERRY_DASH_SQUARE / 2.0,
+                            camera_y + (y + dy * along).round() - FERRY_DASH_SQUARE / 2.0,
+                        ],
+                        size: [FERRY_DASH_SQUARE, FERRY_DASH_SQUARE],
+                        uv_origin: [0.0, 0.0],
+                        uv_size: [1.0, 1.0],
+                        depth: DRAG_RECT_DEPTH,
+                        tint,
+                        alpha: 1.0,
+                        ..Default::default()
+                    }
+                })
             })
             .collect()
     }

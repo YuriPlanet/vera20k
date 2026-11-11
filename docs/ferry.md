@@ -14,8 +14,8 @@ each selected transport and one around the cell under the cursor. Where the
 click would give no transport a route (too near the pick-up spot, or a cell it
 cannot move to) the rings are red and the cursor is the refusal cursor.
 
-While the transport is selected, a ring of light blue dots marks its pick-up
-circle, a dotted line leads towards the drop spot and a second ring marks the
+While the transport is selected, a ring of light blue dashes marks its pick-up
+circle, a dashed line leads towards the drop spot and a second ring marks the
 drop zone.
 
 - **Loading.** The transport waits at the pick-up spot. Any of your infantry
