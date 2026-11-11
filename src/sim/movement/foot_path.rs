@@ -783,10 +783,17 @@ impl Simulation {
         //causing nested Find_Path calls before the outer loop revisits an
         //identity. Check only this admitted traversal, without forbidding
         //cycles at map admission/save or adding a persistent graph cache.
+        //gamemd's loop at 4D3ECD never ends on such a cycle (a hang). VERA
+        //carries on: the mover keeps its own path and no follower is routed,
+        //since a walk cut at the repeat could still nest without end.
         let mut probe = next;
         while let Some(id) = probe {
             if !visited.insert(id) {
-                return Err("Find_Path reached a cyclic Unit follower chain".into());
+                log::warn!(
+                    "Unit {} heads a cyclic FOLLOWS chain (repeats at {id}); its followers are not routed",
+                    request.entity_id
+                );
+                return Ok(());
             }
             let peer = self
                 .substrate
@@ -799,11 +806,11 @@ impl Simulation {
         visited.clear();
         visited.insert(request.entity_id);
         while let Some(id) = next {
-            //The native loop has no completed result for a surviving cycle.
-            //Report that unsupported traversal instead of imposing a hop
-            //limit or pretending a truncated chain succeeded.
+            //The native loop never ends on a cycle that callbacks linked
+            //during this walk; VERA ends the chain at the repeat.
             if !visited.insert(id) {
-                return Err("Find_Path reached a cyclic Unit follower chain".into());
+                log::warn!("Unit follower chain closed on {id} during its walk; ended there");
+                break;
             }
             destination = {
                 let cells = NativeCellQuery::canonical(
