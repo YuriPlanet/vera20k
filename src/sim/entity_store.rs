@@ -190,6 +190,22 @@ impl EntityStore {
         self.touched.take(reader as usize)
     }
 
+    /// Whether `stable_id`'s entity is still the one `other`, a copy of this
+    /// store, shares (test builds only): false once a write has copied it.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn shares_entity_with(&self, other: &Self, stable_id: u64) -> bool {
+        fn entity(
+            store: &EntityStore,
+            stable_id: u64,
+        ) -> Option<&crate::util::shared::Shared<GameEntity>> {
+            let slot = *store.slot_of.get(&stable_id)? as usize;
+            store.entities[slot].as_ref()
+        }
+        entity(self, stable_id)
+            .zip(entity(other, stable_id))
+            .is_some_and(|(mine, theirs)| mine.shares_storage_with(theirs))
+    }
+
     /// How many mutable hand-outs the store has made (test builds only).
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn hand_outs(&self) -> u64 {
@@ -534,7 +550,9 @@ impl EntityStore {
     }
 
     /// Keep a building's relight light at `frame` for the draw
-    /// ([`crate::sim::building_art::BuildingArt::capture_tint_sample`])
+    /// ([`crate::sim::building_art::BuildingArt::capture_tint_sample`]),
+    /// unless the kept one is current
+    /// ([`crate::sim::building_art::BuildingArt::tint_sample_is_current`]),
     /// without a note in the touch logs: every building relights every
     /// frame, and no product derived from the logs reads the sample. No-op
     /// for an absent entity or one that is not a building.
@@ -544,9 +562,21 @@ impl EntityStore {
         frame: u32,
         airstrike_active: bool,
     ) {
-        if let Some(entity) = self.unlogged_mut(stable_id)
-            && entity.category() == EntityCategory::Structure
-        {
+        // Read first: a building whose sample already says what the draw
+        // would read is not handed out, which would copy it every frame
+        // under a presentation frame.
+        if self.get(stable_id).is_none_or(|entity| {
+            entity.category() != EntityCategory::Structure
+                || entity.building_art.tint_sample_is_current(
+                    entity.flashing.flashed(),
+                    entity.invulnerability.as_ref(),
+                    &entity.airstrike_tint,
+                    airstrike_active,
+                )
+        }) {
+            return;
+        }
+        if let Some(entity) = self.unlogged_mut(stable_id) {
             entity.building_art.capture_tint_sample(
                 frame,
                 entity.flashing.flashed(),
