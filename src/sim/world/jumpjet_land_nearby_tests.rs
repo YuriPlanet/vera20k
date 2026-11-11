@@ -144,3 +144,93 @@ fn land_nearby_replans_on_the_approach() {
     assert_ne!(cell, LANDING);
     assert!(replanned <= clear + 20, "{replanned} against {clear}");
 }
+
+/// The cells a second pair of Nighthawks is given for the spot a first one
+/// is still flying to. `None` without retail rules.
+fn second_group_cells(patch: &str) -> Option<Vec<(u16, u16)>> {
+    let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "Hills.mmx",
+        &IniFile::from_str(patch),
+    )?;
+    let rules = &retail.rules;
+    let mut sim = Simulation::new();
+    for (name, side) in [("Americans", 0), ("Russians", 1)] {
+        let house = sim.intern(name);
+        sim.houses_mut_for_test()
+            .register(crate::sim::house_state::HouseState::new(
+                house, side, None, true, 0, 10,
+            ));
+    }
+    let owner = sim.interner().get("Americans").unwrap();
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(owner));
+    sim.session_mut_for_test()
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
+    crate::sim::arena_fixture::flat_arena(&mut sim, rules);
+    sim.intern_rule_type_ids(rules);
+    sim.resolve_type_handles(rules);
+    sim.spawn_object("NAPOWR", "Russians", 3, 3, 0, rules)
+        .unwrap();
+    sim.spawn_object("GAPOWR", "Americans", 16, 26, 0, rules)
+        .unwrap();
+    let hawks: Vec<u64> = [(6, 18), (6, 14), (6, 22)]
+        .into_iter()
+        .map(|(x, y)| {
+            sim.spawn_object("SHAD", "Americans", x, y, 0, rules)
+                .unwrap()
+        })
+        .collect();
+    sim.resolve_type_handles(rules);
+    let order = |sim: &mut Simulation, ids: &[u64]| {
+        let tick = sim.session().tick();
+        for &entity_id in ids {
+            sim.queue_command(CommandEnvelope::new(
+                owner,
+                tick,
+                Command::Move {
+                    entity_id,
+                    target_rx: LANDING.0,
+                    target_ry: LANDING.1,
+                },
+            ));
+        }
+    };
+    let frames = |sim: &mut Simulation, count: u32| {
+        for _ in 0..count {
+            let due = sim.take_due_commands();
+            let result = sim.advance_tick(&due, Some(rules), None, None, 67);
+            assert!(result.frame_committed, "{result:?}");
+        }
+    };
+    order(&mut sim, &hawks[..1]);
+    frames(&mut sim, 40);
+    order(&mut sim, &hawks[1..]);
+    frames(&mut sim, 5);
+    Some(
+        hawks[1..]
+            .iter()
+            .map(
+                |&id| match sim.entities().get(id).unwrap().navigation.nav_com() {
+                    Some(crate::sim::components::NavTargetRef::Cell { rx, ry }) => (rx, ry),
+                    other => panic!("a Cell destination: {other:?}"),
+                },
+            )
+            .collect(),
+    )
+}
+
+/// The original gives a second group the cell a Nighthawk of the first is
+/// still flying to (the group spread `0x0064CDA0` only asks who stands
+/// there). With the key on the order itself leaves that cell out.
+#[test]
+fn land_nearby_keeps_a_second_order_off_a_promised_cell() {
+    let (Some(original), Some(nearby)) = (
+        second_group_cells(""),
+        second_group_cells("[JumpjetControls]\nLandNearby=3\n"),
+    ) else {
+        return;
+    };
+    assert!(original.contains(&LANDING), "{original:?}");
+    assert!(!nearby.contains(&LANDING), "{nearby:?}");
+    assert_ne!(nearby[0], nearby[1]);
+}

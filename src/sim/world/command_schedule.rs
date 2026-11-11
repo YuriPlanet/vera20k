@@ -993,7 +993,7 @@ impl Simulation {
                     });
                 }
                 let mut member_target: Option<GroupMemberTarget> = None;
-                let assignments = group_destination::distribute_group_destinations(
+                let mut assignments = group_destination::distribute_group_destinations(
                     clicked_target,
                     &members,
                     |member, candidate| {
@@ -1015,6 +1015,7 @@ impl Simulation {
                         )
                     },
                 );
+                self.keep_jumpjets_off_promised_cells(&members, &mut assignments, rules, registry);
                 for assignment in assignments {
                     let Some(command) = commands.get_mut(run_start + assignment.command_index)
                     else {
@@ -1024,6 +1025,79 @@ impl Simulation {
                 }
             }
             run_start = run_end;
+        }
+    }
+
+    /// VERA `[JumpjetControls] LandNearby=` (off by default, no native
+    /// counterpart), after the spread `0x0064CDA0` has run unchanged: a
+    /// Jumpjet member whose cell another airborne Jumpjet is bound for, or an
+    /// earlier Jumpjet of this run was given, takes the nearest cell within
+    /// the key's range that neither holds and that it may enter outright. With
+    /// no such cell it keeps the spread's.
+    fn keep_jumpjets_off_promised_cells(
+        &self,
+        members: &[group_destination::GroupDestinationMember],
+        assignments: &mut [group_destination::GroupDestinationAssignment],
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    ) {
+        let range = rules.general.jumpjet_land_nearby;
+        if range <= 0 {
+            return;
+        }
+        let mut given = std::collections::BTreeSet::new();
+        for assignment in assignments {
+            let Some(id) = members
+                .iter()
+                .find(|member| member.command_index == assignment.command_index)
+                .map(|member| member.entity_id)
+            else {
+                continue;
+            };
+            let jumpjet = self.substrate.entities.get(id).is_some_and(|entity| {
+                entity.locomotor.as_ref().is_some_and(|locomotor| {
+                    locomotor.active_kind()
+                        == crate::rules::locomotor_type::LocomotorKind::Jumpjet
+                })
+            });
+            if !jumpjet {
+                continue;
+            }
+            let promised = |cell: (i16, i16), given: &std::collections::BTreeSet<(i16, i16)>| {
+                given.contains(&cell) || self.airborne_jumpjet_bound_for(cell, id).is_some()
+            };
+            let from = assignment.destination;
+            if promised(from, &given) {
+                let mut cells: Vec<(i32, i32, i32)> = Vec::new();
+                for dy in -range..=range {
+                    for dx in -range..=range {
+                        let distance = dx * dx + dy * dy;
+                        if distance != 0 && distance <= range * range {
+                            cells.push((distance, dy, dx));
+                        }
+                    }
+                }
+                cells.sort_unstable();
+                let free = cells.into_iter().find_map(|(_, dy, dx)| {
+                    let x = i16::try_from(i32::from(from.0) + dx).ok().filter(|x| *x >= 0)?;
+                    let y = i16::try_from(i32::from(from.1) + dy).ok().filter(|y| *y >= 0)?;
+                    let clear = self
+                        .mover_can_enter(
+                            id,
+                            (x, y),
+                            InfantryEntryArgs::REPAIR,
+                            crate::sim::movement::infantry_entry::EntryQueryMode::CheckLocomotor,
+                            rules,
+                            registry,
+                        )
+                        .is_ok_and(|code| code == 0);
+                    (clear && !promised((x, y), &given)).then_some((x, y))
+                });
+                if let Some(cell) = free {
+                    assignment.destination = cell;
+                }
+            }
+            given.insert(assignment.destination);
         }
     }
 

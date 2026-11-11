@@ -30,7 +30,14 @@ holds and that no other airborne Jumpjet is heading for. Equally near cells
 are taken by the lower row first, then the lower column; no random draw is
 spent. With no such cell in range it hovers as in the original.
 
-It looks in two places:
+It looks in three places:
+
+- **When the order is given.** A group's cells are handed out as before.
+  Then a Jumpjet whose cell another airborne Jumpjet is already bound for,
+  or an earlier Jumpjet of the same order was given, takes the nearest clear
+  cell instead. A second group sent to the same spot gets cells beside the
+  first's. An order to a single unit is not spread and relies on the
+  approach check.
 
 - **On the approach.** Every eighth frame within four cells of its
   destination, a Jumpjet on an ordinary move checks its landing cell. If the
@@ -39,8 +46,7 @@ It looks in two places:
 - **On arrival.** If the cell is refused only when it descends, it picks one
   then and flies there.
 
-Not changed: a landing over water or beach, which holds as before, and the
-cells a group is given when the order is made.
+Not changed: a landing over water or beach, which holds as before.
 
 Code: `nearby_landing_cell` and `state4_descend` in
 `src/sim/movement/jumpjet_flight.rs`.

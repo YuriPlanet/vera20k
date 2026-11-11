@@ -312,27 +312,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         self.stable_id
     }
     fn landing_cell_claimed_by(&self, cell: (i16, i16)) -> Option<u64> {
-        let entities = &self.sim.substrate.entities;
-        entities
-            .airborne_ids()
-            .filter(|&id| id != self.stable_id)
-            .filter_map(|id| entities.get(id))
-            .filter(|entity| {
-                entity
-                    .locomotor
-                    .as_ref()
-                    .and_then(|locomotor| locomotor.jumpjet_runtime())
-                    .is_some_and(|runtime| {
-                        let destination = runtime.destination();
-                        runtime.phase() != jumpjet_flight::STATE_GROUND
-                            && (
-                                lepton_to_cell_packed(destination.x),
-                                lepton_to_cell_packed(destination.y),
-                            ) == cell
-                    })
-            })
-            .map(|entity| entity.stable_id())
-            .min()
+        self.sim.airborne_jumpjet_bound_for(cell, self.stable_id)
     }
     fn snap_body_facing(&mut self, facing: u16) {
         self.sim
@@ -840,6 +820,33 @@ impl Simulation {
         ) {
             log::debug!("Jumpjet {id} lift-off scatter: {cause}");
         }
+    }
+
+    /// VERA `[JumpjetControls] LandNearby=`: the lowest id among the airborne
+    /// Jumpjets other than `except` whose destination is `cell`. The landing
+    /// search, the approach check and the group spread ask it.
+    pub(crate) fn airborne_jumpjet_bound_for(&self, cell: (i16, i16), except: u64) -> Option<u64> {
+        let entities = &self.substrate.entities;
+        entities
+            .airborne_ids()
+            .filter(|&id| id != except)
+            .filter_map(|id| entities.get(id))
+            .filter(|entity| {
+                entity
+                    .locomotor
+                    .as_ref()
+                    .and_then(|locomotor| locomotor.jumpjet_runtime())
+                    .is_some_and(|runtime| {
+                        let destination = runtime.destination();
+                        runtime.phase() != jumpjet_flight::STATE_GROUND
+                            && (
+                                lepton_to_cell_packed(destination.x),
+                                lepton_to_cell_packed(destination.y),
+                            ) == cell
+                    })
+            })
+            .map(|entity| entity.stable_id())
+            .min()
     }
 
     /// Process54AEC0 through the one private instance and live owner callbacks.
