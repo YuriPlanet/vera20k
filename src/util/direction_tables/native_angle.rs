@@ -5,7 +5,7 @@
 //! 65,534-unit scale. See
 //! `docs/research/substrate/tables/FACING_DIRECTION_SUBSTRATE_STUDY.md`.
 
-use std::sync::OnceLock;
+use crate::util::sync::OnceLock;
 
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53, X87Ordering, X87Value};
 

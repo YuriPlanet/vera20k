@@ -187,7 +187,7 @@ pub struct ZoneGrid {
     hierarchy: ZoneHierarchy,
     /// Derived digest of this owner's retained navigation history. Mutable
     /// entry points invalidate it before returning any writable borrow.
-    navigation_history_hash: std::sync::OnceLock<u64>,
+    navigation_history_hash: crate::util::sync::OnceLock<u64>,
     /// Deserialization restores the saved base plane/rows first. Native
     /// LoadContent67E8CD rebuilds the hierarchy only after Cell/object load.
     pending_native_load: bool,
@@ -278,7 +278,7 @@ impl<'de> serde::Deserialize<'de> for ZoneGrid {
         Ok(Self {
             maps,
             hierarchy: ZoneHierarchy::new(empty(), empty(), empty()),
-            navigation_history_hash: std::sync::OnceLock::new(),
+            navigation_history_hash: crate::util::sync::OnceLock::new(),
             pending_native_load: true,
             base_topology: base,
             bridge_records: Vec::new(),
@@ -532,7 +532,7 @@ impl ZoneGrid {
         ZoneGrid {
             maps,
             hierarchy,
-            navigation_history_hash: std::sync::OnceLock::new(),
+            navigation_history_hash: crate::util::sync::OnceLock::new(),
             pending_native_load: false,
             base_topology,
             bridge_records: bridge_records.to_vec(),

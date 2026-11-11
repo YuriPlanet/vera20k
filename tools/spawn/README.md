@@ -32,7 +32,11 @@ directories (docs/spawn.md). Nothing here is used by ordinary play.
   ACT seconds into the match (source 1; the others ACT+BOUND). Logs:
   `OUT/pN/browser.log` (console), `OUT/pN/events.jsonl` (lifecycle events,
   whose `match-ended` carries `network_quality`), `OUT/gateway.log`. Exit
-  status 0 means every page ended its match and exited.
+  status 0 means every page ended its match and exited. A `--threads`
+  package is served cross-origin isolated and starts its worker pool;
+  `SIM_THREAD=1|always`, or one value per source (`always,0`), turns on its
+  pages' simulation worker (`set_simulation_thread`, docs/sim-thread.md
+  "The browser"); it is off by default.
 
 Clients never show a window: `run.sh` sets `VERA20K_SPAWN_HIDDEN_WINDOW=1`,
 which (for `-SPAWN` launches only) creates the window invisible, keeps the

@@ -89,24 +89,24 @@ impl<'de, T: serde::Deserialize<'de>> serde::Deserialize<'de> for Shared<T> {
 /// A derived cache a copy leaves empty: it is rebuilt from its sources on
 /// the first read, so the presentation frame never copies it.
 #[derive(Debug, Default)]
-pub struct DerivedCache<T>(pub std::sync::OnceLock<T>);
+pub struct DerivedCache<T>(pub crate::util::sync::OnceLock<T>);
 
 impl<T> Clone for DerivedCache<T> {
     fn clone(&self) -> Self {
-        Self(std::sync::OnceLock::new())
+        Self(crate::util::sync::OnceLock::new())
     }
 }
 
 impl<T> Deref for DerivedCache<T> {
-    type Target = std::sync::OnceLock<T>;
+    type Target = crate::util::sync::OnceLock<T>;
 
-    fn deref(&self) -> &std::sync::OnceLock<T> {
+    fn deref(&self) -> &crate::util::sync::OnceLock<T> {
         &self.0
     }
 }
 
 impl<T> DerefMut for DerivedCache<T> {
-    fn deref_mut(&mut self) -> &mut std::sync::OnceLock<T> {
+    fn deref_mut(&mut self) -> &mut crate::util::sync::OnceLock<T> {
         &mut self.0
     }
 }

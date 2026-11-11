@@ -1809,7 +1809,7 @@ fn advance_one_simulation_frame(
     // docs/sim-thread.md: a network frame lent to the simulation thread runs
     // there up to Queue_AI. A restore replays many frames per pass, each
     // waiting for the last, so it stays inline.
-    let queue_handoff = super::sim_host::sim_thread_enabled()
+    let queue_handoff = state.match_state.sim_runtime.thread_enabled()
         && !inline
         && resume == FrameResume::None
         && tick_lane == TickLane::Ordinary
@@ -1846,7 +1846,7 @@ fn advance_one_simulation_frame(
         && !inline
         && resume == FrameResume::None
         && tick_lane == TickLane::Ordinary
-        && super::sim_host::sim_thread_enabled();
+        && state.match_state.sim_runtime.thread_enabled();
     if threaded {
         // The frame published for this tick shows every cell ticked so far;
         // their radar-terrain marks go to the minimap with it, since no draw

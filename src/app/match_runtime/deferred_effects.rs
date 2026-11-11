@@ -81,7 +81,7 @@ impl DeferredClientEffects {
         observing_commands: bool,
         initial_save: bool,
     ) -> bool {
-        (super::sim_host::sim_thread_enabled()
+        (state.match_state.sim_runtime.thread_enabled()
             || std::env::var_os("VERA20K_DEFERRED_TICK_EFFECTS").is_some_and(|value| value == "1"))
             && !replaying
             && !observing_commands
