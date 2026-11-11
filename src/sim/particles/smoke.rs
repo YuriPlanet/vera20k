@@ -226,19 +226,18 @@ pub(super) fn tick_particle(p: &mut Particle, pt: &ParticleType, frame: u32, rng
 
 /// MoveSmoke62D3F0: old-cell bridge admission precedes raw-coordinate commit.
 pub(super) fn move_smoke(p: &mut Particle, pt: &ParticleType, wind: i32, sim: &Simulation) {
-    let index = usize::try_from(wind)
+    // MoveSmoke62D3F0 indexes its eight-entry tables with `[General]
+    // WindDirection` unchecked, so a missing key (-1) or a value past 7 reads
+    // whatever lies beside them. VERA gives such a value no wind.
+    let (wind_dx, wind_dy) = usize::try_from(wind)
         .ok()
         .filter(|&i| i < SMOKE_WIND_DX.len())
-        .expect("native Smoke wind table requires WindDirection in 0..7");
+        .map_or((0, 0), |i| (SMOKE_WIND_DX[i], SMOKE_WIND_DY[i]));
     let rise = X87::ftol_i32_low_masked(X87::load_f32(p.velocity)).wrapping_add(p.drift_z);
     let next = offset_coords(
         p.coords,
-        SMOKE_WIND_DX[index]
-            .wrapping_mul(pt.wind_effect)
-            .wrapping_add(p.drift_x),
-        SMOKE_WIND_DY[index]
-            .wrapping_mul(pt.wind_effect)
-            .wrapping_add(p.drift_y),
+        wind_dx.wrapping_mul(pt.wind_effect).wrapping_add(p.drift_x),
+        wind_dy.wrapping_mul(pt.wind_effect).wrapping_add(p.drift_y),
         rise,
     );
     let deck = super::spark_world::smoke_bridge_deck(sim, p.coords)
