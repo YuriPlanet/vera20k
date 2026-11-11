@@ -2122,10 +2122,41 @@ fn finish_simulation_frame(
             if output.outcome_waiting {
                 // The simulation retains this frame's non-sound facts until
                 // the same House suffix finishes. Its sound prefix has already
-                // reached the synchronous boundary above exactly once. A
-                // deferred frame's client writes, the outcome wait it polled
-                // among them, still reach their owners.
+                // reached the synchronous boundary above exactly once.
                 if let Some(deferred) = deferred {
+                    // A deferred frame has no synchronous boundary: the
+                    // sound facts of this visit, which the simulation has
+                    // already handed over, are delivered here instead.
+                    let sim = &rt.simulation;
+                    let rules = &rt.resources.rules;
+                    let radar_frame = sim.session().tick();
+                    let minimap = &mut state.match_state.match_presentation.minimap;
+                    let mut admit_radar = |request: crate::sim::radar::RadarEventRequest| {
+                        minimap.as_mut().is_some_and(|minimap| {
+                            minimap.admit_radar_event(request, radar_frame, Some(rules))
+                        })
+                    };
+                    let delivered = output.sound_events_delivered;
+                    super::sound_dispatch::dispatch_sim_sound_events(
+                        std::mem::take(&mut output.sound_events)
+                            .into_iter()
+                            .skip(delivered)
+                            .filter(|event| {
+                                !(defer_verdict_to_clip
+                                    && matches!(
+                                        event,
+                                        crate::sim::world::SimSoundEvent::MatchOutcome { .. }
+                                    ))
+                            }),
+                        sim,
+                        rules,
+                        local_owner_name.as_deref(),
+                        &mut admit_radar,
+                        &mut state.match_state.match_audio.sound_events,
+                        None,
+                    );
+                    // Its client writes, the outcome wait it polled among
+                    // them, still reach their owners.
                     deferred.apply(state);
                 }
                 return false;
