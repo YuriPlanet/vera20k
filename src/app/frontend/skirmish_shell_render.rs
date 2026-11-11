@@ -12,18 +12,17 @@ use draw_order::{
     random_map_setup_semantic_draw_order, skirmish_shell_semantic_draw_order,
     validation_modal_semantic_draw_order,
 };
-mod in_game_options;
 mod in_game_shell;
 pub(crate) use in_game_shell::{
     current_in_game_shell_layout, in_game_shell_cursor, in_game_shell_size,
-    native_in_game_shell_active, render_in_game_options_shell,
+    native_in_game_shell_active,
 };
 mod pause_menu;
 pub(crate) use pause_menu::render_pause_menu_shell;
 mod saved_games;
 pub(crate) use saved_games::{family_saved_game_overlays, render_saved_game_shell};
 mod launcher_options;
-pub(crate) use launcher_options::{paint_options_settings, render_launcher_options, zoom_label};
+pub(crate) use launcher_options::{paint_options_settings, render_launcher_options};
 mod modals;
 mod network_failure;
 pub(crate) use modals::render_saved_game_loading;

@@ -225,7 +225,7 @@ pub(crate) struct MatchPresentationState {
     pub(crate) beacons: crate::app::match_runtime::beacons::BeaconManager,
     /// In-scenario modal state — the port of gamemd's in-scenario state
     /// variable. Owns the in-game menu, the abort-mission confirmation and the
-    /// parent/child relationship with the `0xBBB` Options dialog.
+    /// menu's child dialogs (Sound, Keyboard, Surrender, Diplomacy).
     pub(crate) in_game_menu: crate::ui::pause_menu::InGameMenuState,
     /// `[0x822CFC]`, State_Machine's admission latch: `Main_Game` sets it at
     /// each scenario start (`0x0048CE7E`) and a confirmed Abort clears it
@@ -238,8 +238,11 @@ pub(crate) struct MatchPresentationState {
     pub(crate) pause_menu_template: crate::ui::shell::pause_menu::PauseMenuTemplate,
     /// FF's trackbars (WOL in-game menu), recreated on every state-1 entry.
     pub(crate) internet_pause: crate::app::input::pause_menu::InternetPauseControls,
-    /// VERA's Display group (Zoom, Full Screen) in every in-game menu.
-    pub(crate) display_pause: crate::app::input::pause_menu::DisplayPauseControls,
+    /// VERA's Options pages on the in-game menu, while it is open.
+    pub(crate) options_page: Option<crate::app::input::pause_menu::InGameOptionsPage>,
+    /// The page the menu showed when it left for one of its dialogs, which it
+    /// returns to. `None` from play: Escape opens on Game Controls.
+    pub(crate) options_page_category: Option<crate::ui::main_menu_dialogs::options::Category>,
     /// What B6 init (4F1840) made of control712 when the dialog last opened;
     /// its stored results stay for that dialog's lifetime.
     pub(crate) abort_secondary: crate::ui::shell::abort::AbortSecondary,
@@ -257,16 +260,11 @@ pub(crate) struct MatchPresentationState {
     pub(crate) restate_text: String,
     pub(crate) saved_game_browser:
         Option<crate::ui::skirmish_shell::SavedSeedBrowserState<std::path::PathBuf>>,
-    /// Client-side in-game Options (0xBBB) state: the six [Options] values plus
-    /// transient interaction flags. `game_speed` mirrors the launched sim and
-    /// queues an authoritative transition on close; `sim_speed_tps` is its local
-    /// presentation readout. App/ui-level.
+    /// What BBB's init (4E1FE0) reads when the menu opens: the [Options]
+    /// values, the speed context and whether the Game Speed row shows.
+    /// `game_speed` mirrors the launched sim; a moved Game Speed on the menu's
+    /// Game Controls page queues an authoritative transition on close.
     pub(crate) in_game_options: crate::ui::shell::in_game_options_state::InGameOptionsState,
-    /// Laid-out 0xBBB anchor cached by the overlay render pass each frame it draws,
-    /// so the paused mouse handler hit-tests the exact rects that were rendered
-    /// (the sidebar-anchored button Y is render-derived; see KD-6). None until the
-    /// overlay first renders.
-    pub(crate) in_game_options_anchor: Option<crate::ui::shell::layout::InGameOptionsAnchor>,
 }
 
 impl MatchPresentationState {

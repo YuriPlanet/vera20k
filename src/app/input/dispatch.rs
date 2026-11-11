@@ -185,8 +185,6 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
             == crate::ui::pause_menu::InGameMenuState::Menu
         {
             crate::app::input::pause_menu::mouse(state, button, pressed);
-        } else {
-            crate::app::input::in_game_options::in_game_options_mouse(state, button, pressed);
         }
         return;
     }
@@ -1042,8 +1040,6 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
             == crate::ui::pause_menu::InGameMenuState::Menu
         {
             crate::app::input::pause_menu::cursor_moved(state);
-        } else {
-            crate::app::input::in_game_options::in_game_options_drag(state);
         }
         return;
     }
@@ -2215,6 +2211,9 @@ pub(crate) fn run_window_command(state: &mut AppState, command: HotkeyCommand) {
             let shown = state.renderer.performance_overlay.toggle();
             if let Some(dialog) = state.frontend.options_dialog.as_mut() {
                 dialog.sync_performance_stats(shown);
+            }
+            if let Some(page) = state.match_state.match_presentation.options_page.as_mut() {
+                page.dialog.sync_performance_stats(shown);
             }
             crate::app::App::shell_menu_follow_performance_stats(state, shown);
             log::info!(
