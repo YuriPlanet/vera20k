@@ -10,11 +10,14 @@
 pub mod base64;
 #[cfg(target_os = "android")]
 pub mod app_icon;
+#[cfg(target_os = "android")]
+pub mod lan_network;
 pub(crate) mod bit_span;
 pub mod case_insensitive_path;
 pub mod config;
 pub mod direction;
 pub mod direction_tables;
+pub mod device_identity;
 pub mod fixed_math;
 pub mod flh_transform;
 pub mod fnv;

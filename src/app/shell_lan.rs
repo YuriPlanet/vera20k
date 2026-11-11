@@ -203,6 +203,11 @@ impl App {
             .lobby
             .replace_players(vec![local_lobby_row(&local.name)]);
         state.frontend.lan = Some(runtime);
+        // Android routes a socket by the process's network when the socket is
+        // made: bind the process to Wi-Fi before the visit opens its sockets,
+        // and watch that network while the lobby is open.
+        #[cfg(target_os = "android")]
+        crate::util::lan_network::acquire();
         crate::app::lan_service::open(state);
         crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
         shell_transition::invalidate_main_menu_dialog_instance(state);
@@ -220,6 +225,8 @@ impl App {
             .persist_lan_preferences();
         state.frontend.lan = None;
         crate::app::lan_service::close(state);
+        #[cfg(target_os = "android")]
+        crate::util::lan_network::release();
         state.match_state.session.leave_network();
         Self::close_single_player_shell(state);
         state
