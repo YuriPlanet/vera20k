@@ -60,7 +60,9 @@ impl InternetPauseControls {
 /// shape, and the window owns full screen; the group copies them each frame.
 /// Each applies at once, as on the main menu's Options pages, and the
 /// profile saves them with the rest of its values. The Performance Stats box reads
-/// and switches the performance panel itself, which no profile saves.
+/// and switches the performance panel itself, which no profile saves. The
+/// 800x600 box draws battles at gamemd's own screen size in place of the
+/// zoom and shape; picking either of those unticks it.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct DisplayPauseControls {
     /// The window's `Zoom::choices`, one list row each.
@@ -74,6 +76,7 @@ pub(crate) struct DisplayPauseControls {
     pub(crate) sidebar: SidebarSize,
     pub(crate) full_screen: bool,
     pub(crate) original_shape: bool,
+    pub(crate) original_size: bool,
     /// The open list, if any, and its row under the pointer.
     pub(crate) open: Option<DisplayList>,
     pub(crate) hovered: Option<usize>,
@@ -162,6 +165,7 @@ pub(crate) fn sync_display_controls(state: &mut AppState) {
         .in_effect(battle.src_width, battle.src_height);
     display.full_screen = profile.full_screen;
     display.original_shape = profile.original_shape;
+    display.original_size = profile.original_size;
 }
 
 /// Fit the match to changed display choices, as a window resize does: the
@@ -190,7 +194,10 @@ fn display_press(state: &mut AppState, layout: &PauseMenuLayout) -> bool {
             App::play_skirmish_shell_generic_click_sound(state);
             let profile = &mut state.persistence.options_profile;
             match pick {
-                DisplayPick::Zoom(zoom) => profile.zoom = zoom,
+                DisplayPick::Zoom(zoom) => {
+                    profile.zoom = zoom;
+                    profile.original_size = false;
+                }
                 DisplayPick::Sidebar(size) => profile.sidebar = size,
             }
             refit_match(state);
@@ -215,6 +222,14 @@ fn display_press(state: &mut AppState, layout: &PauseMenuLayout) -> bool {
     if box_at(controls.original_shape) {
         display.original_shape = !display.original_shape;
         state.persistence.options_profile.original_shape = display.original_shape;
+        state.persistence.options_profile.original_size = false;
+        refit_match(state);
+        play_checkbox_sound(state);
+        return true;
+    }
+    if box_at(controls.original_size) {
+        display.original_size = !display.original_size;
+        state.persistence.options_profile.original_size = display.original_size;
         refit_match(state);
         play_checkbox_sound(state);
         return true;
