@@ -1113,7 +1113,7 @@ impl MapClock {
         let session = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("clock simulation absent")?
             .simulation
             .session();
@@ -1139,7 +1139,7 @@ fn sound_state(state: &AppState, profile: &MapCaptureProfile) -> Result<Value> {
     let sim = &state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("sound observation simulation absent")?
         .simulation;
     let rng = sim.rng_views();
@@ -1457,7 +1457,7 @@ impl MapInputObservation {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("gesture observation requires a simulation")?
             .simulation;
         let lines = &state.match_state.match_presentation.target_lines;
@@ -1773,7 +1773,7 @@ impl MapCommandBarThumbState {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("thumb observation requires a simulation")?
             .simulation;
         let owner = sim.session().current_house();
@@ -2138,7 +2138,7 @@ fn disguise_inputs(
     let runtime = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("disguise simulation absent")?;
     let sim = &runtime.simulation;
     let draw = if entity.category() == crate::map::entities::EntityCategory::Unit {
@@ -2339,7 +2339,7 @@ impl MapLaserObservation {
         let runtime = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("laser observation simulation absent")?;
         let sim = &runtime.simulation;
         let presentation = &state.match_state.match_presentation;
@@ -2452,7 +2452,7 @@ impl MapElectricBoltObservation {
         let runtime = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("electric observation simulation absent")?;
         let sim = &runtime.simulation;
         let rules = &runtime.resources.rules;
@@ -2736,7 +2736,7 @@ fn terrain_render_observation(state: &AppState, rx: u16, ry: u16) -> Value {
     let grid = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .and_then(|runtime| runtime.view().resolved_terrain());
     let cell = grid.and_then(|grid| grid.cell(rx, ry));
     let tactical_variant = grid.and_then(|grid| grid.tactical_draw_variant(rx, ry));
@@ -3271,7 +3271,7 @@ impl TacticalCaptureSession {
             let sim = &state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .context("simulation absent")?
                 .simulation;
             ensure!(
@@ -3514,7 +3514,7 @@ impl TacticalCaptureSession {
             let issued_tick = state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .context("command simulation absent")?
                 .simulation
                 .session()
@@ -3528,7 +3528,7 @@ impl TacticalCaptureSession {
             let sim = &state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .context("command simulation absent")?
                 .simulation;
             let rules = state.rules().context("command rules absent")?;
@@ -3604,7 +3604,7 @@ impl TacticalCaptureSession {
             let sim = &state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .context("gesture simulation absent")?
                 .simulation;
             let issued_simulation_tick = sim.session().tick();
@@ -3910,7 +3910,7 @@ impl TacticalCaptureSession {
             let sim = &state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .context("gesture simulation disappeared")?
                 .simulation;
             ensure!(
@@ -3995,7 +3995,7 @@ impl TacticalCaptureSession {
         let runtime = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("observation simulation absent")?;
         let sim = &runtime.simulation;
         let grid = runtime.view().resolved_terrain();
@@ -4491,7 +4491,7 @@ impl TacticalCaptureSession {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("map simulation absent")?
             .simulation;
         let step = self.exact_step_receipts.len() as u64;
@@ -4609,7 +4609,7 @@ impl TacticalCaptureSession {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("simulation absent")?
             .simulation;
         Ok(json!(FinalFingerprint {

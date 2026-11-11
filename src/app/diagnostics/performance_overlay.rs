@@ -121,7 +121,7 @@ pub(crate) fn observe_simulation(state: &crate::app::AppState, exact_capture: bo
             .match_state
             .presentation_paused(&state.frontend.screen)
         || state.focus_freeze_active();
-    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+    if let Some(runtime) = state.match_state.sim_runtime.runtime() {
         overlay.observe_simulation_frame(
             runtime.simulation.session().binary_frame(),
             crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32,
@@ -190,7 +190,7 @@ pub(crate) fn match_panel(state: &crate::app::AppState) -> Option<MatchPanel<'_>
         simulation: state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|runtime| &runtime.simulation),
     })
 }

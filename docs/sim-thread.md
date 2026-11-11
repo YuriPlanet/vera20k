@@ -74,28 +74,56 @@ identical frame by frame.
   Phase 1's `SimHost` closes this. Presentation then gets only a shared
   view and cannot reach the runtime mutably.
 
-### Phase 1: a `SimHost` owns everything a tick touches
+### Phase 1: a tick that borrows no app state
 
-Move the mid-tick effect *owners* next to the simulation instead of turning
-their calls into events. A `SimHost` holds:
+The host lives as long as the process, like the thread it becomes. Several
+owners a tick reaches are process globals in gamemd, so they survive launch
+and load: the checksum ring `B04474` is one. A host that lived and died with
+each scenario could not hold them.
 
-- `SimRuntime`;
-- the live network session and the checksum history (`MatchSession`,
-  `LiveCommandSession`);
-- the sound producer: `SfxPlayer` and its `SoundEventQueue`;
-- the outcome-voice wait;
-- the scenario pause clock;
-- the planning input that a defeat leaves.
+Moving every client owner into the host does not work: the sound player,
+the network transport and the input state are shared with menus, the lobby
+and the UI. Instead, a tick that runs on the simulation thread takes what it
+reads from those owners before it starts. It records what it writes, and the
+main thread applies the record in order afterwards
+(`app/match_runtime/deferred_effects.rs`):
 
-The main thread talks to it through:
+- **Sound** is not delivered mid-tick. The frame tail already plays every
+  sound fact the tick left undelivered, and refreshes looping sound
+  positions.
+- **The radar availability cue, the production strip's request clear and
+  Ares bounty text** are recorded, then applied in order after the tick.
+- **Planning Mode**: the flag is taken before the tick. Leaving it issues
+  the same PLANCOMMIT (`planning_mode::plan_commit_command`), and the main
+  thread leaves its own planner after the tick.
+- **The outcome-voice wait** polls a copy of the wait with the voice state
+  taken before the tick. It moves only wall time.
+- **Scenario pause and resume effects** go to the frame tail's
+  `apply_trigger_effects`, as on the headless path.
 
-- `submit(commands)`;
-- `outputs()`: the per-tick `SimFrameOutput` remainder, screen shake, camera,
-  HUD and radar events;
-- `request(query)`, for input queries that need live state.
+Only presentation order moves: sounds and the radar cue follow the tick
+instead of interleaving with it. Network frames (the `Queue_AI` exchange),
+replay playback, a campaign's initial save and command observation still
+need the lent owners. Those frames stay on the borrowing path
+(`DeferredClientEffects::applies`).
 
-`SimHost` still runs on the main thread in this phase. Done when every
-`sim_runtime.as_mut()` outside `SimHost` is gone.
+Done:
+
+- [x] `MatchState::sim_runtime` is the process-lifetime `SimHost`
+  (`app/match_runtime/sim_host.rs`), holding `Option<SimRuntime>`.
+  - Reads take `runtime()`.
+  - Every write names its route through `write_sim(SimWrite::…)`.
+  - The tick takes its parts through `tick_parts()`.
+- [x] The checksum history moved from `MatchSession` into the host.
+- [x] Deferred client effects, opt-in through
+  `VERA20K_DEFERRED_TICK_EFFECTS=1`. In a hidden 1v29 client run, the state
+  hashes at every common tick from 1 to 9000 are identical with and without
+  it.
+- [x] The radar terrain updates per changed cell instead of redrawing its
+  whole surface.
+  - In a hidden 1v29 client run at 600–800 objects, frame time fell from
+    22.9 ms to 14.5 ms and render time from 10.5 ms to 3.7 ms.
+  - The tick is now most of each frame.
 
 ### Phase 2: a presentation frame for the hot draw path
 

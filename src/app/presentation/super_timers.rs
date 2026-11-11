@@ -401,7 +401,7 @@ pub(crate) fn build_super_timer_instances(
     {
         return (Vec::new(), Vec::new());
     }
-    let (Some(runtime), Some(rules)) = (state.match_state.sim_runtime.as_ref(), state.rules())
+    let (Some(runtime), Some(rules)) = (state.match_state.sim_runtime.runtime(), state.rules())
     else {
         return (Vec::new(), Vec::new());
     };

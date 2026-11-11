@@ -63,7 +63,7 @@ pub(crate) fn execute(state: &mut AppState, number: u8, now_ms: u64) {
     if !mode.is_network() {
         return;
     }
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         return;
     };
     let sim = &runtime.simulation;
@@ -114,7 +114,7 @@ pub(crate) fn receive(state: &mut AppState, byte: u8) {
         let pattern = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .and_then(|runtime| {
                 runtime
                     .resources

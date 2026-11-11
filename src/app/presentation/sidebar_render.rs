@@ -59,7 +59,7 @@ pub(crate) fn advance_sidebar_credits_after_frame(
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation)
     else {
         return;
@@ -260,7 +260,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
     };
     let inputs = {
         let match_state = &mut state.match_state;
-        let Some(runtime) = match_state.sim_runtime.as_ref() else {
+        let Some(runtime) = match_state.sim_runtime.runtime() else {
             match_state
                 .match_presentation
                 .sidebar_projection
@@ -281,7 +281,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
     let runtime = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .expect("sidebar runtime");
     let (sim, rules) = (&runtime.simulation, &runtime.resources.rules);
     let owner = sim.interner().get(&owner_name).unwrap_or_default();
@@ -489,7 +489,7 @@ fn build_view(
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)
             .map(|sim| sim.interner()),
         &inputs.supers,
@@ -518,7 +518,7 @@ fn build_view(
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)
             .map(|sim| sim.interner()),
         &inputs.supers,
@@ -554,7 +554,7 @@ fn build_view(
         let simulation = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation);
         let house = simulation.and_then(|sim| sim.houses().get(&owner));
         let rules = state.rules();
@@ -585,7 +585,7 @@ fn build_view(
     }
     // The rebuilt view takes its drawn cameo state from the same projection
     // write as every later frame, so it is never built from other rules.
-    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+    if let Some(runtime) = state.match_state.sim_runtime.runtime() {
         let sim = &runtime.simulation;
         let armed_building = inputs
             .armed
@@ -622,7 +622,7 @@ pub(crate) fn refresh_sidebar_cameo_draw_state(state: &mut AppState) {
         return;
     };
     let AppState { match_state, .. } = state;
-    let Some(runtime) = match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = match_state.sim_runtime.runtime() else {
         return;
     };
     let sim = &runtime.simulation;
@@ -741,7 +741,7 @@ pub(crate) fn minimap_camera_target(
     let rect = active_minimap_screen_rect(state);
     let (cursor_x, cursor_y) = sidebar_cursor(state);
     let minimap = state.match_state.match_presentation.minimap.as_ref()?;
-    let runtime = state.match_state.sim_runtime.as_ref();
+    let runtime = state.match_state.sim_runtime.runtime();
     let native_facts = runtime.and_then(|runtime| {
         let view = runtime.view();
         Some((
@@ -776,7 +776,7 @@ pub(crate) fn minimap_input_target(
     state: &AppState,
 ) -> Option<crate::render::radar::NativeRadarInputTarget> {
     let rect = active_minimap_screen_rect(state);
-    let runtime = state.match_state.sim_runtime.as_ref()?;
+    let runtime = state.match_state.sim_runtime.runtime()?;
     state
         .match_state
         .match_presentation
@@ -944,7 +944,7 @@ pub(crate) fn current_sidebar_side(state: &AppState) -> i32 {
     let sim = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation);
     #[cfg(feature = "ares")]
     let owner = None::<String>;

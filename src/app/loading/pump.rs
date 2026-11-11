@@ -34,6 +34,7 @@ use crate::app::loading::fresh_scenario::FreshScenarioLoadContextDescriptor;
 use crate::app::loading::init::{self, MapLoadInitial, MapLoadResult};
 use crate::app::loading::progress_row::LoadingProgressRowSnapshot;
 use crate::app::match_bootstrap::{LoadingStartup, PreparedMatchStartup};
+use crate::app::match_runtime::sim_host::SimWrite;
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::pal_file::Color;
 use crate::assets::pcx_file::PcxFile;
@@ -1789,7 +1790,7 @@ fn pump_loading_after_present(
                 state
                     .match_state
                     .sim_runtime
-                    .as_mut()
+                    .write_sim(SimWrite::Lifecycle)
                     .map(|runtime| &mut runtime.simulation),
                 session,
                 false,
@@ -1905,7 +1906,7 @@ fn pump_loading_after_present(
         };
         if !initial.has_generated_rules()
             && should_retire_outgoing
-            && let Some(runtime) = state.match_state.sim_runtime.as_mut()
+            && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle)
         {
             crate::app::process_assets::transfer_outgoing_simulation_rules(
                 native_rules_owner,
@@ -2680,7 +2681,7 @@ fn prepare_scenario_initial_before_first_frame(state: &mut AppState) -> anyhow::
         state
             .match_state
             .sim_runtime
-            .as_mut()
+            .write_sim(SimWrite::Lifecycle)
             .map(|runtime| &mut runtime.simulation),
         session,
         true,

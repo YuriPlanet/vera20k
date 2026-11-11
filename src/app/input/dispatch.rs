@@ -7,6 +7,7 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
+use crate::app::match_runtime::sim_host::SimWrite;
 use std::collections::{HashSet, VecDeque};
 
 use winit::event::{ElementState, MouseButton};
@@ -506,7 +507,7 @@ fn tactical_left_up(state: &mut AppState) {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation),
         state.rules(),
         &state.match_state.input.selection_order,
@@ -648,7 +649,7 @@ fn tactical_left_up(state: &mut AppState) {
     if let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation)
     {
         let screen_order =
@@ -657,7 +658,7 @@ fn tactical_left_up(state: &mut AppState) {
             state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .map(|rt| &rt.simulation),
             state.rules(),
             &state.match_state.input.selection_order,
@@ -888,7 +889,7 @@ fn band_caught_drawn_object(
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation)
     else {
         return false;
@@ -1218,7 +1219,7 @@ pub(crate) fn local_queue_view(state: &AppState) -> Vec<crate::sim::production::
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation),
         state.rules(),
     ) {
@@ -1234,7 +1235,7 @@ fn local_interned(state: &AppState, type_id: &str) -> Option<crate::sim::intern:
     state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .and_then(|rt| rt.simulation.interner().get(type_id))
 }
 
@@ -1279,7 +1280,7 @@ fn sidebar_cameo_press(
     let queue = local_queue_view(state);
     let type_iid = local_interned(state, type_id);
     let linked_factory = preferred_local_owner_name(state).and_then(|owner| {
-        let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+        let sim = &state.match_state.sim_runtime.runtime()?.simulation;
         state
             .match_state
             .match_presentation
@@ -1380,13 +1381,13 @@ fn sidebar_cameo_press(
         state
             .match_state
             .sim_runtime
-            .as_ref()?
+            .runtime()?
             .simulation
             .interner()
             .get(&name)
     });
     if let (Some(runtime), Some(owner), Some(type_id)) =
-        (state.match_state.sim_runtime.as_ref(), owner, type_iid)
+        (state.match_state.sim_runtime.runtime(), owner, type_iid)
     {
         state
             .match_state
@@ -1448,7 +1449,7 @@ fn sidebar_cameo_press(
                     let jumped: Vec<String> = jumped
                         .into_iter()
                         .filter_map(|id| {
-                            let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+                            let sim = &state.match_state.sim_runtime.runtime()?.simulation;
                             Some(sim.interner().resolve(id).to_string())
                         })
                         .collect();
@@ -1472,7 +1473,7 @@ fn sidebar_cameo_press(
             // (0,0) at6AB31A, including repeated pending clicks. A null builder
             // instead queues ABANDON16 before EVA_UnableToComply6AB3A9.
             let ready_target = preferred_local_owner_name(state).and_then(|owner| {
-                let runtime = state.match_state.sim_runtime.as_ref()?;
+                let runtime = state.match_state.sim_runtime.runtime()?;
                 let sim = &runtime.simulation;
                 let rules = &runtime.resources.rules;
                 let owner_id = sim.interner().get(&owner)?;
@@ -1500,7 +1501,7 @@ fn sidebar_cameo_press(
                 // cameo's kind/Naval slot and index -1, without HasChanged.
                 // The existing receiver resolves the current complete head.
                 // Source: tools/sidebar_oracle/factory_sale_sidebar.md.
-                let issued = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+                let issued = state.match_state.sim_runtime.runtime().and_then(|runtime| {
                     let sim = &runtime.simulation;
                     let rules = &runtime.resources.rules;
                     let mut selection = crate::sim::production::ProductionSelection::for_type(
@@ -1586,7 +1587,7 @@ fn apply_sidebar_action_inner(state: &mut AppState, action: SidebarAction) {
             let owned_buildings = state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .and_then(|runtime| {
                     let sim = &runtime.simulation;
                     sim.houses().get(&sim.session().current_house()?)
@@ -1624,7 +1625,7 @@ pub(crate) fn report_black_cell_causes(state: &mut AppState) {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)?
             .interner()
             .get(&name)
@@ -1633,7 +1634,7 @@ pub(crate) fn report_black_cell_causes(state: &mut AppState) {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation),
         owner,
     ) {
@@ -1866,7 +1867,7 @@ fn execute_type_select_tap(state: &mut AppState) {
         let Some(sim) = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)
         else {
             return;
@@ -1878,7 +1879,7 @@ fn execute_type_select_tap(state: &mut AppState) {
             state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .map(|rt| &rt.simulation),
             state.rules(),
             &state.match_state.input.selection_order,
@@ -2006,7 +2007,7 @@ fn place_ready_building_for_tab(state: &mut AppState, tab: SidebarTab) {
         return;
     };
     let ready_target = {
-        let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+        let Some(runtime) = state.match_state.sim_runtime.runtime() else {
             return;
         };
         let sim = &runtime.simulation;
@@ -2228,7 +2229,7 @@ pub(crate) fn run_window_command(state: &mut AppState, command: HotkeyCommand) {
 /// they pass `gui_sound: false`.
 fn press_super_weapon(state: &mut AppState, section: &str, right: bool, gui_sound: bool) {
     let selection = (|| {
-        let runtime = state.match_state.sim_runtime.as_ref()?;
+        let runtime = state.match_state.sim_runtime.runtime()?;
         let sim = &runtime.simulation;
         let rules = &runtime.resources.rules;
         let owner = sim.interner().get(&preferred_local_owner_name(state)?)?;
@@ -2383,7 +2384,7 @@ fn open_pause_menu(state: &mut AppState) {
         );
         return;
     }
-    if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+    if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) {
         // Queue_Options647040 does not open the dialog. Its accepted local
         // OPTIONS event requests GameState1 at the due EventClass tail.
         let _ = runtime.simulation.queue_options_request();
@@ -2608,7 +2609,7 @@ pub(crate) fn selected_in_order(state: &AppState) -> Vec<u64> {
     let sim = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation);
     let read = || {
         selected_stable_ids_in_order(
@@ -2789,7 +2790,7 @@ pub(crate) fn reconcile_selection_order_after_sim(
     state: &mut AppState,
     outputs: &[crate::sim::world::LifecycleOutput],
 ) {
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         state.match_state.input.selection_order.clear();
         state.match_state.input.selection_order_pending = false;
         state.match_state.input.category_navigation = Default::default();
@@ -2808,7 +2809,7 @@ pub(crate) fn reconcile_selection_order_after_sim(
     #[cfg(feature = "phobos")]
     if state.match_state.match_presentation.show_flash_on_selecting
         && !selected.is_empty()
-        && let Some(runtime) = state.match_state.sim_runtime.as_mut()
+        && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command)
     {
         runtime
             .simulation
@@ -2910,7 +2911,7 @@ fn apply_selection_mutation(
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation)
     else {
         return false;
@@ -2947,7 +2948,7 @@ fn apply_selection_mutation(
     #[cfg(feature = "phobos")]
     if state.match_state.match_presentation.show_flash_on_selecting
         && !successful_adds.is_empty()
-        && let Some(runtime) = state.match_state.sim_runtime.as_mut()
+        && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command)
     {
         runtime
             .simulation
@@ -3956,7 +3957,7 @@ fn queue_stop_for_selected(state: &mut AppState) {
     let sim = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation);
     let selected_ids = selected_stable_ids_in_order(
         sim,
@@ -3983,7 +3984,7 @@ fn queue_stop_for_selected(state: &mut AppState) {
     }
     // VERA ferry: Stop also ends the selected transports' routes.
     crate::app::input::ferry::stop_selected(state, &selected_ids);
-    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
     for sound in queue_stop_orders(
@@ -4066,7 +4067,7 @@ fn queue_guard_for_selected(state: &mut AppState) {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation),
         state.rules(),
         &state.match_state.input.selection_order,
@@ -4075,7 +4076,7 @@ fn queue_guard_for_selected(state: &mut AppState) {
     if !super::commands::selection_input_has_capacity(state, selected.len()) {
         return;
     }
-    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
     for event in queue_area_guard_orders(
@@ -4095,7 +4096,7 @@ fn queue_scatter_for_selected(state: &mut AppState) {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation),
         state.rules(),
         &state.match_state.input.selection_order,
@@ -4108,7 +4109,7 @@ fn queue_scatter_for_selected(state: &mut AppState) {
         let eligible = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .is_some_and(|runtime| {
                 selected.iter().any(|&id| {
                     runtime
@@ -4129,7 +4130,7 @@ fn queue_scatter_for_selected(state: &mut AppState) {
     if !super::commands::selection_input_has_capacity(state, selected.len()) {
         return;
     }
-    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
     for sound in queue_scatter_orders(&mut runtime.simulation, &runtime.resources.rules, &selected)
@@ -4233,7 +4234,7 @@ fn queue_deploy_undeploy_for_selected(state: &mut AppState) {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation),
         state.rules(),
         &state.match_state.input.selection_order,
@@ -4245,7 +4246,7 @@ fn queue_deploy_undeploy_for_selected(state: &mut AppState) {
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation)
     else {
         return;
@@ -4276,7 +4277,7 @@ fn queue_deploy_undeploy_for_selected(state: &mut AppState) {
         let cmd = if let Command::DeployMcv { entity_id }
         | Command::ToggleInfantryDeploy { entity_id } = cmd
         {
-            let Some(record) = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+            let Some(record) = state.match_state.sim_runtime.runtime().and_then(|runtime| {
                 let sim = &runtime.simulation;
                 sim.encode_deploy_record(sim.interner().get(&owner)?, entity_id)
             }) else {
@@ -4560,7 +4561,7 @@ fn queue_control_group_assignment(state: &mut AppState, slot: usize, entity_ids:
     let Some(owner) = preferred_local_owner_name(state) else {
         return;
     };
-    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
     let _ = schedule_control_group_assignment(&mut runtime.simulation, &owner, slot, entity_ids);
@@ -4663,7 +4664,7 @@ fn handle_control_group_command(state: &mut AppState, group_idx: usize, press: G
     let sim = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation);
     let group = sim
         .map(|sim| sim.projected_control_groups()[group_idx].clone())
@@ -4721,7 +4722,7 @@ fn handle_control_group_command(state: &mut AppState, group_idx: usize, press: G
     let sim = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation);
     match action {
         GroupPressAction::Assign => {
@@ -4764,7 +4765,7 @@ fn apply_selection_action_line_policy(state: &mut AppState, policy: SelectionAct
     let Some(frame) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation)
         .map(|sim| sim.session().binary_frame())
     else {
@@ -4789,7 +4790,7 @@ fn apply_selection_action_line_policy_at_frame(
 
 /// Emit the modeled VoiceSelect side effect for one successful Select call.
 fn emit_selection_voice(state: &mut AppState, entity_id: u64) {
-    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
     if let Some(event) = crate::app::match_runtime::sound_dispatch::selection_voice_event(
@@ -4805,7 +4806,7 @@ fn emit_selection_voice(state: &mut AppState, entity_id: u64) {
 /// Home7315A0 is shared with TAction145. The client's map query forks
 /// Dummy writes so a local H press cannot change authoritative simulation.
 fn jump_camera_to_base(state: &mut AppState) {
-    let coord = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+    let coord = state.match_state.sim_runtime.runtime().and_then(|runtime| {
         let cells = runtime
             .simulation
             .resolved_terrain()

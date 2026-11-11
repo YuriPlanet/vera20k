@@ -673,7 +673,7 @@ fn board_orders(
 
 /// The selected transports a ferry order can take.
 fn selected_transports(state: &AppState) -> Vec<u64> {
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         return Vec::new();
     };
     let sim = &runtime.simulation;
@@ -746,7 +746,7 @@ pub(crate) fn drop_click(state: &mut AppState) -> bool {
         state.match_state.input.cursor_y,
     );
     let routes: Vec<FerryRoute> = {
-        let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+        let Some(runtime) = state.match_state.sim_runtime.runtime() else {
             return true;
         };
         let sim = &runtime.simulation;
@@ -792,7 +792,7 @@ pub(crate) fn frame_pass(state: &mut AppState) {
         return;
     };
     let mut ferry = std::mem::take(&mut state.match_state.input.ferry);
-    let orders = match state.match_state.sim_runtime.as_ref() {
+    let orders = match state.match_state.sim_runtime.runtime() {
         Some(runtime) => {
             let sim = &runtime.simulation;
             let now = sim.session().tick();
@@ -825,7 +825,7 @@ fn armed_preview(state: &AppState) -> Option<(Vec<Cell>, Cell, bool)> {
         return None;
     }
     let transports = selected_transports(state);
-    let runtime = state.match_state.sim_runtime.as_ref()?;
+    let runtime = state.match_state.sim_runtime.runtime()?;
     let sim = &runtime.simulation;
     let owner = preferred_local_owner_name(state).and_then(|name| sim.interner().get(&name))?;
     let clicked = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(

@@ -240,7 +240,7 @@ fn select_template(state: &AppState) -> PauseMenuTemplate {
     let local_defeated = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_some_and(|runtime| runtime.simulation.local_player_defeated());
     PauseMenuTemplate::select(
         mode.is_single_player(),
@@ -373,9 +373,13 @@ pub(crate) fn chat_command(state: &mut AppState, want: bool) {
 /// The applied GameSpeed FF's init (4F1720) reads; a queued speed event
 /// changes it only when it executes.
 fn current_game_speed(state: &AppState) -> i32 {
-    state.match_state.sim_runtime.as_ref().map_or(0, |runtime| {
-        runtime.simulation.session().game_options().game_speed
-    })
+    state
+        .match_state
+        .sim_runtime
+        .runtime()
+        .map_or(0, |runtime| {
+            runtime.simulation.session().game_options().game_speed
+        })
 }
 
 /// Entering state 1 recreates the dialog: 4F10E0 picks its template and FF's
@@ -538,7 +542,7 @@ fn activate(state: &mut AppState, button: PauseMenuButton) {
             if state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .is_some_and(|runtime| runtime.simulation.session().wol_tournament_game())
             {
                 crate::app::input::surrender::open(state);
@@ -612,7 +616,7 @@ fn resume_internet_events(state: &mut AppState) {
     let local_defeated = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_some_and(|runtime| runtime.simulation.local_player_defeated());
     if current_template(state) != PauseMenuTemplate::Internet
         || state.match_state.session_mode() != SessionMode::Wol
