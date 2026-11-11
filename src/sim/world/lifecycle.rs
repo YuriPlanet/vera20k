@@ -4319,10 +4319,20 @@ impl Simulation {
         // The same TechnoClass::Limbo sound cleanup releases the turret
         // rotation loop's `+0x488` handle before the gattling report handle,
         // and re-arms its latch.
-        self.turret_rotate_sound_limbo(stable_id, context.effects(), context.rules());
-        // TechnoClass::Limbo releases the gattling loop and clears the report
-        // latch (`0x006F6C6B`, `0x006F6C76`) ahead of its radio pass.
-        self.gattling_limbo(stable_id, context);
+        // An object already in limbo skips both releases: TechnoClass::Limbo
+        // jumps from its InLimbo test (`0x006F6AC9..0x006F6ACF`) past them to
+        // `0x006F6C93`. The class destructors' own Limbo is such a repeat.
+        let already_in_limbo = self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| entity.lifecycle.in_limbo);
+        if !already_in_limbo {
+            self.turret_rotate_sound_limbo(stable_id, context.effects(), context.rules());
+            // TechnoClass::Limbo releases the gattling loop and clears the
+            // report latch (`0x006F6C6B`, `0x006F6C76`) ahead of its radio pass.
+            self.gattling_limbo(stable_id, context);
+        }
         // RadioLimbo65AA80..65AA99 tests InLimbo before Broadcast(3).
         // CargoAdd4733B0 repeats virtual Limbo after Hospital51A35F's
         // post-conceal HELLO; breaking again loses the repair contact.
@@ -6765,16 +6775,17 @@ impl Simulation {
             .entities
             .get(stable_id)
             .is_some_and(|entity| entity.category() == EntityCategory::Infantry);
-        // Unit7357D6..7357EF and Infantry517DDB..517DEB ask the existing
-        // House CanBuild4F7870 before Team/Slave/Tracking removal. AtLimit(-1)
-        // requests the child's current owner's House+1FC tech-tree refresh.
-        // Both direct scalar paths can arrive without an earlier UnInit.
+        // Unit7357D6..7357EF, Infantry517DDB..517DEB and Aircraft
+        // 4140C3..4140DC ask the existing House CanBuild4F7870 before
+        // Team/Slave/Tracking removal. AtLimit(-1) requests the child's
+        // current owner's House+1FC tech-tree refresh. The direct scalar
+        // paths can arrive without an earlier UnInit.
         let rules = context.rules();
         if (game_state as u8) != 0
             && let Some(owner) = self.substrate.entities.get(stable_id).and_then(|entity| {
                 matches!(
                     entity.category(),
-                    EntityCategory::Unit | EntityCategory::Infantry
+                    EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
                 )
                 .then(|| self.entity_object_type(entity, rules))
                 .flatten()
@@ -6800,6 +6811,19 @@ impl Simulation {
         // RemoveMember6EA870 when a class destructor retained the reference.
         // Source: original gamemd;
         // executed composed action7 cleanup: spatial_oracle/team_creation.
+        // `AircraftClass::~AircraftClass @ 0x00414080` kills its passengers
+        // with no attacker (`KillPassengers(NULL)`, `0x004140E3..0x004140E6`)
+        // after the CanBuild test and before its Team leave. Ordinary UnInit
+        // already emptied the cargo; a carrier destroyed without one has not.
+        if (game_state as u8) != 0
+            && self
+                .substrate
+                .entities
+                .get(stable_id)
+                .is_some_and(|entity| entity.category() == EntityCategory::Aircraft)
+        {
+            self.kill_passengers(stable_id, None, context);
+        }
         if foot && (game_state as u8) != 0 {
             // Ares3.0's Unit7357F6/Infantry517DF2/Aircraft4140EB hooks
             // run after the existing GameState/type/build-limit gates and
@@ -6890,6 +6914,14 @@ impl Simulation {
             // constructed-cancel controls execute this under Factory's
             // A8E7AC bracket; the ordinary late drain repeats it after UnInit.
             self.notify_pointer_expired(stable_id, context);
+            // Building43BD6C..43BD6E then Limbos the building, whatever
+            // GameState holds. The repeat under it at 43BF3B takes the
+            // in-limbo branch and only reruns the factory-queue update
+            // (`0x00445E14` -> `0x00509140`), which the first call already
+            // settled; it is not ported. After UnInit this call is itself
+            // that repeat; a building destroyed while placed leaves its
+            // cells here.
+            self.techno_limbo_with_context(stable_id, context);
             // Building43BDC5 -> ClearAnimSlot451E40(-2) synchronously deletes
             // ordinary21slots, then43BDE0 destroys the distinct eight fire
             // Anims, before Techno tracking removal43BF34. Whole original
@@ -6947,8 +6979,31 @@ impl Simulation {
         // Infantry517E33..517E6C resets movement animation/water/prone/Doing,
         // then calls FootLimbo4DB260 even when already hidden in Cargo. The
         // canonical class+Foot owner preserves that repeated-Limbo suffix.
-        if infantry && (game_state as u8) != 0 {
+        // Aircraft414110..414112 calls FootLimbo4DB260 at the same point.
+        let aircraft = self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| entity.category() == EntityCategory::Aircraft);
+        if (infantry || aircraft) && (game_state as u8) != 0 {
             self.techno_limbo_with_context(stable_id, context);
+        }
+        // Building43BF40..43BF51 scalar-deletes its Factory (`+0x524`) after
+        // Remove_Tracking, outside the GameState gate. Limbo's Detach_All
+        // abandoned it for a placed building; one already in limbo kept it.
+        if self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| entity.category() == EntityCategory::Structure)
+        {
+            crate::sim::production::delete_building_factory(
+                self,
+                context.rules(),
+                stable_id,
+                context.effects(),
+                (game_state as u8) != 0,
+            );
         }
         // Unit73581B..73584D follows its own RemoveTracking735816 with
         // CargoRemoveFirst473430 -> child's scalar+20, before Unit expiry
@@ -6982,6 +7037,18 @@ impl Simulation {
                     self.finalize_and_remove_common(passenger, context, game_state);
                 }
             }
+        }
+        // Unit73584D..73584F then calls FootLimbo4DB260, inside the GameState
+        // gate and whatever A8E7AC holds. Residual: the flag it carries
+        // (`+0x6CC`, 735858..735884) is not modeled, so no drop follows.
+        if (game_state as u8) != 0
+            && self
+                .substrate
+                .entities
+                .get(stable_id)
+                .is_some_and(|entity| entity.category() == EntityCategory::Unit)
+        {
+            self.techno_limbo_with_context(stable_id, context);
         }
         if foot {
             // Class scalar destructors dispatch removed=true independently of
