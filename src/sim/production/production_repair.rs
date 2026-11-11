@@ -496,6 +496,15 @@ fn repair_step(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     let Some(object) = sim.object_type(entity.type_ref(), rules) else {
         return;
     };
+    // `RepairStep=0` heals nothing (gamemd traps on it in the cost at
+    // 0x007120EC): the repair is switched off, where paying each period for
+    // no health would drain the house.
+    if rules.general.repair_step == 0 {
+        if let Some(entity) = sim.substrate.entities.get_mut(id) {
+            entity.repairing.on = false;
+        }
+        return;
+    }
     let (strength, cost) = (object.strength, repair_step_cost(rules, object));
     let owner = entity.owner();
     if available_money(&sim.houses, owner) < cost {
@@ -565,5 +574,23 @@ mod invalid_rule_tests {
         let entity = sim.substrate.entities.get(id).unwrap();
         assert_eq!(entity.health.current(), 50);
         assert!(entity.repairing.is_on());
+    }
+
+    /// `RepairStep=0` can never finish a repair, so the step switches it off
+    /// without charging.
+    #[test]
+    fn a_zero_repair_step_switches_the_repair_off_unpaid() {
+        let (mut sim, mut rules, id) = crate::sim::building_art::slot_test_fixture_with("");
+        rules.general.repair_step = 0;
+        let owner = sim.substrate.entities.get(id).unwrap().owner();
+        let money = available_money(&sim.houses, owner);
+        let entity = sim.substrate.entities.get_mut(id).unwrap();
+        entity.health.set_for_test(50);
+        entity.repairing.set_for_test(true);
+        repair_step(&mut sim, &rules, id);
+        let entity = sim.substrate.entities.get(id).unwrap();
+        assert_eq!(entity.health.current(), 50);
+        assert!(!entity.repairing.is_on());
+        assert_eq!(available_money(&sim.houses, owner), money);
     }
 }
