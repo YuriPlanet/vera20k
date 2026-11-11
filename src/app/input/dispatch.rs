@@ -2191,6 +2191,10 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         }
         // VERA: the next left click names the drop spot.
         HotkeyCommand::Ferry => crate::app::input::ferry::hotkey_pressed(state),
+        // VERA: the selected factories take turns being primary.
+        HotkeyCommand::RotatePrimary => {
+            crate::app::input::primary_rotation::hotkey_pressed(state);
+        }
     }
 }
 

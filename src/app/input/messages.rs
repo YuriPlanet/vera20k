@@ -959,6 +959,18 @@ pub(crate) fn post_formation_lock(state: &mut AppState, locked: bool, units: usi
     post_grey_row(state, &text, false, true);
 }
 
+/// VERA primary rotation (`input::primary_rotation`): say how many factories
+/// now take turns, or that the selected ones stopped. gamemd has no such
+/// line, so the text is VERA's own.
+pub(crate) fn post_primary_rotation(state: &mut AppState, factories: usize) {
+    let text = if factories > 0 {
+        crate::i18n::tr_fill("VERA:PrimaryRotationOn", &[("count", &factories)])
+    } else {
+        crate::i18n::tr("VERA:PrimaryRotationOff")
+    };
+    post_grey_row(state, &text, false, true);
+}
+
 pub(super) fn post_command_backpressure(state: &mut AppState) {
     post_grey_row(
         state,
