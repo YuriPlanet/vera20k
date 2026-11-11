@@ -312,6 +312,20 @@ fn sim_thread_wanted(value: Option<&std::ffi::OsStr>) -> bool {
     value.is_none_or(|value| value != "0")
 }
 
+/// Whether a frame the thread can take goes to it whatever its published
+/// frame costs the main thread: `VERA20K_SIM_THREAD=always`, for diagnosis
+/// and for exercising the thread. By default it goes only when that saves
+/// the main thread time (`sim_tick::advance_in_game_runtime_mode`).
+pub(crate) fn sim_thread_always() -> bool {
+    static ALWAYS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ALWAYS
+        .get_or_init(|| sim_thread_always_wanted(std::env::var_os("VERA20K_SIM_THREAD").as_deref()))
+}
+
+fn sim_thread_always_wanted(value: Option<&std::ffi::OsStr>) -> bool {
+    value.is_some_and(|value| value == "always")
+}
+
 fn env_flag(name: &str) -> bool {
     std::env::var_os(name).is_some_and(|value| value == "1")
 }
@@ -334,6 +348,11 @@ mod tests {
         assert!(sim_thread_wanted(None));
         assert!(sim_thread_wanted(Some(OsStr::new("1"))));
         assert!(!sim_thread_wanted(Some(OsStr::new("0"))));
+        // `always` is on too, and alone skips the cost comparison.
+        assert!(sim_thread_wanted(Some(OsStr::new("always"))));
+        assert!(sim_thread_always_wanted(Some(OsStr::new("always"))));
+        assert!(!sim_thread_always_wanted(Some(OsStr::new("1"))));
+        assert!(!sim_thread_always_wanted(None));
     }
 
     #[test]

@@ -225,6 +225,7 @@ the copy when the tick leaves and the drop when it is back
 main thread less than that ticks inline as well. In a 1v29 skirmish on the
 30-start map the frame costs more than a tick until the battle is large, so
 lending every last frame made GameSpeed 0 run 8 to 22% slower there.
+`VERA20K_SIM_THREAD=always` skips this comparison, to exercise the thread.
 
 Between the dispatch and the next pass nothing on the main thread may take
 the live world: a write waits for the tick, and the tick then did not run

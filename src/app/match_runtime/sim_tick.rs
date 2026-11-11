@@ -1292,11 +1292,12 @@ fn advance_in_game_runtime_mode(
         // cost less here than the frame published for it ticks inline too.
         let (game_speed, network_fps) = local_pacing_inputs(state);
         let pacer = &state.platform.frame_pacer;
-        let worth_lending = state
-            .match_state
-            .sim_runtime
-            .presentation_cost()
-            .is_none_or(|frame| pacer.expected_frame_cost() > frame);
+        let worth_lending = super::sim_host::sim_thread_always()
+            || state
+                .match_state
+                .sim_runtime
+                .presentation_cost()
+                .is_none_or(|frame| pacer.expected_frame_cost() > frame);
         let inline = frame_stepping
             || matches!(mode, RuntimeAdvanceMode::ExactOneStep)
             || !worth_lending
