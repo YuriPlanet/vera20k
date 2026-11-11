@@ -2812,6 +2812,33 @@ fn destructor_takes_a_dead_open_topped_rider_out_of_logic() {
     assert!(sim.compute_retail_multiplayer_checksum().is_ok());
 }
 
+/// The Logic walk can reach a rider that died earlier in the frame: it is past
+/// UnInit (`+0x90` clear) but still in the vector until its destructor. Native
+/// `FootClass::AI` returns at the IsAlive test (`0x004DA53E`); the visit must
+/// not UnInit it again.
+#[test]
+fn logic_visit_of_a_dead_open_topped_rider_does_not_uninit_it_again() {
+    let mut sim = Simulation::new();
+    insert_entity(&mut sim, 1, EntityCategory::Infantry);
+    insert_entity(&mut sim, 2, EntityCategory::Unit);
+    let _ = sim.reveal(1);
+    let _ = sim.reveal(2);
+    assert_eq!(sim.techno_limbo(1), super::ConcealOutcome::Concealed);
+    sim.substrate.entities.get_mut(1).unwrap().passenger_role =
+        PassengerRole::inside_for_test(2, true);
+    assert!(sim.register_open_topped_passenger(1));
+    sim.uninit(1);
+
+    let _ = sim.object_ai_visit_one(1, None, ObjectAiCtx::default());
+
+    let uninits = sim
+        .lifecycle_test_events
+        .iter()
+        .filter(|event| **event == LifecycleTestEvent::UninitAliveCleared { stable_id: 1 })
+        .count();
+    assert_eq!(uninits, 1);
+}
+
 #[test]
 fn lifecycle_authority_second_reveal_is_idempotent() {
     let mut sim = Simulation::new();

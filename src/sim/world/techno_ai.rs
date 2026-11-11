@@ -738,6 +738,17 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return ObjectAiOutcome::default();
         };
+        // A member past its UnInit (`+0x90` clear) that Logic still holds: a
+        // rider killed inside an open-topped transport stays in the vector
+        // until its destructor (`0x005F3D75`). `FootClass::AI @ 0x004DA530`
+        // returns at its IsAlive test (`0x004DA53E`), as do the class bodies
+        // after it (`0x0051BCA4`, `0x007365BB`, `0x00414DA8`). Residual: the
+        // steps `TechnoClass::AI @ 0x006F9E50` runs ahead of its own test
+        // (`0x006FA23C`) are not run for it; the object is in limbo and is
+        // freed at this frame's drain.
+        if !entity.lifecycle.object_alive() {
+            return outcome;
+        }
         // An infantry corpse is no dying object: it keeps IsAlive at Health 0
         // and takes the ordinary visit below (`world::infantry_death`).
         if entity.death.is_dying() {
