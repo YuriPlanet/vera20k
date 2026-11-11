@@ -226,21 +226,30 @@ impl SimWorker {
     }
 }
 
-/// Whether ticks publish a presentation frame: on the simulation thread
-/// (phase 4), or opted into with `VERA20K_PRESENTATION_FRAME=1`.
+/// Whether ticks publish a presentation frame: whenever the simulation
+/// thread is on, or opted into with `VERA20K_PRESENTATION_FRAME=1`.
 pub(crate) fn presentation_frames_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED.get_or_init(|| sim_thread_enabled() || env_flag("VERA20K_PRESENTATION_FRAME"))
 }
 
-/// Whether ordinary offline frames tick on the simulation thread, opted
-/// into with `VERA20K_SIM_THREAD=1`. The browser build has no thread to
-/// lend to and always ticks inline.
+/// Whether ordinary offline frames tick on the simulation thread: yes,
+/// unless `VERA20K_SIM_THREAD=0` turns it off. The browser build has no
+/// thread to lend to and always ticks inline. Unit tests tick inline too:
+/// they read the world straight after a frame, and the host's own tests
+/// cover lending.
 pub(crate) fn sim_thread_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED.get_or_init(|| {
-        !cfg!(all(feature = "wasm", target_arch = "wasm32")) && env_flag("VERA20K_SIM_THREAD")
+        !cfg!(all(feature = "wasm", target_arch = "wasm32"))
+            && !cfg!(test)
+            && sim_thread_wanted(std::env::var_os("VERA20K_SIM_THREAD").as_deref())
     })
+}
+
+/// What `VERA20K_SIM_THREAD` asks for: only `0` turns the thread off.
+fn sim_thread_wanted(value: Option<&std::ffi::OsStr>) -> bool {
+    value.is_none_or(|value| value != "0")
 }
 
 fn env_flag(name: &str) -> bool {
@@ -258,6 +267,14 @@ mod tests {
     use super::*;
     use crate::net::lockstep::{ChecksumMismatch, FrameInfo, FrameInfoCompareGate};
     use crate::sim::world::Simulation;
+
+    #[test]
+    fn the_simulation_thread_is_on_unless_the_variable_is_zero() {
+        use std::ffi::OsStr;
+        assert!(sim_thread_wanted(None));
+        assert!(sim_thread_wanted(Some(OsStr::new("1"))));
+        assert!(!sim_thread_wanted(Some(OsStr::new("0"))));
+    }
 
     #[test]
     fn a_published_frame_keeps_the_tick_it_saw_while_the_world_moves_on() {

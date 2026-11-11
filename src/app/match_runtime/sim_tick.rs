@@ -1019,6 +1019,9 @@ pub(crate) fn advance_in_game_runtime_exact_step(
     if state.frontend.screen != GameScreen::InGame {
         return Err(ExactStepError::ScreenNotInGame);
     }
+    // A tick an earlier pass sent to the simulation thread finishes first,
+    // so the step is counted on the live world, not the published frame.
+    finish_threaded_tick(state, None);
     let (tick_before, binary_frame_before) = state
         .match_state
         .sim_runtime
@@ -1083,8 +1086,13 @@ fn advance_in_game_runtime_mode(
     if crate::app::App::house_outcome_wait_pending(state) {
         // House4F8649/4F8772 services48D080 inside this Main_Tick;
         // it never re-enters55D7C2's timed-pause/Chrono/input prelude.
-        let completed =
-            advance_one_simulation_frame(state, TickLane::Ordinary, None, FrameResume::OutcomeWait);
+        let completed = advance_one_simulation_frame(
+            state,
+            TickLane::Ordinary,
+            None,
+            FrameResume::OutcomeWait,
+            false,
+        );
         state
             .match_state
             .sync_multiplayer_pause_clock(crate::app::match_runtime::frame_pacer::wall_clock_ms());
@@ -1284,8 +1292,9 @@ fn advance_in_game_runtime_mode(
                 .frame_pacer
                 .record_admitted_frame(frame_start_ms);
         }
+        let inline = frame_stepping || matches!(mode, RuntimeAdvanceMode::ExactOneStep);
         let mut frame_committed =
-            advance_one_simulation_frame(state, tick_lane, mouse_scroll, resume);
+            advance_one_simulation_frame(state, tick_lane, mouse_scroll, resume, inline);
         // Debug speed runs further frames in this paced pass, each through
         // the same frame transaction; the pacer interval is unchanged.
         if !frame_stepping && !replaying && debug_speed_allowed(state) {
@@ -1299,7 +1308,7 @@ fn advance_in_game_runtime_mode(
                     break;
                 }
                 frame_committed |=
-                    advance_one_simulation_frame(state, tick_lane, None, FrameResume::None);
+                    advance_one_simulation_frame(state, tick_lane, None, FrameResume::None, inline);
             }
         }
         state
@@ -1462,11 +1471,23 @@ fn should_record_replay_tick(
 /// Complete the exact frame suspended by ExecuteDoList's message box. Reuse
 /// every output consumer below; neither input admission nor Logic runs again.
 pub(crate) fn resume_after_network_failure(state: &mut AppState) -> bool {
-    advance_one_simulation_frame(state, TickLane::Ordinary, None, FrameResume::ChecksumModal)
+    advance_one_simulation_frame(
+        state,
+        TickLane::Ordinary,
+        None,
+        FrameResume::ChecksumModal,
+        false,
+    )
 }
 
 pub(crate) fn leave_network_wait(state: &mut AppState) -> bool {
-    advance_one_simulation_frame(state, TickLane::Ordinary, None, FrameResume::NetworkLeave)
+    advance_one_simulation_frame(
+        state,
+        TickLane::Ordinary,
+        None,
+        FrameResume::NetworkLeave,
+        false,
+    )
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1535,6 +1556,9 @@ fn advance_one_simulation_frame(
     tick_lane: TickLane,
     mouse_scroll: Option<(f32, f32)>,
     resume: FrameResume,
+    // Whether the frame must end inside the call: an exact step or a debug
+    // frame step never goes to the simulation thread.
+    inline: bool,
 ) -> bool {
     // docs/sim-thread.md phase 4: the tick the simulation thread ran since
     // the last pass finishes first, so this frame starts from its results.
@@ -1644,8 +1668,10 @@ fn advance_one_simulation_frame(
         )
     });
     // An ordinary offline frame runs on the simulation thread
-    // (`VERA20K_SIM_THREAD=1`); drawing reads its last published frame.
+    // (off with `VERA20K_SIM_THREAD=0`); drawing reads its last published
+    // frame.
     let threaded = deferred.is_some()
+        && !inline
         && resume == FrameResume::None
         && tick_lane == TickLane::Ordinary
         && super::sim_host::sim_thread_enabled();

@@ -115,8 +115,9 @@ Done:
   - Every write names its route through `write_sim(SimWrite::…)`.
   - The tick takes its parts through `tick_parts()`.
 - [x] The checksum history moved from `MatchSession` into the host.
-- [x] Deferred client effects, opt-in through
-  `VERA20K_DEFERRED_TICK_EFFECTS=1`. In a hidden 1v29 client run, the state
+- [x] Deferred client effects: every frame the simulation thread could take
+  uses them (with the thread off, `VERA20K_DEFERRED_TICK_EFFECTS=1` opts
+  in). In a hidden 1v29 client run, the state
   hashes at every common tick from 1 to 9000 are identical with and without
   it.
 - [x] The radar terrain updates per changed cell instead of redrawing its
@@ -130,7 +131,8 @@ Done:
 At the end of each committed tick, `SimHost::publish_presentation` keeps a
 copy of the runtime (`Arc<SimRuntime>`), and drawing reads it through
 `SimHost::presentation`. A rules or lifecycle write drops it first. It is
-opted into with `VERA20K_PRESENTATION_FRAME=1` until phase 4 turns it on.
+published whenever the simulation thread is on (with the thread off,
+`VERA20K_PRESENTATION_FRAME=1` opts in).
 
 A plain copy of the world is too slow: 40–60 ms in a 1v7 skirmish on the
 30-start map, about half of it the terrain cells. The copy therefore shares
@@ -191,8 +193,9 @@ that wait shows in play.
 - `run_deferred_tick`, which borrows nothing from the app;
 - `finish_simulation_frame`, the frame tail on the main thread.
 
-With `VERA20K_SIM_THREAD=1`, an ordinary offline frame on the deferred path
-is lent to the simulation thread instead of run inline. Each admitted pass
+An ordinary offline frame on the deferred path is lent to the simulation
+thread instead of run inline. This is the default; `VERA20K_SIM_THREAD=0`
+turns the thread, the deferred effects and the presentation frames off. Each admitted pass
 then does four things in order:
 
 1. waits for the tick in flight;
@@ -205,7 +208,10 @@ frames stay inline:
 
 - network play, replay, a campaign's initial save and command observation
   (the deferred path does not apply to them);
-- resumed frames: outcome, network and checksum waits.
+- resumed frames: outcome, network and checksum waits;
+- `ExactOneStep` diagnostics and debug frame steps, which must end inside
+  the call. A tick already in flight finishes before an exact step is
+  counted.
 
 A pass whose finished tick left an outcome wait or a network failure
 dispatches nothing, so the next pass resumes that frame inline.
@@ -214,8 +220,8 @@ The browser build has no thread and always ticks inline.
 
 Residuals:
 
-- `ExactOneStep` diagnostics expect the frame inside the call, so they run
-  without the flag.
+- While the game is paused, the tail of the tick that was in flight (its
+  sounds and its published frame) waits for the next admitted frame.
 - A tick whose tail has not run when a debug tool or a load takes the
   runtime back keeps its result until the next pass, or drops it when a
   scenario is installed.
