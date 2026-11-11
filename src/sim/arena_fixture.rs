@@ -365,7 +365,7 @@ pub fn install_status_miner_cargo(
             .chain(std::iter::repeat_with(|| bale(1, ResourceType::Gem)).take(gems))
             .collect(),
     );
-    entity.miner = Some(miner);
+    entity.miner = Some(Box::new(miner));
 }
 
 /// Explicit Foot+694 prior for an object-action consumer comparison. Actual
@@ -383,11 +383,11 @@ pub fn install_status_capture_count(
     count: u32,
 ) {
     let victims: Vec<_> = (0..count).map(|index| u64::from(index) + 10_000).collect();
-    entity.capture_manager = Some(
+    entity.capture_manager = Some(Box::new(
         crate::sim::capture_manager::CaptureManagerState::with_victims_for_test(
             capacity, infinite, &victims,
         ),
-    );
+    ));
 }
 
 /// One physical retail scene shared by the flight/rearm and presentation tests.

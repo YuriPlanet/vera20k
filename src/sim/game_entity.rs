@@ -31,6 +31,7 @@ use crate::sim::passenger::PassengerRole;
 use crate::sim::radio::Contacts;
 use crate::sim::superweapon::invulnerability::InvulnerabilityState;
 use crate::sim::world::ObjectLifecycle;
+use crate::util::sparse::Sparse;
 
 #[cfg(feature = "ares")]
 mod attach_effect;
@@ -94,6 +95,12 @@ pub(crate) struct ObjectGroupCopy {
 /// mechanism's own state is a record its module defines and alone writes
 /// (for example `building_art`, `veterancy`); other code reads it through
 /// getters and changes it through that module's functions.
+///
+/// Every object's turn walks this record, and an object written while a
+/// presentation frame shares it is copied whole (docs/sim-thread.md). Large
+/// state that few objects hold therefore sits behind a pointer: a [`Sparse`]
+/// for a Building's art and damage fires, a `Box` for a manager only some
+/// types construct.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GameEntity {
     /// Bounded optional observations; absent from saves and normal builds.
@@ -578,9 +585,10 @@ pub struct GameEntity {
     pub(crate) ai_placement_timer: crate::sim::production::AiPlacementTimer,
     /// The Building's animation art: its AnimClass slots, their replay
     /// marks, the damaged-art flag, its StorageClass art, the Stuff flag and
-    /// the Grand_Opening guard. `sim::building_art` owns it.
+    /// the Grand_Opening guard. `sim::building_art` owns it. Out of line,
+    /// and kept only once written, which only a Building does.
     #[serde(default)]
-    pub building_art: crate::sim::building_art::BuildingArt,
+    pub building_art: Sparse<crate::sim::building_art::BuildingArt>,
     /// Independent Building+660, owned by sim::building_power.
     #[serde(default)]
     pub(crate) building_online: crate::sim::building_power::BuildingOnline,
@@ -682,11 +690,12 @@ pub struct GameEntity {
     pub(crate) building_light: crate::sim::world::BuildingLight,
     /// The damage-fire transition cache and its eight AnimClass slots
     /// (`BuildingClass+0x5E8`, `+0x5C8..+0x5E4`), a [`DamageFires`] that
-    /// `sim::anim_class` owns.
+    /// `sim::anim_class` owns. Out of line, and kept only once written,
+    /// which only a Building does.
     ///
     /// [`DamageFires`]: crate::sim::anim_class::DamageFires
     #[serde(default)]
-    pub(crate) damage_fires: crate::sim::anim_class::DamageFires,
+    pub(crate) damage_fires: Sparse<crate::sim::anim_class::DamageFires>,
     /// ObjectClass::OnBridge (`Object+0x8C`), an [`OnBridge`] that
     /// `movement::movement_bridge` owns.
     ///
@@ -701,10 +710,10 @@ pub struct GameEntity {
     pub animation: Option<Animation>,
     /// The harvester's hold, unload and harvest latches, a [`Miner`] that
     /// `sim::miner` owns; construction installs it for a harvester type.
-    pub miner: Option<Miner>,
+    pub miner: Option<Box<Miner>>,
     /// `SlaveManagerClass` of an `Enslaves=` master (`TechnoClass+0x2D8`).
     #[serde(default)]
-    pub slave_manager: Option<crate::sim::slave_manager::SlaveManager>,
+    pub slave_manager: Option<Box<crate::sim::slave_manager::SlaveManager>>,
     /// The slave side of `SlaveManagerClass`: the master whose manager holds
     /// this slave (`TechnoClass+0x2DC`), and the Storage (`+0x33C`) of any
     /// object without a `miner`, written only by `sim::slave_manager`.
@@ -718,7 +727,7 @@ pub struct GameEntity {
     /// `sim::cloak_disguise` owns; the cloak AI installs it for a cloakable
     /// object.
     #[serde(default)]
-    pub cloak: Option<CloakRuntime>,
+    pub cloak: Option<Box<CloakRuntime>>,
     /// Instance stealth grant; sim::cloak_disguise owns its mutations.
     #[serde(default)]
     pub(crate) stealth_ability: StealthAbility,
@@ -737,12 +746,12 @@ pub struct GameEntity {
     /// authoritative runtime state; they cannot be reconstructed from the
     /// victims' back-links.
     #[serde(default)]
-    pub capture_manager: Option<crate::sim::capture_manager::CaptureManagerState>,
+    pub capture_manager: Option<Box<crate::sim::capture_manager::CaptureManagerState>>,
     /// Spawn-manager pool carried by a `Spawns=` parent (V3 Launcher,
     /// Dreadnought, Boomer, Aircraft Carrier, Destroyer). Mirrors the native
     /// `TechnoClass+0x2D0` manager pointer: present iff `Spawns=` resolved.
     #[serde(default)]
-    pub spawn_manager: Option<crate::sim::spawn_manager::SpawnManagerState>,
+    pub spawn_manager: Option<Box<crate::sim::spawn_manager::SpawnManagerState>>,
     /// A spawned child's SpawnOwner (`TechnoClass+0x2D4`), a [`SpawnOwner`]
     /// that `spawn_manager` owns.
     ///
@@ -779,7 +788,7 @@ pub struct GameEntity {
     /// The Crazy Ivan bomb it carries (`ObjectClass+0x38` and its
     /// `BombClass`), written only by `bomb`.
     #[serde(default)]
-    pub bomb: Option<crate::sim::bomb::Bomb>,
+    pub bomb: Option<Box<crate::sim::bomb::Bomb>>,
     /// Psychedelic/chaos runtime, separate from reversible mind control: a
     /// [`BerserkState`] that `combat::receiver_health` owns.
     ///
@@ -1458,7 +1467,7 @@ impl GameEntity {
     /// out); 0 for every other object.
     pub fn building_cloak_stage(&self) -> u8 {
         self.cloak
-            .as_ref()
+            .as_deref()
             .map_or(0, crate::sim::cloak_disguise::CloakRuntime::building_stage)
     }
 
@@ -2973,7 +2982,7 @@ mod tests {
             let mut cloak = CloakRuntime::new(0);
             cloak.set_state_for_test(row["state"].as_i64().unwrap() as i32);
             cloak.set_depth_for_test(row["depth"].as_i64().unwrap() as u32);
-            entity.cloak = Some(cloak);
+            entity.cloak = Some(Box::new(cloak));
             let owned = row["owned"].as_bool().unwrap();
             let query = if row["force"].as_bool().unwrap() {
                 crate::sim::cloak_disguise::VisualCharacterQuery::sensor(false, false, false)

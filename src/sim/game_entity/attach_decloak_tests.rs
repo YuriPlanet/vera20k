@@ -42,7 +42,12 @@ fn hit(sim: &mut Simulation, rules: &RuleSet, target: u64, source: u64, wh: &str
 }
 
 fn cloak(sim: &Simulation, target: u64) -> CloakRuntime {
-    sim.entities().get(target).unwrap().cloak.unwrap()
+    *sim.entities()
+        .get(target)
+        .unwrap()
+        .cloak
+        .as_deref()
+        .unwrap()
 }
 
 #[test]

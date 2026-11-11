@@ -36,7 +36,7 @@ pub(crate) use storage::BuildingStorage;
 /// (Building+55C), their effect-replay marks (+5B0), the damaged-art flag
 /// (+6E6), its StorageClass art, the Stuff flag (+6EA) and the
 /// OnConstructionComplete guard (+6E4).
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BuildingArt {
     /// Building+5FC, initialized to -1 by43B768/43B7BF. This is the
     /// WallTower upgrade image variant, not Techno's gunner turret index.
@@ -78,7 +78,7 @@ pub struct BuildingArt {
 /// Inputs to native BuildingClass::UpdateAnimation's relight at 00450A47.
 /// Retain the pre-Techno values across save/load because the next render uses
 /// them; the gameplay owners remain the entity's live tint and flash state.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BuildingTintSample {
     frame: u32,
     flashed: bool,
@@ -278,6 +278,16 @@ impl Default for BuildingArt {
             free_units_done: false,
             tint_sample: None,
         }
+    }
+}
+
+/// An object that is not a Building never writes its art, and keeps none
+/// (`GameEntity::building_art`).
+impl crate::util::sparse::SparseDefault for BuildingArt {
+    fn sparse_default() -> &'static Self {
+        static DEFAULT: std::sync::LazyLock<BuildingArt> =
+            std::sync::LazyLock::new(BuildingArt::default);
+        &DEFAULT
     }
 }
 

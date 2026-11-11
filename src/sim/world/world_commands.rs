@@ -3856,11 +3856,11 @@ mod tests {
                 }));
             spawn_rule_backed_unit(&mut sim, 42, "HARV", &rules);
             sim.substrate.entities.get_mut(42).unwrap().miner =
-                Some(crate::sim::miner::Miner::new(
+                Some(Box::new(crate::sim::miner::Miner::new(
                     crate::sim::miner::MinerKind::War,
                     &crate::sim::miner::MinerConfig::default(),
                     40,
-                ));
+                )));
             sim.substrate
                 .mission_assign_exact(42, harvest, 0)
                 .expect("miner");
@@ -3895,11 +3895,11 @@ mod tests {
         ));
         spawn_rule_backed_unit(&mut sim, 42, "HARV", &rules);
         let miner = sim.substrate.entities.get_mut(42).unwrap();
-        miner.miner = Some(crate::sim::miner::Miner::new(
+        miner.miner = Some(Box::new(crate::sim::miner::Miner::new(
             crate::sim::miner::MinerKind::War,
             &crate::sim::miner::MinerConfig::default(),
             40,
-        ));
+        )));
         miner.health = crate::sim::combat::Health::new(0);
         sim.substrate
             .mission_assign_exact(42, MissionId::from_known(MissionType::Harvest), 0)

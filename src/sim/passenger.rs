@@ -625,7 +625,7 @@ enum Role {
     #[default]
     None,
     /// Entity owns a CargoClass hold.
-    Transport { cargo: PassengerCargo },
+    Transport { cargo: Box<PassengerCargo> },
     /// Entity is inside a transport (hidden from map, not targetable).
     Inside {
         transport_id: u64,
@@ -645,7 +645,9 @@ impl PassengerRole {
     /// The role of a Cargo carrier (`Passengers=`), with its empty hold.
     pub fn transport(cargo: PassengerCargo) -> Self {
         Self {
-            role: Role::Transport { cargo },
+            role: Role::Transport {
+                cargo: Box::new(cargo),
+            },
             occupants: BuildingOccupants::default(),
             transporter: None,
         }
@@ -683,27 +685,23 @@ impl PassengerRole {
 
     /// The whole carrier relation, for a caller that restores it.
     pub(crate) fn carrier_link(&self) -> Option<CarrierLink> {
-        let (Role::Inside {
-            transport_id,
-            open_topped,
-        }
-        | Role::Transport {
-            cargo:
-                PassengerCargo {
-                    carrier_relation:
-                        CarrierRelation::Inside {
-                            transport_id,
-                            open_topped,
-                        },
-                    ..
-                },
-        }) = &self.role
-        else {
-            return None;
+        let (transport_id, open_topped) = match &self.role {
+            Role::Inside {
+                transport_id,
+                open_topped,
+            } => (*transport_id, *open_topped),
+            Role::Transport { cargo } => match cargo.carrier_relation {
+                CarrierRelation::Inside {
+                    transport_id,
+                    open_topped,
+                } => (transport_id, open_topped),
+                CarrierRelation::Outside => return None,
+            },
+            Role::None => return None,
         };
         Some(CarrierLink {
-            transport_id: *transport_id,
-            open_topped: *open_topped,
+            transport_id,
+            open_topped,
         })
     }
 
@@ -798,7 +796,9 @@ impl PassengerRole {
             };
             let mut cargo = PassengerCargo::new(0, 0.0);
             cargo.carrier_relation = carrier_relation;
-            self.role = Role::Transport { cargo };
+            self.role = Role::Transport {
+                cargo: Box::new(cargo),
+            };
         }
         match &mut self.role {
             Role::Transport { cargo } => cargo,

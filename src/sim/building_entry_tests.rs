@@ -508,13 +508,13 @@ fn an_absorber_refuses_a_controller() {
         .entities
         .get_mut(controller)
         .unwrap()
-        .capture_manager = Some(
+        .capture_manager = Some(Box::new(
         crate::sim::capture_manager::CaptureManagerState::with_victims_for_test(
             1,
             false,
             &[captive],
         ),
-    );
+    ));
 
     assert_eq!(
         can_load(&mut sim, &rules, controller, reactor),

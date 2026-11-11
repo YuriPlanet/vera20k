@@ -1249,7 +1249,7 @@ pub(crate) fn drawn_model_id<'a>(
     {
         Cow::Borrowed(interner.resolve(disguise_type))
     } else if let Some(no_spawn_alt_type) =
-        no_spawn_alt_type_id(base_type, no_spawn_alt, entity.spawn_manager.as_ref())
+        no_spawn_alt_type_id(base_type, no_spawn_alt, entity.spawn_manager.as_deref())
     {
         Cow::Owned(no_spawn_alt_type)
     } else if let Some(display_override) = (!no_spawn_alt)
@@ -3149,7 +3149,7 @@ mod tests {
             entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Jumpjet));
             let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
             cloak.set_state_for_test(row["input"]["cloak"].as_i64().unwrap_or(0) as i32);
-            entity.cloak = Some(cloak);
+            entity.cloak = Some(Box::new(cloak));
             if row["input"]["sinking"].as_bool().unwrap_or(false) {
                 continue;
             }
@@ -3221,7 +3221,7 @@ mod tests {
         entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
         let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
         cloak.set_state_for_test(1);
-        entity.cloak = Some(cloak);
+        entity.cloak = Some(Box::new(cloak));
         assert!(!native_shadow_caller_eligible(
             &entity,
             false,

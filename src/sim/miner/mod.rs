@@ -292,15 +292,15 @@ impl Miner {
     /// Unit Harvest73E5E0 reads the new Type's Storage (+800); only VERA's
     /// derived role/capacity change, not its existing bales or unload state.
     #[cfg(feature = "ares")]
-    pub(crate) fn change_type_binding(slot: &mut Option<Self>, object: &ObjectType) {
+    pub(crate) fn change_type_binding(slot: &mut Option<Box<Self>>, object: &ObjectType) {
         let kind = miner_kind_for_object(object);
         if slot.is_none() {
             let Some(kind) = kind else { return };
-            *slot = Some(Self::new(
+            *slot = Some(Box::new(Self::new(
                 kind,
                 &MinerConfig::default(),
                 object.storage.max(0) as u16,
-            ));
+            )));
         }
         let miner = slot
             .as_mut()
