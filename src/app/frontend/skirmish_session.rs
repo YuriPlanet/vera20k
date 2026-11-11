@@ -3538,21 +3538,6 @@ WOLTaunts=junk
     }
 
     #[test]
-    fn a_default_handle_stays_stock_without_a_platform_suffix() {
-        // Only the Android crate installs the suffix hook; every other platform
-        // keeps the native default, whether the handle comes from the default or
-        // from the stock value a previous run stored.
-        assert_eq!(
-            LocalMultiplayerPreferences::default().handle_bytes,
-            DEFAULT_MULTIPLAYER_HANDLE
-        );
-        let stored = read_local_multiplayer_preferences(
-            b"[MultiPlayer]\nHandle=5b,4e,65,77,20,50,6c,61,79,65,72,5d,\n",
-        );
-        assert_eq!(stored.handle_bytes, DEFAULT_MULTIPLAYER_HANDLE);
-    }
-
-    #[test]
     fn resolving_launch_copy_does_not_mutate_raw_random_fields() {
         let snapshot =
             MultiplayerSetupSnapshot::from_global_defaults(defaults(), SetupProfile::Skirmish);

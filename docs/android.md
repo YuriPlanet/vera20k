@@ -120,69 +120,39 @@ reloads its list, and a shortcut pinned before the switch keeps the old
 component's icon (the launcher owns pinned shortcuts, not the app). The app
 switcher's entry updates at once from the task description.
 
-## Test devices
-
-Android behaviour here is checked on hardware, and LAN play needs more than one
-peer on the same network, so the bench is recorded rather than remembered. Device
-serials and the local network are deliberately left out: this file is published,
-`adb devices -l` re-derives the serials on the build machine, and the private
-record lives beside this repository, not in it.
-
-| Device | Android | ABI | Screen | SoC / GPU | Role |
-|---|---|---|---|---|---|
-| OnePlus OPD2413 (`OP615EL1`) | 16 / API 36 | arm64-v8a | 2400x3392, 420 dpi | Snapdragon 8 Elite (`SM8750P`), Adreno 830 (Vulkan) | Host and client |
-| OnePlus PJZ110 (`OP5D0DL1`) | 16 / API 36 | arm64-v8a | 1080x2376, 640 dpi | Snapdragon 8 Elite (`SM8750`), Adreno 830 (Vulkan) | Host and client |
-
-Refresh a row after a device change:
-
-```powershell
-adb devices -l
-adb -s <serial> shell getprop ro.product.model
-adb -s <serial> shell getprop ro.build.version.release
-adb -s <serial> shell getprop ro.build.version.sdk
-adb -s <serial> shell getprop ro.product.cpu.abi
-adb -s <serial> shell wm size
-adb -s <serial> shell wm density
-adb -s <serial> shell dumpsys SurfaceFlinger | Select-String 'GLES:'
-```
+## LAN play on Android
 
 LAN play between devices needs all of the following, and a missing one looks
 exactly like a discovery bug:
 
-- both peers on one subnet (`adb -s <serial> shell ip -4 addr show wlan0`, same
-  `/24`);
-- the access point's client isolation (`AP isolation` / "网络隔离") off, or the
-  two never see each other's broadcasts;
-- both on the same band when the router splits 2.4 and 5 GHz into different
-  subnets;
-- the app bound to Wi-Fi while the LAN lobby is open
-  (`ConnectivityManager.bindProcessToNetwork`), which is what the lobby now does;
-- a desktop peer's firewall allowing UDP 1234 inbound, and both tablets on the
-  same AP.
+- both peers on one subnet and one access point, with the access point's client
+  isolation off;
+- both on the same band when the router gives 2.4 and 5 GHz different subnets;
+- a desktop peer's firewall allowing UDP 1234 inbound.
 
-Two more conditions come from the game rather than the network, and both look
-like "the other player does not exist":
+The LAN lobby binds the app to Wi-Fi while it is open
+(`ConnectivityManager.bindProcessToNetwork`, `util::lan_network`), so its
+broadcasts leave by Wi-Fi even when cellular is up or the Wi-Fi has no
+internet. A Wi-Fi change while the lobby list shows reopens the lobby's sockets
+on the new network; a change during a room or a match waits for the lobby.
 
-- **One build, one feature set.** The join proof carries
-  `CARGO_PKG_VERSION:VERA20K_NETWORK_BUILD:<extension flags>`, and
-  `VERA20K_NETWORK_BUILD` hashes the multiplayer sources plus every enabled
-  `CARGO_FEATURE_*`. The APK is built with `--no-default-features`, so a desktop
-  peer must be too; a desktop `dev-overlays` build is refused with "版本或已載入的
-  遊戲將不一致" (join reason 8, a version mismatch, before the rules/ai/art digests
-  are compared at all).
+Two more conditions come from the game, and both look like "the other player
+does not exist":
+
+- **One build, one feature set.** The join proof carries the version,
+  `VERA20K_NETWORK_BUILD` and the extension flags, and `VERA20K_NETWORK_BUILD`
+  hashes the multiplayer sources plus every enabled Cargo feature. The APK is
+  built with `--no-default-features`, so a desktop peer must be too, or the
+  host refuses the join as a version mismatch.
 - **Player names are the LAN identity.** A player discards advertisements whose
   name matches its own, so two peers left at the default `[New Player]` never
-  see each other's games. On Android the default handle is made unique instead:
-  the activity appends the last three hex digits of the Android ID, so a fresh
-  install enters the lobby as `[New Player]-1A2` (`util::device_identity`). The
-  ID is per app signing key and user, survives reinstall and an app-data clear,
-  and changes only on a factory reset. Three digits keep the whole name inside
-  the lobby's 134 px name box; the handle's 19-byte limit still bounds it.
-  Every other platform keeps the stock name and renames by typing.
+  see each other's games. Android has no text input yet, so the activity
+  appends the last three hex digits of the Android ID: a fresh install enters
+  the lobby as `[New Player]-1A2` (`util::device_identity`). The ID survives
+  reinstall and an app-data clear and changes only on a factory reset. Every
+  other platform keeps the stock name.
 
-Stock maps synchronise with the room (preview and name). A map the guest's
-library does not hold is reported on the host as "並未擁有" and needs the map
-library compared on both sides before the match can start.
+A guest also needs the host's map in its own map library.
 
 ## Deliberate choices
 

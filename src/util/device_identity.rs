@@ -24,7 +24,7 @@ use std::sync::OnceLock;
 
 /// What the activity provides for [`handle_suffix`].
 pub struct Hooks {
-    /// Last four hex digits of the Android ID, upper-case, or `None` when the
+    /// Last three hex digits of the Android ID, upper-case, or `None` when the
     /// device does not supply one.
     pub handle_suffix: fn() -> Option<String>,
 }
