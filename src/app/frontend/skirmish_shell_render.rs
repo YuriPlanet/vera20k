@@ -31,7 +31,9 @@ pub(crate) use network_failure::render_network_failure;
 mod preview;
 mod text;
 
-pub(crate) use preview::{SkirmishPreviewTexture, start_marker_picture};
+pub(crate) use preview::{
+    SkirmishPreviewTexture, is_random_map_sentinel_entry, start_marker_picture,
+};
 
 /// The preview the setup dialog shows for `file`, decoded the way BC's own
 /// preview is: the LAN host's `[0xAC1154]` for its preview upload.
@@ -124,10 +126,6 @@ const SHELL_LABEL_TEXT_RGB: [f32; 3] = [1.0, 1.0, 0.0];
 const SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F: [f32; 3] = [0x9F as f32 / 255.0, 0.0, 0.0];
 const RANDMAP_SENTINEL_FILE_NAME: &str = "RandMap.Sed";
 
-/// Whether a map list entry is the generated random map (`RandMap.Sed`).
-pub(crate) fn is_random_map_entry(entry: &crate::map::scenario_menu::MapMenuEntry) -> bool {
-    preview::is_random_map_sentinel_entry(entry)
-}
 const RANDMAP_PREVIEW_FILE_NAME: &str = "RandMap.img";
 const COMBODROPWIN_TEXT_INSET_X: i32 = 3;
 const COMBODROPWIN_TEXT_TRUNCATION_SCROLLBAR_RESERVE_PX: i32 = 20;

@@ -22,7 +22,7 @@ impl App {
         else {
             return Vec::new();
         };
-        if crate::app::frontend::skirmish_shell_render::is_random_map_entry(entry) {
+        if crate::app::frontend::skirmish_shell_render::is_random_map_sentinel_entry(entry) {
             let header = state.frontend.random_map_retention.generated_header();
             let count = usize::try_from(header.count).unwrap_or(0);
             return header
