@@ -38,6 +38,7 @@ use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 use crate::sim::command::Command;
+use crate::sim::components::DriveCoord;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::MissionType;
@@ -1094,11 +1095,11 @@ pub(crate) fn armed_click_accepted(state: &AppState) -> Option<bool> {
     armed_preview(state).map(|(_, _, accepted)| accepted)
 }
 
-/// One circle of the ferry's marks: a closed line in VERA's world-pixel
-/// frame.
+/// One circle of the ferry's marks: the corners of a closed line, in leptons
+/// at the height of the ground under its centre.
 #[derive(Debug, Clone)]
 pub(crate) struct FerryRing {
-    pub points: Vec<(f32, f32)>,
+    pub points: Vec<DriveCoord>,
     /// The drop zone's circle; otherwise a pick-up area's.
     pub drop: bool,
     /// Part of the preview of a click that would be refused.
@@ -1174,9 +1175,7 @@ pub(crate) fn waypoint_paths(state: &AppState) -> Vec<FerryPath> {
 /// armed, the same circles for the selected transports and the cell under the
 /// cursor. The waypoints are [`waypoint_paths`].
 pub(crate) fn marks(state: &AppState) -> Vec<FerryRing> {
-    use crate::util::lepton::{
-        GROUND_LEVEL_HEIGHT_LEPTONS, LEPTONS_PER_CELL_I32, absolute_leptons_to_screen,
-    };
+    use crate::util::lepton::{GROUND_LEVEL_HEIGHT_LEPTONS, LEPTONS_PER_CELL_I32};
     let routes = shown_routes(state);
     let preview = armed_preview(state);
     if routes.is_empty() && preview.is_none() {
@@ -1201,11 +1200,11 @@ pub(crate) fn marks(state: &AppState) -> Vec<FerryRing> {
             points: (0..64)
                 .map(|corner| {
                     let angle = std::f32::consts::TAU * corner as f32 / 64.0;
-                    absolute_leptons_to_screen(
-                        (x + radius * angle.cos()) as i32,
-                        (y + radius * angle.sin()) as i32,
+                    DriveCoord {
+                        x: (x + radius * angle.cos()) as i32,
+                        y: (y + radius * angle.sin()) as i32,
                         z,
-                    )
+                    }
                 })
                 .collect(),
             drop,

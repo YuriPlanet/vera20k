@@ -18,6 +18,9 @@ and the cursor is the refusal cursor.
 While a ferrying transport is selected, the same blue and yellow circles mark
 its route, and its waypoints show between them.
 
+The circles lie on the ground: buildings, units and trees standing on them
+cover them, as they cover the ground itself.
+
 ## Waypoints
 
 After the Ferry key, hold the **Planning Mode** key (Z by default) and left
