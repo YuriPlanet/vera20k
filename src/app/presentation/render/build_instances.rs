@@ -23,6 +23,8 @@ use crate::map::terrain::TilePlacement;
 use crate::map::theater::TileKey;
 use crate::render::batch::SpriteInstance;
 use crate::ui::sidebar::SidebarView;
+#[path = "ferry_lines.rs"]
+mod ferry_lines;
 #[path = "planning_lines.rs"]
 mod planning_lines;
 
@@ -71,6 +73,9 @@ pub(super) struct UiInstances {
     /// The frame `software_cursor` was built from, whose texture draws it.
     pub software_cursor_draw: Option<crate::app::presentation::ui_overlays::SoftwareCursorDraw>,
     pub drag: Vec<SpriteInstance>,
+    /// World-surface stores that lie on the ground: drawn before the
+    /// buildings and objects, which cover them (the VERA ferry's circles).
+    pub ground_marks: Vec<SpriteInstance>,
     pub placement: Vec<SpriteInstance>,
     /// Phobos placement preview artwork, drawn after the PLACE cells.
     #[cfg(feature = "phobos")]
@@ -932,48 +937,6 @@ pub(super) fn build_ui_instances(
             input.camera_y,
         ));
     }
-    // VERA ferry: the routes' circles, from world pixels back to the screen
-    // (the inverse of `sim_tick::screen_point_to_world`), kept to the
-    // battlefield so none is drawn over the sidebar.
-    if let Some(overlay) = &state.match_state.match_presentation.selection_overlay {
-        let input = &state.match_state.input;
-        let (left, top, width, height) = crate::app::input::camera::tactical_viewport_px(state);
-        let clip = [
-            left as f32,
-            top as f32,
-            (left + width) as f32,
-            (top + height) as f32,
-        ];
-        for ring in crate::app::input::ferry::marks(state) {
-            let screen: Vec<(f32, f32)> = ring
-                .points
-                .iter()
-                .map(|&(x, y)| {
-                    (
-                        (x - input.camera_x) * input.zoom_level,
-                        (y - input.camera_y) * input.zoom_level,
-                    )
-                })
-                .collect();
-            let kind = if ring.refused {
-                crate::render::selection_overlay::FerryRingKind::Refused
-            } else if ring.via {
-                crate::render::selection_overlay::FerryRingKind::Via
-            } else if ring.drop {
-                crate::render::selection_overlay::FerryRingKind::Unload
-            } else {
-                crate::render::selection_overlay::FerryRingKind::Load
-            };
-            drag.extend(overlay.build_ferry_ring(
-                &screen,
-                kind,
-                clip,
-                input.camera_x,
-                input.camera_y,
-            ));
-        }
-    }
-
     let placement_preview = build_placement_preview(state);
 
     let input = &state.match_state.input;
@@ -1028,6 +991,7 @@ pub(super) fn build_ui_instances(
         }
     };
     let (mut target_line, planning_highlights) = planning_lines::build(state, view, wall_ms);
+    target_line.extend(ferry_lines::build_paths(state, view, wall_ms));
     let action_lines = crate::app::presentation::target_lines::build_target_line_instances(
         &state.match_state.match_presentation.target_lines,
         state.match_state.input.planning.active(),
@@ -1070,6 +1034,7 @@ pub(super) fn build_ui_instances(
         software_cursor,
         software_cursor_draw,
         drag,
+        ground_marks: ferry_lines::build_rings(state, view),
         placement: placement_preview.cells,
         #[cfg(feature = "phobos")]
         placement_ghost: placement_preview.ghost,

@@ -526,6 +526,24 @@ pub(super) fn dispatch_draw_passes(
         pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
     }
 
+    let bracket_tex = state
+        .match_state
+        .match_presentation
+        .selection_overlay
+        .as_ref()
+        .map(|o| o.white_texture());
+    // VERA ferry: its pick-up and drop circles lie on the ground. They follow
+    // the kept terrain picture, so are never stored in it, and precede the
+    // fogged snapshots, the building bases and every object, which cover
+    // them. Surface stores: no Z read or write.
+    draw_pooled_surface_lines(
+        &mut pass,
+        &state.renderer.batch_renderer,
+        pool,
+        bracket_tex,
+        "ground_marks",
+    );
+
     // Cell::DrawOverlay_Shadow0047F510 uses native destination halving and
     // read/write Z after all overlay bodies. End the ordinary pass before the
     // shared renderer snapshots the same live color/depth attachments. Its
@@ -653,12 +671,6 @@ pub(super) fn dispatch_draw_passes(
         pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
     }
 
-    let bracket_tex = state
-        .match_state
-        .match_presentation
-        .selection_overlay
-        .as_ref()
-        .map(|o| o.white_texture());
     // Original6D4648 draws the first rally pass BEFORE the object loop at
     // 6D465F. Building bases have already primed Z; mobile bodies and Anim
     // slots can cover the line. The second pass follows effects and BandBox.

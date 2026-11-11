@@ -49,7 +49,7 @@ pub(crate) fn in_game_key_edge(
     // The Formation Line key comes up whoever owns the edge, as above; so
     // does the ferry's waypoint key.
     if !edge.state.is_pressed() {
-        state.match_state.input.ferry.release_via_key(edge.physical);
+        crate::app::input::ferry::via_key_edge(state, edge.physical, false);
         state
             .match_state
             .input
@@ -93,7 +93,7 @@ pub(crate) fn in_game_key_edge(
         && resolution == hotkeys::HotkeyResolution::Command(hotkeys::HotkeyCommand::PlanningMode)
     {
         if edge.state.is_pressed() {
-            state.match_state.input.ferry.press_via_key(edge.physical);
+            crate::app::input::ferry::via_key_edge(state, edge.physical, true);
         }
         return;
     }

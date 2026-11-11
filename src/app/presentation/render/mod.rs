@@ -1065,6 +1065,7 @@ fn upload_to_gpu(
         pool.upload_page("beacons", house, beacons);
     }
     pool.upload("drag", &ui.drag);
+    pool.upload("ground_marks", &ui.ground_marks);
     pool.upload("software_cursor", &software_cursor);
     pool.upload("placement", &ui.placement);
     #[cfg(feature = "phobos")]

@@ -38,6 +38,7 @@ use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 use crate::sim::command::Command;
+use crate::sim::components::DriveCoord;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::MissionType;
@@ -415,16 +416,25 @@ impl FerryState {
         std::mem::take(&mut self.armed)
     }
 
-    /// The Planning Mode key went down while the click is armed.
-    pub(crate) fn press_via_key(&mut self, physical: winit::keyboard::KeyCode) {
-        self.via_key = Some(physical);
+    /// The Planning Mode key went down while the click is armed; whether it
+    /// was up before.
+    fn press_via_key(&mut self, physical: winit::keyboard::KeyCode) -> bool {
+        self.via_key.replace(physical).is_none()
     }
 
-    /// A key came up; the waypoint key no longer marks clicks.
-    pub(crate) fn release_via_key(&mut self, physical: winit::keyboard::KeyCode) {
-        if self.via_key == Some(physical) {
+    /// A key came up; the waypoint key no longer marks clicks. Whether it was
+    /// the waypoint key.
+    fn release_via_key(&mut self, physical: winit::keyboard::KeyCode) -> bool {
+        let held = self.via_key == Some(physical);
+        if held {
             self.via_key = None;
         }
+        held
+    }
+
+    /// Whether the waypoint key is held: the armed click adds a waypoint.
+    pub(crate) fn waypoint_click(&self) -> bool {
+        self.armed && self.via_key.is_some()
     }
 
     /// End the routes of these transports, as the Stop key does.
@@ -867,6 +877,36 @@ pub(crate) fn hotkey_pressed(state: &mut AppState) {
     state.match_state.input.ferry.armed = !selected_transports(state).is_empty();
 }
 
+/// The Planning Mode key's edge while the drop click is armed: held, clicks
+/// add waypoints. Going down and coming up it gives Planning Mode's own
+/// sounds (`StartPlanningModeSound`, `EndPlanningModeSound`), as the key does
+/// there.
+pub(crate) fn via_key_edge(state: &mut AppState, physical: winit::keyboard::KeyCode, down: bool) {
+    let ferry = &mut state.match_state.input.ferry;
+    let changed = if down {
+        ferry.press_via_key(physical)
+    } else {
+        ferry.release_via_key(physical)
+    };
+    if !changed {
+        return;
+    }
+    let sound = state.rules().and_then(|rules| {
+        if down {
+            rules.general.start_planning_mode_sound.clone()
+        } else {
+            rules.general.end_planning_mode_sound.clone()
+        }
+    });
+    if let Some(sound_id) = sound {
+        state
+            .match_state
+            .match_audio
+            .sound_events
+            .push(crate::audio::events::GameSoundEvent::UiSound { sound_id });
+    }
+}
+
 /// The route a drop click on `clicked` gives this transport: from the cell it
 /// stands on to the cell a Move click there would send it to
 /// ([`ordinary_cell_move_goal`]). `None` when the transport cannot ferry, no
@@ -900,7 +940,7 @@ fn route_for(
 pub(crate) fn drop_click(state: &mut AppState) -> bool {
     // With the Planning Mode key held, the click is a waypoint and the drop
     // click stays armed.
-    if state.match_state.input.ferry.armed && state.match_state.input.ferry.via_key.is_some() {
+    if state.match_state.input.ferry.waypoint_click() {
         let clicked = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
             state,
             state.match_state.input.cursor_x,
@@ -1027,7 +1067,7 @@ fn armed_preview(state: &AppState) -> Option<(Vec<Cell>, Cell, bool)> {
     }
     // A waypoint click needs only a cell one of them can move to; the drop
     // click needs a whole route.
-    let waypoint_click = state.match_state.input.ferry.via_key.is_some();
+    let waypoint_click = state.match_state.input.ferry.waypoint_click();
     let rules = &runtime.resources.rules;
     let registry = Some(&runtime.resources.overlay_registry);
     let accepted = transports.iter().any(|&id| {
@@ -1055,30 +1095,21 @@ pub(crate) fn armed_click_accepted(state: &AppState) -> Option<bool> {
     armed_preview(state).map(|(_, _, accepted)| accepted)
 }
 
-/// One circle of the ferry's marks: a closed line in VERA's world-pixel
-/// frame.
+/// One circle of the ferry's marks: the corners of a closed line, in leptons
+/// at the height of the ground under its centre.
 #[derive(Debug, Clone)]
 pub(crate) struct FerryRing {
-    pub points: Vec<(f32, f32)>,
+    pub points: Vec<DriveCoord>,
     /// The drop zone's circle; otherwise a pick-up area's.
     pub drop: bool,
-    /// A waypoint's small circle, whatever `drop` says.
-    pub via: bool,
     /// Part of the preview of a click that would be refused.
     pub refused: bool,
 }
 
-/// The ferry's marks: for each selected transport's route a circle around its
-/// pick-up area and one around its drop zone; and, while a drop click is
-/// armed, the same circles for the selected transports and the cell under the
-/// cursor.
-pub(crate) fn marks(state: &AppState) -> Vec<FerryRing> {
-    use crate::util::lepton::{
-        GROUND_LEVEL_HEIGHT_LEPTONS, LEPTONS_PER_CELL_I32, absolute_leptons_to_screen,
-    };
-    // Only a selected transport shows its route.
+/// The routes that show their marks: only a selected transport's.
+fn shown_routes(state: &AppState) -> Vec<&FerryRoute> {
     let entities = state.sim_view().map(|view| view.simulation().entities());
-    let routes: Vec<&FerryRoute> = state
+    state
         .match_state
         .input
         .ferry
@@ -1089,7 +1120,63 @@ pub(crate) fn marks(state: &AppState) -> Vec<FerryRing> {
                 .and_then(|entities| entities.get(route.transport))
                 .is_some_and(|entity| entity.selection.is_selected())
         })
+        .collect()
+}
+
+/// A ferry's waypoints as one path of cells, drawn in Planning Mode's look.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FerryPath {
+    /// The pick-up spot, the waypoints in order, and the drop spot once it is
+    /// clicked.
+    pub cells: Vec<Cell>,
+    /// The drop click is still armed: Planning Mode's colour for nodes it has
+    /// not committed yet.
+    pub pending: bool,
+}
+
+/// The waypoint paths to draw: one for each selected transport's route that
+/// has waypoints, and while the drop click is armed one from each selected
+/// transport through the waypoints clicked so far.
+pub(crate) fn waypoint_paths(state: &AppState) -> Vec<FerryPath> {
+    let mut paths: Vec<FerryPath> = shown_routes(state)
+        .into_iter()
+        .filter(|route| !route.via.is_empty())
+        .map(|route| FerryPath {
+            cells: std::iter::once(route.pickup)
+                .chain(route.via.iter().copied())
+                .chain(std::iter::once(route.drop))
+                .collect(),
+            pending: false,
+        })
         .collect();
+    let ferry = &state.match_state.input.ferry;
+    if ferry.armed
+        && !ferry.pending_via.is_empty()
+        && let Some(view) = state.sim_view()
+    {
+        let entities = view.simulation().entities();
+        for id in selected_transports(state) {
+            if let Some(entity) = entities.get(id) {
+                let pickup = (entity.position.rx(), entity.position.ry());
+                paths.push(FerryPath {
+                    cells: std::iter::once(pickup)
+                        .chain(ferry.pending_via.iter().copied())
+                        .collect(),
+                    pending: true,
+                });
+            }
+        }
+    }
+    paths
+}
+
+/// The ferry's circles: for each selected transport's route one around its
+/// pick-up area and one around its drop zone; and, while a drop click is
+/// armed, the same circles for the selected transports and the cell under the
+/// cursor. The waypoints are [`waypoint_paths`].
+pub(crate) fn marks(state: &AppState) -> Vec<FerryRing> {
+    use crate::util::lepton::{GROUND_LEVEL_HEIGHT_LEPTONS, LEPTONS_PER_CELL_I32};
+    let routes = shown_routes(state);
     let preview = armed_preview(state);
     if routes.is_empty() && preview.is_none() {
         return Vec::new();
@@ -1101,7 +1188,8 @@ pub(crate) fn marks(state: &AppState) -> Vec<FerryRing> {
     let pickup_radius = (PICKUP_RADIUS_CELLS as f32 + 0.5) * cell;
     let drop_radius = (DROP_RADIUS_CELLS as f32 + 0.5) * cell;
     // A circle around a cell's centre, at its ground height, as 64 corners.
-    let mark = |at: Cell, radius: f32, drop: bool, via: bool, refused: bool| {
+    let ring = |at: Cell, drop: bool, refused: bool| {
+        let radius = if drop { drop_radius } else { pickup_radius };
         let level = cells
             .and_then(|cells| cells.cell_level(at.0, at.1))
             .unwrap_or(0);
@@ -1112,39 +1200,31 @@ pub(crate) fn marks(state: &AppState) -> Vec<FerryRing> {
             points: (0..64)
                 .map(|corner| {
                     let angle = std::f32::consts::TAU * corner as f32 / 64.0;
-                    absolute_leptons_to_screen(
-                        (x + radius * angle.cos()) as i32,
-                        (y + radius * angle.sin()) as i32,
+                    DriveCoord {
+                        x: (x + radius * angle.cos()) as i32,
+                        y: (y + radius * angle.sin()) as i32,
                         z,
-                    )
+                    }
                 })
                 .collect(),
             drop,
-            via,
             refused,
         }
     };
-    let ring = |at: Cell, drop: bool, refused: bool| {
-        let radius = if drop { drop_radius } else { pickup_radius };
-        mark(at, radius, drop, false, refused)
-    };
-    let waypoint = |at: Cell| mark(at, cell * 0.6, false, true, false);
     let mut rings = Vec::new();
     for route in routes {
         rings.push(ring(route.pickup, false, false));
         rings.push(ring(route.drop, true, false));
-        rings.extend(route.via.iter().map(|&at| waypoint(at)));
     }
     if let Some((pickups, clicked, accepted)) = preview {
+        // With the waypoint key held the click adds a waypoint, not the drop:
+        // no drop zone follows the cursor, and a cell no transport can move
+        // to is the cursor's to refuse.
+        let waypoint_click = state.match_state.input.ferry.waypoint_click();
         for pickup in pickups {
-            rings.push(ring(pickup, false, !accepted));
+            rings.push(ring(pickup, false, !accepted && !waypoint_click));
         }
-        let ferry = &state.match_state.input.ferry;
-        rings.extend(ferry.pending_via.iter().map(|&at| waypoint(at)));
-        // With the waypoint key held the click adds a waypoint, not the drop.
-        if ferry.via_key.is_some() {
-            rings.push(mark(clicked, cell * 0.6, false, true, !accepted));
-        } else {
+        if !waypoint_click {
             rings.push(ring(clicked, true, !accepted));
         }
     }
