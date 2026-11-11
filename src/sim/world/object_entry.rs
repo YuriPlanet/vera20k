@@ -1257,7 +1257,7 @@ fn full_foot_entry<'a>(
         }
         let (b, blocker) = live
             .blocker(blocker_id)
-            .ok_or("repair list has retired blocker")?;
+            .ok_or_else(|| format!("repair list has retired blocker {blocker_id} at cell {p:?}"))?;
         if victim_cell.is_some_and(|cell| cell == crate::sim::movement::coord_cell(b.position)) {
             return Ok(0);
         }
