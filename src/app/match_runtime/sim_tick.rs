@@ -2293,6 +2293,9 @@ fn advance_one_simulation_frame(
         // (0x0055DEA4); its input tail follows their lifecycle outputs.
         if frame_committed {
             crate::app::input::planning_mode::frame_pass(state);
+            // VERA ferry: the routes' orders, as ordinary input for a later
+            // frame.
+            crate::app::input::ferry::frame_pass(state);
         }
         // Black-cell census, on a schedule rather than a keypress: nobody hits a debug key
         // at the exact moment they notice the artifact. Spread-out ticks give a time series,

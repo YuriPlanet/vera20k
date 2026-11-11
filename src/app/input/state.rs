@@ -240,6 +240,8 @@ pub(crate) struct MatchInputState {
     /// VERA formation lock: which units keep their places in a move.
     pub(crate) formation_locks: super::formation_lock::FormationLocks,
     pub(crate) planning: crate::app::input::planning_mode::PlanningInputState,
+    /// VERA ferry order: the armed drop click and the local routes.
+    pub(crate) ferry: super::ferry::FerryState,
     pub(crate) category_navigation:
         crate::app::input::dispatch::selection_navigation::CategoryNavigation,
     /// Original CursorCheat toggle A8F7D8, consumed by tactical tooltips.
@@ -500,6 +502,7 @@ impl MatchInputState {
             formation_line: super::formation_line::FormationLineState::default(),
             formation_locks: super::formation_lock::FormationLocks::default(),
             planning: Default::default(),
+            ferry: Default::default(),
             category_navigation: Default::default(),
             cursor_coordinates: false,
             retail_screenshot_requested: false,
@@ -839,6 +842,7 @@ impl MatchInputState {
     pub(crate) fn clear_command_latches(&mut self) {
         self.type_select.clear_held();
         self.formation_line.clear_key();
+        self.ferry.disarm();
         // A command-latch clear does not end the local planning mode. Keep
         // its physical release owner so an input lock cannot strand paths.
         self.queued_order_mode = crate::app::types::OrderMode::Move;
