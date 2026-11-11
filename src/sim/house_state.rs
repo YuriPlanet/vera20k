@@ -2214,11 +2214,13 @@ impl HouseState {
 
     /// House+54E0 is forgotten if it names `building`: the new owner's clear
     /// in `BuildingClass::ChangeOwner` (`0x00448C8C`) and
-    /// `HouseClass::PointerExpired` (`0x004FB9BB`).
-    pub(crate) fn forget_lost_building(&mut self, building: u64) {
-        if self.lost_building == Some(building) {
+    /// `HouseClass::PointerExpired` (`0x004FB9BB`). Answers whether it did.
+    pub(crate) fn forget_lost_building(&mut self, building: u64) -> bool {
+        let named = self.lost_building == Some(building);
+        if named {
             self.lost_building = None;
         }
+        named
     }
 
     /// House+54E0, read by a computer engineer's Greatest_Threat.

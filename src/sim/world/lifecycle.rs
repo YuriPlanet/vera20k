@@ -5977,17 +5977,45 @@ impl Simulation {
         if announce_to_bombs {
             Self::bomb_planter_expired(&mut self.substrate, &self.bombs, expired_id);
         }
+        // The three listener families below compare the expired object with
+        // what they hold and write only on a match. A team holds Technos and
+        // the Terrain object that blocks its path, a factory its product and
+        // a house the building it lost, so the end of any other object (a
+        // Bullet, a Particle, a Smudge) matches nothing in them: its
+        // broadcast skips their walks (VERA-only, results unchanged). A debug
+        // build under the live-read check still walks, and asserts that.
+        // RESIDUAL: restore checks no team target and no House+54E0, so a
+        // save edited by hand can make one name such an object. Its end then
+        // leaves the name where the walk cleared it, and a checked debug
+        // build asserts. The game's own saves never hold one; such a team
+        // would wait on an object that no longer exists.
+        let techno = self.substrate.entities.contains(expired_id);
+        let team_object = techno || self.terrain_objects.objects().contains_key(&expired_id);
+        let checked = crate::sim::touch_log::live_read_check_enabled();
         // `TeamClass::PointerExpired @ 0x006EAE60`, each team a listener.
-        self.team_script_vm
-            .pointer_expired(expired_id, control == PointerExpiryControl::Uninit);
-        // FactoryClass::PointerExpired4CA580 is a control-insensitive
-        // listener in Dispatch7258D0. Its only mutation clears a matching
-        // held product; no entity listener consumes that factory pointer.
-        self.production.factories_mut().pointer_expired(expired_id);
-        // `HouseClass::PointerExpired @ 0x004FB9B0`, each house a listener
-        // (`0x004F5FFB`), forgets House+54E0 whatever the control.
-        for house in self.houses.values_mut() {
-            house.forget_lost_building(expired_id);
+        if team_object || checked {
+            let named = self
+                .team_script_vm
+                .pointer_expired(expired_id, control == PointerExpiryControl::Uninit);
+            debug_assert!(
+                team_object || !named,
+                "a team named {expired_id}, which is neither a Techno nor a Terrain object"
+            );
+        }
+        if techno || checked {
+            // FactoryClass::PointerExpired4CA580 is a control-insensitive
+            // listener in Dispatch7258D0. Its only mutation clears a matching
+            // held product; no entity listener consumes that factory pointer.
+            let mut named = self.production.factories_mut().pointer_expired(expired_id);
+            // `HouseClass::PointerExpired @ 0x004FB9B0`, each house a listener
+            // (`0x004F5FFB`), forgets House+54E0 whatever the control.
+            for house in self.houses.values_mut() {
+                named |= house.forget_lost_building(expired_id);
+            }
+            debug_assert!(
+                techno || !named,
+                "a factory or a house named {expired_id}, which is no Techno"
+            );
         }
         let Some((
             expired_target_cell,
