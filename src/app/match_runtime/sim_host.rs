@@ -72,7 +72,7 @@ pub(crate) struct SimHost {
     /// Drawing reads it while the live world is ticking elsewhere.
     /// Copy-on-write state (the terrain cells, the resources) stays shared
     /// with the live world until that changes. It lives only while the
-    /// runtime is lent, apart from the `VERA20K_PRESENTATION_FRAME` opt-in.
+    /// runtime is lent.
     presentation: Option<Arc<SimRuntime>>,
     /// What the last lent job cost this thread: copying the frame when the
     /// job left ([`Self::lend`]), kept in `copy_cost` meanwhile, then the
@@ -119,7 +119,10 @@ impl SimHost {
             self.report_early_returns();
         }
         let copy_started = Instant::now();
-        self.publish_presentation();
+        self.presentation = self
+            .runtime
+            .as_ref()
+            .map(|runtime| Arc::new(runtime.clone()));
         self.copy_cost = copy_started.elapsed();
         let runtime = self.runtime.take().expect("installed runtime");
         self.worker
@@ -183,27 +186,9 @@ impl SimHost {
 
     /// Mutable access to the installed runtime for one write route; a lent
     /// runtime comes back first.
-    pub(crate) fn write_sim(&mut self, route: SimWrite) -> Option<&mut SimRuntime> {
+    pub(crate) fn write_sim(&mut self, _route: SimWrite) -> Option<&mut SimRuntime> {
         self.reclaim(true);
-        if matches!(route, SimWrite::Rules | SimWrite::Lifecycle) {
-            // These may rebind the shared resources (`resources_mut`), which
-            // an opted-in frame would still share.
-            self.presentation = None;
-        }
         self.runtime.as_mut()
-    }
-
-    /// Publish the live world as the presentation frame: [`Self::lend`]
-    /// does, and so does every tick under the `VERA20K_PRESENTATION_FRAME`
-    /// opt-in.
-    pub(crate) fn publish_presentation(&mut self) {
-        if self.lent {
-            return;
-        }
-        self.presentation = self
-            .runtime
-            .as_ref()
-            .map(|runtime| Arc::new(runtime.clone()));
     }
 
     /// What the last lent job cost this thread, to weigh against the tick
@@ -240,7 +225,6 @@ impl SimHost {
         self.reclaim(true);
         self.report_early_returns();
         self.job_result = None;
-        self.presentation = None;
         self.lend_cost = None;
         self.runtime = runtime;
     }
@@ -250,7 +234,6 @@ impl SimHost {
         self.reclaim(true);
         self.report_early_returns();
         self.job_result = None;
-        self.presentation = None;
         self.lend_cost = None;
         self.runtime.take()
     }
@@ -289,52 +272,12 @@ impl SimWorker {
     }
 }
 
-/// Whether every tick publishes a presentation frame for drawing to read,
-/// with or without the simulation thread: the phase 2 aid, opted into with
-/// `VERA20K_PRESENTATION_FRAME=1`. The thread needs no such frame: it
-/// publishes its own when it takes a tick ([`SimHost::lend`]).
-pub(crate) fn presentation_frames_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| env_flag("VERA20K_PRESENTATION_FRAME"))
-}
-
-/// Whether ordinary offline frames tick on the simulation thread: yes,
-/// unless `VERA20K_SIM_THREAD=0` turns it off. The browser build has no
-/// thread to lend to and always ticks inline. Unit tests tick inline too:
-/// they read the world straight after a frame, and the host's own tests
-/// cover lending.
-pub(crate) fn sim_thread_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        !cfg!(all(feature = "wasm", target_arch = "wasm32"))
-            && !cfg!(test)
-            && sim_thread_wanted(std::env::var_os("VERA20K_SIM_THREAD").as_deref())
-    })
-}
-
-/// What `VERA20K_SIM_THREAD` asks for: only `0` turns the thread off.
-fn sim_thread_wanted(value: Option<&std::ffi::OsStr>) -> bool {
-    value.is_none_or(|value| value != "0")
-}
-
-/// Whether a frame the thread can take goes to it whatever its published
-/// frame costs the main thread: `VERA20K_SIM_THREAD=always`, for diagnosis
-/// and for exercising the thread. By default it goes only when that saves
-/// the main thread time (`sim_tick::advance_in_game_runtime_mode`).
-pub(crate) fn sim_thread_always() -> bool {
-    static ALWAYS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ALWAYS.get_or_init(|| {
-        sim_thread_enabled()
-            && sim_thread_always_wanted(std::env::var_os("VERA20K_SIM_THREAD").as_deref())
-    })
-}
-
-fn sim_thread_always_wanted(value: Option<&std::ffi::OsStr>) -> bool {
-    value.is_some_and(|value| value == "always")
-}
-
-fn env_flag(name: &str) -> bool {
-    std::env::var_os(name).is_some_and(|value| value == "1")
+/// Whether ordinary frames can tick on the simulation thread: wherever the
+/// platform has one. The browser build has no thread to lend to and always
+/// ticks inline. Unit tests tick inline too: they read the world straight
+/// after a frame, and the host's own tests cover lending.
+pub(crate) const fn sim_thread_available() -> bool {
+    !cfg!(all(feature = "wasm", target_arch = "wasm32")) && !cfg!(test)
 }
 
 // docs/sim-thread.md moves the host onto its own thread; it must stay Send.
@@ -348,40 +291,6 @@ mod tests {
     use super::*;
     use crate::net::lockstep::{ChecksumMismatch, FrameInfo, FrameInfoCompareGate};
     use crate::sim::world::Simulation;
-
-    #[test]
-    fn the_simulation_thread_is_on_unless_the_variable_is_zero() {
-        use std::ffi::OsStr;
-        assert!(sim_thread_wanted(None));
-        assert!(sim_thread_wanted(Some(OsStr::new("1"))));
-        assert!(!sim_thread_wanted(Some(OsStr::new("0"))));
-        // `always` is on too, and alone skips the cost comparison.
-        assert!(sim_thread_wanted(Some(OsStr::new("always"))));
-        assert!(sim_thread_always_wanted(Some(OsStr::new("always"))));
-        assert!(!sim_thread_always_wanted(Some(OsStr::new("1"))));
-        assert!(!sim_thread_always_wanted(None));
-    }
-
-    #[test]
-    fn a_published_frame_keeps_the_tick_it_saw_while_the_world_moves_on() {
-        let mut host = SimHost::default();
-        host.install(Some(SimRuntime::from_simulation(Simulation::new())));
-        host.write_sim(SimWrite::Tick)
-            .unwrap()
-            .simulation
-            .session_mut_for_test()
-            .set_tick_for_test(7);
-        host.publish_presentation();
-        host.write_sim(SimWrite::Tick)
-            .unwrap()
-            .simulation
-            .session_mut_for_test()
-            .set_tick_for_test(8);
-        assert_eq!(host.presentation().unwrap().simulation.session().tick(), 7);
-        assert_eq!(host.runtime().unwrap().simulation.session().tick(), 8);
-        host.install(None);
-        assert!(host.presentation().is_none());
-    }
 
     #[test]
     fn a_lent_runtime_serves_reads_from_the_frame_until_a_write_takes_it_back() {

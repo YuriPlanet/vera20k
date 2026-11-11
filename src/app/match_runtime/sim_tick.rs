@@ -1293,12 +1293,11 @@ fn advance_in_game_runtime_mode(
         // drop and the wait for it, ticks inline too.
         let (game_speed, network_fps) = local_pacing_inputs(state);
         let pacer = &state.platform.frame_pacer;
-        let worth_lending = super::sim_host::sim_thread_always()
-            || state
-                .match_state
-                .sim_runtime
-                .lend_cost()
-                .is_none_or(|lent| pacer.expected_frame_cost() > lent);
+        let worth_lending = state
+            .match_state
+            .sim_runtime
+            .lend_cost()
+            .is_none_or(|lent| pacer.expected_frame_cost() > lent);
         let now = crate::util::time::Instant::now();
         // Online, the relay's frontier and the online pacer admit the next
         // frame (the catch-up loop in `App::service_match_runtime`).
@@ -1809,7 +1808,7 @@ fn advance_one_simulation_frame(
     // docs/sim-thread.md: a network frame lent to the simulation thread runs
     // there up to Queue_AI. A restore replays many frames per pass, each
     // waiting for the last, so it stays inline.
-    let queue_handoff = super::sim_host::sim_thread_enabled()
+    let queue_handoff = super::sim_host::sim_thread_available()
         && !inline
         && resume == FrameResume::None
         && tick_lane == TickLane::Ordinary
@@ -1840,13 +1839,13 @@ fn advance_one_simulation_frame(
             queue_handoff,
         )
     });
-    // An ordinary frame runs on the simulation thread (off with
-    // `VERA20K_SIM_THREAD=0`); drawing reads its last published frame.
+    // An ordinary frame runs on the simulation thread; drawing reads its last
+    // published frame.
     let threaded = deferred.is_some()
         && !inline
         && resume == FrameResume::None
         && tick_lane == TickLane::Ordinary
-        && super::sim_host::sim_thread_enabled();
+        && super::sim_host::sim_thread_available();
     if threaded {
         // The frame published for this tick shows every cell ticked so far;
         // their radar-terrain marks go to the minimap with it, since no draw
@@ -2598,12 +2597,6 @@ fn finish_simulation_frame(
         // world is no longer borrowed.
         if let Some(deferred) = deferred {
             deferred.apply(state);
-        }
-        // The simulation thread publishes a frame when it takes a tick
-        // (`SimHost::lend`); this is the phase 2 opt-in, a frame after every
-        // tick without the thread.
-        if frame_committed && super::sim_host::presentation_frames_enabled() {
-            state.match_state.sim_runtime.publish_presentation();
         }
         if frame_committed {
             state
