@@ -59,6 +59,7 @@ simulation, session and network command owners.
 
 - [Colour-vision filter](color-vision-config.md): the `[VERA] ColorVisionMode=` whole-viewport daltonization option.
 - [End-game screens](ini-end-game-screens.md): the verdict card, its theme and the score page's own art.
+- [Formation line](formation-line.md): hold F and drag with the left button to line a group up along a drawn line.
 - [Health-strip modes](health-bars.md): the `[VERA] HealthBars=` client option.
 - [Interface layout](interface-layout.md): `veraui.ini`, a mod's own places for the sidebar, the command bar and the sidebar's parts.
 - [Smooth Jumpjet facing](jumpjet-smooth-facing.md): the `[JumpjetControls] SmoothFacing=` rules key that stops a Nighthawk's body snapping at take-off and unload.

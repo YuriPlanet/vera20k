@@ -672,6 +672,12 @@ fn action_line_color(palette: &crate::assets::pal_file::Palette, index: u8) -> [
     [rgba[0], rgba[1], rgba[2]].map(|v| f32::from(v) / 255.)
 }
 
+/// The Move action line's colour ([`action_line_color`] index 3), for VERA's
+/// formation line dots: they mark where a Move will send each unit.
+pub(crate) fn move_action_line_color(palette: &crate::assets::pal_file::Palette) -> [f32; 3] {
+    action_line_color(palette, 3)
+}
+
 /// The packed surface word of Palette87F6C4's entry `index` (its 16-bit
 /// table at +174, `+0x10` for index 8).
 fn action_line_word(palette: &crate::assets::pal_file::Palette, index: u8) -> u16 {

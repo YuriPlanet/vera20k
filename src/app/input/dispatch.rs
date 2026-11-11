@@ -328,6 +328,11 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                 {
                     return; // suppress selection drag while a targeting / repair / sell / beacon mode is active
                 }
+                // VERA formation line: with its key held and a group
+                // selected, the drag draws a line and no band box.
+                if begin_formation_line(state) {
+                    return;
+                }
                 state.match_state.input.selection_state.begin_drag(
                     state.match_state.input.cursor_x,
                     state.match_state.input.cursor_y,
@@ -338,7 +343,20 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                 // clear it exits having done nothing; with it set it runs
                 // BandBox_LeftUp and drops the capture, whichever button was
                 // holding it. See `TacticalMouseState::end_left_press`.
+                // VERA formation line: the drag ends with the button,
+                // whether or not the capture below is still held.
+                let formation = state.match_state.input.formation_line.finish();
                 if !state.match_state.input.tactical_mouse.end_left_press() {
+                    return;
+                }
+                // A drawn line or block orders the group; a line too short
+                // to be one is the ordinary click below.
+                if let Some(path) = formation
+                    && path.is_order()
+                    && crate::app::input::context_order::queue_formation_line(state, &path)
+                {
+                    // As BandBox_LeftUp ends the attack-move mode (`0x00731CF0`).
+                    state.match_state.input.queued_order_mode = OrderMode::Move;
                     return;
                 }
                 band_box_left_up(state, LeftUp::Tactical);
@@ -371,11 +389,40 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                     }
                     // The native release tears the band rectangle down too.
                     state.match_state.input.selection_state.cancel_drag();
+                    // VERA formation line: and a line being drawn.
+                    state.match_state.input.formation_line.cancel();
                 }
             }
         }
         _ => {}
     }
+}
+
+/// VERA formation line (`input::formation_line`): start one at the cursor
+/// when its key is held and at least two units that take a point are
+/// selected ([`crate::app::input::context_order::formation_unit_count`]). Fewer leave
+/// the press to the band box, so the key alone never blocks selecting.
+fn begin_formation_line(state: &mut AppState) -> bool {
+    if !state.match_state.input.formation_line.key_held() {
+        return false;
+    }
+    let selected = crate::app::input::context_order::formation_unit_count(state);
+    if selected < 2 {
+        return false;
+    }
+    let world = crate::app::match_runtime::sim_tick::screen_point_to_world(
+        state,
+        state.match_state.input.cursor_x,
+        state.match_state.input.cursor_y,
+    );
+    // Shift held as well: the drag is a block's front row.
+    let block = state.match_state.input.hotkey_modifiers.shift_key();
+    state
+        .match_state
+        .input
+        .formation_line
+        .begin(world, selected, block);
+    true
 }
 
 /// What reaches `DisplayClass::BandBox_LeftUp @ 0x004AB9B0`.
@@ -1007,6 +1054,18 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
         state.match_state.input.cursor_y,
         crate::app::input::camera::tactical_viewport_px(state),
     );
+
+    // VERA formation line: the drag adds to the line, clamped to the
+    // battlefield like the band box's corner.
+    if state.match_state.input.formation_line.drawing() {
+        let world = crate::app::match_runtime::sim_tick::screen_point_to_world(
+            state,
+            clamped_endpoint.0,
+            clamped_endpoint.1,
+        );
+        state.match_state.input.formation_line.extend(world);
+        return;
+    }
 
     // Activation arms the rectangle and nothing else. The call gamemd makes at
     // that moment is a cursor-shape setter, not an unselect — the selection is
@@ -2116,6 +2175,11 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         // VERA: the mouse drags the interface's parts until the key comes
         // again.
         HotkeyCommand::LayoutEdit => crate::app::input::layout_edit::toggle(state),
+        // A held key: `input::keyboard::in_game_key_edge` tracks it.
+        HotkeyCommand::FormationLine => {}
+        HotkeyCommand::FormationLock => {
+            crate::app::input::context_order::toggle_formation_lock(state);
+        }
     }
 }
 
