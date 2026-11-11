@@ -1667,16 +1667,20 @@ impl Simulation {
         if owed.len() != entities.len() {
             owed = entities
                 .iter()
-                .map(|entity| store.owed_visits(entity.stable_id()).0)
+                .map(|entity| store.owed_visits(entity.stable_id()))
                 .collect();
         }
         let entities: Vec<(&GameEntity, u32)> = entities.iter().copied().zip(owed).collect();
-        digests(&entities, entities.len() >= 4096, |&(entity, owed), hasher| {
-            hash_entity_owed(entity, frame, owed, hasher);
-            if network {
-                entity.discovery.hash_network(hasher);
-            }
-        })
+        digests(
+            &entities,
+            entities.len() >= 4096,
+            |&(entity, owed), hasher| {
+                hash_entity_owed(entity, frame, owed, hasher);
+                if network {
+                    entity.discovery.hash_network(hasher);
+                }
+            },
+        )
     }
 
     /// Hash all entity components in stable-entity-ID order, as the digests

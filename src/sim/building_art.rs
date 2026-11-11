@@ -136,17 +136,30 @@ impl BuildingArt {
         });
     }
 
-    pub fn tint_sample(&self) -> Option<&BuildingTintSample> {
-        self.tint_sample.as_ref()
+    /// Whether [`Self::capture_tint_sample`] with these inputs would leave
+    /// what the draw reads as it is. The draw reads the sample's frame only
+    /// under an Iron Curtain or an airstrike mark (`presentation::lighting`,
+    /// `effect_light`), so a sample without either that agrees on the rest
+    /// is current whatever frame it holds.
+    pub(crate) fn tint_sample_is_current(
+        &self,
+        flashed: bool,
+        invulnerability: Option<&crate::sim::superweapon::invulnerability::InvulnerabilityState>,
+        airstrike: &crate::sim::superweapon::airstrike_tint::AirstrikeTintState,
+        airstrike_active: bool,
+    ) -> bool {
+        invulnerability.is_none()
+            && !airstrike_active
+            && self.tint_sample.as_ref().is_some_and(|sample| {
+                sample.flashed == flashed
+                    && sample.invulnerability.is_none()
+                    && !sample.airstrike_active
+                    && sample.airstrike == *airstrike
+            })
     }
 
-    /// The frame a sleeping building last owed a relight
-    /// (`GameEntity::settle_sleep`). The sleep rule admits only a building
-    /// whose sample already holds its resting inputs.
-    pub(crate) fn restamp_tint_sample(&mut self, frame: u32) {
-        if let Some(sample) = self.tint_sample.as_mut() {
-            sample.frame = frame;
-        }
+    pub fn tint_sample(&self) -> Option<&BuildingTintSample> {
+        self.tint_sample.as_ref()
     }
 
     /// Building+6E6.

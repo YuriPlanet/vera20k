@@ -135,13 +135,13 @@ impl Simulation {
             self.substrate
                 .entities
                 .fit_to_sleep(id, frame.wrapping_sub(1));
-            let mut expected = self
+            let expected = self
                 .substrate
                 .entities
                 .get(id)
                 .expect("a sleeper is stored")
                 .clone();
-            expected.settle_sleep(1, frame);
+            expected.settle_sleep(1);
             return SleepVisit::Check(Box::new(SleepCheck {
                 expected: serde_json::to_value(&expected).expect("an entity serializes"),
                 scenario_rng: self.scenario_rng.state(),
@@ -149,7 +149,7 @@ impl Simulation {
                 entities: self.substrate.entities.len(),
             }));
         }
-        self.substrate.entities.owe_visit(id, frame);
+        self.substrate.entities.owe_visit(id);
         // What every turn ends with for the world, at this slot as before:
         // the sound prefix (`FootClass::AI`'s edge sounds) and the commit
         // that publishes pending overlay Recalcs and smudge dirt.
@@ -178,11 +178,8 @@ impl Simulation {
     /// would have counted.
     pub(super) fn finish_sleep_check(&self, id: u64, check: SleepCheck) {
         let after = self.substrate.entities.get(id).map(|entity| {
-            let mut entity = entity.clone();
-            let (owed, last_frame) = self.substrate.entities.owed_visits(id);
-            if owed != 0 {
-                entity.settle_sleep(owed, last_frame);
-            }
+            let entity = entity.clone();
+            entity.settle_sleep(self.substrate.entities.owed_visits(id));
             serde_json::to_value(&entity).expect("an entity serializes")
         });
         let name = self
@@ -305,12 +302,14 @@ impl Simulation {
             && !entity.damage_fires.is_active()
             && entity.damage_fires.anim_ids().iter().all(Option::is_none)
             && entity.airstrike_tint == Default::default()
-            && entity.building_art.tint_sample().is_some_and(|sample| {
-                !sample.flashed()
-                    && sample.invulnerability().is_none()
-                    && !sample.airstrike_active()
-                    && *sample.airstrike() == entity.airstrike_tint
-            })
+            // Its building's airstrike flag reads `airstrike_link`, empty
+            // below.
+            && entity.building_art.tint_sample_is_current(
+                entity.flashing.flashed(),
+                entity.invulnerability.as_ref(),
+                &entity.airstrike_tint,
+                false,
+            )
             && entity.native_stage().rate() == 0
             && !entity.native_stage().changed()
             && entity.invulnerability.is_none()

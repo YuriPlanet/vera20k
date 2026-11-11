@@ -161,8 +161,6 @@ struct SleepCell {
     wake_at: u32,
     /// Visits the pass counted instead of running.
     owed: u32,
-    /// The frame of the last counted visit.
-    last_frame: u32,
     /// What the sleeper's owner looked like when it fell asleep, for the
     /// pass to compare (`world::idle_sleep`).
     note: u8,
@@ -259,24 +257,20 @@ impl EntityStore {
         (cell.wake_at != 0).then_some((cell.wake_at, cell.note))
     }
 
-    /// Count the visit the pass makes to sleeping `stable_id` at `frame`
-    /// instead of running its turn.
-    pub(crate) fn owe_visit(&mut self, stable_id: u64, frame: u32) {
+    /// Count the visit the pass makes to sleeping `stable_id` instead of
+    /// running its turn.
+    pub(crate) fn owe_visit(&mut self, stable_id: u64) {
         if let Some(slot) = self.slot(stable_id) {
             let cell = &mut self.sleep[slot as usize];
             cell.owed = cell.owed.wrapping_add(1);
-            cell.last_frame = frame;
         }
     }
 
-    /// The visits sleeping `stable_id` is owed and the frame of the last one,
-    /// which its mission counter and draw cache do not hold yet
-    /// ([`GameEntity::settle_sleep`]).
-    pub(crate) fn owed_visits(&self, stable_id: u64) -> (u32, u32) {
-        self.slot(stable_id).map_or((0, 0), |slot| {
-            let cell = self.sleep[slot as usize];
-            (cell.owed, cell.last_frame)
-        })
+    /// The visits sleeping `stable_id` is owed, which its mission counter
+    /// does not hold yet ([`GameEntity::settle_sleep`]).
+    pub(crate) fn owed_visits(&self, stable_id: u64) -> u32 {
+        self.slot(stable_id)
+            .map_or(0, |slot| self.sleep[slot as usize].owed)
     }
 
     /// The visits each stored entity is owed, in [`Self::values`] order.
@@ -321,16 +315,27 @@ impl EntityStore {
         if cell.owed == 0 {
             return;
         }
-        // Only a building's relight sample needs the mutable handle, which
-        // copies an entity a presentation frame still shares; the counter
-        // steps through the shared one, as its per-visit step does.
-        if self.categories[slot] == EntityCategory::Structure {
-            if let Some(entity) = self.entities[slot].as_deref_mut() {
-                entity.settle_sleep(cell.owed, cell.last_frame);
-            }
-        } else if let Some(entity) = self.entities[slot].as_deref() {
-            entity.mission.add_owed_ai_visits(cell.owed);
+        // Through the shared handle, as the per-visit step does: waking does
+        // not copy an entity a presentation frame still shares.
+        if let Some(entity) = self.entities[slot].as_deref() {
+            entity.settle_sleep(cell.owed);
         }
+    }
+
+    /// Whether `stable_id`'s entity is still the one `other`, a copy of this
+    /// store, shares (test builds only): false once a write has copied it.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn shares_entity_with(&self, other: &Self, stable_id: u64) -> bool {
+        fn entity(
+            store: &EntityStore,
+            stable_id: u64,
+        ) -> Option<&crate::util::shared::Shared<GameEntity>> {
+            let slot = *store.slot_of.get(&stable_id)? as usize;
+            store.entities[slot].as_ref()
+        }
+        entity(self, stable_id)
+            .zip(entity(other, stable_id))
+            .is_some_and(|(mine, theirs)| mine.shares_storage_with(theirs))
     }
 
     /// How many mutable hand-outs the store has made (test builds only).
@@ -695,7 +700,9 @@ impl EntityStore {
     }
 
     /// Keep a building's relight light at `frame` for the draw
-    /// ([`crate::sim::building_art::BuildingArt::capture_tint_sample`])
+    /// ([`crate::sim::building_art::BuildingArt::capture_tint_sample`]),
+    /// unless the kept one is current
+    /// ([`crate::sim::building_art::BuildingArt::tint_sample_is_current`]),
     /// without a note in the touch logs: every building relights every
     /// frame, and no product derived from the logs reads the sample. No-op
     /// for an absent entity or one that is not a building.
@@ -705,9 +712,21 @@ impl EntityStore {
         frame: u32,
         airstrike_active: bool,
     ) {
-        if let Some(entity) = self.unlogged_mut(stable_id)
-            && entity.category() == EntityCategory::Structure
-        {
+        // Read first: a building whose sample already says what the draw
+        // would read is not handed out, which would copy it every frame
+        // under a presentation frame.
+        if self.get(stable_id).is_none_or(|entity| {
+            entity.category() != EntityCategory::Structure
+                || entity.building_art.tint_sample_is_current(
+                    entity.flashing.flashed(),
+                    entity.invulnerability.as_ref(),
+                    &entity.airstrike_tint,
+                    airstrike_active,
+                )
+        }) {
+            return;
+        }
+        if let Some(entity) = self.unlogged_mut(stable_id) {
             entity.building_art.capture_tint_sample(
                 frame,
                 entity.flashing.flashed(),
@@ -1183,10 +1202,10 @@ impl serde::Serialize for EntityStore {
         for (id, entity) in self.stored() {
             // A sleeping entity is saved as its next turn would find it.
             match self.owed_visits(id) {
-                (0, _) => map.serialize_entry(&id, entity)?,
-                (owed, last_frame) => {
-                    let mut settled = entity.clone();
-                    settled.settle_sleep(owed, last_frame);
+                0 => map.serialize_entry(&id, entity)?,
+                owed => {
+                    let settled = entity.clone();
+                    settled.settle_sleep(owed);
                     map.serialize_entry(&id, &settled)?;
                 }
             }
