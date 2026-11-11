@@ -606,6 +606,9 @@ impl App {
                     &config.paths.ra2_dir,
                     mods.dir(),
                     startup_options.media_archive_mode,
+                    crate::assets::asset_manager::ArchiveFamily::for_ini_profile(
+                        config.ini.profile,
+                    ),
                 )
                 .and_then(|assets| assets.with_ini_roots(&config.ini))
                     .with_context(|| crate::i18n::tr("VERA:CannotLoadArchives")),

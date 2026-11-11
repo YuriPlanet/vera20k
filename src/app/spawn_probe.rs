@@ -181,9 +181,14 @@ pub(crate) fn probe(
     mod_dir: Option<std::path::PathBuf>,
 ) -> Result<ProbeReport> {
     let root = &config.paths.ra2_dir;
-    let mut assets = AssetManager::with_mod(root, mod_dir.as_deref(), media_archive_mode)
-        .and_then(|assets| assets.with_ini_roots(&config.ini))
-        .context("could not load the game archives")?;
+    let mut assets = AssetManager::with_mod(
+        root,
+        mod_dir.as_deref(),
+        media_archive_mode,
+        crate::assets::asset_manager::ArchiveFamily::for_ini_profile(config.ini.profile),
+    )
+    .and_then(|assets| assets.with_ini_roots(&config.ini))
+    .context("could not load the game archives")?;
     let mut process =
         ProcessAssets::new_with_ini_config(media_archive_mode, true, config.ini.clone())
             .with_personal_rules(personal_rules)

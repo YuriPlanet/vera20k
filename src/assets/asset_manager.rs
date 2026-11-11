@@ -414,6 +414,38 @@ const KNOWN_NESTED_MIX_NAMES: &[&str] = &[
 /// Active Yuri's Revenge requires both masters, in this order.
 pub const MASTER_ARCHIVES: [&str; 2] = ["ra2md.mix", "ra2.mix"];
 
+/// Which startup archive names a launch mounts. Mental Omega's spawner
+/// `cncnet5mo.dll` overwrites gamemd's archive-name literals before startup
+/// (its `.patch` table): `EXPANDMD%02d.MIX` `0x82668C`, `MAPSMD%02d.MIX`
+/// `0x81C2EC`, `MAPSMD*.MIX` `0x82679C`, `MULTIMD.MIX` `0x81C284`,
+/// `THEMEMD.MIX` `0x81C24C` and the MOVMD names at `0x81C210` and
+/// `0x8266A0..0x826748` take their `MO` spelling. Master, cache, local,
+/// audio, conquer and cameo archives keep their YR names.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ArchiveFamily {
+    #[default]
+    Yr,
+    Mo,
+}
+
+impl ArchiveFamily {
+    /// Only an explicit MO selection mounts the MO family: Auto probes INI
+    /// roots after mounting and so cannot choose the archives it probes.
+    pub fn for_ini_profile(profile: crate::util::ini_roots::IniProfile) -> Self {
+        match profile {
+            crate::util::ini_roots::IniProfile::Mo => Self::Mo,
+            _ => Self::Yr,
+        }
+    }
+
+    fn tag(self) -> &'static str {
+        match self {
+            Self::Yr => "md",
+            Self::Mo => "mo",
+        }
+    }
+}
+
 /// One startup archive that an install inspection could not mount.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArchiveIssue {
@@ -509,21 +541,24 @@ impl AssetManager {
 
     /// Load the core runtime archive stack for one native media-selection mode.
     pub fn new(ra2_dir: &Path, media_mode: MediaArchiveMode) -> Result<Self, AssetError> {
-        Self::with_mod(ra2_dir, None, media_mode)
+        Self::with_mod(ra2_dir, None, media_mode, ArchiveFamily::Yr)
     }
 
     /// VERA: [`AssetManager::new`] with a mod folder's files read as if they
     /// had been copied on top of `ra2_dir`. gamemd has one folder; a mod made
-    /// to be copied into it resolves the same from its own folder.
+    /// to be copied into it resolves the same from its own folder. `family`
+    /// picks the launch's archive-name family.
     pub fn with_mod(
         ra2_dir: &Path,
         mod_dir: Option<&Path>,
         media_mode: MediaArchiveMode,
+        family: ArchiveFamily,
     ) -> Result<Self, AssetError> {
         Self::open_startup_archives(
             ra2_dir,
             mod_dir,
             media_mode,
+            family,
             StartupArchivePolicy::OptionalWarnings,
         )
     }
@@ -542,6 +577,7 @@ impl AssetManager {
             ra2_dir,
             None,
             media_mode,
+            ArchiveFamily::Yr,
             StartupArchivePolicy::Inspect(&mut issues),
         )?;
         Ok((manager, issues))
@@ -551,9 +587,11 @@ impl AssetManager {
         ra2_dir: &Path,
         mod_dir: Option<&Path>,
         media_mode: MediaArchiveMode,
+        family: ArchiveFamily,
         mut policy: StartupArchivePolicy<'_>,
     ) -> Result<Self, AssetError> {
         let mut manager = Self::from_roots(ra2_dir, mod_dir)?;
+        let tag = family.tag();
 
         // WinMain registers the YR language archive before the RA2 fallback.
         manager.mount_startup_archive("langmd.mix", false, &mut policy)?;
@@ -562,7 +600,7 @@ impl AssetManager {
         // Init_Base_Mix_Files probes all expansion slots in descending order.
         for index in (0..=99).rev() {
             manager.mount_startup_archive(
-                &format!("expandmd{index:02}.mix"),
+                &format!("expand{tag}{index:02}.mix"),
                 false,
                 &mut policy,
             )?;
@@ -604,16 +642,16 @@ impl AssetManager {
         manager.mount_startup_archive("cameomd.mix", true, &mut policy)?;
         manager.mount_startup_archive("cameo.mix", true, &mut policy)?;
 
-        manager.mount_startup_map_media(media_mode, &mut policy)?;
-        manager.mount_reported_archive("multimd.mix", &mut policy)?;
-        manager.mount_startup_archive("thememd.mix", false, &mut policy)?;
+        manager.mount_startup_map_media(media_mode, family, &mut policy)?;
+        manager.mount_reported_archive(&format!("multi{tag}.mix"), &mut policy)?;
+        manager.mount_startup_archive(&format!("theme{tag}.mix"), false, &mut policy)?;
         // VERA presentation extension: native YR mounts THEME.MIX only when
         // THEMEMD.MIX is absent. Keep MD first, then make original RA2 music
         // available to the shared Theme catalog without displacing YR files.
         // Preserve this user-requested parity exception during future parity
         // work unless the user explicitly asks to change the music catalog.
         manager.mount_startup_archive("theme.mix", false, &mut policy)?;
-        manager.mount_startup_movie_media(media_mode, &mut policy)?;
+        manager.mount_startup_movie_media(media_mode, family, &mut policy)?;
 
         // Loose YRO archives are deliberately absent here. Retail registers
         // each one during SessionClass scenario enumeration, immediately
@@ -1294,23 +1332,26 @@ impl AssetManager {
 
     #[cfg(test)]
     fn mount_native_map_media(&mut self, mode: MediaArchiveMode) -> Result<(), AssetError> {
-        self.mount_startup_map_media(mode, &mut StartupArchivePolicy::FailFast)
+        self.mount_startup_map_media(mode, ArchiveFamily::Yr, &mut StartupArchivePolicy::FailFast)
     }
 
     fn mount_startup_map_media(
         &mut self,
         mode: MediaArchiveMode,
+        archives: ArchiveFamily,
         policy: &mut StartupArchivePolicy<'_>,
     ) -> Result<(), AssetError> {
+        let maps = format!("maps{}", archives.tag());
         match mode {
             MediaArchiveMode::Numbered { media_index } => {
                 let number = media_index.wrapping_add(1);
-                self.mount_reported_archive(&format!("mapsmd{number:02}.mix"), policy)?;
+                self.mount_reported_archive(&format!("{maps}{number:02}.mix"), policy)?;
                 self.mount_startup_archive(&format!("maps{number:02}.mix"), false, policy)?;
             }
             MediaArchiveMode::CdWildcard => {
+                let wildcard = format!("{}*.MIX", maps.to_ascii_uppercase());
                 let result = (|| {
-                    let md = self.mount_wildcard_archives(None, "mapsmd")?;
+                    let md = self.mount_wildcard_archives(None, &maps)?;
                     if !md.matched {
                         // This is the native fallback branch. Active YR then
                         // fails its required-MD global check; see
@@ -1319,13 +1360,13 @@ impl AssetManager {
                     }
                     if !md.first_registered {
                         return Err(AssetError::AssetNotFound {
-                            name: "MAPSMD*.MIX".to_string(),
+                            name: wildcard.clone(),
                         });
                     }
                     Ok(())
                 })();
                 if let Err(error) = result {
-                    Self::record_archive_issue("MAPSMD*.MIX", false, error, policy)?;
+                    Self::record_archive_issue(&wildcard, false, error, policy)?;
                 }
             }
         }
@@ -1334,33 +1375,38 @@ impl AssetManager {
 
     #[cfg(test)]
     fn mount_native_movie_media(&mut self, mode: MediaArchiveMode) -> Result<(), AssetError> {
-        self.mount_startup_movie_media(mode, &mut StartupArchivePolicy::FailFast)
+        self.mount_startup_movie_media(mode, ArchiveFamily::Yr, &mut StartupArchivePolicy::FailFast)
     }
 
     fn mount_startup_movie_media(
         &mut self,
         mode: MediaArchiveMode,
+        archives: ArchiveFamily,
         policy: &mut StartupArchivePolicy<'_>,
     ) -> Result<(), AssetError> {
+        let movmd = format!("mov{}", archives.tag());
         match mode {
             MediaArchiveMode::Numbered { media_index } => {
                 let number = media_index.wrapping_add(1);
-                if !self.mount_startup_archive(&format!("movmd{number:02}.mix"), false, policy)? {
+                if !self.mount_startup_archive(&format!("{movmd}{number:02}.mix"), false, policy)? {
                     self.mount_reported_archive(&format!("movies{number:02}.mix"), policy)?;
                 }
             }
             MediaArchiveMode::CdWildcard => {
                 // Retail starts with root MOVMD, then each successful raw-file
                 // probe overwrites the selected wildcard in this exact order.
+                let upper = movmd.to_ascii_uppercase();
+                let (md01, md03) = (format!("{upper}01.MIX"), format!("{upper}03.MIX"));
+                let (sub01, sub03) = (format!("MIXFILES/{md01}"), format!("MIXFILES/{md03}"));
                 let mut directory = None;
-                let mut family = "movmd";
+                let mut family = movmd.as_str();
                 for (probe, selected_directory, selected_family) in [
                     ("MOVIES01.MIX", None, "movies"),
                     ("MIXFILES/MOVIES01.MIX", Some("MIXFILES"), "movies"),
-                    ("MOVMD01.MIX", None, "movmd"),
-                    ("MIXFILES/MOVMD01.MIX", Some("MIXFILES"), "movmd"),
-                    ("MOVMD03.MIX", None, "movmd"),
-                    ("MIXFILES/MOVMD03.MIX", Some("MIXFILES"), "movmd"),
+                    (md01.as_str(), None, movmd.as_str()),
+                    (sub01.as_str(), Some("MIXFILES"), movmd.as_str()),
+                    (md03.as_str(), None, movmd.as_str()),
+                    (sub03.as_str(), Some("MIXFILES"), movmd.as_str()),
                 ] {
                     if self.raw_relative_file_available(probe) {
                         directory = selected_directory;
@@ -1368,10 +1414,10 @@ impl AssetManager {
                     }
                 }
 
-                let name = if family == "movmd" {
-                    "MOVMD*.MIX"
+                let name = if family == movmd {
+                    format!("{upper}*.MIX")
                 } else {
-                    "MOVIES*.MIX"
+                    "MOVIES*.MIX".to_string()
                 };
                 let result = (|| {
                     let mut mounted = self.mount_wildcard_archives(directory, family)?;
@@ -1386,7 +1432,7 @@ impl AssetManager {
                     Ok(())
                 })();
                 if let Err(error) = result {
-                    Self::record_archive_issue(name, false, error, policy)?;
+                    Self::record_archive_issue(&name, false, error, policy)?;
                 }
             }
         }
@@ -2272,7 +2318,13 @@ mod tests {
         .unwrap();
 
         let stock = MediaArchiveMode::STOCK_DIGITAL;
-        let modded = AssetManager::with_mod(install.path(), Some(mod_dir.path()), stock).unwrap();
+        let modded = AssetManager::with_mod(
+            install.path(),
+            Some(mod_dir.path()),
+            stock,
+            ArchiveFamily::Yr,
+        )
+        .unwrap();
         assert_eq!(modded.get_ref("rulesmd.ini"), Some(&b"mod rules"[..]));
         assert_eq!(modded.get_ref("artmd.ini"), Some(&b"game art"[..]));
         // The mod's archive stands where the installation's of that name did.
@@ -2300,7 +2352,13 @@ mod tests {
         mod_dir.write_mix("ecachemod.mix", "mod.vxl", b"mod model");
 
         let stock = MediaArchiveMode::STOCK_DIGITAL;
-        let manager = AssetManager::with_mod(install.path(), Some(mod_dir.path()), stock).unwrap();
+        let manager = AssetManager::with_mod(
+            install.path(),
+            Some(mod_dir.path()),
+            stock,
+            ArchiveFamily::Yr,
+        )
+        .unwrap();
         // An expansion archive is registered first and keeps a shared name.
         assert_eq!(manager.get_ref("shared.shp"), Some(&b"expansion"[..]));
         // ECACHE before ELOCAL, each family in listing order; a mod folder's
