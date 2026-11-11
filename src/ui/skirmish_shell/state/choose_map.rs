@@ -174,11 +174,15 @@ pub struct ChooseMapModalState {
     row_modes: Vec<i32>,
     /// VERA: typed text; every list shows only maps whose name holds it.
     pub search: String,
-    /// VERA: the maps the player starred, by [`favorite_key`].
+    /// VERA: the maps the player starred, by [`favorite_key`]: a copy of
+    /// the map library's, which owns and saves them.
     pub favorites: std::collections::BTreeSet<String>,
     /// The rows' text when the mode fills its own list (Cooperative's
     /// `+0x4C`: `"%d. %s"` per campaign); otherwise each record's name.
     pub row_labels: Option<Vec<String>>,
+    /// VERA: per listed row, whether its map can be starred
+    /// ([`favorite_key`]); the random map cannot.
+    starrable_rows: Vec<bool>,
     /// The highlighted map's name when the game type was last clicked
     /// (`[0xAC0EC8]`), which a rebuilt list reselects.
     reselect_name: String,
@@ -295,6 +299,7 @@ impl ChooseMapModalState {
             search: String::new(),
             favorites: Default::default(),
             row_labels: None,
+            starrable_rows: Vec::new(),
             reselect_name: String::new(),
             highlighted_filtered_index: None,
             mode_top_index: 0,
@@ -413,11 +418,21 @@ impl ChooseMapModalState {
     }
 
     fn build_map_list(&mut self, modes: &[SkirmishGameMode], records: &[SkirmishScenarioRecord]) {
+        self.build_map_rows(modes, records);
+        self.starrable_rows = self
+            .filtered_record_indices
+            .iter()
+            .map(|index| records.get(*index).and_then(favorite_key).is_some())
+            .collect();
+    }
+
+    fn build_map_rows(&mut self, modes: &[SkirmishGameMode], records: &[SkirmishScenarioRecord]) {
         self.row_labels = None;
         self.row_modes.clear();
         if is_own_row(self.selected_mode_id) {
             // Each map is played with the first listed game type that takes
-            // it; one no listed type takes is not offered. Favorites lists
+            // it, Cooperative aside: it plays campaigns, not maps. One no
+            // listed type takes is not offered. Favorites lists
             // the starred maps, online ones only where Online Maps shows;
             // Online Maps lists its starred maps first. Catalog order
             // otherwise.
@@ -427,6 +442,7 @@ impl ChooseMapModalState {
                 .mode_rows
                 .iter()
                 .filter_map(|id| mode_by_id(modes, *id))
+                .filter(|mode| mode.class != crate::skirmish_modes::MpModeClass::Cooperative)
                 .collect();
             let mut rows: Vec<(usize, i32)> = (0..records.len())
                 .filter(|index| {
@@ -454,7 +470,7 @@ impl ChooseMapModalState {
             return;
         }
         let mode = mode_by_id(modes, self.selected_mode_id);
-        // Online maps list only under Online Maps.
+        // Online maps list only under Online Maps and Favorites.
         self.filtered_record_indices = mode
             .map(|mode| filter_records_for_mode(records, mode, self.official_only))
             .unwrap_or_default()
@@ -660,8 +676,8 @@ impl ChooseMapModalState {
     /// A press on the lists (`0x0061A948`): scrollbar capture, or a row. A
     /// game-type row whose index equals the last one clicked (`[0x8316FC]`,
     /// which lives across chooser visits and starts at -1) moves the cursor
-    /// without rebuilding the map list (`0x005E6BB7`). VERA's Online Maps row
-    /// always rebuilds: its list is not a game type's.
+    /// without rebuilding the map list (`0x005E6BB7`). VERA's Online Maps and
+    /// Favorites rows always rebuild: their lists are not a game type's.
     pub fn mouse_down(
         &mut self,
         layout: &ChooseMapModalLayout,
@@ -771,12 +787,17 @@ impl ChooseMapModalState {
     }
 
     /// Create Random Map follows the game type; VERA's favorite button is
-    /// enabled while a map is highlighted in a list of maps.
+    /// enabled while a map that can be starred is highlighted in a list of
+    /// maps.
     pub fn button_enabled(&self, button: ChooseMapModalButton) -> bool {
         match button {
             ChooseMapModalButton::CreateRandomMap0x583 => self.random_map_button_enabled(),
             ChooseMapModalButton::Favorite => {
-                self.highlighted_filtered_index.is_some() && self.row_labels.is_none()
+                self.row_labels.is_none()
+                    && self
+                        .highlighted_filtered_index
+                        .and_then(|row| self.starrable_rows.get(row))
+                        .is_some_and(|starrable| *starrable)
             }
             _ => true,
         }
@@ -1052,6 +1073,9 @@ mod tests {
         assert_eq!(modal.selected_record_index(), Some(3));
         assert_eq!(modal.favorite_button(&all), None);
         assert_eq!(modal.toggle_favorite(&modes, &all, &layout), None);
+        assert!(!modal.button_enabled(ChooseMapModalButton::Favorite));
+        modal.highlighted_filtered_index = Some(0);
+        assert!(modal.button_enabled(ChooseMapModalButton::Favorite));
     }
 
     #[test]

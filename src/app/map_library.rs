@@ -371,13 +371,22 @@ fn in_online_play(state: &AppState) -> bool {
     state.frontend.wol.is_some()
 }
 
-/// Star or unstar a map, and keep the stars for later runs.
+/// Star or unstar a map, and keep the stars for later runs. The library
+/// owns the stars; an open Choose Map gets a fresh copy.
 pub(crate) fn set_favorite(state: &mut AppState, key: String, starred: bool) {
     let favorites = &mut state.frontend.map_library.favorites;
     if starred {
         favorites.insert(key);
     } else {
         favorites.remove(&key);
+    }
+    if let Some(modal) = state
+        .frontend
+        .skirmish_shell_state
+        .choose_map_modal
+        .as_mut()
+    {
+        modal.favorites = state.frontend.map_library.favorites.clone();
     }
     let Some(path) = favorites_path(state) else {
         return;
@@ -607,17 +616,25 @@ pub(crate) fn keep_map(
     let listed = records.iter().any(|record| {
         !record.is_online() && record.file_name.to_lowercase() == kept.name.to_lowercase()
     });
+    let mut carried_star = None;
     if online.is_some() || !listed {
         let ordinal = online.map_or(records.len(), |index| records[index].source_ordinal);
         let record =
             crate::map::scenario_sources::loose_yrm_record(&kept.path, kept.name.clone(), ordinal)
                 .context("the kept map does not read as a map")?;
+        // A starred online map stays starred under its file name.
+        if online.is_some() && state.frontend.map_library.favorites.contains(&sha256) {
+            carried_star = crate::ui::skirmish_shell::favorite_key(&record);
+        }
         match online {
             Some(index) => records[index] = record,
             None => records.push(record),
         }
     }
     drop(records);
+    if let Some(key) = carried_star {
+        set_favorite(state, key, true);
+    }
     refresh_choose_map(state);
     Ok(kept.path)
 }

@@ -251,6 +251,7 @@ fn build_skirmish_shell_instances(
                 atlas,
                 layout,
                 choose_map_layout,
+                1.0,
             );
             push_saved_seed_modal_instances(
                 &mut instances,
@@ -304,6 +305,7 @@ fn build_skirmish_shell_instances(
                 atlas,
                 layout,
                 choose_map_layout,
+                modals::CHOOSE_MAP_BACKGROUND_BRIGHTNESS,
             );
             // `0x6B`'s slides draw the top panel and the column like `0x102`'s
             // (no map button); the slide-out repaint blanks every child.
@@ -1133,9 +1135,10 @@ mod tests {
             );
             (draws, [title, help], scale.factor())
         };
-        for (random, sample) in [true, false].into_iter().flat_map(|random| {
-            ["字".repeat(90), "A ".repeat(100)].map(|sample| (random, sample))
-        }) {
+        for (random, sample) in [true, false]
+            .into_iter()
+            .flat_map(|random| ["字".repeat(90), "A ".repeat(100)].map(|sample| (random, sample)))
+        {
             let base = draw(800, 600, random, &sample).0;
             assert!(base.iter().all(|draw| !draw.instances.is_empty()));
             for (width, height) in [(800, 600), (1200, 900), (1600, 1200)] {
@@ -1158,9 +1161,7 @@ mod tests {
                     }
                 }
                 let help = &fitted[1];
-                assert!(
-                    (help.instances[0].position[1] - rects[1].y as f32).abs() <= 0.5
-                );
+                assert!((help.instances[0].position[1] - rects[1].y as f32).abs() <= 0.5);
                 assert!(help.scissor.y + help.scissor.h <= height);
             }
         }

@@ -1344,7 +1344,11 @@ pub(super) fn push_choose_map_modal_text_draws(
     } else if modal.online_maps_selected() {
         Some(crate::app::map_library::empty_online_maps_text(state))
     } else if modal.favorites_selected() && modal.search.is_empty() {
-        Some(tr("VERA:NoFavorites"))
+        Some(tr(if modal.favorites.is_empty() {
+            "VERA:NoFavorites"
+        } else {
+            "VERA:NoFavoritesHere"
+        }))
     } else {
         None
     };

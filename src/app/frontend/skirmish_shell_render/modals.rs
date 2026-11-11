@@ -196,15 +196,17 @@ pub(super) fn shell_content_fallback_rect(layout: &SkirmishShellLayout) -> RectP
     )
 }
 
-/// VERA: how bright the chooser's background art is drawn, so list text
-/// reads over it. gamemd draws it at full brightness.
-const CHOOSE_MAP_BACKGROUND_BRIGHTNESS: f32 = 0.8;
+/// VERA: how bright Choose Map draws its background art, so list text
+/// reads over it. gamemd draws it at full brightness, as the saved-seed
+/// browser on the same art still does.
+pub(super) const CHOOSE_MAP_BACKGROUND_BRIGHTNESS: f32 = 0.8;
 
 pub(super) fn push_choose_map_background_instances(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
     shell_layout: &SkirmishShellLayout,
     modal_layout: &ChooseMapModalLayout,
+    brightness: f32,
 ) -> BackdropInteriorPaint {
     let background = choose_map_background_entry(atlas, modal_layout);
     let interior = backdrop_interior(background.is_some());
@@ -221,7 +223,7 @@ pub(super) fn push_choose_map_background_instances(
             SHELL_PARENT_BACKGROUND_DEPTH,
         );
         if let Some(art) = out.last_mut() {
-            art.tint = [CHOOSE_MAP_BACKGROUND_BRIGHTNESS; 3];
+            art.tint = [brightness; 3];
         }
     } else {
         let fallback = shell_content_fallback_rect(shell_layout);
