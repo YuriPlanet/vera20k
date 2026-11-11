@@ -118,10 +118,6 @@ pub(crate) struct RetailOptionsProfile {
     /// Whether battles keep gamemd's 4:3 screen shape, with bars on a window
     /// of any other shape, instead of filling the window.
     pub(crate) original_shape: bool,
-    /// `[VERA] OriginalSize=`: whether battles draw gamemd's 800x600 screen,
-    /// scaled up to the window, in place of the zoom and shape above. The
-    /// Esc menu's 800x600 box; off by default.
-    pub(crate) original_size: bool,
     /// The Options page's battle sidebar size.
     pub(crate) sidebar: crate::ui::main_menu_dialogs::options::SidebarSize,
     /// `[VERA] YROriginalStyle=`: whether the startup splash, the menu movie,
@@ -325,7 +321,6 @@ impl Default for RetailOptionsProfile {
             full_screen: false,
             zoom: crate::ui::main_menu_dialogs::options::Zoom::Auto,
             original_shape: false,
-            original_size: false,
             sidebar: crate::ui::main_menu_dialogs::options::SidebarSize::Normal,
             yr_original_style: false,
             skip_intro: false,
@@ -373,7 +368,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 31],
+    pub(crate) vera: [(&'static str, String); 30],
 }
 
 impl RetailOptionsLoad {
@@ -565,7 +560,6 @@ impl RetailOptionsProfile {
                 vera.read_int("Zoom", self.zoom.ini_value()),
             );
             self.original_shape = vera.read_bool("OriginalShape", self.original_shape);
-            self.original_size = vera.read_bool("OriginalSize", self.original_size);
             self.sidebar = crate::ui::main_menu_dialogs::options::SidebarSize::from_ini_value(
                 vera.read_int("Sidebar", self.sidebar.ini_value()),
             );
@@ -801,7 +795,6 @@ impl RetailOptionsProfile {
                     format_bool(self.show_string_keys).to_string(),
                 ),
                 ("ColorVisionMode", self.color_vision.ini_value().to_string()),
-                ("OriginalSize", format_bool(self.original_size).to_string()),
             ],
         }
     }
@@ -1541,7 +1534,6 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         assert!(!defaults.retained_profile.full_screen);
         assert_eq!(defaults.retained_profile.zoom, Zoom::Auto);
         assert!(!defaults.retained_profile.original_shape);
-        assert!(!defaults.retained_profile.original_size);
         assert_eq!(defaults.retained_profile.sidebar, SidebarSize::Normal);
         assert!(!defaults.retained_profile.yr_original_style);
         // Shift + left click queues one copy, as in gamemd, until it is ticked.
@@ -1578,7 +1570,6 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
             full_screen: true,
             zoom: Zoom::Percent(150),
             original_shape: true,
-            original_size: true,
             sidebar: SidebarSize::ExtraLarge,
             yr_original_style: true,
             skip_intro: true,
@@ -1602,7 +1593,6 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         assert!(reread.retained_profile.full_screen);
         assert_eq!(reread.retained_profile.zoom, Zoom::Percent(150));
         assert!(reread.retained_profile.original_shape);
-        assert!(reread.retained_profile.original_size);
         assert_eq!(reread.retained_profile.sidebar, SidebarSize::ExtraLarge);
         assert!(reread.retained_profile.yr_original_style);
         assert!(reread.retained_profile.skip_intro);

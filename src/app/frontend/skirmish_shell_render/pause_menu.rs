@@ -11,7 +11,7 @@ use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw, TextRect};
 use crate::ui::main_menu_dialogs::options::{
-    FULL_SCREEN_LABEL, ORIGINAL_SHAPE_LABEL, ORIGINAL_SIZE_LABEL, PERFORMANCE_STATS_LABEL,
+    FULL_SCREEN_LABEL, ORIGINAL_SHAPE_LABEL, PERFORMANCE_STATS_LABEL, SET_WINDOW_SIZE_LABEL,
     SIDEBAR_LABEL, ZOOM_LABEL,
 };
 use crate::ui::shell::geom::RectPx;
@@ -222,8 +222,8 @@ pub(crate) fn render_pause_menu_shell(
         ));
     };
     // VERA's Display group: the main menu's Zoom and Sidebar lists, Full
-    // Screen, Original 4:3 Shape, the Performance Stats, which shows the
-    // panel's own live state, and the 800x600 box.
+    // Screen, Original 4:3 Shape and the Performance Stats, which shows the
+    // panel's own live state.
     let display_layout = layout.display;
     let display = &state.match_state.match_presentation.display_pause;
     group_box(
@@ -280,11 +280,6 @@ pub(crate) fn render_pause_menu_shell(
             state.renderer.performance_overlay.is_visible(),
             PERFORMANCE_STATS_LABEL,
         ),
-        (
-            display_layout.original_size,
-            display.original_size,
-            ORIGINAL_SIZE_LABEL,
-        ),
     ] {
         paint_control(
             &mut controls,
@@ -297,6 +292,47 @@ pub(crate) fn render_pause_menu_shell(
             font,
             &crate::i18n::tr(caption_key),
             RectPx::new(rect.x + 26, rect.y, rect.w - 26, rect.h),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::V_CENTER,
+        ));
+    }
+    // The main menu's Set Window Size button (owner-draw type 3, MNBTTN),
+    // captioned with the launch window's size as there.
+    if let Some((button, label)) = display_layout.window_size {
+        controls.extend(crate::render::shell_paint::paint_modal_sprites(
+            None,
+            super::chrome::type3_button_frames(chrome_atlas),
+            RectPx::new(0, 0, width, height),
+            &[crate::render::shell_paint::ModalButton {
+                rect: button,
+                pressed: false,
+                enabled: true,
+            }],
+            ShellScale::RETAIL,
+            crate::render::shell_paint::ModalDepths {
+                background: super::SHELL_CONTROL_DEPTH,
+                button: super::SHELL_CONTROL_DEPTH,
+                text: SHELL_CONTROL_TEXT_DEPTH,
+            },
+        ));
+        let size = state.platform.launch_window_size;
+        let caption_rect = super::text::button_text_rect(button, false, ShellScale::RETAIL);
+        texts.push(text_draw(
+            font,
+            &format!("{}x{}", size.width, size.height),
+            RectPx::new(
+                caption_rect.x,
+                caption_rect.y,
+                caption_rect.w as i32,
+                caption_rect.h as i32,
+            ),
+            super::text::button_label_color(),
+            ShellAlign::BUTTON_CAPTION,
+        ));
+        texts.push(text_draw(
+            font,
+            &crate::i18n::tr(SET_WINDOW_SIZE_LABEL),
+            label,
             SHELL_LABEL_TEXT_RGB,
             ShellAlign::V_CENTER,
         ));

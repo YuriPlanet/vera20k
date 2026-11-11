@@ -89,8 +89,6 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         App::play_launcher_options_cue(self, cue);
     }
     fn store_zoom(&mut self, zoom: crate::ui::main_menu_dialogs::options::Zoom) {
-        // A zoom or shape picked after the Esc menu's 800x600 box replaces it.
-        self.persistence.options_profile.original_size = false;
         self.persistence.options_profile.zoom = zoom;
         App::sync_zoom_pass(self);
     }
@@ -136,7 +134,6 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         self.refresh_string_key_labels();
     }
     fn store_original_shape(&mut self, original_shape: bool) {
-        self.persistence.options_profile.original_size = false;
         self.persistence.options_profile.original_shape = original_shape;
         App::sync_zoom_pass(self);
     }

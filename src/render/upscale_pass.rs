@@ -202,38 +202,6 @@ impl ZoomGeometry {
         }
     }
 
-    /// A frame of exactly `src_width` x `src_height`, at the largest scale
-    /// the window has room for, centred. None when the window is smaller
-    /// than the frame: a zoom never shrinks.
-    pub fn fixed(
-        window_width: u32,
-        window_height: u32,
-        src_width: u32,
-        src_height: u32,
-    ) -> Option<Self> {
-        if src_width == 0 || src_height == 0 {
-            return None;
-        }
-        let percent = (window_width * 100 / src_width).min(window_height * 100 / src_height);
-        if percent < 100 {
-            return None;
-        }
-        let zoom = Self {
-            percent,
-            src_width,
-            src_height,
-            origin: (0, 0),
-        };
-        let (frame_width, frame_height) = zoom.frame_size();
-        Some(Self {
-            origin: (
-                (window_width - frame_width) / 2,
-                (window_height - frame_height) / 2,
-            ),
-            ..zoom
-        })
-    }
-
     /// Window pixels per source pixel.
     pub fn scale(self) -> f32 {
         self.percent as f32 / 100.0
@@ -445,21 +413,6 @@ mod tests {
         assert_eq!((odd.src_width, odd.src_height), (910, 512));
         assert_eq!((odd.frame_size(), odd.origin), ((1365, 768), (0, 0)));
         assert!(!odd.is_whole_window(1366, 768));
-    }
-
-    #[test]
-    fn a_fixed_frame_keeps_its_size_and_fills_what_the_window_allows() {
-        // 1920x1080: 800x600 at 180%, 1440x1080 between side bars.
-        let wide = ZoomGeometry::fixed(1920, 1080, 800, 600).unwrap();
-        assert_eq!((wide.src_width, wide.src_height), (800, 600));
-        assert_eq!(wide.percent, 180);
-        assert_eq!(wide.frame_size(), (1440, 1080));
-        assert_eq!(wide.origin, (240, 0));
-        // A window of the frame's own size is the whole window, unscaled.
-        let same = ZoomGeometry::fixed(800, 600, 800, 600).unwrap();
-        assert!(same.is_whole_window(800, 600));
-        // A smaller window has no room for it.
-        assert_eq!(ZoomGeometry::fixed(799, 600, 800, 600), None);
     }
 
     #[test]

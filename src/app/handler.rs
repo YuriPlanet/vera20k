@@ -172,8 +172,7 @@ impl App {
 
     /// Keep the zoom pass matching the window and the Options choices: a
     /// source target of the window size over the zoom, in the window's
-    /// shape or the original 4:3, or gamemd's 800x600 screen at the Esc
-    /// menu's 800x600 box, or none when that is the whole window. The
+    /// shape or the original 4:3, or none when that is the whole window. The
     /// match reads its size through `render_width`/`render_height`, so a
     /// resize mid-match re-projects the battlefield and sidebar the same way.
     /// A sealed capture never zooms or takes bars.
@@ -210,14 +209,6 @@ impl App {
         let (percent, shape) = if state.platform.capture_client_size.is_some() {
             let zoom = state.platform.capture_presentation.zoom;
             (zoom.percent(width, height), FrameShape::Window)
-        } else if let Some(original) = profile
-            .original_size
-            .then(|| ZoomGeometry::fixed(width, height, 800, 600))
-            .flatten()
-        {
-            // The 800x600 box: gamemd's own screen in place of the zoom and
-            // shape. A window with no room for it keeps them.
-            return original;
         } else if profile.original_shape {
             (profile.zoom.percent(width, height), FrameShape::Original)
         } else {
