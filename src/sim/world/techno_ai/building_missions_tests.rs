@@ -347,7 +347,7 @@ fn mission_attack_matches_the_original() {
         entity.body_facing.snap(away, FRAME);
         let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(FRAME as i32);
         cloak.set_state_for_test(2);
-        entity.cloak = Some(cloak);
+        entity.cloak = Some(Box::new(cloak));
 
         let (returns, fire_calls) = with_building_fire_stub(None, || {
             with_draws(&mut sim, row, |sim| {

@@ -167,7 +167,8 @@ caught up; local orders given until then are dropped, and effects and voices sta
 silent. The relay refuses a different world as an agreement mismatch. Abort Mission
 during this replay leaves as it does while Reconnecting.
 
-Authored matches, Cooperative aside, record reconstructible JSON replays in `replays/`.
+Authored matches, Cooperative aside, record reconstructible JSON replays in `replays/`,
+offline skirmishes against computer players included.
 A replay is written when its match ends or the game closes, and also when an
 internal error (a panic) closes the game; the folder keeps the newest 20.
 `vera20k --replay <replay.json> --ra2-dir <retail-directory>` opens read-only
@@ -176,7 +177,9 @@ playback with camera controls and Escape to close.
 accepted launch and replays the production frame transaction without connecting
 to the lobby. Startup version, rules, map bytes, seed and initial state must match;
 recorded state hashes are checked during playback. Generated maps, campaigns and
-restored mid-match segments currently lack standalone replay startup.
+restored mid-match segments currently lack standalone replay startup; a skirmish or
+network match that cannot be recorded says why in the log. `--replay-verify` loads no personal rules (`VERARULES.INI`)
+and no mod, so it refuses a match played with either as a rules mismatch.
 Replay version 4 regenerates shared planning events through the simulation at
 their original frame phases. Earlier JSON logs remain readable for inspection;
 playback requires the current version to avoid executing old internal events twice.

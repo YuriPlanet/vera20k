@@ -3190,7 +3190,7 @@ mod receiver {
                 .entities
                 .get_mut(spawner)
                 .unwrap()
-                .spawn_manager = Some(manager);
+                .spawn_manager = Some(Box::new(manager));
             let wh = rules.warhead("EMPWH").unwrap();
             assert_eq!(
                 sim.deliver_ares_emp(spawner, Some(source), wh, &rules, FrameEffects::empty()),

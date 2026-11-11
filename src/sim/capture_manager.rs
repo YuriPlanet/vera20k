@@ -702,7 +702,7 @@ impl Simulation {
             .entities
             .get(controller_id)?
             .capture_manager
-            .as_ref()
+            .as_deref()
             .map(CaptureManagerState::count)
     }
 
