@@ -169,3 +169,43 @@ fn a_fire_visit_without_a_target_keeps_its_deliveries() {
     let man = sim.substrate.entities.get(man).unwrap();
     assert_eq!(man.mission_leaf.foot_firing_sequence_latch(), 0);
 }
+
+/// Idle turns hand their object out for writing only when a timer comes
+/// due (a mission handler re-arming its clock): each hand-out copies an
+/// object a presentation frame still shares, so a step that writes nothing
+/// must not take one.
+#[test]
+fn an_idle_turn_hands_its_object_out_only_on_a_due_timer() {
+    let (mut sim, rules, tank, plant) = scene();
+    let mut turn = |sim: &mut Simulation, id| {
+        let before = sim.substrate.entities.hand_outs();
+        sim.advance_live_object_turn(id, &rules, techno_ai::ObjectAiCtx::default())
+            .unwrap();
+        sim.substrate.entities.hand_outs() - before
+    };
+    let mut frame = |sim: &mut Simulation| {
+        let next = sim.session.binary_frame() + 1;
+        sim.session.set_binary_frame_for_test(next);
+    };
+    // Let construction, first missions and timers settle.
+    for _ in 0..40 {
+        turn(&mut sim, tank);
+        turn(&mut sim, plant);
+        frame(&mut sim);
+    }
+    let mut handed_out = [0u64; 2];
+    let mut writing_turns = [0u32; 2];
+    for _ in 0..60 {
+        for (slot, id) in [tank, plant].into_iter().enumerate() {
+            let count = turn(&mut sim, id);
+            handed_out[slot] += count;
+            writing_turns[slot] += u32::from(count != 0);
+        }
+        frame(&mut sim);
+    }
+    assert!(
+        writing_turns[0] <= 6 && writing_turns[1] <= 6,
+        "turns of 60 that handed the object out (tank, plant): {writing_turns:?}, \
+         hand-outs {handed_out:?}"
+    );
+}

@@ -504,7 +504,7 @@ fn enter_idle_mode_matches_the_unlimbo_rows() {
         let building = sim
             .spawn_object_limbo_at_height("DEF", "Americans", 7, 7, 0, 0, &rules)
             .unwrap();
-        let before = sim.substrate.entities.get(building).unwrap().mission;
+        let before = sim.substrate.entities.get(building).unwrap().mission.clone();
         assert_eq!(before.current(), MissionId::NONE, "{name}");
         assert_eq!(before.queued(), MissionId::NONE, "{name}");
         let initial = input["args"][0] != 0;
