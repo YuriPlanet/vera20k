@@ -472,6 +472,7 @@ pub fn run_pipeline(
             objects: &mut urban_area_objects,
             trace: &mut construction_trace,
             entity_base: structures.len() + tech_placements.len(),
+            trees: &mut terrain,
         };
         urban_areas::run(&mut ctx, &args, &mut output);
     }

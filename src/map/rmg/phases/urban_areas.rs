@@ -61,6 +61,11 @@ pub struct UrbanCatalog {
     pub structures: Vec<UrbanStructure>,
     pub infantry: Vec<UrbanFoot>,
     pub vehicles: Vec<UrbanFoot>,
+    /// VERA extension: one-cell street furniture (lights, signs, booths) and
+    /// the theater's street trees, set along the roads of a filled district
+    /// ([`decorate_streets`]). Empty for Ares' lists.
+    pub props: Vec<UrbanStructure>,
+    pub trees: Vec<String>,
 }
 
 /// What the app supplies for an urban run.
@@ -118,6 +123,8 @@ pub struct UrbanOutput<'a> {
     pub trace: &'a mut RmgConstructionTrace,
     /// Entity index of the first urban object in the emitted list.
     pub entity_base: usize,
+    /// VERA extension: street trees as `(name, x, y)` terrain objects.
+    pub trees: &'a mut Vec<(String, i16, i16)>,
 }
 
 const NORTH: usize = 0;
@@ -144,6 +151,17 @@ const FILL_MAX_AREA: i32 = 1700;
 const FILL_COVER_PERCENT: i64 = 120;
 const FILL_ATTEMPTS_PER_DISTRICT: i32 = 3;
 const FILL_COMPACTNESS: f64 = 2.2;
+/// VERA fill: the buildings and props a whole run may place before each
+/// district's share is cut down, so a city over the largest sizes keeps its
+/// streets but stays playable (thousands more objects slow the match), and
+/// the buildings a district of [`FILL_MAX_AREA`] cells takes on average.
+const FILL_STRUCTURE_BUDGET: i64 = 2400;
+const FILL_STRUCTURES_PER_DISTRICT: i64 = 30;
+/// VERA fill street furniture, from authored towns: about one prop to four
+/// buildings and one tree a building, each from up to twenty kerb cells.
+const BUILDINGS_PER_PROP: i32 = 4;
+const TREES_PER_BUILDING: i32 = 1;
+const KERB_TRIES: i32 = 20;
 /// Plaza sizes in try order (`0x005A78D9..0x005A7964`).
 const PLAZAS: [(i32, i32); 5] = [(6, 4), (4, 6), (4, 4), (4, 2), (2, 4)];
 
@@ -171,10 +189,14 @@ fn step(cell: (i32, i32), dir: usize) -> (i32, i32) {
 /// (`0x005A89D0`, `0x005A82E0`, `0x005A8720`) is unreachable and not ported.
 pub fn run(ctx: &mut UrbanCtx<'_>, args: &UrbanArgs, out: &mut UrbanOutput<'_>) {
     let presence = f64::from(args.urban_presence);
-    let (target, max_attempts) = match args.vera_fill {
+    let (target, max_attempts, share) = match args.vera_fill {
         Some(fill) => fill_plan(ctx, args, fill),
         // 0x005A502E: FILD +0x60; FADD 0.32 [0x007EDAF0]; FMUL 3.0 [0x007E3D90].
-        None => (ftol(t(presence).add(t(0.32)).mul(t(3.0))), MAX_ATTEMPTS),
+        None => (
+            ftol(t(presence).add(t(0.32)).mul(t(3.0))),
+            MAX_ATTEMPTS,
+            FULL_SHARE,
+        ),
     };
     let mut successes = 0;
     let mut attempts = 0;
@@ -195,9 +217,12 @@ pub fn run(ctx: &mut UrbanCtx<'_>, args: &UrbanArgs, out: &mut UrbanOutput<'_>) 
             };
             if let Some(cells) = grow_area(ctx, seed, size, compact) {
                 place_paved_roads(ctx, &cells);
-                place_structures(ctx, &cells, out);
+                let buildings = place_structures(ctx, &cells, out, share);
                 place_foots(ctx, &cells, out);
                 place_plazas(ctx, &cells);
+                if args.vera_fill.is_some() {
+                    decorate_streets(ctx, &cells, out, buildings);
+                }
                 successes += 1;
             }
         }
@@ -213,7 +238,11 @@ pub fn run(ctx: &mut UrbanCtx<'_>, args: &UrbanArgs, out: &mut UrbanOutput<'_>) 
 /// [`area_size`] draws to pave most of the open land, the clear cells the
 /// earlier phases left unlocked (start bases, ore fields and tech buildings
 /// stay locked). Values between scale linearly.
-fn fill_plan(ctx: &mut UrbanCtx<'_>, args: &UrbanArgs, fill: i32) -> (i32, i32) {
+///
+/// The third value is each district's share of its buildings, in thousandths:
+/// under [`FULL_SHARE`] once the districts wanted would together pass
+/// [`FILL_STRUCTURE_BUDGET`].
+fn fill_plan(ctx: &mut UrbanCtx<'_>, args: &UrbanArgs, fill: i32) -> (i32, i32, i32) {
     let mut open = 0i64;
     for (x, y) in ctx.grid.native_cells() {
         let cell = *ctx.grid.cell_native(x, y);
@@ -225,9 +254,25 @@ fn fill_plan(ctx: &mut UrbanCtx<'_>, args: &UrbanArgs, fill: i32) -> (i32, i32) 
         i64::from((args.map_w * args.map_h * 2 / 30).clamp(FILL_MIN_AREA, FILL_MAX_AREA));
     let full = (open * FILL_COVER_PERCENT / 100 / district).max(1);
     let target = 1 + (i64::from(fill.clamp(1, 100)) - 1) * (full - 1) / 99;
+    // Buildings and their props (one to four) the districts would take.
+    let expected = target * FILL_STRUCTURES_PER_DISTRICT * district / i64::from(FILL_MAX_AREA)
+        * i64::from(BUILDINGS_PER_PROP + 1)
+        / i64::from(BUILDINGS_PER_PROP);
+    let share = if expected > FILL_STRUCTURE_BUDGET {
+        (FILL_STRUCTURE_BUDGET * i64::from(FULL_SHARE) / expected) as i32
+    } else {
+        FULL_SHARE
+    };
     let target = target as i32;
-    (target, target * FILL_ATTEMPTS_PER_DISTRICT + MAX_ATTEMPTS)
+    (
+        target,
+        target * FILL_ATTEMPTS_PER_DISTRICT + MAX_ATTEMPTS,
+        share,
+    )
 }
+
+/// A district's whole building count, in thousandths.
+const FULL_SHARE: i32 = 1000;
 
 /// The seed loop of `0x005A5020` (0x005A50B1..0x005A51C2): a clear cell drawn
 /// over the whole scratch array, `(0, 0)` after two hundred picks. A
@@ -711,22 +756,33 @@ fn foundation_fits(ctx: &mut UrbanCtx<'_>, anchor: (i32, i32), footprint: &[(i16
 /// The constructor (a Scenario word) precedes the anchors, so a building
 /// that never fits still leaves a discarded event. `Put` admits every gate
 /// survivor while Generate holds ScenarioInit (see the tiberium phase).
-fn place_structures(ctx: &mut UrbanCtx<'_>, cells: &[(i32, i32)], out: &mut UrbanOutput<'_>) {
+///
+/// VERA extension: `share` (thousandths) cuts the count for a filled map past
+/// its budget, never under one building; returns the buildings placed.
+fn place_structures(
+    ctx: &mut UrbanCtx<'_>,
+    cells: &[(i32, i32)],
+    out: &mut UrbanOutput<'_>,
+    share: i32,
+) -> i32 {
     let count = cells.len() as i32;
-    let target = (ctx.rng.uniform(count / 20, count / 10) as u32 >> 1) as i32;
+    let mut target = (ctx.rng.uniform(count / 20, count / 10) as u32 >> 1) as i32;
+    if share < FULL_SHARE && target > 0 {
+        target = (target * share / FULL_SHARE).max(1);
+    }
     let catalog = ctx.inputs.catalog;
     if catalog.structures.is_empty() {
-        return;
+        return 0;
     }
     let mut names: Vec<&UrbanStructure> = catalog.structures.iter().collect();
     let mut placed = 0;
     let mut picks = 0;
     if target == 0 {
-        return;
+        return 0;
     }
     loop {
         if target * 2 <= picks || names.len() < 2 {
-            return;
+            return placed;
         }
         let pick = ctx.rng.uniform(0, names.len() as i32 - 1) as usize;
         let entry = names[pick];
@@ -760,7 +816,72 @@ fn place_structures(ctx: &mut UrbanCtx<'_>, cells: &[(i32, i32)], out: &mut Urba
         }
         picks += 1;
         if placed >= target {
-            return;
+            return placed;
+        }
+    }
+}
+
+/// VERA extension: street furniture for a filled district of `buildings`
+/// buildings. Authored towns set their props beside roads (95% of them in a
+/// survey of 2,576 towns) at about one to four buildings, and about a tree a
+/// building. Each goes on a free kerb cell: pavement that touches a road.
+/// Props are neutral one-cell buildings, traced like the district's others;
+/// trees are terrain objects.
+fn decorate_streets(
+    ctx: &mut UrbanCtx<'_>,
+    cells: &[(i32, i32)],
+    out: &mut UrbanOutput<'_>,
+    buildings: i32,
+) {
+    let kerb: Vec<(i32, i32)> = cells
+        .iter()
+        .copied()
+        .filter(|&cell| {
+            (0..8).step_by(2).any(|dir| {
+                let (x, y) = step(cell, dir);
+                ctx.scratch.in_diamond(x, y)
+                    && ctx.ids.is_paved_road(ctx.grid.cell_native(x, y).tile)
+            })
+        })
+        .collect();
+    if kerb.is_empty() {
+        return;
+    }
+    let catalog = ctx.inputs.catalog;
+    let single = [(0i16, 0i16)];
+    // A free kerb cell, from up to `KERB_TRIES` draws.
+    let free_kerb = |ctx: &mut UrbanCtx<'_>| {
+        (0..KERB_TRIES).find_map(|_| {
+            let cell = kerb[ctx.rng.uniform(0, kerb.len() as i32 - 1) as usize];
+            foundation_fits(ctx, cell, &single).then_some(cell)
+        })
+    };
+    if !catalog.props.is_empty() {
+        for _ in 0..buildings / BUILDINGS_PER_PROP {
+            let prop = &catalog.props[ctx.rng.uniform(0, catalog.props.len() as i32 - 1) as usize];
+            let event = out
+                .trace
+                .push_discarded(RmgConstructionPhase::UrbanAreas, prop.name.clone());
+            if let Some(cell) = free_kerb(ctx) {
+                ctx.grid.cell_native_mut(cell.0, cell.1).occupied = true;
+                record(
+                    out,
+                    event,
+                    prop.name.clone(),
+                    EntityCategory::Structure,
+                    cell,
+                    0,
+                );
+            }
+        }
+    }
+    if !catalog.trees.is_empty() {
+        for _ in 0..buildings * TREES_PER_BUILDING {
+            let tree = &catalog.trees[ctx.rng.uniform(0, catalog.trees.len() as i32 - 1) as usize];
+            if let Some(cell) = free_kerb(ctx) {
+                ctx.grid.cell_native_mut(cell.0, cell.1).occupied = true;
+                out.trees.push((tree.clone(), cell.0 as i16, cell.1 as i16));
+            }
         }
     }
 }
@@ -1005,6 +1126,7 @@ mod tests {
             ],
             infantry: vec![foot("CIV1", true), foot("CIVBAD", false)],
             vehicles: vec![foot("TRUCKA", true)],
+            ..Default::default()
         }
     }
 
@@ -1051,6 +1173,7 @@ mod tests {
                 objects: &mut objects,
                 trace: &mut trace,
                 entity_base: 7,
+                trees: &mut Vec::new(),
             };
             run(&mut ctx, &w.args, &mut out);
         }
