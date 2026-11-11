@@ -230,9 +230,21 @@ impl SimWorker {
 /// (phase 4), or opted into with `VERA20K_PRESENTATION_FRAME=1`.
 pub(crate) fn presentation_frames_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| sim_thread_enabled() || env_flag("VERA20K_PRESENTATION_FRAME"))
+}
+
+/// Whether ordinary offline frames tick on the simulation thread, opted
+/// into with `VERA20K_SIM_THREAD=1`. The browser build has no thread to
+/// lend to and always ticks inline.
+pub(crate) fn sim_thread_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED.get_or_init(|| {
-        std::env::var_os("VERA20K_PRESENTATION_FRAME").is_some_and(|value| value == "1")
+        !cfg!(all(feature = "wasm", target_arch = "wasm32")) && env_flag("VERA20K_SIM_THREAD")
     })
+}
+
+fn env_flag(name: &str) -> bool {
+    std::env::var_os(name).is_some_and(|value| value == "1")
 }
 
 // docs/sim-thread.md moves the host onto its own thread; it must stay Send.

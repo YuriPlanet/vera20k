@@ -168,18 +168,57 @@ Follow-ups: fog planes keep one byte per cell per house where gameplay
 needs a few bits; packing them would shrink both the copy and the cache
 footprint.
 
-### Phase 3: cold paths and input
+### Phase 3: lending the runtime
 
-The sidebar, tooltips and cursor legality read the frame when the data is
-small. Heavy queries such as reachability and fire error either go to
-`SimHost` as a request answered after the next tick (one tick, 22 ms), or
-take a short lock between ticks.
+`SimHost::lend` hands the runtime to a persistent simulation thread for
+one job. While it is away, `runtime()` serves the published presentation
+frame, so the sidebar, tooltips, cursor legality and the other cold readers
+see the last tick without waiting. Every write route (`write_sim`,
+`tick_parts`, `install`, `take_runtime`) first takes the runtime back,
+waiting for the job; its result then waits in the host. A panic in the job
+resumes on the main thread.
+
+A player command therefore waits for the tick in flight, at most one tick.
+Heavy queries can still move to requests answered after the next tick if
+that wait shows in play.
 
 ### Phase 4: the thread
 
-`SimHost` runs on a dedicated thread at the game speed. The browser build
-keeps the inline mode behind a cfg until a Worker thread with shared memory
-exists.
+`advance_one_simulation_frame` is split into three parts:
+
+- the prepare, on the main thread: client reads, due commands and the
+  deferred effects;
+- `run_deferred_tick`, which borrows nothing from the app;
+- `finish_simulation_frame`, the frame tail on the main thread.
+
+With `VERA20K_SIM_THREAD=1`, an ordinary offline frame on the deferred path
+is lent to the simulation thread instead of run inline. Each admitted pass
+then does four things in order:
+
+1. waits for the tick in flight;
+2. runs that tick's tail with this pass's camera scroll;
+3. publishes the frame;
+4. dispatches the next tick and draws while it runs.
+
+Drawing therefore shows the world one tick behind the simulation. These
+frames stay inline:
+
+- network play, replay, a campaign's initial save and command observation
+  (the deferred path does not apply to them);
+- resumed frames: outcome, network and checksum waits.
+
+A pass whose finished tick left an outcome wait or a network failure
+dispatches nothing, so the next pass resumes that frame inline.
+
+The browser build has no thread and always ticks inline.
+
+Residuals:
+
+- `ExactOneStep` diagnostics expect the frame inside the call, so they run
+  without the flag.
+- A tick whose tail has not run when a debug tool or a load takes the
+  runtime back keeps its result until the next pass, or drops it when a
+  scenario is installed.
 
 ## Validation
 
