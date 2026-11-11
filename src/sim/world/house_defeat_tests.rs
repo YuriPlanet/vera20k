@@ -856,7 +856,8 @@ fn native_blowup_subsets_corpus() {
                     .entities
                     .get_mut(controller)
                     .unwrap()
-                    .capture_manager = Some(CaptureManagerState::with_nodes_for_test(&nodes));
+                    .capture_manager =
+                    Some(Box::new(CaptureManagerState::with_nodes_for_test(&nodes)));
             }
         }
         let subset = match input["subset"].as_str().unwrap() {
@@ -978,7 +979,8 @@ fn native_blowup_all_corpus() {
                     .entities
                     .get_mut(controller)
                     .unwrap()
-                    .capture_manager = Some(CaptureManagerState::with_nodes_for_test(&nodes));
+                    .capture_manager =
+                    Some(Box::new(CaptureManagerState::with_nodes_for_test(&nodes)));
             }
         }
         let mut warpers = Vec::new();

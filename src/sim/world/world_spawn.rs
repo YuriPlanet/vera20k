@@ -625,7 +625,6 @@ impl Simulation {
                 }
                 if matches!(outcome, RevealOutcome::Revealed { .. }) {
                     Self::initialize_cloak_after_unlimbo(&sim.interner, &sim.session, &mut sim.substrate, stable_id, rules);
-                    sim.add_unit_sensor_after_unlimbo(stable_id, rules, overlay_registry);
                     // ReadScenarioBuildings (0x0044F820) makes no sensor call:
                     // a map building stamps only if the first opening its
                     // Unlimbo already ran (0x00440D61 / 0x00440E76) passed
@@ -1166,7 +1165,6 @@ impl Simulation {
             stable_id,
             rules,
         );
-        self.add_unit_sensor_after_unlimbo(stable_id, rules, overlay_registry);
         self.substrate.ready_finished_spawn_adapter(stable_id);
         Ok(Some(stable_id))
     }
@@ -1559,6 +1557,7 @@ impl Simulation {
             rules,
             overlay_registry,
             frame_effects,
+            true,
         ) {
             return (outcome == RevealOutcome::Consumed).then_some(stable_id);
         }
@@ -1615,7 +1614,6 @@ impl Simulation {
             stable_id,
             rules,
         );
-        self.add_unit_sensor_after_unlimbo(stable_id, rules, overlay_registry);
         Some(stable_id)
     }
 
@@ -2189,6 +2187,7 @@ impl Simulation {
             rules,
             overlay_registry,
             frame_effects,
+            !scenario_initialization,
         ) {
             return (stable_id, outcome);
         }
@@ -2954,7 +2953,6 @@ impl Simulation {
             new_sid,
             rules,
         );
-        self.add_unit_sensor_after_unlimbo(new_sid, rules, registry);
         self.mission_spawned_entities = true;
         if recalc_context.is_some() {
             // The new Building's committed north-west anchor is the native
@@ -3211,7 +3209,6 @@ impl Simulation {
             new_sid,
             rules,
         );
-        self.add_unit_sensor_after_unlimbo(new_sid, rules, overlay_registry);
         if let Some(unit) = self.substrate.entities.get_mut(new_sid) {
             converted_health.apply(unit);
             // RESIDUAL: native Selects the new unit (vt+0x14C, `0x0044A137`)

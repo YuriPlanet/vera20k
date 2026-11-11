@@ -1820,6 +1820,28 @@ impl HouseState {
         self.stats.record_built();
     }
 
+    /// Every item [`Self::produced_count`] holds for `category` whose type's
+    /// `Naval=` is `naval`, summed: how many such objects this House has
+    /// finished. War Factory and Naval Yard products feed one counter; this
+    /// keeps them apart, as the two kinds of factory are. A VERA reader
+    /// (`app::input::primary_rotation`); gamemd has no such total.
+    pub fn produced_total(
+        &self,
+        rules: &crate::rules::ruleset::RuleSet,
+        category: ObjectCategory,
+        naval: bool,
+    ) -> i64 {
+        self.produced_type_counts[category as usize]
+            .iter()
+            .filter(|&(&index, _)| {
+                rules
+                    .type_array_at(category, index)
+                    .is_some_and(|object| object.naval == naval)
+            })
+            .map(|(_, &count)| i64::from(count))
+            .sum()
+    }
+
     /// Counter49FAE0's logical item query. Sparse lookup replaces native
     /// allocation/zero-fill; allocator capacity has no gameplay consumer here.
     pub fn produced_count(&self, category: ObjectCategory, type_index: i32) -> i32 {
@@ -2214,11 +2236,13 @@ impl HouseState {
 
     /// House+54E0 is forgotten if it names `building`: the new owner's clear
     /// in `BuildingClass::ChangeOwner` (`0x00448C8C`) and
-    /// `HouseClass::PointerExpired` (`0x004FB9BB`).
-    pub(crate) fn forget_lost_building(&mut self, building: u64) {
-        if self.lost_building == Some(building) {
+    /// `HouseClass::PointerExpired` (`0x004FB9BB`). Answers whether it did.
+    pub(crate) fn forget_lost_building(&mut self, building: u64) -> bool {
+        let named = self.lost_building == Some(building);
+        if named {
             self.lost_building = None;
         }
+        named
     }
 
     /// House+54E0, read by a computer engineer's Greatest_Threat.
@@ -3847,5 +3871,32 @@ mod signed_country_side_tests {
         let bytes = crate::util::save_codec::serialize(&house).unwrap();
         let restored: HouseState = crate::util::save_codec::deserialize(&bytes).unwrap();
         assert_eq!(restored.side_index, -1);
+    }
+}
+
+#[cfg(test)]
+mod produced_total_tests {
+    use super::*;
+    use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
+
+    /// VERA primary rotation counts War Factory and Naval Yard products
+    /// apart, though both feed the one Vehicle counter.
+    #[test]
+    fn ships_and_tanks_are_counted_apart() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=TANK\n1=BOAT\n[TANK]\nStrength=1\n[BOAT]\nStrength=1\nNaval=yes\n",
+        ))
+        .unwrap();
+        let mut house = HouseState::new(Default::default(), 0, None, false, 0, 10);
+        house.set_produced_count_for_test(ObjectCategory::Vehicle, 0, 3);
+        house.set_produced_count_for_test(ObjectCategory::Vehicle, 1, 2);
+        assert_eq!(
+            house.produced_total(&rules, ObjectCategory::Vehicle, false),
+            3
+        );
+        assert_eq!(
+            house.produced_total(&rules, ObjectCategory::Vehicle, true),
+            2
+        );
     }
 }

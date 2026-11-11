@@ -271,7 +271,7 @@ pub(crate) fn render_game(
     let selected_building = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .is_some_and(|runtime| {
             runtime
                 .simulation
@@ -337,7 +337,7 @@ pub(crate) fn render_game(
     // the runtime directly for split borrows.
     if let Some(ref mut shroud_buf) = state.match_state.match_presentation.shroud_buffer
         && !state.match_state.sandbox_full_visibility
-        && let (Some(rt), Some(owner)) = (state.match_state.sim_runtime.as_ref(), &local_owner)
+        && let (Some(rt), Some(owner)) = (state.match_state.sim_runtime.presentation(), &local_owner)
     {
         let view = rt.view();
         let owner_id = view.interner().get(owner).unwrap_or_default();
@@ -456,7 +456,7 @@ pub(crate) fn render_game(
         );
     }
     let persistent_lights = persistent_light_start..combat_lights.len();
-    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+    if let Some(runtime) = state.match_state.sim_runtime.presentation() {
         state.renderer.combat_light_renderer.set_spotlight_radius(
             &state.renderer.gpu.queue,
             runtime.resources.rules.general.spotlight.radius,
@@ -526,7 +526,7 @@ pub(crate) fn render_game(
             state.match_state.input.cursor_y,
         )
     });
-    let sim_runtime = state.match_state.sim_runtime.as_ref();
+    let sim_runtime = state.match_state.sim_runtime.presentation();
     let simulation = sim_runtime.map(|runtime| &runtime.simulation);
     let rules = sim_runtime
         .map(|runtime| &runtime.resources.rules)
@@ -566,7 +566,7 @@ pub(crate) fn render_game(
     // once per composite; the owner reads take no Main draw, so they run
     // ahead of the borrow.
     if steps > 0
-        && let Some(runtime) = state.match_state.sim_runtime.as_ref()
+        && let Some(runtime) = state.match_state.sim_runtime.presentation()
     {
         let sim = runtime.view().simulation();
         let rules = &runtime.resources.rules;
@@ -586,13 +586,13 @@ pub(crate) fn render_game(
     // trails, even when this composite ran no Logic. Their shared process
     // Main requests happen here once; GPU uploads only read resolved colors.
     let mut main = crate::app::state::process_main_draws(
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.presentation(),
         &state.frontend.frontend_main_rng,
     );
     let sim = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|runtime| runtime.view().simulation());
     let viewer = local_owner
         .as_deref()
@@ -1065,6 +1065,7 @@ fn upload_to_gpu(
         pool.upload_page("beacons", house, beacons);
     }
     pool.upload("drag", &ui.drag);
+    pool.upload("ground_marks", &ui.ground_marks);
     pool.upload("software_cursor", &software_cursor);
     pool.upload("placement", &ui.placement);
     #[cfg(feature = "phobos")]

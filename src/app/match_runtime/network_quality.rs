@@ -329,7 +329,7 @@ pub(crate) fn observe_pass(state: &mut AppState) {
         .live_network
         .as_ref()
         .filter(|live| in_game && live.uses_sequenced_lockstep())
-        .zip(state.match_state.sim_runtime.as_ref())
+        .zip(state.match_state.sim_runtime.runtime())
         .map(|(live, runtime)| {
             let frame = runtime.simulation.session().binary_frame();
             let reconnecting = live.recovery_status(

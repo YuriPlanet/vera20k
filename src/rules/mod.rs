@@ -294,6 +294,7 @@ pub mod terrain_rules;
 pub mod tiberium_type;
 pub mod voxel_anim_type;
 pub mod voxel_asset_catalog;
+mod voxel_model_plan;
 pub mod voxel_frame_catalog;
 pub mod warhead_type;
 #[cfg(all(test, not(feature = "ares")))]

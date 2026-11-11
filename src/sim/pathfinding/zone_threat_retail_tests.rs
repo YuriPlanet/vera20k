@@ -31,7 +31,7 @@ fn retail_miner_beside_a_bridge_searches_through_record_zero_edge() {
     let rules = runtime.resources.rules.clone();
 
     let sim = &mut runtime.simulation;
-    let zones = sim.zone_grid.as_ref().unwrap();
+    let zones = sim.zone_grid.as_deref().unwrap();
     let start_zone = zones.hierarchy_zone_at_native(2, MINER_CELL).unwrap();
     let level2 = zones
         .hierarchy_for(MovementZone::Normal)

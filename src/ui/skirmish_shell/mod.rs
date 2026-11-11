@@ -35,7 +35,7 @@ pub(crate) use state::status_help_key_for_hover_with_catalog;
 pub use state::{
     AcceptOutcome, ChooseMapContext, ChooseMapHoverTarget, ChooseMapListPress, ChooseMapModalState,
     ChooseMapPrompt, ChooseMapPromptAnswer, ChooseMapPromptButton, ChooseMapPromptKind, ChooseMapSelection,
-    ONLINE_MAPS_ROW, SEARCH_MAX_CHARS,
+    FAVORITES_ROW, ONLINE_MAPS_ROW, SEARCH_MAX_CHARS, favorite_key,
     DropdownScrollDragState, DropdownScrollbarPart, DropdownScrollbarPressState, MainRngRanged,
     OpenComboDropdown, OwnerDrawButton, PLAYER_NAME_CARET_MARGIN_PX, PLAYER_NAME_DEFAULT,
     PLAYER_NAME_EDIT_LIMIT_BYTES, PLAYERS_RANGE, ADVANCED_RANGE, PlayerNameEditState,
@@ -43,7 +43,7 @@ pub use state::{
     SAVED_SEED_DESCRIPTION_MAX_UNITS, SETUP_COMBO_ROWS, SavedSeedBrowserRow, SavedSeedBrowserState,
     SavedSeedDescriptionEdit, SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose,
     SetupCombo, SetupComboItem, SkirmishAiRowType, SkirmishComboId, SkirmishComboItem,
-    SkirmishCountryChoice, SkirmishHoverTarget, SkirmishSavedSetup, SkirmishSetupComputer,
+    SkirmishCountryChoice, SkirmishHoverTarget, SkirmishSavedSetup, SkirmishSetupComputer, apply_team_starts,
     SkirmishSetupSeat, SkirmishShellAction, SkirmishShellDialog, SkirmishShellOpponent,
     SkirmishShellState, SkirmishShellUiSound, SkirmishTrackbarBounds,
     SkirmishValidationModalState, accept_selected_map, action_for_owner_draw_button,

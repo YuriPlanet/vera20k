@@ -341,7 +341,7 @@ impl Simulation {
     ) -> Option<(u16, u16)> {
         let required_zone_id = if seed_zone {
             self.zone_grid
-                .as_ref()
+                .as_deref()
                 .zip(self.resolved_terrain.as_ref())
                 .and_then(|(zones, terrain)| {
                     zones.get_zone_id_native(
@@ -721,7 +721,7 @@ impl Simulation {
         }
         let (Some(terrain), Some(zones), Some(bounds), Some(size)) = (
             self.resolved_terrain.as_ref(),
-            self.zone_grid.as_ref(),
+            self.zone_grid.as_deref(),
             self.playfield_bounds(),
             self.map_size_diamond(),
         ) else {

@@ -58,11 +58,11 @@ impl Scene {
         let terrain_template = sim.resolved_terrain().cloned();
         let mut scene = Self(SimRuntime {
             simulation: sim,
-            resources: SimResources {
+            resources: std::sync::Arc::new(SimResources {
                 rules,
                 overlay_registry: registry,
                 terrain_template,
-            },
+            }),
         });
         scene.spawn("GAPOWR", "Americans", (4, 24));
         scene.spawn("NAPOWR", "Russians", (28, 28));
@@ -101,7 +101,7 @@ impl Scene {
         // Observe the actual serialized clock without depending on a new API:
         // the same test source compiles against the pre-fix production tree.
         let entity = serde_json::to_value(self.actor(id)).unwrap();
-        serde_json::from_value(entity["ammo_reload_timer"].clone())
+        serde_json::from_value(entity["seldom"]["ammo_reload_timer"].clone())
             .expect("authoritative saved reload clock")
     }
 

@@ -33,7 +33,21 @@ impl Simulation {
             if let (Some(grid), Some(terrain)) =
                 (self.smudge_grid.as_mut(), self.resolved_terrain.as_ref())
                 && grid
-                    .clear_footprint_identity_at(source, &rules.smudge_types, terrain)
+                    .clear_footprint_identity_at(
+                        (source.0 as i16, source.1 as i16),
+                        &rules.smudge_types,
+                        terrain,
+                        |identity, at, changed| {
+                            if changed
+                                && matches!(
+                                    identity,
+                                    crate::map::cell_index::NativeCellIdentity::Real(_)
+                                )
+                            {
+                                self.dirty_cells.mark_cell((at.0 as u16, at.1 as u16));
+                            }
+                        },
+                    )
                     .is_none()
             {
                 log::debug!("Map588AC0 source has an unavailable SmudgeType");

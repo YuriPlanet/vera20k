@@ -103,7 +103,7 @@ const CAMERA_COMMANDS: [CommandMetadata; 4] = [
 /// (`hotkeys::VERA_DEFAULT_KEYS`). Each name is the Options page's label for
 /// the same setting, but Ferry's and the two Formation commands', which have
 /// none; each category literal is [`VERA_CATEGORY_KEY`].
-const SHORTCUT_COMMANDS: [CommandMetadata; 8] = [
+const SHORTCUT_COMMANDS: [CommandMetadata; 9] = [
     command!(
         HotkeyCommand::PerformanceStats,
         "PerformanceStats",
@@ -166,6 +166,14 @@ const SHORTCUT_COMMANDS: [CommandMetadata; 8] = [
         "VERA:Ferry",
         "VERA:HotkeyCategory",
         "VERA:FerryDesc",
+        None
+    ),
+    command!(
+        HotkeyCommand::RotatePrimary,
+        "RotatePrimary",
+        "VERA:RotatePrimary",
+        "VERA:HotkeyCategory",
+        "VERA:RotatePrimaryDesc",
         None
     ),
 ];

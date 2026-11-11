@@ -1,4 +1,5 @@
 use super::*;
+use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::persistence::options::audio::AudioVolumeOperations;
 use crate::util::time::{Duration, Instant};
 
@@ -169,6 +170,10 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // The next cameo press reads it; Options' accept writes it out.
         self.persistence.options_profile.shift_queue = shift_queue;
     }
+    fn store_auto_repair(&mut self, enabled: bool) {
+        // The next logic frame's pass reads it; Options' accept writes it out.
+        self.persistence.options_profile.auto_repair = enabled;
+    }
     fn store_terrain_deformation(&mut self, enabled: bool) {
         // The next game's rules and every later network agreement read it;
         // Options' accept writes it out.
@@ -279,7 +284,7 @@ impl crate::app::persistence::options::launcher::LauncherParentOperations
         // Display4AE450 resamples synchronously, before the next Logic visit
         // can copy a Cell's light into a grapple anim. This local operation
         // never enters Simulation's replay/sync hash.
-        if let Some(runtime) = self.state.match_state.sim_runtime.as_ref()
+        if let Some(runtime) = self.state.match_state.sim_runtime.runtime()
             && let Some(terrain) = runtime.simulation.resolved_terrain()
         {
             let presentation = &mut self.state.match_state.match_presentation;
@@ -568,7 +573,7 @@ impl App {
             .multiplayer_shell_runtime
             .read_multiplayer_settings(&mut state.process_assets);
         let main = crate::app::state::process_main_draws(
-            state.match_state.sim_runtime.as_ref(),
+            state.match_state.sim_runtime.runtime(),
             &state.frontend.frontend_main_rng,
         );
         state
@@ -582,17 +587,17 @@ impl App {
         if let Some(rules) = state.frontend.frontend_rules.as_mut() {
             state.process_assets.project_multiplayer_countries(rules);
         }
-        if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Rules) {
             state
                 .process_assets
-                .project_multiplayer_countries(&mut runtime.resources.rules);
+                .project_multiplayer_countries(&mut runtime.resources_mut().rules);
         }
         if let Some(rules) = state.frontend.frontend_rules.as_ref() {
             state
                 .frontend
                 .skirmish_shell_state
                 .refresh_country_catalog(rules);
-        } else if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+        } else if let Some(runtime) = state.match_state.sim_runtime.runtime() {
             state
                 .frontend
                 .skirmish_shell_state
@@ -1016,7 +1021,7 @@ impl App {
     pub(crate) fn retire_finished_scenario(state: &mut AppState) {
         // Main_Game48CEBF also retires ScenarioStarted after score Continue;
         // source: original gamemd.exe Main_Game48CCC0 (EBX=0 at48CCD4).
-        if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {
             runtime.simulation.retire_scenario_started();
         }
         // The accepted match owns the socket until either exit path returns
@@ -1247,7 +1252,7 @@ impl App {
     }
 
     /// The Options values as they stand now.
-    pub(super) fn launcher_options_from_state(
+    pub(crate) fn launcher_options_from_state(
         state: &AppState,
     ) -> crate::ui::main_menu_dialogs::OptionsDialogState {
         use crate::app::persistence::options::launcher::launcher_dialog_from_profile;
@@ -1274,7 +1279,7 @@ impl App {
     }
 
     /// The Options captions the string table names, in the language in use.
-    fn launcher_options_labels(
+    pub(crate) fn launcher_options_labels(
         state: &AppState,
     ) -> crate::ui::main_menu_dialogs::options::LauncherOptionsLabels {
         let mut labels =
@@ -1355,6 +1360,7 @@ impl App {
                     &mut operations,
                     dialog,
                     result,
+                    None,
                 );
             }
             None => {
@@ -1396,6 +1402,23 @@ impl App {
             &mut operations,
             dialog,
             result,
+            None,
+        );
+    }
+
+    /// The in-game menu's Options page has closed: the controls the player
+    /// moved commit as the main menu's do, and the profile is written once.
+    pub(crate) fn commit_in_game_options_page(
+        state: &mut AppState,
+        dialog: crate::ui::main_menu_dialogs::OptionsDialogState,
+        opened: crate::ui::main_menu_dialogs::options::LauncherOptionsPacked,
+    ) {
+        let mut operations = AppStateLauncherParentOperations { state };
+        crate::app::persistence::options::launcher::dispatch_launcher_parent_result(
+            &mut operations,
+            dialog,
+            crate::ui::main_menu_dialogs::options::LauncherParentResult::Back,
+            Some(opened),
         );
     }
 
@@ -1434,6 +1457,7 @@ impl App {
             &mut operations,
             dialog,
             crate::ui::main_menu_dialogs::options::LauncherParentResult::Terminal,
+            None,
         );
     }
 
@@ -1557,7 +1581,7 @@ impl App {
             });
         }
         Some((
-            crate::ui::shell::descriptor::DialogId(kind.template_id(false)),
+            crate::ui::shell::descriptor::DialogId(kind.template_id()),
             feed,
         ))
     }
@@ -1682,6 +1706,7 @@ impl App {
         // Complete that transaction before unrelated shell teardown.
         crate::app::input::keyboard::prepare_terminal_exit(state);
         Self::close_launcher_options_terminal(state);
+        crate::app::input::pause_menu::on_match_end(state);
         if Self::native_skirmish_shell_active(state) {
             // A terminal exit has no Start/Back transaction, so pack the
             // page's current controls into the durable record first. The
@@ -2235,7 +2260,7 @@ impl App {
             return;
         };
         let dialog =
-            crate::ui::shell::descriptor::DialogId(message_box.labels.kind().template_id(false));
+            crate::ui::shell::descriptor::DialogId(message_box.labels.kind().template_id());
         if state.frontend.shell_controller.top_id() != Some(dialog) {
             state.frontend.shell_controller.push(dialog, true);
         }

@@ -1147,7 +1147,7 @@ fn compare_authored_natural_phases(
             actual_changes, expected_changes,
             "{name}: every changed cell"
         );
-        previous_cells.clone_from_slice(actual.overlay_grid.as_ref().unwrap().cells());
+        previous_cells.clone_from_slice(&actual.overlay_grid.as_ref().unwrap().cells().to_vec());
         actual.process_pending_delete_with(
             rules,
             Some(registry),

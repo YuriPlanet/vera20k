@@ -261,7 +261,7 @@ impl BlockerNeighborCounts {
         }
     }
 
-    pub(crate) fn from_retained_wall_plane(width: u16, height: u16, counts: &[u8]) -> Self {
+    pub(crate) fn from_retained_wall_plane(width: u16, height: u16, counts: &crate::util::shared::ChunkedVec<u8>) -> Self {
         assert_eq!(
             counts.len(),
             usize::from(width) * usize::from(height),
@@ -281,13 +281,13 @@ impl BlockerNeighborCounts {
     /// Bring the retained wall/Foot part of these counts from `kept` to
     /// `now`, cell by cell, and make `kept` a copy of `now`. The counts wrap,
     /// so this is every delta between them applied at once.
-    pub(crate) fn apply_retained_difference(&mut self, kept: &mut [u8], now: &[u8]) {
+    pub(crate) fn apply_retained_difference(&mut self, kept: &mut [u8], now: &crate::util::shared::ChunkedVec<u8>) {
         assert_eq!(
             (kept.len(), now.len()),
             (self.counts.len(), self.counts.len()),
             "retained wall-neighbor plane must match pathfinding dimensions"
         );
-        for ((count, kept), &now) in self.counts.iter_mut().zip(kept.iter_mut()).zip(now) {
+        for ((count, kept), &now) in self.counts.iter_mut().zip(kept.iter_mut()).zip(now.iter()) {
             *count = count.wrapping_add(now.wrapping_sub(*kept));
             *kept = now;
         }

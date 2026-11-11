@@ -2483,6 +2483,44 @@ fn saved_setup_loads_back_through_the_combo_rules() {
     assert_eq!(shown.computers[1].seat.start, LaunchStartPosition::Auto);
 }
 
+/// VERA's Team Starts fills the Start column through the combo rules: each
+/// playing row gets its own start, allies neighbouring ones, and a row that
+/// does not play keeps Random.
+#[test]
+fn team_starts_seat_allies_together_on_the_page() {
+    use SkirmishComboId as Id;
+    use SkirmishComboItem as Item;
+    let maps = [test_map_entry_with_starts("four.map", 4)];
+    let mut shell = controlled_country_shell();
+    initialize_rows_for_selected_map(&mut shell, &maps);
+    for (id, item) in [
+        (Id::Team(0), Item::Team(0)),
+        (Id::AiType(0), Item::AiType(SkirmishAiRowType::Hard)),
+        (Id::Team(1), Item::Team(1)),
+        (Id::AiType(1), Item::AiType(SkirmishAiRowType::Hard)),
+        (Id::Team(2), Item::Team(0)),
+        (Id::AiType(2), Item::AiType(SkirmishAiRowType::None)),
+        // A claim the fill must free: the player holds the start it gives
+        // to another row.
+        (Id::Start(0), Item::Start(LaunchStartPosition::Position(1))),
+    ] {
+        apply_combo_selection_for_test(&mut shell, id, item);
+    }
+    // West pair (0, 1) and east pair (2, 3).
+    let starts = [(10, 10), (10, 30), (90, 10), (90, 30)];
+    apply_team_starts(&mut shell, &maps, &starts);
+    let start = |row| match selected_combo_item(&shell, Id::Start(row)) {
+        Some(Item::Start(LaunchStartPosition::Position(start))) => Some(start),
+        _ => None,
+    };
+    let (player, enemy, ally) = (start(0), start(1), start(2));
+    let west = |start: Option<u8>| start.expect("a playing row has a start") < 2;
+    assert_eq!(west(player), west(ally), "allies share a side");
+    assert_ne!(west(player), west(enemy), "the enemy takes the other");
+    assert_ne!(player, ally);
+    assert_eq!(start(3), None, "a closed row keeps Random");
+}
+
 /// Save and Load reach every computer row the map seats, not only the rows
 /// VERA's scrollbar shows.
 #[test]

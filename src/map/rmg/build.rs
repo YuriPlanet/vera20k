@@ -561,6 +561,7 @@ mod tests {
             structures: Vec::new(),
             infantry: vec![foot("CIV1")],
             vehicles: vec![foot("TRUCKA")],
+            ..Default::default()
         };
         let draws = std::cell::Cell::new(0u32);
         let main_draw = || {
@@ -846,6 +847,171 @@ mod tests {
                 "entity {index} {} has no constructor",
                 entity.type_id
             );
+        }
+
+        // Street furniture: props and trees on pavement that touches a road.
+        let props = &settings.vera_urban.props;
+        assert!(!props.is_empty() && !settings.vera_urban.trees.is_empty());
+        let tile_at = |x: u16, y: u16| {
+            urban
+                .map_file
+                .cells
+                .iter()
+                .find(|cell| (cell.rx, cell.ry) == (x, y))
+                .map_or(-1, |cell| cell.tile_index)
+        };
+        let placed: Vec<_> = urban
+            .map_file
+            .entities
+            .iter()
+            .filter(|entity| props.iter().any(|prop| prop.name == entity.type_id))
+            .collect();
+        assert!(!placed.is_empty(), "the districts have street furniture");
+        for prop in placed {
+            let (x, y) = (prop.cell_x, prop.cell_y);
+            let by_road = [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
+                .into_iter()
+                .any(|(nx, ny)| resolved.ids.is_paved_road(tile_at(nx, ny)));
+            assert!(by_road, "{} at {x},{y} stands off the road", prop.type_id);
+        }
+        let street_trees = urban
+            .map_file
+            .terrain_objects
+            .iter()
+            .filter(|tree| {
+                let tile = tile_at(tree.rx, tree.ry);
+                resolved.ids.is_pave(tile) || resolved.ids.is_misc_pave(tile)
+            })
+            .count();
+        assert!(street_trees > 0, "trees stand on the pavement");
+
+        // A city over the largest size keeps its buildings within budget.
+        let largest = generate_map(
+            &RmgOptions {
+                urban_enabled: true,
+                urban_presence: 100,
+                width: 8,
+                height: 8,
+                ..base.clone()
+            },
+            &settings,
+            &resolved,
+            &blocks,
+            &objects,
+        );
+        let buildings = largest
+            .map_file
+            .entities
+            .iter()
+            .filter(|entity| entity.category == crate::map::entities::EntityCategory::Structure)
+            .count();
+        assert!(
+            (1500..3000).contains(&buildings),
+            "{buildings} buildings on the largest map"
+        );
+    }
+
+    /// VERA extension: the exported `.yrm` text of a generated map parses
+    /// back to the same cells, overlays, objects and starts.
+    #[test]
+    fn exported_map_text_reads_back_the_generated_map() {
+        let generated = generate_map(
+            &options(1, 0),
+            &RmgSettings::default(),
+            &resolved(),
+            &one_by_one(),
+            &GenerationObjects::tech(&[]),
+        );
+        let map = &generated.map_file;
+        let thumbnail: Vec<u8> = (0..6 * 4 * 4).map(|byte| byte as u8 | 3).collect();
+        let starts = crate::map::preview::PreviewSourceBounds {
+            origin_x: 3,
+            origin_y: 5,
+            width: 40,
+            height: 30,
+            start_points: vec![
+                crate::map::preview::PreviewStartPoint { x: 10, y: 12 },
+                crate::map::preview::PreviewStartPoint { x: 30, y: 25 },
+            ],
+        };
+        let text = crate::map::map_export::multiplayer_map_text(
+            map,
+            "Exported",
+            2,
+            4,
+            Some(crate::map::map_export::ExportPreview {
+                width: 6,
+                height: 4,
+                rgba: &thumbnail,
+            }),
+            Some(&starts),
+        );
+        assert_eq!(
+            crate::map::scenario_menu::preview_source_bounds_from_verified_source(
+                &crate::rules::ini_parser::IniFile::from_str(&text)
+            ),
+            Some(starts.clone()),
+            "the map list reads the start markers back"
+        );
+        let read = crate::map::map_file::MapFile::from_bytes(text.as_bytes()).expect("parses");
+        let shown = crate::map::preview::decode_preview_image_from_ini(&read.ini)
+            .expect("the thumbnail decodes")
+            .expect("the map carries a thumbnail");
+        assert_eq!((shown.width, shown.height), (6, 4));
+        let rgb = |rgba: &[u8]| -> Vec<u8> {
+            rgba.chunks_exact(4)
+                .flat_map(|p| [p[0], p[1], p[2]])
+                .collect()
+        };
+        assert_eq!(rgb(&shown.rgba), rgb(&thumbnail));
+
+        assert_eq!(read.basic.name.as_deref(), Some("Exported"));
+        assert_eq!(read.header.theater, map.header.theater);
+        assert_eq!(
+            (read.header.width, read.header.local_width),
+            (map.header.width, map.header.local_width)
+        );
+        let cells = |m: &crate::map::map_file::MapFile| {
+            let mut cells: Vec<_> = m
+                .cells
+                .iter()
+                .map(|c| (c.rx, c.ry, c.tile_index, c.sub_tile, c.z))
+                .collect();
+            cells.sort_unstable();
+            cells
+        };
+        assert!(!map.cells.is_empty());
+        assert_eq!(cells(&read), cells(map));
+        let overlays = |m: &crate::map::map_file::MapFile| {
+            let mut overlays: Vec<_> = m
+                .overlays
+                .iter()
+                .map(|o| (o.rx, o.ry, o.overlay_id, o.frame))
+                .collect();
+            overlays.sort_unstable();
+            overlays
+        };
+        assert!(!map.overlays.is_empty());
+        assert_eq!(overlays(&read), overlays(map));
+        let objects = |m: &crate::map::map_file::MapFile| {
+            let mut objects: Vec<_> = m
+                .entities
+                .iter()
+                .map(|e| (e.type_id.clone(), e.cell_x, e.cell_y, e.facing))
+                .chain(
+                    m.terrain_objects
+                        .iter()
+                        .map(|t| (t.name.clone(), t.rx, t.ry, 0)),
+                )
+                .collect();
+            objects.sort_unstable();
+            objects
+        };
+        assert_eq!(objects(&read), objects(map));
+        assert_eq!(read.waypoints.len(), generated.start_waypoints.len());
+        for (slot, x, y) in &generated.start_waypoints {
+            let waypoint = &read.waypoints[&u32::from(*slot)];
+            assert_eq!((waypoint.rx, waypoint.ry), (*x, *y));
         }
     }
 

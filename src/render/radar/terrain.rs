@@ -36,6 +36,8 @@ pub(super) struct NativeRadarTerrainSurface {
     overrides: BTreeMap<(u16, u16), [u8; 3]>,
     raw_rgb: Vec<[u8; 3]>,
     generated_rgb565: Vec<u16>,
+    /// The generated surface's sampler, built once with the geometry.
+    sampler: RadarSampler,
     /// The cell each generated pixel shows the shroud and fog of
     /// ([`NativeRadarSurfaceGeometry::visibility_cells`]), built once: the
     /// geometry never changes under a surface.
@@ -65,6 +67,7 @@ impl NativeRadarTerrainSurface {
             overrides,
             raw_rgb: vec![[0; 3]; area(raw_size)],
             generated_rgb565: vec![0; area(generated_size)],
+            sampler: RadarSampler::new(raw_size, generated_size),
             pixel_cells: geometry.visibility_cells(),
             revision: 0,
             hd: None,
@@ -131,9 +134,13 @@ impl NativeRadarTerrainSurface {
     }
 
     // Original655250 regenerates the dirty union rectangle through6547C0.
-    // This cache rebuilds the full surface instead. The consumed ordinary-ore
-    // control matches original full generation; incremental generation differs
-    // at five pixels in one3x2 patch/fringe row (ore_render.json radar).
+    // This cache keeps full generation's output instead: the consumed
+    // ordinary-ore control matches original full generation, and native's
+    // rectangle walk differs at five pixels in one3x2 patch/fringe row
+    // (ore_render.json radar). A generated pixel depends only on its own
+    // column and row spans, so rewriting the changed cells' raw pixels and
+    // resampling the pixels whose spans reach them gives exactly what full
+    // generation would, without redrawing every cell on each update.
     pub fn set_cell_states(
         &mut self,
         changes: impl IntoIterator<Item = NativeRadarCellUpdate>,
@@ -162,18 +169,43 @@ impl NativeRadarTerrainSurface {
         if changed_cells.is_empty() {
             return false;
         }
-        self.rebuild();
-        if let Some(hd) = &mut self.hd {
-            // A cell writes only its own two raw pixels (`fill_raw_cell`).
-            let width = self.geometry.raw_size().0;
-            for &cell in &changed_cells {
-                let (x, y) = self.geometry.cell_to_raw_pixel(cell);
-                hd.resample(
-                    &self.raw_rgb,
-                    x.max(0)..x.saturating_add(2).min(width),
-                    y..y.saturating_add(1),
+        // A cell writes only its own two raw pixels (`fill_raw_cell`), and no
+        // two cells share one: cells in a raw row differ by two in x.
+        let raw_size = self.geometry.raw_size();
+        for &cell in &changed_cells {
+            if let Some(slot) = self.base_index.slot(cell.0, cell.1) {
+                let base = self.base_cells[slot];
+                let (left, right) = self
+                    .overrides
+                    .get(&cell)
+                    .map_or((base.left, base.right), |&color| (color, color));
+                fill_raw_cell(
+                    &mut self.raw_rgb,
+                    raw_size,
+                    self.geometry.cell_to_raw_pixel(cell),
+                    left,
+                    right,
                 );
             }
+        }
+        let width = raw_size.0;
+        for &cell in &changed_cells {
+            let (x, y) = self.geometry.cell_to_raw_pixel(cell);
+            let columns = x.max(0)..x.saturating_add(2).min(width);
+            let rows = y..y.saturating_add(1);
+            self.sampler.resample(
+                &self.raw_rgb,
+                &mut self.generated_rgb565,
+                columns.clone(),
+                rows.clone(),
+            );
+            if let Some(hd) = &mut self.hd {
+                hd.sampler
+                    .resample(&self.raw_rgb, &mut hd.rgb565, columns, rows);
+            }
+        }
+        self.revision = self.revision.wrapping_add(1);
+        if self.hd.is_some() {
             self.hd_revision = self.hd_revision.wrapping_add(1);
         }
         true
@@ -195,8 +227,7 @@ impl NativeRadarTerrainSurface {
                 right,
             );
         }
-        self.generated_rgb565 =
-            generate_rgb565(&self.raw_rgb, raw_size, self.geometry.generated_size());
+        self.generated_rgb565 = self.sampler.generate(&self.raw_rgb);
         self.revision = self.revision.wrapping_add(1);
     }
 }
@@ -229,11 +260,6 @@ fn fill_raw_cell(
         raw[row + origin.0 as usize] = left;
         raw[row + origin.0 as usize + 1] = right;
     }
-}
-
-/// Full-surface active-YR weighted-area sampler.
-fn generate_rgb565(raw: &[[u8; 3]], raw_size: (i32, i32), generated_size: (i32, i32)) -> Vec<u16> {
-    RadarSampler::new(raw_size, generated_size).generate(raw)
 }
 
 /// The weighted-area sampler of `GenerateTerrainSurface @ 0x006547C0`, its raw
@@ -377,6 +403,19 @@ impl RadarSampler {
         ])
     }
 
+    /// Resample the pixels of `output` (this sampler's generated surface)
+    /// whose spans reach the raw `columns` and `rows`.
+    fn resample(&self, raw: &[[u8; 3]], output: &mut [u16], columns: Range<i32>, rows: Range<i32>) {
+        let width = self.columns.len();
+        let columns = Self::reaching(&self.columns, columns);
+        for row in Self::reaching(&self.rows, rows) {
+            for column in columns.clone() {
+                output[row * width + column] =
+                    self.sample(raw, self.columns[column], self.rows[row]);
+            }
+        }
+    }
+
     /// The columns or rows whose raw span reaches `range`.
     fn reaching(spans: &[SampleSpan], range: Range<i32>) -> Range<usize> {
         spans.partition_point(|span| span.last <= range.start)
@@ -405,18 +444,6 @@ impl HdTerrain {
             scale,
             sampler,
             rgb565,
-        }
-    }
-
-    fn resample(&mut self, raw: &[[u8; 3]], columns: Range<i32>, rows: Range<i32>) {
-        let width = self.sampler.columns.len();
-        let columns = RadarSampler::reaching(&self.sampler.columns, columns);
-        for row in RadarSampler::reaching(&self.sampler.rows, rows) {
-            for column in columns.clone() {
-                self.rgb565[row * width + column] =
-                    self.sampler
-                        .sample(raw, self.sampler.columns[column], self.sampler.rows[row]);
-            }
         }
     }
 }

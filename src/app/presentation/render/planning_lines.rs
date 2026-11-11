@@ -11,8 +11,10 @@ use crate::render::native_surface_format::{
     ACTIVE_RETAIL_RGB565_PRESENTATION, RGB565, interpolate_rgb8,
 };
 use crate::render::surface_line::{clip_line, patterned_line, solid_line};
+use crate::rules::ruleset::RuleSet;
 use crate::sim::components::DriveCoord;
-use crate::sim::world::{PlanningBadgeKind, PlanningDrawSegment};
+use crate::sim::intern::InternedId;
+use crate::sim::world::{PlanningBadgeKind, PlanningDrawSegment, Simulation};
 
 // Original static bytes836880;63D8B8 negates the presentation wall clock.
 const PATTERN: [u8; 16] = [1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0];
@@ -29,7 +31,7 @@ pub(super) fn build(
     if !state.match_state.input.planning.active() {
         return (out, highlights);
     }
-    let Some(rt) = state.match_state.sim_runtime.as_ref() else {
+    let Some(rt) = state.match_state.sim_runtime.presentation() else {
         return (out, highlights);
     };
     let sim = &rt.simulation;
@@ -41,26 +43,8 @@ pub(super) fn build(
         crate::app::input::planning_mode::hover_node(state),
         state.match_state.input.planning.highlighted_node(),
     );
-    let phase = ((wall_ms as i32).wrapping_neg() >> 5) & 15;
-    let color = |owner, bright| {
-        let name = sim.interner().resolve(owner);
-        let index = state
-            .match_state
-            .match_presentation
-            .house_color_map
-            .get(name)
-            .copied()
-            .unwrap_or(crate::rules::house_colors::NO_REMAP);
-        let rgb = crate::render::palette_light::house_color_rgb(
-            &rt.resources.rules.house_color_ramps,
-            index,
-        );
-        if bright {
-            interpolate_rgb8(rgb, [255; 3], 100)
-        } else {
-            interpolate_rgb8(rgb, [0; 3], 80)
-        }
-    };
+    let phase = stroke_phase(wall_ms);
+    let color = |owner, bright| stroke_rgb(state, sim, &rt.resources.rules, owner, bright);
     // A derived frame-local membership index avoids scanning the whole graph
     // once per badge in large selected groups. It dies with this projection.
     let highlighted_members: std::collections::HashSet<_> =
@@ -262,9 +246,39 @@ pub(super) fn build(
     (out, highlights)
 }
 
+/// The patterned strokes' phase: 63D8B8 negates the presentation wall clock.
+pub(super) fn stroke_phase(wall_ms: u32) -> i32 {
+    ((wall_ms as i32).wrapping_neg() >> 5) & 15
+}
+
+/// A house's stroke and marker colour: toward white for a stroke not yet
+/// committed, toward black otherwise.
+pub(super) fn stroke_rgb(
+    state: &AppState,
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    bright: bool,
+) -> [u8; 3] {
+    let name = sim.interner().resolve(owner);
+    let index = state
+        .match_state
+        .match_presentation
+        .house_color_map
+        .get(name)
+        .copied()
+        .unwrap_or(crate::rules::house_colors::NO_REMAP);
+    let rgb = crate::render::palette_light::house_color_rgb(&rules.house_color_ramps, index);
+    if bright {
+        interpolate_rgb8(rgb, [255; 3], 100)
+    } else {
+        interpolate_rgb8(rgb, [0; 3], 80)
+    }
+}
+
 /// `Planning__CoordsToSurfacePoint @ 0x006339E0`: `CoordsToClient2`, then
 /// the tactical view's surface offset.
-fn project(coord: DriveCoord, view: TacticalViewport) -> [i32; 2] {
+pub(super) fn project(coord: DriveCoord, view: TacticalViewport) -> [i32; 2] {
     let (x, y) = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
     [
         x as i32 - view.camera[0] + view.clip[0],
@@ -282,7 +296,7 @@ fn emit_rect(out: &mut Vec<SpriteInstance>, rect: [i32; 4], rgb: [u8; 3], view: 
     push_surface_rect(out, rect, tint(rgb), view);
 }
 
-fn emit_marker(
+pub(super) fn emit_marker(
     out: &mut Vec<SpriteInstance>,
     at: [i32; 2],
     size: i32,
@@ -311,7 +325,7 @@ fn emit_outline(
     emit_rect(out, [x + w - 1, y, 1, h], rgb, view);
 }
 
-fn emit_marker_outer(
+pub(super) fn emit_marker_outer(
     out: &mut Vec<SpriteInstance>,
     at: [i32; 2],
     size: i32,
@@ -401,7 +415,7 @@ fn emit_badge(
     }
 }
 
-fn emit_segment(
+pub(super) fn emit_segment(
     out: &mut Vec<SpriteInstance>,
     from: [i32; 2],
     to: [i32; 2],
@@ -428,7 +442,7 @@ fn emit_segment(
     }
 }
 
-fn emit_solid_segment(
+pub(super) fn emit_solid_segment(
     out: &mut Vec<SpriteInstance>,
     from: [i32; 2],
     to: [i32; 2],

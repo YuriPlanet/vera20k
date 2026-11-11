@@ -134,7 +134,7 @@ fn retail_gate_make_body_uses_native_gate_and_selling_reflections() {
         .make_frame_counts
         .insert("GAGATE_A_MAKE".to_owned(), make_count);
     let mut runtime = SimRuntime::from_simulation(sim);
-    runtime.resources.rules = rules.clone();
+    runtime.resources_mut().rules = rules.clone();
     let house_colors =
         HouseColorMap::from([("Americans".to_owned(), crate::rules::house_colors::NO_REMAP)]);
 
@@ -304,7 +304,7 @@ fn an_opening_gate_draws_without_the_buildngz_zshape_or_extra_light() {
         .collect();
     let atlas = SpriteAtlas::from_test_entries(keys);
     let mut runtime = SimRuntime::from_simulation(sim);
-    runtime.resources.rules = rules.clone();
+    runtime.resources_mut().rules = rules.clone();
     let colors =
         HouseColorMap::from([("Americans".to_owned(), crate::rules::house_colors::NO_REMAP)]);
     let zshape = Z_GRADIENT_ZSHAPE_FLAG | Z_GRADIENT_ZSHAPE_CLIP_FLAG;

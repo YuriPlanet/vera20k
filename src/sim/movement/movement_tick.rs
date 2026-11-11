@@ -595,18 +595,20 @@ fn advance_ordinary_mover(
 /// way). The entity touch log maintains building contributions (and, in
 /// fixtures without an overlay grid, mobiles).
 /// Debug checks compare against a fresh sum. No cache data is saved or hashed.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct MovementPassCache {
     blocker: BlockerPlaneCache,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct BlockerPlaneCache {
     entry: Option<BlockerPlaneEntry>,
     /// How often the plane was rebuilt from the whole map and every entity.
     #[cfg(any(test, feature = "test-support"))]
     world_rebuilds: usize,
 }
+
+#[derive(Clone)]
 
 struct BlockerPlaneEntry {
     key: BlockerPlaneKey,
@@ -805,7 +807,7 @@ impl MovementPassCache {
 /// Walk tail. Returns whether the object still advances as an ordinary
 /// mover.
 fn prepare_movement_visit(entities: &mut EntityStore, entity_id: u64) -> bool {
-    let Some(entity) = entities.get_mut(entity_id) else {
+    let Some(entity) = entities.get(entity_id) else {
         return false;
     };
     // Walk75AEC0 is the Process of every live Foot (FootClass::AI
@@ -816,9 +818,7 @@ fn prepare_movement_visit(entities: &mut EntityStore, entity_id: u64) -> bool {
         loco.active_kind() == LocomotorKind::Walk
             && (loco.step_head().is_some() || loco.walk_destination().is_some())
     });
-    if entity.is_active() && !walk_route {
-        super::walk_step::finish_idle(entity);
-    }
+    let idle_tail = entity.is_active() && !walk_route;
     // A Drive or Ship got here through the outer Process gates
     // (`track_turn`: Drive 0x4B08D1..0x4B0A69 / Ship 0x69FF98..0x6A0131),
     // which admit Process_Movement (0x4B0A79 / 0x6A0142) for a moving class
@@ -826,10 +826,17 @@ fn prepare_movement_visit(entities: &mut EntityStore, entity_id: u64) -> bool {
     let track_route = entity.locomotor.as_ref().is_some_and(|loco| {
         super::track_process::TrackFamily::from_kind(loco.active_kind()).is_some()
     });
+    // The idle tail writes only speed and the scold latch, which neither
+    // route nor layer reads.
+    let layer = entity.movement_layer_or_ground();
+    if idle_tail
+        && let Some(entity) = entities.get_mut_if(entity_id, super::walk_step::finish_idle_writes)
+    {
+        super::walk_step::finish_idle(entity);
+    }
     if !walk_route && !track_route {
         return false;
     }
-    let layer = entity.movement_layer_or_ground();
     !matches!(layer, MovementLayer::Air | MovementLayer::Underground)
 }
 
@@ -864,7 +871,7 @@ pub(crate) fn tick_movement_with_grids(
     sim.session.set_binary_frame_for_test(native_frame);
     *sim.house_alliances_mut_for_test() = alliances.clone();
     sim.path_grid = path_grid.cloned().map(std::sync::Arc::new);
-    sim.zone_grid = zone_grid.cloned();
+    sim.zone_grid = zone_grid.cloned().map(Into::into);
     sim.resolved_terrain = resolved_terrain.cloned();
     sim.set_playfield_bounds_for_test(playfield_bounds);
     sim.set_terrain_speed_config_for_test(terrain_speed_config.clone());

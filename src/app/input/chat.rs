@@ -11,7 +11,8 @@
 //! an own beacon selected, is the beacon-text residual of
 //! [`crate::app::match_runtime::beacons`]. WOL's `/page` and
 //! `/reply` commands (`0x0078A6B0`) and its relay mask (`0x0055F056`) are WOL
-//! backend. Typed text arrives as the key event's text, every UTF-16 unit of
+//! backend. VERA's `/pause` and `/resume` lines ([`pause_command`]) are not
+//! sent. Typed text arrives as the key event's text, every UTF-16 unit of
 //! it, and input-method text through [`commit_text`]. Native WM_CHAR delivers
 //! one ANSI byte per character (`0x0054F56C`), and Shift/Ctrl+Backspace delete
 //! twice or append `0x7F` there; VERA deletes once.
@@ -47,6 +48,9 @@ pub(crate) struct ChatState {
     /// Indexed by House array index. Dialog 0x73 writes it (`0x006582C3`);
     /// the local player's own byte is never written there.
     muted: std::collections::BTreeSet<usize>,
+    /// VERA: part of the open line already went out as an overflow chunk, so
+    /// what is left of it is chat, never a command.
+    overflowed: bool,
 }
 
 impl Default for ChatState {
@@ -54,6 +58,7 @@ impl Default for ChatState {
         Self {
             target: ChatTarget::None,
             muted: Default::default(),
+            overflowed: false,
         }
     }
 }
@@ -187,6 +192,7 @@ fn open_edit(state: &mut AppState, target: ChatTarget) -> bool {
     let presentation = &mut state.match_state.match_presentation;
     if presentation.message_list.add_edit(&prefix, rgb, true) {
         presentation.chat.target = target;
+        presentation.chat.overflowed = false;
     }
     true
 }
@@ -201,15 +207,34 @@ fn apply_input(state: &mut AppState, key: EditKey) {
         EditInput::Ended if key == EditKey::Escape => presentation.chat.target = ChatTarget::None,
         EditInput::Sent(text) => {
             let target = state.match_state.match_presentation.chat.target;
-            send(state, target, &text);
+            let whole_line = !state.match_state.match_presentation.chat.overflowed;
+            match pause_command(&text).filter(|_| whole_line) {
+                Some(want) => crate::app::input::pause_menu::chat_command(state, want),
+                None => send(state, target, &text),
+            }
             // 0x0055F1BD: result 3 clears the target.
             state.match_state.match_presentation.chat.target = ChatTarget::None;
         }
         EditInput::Overflowed(chunk) => {
+            state.match_state.match_presentation.chat.overflowed = true;
             let target = state.match_state.match_presentation.chat.target;
             send(state, target, &chunk);
         }
         _ => {}
+    }
+}
+
+/// VERA: a typed line that is only `/pause` or `/resume`, ASCII
+/// case-insensitively, asks for the shared pause (true) or its end instead
+/// of being sent; gamemd sends such a line as chat. Any other line is chat.
+fn pause_command(line: &str) -> Option<bool> {
+    let word = line.trim_matches(' ');
+    if word.eq_ignore_ascii_case("/pause") {
+        Some(true)
+    } else if word.eq_ignore_ascii_case("/resume") {
+        Some(false)
+    } else {
+        None
     }
 }
 
@@ -257,7 +282,7 @@ fn send(state: &mut AppState, target: ChatTarget, text: &str) {
 /// participant-to-House map stands in for that match. AI Houses and the
 /// local House have no connection.
 fn route(state: &AppState, local: InternedId, target: ChatTarget) -> Option<(Vec<usize>, bool)> {
-    let runtime = state.match_state.sim_runtime.as_ref()?;
+    let runtime = state.match_state.sim_runtime.runtime()?;
     let sim = &runtime.simulation;
     let rules = &runtime.resources.rules;
     let session = &state.match_state.session;
@@ -359,7 +384,7 @@ pub(crate) fn receive(state: &mut AppState, source_index: usize, text: &str) {
             state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .and_then(|runtime| runtime.simulation.interner().get(&owner))
         });
     // Native shows the line whoever sent it; without a House, system white.
@@ -398,7 +423,7 @@ fn local_house(state: &AppState) -> Option<InternedId> {
     state
         .match_state
         .sim_runtime
-        .as_ref()?
+        .runtime()?
         .simulation
         .session()
         .current_house()
@@ -446,6 +471,14 @@ mod tests {
             Some(ChatTarget::All),
             "AltGr"
         );
+    }
+
+    #[test]
+    fn only_a_whole_pause_or_resume_line_is_a_command() {
+        assert_eq!(pause_command("/pause"), Some(true));
+        assert_eq!(pause_command(" /Resume "), Some(false));
+        assert_eq!(pause_command("/pause please"), None);
+        assert_eq!(pause_command("pause"), None);
     }
 
     fn houses() -> [ChatHouse; 3] {

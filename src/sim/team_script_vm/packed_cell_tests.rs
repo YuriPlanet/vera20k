@@ -35,6 +35,12 @@ pub(super) fn scene(
         assert!(!stock_ini.section_or_empty("Waypoints").is_present(index));
     }
     let mut map = super::firesale_retail_tests::scenario(stock, script);
+    // The team is made once the Computer house's MCV has deployed: a later
+    // deploy sends every ground unit of the house, the member too, to the new
+    // base over the script's destination
+    // (`HouseClass::MoveGroundForcesToBase @ 0x0050C920`). The MCV starts
+    // facing north (`0x005D708B`), turns, and deploys after frame 19.
+    map = map.replacen("F0520004=1,13,0,1\n", "F0520004=1,13,0,4\n", 1);
     // Select authored inputs before the production reader; normal recruitment
     // supplies membership and the live type remains the actor constructor's.
     map = map
@@ -88,6 +94,13 @@ pub(super) fn scene(
         {
             assert_eq!(team.members().collect::<Vec<_>>(), [member]);
             let team = team.id();
+            let sim = scene.sim();
+            assert!(
+                sim.entities().values().any(|entity| {
+                    entity.owner() == owner && sim.interner.resolve(entity.type_ref()) == "NACNST"
+                }),
+                "the Computer house's yard must stand before its team moves"
+            );
             return Some((scene, team, member));
         }
     }

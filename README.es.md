@@ -20,12 +20,6 @@ archivos originales del juego, así que necesitarás tu propia copia de Red Aler
 VERA20K está hecho por jugadores y para jugadores, y son los jugadores quienes tienen la última
 palabra sobre su rumbo.
 
-**Necesitamos más mantenedores.** Si quieres ayudar a revisar los PR, orientar a nuevos
-colaboradores o encargarte de una parte del motor, dínoslo en [Discord](https://discord.gg/kmjRUn5m5F) o en el
-grupo de QQ (1097193563).
-
-**No tengas miedo de enviar un PR.** No tiene que ser perfecto; te ayudaremos con el resto.
-
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K: pantalla de configuración de escaramuza y vista de una partida" width="100%">
 
 ## Objetivos del proyecto
@@ -48,6 +42,8 @@ Para iniciar escaramuzas o campañas de YR para un jugador desde un cliente de C
 [configuración del cliente sin conexión](integrations/cncnet/README.md).
 
 ## Contribuir
+
+**No tengas miedo de enviar un PR.** No tiene que ser perfecto; te ayudaremos con el resto.
 
 Toda ayuda es bienvenida, y estas áreas son las que más la necesitan. Cada una enlaza a su
 página en la hoja de ruta, con el trabajo en curso y el siguiente paso:

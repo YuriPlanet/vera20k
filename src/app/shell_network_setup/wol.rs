@@ -29,7 +29,7 @@ pub(crate) fn resident_seed(state: &AppState) -> u32 {
     state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map_or(state.frontend.startup_rng_seed, |runtime| {
             runtime.simulation.session().seed() as u32
         })

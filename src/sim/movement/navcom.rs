@@ -371,6 +371,11 @@ impl NavigationState {
         self.pending_destination_setter = false;
     }
 
+    /// Whether a call is owed for `Simulation::complete_pending_order`.
+    pub(crate) fn destination_setter_owed(&self) -> bool {
+        self.pending_destination_setter
+    }
+
     /// Take the owed call for `Simulation::complete_pending_order` to make.
     pub(crate) fn take_destination_setter(&mut self) -> bool {
         std::mem::take(&mut self.pending_destination_setter)

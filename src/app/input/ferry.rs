@@ -38,6 +38,7 @@ use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 use crate::sim::command::Command;
+use crate::sim::components::DriveCoord;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::MissionType;
@@ -62,6 +63,19 @@ const LEASH_CELLS: i64 = PICKUP_RADIUS_CELLS + 3;
 /// A drop spot this close to the pick-up spot is refused: units set down
 /// inside the circle would board again.
 const MIN_ROUTE_CELLS: i64 = PICKUP_RADIUS_CELLS + 3;
+/// A ground transport within this many cells of a waypoint is sent on to
+/// the next.
+const VIA_REACH_CELLS: i64 = 2;
+/// The same for a Jumpjet or aircraft, which slows and sinks about a cell
+/// before its destination (`State3_Translate`'s slow radius, `0x0054BFF0`)
+/// and covers about a cell between two looks.
+const VIA_AIR_REACH_CELLS: i64 = 4;
+/// A Move to a waypoint may be given a cell this far from it: the group
+/// spread (`0x0064CDA0`) hands transports sent to one cell a cell each, up to
+/// six probes out.
+const VIA_SPREAD_CELLS: i64 = 8;
+/// The most waypoints one route takes.
+const MAX_VIA: usize = 8;
 /// A transport that stops within this many cells of a leg's end has arrived.
 const ARRIVE_CELLS: i64 = 3;
 /// Logic frames with nobody boarding before a partly loaded transport leaves.
@@ -112,13 +126,21 @@ pub(crate) struct TransportFacts {
     pub full: bool,
     /// Someone is on the way aboard.
     pub boarding: bool,
+    /// The cell its Move is heading for, when it has one.
+    pub heading: Option<Cell>,
+    /// How near a waypoint it is sent on: [`VIA_REACH_CELLS`] or
+    /// [`VIA_AIR_REACH_CELLS`].
+    pub reach: i64,
 }
 
 /// The order a look sends for a route's transport.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FerryAction {
     None,
+    /// Move to a leg's end: the pick-up spot, or the drop zone.
     MoveTo(Cell),
+    /// Move to a waypoint on the way there.
+    MoveVia(Cell),
     Unload,
     /// The route is over.
     End,
@@ -141,6 +163,12 @@ pub(crate) struct FerryRoute {
     /// Loading: the last logic frame someone was boarding or the hold changed.
     last_boarding: u64,
     last_count: u32,
+    /// The waypoints between the pick-up spot and the drop spot, in the
+    /// order they are passed on the way out; the way back takes them in
+    /// reverse.
+    via: Vec<Cell>,
+    /// How many waypoints of the current Move leg are still ahead.
+    via_left: usize,
 }
 
 impl FerryRoute {
@@ -155,7 +183,82 @@ impl FerryRoute {
             seen_busy: false,
             last_boarding: now,
             last_count: passengers,
+            via: Vec::new(),
+            via_left: 0,
         }
+    }
+
+    /// The same route through these waypoints.
+    pub(crate) fn with_via(mut self, via: Vec<Cell>) -> Self {
+        self.via = via;
+        self
+    }
+
+    /// The waypoint the current Move leg heads for next, if any is left.
+    fn via_point(&self) -> Option<Cell> {
+        let passed = self.via.len().checked_sub(self.via_left)?;
+        match self.leg {
+            _ if self.via_left == 0 => None,
+            Leg::ToDrop => self.via.get(passed).copied(),
+            Leg::ToPickup => self.via.get(self.via_left - 1).copied(),
+            Leg::Loading | Leg::Unloading => None,
+        }
+    }
+
+    /// Start a Move leg through every waypoint: the order for its first
+    /// stretch.
+    fn set_out(&mut self, leg: Leg, end: Cell, now: u64) -> FerryAction {
+        self.begin(leg, now);
+        self.target = end;
+        self.via_left = self.via.len();
+        match self.via_point() {
+            Some(point) => FerryAction::MoveVia(point),
+            None => FerryAction::MoveTo(end),
+        }
+    }
+
+    /// Leave out the waypoint ahead: the order for the stretch after it.
+    fn skip_waypoint(&mut self, now: u64) -> FerryAction {
+        self.via_left = self.via_left.saturating_sub(1);
+        self.ordered_at = now;
+        match self.via_point() {
+            Some(next) => FerryAction::MoveVia(next),
+            None => FerryAction::MoveTo(self.target),
+        }
+    }
+
+    /// A Move leg with waypoints still ahead. The transport is sent on to
+    /// the next point, without stopping, once it is within its reach of the
+    /// waypoint or of the cell near the waypoint its Move was given, or has
+    /// stopped as near the waypoint as that Move took it. One that stops
+    /// farther than [`VIA_SPREAD_CELLS`] from the waypoint was sent
+    /// elsewhere, and its ferry ends. `None` once no waypoint is left and
+    /// the leg's end decides.
+    fn pass_waypoints(&mut self, transport: &TransportFacts, now: u64) -> Option<FerryAction> {
+        let point = self.via_point()?;
+        let waited = now.saturating_sub(self.ordered_at);
+        let stopped = transport.idle && waited >= ORDER_GRACE_TICKS;
+        let own_cell = transport
+            .heading
+            .filter(|&cell| within(cell, point, VIA_SPREAD_CELLS));
+        if within(transport.cell, point, transport.reach)
+            || own_cell.is_some_and(|cell| within(transport.cell, cell, transport.reach))
+            || (stopped && within(transport.cell, point, VIA_SPREAD_CELLS))
+        {
+            // A transport sent on while at rest has yet to be seen moving.
+            self.seen_busy = !transport.idle;
+            return Some(self.skip_waypoint(now));
+        }
+        Some(if !stopped {
+            FerryAction::None
+        } else if self.seen_busy {
+            FerryAction::End
+        } else if waited < RESEND_TICKS {
+            FerryAction::None
+        } else {
+            self.ordered_at = now;
+            FerryAction::MoveVia(point)
+        })
     }
 
     fn begin(&mut self, leg: Leg, now: u64) {
@@ -180,12 +283,13 @@ impl FerryRoute {
                 }
                 let quiet = now.saturating_sub(self.last_boarding) >= QUIET_TICKS;
                 if transport.passengers > 0 && (transport.full || (!transport.boarding && quiet)) {
-                    self.begin(Leg::ToDrop, now);
-                    self.target = self.drop;
-                    return FerryAction::MoveTo(self.drop);
+                    return self.set_out(Leg::ToDrop, self.drop, now);
                 }
                 FerryAction::None
             }
+            Leg::ToDrop | Leg::ToPickup if self.via_left > 0 => self
+                .pass_waypoints(transport, now)
+                .unwrap_or(FerryAction::None),
             Leg::ToDrop => match self.arrival(transport, self.target, now) {
                 Arrival::Travelling => FerryAction::None,
                 Arrival::Arrived => {
@@ -202,9 +306,7 @@ impl FerryRoute {
                     return FerryAction::None;
                 }
                 if transport.passengers == 0 {
-                    self.begin(Leg::ToPickup, now);
-                    self.target = self.pickup;
-                    return FerryAction::MoveTo(self.pickup);
+                    return self.set_out(Leg::ToPickup, self.pickup, now);
                 }
                 // Still loaded and at rest: the passengers left aboard found
                 // no way out. Cross again, to a cell with room for them.
@@ -213,6 +315,7 @@ impl FerryRoute {
                 }
                 self.begin(Leg::ToDrop, now);
                 self.target = self.drop;
+                self.via_left = 0;
                 FerryAction::MoveTo(self.drop)
             }
             Leg::ToPickup => match self.arrival(transport, self.pickup, now) {
@@ -236,6 +339,11 @@ impl FerryRoute {
             return Arrival::Travelling;
         }
         let near = within(transport.cell, end, ARRIVE_CELLS);
+        // An order sent while passing a waypoint needs a moment to show.
+        if !near && !self.via.is_empty() && now.saturating_sub(self.ordered_at) < ORDER_GRACE_TICKS
+        {
+            return Arrival::Travelling;
+        }
         if self.seen_busy {
             return if near {
                 Arrival::Arrived
@@ -287,6 +395,11 @@ impl Boarder {
 pub(crate) struct FerryState {
     /// The Ferry key was pressed: the next left click names the drop spot.
     armed: bool,
+    /// The Planning Mode key, held while the click is armed: clicks add
+    /// waypoints.
+    via_key: Option<winit::keyboard::KeyCode>,
+    /// The waypoints clicked so far for the armed click.
+    pending_via: Vec<Cell>,
     routes: Vec<FerryRoute>,
     boarders: Vec<Boarder>,
 }
@@ -298,7 +411,30 @@ impl FerryState {
 
     /// Drop the armed click; whether there was one.
     pub(crate) fn disarm(&mut self) -> bool {
+        self.via_key = None;
+        self.pending_via.clear();
         std::mem::take(&mut self.armed)
+    }
+
+    /// The Planning Mode key went down while the click is armed; whether it
+    /// was up before.
+    fn press_via_key(&mut self, physical: winit::keyboard::KeyCode) -> bool {
+        self.via_key.replace(physical).is_none()
+    }
+
+    /// A key came up; the waypoint key no longer marks clicks. Whether it was
+    /// the waypoint key.
+    fn release_via_key(&mut self, physical: winit::keyboard::KeyCode) -> bool {
+        let held = self.via_key == Some(physical);
+        if held {
+            self.via_key = None;
+        }
+        held
+    }
+
+    /// Whether the waypoint key is held: the armed click adds a waypoint.
+    pub(crate) fn waypoint_click(&self) -> bool {
+        self.armed && self.via_key.is_some()
     }
 
     /// End the routes of these transports, as the Stop key does.
@@ -383,9 +519,48 @@ impl FerryState {
                 passengers: cargo.map_or(0, PassengerCargo::count),
                 full: cargo.map_or(0, PassengerCargo::total_size) >= object.passengers,
                 boarding,
+                heading: match entity.navigation.nav_com() {
+                    Some(crate::sim::components::NavTargetRef::Cell { rx, ry }) => Some((rx, ry)),
+                    _ => None,
+                },
+                reach: if entity.locomotor.as_ref().is_some_and(|locomotor| {
+                    matches!(
+                        locomotor.active_kind(),
+                        crate::rules::locomotor_type::LocomotorKind::Jumpjet
+                            | crate::rules::locomotor_type::LocomotorKind::Fly
+                    )
+                }) {
+                    VIA_AIR_REACH_CELLS
+                } else {
+                    VIA_REACH_CELLS
+                },
             };
-            match route.step(&facts, now) {
-                FerryAction::None => {}
+            let mut action = route.step(&facts, now);
+            // A waypoint no Move click would send this transport to is left
+            // out, and the route carries on with the point after it.
+            while let FerryAction::MoveVia(cell) = action {
+                action = match ordinary_cell_move_goal(
+                    sim,
+                    rules,
+                    registry,
+                    owner,
+                    route.transport,
+                    cell,
+                    false,
+                ) {
+                    Some(goal) => {
+                        orders.push(Command::Move {
+                            entity_id: route.transport,
+                            target_rx: goal.0,
+                            target_ry: goal.1,
+                        });
+                        FerryAction::None
+                    }
+                    None => route.skip_waypoint(now),
+                };
+            }
+            match action {
+                FerryAction::None | FerryAction::MoveVia(_) => {}
                 FerryAction::MoveTo(cell) => {
                     // A crossing ends on a free cell of the drop zone that no
                     // other route is heading for.
@@ -673,7 +848,7 @@ fn board_orders(
 
 /// The selected transports a ferry order can take.
 fn selected_transports(state: &AppState) -> Vec<u64> {
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         return Vec::new();
     };
     let sim = &runtime.simulation;
@@ -700,6 +875,36 @@ pub(crate) fn hotkey_pressed(state: &mut AppState) {
         return;
     }
     state.match_state.input.ferry.armed = !selected_transports(state).is_empty();
+}
+
+/// The Planning Mode key's edge while the drop click is armed: held, clicks
+/// add waypoints. Going down and coming up it gives Planning Mode's own
+/// sounds (`StartPlanningModeSound`, `EndPlanningModeSound`), as the key does
+/// there.
+pub(crate) fn via_key_edge(state: &mut AppState, physical: winit::keyboard::KeyCode, down: bool) {
+    let ferry = &mut state.match_state.input.ferry;
+    let changed = if down {
+        ferry.press_via_key(physical)
+    } else {
+        ferry.release_via_key(physical)
+    };
+    if !changed {
+        return;
+    }
+    let sound = state.rules().and_then(|rules| {
+        if down {
+            rules.general.start_planning_mode_sound.clone()
+        } else {
+            rules.general.end_planning_mode_sound.clone()
+        }
+    });
+    if let Some(sound_id) = sound {
+        state
+            .match_state
+            .match_audio
+            .sound_events
+            .push(crate::audio::events::GameSoundEvent::UiSound { sound_id });
+    }
 }
 
 /// The route a drop click on `clicked` gives this transport: from the cell it
@@ -733,6 +938,23 @@ fn route_for(
 /// The armed left click: every selected transport ferries from where it
 /// stands to the clicked cell. Returns whether the click was taken.
 pub(crate) fn drop_click(state: &mut AppState) -> bool {
+    // With the Planning Mode key held, the click is a waypoint and the drop
+    // click stays armed.
+    if state.match_state.input.ferry.waypoint_click() {
+        let clicked = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
+            state,
+            state.match_state.input.cursor_x,
+            state.match_state.input.cursor_y,
+        );
+        // A cell none of the selected transports can move to is not taken.
+        let accepted = armed_preview(state).is_some_and(|(_, _, accepted)| accepted);
+        let pending = &mut state.match_state.input.ferry.pending_via;
+        if accepted && pending.len() < MAX_VIA {
+            pending.push(clicked);
+        }
+        return true;
+    }
+    let via = std::mem::take(&mut state.match_state.input.ferry.pending_via);
     if !state.match_state.input.ferry.disarm() {
         return false;
     }
@@ -746,7 +968,7 @@ pub(crate) fn drop_click(state: &mut AppState) -> bool {
         state.match_state.input.cursor_y,
     );
     let routes: Vec<FerryRoute> = {
-        let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+        let Some(runtime) = state.match_state.sim_runtime.runtime() else {
             return true;
         };
         let sim = &runtime.simulation;
@@ -768,6 +990,7 @@ pub(crate) fn drop_click(state: &mut AppState) -> bool {
                     clicked,
                     now,
                 )
+                .map(|route| route.with_via(via.clone()))
             })
             .collect()
     };
@@ -792,7 +1015,7 @@ pub(crate) fn frame_pass(state: &mut AppState) {
         return;
     };
     let mut ferry = std::mem::take(&mut state.match_state.input.ferry);
-    let orders = match state.match_state.sim_runtime.as_ref() {
+    let orders = match state.match_state.sim_runtime.runtime() {
         Some(runtime) => {
             let sim = &runtime.simulation;
             let now = sim.session().tick();
@@ -816,16 +1039,17 @@ pub(crate) fn frame_pass(state: &mut AppState) {
     }
 }
 
-/// The armed drop click as it would land on the cell under the cursor: the
-/// selected transports' cells, that cell, and whether the click would give at
-/// least one of them a route. `None` while no click is armed or no transport
+/// The armed click as it would land on the cell under the cursor: the
+/// selected transports' cells, that cell, and whether the click would be
+/// taken: a route for at least one of them, or with the waypoint key held a
+/// cell at least one of them can move to. `None` while no click is armed or no transport
 /// is selected.
 fn armed_preview(state: &AppState) -> Option<(Vec<Cell>, Cell, bool)> {
     if !state.match_state.input.ferry.armed() {
         return None;
     }
     let transports = selected_transports(state);
-    let runtime = state.match_state.sim_runtime.as_ref()?;
+    let runtime = state.match_state.sim_runtime.runtime()?;
     let sim = &runtime.simulation;
     let owner = preferred_local_owner_name(state).and_then(|name| sim.interner().get(&name))?;
     let clicked = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
@@ -841,17 +1065,26 @@ fn armed_preview(state: &AppState) -> Option<(Vec<Cell>, Cell, bool)> {
     if pickups.is_empty() {
         return None;
     }
+    // A waypoint click needs only a cell one of them can move to; the drop
+    // click needs a whole route.
+    let waypoint_click = state.match_state.input.ferry.waypoint_click();
+    let rules = &runtime.resources.rules;
+    let registry = Some(&runtime.resources.overlay_registry);
     let accepted = transports.iter().any(|&id| {
-        route_for(
-            sim,
-            &runtime.resources.rules,
-            Some(&runtime.resources.overlay_registry),
-            owner,
-            id,
-            clicked,
-            sim.session().tick(),
-        )
-        .is_some()
+        if waypoint_click {
+            ordinary_cell_move_goal(sim, rules, registry, owner, id, clicked, false).is_some()
+        } else {
+            route_for(
+                sim,
+                rules,
+                registry,
+                owner,
+                id,
+                clicked,
+                sim.session().tick(),
+            )
+            .is_some()
+        }
     });
     Some((pickups, clicked, accepted))
 }
@@ -862,28 +1095,21 @@ pub(crate) fn armed_click_accepted(state: &AppState) -> Option<bool> {
     armed_preview(state).map(|(_, _, accepted)| accepted)
 }
 
-/// One circle of the ferry's marks: a closed line in VERA's world-pixel
-/// frame.
+/// One circle of the ferry's marks: the corners of a closed line, in leptons
+/// at the height of the ground under its centre.
 #[derive(Debug, Clone)]
 pub(crate) struct FerryRing {
-    pub points: Vec<(f32, f32)>,
+    pub points: Vec<DriveCoord>,
     /// The drop zone's circle; otherwise a pick-up area's.
     pub drop: bool,
     /// Part of the preview of a click that would be refused.
     pub refused: bool,
 }
 
-/// The ferry's marks: for each selected transport's route a circle around its
-/// pick-up area and one around its drop zone; and, while a drop click is
-/// armed, the same circles for the selected transports and the cell under the
-/// cursor.
-pub(crate) fn marks(state: &AppState) -> Vec<FerryRing> {
-    use crate::util::lepton::{
-        GROUND_LEVEL_HEIGHT_LEPTONS, LEPTONS_PER_CELL_I32, absolute_leptons_to_screen,
-    };
-    // Only a selected transport shows its route.
+/// The routes that show their marks: only a selected transport's.
+fn shown_routes(state: &AppState) -> Vec<&FerryRoute> {
     let entities = state.sim_view().map(|view| view.simulation().entities());
-    let routes: Vec<&FerryRoute> = state
+    state
         .match_state
         .input
         .ferry
@@ -894,7 +1120,63 @@ pub(crate) fn marks(state: &AppState) -> Vec<FerryRing> {
                 .and_then(|entities| entities.get(route.transport))
                 .is_some_and(|entity| entity.selection.is_selected())
         })
+        .collect()
+}
+
+/// A ferry's waypoints as one path of cells, drawn in Planning Mode's look.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FerryPath {
+    /// The pick-up spot, the waypoints in order, and the drop spot once it is
+    /// clicked.
+    pub cells: Vec<Cell>,
+    /// The drop click is still armed: Planning Mode's colour for nodes it has
+    /// not committed yet.
+    pub pending: bool,
+}
+
+/// The waypoint paths to draw: one for each selected transport's route that
+/// has waypoints, and while the drop click is armed one from each selected
+/// transport through the waypoints clicked so far.
+pub(crate) fn waypoint_paths(state: &AppState) -> Vec<FerryPath> {
+    let mut paths: Vec<FerryPath> = shown_routes(state)
+        .into_iter()
+        .filter(|route| !route.via.is_empty())
+        .map(|route| FerryPath {
+            cells: std::iter::once(route.pickup)
+                .chain(route.via.iter().copied())
+                .chain(std::iter::once(route.drop))
+                .collect(),
+            pending: false,
+        })
         .collect();
+    let ferry = &state.match_state.input.ferry;
+    if ferry.armed
+        && !ferry.pending_via.is_empty()
+        && let Some(view) = state.sim_view()
+    {
+        let entities = view.simulation().entities();
+        for id in selected_transports(state) {
+            if let Some(entity) = entities.get(id) {
+                let pickup = (entity.position.rx(), entity.position.ry());
+                paths.push(FerryPath {
+                    cells: std::iter::once(pickup)
+                        .chain(ferry.pending_via.iter().copied())
+                        .collect(),
+                    pending: true,
+                });
+            }
+        }
+    }
+    paths
+}
+
+/// The ferry's circles: for each selected transport's route one around its
+/// pick-up area and one around its drop zone; and, while a drop click is
+/// armed, the same circles for the selected transports and the cell under the
+/// cursor. The waypoints are [`waypoint_paths`].
+pub(crate) fn marks(state: &AppState) -> Vec<FerryRing> {
+    use crate::util::lepton::{GROUND_LEVEL_HEIGHT_LEPTONS, LEPTONS_PER_CELL_I32};
+    let routes = shown_routes(state);
     let preview = armed_preview(state);
     if routes.is_empty() && preview.is_none() {
         return Vec::new();
@@ -918,11 +1200,11 @@ pub(crate) fn marks(state: &AppState) -> Vec<FerryRing> {
             points: (0..64)
                 .map(|corner| {
                     let angle = std::f32::consts::TAU * corner as f32 / 64.0;
-                    absolute_leptons_to_screen(
-                        (x + radius * angle.cos()) as i32,
-                        (y + radius * angle.sin()) as i32,
+                    DriveCoord {
+                        x: (x + radius * angle.cos()) as i32,
+                        y: (y + radius * angle.sin()) as i32,
                         z,
-                    )
+                    }
                 })
                 .collect(),
             drop,
@@ -935,10 +1217,16 @@ pub(crate) fn marks(state: &AppState) -> Vec<FerryRing> {
         rings.push(ring(route.drop, true, false));
     }
     if let Some((pickups, clicked, accepted)) = preview {
+        // With the waypoint key held the click adds a waypoint, not the drop:
+        // no drop zone follows the cursor, and a cell no transport can move
+        // to is the cursor's to refuse.
+        let waypoint_click = state.match_state.input.ferry.waypoint_click();
         for pickup in pickups {
-            rings.push(ring(pickup, false, !accepted));
+            rings.push(ring(pickup, false, !accepted && !waypoint_click));
         }
-        rings.push(ring(clicked, true, !accepted));
+        if !waypoint_click {
+            rings.push(ring(clicked, true, !accepted));
+        }
     }
     rings
 }

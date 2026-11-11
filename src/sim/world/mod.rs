@@ -36,6 +36,9 @@ mod disk_laser_tests;
 pub(crate) mod entry_test_fixture;
 mod frame_channel;
 mod frame_effects;
+mod idle_sleep;
+#[cfg(test)]
+mod idle_sleep_tests;
 mod network_commands;
 mod object_entry;
 mod queued_command;
@@ -384,7 +387,7 @@ impl MasterFrameOutput {
 
 /// Saved continuation after the CRC modal. This is control state, not a
 /// second command queue: DoList retains the original bytes and processed bits.
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct NetworkFailureContinuation {
     failure: crate::sim::command_queue::ChecksumMismatch,
     tick_ms: u32,
@@ -393,7 +396,7 @@ struct NetworkFailureContinuation {
 
 // Explicit variants keep the continuation describable by the binary snapshot
 // schema. Its layout fingerprint rejects snapshots with the earlier shape.
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 enum FrameContinuation {
     Checksum(NetworkFailureContinuation),
     Interrupted(NetworkInterruptionContinuation),
@@ -401,28 +404,28 @@ enum FrameContinuation {
     Outcome(HouseOutcomeContinuation),
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct HouseOutcomeContinuation {
     cursor: house_defeat::HouseOutcomeCursor,
     tick_ms: u32,
     frame: FrameCompletion,
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct NetworkInterruptionContinuation {
     interruption: NetworkInterruption,
     tick_ms: u32,
     frame: FrameCompletion,
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct NetworkWaitContinuation {
     context: NetworkQueueContext,
     tick_ms: u32,
     frame: FrameCompletion,
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct FrameCompletion {
     commands: Vec<CommandEnvelope>,
     execute_tick: u64,
@@ -1383,7 +1386,10 @@ where
 }
 
 /// The game simulation - owns all authoritative game state.
-#[derive(serde::Serialize, serde::Deserialize)]
+/// `Clone` serves exactly one copy: the presentation frame a tick publishes
+/// for drawing when it goes to the simulation thread (docs/sim-thread.md).
+/// No authority is copied: gameplay owns the one live world.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Simulation {
     /// String interner for owner/type_ref — zero-cost ID clones instead of heap Strings.
     pub(crate) interner: crate::sim::intern::StringInterner,
@@ -1639,13 +1645,19 @@ pub struct Simulation {
     /// Batched path searches (`movement::path_batch`); `None`
     /// searches in native order. Its registrations wait across a save.
     pub(crate) path_batch: Option<crate::sim::movement::path_batch::PathBatch>,
+    /// Idle objects sleep (`idle_sleep`). A runtime setting: never saved or
+    /// hashed, and no result depends on it.
+    #[serde(skip)]
+    idle_sleep: idle_sleep::IdleSleep,
     /// Batched target scans (`techno_ai::scan_batch`); `None` scans in
     /// native order. A save carries only the setting.
     pub(crate) scan_batch: Option<techno_ai::ScanBatch>,
     /// Retained native navigation base plane/raw movement rows plus the live
     /// derived hierarchy. ZoneGrid saves only its own retained base state;
     /// LoadContent67E8CD rebuilds hierarchy after bound Cell/object restoration.
-    pub(crate) zone_grid: Option<ZoneGrid>,
+    /// Shared copy-on-write with the presentation frame (`util::shared`):
+    /// it changes only when walls, bridges or terrain do.
+    pub(crate) zone_grid: Option<crate::util::shared::Shared<ZoneGrid>>,
     /// Canonical dynamic navigation projection. Every reader reads it at its
     /// point of use; a republish replaces the `Arc` without mutating readers'
     /// shared copies.
@@ -1921,7 +1933,7 @@ pub(crate) struct SimulationAreaDamageCellPrelude<'a> {
     binary_frame: u32,
     spread_enabled: bool,
     dirty_cells: &'a mut crate::sim::dirty_cells::DirtyCells,
-    zone_grid: &'a mut Option<ZoneGrid>,
+    zone_grid: &'a mut Option<crate::util::shared::Shared<ZoneGrid>>,
     path_grid: &'a mut Option<Arc<PathGrid>>,
     bridge_state: Option<&'a BridgeRuntimeState>,
     playfield_bounds: Option<PlayfieldBounds>,
@@ -2013,7 +2025,7 @@ pub(crate) fn simulation_area_damage_cell_prelude<'a>(
     binary_frame: u32,
     spread_enabled: bool,
     dirty_cells: &'a mut crate::sim::dirty_cells::DirtyCells,
-    zone_grid: &'a mut Option<ZoneGrid>,
+    zone_grid: &'a mut Option<crate::util::shared::Shared<ZoneGrid>>,
     path_grid: &'a mut Option<Arc<PathGrid>>,
     bridge_state: Option<&'a BridgeRuntimeState>,
     playfield_bounds: Option<PlayfieldBounds>,
@@ -2039,7 +2051,7 @@ pub(crate) fn simulation_area_damage_cell_prelude<'a>(
 }
 
 pub(crate) fn repair_wall_damage_navigation_authorities(
-    zone_grid: &mut Option<ZoneGrid>,
+    zone_grid: &mut Option<crate::util::shared::Shared<ZoneGrid>>,
     path_grid: &mut Option<Arc<PathGrid>>,
     terrain: &ResolvedTerrainGrid,
     overlays: &OverlayGrid,
@@ -2088,7 +2100,7 @@ pub(crate) fn repair_wall_damage_navigation_authorities(
 /// (`0x0056D5A0`), then IncrementalRebuildZoneGraphAroundCell (`0x00584550`).
 /// A missing zone grid, or one whose bridge inputs changed, is built whole.
 pub(crate) fn repair_zone_after_recalc(
-    zone_grid: &mut Option<ZoneGrid>,
+    zone_grid: &mut Option<crate::util::shared::Shared<ZoneGrid>>,
     path_grid: &PathGrid,
     terrain: &ResolvedTerrainGrid,
     bridge_state: Option<&BridgeRuntimeState>,
@@ -2101,12 +2113,12 @@ pub(crate) fn repair_zone_after_recalc(
         .unwrap_or(&[]);
     let bridge_geometry = bridge_state.and_then(BridgeRuntimeState::native_zone_source_size);
     if zone_grid
-        .as_ref()
+        .as_deref()
         .is_some_and(|zones| !zones.bridge_inputs_match(bridge_records, bridge_geometry))
     {
         *zone_grid = None;
     }
-    if let Some(zone_grid) = zone_grid.as_mut() {
+    if let Some(zone_grid) = zone_grid.as_deref_mut() {
         let _ = zone_grid.refresh_base_cell_attributes_at(terrain, cell.0, cell.1);
         let _ = repair_zone_cell(
             zone_grid,
@@ -2124,7 +2136,8 @@ pub(crate) fn repair_zone_after_recalc(
             bridge_records,
             bridge_geometry,
             playfield_bounds,
-        ));
+        )
+        .into());
     }
 }
 
@@ -2132,7 +2145,7 @@ pub(crate) fn repair_zone_after_recalc(
 /// Native Cell expiry7258D0 has no Techno listener broadcast.
 pub(crate) struct SimulationWallRuntimeHost<'a> {
     pub(crate) dirty_cells: &'a mut crate::sim::dirty_cells::DirtyCells,
-    pub(crate) zone_grid: &'a mut Option<ZoneGrid>,
+    pub(crate) zone_grid: &'a mut Option<crate::util::shared::Shared<ZoneGrid>>,
     pub(crate) path_grid: &'a mut Option<Arc<PathGrid>>,
     pub(crate) bridge_state: Option<&'a BridgeRuntimeState>,
     pub(crate) playfield_bounds: Option<PlayfieldBounds>,
@@ -3666,7 +3679,7 @@ impl Simulation {
     }
 
     pub fn zone_grid(&self) -> Option<&ZoneGrid> {
-        self.zone_grid.as_ref()
+        self.zone_grid.as_deref()
     }
 
     pub fn resolved_terrain(&self) -> Option<&ResolvedTerrainGrid> {
@@ -4620,6 +4633,7 @@ impl Simulation {
             civilian_house_memo: Default::default(),
             expiry_listeners: Default::default(),
             path_batch: None,
+            idle_sleep: Default::default(),
             scan_batch: None,
             interner: crate::sim::intern::StringInterner::new(),
             type_tech_levels: TypeTechLevels::default(),
@@ -6186,11 +6200,17 @@ impl Simulation {
         power_states: &mut PowerStates,
         id: u64,
     ) {
-        let owner = substrate.entities.get_mut(id).and_then(|entity| {
-            entity
-                .sample_building_health_for_power()
-                .then_some(entity.owner())
-        });
+        let owner = substrate
+            .entities
+            .get_mut_if(
+                id,
+                crate::sim::game_entity::GameEntity::building_health_sample_changes,
+            )
+            .and_then(|entity| {
+                entity
+                    .sample_building_health_for_power()
+                    .then_some(entity.owner())
+            });
         if let Some(owner) = owner {
             Self::invalidate_house_power(houses, power_states, owner, true);
         }

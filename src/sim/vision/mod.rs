@@ -203,16 +203,19 @@ pub(crate) fn conceal_area_cells(coord: [i32; 3], radius: i32) -> Vec<(u16, u16)
 /// with the previous BTreeSet design.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct OwnerVisibility {
-    cells: Vec<u8>,
+    /// The per-cell planes are shared copy-on-write in chunks with the
+    /// presentation frame (docs/sim-thread.md): a tick copies only the
+    /// chunks its sight changes.
+    cells: crate::util::shared::ChunkedVec<u8>,
     width: u16,
     height: u16,
     /// [`GROUND_VISIBLE`] / [`GROUND_OPEN`] per cell, aligned with `cells`.
-    ground_flags: Vec<u8>,
-    shroud_knowledge: Vec<ShroudKnowledge>,
-    map_cell_edge_cache: Vec<MapCellEdgeCache>,
+    ground_flags: crate::util::shared::ChunkedVec<u8>,
+    shroud_knowledge: crate::util::shared::ChunkedVec<ShroudKnowledge>,
+    map_cell_edge_cache: crate::util::shared::ChunkedVec<MapCellEdgeCache>,
     /// Packed ground/fog inputs for Tactical6D8700; rebuilt after loading.
     #[serde(skip)]
-    edge_inputs_cache: std::sync::OnceLock<Vec<u16>>,
+    edge_inputs_cache: crate::util::shared::DerivedCache<Vec<u16>>,
     dummy_visibility: DummyVisibility,
     /// The cells the per-frame passes must visit; never saved or hashed.
     #[serde(skip)]
@@ -271,13 +274,13 @@ impl OwnerVisibility {
     pub fn new(width: u16, height: u16) -> Self {
         let len: usize = (width as usize) * (height as usize);
         Self {
-            cells: vec![0u8; len],
+            cells: crate::util::shared::ChunkedVec::filled(0u8, len),
             width,
             height,
-            ground_flags: vec![0; len],
-            shroud_knowledge: vec![ShroudKnowledge::default(); len],
-            map_cell_edge_cache: vec![MapCellEdgeCache::default(); len],
-            edge_inputs_cache: std::sync::OnceLock::new(),
+            ground_flags: crate::util::shared::ChunkedVec::filled(0, len),
+            shroud_knowledge: crate::util::shared::ChunkedVec::filled(ShroudKnowledge::default(), len),
+            map_cell_edge_cache: crate::util::shared::ChunkedVec::filled(MapCellEdgeCache::default(), len),
+            edge_inputs_cache: Default::default(),
             dummy_visibility: DummyVisibility::default(),
             // Every zeroed cell already matches its default knowledge.
             tracked: TrackedCells {
@@ -410,7 +413,7 @@ impl OwnerVisibility {
     /// grid tracked: afterwards no cell is transient, every
     /// visible cell has its ground bits, and publishing lists the rest.
     fn clear_every_cell(&mut self) {
-        for knowledge in &mut self.shroud_knowledge {
+        for knowledge in self.shroud_knowledge.iter_mut() {
             knowledge.end_frame_sight();
         }
         for index in 0..self.cells.len() {
@@ -524,19 +527,19 @@ impl OwnerVisibility {
     }
 
     /// The raw cell flags in row-major order.
-    pub fn cells_raw(&self) -> &[u8] {
-        &self.cells
+    pub fn cells_raw(&self) -> Vec<u8> {
+        self.cells.to_vec()
     }
 
     /// The ground bits in the same row-major order as `cells`.
     #[cfg(any(test, feature = "test-support"))]
-    pub fn ground_flags_raw(&self) -> &[u8] {
-        &self.ground_flags
+    pub fn ground_flags_raw(&self) -> Vec<u8> {
+        self.ground_flags.to_vec()
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn shroud_knowledge_raw(&self) -> &[ShroudKnowledge] {
-        &self.shroud_knowledge
+    pub(crate) fn shroud_knowledge_raw(&self) -> Vec<ShroudKnowledge> {
+        self.shroud_knowledge.to_vec()
     }
 
     /// Fold every per-cell grid and the Dummy's state into `hasher`, for the
@@ -544,8 +547,9 @@ impl OwnerVisibility {
     pub(crate) fn hash_cells(&self, hasher: &mut impl std::hash::Hasher) {
         use std::hash::Hash;
         self.cells.hash(hasher);
-        crate::util::state_hasher::hash_records(
-            &self.shroud_knowledge,
+        crate::util::state_hasher::hash_record_iter(
+            self.shroud_knowledge.len(),
+            self.shroud_knowledge.iter(),
             hasher,
             ShroudKnowledge::hash_record,
         );

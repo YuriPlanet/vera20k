@@ -131,7 +131,7 @@ fn roundtrip_fixture_save(fixture: &mut Fixture, label: &str) {
             overlay_registry: fixture.overlays.clone(),
             terrain_template: Some(terrain),
             ..crate::sim::runtime::SimResources::empty()
-        },
+        }.into(),
     };
     let prepared = crate::app::persistence::PreparedLoad::from_repository(
         crate::app::persistence::LoadPreparationView::from_runtime(

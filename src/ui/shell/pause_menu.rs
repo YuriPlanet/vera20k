@@ -6,8 +6,13 @@
 //! uses60B350 (FF609A25). FF's group box, trackbars and statics take the
 //! ordinary60B7A0 placement. App owns action dispatch.
 //!
-//! VERA adds a Display group to every template, with Zoom and Full Screen,
-//! so they change mid-match from the menu Escape opens.
+//! VERA shows Options pages left of every template's buttons, so their
+//! settings change mid-match from the menu Escape opens. The Options dialog's
+//! own `LauncherOptionsLayout::in_game` lays them out. The menu opens on Game
+//! Controls, which the template's own Game Controls button shows: gamemd
+//! opens those settings as dialog BBB from it. Two more pages have buttons in
+//! the sidebar rows under it ([`PauseMenuLayout::add_page_tabs`]), and FF's
+//! group heads the first of those.
 
 use super::geom::{self, RectPx};
 use super::in_game_shell::{self, InGameShellLayout};
@@ -24,6 +29,10 @@ pub enum PauseMenuButton {
     Resume,
     /// VERA relay control, independent of the native local Options dialog.
     SharedPause,
+    /// VERA's own row for gamemd's in-game Keyboard dialog (A3), which
+    /// gamemd opens from BBB's 0x52C. [`PauseMenuLayout::add_page_tabs`]
+    /// places it under the page buttons where the sidebar has a row for it.
+    Keyboard,
 }
 
 impl PauseMenuButton {
@@ -35,7 +44,7 @@ impl PauseMenuButton {
         Self::Abort,
         Self::Resume,
     ];
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::GameControls,
         Self::Load,
         Self::Save,
@@ -43,6 +52,7 @@ impl PauseMenuButton {
         Self::Abort,
         Self::Resume,
         Self::SharedPause,
+        Self::Keyboard,
     ];
 }
 
@@ -324,55 +334,22 @@ impl InternetControlsLayout {
     }
 }
 
-/// One of the Display group's two lists.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DisplayList {
-    Zoom,
-    Sidebar,
-}
-
-/// VERA's Display group: the main menu's Zoom and Sidebar lists with their
-/// captions, its Full Screen and Original 4:3 Shape boxes, and the
-/// Performance Stats box under them. gamemd's menus have none of them. It
-/// sits where FF's Internet Game Controls group does, or under it in FF, and
-/// takes the same ordinary placement.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DisplayControlsLayout {
-    pub group: RectPx,
-    /// Each list's caption and combo face, in [`DisplayList`] order. The
-    /// faces are 180 pixels wide, as on the main menu's Options pages.
-    pub captions: [RectPx; 2],
-    pub lists: [RectPx; 2],
-    pub full_screen: RectPx,
-    pub original_shape: RectPx,
-    pub performance_stats: RectPx,
-}
-
-impl DisplayControlsLayout {
-    pub fn face(&self, list: DisplayList) -> RectPx {
-        self.lists[list as usize]
-    }
-
-    /// The list whose face is under the pointer.
-    pub fn face_at(&self, x: i32, y: i32) -> Option<DisplayList> {
-        [DisplayList::Zoom, DisplayList::Sidebar]
-            .into_iter()
-            .find(|list| self.face(*list).contains(x, y))
-    }
-}
-
-/// VERA's Display group's caption, a label of VERA's language files.
-pub const DISPLAY_GROUP_CAPTION: &str = "VERA:DisplayGroup";
-const DISPLAY_COMBO_W: i32 = 180;
+/// VERA's Options pages under Game Controls on the in-game menu, one sidebar
+/// button each. A sidebar too short for them all shows the first ones
+/// ([`PauseMenuLayout::add_page_tabs`]).
+pub const PAGE_TABS: usize = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PauseMenuLayout {
     pub template: PauseMenuTemplate,
-    buttons: [Option<RectPx>; 7],
+    buttons: [Option<RectPx>; 8],
+    /// The page buttons' rows, of which [`Self::add_page_tabs`] shows the
+    /// first `shown_tabs`.
+    page_tabs: [RectPx; PAGE_TABS],
+    shown_tabs: Option<usize>,
     pub title: RectPx,
     pub footer: RectPx,
     pub internet: Option<InternetControlsLayout>,
-    pub display: DisplayControlsLayout,
 }
 
 impl PauseMenuLayout {
@@ -380,56 +357,97 @@ impl PauseMenuLayout {
         self.buttons[button as usize]
     }
 
-    /// An open Display list of `rows` choices: under its face, or over it
-    /// when the status line leaves no room below. It grows with the choices,
-    /// as on the main menu's Options pages, so it never scrolls.
-    pub fn display_list(&self, list: DisplayList, rows: usize) -> RectPx {
-        let face = self.display.face(list);
-        let row_h = crate::ui::skirmish_shell::COMBO_DROPDOWN_ROW_H;
-        let h = rows as i32 * row_h;
-        let below = face.y + face.h + 1;
-        let y = if below + h <= self.footer.y {
-            below
-        } else {
-            (face.y - 1 - h).max(0)
-        };
-        RectPx::new(face.x, y, face.w, h)
-    }
-
-    /// The open list's row under the pointer.
-    pub fn display_row_at(&self, list: DisplayList, rows: usize, x: i32, y: i32) -> Option<usize> {
-        let list = self.display_list(list, rows);
-        let row_h = crate::ui::skirmish_shell::COMBO_DROPDOWN_ROW_H;
-        list.contains(x, y)
-            .then(|| ((y - list.y) / row_h) as usize)
-            .filter(|row| *row < rows)
-    }
-
     /// The template's buttons with their rectangles.
     pub fn buttons(&self) -> impl Iterator<Item = (PauseMenuButton, RectPx)> + '_ {
         self.template
             .buttons()
             .iter()
-            .chain(std::iter::once(&PauseMenuButton::SharedPause))
+            .chain([&PauseMenuButton::SharedPause, &PauseMenuButton::Keyboard])
             .filter_map(|button| Some((*button, self.button(*button)?)))
     }
 
-    /// Add one relay control in the next unused sidebar row. Native controls,
-    /// including the local Resume button, keep their original rectangles.
+    /// The Options page buttons that show, in page order: none before
+    /// [`Self::add_page_tabs`].
+    pub fn page_tabs(&self) -> &[RectPx] {
+        &self.page_tabs[..self.shown_tabs.unwrap_or(0)]
+    }
+
+    /// Give VERA's Options page buttons the rows under Game Controls, so the
+    /// menu's settings buttons stand together. gamemd has no such buttons:
+    /// 60B000 puts the template's next buttons in those rows, and here they
+    /// stand that many rows lower. Game Controls and Resume keep their places.
+    ///
+    /// A sidebar without a row for every page shows the first ones only.
+    /// Retail art has the rows: B5's seven end where Resume begins in a
+    /// 640x480 frame, the shortest sidebar. BBA and FF keep a row for the
+    /// relay's button whether or not it shows.
+    ///
+    /// Keyboard takes the row under the page buttons when one is left. B5
+    /// has none in a frame under 503 pixels high (SIDE2 tiles are 50), where
+    /// the Game Controls page holds the button instead.
+    pub fn add_page_tabs(&mut self) {
+        if self.shown_tabs.is_some() {
+            return;
+        }
+        let (Some(controls), Some(resume)) = (
+            self.button(PauseMenuButton::GameControls),
+            self.button(PauseMenuButton::Resume),
+        ) else {
+            return;
+        };
+        let moved = |button: &PauseMenuButton| {
+            !matches!(
+                button,
+                PauseMenuButton::GameControls | PauseMenuButton::Resume
+            )
+        };
+        let below = self.template.buttons().iter().filter(|b| moved(*b)).count()
+            + usize::from(self.template != PauseMenuTemplate::Offline);
+        // 60B000's rows are one button high.
+        let rows = usize::try_from((resume.y - controls.y) / controls.h.max(1)).unwrap_or(0);
+        let free = rows.saturating_sub(1 + below);
+        let shown = free.min(PAGE_TABS);
+        let keyboard = free > PAGE_TABS;
+        let rows_down = |rect: RectPx, rows: usize| rect.translate(0, rows as i32 * controls.h);
+        for button in PauseMenuButton::ALL.iter().filter(|b| moved(*b)) {
+            if let Some(rect) = self.buttons[*button as usize].as_mut() {
+                *rect = rows_down(*rect, shown + usize::from(keyboard));
+            }
+        }
+        self.page_tabs = std::array::from_fn(|tab| rows_down(controls, tab + 1));
+        self.shown_tabs = Some(shown);
+        if keyboard {
+            self.buttons[PauseMenuButton::Keyboard as usize] = Some(rows_down(controls, shown + 1));
+        }
+    }
+
+    /// FF's group heads the Game Options page, which VERA shows on the left of
+    /// the screen that gamemd leaves to the group: up from its native 118 DLUs.
+    pub fn raise_internet_group(&mut self) {
+        if let Some(internet) = self.internet.as_mut() {
+            let raise = |rect: RectPx| rect.translate(0, -INTERNET_GROUP_RAISE);
+            internet.group = raise(internet.group);
+            internet.sliders = internet.sliders.map(raise);
+            internet.captions = internet.captions.map(raise);
+            internet.values = internet.values.map(raise);
+        }
+    }
+
+    /// Add one relay control in the row under Abort Mission, the last button
+    /// of BBA and FF above Resume. No other button moves for it.
     pub fn enable_shared_pause(&mut self) {
         if self.template == PauseMenuTemplate::Offline {
             return;
         }
-        let controls = self.button(PauseMenuButton::GameControls).unwrap();
+        // 60B000's rows are one button high.
         let abort = self.button(PauseMenuButton::Abort).unwrap();
-        self.buttons[PauseMenuButton::SharedPause as usize] = Some(RectPx::new(
-            abort.x,
-            abort.y + (abort.y - controls.y),
-            abort.w,
-            abort.h,
-        ));
+        self.buttons[PauseMenuButton::SharedPause as usize] = Some(abort.translate(0, abort.h));
     }
 }
+
+/// 72 DLUs in pixels, a multiple of 8 so each rect keeps its authored size
+/// ([`geom::dlu_rect`] is `y * 13 / 8`).
+const INTERNET_GROUP_RAISE: i32 = 117;
 
 /// Layout uses the same loaded-art geometry as the parent compositor. Control
 /// rectangles are physical pixels; no battlefield camera applies.
@@ -440,7 +458,7 @@ pub fn pause_menu_layout(
     button_size: [i32; 2],
     template: PauseMenuTemplate,
 ) -> PauseMenuLayout {
-    let mut buttons = [None; 7];
+    let mut buttons = [None; 8];
     for button in template.buttons() {
         let control = template.control(*button).expect("template button");
         let dlu = control.dlu_rect;
@@ -458,39 +476,14 @@ pub fn pause_menu_layout(
         captions: [ordinary(61, 136, 67, 13), ordinary(61, 158, 67, 13)],
         values: [ordinary(278, 136, 78, 13), ordinary(278, 158, 78, 13)],
     });
-    // FF's group spans DLU y118..186; the Display group takes its place, or
-    // the space under it.
-    let top = if internet.is_some() { 196 } else { 118 };
-    let face = |y| {
-        let row = ordinary(134, y, 120, 15);
-        RectPx::new(
-            row.x,
-            row.y,
-            DISPLAY_COMBO_W,
-            crate::ui::skirmish_shell::COMBO_FACE_H,
-        )
-    };
-    let display = DisplayControlsLayout {
-        group: ordinary(58, top, 301, 92),
-        captions: [
-            ordinary(61, top + 14, 67, 15),
-            ordinary(61, top + 33, 67, 15),
-        ],
-        lists: [face(top + 14), face(top + 33)],
-        full_screen: ordinary(134, top + 56, 80, 10),
-        original_shape: ordinary(222, top + 56, 130, 10),
-        // One checkbox row (18 DLU, as BBB's Target Lines and Show Hidden)
-        // under Full Screen, alone on it, so its caption runs to the edge
-        // Original 4:3 Shape ends at: room for the longer translations.
-        performance_stats: ordinary(134, top + 74, 218, 10),
-    };
     PauseMenuLayout {
         template,
         buttons,
+        page_tabs: [RectPx::new(0, 0, 0, 0); PAGE_TABS],
+        shown_tabs: None,
         title: in_game_shell::right_panel_title_rect(width),
         footer: in_game_shell::status_line_rect(height),
         internet,
-        display,
     }
 }
 
@@ -586,6 +579,55 @@ mod tests {
                     layout.internet.is_some(),
                     template == PauseMenuTemplate::Internet
                 );
+            }
+        }
+    }
+
+    /// VERA's page buttons take rows 1 and 2 under Game Controls and
+    /// Keyboard the row after them. The template's later buttons and the
+    /// relay's follow, and Resume stays. B5's own seven rows end at Resume at
+    /// 640x480, so Keyboard has no row there.
+    #[test]
+    fn page_tabs_stand_under_game_controls_and_move_the_later_buttons_down() {
+        use PauseMenuButton::*;
+        let fixture = geometry();
+        for case in fixture["cases"].as_array().unwrap() {
+            let width = case["width"].as_i64().unwrap() as i32;
+            let height = case["height"].as_i64().unwrap() as i32;
+            let shell = shell_for(&fixture, case);
+            let row = |row: i32| RectPx::new(width - 147, 227 + row * 25, 125, 25);
+            let menu = |template| pause_menu_layout(width, height, shell, [125, 25], template);
+
+            let native = menu(PauseMenuTemplate::Offline);
+            assert!(native.page_tabs().is_empty());
+            let mut b5 = native;
+            b5.add_page_tabs();
+            b5.add_page_tabs();
+            let keyboard = height > 480;
+            let tabs = PAGE_TABS as i32 + i32::from(keyboard);
+            assert_eq!(b5.page_tabs(), [row(1), row(2)]);
+            assert_eq!(b5.button(Keyboard), keyboard.then(|| row(3)));
+            assert_eq!(b5.button(GameControls), Some(row(0)));
+            for (button, at) in [(Load, 1), (Save, 2), (Delete, 3), (Abort, 4)] {
+                assert_eq!(b5.button(button), Some(row(tabs + at)), "{button:?}");
+            }
+            let resume = native.button(Resume).unwrap();
+            assert_eq!(b5.button(Resume), Some(resume));
+            assert!(row(tabs + 5).y <= resume.y, "{width}x{height}");
+
+            for template in [PauseMenuTemplate::Network, PauseMenuTemplate::Internet] {
+                let mut tabs_first = menu(template);
+                tabs_first.add_page_tabs();
+                tabs_first.enable_shared_pause();
+                let mut relay_first = menu(template);
+                relay_first.enable_shared_pause();
+                relay_first.add_page_tabs();
+                assert_eq!(tabs_first, relay_first);
+                assert_eq!(tabs_first.page_tabs(), [row(1), row(2)]);
+                assert_eq!(tabs_first.button(Keyboard), Some(row(3)));
+                assert_eq!(tabs_first.button(Abort), Some(row(4)));
+                assert_eq!(tabs_first.button(SharedPause), Some(row(5)));
+                assert!(row(6).y <= tabs_first.button(Resume).unwrap().y);
             }
         }
     }
@@ -690,55 +732,5 @@ mod tests {
             };
             assert_eq!(ours, native, "{case}");
         }
-    }
-
-    #[test]
-    fn display_group_takes_ff_s_group_place_or_sits_under_it() {
-        let shell = crate::ui::shell::in_game_shell::allied_fixture_layout(800, 600);
-        let layout = |template| pause_menu_layout(800, 600, shell, [125, 25], template);
-        let ff = layout(PauseMenuTemplate::Internet);
-        let internet = ff.internet.unwrap();
-        for template in [PauseMenuTemplate::Offline, PauseMenuTemplate::Network] {
-            let group = layout(template).display.group;
-            assert_eq!(
-                (group.x, group.y, group.w),
-                (internet.group.x, internet.group.y, internet.group.w)
-            );
-        }
-        let display = ff.display;
-        assert!(display.group.y > internet.group.y + internet.group.h);
-        // The main menu's 180-pixel combos beside their captions, one under
-        // the other, then the two boxes side by side inside the group.
-        let (zoom, sidebar) = (
-            display.face(DisplayList::Zoom),
-            display.face(DisplayList::Sidebar),
-        );
-        assert_eq!((zoom.w, zoom.h), (180, 24));
-        assert_eq!(display.captions[1].y, sidebar.y);
-        assert!(zoom.y + zoom.h < sidebar.y && sidebar.y + sidebar.h < display.full_screen.y);
-        assert_eq!(display.full_screen.y, display.original_shape.y);
-        assert!(display.full_screen.x + display.full_screen.w <= display.original_shape.x);
-        let group = display.group;
-        assert!(display.original_shape.x + display.original_shape.w <= group.x + group.w);
-        // The Performance Stats box takes the next row under Full Screen.
-        assert_eq!(display.performance_stats.x, display.full_screen.x);
-        assert!(display.full_screen.y + display.full_screen.h < display.performance_stats.y);
-        assert!(display.performance_stats.y + display.performance_stats.h < group.y + group.h);
-        assert!(display.performance_stats.x + display.performance_stats.w <= group.x + group.w);
-        assert!(group.y + group.h < ff.footer.y);
-        assert_eq!(
-            display.face_at(sidebar.x + 5, sidebar.y + 5),
-            Some(DisplayList::Sidebar)
-        );
-        // Two rows fit under a face; a list too tall for the space above
-        // the status line opens over its face instead.
-        let list = ff.display_list(DisplayList::Zoom, 2);
-        assert_eq!(list.y, zoom.y + zoom.h + 1);
-        assert_eq!(
-            ff.display_row_at(DisplayList::Zoom, 2, list.x + 4, list.y + 30),
-            Some(1)
-        );
-        let tall = ff.display_list(DisplayList::Zoom, 10);
-        assert_eq!(tall.y + tall.h, zoom.y - 1);
     }
 }

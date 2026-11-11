@@ -68,7 +68,7 @@ fn assert_surface_matches_native(raw_size: (i32, i32), generated_size: (i32, i32
         row["output"]["generated_size"],
         serde_json::json!(generated_size)
     );
-    let actual = generate_rgb565(&fixture(raw_size), raw_size, generated_size);
+    let actual = RadarSampler::new(raw_size, generated_size).generate(&fixture(raw_size));
     assert_eq!(packed_hash(&actual), row["output"]["rgb565_sha256"]);
 }
 
@@ -228,4 +228,50 @@ fn visibility_cells_answer_as_the_native_inverse_on_and_off_the_surface() {
             "{pixel:?}"
         );
     }
+}
+
+/// Updates rewrite only the changed cells' raw pixels and resample only the
+/// generated pixels whose spans reach them; the surface must still equal a
+/// full generation of the final state, edges and overrides included.
+#[test]
+fn cell_updates_match_full_generation_of_the_final_state() {
+    let geometry = NativeRadarSurfaceGeometry::from_raw_rect(80, 0, 161, 159).unwrap();
+    let color = |x: u16, y: u16, half: u16| [(x * 3) as u8, (y * 3) as u8, (half * 200) as u8];
+    let mut cells: Vec<_> = (0..80u16)
+        .flat_map(|x| (0..80u16).map(move |y| (x, y)))
+        .map(|(x, y)| NativeRadarCellColors {
+            cell: (x, y),
+            left: color(x, y, 0),
+            right: color(x, y, 1),
+        })
+        .collect();
+    let mut surface = NativeRadarTerrainSurface::new(geometry, cells.clone(), BTreeMap::new(), 1.0);
+    let mut overrides = BTreeMap::new();
+    let updates = [
+        ((0, 0), [9, 9, 9], None),
+        ((79, 0), [1, 2, 3], Some([200, 10, 10])),
+        ((0, 79), [4, 5, 6], None),
+        ((40, 40), [7, 8, 9], Some([10, 200, 10])),
+        ((40, 40), [7, 8, 9], None),
+        ((79, 79), [250, 250, 250], None),
+    ];
+    for (cell, left, override_color) in updates {
+        let base = NativeRadarCellColors {
+            cell,
+            left,
+            right: [left[2], left[1], left[0]],
+        };
+        assert!(surface.set_cell_states([NativeRadarCellUpdate {
+            base,
+            override_color,
+        }]));
+        *cells.iter_mut().find(|known| known.cell == cell).unwrap() = base;
+        match override_color {
+            Some(color) => overrides.insert(cell, color),
+            None => overrides.remove(&cell),
+        };
+    }
+    let full = NativeRadarTerrainSurface::new(geometry, cells, overrides, 1.0);
+    assert_eq!(surface.raw_rgb(), full.raw_rgb());
+    assert_eq!(surface.generated_rgb565(), full.generated_rgb565());
 }

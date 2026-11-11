@@ -10,6 +10,7 @@
 //! Controlled service events remain available for diagnostics. Both paths
 //! use the same dialog, vote and connection-removal owners here.
 
+use crate::app::match_runtime::sim_host::SimWrite;
 use std::collections::{BTreeMap, VecDeque};
 
 use crate::app::AppState;
@@ -31,7 +32,12 @@ pub(crate) fn frame_budget(state: &AppState) -> Option<(u16, u32)> {
     {
         return Some((fps, 0));
     }
-    let session = state.match_state.sim_runtime.as_ref()?.simulation.session();
+    let session = state
+        .match_state
+        .sim_runtime
+        .runtime()?
+        .simulation
+        .session();
     let timing = session.network_command_timing()?;
     let delay = state.match_state.live_network.as_ref().map_or(0, |live| {
         live.pacing_delay_millis(session.network_max_ahead_frames().unwrap_or(0))
@@ -46,7 +52,7 @@ pub(crate) fn game_frame_ms(state: &AppState) -> Option<f32> {
         state
             .match_state
             .sim_runtime
-            .as_ref()?
+            .runtime()?
             .simulation
             .session()
             .game_options()
@@ -274,12 +280,18 @@ pub(crate) fn post_connection_line(state: &mut AppState, destroyed: ConnectionDe
 /// DestroyConnection(house, 0) (`0x0064C9B1`). Remote sources the relay ended
 /// for silence run DestroyConnection(house, 1) after their EVENT_REMOVEPLAYER.
 pub(crate) fn drain_departures(state: &mut AppState) {
-    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+    // A tick on the simulation thread stops a network frame at Queue_AI,
+    // before the dispatch that executes departures, so it has none; taking
+    // the world here would only wait for it.
+    if state.match_state.sim_runtime.is_lent() {
+        return;
+    }
+    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Network) else {
         return;
     };
     let departed = runtime.simulation.take_departed_senders();
     for sender in departed {
-        let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+        let Some(runtime) = state.match_state.sim_runtime.runtime() else {
             return;
         };
         let Some(source) = house_source(
@@ -298,7 +310,7 @@ pub(crate) fn drain_departures(state: &mut AppState) {
         .map(|live| live.take_lost_houses())
         .unwrap_or_default();
     for house in lost {
-        let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+        let Some(runtime) = state.match_state.sim_runtime.runtime() else {
             return;
         };
         let Some(source) = house_source(
@@ -326,7 +338,7 @@ pub(crate) fn post_speed_changes(state: &mut AppState) {
         let text = match change {
             MatchSpeedChange::SlowedBy(house) => {
                 state.match_state.network_quality.record_slowdown(house);
-                let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+                let Some(runtime) = state.match_state.sim_runtime.runtime() else {
                     return;
                 };
                 let name = house_source(
@@ -354,7 +366,7 @@ pub(crate) fn post_speed_changes(state: &mut AppState) {
 /// leaving or already defeated keeps quiet.
 pub(crate) fn post_caught_up(state: &mut AppState) {
     let reached = state.match_state.multiplayer_paused();
-    let Some((frame, defeated)) = state.match_state.sim_runtime.as_ref().map(|runtime| {
+    let Some((frame, defeated)) = state.match_state.sim_runtime.runtime().map(|runtime| {
         (
             runtime.simulation.session().binary_frame(),
             runtime.simulation.local_player_defeated(),
@@ -392,7 +404,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkMatchEvent) -> a
             let runtime = state
                 .match_state
                 .sim_runtime
-                .as_mut()
+                .write_sim(SimWrite::Network)
                 .ok_or_else(|| anyhow::anyhow!("no running match"))?;
             let sim = &mut runtime.simulation;
             let owner = sim
@@ -417,7 +429,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkMatchEvent) -> a
             let frame: u64 = state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .ok_or_else(|| anyhow::anyhow!("no running match"))?
                 .simulation
                 .session()
@@ -457,7 +469,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkMatchEvent) -> a
             let runtime = state
                 .match_state
                 .sim_runtime
-                .as_mut()
+                .write_sim(SimWrite::Network)
                 .ok_or_else(|| anyhow::anyhow!("no running match"))?;
             let sim = &mut runtime.simulation;
             let owner = sim
@@ -860,7 +872,7 @@ pub(crate) fn decode_kick_proposal(
 fn capture_live_bars(state: &mut AppState, elapsed: u32, now_millis: u32) {
     let (Some(live), Some(runtime)) = (
         state.match_state.live_network.as_ref(),
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.runtime(),
     ) else {
         return;
     };
@@ -894,7 +906,7 @@ fn kick(state: &mut AppState, source_index: usize, error: ConnectionError) {
         .network_wait
         .stalled
         .retain(|peer| peer.source_index != source_index);
-    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Network) else {
         return;
     };
     if let Some(destroyed) = destroy_connection(
@@ -958,7 +970,7 @@ fn lowest_record(state: &AppState) -> Option<usize> {
         let house = live.lowest_frame_peer()?.house_id();
         return house_source(
             &state.match_state.session,
-            &state.match_state.sim_runtime.as_ref()?.simulation,
+            &state.match_state.sim_runtime.runtime()?.simulation,
             i32::from(house),
         );
     }
@@ -1121,7 +1133,7 @@ fn tally_kicks(
 /// backend, so VERA keeps waiting.
 pub(crate) fn service_wait(state: &mut AppState, now_ms: u64) -> WaitPass {
     let now = super::frame_pacer::frame_bucket(now_ms);
-    if state.match_state.sim_runtime.is_none()
+    if !state.match_state.sim_runtime.is_installed()
         || !state.match_state.session_mode().is_network()
         || super::network_failure::pending(state)
     {
@@ -1136,7 +1148,7 @@ pub(crate) fn service_wait(state: &mut AppState, now_ms: u64) -> WaitPass {
         let frame = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map_or(0, |rt| rt.simulation.session().binary_frame());
         if state
             .match_state
@@ -1230,14 +1242,15 @@ pub(crate) fn service_wait(state: &mut AppState, now_ms: u64) -> WaitPass {
     if let Some(timeout) = state.match_state.network_wait.timeout_action(now) {
         if timeout == WaitTimeout::InitialFailure {
             //649237/649931..649A16: initial expiry returns7; it never kicks.
-            let interrupted = if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
-                state
-                    .match_state
-                    .network_wait
-                    .interrupt_initial_wait(&mut runtime.simulation)
-            } else {
-                false
-            };
+            let interrupted =
+                if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Network) {
+                    state
+                        .match_state
+                        .network_wait
+                        .interrupt_initial_wait(&mut runtime.simulation)
+                } else {
+                    false
+                };
             if interrupted {
                 super::network_failure::show(state);
             }
@@ -1246,7 +1259,7 @@ pub(crate) fn service_wait(state: &mut AppState, now_ms: u64) -> WaitPass {
         //64B410 chooses the first minimum signed peer frame. Recovery restarts
         //all three countdowns but retains entry, page, votes and peer+14.
         let source = lowest_record(state);
-        let runtime = state.match_state.sim_runtime.as_ref();
+        let runtime = state.match_state.sim_runtime.runtime();
         let house = source.and_then(|source| {
             source_house(&state.match_state.session, &runtime?.simulation, source)
         });
@@ -1357,7 +1370,7 @@ pub(crate) fn propose_kick(state: &mut AppState, row: usize) {
     if state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_some_and(|runtime| runtime.simulation.session().wol_tournament_game())
     {
         let line = csf(state, "TXT_CANT_KICK");

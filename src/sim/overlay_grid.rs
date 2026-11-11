@@ -94,11 +94,12 @@ impl OverlayCell {
 pub struct OverlayGrid {
     width: u16,
     height: u16,
-    cells: Vec<OverlayCell>,
+    /// Shared copy-on-write in chunks with the presentation frame.
+    cells: crate::util::shared::ChunkedVec<OverlayCell>,
     /// Retained wall and Foot contribution to CellClass+0x122, one byte per
     /// cell. It is the sole wall authority, even when all zero: final wall
     /// identities are never scanned as a substitute.
-    retained_neighbor_counts: Vec<u8>,
+    retained_neighbor_counts: crate::util::shared::ChunkedVec<u8>,
     #[serde(skip, default)]
     foot_neighbor_changes: crate::sim::cell_neighbors::NeighborCountChanges,
     /// Cells mutated this tick — drained by Simulation's end-of-frame finalizer
@@ -149,8 +150,8 @@ impl OverlayGrid {
         Self {
             width,
             height,
-            cells: vec![OverlayCell::default(); count],
-            retained_neighbor_counts: vec![0u8; count],
+            cells: crate::util::shared::ChunkedVec::filled(OverlayCell::default(), count),
+            retained_neighbor_counts: crate::util::shared::ChunkedVec::filled(0u8, count),
             foot_neighbor_changes: Default::default(),
             dirty_cells: Vec::new(),
             #[cfg(test)]
@@ -186,12 +187,12 @@ impl OverlayGrid {
                 wall_owner: None,
                 rubble_building_type: None,
             })
-            .collect();
+            .collect::<Vec<_>>();
         Self {
             width,
             height,
-            cells,
-            retained_neighbor_counts,
+            cells: cells.into(),
+            retained_neighbor_counts: retained_neighbor_counts.into(),
             foot_neighbor_changes: Default::default(),
             dirty_cells: Vec::new(),
             #[cfg(test)]
@@ -319,7 +320,7 @@ impl OverlayGrid {
 
     /// Read cell at (rx, ry). Returns default (no overlay) for out-of-bounds.
     /// Every cell in row-major order (`ry * width + rx`).
-    pub(crate) fn cells(&self) -> &[OverlayCell] {
+    pub(crate) fn cells(&self) -> &crate::util::shared::ChunkedVec<OverlayCell> {
         &self.cells
     }
 
@@ -391,7 +392,7 @@ impl OverlayGrid {
 
     /// Read the retained wall and Foot contribution plane. All-zero is
     /// authoritative and must not fall back to a final-identity scan.
-    pub(crate) fn retained_neighbor_counts(&self) -> &[u8] {
+    pub(crate) fn retained_neighbor_counts(&self) -> &crate::util::shared::ChunkedVec<u8> {
         &self.retained_neighbor_counts
     }
 
@@ -1026,6 +1027,11 @@ impl OverlayGrid {
             navigation_changed,
             zone_changed,
         }
+    }
+
+    /// Whether [`Self::take_synchronous_navigation_cells`] would return any cell.
+    pub(crate) fn has_synchronous_navigation_cells(&self) -> bool {
+        !self.synchronous_navigation_cells.is_empty()
     }
 
     /// Drain movement-authority changes after all inline overlay callbacks that
@@ -2166,7 +2172,7 @@ mod tests {
             (Some(0x18), 9)
         );
         assert!(grid.dirty_cells.is_empty());
-        assert_eq!(grid.retained_neighbor_counts(), &[5, 8][..]);
+        assert_eq!(grid.retained_neighbor_counts(), &[5u8, 8][..]);
     }
 
     #[test]

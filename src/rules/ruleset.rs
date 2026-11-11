@@ -5067,6 +5067,7 @@ pub struct RuleSet {
     /// active AssetManager with effect assets. Gameplay and rendering share
     /// the GPU-independent physical model loader.
     voxel_assets: crate::rules::voxel_asset_catalog::VoxelAssetCatalog,
+    pub(crate) voxel_model_plan: super::voxel_model_plan::VoxelModelPlan,
     /// Every building type's construction control from its Buildup SHP,
     /// bound once from the active assets (`bind_building_buildup_assets`).
     buildup_assets: crate::rules::buildup_asset_catalog::BuildupAssetCatalog,
@@ -7192,7 +7193,7 @@ impl RuleSet {
         let particle_types = processed.particle_type_projections().collect::<Vec<_>>();
         let (particle_system_types, particle_system_types_by_name) =
             parse_particle_system_types(processed);
-        let (voxel_anim_types, voxel_anim_types_by_name) = parse_voxel_anim_types(ini);
+        let (voxel_anim_types, voxel_anim_types_by_name) = parse_voxel_anim_types(processed);
 
         log::info!(
             "RuleSet loaded: {} objects ({} inf, {} veh, {} air, {} bld), \
@@ -7421,6 +7422,7 @@ impl RuleSet {
                 .collect(),
             effect_assets: crate::rules::effect_asset_catalog::EffectAssetCatalog::default(),
             voxel_assets: crate::rules::voxel_asset_catalog::VoxelAssetCatalog::default(),
+            voxel_model_plan: processed.voxel_model_plan().clone(),
             buildup_assets: crate::rules::buildup_asset_catalog::BuildupAssetCatalog::default(),
             rubble_assets: crate::rules::building_rubble::RubbleAssetCatalog::default(),
             terrain_assets: crate::rules::terrain_asset_catalog::TerrainAssetCatalog::default(),
@@ -9819,6 +9821,7 @@ impl RuleSet {
         self.unit_shp_read_states.hash(&mut hasher);
         self.effect_assets.hash(&mut hasher);
         self.voxel_assets.hash(&mut hasher);
+        self.voxel_model_plan.hash(&mut hasher);
         self.buildup_assets.hash(&mut hasher);
         self.rubble_assets.hash(&mut hasher);
         self.terrain_assets.hash(&mut hasher);
@@ -11696,6 +11699,25 @@ impl RuleSet {
             crate::rules::voxel_asset_catalog::VoxelAssetCatalog::bind(self, asset_manager);
     }
 
+    pub fn loaded_voxel_model(
+        &self,
+        type_id: &str,
+    ) -> Option<&crate::rules::voxel_asset_catalog::LoadedVoxelModel> {
+        let object = self.object(type_id)?;
+        self.voxel_assets.model(object.category, &object.id)
+    }
+
+    pub fn voxel_anim_model(
+        &self,
+        id: VoxelAnimTypeId,
+    ) -> Option<&crate::rules::voxel_asset_catalog::VoxelPart> {
+        self.voxel_assets.voxel_anim(id.0 as usize)
+    }
+
+    pub(crate) fn voxel_models_bound(&self) -> bool {
+        self.voxel_assets.is_bound()
+    }
+
     /// Techno6F9E10's loaded-main-VXL predicate for the type `object` names,
     /// never an ART declaration or renderer-cache query. Unbound/missing/
     /// malformed models answer false.
@@ -12165,25 +12187,17 @@ fn project_country_side_registry<'a>(
 /// systems, because `DebrisTypes=` and `Spawns=` resolve by name and the ids
 /// are hashed.
 ///
-/// RESIDUAL: RulesClass::ReadVoxelAnims (`0x00672920`) allocates a type for
-/// every listed name through FindOrAllocate (`0x0074B960`), section or not;
-/// VERA skips an entry without a section, which shifts later ids and leaves a
-/// `DebrisTypes=` reference to it unresolved. Every retail entry has a
-/// section.
-fn parse_voxel_anim_types(ini: &IniFile) -> (Vec<VoxelAnimType>, HashMap<String, VoxelAnimTypeId>) {
-    let ids: Vec<String> = parse_registry(ini, "VoxelAnims");
-    let mut types: Vec<VoxelAnimType> = Vec::with_capacity(ids.len());
-    let mut by_name: HashMap<String, VoxelAnimTypeId> = HashMap::with_capacity(ids.len());
-    for id in &ids {
-        let Some(section) = ini.section(id) else {
-            log::trace!(
-                "VoxelAnimType '{}' listed in [VoxelAnims] but has no section",
-                id
-            );
-            continue;
-        };
-        by_name.insert(id.to_ascii_uppercase(), VoxelAnimTypeId(types.len() as u32));
-        types.push(VoxelAnimType::from_ini_section(id, section));
+/// Native ReadVoxelAnims672920 allocates every listed identity, including
+/// constructor-only entries; the retained processor supplies that exact order.
+fn parse_voxel_anim_types(
+    processed: &ProcessedRulesLayers,
+) -> (Vec<VoxelAnimType>, HashMap<String, VoxelAnimTypeId>) {
+    let types: Vec<_> = processed.voxel_anim_type_projections().collect();
+    let mut by_name = HashMap::new();
+    for (index, kind) in types.iter().enumerate() {
+        by_name
+            .entry(kind.name.to_ascii_uppercase())
+            .or_insert(VoxelAnimTypeId(index as u32));
     }
     (types, by_name)
 }

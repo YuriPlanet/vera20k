@@ -658,6 +658,14 @@ fn uninit_clears_aircraft_bridge_occupation() {
 #[test]
 fn gsi_04_11_structure_mark_clears_full_smudge_footprints_and_refinery_hole() {
     let mut sim = Simulation::with_seed(1);
+    let rules =
+        crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+            "[SmudgeTypes]\n0=EMPTY\n1=TWO\n2=ONE\n3=DISTANT\n[TWO]\nWidth=2\nHeight=2\n",
+        ))
+        .unwrap();
+    sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_flat_ground_grid(
+        16,
+    ));
     let stable_id = 41;
     insert_reservation_building(
         &mut sim,
@@ -676,7 +684,6 @@ fn gsi_04_11_structure_mark_clears_full_smudge_footprints_and_refinery_hole() {
             ry,
             crate::sim::smudge_grid::SmudgeCell {
                 type_id: Some(1),
-                footprint_origin: Some((4, 5)),
                 frame_offset,
             },
         );
@@ -686,7 +693,6 @@ fn gsi_04_11_structure_mark_clears_full_smudge_footprints_and_refinery_hole() {
         6,
         crate::sim::smudge_grid::SmudgeCell {
             type_id: Some(2),
-            footprint_origin: Some((7, 6)),
             frame_offset: 0,
         },
     );
@@ -695,7 +701,6 @@ fn gsi_04_11_structure_mark_clears_full_smudge_footprints_and_refinery_hole() {
         9,
         crate::sim::smudge_grid::SmudgeCell {
             type_id: Some(3),
-            footprint_origin: Some((9, 9)),
             frame_offset: 0,
         },
     );
@@ -703,7 +708,11 @@ fn gsi_04_11_structure_mark_clears_full_smudge_footprints_and_refinery_hole() {
     sim.smudge_grid = Some(grid);
 
     assert!(matches!(
-        sim.try_reveal_entity(stable_id, request(5, 5, PlacementEvidence::MarkSucceeded)),
+        sim.try_reveal_entity_with_context(
+            stable_id,
+            request(5, 5, PlacementEvidence::MarkSucceeded),
+            super::UninitContext::with_rules(&rules),
+        ),
         RevealOutcome::Revealed { .. }
     ));
 
@@ -717,8 +726,107 @@ fn gsi_04_11_structure_mark_clears_full_smudge_footprints_and_refinery_hole() {
     );
     let expected = vec![(4, 5), (5, 5), (4, 6), (5, 6), (7, 6)];
     assert_eq!(sim.dirty_cells.tactical_for_test(), expected);
-    assert_eq!(sim.dirty_cells.radar(), expected);
-    assert_eq!(sim.dirty_cells.radar_generation(), 5);
+    assert!(sim.dirty_cells.radar().is_empty());
+    assert_eq!(sim.dirty_cells.radar_generation(), 0);
+    assert_eq!(grid.cell(5, 5).frame_offset, 1);
+    assert_eq!(grid.cell(5, 6).frame_offset, 3);
+}
+
+/// SmudgePlace6B6080 truncates data to a byte; BuildingMark43F81B decodes
+/// that saved byte with current Width, even when it names a later origin.
+#[test]
+fn wrapped_smudge_data_survives_load_and_controls_building_clear() {
+    use crate::map::map_file::MapSmudgeEntry;
+    use crate::rules::native_processing::{ProcessedRulesLayers, RulesLayerKind, RulesLayerStack};
+    use crate::sim::overlay_grid::OverlayGrid;
+    use crate::sim::smudge_grid::SmudgeGrid;
+
+    let Some((root, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    let mut layers = RulesLayerStack::new(root);
+    layers.push(
+        RulesLayerKind::GameMode,
+        crate::rules::ini_parser::IniFile::from_str("[CRATER11]\nWidth=257\nHeight=3\n"),
+    );
+    layers.push(
+        RulesLayerKind::Scenario,
+        crate::rules::ini_parser::IniFile::from_str("[CRATER11]\nHeight=2\n"),
+    );
+    let processed = layers.process_with_fixed_art(&art).unwrap();
+    let saved_rules = save_codec::serialize(&processed).unwrap();
+    let rules = crate::rules::ruleset::RuleSet::from_processed_rules(&processed).unwrap();
+    let terrain = crate::map::resolved_terrain::test_grid(
+        300,
+        20,
+        crate::map::resolved_terrain::test_smudge_cell,
+    );
+    let overlay = OverlayGrid::new(300, 20);
+    let mut grid = SmudgeGrid::from_map_entries(
+        &[
+            MapSmudgeEntry {
+                type_name: "CRATER11".into(),
+                rx: 1,
+                ry: 10,
+            },
+            MapSmudgeEntry {
+                type_name: "CRATER01".into(),
+                rx: 258,
+                ry: 11,
+            },
+        ],
+        &rules.smudge_types,
+        &terrain,
+        &overlay,
+        300,
+        20,
+    );
+    let wide = rules.smudge_types.find_by_name("CRATER11").unwrap();
+    assert_eq!(grid.cell(257, 10).type_id, Some(wide));
+    assert_eq!(grid.cell(257, 10).frame_offset, 0);
+    assert_eq!(grid.cell(256, 10).frame_offset, 255);
+    let _ = grid.drain_dirty();
+    let mut live = Simulation::with_seed(17);
+    live.install_resolved_terrain_for_new_map(terrain.clone());
+    live.overlay_grid = Some(overlay);
+    live.smudge_grid = Some(grid);
+    let bytes = GameSnapshot::save(&live, 0, rules.simulation_config_hash(), "wide-smudge", 0);
+    let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+    let saved_rules: ProcessedRulesLayers = save_codec::deserialize(&saved_rules).unwrap();
+    let rules = crate::rules::ruleset::RuleSet::from_processed_rules(&saved_rules).unwrap();
+    let definition = rules.smudge_types.get(wide).unwrap();
+    assert_eq!((definition.width, definition.height), (257, 2));
+    restored.restore_after_snapshot_load().unwrap();
+    restored.rebuild_caches_after_load(terrain, Default::default(), &rules);
+    restored
+        .restore_map_authority_after_snapshot_load(&rules, &rules.overlay_registry(), None)
+        .unwrap();
+
+    // A one-cell Building lands on the later data0. Its decoded rectangle
+    // clears an unrelated mark ahead, while the original data0 remains.
+    insert_reservation_building(&mut restored, 41, "Americans", 257, 10, &"1x1".into(), 0);
+    let rng = restored.scenario_rng.native_state_hex();
+    assert!(matches!(
+        restored.try_reveal_entity_with_context(
+            41,
+            request(257, 10, PlacementEvidence::MarkSucceeded),
+            super::UninitContext::with_rules(&rules),
+        ),
+        RevealOutcome::Revealed { .. }
+    ));
+    let grid = restored.smudge_grid.as_ref().unwrap();
+    assert_eq!(grid.cell(1, 10).type_id, Some(wide));
+    assert_eq!(grid.cell(256, 10).frame_offset, 255);
+    assert!(grid.cell(257, 10).type_id.is_none());
+    assert!(grid.cell(258, 11).type_id.is_none());
+    assert!(restored.dirty_cells.radar().is_empty());
+    assert!(
+        restored
+            .dirty_cells
+            .tactical_for_test()
+            .contains(&(258, 11))
+    );
+    assert_eq!(restored.scenario_rng.native_state_hex(), rng);
 }
 
 fn gsi_04_16_edge_gate_rules() -> crate::rules::ruleset::RuleSet {
@@ -5815,8 +5923,8 @@ fn homing_ground_impact_reaches_damage_and_cleanup_through_runtime_frame() {
             );
         }
         let mut runtime = SimRuntime::from_simulation(sim);
-        runtime.resources.rules = RuleSet::from_ini(&ini).unwrap();
-        runtime.resources.overlay_registry =
+        runtime.resources_mut().rules = RuleSet::from_ini(&ini).unwrap();
+        runtime.resources_mut().overlay_registry =
             crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, Some(&art));
 
         let _ = runtime
@@ -8355,7 +8463,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
         )
     };
     assert_eq!(
-        remote_bridge_route(sim.zone_grid.as_ref().unwrap()),
+        remote_bridge_route(sim.zone_grid.as_deref().unwrap()),
         (true, true)
     );
     let without_bridge_records = crate::sim::pathfinding::zone_map::ZoneGrid::build_with_terrain(
@@ -8378,7 +8486,6 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
             0,
             crate::sim::smudge_grid::SmudgeCell {
                 type_id: Some(9),
-                footprint_origin: Some((0, 0)),
                 frame_offset,
             },
         );
@@ -8465,11 +8572,11 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
     // Check before any later frame repair: native cliff collapse rebuilds
     // connectivity synchronously with the retained global bridge vector.
     assert_eq!(
-        remote_bridge_route(sim.zone_grid.as_ref().unwrap()),
+        remote_bridge_route(sim.zone_grid.as_deref().unwrap()),
         (true, true)
     );
     assert_eq!(
-        sim.zone_grid.as_ref().unwrap().bridge_records(),
+        sim.zone_grid.as_deref().unwrap().bridge_records(),
         bridge_records
     );
     let canonical_path = crate::sim::pathfinding::PathGrid::from_resolved_terrain_with_bridges(
@@ -8550,7 +8657,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
     // history, so this compares exact saved authority without normalizing a
     // live graph merely to make its hash agree with ordinary load.
     let expected_authority = save_codec::serialize(&sim).unwrap();
-    let expected_base = save_codec::serialize(sim.zone_grid.as_ref().unwrap()).unwrap();
+    let expected_base = save_codec::serialize(sim.zone_grid.as_deref().unwrap()).unwrap();
     let bytes = GameSnapshot::save(&sim, 0, 0, "collapsed-dcliff", 0);
     let mut restored = GameSnapshot::load(&bytes)
         .expect("collapsed cliff snapshot")
@@ -8561,7 +8668,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
     assert!(
         restored
             .zone_grid
-            .as_ref()
+            .as_deref()
             .unwrap()
             .is_native_load_pending()
     );
@@ -8570,7 +8677,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
         expected_authority
     );
     assert_eq!(
-        save_codec::serialize(restored.zone_grid.as_ref().unwrap()).unwrap(),
+        save_codec::serialize(restored.zone_grid.as_deref().unwrap()).unwrap(),
         expected_base
     );
     restored.rebuild_caches_after_load(pristine_terrain, Default::default(), &rules);
@@ -8581,7 +8688,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
     assert!(
         !restored
             .zone_grid
-            .as_ref()
+            .as_deref()
             .unwrap()
             .is_native_load_pending()
     );
@@ -8590,14 +8697,14 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
         expected_authority
     );
     assert_eq!(
-        save_codec::serialize(restored.zone_grid.as_ref().unwrap()).unwrap(),
+        save_codec::serialize(restored.zone_grid.as_deref().unwrap()).unwrap(),
         expected_base
     );
     // Native LoadContent67E8CD ->581F50 clears the incremental hierarchy
     // and rebuilds it from this saved base. The physical Anytown restore
     // packet establishes that its history-sensitive live hash may change.
     assert_eq!(
-        remote_bridge_route(restored.zone_grid.as_ref().unwrap()),
+        remote_bridge_route(restored.zone_grid.as_deref().unwrap()),
         (true, true)
     );
     let restored_terrain = restored.resolved_terrain.as_ref().unwrap();
@@ -10134,4 +10241,41 @@ fn detach_all_false_keeps_a_rider_in_its_transports_cargo() {
 
     let transport = sim.substrate.entities.get(1).unwrap();
     assert_eq!(transport.passenger_role.cargo().unwrap().passengers(), &[2]);
+}
+
+/// The Restore inside the expiry broadcast (`TechnoClass::PointerExpired`
+/// `0x00707A51`) cannot fail natively. VERA's preflight can refuse it, here
+/// for an archived NavCom that names no object; the broadcast must carry on
+/// and still clear the expiring target.
+#[test]
+fn target_expiry_carries_on_when_the_suspended_mission_cannot_be_restored() {
+    let rules = receiver_authority_rules();
+    let mut sim = Simulation::with_seed(0x1234);
+    insert_entity(&mut sim, 1, EntityCategory::Unit);
+    insert_entity(&mut sim, 2, EntityCategory::Unit);
+    let _ = sim.try_reveal_entity(2, request(9, 11, PlacementEvidence::MarkSucceeded));
+
+    let listener = sim.substrate.entities.get_mut(1).unwrap();
+    listener
+        .attack_target
+        .set_for_test(Some(TargetKind::Entity(2)));
+    listener
+        .navigation
+        .set_suspended_nav_com_for_test(Some(NavTargetRef::Object { id: 99 }));
+    listener.mission.apply_test_fixture(MissionTestFixture {
+        current: MissionId::from_known(MissionType::Attack),
+        suspended: MissionId::from_known(MissionType::Guard),
+        queued: MissionId::NONE,
+        movement_bypass_latch: 0,
+        handler_state: 0,
+        mission_start_frame: 100,
+        ai_counter: 0,
+        dispatch_timer: MissionDispatchTimer::at_frame(100),
+    });
+
+    sim.uninit_with_rules(2, &rules);
+
+    let listener = sim.substrate.entities.get(1).unwrap();
+    assert_eq!(listener.attack_target.target(), None);
+    assert!(!sim.substrate.entities.get(2).unwrap().is_object_alive());
 }

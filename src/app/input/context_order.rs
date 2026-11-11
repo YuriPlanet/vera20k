@@ -15,6 +15,7 @@ use crate::app::input::dispatch::{
     is_alt_held, is_ctrl_held, is_shift_held, selected_stable_ids_in_order,
 };
 use crate::app::input::entity_pick::{HoverObject, HoverTargetKindWithId, hover_object_at_point};
+use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::types::{HoverTargetKind, OrderMode};
 use crate::map::entities::EntityCategory;
 use crate::sim::combat::TargetKind;
@@ -1368,7 +1369,7 @@ fn emit_entity_order_voice(
     target: Option<TargetKind>,
 ) {
     if voice_field == "VoiceDeploy" {
-        if let Some(runtime) = state.match_state.sim_runtime.as_mut()
+        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command)
             && let Some(event) = crate::app::match_runtime::sound_dispatch::deploy_order_voice_event(
                 &mut runtime.simulation,
                 &runtime.resources.rules,
@@ -1381,7 +1382,7 @@ fn emit_entity_order_voice(
         return;
     }
     if voice_field == "VoiceSpecialAttack" {
-        if let Some(runtime) = state.match_state.sim_runtime.as_mut()
+        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command)
             && let Some(event) =
                 crate::app::match_runtime::sound_dispatch::default_order_voice_event(
                     &mut runtime.simulation,
@@ -1394,7 +1395,7 @@ fn emit_entity_order_voice(
         }
         return;
     }
-    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
     let Some(id) = runtime.simulation.order_voice_request(
@@ -1446,7 +1447,7 @@ fn finish_order(
             state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .map(|rt| &rt.simulation),
             state.rules(),
             &state.match_state.input.selection_order,
@@ -1462,7 +1463,7 @@ fn finish_order(
                 state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .map(|rt| &rt.simulation),
                 state.rules(),
                 &state.match_state.input.selection_order,
@@ -1474,7 +1475,7 @@ fn finish_order(
         let (encoded, feedback): (Vec<_>, Vec<_>) = if let Some(sim) = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)
         {
             queued
@@ -1495,7 +1496,7 @@ fn finish_order(
             if let Some(sim) = state
                 .match_state
                 .sim_runtime
-                .as_mut()
+                .write_sim(SimWrite::Command)
                 .map(|rt| &mut rt.simulation)
             {
                 accepted = sim.issue_local_commands(encoded);
@@ -1529,7 +1530,7 @@ fn finish_order(
         && let Some(frame) = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| rt.simulation.session().binary_frame())
     {
         state
@@ -2114,7 +2115,7 @@ pub(crate) fn try_queue_context_order(
     target: ContextOrderTarget,
     select_friendly_clicks: bool,
 ) -> bool {
-    if state.match_state.sim_runtime.is_none() {
+    if !state.match_state.sim_runtime.is_installed() {
         return false;
     }
     let (target_rx, target_ry) = match target {
@@ -2148,11 +2149,11 @@ pub(crate) fn try_queue_context_order(
     let owner_id: InternedId = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation)
         .and_then(|s| s.interner().get(&owner))
         .unwrap_or_default();
-    let translucent_viewer = state.match_state.sim_runtime.as_ref().and_then(|rt| {
+    let translucent_viewer = state.match_state.sim_runtime.runtime().and_then(|rt| {
         crate::app::presentation::instances::translucent_fog_viewer(state, &rt.simulation)
     });
 
@@ -2164,7 +2165,7 @@ pub(crate) fn try_queue_context_order(
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation),
         state.rules(),
         &state.match_state.input.selection_order,
@@ -2177,7 +2178,7 @@ pub(crate) fn try_queue_context_order(
     let mut planning_cell = None;
     let planning = state.match_state.input.planning.active();
 
-    if let Some(rt) = state.match_state.sim_runtime.as_mut() {
+    if let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Command) {
         let resources = &rt.resources;
         let sim = &mut rt.simulation;
         let execute_tick = sim.session().tick();
@@ -3291,7 +3292,7 @@ fn formation_units(
 /// How many of the selection's units a VERA formation line or block would
 /// order: one dot each.
 pub(crate) fn formation_unit_count(state: &AppState) -> usize {
-    let Some(rt) = state.match_state.sim_runtime.as_ref() else {
+    let Some(rt) = state.match_state.sim_runtime.runtime() else {
         return 0;
     };
     let current_objects = selected_stable_ids_in_order(
@@ -3352,7 +3353,7 @@ pub(crate) fn queue_formation_line(
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation),
         state.rules(),
         &state.match_state.input.selection_order,
@@ -3361,7 +3362,7 @@ pub(crate) fn queue_formation_line(
     if state.match_state.input.planning.active() {
         return false;
     }
-    let Some(rt) = state.match_state.sim_runtime.as_ref() else {
+    let Some(rt) = state.match_state.sim_runtime.runtime() else {
         return false;
     };
     let resources = &rt.resources;
@@ -3447,13 +3448,13 @@ pub(crate) fn toggle_formation_lock(state: &mut AppState) {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation),
         state.rules(),
         &state.match_state.input.selection_order,
         state.match_state.input.selection_order_pending,
     );
-    let Some(rt) = state.match_state.sim_runtime.as_ref() else {
+    let Some(rt) = state.match_state.sim_runtime.runtime() else {
         return;
     };
     let sim = &rt.simulation;
@@ -8676,7 +8677,7 @@ mod tests {
                 sim.entities_mut_for_test()
                     .get_mut(engineer)
                     .unwrap()
-                    .spawn_manager = Some(SpawnManagerState::for_test(spawn_type, slots));
+                    .spawn_manager = Some(Box::new(SpawnManagerState::for_test(spawn_type, slots)));
             }
             let before = sim.state_hash();
             let actor = serde_json::to_value(sim.entities().get(engineer).unwrap()).unwrap();

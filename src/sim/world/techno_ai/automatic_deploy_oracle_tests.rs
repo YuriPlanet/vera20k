@@ -265,7 +265,7 @@ fn retail_gi_and_guardian_gi_deploy_then_team_move_in_bound_runtime() {
     resources.terrain_template = Some(terrain);
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources,
+        resources: std::sync::Arc::new(resources),
     };
     let cues = RefCell::new(Vec::new());
     let advance = |runtime: &mut SimRuntime| {

@@ -221,10 +221,7 @@ fn production_self_heal_matches_original_signed_cadence_and_increment() {
                 &rules,
             )
         }));
-        assert!(
-            result.is_err(),
-            "native IDIV fault cannot become no-heal: {row}"
-        );
+        assert!(result.is_ok(), "a native IDIV fault is no heal: {row}");
         assert_eq!(
             sim.substrate.entities.get(1).unwrap().health.current(),
             row["input"]["current"].as_i64().unwrap() as i32

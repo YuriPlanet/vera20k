@@ -108,6 +108,8 @@ const SETUP_DELETE_Y: i32 = 203;
 /// VERA: the Advanced/Basic toggle takes the column's next slot below Delete,
 /// at the same 27-unit pitch.
 const SETUP_ADVANCED_Y: i32 = 230;
+/// VERA: Export Map takes the slot after the toggle, at the same pitch.
+const SETUP_EXPORT_Y: i32 = 257;
 /// VERA: the Fair Starts toggle, two slots below the Advanced toggle at the
 /// same pitch (the slot between is Export Map's).
 const SETUP_FAIR_Y: i32 = 284;
@@ -223,6 +225,9 @@ pub struct SkirmishShellLayout {
     /// Map; gamemd's `0x102` has no such buttons.
     pub save_setup_button: RectPx,
     pub load_setup_button: RectPx,
+    /// VERA's Team Starts, on the tile under Load Setup where the panel has
+    /// one above Back; an empty rect where it has none (640x480).
+    pub team_starts_button: RectPx,
     pub back_button: RectPx,
     pub map_preview: RectPx,
     pub column_labels: SkirmishColumnLabelRects,
@@ -284,6 +289,8 @@ pub enum ChooseMapModalButton {
     UseMap0x6c5,
     Cancel0x5c0,
     CreateRandomMap0x583,
+    /// VERA: stars or unstars the highlighted map. `0x6B` has no such button.
+    Favorite,
 }
 
 /// VERA: the generator fields the Advanced view sets, each a 0..100 slider.
@@ -353,6 +360,9 @@ pub enum RandomMapSetupControl {
     AdvancedToggle,
     /// VERA: one of the Advanced view's sliders.
     Advanced(AdvancedField),
+    /// VERA: writes the generated map as a `.yrm` file (offline Skirmish
+    /// only).
+    ExportMap,
     /// VERA: turns Fair Starts on or off (offline Skirmish only).
     FairStartsToggle,
     /// Ares' Urban Areas box (`ARES_CHK_RMG_URBAN_AREAS`, Ares' dialog 261).
@@ -368,9 +378,16 @@ pub struct ChooseMapModalLayout {
     pub dialog: RectPx,
     pub mode_list: RectPx,
     pub map_list: RectPx,
+    /// VERA: the search box between the Game Map heading and the map list,
+    /// framed like the list. `0x6B` has none; its list starts where the box
+    /// does and is one row longer.
+    pub map_search: RectPx,
     pub use_map_button: RectPx,
     pub cancel_button: RectPx,
     pub create_random_map_button: RectPx,
+    /// VERA: the favorite button, in the right column's slot under Create
+    /// Random Map.
+    pub favorite_button: RectPx,
     pub title: RectPx,
     pub select_engagement: RectPx,
     pub game_type_heading: RectPx,
@@ -418,6 +435,8 @@ pub struct RandomMapSetupLayout {
     pub cancel: RectPx,
     /// VERA: the Advanced/Basic toggle in the right column.
     pub advanced: RectPx,
+    /// VERA: the Export Map button below the toggle.
+    pub export: RectPx,
     /// VERA: the Fair Starts toggle in the right column.
     pub fair_starts: RectPx,
     /// VERA: the Advanced view's labels and slider windows, by
@@ -466,6 +485,7 @@ pub fn translate_layout(mut layout: SkirmishShellLayout, dx: i32, dy: i32) -> Sk
     layout.choose_map_button = layout.choose_map_button.translate(dx, dy);
     layout.save_setup_button = layout.save_setup_button.translate(dx, dy);
     layout.load_setup_button = layout.load_setup_button.translate(dx, dy);
+    layout.team_starts_button = layout.team_starts_button.translate(dx, dy);
     layout.back_button = layout.back_button.translate(dx, dy);
     layout.map_preview = layout.map_preview.translate(dx, dy);
     layout.column_labels.players = layout.column_labels.players.translate(dx, dy);
@@ -747,6 +767,13 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
         ],
     };
     let opponent_scrollbar = opponent_scrollbar_rect(&rows);
+    let back_button = back_rect(screen_w, panel);
+    let team_starts_tile = choose_map_button.translate(0, 3 * SDBTNBKGD_H);
+    let team_starts_button = if team_starts_tile.y + team_starts_tile.h <= back_button.y {
+        team_starts_tile
+    } else {
+        RectPx::new(0, 0, 0, 0)
+    };
 
     SkirmishShellLayout {
         scale: ShellScale::RETAIL,
@@ -760,7 +787,8 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
         // Every panel keeps them above Back: it has six tiles at 640x480.
         save_setup_button: choose_map_button.translate(0, SDBTNBKGD_H),
         load_setup_button: choose_map_button.translate(0, 2 * SDBTNBKGD_H),
-        back_button: back_rect(screen_w, panel),
+        team_starts_button,
+        back_button,
         map_preview: right_static(
             AnchorRule::RightAnchor,
             RectPx::new(429, 23, 96, 69),
@@ -835,19 +863,48 @@ fn opponent_scrollbar_rect(rows: &SkirmishRowRects) -> RectPx {
     )
 }
 
+/// VERA: the search box's height, and how far it pushes the map list's top
+/// down: the box and the two frames between them. The box's top is flush
+/// with the game-type list's.
+const MAP_SEARCH_H: i32 = 17;
+const MAP_SEARCH_LIST_SHIFT: i32 = MAP_SEARCH_H + 3;
+
+/// VERA: both lists and their headings are 20 px (a tenth) wider than
+/// `0x6B`'s, for long map names. The game-type column grows to the left and
+/// the map column to the right, so the gap between them stays.
+const LIST_WIDEN: i32 = 20;
+
+fn widen_left(rect: RectPx) -> RectPx {
+    RectPx::new(rect.x - LIST_WIDEN, rect.y, rect.w + LIST_WIDEN, rect.h)
+}
+
+fn widen_right(rect: RectPx) -> RectPx {
+    RectPx::new(rect.x, rect.y, rect.w + LIST_WIDEN, rect.h)
+}
+
 pub fn compute_choose_map_modal_layout(screen_w: u32, screen_h: u32) -> ChooseMapModalLayout {
     let screen_w = screen_w as i32;
     let screen_h = screen_h as i32;
     let panel = right_panel_rects(screen_w, screen_h);
     let use_map_base = dlu_rect(425, 122, 108, 23);
     let create_random_map_base = dlu_rect(425, 149, 108, 23);
+    // VERA: one slot (27 dialog units) under Create Random Map.
+    let favorite_base = dlu_rect(425, 176, 108, 23);
+    // `0x6B`'s map list window; VERA's search box takes its top.
+    let map_list = widen_right(crate::ui::shell::geom::child_window(225, 78, 130, 211));
 
     ChooseMapModalLayout {
         scale: ShellScale::RETAIL,
         screen: RectPx::new(0, 0, screen_w, screen_h),
         dialog: RectPx::new(0, 0, screen_w, screen_h),
-        mode_list: crate::ui::shell::geom::child_window(77, 78, 130, 211),
-        map_list: crate::ui::shell::geom::child_window(225, 78, 130, 211),
+        mode_list: widen_left(crate::ui::shell::geom::child_window(77, 78, 130, 211)),
+        map_list: RectPx::new(
+            map_list.x,
+            map_list.y + MAP_SEARCH_LIST_SHIFT,
+            map_list.w,
+            map_list.h - MAP_SEARCH_LIST_SHIFT,
+        ),
+        map_search: RectPx::new(map_list.x, map_list.y, map_list.w, MAP_SEARCH_H),
         use_map_button: snap_button_biased_truncate(
             screen_w,
             screen_h,
@@ -863,6 +920,13 @@ pub fn compute_choose_map_modal_layout(screen_w: u32, screen_h: u32) -> ChooseMa
             panel,
             SDBTNANM_W,
         ),
+        favorite_button: snap_button_biased_truncate(
+            screen_w,
+            screen_h,
+            favorite_base,
+            panel,
+            SDBTNANM_W,
+        ),
         title: right_static(
             LOW_HEADING_ANCHOR,
             RectPx::new(425, 1, 108, 10),
@@ -870,8 +934,8 @@ pub fn compute_choose_map_modal_layout(screen_w: u32, screen_h: u32) -> ChooseMa
             screen_h,
         ),
         select_engagement: dlu_rect(80, 20, 257, 12),
-        game_type_heading: dlu_rect(77, 60, 130, 10),
-        game_map_heading: dlu_rect(225, 60, 130, 10),
+        game_type_heading: widen_left(dlu_rect(77, 60, 130, 10)),
+        game_map_heading: widen_right(dlu_rect(225, 60, 130, 10)),
         status_help: choose_map_status_help_rect(screen_w, screen_h),
         preview: right_static(
             AnchorRule::RightAnchor,
@@ -970,6 +1034,7 @@ pub fn compute_random_map_setup_layout(screen_w: u32, screen_h: u32) -> RandomMa
         delete: right_button(SETUP_DELETE_Y),
         cancel: back_rect(screen_w, panel),
         advanced: right_button(SETUP_ADVANCED_Y),
+        export: right_button(SETUP_EXPORT_Y),
         fair_starts: right_button(SETUP_FAIR_Y),
         advanced_label_rects: std::array::from_fn(|row| {
             dlu_rect(
@@ -1064,6 +1129,9 @@ pub fn random_map_setup_control_at_view(
 ) -> Option<RandomMapSetupControl> {
     if extended && layout.advanced.contains(x, y) {
         return Some(RandomMapSetupControl::AdvancedToggle);
+    }
+    if extended && layout.export.contains(x, y) {
+        return Some(RandomMapSetupControl::ExportMap);
     }
     if extended && layout.fair_starts.contains(x, y) {
         return Some(RandomMapSetupControl::FairStartsToggle);
@@ -1368,6 +1436,7 @@ impl ScaledRects for SkirmishShellLayout {
             choose_map_button: self.choose_map_button.scaled_rects(scale),
             save_setup_button: self.save_setup_button.scaled_rects(scale),
             load_setup_button: self.load_setup_button.scaled_rects(scale),
+            team_starts_button: self.team_starts_button.scaled_rects(scale),
             back_button: self.back_button.scaled_rects(scale),
             map_preview: self.map_preview.scaled_rects(scale),
             column_labels: self.column_labels.scaled_rects(scale),
@@ -1392,9 +1461,11 @@ impl ScaledRects for ChooseMapModalLayout {
             dialog: self.dialog.scaled_rects(scale),
             mode_list: self.mode_list.scaled_rects(scale),
             map_list: self.map_list.scaled_rects(scale),
+            map_search: self.map_search.scaled_rects(scale),
             use_map_button: self.use_map_button.scaled_rects(scale),
             cancel_button: self.cancel_button.scaled_rects(scale),
             create_random_map_button: self.create_random_map_button.scaled_rects(scale),
+            favorite_button: self.favorite_button.scaled_rects(scale),
             title: self.title.scaled_rects(scale),
             select_engagement: self.select_engagement.scaled_rects(scale),
             game_type_heading: self.game_type_heading.scaled_rects(scale),
@@ -1425,6 +1496,7 @@ impl ScaledRects for RandomMapSetupLayout {
             delete: self.delete.scaled_rects(scale),
             cancel: self.cancel.scaled_rects(scale),
             advanced: self.advanced.scaled_rects(scale),
+            export: self.export.scaled_rects(scale),
             fair_starts: self.fair_starts.scaled_rects(scale),
             advanced_label_rects: self.advanced_label_rects.scaled_rects(scale),
             advanced_control_rects: self.advanced_control_rects.scaled_rects(scale),
@@ -1534,6 +1606,9 @@ pub fn choose_map_modal_button_at(
     if layout.create_random_map_button.contains(x, y) {
         return Some(ChooseMapModalButton::CreateRandomMap0x583);
     }
+    if layout.favorite_button.contains(x, y) {
+        return Some(ChooseMapModalButton::Favorite);
+    }
     None
 }
 
@@ -1603,6 +1678,15 @@ mod tests {
         // VERA's Save Setup and Load Setup fill the two tiles above Back.
         assert_eq!(layout.save_setup_button, RectPx::new(484, 325, 156, 42));
         assert_eq!(layout.load_setup_button, RectPx::new(484, 367, 156, 42));
+        // Back takes the next tile at 640x480, so Team Starts has none there;
+        // at 800x600 it sits between Load Setup and Back.
+        assert_eq!(layout.team_starts_button.w, 0);
+        let roomy = compute_layout(800, 600);
+        assert_eq!(
+            roomy.team_starts_button.y,
+            roomy.load_setup_button.y + roomy.load_setup_button.h
+        );
+        assert!(roomy.team_starts_button.y + roomy.team_starts_button.h <= roomy.back_button.y);
         assert_eq!(layout.map_preview, RectPx::new(484, 37, 144, 112));
         assert_eq!(layout.back_button, RectPx::new(484, 409, 156, 42));
     }
@@ -1682,6 +1766,8 @@ mod tests {
         }
         assert!(sliders[6].y + sliders[6].h <= setup.progress_text.y);
         assert!(setup.advanced.y >= setup.delete.y + setup.delete.h);
+        assert!(setup.advanced.y + setup.advanced.h <= setup.export.y);
+        assert!(setup.export.y + setup.export.h <= setup.cancel.y);
         assert!(setup.advanced.y + setup.advanced.h <= setup.cancel.y);
         assert!(setup.fair_starts.y >= setup.advanced.y + 2 * setup.advanced.h);
         assert!(setup.fair_starts.y + setup.fair_starts.h <= setup.cancel.y);
@@ -1917,8 +2003,10 @@ mod tests {
 
         assert_eq!(layout.screen, RectPx::new(0, 0, 800, 600));
         assert_eq!(layout.dialog, RectPx::new(0, 0, 800, 600));
-        assert_eq!(layout.mode_list, RectPx::new(116, 127, 196, 344));
-        assert_eq!(layout.map_list, RectPx::new(338, 127, 196, 344));
+        // VERA: 20 px wider than `0x6B`'s 196, to the left.
+        assert_eq!(layout.mode_list, RectPx::new(96, 127, 216, 344));
+        // VERA: the search box takes the top 20 px of `0x6B`'s 344 px list.
+        assert_eq!(layout.map_list, RectPx::new(338, 147, 216, 324));
         assert_eq!(layout.use_map_button, RectPx::new(644, 199, 156, 42));
         assert_eq!(
             layout.create_random_map_button,
@@ -1927,8 +2015,11 @@ mod tests {
         assert_eq!(layout.cancel_button, RectPx::new(644, 535, 156, 42));
         assert_eq!(layout.title, RectPx::new(635, 3, 163, 17));
         assert_eq!(layout.select_engagement, RectPx::new(120, 33, 386, 20));
-        assert_eq!(layout.game_type_heading, RectPx::new(116, 98, 195, 16));
-        assert_eq!(layout.game_map_heading, RectPx::new(338, 98, 195, 16));
+        assert_eq!(layout.game_type_heading, RectPx::new(96, 98, 215, 16));
+        assert_eq!(layout.game_map_heading, RectPx::new(338, 98, 215, 16));
+        // The box's top is the game-type list's; its frame meets the map list's.
+        assert_eq!(layout.map_search, RectPx::new(338, 127, 216, 17));
+        assert_eq!(layout.favorite_button, RectPx::new(644, 283, 156, 42));
         assert_eq!(layout.status_help, RectPx::new(10, 578, 456, 21));
         assert_eq!(layout.preview, RectPx::new(644, 37, 144, 112));
     }
@@ -1939,8 +2030,9 @@ mod tests {
 
         assert_eq!(layout.screen, RectPx::new(0, 0, 1024, 768));
         assert_eq!(layout.dialog, RectPx::new(0, 0, 1024, 768));
-        assert_eq!(layout.mode_list, RectPx::new(116, 127, 196, 344));
-        assert_eq!(layout.map_list, RectPx::new(338, 127, 196, 344));
+        // VERA: 20 px wider than `0x6B`'s 196, to the left.
+        assert_eq!(layout.mode_list, RectPx::new(96, 127, 216, 344));
+        assert_eq!(layout.map_list, RectPx::new(338, 147, 216, 324));
         assert_eq!(layout.use_map_button, RectPx::new(756, 283, 156, 42));
         assert_eq!(
             layout.create_random_map_button,
@@ -1949,8 +2041,8 @@ mod tests {
         assert_eq!(layout.cancel_button, RectPx::new(756, 619, 156, 42));
         assert_eq!(layout.title, RectPx::new(747, 87, 163, 17));
         assert_eq!(layout.select_engagement, RectPx::new(120, 33, 386, 20));
-        assert_eq!(layout.game_type_heading, RectPx::new(116, 98, 195, 16));
-        assert_eq!(layout.game_map_heading, RectPx::new(338, 98, 195, 16));
+        assert_eq!(layout.game_type_heading, RectPx::new(96, 98, 215, 16));
+        assert_eq!(layout.game_map_heading, RectPx::new(338, 98, 215, 16));
         assert_eq!(layout.status_help, RectPx::new(122, 662, 456, 21));
         assert_eq!(layout.preview, RectPx::new(756, 121, 144, 112));
     }

@@ -705,7 +705,7 @@ fn retail_dominator_strike_captures_the_block() {
         400
     );
     // The player's captives take no Hunt.
-    let mission = sim.substrate.entities.get(tank).unwrap().mission;
+    let mission = sim.substrate.entities.get(tank).unwrap().mission.clone();
     assert_ne!(mission.queued().known(), Some(MissionType::Hunt));
 
     // A save mid-strike restores the Dominator and its captives.
@@ -823,7 +823,7 @@ fn retail_computer_dominator_sends_its_captives_hunting() {
     }
     for id in [tank, gi] {
         assert_eq!(owner_name(&sim, id), "Russians");
-        let mission = sim.substrate.entities.get(id).unwrap().mission;
+        let mission = sim.substrate.entities.get(id).unwrap().mission.clone();
         assert!(
             [mission.current().known(), mission.queued().known()]
                 .contains(&Some(MissionType::Hunt)),
@@ -891,7 +891,7 @@ fn retail_computer_aims_its_dominator_at_the_group() {
     }
     for id in group {
         assert_eq!(owner_name(&sim, id), "Russians");
-        let mission = sim.substrate.entities.get(id).unwrap().mission;
+        let mission = sim.substrate.entities.get(id).unwrap().mission.clone();
         assert!(
             [mission.current().known(), mission.queued().known()]
                 .contains(&Some(MissionType::Hunt)),

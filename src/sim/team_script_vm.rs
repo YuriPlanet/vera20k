@@ -731,21 +731,106 @@ impl TeamScriptState {
     }
 }
 
+/// Each member's team, by member id (`FootClass+0x5D4`), as a map, with a
+/// bit per id beside it that says whether the map can hold that id.
+///
+/// VERA-only: every infantryman asks for its team on every step
+/// (`InfantryClass::AI 0x0051BE3E`), and most objects are in no team, so the
+/// bit answers "none" without walking the map. The map is the source of
+/// truth and all that is saved; [`Self::insert`] sets a bit, a removal
+/// leaves it set (a set bit only means "ask the map"), and a load rebuilds
+/// the bits. Debug builds under the live-read check compare each "none"
+/// with the map.
+#[derive(Debug, Clone, Default)]
+struct MemberTeams {
+    teams: BTreeMap<u64, u64>,
+    /// Bit `id` of word `id / 64`, for ids below [`Self::LISTED_IDS`].
+    listed: Vec<u64>,
+}
+
+impl MemberTeams {
+    /// Ids from here up are always asked of the map, so a stray huge id
+    /// cannot grow the bits without bound.
+    const LISTED_IDS: u64 = 1 << 24;
+
+    fn get(&self, id: &u64) -> Option<&u64> {
+        if *id < Self::LISTED_IDS
+            && self
+                .listed
+                .get((*id / 64) as usize)
+                .is_none_or(|word| word & (1 << (*id % 64)) == 0)
+        {
+            debug_assert!(
+                !crate::sim::touch_log::live_read_check_enabled()
+                    || !self.teams.contains_key(id),
+                "member {id} is in a team its bit does not list"
+            );
+            return None;
+        }
+        self.teams.get(id)
+    }
+
+    #[cfg(test)]
+    fn contains_key(&self, id: &u64) -> bool {
+        self.get(id).is_some()
+    }
+
+    fn insert(&mut self, id: u64, team: u64) -> Option<u64> {
+        self.list(id);
+        self.teams.insert(id, team)
+    }
+
+    fn remove(&mut self, id: &u64) -> Option<u64> {
+        self.teams.remove(id)
+    }
+
+    fn list(&mut self, id: u64) {
+        if id < Self::LISTED_IDS {
+            let word = (id / 64) as usize;
+            if self.listed.len() <= word {
+                self.listed.resize(word + 1, 0);
+            }
+            self.listed[word] |= 1 << (id % 64);
+        }
+    }
+}
+
+impl Serialize for MemberTeams {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.teams.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for MemberTeams {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let teams = BTreeMap::<u64, u64>::deserialize(deserializer)?;
+        let mut members = Self {
+            teams,
+            listed: Vec::new(),
+        };
+        let ids: Vec<u64> = members.teams.keys().copied().collect();
+        for id in ids {
+            members.list(id);
+        }
+        Ok(members)
+    }
+}
+
 /// Owns resolved TeamType/TaskForce/ScriptType definitions and live TeamClass
 /// state.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TeamScriptVm {
-    scripts: BTreeMap<InternedId, TeamScriptDefinition>,
+    scripts: crate::util::shared::Shared<BTreeMap<InternedId, TeamScriptDefinition>>,
     #[serde(default)]
     script_order: Vec<InternedId>,
-    task_forces: BTreeMap<InternedId, TeamTaskForceDefinition>,
+    task_forces: crate::util::shared::Shared<BTreeMap<InternedId, TeamTaskForceDefinition>>,
     #[serde(default)]
     task_force_order: Vec<InternedId>,
     team_types: BTreeMap<InternedId, TeamTypeDefinition>,
     #[serde(default)]
     team_type_ini: BTreeMap<InternedId, TeamTypeIniMetadata>,
     #[serde(default)]
-    ai_triggers: BTreeMap<InternedId, TeamAiTriggerDefinition>,
+    ai_triggers: crate::util::shared::Shared<BTreeMap<InternedId, TeamAiTriggerDefinition>>,
     #[serde(default)]
     ai_trigger_order: Vec<InternedId>,
     /// Live teams by id, which increases with construction, so key order is
@@ -761,7 +846,7 @@ pub struct TeamScriptVm {
     /// head drop in [`Self::pointer_expired`]) change either, and it is saved
     /// with them.
     #[serde(default)]
-    member_team: BTreeMap<u64, u64>,
+    member_team: MemberTeams,
     /// Each object's team to rejoin (`TechnoClass+0x434`): a
     /// `RejoinTeamIfLimboed=` Foot's team as it LimboLaunches at an Infantry
     /// target (`TechnoClass::Fire @ 0x006FF7A3..0x006FF7E9`), which its
@@ -1209,9 +1294,11 @@ impl TeamScriptVm {
     /// the head of its list (a member leaves through `Remove_Member` first,
     /// so only a list the removal missed has it there). The team's own
     /// update is the only reader of what it clears, so the teams' place in
-    /// the listener order does not matter.
-    pub(crate) fn pointer_expired(&mut self, expired: u64, all: bool) {
+    /// the listener order does not matter. Answers whether any team named
+    /// `expired`.
+    pub(crate) fn pointer_expired(&mut self, expired: u64, all: bool) -> bool {
         let object = Some(TeamTarget::Object(expired));
+        let mut named = false;
         for team in self.teams.values_mut() {
             if all
                 && team
@@ -1219,24 +1306,30 @@ impl TeamScriptVm {
                     .first()
                     .is_some_and(|member| member.id == expired)
             {
+                named = true;
                 team.members.remove(0);
                 if self.member_team.get(&expired) == Some(&team.id) {
                     self.member_team.remove(&expired);
                 }
             }
             if team.focus == object {
+                named = true;
                 team.focus = None;
             }
             if team.mission_target == object {
+                named = true;
                 team.mission_target = None;
             }
             if team.zone == object {
+                named = true;
                 team.zone = None;
             }
             if team.closest_member == Some(expired) {
+                named = true;
                 team.closest_member = None;
             }
         }
+        named
     }
 }
 
@@ -1628,6 +1721,30 @@ mod type_conversion_tests;
 
 #[cfg(test)]
 mod tests {
+    /// The bits beside the member map answer "none" only for an id the map
+    /// does not hold: a removal leaves the bit, a load rebuilds the bits,
+    /// and an id past the bits is asked of the map.
+    #[test]
+    fn member_teams_answer_as_their_map_does() {
+        let mut members = super::MemberTeams::default();
+        let far = super::MemberTeams::LISTED_IDS + 5;
+        assert_eq!(members.get(&7), None);
+        members.insert(7, 100);
+        members.insert(700, 101);
+        members.insert(far, 102);
+        assert_eq!(members.get(&7), Some(&100));
+        assert_eq!(members.get(&8), None);
+        assert_eq!(members.get(&far), Some(&102));
+        assert_eq!(members.remove(&7), Some(100));
+        assert_eq!(members.get(&7), None);
+        let saved = serde_json::to_string(&members).unwrap();
+        assert_eq!(saved, serde_json::to_string(&members.teams).unwrap());
+        let loaded: super::MemberTeams = serde_json::from_str(&saved).unwrap();
+        assert_eq!(loaded.get(&700), Some(&101));
+        assert_eq!(loaded.get(&far), Some(&102));
+        assert_eq!(loaded.get(&7), None);
+    }
+
     use super::*;
     use std::collections::hash_map::DefaultHasher;
 

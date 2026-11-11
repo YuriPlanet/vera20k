@@ -470,7 +470,7 @@ fn bridge_post(
     let seed = terrain.native_cell_coord(post);
     let zone = sim
         .zone_grid
-        .as_ref()
+        .as_deref()
         .expect("Patrol FNPC zones")
         .get_zone_id_native(
             terrain,

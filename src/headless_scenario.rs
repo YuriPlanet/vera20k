@@ -538,11 +538,11 @@ fn load_with_assets(
     Ok(HeadlessScenario {
         runtime: crate::sim::runtime::SimRuntime {
             simulation: sim,
-            resources: crate::sim::runtime::SimResources {
+            resources: std::sync::Arc::new(crate::sim::runtime::SimResources {
                 overlay_registry,
                 terrain_template: None,
                 rules,
-            },
+            }),
         },
         map,
         source,
@@ -1065,7 +1065,7 @@ mod retail_construction_tests {
         let terrain = loaded.resolved_terrain().unwrap();
         assert!(terrain.native_fixed_cell_index(26, 101).is_none());
         assert!(terrain.native_fixed_cell_index(101, 96).is_some());
-        let zones = loaded.zone_grid.as_mut().unwrap();
+        let zones = loaded.zone_grid.as_deref_mut().unwrap();
         let width = usize::from(zones.width());
         let target = 96 * width + 101;
         let base = zones.base_topology_mut_for_test();
@@ -1083,7 +1083,7 @@ mod retail_construction_tests {
         assert_eq!(
             loaded
                 .zone_grid
-                .as_mut()
+                .as_deref_mut()
                 .unwrap()
                 .base_topology_mut_for_test()
                 .zone_ids()[target],
@@ -1887,7 +1887,37 @@ mod retail_construction_tests {
                 .map(|(_, entity)| sim.interner.resolve(entity.type_ref()).to_string())
                 .collect();
             eprintln!("{team_type}: the local house owns {yards:?}");
-            let (house, spawned) = spawn_beside_base(sim, &resources.rules, country, &types);
+            // The members stand together in a free 3x3 block, within Stray of
+            // their mean, the team's centre (`Calc_Center @ 0x006EAEE0`).
+            // Action 14 (`0x006ED200`) sends a member farther off there on
+            // Move before it joins, and a Night Hawk in flight cannot be
+            // boarded: on Move with a NavCom it answers its passengers
+            // NEGATIVE (`UnitClass::Receive_Radio`,
+            // `0x007377F5..0x0073780D`), and a cell they stand in refuses its
+            // landing (State 4, `0x0054C6CE..0x0054C714`, to Stop_Moving at
+            // `0x0054CA3C`).
+            let house = house_of(sim, country);
+            let (bx, by) = sim.houses[&house]
+                .base_center()
+                .expect("the base has a centre");
+            let free = |sim: &Simulation, rx: i32, ry: i32| {
+                let (Ok(x), Ok(y)) = (u16::try_from(rx), u16::try_from(ry)) else {
+                    return false;
+                };
+                sim.path_grid()
+                    .is_some_and(|grid| grid.is_walkable_for_infantry(x, y))
+                    && sim.substrate.occupancy.get(x, y).is_none_or(|cell| {
+                        cell.is_empty_on(crate::sim::movement::locomotor::MovementLayer::Ground)
+                    })
+            };
+            let block = (0..900)
+                .map(|n| (i32::from(bx) + n % 30 - 15, i32::from(by) + n / 30 - 15))
+                .find(|&(rx, ry)| {
+                    (-1..=1).all(|dy| (-1..=1).all(|dx| free(&*sim, rx + dx, ry + dy)))
+                })
+                .expect("a free 3x3 block beside the base");
+            let spawned =
+                spawn_on_free_cells(sim, &resources.rules, house, cells_nearest(block), &types);
             let id = sim
                 .interner
                 .get(team_type)
@@ -2237,9 +2267,25 @@ mod retail_construction_tests {
         let (bx, by) = sim.houses[&yuri]
             .base_center()
             .expect("the base has a centre");
-        // A 2x2 foundation inside a free 4x4 square, so a tank can reach it.
-        let open = |sim: &Simulation, rx: i32, ry: i32| {
-            (-1..3).all(|dy| {
+        // A 2x2 foundation inside a free 4x4 square, so a tank can reach it,
+        // where the bunker's own placement test admits it (the AI's base
+        // changes which free cells are ramps, ore or otherwise unbuildable).
+        let placing = std::sync::Arc::clone(resources);
+        let open = move |sim: &Simulation, rx: i32, ry: i32| {
+            let (Ok(x), Ok(y)) = (i16::try_from(rx), i16::try_from(ry)) else {
+                return false;
+            };
+            let natbnk = placing.rules.object("NATBNK").expect("retail NATBNK");
+            crate::sim::build_site::can_place_building_at(
+                sim,
+                &placing.rules,
+                Some(&placing.overlay_registry),
+                natbnk,
+                (x, y),
+                None,
+                None,
+                None,
+            ) && (-1..3).all(|dy| {
                 (-1..3).all(|dx| {
                     let (Ok(x), Ok(y)) = (u16::try_from(rx + dx), u16::try_from(ry + dy)) else {
                         return false;
@@ -2401,11 +2447,16 @@ mod retail_construction_tests {
     ///
     /// Put on line 3 instead, as action 6 would, the team's action 9 orders
     /// each chopper (`IsSimpleDeployer=`) to Unload, and they start to land.
-    /// Action 9 is done at once, and the team's next attack order takes them
-    /// off Unload in the air, as `Coordinate_Attack` does natively
+    /// Action 9 is done at once, and the team's next attack order queues
+    /// Attack over their Unload, as `Coordinate_Attack` does natively
     /// (`0x006EB79A..0x006EB7B5`): Unit vt+0x4E4 (`0x00736D50`) keeps only a
     /// `DeployToFire=` unit, or a computer one deploying into a `TickTank=`
-    /// building, on Unload, and the Siege Chopper is neither.
+    /// building, on Unload, and the Siege Chopper is neither. The queued
+    /// Attack waits while the chopper comes down
+    /// (`UnitClass::Is_Ready_To_Commence @ 0x00744270`, the moving arm
+    /// `0x007442C2..0x00744327`; a descending jumpjet is moving,
+    /// `JumpjetLocomotionClass::Is_Moving_Now @ 0x0054D0D0`), so each takes
+    /// it once it is down, before it deploys.
     #[test]
     #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
     fn retail_soviet_siege_chopper_team_holds_then_attacks_undeployed() {
@@ -2515,6 +2566,8 @@ mod retail_construction_tests {
             )
         };
         let (mut on_9, mut past, mut attacking) = (None, None, None);
+        // Each chopper's state on the first frame it is on Attack.
+        let mut ordered = vec![None; choppers.len()];
         for frame in 1..=600u32 {
             scenario.tick();
             let sim = scenario.sim();
@@ -2523,6 +2576,11 @@ mod retail_construction_tests {
                 states.iter().all(|state| !state.2),
                 "a chopper deployed at frame {frame}: {states:?}"
             );
+            for (first, state) in ordered.iter_mut().zip(&states) {
+                if first.is_none() && state.3 == Some(MissionType::Attack) {
+                    *first = Some((frame, *state));
+                }
+            }
             let cursor = sim.team_script_vm.team(team).map(|team| team.cursor());
             if on_9.is_none() && cursor == Some(3) {
                 on_9 = Some((frame, states.clone()));
@@ -2550,10 +2608,17 @@ mod retail_construction_tests {
             "action 9 did not set both choppers landing to unload: {unloading:?}"
         );
         assert!(past.is_some(), "the team stayed on action 9");
-        let (_, _, airborne) = attacking.expect("no attack order took the choppers off Unload");
+        attacking.expect("no attack order took the choppers off Unload");
+        eprintln!("Siege Chopper team: each chopper's first Attack frame {ordered:?}");
+        // Is_Ready_To_Commence @ 0x00744270 holds the queued Attack while the
+        // jumpjet moves, so none takes it on the way down (it was once
+        // expected in the air).
         assert!(
-            airborne.iter().all(|state| state.1 > 0),
-            "a chopper landed before its attack order: {airborne:?}"
+            ordered
+                .iter()
+                .flatten()
+                .all(|(_, state)| state.0 != Some(STATE_DESCEND)),
+            "a chopper took Attack while it was descending: {ordered:?}"
         );
     }
 
@@ -3270,10 +3335,23 @@ mod retail_construction_tests {
             },
             &[(LaunchCountry::America, AiDifficulty::Normal)],
         );
+        // As the spy team's test waits: the American yard's deploy sends
+        // every ground Techno of the house to the new base
+        // (`HouseClass::MoveGroundForcesToBase @ 0x0050C920`) and would call
+        // Tanya off the reactor.
+        let america = house_of(scenario.sim(), "Americans");
+        for _ in 0..300 {
+            scenario.tick();
+            if scenario.sim().entities().values().any(|entity| {
+                entity.owner() == america
+                    && entity.category() == crate::map::entities::EntityCategory::Structure
+            }) {
+                break;
+            }
+        }
         let runtime = &mut scenario.runtime;
         let (sim, rules) = (&mut runtime.simulation, &runtime.resources.rules);
         let soviet = house_of(sim, "Russians");
-        let america = house_of(sim, "Americans");
         let at = |sim: &Simulation, id| {
             let entity = sim.entities().get(id).expect("spawned");
             (

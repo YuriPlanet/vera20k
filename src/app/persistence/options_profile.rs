@@ -181,6 +181,12 @@ pub(crate) struct RetailOptionsProfile {
     /// mobile strip while [`Self::shift_queue`] is on. VERA's own convenience;
     /// gamemd never reads this section. Clamped by [`SHIFT_QUEUE_COUNT_RANGE`].
     pub(crate) shift_queue_count: u32,
+    /// `[VERA] AutoRepair=`: the Options page's Auto Repair box. On, the
+    /// player's own game sends the ordinary Repair order for each of their
+    /// damaged buildings (`app::input::auto_repair`, `docs/auto-repair.md`).
+    /// A local input preference: nothing in the rules or on the network
+    /// changes. Off by default, so buildings wait for the wrench as in gamemd.
+    pub(crate) auto_repair: bool,
     /// `[VERA] TerrainDeformation=`: the Options page's Terrain Deformation
     /// box. Explosions dent open ground as in Tiberian Sun and a nuke leaves a
     /// crater (`docs/terrain-deformation.md`). Unlike the presentation boxes it
@@ -335,6 +341,7 @@ impl Default for RetailOptionsProfile {
             hd_map_previews: true,
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
             shift_queue: false,
+            auto_repair: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
             terrain_deformation: false,
             wol_test_service: false,
@@ -368,7 +375,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 30],
+    pub(crate) vera: [(&'static str, String); 31],
 }
 
 impl RetailOptionsLoad {
@@ -591,6 +598,7 @@ impl RetailOptionsProfile {
             );
             self.terrain_deformation =
                 vera.read_bool("TerrainDeformation", self.terrain_deformation);
+            self.auto_repair = vera.read_bool("AutoRepair", self.auto_repair);
             self.wol_test_service = vera.read_bool("WolTestService", self.wol_test_service);
             self.solo_skirmish = vera.read_bool("SoloSkirmish", self.solo_skirmish);
             self.commander_feedback = vera.read_bool("CommanderFeedback", self.commander_feedback);
@@ -790,6 +798,7 @@ impl RetailOptionsProfile {
                     "TerrainDeformation",
                     format_bool(self.terrain_deformation).to_string(),
                 ),
+                ("AutoRepair", format_bool(self.auto_repair).to_string()),
                 (
                     "ShowStringKeys",
                     format_bool(self.show_string_keys).to_string(),

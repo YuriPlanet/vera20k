@@ -33,7 +33,7 @@ pub(crate) fn refresh_coordinate_sound_gains(state: &mut AppState) {
     let sim = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|runtime| &runtime.simulation);
     let local_owner = preferred_local_owner_name(state);
     let Some(catalog) = state.process_assets.audio_catalog() else {
@@ -383,7 +383,7 @@ pub(crate) fn update_power_bar_anim(state: &mut AppState, wall_ms: u64) {
 
     let anim = &mut state.match_state.match_presentation.power_bar_anim;
     match (
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.presentation(),
         owner_name.as_deref(),
     ) {
         (Some(runtime), Some(owner)) => {
@@ -438,7 +438,7 @@ pub(crate) fn update_radar_state(state: &mut AppState) {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .presentation()
             .map(|rt| &rt.simulation),
         state.rules(),
         preferred_local_owner_name(state).as_deref(),
@@ -506,7 +506,7 @@ fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
     let sim = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|rt| &rt.simulation);
     let (Some(sfx), Some(assets), Some(catalog)) = (
         &mut state.audio.sfx_player,

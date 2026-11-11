@@ -628,7 +628,7 @@ pub(crate) fn build_control_group_status_instances(
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .presentation()
             .map(|runtime| &runtime.simulation),
         state.rules(),
     ) else {
@@ -843,7 +843,7 @@ pub(crate) fn build_building_status_instances(
     body_opportunities: &BTreeSet<u64>,
 ) -> BuildingStatusTextInstances {
     let (Some(runtime), Some(rules), Some(csf)) = (
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.presentation(),
         state.rules(),
         state.process_assets.csf.as_ref(),
     ) else {
@@ -1798,9 +1798,10 @@ pub(crate) fn techno_extras_for_parent(
                 SelfHealPip::Units => rules.general.self_heal_unit_frames,
             };
             let frame = sim.session().binary_frame() as i32;
-            let remainder = frame.checked_rem(period).unwrap_or_else(|| {
-                panic!("native self-heal marker IDIV fault at 0070A549/0070A5B5: frame={frame} period={period}")
-            });
+            // A zero period traps in gamemd (IDIV at 0x0070A549 / 0x0070A5B5)
+            // and never heals in VERA, so the marker stays on its steady
+            // frame.
+            let remainder = frame.checked_rem(period).unwrap_or(i32::MAX);
             let selector = u8::from(remainder <= 5 && entity.health.current() < object.strength);
             let (offset_x, offset_y) = self_heal_pip_offset(entity.category());
             strip.self_heal = instance(shape, arm.frame(), (sx + offset_x, sy + offset_y), 0.0004)

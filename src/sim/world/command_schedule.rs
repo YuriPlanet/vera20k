@@ -526,6 +526,11 @@ impl Simulation {
         projected
     }
 
+    /// Whether an executed EXIT command's terminal edge waits to be taken.
+    pub fn executed_exit_owner_pending(&self) -> bool {
+        self.executed_exit_owner.is_some()
+    }
+
     /// Consume the terminal edge raised by one executed EXIT command.
     pub fn take_executed_exit_owner(&mut self) -> Option<InternedId> {
         self.executed_exit_owner.take()
@@ -933,7 +938,7 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) {
         let (Some(terrain), Some(zones)) =
-            (self.resolved_terrain.as_ref(), self.zone_grid.as_ref())
+            (self.resolved_terrain.as_ref(), self.zone_grid.as_deref())
         else {
             return;
         };

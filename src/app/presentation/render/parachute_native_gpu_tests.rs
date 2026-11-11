@@ -156,7 +156,7 @@ impl Scene {
         Self {
             runtime: SimRuntime {
                 simulation: sim,
-                resources,
+                resources: resources.into(),
             },
             body,
             canopy,
