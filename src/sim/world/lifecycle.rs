@@ -1553,6 +1553,10 @@ impl Simulation {
         // cloak here as native's can. Trigger: a new Cloakable sensor unit
         // put inside its house's CloakGenerator field (no stock building has
         // one). Effect: it cloaks on its first cloak tick instead.
+        // RESIDUAL (pre-existing in every AddSensorsAt caller): its building
+        // arm (`0x004DE8DE..0x004DE909`), which sets byte +0x80 on a
+        // building not owned by the local player in each stamped cell, has
+        // no port; the field is not identified.
         self.add_unit_sensors_at_current(stable_id, context.rules(), context.registry());
         // Unit737BBE..737BD2 / Aircraft414403..414417 snap Secondary after
         // Foot success, including dead-Techno success. The Techno body snap
