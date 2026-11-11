@@ -1679,7 +1679,7 @@ fn synchronized_deploy_queues_unload_before_handler_action_and_sound() {
     .unwrap();
     let (mut sim, rules, id) = native_deploy_fixture(&row[0]);
     let actor = sim.substrate.entities.get(id).unwrap();
-    let before_mission = actor.mission;
+    let before_mission = actor.mission.clone();
     let before_stage = serde_json::to_value(actor.native_stage()).unwrap();
     assert_eq!(before_mission.current().known(), Some(MissionType::Enter));
     assert!(sim.apply_command(

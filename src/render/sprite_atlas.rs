@@ -1128,8 +1128,9 @@ pub fn atlas_covers_world(
 }
 
 /// Every (type, house colour) pair the world's objects draw: each placed
-/// non-voxel object in its owner's colour, and every building a unit can
-/// deploy into in every house colour. Every sprite key an object needs
+/// non-voxel object in its owner's colour, each active Infantry disguise in
+/// its disguise house's colour, and every building a unit can deploy into in
+/// every house colour. Every sprite key an object needs
 /// derives from one of these pairs, so the atlas records coverage per pair.
 /// Objects of one type and owner give one pair between them, at the first.
 fn object_pairs<'a>(
@@ -1141,16 +1142,38 @@ fn object_pairs<'a>(
     let mut asked = crate::util::lookup_hash::LookupSet::default();
     let placed = entities
         .values()
-        .filter(move |entity| {
-            !entity.is_voxel() && asked.insert((entity.type_ref(), entity.owner()))
+        .filter(|entity| !entity.is_voxel())
+        .flat_map(|entity| {
+            // InfantryClass::DrawIt @ 0x00518DDF and TechnoClass::GetRemapColour
+            // @ 0x00705D70 (branch 0x00705DAB) select its type and house. Keep both
+            // images resident across the viewer-dependent cycle, even when
+            // no real infantryman supplies that type/colour to the atlas.
+            let disguise = if entity.category() == EntityCategory::Infantry {
+                entity
+                    .disguise
+                    .as_ref()
+                    .filter(|disguise| disguise.is_disguised())
+                    .and_then(|disguise| {
+                        Some((
+                            disguise.type_id()?,
+                            disguise.house().unwrap_or(entity.owner()),
+                        ))
+                    })
+            } else {
+                None
+            };
+            [Some((entity.type_ref(), entity.owner())), disguise]
+                .into_iter()
+                .flatten()
         })
-        .map(move |entity| {
-            let owner = interner.map_or("", |i| i.resolve(entity.owner()));
+        .filter(move |pair| asked.insert(*pair))
+        .map(move |(type_id, owner)| {
+            let owner = interner.map_or("", |i| i.resolve(owner));
             let color = house_colors
                 .get(owner)
                 .copied()
                 .unwrap_or(crate::rules::house_colors::NO_REMAP);
-            (interner.map_or("", |i| i.resolve(entity.type_ref())), color)
+            (interner.map_or("", |i| i.resolve(type_id)), color)
         });
     let deploy_targets = extra_building_types
         .iter()

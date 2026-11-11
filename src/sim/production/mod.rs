@@ -58,7 +58,7 @@ pub use self::production_queue::{
     dispatch_production_changes_for_tests, publish_production_changes_for_tests,
 };
 pub(crate) use self::production_refinery::spawn_building_free_unit;
-pub use self::production_repair::can_repair_building;
+pub use self::production_repair::{buildings_wanting_repair, can_repair_building};
 pub use self::production_repair::{RepairControl, repair_step_cost, toggle_repair};
 pub(crate) use self::production_repair::{engineer_repair, update_repair_and_power};
 #[cfg(any(test, feature = "test-support"))]

@@ -242,6 +242,10 @@ pub(crate) struct MatchInputState {
     pub(crate) planning: crate::app::input::planning_mode::PlanningInputState,
     /// VERA ferry order: the armed drop click and the local routes.
     pub(crate) ferry: super::ferry::FerryState,
+    /// VERA Auto Repair: the Repair orders sent and not yet seen to land.
+    pub(crate) auto_repair: super::auto_repair::AutoRepairState,
+    /// VERA primary rotation: the factory groups that take turns.
+    pub(crate) primary_rotation: super::primary_rotation::PrimaryRotationState,
     pub(crate) category_navigation:
         crate::app::input::dispatch::selection_navigation::CategoryNavigation,
     /// Original CursorCheat toggle A8F7D8, consumed by tactical tooltips.
@@ -503,6 +507,8 @@ impl MatchInputState {
             formation_locks: super::formation_lock::FormationLocks::default(),
             planning: Default::default(),
             ferry: Default::default(),
+            auto_repair: Default::default(),
+            primary_rotation: Default::default(),
             category_navigation: Default::default(),
             cursor_coordinates: false,
             retail_screenshot_requested: false,
@@ -716,6 +722,10 @@ impl MatchInputState {
         self.planning.reset();
         self.formation_line = Default::default();
         self.formation_locks.clear();
+        // Its building ids and frames belong to the world that ended.
+        self.auto_repair = Default::default();
+        // Its factory ids and counts belong to the world that ended.
+        self.primary_rotation = Default::default();
         self.targeting_mode = None;
         self.building_placement_preview = None;
         self.saved_building_placement = None;

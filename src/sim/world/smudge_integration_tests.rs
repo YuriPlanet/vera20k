@@ -15,11 +15,83 @@ use super::Simulation;
 use crate::sim::smudge_grid::{SmudgeCell, SmudgeGrid};
 use crate::sim::snapshot::GameSnapshot;
 
+/// SmudgeRead6B56D0 retains signed dimensions; CanPlace6B5F80 and Place6B6080
+/// skip empty loops while the ordinary constructor/UnInit still run.
+#[test]
+fn signed_empty_smudge_footprints_still_construct_on_an_occupied_cell() {
+    use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+    use crate::sim::combat::SmudgeSpawnRequest;
+    use crate::sim::combat::smudge_dispatch::AnimMiddleMarks;
+    use crate::sim::native_identity::NativeUniqueIdCursor;
+    use crate::sim::overlay_grid::OverlayGrid;
+    use crate::sim::smudge_grid::SimCoord;
+
+    let Some((root, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    for changes in ["Width=0", "Height=-1"] {
+        let mut layers = RulesLayerStack::new(root.clone());
+        layers.push(
+            RulesLayerKind::Scenario,
+            crate::rules::ini_parser::IniFile::from_str(&format!("[CRATER11]\n{changes}\n")),
+        );
+        let processed = layers.process_with_fixed_art(&art).unwrap();
+        let rules = crate::rules::ruleset::RuleSet::from_processed_rules(&processed).unwrap();
+        let selected = rules.smudge_types.find_by_name("CRATER11").unwrap();
+        let occupied = SmudgeCell {
+            type_id: rules.smudge_types.find_by_name("CRATER01"),
+            ..SmudgeCell::default()
+        };
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 23);
+        sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+        let mut marks = SmudgeGrid::new(32, 32);
+        marks.test_force_set(10, 10, occupied);
+        let _ = marks.drain_dirty();
+        sim.smudge_grid = Some(marks);
+        *sim.native_unique_ids_mut_for_test() =
+            Some(NativeUniqueIdCursor::for_synthetic_simulation());
+        let rng = sim.scenario_rng.native_state_hex();
+        let dummy = sim.effective_shared_cell_dummy().snapshot();
+        sim.commit_smudge_request_inline(
+            &rules,
+            Some(rules.overlay_registry()),
+            SmudgeSpawnRequest::AnimMiddle {
+                coord: SimCoord {
+                    x: 2688,
+                    y: 2688,
+                    z: 0,
+                },
+                marks: AnimMiddleMarks {
+                    scorch: false,
+                    crater: true,
+                    force_big_craters: false,
+                    width: 30,
+                    height: 30,
+                },
+            },
+        );
+        let marks = sim.smudge_grid.as_ref().unwrap();
+        let objects: Vec<_> = marks.objects().collect();
+        assert_eq!(
+            objects.len(),
+            1,
+            "{changes} must select the empty footprint"
+        );
+        assert_eq!(objects[0].1.type_id(), selected);
+        assert!(!objects[0].1.object_alive() && objects[0].1.in_limbo());
+        assert_eq!(sim.native_identity_cursor(), Some(1));
+        assert_eq!(marks.iter_occupied().count(), 1);
+        assert_eq!(*marks.cell(10, 10), occupied);
+        assert_eq!(sim.effective_shared_cell_dummy().snapshot(), dummy);
+        assert_eq!(sim.scenario_rng.native_state_hex(), rng);
+    }
+}
+
 /// Build a Simulation with a populated SmudgeGrid seeded with a fixed pattern.
 ///
 /// Same seed -> same starting state. The pattern uses small but nontrivial
 /// data so the hash is sensitive to all SmudgeCell fields (type_id,
-/// footprint_origin, frame_offset).
+/// frame_offset).
 fn build_test_sim_with_seed(seed: u64) -> Simulation {
     let mut sim = Simulation::with_seed(seed);
     let mut grid = SmudgeGrid::new(16, 16);
@@ -30,7 +102,6 @@ fn build_test_sim_with_seed(seed: u64) -> Simulation {
         3,
         SmudgeCell {
             type_id: Some(0),
-            footprint_origin: Some((2, 3)),
             frame_offset: 0,
         },
     );
@@ -43,7 +114,6 @@ fn build_test_sim_with_seed(seed: u64) -> Simulation {
                 5 + dy,
                 SmudgeCell {
                     type_id: Some(1),
-                    footprint_origin: Some((5, 5)),
                     frame_offset: (dx as u8) + (dy as u8) * w,
                 },
             );
@@ -126,14 +196,14 @@ fn smudge_grid_survives_snapshot_roundtrip() {
         .as_ref()
         .unwrap()
         .iter_occupied()
-        .map(|(rx, ry, c)| (rx, ry, c.type_id, c.footprint_origin, c.frame_offset))
+        .map(|(rx, ry, c)| (rx, ry, c.type_id, c.frame_offset))
         .collect();
     let restored_cells: Vec<_> = sim_restored
         .smudge_grid
         .as_ref()
         .unwrap()
         .iter_occupied()
-        .map(|(rx, ry, c)| (rx, ry, c.type_id, c.footprint_origin, c.frame_offset))
+        .map(|(rx, ry, c)| (rx, ry, c.type_id, c.frame_offset))
         .collect();
     assert_eq!(
         orig_cells, restored_cells,
@@ -162,7 +232,6 @@ fn gsi_04_11_smudge_dirty_flush_publishes_tactical_then_radar_per_cell() {
             ry,
             SmudgeCell {
                 type_id: Some(1),
-                footprint_origin: Some((3, 4)),
                 frame_offset: ((rx - 3) + (ry - 4) * 2) as u8,
             },
         );
@@ -244,9 +313,7 @@ fn action118_matches_original_smudge_fields_dummy_and_first_null_controls() {
                 input["y"].as_u64().unwrap() as u16,
                 SmudgeCell {
                     type_id: Some(input["smudge"].as_u64().unwrap() as u16),
-                    // This cache is not native authority. Intentionally stale
-                    // metadata must not replace the retained data-byte decode.
-                    footprint_origin: Some((9, 9)),
+                    // The retained byte is the removal authority.
                     frame_offset: input["smudge_data"].as_u64().unwrap() as u8,
                 },
             );

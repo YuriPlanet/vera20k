@@ -244,7 +244,7 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
         e.set_on_bridge(input["obstacle_deck"] == true);
         let mut cloak = CloakRuntime::new(0);
         cloak.set_state_for_test(input["cloak"].as_i64().unwrap_or(0) as i32);
-        e.cloak = Some(cloak);
+        e.cloak = Some(Box::new(cloak));
         sim.substrate.occupancy.add(
             10,
             10,
@@ -355,7 +355,15 @@ fn compare(sim: &Simulation, id: u64, other: Option<u64>, expected: &Value, row:
             row["input"]
         );
     }
-    let cloak = other.map(|other| sim.substrate.entities.get(other).unwrap().cloak.unwrap());
+    let cloak = other.map(|other| {
+        *sim.substrate
+            .entities
+            .get(other)
+            .unwrap()
+            .cloak
+            .clone()
+            .unwrap()
+    });
     let logical = cloak.map_or([0; 6], |c| {
         [
             c.state(),

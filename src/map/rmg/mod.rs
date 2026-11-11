@@ -7,6 +7,7 @@
 pub mod build;
 mod description;
 pub mod emit;
+pub mod fairness;
 pub mod grid;
 pub mod options;
 pub mod phases;

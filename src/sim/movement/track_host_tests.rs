@@ -1056,7 +1056,7 @@ fn per_cell_promotes_queued_mission_before_tail_without_dispatching_handler() {
         ));
         let mut miner = Miner::new(MinerKind::War, &MinerConfig::default(), 0);
         miner.set_unload_active_for_test(unload_active);
-        entity.miner = Some(miner);
+        entity.miner = Some(Box::new(miner));
         entity.mission.apply_test_fixture(MissionTestFixture {
             current: MissionId::from_known(MissionType::Move),
             suspended: MissionId::NONE,
@@ -1074,7 +1074,7 @@ fn per_cell_promotes_queued_mission_before_tail_without_dispatching_handler() {
             None,
             crate::sim::world::FrameEffects::default(),
         );
-        let mission = sim.substrate.entities.get(1).unwrap().mission;
+        let mission = sim.substrate.entities.get(1).unwrap().mission.clone();
         if unload_active {
             assert_eq!(mission.current().known(), Some(MissionType::Move));
             assert_eq!(mission.queued().known(), Some(MissionType::Unload));
@@ -1240,7 +1240,7 @@ fn per_cell_factory_clearance_precedes_ready_and_preserves_foot_stop_scope() {
     )
     .unwrap();
     let path_runtime = unit.navigation.path_runtime().clone();
-    let producer_mission = sim.substrate.entities.get(2).unwrap().mission;
+    let producer_mission = sim.substrate.entities.get(2).unwrap().mission.clone();
     let rng = sim.rng_state();
     assert_eq!(
         sim.substrate
@@ -1544,7 +1544,7 @@ fn per_cell_factory_clearance_starts_a_slave_miners_hunt() {
     let slave_type = sim.intern("SLAV");
     let unit = sim.substrate.entities.get_mut(1).unwrap();
     unit.set_archive_target(Some(TargetKind::Cell(12, 10)));
-    unit.slave_manager = Some(SlaveManager::new(slave_type, [None; 0], 0, 0, 0));
+    unit.slave_manager = Some(Box::new(SlaveManager::new(slave_type, [None; 0], 0, 0, 0)));
     sim.per_cell_process(
         1,
         super::super::PerCellReason::Arrival,
@@ -1662,7 +1662,7 @@ fn per_cell_factory_clearance_without_a_post_clears_the_archive() {
     use crate::sim::components::NavTargetRef;
 
     let (mut sim, rules) = computer_product_at_factory_exit();
-    let mission = sim.substrate.entities.get(1).unwrap().mission;
+    let mission = sim.substrate.entities.get(1).unwrap().mission.clone();
     sim.per_cell_process(
         1,
         super::super::PerCellReason::Arrival,
@@ -1695,7 +1695,7 @@ fn per_cell_factory_clearance_reads_unit_archive_through_the_shared_setter() {
     let (mut sim, rules) = factory_per_cell_fixture(true, false, "");
     let unit = sim.substrate.entities.get_mut(1).unwrap();
     unit.set_archive_target(Some(TargetKind::Cell(12, 10)));
-    let mission = unit.mission;
+    let mission = unit.mission.clone();
     let position = unit.position;
     let rng = sim.rng_state();
     sim.per_cell_process(
@@ -1763,7 +1763,11 @@ fn per_cell_factory_harvester_queue_uses_live_readiness_and_preserves_miner_stat
                     crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
             }
             let unit = sim.substrate.entities.get_mut(1).unwrap();
-            unit.miner = Some(Miner::new(MinerKind::War, &MinerConfig::default(), 0));
+            unit.miner = Some(Box::new(Miner::new(
+                MinerKind::War,
+                &MinerConfig::default(),
+                0,
+            )));
             unit.navigation
                 .set_nav_com_aux_for_test(Some(NavTargetRef::cell(13, 10)));
             unit.mission.apply_test_fixture(MissionTestFixture {
@@ -2875,13 +2879,13 @@ fn the_unit_guard_pick_follows_house_iq_team_and_type() {
                 unit.slave = crate::sim::slave_manager::SlaveLink::for_test(Some(id + 1), vec![]);
             }
             "slave_manager" => {
-                unit.slave_manager = Some(crate::sim::slave_manager::SlaveManager::new(
+                unit.slave_manager = Some(Box::new(crate::sim::slave_manager::SlaveManager::new(
                     slave_type,
                     [],
                     0,
                     0,
                     0,
-                ));
+                )));
             }
             "bunker" => unit.bunker.set_bunker_link_for_test(
                 crate::sim::docking::bunker_link::BunkerLink::Installed(id + 1),

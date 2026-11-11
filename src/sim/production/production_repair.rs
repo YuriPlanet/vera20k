@@ -48,6 +48,7 @@ use crate::map::entities::EntityCategory;
 use crate::rules::object_type::{FactoryType, ObjectType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::credit_income::{available_money, spend_money};
+use crate::sim::intern::InternedId;
 use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF64Bits};
 
@@ -309,6 +310,54 @@ pub fn can_repair_building(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
         && object.repairable
         && entity.health.current() != object.strength
         && !(object.foundation.dimensions() == (1, 1) && undeploys(rules, object))
+}
+
+/// VERA Auto Repair (`docs/auto-repair.md`): `owner`'s buildings a player
+/// would click with the wrench now, in stored-id order. Each is one the house
+/// may repair ([`can_repair_building`]), on neither Construction nor Selling
+/// and not repairing already: what [`update_repair_and_power`] and the
+/// computer's auto-repair start ask before starting one (`0x00450630`,
+/// `0x004506B2`). The owner's available money also covers a repair step for
+/// each, after the steps of the repairs already running, because the step
+/// stops a repair it cannot pay for (`0x00450813`): more starts than that
+/// would stop again at once. Read only: the player's own game sends each the
+/// ordinary REPAIR event, and stock play never asks.
+pub fn buildings_wanting_repair(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Vec<u64> {
+    let entities = &sim.substrate.entities;
+    let step_cost = |id: u64| {
+        let entity = entities.get(id)?;
+        let object = sim.object_type(entity.type_ref(), rules)?;
+        Some(i64::from(repair_step_cost(rules, object)))
+    };
+    let owned = entities.owned_ids(owner, EntityCategory::Structure);
+    let running: i64 = owned
+        .iter()
+        .filter(|&&id| entities.get(id).is_some_and(|entity| entity.repairing.on))
+        .filter_map(|&id| step_cost(id))
+        .sum();
+    let mut money = i64::from(available_money(&sim.houses, owner)) - running;
+    owned
+        .iter()
+        .copied()
+        .filter(|&id| {
+            let Some(entity) = entities.get(id) else {
+                return false;
+            };
+            if entity.repairing.on
+                || entity.constructing_or_selling()
+                || !can_repair_building(sim, rules, id)
+            {
+                return false;
+            }
+            match step_cost(id) {
+                Some(cost) if money >= cost => {
+                    money -= cost;
+                    true
+                }
+                _ => false,
+            }
+        })
+        .collect()
 }
 
 /// Shared TechnoType repair step cost, vt+0xB0 (`0x007120D0`):

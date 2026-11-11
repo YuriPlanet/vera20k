@@ -134,15 +134,12 @@ impl App {
             .match_presentation
             .in_game_gadgets
             .cancel_pointer_capture();
-        state
-            .match_state
-            .match_presentation
-            .in_game_options
-            .dragging_slider = None;
-        state.match_state.match_presentation.in_game_options.buttons = Default::default();
         state.match_state.match_presentation.pause_menu_interaction = Default::default();
         state.match_state.match_presentation.abort_buttons = Default::default();
         state.match_state.match_presentation.diplomacy = Default::default();
+        if let Some(page) = state.match_state.match_presentation.options_page.as_mut() {
+            page.dialog.shell_cancel_pointer_gesture();
+        }
         if let Some(dialog) = state.match_state.match_presentation.sound_dialog.as_mut() {
             dialog.reset_interaction();
         }
@@ -316,6 +313,9 @@ impl App {
         state.persistence.options_profile.full_screen = full_screen;
         if let Some(dialog) = state.frontend.options_dialog.as_mut() {
             dialog.sync_full_screen(full_screen);
+        }
+        if let Some(page) = state.match_state.match_presentation.options_page.as_mut() {
+            page.dialog.sync_full_screen(full_screen);
         }
         Self::shell_menu_follow_full_screen(state, full_screen, changed);
     }

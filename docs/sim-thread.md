@@ -102,10 +102,11 @@ main thread applies the record in order afterwards
   `apply_trigger_effects`, as on the headless path.
 
 Only presentation order moves: sounds and the radar cue follow the tick
-instead of interleaving with it. Network frames (the `Queue_AI` exchange),
-replay playback, a campaign's initial save and command observation still
-need the lent owners. Those frames stay on the borrowing path
-(`DeferredClientEffects::applies`).
+instead of interleaving with it. Replay playback, a campaign's initial save
+and command observation still need the lent owners. Those frames stay on the
+borrowing path (`DeferredClientEffects::applies`). A network frame's
+`Queue_AI` exchange needs the live session; phase 4 hands it back to the
+main thread.
 
 Done:
 
@@ -145,7 +146,10 @@ storage with the live world copy-on-write (`util::shared`):
 - `CellMap` strips are one column each, shared the same way.
 - `Shared<T>` for state that rarely changes as a whole: entities (each one
   separately), the zone grid, the interner, AI script definitions, terrain
-  objects and the terrain's TMP headers and per-cell side arrays.
+  objects and the terrain's TMP headers and per-cell side arrays. An entity
+  is two such values: the record its turn reads each step, and its `Seldom`
+  part (orders, events, drawing), which a turn that does not write it leaves
+  shared.
 - `DerivedCache` for caches a copy can rebuild; a copy starts empty.
 
 Writers that usually leave a value unchanged compare before they borrow it
@@ -239,10 +243,29 @@ commands between passes do take the world back; they wait for the tick, and
 its tail still runs at the next pass.
 
 While a tick is lent, drawing shows the world one tick behind the
-simulation. These frames always stay inline:
+simulation.
 
-- network play, replay, a campaign's initial save and command observation
-  (the deferred path does not apply to them);
+A network frame (LAN or online) can be lent the same way. On the thread it
+runs Logic and its checksum and stops at `Queue_AI`: `DeferredClientEffects`
+answers the exchange with a wait and records the checksum. Finishing the tick
+applies that record to the history, then resumes the frame inline as a
+network wait is resumed (`FrameResume::QueueHandoff`): the live session runs
+the exchange, the dispatch, the FRAMEINFO comparison and the commit. The
+session never leaves the main thread, and the frame keeps gamemd's order:
+Logic, checksum, exchange, wait, dispatch. A tick on the thread therefore
+never executes departures or an EXIT. Two measurements follow the frame
+across the hand-off: `MainTick55D3DA/55DE0D` times the Logic visit up to
+`Queue_AI` on the thread, and the frame's cost is the thread's part alone.
+Online, whether another pass follows a frame is asked of the relay's
+frontier and the online pacer, as the catch-up loop asks it, not of the
+local timer.
+
+These frames always stay inline:
+
+- replay, a campaign's initial save and command observation (the deferred
+  path does not apply to them);
+- a network restore, which replays many frames per pass, each waiting for
+  the last;
 - resumed frames: outcome, network and checksum waits;
 - `ExactOneStep` diagnostics and debug frame steps, which must end inside
   the call. A tick already in flight finishes before an exact step is

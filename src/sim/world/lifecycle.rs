@@ -1329,7 +1329,6 @@ impl Simulation {
                     position.sub_y(),
                 ));
         }
-        self.reposition_building_anim_slots(stable_id, context.rules());
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::RevealCoordinatesCommitted);
 
@@ -2432,23 +2431,6 @@ impl Simulation {
         let hidden_profile = entity.type_facts.building_hidden_occupancy();
         let current_cell = (entity.position.rx(), entity.position.ry());
         let (width, height) = foundation.dimensions();
-        let mut intersections = Vec::with_capacity(usize::from(width) * usize::from(height));
-        for dy in 0..height {
-            for dx in 0..width {
-                let Some(rx) = current_cell.0.checked_add(dx) else {
-                    continue;
-                };
-                let Some(ry) = current_cell.1.checked_add(dy) else {
-                    continue;
-                };
-                intersections.push((rx, ry));
-            }
-        }
-        if let Some(smudge_grid) = self.smudge_grid.as_mut() {
-            smudge_grid.clear_intersecting_footprints(&intersections);
-        }
-        Self::flush_smudge_dirty(&mut self.smudge_grid, &mut self.dirty_cells);
-
         if let Some(layer) = layer {
             for &(rx, ry) in &cells {
                 self.substrate
@@ -2468,6 +2450,9 @@ impl Simulation {
                     )
                 })
             {
+                // A sleeping object reads its cell's hidden state only in a
+                // turn (`world::idle_sleep`).
+                self.substrate.entities.wake_all();
                 #[cfg(any(test, feature = "test-support"))]
                 self.trace_lifecycle_for_test(LifecycleTestEvent::HiddenOccupationEntered);
             }
@@ -2487,6 +2472,45 @@ impl Simulation {
         // Cell Recalc47D2B0 before returning. Keep the derived path view at
         // that boundary too; the marked structures remain its authority.
         self.publish_recalculated_cells(context.rules(), &cells);
+        // BuildingMark43F738 moves its retained animations after PlaceDown
+        // publishes the cells, before43F79B begins the smudge-clear scan.
+        self.reposition_building_anim_slots(stable_id, context.rules());
+        if let (Some(grid), Some(terrain)) =
+            (self.smudge_grid.as_mut(), self.resolved_terrain.as_ref())
+        {
+            // BuildingMark43F79B..43F91E follows PlaceDown, visits the full
+            // rectangle (including refinery holes), and clears by current
+            // SmudgeData/Width rather than a placement-time origin cache.
+            'sources: for dy in 0..height {
+                for dx in 0..width {
+                    let source = (
+                        (current_cell.0 as i16).wrapping_add(dx as i16),
+                        (current_cell.1 as i16).wrapping_add(dy as i16),
+                    );
+                    let cleared = grid.clear_footprint_identity_at(
+                        source,
+                        &context.rules().smudge_types,
+                        terrain,
+                        |identity, at, _| {
+                            // Cell4852D0 invalidates every target, including
+                            // already-empty overlaps, without a radar write.
+                            if matches!(
+                                identity,
+                                crate::map::cell_index::NativeCellIdentity::Real(_)
+                            ) {
+                                self.dirty_cells.mark_tactical((at.0 as u16, at.1 as u16));
+                            }
+                        },
+                    );
+                    if cleared.is_none() {
+                        // Native faults here on an invalid type/zero divisor.
+                        // Keep committed placement and earlier clear writes.
+                        log::debug!("BuildingMark stopped an invalid smudge clear");
+                        break 'sources;
+                    }
+                }
+            }
+        }
         self.substrate
             .entities
             .get(stable_id)
@@ -2813,6 +2837,7 @@ impl Simulation {
                     )
                 })
             {
+                self.substrate.entities.wake_all();
                 #[cfg(any(test, feature = "test-support"))]
                 self.trace_lifecycle_for_test(LifecycleTestEvent::HiddenOccupationExited);
             }

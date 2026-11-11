@@ -252,6 +252,60 @@ pub fn decompress_chunks(data: &[u8], maximum_output: usize) -> Result<Vec<u8>, 
     Ok(result)
 }
 
+/// Write `data` in the chunk layout [`decompress_chunks`] reads: blocks of at
+/// most `block_size` bytes, each behind `[u16 compressed_len][u16
+/// uncompressed_len]`.
+///
+/// RESIDUAL: native's LCW compressor also emits back-references; this writes
+/// only fills (`0xFE`) for runs and literal copies, which decode to the same
+/// bytes but are larger on data that is not mostly runs.
+pub fn compress_chunks(data: &[u8], block_size: usize) -> Vec<u8> {
+    let mut out = Vec::new();
+    for block in data.chunks(block_size.clamp(1, 0xFFFF)) {
+        let stream = fill_and_literal_stream(block);
+        out.extend_from_slice(&(stream.len() as u16).to_le_bytes());
+        out.extend_from_slice(&(block.len() as u16).to_le_bytes());
+        out.extend_from_slice(&stream);
+    }
+    out
+}
+
+/// One LCW stream of `block`: a fill command for each run of four or more
+/// equal bytes, literal copies of up to 63 bytes otherwise, then the `0x80`
+/// end marker.
+fn fill_and_literal_stream(block: &[u8]) -> Vec<u8> {
+    const MIN_FILL: usize = 4;
+    let mut out = Vec::with_capacity(block.len() / 8 + 16);
+    let mut literal_start = 0;
+    let mut at = 0;
+    let flush = |out: &mut Vec<u8>, literals: &[u8]| {
+        for run in literals.chunks(0x3F) {
+            out.push(0x80 | run.len() as u8);
+            out.extend_from_slice(run);
+        }
+    };
+    while at < block.len() {
+        let value = block[at];
+        let run = block[at..]
+            .iter()
+            .take_while(|&&byte| byte == value)
+            .count();
+        if run >= MIN_FILL {
+            flush(&mut out, &block[literal_start..at]);
+            out.push(0xFE);
+            out.extend_from_slice(&(run as u16).to_le_bytes());
+            out.push(value);
+            at += run;
+            literal_start = at;
+        } else {
+            at += run;
+        }
+    }
+    flush(&mut out, &block[literal_start..]);
+    out.push(0x80);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

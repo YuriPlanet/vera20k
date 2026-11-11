@@ -644,13 +644,41 @@ impl LocalFramePacer {
         game_speed: u8,
         network_fps: Option<(u16, u32)>,
     ) -> bool {
-        let Some((started, finished)) = self.service_pass else {
-            return false;
-        };
-        Self::permits_catch_up(
-            finished + 1,
-            now.saturating_duration_since(started) + self.expected_frame_cost(),
-        ) && self.should_admit(now_ms, game_speed, network_fps, false)
+        self.catch_up_continues(now) && self.should_admit(now_ms, game_speed, network_fps, false)
+    }
+
+    /// [`Self::another_pass_follows`] for sequenced online play, whose frames
+    /// the relay's frontier and the online pacer admit, not the local timer:
+    /// the service continues while the next frame is admitted
+    /// ([`Self::online_frame_decision`]), asked here of a copy.
+    pub(crate) fn another_online_pass_follows(
+        &self,
+        now: Instant,
+        next_frame: u32,
+        frontier: u32,
+        receipt: Option<(SequencedTiming, bool)>,
+    ) -> bool {
+        self.catch_up_continues(now)
+            && match receipt {
+                Some((receipt, recovering)) if next_frame != 0 => {
+                    receipt.frames_per_second != 0
+                        && self
+                            .online_copy(now, receipt)
+                            .decide(now, next_frame, frontier, receipt, recovering)
+                            .admits()
+                }
+                _ => Self::admits_canonical_frame(next_frame, frontier),
+            }
+    }
+
+    /// Whether the catch-up budget stays open after a frame admitted now.
+    fn catch_up_continues(&self, now: Instant) -> bool {
+        self.service_pass.is_some_and(|(started, finished)| {
+            Self::permits_catch_up(
+                finished + 1,
+                now.saturating_duration_since(started) + self.expected_frame_cost(),
+            )
+        })
     }
 
     /// What the next frame's tick is expected to take on this thread: the
@@ -727,6 +755,16 @@ impl LocalFramePacer {
         if next_frame == 0 || receipt.frames_per_second == 0 {
             return false;
         }
+        let mut online = self.online_copy(now, receipt);
+        online
+            .decide(now, next_frame, frontier, receipt, recovering)
+            .admits()
+            && now >= online.deadline(next_frame)
+    }
+
+    /// The online pacer as [`Self::online_frame_decision`] would find it,
+    /// for read-only questions.
+    fn online_copy(&self, now: Instant, receipt: SequencedTiming) -> OnlinePacer {
         let mut online = self
             .online
             .as_ref()
@@ -736,9 +774,6 @@ impl LocalFramePacer {
             online.reset_clock(receipt, now);
         }
         online
-            .decide(now, next_frame, frontier, receipt, recovering)
-            .admits()
-            && now >= online.deadline(next_frame)
     }
 
     pub(crate) fn online_pacing_status(&self) -> Option<OnlinePacingStatus> {
@@ -1588,6 +1623,24 @@ mod tests {
         paced.record_admitted_frame(32);
         assert!(!paced.another_pass_follows(started, 32, 1, None));
         assert!(paced.another_pass_follows(started, 32 + FRAME_BUCKET_MS, 1, None));
+    }
+
+    /// Online, the relay's frontier admits the next frame, not the local
+    /// timer: a frame the relay has sealed is caught up in another pass, and
+    /// one beyond its frontier is not.
+    #[test]
+    fn an_online_frame_the_relay_sealed_has_another_pass_behind_it() {
+        let started = Instant::now();
+        let mut pacer = LocalFramePacer::new();
+        pacer.begin_service_pass(started, 0);
+        let receipt = push_receipt(started, 40);
+        assert!(pacer.another_online_pass_follows(started, 11, 40, Some((receipt, false))));
+        assert!(!pacer.another_online_pass_follows(started, 41, 40, Some((receipt, false))));
+        // Without the online clock (a pause), the frontier alone decides.
+        assert!(pacer.another_online_pass_follows(started, 11, 40, None));
+        assert!(!pacer.another_online_pass_follows(started, 41, 40, None));
+        pacer.begin_service_pass(started, 7);
+        assert!(!pacer.another_online_pass_follows(started, 11, 40, Some((receipt, false))));
     }
 
     #[test]

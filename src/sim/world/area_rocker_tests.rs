@@ -46,13 +46,13 @@ fn stock_kirov_bomb_impact_rocks_its_live_neighbor_then_rolls_it() {
     assert!(projectile.vertical && projectile.voxel);
     // Read the real resolved Bullet image and physical model, not an ART
     // lookup under the projectile's rules name or a supplied loaded flag.
-    let (model, _) = crate::rules::voxel_asset_catalog::load_main_voxel(
+    let model = crate::rules::voxel_asset_catalog::load_voxel_model(
         &assets,
         projectile.voxel_image_load().unwrap(),
         Some(&rules),
     )
     .expect("physical retail Kirov bomb model");
-    assert!(!model.vxl().limbs.is_empty());
+    assert!(!model.main().unwrap().vxl().limbs.is_empty());
     let warhead = rules.warhead("BlimpHE").unwrap();
     assert!(warhead.rocker);
     assert!(warhead.cell_spread_f64 > 0.0);

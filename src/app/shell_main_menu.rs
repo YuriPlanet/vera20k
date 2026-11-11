@@ -170,6 +170,10 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // The next cameo press reads it; Options' accept writes it out.
         self.persistence.options_profile.shift_queue = shift_queue;
     }
+    fn store_auto_repair(&mut self, enabled: bool) {
+        // The next logic frame's pass reads it; Options' accept writes it out.
+        self.persistence.options_profile.auto_repair = enabled;
+    }
     fn store_terrain_deformation(&mut self, enabled: bool) {
         // The next game's rules and every later network agreement read it;
         // Options' accept writes it out.
@@ -1248,7 +1252,7 @@ impl App {
     }
 
     /// The Options values as they stand now.
-    pub(super) fn launcher_options_from_state(
+    pub(crate) fn launcher_options_from_state(
         state: &AppState,
     ) -> crate::ui::main_menu_dialogs::OptionsDialogState {
         use crate::app::persistence::options::launcher::launcher_dialog_from_profile;
@@ -1275,7 +1279,7 @@ impl App {
     }
 
     /// The Options captions the string table names, in the language in use.
-    fn launcher_options_labels(
+    pub(crate) fn launcher_options_labels(
         state: &AppState,
     ) -> crate::ui::main_menu_dialogs::options::LauncherOptionsLabels {
         let mut labels =
@@ -1356,6 +1360,7 @@ impl App {
                     &mut operations,
                     dialog,
                     result,
+                    None,
                 );
             }
             None => {
@@ -1397,6 +1402,23 @@ impl App {
             &mut operations,
             dialog,
             result,
+            None,
+        );
+    }
+
+    /// The in-game menu's Options page has closed: the controls the player
+    /// moved commit as the main menu's do, and the profile is written once.
+    pub(crate) fn commit_in_game_options_page(
+        state: &mut AppState,
+        dialog: crate::ui::main_menu_dialogs::OptionsDialogState,
+        opened: crate::ui::main_menu_dialogs::options::LauncherOptionsPacked,
+    ) {
+        let mut operations = AppStateLauncherParentOperations { state };
+        crate::app::persistence::options::launcher::dispatch_launcher_parent_result(
+            &mut operations,
+            dialog,
+            crate::ui::main_menu_dialogs::options::LauncherParentResult::Back,
+            Some(opened),
         );
     }
 
@@ -1435,6 +1457,7 @@ impl App {
             &mut operations,
             dialog,
             crate::ui::main_menu_dialogs::options::LauncherParentResult::Terminal,
+            None,
         );
     }
 
@@ -1558,7 +1581,7 @@ impl App {
             });
         }
         Some((
-            crate::ui::shell::descriptor::DialogId(kind.template_id(false)),
+            crate::ui::shell::descriptor::DialogId(kind.template_id()),
             feed,
         ))
     }
@@ -1683,6 +1706,7 @@ impl App {
         // Complete that transaction before unrelated shell teardown.
         crate::app::input::keyboard::prepare_terminal_exit(state);
         Self::close_launcher_options_terminal(state);
+        crate::app::input::pause_menu::on_match_end(state);
         if Self::native_skirmish_shell_active(state) {
             // A terminal exit has no Start/Back transaction, so pack the
             // page's current controls into the durable record first. The
@@ -2236,7 +2260,7 @@ impl App {
             return;
         };
         let dialog =
-            crate::ui::shell::descriptor::DialogId(message_box.labels.kind().template_id(false));
+            crate::ui::shell::descriptor::DialogId(message_box.labels.kind().template_id());
         if state.frontend.shell_controller.top_id() != Some(dialog) {
             state.frontend.shell_controller.push(dialog, true);
         }

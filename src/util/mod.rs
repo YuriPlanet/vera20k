@@ -51,6 +51,7 @@ pub(crate) mod sha1;
 pub mod sha256;
 pub mod shared;
 pub mod single_instance;
+pub mod sparse;
 pub mod version;
 // Portable state hashing; `rules` and `sim` both fold identities through it.
 pub(crate) mod state_hasher;

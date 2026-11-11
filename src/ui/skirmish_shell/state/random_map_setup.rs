@@ -267,6 +267,9 @@ pub struct RandomMapSetupModalState {
     pub advanced_values: Option<[i32; 7]>,
     /// An Advanced slider holding the mouse since a press on it.
     pub advanced_hold: Option<TrackbarHold<AdvancedField>>,
+    /// VERA extension: the generated map on show was written as a map file;
+    /// Export Map rests until the next Generate.
+    pub exported: bool,
 }
 
 /// The Advanced sliders' range, the fields' own clamp (`RmgOptions::normalize`).
@@ -329,6 +332,7 @@ impl RandomMapSetupModalState {
             advanced: false,
             advanced_values: None,
             advanced_hold: None,
+            exported: false,
         };
         modal.normalize_options();
         modal
@@ -355,6 +359,7 @@ impl RandomMapSetupModalState {
             }
             // VERA's towns are offline-only, like the Advanced view.
             self.options.urban_enabled = false;
+            self.options.fair_starts = false;
         }
     }
 
@@ -388,7 +393,8 @@ impl RandomMapSetupModalState {
             C::Advanced(AdvancedField::PlateauSize) => {
                 self.extended && matches!(self.options.map_type, 3 | 4)
             }
-            C::AdvancedToggle | C::Advanced(_) => self.extended,
+            C::AdvancedToggle | C::Advanced(_) | C::FairStartsToggle => self.extended,
+            C::ExportMap => self.extended && self.generated && !self.exported,
             _ => true,
         }
     }
@@ -613,6 +619,16 @@ impl RandomMapSetupModalState {
         }
     }
 
+    /// VERA extension: switch Fair Starts. Like any option edit it makes the
+    /// generated result stale.
+    pub fn toggle_fair_starts(&mut self) {
+        if !self.extended {
+            return;
+        }
+        self.options.fair_starts = !self.options.fair_starts;
+        self.generated = false;
+    }
+
     /// Switch the option rows between the original controls and the
     /// Advanced sliders. Any open list or held slider lets go.
     pub fn toggle_advanced(&mut self) {
@@ -718,6 +734,7 @@ impl RandomMapSetupModalState {
     pub fn finish_generate(&mut self, preview: Option<PreviewImage>) {
         self.generating = false;
         self.generated = true;
+        self.exported = false;
         self.saved_seed_buttons_enabled = true;
         if preview.is_some() {
             self.preview_generation = self.preview_generation.wrapping_add(1);
@@ -877,8 +894,14 @@ mod tests {
             false,
         );
         assert!(!network.is_enabled(RandomMapSetupControl::AdvancedToggle));
+        network.toggle_fair_starts();
+        assert!(!network.options.fair_starts, "Fair Starts is offline-only");
         let mut offline = opened();
         assert!(offline.is_enabled(RandomMapSetupControl::AdvancedToggle));
+        offline.generated = true;
+        offline.toggle_fair_starts();
+        assert!(offline.options.fair_starts);
+        assert!(!offline.generated, "the shown map no longer matches");
         let plateau = RandomMapSetupControl::Advanced(AdvancedField::PlateauSize);
         offline.set_map_type(1);
         assert!(

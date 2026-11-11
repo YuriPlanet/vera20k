@@ -425,7 +425,11 @@ fn cell_distance(dx: i16, dy: i16) -> i32 {
 
 impl Simulation {
     fn slave_manager(&self, master: u64) -> Option<&SlaveManager> {
-        self.substrate.entities.get(master)?.slave_manager.as_ref()
+        self.substrate
+            .entities
+            .get(master)?
+            .slave_manager
+            .as_deref()
     }
 
     fn now_frame(session: &ScenarioSession) -> i32 {
@@ -487,7 +491,9 @@ impl Simulation {
         let slave_type = self.interner.intern(&slave_type.id);
         let now = Self::now_frame(&self.session);
         if let Some(parent) = self.substrate.entities.get_mut(master) {
-            parent.slave_manager = Some(SlaveManager::new(slave_type, slaves, regen, reload, now));
+            parent.slave_manager = Some(Box::new(SlaveManager::new(
+                slave_type, slaves, regen, reload, now,
+            )));
         }
     }
 
@@ -1788,6 +1794,7 @@ impl Simulation {
             .get_mut(master)?
             .slave_manager
             .take()
+            .map(|manager| *manager)
     }
 
     /// Ares100458F3..10045953: FreeSlaves, then100038E0 clears every node,
@@ -1825,7 +1832,7 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get_mut(master)
             && entity.slave_manager.is_none()
         {
-            entity.slave_manager = Some(manager);
+            entity.slave_manager = Some(Box::new(manager));
         }
     }
 
@@ -1946,7 +1953,10 @@ impl Simulation {
 
 impl crate::sim::world::ObjectSubstrate {
     fn slave_manager_mut(&mut self, master: u64) -> Option<&mut SlaveManager> {
-        self.entities.get_mut(master)?.slave_manager.as_mut()
+        self.entities
+            .get_mut_if(master, |entity| entity.slave_manager.is_some())?
+            .slave_manager
+            .as_deref_mut()
     }
     fn set_manager_state(&mut self, master: u64, state: ManagerState, frame: i32) {
         if let Some(manager) = self.slave_manager_mut(master) {
