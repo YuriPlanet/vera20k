@@ -10044,3 +10044,25 @@ fn a_missile_is_tracked_in_the_cell_its_flight_step_reached() {
     assert_eq!(cell, (13, 12), "the flight step left the launch cell");
     assert_eq!(missile.air_spatial_bucket(), Some(bucket(&sim, cell)));
 }
+
+/// `TechnoClass::PointerExpired @ 0x007077C0` removes the expiring object from
+/// the listener's cargo only when its `removed` argument is set
+/// (`0x007077D8..0x007077E9`). A rider that cloaks sends Detach_All(false) and
+/// stays aboard.
+#[test]
+fn detach_all_false_keeps_a_rider_in_its_transports_cargo() {
+    let mut sim = Simulation::new();
+    insert_entity(&mut sim, 1, EntityCategory::Unit);
+    insert_entity(&mut sim, 2, EntityCategory::Infantry);
+    let _ = sim.reveal(1);
+    let mut cargo = PassengerCargo::new(5, 1.0);
+    cargo.board_forced_chain(&[(2, 1.0)]);
+    sim.substrate.entities.get_mut(1).unwrap().passenger_role = PassengerRole::transport(cargo);
+    sim.substrate.entities.get_mut(2).unwrap().passenger_role =
+        PassengerRole::inside_for_test(1, true);
+
+    sim.detach_all(2, false, super::UninitContext::default());
+
+    let transport = sim.substrate.entities.get(1).unwrap();
+    assert_eq!(transport.passenger_role.cargo().unwrap().passengers(), &[2]);
+}
