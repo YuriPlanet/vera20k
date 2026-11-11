@@ -251,7 +251,7 @@ impl App {
                             frame,
                             frontier,
                             timing,
-                            runtime.simulation.pending_network_wait(),
+                            state.match_state.sim_runtime.network_wait_pending(),
                             recovering,
                         )
                         .admits()
@@ -281,11 +281,7 @@ impl App {
         // GScreen Input reads the current native frame parity but does not
         // advance it. Hidden background service still owns Input while the
         // match runs; the focus-freeze sleep path and shell do not.
-        let network_wait_pending = state
-            .match_state
-            .sim_runtime
-            .runtime()
-            .is_some_and(|rt| rt.simulation.pending_network_wait());
+        let network_wait_pending = state.match_state.sim_runtime.network_wait_pending();
         let in_game = state.frontend.screen == GameScreen::InGame;
         // Wait_For_Players still enters GScreen Input at 0x006485B7 and
         // 0x00649827; repeated services read the same binary-frame parity.
@@ -512,11 +508,7 @@ impl App {
         // match running behind other windows instead. The gate sits at the
         // call site, not inside the runtime, so a focus edge never re-anchors
         // the frame pacer on its own.
-        let network_frame_pending = state
-            .match_state
-            .sim_runtime
-            .runtime()
-            .is_some_and(|rt| rt.simulation.pending_network_wait());
+        let network_frame_pending = state.match_state.sim_runtime.network_wait_pending();
         // Main_Game48CE8A..48CEA8 runs the router 55CFD0 after every
         // Main_Tick and leaves the loop once it routes, so no frame follows a
         // published result. One the router leaves waiting for a commander
@@ -601,7 +593,7 @@ impl App {
             })?;
         let sim = &state.match_state.sim_runtime.runtime()?.simulation;
         if sim.session().scenario_paused()
-            || sim.pending_network_wait()
+            || state.match_state.sim_runtime.network_wait_pending()
             || sim.pending_network_interruption().is_some()
             || sim.pending_network_failure().is_some()
         {
@@ -1345,6 +1337,9 @@ impl App {
                 // minimap keeps its own radar-terrain backlog, so the frame
                 // moves the simulation's newly marked cells there first.
                 Self::drain_radar_terrain_marks(state);
+                // docs/sim-thread.md: the tick this pass staged runs on the
+                // simulation thread while the frame draws.
+                state.match_state.sim_runtime.dispatch_staged();
                 let game_output = if state.renderer.upscale_pass.is_some() {
                     // Render game to intermediate texture, then upscale to swapchain.
                     let up = state.renderer.upscale_pass.as_ref().unwrap();

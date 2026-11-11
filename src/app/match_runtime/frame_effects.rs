@@ -594,13 +594,14 @@ mod radar_persistence_tests {
 }
 
 #[cfg(test)]
-mod network_command_tests {
+pub(super) mod network_command_tests {
     use super::*;
     use crate::sim::house_state::HouseState;
     use crate::sim::runtime::SimRuntime;
     use crate::sim::world::{FrameEffects, TickLane};
 
-    fn frame_256_runtime() -> SimRuntime {
+    /// A WOL world at frame 256, the first frame its House gate admits.
+    pub(in crate::app::match_runtime) fn frame_256_runtime() -> SimRuntime {
         let mut sim = Simulation::with_seed(73);
         let owner = sim.intern("Human");
         sim.houses_mut_for_test()

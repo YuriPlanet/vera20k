@@ -102,10 +102,11 @@ main thread applies the record in order afterwards
   `apply_trigger_effects`, as on the headless path.
 
 Only presentation order moves: sounds and the radar cue follow the tick
-instead of interleaving with it. Network frames (the `Queue_AI` exchange),
-replay playback, a campaign's initial save and command observation still
-need the lent owners. Those frames stay on the borrowing path
-(`DeferredClientEffects::applies`).
+instead of interleaving with it. Replay playback, a campaign's initial save
+and command observation still need the lent owners. Those frames stay on the
+borrowing path (`DeferredClientEffects::applies`). A network frame's
+`Queue_AI` exchange needs the live session; phase 4 hands it back to the
+main thread.
 
 Done:
 
@@ -191,24 +192,58 @@ that wait shows in play.
 - `run_deferred_tick`, which borrows nothing from the app;
 - `finish_simulation_frame`, the frame tail on the main thread.
 
-With `VERA20K_SIM_THREAD=1`, an ordinary offline frame on the deferred path
-is lent to the simulation thread instead of run inline. Each admitted pass
+With `VERA20K_SIM_THREAD=1`, an ordinary frame on the deferred path is
+lent to the simulation thread instead of run inline. Each admitted pass
 then does four things in order:
 
 1. waits for the tick in flight;
 2. runs that tick's tail with this pass's camera scroll;
 3. publishes the frame;
-4. dispatches the next tick and draws while it runs.
+4. stages the next tick (`SimHost::stage`).
 
-Drawing therefore shows the world one tick behind the simulation. These
-frames stay inline:
+The frame loop lends the staged tick when it starts drawing
+(`SimHost::dispatch_staged`), so the tick runs while the frame draws.
+Lending it at once would not: the pass's own writes after the frame (EXIT
+and departure routing, the radar-terrain marks) take the runtime back and
+would wait for it. Those writes belong to the frame that just finished, so
+they reach the world before the staged tick starts, as writes between two
+frames do. A tick never lent (a hidden window draws nothing) runs on the main
+thread when the next pass takes its result. Drawing therefore shows the
+world one tick behind the simulation.
 
-- network play, replay, a campaign's initial save and command observation
-  (the deferred path does not apply to them);
+A network frame (LAN or online) runs Logic and its checksum on the thread
+and stops at `Queue_AI`: `DeferredClientEffects` answers the exchange with
+a wait and records the checksum. The pass that finishes the tick applies
+that record to the history, then resumes the frame inline as it resumes a
+network wait (`FrameResume::QueueHandoff`). The live session runs the
+exchange there, then the dispatch, the FRAMEINFO comparison and the commit.
+The session never leaves the main thread, and the frame keeps gamemd's
+order: Logic, checksum, exchange, wait, dispatch. Network service takes the
+runtime back early in every pass; until an admitted pass finishes the tick,
+the stopped frame is no `Wait_For_Players` for the pacer, the wait service,
+the shared pause or a Leave (`SimHost::network_wait_pending`). Two
+measurements follow the frame across the hand-off:
+
+- `MainTick55D3DA/55DE0D` times the Logic visit up to `Queue_AI`. That
+  visit ends when the thread does, not when the main thread resumes it.
+- The tick cost the relay's pace reports and the network panel read is the
+  thread's Logic; the resumed exchange adds no second sample.
+
+These frames stay inline:
+
+- replay, a campaign's initial save and command observation (the deferred
+  path does not apply to them);
+- a network restore, which replays many frames per pass, each waiting for
+  the last;
 - resumed frames: outcome, network and checksum waits.
 
-A pass whose finished tick left an outcome wait or a network failure
-dispatches nothing, so the next pass resumes that frame inline.
+A pass checks its gates before the tick in flight finishes, so the pass
+that finishes it dispatches nothing when that frame did not commit or reached
+a pause. An uncommitted frame waits (outcome, network wait or failure) or
+ended the match; a frame that reached a shared or scenario pause holds the
+world. The next pass resumes, routes or holds it inline. A tick that stopped
+for an outcome wait applies its recorded writes first, as a borrowing tick
+has already made them.
 
 The browser build has no thread and always ticks inline.
 

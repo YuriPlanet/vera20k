@@ -67,12 +67,7 @@ impl App {
     /// tail before the result-8 return.
     pub(super) fn leave_network_wait_to_main_menu(state: &mut AppState) {
         crate::app::match_runtime::network_failure::hold_quit_line(state);
-        if state
-            .match_state
-            .sim_runtime
-            .runtime()
-            .is_some_and(|rt| rt.simulation.pending_network_wait())
-        {
+        if state.match_state.sim_runtime.network_wait_pending() {
             crate::app::match_runtime::sim_tick::leave_network_wait(state);
         }
         Self::return_disconnected_to_main_menu(state);

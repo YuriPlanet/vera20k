@@ -153,7 +153,7 @@ impl MatchState {
                 multiplayer_pause_reached(
                     pause,
                     runtime.simulation.session().binary_frame(),
-                    runtime.simulation.pending_network_wait(),
+                    self.sim_runtime.network_wait_pending(),
                 )
             })
     }

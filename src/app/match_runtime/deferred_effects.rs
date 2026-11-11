@@ -17,18 +17,24 @@
 //!   before the tick. That wait moves only wall time, never a frame's
 //!   result or hash.
 //!
-//! Network, replay, a campaign's initial save and command observation still
-//! need the lent owners, so [`DeferredClientEffects::applies`] keeps those
-//! frames on the borrowing path.
+//! A network frame stops at Queue_AI instead
+//! ([`DeferredClientEffects::hands_off_queue`]):
+//! the live session stays on the main thread, which resumes the frame there
+//! as it resumes a network wait. Its checksum is recorded for the main
+//! thread's history before that exchange compares FRAMEINFO against it.
+//!
+//! Replay, a campaign's initial save and command observation still need the
+//! lent owners, so those frames stay on the borrowing path.
 
 use std::cell::{Cell, RefCell};
 
 use crate::app::AppState;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::command::CommandEnvelope;
+use crate::sim::command::{CommandEnvelope, CommandRecord};
 use crate::sim::intern::InternedId;
 use crate::sim::world::{
-    LocalPlanningBoundary, OutcomeWaitBoundary, Simulation, TacticalRadarBoundary,
+    LocalPlanningBoundary, NetworkCommandBoundary, NetworkCommandError, NetworkCommandQueues,
+    NetworkQueueContext, NetworkQueuePass, OutcomeWaitBoundary, Simulation, TacticalRadarBoundary,
 };
 
 use super::scenario_exit::ScenarioOutcomeVoiceWait;
@@ -45,6 +51,9 @@ pub(crate) enum DeferredEffect {
     /// Ares bounty text reached its native call.
     #[cfg(feature = "ares")]
     Bounty(crate::sim::bounty::BountyText),
+    /// `Queue_AI_Multiplayer` stored this frame's checksum (history
+    /// `0x00B04474[Frame & 0xFF]`).
+    FrameChecksum { frame: u32, checksum: u32 },
 }
 
 /// What a tick reads from the client, taken before it, and what it writes,
@@ -54,14 +63,17 @@ pub(crate) struct DeferredClientEffects {
     planning_active: Cell<bool>,
     voices_active: bool,
     defer_verdict_to_clip: bool,
+    queue_handoff: bool,
     outcome_wait: RefCell<Option<ScenarioOutcomeVoiceWait>>,
     recorded: RefCell<Vec<DeferredEffect>>,
 }
 
 impl DeferredClientEffects {
-    /// Whether the next ordinary frame can run without the lent owners.
-    /// The simulation thread (`VERA20K_SIM_THREAD=1`) ticks this way;
-    /// `VERA20K_DEFERRED_TICK_EFFECTS=1` opts an inline tick in.
+    /// Whether the next ordinary offline frame can run without the lent
+    /// owners. The simulation thread (`VERA20K_SIM_THREAD=1`) ticks this way;
+    /// `VERA20K_DEFERRED_TICK_EFFECTS=1` opts an inline tick in. A network
+    /// frame needs its exchange, which only [`Self::hands_off_queue`] leaves
+    /// to the main thread.
     pub(crate) fn applies(
         state: &AppState,
         replaying: bool,
@@ -81,13 +93,15 @@ impl DeferredClientEffects {
                 .is_some_and(|runtime| runtime.simulation.session().game_mode().is_network())
     }
 
-    /// Take what the tick will read from the client owners.
+    /// Take what the tick will read from the client owners. With
+    /// `queue_handoff` the tick stops at Queue_AI ([`Self::hands_off_queue`]).
     pub(crate) fn take(
         planning_active: bool,
         sfx: Option<&mut crate::audio::sfx::SfxPlayer>,
         assets: &crate::app::process_assets::ProcessAssets,
         outcome_wait: &Option<ScenarioOutcomeVoiceWait>,
         defer_verdict_to_clip: bool,
+        queue_handoff: bool,
     ) -> Self {
         let voices_active = match (sfx, assets.manager(), assets.audio_catalog()) {
             (Some(sfx), Some(manager), Some(catalog)) => {
@@ -99,9 +113,16 @@ impl DeferredClientEffects {
             planning_active: Cell::new(planning_active),
             voices_active,
             defer_verdict_to_clip,
+            queue_handoff,
             outcome_wait: RefCell::new(outcome_wait.clone()),
             recorded: RefCell::new(Vec::new()),
         }
+    }
+
+    /// Whether this network frame waits at Queue_AI for the main thread,
+    /// where the live session runs the exchange and the frame's rest.
+    pub(crate) fn hands_off_queue(&self) -> bool {
+        self.queue_handoff
     }
 
     pub(crate) fn record(&self, effect: DeferredEffect) {
@@ -151,6 +172,11 @@ impl DeferredClientEffects {
                             .flying_credits
                             .borrow_mut()
                             .admit(&rt.simulation, &rt.resources.rules, text);
+                    }
+                }
+                DeferredEffect::FrameChecksum { frame, checksum } => {
+                    if let Some((_, checksums)) = state.match_state.sim_runtime.tick_parts() {
+                        checksums.record_frame_checksum(frame, checksum);
                     }
                 }
             }
@@ -224,6 +250,33 @@ impl OutcomeWaitBoundary for DeferredClientEffects {
     }
 }
 
+/// Queue_AI on the simulation thread: the frame suspends after Logic and its
+/// checksum, before any transfer or dispatch, and the main thread resumes it
+/// through the live session ([`super::frame_effects::FrameClientBoundary`]).
+impl NetworkCommandBoundary for DeferredClientEffects {
+    fn exchange_commands(
+        &self,
+        _context: NetworkQueueContext,
+        _queues: &mut NetworkCommandQueues<'_>,
+    ) -> Result<Option<NetworkQueuePass>, NetworkCommandError> {
+        Ok(Some(NetworkQueuePass::Waiting))
+    }
+
+    fn record_frame_checksum(&self, frame: u32, checksum: u32) {
+        self.record(DeferredEffect::FrameChecksum { frame, checksum });
+    }
+
+    fn compare_frame_info(
+        &self,
+        _record: &CommandRecord,
+        _current_frame: i32,
+    ) -> Result<bool, NetworkCommandError> {
+        Err(NetworkCommandError::Unavailable(
+            "FRAMEINFO compares after the main thread's exchange".to_owned(),
+        ))
+    }
+}
+
 // Phase 4 moves the record to the simulation thread and back.
 const _: () = {
     const fn assert_send<T: Send>() {}
@@ -239,6 +292,7 @@ mod tests {
             planning_active: Cell::new(planning_active),
             voices_active: false,
             defer_verdict_to_clip,
+            queue_handoff: false,
             outcome_wait: RefCell::new(None),
             recorded: RefCell::new(Vec::new()),
         }
@@ -290,5 +344,77 @@ mod tests {
             crate::sim::house_state::HouseOutcomeKind::Victory
         ));
         assert!(effects.outcome_wait.borrow().is_none());
+    }
+
+    /// The simulation thread's part of a network frame stops at Queue_AI
+    /// with its checksum recorded; the main thread's resumed exchange then
+    /// compares the peer's FRAMEINFO against that checksum.
+    #[test]
+    fn a_handed_off_network_frame_compares_the_checksum_its_logic_recorded() {
+        use crate::sim::world::{FrameEffects, TickLane};
+        let world = super::super::frame_effects::network_command_tests::frame_256_runtime;
+        let expected = world()
+            .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::empty())
+            .unwrap()
+            .multiplayer_checksum
+            .unwrap()
+            .checksum
+            .unwrap()
+            .value;
+        let mut runtime = world();
+        let peer = crate::net::lockstep::FrameInfo {
+            house_id: 0,
+            event_frame: 256,
+            checksum: expected ^ 1,
+            timing_word: 0,
+            delay: 0,
+        };
+        runtime
+            .simulation
+            .admit_native_command_record(peer.encode());
+        let mut effects = deferred(false, false);
+        effects.queue_handoff = true;
+
+        let logic = runtime
+            .advance_frame(
+                &[],
+                33,
+                TickLane::Ordinary,
+                FrameEffects::empty().with_network_commands(&effects),
+            )
+            .unwrap();
+        assert!(logic.network_waiting);
+        assert!(!logic.tick.frame_committed);
+        assert_eq!(
+            *effects.recorded(),
+            [DeferredEffect::FrameChecksum {
+                frame: 256,
+                checksum: expected
+            }]
+        );
+
+        // `apply` stores the recorded checksum in the host's history.
+        let mut checksums = crate::sim::command_queue::FrameChecksumState::default();
+        checksums.record_frame_checksum(0, 0);
+        checksums.record_frame_checksum(256, expected);
+        let mut sounds = crate::audio::events::SoundEventQueue::new();
+        let mut radar = |_, _, _: &RuleSet| false;
+        let boundary = super::super::frame_effects::FrameClientBoundary::new(
+            None,
+            Some("Human"),
+            &mut sounds,
+            &mut radar,
+        )
+        .with_frame_checksums(&mut checksums);
+        let rest = runtime
+            .resume_network_wait(
+                FrameEffects::for_sound(&boundary).with_network_commands(&boundary),
+            )
+            .unwrap();
+        let failure = rest
+            .network_failure
+            .expect("the peer's FRAMEINFO differs from this frame's checksum");
+        assert_eq!(failure.local_checksum, expected);
+        assert_eq!(failure.remote_checksum, expected ^ 1);
     }
 }
