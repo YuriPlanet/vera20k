@@ -1064,4 +1064,8 @@ fn buildings_wanting_repair_are_the_damaged_idle_ones_the_owner_can_pay_for() {
     assert_eq!(wanting(1000), [1]);
     // A house that cannot pay one step gets none: the step would stop it.
     assert!(wanting(0).is_empty());
+    // Building 3's running repair pays its step first; 1 needs a second.
+    let step = production::repair_step_cost(&rules, rules.object("GAPOWR").unwrap());
+    assert!(wanting(2 * step - 1).is_empty());
+    assert_eq!(wanting(2 * step), [1]);
 }

@@ -317,27 +317,45 @@ pub fn can_repair_building(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
 /// may repair ([`can_repair_building`]), on neither Construction nor Selling
 /// and not repairing already: what [`update_repair_and_power`] and the
 /// computer's auto-repair start ask before starting one (`0x00450630`,
-/// `0x004506B2`). The owner's available money also covers one repair step,
-/// because the step stops a repair it cannot pay for (`0x00450813`). Read
-/// only: the player's own game sends each the ordinary REPAIR event, and
-/// stock play never asks.
+/// `0x004506B2`). The owner's available money also covers a repair step for
+/// each, after the steps of the repairs already running, because the step
+/// stops a repair it cannot pay for (`0x00450813`): more starts than that
+/// would stop again at once. Read only: the player's own game sends each the
+/// ordinary REPAIR event, and stock play never asks.
 pub fn buildings_wanting_repair(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Vec<u64> {
-    let money = available_money(&sim.houses, owner);
-    sim.substrate
-        .entities
-        .owned_ids(owner, EntityCategory::Structure)
+    let entities = &sim.substrate.entities;
+    let step_cost = |id: u64| {
+        let entity = entities.get(id)?;
+        let object = sim.object_type(entity.type_ref(), rules)?;
+        Some(i64::from(repair_step_cost(rules, object)))
+    };
+    let owned = entities.owned_ids(owner, EntityCategory::Structure);
+    let running: i64 = owned
+        .iter()
+        .filter(|&&id| entities.get(id).is_some_and(|entity| entity.repairing.on))
+        .filter_map(|&id| step_cost(id))
+        .sum();
+    let mut money = i64::from(available_money(&sim.houses, owner)) - running;
+    owned
         .iter()
         .copied()
         .filter(|&id| {
-            let Some(entity) = sim.substrate.entities.get(id) else {
+            let Some(entity) = entities.get(id) else {
                 return false;
             };
-            !entity.repairing.on
-                && !entity.constructing_or_selling()
-                && can_repair_building(sim, rules, id)
-                && sim
-                    .object_type(entity.type_ref(), rules)
-                    .is_some_and(|object| money >= repair_step_cost(rules, object))
+            if entity.repairing.on
+                || entity.constructing_or_selling()
+                || !can_repair_building(sim, rules, id)
+            {
+                return false;
+            }
+            match step_cost(id) {
+                Some(cost) if money >= cost => {
+                    money -= cost;
+                    true
+                }
+                _ => false,
+            }
         })
         .collect()
 }

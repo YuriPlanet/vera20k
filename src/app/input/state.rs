@@ -719,6 +719,8 @@ impl MatchInputState {
         self.planning.reset();
         self.formation_line = Default::default();
         self.formation_locks.clear();
+        // Its building ids and frames belong to the world that ended.
+        self.auto_repair = Default::default();
         self.targeting_mode = None;
         self.building_placement_preview = None;
         self.saved_building_placement = None;

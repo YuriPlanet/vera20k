@@ -72,6 +72,9 @@ pub(crate) struct FrameClientBoundary<'a> {
     /// complete facts, so this sink is filled in the same pass that plays the
     /// prefix and drained by the frame tail alongside the suffix rows.
     eva_text: Option<&'a RefCell<Vec<HudMessage>>>,
+    /// Sounds of the player's own automatic orders this game skips
+    /// ([`crate::app::match_audio::QuietSounds`]).
+    quiet: Option<RefCell<&'a mut crate::app::match_audio::QuietSounds>>,
 }
 
 impl<'a> FrameClientBoundary<'a> {
@@ -97,7 +100,18 @@ impl<'a> FrameClientBoundary<'a> {
             scenario_pause: None,
             defer_verdict_to_clip: false,
             eva_text: None,
+            quiet: None,
         }
+    }
+
+    /// Skip the sounds the player's own automatic orders cause. `None`, as
+    /// in every headless and test frame, plays them all.
+    pub(crate) fn with_quiet_sounds(
+        mut self,
+        quiet: &'a mut crate::app::match_audio::QuietSounds,
+    ) -> Self {
+        self.quiet = Some(RefCell::new(quiet));
+        self
     }
 
     /// Collect the accessibility rows from the synchronously delivered sound
@@ -409,6 +423,8 @@ impl SoundBoundary for FrameClientBoundary<'_> {
         }
         let mut output = self.output.borrow_mut();
         let mut eva_text = self.eva_text.map(|sink| sink.borrow_mut());
+        let mut quiet = self.quiet.as_ref().map(RefCell::borrow_mut);
+        let frame = sim.session().tick();
         {
             let mut admit_radar = self.admit_radar.borrow_mut();
             dispatch_sim_sound_events(
@@ -417,6 +433,7 @@ impl SoundBoundary for FrameClientBoundary<'_> {
                     // [`FrameClientBoundary::defer_verdict_to_clip`].
                     !(self.defer_verdict_to_clip
                         && matches!(event, SimSoundEvent::MatchOutcome { .. }))
+                        && quiet.as_mut().is_none_or(|quiet| quiet.admit(event, frame))
                 }),
                 sim,
                 rules,
