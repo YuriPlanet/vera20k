@@ -23,12 +23,21 @@ that moved in, leave the later ones in the air.
 
 ## What the option changes
 
-A refused Jumpjet flies to the nearest cell within `LandNearby=` cells of the
-refused one that it may enter outright, that is neither water nor beach and
-that no other flying object holds, and lands there. Equally near cells are
-taken by the lower row first, then the lower column; no random draw is spent.
-If that cell is taken too when it gets there, it searches again from it. With
-no such cell in range it hovers as in the original.
+A Jumpjet whose landing cell is taken picks another: among the cells within
+`LandNearby=` cells of the taken one, the cell nearest to itself that it may
+enter outright, that is neither water nor beach, that no other flying object
+holds and that no other airborne Jumpjet is heading for. Equally near cells
+are taken by the lower row first, then the lower column; no random draw is
+spent. With no such cell in range it hovers as in the original.
+
+It looks in two places:
+
+- **On the approach.** Every eighth frame within four cells of its
+  destination, a Jumpjet on an ordinary move checks its landing cell. If the
+  cell is taken, or an airborne Jumpjet with a lower id is heading for the
+  same one, it picks its new cell then, so it loses no time.
+- **On arrival.** If the cell is refused only when it descends, it picks one
+  then and flies there.
 
 Not changed: a landing over water or beach, which holds as before, and the
 cells a group is given when the order is made.

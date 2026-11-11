@@ -8,9 +8,25 @@ use crate::sim::world::Simulation;
 
 const LANDING: (u16, u16) = (20, 18);
 
-/// Where the Nighthawk stands 400 frames after a tank appeared on its landing
-/// cell, and whether it is on the ground. `None` without retail rules.
+/// Where the Nighthawk stands after a tank appeared on its landing cell during
+/// the descent, and whether it got down. `None` without retail rules.
 fn after_a_blocked_landing(patch: &str) -> Option<((u16, u16), bool)> {
+    let (cell, landed_after) = blocked_landing(patch, Block::DuringDescent)?;
+    Some((cell, landed_after.is_some()))
+}
+
+/// When the tank takes the landing cell.
+#[derive(Clone, Copy, PartialEq)]
+enum Block {
+    Never,
+    /// Two frames after the order, long before the Nighthawk arrives.
+    Early,
+    DuringDescent,
+}
+
+/// The Nighthawk's cell at the end, and the frames from its order to its
+/// touchdown when it landed within 1000 frames. `None` without retail rules.
+fn blocked_landing(patch: &str, block: Block) -> Option<((u16, u16), Option<u32>)> {
     let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
         "Hills.mmx",
         &IniFile::from_str(patch),
@@ -64,20 +80,29 @@ fn after_a_blocked_landing(patch: &str) -> Option<((u16, u16), bool)> {
             target_ry: LANDING.1,
         },
     ));
-    let mut frames = 0;
-    while phase(&sim) != STATE_DESCEND {
+    let mut blocked = block == Block::Never;
+    let mut landed_after = None;
+    let mut left_the_ground = false;
+    for frames in 0..1000 {
         frame(&mut sim);
-        frames += 1;
-        assert!(frames < 600, "the Nighthawk reaches its descent");
-    }
-    sim.spawn_object("MTNK", "Americans", LANDING.0, LANDING.1, 0, rules)
-        .unwrap();
-    sim.resolve_type_handles(rules);
-    for _ in 0..400 {
-        frame(&mut sim);
+        let now = phase(&sim);
+        if !blocked
+            && (block == Block::Early && frames == 2
+                || block == Block::DuringDescent && now == STATE_DESCEND)
+        {
+            sim.spawn_object("MTNK", "Americans", LANDING.0, LANDING.1, 0, rules)
+                .unwrap();
+            sim.resolve_type_handles(rules);
+            blocked = true;
+        }
+        left_the_ground |= now != STATE_GROUND;
+        if left_the_ground && now == STATE_GROUND {
+            landed_after = Some(frames);
+            break;
+        }
     }
     let position = sim.entities().get(hawk).unwrap().position;
-    Some(((position.rx(), position.ry()), phase(&sim) == STATE_GROUND))
+    Some(((position.rx(), position.ry()), landed_after))
 }
 
 /// The original hovers over a landing cell something else took
@@ -99,4 +124,23 @@ fn land_nearby_lands_beside_a_taken_cell() {
         i32::from(cell.1) - i32::from(LANDING.1),
     );
     assert!(cell != LANDING && dx * dx + dy * dy <= 9, "{cell:?}");
+}
+
+/// A cell taken while the Nighthawk is still on its way is replaced on the
+/// approach, so the landing takes about as long as an unhindered one rather
+/// than a descent, a refusal and a second flight.
+#[test]
+fn land_nearby_replans_on_the_approach() {
+    let key = "[JumpjetControls]\nLandNearby=3\n";
+    let (Some(clear), Some(early)) = (
+        blocked_landing(key, Block::Never),
+        blocked_landing(key, Block::Early),
+    ) else {
+        return;
+    };
+    let (Some(clear), (cell, Some(replanned))) = (clear.1, early) else {
+        panic!("both Nighthawks land: {clear:?} {early:?}");
+    };
+    assert_ne!(cell, LANDING);
+    assert!(replanned <= clear + 20, "{replanned} against {clear}");
 }

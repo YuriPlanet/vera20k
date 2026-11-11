@@ -308,6 +308,32 @@ impl JumpjetFlightHost for CruiseHost<'_> {
     fn land_nearby_range(&self) -> i32 {
         self.rules.general.jumpjet_land_nearby
     }
+    fn owner_id(&self) -> u64 {
+        self.stable_id
+    }
+    fn landing_cell_claimed_by(&self, cell: (i16, i16)) -> Option<u64> {
+        let entities = &self.sim.substrate.entities;
+        entities
+            .airborne_ids()
+            .filter(|&id| id != self.stable_id)
+            .filter_map(|id| entities.get(id))
+            .filter(|entity| {
+                entity
+                    .locomotor
+                    .as_ref()
+                    .and_then(|locomotor| locomotor.jumpjet_runtime())
+                    .is_some_and(|runtime| {
+                        let destination = runtime.destination();
+                        runtime.phase() != jumpjet_flight::STATE_GROUND
+                            && (
+                                lepton_to_cell_packed(destination.x),
+                                lepton_to_cell_packed(destination.y),
+                            ) == cell
+                    })
+            })
+            .map(|entity| entity.stable_id())
+            .min()
+    }
     fn snap_body_facing(&mut self, facing: u16) {
         self.sim
             .substrate
