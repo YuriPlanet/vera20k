@@ -1776,27 +1776,45 @@ impl Simulation {
         //440E76's virtual discovery precedes the successful BasePlan
         // tail at44159D..4415B3, including a reached first opening.
         self.fill_base_plan_from_successful_building_unlimbo(stable_id);
-        Self::submit_entity_display(
-            &self.interner,
-            &self.terrain_objects,
-            &mut self.substrate,
-            &self.resolved_terrain,
-            stable_id,
-            context.rules,
-            context.terrain(),
-        );
-        self.lifecycle_outputs
-            .emit(LifecycleOutput::RevealDisplay { stable_id });
-        #[cfg(any(test, feature = "test-support"))]
-        self.trace_lifecycle_for_test(LifecycleTestEvent::RevealDisplayBoundary);
+        // `ObjectClass::Unlimbo @ 0x005F4EC0` enters Display (`0x005F4FE2`),
+        // Logic (`0x005F5040`) and its AlphaShape (`0x005F5045..0x005F5100`)
+        // before the Building tail above, whose discovery calls
+        // (`0x00440D61`, `0x00440E76`) can raise Tag event 4. A building an
+        // action destroys there leaves all three through its own Limbo, so
+        // entering them here would put a dead object back. Native rereads
+        // alive `+0x90` and limbo `+0x81` only at `0x00440E1B..0x00440E2D`,
+        // for the wall links; the rest of the tail, 4415D8 below included,
+        // runs and Unlimbo returns 1 (`0x004415E0`). No Foot callback runs
+        // between the alive gate above and this point.
+        // Residual (invisible): the dead object's disabled AlphaShape, drawn
+        // until the next purge, is not constructed.
+        let still_placed = self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| entity.lifecycle.object_alive && !entity.lifecycle.in_limbo);
+        let mut logic_registered = false;
+        if still_placed {
+            Self::submit_entity_display(
+                &self.interner,
+                &self.terrain_objects,
+                &mut self.substrate,
+                &self.resolved_terrain,
+                stable_id,
+                context.rules,
+                context.terrain(),
+            );
+            self.lifecycle_outputs
+                .emit(LifecycleOutput::RevealDisplay { stable_id });
+            #[cfg(any(test, feature = "test-support"))]
+            self.trace_lifecycle_for_test(LifecycleTestEvent::RevealDisplayBoundary);
 
-        let logic_registered = if request.logic_eligible {
-            self.register_logic_object(stable_id)
-        } else {
-            false
-        };
-        // Unlimbo's AlphaShapeClass block follows the Logic registration.
-        self.construct_alpha_shape(stable_id, context.rules());
+            if request.logic_eligible {
+                logic_registered = self.register_logic_object(stable_id);
+            }
+            // Unlimbo's AlphaShapeClass block follows the Logic registration.
+            self.construct_alpha_shape(stable_id, context.rules());
+        }
         // Building4415D8: successful normal Unlimbo after opening/base-plan.
         // The early dead/failed paths do not reach this call.
         let rules = context.rules();
