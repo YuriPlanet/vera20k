@@ -882,6 +882,10 @@ mod tests {
             report.ore_min * 100 >= report.ore_max * 95,
             "ore near the starts is even: {report:?}"
         );
+        assert!(
+            report.expansion_min > 0 && report.expansion_min * 100 >= report.expansion_max * 90,
+            "every start has an expansion field of about the same ore: {report:?}"
+        );
 
         let overlays = |map: &GeneratedMap| -> Vec<(u16, u16, u8, u8)> {
             map.map_file

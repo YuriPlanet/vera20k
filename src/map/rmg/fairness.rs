@@ -7,7 +7,9 @@
 //! the last native stage so no native draw moves:
 //!
 //! - [`equalize_ore`] brings the ore near each start to the median
-//!   start's, from its own RNG stream.
+//!   start's, from its own RNG stream: first the fields beside the base,
+//!   then the ring beyond them, where every start is also given an
+//!   expansion field.
 //! - [`measure`] reports the closest pair of starts, the ore and the flat
 //!   open ground near each, which the seed search in
 //!   [`build`](super::build) scores.
@@ -24,10 +26,31 @@ use super::tiles::TileIds;
 const ORE_BASE: i32 = 102;
 const GEM_BASE: i32 = 27;
 const LOOKS: i32 = 12;
-/// A cell's ore counts toward the nearest start within this many cells.
-const ORE_RADIUS: i32 = 24;
 /// Topped-up ore keeps this far from a start, leaving room for the base.
 const BASE_CLEARANCE: i32 = 7;
+/// A band of cells around each start whose ore is evened: a cell counts
+/// toward its nearest start when its distance lies in `inner..=outer`.
+#[derive(Clone, Copy)]
+struct Ring {
+    inner: i32,
+    outer: i32,
+    /// A new field begins as near this distance as free ground allows.
+    origin: i32,
+}
+/// The fields a base harvests first.
+const HOME: Ring = Ring {
+    inner: BASE_CLEARANCE,
+    outer: 24,
+    origin: BASE_CLEARANCE,
+};
+/// The ring beyond them, where a base expands to its second field, and the
+/// share of the home value every start's ring is brought up to at least.
+const EXPANSION_SHARE: i64 = 4;
+const EXPANSION: Ring = Ring {
+    inner: HOME.outer + 1,
+    outer: 44,
+    origin: 34,
+};
 /// Half the side of the square of ground counted as a start's building room.
 const ROOM_RADIUS: i32 = 9;
 /// Mixed into the map seed for the top-up's own draws.
@@ -43,6 +66,9 @@ pub struct FairnessReport {
     /// Least and most ore value near a start (a gem cell counts double).
     pub ore_min: i64,
     pub ore_max: i64,
+    /// The same for the expansion ring beyond it.
+    pub expansion_min: i64,
+    pub expansion_max: i64,
     /// Least and most flat, open cells around a start.
     pub room_min: i64,
     pub room_max: i64,
@@ -51,10 +77,10 @@ pub struct FairnessReport {
 }
 
 impl FairnessReport {
-    /// The three shares the search weighs, each 0..=1000: start spacing
-    /// against 60% of an even spread, and the poorest start's ore and room
-    /// against the richest's.
-    fn shares(&self) -> [i64; 3] {
+    /// The four shares the search weighs, each 0..=1000: start spacing
+    /// against 60% of an even spread, and the poorest start's ore, expansion
+    /// ore and room against the richest's.
+    fn shares(&self) -> [i64; 4] {
         let share = |part: i64, whole: i64| {
             if whole <= 0 {
                 1000
@@ -65,6 +91,7 @@ impl FairnessReport {
         [
             share(self.closest_starts_sq * 100, self.even_spacing_sq * 36),
             share(self.ore_min, self.ore_max),
+            share(self.expansion_min, self.expansion_max),
             share(self.room_min, self.room_max),
         ]
     }
@@ -75,10 +102,15 @@ impl FairnessReport {
     }
 
     /// Fair enough to stop searching: every start placed, the closest pair at
-    /// 60% of an even spread or more, ore within 15% and room within 40%.
+    /// 60% of an even spread or more, ore and expansion ore within 15% and
+    /// room within 40%.
     pub fn is_fair(&self) -> bool {
-        let [spacing, ore, room] = self.shares();
-        self.unfilled_starts == 0 && spacing >= 1000 && ore >= 850 && room >= 600
+        let [spacing, ore, expansion, room] = self.shares();
+        self.unfilled_starts == 0
+            && spacing >= 1000
+            && ore >= 850
+            && expansion >= 850
+            && room >= 600
     }
 }
 
@@ -135,14 +167,17 @@ fn dist_sq(a: (i32, i32), b: (i32, i32)) -> i64 {
     dx * dx + dy * dy
 }
 
-/// The start `cell` belongs to: the nearest one, when within the ore radius.
-fn owner(starts: &[(i32, i32)], cell: (i32, i32)) -> Option<usize> {
+/// The start `cell` belongs to in `ring`: the nearest one, when the cell
+/// lies in its band.
+fn owner(starts: &[(i32, i32)], cell: (i32, i32), ring: Ring) -> Option<usize> {
     let (index, nearest) = starts
         .iter()
         .enumerate()
         .map(|(index, &start)| (index, dist_sq(start, cell)))
         .min_by_key(|&(index, distance)| (distance, index))?;
-    (nearest <= i64::from(ORE_RADIUS * ORE_RADIUS)).then_some(index)
+    (i64::from(ring.inner * ring.inner)..=i64::from(ring.outer * ring.outer))
+        .contains(&nearest)
+        .then_some(index)
 }
 
 /// The cells of the square of `radius` around `centre`, in scan order.
@@ -151,12 +186,12 @@ fn square(centre: (i32, i32), radius: i32) -> impl Iterator<Item = (i32, i32)> {
         .flat_map(move |y| (centre.0 - radius..=centre.0 + radius).map(move |x| (x, y)))
 }
 
-/// Ore value near each start, by start.
-fn ore_by_start(ctx: &FairCtx<'_>, starts: &[(i32, i32)]) -> Vec<i64> {
+/// Ore value in each start's band of `ring`, by start.
+fn ore_by_start(ctx: &FairCtx<'_>, starts: &[(i32, i32)], ring: Ring) -> Vec<i64> {
     let mut ore = vec![0i64; starts.len()];
     for (index, &start) in starts.iter().enumerate() {
-        for cell in square(start, ORE_RADIUS) {
-            if owner(starts, cell) != Some(index) || !ctx.in_play(cell.0, cell.1) {
+        for cell in square(start, ring.outer) {
+            if owner(starts, cell, ring) != Some(index) || !ctx.in_play(cell.0, cell.1) {
                 continue;
             }
             if let Some(ground) = ctx.grid.get(cell.0, cell.1) {
@@ -167,33 +202,72 @@ fn ore_by_start(ctx: &FairCtx<'_>, starts: &[(i32, i32)]) -> Vec<i64> {
     ore
 }
 
-/// Bring the ore near every start to the median start's, so the map's total
-/// stays about what the generator placed.
+/// Even the ore around every start: the fields beside the base to the median
+/// start's, then the expansion ring to its own median or a quarter of the home
+/// value, whichever is more, so every base has a second field to move out to
+/// at the same distance. The map's total stays about what the generator
+/// placed.
+///
+/// New cells are as thick as the map's own ore on average, so an added field
+/// covers the ground a generated one of its value would.
+pub fn equalize_ore(ctx: &mut FairCtx<'_>, starts: &[(i32, i32)], seed: u16) {
+    let mut rng = RmgRng::new(seed ^ FAIR_SALT);
+    let (mut value, mut cells) = (0i64, 0i64);
+    for (x, y) in ctx.grid.native_cells() {
+        if let Some(ground) = ctx.grid.get(x, y)
+            && (ORE_BASE..ORE_BASE + LOOKS).contains(&ground.overlay)
+        {
+            value += ore_value(ground.overlay, ground.density);
+            cells += 1;
+        }
+    }
+    let thickness = if cells == 0 {
+        1
+    } else {
+        (value / cells).clamp(1, 12)
+    };
+    let home = equalize_ring(ctx, starts, HOME, 0, thickness, &mut rng);
+    equalize_ring(
+        ctx,
+        starts,
+        EXPANSION,
+        home / EXPANSION_SHARE,
+        thickness,
+        &mut rng,
+    );
+}
+
+/// Bring the ore in every start's band of `ring` to the median start's, or
+/// to `floor` when that is more; returns the value aimed for.
 ///
 /// A richer start loses its farthest ore cells. Each poorer start's fields
-/// grow outward over free ground, and a new field begins on the nearest free
-/// ground when they are hemmed in or it has none; where no ground is left,
-/// its ore cells thicken instead. Changed cells keep [`BASE_CLEARANCE`] from
-/// the start and stay nearer to it than to any other.
-pub fn equalize_ore(ctx: &mut FairCtx<'_>, starts: &[(i32, i32)], seed: u16) {
-    let ore = ore_by_start(ctx, starts);
+/// grow outward over free ground, and a new field begins on free ground
+/// nearest the ring's origin distance when they are hemmed in or it has none;
+/// where no ground is left, its ore cells thicken instead. Changed cells stay
+/// in the band and nearer to their start than to any other.
+fn equalize_ring(
+    ctx: &mut FairCtx<'_>,
+    starts: &[(i32, i32)],
+    ring: Ring,
+    floor: i64,
+    thickness: i64,
+    rng: &mut RmgRng,
+) -> i64 {
+    let ore = ore_by_start(ctx, starts, ring);
     let mut sorted = ore.clone();
     sorted.sort_unstable();
-    let Some(&target) = sorted.get(sorted.len() / 2) else {
-        return;
+    let Some(&median) = sorted.get(sorted.len() / 2) else {
+        return 0;
     };
-    let mut rng = RmgRng::new(seed ^ FAIR_SALT);
+    let target = median.max(floor);
     for (index, &start) in starts.iter().enumerate() {
         let mut missing = target - ore[index];
         if missing == 0 {
             continue;
         }
-        let mine = |cell: (i32, i32)| {
-            owner(starts, cell) == Some(index)
-                && dist_sq(start, cell) >= i64::from(BASE_CLEARANCE * BASE_CLEARANCE)
-        };
+        let mine = |cell: (i32, i32)| owner(starts, cell, ring) == Some(index);
         // The start's ore cells, nearest first: the fields to grow from.
-        let mut fields: Vec<(i32, i32)> = square(start, ORE_RADIUS)
+        let mut fields: Vec<(i32, i32)> = square(start, ring.outer)
             .filter(|&cell| {
                 mine(cell)
                     && ctx.in_play(cell.0, cell.1)
@@ -225,12 +299,14 @@ pub fn equalize_ore(ctx: &mut FairCtx<'_>, starts: &[(i32, i32)], seed: u16) {
             continue;
         }
 
-        // Free ground of the start's own, nearest first: where a new field
-        // begins once the fields there are have nowhere left to grow.
-        let mut ground: Vec<(i32, i32)> = square(start, ORE_RADIUS)
+        // Free ground of the start's own, nearest the ring's origin distance
+        // first: where a new field begins once the fields there are have
+        // nowhere left to grow.
+        let mut ground: Vec<(i32, i32)> = square(start, ring.outer)
             .filter(|&cell| mine(cell) && ctx.takes_ore(cell.0, cell.1))
             .collect();
-        ground.sort_by_key(|&cell| (dist_sq(start, cell), cell.1, cell.0));
+        let origin_sq = i64::from(ring.origin * ring.origin);
+        ground.sort_by_key(|&cell| ((dist_sq(start, cell) - origin_sq).abs(), cell.1, cell.0));
         let mut ground = ground.into_iter();
 
         let mut queue: VecDeque<(i32, i32)> = fields.iter().copied().collect();
@@ -240,8 +316,7 @@ pub fn equalize_ore(ctx: &mut FairCtx<'_>, starts: &[(i32, i32)], seed: u16) {
                 let Some(first) = ground.find(|&cell| ctx.takes_ore(cell.0, cell.1)) else {
                     break;
                 };
-                plant(ctx, first, &mut rng);
-                missing -= 1;
+                missing -= plant(ctx, first, missing.min(thickness), rng);
                 fields.push(first);
                 queue.push_back(first);
                 continue;
@@ -249,8 +324,7 @@ pub fn equalize_ore(ctx: &mut FairCtx<'_>, starts: &[(i32, i32)], seed: u16) {
             for dir in 0..8 {
                 let next = RmgGrid::step(cell.0, cell.1, dir);
                 if missing > 0 && mine(next) && ctx.takes_ore(next.0, next.1) {
-                    plant(ctx, next, &mut rng);
-                    missing -= 1;
+                    missing -= plant(ctx, next, missing.min(thickness), rng);
                     fields.push(next);
                     queue.push_back(next);
                 }
@@ -276,15 +350,19 @@ pub fn equalize_ore(ctx: &mut FairCtx<'_>, starts: &[(i32, i32)], seed: u16) {
             }
         }
     }
+    target
 }
 
-/// A new ore cell of a drawn look, as `PlaceTiberiumField` paints one.
-fn plant(ctx: &mut FairCtx<'_>, cell: (i32, i32), rng: &mut RmgRng) {
+/// A new ore cell of a drawn look, as `PlaceTiberiumField` paints one, worth
+/// `amount` (1..=12); returns the value planted.
+fn plant(ctx: &mut FairCtx<'_>, cell: (i32, i32), amount: i64, rng: &mut RmgRng) -> i64 {
     let look = rng.uniform(0, LOOKS - 1);
+    let amount = amount.clamp(1, 12);
     if let Some(ground) = ctx.grid.get_mut(cell.0, cell.1) {
         ground.overlay = ORE_BASE + look;
-        ground.density = 0;
+        ground.density = (amount - 1) as u8;
     }
+    amount
 }
 
 /// Measure what the finished grid offers each of `starts`, for a map of
@@ -306,7 +384,8 @@ pub fn measure(
         .native_cells()
         .filter(|&(x, y)| ctx.in_play(x, y))
         .count() as i64;
-    let ore = ore_by_start(ctx, starts);
+    let ore = ore_by_start(ctx, starts, HOME);
+    let expansion = ore_by_start(ctx, starts, EXPANSION);
     let room: Vec<i64> = starts
         .iter()
         .map(|&start| {
@@ -327,6 +406,8 @@ pub fn measure(
         even_spacing_sq: cells / i64::from(players.max(1)),
         ore_min: ore.iter().copied().min().unwrap_or(0),
         ore_max: ore.iter().copied().max().unwrap_or(0),
+        expansion_min: expansion.iter().copied().min().unwrap_or(0),
+        expansion_max: expansion.iter().copied().max().unwrap_or(0),
         room_min: room.iter().copied().min().unwrap_or(0),
         room_max: room.iter().copied().max().unwrap_or(0),
         unfilled_starts: unfilled as i64,
