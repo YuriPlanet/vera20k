@@ -38,10 +38,25 @@ const FORMATION_DOT: [(f32, f32, f32, f32, f32); 5] = [
     (5.0, 1.0, 1.0, 4.0, FORMATION_DOT_EDGE_ALPHA),
     (1.0, 1.0, 4.0, 4.0, FORMATION_DOT_CORE_ALPHA),
 ];
-/// VERA ferry route dots: half the square's side in screen pixels, and its
-/// colour.
-const FERRY_DOT_HALF: f32 = 1.5;
-const FERRY_DOT_TINT: [f32; 3] = [0.4, 0.9, 1.0];
+/// What a VERA ferry circle marks, and so its colour: blue where a transport
+/// loads, yellow where it unloads, red for an armed click that would be
+/// refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FerryRingKind {
+    Load,
+    Unload,
+    Refused,
+}
+
+impl FerryRingKind {
+    fn tint(self) -> [f32; 3] {
+        match self {
+            Self::Load => [0.25, 0.6, 1.0],
+            Self::Unload => [1.0, 0.9, 0.15],
+            Self::Refused => [1.0, 0.25, 0.2],
+        }
+    }
+}
 
 /// Manages textures and rendering for selection overlays.
 pub struct SelectionOverlay {
@@ -646,34 +661,50 @@ impl SelectionOverlay {
         self.pipbrd.as_ref()
     }
 
-    /// VERA ferry order (`app::input::ferry`): one dot at each given screen
-    /// point, in the band box's batch and coordinate frame (screen pixels
-    /// plus the camera offset). Each is a light blue square on a black one.
-    pub fn build_ferry_dots(
+    /// VERA ferry order (`app::input::ferry`): one closed line, a pixel
+    /// wide, through the given screen points, in the band box's batch and
+    /// coordinate frame (screen pixels plus the camera offset), in its
+    /// kind's colour. Pixels outside `clip` (left, top, right, bottom) are
+    /// left out.
+    pub fn build_ferry_ring(
         &self,
         screen_points: &[(f32, f32)],
+        kind: FerryRingKind,
+        clip: [f32; 4],
         camera_x: f32,
         camera_y: f32,
     ) -> Vec<SpriteInstance> {
-        let square = |(x, y): (f32, f32), half: f32, tint: [f32; 3]| SpriteInstance {
-            position: [camera_x + x.round() - half, camera_y + y.round() - half],
-            size: [half * 2.0, half * 2.0],
-            uv_origin: [0.0, 0.0],
-            uv_size: [1.0, 1.0],
-            depth: DRAG_RECT_DEPTH,
-            tint,
-            alpha: 1.0,
-            ..Default::default()
-        };
-        screen_points
-            .iter()
-            .flat_map(|&point| {
-                [
-                    square(point, FERRY_DOT_HALF + 1.0, [0.0, 0.0, 0.0]),
-                    square(point, FERRY_DOT_HALF, FERRY_DOT_TINT),
-                ]
-            })
-            .collect()
+        let tint = kind.tint();
+        let mut instances = Vec::new();
+        let mut last = None;
+        for (index, &(x0, y0)) in screen_points.iter().enumerate() {
+            let (x1, y1) = screen_points[(index + 1) % screen_points.len()];
+            let steps = (x1 - x0).abs().max((y1 - y0).abs()).ceil().max(1.0) as u32;
+            for step in 0..steps {
+                let t = step as f32 / steps as f32;
+                let pixel = ((x0 + (x1 - x0) * t).round(), (y0 + (y1 - y0) * t).round());
+                if last == Some(pixel)
+                    || pixel.0 < clip[0]
+                    || pixel.1 < clip[1]
+                    || pixel.0 >= clip[2]
+                    || pixel.1 >= clip[3]
+                {
+                    continue;
+                }
+                last = Some(pixel);
+                instances.push(SpriteInstance {
+                    position: [camera_x + pixel.0, camera_y + pixel.1],
+                    size: [1.0, 1.0],
+                    uv_origin: [0.0, 0.0],
+                    uv_size: [1.0, 1.0],
+                    depth: DRAG_RECT_DEPTH,
+                    tint,
+                    alpha: 1.0,
+                    ..Default::default()
+                });
+            }
+        }
+        instances
     }
 
     /// VERA formation line: one round dot per unit at the given screen

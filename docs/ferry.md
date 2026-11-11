@@ -9,9 +9,14 @@ until it is told to do something else. The drop spot is the cell a Move click
 there would send the transport to. A second press of the key, or a right
 click, drops the armed click again.
 
-While the transport is selected, a ring of light blue dots marks its pick-up
-circle, a dotted line leads towards the drop spot and a second ring marks the
-drop zone.
+After the key is pressed, a thin blue circle shows around each selected
+transport (where it loads) and a thin yellow one around the cell under the
+cursor (where it unloads). Where the click would give no transport a route
+(too near the pick-up spot, or a cell it cannot move to) both circles are red
+and the cursor is the refusal cursor.
+
+While a ferrying transport is selected, the same blue and yellow circles mark
+its route.
 
 - **Loading.** The transport waits at the pick-up spot. Any of your infantry
   and vehicles that comes to a stop inside the circle (4 cells around the
@@ -24,11 +29,14 @@ drop zone.
   aboard holds the transport for at most 300 frames.
 - **Crossing.** It heads for the free cell nearest the drop spot inside the
   drop zone (3 cells around the spot): one that holds nothing, that no other
-  ferrying transport is heading for and that it can move to. So several
-  transports, or units already set down, do not block the drop.
+  ferrying transport is heading for, that it can move to and that has an
+  empty cell beside it for the passengers. So several transports, or units
+  already set down, do not block the drop. When every such cell of the zone
+  is taken, it lands on the nearest one up to 4 cells outside the zone.
 - **Unloading.** Where it stops it unloads as it does when clicked on
   itself. A transport on water first drives to the nearest land, as that
-  order always does. If the way out is blocked it tries again.
+  order always does. If some passengers find no way out, it moves to
+  another free cell with room for them and unloads the rest there.
 - **Returning.** Empty, it moves back to the pick-up spot and loads again.
 
 ## What ends a ferry
