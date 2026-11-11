@@ -10135,3 +10135,40 @@ fn detach_all_false_keeps_a_rider_in_its_transports_cargo() {
     let transport = sim.substrate.entities.get(1).unwrap();
     assert_eq!(transport.passenger_role.cargo().unwrap().passengers(), &[2]);
 }
+
+/// The Restore inside the expiry broadcast (`TechnoClass::PointerExpired`
+/// `0x00707A51`) cannot fail natively. VERA's preflight can refuse it, here
+/// for an archived NavCom that names no object; the broadcast must carry on
+/// and still clear the expiring target.
+#[test]
+fn target_expiry_carries_on_when_the_suspended_mission_cannot_be_restored() {
+    let rules = receiver_authority_rules();
+    let mut sim = Simulation::with_seed(0x1234);
+    insert_entity(&mut sim, 1, EntityCategory::Unit);
+    insert_entity(&mut sim, 2, EntityCategory::Unit);
+    let _ = sim.try_reveal_entity(2, request(9, 11, PlacementEvidence::MarkSucceeded));
+
+    let listener = sim.substrate.entities.get_mut(1).unwrap();
+    listener
+        .attack_target
+        .set_for_test(Some(TargetKind::Entity(2)));
+    listener
+        .navigation
+        .set_suspended_nav_com_for_test(Some(NavTargetRef::Object { id: 99 }));
+    listener.mission.apply_test_fixture(MissionTestFixture {
+        current: MissionId::from_known(MissionType::Attack),
+        suspended: MissionId::from_known(MissionType::Guard),
+        queued: MissionId::NONE,
+        movement_bypass_latch: 0,
+        handler_state: 0,
+        mission_start_frame: 100,
+        ai_counter: 0,
+        dispatch_timer: MissionDispatchTimer::at_frame(100),
+    });
+
+    sim.uninit_with_rules(2, &rules);
+
+    let listener = sim.substrate.entities.get(1).unwrap();
+    assert_eq!(listener.attack_target.target(), None);
+    assert!(!sim.substrate.entities.get(2).unwrap().is_object_alive());
+}
