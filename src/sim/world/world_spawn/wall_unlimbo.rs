@@ -25,6 +25,12 @@ impl Simulation {
     /// they stand on. The native wall arm never reaches Building's live
     /// enrollment suffix. `game_active` is native `0x00A8E9A0`, which the
     /// cell's building lookup (`0x0047C520`) answers null without.
+    /// RESIDUAL: callers pass false during scenario load, as
+    /// `building_upgrade_host_at` does, but `Main__PrepareSession` sets the
+    /// byte at `0x0052D9D7`, before Start_Scenario, so native runs the
+    /// LaserFencePost arm for a map-authored post too. Trigger: a map that
+    /// authors a `LaserFencePost=` on its house's `LaserFence=` building
+    /// (no retail type is either). Effect: both buildings stay on the cell.
     pub(super) fn unlimbo_constructed_wall(
         &mut self,
         id: u64,
