@@ -933,15 +933,9 @@ pub(super) fn build_ui_instances(
         ));
     }
     // VERA ferry: the routes' circles, from world pixels back to the screen
-    // (the inverse of `sim_tick::screen_point_to_world`), in the Move action
-    // line's green, kept to the battlefield so none is drawn over the sidebar.
-    if let (Some(overlay), Some(palette)) = (
-        &state.match_state.match_presentation.selection_overlay,
-        state
-            .match_state
-            .match_presentation
-            .surface_palette(state.process_assets.manager()),
-    ) {
+    // (the inverse of `sim_tick::screen_point_to_world`), kept to the
+    // battlefield so none is drawn over the sidebar.
+    if let Some(overlay) = &state.match_state.match_presentation.selection_overlay {
         let input = &state.match_state.input;
         let (left, top, width, height) = crate::app::input::camera::tactical_viewport_px(state);
         let clip = [
@@ -950,7 +944,6 @@ pub(super) fn build_ui_instances(
             (left + width) as f32,
             (top + height) as f32,
         ];
-        let green = crate::app::presentation::target_lines::move_action_line_color(palette);
         for ring in crate::app::input::ferry::marks(state) {
             let screen: Vec<(f32, f32)> = ring
                 .points
@@ -962,9 +955,16 @@ pub(super) fn build_ui_instances(
                     )
                 })
                 .collect();
+            let kind = if ring.refused {
+                crate::render::selection_overlay::FerryRingKind::Refused
+            } else if ring.drop {
+                crate::render::selection_overlay::FerryRingKind::Unload
+            } else {
+                crate::render::selection_overlay::FerryRingKind::Load
+            };
             drag.extend(overlay.build_ferry_ring(
                 &screen,
-                (!ring.refused).then_some(green),
+                kind,
                 clip,
                 input.camera_x,
                 input.camera_y,

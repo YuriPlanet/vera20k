@@ -38,8 +38,25 @@ const FORMATION_DOT: [(f32, f32, f32, f32, f32); 5] = [
     (5.0, 1.0, 1.0, 4.0, FORMATION_DOT_EDGE_ALPHA),
     (1.0, 1.0, 4.0, 4.0, FORMATION_DOT_CORE_ALPHA),
 ];
-/// VERA ferry circles of an armed drop click that would be refused.
-const FERRY_REFUSED_TINT: [f32; 3] = [1.0, 0.25, 0.2];
+/// What a VERA ferry circle marks, and so its colour: blue where a transport
+/// loads, yellow where it unloads, red for an armed click that would be
+/// refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FerryRingKind {
+    Load,
+    Unload,
+    Refused,
+}
+
+impl FerryRingKind {
+    fn tint(self) -> [f32; 3] {
+        match self {
+            Self::Load => [0.25, 0.6, 1.0],
+            Self::Unload => [1.0, 0.9, 0.15],
+            Self::Refused => [1.0, 0.25, 0.2],
+        }
+    }
+}
 
 /// Manages textures and rendering for selection overlays.
 pub struct SelectionOverlay {
@@ -646,18 +663,18 @@ impl SelectionOverlay {
 
     /// VERA ferry order (`app::input::ferry`): one closed line, a pixel
     /// wide, through the given screen points, in the band box's batch and
-    /// coordinate frame (screen pixels plus the camera offset). `tint` is the
-    /// Move action line's colour; `None` draws a refused click's red. Pixels
-    /// outside `clip` (left, top, right, bottom) are left out.
+    /// coordinate frame (screen pixels plus the camera offset), in its
+    /// kind's colour. Pixels outside `clip` (left, top, right, bottom) are
+    /// left out.
     pub fn build_ferry_ring(
         &self,
         screen_points: &[(f32, f32)],
-        tint: Option<[f32; 3]>,
+        kind: FerryRingKind,
         clip: [f32; 4],
         camera_x: f32,
         camera_y: f32,
     ) -> Vec<SpriteInstance> {
-        let tint = tint.unwrap_or(FERRY_REFUSED_TINT);
+        let tint = kind.tint();
         let mut instances = Vec::new();
         let mut last = None;
         for (index, &(x0, y0)) in screen_points.iter().enumerate() {

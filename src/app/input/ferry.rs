@@ -829,6 +829,8 @@ pub(crate) fn armed_click_accepted(state: &AppState) -> Option<bool> {
 #[derive(Debug, Clone)]
 pub(crate) struct FerryRing {
     pub points: Vec<(f32, f32)>,
+    /// The drop zone's circle; otherwise a pick-up area's.
+    pub drop: bool,
     /// Part of the preview of a click that would be refused.
     pub refused: bool,
 }
@@ -863,9 +865,11 @@ pub(crate) fn marks(state: &AppState) -> Vec<FerryRing> {
         .sim_view()
         .and_then(|view| crate::app::match_runtime::sim_tick::tactical_cells(view.simulation()));
     let cell = LEPTONS_PER_CELL_I32 as f32;
-    // A circle of `radius` leptons around a cell's centre, at its ground
-    // height, as 64 corners.
-    let ring = |at: Cell, radius: f32, refused: bool| {
+    let pickup_radius = (PICKUP_RADIUS_CELLS as f32 + 0.5) * cell;
+    let drop_radius = (DROP_RADIUS_CELLS as f32 + 0.5) * cell;
+    // A circle around a cell's centre, at its ground height, as 64 corners.
+    let ring = |at: Cell, drop: bool, refused: bool| {
+        let radius = if drop { drop_radius } else { pickup_radius };
         let level = cells
             .and_then(|cells| cells.cell_level(at.0, at.1))
             .unwrap_or(0);
@@ -883,21 +887,20 @@ pub(crate) fn marks(state: &AppState) -> Vec<FerryRing> {
                     )
                 })
                 .collect(),
+            drop,
             refused,
         }
     };
-    let pickup_radius = (PICKUP_RADIUS_CELLS as f32 + 0.5) * cell;
-    let drop_radius = (DROP_RADIUS_CELLS as f32 + 0.5) * cell;
     let mut rings = Vec::new();
     for route in routes {
-        rings.push(ring(route.pickup, pickup_radius, false));
-        rings.push(ring(route.drop, drop_radius, false));
+        rings.push(ring(route.pickup, false, false));
+        rings.push(ring(route.drop, true, false));
     }
     if let Some((pickups, clicked, accepted)) = preview {
         for pickup in pickups {
-            rings.push(ring(pickup, pickup_radius, !accepted));
+            rings.push(ring(pickup, false, !accepted));
         }
-        rings.push(ring(clicked, drop_radius, !accepted));
+        rings.push(ring(clicked, true, !accepted));
     }
     rings
 }
