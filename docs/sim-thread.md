@@ -127,28 +127,46 @@ Done:
 
 ### Phase 2: a presentation frame for the hot draw path
 
-A copy of the whole world is not the frame. Deriving `Clone` on
-`Simulation` is easy, but measured in a 1v7 skirmish on the 30-start map
-at 450–930 objects:
+At the end of each committed tick, `SimHost::publish_presentation` keeps a
+copy of the runtime (`Arc<SimRuntime>`), and drawing reads it through
+`SimHost::presentation`. A rules or lifecycle write drops it first. It is
+opted into with `VERA20K_PRESENTATION_FRAME=1` until phase 4 turns it on.
 
-- A copy took 40–60 ms, whatever the object count. About half of that was
-  the resolved terrain cells.
-- With those cells shared copy-on-write, a copy kept until the next tick
-  took about 22 ms, and dropping the previous one took about 25 ms.
-- The mean tick rose from 4.4 ms to 20.7 ms. Every unit step runs
-  `recalc_resident_bridge_cell` → `recalc_cell_attributes`, which writes
-  its cell even when nothing changes, so the terrain is copied on almost
-  every tick.
+A plain copy of the world is too slow: 40–60 ms in a 1v7 skirmish on the
+30-start map, about half of it the terrain cells. The copy therefore shares
+storage with the live world copy-on-write (`util::shared`):
 
-The frame therefore holds only what drawing reads. Large, rarely changing
-state (terrain, overlays) is shared by revision, not copied each tick.
+- `ChunkedVec` (256-element chunks) for per-cell state written in small
+  parts every tick: fog planes and their caches, overlays, smudges and the
+  terrain cells. A write copies only its chunk.
+- `CellMap` strips are one column each, shared the same way.
+- `Shared<T>` for state that rarely changes as a whole: entities (each one
+  separately), the zone grid, the interner, AI script definitions, terrain
+  objects and the terrain's TMP headers and per-cell side arrays.
+- `DerivedCache` for caches a copy can rebuild; a copy starts empty.
 
-At the end of each tick, `SimHost` publishes an immutable
-`Arc<PresentationFrame>`. It holds per-object draw records (pose, type,
-owner, health, flags), the display order, anim, particle and projectile
-points, and cell deltas for fog, terrain and overlays. Object, anim and
-particle drawing reads only the last two frames. That is the work that scales
-with unit count.
+Writers that usually leave a value unchanged compare before they borrow it
+mutably, so an unchanged write copies nothing: the terrain cell recalc
+(`CellClass::RecalcAttributes @ 0x0047D2B0`) and the overlay projection
+work on a one-cell shadow (`cow_cells`), and the zone grid checks a cell's
+class and level before refreshing it.
+
+Measured with `sim-bench`, 1v29 skirmish on the 30-start map, 3,000 ticks,
+447–583 objects, keeping each tick's copy until the next one:
+
+| | mean tick |
+|---|---|
+| before phase 2 | 3.5 ms |
+| phase 2, no frame | 3.7 ms |
+| phase 2, a frame each tick | 7.2 ms (copy 1.5 ms, drop of the previous 1.2 ms) |
+
+`final_hash` is the same in all three. The copy still deep-copies the 30
+houses (~0.3 ms) and the entity store's index (~0.2 ms); the remaining
+tick cost is the chunks and entities a tick really writes.
+
+Follow-ups: fog planes keep one byte per cell per house where gameplay
+needs a few bits; packing them would shrink both the copy and the cache
+footprint.
 
 ### Phase 3: cold paths and input
 

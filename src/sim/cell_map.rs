@@ -82,7 +82,8 @@ impl<V: Clone> CellMap<V> {
         self.filled_count + self.outside.len()
     }
 
-    /// Slots per strip: eight columns of the dense array.
+    /// Slots per strip: one column of the dense array, so a write shared
+    /// with a presentation frame copies only that column.
     fn strip_slots(&self) -> usize {
         self.side
     }
@@ -138,7 +139,8 @@ impl<V: Clone> CellMap<V> {
                 .enumerate()
             {
                 if let Some(value) = value {
-                    let slot = strip * 8 * old_side + offset;
+                    // One column per strip at the old side.
+                    let slot = strip * old_side + offset;
                     let key = ((slot / old_side) as u16, (slot % old_side) as u16);
                     self.get_or_insert_with(key, || value);
                 }

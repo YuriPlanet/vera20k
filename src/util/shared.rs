@@ -328,7 +328,13 @@ impl<T: Clone + std::fmt::Debug> std::fmt::Debug for ChunkedVec<T> {
 
 impl<T: Clone + serde::Serialize> serde::Serialize for ChunkedVec<T> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_seq(self.iter())
+        // A known length, as a Vec gives: bincode needs it up front.
+        use serde::ser::SerializeSeq;
+        let mut seq = serializer.serialize_seq(Some(self.len))?;
+        for value in self.iter() {
+            seq.serialize_element(value)?;
+        }
+        seq.end()
     }
 }
 
