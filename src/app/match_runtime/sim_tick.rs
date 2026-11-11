@@ -1716,7 +1716,13 @@ fn advance_one_simulation_frame(
         let _ = state.match_state.match_diagnostics.get_or_begin_replay(rt);
         state.match_state.match_diagnostics.retain_replay_startup(
             rt,
-            state.match_state.session.network_setup(),
+            // A network match's session owns its launch; an offline
+            // skirmish's stays with the startup that installed it.
+            state
+                .match_state
+                .session
+                .network_setup()
+                .or_else(|| state.match_state.startup.offline_launch()),
             state.match_state.loaded_map_source.as_ref(),
             state.match_state.loaded_map_hash,
             state
