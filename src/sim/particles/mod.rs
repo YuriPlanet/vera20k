@@ -405,8 +405,17 @@ impl Particle {
         } else {
             pt.velocity
         };
-        assert_ne!(divisor, 0, "native Particle constructor divides by MaxEC");
-        let lifetime_extra = sim.particle_rng().next_raw_abs_modulo(divisor) as i16;
+        // The native Particle constructor (0x0062B5E0) divides its lifetime
+        // draw by MaxEC, so `MaxEC=0`, which only a map or mod can set, traps
+        // in gamemd. VERA carries on: no draw and no extra lifetime. The
+        // identity and any Smoke draw are already taken here and the callers
+        // cannot carry a refusal, so the particle is still built.
+        let lifetime_extra = if divisor == 0 {
+            log::warn!("particle type {type_id:?} has MaxEC=0: no lifetime draw");
+            0
+        } else {
+            sim.particle_rng().next_raw_abs_modulo(divisor) as i16
+        };
         let lifetime_remaining = (pt.max_ec as i16).wrapping_add(lifetime_extra);
         let location = floor_constructor_coords_with(coords, |x, y| ground(sim, x, y))?;
         let direction = spawn::native_velocity(coords, target);
@@ -1103,6 +1112,26 @@ mod tests {
 
     fn fake_system(stable_id: u64) -> ParticleSystem {
         ParticleSystem::test_fixture(stable_id, ParticleSystemTypeId(0), IVec3::ZERO)
+    }
+
+    #[test]
+    fn zero_max_ec_constructs_without_a_lifetime_draw() {
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[Particles]\n0=GasP\n[GasP]\nBehavesLike=Gas\nMaxEC=0\n",
+            ))
+            .expect("particle rules");
+        let mut sim = Simulation::with_seed(7);
+        let rng_before = sim.scenario_rng.logical_state();
+        let particle = Particle::new(
+            ParticleTypeId(0),
+            IVec3::ZERO,
+            IVec3::ZERO,
+            rules.particle_type(ParticleTypeId(0)),
+            &mut sim,
+        );
+        assert_eq!(particle.lifetime_remaining(), 0);
+        assert_eq!(sim.scenario_rng.logical_state(), rng_before);
     }
 
     #[test]
