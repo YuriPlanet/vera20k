@@ -79,8 +79,8 @@ A launcher can copy `version`, `rules_digest` and `map.source_sha256` into
 `[Settings] ExpectedVersion`, `ExpectedRulesDigest`, `ExpectedMapDigest`.
 `rules_digest` is Battle's. `[Settings] GameMode` selects an `MPModesMD.ini` row
 by id (default 1): a network launch takes a stock row, and a one-human launch any
-row of the `MPModesMD.ini` the game loaded, or row 1 when the id has none, as the
-CnCNet Spawner does, so a mod's own modes start too. The digest covers that row's
+row of the `MPModesMD.ini` the game loaded, or row 1 when the id has none, so a
+mod's own modes start too. The digest covers that row's
 INI, so another mode takes its digest from the report's `game_modes`, which lists
 the stock rows. A mod chosen in `config.toml`
 (`[paths] mod`, [modding guide](../../docs/modding.md)) is read by the probe as by
