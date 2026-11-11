@@ -121,3 +121,51 @@ fn a_buildings_turn_keeps_its_deliveries_and_takes_no_foot_tail() {
         "the building looked itself up {tail} times after its AI"
     );
 }
+
+/// A tank and an infantryman that hold no target take their fire visits
+/// without a receiver transaction. Each visit still delivers the smudge
+/// grid's pending dirt, as the commit of an empty transaction did, and the
+/// infantryman's clears his firing latch.
+#[test]
+fn a_fire_visit_without_a_target_keeps_its_deliveries() {
+    use crate::sim::combat::world_fire::FireVisit;
+    let rules = RuleSet::from_ini(&clear_ground_ini(
+        "[VehicleTypes]\n0=MTNK\n[InfantryTypes]\n0=E1\n\
+         [MTNK]\nStrength=300\nSpeed=6\n[E1]\nStrength=125\nSpeed=4\n",
+    ))
+    .unwrap();
+    let mut sim = rival_arena(&rules, 0x0B2);
+    let tank = sim
+        .spawn_object("MTNK", "Americans", 10, 10, 0, &rules)
+        .expect("tank");
+    let man = sim
+        .spawn_object("E1", "Americans", 14, 14, 0, &rules)
+        .expect("infantryman");
+    sim.resolve_type_handles(&rules);
+    sim.substrate
+        .entities
+        .get_mut(man)
+        .unwrap()
+        .mission_leaf
+        .set_foot_firing_sequence(1);
+    for (visit, cell) in [
+        (FireVisit::UnitTarget(tank), (3, 4)),
+        (FireVisit::InfantryTarget(man), (5, 6)),
+    ] {
+        let mut smudges = crate::sim::smudge_grid::SmudgeGrid::new(32, 32);
+        smudges.test_force_set(cell.0, cell.1, Default::default());
+        sim.smudge_grid = Some(smudges);
+        sim.dirty_cells.clear_tactical_for_test();
+        let receipt = sim.commit_fire_visit(
+            visit,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+        assert!(!receipt.bridge_state_changed && !receipt.structure_destroyed);
+        assert!(sim.smudge_grid.as_mut().unwrap().drain_dirty().is_empty());
+        assert!(sim.dirty_cells.tactical_for_test().contains(&cell));
+    }
+    let man = sim.substrate.entities.get(man).unwrap();
+    assert_eq!(man.mission_leaf.foot_firing_sequence_latch(), 0);
+}

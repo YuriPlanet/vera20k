@@ -1209,9 +1209,11 @@ impl TeamScriptVm {
     /// the head of its list (a member leaves through `Remove_Member` first,
     /// so only a list the removal missed has it there). The team's own
     /// update is the only reader of what it clears, so the teams' place in
-    /// the listener order does not matter.
-    pub(crate) fn pointer_expired(&mut self, expired: u64, all: bool) {
+    /// the listener order does not matter. Answers whether any team named
+    /// `expired`.
+    pub(crate) fn pointer_expired(&mut self, expired: u64, all: bool) -> bool {
         let object = Some(TeamTarget::Object(expired));
+        let mut named = false;
         for team in self.teams.values_mut() {
             if all
                 && team
@@ -1219,24 +1221,30 @@ impl TeamScriptVm {
                     .first()
                     .is_some_and(|member| member.id == expired)
             {
+                named = true;
                 team.members.remove(0);
                 if self.member_team.get(&expired) == Some(&team.id) {
                     self.member_team.remove(&expired);
                 }
             }
             if team.focus == object {
+                named = true;
                 team.focus = None;
             }
             if team.mission_target == object {
+                named = true;
                 team.mission_target = None;
             }
             if team.zone == object {
+                named = true;
                 team.zone = None;
             }
             if team.closest_member == Some(expired) {
+                named = true;
                 team.closest_member = None;
             }
         }
+        named
     }
 }
 

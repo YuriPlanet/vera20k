@@ -182,12 +182,13 @@ pub(super) fn build_miner_snapshot(sim: &Simulation, id: u64) -> Option<MinerSna
 /// Commit one dispatched snapshot back to the entity: miner mutations and the
 /// FSM cursor of record (`MissionCom::handler_state`, which
 /// `UnitClass::Mission_Harvest @ 0x0073E5E0` stores at
-/// `0x0073E714..0x0073EE68`).
-pub(super) fn commit_miner_snapshot(substrate: &mut ObjectSubstrate, snap: &MinerSnapshot) {
+/// `0x0073E714..0x0073EE68`). The snapshot's working copy of the miner moves
+/// back; its dispatch ends here.
+pub(super) fn commit_miner_snapshot(substrate: &mut ObjectSubstrate, snap: MinerSnapshot) {
     let Some(entity) = substrate.entities.get_mut(snap.entity_id) else {
         return;
     };
-    entity.miner = Some(snap.miner.clone());
+    entity.miner = Some(snap.miner);
     entity.mission.set_handler_state(snap.state.cursor());
 }
 
@@ -344,7 +345,7 @@ pub(super) fn process_miner(
         return Ok(());
     }
 
-    let state_before = format!("{:?}", snap.state);
+    let state_before = snap.state;
     match snap.state {
         MinerState::SearchOre => {
             harvest_looking(sim, rules, overlay_registry, snap, frame_effects)?
@@ -364,13 +365,12 @@ pub(super) fn process_miner(
             arm_rate_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, snap);
         }
     }
-    let state_after = format!("{:?}", snap.state);
-    if state_before != state_after {
+    if state_before != snap.state {
         log::info!(
-            "MINER {} state: {} → {} pos=({},{}) cargo={} stage={}",
+            "MINER {} state: {:?} → {:?} pos=({},{}) cargo={} stage={}",
             snap.entity_id,
             state_before,
-            state_after,
+            snap.state,
             snap.rx,
             snap.ry,
             snap.miner.cargo.len(),
