@@ -374,7 +374,9 @@ impl TerminalLifetime {
 ///   cloak callers pass **0**: `TechnoClass::StartCloaking @ 0x00703770` and
 ///   the `CloakState 1 -> 2` arm of `TechnoClass::CloakingTick @ 0x006FB740`.
 ///
-/// A control of 0 changes three things inside the receiver body: it runs the
+/// A control of 0 changes five things inside the receiver body: it skips
+/// RadioClass's contact break (`0x0065AAF0`) and the listener's
+/// `CargoClass::Remove` of the object (`0x007077D8..0x007077E9`), it runs the
 /// `allowClear` sensor test (`0x00707994 CALL 0x004870D0`,
 /// `CellClass::SensorCountForHouse`), it exempts a receiver whose own house
 /// owns the expiring object from the Target clear (`0x007079B7..0x007079CB`),
