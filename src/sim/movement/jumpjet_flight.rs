@@ -356,6 +356,10 @@ pub(crate) trait JumpjetFlightHost {
     fn smooth_facing(&self) -> bool {
         false
     }
+    /// VERA `[JumpjetControls] LandNearby=` in cells; 0 is the original.
+    fn land_nearby_range(&self) -> i32 {
+        0
+    }
     fn binary_frame(&self) -> u32;
     fn trig(&self) -> &TrigTable;
     fn owner_kind(&self) -> FlightOwnerKind;
@@ -1057,6 +1061,42 @@ fn claim_or_scatter(
     }
 }
 
+/// VERA `[JumpjetControls] LandNearby=`: the cell nearest `refused`, within
+/// the key's range, that the owner may enter outright (`Can_Enter_Cell` 0),
+/// is neither water nor beach and has no other object in its air slot. Ties
+/// go to the lower row, then the lower column.
+fn nearby_landing_cell(
+    refused: (i16, i16),
+    host: &mut impl JumpjetFlightHost,
+) -> Option<(i16, i16)> {
+    let range = host.land_nearby_range();
+    if range <= 0 {
+        return None;
+    }
+    let mut cells: Vec<(i32, i32, i32)> = Vec::new();
+    for dy in -range..=range {
+        for dx in -range..=range {
+            let distance = dx * dx + dy * dy;
+            if distance != 0 && distance <= range * range {
+                cells.push((distance, dy, dx));
+            }
+        }
+    }
+    cells.sort_unstable();
+    cells.into_iter().find_map(|(_, dy, dx)| {
+        let x = i16::try_from(i32::from(refused.0) + dx).ok()?;
+        let y = i16::try_from(i32::from(refused.1) + dy).ok()?;
+        if x < 0 || y < 0 {
+            return None;
+        }
+        let centre = [i32::from(x) * 256 + 128, i32::from(y) * 256 + 128];
+        (host.can_enter_cell((x, y)) == 0
+            && !matches!(host.cell_land_type(centre), 2 | 6)
+            && !host.air_slot_taken_at((x, y)))
+        .then_some((x, y))
+    })
+}
+
 /// `CellClass::GetSubCell @ 0x004810A0`: the infantry sub-cell a coordinate
 /// falls in. Only 0, 2, 3 and 4 are produced — never 1.
 fn sub_cell_of(coord: [i32; 3]) -> i32 {
@@ -1293,6 +1333,13 @@ pub(crate) fn state4_descend(
             let refused =
                 !admitted || (!bridge && (answer > 2 || (answer == 2 && !runtime.landing_latched)));
             if refused {
+                // VERA `LandNearby=` (a deviation from `0x0054C6F5`'s stop,
+                // off by default): fly to the nearest clear cell and land
+                // there. No RNG draw; with none in range, the original's stop.
+                if let Some(cell) = nearby_landing_cell(dest_cell, host) {
+                    host.set_destination_cell(cell, runtime);
+                    return STATE_TRANSLATE;
+                }
                 return host.stop_moving(runtime);
             }
             if !runtime.landing_latched {

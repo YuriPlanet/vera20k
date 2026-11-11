@@ -305,6 +305,9 @@ impl JumpjetFlightHost for CruiseHost<'_> {
     fn smooth_facing(&self) -> bool {
         self.rules.general.jumpjet_smooth_facing
     }
+    fn land_nearby_range(&self) -> i32 {
+        self.rules.general.jumpjet_land_nearby
+    }
     fn snap_body_facing(&mut self, facing: u16) {
         self.sim
             .substrate
@@ -884,6 +887,10 @@ mod native_tests;
 #[cfg(test)]
 #[path = "jumpjet_smooth_facing_tests.rs"]
 mod smooth_facing_tests;
+
+#[cfg(test)]
+#[path = "jumpjet_land_nearby_tests.rs"]
+mod land_nearby_tests;
 
 #[cfg(test)]
 mod tests {
