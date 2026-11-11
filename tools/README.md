@@ -265,11 +265,11 @@ are adopted only when their live checkout/common Git directory and namespace
 prove ownership. A registered cache whose checkout no longer exists is abandoned
 once it has been idle ten minutes (`ABANDONED_SECONDS`), it sits in this repository's
 cache root under its checkout's namespace, and no run holds that checkout's lock.
-Every pass then removes the Cargo profile output in it, whatever the budgets, apart
-from files a preserved or latest build still names; its latest record goes first,
-since only its live checkout could resolve it. Empty directories go with it, and a
-cache left empty leaves the registry. Unregistered or unverifiable caches stay
-untouched.
+Every pass then removes the Cargo profile output in it, `--target` builds of any
+profile included, whatever the budgets, apart from files a preserved or latest build
+still names; its latest record goes first, since only its live checkout could resolve
+it. Empty directories go with it, and a cache left empty leaves the registry.
+Unregistered or unverifiable caches stay untouched.
 Only orphaned `deps/*.rcgu.o`, complete finalized incremental sessions and older
 Mach-O/ELF executables in `deps` are eligible; paths must belong to exact Cargo
 profile directories. An older executable is a `<name>-<16 hex>` file with a newer

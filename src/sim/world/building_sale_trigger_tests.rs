@@ -186,8 +186,7 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
     .expect("physical terrain, objects and their authored Tags");
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&teams, &rules)
-        .expect("resolved stock team AI");
+    sim.install_team_ai_registry(&teams, &rules);
     let post = crate::sim::runtime::finalize_constructed_scenario(
         &mut sim,
         &map,
@@ -211,11 +210,11 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
         },
         runtime: crate::sim::runtime::SimRuntime {
             simulation: sim,
-            resources: crate::sim::runtime::SimResources {
+            resources: std::sync::Arc::new(crate::sim::runtime::SimResources {
                 overlay_registry: overlays,
                 terrain_template: None,
                 rules,
-            },
+            }),
         },
         map,
     }

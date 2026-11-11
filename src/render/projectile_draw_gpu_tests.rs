@@ -430,7 +430,8 @@ fn production_bullet_small_piece_workload_timing() {
                     let completed_ms = begin.elapsed().as_secs_f64() * 1000.;
                     assert_eq!(stats.pieces, pairs * 2);
                     assert_eq!(stats.waves, 1);
-                    assert_eq!(stats.passes, 4);
+                    let webgl = crate::render::gpu::webgl_fallback(&gpu.device);
+                    assert_eq!(stats.passes, if webgl { 4 } else { 3 });
                     assert_eq!(stats.tile_dependencies, 0);
                     if sample > 0 {
                         eprintln!(
@@ -461,6 +462,67 @@ fn production_bullet_small_piece_workload_timing() {
     if let Some(path) = std::env::var_os("VERA20K_PROJECTILE_PERF_OUTPUT") {
         std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
     }
+}
+
+/// A body without a native palette has a colour its packed word does not hold.
+/// Bullet body leaves 00494B60/00497FD0 store that word.
+#[test]
+#[ignore = "requires GPU; a read-only body without a native palette stores its RGB565 word"]
+fn compat_read_only_body_stores_its_packed_word() {
+    let gpu = Gpu::new();
+    let format = wgpu::TextureFormat::Bgra8UnormSrgb;
+    let size = [1, 1];
+    let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+    batch.write_camera(&gpu.queue, camera(size));
+    let mut terrain = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
+    let color = gpu.target(size, format);
+    let cv = color.create_view(&Default::default());
+    let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
+    let dv = depth.create_view(&Default::default());
+    terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
+    // RGB565 keeps only the high bits of each of these channels: 0x55a9.
+    let atlases = [batch.create_texture_on_device(
+        &gpu.device,
+        &gpu.queue,
+        &[83, 181, 77, 255],
+        1,
+        1,
+        Some(&[1]),
+    )];
+    let mut instance = sprite([0.; 2], [1.; 2], 4096. - 32768.);
+    instance.palette_light = Default::default();
+    let instances = [instance];
+    let buffer = gpu
+        .device
+        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::cast_slice(&instances),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+    let mut encoder = gpu.device.create_command_encoder(&Default::default());
+    clear(
+        &mut encoder,
+        &cv,
+        &dv,
+        5000,
+        wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+    );
+    terrain.draw_span(
+        &mut encoder,
+        &cv,
+        &dv,
+        &batch,
+        |slot| atlases.get(slot),
+        &buffer,
+        &instances,
+        [read_only(0, TerrainPiece::Body, 0)],
+        [0, 0, 1, 1],
+    );
+    let reads = [gpu.read(&mut encoder, &color)];
+    assert_eq!(
+        gpu.finish(encoder, &reads, size)[0],
+        encoded(0x55a9, format)
+    );
 }
 
 #[path = "projectile_ordered_gpu_tests.rs"]

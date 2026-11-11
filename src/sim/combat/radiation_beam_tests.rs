@@ -472,6 +472,7 @@ fn assert_native_births(
             source,
             ProjectileTarget::Entity(target),
             mode,
+            None,
         );
         let [LifecycleOutput::RadiationBeamCreated(birth)] = sim.lifecycle_outputs.as_slice()
         else {
@@ -707,4 +708,67 @@ fn native_eruption_births_and_main_draws_match_the_original() {
             "{name}: Main draw count and order"
         );
     }
+}
+
+/// Ares TechnoClass_FireRadBeam1/2 (Ares.dll 10056010/10056080, hooks
+/// 0x6FD64A/0x6FD79C): GetFLH takes FireAt's weapon index, and Beam.Color,
+/// Beam.Duration and Beam.Amplitude replace the stock colour, 15 and 40;
+/// Beam.IsHouseColor keeps the firer House's colour.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_beam_keys_and_weapon_index_shape_the_copied_beam() {
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(
+            "[InfantryTypes]\n0=BEAMER\n1=MARK\n[BEAMER]\nPrimary=TINT\nSecondary=HOUSE\n\
+             [MARK]\n[Radiation]\nRadColor=0,255,0\n\
+             [TINT]\nIsRadBeam=yes\nBeam.Color=10,20,30\nBeam.Duration=7\nBeam.Amplitude=12.5\n\
+             [HOUSE]\nIsRadBeam=yes\nBeam.IsHouseColor=yes\n",
+        ),
+        &IniFile::from_str("[BEAMER]\nPrimaryFireFLH=0,0,0\nSecondaryFireFLH=200,0,100\n"),
+    )
+    .unwrap();
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let source = sim
+        .spawn_object("BEAMER", "Americans", 16, 16, 64, &rules)
+        .unwrap();
+    let target = sim
+        .spawn_object("MARK", "Russians", 20, 16, 0, &rules)
+        .unwrap();
+    let mut birth = |index: i32, weapon: &str| {
+        sim.lifecycle_outputs.clear_for_test();
+        super::radiation_beam::create(
+            &mut sim,
+            &rules,
+            source,
+            ProjectileTarget::Entity(target),
+            CopiedBeamMode::Radiation,
+            Some((index, rules.weapon(weapon).unwrap())),
+        );
+        let [LifecycleOutput::RadiationBeamCreated(birth)] = sim.lifecycle_outputs.as_slice()
+        else {
+            panic!("one copied beam");
+        };
+        *birth
+    };
+    let tinted = birth(0, "TINT");
+    assert_eq!(tinted.color, [10, 20, 30]);
+    assert_eq!(tinted.duration, 7);
+    assert_eq!(f64::from_bits(tinted.amplitude.bits()), 12.5);
+    assert_eq!(
+        tinted.house_color,
+        super::radiation_beam::BeamHouseColor::None
+    );
+    let house = birth(1, "HOUSE");
+    assert_eq!((house.duration, house.color), (15, [0, 255, 0]));
+    assert_eq!(
+        house.house_color,
+        super::radiation_beam::BeamHouseColor::House
+    );
+    assert_ne!(
+        house.from,
+        birth(0, "HOUSE").from,
+        "FireAt's index picks the FLH"
+    );
 }

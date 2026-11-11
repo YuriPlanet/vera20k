@@ -505,7 +505,7 @@ impl SoundRegistry {
 
     /// Look up a sound entry by ID (case-insensitive).
     pub fn get(&self, sound_id: &str) -> Option<&SoundEntry> {
-        self.entries.get(&sound_id.to_ascii_uppercase())
+        crate::util::native_string::with_ascii_uppercase(sound_id, |key| self.entries.get(key))
     }
 
     /// VocClass::FindIndex7514D0 returns the first registered slot matching
@@ -1156,6 +1156,16 @@ impl EvaRegistry {
             #[cfg(feature = "ares")]
             extra_tags,
         }
+    }
+
+    /// Ares' voice count, `EVAVoices::Types` plus the three stock tags: the
+    /// bound trigger action 148 checks before it selects a voice
+    /// (TActionExt::Execute 100396C0).
+    #[cfg(feature = "ares")]
+    pub fn voice_count(&self) -> i32 {
+        i32::try_from(self.extra_tags.len())
+            .expect("EVA voice registry exceeds native i32 count")
+            .saturating_add(3)
     }
 
     /// Ares1002EC00 resolves stock names to 0/1/2, then registered EVATypes

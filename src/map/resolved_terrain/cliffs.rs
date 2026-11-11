@@ -4,11 +4,12 @@
 use super::build::{TileMetadata, canonical_ramp_from_slope_type, load_tile_metadata};
 use super::*;
 
+/// A runtime tile stamp's TMP metadata and tileset permissions.
 #[derive(Debug, Clone)]
-struct DynamicTilePrototype {
-    metadata: TileMetadata,
-    accepts_smudge: bool,
-    allows_tiberium: bool,
+pub(super) struct DynamicTilePrototype {
+    pub(super) metadata: TileMetadata,
+    pub(super) accepts_smudge: bool,
+    pub(super) allows_tiberium: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -176,6 +177,7 @@ impl ResolvedTerrainGrid {
         &mut self,
         rx: u16,
         ry: u16,
+        cliff_back_rock: Option<&LandTypeSemantics>,
         mut clear_replacement_cell: impl FnMut(u16, u16),
     ) -> Option<DestroyableCliffMutation> {
         let catalog = self.destroyable_cliff_catalog.clone()?;
@@ -273,12 +275,19 @@ impl ResolvedTerrainGrid {
                         .wrapping_add(prototype.metadata.template_height as i8)
                         as u8;
                     self.set_cell_level(cell_index, level);
-                    self.apply_runtime_lat_slope(x as i16, y as i16, &catalog, &mut changed_cells);
+                    self.apply_runtime_lat_slope(
+                        x as i16,
+                        y as i16,
+                        &catalog.lat_config,
+                        catalog.slope_config,
+                        &mut changed_cells,
+                    );
                     for (dx, dy) in [(0i16, -1i16), (1, 0), (0, 1), (-1, 0)] {
                         self.apply_runtime_lat_slope(
                             (x as i16).wrapping_add(dx),
                             (y as i16).wrapping_add(dy),
-                            &catalog,
+                            &catalog.lat_config,
+                            catalog.slope_config,
                             &mut changed_cells,
                         );
                     }
@@ -289,6 +298,20 @@ impl ResolvedTerrainGrid {
                         changed_cells.push((x, y));
                     }
                 }
+            }
+        }
+
+        // Family A 0x0058137B, family B 0x00581A7A: RecalcAttributes once
+        // more over the old footprint, every Level now final. The retail
+        // stamps cover that footprint exactly, and the one answer the stamps'
+        // own Recalc could have got wrong is the CliffBack neighbour test.
+        // Residual: that Recalc reads the six neighbours for any non-zero
+        // CliffBack byte, on any land (`0x0047DB59..0x0047DB66`); this reads
+        // them only for byte 2, on land the write can take.
+        if let Some(rock) = cliff_back_rock {
+            for &(x, y) in &original_footprint {
+                let index = self.index(x, y).expect("validated real cell");
+                self.reclass_cell_behind_cliff(index, rock);
             }
         }
 
@@ -315,11 +338,15 @@ impl ResolvedTerrainGrid {
         })
     }
 
-    fn apply_runtime_lat_slope(
+    /// One cell's runtime LAT and slope fixup
+    /// (`CellClass__ApplyLAT_and_SlopeFixup @ 0x0047CA80`), recording the
+    /// cell in `changed_cells` when its tile changes.
+    pub(super) fn apply_runtime_lat_slope(
         &mut self,
         x: i16,
         y: i16,
-        catalog: &DestroyableCliffCatalog,
+        lat_config: &lat::LatConfig,
+        slope_config: lat::SlopeFixupConfig,
         changed_cells: &mut Vec<(u16, u16)>,
     ) {
         let (Ok(rx), Ok(ry)) = (u16::try_from(x), u16::try_from(y)) else {
@@ -366,12 +393,12 @@ impl ResolvedTerrainGrid {
                 .map_or(0, |cell| cell.slope_type)
         });
         let old_tile = self.cells[index].final_tile_index;
-        let lat_tile = lat::lat_fixed_tile(old_tile, cardinal_tiles, &catalog.lat_config);
+        let lat_tile = lat::lat_fixed_tile(old_tile, cardinal_tiles, lat_config);
         let new_tile = lat::slope_fixed_tile(
             lat_tile,
             self.cells[index].slope_type,
             cardinal_slopes,
-            catalog.slope_config,
+            slope_config,
         );
         if new_tile != old_tile {
             self.cells[index].final_tile_index = new_tile;
@@ -465,7 +492,7 @@ pub(super) fn build_destroyable_cliff_catalog(
     })
 }
 
-fn stamp_dynamic_tile_identity(
+pub(super) fn stamp_dynamic_tile_identity(
     cell: &mut ResolvedTerrainCell,
     tile_id: u16,
     sub_tile: u8,
@@ -479,7 +506,7 @@ fn stamp_dynamic_tile_identity(
     cell.overlay_zone_type = None;
 }
 
-fn recalc_dynamic_tile_attributes(
+pub(super) fn recalc_dynamic_tile_attributes(
     cell: &mut ResolvedTerrainCell,
     prototype: &DynamicTilePrototype,
 ) {

@@ -81,6 +81,26 @@ fn fs_main(input: Output) -> @location(0) vec4f {
             }
             continue;
         }
+        //Ares ModifyWaveColor 10055920 (hooks 75EE57/7601FB) for Wave0/3: the
+        //same strict Z and displaced read (Draw_Laser 7609E0's source is the
+        //pixel itself, hooks 760BC2/760DE2), then each channel becomes
+        //ch + added + ((ch * scale) >> 16), clamped to 0..255. The CPU folds
+        //the pixel intensity into added (rgb, a_sample, gate_y) and scale
+        //(strength, destination_weight, gate_x).
+        if op.mode == 11u {
+            if op.z < old_z {
+                let source = textureLoad(old_words,vec2i(op.source_x,op.source_y),0).r;
+                let channel = vec3i(i32((source >> 11u) & 31u) << 3u,
+                    i32((source >> 5u) & 63u) << 2u, i32(source & 31u) << 3u);
+                let added = vec3i(bitcast<i32>(op.rgb), bitcast<i32>(op.a_sample), op.gate_y);
+                let scale = vec3i(op.strength, op.destination_weight, op.gate_x);
+                let lit = clamp(channel + added + ((channel * scale) >> vec3u(16u)),
+                    vec3i(0), vec3i(255));
+                word = u32((lit.r >> 3u) << 11u) | u32((lit.g >> 2u) << 5u) | u32(lit.b >> 3u);
+                touched = true;
+            }
+            continue;
+        }
         //Particle62D02C compares a signed candidate with an unsigned stored
         //word. CPU preparation interpolated the channels (carried in
         //strength/destination_weight/source_x); A and the current Z are
@@ -167,7 +187,5 @@ fn fs_main(input: Output) -> @location(0) vec4f {
         touched = true;
     }
     if !touched { discard; }
-    let encoded = vec3f(f32(RETAIL_FIVE[(word >> 11u) & 31u]),
-        f32(RETAIL_SIX[(word >> 5u) & 63u]),f32(RETAIL_FIVE[word & 31u])) / 255.0;
-    return vec4f(srgb_decode(encoded),1);
+    return vec4f(retail_linear(word),1);
 }

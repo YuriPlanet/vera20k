@@ -84,9 +84,30 @@ def package_host(stage, destination, network, lan=False, label=None):
             (destination / name).unlink(missing_ok=True)
 
 
+def package_fonts(destination):
+    """Copy the bundled fonts, glyph tables and their licences to `pkg/fonts/`. The browser engine
+    embeds none: it fetches Noto Sans and the CJK glyph table before the game starts, and each
+    other font the first time text needs one (src/render/text_engine/web_fonts.rs)."""
+    shutil.rmtree(destination, ignore_errors=True)
+    destination.mkdir()
+    for source in sorted((ROOT / 'src/render/fonts').iterdir()):
+        if source.suffix in ('.ttf', '.otf', '.bin') or (source.name.startswith('OFL') and source.suffix == '.txt'):
+            shutil.copyfile(source, destination / source.name)
+
+
+def snapshot_layout(target):
+    """The saved-game layout id the browser build compiles in instead of tracing the saved types
+    at run time (src/sim/snapshot.rs), from this source built for the host."""
+    subprocess.run([sys.executable, '-m', 'tools.cargo_run', '--', 'build', '-p', 'vera20k-core',
+                    '--bin', 'snapshot-layout', '--profile', 'fast', '--locked'], cwd=ROOT, check=True)
+    tool = target / 'fast' / ('snapshot-layout.exe' if os.name == 'nt' else 'snapshot-layout')
+    return subprocess.check_output([str(tool)], text=True).strip()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--profile', choices=['fast', 'release'], default='fast')
+    # `wasm` is the size-optimized package players download; `fast` rebuilds quickly after an edit.
+    parser.add_argument('--profile', choices=['wasm', 'fast', 'release'], default='wasm')
     parser.add_argument('--network', action='store_true', help='Enable the optional WS/UDP browser transport')
     parser.add_argument('--lan', action='store_true', help='Also enable browser LAN play over WebRTC (requires --network)')
     parser.add_argument('--threads', action='store_true', help=f'Run simulation work on a Web Worker pool (builds with {THREADS_TOOLCHAIN})')
@@ -105,14 +126,16 @@ def main():
         parser.error(f'Install the matching binding CLI: cargo install wasm-bindgen-cli --version {version} --locked')
     features = 'wasm-lan' if args.lan else 'wasm-net' if args.network else 'wasm'
     threads = ['-Z', 'build-std=std,panic_abort'] if args.threads else []
-    env = {**os.environ, 'RUSTUP_TOOLCHAIN': THREADS_TOOLCHAIN, 'RUSTFLAGS': THREADS_RUSTFLAGS} if args.threads else None
+    target = owned_target(ROOT, build_store(ROOT)[1])
+    env = {**os.environ, 'VERA20K_SNAPSHOT_LAYOUT': snapshot_layout(target)}
+    if args.threads:
+        env |= {'RUSTUP_TOOLCHAIN': THREADS_TOOLCHAIN, 'RUSTFLAGS': THREADS_RUSTFLAGS}
     subprocess.run([
         sys.executable, '-m', 'tools.cargo_run', '--', 'rustc', '-p', 'vera20k', '--lib', *threads,
         '--target', 'wasm32-unknown-unknown', '--no-default-features', '--features', f'{features},wasm-threads' if args.threads else features,
         '--profile', args.profile, '--locked', '--crate-type', 'cdylib',
         '--', '-C', 'link-arg=-zstack-size=8388608',
     ], cwd=ROOT, env=env, check=True)
-    target = owned_target(ROOT, build_store(ROOT)[1])
     binary = target / 'wasm32-unknown-unknown' / args.profile / 'vera20k.wasm'
     (ROOT / 'target').mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='wasm-package-', dir=ROOT / 'target') as temporary:
@@ -122,6 +145,7 @@ def main():
         # Only generated public files; retail data never enters the package.
         package_host(stage, destination, args.network, args.lan, build_label(args.profile, args.network, args.lan, args.threads))
         shutil.copytree(stage / 'pkg', destination / 'pkg', dirs_exist_ok=True)
+        package_fonts(destination / 'pkg' / 'fonts')
     serve = 'python3 tools/wasm/serve.py' if args.threads else 'python3 -m http.server 8000 --bind 127.0.0.1 --directory target/wasm-dist'
     print(f'Browser build: {destination}\nServe with: {serve}')
 

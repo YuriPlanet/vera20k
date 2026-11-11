@@ -23,6 +23,9 @@ pub use command_bar::CommandBarArt;
 #[path = "sidebar_chrome_in_game_shell.rs"]
 mod in_game_shell;
 pub use in_game_shell::InGameShellArt;
+#[path = "sidebar_chrome_layout_art.rs"]
+mod layout_art;
+pub use layout_art::LayoutArt;
 
 #[cfg(test)]
 pub(crate) fn packed_command_bar_fixture(
@@ -308,6 +311,8 @@ pub struct SidebarChromeAtlas {
     pub texture: BatchTexture,
     pub command_bar: CommandBarArt<SidebarChromeEntry>,
     pub in_game_shell: InGameShellArt<SidebarChromeEntry>,
+    /// The pictures of the buttons the layout file adds (`Art=`).
+    pub layout_art: LayoutArt<SidebarChromeEntry>,
     pub top_strip_left: Option<SidebarChromeEntry>,
     pub top_strip_sidebar: Option<SidebarChromeEntry>,
     pub top_strip_thin: Option<SidebarChromeEntry>,
@@ -824,6 +829,7 @@ fn build_theme_atlas(
     let generic_palette = decode_sidebar_palette(generic_palette_source.bytes).ok()?;
     let command_bar_art = command_bar::load(side_route, &generic_palette);
     let in_game_shell_art = in_game_shell::load(side_route, &generic_palette);
+    let layout_art_rendered = layout_art::load(side_route, &generic_palette);
     log::debug!(
         "{theme:?} generic sidebar palette resolved from {}",
         generic_palette_source.archive_name
@@ -995,6 +1001,7 @@ fn build_theme_atlas(
     let mut all_entries: Vec<&RenderedChromeEntry> = vec![&radar, &side1, &side2, &side3];
     all_entries.extend(command_bar_art.entries());
     all_entries.extend(in_game_shell_art.entries());
+    all_entries.extend(layout_art_rendered.entries());
     if let Some(ref top) = top_strip_left {
         all_entries.push(top);
     }
@@ -1063,6 +1070,11 @@ fn build_theme_atlas(
         uv
     });
     let in_game_shell = in_game_shell_art.map(|entry| {
+        let uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, entry);
+        y += entry.height + CHROME_PADDING;
+        uv
+    });
+    let layout_art = layout_art_rendered.map(|entry| {
         let uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, entry);
         y += entry.height + CHROME_PADDING;
         uv
@@ -1237,6 +1249,7 @@ fn build_theme_atlas(
     let sidebar_pieces: Vec<[u32; 4]> = command_bar
         .entries()
         .copied()
+        .chain(layout_art.entries().copied())
         .chain(
             [
                 top_strip_left_uv,
@@ -1282,6 +1295,7 @@ fn build_theme_atlas(
         texture,
         command_bar,
         in_game_shell,
+        layout_art,
         top_strip_left: top_strip_left_uv,
         top_strip_sidebar: top_strip_sidebar_uv,
         top_strip_thin: top_strip_thin_uv,

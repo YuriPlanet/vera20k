@@ -5,6 +5,7 @@
 //! the real renderer, and publishes one transactional final readback. It does
 //! not focus the window, inject desktop input, or grant simulation state.
 
+use crate::app::match_runtime::sim_host::SimWrite;
 use crate::util::time::{Duration, Instant};
 use std::path::Path;
 
@@ -468,7 +469,7 @@ impl TacticalCaptureSession {
                     let sim = state
                         .match_state
                         .sim_runtime
-                        .as_mut()
+                        .write_sim(SimWrite::Debug)
                         .map(|rt| &mut rt.simulation)
                         .context("queue action requires live simulation")?;
                     sim.intern(&type_id)
@@ -492,7 +493,7 @@ impl TacticalCaptureSession {
                     let sim = state
                         .match_state
                         .sim_runtime
-                        .as_mut()
+                        .write_sim(SimWrite::Debug)
                         .map(|rt| &mut rt.simulation)
                         .context("placement action requires live simulation")?;
                     sim.intern(&choice.type_id)
@@ -578,7 +579,7 @@ impl TacticalCaptureSession {
         let sim = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)
             .context("Rust L0 requires live simulation")?;
         let rules = state.rules().context("Rust L0 requires live rules")?;
@@ -755,7 +756,7 @@ impl TacticalCaptureSession {
         let sim = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)
             .context("Rust L0 simulation is absent")?;
         ensure!(
@@ -860,7 +861,7 @@ impl TacticalCaptureSession {
         let sim = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)
             .context("tactical observation requires live simulation")?;
         let rules = state
@@ -1036,10 +1037,21 @@ impl TacticalCaptureSession {
         output: &GameRenderOutput,
     ) -> Result<(bool, Value)> {
         let profile = self.request.profile()?;
+        // The profile seals the original sidebar geometry, which a layout
+        // file in the game folder or a mod MIX would move.
+        ensure!(
+            state
+                .match_state
+                .match_presentation
+                .match_layouts
+                .is_original(),
+            "tactical capture requires the original interface: remove {} from the game files",
+            crate::ui::match_layout::FILE_NAME
+        );
         let sim = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)
             .context("render readiness requires live simulation")?;
         let owner = &profile.launch.player_name;
@@ -1217,7 +1229,7 @@ impl TacticalCaptureSession {
         let sim = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)
             .context("structure readiness requires live simulation")?;
         let bindings = script.structure_bindings();
@@ -1283,7 +1295,7 @@ impl TacticalCaptureSession {
         let sim = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)
             .context("fingerprint requires live simulation")?;
         let owner_id = sim.interner().get(owner).unwrap_or_default();
@@ -1605,7 +1617,7 @@ fn validate_loaded_resources(state: &AppState) -> Result<()> {
     let sim = &state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("simulation is absent")?
         .simulation;
     ensure!(

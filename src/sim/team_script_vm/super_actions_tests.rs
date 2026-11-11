@@ -67,7 +67,8 @@ fn events<'a>(row: &'a Value, kind: &str) -> Vec<&'a Value> {
 /// recharge frames; member `index` of type `M<index>` with its
 /// `LeadershipRating=`, armed to scan; the centre object's `PROBE`; and the
 /// enemy's power plant `PLANT`.
-fn rules_for(row: &Value) -> RuleSet {
+/// With `extra` lines added to the `[SW<index>]` sections they name.
+fn rules_for_with(row: &Value, extra: &[(usize, &str)]) -> RuleSet {
     let supers = row["supers"].as_array().unwrap();
     let armed = "Strength=100\nPrimary=M60\nSpeed=4\n\
                  Locomotor={4A582744-9839-11D1-B709-00A024DDAFD1}\n";
@@ -96,6 +97,9 @@ fn rules_for(row: &Value) -> RuleSet {
     }
     for (index, sw) in supers.iter().enumerate() {
         ini += &format!("[SW{index}]\nType={:?}\n", KINDS[int(&sw["kind"]) as usize]);
+        for (_, lines) in extra.iter().filter(|(at, _)| *at == index) {
+            ini += lines;
+        }
         // Authored action-56 scenes exercise the real two-click transaction;
         // the existing native-oracle rows retain their original type inputs.
         if row["paired_chrono"].as_bool() == Some(true) {
@@ -136,7 +140,12 @@ struct Replay {
 /// at the row's centre coordinates, and the enemy's one-cell power plant at
 /// [`TARGET_CELL`] when `plant`.
 fn replay(row: &Value, plant: bool) -> Replay {
-    let rules = rules_for(row);
+    replay_with(row, plant, &[])
+}
+
+/// [`replay`] over [`rules_for_with`].
+fn replay_with(row: &Value, plant: bool, extra: &[(usize, &str)]) -> Replay {
+    let rules = rules_for_with(row, extra);
     let mut sim = Simulation::with_seed(0x5C57);
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     sim.intern_rule_type_ids(&rules);
@@ -296,6 +305,10 @@ fn the_superweapon_script_actions_match_native() {
             continue;
         }
         replayed += 1;
+        // Ares replaces action 55 (hook 6EFC70); its own regression covers it.
+        if cfg!(feature = "ares") && int(&row["action"]) == 55 {
+            continue;
+        }
         let Replay {
             mut sim,
             rules,
@@ -315,6 +328,7 @@ fn the_superweapon_script_actions_match_native() {
         match int(&row["action"]) {
             55 => sim.team_action_iron_curtain(
                 team,
+                int(&row["argument"]),
                 &rules,
                 None,
                 crate::sim::world::FrameEffects::default(),
@@ -437,8 +451,7 @@ fn retail_superweapon_scripts_run_ported_actions() {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules)
-        .expect("retail AIMD installs");
+    sim.install_team_ai_registry(&registry, &rules);
     let vm = &sim.team_script_vm;
     let scripts: Vec<_> = vm
         .scripts
@@ -475,3 +488,48 @@ fn retail_superweapon_scripts_run_ported_actions() {
 
 #[path = "chronoshift_building_tests.rs"]
 mod chronoshift_building_tests;
+
+/// Ares's action 55 (hook 6EFC70, 10039EF0) takes the first type whose
+/// `SW.AITargeting` is IronCurtain and whose `SW.Group` is the argument, and
+/// fires it by its own index; the native firing row's group-0 Iron Curtain
+/// does not match argument 9, so the step completes without a launch.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_iron_curtain_action_matches_ai_mode_and_group() {
+    let row = rows()
+        .into_iter()
+        .find(|row| int(&row["action"]) == 55 && replayable(row) && !events(row, "fire").is_empty())
+        .unwrap();
+    for (extra, fires) in [(&[][..], false), (&[(1, "SW.Group=9\n")][..], true)] {
+        let Replay {
+            mut sim,
+            rules,
+            team,
+            ..
+        } = replay_with(&row, false, extra);
+        AI_FIRE_LOG.set(Some(Vec::new()));
+        sim.team_action_iron_curtain(
+            team,
+            9,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+        let fired: Vec<_> = AI_FIRE_LOG
+            .take()
+            .unwrap()
+            .into_iter()
+            .filter_map(|event| match event {
+                AiFireEvent::Fire(id, cell) => Some((sim.interner.resolve(id).to_owned(), cell)),
+                _ => None,
+            })
+            .collect();
+        let expected: Vec<(String, (u16, u16))> = if fires {
+            vec![("SW1".to_owned(), (12, 13))]
+        } else {
+            Vec::new()
+        };
+        assert_eq!(fired, expected, "group read {extra:?}");
+        assert!(sim.team_script_vm.teams[&team].advance_pending);
+    }
+}

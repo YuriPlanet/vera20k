@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail, ensure};
 
 use crate::rules::ini_parser::{IniFile, IniSection};
+use crate::sim::game_options::is_selectable_game_speed;
 use crate::skirmish_launch::{
     AiDifficulty, LaunchCountry, LaunchHumanRole, LaunchStartPosition, LaunchTeam,
     NETWORK_PLAYER_SLOT_COUNT, PreFillHouseRoster, SKIRMISH_PLAYER_SLOT_COUNT, SkirmishAiSlot,
@@ -343,13 +344,11 @@ impl SpawnRequest {
             );
         }
 
-        let mut game_speed = ranged(
-            settings,
-            "GameSpeed",
-            0,
-            0,
-            i32::from(crate::sim::game_options::IN_GAME_OPTIONS_MAX_SPEED),
-        )?;
+        let mut game_speed = integer(settings, "GameSpeed", 0)?;
+        ensure!(
+            u8::try_from(game_speed).is_ok_and(is_selectable_game_speed),
+            "GameSpeed={game_speed} is not a selectable game speed"
+        );
         let seed = settings
             .is_present("Seed")
             .then(|| integer(settings, "Seed", 0))
@@ -983,8 +982,8 @@ fn transport(
             certificate.sources_mask == (1u32 << player_count) - 1,
             "[Relay] OrderingCertificate roster does not match PlayerCount={player_count}"
         );
-        // The lobby derives this clock from the launch speed table
-        // [60,45,30,20,15,12,10], the native PreCalcFrameRate rows.
+        // The lobby derives this clock from the native PreCalcFrameRate
+        // rows plus VERA's 90-tick preset.
         let game_speed = crate::net::lockstep::game_speed_for_frame_rate(certificate.tick_hz)
             .with_context(|| {
                 format!(

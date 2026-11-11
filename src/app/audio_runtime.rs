@@ -598,7 +598,7 @@ impl AppAudioRuntime {
 /// here; reset retains the outgoing cache until this explicit replacement.
 pub(crate) fn bind_match_eva_context(state: &mut crate::app::AppState) {
     if let (Some(runtime), Some(sfx)) = (
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.runtime(),
         state.audio.sfx_player.as_mut(),
     ) {
         sfx.set_eva_side(
@@ -615,7 +615,7 @@ pub(crate) fn bind_match_theme_context(state: &mut crate::app::AppState) {
     if let Some(assets) = state.process_assets.manager() {
         state.audio.initialize_theme(assets);
     }
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         return;
     };
     let simulation = &runtime.simulation;
@@ -766,8 +766,8 @@ mod tests {
             master_groups: Default::default(),
             restore_muted: false,
         };
-        let mut frontend = crate::sim::rng::MainRng::new(1);
-        let mut main = crate::app::state::process_main_draws(None, &mut frontend);
+        let frontend = crate::sim::rng::MainRng::new(1);
+        let mut main = crate::app::state::process_main_draws(None, &frontend);
         runtime.service_audio(100, false, Some(&assets), None, &mut main);
         assert!(!runtime.service_clock.admit(100));
         runtime.service_audio(133, false, Some(&assets), None, &mut main);

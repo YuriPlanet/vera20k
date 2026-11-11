@@ -5,6 +5,7 @@ use std::sync::Arc;
 use winit::dpi::PhysicalSize;
 use winit::window::{UserAttentionType, Window};
 
+use crate::app::frontend::startup_options::ScreenSize;
 use crate::app::match_runtime::frame_pacer::LocalFramePacer;
 use crate::ui::game_screen::GameScreen;
 
@@ -55,9 +56,11 @@ pub(crate) struct PlatformState {
     /// frame does not re-issue it. winit's call is not free on Windows: it runs
     /// `refresh_os_cursor`, which clears any OS cursor clip winit does not itself
     /// own, so repeating it per frame would tear `cursor_confined` down every
-    /// frame. `show_os_cursor_only_without_game_cursor` is the only writer and
-    /// re-asserts the clip after each transition. Presentation-only.
+    /// frame. `input::hardware_cursor` issues it and re-asserts the clip after
+    /// each transition. Presentation-only.
     pub(crate) os_cursor_visible: Option<bool>,
+    /// What the window system shows at the pointer.
+    pub(crate) hardware_cursor: crate::app::input::hardware_cursor::HardwareCursor,
     /// Live message-pump modifiers for focused shell controls. Gameplay keeps
     /// its separate paused-input admission snapshot.
     pub(crate) live_modifiers: winit::keyboard::ModifiersState,
@@ -113,9 +116,13 @@ pub(crate) struct PlatformState {
     /// thread, so the choice is re-asserted over the next passes until the
     /// window is really there. Presentation-only, never serialized.
     pub(crate) recenter_windowed: bool,
-    /// Whether `options_profile.window_placement` moved since VERA.INI was
-    /// last written, so leaving the game writes it once. Presentation-only.
-    pub(crate) window_placement_unsaved: bool,
+    /// The size a launch opens the player's window at, in logical units:
+    /// gamemd's startup size (`RetailOptionsLoad::startup_shell_screen`). The
+    /// Esc menu's Set Window Size button goes back to it. Presentation-only.
+    pub(crate) launch_window_size: ScreenSize,
+    /// Whether that button is still waiting for the window to come out of full
+    /// screen. Presentation-only, never serialized.
+    pub(crate) launch_window_owed: bool,
 }
 
 /// The Options presentation choices a capture runs its battle at. A sealed
@@ -151,6 +158,7 @@ impl PlatformState {
         window: Arc<Window>,
         game_config: Option<crate::util::config::GameConfig>,
         capture_client_size: Option<PhysicalSize<u32>>,
+        launch_window_size: ScreenSize,
     ) -> Self {
         let pause_on_focus_loss = game_config
             .as_ref()
@@ -161,6 +169,7 @@ impl PlatformState {
             pointer_held: std::cell::Cell::new(false),
             pointer_in_client: true,
             os_cursor_visible: None,
+            hardware_cursor: Default::default(),
             live_modifiers: winit::keyboard::ModifiersState::empty(),
             held_modifier_keys: Default::default(),
             ime: Default::default(),
@@ -174,7 +183,8 @@ impl PlatformState {
             capture_client_size,
             capture_presentation: CapturePresentation::default(),
             recenter_windowed: false,
-            window_placement_unsaved: false,
+            launch_window_size,
+            launch_window_owed: false,
         }
     }
 

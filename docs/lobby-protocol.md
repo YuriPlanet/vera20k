@@ -13,7 +13,7 @@ persistent state is created.
 `POST /v1/sessions` accepts exactly
 `{nickname,protocol:4,password?,remember?,sign_in_token?}` and returns
 `{player_id,nickname,token,expires_at}`, plus `motd` while an operator welcome is set:
-text the game prints in the chat lobby in place of its own welcome, one line per `\n`.
+text the game prints in the chat lobby, one line per `\n`. Without it the game prints no welcome.
 A client names its player's language in `Vera-Language: <tag>`, a BCP 47 tag of two or
 three letters and at most three subtags such as `zh-CN`; the operator's welcome, notice
 and maintenance message then come in that language when the operator wrote it: the
@@ -230,7 +230,9 @@ relay pacing off; other bits zero), then HMAC-SHA256 over the first35 bytes with
 domain `VERA20k relay ordering certificate v2\0`. Every grant of one match carries
 the same version and flags; clients reject a renewal whose pacing differs. The signed
 mask includes all human sources (including observers); AI has no source. FPS
-follows launch speed `[60,45,30,20,15,12,10]`. The certificate lasts24 hours;
+follows launch speed `[60,45,30,20,15,12,10]` for stored settings 0–6;
+VERA's setting 8 selects 90 FPS. Setting 7 is not a selectable setup speed.
+The certificate lasts24 hours;
 every UDP control still needs a live authenticated short-lived ticket. The relay
 binds the first matching startup agreement to this roster/clock and starts once
 every remaining signed source is ready. A source that never becomes ready leaves
@@ -347,12 +349,15 @@ earlier chunks the service re-reads to check a finished upload.
 Canonical options are limited to 24 KiB, choice objects use the exact canonical
 slot schema, and unknown request/option fields are rejected. The actor also caps
 pending requests/parsed bodies at 128/4 MiB and individual events at 64 KiB. Active
-sessions, guest profiles and public-room membership are capped at 256. Per-address
-limits key on the client's network: an IPv4 address, or an IPv6 /64, with the
-enclosing /48 as the range. New guest entries are limited to 40/hour per address,
-64/hour per range and 256/hour globally, and one range holds at most 64 active
-sessions (503 `network_full`), with the existing sign-in and ingress limits also
-applied. One name can be taken 30 times in 5 minutes; refused entries do not count. These are service admission limits, not gameplay timers.
+sessions, guest profiles and public-room membership are capped at 256, of which
+guests hold at most 192 so that accounts always fit. When guests hold them all, a
+new guest from a smaller range replaces the longest-silent guest of the largest
+range, unless that guest is in a match, and is otherwise refused (503
+`service_full`). Per-address limits key on the client's network: an IPv4 address,
+or an IPv6 /64, with the enclosing /48 as the range. New guest entries are limited
+to 40/hour per address, 64/hour per range and 512/hour globally, and one range holds
+at most 32 active sessions (503 `network_full`), with the existing sign-in and
+ingress limits also applied. One name can be taken 30 times in 5 minutes; refused entries do not count. These are service admission limits, not gameplay timers.
 Clients verify and install into a
 local cache, preserve existing installed maps, and still require user readiness.
 Generated maps transfer the `.SED` bytes as the map and the separate native PCX
@@ -433,10 +438,18 @@ A game whose online match reached play adds `network_quality` to that match's
 `network:{gaps,repair_pulls,command_round_trip_ms,max_jitter_reserve_ms,underruns,`
 `underrun_wait_ms,max_underrun_wait_ms,link},`
 `performance:{tick_ms_p50,tick_ms_p99,fps_p50,fps_p5,unfocused_seconds},`
-`pacing:{slowdowns,slowed_by,slowed_seconds},outcome:{desync_frame,reconnects}}`.
+`pacing:{slowdowns,slowed_by,slowed_seconds},outcome:{desync_frame,reconnects,started,failure,start_hash}}`.
 Times are seconds, or milliseconds where the name says so; `command_round_trip_ms`
 is `{mean,max,samples}` or null, `tick_ms_p50`, `tick_ms_p99`, `fps_p50`, `fps_p5` and
 `desync_frame` may be null, and `slowed_by` lists the House each relay slowdown named.
+`started` says the relay's clock for the match started. `failure` is null, or names the
+error that ended the match on this game: `agreement_mismatch`, `start_cancelled`, `modified_retry`,
+`invalid_cursor`, `refused`, `history_expired`, `invalid_timeline`, `desync`, `unavailable`,
+`absent` (no answer from the relay for ten minutes), `queue_full`, `newer_client_required` or
+`local_error`. `start_hash` is null once the
+relay's clock started; before that it maps each part of the start this game offered the
+relay to 16 hex digits, so two games' reports of one match differ in the part that differs.
+Games before these fields send none of them.
 `fps_p50` and `fps_p5` read the presents of a moving picture: one that stands between
 frames is not drawn again, and the present after it starts a new interval.
 `underruns` counts the waits for a frame due but not yet received; `underrun_wait_ms`
@@ -454,6 +467,9 @@ gets the same finish again without it.
 
 `POST /v1/translate` accepts exactly `{text,target}` from a v4 bearer and returns
 `{text}`: `text` translated into `target`, a language tag such as `en` or `zh-Hans`.
+A reply can start with a short bracketed note, in that language, naming the language
+it was translated from. It can also carry `source`, that language's tag, when it is one
+of the translation targets; clients hide a translation whose `source` the player reads.
 `text` is non-blank and at most 2048 UTF-8 bytes, the chat limit. Clients translate
 received chat only after the player opts in, and always keep the original visible.
 A deployment without a translator, a failed model call or one taking over 10 seconds,
@@ -510,6 +526,9 @@ otherwise on the next public-channel join.
 A session that still joins a game room from another version, through a buddy's game or
 its name, makes every member hear a `chat` line from the notice sender naming both
 versions.
+The same line, with both full `version` agreement strings, goes to the room once when
+a member's `ready` or `map_status` names another build of the host's version, since
+such a room cannot start.
 
 Each `join` of the public channel gives the joining session one `chat` line from the
 notice sender after its `joined`. The line says how many players are online: in the
@@ -593,8 +612,9 @@ password. Every request below is a `POST` with a JSON body; a refusal's
 - `/v1/accounts/forget` `{name,sign_in_token}` returns 200 and drops that remembered
   sign-in.
 - `/v1/accounts/delete` `{name,password}` returns 200, deletes the account with its
-  email, remembered sign-ins and ranked games, signs out its player and mails the owner;
-  anyone may then take the name. A wrong password counts as at `/v1/sessions` (403
+  email, remembered sign-ins, ratings and standings, signs out its player and mails the
+  owner; anyone may then take the name. Records of its ranked games stay 90 days for
+  disputes, and no profile names it. A wrong password counts as at `/v1/sessions` (403
   `wrong_password`, the lock), and a name without an account returns 404 `no_account`.
 
 At `/v1/sessions` an account's name needs its `password` or a `sign_in_token`, never
@@ -607,20 +627,18 @@ or `sign_in_token` for a name without an account returns 404 `no_account`; other
 that name enters as a guest. A lobby without accounts set up refuses a password with
 503 `accounts_unavailable`.
 
-VERA20k's online login page has its buttons beside an info pane, and each button opens
-a popup. Login asks for the name and password, with Remember password, and Play as Guest
-for the name alone, with no password or remembered sign-in; Enter on the page opens Login.
-Create Account asks for the name, email and password, then the mailed code, and signs in.
-Forgot Password asks for the name and mails its code, then asks for it and a new
-password, and signs in. Delete Account asks for the name and its password, then says the
-account is deleted and forgets a remembered sign-in of it. The pane shows the players
-online, or while nobody is, the last 24 hours' games (`GET /v1/stats`), vera20k.org's five
-newest news posts in the game's language (`GET https://vera20k.org/news.json?lang=<tag>`,
-the tag of VERA's interface language such as `en`, `zh-CN` or `ru`, each post in English
-where the site has no translation: `{posts:[{date,title,summary}]}`) and the online rules;
-it reads both each time the page opens. A remembered
-sign-in lives in `Account.json` beside `VERA.INI` as `{name, sign_in_token}` per lobby,
-readable only by its owner; Login's popup then opens on the name with a masked password.
+VERA20k's online login page is its sign-in form: a username, which starts from the last
+name signed in, a password and Remember password. Play, or Enter, signs in: a username
+alone enters as a guest, and with its password as that account. Under the form the page
+shows the players online and the last 24 hours' games (`GET /v1/stats`, read each time
+the page opens), leaving out a count of none. Every other button opens a popup that
+starts from the form's username. Create Account asks for the name, email and password,
+then the mailed code, and signs in. Forgot Password asks for the name and mails its
+code, then asks for it and a new password, and signs in. Delete Account asks for the name
+and its password, then says the account is deleted and forgets a remembered sign-in of
+it. A remembered sign-in lives in `Account.json` beside `VERA.INI` as `{name,
+sign_in_token}` per lobby, readable only by its owner; the form then opens on the name
+with a masked password, and Play needs none.
 Unticking Remember password forgets it here and at the lobby, and so does a password
 sign-in of that name or a remembered sign-in of another account. A `wrong_password` or
 `no_account` answer to it forgets it too. Signing in under another name leaves it.
@@ -668,7 +686,9 @@ every 4 OS, from Corporal (32 points) at 18 to Five-Star General (1501) at 46, a
 Commander in Chief (2001) for the running season's number 1 from OS 46. Its `rank` is
 their place this season, 0 when unranked. One lookup fills both of the game's tables: its
 ladder table from `records`, and its high-score table, whose points pick each player's
-badge, from `high_scores`. A lobby from before badges sends no `high_scores`, and the game
+badge, from `high_scores`. Until the operator starts the first season no one has a rating,
+and `high_scores` gives every name asked for the Colonel's 251 points with `rank` 0; a
+lobby from before that sends none then. A lobby from before badges sends no `high_scores`, and the game
 then shows none; one from before `os` leaves it out, and the game shows the rounded OS.
 After a ranked game each of its players hears from `VERA20k` how it counted: their new OS,
 their place in the season and the badge the game brought them, such as `Ranked game won:
@@ -688,7 +708,8 @@ after it. An ended season keeps its final standings.
 indexes the ten badges, lowest first, and is `null` before the player's first ranked game;
 `rank` is `null` when they are unranked in the running season, and `ranked` is how many
 players it ranks. `games` holds their 20 newest rated games, each
-`{ended,season,sides,size,map,mode,teams,won,os,change}`, their own team first in `teams`; `trend`
+`{ended,season,sides,size,map,mode,teams,won,os,change}`, their own team first in `teams`,
+where `null` stands for a player whose account has since been deleted; `trend`
 their OS after each of their 200 newest rated games, oldest first, each `{ended,season,os}`;
 and `seasons` their final standing in each ended season they played, newest first, each
 `{season,rank,total,os,badge,wins,losses,disconnects}`. A name without an account answers

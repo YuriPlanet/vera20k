@@ -13,6 +13,35 @@ pub(crate) use crate::sim::snapshot::SavedCameoId as CameoId;
 
 use super::SidebarTab;
 
+/// Entries a strip holds before `SidebarClass::AddCameo` 6A6300 rejects another:
+/// it refuses a strip that already has more than 75, and `StripClass::InsertEntry`
+/// 6A8710 writes into a 75-record array. Ares 3.0 keeps its own growable vector
+/// per tab and drops both limits (`SidebarClass_AddCameo_SkipSizeCheck`
+/// Ares.dll 1002C160, hook 0x6A63B7; `StripClass_AddCameo_ReplaceItAll`
+/// Ares.dll 1002C2D0, hook 0x6A8710; every `TabCameos` loop runs to the vector's
+/// count), so an `ares` build never rejects a cameo for its strip's size.
+pub(crate) fn strip_rejects_entry(len: usize) -> bool {
+    #[cfg(not(feature = "ares"))]
+    {
+        len > 75
+    }
+    #[cfg(feature = "ares")]
+    {
+        let _ = len;
+        false
+    }
+}
+
+/// Leading strip entries `SidebarClass::FlashCameo` 6AC5F0 scans: its 75
+/// records, or (Ares.dll 1002C1D0, hook 0x6AC6D9) the whole tab vector.
+fn flash_scan_limit() -> usize {
+    if cfg!(feature = "ares") {
+        usize::MAX
+    } else {
+        75
+    }
+}
+
 /// The request retained by a cameo before its queued event reaches the Factory.
 /// Native Select6AB80D writes status1; Right6AB0C9 changes it to status2.
 /// Draw's status3 case (6A98DA) has no writer: Action stores only 0, 1 and 2.
@@ -178,10 +207,30 @@ impl CameoKey {
 /// `Default` is the SidebarClass constructor 6A4E60 and StripClass
 /// constructor 6A80A0 / Init_Clear 6A81B0 state: no entries, TopRow 0, nothing
 /// queued. Their Stage and Unknown_40 drive nothing (Unknown_40 is only -1).
+/// How many cameos a strip row holds: the original's two (GetVisibleSlotCount
+/// `0x006AC430` counts 2 * rows) unless the player's layout says otherwise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct StripColumns(usize);
+
+impl StripColumns {
+    pub(crate) fn new(columns: usize) -> Self {
+        Self(columns.max(1))
+    }
+}
+
+impl Default for StripColumns {
+    fn default() -> Self {
+        Self(2)
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct CameoStrips {
     strips: [Vec<Cameo>; 4],
     scroll_rows: [usize; 4],
+    /// The row width the scroll rules below count in. From the layout on
+    /// every refresh, not saved.
+    columns: StripColumns,
     /// StripClass PendingScroll: rows the scroll arrows queued, negative up.
     /// Presentation only, and not saved: a load starts with none queued.
     pending_scroll: [i32; 4],
@@ -274,6 +323,25 @@ impl CameoReconcile {
             Some(std::array::from_fn(|index| strips.strips[index].is_empty()));
         self
     }
+}
+
+/// MSVC `std::lower_bound` over a strip: the first entry for which
+/// `before(entry)` is false, found by the same halving walk Ares.dll runs
+/// (1002C2D0 and 1002C660). It is not a plain `partition_point`, because
+/// `SortsBefore` is true on an equal key and so is not a strict ordering.
+#[cfg(feature = "ares")]
+fn cameo_lower_bound(strip: &[Cameo], mut before: impl FnMut(&Cameo) -> bool) -> usize {
+    let (mut first, mut count) = (0, strip.len());
+    while count > 0 {
+        let half = count / 2;
+        if before(&strip[first + half]) {
+            first += half + 1;
+            count -= half + 1;
+        } else {
+            count = half;
+        }
+    }
+    first
 }
 
 impl CameoStrips {
@@ -405,6 +473,9 @@ impl CameoStrips {
     /// TAction115 -> Sidebar6AC5F0 matches the first retained numeric type
     /// index, deliberately without comparing RTTI (Unit/Aircraft can collide).
     /// Original-executed controls: tools/sidebar_oracle/trigger_cameos.json.
+    /// Ares 3.0 `SidebarClass_FlashCameo` (Ares.dll 1002C1D0, hook 0x6AC6D9)
+    /// runs the same match over the whole tab vector, not the first 75
+    /// ([`flash_scan_limit`]).
     pub(crate) fn flash_type_index(
         &mut self,
         tab: SidebarTab,
@@ -416,7 +487,7 @@ impl CameoStrips {
         let deadline = frame.wrapping_add(duration);
         if let Some(entry) = self.strips[tab.tab_index()]
             .iter()
-            .take(75)
+            .take(flash_scan_limit())
             .find(|entry| index_of(entry.id) == Some(type_index))
         {
             self.flash_deadlines.insert(entry.id, deadline);
@@ -453,6 +524,7 @@ impl CameoStrips {
         self.redraw_until = redraw_until;
     }
 
+    #[cfg(test)]
     pub(crate) fn scroll_rows(&self) -> [usize; 4] {
         self.scroll_rows
     }
@@ -482,7 +554,7 @@ impl CameoStrips {
         let index = tab.tab_index();
         let top = self.scroll_rows[index];
         let rows = rows as i32;
-        if down && (top + visible_rows) * 2 < self.strips[index].len() {
+        if down && (top + visible_rows) * self.columns.0 < self.strips[index].len() {
             self.pending_scroll[index] += rows;
         } else if !down && top != 0 {
             self.pending_scroll[index] -= rows;
@@ -499,6 +571,7 @@ impl CameoStrips {
     /// never shows it. A strip that fits on screen, or has no row left in
     /// the queued direction, drops its queue.
     pub(crate) fn step_pending_scroll(&mut self, visible_rows: usize) {
+        let columns = self.columns.0;
         for ((strip, top), pending) in self
             .strips
             .iter()
@@ -508,7 +581,7 @@ impl CameoStrips {
             if *pending == 0 {
                 continue;
             }
-            if visible_rows * 2 >= strip.len() {
+            if visible_rows * columns >= strip.len() {
                 *pending = 0;
             } else if *pending < 0 {
                 if *top == 0 {
@@ -517,13 +590,19 @@ impl CameoStrips {
                     *pending += 1;
                     *top -= 1;
                 }
-            } else if (*top + visible_rows) * 2 < strip.len() {
+            } else if (*top + visible_rows) * columns < strip.len() {
                 *pending -= 1;
                 *top += 1;
             } else {
                 *pending = 0;
             }
         }
+    }
+
+    /// Take the layout's row width for the scroll rules. A top row past the
+    /// end under a new width is clamped where the view is built.
+    pub(crate) fn set_columns(&mut self, columns: StripColumns) {
+        self.columns = columns;
     }
 
     pub(crate) fn has_pending_scroll(&self) -> bool {
@@ -548,20 +627,30 @@ impl CameoStrips {
         }
     }
 
-    /// AddCameo rejects a duplicate identity and count above 75. Equal keys
+    /// AddCameo rejects a duplicate identity and count above 75
+    /// ([`strip_rejects_entry`]; Ares lifts it). Equal keys
     /// enter before the existing item. Returns whether insertion succeeded.
     /// Native allocates only 75 records, so its accepted 76th entry can
     /// overwrite adjacent storage. Vec preserves that admission boundary
     /// safely; it does not reproduce the overwrite.
     pub(crate) fn insert(&mut self, candidate: &Cameo) -> bool {
         let strip = &mut self.strips[candidate.tab.tab_index()];
-        if strip.len() > 75 || strip.iter().any(|entry| entry.id == candidate.id) {
+        if strip_rejects_entry(strip.len()) || strip.iter().any(|entry| entry.id == candidate.id) {
             return false;
         }
+        #[cfg(not(feature = "ares"))]
         let at = strip
             .iter()
             .position(|entry| candidate.key.inserts_before(&entry.key))
             .unwrap_or(strip.len());
+        // Ares 3.0 `StripClass_AddCameo_ReplaceItAll` (Ares.dll 1002C2D0, hook
+        // 0x6A8710) inserts at `std::lower_bound` with `CameoDataStruct::operator<`
+        // (SortsBefore 0x6A8420, true on an equal name): an equal key enters
+        // after the existing item, not before it.
+        #[cfg(feature = "ares")]
+        let at = cameo_lower_bound(strip.as_slice(), |entry| {
+            entry.key.inserts_before(&candidate.key)
+        });
         strip.insert(at, candidate.clone());
         true
     }
@@ -571,11 +660,21 @@ impl CameoStrips {
     /// toward zero, including the odd-count upper bound. This deliberately
     /// preserves the native adjustment even when only a later item disappears.
     /// Original-executed controls: tools/sidebar_oracle/cameo_order.json.
+    ///
+    /// An `ares` build replaces the TopRow rule with Ares 3.0
+    /// `StripClass_RecheckCameos` (Ares.dll 1002C660, hook 0x6AA600): the cameo
+    /// that topped the strip is looked up again in the survivors with
+    /// `std::lower_bound` (SortsBefore 0x6A8420) and the row is
+    /// `min(position / 2, max(count - slots, 0) / 2)`; an unchanged count
+    /// leaves the row alone.
     pub(crate) fn retain(&mut self, visible_rows: usize, mut keep: impl FnMut(CameoId) -> bool) {
-        let visible_slots = visible_rows * 2;
+        let columns = self.columns.0;
+        let visible_slots = visible_rows * columns;
         for (strip, row) in self.strips.iter_mut().zip(&mut self.scroll_rows) {
             let old_count = strip.len();
-            let start = *row * 2;
+            #[cfg(feature = "ares")]
+            let top = strip.get(*row * columns).map(|entry| entry.key.clone());
+            let start = *row * columns;
             let mut old_index = 0;
             let mut new_index = 0;
             let mut first_visible = None;
@@ -593,13 +692,30 @@ impl CameoStrips {
                 old_index += 1;
                 retained
             });
+            #[cfg(feature = "ares")]
+            if strip.len() != old_count {
+                let last = strip.len().saturating_sub(visible_slots) / columns;
+                *row = match &top {
+                    Some(top) => {
+                        cameo_lower_bound(strip.as_slice(), |entry| entry.key.inserts_before(top))
+                            / columns
+                    }
+                    None => *row,
+                }
+                .min(last);
+            }
+            #[cfg(not(feature = "ares"))]
             if strip.len() != old_count {
                 *row = first_visible.map_or(0, |(snapshot_index, retained_index)| {
-                    let shifted = *row as i64 - (snapshot_index as i64 - retained_index as i64) / 2;
-                    let last = (strip.len() as i64 - visible_slots as i64) / 2;
+                    let columns = columns as i64;
+                    let shifted =
+                        *row as i64 - (snapshot_index as i64 - retained_index as i64) / columns;
+                    let last = (strip.len() as i64 - visible_slots as i64) / columns;
                     shifted.min(last).max(0) as usize
                 });
             }
+            #[cfg(feature = "ares")]
+            let _ = first_visible;
         }
         self.flash_deadlines
             .retain(|id, _| self.strips.iter().flatten().any(|entry| entry.id == *id));

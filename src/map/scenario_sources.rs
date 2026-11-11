@@ -15,10 +15,11 @@ use crate::map::skirmish_scenarios::{
     PKT_DEFAULT_MAX_PLAYERS, PKT_DEFAULT_MIN_PLAYERS, PKT_GAME_MODE_CAPACITY, PktEntryFields,
     SkirmishScenarioRecord, SkirmishScenarioSource, read_game_modes,
 };
-use crate::map::source::read_map_ini_for_metadata;
+use crate::map::source::{game_folder_file, game_folders, read_map_ini_for_metadata};
 use crate::map::waypoints::DEFAULT_SKIRMISH_PLAYER_CAPACITY;
 use crate::rules::ini_parser::IniFile;
 use crate::util::config::GameConfig;
+use crate::util::native_string::decode_widened_utf8;
 
 /// Names the loose wildcard scans skip. Both are exclusions, not prerequisites:
 /// the archived `MISSIONSMD.PKT` is already consumed as the first source, and
@@ -102,7 +103,7 @@ fn append_loose_pkt_records(
     assets: &AssetManager,
     csf: Option<&CsfFile>,
 ) -> Result<()> {
-    for (path, file_name) in loose_files_with_extension(ra2_dir, "pkt")? {
+    for (path, file_name) in loose_files_with_extension(&game_folders(ra2_dir), "pkt")? {
         // The wildcard scan would otherwise re-list every archived row a second
         // time from an extracted copy sitting beside the executable.
         if file_name.eq_ignore_ascii_case(MISSIONS_MD_PKT_FILE_NAME) {
@@ -117,7 +118,7 @@ fn append_loose_pkt_records(
             SkirmishScenarioSource::LoosePkt(file_name),
             csf,
             |map_file| {
-                read_map_ini_for_metadata(&ra2_dir.join(map_file)).or_else(|| {
+                read_map_ini_for_metadata(&game_folder_file(ra2_dir, map_file)).or_else(|| {
                     assets
                         .get_ref(map_file)
                         .and_then(|bytes| IniFile::from_bytes(bytes).ok())
@@ -134,7 +135,7 @@ fn append_loose_yro_records(
     manager: &mut AssetManager,
     csf: Option<&CsfFile>,
 ) -> Result<()> {
-    for (path, file_name) in loose_files_with_extension(ra2_dir, "yro")? {
+    for (path, file_name) in loose_files_with_extension(&game_folders(ra2_dir), "yro")? {
         // The campaign archive is skipped by name so its missions never reach
         // the skirmish chooser.
         if file_name.eq_ignore_ascii_case(MISSIONS_YRO_FILE_NAME) {
@@ -180,14 +181,14 @@ fn append_loose_yrm_records(
     records: &mut Vec<SkirmishScenarioRecord>,
     ra2_dir: &Path,
 ) -> Result<()> {
-    let mut files = loose_files_with_extension(ra2_dir, "yrm")?;
+    let mut files = loose_files_with_extension(&game_folders(ra2_dir), "yrm")?;
     // VERA's downloaded maps follow; a game-folder file of the same name is
     // the one a lookup finds (`source::local_map_path`).
     if let Some(downloaded) = crate::map::source::downloaded_maps_dir()
         && crate::util::file_system::exists(downloaded)
     {
         // An unreadable Maps folder lists nothing, not a failed scan.
-        let kept = loose_files_with_extension(downloaded, "yrm").unwrap_or_else(|error| {
+        let kept = loose_files_with_extension(&[downloaded], "yrm").unwrap_or_else(|error| {
             log::warn!("Could not list {}: {error}", downloaded.display());
             Vec::new()
         });
@@ -226,13 +227,18 @@ pub fn loose_yrm_record(
     ))
 }
 
-fn loose_files_with_extension(ra2_dir: &Path, extension: &str) -> Result<Vec<(PathBuf, String)>> {
+/// The files of `folders` with `extension`: one folder, or the game folder
+/// with the mod folder's files copied on top (`source::game_folders`).
+fn loose_files_with_extension(
+    folders: &[&Path],
+    extension: &str,
+) -> Result<Vec<(PathBuf, String)>> {
     let mut files = Vec::new();
 
     // `SessionClass::ScanMultiplayerMapFiles` (`0x00699980`) lists with
     // FindFirstFileA (`0x00699AE6`, `0x00699C5D`, `0x0069A007`) and registers
     // each YRO as it is listed.
-    for path in crate::util::case_insensitive_path::native_listing(ra2_dir)? {
+    for path in crate::util::case_insensitive_path::native_listing_over(folders)? {
         if !retail_enumerated_file(&path) {
             continue;
         }
@@ -383,7 +389,7 @@ fn pkt_display_name(
 ) -> Option<(String, Option<String>)> {
     let section = pkt.section(map_stem)?;
     if let Some(value) = section.read_name("DescriptionText", 0x2C) {
-        return Some((value.to_string(), None));
+        return Some((decode_widened_utf8(value).into_owned(), None));
     }
     section.read_name("Description", 0x400).map(|label| {
         let text = csf.map_or_else(|| label.to_string(), |csf| csf.text(label).into_owned());
@@ -445,6 +451,38 @@ mod tests {
         assert_eq!(entry.multiplayer_start_waypoints[0].ry, 100);
         assert_eq!(entry.player_capacity, 3);
         assert_eq!(entry.preview_source_bounds, None);
+    }
+
+    #[test]
+    fn map_text_saved_as_utf8_reads_as_its_characters() {
+        let directory = TestDirectory::new("utf8-map-text");
+        let path = directory.path().join("Daxian.yrm");
+        std::fs::write(&path, "[Basic]\nName=大仙防守\nAuthor=小明\n").unwrap();
+        let entry = read_map_menu_entry(&path, "Daxian.yrm");
+        assert_eq!(entry.display_name, "大仙防守");
+        assert_eq!(entry.author.as_deref(), Some("小明"));
+
+        // gamemd's 64-byte buffer ends this name inside a character.
+        std::fs::write(&path, format!("[Basic]\nName=A{}\n", "大".repeat(30))).unwrap();
+        let entry = read_map_menu_entry(&path, "Daxian.yrm");
+        assert_eq!(entry.display_name, format!("A{}", "大".repeat(20)));
+
+        let pkt = "[MultiMaps]\n1=Arena\n[Arena]\nDescriptionText=大仙防守\n";
+        let pkt = IniFile::from_bytes(pkt.as_bytes()).unwrap();
+        let mut records = Vec::new();
+        append_pkt_records(
+            &mut records,
+            &pkt,
+            SkirmishScenarioSource::MissionsMdPkt,
+            None,
+            bare_map_payload,
+        );
+        assert_eq!(records[0].display_name, "大仙防守");
+
+        assert_eq!(
+            crate::map::basic::briefing_text("[Basic]\nBriefing=守住@大桥\n".as_bytes()).as_deref(),
+            Some("守住\n大桥")
+        );
     }
 
     #[test]

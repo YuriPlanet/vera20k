@@ -160,7 +160,7 @@ impl RocketHost for RocketProcessHost<'_> {
         let frame = self.frame;
         self.owner_mut().body_facing.set(facing, frame);
     }
-    fn anim(&mut self, name: &'static str, coord: [i32; 3], delay: i32, z_adjust: i32) {
+    fn anim(&mut self, name: &str, coord: [i32; 3], delay: i32, z_adjust: i32) {
         let [x, y, z] = coord;
         self.sim.spawn_named_anim(
             self.rules,
@@ -242,6 +242,61 @@ impl RocketHost for RocketProcessHost<'_> {
         )
         .bridge_state_changed;
     }
+    fn weapon_detonation(&mut self, weapon: &str, coord: [i32; 3]) {
+        use crate::sim::projectile::{
+            ProjectileDetonation, ProjectileDetonationReason, ProjectilePayload, ProjectileTarget,
+        };
+        let rules = self.rules;
+        let Some(kind) = rules.weapon(weapon) else {
+            return;
+        };
+        let Some(warhead) = kind.warhead.as_deref() else {
+            return;
+        };
+        let interner = &mut self.sim.interner;
+        let payload = ProjectilePayload::new(
+            kind.damage,
+            interner.intern(warhead),
+            kind.projectile.as_deref().map(|name| interner.intern(name)),
+            kind.bright,
+        )
+        .with_installed_weapon(Some(interner.intern(&kind.id)));
+        // CreateBullet(owner, owner, ...) without Fire, then Remove: the
+        // Bullet stays at its constructor coordinate and detonates once at
+        // the impact, without the cluster loop.
+        let bullet_id = self.sim.construct_projectile(
+            self.id,
+            ProjectileTarget::Entity(self.id),
+            payload,
+            self.rules,
+        );
+        let bullet = self
+            .sim
+            .projectiles
+            .get(bullet_id)
+            .expect("constructed Missile.Weapon Bullet");
+        let detonation = ProjectileDetonation {
+            projectile_id: bullet_id,
+            source_id: bullet.source_id(),
+            target: bullet.target(),
+            impact: ProjectileCoord::new(coord[0], coord[1], coord[2]),
+            payload: bullet.payload(),
+            reason: ProjectileDetonationReason::DeathWeapon,
+        };
+        self.bridge_state_changed |= self.sim.commit_logic_projectile_detonations(
+            self.rules,
+            self.registry,
+            &[detonation],
+            self.frame_effects,
+        );
+        // UnInit (vtable +0xF8) of the never-Fired Bullet.
+        self.sim.destroy_unfired_projectile(
+            bullet_id,
+            self.rules,
+            self.registry,
+            self.frame_effects,
+        );
+    }
     fn uninit(&mut self) {
         self.sim.uninit_with_context(
             self.id,
@@ -272,9 +327,7 @@ impl Simulation {
         let Some(entity) = substrate.entities.get_mut(id) else {
             return;
         };
-        let (block, _) = rules
-            .missile_spawn
-            .rocket_block(interner.resolve(entity.type_ref()));
+        let (block, _) = rules.rocket_block(interner.resolve(entity.type_ref()));
         if let Some(rocket) = entity
             .locomotor
             .as_mut()
@@ -304,9 +357,9 @@ impl Simulation {
         else {
             return RocketProcessOutcome::default();
         };
-        let (block, cmisl) = rules
-            .missile_spawn
-            .rocket_block(self.interner.resolve(entity.type_ref()));
+        let type_name = self.interner.resolve(entity.type_ref());
+        let (block, cmisl) = rules.rocket_block(type_name);
+        let ext = rules.rocket_type_ext(type_name);
         let trig = TrigTable::embedded();
         let frame = self.session.binary_frame();
         let mut host = RocketProcessHost {
@@ -319,7 +372,7 @@ impl Simulation {
             bridge_state_changed: false,
             frame_effects,
         };
-        rocket_movement::process(&mut rocket, block, cmisl, &mut host);
+        rocket_movement::process(&mut rocket, block, cmisl, &ext, &mut host);
         let outcome = RocketProcessOutcome {
             bridge_state_changed: host.bridge_state_changed,
         };

@@ -60,6 +60,29 @@ impl Simulation {
         self.convert_techno_type(id, &target, rules, effects);
     }
 
+    /// A bare Type store (Unit `+0x6C4`) with Health at the new type's
+    /// Strength (`+0x6C`): Ares' visceroid merge
+    /// (`UnitClass_UpdatePosition_Visceroid @ 1004C530`) writes nothing else,
+    /// unlike [`Self::convert_techno_type`]. The Type facts VERA caches, which
+    /// native reads from the Type, follow; house tracking is left as native
+    /// leaves it.
+    #[cfg(feature = "ares")]
+    pub(crate) fn store_techno_type(
+        &mut self,
+        id: u64,
+        destination: &crate::rules::object_type::ObjectType,
+        rules: &RuleSet,
+    ) {
+        let new_type = self.interner.intern(&destination.id);
+        let Some(actor) = self.substrate.entities.get_mut(id) else {
+            return;
+        };
+        actor.type_ref = new_type;
+        actor.is_voxel = GameEntity::object_uses_voxel(&destination.id, destination, rules);
+        actor.refresh_type_projection(Some(destination), rules);
+        actor.health.set(destination.strength);
+    }
+
     pub(crate) fn convert_techno_type(
         &mut self,
         id: u64,

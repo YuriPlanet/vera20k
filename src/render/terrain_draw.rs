@@ -8,12 +8,15 @@
 //! into integer color and float depth scratch while live Z is not attached.
 //! Terrain edits use dependency waves, in which an edit replays the earlier
 //! edits it overlaps per pixel where it can do so exactly. Read-only Bullet
-//! edits instead reduce the last admitted body and subsequent shadows in four
-//! passes, preserving exact original sequence with immutable Z. Ordinary draw
-//! families are fences.
+//! edits, and read-write intervals that would need more waves, draw in command
+//! order against the live depth test, and opaque ordinary bodies can join such
+//! an interval (`draw_interval_tail`). WebGL2, without that path, reduces
+//! read-only edits to the last admitted body and subsequent shadows in four
+//! passes. Other ordinary draw families are fences.
 
 use super::batch::{
-    BatchRenderer, BatchTexture, CameraUniform, SPRITE_INSTANCE_ATTRIBUTES, SpriteInstance,
+    BatchRenderer, BatchTexture, CameraUniform, SHADOW_COUNT_FORMAT, SPRITE_INSTANCE_ATTRIBUTES,
+    SpriteInstance,
 };
 use super::tactical_draw_plan::RenderZPolicy;
 
@@ -36,7 +39,8 @@ pub(crate) use packed::{
 use submission::PassSubmission;
 pub(crate) use surface_lines::SurfaceLineBatch;
 
-// High16 bits select the final admitted body; low16 retain its native word.
+// WebGL2's reduction: high16 bits select the final admitted body; low16 retain
+// its native word.
 const READ_ONLY_COMMAND_LIMIT: usize = u16::MAX as usize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -133,30 +137,51 @@ struct Targets {
     depth: wgpu::TextureView,
     source: wgpu::BindGroup,
     snapshot: wgpu::BindGroup,
-    // Derived scratch, never display authority: snapshot clears every covered
-    // pixel before each read-only chunk. prepare replaces it with target handles.
-    read_only: wgpu::BindGroup,
-    /// WebGL2 resolve inputs: last bodies and shadow counts.
-    read_only_resolve: Option<wgpu::BindGroup>,
-    /// WebGL2 last-body and shadow-count attachments replacing the atomics.
-    read_only_targets: Option<[wgpu::TextureView; 2]>,
-    read_only_rows: u32,
+    /// WebGL2's read-only reduction scratch.
+    read_only: Option<ReadOnlyTargets>,
     /// Depth-tested edits' shadow counts (`R8Unorm`) and their resolve
     /// binding. Derived scratch: each interval clears it before counting.
     shadow_counts: Option<(wgpu::TextureView, wgpu::BindGroup)>,
 }
 
-/// Read-write edits against the live depth test (`terrain_depth.wgsl`).
-/// Absent on WebGL2, which has no independent blend and keeps the
-/// snapshot-and-edit waves.
+/// Derived scratch, never display authority: the snapshot clears every covered
+/// pixel before each read-only interval. `prepare` replaces it with the targets.
+struct ReadOnlyTargets {
+    /// Last-body and shadow-count attachments.
+    attachments: [wgpu::TextureView; 2],
+    /// The last bodies, as the shadows pass reads them.
+    bodies: wgpu::BindGroup,
+    /// The last bodies and shadow counts, as the resolve reads them.
+    resolve: wgpu::BindGroup,
+}
+
+/// Edits against the live depth test (`terrain_depth.wgsl`). Absent on WebGL2,
+/// which has no independent blend: it keeps the snapshot-and-edit waves and
+/// reduces read-only intervals (`ReadOnlyReduction`).
 struct DepthEditGpu {
+    read_write: DepthEditPipelines,
+    /// The same admission without a Z store.
+    read_only: DepthEditPipelines,
+    resolve: wgpu::RenderPipeline,
+    counts_layout: wgpu::BindGroupLayout,
+}
+
+struct DepthEditPipelines {
     body: wgpu::RenderPipeline,
     shadow: wgpu::RenderPipeline,
     /// The same pieces' negative-candidate pixels, depth compare Always.
     body_wrapped: wgpu::RenderPipeline,
     shadow_wrapped: wgpu::RenderPipeline,
+}
+
+/// WebGL2's read-only intervals (`TerrainDrawRenderer::reduce_read_only`).
+struct ReadOnlyReduction {
+    snapshot: wgpu::RenderPipeline,
+    body: wgpu::RenderPipeline,
+    shadow: wgpu::RenderPipeline,
     resolve: wgpu::RenderPipeline,
-    counts_layout: wgpu::BindGroupLayout,
+    bodies_layout: wgpu::BindGroupLayout,
+    resolve_layout: wgpu::BindGroupLayout,
 }
 
 /// Derived destination scratch for another native surface. The surface owner
@@ -177,25 +202,19 @@ pub(crate) struct TerrainDrawRenderer {
     packed_snapshot_pipeline: Option<wgpu::RenderPipeline>,
     body_pipeline: wgpu::RenderPipeline,
     shadow_pipeline: wgpu::RenderPipeline,
-    read_only_snapshot_pipeline: wgpu::RenderPipeline,
-    read_only_body_pipeline: wgpu::RenderPipeline,
-    read_only_shadow_pipeline: wgpu::RenderPipeline,
-    read_only_resolve_pipeline: wgpu::RenderPipeline,
+    /// The browser WebGL2 fallback's read-only reduction.
+    read_only: Option<ReadOnlyReduction>,
     #[cfg(test)]
     reference_body_pipeline: wgpu::RenderPipeline,
     #[cfg(test)]
     reference_shadow_pipeline: wgpu::RenderPipeline,
     source_layout: wgpu::BindGroupLayout,
     snapshot_layout: wgpu::BindGroupLayout,
-    read_only_layout: wgpu::BindGroupLayout,
-    /// The read-only layout itself, or on WebGL2 its bodies plus shadow counts.
-    read_only_resolve_layout: wgpu::BindGroupLayout,
-    /// Browser WebGL2 fallback: read-only reduction uses render targets.
-    webgl: bool,
     targets: Option<Targets>,
     camera: CameraUniform,
     batches: TerrainBatches,
-    read_only_commands: Vec<TerrainCommand>,
+    /// One pending read-only interval, flagged as `depth_commands` are.
+    read_only_commands: Vec<(TerrainCommand, bool)>,
     /// This frame's read-write wave windows (terrain_edit.wgsl `edits`).
     edit_records: super::uniform_windows::UniformWindows,
     depth: Option<DepthEditGpu>,
@@ -256,37 +275,6 @@ impl TerrainDrawRenderer {
             ],
         });
         let webgl = super::gpu::webgl_fallback(device);
-        let read_only_layout = if webgl {
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("WebGL2 read-only last bodies"),
-                entries: &[entry(0, wgpu::TextureSampleType::Uint)],
-            })
-        } else {
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Native read-only destination reduction"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            })
-        };
-        let read_only_resolve_layout = if webgl {
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("WebGL2 read-only last bodies and shadow counts"),
-                entries: &[
-                    entry(0, wgpu::TextureSampleType::Uint),
-                    entry(1, wgpu::TextureSampleType::Float { filterable: false }),
-                ],
-            })
-        } else {
-            read_only_layout.clone()
-        };
         let snapshot_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Terrain encoded RGB565 and native Z snapshot"),
             source: wgpu::ShaderSource::Wgsl(snapshot_source(webgl).into()),
@@ -295,18 +283,6 @@ impl TerrainDrawRenderer {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Terrain snapshot layout"),
                 bind_group_layouts: &[Some(&source_layout)],
-                immediate_size: 0,
-            });
-        // WebGL2 resets its render-target scratch through attachments instead.
-        let read_only_snapshot_groups: &[_] = if webgl {
-            &[Some(&source_layout)]
-        } else {
-            &[Some(&source_layout), Some(&read_only_layout)]
-        };
-        let read_only_snapshot_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Native read-only snapshot/reset layout"),
-                bind_group_layouts: read_only_snapshot_groups,
                 immediate_size: 0,
             });
         let target = |format| {
@@ -419,21 +395,22 @@ impl TerrainDrawRenderer {
                 cache: None,
             })
         };
-        let read_only_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Native read-only admitted body/shadow layout"),
-                bind_group_layouts: &[
-                    Some(batch.camera_bind_group_layout()),
-                    Some(batch.texture_bind_group_layout()),
-                    Some(&snapshot_layout),
-                    Some(&read_only_layout),
-                ],
-                immediate_size: 0,
+        let read_only = webgl.then(|| {
+            let bodies_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("WebGL2 read-only last bodies"),
+                entries: &[entry(0, wgpu::TextureSampleType::Uint)],
             });
-        // The WebGL2 bodies pass writes the R32Uint target its shadows pass
-        // reads, so it binds no read-only group.
-        let read_only_body_layout = if webgl {
-            &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            let resolve_layout =
+                device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("WebGL2 read-only last bodies and shadow counts"),
+                    entries: &[
+                        entry(0, wgpu::TextureSampleType::Uint),
+                        entry(1, wgpu::TextureSampleType::Float { filterable: false }),
+                    ],
+                });
+            // The bodies pass writes the R32Uint target its shadows pass
+            // reads, so it binds no last-bodies group.
+            let body_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("WebGL2 read-only last body layout"),
                 bind_group_layouts: &[
                     Some(batch.camera_bind_group_layout()),
@@ -441,106 +418,119 @@ impl TerrainDrawRenderer {
                     Some(&snapshot_layout),
                 ],
                 immediate_size: 0,
-            })
-        } else {
-            &read_only_pipeline_layout
-        };
-        let read_only_pipeline = |fragment, layout, target: wgpu::ColorTargetState| {
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(fragment),
-                layout: Some(layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: Some("vs_ordinal"),
-                    buffers: &[Some(wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<SpriteInstance>() as u64,
-                        step_mode: wgpu::VertexStepMode::Instance,
-                        attributes: &SPRITE_INSTANCE_ATTRIBUTES,
-                    })],
-                    compilation_options: Default::default(),
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: Some(fragment),
-                    targets: &[Some(target)],
-                    compilation_options: Default::default(),
-                }),
-                primitive: Default::default(),
-                depth_stencil: None,
-                multisample: Default::default(),
-                multiview_mask: None,
-                cache: None,
-            })
-        };
-        let resolve_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Native read-only ordered word resolution"),
-            source: wgpu::ShaderSource::Wgsl(resolve_source(webgl).into()),
-        });
-        let resolve_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Native read-only resolve layout"),
-            bind_group_layouts: &[Some(&snapshot_layout), Some(&read_only_resolve_layout)],
-            immediate_size: 0,
-        });
-        // Color writes are disabled on ordinary devices; only the scratch atomics change.
-        let discarded = wgpu::ColorTargetState {
-            format,
-            blend: None,
-            write_mask: wgpu::ColorWrites::empty(),
-        };
-        let (body_target, shadow_target) = if webgl {
+            });
+            let shadow_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("WebGL2 read-only admitted shadow layout"),
+                bind_group_layouts: &[
+                    Some(batch.camera_bind_group_layout()),
+                    Some(batch.texture_bind_group_layout()),
+                    Some(&snapshot_layout),
+                    Some(&bodies_layout),
+                ],
+                immediate_size: 0,
+            });
+            let reduction = |fragment, layout, target: wgpu::ColorTargetState| {
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some(fragment),
+                    layout: Some(layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader,
+                        entry_point: Some("vs_ordinal"),
+                        buffers: &[Some(wgpu::VertexBufferLayout {
+                            array_stride: std::mem::size_of::<SpriteInstance>() as u64,
+                            step_mode: wgpu::VertexStepMode::Instance,
+                            attributes: &SPRITE_INSTANCE_ATTRIBUTES,
+                        })],
+                        compilation_options: Default::default(),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &shader,
+                        entry_point: Some(fragment),
+                        targets: &[Some(target)],
+                        compilation_options: Default::default(),
+                    }),
+                    primitive: Default::default(),
+                    depth_stencil: None,
+                    multisample: Default::default(),
+                    multiview_mask: None,
+                    cache: None,
+                })
+            };
             let count = wgpu::BlendComponent {
                 src_factor: wgpu::BlendFactor::One,
                 dst_factor: wgpu::BlendFactor::One,
                 operation: wgpu::BlendOperation::Add,
             };
-            (
-                wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::R32Uint,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                },
-                wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::R8Unorm,
-                    blend: Some(wgpu::BlendState {
-                        color: count,
-                        alpha: count,
-                    }),
-                    write_mask: wgpu::ColorWrites::ALL,
-                },
-            )
-        } else {
-            (discarded.clone(), discarded)
-        };
-        let read_only_resolve_pipeline =
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("Native read-only final destination words"),
-                layout: Some(&resolve_layout),
-                vertex: wgpu::VertexState {
-                    module: &resolve_shader,
-                    entry_point: Some("vs_main"),
-                    buffers: &[],
-                    compilation_options: Default::default(),
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &resolve_shader,
-                    entry_point: Some("fs_main"),
-                    targets: &[target(format)],
-                    compilation_options: Default::default(),
-                }),
-                primitive: Default::default(),
-                // Words only: the live depth is attached (`LiveTail`), never
-                // tested or written.
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: wgpu::TextureFormat::Depth32Float,
-                    depth_write_enabled: Some(false),
-                    depth_compare: Some(wgpu::CompareFunction::Always),
-                    stencil: Default::default(),
-                    bias: Default::default(),
-                }),
-                multisample: Default::default(),
-                multiview_mask: None,
-                cache: None,
+            let resolve_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("WebGL2 read-only ordered word resolution"),
+                source: wgpu::ShaderSource::Wgsl(resolve_source().into()),
             });
+            let resolve_pipeline_layout =
+                device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("WebGL2 read-only resolve layout"),
+                    bind_group_layouts: &[Some(&snapshot_layout), Some(&resolve_layout)],
+                    immediate_size: 0,
+                });
+            ReadOnlyReduction {
+                snapshot: snapshot_pipeline(
+                    "fs_read_only",
+                    &snapshot_pipeline_layout,
+                    &snapshot_targets[..],
+                ),
+                body: reduction(
+                    "fs_read_only_body",
+                    &body_layout,
+                    wgpu::ColorTargetState {
+                        format: wgpu::TextureFormat::R32Uint,
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    },
+                ),
+                shadow: reduction(
+                    "fs_read_only_shadow",
+                    &shadow_layout,
+                    wgpu::ColorTargetState {
+                        format: wgpu::TextureFormat::R8Unorm,
+                        blend: Some(wgpu::BlendState {
+                            color: count,
+                            alpha: count,
+                        }),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    },
+                ),
+                resolve: device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("WebGL2 read-only final destination words"),
+                    layout: Some(&resolve_pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &resolve_shader,
+                        entry_point: Some("vs_main"),
+                        buffers: &[],
+                        compilation_options: Default::default(),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &resolve_shader,
+                        entry_point: Some("fs_main"),
+                        targets: &[target(format)],
+                        compilation_options: Default::default(),
+                    }),
+                    primitive: Default::default(),
+                    // Words only: the live depth is attached (`LiveTail`), never
+                    // tested or written.
+                    depth_stencil: Some(wgpu::DepthStencilState {
+                        format: wgpu::TextureFormat::Depth32Float,
+                        depth_write_enabled: Some(false),
+                        depth_compare: Some(wgpu::CompareFunction::Always),
+                        stencil: Default::default(),
+                        bias: Default::default(),
+                    }),
+                    multisample: Default::default(),
+                    multiview_mask: None,
+                    cache: None,
+                }),
+                bodies_layout,
+                resolve_layout,
+            }
+        });
         let depth = (!webgl).then(|| {
             let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Terrain depth-tested edit layout"),
@@ -556,8 +546,9 @@ impl TerrainDrawRenderer {
                 operation: wgpu::BlendOperation::Add,
             };
             // A body writes colour and resets its count; a shadow only adds
-            // 1/255 to the count. Both store Z through the live depth test.
-            let edit = |fragment, shadow: bool, depth_compare| {
+            // 1/255 to the count. Both store Z through the live depth test,
+            // except in a read-only interval.
+            let edit = |fragment, shadow: bool, depth_compare, stores_z: bool| {
                 device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                     label: Some(fragment),
                     layout: Some(&layout),
@@ -585,7 +576,7 @@ impl TerrainDrawRenderer {
                                 },
                             }),
                             Some(wgpu::ColorTargetState {
-                                format: wgpu::TextureFormat::R8Unorm,
+                                format: SHADOW_COUNT_FORMAT,
                                 blend: shadow.then_some(wgpu::BlendState {
                                     color: add,
                                     alpha: add,
@@ -598,7 +589,7 @@ impl TerrainDrawRenderer {
                     primitive: Default::default(),
                     depth_stencil: Some(wgpu::DepthStencilState {
                         format: wgpu::TextureFormat::Depth32Float,
-                        depth_write_enabled: Some(true),
+                        depth_write_enabled: Some(stores_z),
                         depth_compare: Some(depth_compare),
                         stencil: Default::default(),
                         bias: Default::default(),
@@ -656,18 +647,21 @@ impl TerrainDrawRenderer {
                 multiview_mask: None,
                 cache: None,
             });
+            let pipelines = |body, body_wrapped, stores_z| {
+                use wgpu::CompareFunction::{Always, Less};
+                DepthEditPipelines {
+                    body: edit(body, false, Less, stores_z),
+                    shadow: edit("fs_depth_shadow", true, Less, stores_z),
+                    body_wrapped: edit(body_wrapped, false, Always, stores_z),
+                    shadow_wrapped: edit("fs_depth_shadow_wrapped", true, Always, stores_z),
+                }
+            };
             DepthEditGpu {
-                body: edit("fs_depth_body", false, wgpu::CompareFunction::Less),
-                shadow: edit("fs_depth_shadow", true, wgpu::CompareFunction::Less),
-                body_wrapped: edit(
-                    "fs_depth_body_wrapped",
+                read_write: pipelines("fs_depth_body", "fs_depth_body_wrapped", true),
+                read_only: pipelines(
+                    "fs_depth_read_only_body",
+                    "fs_depth_read_only_body_wrapped",
                     false,
-                    wgpu::CompareFunction::Always,
-                ),
-                shadow_wrapped: edit(
-                    "fs_depth_shadow_wrapped",
-                    true,
-                    wgpu::CompareFunction::Always,
                 ),
                 resolve,
                 counts_layout,
@@ -686,24 +680,9 @@ impl TerrainDrawRenderer {
                     &packed_snapshot_targets,
                 )
             }),
-            read_only_snapshot_pipeline: snapshot_pipeline(
-                "fs_read_only",
-                &read_only_snapshot_layout,
-                &snapshot_targets[..if webgl { 4 } else { 2 }],
-            ),
             body_pipeline: pipeline("fs_body", true),
             shadow_pipeline: pipeline("fs_shadow", true),
-            read_only_body_pipeline: read_only_pipeline(
-                "fs_read_only_body",
-                read_only_body_layout,
-                body_target,
-            ),
-            read_only_shadow_pipeline: read_only_pipeline(
-                "fs_read_only_shadow",
-                &read_only_pipeline_layout,
-                shadow_target,
-            ),
-            read_only_resolve_pipeline,
+            read_only,
             // Original per-piece transactions remain only as test references.
             #[cfg(test)]
             reference_body_pipeline: pipeline("fs_body", false),
@@ -719,9 +698,6 @@ impl TerrainDrawRenderer {
             packed: packed::PackedSpriteGpu::new(device, queue, format, batch),
             source_layout,
             snapshot_layout,
-            read_only_layout,
-            read_only_resolve_layout,
-            webgl,
             targets: None,
             batches: TerrainBatches::default(),
             read_only_commands: Vec::new(),
@@ -870,7 +846,7 @@ impl TerrainDrawRenderer {
             resource: wgpu::BindingResource::TextureView(view),
         };
         let shadow_counts = self.depth.as_ref().map(|gpu| {
-            let counts = scratch(wgpu::TextureFormat::R8Unorm);
+            let counts = scratch(SHADOW_COUNT_FORMAT);
             let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("Terrain depth-tested shadow counts"),
                 layout: &gpu.counts_layout,
@@ -891,56 +867,25 @@ impl TerrainDrawRenderer {
             layout: &self.snapshot_layout,
             entries: &[binding(0, &words), binding(1, &scratch_depth)],
         });
-        if self.webgl {
-            // Whole-surface render targets: one band covers every row.
+        let read_only = if let Some(gpu) = &self.read_only {
             let bodies = scratch(wgpu::TextureFormat::R32Uint);
             let shadows = scratch(wgpu::TextureFormat::R8Unorm);
-            let read_only = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("WebGL2 read-only last bodies"),
-                layout: &self.read_only_layout,
-                entries: &[binding(0, &bodies)],
-            });
-            let read_only_resolve = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("WebGL2 read-only last bodies and shadow counts"),
-                layout: &self.read_only_resolve_layout,
-                entries: &[binding(0, &bodies), binding(1, &shadows)],
-            });
-            return Targets {
-                source_color: color.clone(),
-                source_depth: depth.clone(),
-                _encoded_source: encoded_source,
-                words,
-                depth: scratch_depth,
-                source,
-                snapshot,
-                read_only,
-                read_only_resolve: Some(read_only_resolve),
-                read_only_targets: Some([bodies, shadows]),
-                read_only_rows: color.height(),
-                shadow_counts,
-            };
-        }
-        let read_only_rows = color.height().min(
-            (device.limits().max_storage_buffer_binding_size / 8 / u64::from(color.width())) as u32,
-        );
-        assert!(
-            read_only_rows > 0,
-            "one destination row fits a storage binding"
-        );
-        let state = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Native read-only body ordinal/word and shadow count"),
-            size: u64::from(color.width()) * u64::from(read_only_rows) * 8,
-            usage: wgpu::BufferUsages::STORAGE,
-            mapped_at_creation: false,
-        });
-        let read_only = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Native read-only destination scratch"),
-            layout: &self.read_only_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: state.as_entire_binding(),
-            }],
-        });
+            Some(ReadOnlyTargets {
+                bodies: device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("WebGL2 read-only last bodies"),
+                    layout: &gpu.bodies_layout,
+                    entries: &[binding(0, &bodies)],
+                }),
+                resolve: device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("WebGL2 read-only last bodies and shadow counts"),
+                    layout: &gpu.resolve_layout,
+                    entries: &[binding(0, &bodies), binding(1, &shadows)],
+                }),
+                attachments: [bodies, shadows],
+            })
+        } else {
+            None
+        };
         Targets {
             source_color: color.clone(),
             source_depth: depth.clone(),
@@ -950,21 +895,18 @@ impl TerrainDrawRenderer {
             source,
             snapshot,
             read_only,
-            read_only_resolve: None,
-            read_only_targets: None,
-            read_only_rows,
             shadow_counts,
         }
     }
 
-    /// Whether read-write intervals needing two or more waves draw against
-    /// the live depth test.
-    #[cfg(test)]
+    /// Whether edits can draw against the live depth test: read-write
+    /// intervals needing two or more waves, and [`Self::draw_interval_tail`].
     pub(crate) fn depth_tested_edits(&self) -> bool {
         self.depth.is_some()
     }
 
-    /// Test hook: replays and strict waves only, as on WebGL2.
+    /// Test hook: read-write replays and strict waves only, as on WebGL2.
+    /// Read-only edits have no other path on a device without its reduction.
     #[cfg(test)]
     pub(crate) fn disable_depth_tested_edits(&mut self) {
         self.depth = None;
@@ -975,8 +917,8 @@ impl TerrainDrawRenderer {
     /// ReadWrite overlaps retain dependency waves, replaying each other inside
     /// one where they can (`replays`); an interval that still needs two or
     /// more waves draws against the live depth test where the adapter has it
-    /// (`draw_read_write`). A maximal ReadOnly interval reduces admitted
-    /// bodies/shadows against one immutable Z snapshot in four passes;
+    /// (`draw_read_write`). A maximal ReadOnly interval draws against the
+    /// live depth test too, which it leaves as it found it (`draw_read_only`);
     /// command sequence, never instance/atlas index, selects its order.
     pub(crate) fn draw_span<'a>(
         &mut self,
@@ -1021,23 +963,9 @@ impl TerrainDrawRenderer {
         let mut stats = TerrainBatchStats::default();
         let mut tail = None;
         for draw in commands {
-            assert!(
-                matches!(
-                    draw.render_z,
-                    RenderZPolicy::ReadOnly | RenderZPolicy::ReadWrite
-                ),
-                "destination edits require an explicit native depth policy"
-            );
-            // Missing images stay absent and cannot manufacture dependencies.
-            // The resolver is a stable frame-local view through every wave.
-            if atlas(draw.atlas_slot).is_none() {
-                continue;
-            }
-            let instance = &instances[draw.index as usize];
-            let Some(rect) = piece_scissor(instance, self.camera, tactical) else {
+            let Some((command, wraps)) = self.admit_edit(draw, atlas, instances, tactical) else {
                 continue;
             };
-            let command = TerrainCommand::new(draw, rect);
             if draw.render_z == RenderZPolicy::ReadOnly {
                 if self.batches.stats().pieces != 0 {
                     stats.accumulate(self.draw_read_write(
@@ -1045,28 +973,19 @@ impl TerrainDrawRenderer {
                     ));
                     self.batches.begin_span(size);
                 }
-                self.read_only_commands.push(command);
-                if self.read_only_commands.len() == READ_ONLY_COMMAND_LIMIT {
+                self.read_only_commands.push((command, wraps));
+                if self.read_only.is_some()
+                    && self.read_only_commands.len() == READ_ONLY_COMMAND_LIMIT
+                {
                     stats.accumulate(
                         self.draw_read_only(encoder, color, depth, batch, atlas, buffer, &mut tail),
                     );
-                    self.read_only_commands.clear();
                 }
                 continue;
             }
             stats.accumulate(
                 self.draw_read_only(encoder, color, depth, batch, atlas, buffer, &mut tail),
             );
-            self.read_only_commands.clear();
-            let mut wraps = false;
-            if self.depth.is_some() {
-                let low = candidate_range(instance, self.camera)[0];
-                // Above 65535 nothing is admitted; only negative rows wrap.
-                if low > 65535 {
-                    continue;
-                }
-                wraps = low < 0;
-            }
             let camera = self.camera;
             if self.batches.push_replaying(command, |earlier, later| {
                 replays(&camera, instances, atlas, earlier, later)
@@ -1103,8 +1022,83 @@ impl TerrainDrawRenderer {
         stats.accumulate(
             self.draw_read_only(encoder, color, depth, batch, atlas, buffer, &mut tail),
         );
-        self.read_only_commands.clear();
         (stats, tail)
+    }
+
+    /// One interval of destination edits and opaque bodies in parent order,
+    /// in a single pass against the live depth test, leaving its shadow
+    /// resolve as the tail. A body restarts its pixels' shadow counts as a
+    /// body edit does (`fs_counted`), so the words snapshot and resolve leave
+    /// what the original sequence of stores and halvings leaves. VERA
+    /// scheduling only: `draw_body` records the caller's body `u32`.
+    pub(crate) fn draw_interval_tail<'a>(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        color: &wgpu::TextureView,
+        depth: &wgpu::TextureView,
+        batch: &BatchRenderer,
+        atlas: &impl Fn(usize) -> Option<&'a BatchTexture>,
+        buffer: &wgpu::Buffer,
+        instances: &[SpriteInstance],
+        draws: &[IntervalDraw],
+        tactical: [u32; 4],
+        draw_body: impl FnMut(&mut wgpu::RenderPass<'_>, u32),
+    ) -> (TerrainBatchStats, Option<LiveTail>) {
+        let steps: Vec<_> = draws
+            .iter()
+            .filter_map(|&draw| match draw {
+                IntervalDraw::Body(body) => Some(DepthStep::Body(body)),
+                IntervalDraw::Edit(edit) => self
+                    .admit_edit(edit, atlas, instances, tactical)
+                    .map(|(command, wraps)| DepthStep::Edit(command, wraps)),
+            })
+            .collect();
+        let mut tail = None;
+        let stats = self.draw_depth_run(
+            encoder,
+            color,
+            depth,
+            batch,
+            atlas,
+            buffer,
+            steps.iter().copied(),
+            draw_body,
+            &mut tail,
+        );
+        (stats, tail)
+    }
+
+    /// The scheduled form of an edit, and whether it also draws its wrapped
+    /// variant; `None` when it can draw nothing.
+    fn admit_edit<'a>(
+        &self,
+        draw: DestinationEditCommand,
+        atlas: &impl Fn(usize) -> Option<&'a BatchTexture>,
+        instances: &[SpriteInstance],
+        tactical: [u32; 4],
+    ) -> Option<(TerrainCommand, bool)> {
+        assert!(
+            matches!(
+                draw.render_z,
+                RenderZPolicy::ReadOnly | RenderZPolicy::ReadWrite
+            ),
+            "destination edits require an explicit native depth policy"
+        );
+        // Missing images stay absent and cannot manufacture dependencies.
+        // The resolver is a stable frame-local view through every wave.
+        atlas(draw.atlas_slot)?;
+        let instance = &instances[draw.index as usize];
+        let rect = piece_scissor(instance, self.camera, tactical)?;
+        let mut wraps = false;
+        if self.depth.is_some() {
+            let low = candidate_range(instance, self.camera)[0];
+            // Above 65535 nothing is admitted; only negative rows wrap.
+            if low > 65535 {
+                return None;
+            }
+            wraps = low < 0;
+        }
+        Some((TerrainCommand::new(draw, rect), wraps))
     }
 
     /// The pending read-write interval. One wave, its overlaps replayed
@@ -1123,7 +1117,20 @@ impl TerrainDrawRenderer {
         tail: &mut Option<LiveTail>,
     ) -> TerrainBatchStats {
         let stats = if self.batches.stats().waves > 1 && !self.depth_commands.is_empty() {
-            self.draw_depth_run(encoder, color, depth, batch, atlas, buffer, tail)
+            let commands = std::mem::take(&mut self.depth_commands);
+            let stats = self.draw_depth_run(
+                encoder,
+                color,
+                depth,
+                batch,
+                atlas,
+                buffer,
+                edit_steps(&commands),
+                no_bodies,
+                tail,
+            );
+            self.depth_commands = commands;
+            stats
         } else {
             self.draw_scheduled(encoder, color, depth, batch, atlas, buffer, instances, tail)
         };
@@ -1131,9 +1138,9 @@ impl TerrainDrawRenderer {
         stats
     }
 
-    /// One maximal read-write interval in a single pass against the live
-    /// depth test, in command order, instead of a snapshot/edit wave per
-    /// overlap layer. Admission and the stored Z are the original leaves'
+    /// One maximal interval in a single pass against the live depth test, in
+    /// command order, instead of a snapshot/edit wave per overlap layer.
+    /// Admission and any stored Z are the original leaves'
     /// (`terrain_depth.wgsl`). Shadows count per pixel instead of halving;
     /// a words snapshot of the result and the resolve tail then halve each
     /// pixel once per shadow admitted after its last admitted body, which is
@@ -1146,12 +1153,10 @@ impl TerrainDrawRenderer {
         batch: &BatchRenderer,
         atlas: &impl Fn(usize) -> Option<&'texture BatchTexture>,
         buffer: &wgpu::Buffer,
+        steps: impl Iterator<Item = DepthStep> + Clone,
+        mut draw_body: impl FnMut(&mut wgpu::RenderPass<'_>, u32),
         tail: &mut Option<LiveTail>,
     ) -> TerrainBatchStats {
-        if self.depth_commands.is_empty() {
-            return TerrainBatchStats::default();
-        }
-        let commands = std::mem::take(&mut self.depth_commands);
         let mut passes = 0;
         // The previous tail lands first; it also still reads the scratch.
         if let Some(previous) = tail.take() {
@@ -1202,7 +1207,15 @@ impl TerrainDrawRenderer {
             pass.set_bind_group(0, batch.camera_bind_group(), &[]);
             pass.set_vertex_buffer(0, buffer.slice(..));
             let mut bound_atlas = None;
-            for (command, wraps) in &commands {
+            for step in steps.clone() {
+                let (command, wraps) = match step {
+                    DepthStep::Edit(command, wraps) => (command, wraps),
+                    DepthStep::Body(body) => {
+                        draw_body(&mut pass, body);
+                        bound_atlas = None;
+                        continue;
+                    }
+                };
                 let draw = command.draw;
                 if bound_atlas != Some(draw.atlas_slot) {
                     let texture =
@@ -1212,14 +1225,19 @@ impl TerrainDrawRenderer {
                 }
                 let [x, y, width, height] = command.rect;
                 pass.set_scissor_rect(x, y, width, height);
+                let pipelines = if draw.render_z == RenderZPolicy::ReadOnly {
+                    &gpu.read_only
+                } else {
+                    &gpu.read_write
+                };
                 let (pipeline, wrapped) = match draw.piece {
-                    TerrainPiece::Body => (&gpu.body, &gpu.body_wrapped),
-                    TerrainPiece::Shadow => (&gpu.shadow, &gpu.shadow_wrapped),
+                    TerrainPiece::Body => (&pipelines.body, &pipelines.body_wrapped),
+                    TerrainPiece::Shadow => (&pipelines.shadow, &pipelines.shadow_wrapped),
                 };
                 pass.set_pipeline(pipeline);
                 pass.draw(0..6, draw.index..draw.index + 1);
                 // The two variants admit disjoint rows of the same piece.
-                if *wraps {
+                if wraps {
                     pass.set_pipeline(wrapped);
                     pass.draw(0..6, draw.index..draw.index + 1);
                 }
@@ -1227,10 +1245,14 @@ impl TerrainDrawRenderer {
         }
         self.submission.note_closed_passes(encoder, 1);
         passes += 1;
-        let shadows: Vec<_> = commands
-            .iter()
-            .filter(|(command, _)| command.draw.piece == TerrainPiece::Shadow)
-            .map(|(command, _)| command.rect)
+        let shadows: Vec<_> = steps
+            .clone()
+            .filter_map(|step| match step {
+                DepthStep::Edit(command, _) if command.draw.piece == TerrainPiece::Shadow => {
+                    Some(command.rect)
+                }
+                _ => None,
+            })
             .collect();
         if !shadows.is_empty() {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1256,15 +1278,14 @@ impl TerrainDrawRenderer {
             // Repeated clipped rectangles write the same immutable result.
             *tail = Some(LiveTail(Tail::Shadows(shadows)));
         }
-        let stats = TerrainBatchStats {
-            pieces: commands.len(),
+        TerrainBatchStats {
+            pieces: steps
+                .filter(|step| matches!(step, DepthStep::Edit(..)))
+                .count(),
             waves: 1,
             passes,
             tile_dependencies: 0,
-        };
-        self.depth_commands = commands;
-        self.depth_commands.clear();
-        stats
+        }
     }
 
     fn draw_scheduled<'a>(
@@ -1298,14 +1319,9 @@ impl TerrainDrawRenderer {
         stats
     }
 
-    /// Original read-only leaves do not alter admission for any later piece.
-    /// Select the last admitted body, count admitted shadows after that body,
-    /// and apply the native packed half operation to that body's word (or the
-    /// snapshot when there was no body). No depth/ordering authority is added.
-    /// Capacity bands reuse bounded scratch for large attachments; separate
-    /// pixels are independent, so bands cannot reorder a pixel's operations.
-    /// Each band's final words are its tail; the next band's reset reuses the
-    /// scratch they read, so that tail lands first.
+    /// One maximal read-only interval, which leaves the pending commands
+    /// empty. Its pieces never change Z, so the live depth test admits each
+    /// as a snapshot of the Z it began with would.
     fn draw_read_only<'texture>(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
@@ -1319,143 +1335,136 @@ impl TerrainDrawRenderer {
         if self.read_only_commands.is_empty() {
             return TerrainBatchStats::default();
         }
-        let commands = std::mem::take(&mut self.read_only_commands);
-        let height = self
-            .targets
-            .as_ref()
-            .expect("prepare precedes destination drawing")
-            .source_color
-            .height();
-        let band_rows = self.targets.as_ref().map_or(1, |t| t.read_only_rows);
-        let mut passes = 0;
-        for top in (0..height).step_by(band_rows as usize) {
-            let bottom = (top + band_rows).min(height);
-            let band_rect = |rect: [u32; 4]| {
-                let y = rect[1].max(top);
-                let end = (rect[1] + rect[3]).min(bottom);
-                (end > y).then_some([rect[0], y, rect[2], end.saturating_sub(y)])
-            };
-            if !commands
-                .iter()
-                .any(|command| band_rect(command.rect).is_some())
-            {
-                continue;
-            }
-            if let Some(previous) = tail.take() {
-                passes += self.flush_tail(encoder, color, depth, previous, batch, atlas, buffer);
-            }
-            let targets = self
-                .targets
-                .as_ref()
-                .expect("prepare precedes destination drawing");
-            let attachment = |view| {
-                Some(wgpu::RenderPassColorAttachment {
-                    view,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })
-            };
-            {
-                let snapshot = [attachment(&targets.words), attachment(&targets.depth)];
-                let webgl_snapshot = targets.read_only_targets.as_ref().map(|[bodies, shadows]| {
-                    [
-                        attachment(&targets.words),
-                        attachment(&targets.depth),
-                        attachment(bodies),
-                        attachment(shadows),
-                    ]
-                });
-                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Read-only snapshot and covered scratch reset"),
-                    color_attachments: webgl_snapshot
-                        .as_ref()
-                        .map_or(&snapshot[..], |all| &all[..]),
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                    multiview_mask: None,
-                });
-                pass.set_pipeline(&self.read_only_snapshot_pipeline);
-                pass.set_bind_group(0, &targets.source, &[]);
-                if targets.read_only_targets.is_none() {
-                    pass.set_bind_group(1, &targets.read_only, &[]);
-                }
-                for command in &commands {
-                    let Some([x, y, width, height]) = band_rect(command.rect) else {
-                        continue;
-                    };
-                    pass.set_scissor_rect(x, y, width, height);
-                    pass.draw(0..3, 0..1);
-                }
-            }
-            for (piece, pipeline) in [
-                (TerrainPiece::Body, &self.read_only_body_pipeline),
-                (TerrainPiece::Shadow, &self.read_only_shadow_pipeline),
-            ] {
-                // WebGL2 reduces into its own attachments; ordinary devices
-                // attach the colour target with writes disabled.
-                let output = match (&targets.read_only_targets, piece) {
-                    (Some([bodies, _]), TerrainPiece::Body) => bodies,
-                    (Some([_, shadows]), TerrainPiece::Shadow) => shadows,
-                    (None, _) => color,
-                };
-                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Read-only admitted source reduction"),
-                    color_attachments: &[attachment(output)],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                    multiview_mask: None,
-                });
-                pass.set_pipeline(pipeline);
-                pass.set_bind_group(0, batch.camera_bind_group(), &[]);
-                pass.set_bind_group(2, &targets.snapshot, &[]);
-                if targets.read_only_targets.is_none() || piece == TerrainPiece::Shadow {
-                    pass.set_bind_group(3, &targets.read_only, &[]);
-                }
-                pass.set_vertex_buffer(0, buffer.slice(..));
-                let mut bound_atlas = None;
-                for (ordinal, command) in commands.iter().enumerate() {
-                    let draw = command.draw;
-                    if draw.piece != piece {
-                        continue;
-                    }
-                    if bound_atlas != Some(draw.atlas_slot) {
-                        let texture =
-                            atlas(draw.atlas_slot).expect("scheduled atlas remains available");
-                        pass.set_bind_group(1, &texture.bind_group, &[]);
-                        bound_atlas = Some(draw.atlas_slot);
-                    }
-                    let Some([x, y, width, height]) = band_rect(command.rect) else {
-                        continue;
-                    };
-                    pass.set_scissor_rect(x, y, width, height);
-                    // Sequence is independent of instance storage, page and piece.
-                    let vertex = ordinal as u32 * 6;
-                    pass.draw(vertex..vertex + 6, draw.index..draw.index + 1);
-                }
-            }
-            self.submission.note_closed_passes(encoder, 3);
-            passes += 3;
-            // Repeated clipped rectangles write the same immutable result.
-            let rects = commands
-                .iter()
-                .filter_map(|command| band_rect(command.rect))
-                .collect();
-            *tail = Some(LiveTail(Tail::ReadOnly(rects)));
-        }
-        let stats = TerrainBatchStats {
-            pieces: commands.len(),
-            waves: 1,
-            passes,
-            tile_dependencies: 0,
+        let mut commands = std::mem::take(&mut self.read_only_commands);
+        let stats = if self.read_only.is_some() {
+            self.reduce_read_only(encoder, color, depth, batch, atlas, buffer, &commands, tail)
+        } else {
+            self.draw_depth_run(
+                encoder,
+                color,
+                depth,
+                batch,
+                atlas,
+                buffer,
+                edit_steps(&commands),
+                no_bodies,
+                tail,
+            )
         };
+        commands.clear();
         self.read_only_commands = commands;
         stats
+    }
+
+    /// WebGL2's read-only interval, in four passes. Original read-only leaves
+    /// do not alter admission for any later piece. Select the last admitted
+    /// body, count admitted shadows after that body, and apply the native
+    /// packed half operation to that body's word (or the snapshot when there
+    /// was no body). No depth/ordering authority is added. The final words
+    /// are the tail.
+    fn reduce_read_only<'texture>(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        color: &wgpu::TextureView,
+        depth: &wgpu::TextureView,
+        batch: &BatchRenderer,
+        atlas: &impl Fn(usize) -> Option<&'texture BatchTexture>,
+        buffer: &wgpu::Buffer,
+        commands: &[(TerrainCommand, bool)],
+        tail: &mut Option<LiveTail>,
+    ) -> TerrainBatchStats {
+        let mut passes = 0;
+        if let Some(previous) = tail.take() {
+            passes += self.flush_tail(encoder, color, depth, previous, batch, atlas, buffer);
+        }
+        let gpu = self.read_only.as_ref().expect("the WebGL2 reduction");
+        let targets = self
+            .targets
+            .as_ref()
+            .expect("prepare precedes destination drawing");
+        let scratch = targets.read_only.as_ref().expect("the WebGL2 scratch");
+        let attachment = |view| {
+            Some(wgpu::RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })
+        };
+        let [bodies, shadows] = &scratch.attachments;
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Read-only snapshot and covered scratch reset"),
+                color_attachments: &[
+                    attachment(&targets.words),
+                    attachment(&targets.depth),
+                    attachment(bodies),
+                    attachment(shadows),
+                ],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&gpu.snapshot);
+            pass.set_bind_group(0, &targets.source, &[]);
+            for (command, _) in commands {
+                let [x, y, width, height] = command.rect;
+                pass.set_scissor_rect(x, y, width, height);
+                pass.draw(0..3, 0..1);
+            }
+        }
+        for (piece, pipeline, output) in [
+            (TerrainPiece::Body, &gpu.body, bodies),
+            (TerrainPiece::Shadow, &gpu.shadow, shadows),
+        ] {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Read-only admitted source reduction"),
+                color_attachments: &[attachment(output)],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(pipeline);
+            pass.set_bind_group(0, batch.camera_bind_group(), &[]);
+            pass.set_bind_group(2, &targets.snapshot, &[]);
+            if piece == TerrainPiece::Shadow {
+                pass.set_bind_group(3, &scratch.bodies, &[]);
+            }
+            pass.set_vertex_buffer(0, buffer.slice(..));
+            let mut bound_atlas = None;
+            for (ordinal, (command, _)) in commands.iter().enumerate() {
+                let draw = command.draw;
+                if draw.piece != piece {
+                    continue;
+                }
+                if bound_atlas != Some(draw.atlas_slot) {
+                    let texture =
+                        atlas(draw.atlas_slot).expect("scheduled atlas remains available");
+                    pass.set_bind_group(1, &texture.bind_group, &[]);
+                    bound_atlas = Some(draw.atlas_slot);
+                }
+                let [x, y, width, height] = command.rect;
+                pass.set_scissor_rect(x, y, width, height);
+                // Sequence is independent of instance storage, page and piece.
+                let vertex = ordinal as u32 * 6;
+                pass.draw(vertex..vertex + 6, draw.index..draw.index + 1);
+            }
+        }
+        self.submission.note_closed_passes(encoder, 3);
+        // Repeated clipped rectangles write the same immutable result.
+        let rects = commands.iter().map(|(command, _)| command.rect).collect();
+        *tail = Some(LiveTail(Tail::ReadOnly(rects)));
+        TerrainBatchStats {
+            pieces: commands.len(),
+            waves: 1,
+            passes: passes + 3,
+            tile_dependencies: 0,
+        }
     }
 
     /// Sequential validation reference shares the exact clip and pipelines
@@ -1641,16 +1650,11 @@ impl TerrainDrawRenderer {
                 }
             }
             Tail::ReadOnly(rects) => {
-                pass.set_pipeline(&self.read_only_resolve_pipeline);
+                let gpu = self.read_only.as_ref().expect("the WebGL2 reduction");
+                let scratch = targets.read_only.as_ref().expect("the WebGL2 scratch");
+                pass.set_pipeline(&gpu.resolve);
                 pass.set_bind_group(0, &targets.snapshot, &[]);
-                pass.set_bind_group(
-                    1,
-                    targets
-                        .read_only_resolve
-                        .as_ref()
-                        .unwrap_or(&targets.read_only),
-                    &[],
-                );
+                pass.set_bind_group(1, &scratch.resolve, &[]);
                 // Pixels with no admitted operation discard, preserving live bytes.
                 for &[x, y, width, height] in rects {
                     pass.set_scissor_rect(x, y, width, height);
@@ -1723,6 +1727,34 @@ impl TerrainDrawRenderer {
     }
 }
 
+/// One draw of [`TerrainDrawRenderer::draw_interval_tail`], in parent order.
+#[derive(Clone, Copy)]
+pub(crate) enum IntervalDraw {
+    Edit(DestinationEditCommand),
+    /// An opaque body the caller records, by its own number.
+    Body(u32),
+}
+
+/// One draw of a depth-tested interval; an edit is flagged where it may have
+/// negative candidates and also draws its wrapped variant.
+#[derive(Clone, Copy)]
+enum DepthStep {
+    Edit(TerrainCommand, bool),
+    Body(u32),
+}
+
+fn edit_steps(
+    commands: &[(TerrainCommand, bool)],
+) -> impl Iterator<Item = DepthStep> + Clone + use<'_> {
+    commands
+        .iter()
+        .map(|&(command, wraps)| DepthStep::Edit(command, wraps))
+}
+
+fn no_bodies(_: &mut wgpu::RenderPass<'_>, _: u32) {
+    unreachable!("an edit interval holds only edits");
+}
+
 /// The draws a destination edit leaves for the live colour and depth after
 /// its last read of them. The caller's next pass over those attachments
 /// records them first ([`TerrainDrawRenderer::record_tail`]); anything else
@@ -1740,26 +1772,23 @@ enum Tail {
     Edits(Vec<TerrainCommand>, Vec<(wgpu::BindGroup, u32)>),
     /// One depth-tested interval's shadow halves, per shadow rectangle.
     Shadows(Vec<[u32; 4]>),
-    /// One read-only band's final words, per clipped rectangle.
+    /// WebGL2's read-only final words, per rectangle.
     ReadOnly(Vec<[u32; 4]>),
 }
 
 /// Snapshot module source. The WebGL2 fallback loads the scene through its
-/// sRGB view and resets render-target scratch instead of storage atomics.
+/// sRGB view and has a snapshot that also resets its read-only scratch.
 fn snapshot_source(webgl: bool) -> String {
-    let snapshot = include_str!("terrain_snapshot.wgsl");
+    let snapshot = format!(
+        "{}\n{}",
+        include_str!("native_packed.wgsl"),
+        include_str!("terrain_snapshot.wgsl")
+    );
     if !webgl {
-        return format!("{}\n{}", include_str!("native_packed.wgsl"), snapshot);
+        return snapshot;
     }
-    let ordinary = &snapshot[..snapshot
-        .find("// Read-only span scratch")
-        .expect("read-only snapshot section")];
     crate::render::webgl::encoded_shader(
-        &format!(
-            "{}\n{ordinary}\n{}",
-            include_str!("native_packed.wgsl"),
-            WEBGL_READ_ONLY_SNAPSHOT
-        ),
+        &format!("{snapshot}\n{WEBGL_READ_ONLY_SNAPSHOT}"),
         &[
             (
                 "textureLoad(scene, p, 0).rgb",
@@ -1790,10 +1819,9 @@ fn fs_read_only(@builtin(position) position: vec4f) -> FallbackReadOnlySnapshot 
     return FallbackReadOnlySnapshot(snapshot.word, snapshot.depth, 0u, vec4f(0.0));
 }";
 
-/// Destination edit module source. Without fragment atomics, the WebGL2
-/// fallback draws one span's bodies in command order into an R32Uint target,
-/// so the last admitted body is the one stored, as `atomicMax` selects; each
-/// later admitted shadow adds 1/255 to an R8Unorm count by additive blending.
+/// Destination edit module source. Edits draw against the live depth test
+/// (`terrain_depth.wgsl`), except on the WebGL2 fallback, which reduces its
+/// read-only ones instead (`terrain_read_only.wgsl`).
 fn edit_source(webgl: bool) -> String {
     // Reuse the production SHP projection/ABI verbatim, without its shape
     // binding or fragment policy. Both consumers share native_row_z.
@@ -1802,83 +1830,20 @@ fn edit_source(webgl: bool) -> String {
         .find("// One signed candidate owner")
         .expect("SHP projection boundary")]
         .replace("@group(2) @binding(0) var t_zshape: texture_2d<f32>;", "");
-    let read_only = include_str!("terrain_read_only.wgsl");
-    let read_only = if webgl {
-        use crate::render::webgl::patch;
-        let read_only = patch(
-            read_only,
-            "struct ReadOnlyPixel { body: atomic<u32>, shadows: atomic<u32> };
-@group(3) @binding(0) var<storage, read_write> read_only_pixels: array<ReadOnlyPixel>;",
-            "@group(3) @binding(0) var read_only_bodies: texture_2d<u32>;",
-        );
-        let read_only = patch(
-            &read_only,
-            "fn read_only_address(input: VertexOutput) -> u32 {
-    let p = vec2u(input.position.xy);
-    let width = textureDimensions(old_depth).x;
-    let rows = arrayLength(&read_only_pixels) / width;
-    return (p.y % rows) * width + p.x;
-}",
-            "",
-        );
-        let read_only = patch(
-            &read_only,
-            "fn fs_read_only_body(input: VertexOutput) -> @location(0) vec4f {",
-            "fn fs_read_only_body(input: VertexOutput) -> @location(0) u32 {",
-        );
-        let read_only = patch(
-            &read_only,
-            "    atomicMax(&read_only_pixels[read_only_address(input)].body,
-        (input.command_ordinal << 16u) | word);
-    return vec4f(0.0); // Color writes are disabled; only the scratch atomic changes.",
-            "    return (input.command_ordinal << 16u) | word;",
-        );
-        patch(
-            &read_only,
-            "    let address = read_only_address(input);
-    let last_body = atomicLoad(&read_only_pixels[address].body) >> 16u;
-    if input.command_ordinal > last_body {
-        atomicAdd(&read_only_pixels[address].shadows, 1u);
-    }
-    return vec4f(0.0);",
-            "    let last_body = textureLoad(read_only_bodies, vec2i(input.position.xy), 0).r >> 16u;
-    if input.command_ordinal <= last_body { discard; }
-    return vec4f(1.0 / 255.0);",
-        )
+    let entry_points = if webgl {
+        include_str!("terrain_read_only.wgsl")
     } else {
-        format!("{read_only}\n{}", include_str!("terrain_depth.wgsl"))
+        include_str!("terrain_depth.wgsl")
     };
     super::tactical_shader::sprite_source(&format!(
-        "{vertex}\n{}\n{read_only}",
+        "{vertex}\n{}\n{entry_points}",
         include_str!("terrain_edit.wgsl"),
     ))
 }
 
-/// Read-only resolve module source; the WebGL2 fallback reads the last body
-/// and shadow count from the render-target scratch.
-fn resolve_source(webgl: bool) -> String {
-    let resolve = include_str!("terrain_read_only_resolve.wgsl");
-    if !webgl {
-        return super::tactical_shader::source(resolve);
-    }
-    use crate::render::webgl::patch;
-    let resolve = patch(
-        resolve,
-        "struct ReadOnlyPixel { body: atomic<u32>, shadows: atomic<u32> };
-@group(1) @binding(0) var<storage, read_write> read_only_pixels: array<ReadOnlyPixel>;",
-        "@group(1) @binding(0) var read_only_bodies: texture_2d<u32>;
-@group(1) @binding(1) var read_only_shadows: texture_2d<f32>;",
-    );
-    let resolve = patch(
-        &resolve,
-        "    let rows = arrayLength(&read_only_pixels) / width;
-    let address = (p.y % rows) * width + p.x;
-    let body = atomicLoad(&read_only_pixels[address].body);
-    let shadows = atomicLoad(&read_only_pixels[address].shadows);",
-        "    let body = textureLoad(read_only_bodies, vec2i(p), 0).r;
-    let shadows = u32(round(textureLoad(read_only_shadows, vec2i(p), 0).r * 255.0));",
-    );
-    super::tactical_shader::source(&resolve)
+/// The WebGL2 fallback's read-only resolve module source.
+fn resolve_source() -> String {
+    super::tactical_shader::source(include_str!("terrain_read_only_resolve.wgsl"))
 }
 
 /// Signed candidate envelope of a destination edit, as `terrain_source` in
@@ -1968,7 +1933,7 @@ mod webgl_shader_tests {
                 "terrain edit",
                 pad_camera_structs(&super::edit_source(true)),
             ),
-            ("read-only resolve", super::resolve_source(true)),
+            ("read-only resolve", super::resolve_source()),
             ("packed composite", super::packed::packed_source(true)),
             (
                 "packed SHP",

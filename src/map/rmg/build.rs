@@ -146,20 +146,40 @@ impl GenerationPointView<'_> {
     }
 }
 
+/// What the generator may construct.
+pub struct GenerationObjects<'a> {
+    /// The resolved neutral tech-building list (empty places no tech
+    /// buildings).
+    pub tech_types: &'a [TechType],
+    /// The Ares urban catalog and Main draw, used when the options' urban
+    /// switch is set.
+    pub urban_areas: Option<super::phases::urban_areas::UrbanInputs<'a>>,
+}
+
+impl<'a> GenerationObjects<'a> {
+    /// Tech buildings only.
+    pub fn tech(tech_types: &'a [TechType]) -> Self {
+        Self {
+            tech_types,
+            urban_areas: None,
+        }
+    }
+}
+
 /// Run the full generator, returning a populated `MapFile` plus the generated
 /// start waypoints and the executed stage list.
 ///
 /// `resolved` is a theater/rules snapshot; `blocks` provides tile-block layouts
-/// (from `theater_blocks::TheaterTileBlocks`); `tech_types` is the resolved
-/// neutral tech-building list (empty places no tech buildings).
+/// (from `theater_blocks::TheaterTileBlocks`); `objects` lists what may be
+/// constructed.
 pub fn generate_map(
     options: &RmgOptions,
     settings: &RmgSettings,
     resolved: &ResolvedTheaterInputs,
     blocks: &dyn TileBlocks,
-    tech_types: &[TechType],
+    objects: &GenerationObjects<'_>,
 ) -> GeneratedMap {
-    generate_map_observed(options, settings, resolved, blocks, tech_types, &mut |_| {})
+    generate_map_observed(options, settings, resolved, blocks, objects, &mut |_| {})
 }
 
 /// Chance that a map is allowed to attempt a river waterfall crossing.
@@ -179,6 +199,37 @@ fn draw_bridge_enable(rng: &mut RmgRng) -> bool {
         .lt(TruncF64::from_f64(f64::from(BRIDGE_ENABLE_CHANCE)))
 }
 
+/// Mixed into the map seed for VERA's urban foot stream.
+const VERA_URBAN_SALT: u16 = 0xB71D;
+
+/// The urban pass's inputs, the presence it reads and VERA's fill: Ares'
+/// switch keeps the seed's own presence and the native district count;
+/// VERA's opt-in passes presence 1 (`0x005A5020` never takes its early exit
+/// at 1 or more) and the Buildings slider (1..=100) as the fill, from one
+/// district up to most of the open land.
+fn urban_inputs<'a>(
+    options: &RmgOptions,
+    objects: &'a GenerationObjects<'a>,
+    vera: &'a super::phases::urban_areas::UrbanInputs<'a>,
+) -> (
+    Option<&'a super::phases::urban_areas::UrbanInputs<'a>>,
+    i32,
+    Option<i32>,
+) {
+    #[cfg(feature = "ares")]
+    if options.urban_areas {
+        if objects.urban_areas.is_none() {
+            log::warn!("random map: urban areas requested without an urban catalog");
+        }
+        return (objects.urban_areas.as_ref(), options.urban_presence, None);
+    }
+    let _ = objects;
+    if options.urban_enabled && options.urban_presence > 0 {
+        return (Some(vera), 1, Some(options.urban_presence.min(100)));
+    }
+    (None, options.urban_presence, None)
+}
+
 /// As [`generate_map`], calling `observe` at every generation boundary.
 ///
 /// The observer sees the run; it cannot alter it. Everything that decides the
@@ -189,11 +240,21 @@ pub fn generate_map_observed(
     settings: &RmgSettings,
     resolved: &ResolvedTheaterInputs,
     blocks: &dyn TileBlocks,
-    tech_types: &[TechType],
+    objects: &GenerationObjects<'_>,
     observe: &mut dyn FnMut(GenerationPointView<'_>),
 ) -> GeneratedMap {
     let mut options = options.clone();
     options.normalize();
+    // VERA extension: an opted-in Urban Presence runs the same urban pass with
+    // VERA's catalogue, and its foot picks draw from a stream seeded by the
+    // map seed, so the setup preview and the match load build the same map.
+    let vera_draws = std::cell::RefCell::new(RmgRng::new(options.seed_u16() ^ VERA_URBAN_SALT));
+    let vera_draw = || vera_draws.borrow_mut().next_u32();
+    let vera_urban = super::phases::urban_areas::UrbanInputs {
+        catalog: &settings.vera_urban,
+        main_draw: &vera_draw,
+    };
+    let (urban, urban_presence, urban_fill) = urban_inputs(&options, objects, &vera_urban);
 
     let geometry = MapGeometry::from_options(&options);
     let mut rng = RmgRng::new(options.seed_u16());
@@ -210,7 +271,7 @@ pub fn generate_map_observed(
         wheel_impassable: resolved.wheel_impassable,
         cliff_back_impassability: resolved.cliff_back_impassability,
         overlay_zones: &resolved.overlay_zones,
-        tech_types,
+        tech_types: objects.tech_types,
         trig: resolved.trig,
         map_type: options.map_type,
         accessibility: options.accessibility,
@@ -230,6 +291,9 @@ pub fn generate_map_observed(
         // (0..3); a final binary confirmation is still open.
         width: options.width,
         max_trees: settings.max_trees,
+        urban_presence,
+        urban_fill,
+        urban_areas: urban,
     };
 
     observe(GenerationPointView {
@@ -276,6 +340,7 @@ pub fn generate_map_observed(
         &output.structures,
         &output.waypoints,
     );
+    emit::populate_urban(&mut map_file, &output.urban_areas);
 
     GeneratedMap {
         map_file,
@@ -412,11 +477,75 @@ mod tests {
                 &RmgSettings::default(),
                 &resolved(),
                 &one_by_one(),
-                &[],
+                &GenerationObjects::tech(&[]),
             );
             Some(std::sync::Arc::new(generated))
         })
         .expect("generated map")
+    }
+
+    /// Ares urban areas (hook 0x598FB8): the switch runs the stage, and each
+    /// placed urban object follows the structures at the entity index its
+    /// constructor row names.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn urban_objects_follow_the_structures_with_matching_trace_rows() {
+        use crate::map::rmg::RmgConstructionPhase;
+        use crate::map::rmg::phases::urban_areas::{UrbanCatalog, UrbanFoot, UrbanInputs};
+        let foot = |name: &str| UrbanFoot {
+            name: name.into(),
+            known: true,
+        };
+        let catalog = UrbanCatalog {
+            structures: Vec::new(),
+            infantry: vec![foot("CIV1")],
+            vehicles: vec![foot("TRUCKA")],
+        };
+        let draws = std::cell::Cell::new(0u32);
+        let main_draw = || {
+            draws.set(draws.get() + 1);
+            draws.get()
+        };
+        let objects = GenerationObjects {
+            tech_types: &[],
+            urban_areas: Some(UrbanInputs {
+                catalog: &catalog,
+                main_draw: &main_draw,
+            }),
+        };
+        let mut placed = 0;
+        for seed in 1..=8 {
+            let options = RmgOptions {
+                urban_areas: true,
+                urban_presence: 60,
+                num_players: 2,
+                water_amount: 0,
+                seed,
+                ..options(1, 0)
+            };
+            let generated = generate_map(
+                &options,
+                &RmgSettings::default(),
+                &resolved(),
+                &one_by_one(),
+                &objects,
+            );
+            assert!(generated.stages_run.contains(&Stage::UrbanAreas));
+            for event in &generated.construction_trace.events {
+                if event.phase != RmgConstructionPhase::UrbanAreas {
+                    continue;
+                }
+                if let RmgConstructionOutcome::Emitted { entity_index, cell } = &event.outcome {
+                    let entity = &generated.map_file.entities[*entity_index];
+                    assert_eq!(entity.type_id, event.techno_type);
+                    assert_eq!((entity.cell_x, entity.cell_y), *cell);
+                    assert_eq!(entity.owner, "Neutral");
+                    placed += 1;
+                }
+            }
+        }
+        assert!(placed > 0, "some seed's urban area placed foots");
+        assert!(draws.get() > 0, "each foot pick draws Main");
     }
 
     /// VERA extension: a thirty-player seed gets a start for every player.
@@ -431,7 +560,7 @@ mod tests {
             &RmgSettings::default(),
             &resolved(),
             &one_by_one(),
-            &[],
+            &GenerationObjects::tech(&[]),
         );
         assert_eq!(generated.unfilled_start_slots, 0);
         let mut slots: Vec<u8> = generated.start_waypoints.iter().map(|w| w.0).collect();
@@ -454,7 +583,13 @@ mod tests {
                 height: size,
                 ..options(0, 0)
             };
-            let generated = generate_map(&options, &settings, &resolved, &blocks, &[]);
+            let generated = generate_map(
+                &options,
+                &settings,
+                &resolved,
+                &blocks,
+                &GenerationObjects::tech(&[]),
+            );
             assert_eq!(
                 (
                     generated.unfilled_start_slots,
@@ -481,7 +616,7 @@ mod tests {
             &RmgSettings::default(),
             &resolved(),
             &one_by_one(),
-            &[],
+            &GenerationObjects::tech(&[]),
         );
         assert_eq!(generated.unfilled_start_slots, 0);
         assert_eq!(generated.start_waypoints.len(), 30);
@@ -521,7 +656,13 @@ mod tests {
                     num_players: 8,
                     ..options(map_type, theater)
                 };
-                let generated = generate_map(&options, &settings, &resolved, &blocks, &[]);
+                let generated = generate_map(
+                    &options,
+                    &settings,
+                    &resolved,
+                    &blocks,
+                    &GenerationObjects::tech(&[]),
+                );
                 assert_eq!(
                     (
                         generated.unfilled_start_slots,
@@ -534,6 +675,119 @@ mod tests {
         }
     }
 
+    /// VERA extension: an opted-in Urban Presence runs the urban pass
+    /// (`0x005A5020`) in any build with VERA's catalogue: paved roads,
+    /// civilian buildings of the theater's style families and foots, every one
+    /// traced so the load replays it. The same presence without the opt-in
+    /// leaves the pass out.
+    #[test]
+    #[ignore = "slow; run when changing what it covers"]
+    fn opted_in_urban_presence_builds_paved_districts() {
+        let Some((mut settings, resolved, blocks)) = retail_inputs() else {
+            return;
+        };
+        let (_, mut assets) = crate::rules::retail_ini_fixture::retail_assets().expect("retail");
+        crate::map::theater::load_theater(&mut assets, "TEMPERATE").expect("TEMPERATE");
+        let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()
+            .expect("retail rules");
+        let art = crate::rules::retail_ini_fixture::retail_ini("artmd.ini").expect("art");
+        settings.vera_urban = crate::map::rmg::tech_catalog::resolve_vera_urban(
+            &rules,
+            &art,
+            &[],
+            "tem",
+            "TEMPERATE",
+            4242,
+            |file| assets.contains(file),
+        );
+        assert!(!settings.vera_urban.structures.is_empty());
+        assert!(!settings.vera_urban.infantry.is_empty());
+        assert!(
+            !settings
+                .vera_urban
+                .structures
+                .iter()
+                .any(|entry| entry.name == "CALOND06"),
+            "Temperate draws CALOND06 as Westwood's placeholder cube"
+        );
+
+        let base = RmgOptions {
+            num_players: 4,
+            width: 2,
+            height: 2,
+            urban_presence: 80,
+            water_amount: 15,
+            seed: 4242,
+            ..options(1, 0)
+        };
+        let objects = GenerationObjects::tech(&[]);
+        let plain = generate_map(&base, &settings, &resolved, &blocks, &objects);
+        assert!(!plain.stages_run.contains(&Stage::UrbanAreas));
+        let urban = generate_map(
+            &RmgOptions {
+                urban_enabled: true,
+                ..base.clone()
+            },
+            &settings,
+            &resolved,
+            &blocks,
+            &objects,
+        );
+        assert!(urban.stages_run.contains(&Stage::UrbanAreas));
+        let roads = urban
+            .map_file
+            .cells
+            .iter()
+            .filter(|cell| resolved.ids.is_paved_road(cell.tile_index))
+            .count();
+        assert!(roads > 0, "the district has paved roads");
+        // Buildings 1 is one district; 100 paves most of the open land (this
+        // small map's land is broken up, so it takes only a few more).
+        let paved = |presence: i32| {
+            let map = generate_map(
+                &RmgOptions {
+                    urban_enabled: true,
+                    urban_presence: presence,
+                    ..base.clone()
+                },
+                &settings,
+                &resolved,
+                &blocks,
+                &objects,
+            );
+            map.map_file
+                .cells
+                .iter()
+                .filter(|cell| cell.tile_index == resolved.ids.pave)
+                .count()
+        };
+        let (least, most) = (paved(1), paved(100));
+        assert!(
+            most > least * 3 / 2,
+            "Buildings 100 paves {most} cells, 1 paves {least}"
+        );
+        assert!(
+            urban.map_file.entities.len() > plain.map_file.entities.len() + 4,
+            "the district adds buildings: {} vs {}",
+            urban.map_file.entities.len(),
+            plain.map_file.entities.len()
+        );
+        for (index, entity) in urban.map_file.entities.iter().enumerate() {
+            let traced = urban.construction_trace.events.iter().any(|event| {
+                event.outcome
+                    == crate::map::rmg::RmgConstructionOutcome::Emitted {
+                        entity_index: index,
+                        cell: (entity.cell_x, entity.cell_y),
+                    }
+            });
+            assert!(
+                traced,
+                "entity {index} {} has no constructor",
+                entity.type_id
+            );
+        }
+    }
+
     #[test]
     fn generate_map_is_deterministic() {
         let resolved = resolved();
@@ -541,7 +795,13 @@ mod tests {
         let settings = RmgSettings::default();
         let options = options(1, 0);
         let snapshot = || {
-            let mut g = generate_map(&options, &settings, &resolved, &blocks, &[]);
+            let mut g = generate_map(
+                &options,
+                &settings,
+                &resolved,
+                &blocks,
+                &GenerationObjects::tech(&[]),
+            );
             let tiles: Vec<i32> = g.map_file.cells.iter().map(|c| c.tile_index).collect();
             let overlays: Vec<(u16, u16, u8)> = g
                 .map_file
@@ -577,7 +837,13 @@ mod tests {
         for seed in 1..=8 {
             let mut options = options(1, 0);
             options.seed = seed;
-            let generated = generate_map(&options, &settings, &resolved, &blocks, &types);
+            let generated = generate_map(
+                &options,
+                &settings,
+                &resolved,
+                &blocks,
+                &GenerationObjects::tech(&types),
+            );
             if !generated.construction_trace.events.is_empty() {
                 chosen = Some(generated);
                 break;
@@ -613,7 +879,13 @@ mod tests {
         let placed = (1..=8).find_map(|seed| {
             let mut options = options(0, 0);
             options.seed = seed;
-            let generated = generate_map(&options, &settings, &resolved, &blocks, &types);
+            let generated = generate_map(
+                &options,
+                &settings,
+                &resolved,
+                &blocks,
+                &GenerationObjects::tech(&types),
+            );
             let emitted =
                 generated
                     .construction_trace
@@ -668,11 +940,17 @@ mod tests {
     ) -> ObservedRun {
         let mut points = Vec::new();
         let mut snapshots = Vec::new();
-        let generated =
-            generate_map_observed(options, settings, resolved, blocks, &[], &mut |view| {
+        let generated = generate_map_observed(
+            options,
+            settings,
+            resolved,
+            blocks,
+            &GenerationObjects::tech(&[]),
+            &mut |view| {
                 points.push(view.point());
                 snapshots.push(view.snapshot());
-            });
+            },
+        );
         (generated, points, snapshots)
     }
 
@@ -882,12 +1160,18 @@ mod tests {
             return;
         };
         let cells = |options: &RmgOptions| {
-            generate_map(options, &settings, &resolved, &blocks, &[])
-                .map_file
-                .cells
-                .iter()
-                .map(|c| c.tile_index)
-                .collect::<Vec<_>>()
+            generate_map(
+                options,
+                &settings,
+                &resolved,
+                &blocks,
+                &GenerationObjects::tech(&[]),
+            )
+            .map_file
+            .cells
+            .iter()
+            .map(|c| c.tile_index)
+            .collect::<Vec<_>>()
         };
         let differs = |map_type, seed| {
             let mut low = matrix_options(map_type, 0, seed);
@@ -919,7 +1203,7 @@ mod tests {
             &RmgSettings::default(),
             &resolved(),
             &one_by_one(),
-            &[],
+            &GenerationObjects::tech(&[]),
         )
     }
 
@@ -1120,7 +1404,7 @@ mod tests {
                 &settings,
                 &resolved(),
                 &one_by_one(),
-                &[],
+                &GenerationObjects::tech(&[]),
                 &mut |view| {
                     if view.point() == GenerationPoint::Initial {
                         preview_has_no_synthetic_lighting = view.snapshot().map_file.ini.is_empty();

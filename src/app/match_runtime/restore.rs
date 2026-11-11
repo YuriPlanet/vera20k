@@ -1,6 +1,7 @@
 //! Successful saved-world adoption and its route-specific presentation state.
 
 use crate::app::AppState;
+use crate::app::match_runtime::sim_host::SimWrite;
 
 /// Apply the validated world/resources and the already-prepared asset bundle.
 /// Recoverable preparation has finished before any outgoing state is cleared.
@@ -26,7 +27,7 @@ pub(crate) fn commit_prepared_load(
     // reconstructs each voice handle/latch. Do this only after preparation
     // succeeded; the new FootLoad state starts silent until its next AI visit.
     // Ordinary Vox.Save7533B0 emits tags only, no nodes or selected voice;
-    // incoming announcements start empty. Saved static Voc is a separate path.
+    // incoming announcements start empty. Saved static Voc returns below.
     if let Some(sfx) = state.audio.sfx_player.as_mut() {
         sfx.stop_all();
     }
@@ -55,7 +56,7 @@ pub(crate) fn commit_prepared_load(
             &state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .expect("prepared saved game installs a runtime")
                 .simulation,
             committed.map.source(),
@@ -71,7 +72,7 @@ pub(crate) fn commit_prepared_load(
     let game_mode = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .expect("prepared saved game installs a runtime")
         .simulation
         .session()
@@ -91,7 +92,7 @@ pub(crate) fn commit_prepared_load(
     let pause_effects = state
         .match_state
         .sim_runtime
-        .as_mut()
+        .write_sim(SimWrite::Lifecycle)
         .map_or_else(Vec::new, |rt| {
             crate::app::radar_movie::release_saved_scenario_hold(
                 &mut rt.simulation,
@@ -104,7 +105,7 @@ pub(crate) fn commit_prepared_load(
     let runtime = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .expect("prepared saved game installs a runtime");
     let theater_name = runtime.simulation.session().theater().to_owned();
     let theater_ext = crate::app::loading::init_helpers::theater_ext_for(&theater_name).to_owned();
@@ -150,6 +151,15 @@ pub(crate) fn commit_prepared_load(
     let mut power = committed.power_bar_anim;
     power.reanchor_after_load(power_ms);
     state.match_state.match_presentation.power_bar_anim = power;
+
+    // VocClass::LoadStaticSounds (`0x00751710`) restarts the saved loopable
+    // coordinate sounds after its clear, which `stop_all` above performed.
+    if let (Some(sfx), Some(catalog)) = (
+        state.audio.sfx_player.as_mut(),
+        state.process_assets.audio_catalog(),
+    ) {
+        sfx.restore_static_sounds(committed.map.static_sounds(), catalog.sounds());
+    }
 
     crate::app::audio_runtime::bind_match_theme_context(state);
     let music_now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
@@ -211,7 +221,7 @@ pub(crate) fn commit_prepared_load(
         state
             .match_state
             .sim_runtime
-            .as_mut()
+            .write_sim(SimWrite::Lifecycle)
             .expect("prepared saved game installs a runtime")
             .simulation
             .prepare_fog_view_for(&owner);

@@ -12,18 +12,17 @@ use draw_order::{
     random_map_setup_semantic_draw_order, skirmish_shell_semantic_draw_order,
     validation_modal_semantic_draw_order,
 };
-mod in_game_options;
 mod in_game_shell;
 pub(crate) use in_game_shell::{
     current_in_game_shell_layout, in_game_shell_cursor, in_game_shell_size,
-    native_in_game_shell_active, render_in_game_options_shell,
+    native_in_game_shell_active,
 };
 mod pause_menu;
 pub(crate) use pause_menu::render_pause_menu_shell;
 mod saved_games;
 pub(crate) use saved_games::{family_saved_game_overlays, render_saved_game_shell};
 mod launcher_options;
-pub(crate) use launcher_options::{render_launcher_options, zoom_label};
+pub(crate) use launcher_options::{paint_options_settings, render_launcher_options};
 mod modals;
 mod network_failure;
 pub(crate) use modals::render_saved_game_loading;
@@ -251,6 +250,7 @@ fn build_skirmish_shell_instances(
                 atlas,
                 layout,
                 choose_map_layout,
+                1.0,
             );
             push_saved_seed_modal_instances(
                 &mut instances,
@@ -304,6 +304,7 @@ fn build_skirmish_shell_instances(
                 atlas,
                 layout,
                 choose_map_layout,
+                modals::CHOOSE_MAP_BACKGROUND_BRIGHTNESS,
             );
             // `0x6B`'s slides draw the top panel and the column like `0x102`'s
             // (no map button); the slide-out repaint blanks every child.
@@ -329,6 +330,7 @@ fn build_skirmish_shell_instances(
                 push_choose_map_modal_control_instances(
                     &mut instances,
                     atlas,
+                    font,
                     choose_map_layout,
                     interior,
                     shell,
@@ -918,6 +920,9 @@ fn render_skirmish_shell_with_atlas(
         .and_then(|sequence| sequence.frames.first())
         .map(|frame| &frame.texture);
 
+    // A game room's Choose Map is one of the online client's screens.
+    let smooth_art = state.smooth_online_menus()
+        && state.frontend.shell_route == crate::app::shell_route::ShellRoute::NetworkSetup;
     let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: Some("Skirmish Shell"),
         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -941,11 +946,12 @@ fn render_skirmish_shell_with_atlas(
         occlusion_query_set: None,
         multiview_mask: None,
     });
-    state.renderer.batch_renderer.draw_with_buffer_passthrough(
+    state.renderer.batch_renderer.draw_chrome(
         &mut pass,
         &atlas.texture,
         &buffer,
         count,
+        smooth_art,
     );
     if let (Some(preview), Some((buffer, count))) = (
         state.frontend.skirmish_preview_texture.as_ref(),
@@ -959,11 +965,12 @@ fn render_skirmish_shell_with_atlas(
         );
     }
     if let Some((buffer, count)) = marker_buffer.as_ref() {
-        state.renderer.batch_renderer.draw_with_buffer_passthrough(
+        state.renderer.batch_renderer.draw_chrome(
             &mut pass,
             &atlas.texture,
             buffer,
             *count,
+            smooth_art,
         );
     }
     if let Some((buffer, count)) = marker_label_buffer.as_ref() {
@@ -985,11 +992,12 @@ fn render_skirmish_shell_with_atlas(
     draw_scissored_text(&mut pass, state, &shell_draws, &scissored_text_buffers);
     pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
     if let Some((buffer, count)) = dropdown_buffer.as_ref() {
-        state.renderer.batch_renderer.draw_with_buffer_passthrough(
+        state.renderer.batch_renderer.draw_chrome(
             &mut pass,
             &atlas.texture,
             buffer,
             *count,
+            smooth_art,
         );
     }
     draw_scissored_text(
@@ -1126,9 +1134,10 @@ mod tests {
             );
             (draws, [title, help], scale.factor())
         };
-        for (random, sample) in [true, false].into_iter().flat_map(|random| {
-            ["字".repeat(90), "A ".repeat(100)].map(|sample| (random, sample))
-        }) {
+        for (random, sample) in [true, false]
+            .into_iter()
+            .flat_map(|random| ["字".repeat(90), "A ".repeat(100)].map(|sample| (random, sample)))
+        {
             let base = draw(800, 600, random, &sample).0;
             assert!(base.iter().all(|draw| !draw.instances.is_empty()));
             for (width, height) in [(800, 600), (1200, 900), (1600, 1200)] {
@@ -1151,9 +1160,7 @@ mod tests {
                     }
                 }
                 let help = &fitted[1];
-                assert!(
-                    (help.instances[0].position[1] - rects[1].y as f32).abs() <= 0.5
-                );
+                assert!((help.instances[0].position[1] - rects[1].y as f32).abs() <= 0.5);
                 assert!(help.scissor.y + help.scissor.h <= height);
             }
         }
@@ -2077,6 +2084,7 @@ pub(crate) use chrome::type3_button_frames;
 mod keyboard;
 mod lan_lobby;
 mod wol_buddy;
+mod wol_chat_translation;
 mod wol_lobby;
 mod wol_login;
 mod wol_my_info;
@@ -2086,6 +2094,7 @@ mod wol_persona;
 mod wol_quick_match;
 pub(crate) use lan_lobby::render_lan_lobby;
 pub(crate) use wol_buddy::paint_wol_buddy_children;
+pub(crate) use wol_chat_translation::paint_wol_chat_translation_children;
 pub(crate) use wol_lobby::{
     WolLobbyPaint, paint_wol_card_countries, paint_wol_lobby_children, paint_wol_lobby_popup,
     paint_wol_player_card,

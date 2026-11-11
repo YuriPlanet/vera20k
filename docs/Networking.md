@@ -28,11 +28,19 @@ The HTTPS service supplies match-specific relay credentials before the same load
 and command handoff. Both paths transfer selected authored maps or generated
 seed/preview data and verify build, rules and effective-map agreement before start.
 
-Typing `/translate zh` (or `en`, `zh-tw`, `ja`, `ko`, `de`, `fr`, `es`, `pt`) in an
-online chat edit turns on chat translation, saved as `[VERA] TranslateChat=`;
-`/translate off` stops it. Received lobby, room and match chat written in the other
-script (Latin versus CJK) is sent to the lobby's translation service. The original
-stays; its translation follows as a line from the same sender marked `»`.
+Typing `/translate zh` (or `en`, `zh-tw`, `ja`, `ko`, `de`, `fr`, `es`, `pt`, `ru`,
+`ar`, `th`, `tr`, `sv`) in an online chat edit turns on chat translation, saved as `[VERA] TranslateChat=`;
+`/translate off` stops it. The online lobby's Chat Translation page picks the same
+languages or Off, and sets where lines are translated (lobby, game rooms, matches,
+private messages), whether the source language is named, whether languages sharing the
+reader's alphabet are translated, and which languages the player already reads, all
+saved as `[VERA] Translate*=`. Choosing a language other than English starts with
+shared-alphabet lines translated too. Received chat in another script is sent to the lobby's
+translation service: for a Latin-script language a line with any letter outside it, for
+any other language a line with none of its letters. The original stays; its translation
+follows as a line from the same sender marked `»`, starting with a bracketed note in the
+reader's language that names the source language, unless it only repeats the original
+or the service says it was already in a language the player reads.
 
 The app services reliable messages and intermediate progress while loading, and
 continues servicing transport during frame waits. Gameplay uses the same
@@ -82,7 +90,9 @@ replay and federation are unchanged. Measured traffic is in
 
 When every active player and the relay support synchronized pause, any player
 can use the Pause key or Options' **Pause All Players** / **Resume All Players**
-button. A pause marker follows the relay's last committed frame; clients finish
+button, or type `/pause` or `/resume` as a whole line in match chat. Such a line is
+not sent as chat; in a match without synchronized pause it answers that pausing is
+not available. A pause marker follows the relay's last committed frame; clients finish
 that same frame and stop. Resume uses a separate authenticated control, so it
 works while simulation ticks are stopped. Both markers use the normal ordered
 history and replay recovery. Connections, chat and ticket renewal keep running;
@@ -133,7 +143,11 @@ journal is not encrypted: it holds plain commands and relies on file permissions
 and world in the match; the client renews its ticket and reads missed frames when
 connectivity returns. The UI shows Reconnecting or Catching up while healthy
 clients continue. After ten minutes of silence the relay removes the player
-through the same stream. Like a native lost connection, a removal for silence
+through the same stream. A game that has had no answer from the relay for that
+long, and 15 seconds more, releases its relay route and sends it nothing more:
+its place is gone, and a game whose ticket lapsed gets no answer that says so.
+A match of two or more players then ends with the game-server connection
+message; a one-human match plays on without the relay. Like a native lost connection, a removal for silence
 destroys the player's House and shows "connection lost"; a player who quits still
 leaves through EXIT. While Reconnecting, the relay cannot sequence that EXIT, so
 a confirmed Abort Mission returns to the shell once the relay has been silent for
@@ -153,7 +167,8 @@ caught up; local orders given until then are dropped, and effects and voices sta
 silent. The relay refuses a different world as an agreement mismatch. Abort Mission
 during this replay leaves as it does while Reconnecting.
 
-Authored matches, Cooperative aside, record reconstructible JSON replays in `replays/`.
+Authored matches, Cooperative aside, record reconstructible JSON replays in `replays/`,
+offline skirmishes against computer players included.
 A replay is written when its match ends or the game closes, and also when an
 internal error (a panic) closes the game; the folder keeps the newest 20.
 `vera20k --replay <replay.json> --ra2-dir <retail-directory>` opens read-only
@@ -162,7 +177,9 @@ playback with camera controls and Escape to close.
 accepted launch and replays the production frame transaction without connecting
 to the lobby. Startup version, rules, map bytes, seed and initial state must match;
 recorded state hashes are checked during playback. Generated maps, campaigns and
-restored mid-match segments currently lack standalone replay startup.
+restored mid-match segments currently lack standalone replay startup; a skirmish or
+network match that cannot be recorded says why in the log. `--replay-verify` loads no personal rules (`VERARULES.INI`)
+and no mod, so it refuses a match played with either as a rules mismatch.
 Replay version 4 regenerates shared planning events through the simulation at
 their original frame phases. Earlier JSON logs remain readable for inspection;
 playback requires the current version to avoid executing old internal events twice.
@@ -232,6 +249,10 @@ modern online ordering above is an intentional adaptation.
 - Ordinary waits use the private response maximum from `542450`; primary-global
   acknowledgement history is excluded. The native optional extra channel at
   manager `+50` remains an unimplemented dependency.
+- The LAN application message's name field holds 19 bytes and a terminator. An
+  online name may be 24 characters, so VERA writes the first 19 bytes of a longer
+  name and receivers match a sender by that same prefix (together with its
+  endpoint, as before). LAN names are at most 19 and travel unchanged.
 - Setup Back retains transport history within a lobby visit. A fresh post-match
   visit resets queues, sequence history, observations and lobby timing while
   retaining the portable socket bindings.

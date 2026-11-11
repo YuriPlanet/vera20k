@@ -203,16 +203,19 @@ pub(crate) fn conceal_area_cells(coord: [i32; 3], radius: i32) -> Vec<(u16, u16)
 /// with the previous BTreeSet design.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct OwnerVisibility {
-    cells: Vec<u8>,
+    /// The per-cell planes are shared copy-on-write in chunks with the
+    /// presentation frame (docs/sim-thread.md): a tick copies only the
+    /// chunks its sight changes.
+    cells: crate::util::shared::ChunkedVec<u8>,
     width: u16,
     height: u16,
     /// [`GROUND_VISIBLE`] / [`GROUND_OPEN`] per cell, aligned with `cells`.
-    ground_flags: Vec<u8>,
-    shroud_knowledge: Vec<ShroudKnowledge>,
-    map_cell_edge_cache: Vec<MapCellEdgeCache>,
+    ground_flags: crate::util::shared::ChunkedVec<u8>,
+    shroud_knowledge: crate::util::shared::ChunkedVec<ShroudKnowledge>,
+    map_cell_edge_cache: crate::util::shared::ChunkedVec<MapCellEdgeCache>,
     /// Packed ground/fog inputs for Tactical6D8700; rebuilt after loading.
     #[serde(skip)]
-    edge_inputs_cache: std::sync::OnceLock<Vec<u16>>,
+    edge_inputs_cache: crate::util::shared::DerivedCache<Vec<u16>>,
     dummy_visibility: DummyVisibility,
     /// The cells the per-frame passes must visit; never saved or hashed.
     #[serde(skip)]
@@ -271,13 +274,13 @@ impl OwnerVisibility {
     pub fn new(width: u16, height: u16) -> Self {
         let len: usize = (width as usize) * (height as usize);
         Self {
-            cells: vec![0u8; len],
+            cells: crate::util::shared::ChunkedVec::filled(0u8, len),
             width,
             height,
-            ground_flags: vec![0; len],
-            shroud_knowledge: vec![ShroudKnowledge::default(); len],
-            map_cell_edge_cache: vec![MapCellEdgeCache::default(); len],
-            edge_inputs_cache: std::sync::OnceLock::new(),
+            ground_flags: crate::util::shared::ChunkedVec::filled(0, len),
+            shroud_knowledge: crate::util::shared::ChunkedVec::filled(ShroudKnowledge::default(), len),
+            map_cell_edge_cache: crate::util::shared::ChunkedVec::filled(MapCellEdgeCache::default(), len),
+            edge_inputs_cache: Default::default(),
             dummy_visibility: DummyVisibility::default(),
             // Every zeroed cell already matches its default knowledge.
             tracked: TrackedCells {
@@ -410,7 +413,7 @@ impl OwnerVisibility {
     /// grid tracked: afterwards no cell is transient, every
     /// visible cell has its ground bits, and publishing lists the rest.
     fn clear_every_cell(&mut self) {
-        for knowledge in &mut self.shroud_knowledge {
+        for knowledge in self.shroud_knowledge.iter_mut() {
             knowledge.end_frame_sight();
         }
         for index in 0..self.cells.len() {
@@ -457,6 +460,9 @@ impl OwnerVisibility {
     /// CreateGap6FB170 updates the counter and both ground bits together.
     /// Preserve cache/frame/pending state; later Map5673A0 fire disclosure
     /// must see the erased ground bits and reach its ordinary reveal leaf.
+    /// Ares TechnoClass_CreateGap_Optimize (1004D360, hook 0x6FB306) and
+    /// DeleteGap_Optimize (1004D3A0, hook 0x6FB5F0) rewrite these cell
+    /// updates with fewer GetCellAt calls and the same writes.
     fn add_gap_cell(&mut self, index: usize) {
         if self.shroud_knowledge[index].add_gap() {
             self.set_ground_bits(
@@ -521,19 +527,19 @@ impl OwnerVisibility {
     }
 
     /// The raw cell flags in row-major order.
-    pub fn cells_raw(&self) -> &[u8] {
-        &self.cells
+    pub fn cells_raw(&self) -> Vec<u8> {
+        self.cells.to_vec()
     }
 
     /// The ground bits in the same row-major order as `cells`.
     #[cfg(any(test, feature = "test-support"))]
-    pub fn ground_flags_raw(&self) -> &[u8] {
-        &self.ground_flags
+    pub fn ground_flags_raw(&self) -> Vec<u8> {
+        self.ground_flags.to_vec()
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn shroud_knowledge_raw(&self) -> &[ShroudKnowledge] {
-        &self.shroud_knowledge
+    pub(crate) fn shroud_knowledge_raw(&self) -> Vec<ShroudKnowledge> {
+        self.shroud_knowledge.to_vec()
     }
 
     /// Fold every per-cell grid and the Dummy's state into `hasher`, for the
@@ -541,8 +547,9 @@ impl OwnerVisibility {
     pub(crate) fn hash_cells(&self, hasher: &mut impl std::hash::Hasher) {
         use std::hash::Hash;
         self.cells.hash(hasher);
-        crate::util::state_hasher::hash_records(
-            &self.shroud_knowledge,
+        crate::util::state_hasher::hash_record_iter(
+            self.shroud_knowledge.len(),
+            self.shroud_knowledge.iter(),
             hasher,
             ShroudKnowledge::hash_record,
         );
@@ -824,6 +831,7 @@ impl FogState {
 
     /// Apply every plane's waiting writes once the object pass ends.
     pub(crate) fn settle_plane_writes(&mut self) {
+        let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::VISION);
         self.by_owner.settle();
     }
 
@@ -977,7 +985,7 @@ impl FogState {
         id: u64,
         viewer: InternedId,
         source_owner: InternedId,
-        admission: &SightAdmission,
+        source: impl Into<SightSource>,
     ) -> bool {
         if self.source_sight_is_latched(id, viewer) {
             return false;
@@ -985,7 +993,7 @@ impl FogState {
         // The native cache has source geometry; ordinary ReReveal takes its
         // House gate from the source owner, even when UpdateReveal's explicit
         // alternate House received the actual map contribution (70B0CB..B12C).
-        let mut source = SightSource::from(admission);
+        let mut source = source.into();
         source.owner = source_owner;
         self.note_sight(id, viewer);
         self.sight_sources.insert((id, viewer), source);
@@ -1346,13 +1354,17 @@ impl FogState {
 
     pub(crate) fn forget_fogged_live_object(&mut self, id: u64) {
         self.note_shared_write();
-        self.fogged_live_objects.retain(|(_, candidate)| *candidate != id);
+        self.fogged_live_objects
+            .retain(|(_, candidate)| *candidate != id);
     }
 
     /// Building4519A8..B2 copies its fog flag to a replacement slot Anim.
     pub(crate) fn inherit_object_fog(&mut self, parent: u64, child: u64) {
-        let viewers: Vec<_> = self.fogged_live_objects.iter()
-            .filter_map(|&(viewer, id)| (id == parent).then_some(viewer)).collect();
+        let viewers: Vec<_> = self
+            .fogged_live_objects
+            .iter()
+            .filter_map(|&(viewer, id)| (id == parent).then_some(viewer))
+            .collect();
         for viewer in viewers {
             self.set_object_fogged(viewer, child, true);
         }
@@ -1998,6 +2010,7 @@ impl FogState {
 /// The settings a reveal reads, from the rules, the map and the game
 /// ([`VisionConfig::new`]; production builds it in
 /// `Simulation::sight_reveal_config`).
+#[derive(PartialEq)]
 pub struct VisionConfig {
     /// When true, Techno reveal/update readers require the canonical stored
     /// TechnoClass+0x3D5 membership byte. Headless fixtures without live
@@ -2259,7 +2272,7 @@ pub(crate) fn entity_sight_admission(
 /// The sight admission of a source with `geometry`: its footprint under
 /// `config` and `height_grid` ([`collect_reveal_cells`]); none on an
 /// unallocated map.
-fn sight_admission(
+pub(crate) fn sight_admission(
     fog: &FogState,
     geometry: SightGeometry,
     config: &VisionConfig,
@@ -2320,6 +2333,19 @@ pub(crate) struct SightGeometry {
     pub(crate) owner: InternedId,
     pub(crate) origin: (u16, u16, i32),
     pub(crate) radius: i32,
+}
+
+impl From<SightGeometry> for SightSource {
+    /// The client cache an admission with this geometry publishes
+    /// (`+0x250/+0x254/+0x260`); the footprint is no part of it.
+    fn from(geometry: SightGeometry) -> Self {
+        Self {
+            latched: true,
+            owner: geometry.owner,
+            origin: geometry.origin,
+            radius: geometry.radius,
+        }
+    }
 }
 
 /// [`entity_sight_admission`] without its footprint.
@@ -3225,7 +3251,6 @@ pub(crate) fn publish_gap_generator_event(
         }
     }
 }
-
 
 #[cfg(test)]
 mod tracked_cells_tests;

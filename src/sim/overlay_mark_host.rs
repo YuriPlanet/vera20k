@@ -379,7 +379,14 @@ impl OverlayMarkHost for SimulationMarkHost<'_> {
 
     fn recalc_ordinary(&mut self, cell: NativeCellIdentity) -> Result<(), RuntimeOverlayError> {
         if self.recalc == OverlayRecalc::Immediate {
-            self.recalc(cell)?;
+            return self.recalc(cell);
+        }
+        // The batch projects this cell (`recalculate_deferred_cell`); Mark's
+        // Recalc (`0x005FD200`) still reads its CliffBack neighbours here.
+        if let Some(coord) = self.real_coord(cell)
+            && let Some(terrain) = self.sim.resolved_terrain.as_ref()
+        {
+            terrain.read_cliff_back_neighbours(coord, self.registry.cliff_back_impassability());
         }
         Ok(())
     }

@@ -804,6 +804,15 @@ fn acknowledge(state: &mut AppState) {
     state.platform.window.request_redraw();
 }
 
+/// VERA's Esc menu (`app::shell_menu`): the create box and notices keep Esc.
+pub(crate) fn leaves_escape(state: &AppState) -> bool {
+    state
+        .frontend
+        .lan
+        .as_ref()
+        .is_some_and(|runtime| runtime.create.is_none() && runtime.modal.is_none())
+}
+
 pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
     if event.state.is_pressed() && !shell_transition::blocks_shell_input(state) {
         let code = match event.physical_key {

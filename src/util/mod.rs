@@ -8,6 +8,8 @@
 //! - Any module may depend on util/.
 
 pub mod base64;
+#[cfg(target_os = "android")]
+pub mod app_icon;
 pub(crate) mod bit_span;
 pub mod case_insensitive_path;
 pub mod config;
@@ -44,7 +46,9 @@ pub mod retail_trig;
 pub mod save_codec;
 pub(crate) mod sha1;
 pub mod sha256;
+pub mod shared;
 pub mod single_instance;
+pub mod sparse;
 pub mod version;
 // Portable state hashing; `rules` and `sim` both fold identities through it.
 pub(crate) mod state_hasher;

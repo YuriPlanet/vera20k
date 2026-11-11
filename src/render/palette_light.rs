@@ -214,17 +214,24 @@ pub fn native_row(brightness: i32, a: u8, rows: u32) -> u32 {
 /// https://docs.rs/wgpu/27.0.1/wgpu/enum.TextureFormat.html
 pub(crate) fn shader_source(body: &str) -> String {
     let profile = super::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION;
-    let words = |bytes: &[u8]| {
+    // Decoded here, once, so no pixel pays for the conversion.
+    let linear = |bytes: &[u8]| {
         bytes
             .iter()
-            .map(|b| b.to_string())
+            .map(|&byte| {
+                format!(
+                    "{:?}",
+                    super::area_scale::srgb_to_linear(f32::from(byte) / 255.0)
+                )
+            })
             .collect::<Vec<_>>()
             .join(",")
     };
     format!(
-        "const RETAIL_FIVE = array<u32,32>({});\nconst RETAIL_SIX = array<u32,64>({});\n{}\n{}",
-        words(&profile.five_bit),
-        words(&profile.six_bit),
+        "const RETAIL_FIVE_LINEAR = array<f32,32>({});\n\
+         const RETAIL_SIX_LINEAR = array<f32,64>({});\n{}\n{}",
+        linear(&profile.five_bit),
+        linear(&profile.six_bit),
         include_str!("palette_light.wgsl"),
         body
     )

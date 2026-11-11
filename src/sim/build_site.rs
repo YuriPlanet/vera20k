@@ -40,9 +40,9 @@ const FLAG_BRIDGE_BODY: u32 = 0x400;
 const OCCUPATION_INFANTRY_OR_VEHICLE: u8 = 0x3F;
 /// Overlay indices the wall arms compare (`0x0047C8B1`, `0x0047C903`):
 /// GASAND 0, GAWALL 2 and NAWALL 0x1A in the stock `[OverlayTypes]` list.
-const OVERLAY_GASAND: u8 = 0;
-const OVERLAY_GAWALL: u8 = 2;
-const OVERLAY_NAWALL: u8 = 0x1A;
+pub(crate) const OVERLAY_GASAND: u8 = 0;
+pub(crate) const OVERLAY_GAWALL: u8 = 2;
+pub(crate) const OVERLAY_NAWALL: u8 = 0x1A;
 /// The laser fence overlay a `LaserFence=` type may stand on (`0x0047C961`).
 const OVERLAY_LASER_FENCE: u8 = 0x7E;
 /// The overlay data a wall reaches once damaged (`0x0047C8D4`, `0x0047C926`):
@@ -64,14 +64,14 @@ pub(crate) fn building_speed_type(ty: &ObjectType) -> Option<SpeedType> {
 /// where it is marked, and its locomotor's Mark_All_Occupation_Bits(0)
 /// clears the bits its track holds, the next Cell of a driving unit
 /// included. The test reads that state instead of writing it.
-pub(crate) struct LiftedUnit {
+pub struct LiftedUnit {
     id: u64,
     /// Cells whose ground-plane vehicle bit the lift clears.
     ground_cells: Vec<(u16, u16)>,
 }
 
 impl LiftedUnit {
-    pub(crate) fn read(sim: &Simulation, id: u64) -> Self {
+    pub fn read(sim: &Simulation, id: u64) -> Self {
         let ground_cells = sim
             .unit_mark_up_raw_cleared(id)
             .into_iter()
@@ -100,7 +100,7 @@ impl LiftedUnit {
 /// `lifted` reads the map as it stands while that Unit is lifted for the
 /// test ([`LiftedUnit`]).
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn can_place_building_at(
+pub fn can_place_building_at(
     sim: &Simulation,
     rules: &RuleSet,
     registry: Option<&OverlayTypeRegistry>,
@@ -451,30 +451,37 @@ fn overlay_admits(
     flags: u32,
     slope: u8,
 ) -> bool {
+    #[cfg(feature = "ares")]
+    if ares_gate_on_wall(
+        rules,
+        registry,
+        overlay_id,
+        overlay_data,
+        wall_owner,
+        ty,
+        house,
+    ) {
+        return true;
+    }
     let Some(ty) = ty else {
         return false;
     };
-    // BuildingType+0xE54 ToOverlay, compared by OverlayType index.
-    let own_damaged_wall = || {
-        overlay_data >= WALL_DAMAGED_DATA
-            && ty
-                .to_overlay
-                .as_deref()
-                .and_then(|name| registry?.id_for_name(name))
-                == Some(overlay_id)
-    };
-    let gates = &rules.general.building_types;
-    if matches!(overlay_id, OVERLAY_GASAND | OVERLAY_GAWALL)
-        && (own_damaged_wall() || gates.stands_on_gdi_wall(&ty.id))
-        && wall_owner == house
+    #[cfg(not(feature = "ares"))]
     {
-        return true;
-    }
-    if overlay_id == OVERLAY_NAWALL
-        && (own_damaged_wall() || gates.stands_on_nod_wall(&ty.id))
-        && wall_owner == house
-    {
-        return true;
+        let damaged = || own_damaged_wall(registry, ty, overlay_id, overlay_data);
+        let gates = &rules.general.building_types;
+        if matches!(overlay_id, OVERLAY_GASAND | OVERLAY_GAWALL)
+            && (damaged() || gates.stands_on_gdi_wall(&ty.id))
+            && wall_owner == house
+        {
+            return true;
+        }
+        if overlay_id == OVERLAY_NAWALL
+            && (damaged() || gates.stands_on_nod_wall(&ty.id))
+            && wall_owner == house
+        {
+            return true;
+        }
     }
     // A LaserFence type on the fence overlay or on ore
     // (`OverlayToTiberiumIndex @ 0x005FDD20` != -1).
@@ -495,6 +502,71 @@ fn overlay_admits(
         return flags & (FLAG_HIGH_BRIDGE | FLAG_BRIDGE_BODY) == 0 && slope == 0;
     }
     false
+}
+
+/// BuildingType+0xE54 `ToOverlay=` is this overlay (compared by OverlayType
+/// index) and the overlay data has reached the damaged stage.
+fn own_damaged_wall(
+    registry: Option<&OverlayTypeRegistry>,
+    ty: &ObjectType,
+    overlay_id: u8,
+    overlay_data: u8,
+) -> bool {
+    overlay_data >= WALL_DAMAGED_DATA
+        && ty
+            .to_overlay
+            .as_deref()
+            .and_then(|name| registry?.id_for_name(name))
+            == Some(overlay_id)
+}
+
+/// Ares 3.0 CellClass_CanThisExistHere_GateOnWall `10015780` (hook
+/// `0x0047C8AB`), in place of the two stock wall arms
+/// (`0x0047C8B1..0x0047C94D`). The placing house must own the wall first;
+/// then a `Gate=` type stands on any `Wall=yes` overlay, and a type whose
+/// `ToOverlay=` is the overlay on its damaged stage stands on any overlay
+/// index, not only GASAND, GAWALL and NAWALL. Otherwise the stock type lists
+/// decide, compared as Rules pointers: a null `ty` (a TerrainType's test)
+/// matches an unset `[General]` entry. A refusal continues at the laser
+/// fence arm (`0x0047C94F`).
+#[cfg(feature = "ares")]
+fn ares_gate_on_wall(
+    rules: &RuleSet,
+    registry: Option<&OverlayTypeRegistry>,
+    overlay_id: u8,
+    overlay_data: u8,
+    wall_owner: Option<InternedId>,
+    ty: Option<&ObjectType>,
+    house: Option<InternedId>,
+) -> bool {
+    if house != wall_owner {
+        return false;
+    }
+    if let Some(ty) = ty {
+        let wall = registry
+            .and_then(|registry| registry.flags(overlay_id))
+            .is_some_and(|flags| flags.wall);
+        if (ty.gate && wall) || own_damaged_wall(registry, ty, overlay_id, overlay_data) {
+            return true;
+        }
+    }
+    let is = |name: &Option<String>| match (name.as_deref(), ty) {
+        (None, None) => true,
+        (Some(name), Some(ty)) => name.eq_ignore_ascii_case(&ty.id),
+        _ => false,
+    };
+    let types = &rules.general.building_types;
+    match overlay_id {
+        OVERLAY_GASAND | OVERLAY_GAWALL => {
+            [&types.wall_tower, &types.gdi_gate_one, &types.gdi_gate_two]
+                .into_iter()
+                .any(is)
+        }
+        OVERLAY_NAWALL => [&types.nod_gate_one, &types.nod_gate_two]
+            .into_iter()
+            .any(is),
+        _ => false,
+    }
 }
 
 /// BuildingType+0xE58: `ToTile=` resolves (`0x00465CC0` → `0x00544CE0`) only

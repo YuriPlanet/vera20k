@@ -149,7 +149,7 @@ fn ordinary_overlay_z(
     };
     Some(OverlayBodyDepth {
         render_z: RenderZPolicy::ReadWrite,
-        z_adjust: native_z::ground_anchored_z_adjust(i32::from(level), class_term) as f32,
+        z_adjust: native_z::ground_anchored_z_adjust(i32::from(level as i8), class_term) as f32,
         gradient,
         shape,
     })
@@ -238,7 +238,6 @@ fn overlay_display_identity(
 /// Borrowed inputs to the one retained dynamic-effect traversal. App startup,
 /// platform windows and unrelated presentation resources are not draw inputs.
 pub(crate) struct DisplayEffectInputs<'a> {
-    pub interpolation: Option<&'a crate::app::presentation::interpolation::RenderInterpolation>,
     pub sim: &'a crate::sim::world::Simulation,
     pub rules: &'a crate::rules::ruleset::RuleSet,
     pub camera: [f32; 2],
@@ -260,11 +259,13 @@ pub(crate) struct DisplayEffectInputs<'a> {
 }
 
 impl DisplayEffectInputs<'_> {
-    /// Tactical6D2140's view, in world pixels.
+    /// Tactical6D2140's view, in world pixels, for draw admission measured
+    /// from the camera, the frame's corner: the battlefield and its offset on
+    /// both sides (`camera::tactical_centring_size`).
     pub(crate) fn projection_viewport(&self) -> [f32; 2] {
         [
-            self.tactical[2] as f32 / self.zoom,
-            self.tactical[3] as f32 / self.zoom,
+            (self.tactical[2] + 2 * self.tactical[0]) as f32 / self.zoom,
+            (self.tactical[3] + 2 * self.tactical[1]) as f32 / self.zoom,
         ]
     }
 }
@@ -287,7 +288,6 @@ fn anim_draw_point(
     sim: &crate::sim::world::Simulation,
     anim: &crate::sim::anim_class::AnimObject,
     id: u64,
-    interpolation: Option<&crate::app::presentation::interpolation::RenderInterpolation>,
     camera: [f32; 2],
     viewport: [f32; 2],
 ) -> Option<AnimDrawPoint> {
@@ -298,7 +298,7 @@ fn anim_draw_point(
     // uses the same painted point as the existing body emitter, without
     // image offsets or the parent Building's viewport/body visibility.
     let anim_coord = sim.anim_absolute_coord(id)?;
-    let (mut center_x, mut center_y, rx, ry, _, mut lift_px) = anim_world_render_coords(anim_coord);
+    let (center_x, mut center_y, rx, ry, _, mut lift_px) = anim_world_render_coords(anim_coord);
     if let Some(building) = anim
         .building_slot()
         .and_then(|(id, _)| sim.entities().get(id))
@@ -309,27 +309,7 @@ fn anim_draw_point(
         center_y -= correction as f32;
         lift_px += correction;
     }
-    let mut drawn_coord = [anim_coord.x, anim_coord.y, anim_coord.z];
-    // Slot preparation uses the committed coordinate; retain that geometry.
-    // Free Anims keep their existing sampled point for admission and drawing.
-    if !anim.is_building_anim()
-        && let Some(interpolation) = interpolation
-    {
-        use crate::app::presentation::interpolation::{PointKind, PointPose};
-        let sample = interpolation.sample_point(
-            PointKind::Anim,
-            id,
-            PointPose::new(
-                [anim_coord.x, anim_coord.y, anim_coord.z],
-                anim.type_id().index(),
-                anim.owner_entity(),
-            ),
-            sim.session().binary_frame(),
-        );
-        [center_x, center_y] = sample.screen;
-        lift_px = sample.lift.round() as i32;
-        drawn_coord = sample.coord;
-    }
+    let drawn_coord = [anim_coord.x, anim_coord.y, anim_coord.z];
     projection_admitted([center_x, center_y], camera, viewport).then_some(AnimDrawPoint {
         center: [center_x, center_y],
         cell: (rx, ry),
@@ -339,9 +319,9 @@ fn anim_draw_point(
 }
 
 /// Whether building slot Anim `id`'s Display encounter can reach its
-/// prepared parent: [`anim_draw_point`] admits it (a slot takes no
-/// interpolated point). Slot preparation skips every slot this rejects, so
-/// it only drops parents the traversal would never consume.
+/// prepared parent: [`anim_draw_point`] admits it. Slot preparation skips
+/// every slot this rejects, so it only drops parents the traversal would
+/// never consume.
 pub(super) fn slot_anim_admissible(
     sim: &crate::sim::world::Simulation,
     id: u64,
@@ -349,7 +329,7 @@ pub(super) fn slot_anim_admissible(
     viewport: [f32; 2],
 ) -> bool {
     sim.anim(id).is_some_and(|anim| {
-        anim.is_building_anim() && anim_draw_point(sim, anim, id, None, camera, viewport).is_some()
+        anim.is_building_anim() && anim_draw_point(sim, anim, id, camera, viewport).is_some()
     })
 }
 
@@ -380,7 +360,7 @@ pub(crate) fn build_display_effect_instances(
     // Particles have independent AIR registrations, including live bodies
     // detached from a System. The store owns their lifetime; Display supplies
     // every encounter, never this frame-local lookup's iteration/hash order.
-    let particles: HashMap<_, _> = sim
+    let particles: crate::util::lookup_hash::LookupMap<_, _> = sim
         .particle_systems()
         .display_particles()
         .map(|(system, particle)| (particle.stable_id(), (system, particle)))
@@ -412,43 +392,48 @@ pub(crate) fn build_display_effect_instances(
         .collect::<Vec<_>>();
     let local_owner = input.local_owner;
     for &stable_id in sim.display_layers().ordered_ids() {
-        if let Some(light) = sim.building_spotlight(stable_id, local_owner, input.rules) {
-            super::particles::build_spotlight_instance(
-                input,
-                stable_id,
-                light,
-                &context,
-                ground_objects,
-                ground_order,
-            );
+        // One ID namespace (`Simulation::allocate_stable_id`): most members
+        // are entities, drawn already, so spare them the lookups below.
+        if sim.entities().contains(stable_id) {
             continue;
         }
-        if let Some(system) = sim.particle_systems().get(stable_id) {
-            super::particles::build_particle_system_instance(
-                input,
-                system,
-                &context,
-                ground_objects,
-                ground_order,
-            );
-            continue;
-        }
-        if let Some(&(system, particle)) = particles.get(&stable_id) {
-            super::particles::build_particle_instance(
-                input,
-                system,
-                particle,
-                &context,
-                ground_objects,
-                ground_order,
-                &mut observations,
-            );
-            continue;
-        }
-        let Some(atlas) = input.atlas else {
+        // An id names one kind of object, so the order of these tests picks
+        // no winner: Anims and Terrain objects, the many, are asked first.
+        let Some(anim) = sim.anim(stable_id) else {
+            if sim.terrain_objects().objects().contains_key(&stable_id) {
+                continue;
+            }
+            if let Some(light) = sim.building_spotlight(stable_id, local_owner, input.rules) {
+                super::particles::build_spotlight_instance(
+                    input,
+                    stable_id,
+                    light,
+                    &context,
+                    ground_objects,
+                    ground_order,
+                );
+            } else if let Some(system) = sim.particle_systems().get(stable_id) {
+                super::particles::build_particle_system_instance(
+                    input,
+                    system,
+                    &context,
+                    ground_objects,
+                    ground_order,
+                );
+            } else if let Some(&(system, particle)) = particles.get(&stable_id) {
+                super::particles::build_particle_instance(
+                    input,
+                    system,
+                    particle,
+                    &context,
+                    ground_objects,
+                    ground_order,
+                    &mut observations,
+                );
+            }
             continue;
         };
-        let Some(anim) = sim.anim(stable_id) else {
+        let Some(atlas) = input.atlas else {
             continue;
         };
         // Paradrop creates a retained Anim, whose GetCoords resolves its
@@ -469,14 +454,7 @@ pub(crate) fn build_display_effect_instances(
             cell: (rx, ry),
             lift_px,
             drawn_coord,
-        }) = anim_draw_point(
-            sim,
-            anim,
-            stable_id,
-            input.interpolation,
-            input.camera,
-            projection_viewport,
-        )
+        }) = anim_draw_point(sim, anim, stable_id, input.camera, projection_viewport)
         else {
             continue;
         };
@@ -565,7 +543,7 @@ pub(crate) fn build_display_effect_instances(
             } else {
                 crate::render::sprite_atlas::ShpPaletteContext::GlobalAnim
             },
-            type_id: type_name.to_string(),
+            type_id: type_name.into(),
             facing: 0,
             frame,
             house_color: remap_color.unwrap_or(HouseColorIndex(0)),
@@ -1148,7 +1126,7 @@ pub(crate) fn build_overlay_instances(
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .presentation()
             .map_or((None, None, false), |runtime| {
                 let sim = &runtime.simulation;
                 let viewer = crate::app::input::commands::preferred_local_owner_name(state)
@@ -1166,7 +1144,7 @@ pub(crate) fn build_overlay_instances(
     let terrain = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .and_then(|runtime| runtime.simulation.resolved_terrain());
     // Only the entries whose body can reach the view, still in index order:
     // the opaque leaf keeps the first pixel on equal Z (0x004991EA..0x004991EC),
@@ -1182,14 +1160,14 @@ pub(crate) fn build_overlay_instances(
         live_grid: state
             .match_state
             .sim_runtime
-            .as_ref()
+            .presentation()
             .and_then(|runtime| runtime.simulation.overlay_grid()),
         registry: state.overlay_registry(),
         rules: state.rules(),
         interner: state
             .match_state
             .sim_runtime
-            .as_ref()
+            .presentation()
             .map(|runtime| runtime.simulation.interner()),
         tiberium_types: state.rules().map(|rules| &rules.tiberium_types),
         terrain,
@@ -1232,7 +1210,7 @@ pub(crate) fn build_overlay_instances(
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|rt| &rt.simulation)
     else {
         return;
@@ -1400,47 +1378,6 @@ fn native_terrain_instance(
     }
 }
 
-/// Sample the upstream polygon without rebuilding its native shape. History
-/// uses world-projected points, so camera movement never becomes wave motion.
-fn sample_weapon_wave_draw(
-    mut draw: crate::render::wave_geometry::WaveDraw,
-    id: u64,
-    cache: &crate::app::presentation::interpolation::RenderInterpolation,
-    frame: u32,
-    camera: [i32; 2],
-) -> crate::render::wave_geometry::WaveDraw {
-    use crate::app::presentation::interpolation::{PointKind, PointPose};
-    use crate::render::wave_geometry::WavePolygon;
-    let sample = |index, p: [i32; 2]| {
-        let [x, y, _] = cache
-            .sample_draw_point(
-                PointKind::Wave(index),
-                id,
-                PointPose::new([p[0], p[1], 0], 0, None),
-                frame,
-            )
-            .coord;
-        [x - camera[0], y - camera[1]]
-    };
-    let points: &mut [[i32; 2]] = match &mut draw.polygon {
-        WavePolygon::Magnetic(points) => points,
-        WavePolygon::Sonic(points) => points,
-    };
-    for (i, p) in points.iter_mut().enumerate() {
-        *p = sample(i as u8, *p);
-    }
-    draw.source_point = sample(6, draw.source_point);
-    draw.source_z = cache
-        .sample_draw_point(
-            PointKind::Wave(7),
-            id,
-            PointPose::new([0, 0, draw.source_z], 0, None),
-            frame,
-        )
-        .coord[2];
-    draw
-}
-
 /// Attach native Sonic/magnetic destination edits to retained Display parents.
 pub(crate) fn build_weapon_wave_instances(
     state: &AppState,
@@ -1450,7 +1387,7 @@ pub(crate) fn build_weapon_wave_instances(
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|rt| &rt.simulation)
     else {
         return;
@@ -1463,11 +1400,25 @@ pub(crate) fn build_weapon_wave_instances(
         state.match_state.input.camera_y,
     ]
     .map(|value| value.floor() as i32);
-    let cache = &state.match_state.match_presentation.interpolation;
-    for (id, draw) in
-        crate::app::presentation::fire_effects::build_weapon_wave_draws(sim, observer, [0, 0])
-    {
-        let draw = sample_weapon_wave_draw(draw, id, cache, sim.session().binary_frame(), camera);
+    #[cfg(feature = "ares")]
+    let blend = {
+        let rules = &state
+            .match_state
+            .sim_runtime
+            .presentation()
+            .expect("the wave owner's runtime")
+            .resources
+            .rules;
+        let colors = &state.match_state.match_presentation.house_color_map;
+        move |wave: &crate::sim::wave::Wave| {
+            crate::app::presentation::fire_effects::ares_wave_blend(sim, rules, colors, wave)
+        }
+    };
+    #[cfg(not(feature = "ares"))]
+    let blend = |_: &crate::sim::wave::Wave| crate::render::wave_geometry::WaveBlend::Native;
+    for (id, draw) in crate::app::presentation::fire_effects::build_weapon_wave_draws(
+        sim, observer, camera, blend,
+    ) {
         use crate::app::presentation::render::draw_plan_lowering::{
             ObjectBodyDraw, PlannedObjectInstance,
         };
@@ -1565,104 +1516,6 @@ mod tests {
             [0.0, 0.0],
             "a free animation carries no effect offset"
         );
-    }
-
-    #[test]
-    fn interpolated_wave_polygon_preserves_native_spans_when_an_edge_folds_back() {
-        use crate::app::presentation::interpolation::RenderInterpolation;
-        use crate::render::wave_geometry::{WaveClipPath, WaveDraw, WavePolygon, polygon_spans};
-        use crate::sim::world::Simulation;
-
-        let old = WaveDraw {
-            polygon: WavePolygon::Magnetic([[0, 5], [3, 7], [4, 2], [-3, 0]]),
-            source_point: [0, 0],
-            source_z: 0,
-            phase: 3,
-            direction: 0,
-            clip_path: WaveClipPath::Fast,
-        };
-        let current = WaveDraw {
-            polygon: WavePolygon::Magnetic([[0, -5], [-3, 3], [-2, 6], [5, 10]]),
-            ..old
-        };
-        let mut sim = Simulation::new();
-        sim.session_mut_for_test().set_binary_frame_for_test(1);
-        let mut cache = RenderInterpolation::new(true);
-        cache.observe(&sim, 0, Some(32.), false);
-        super::sample_weapon_wave_draw(old, 7, &cache, 1, [0, 0]);
-        sim.session_mut_for_test().set_binary_frame_for_test(2);
-        cache.observe(&sim, 32, Some(32.), false);
-        super::sample_weapon_wave_draw(current, 7, &cache, 2, [0, 0]);
-        cache.observe(&sim, 48, Some(32.), false);
-        let sampled = super::sample_weapon_wave_draw(current, 7, &cache, 2, [0, 0]);
-        assert_eq!(sampled.polygon.points(), &[[0, 0], [0, 5], [1, 4], [1, 5]]);
-
-        // Native execution of FUN_0063F080 @ 0x0063F080 (gamemd.exe) yields
-        // four visible rows; its extra edge write is outside that visible span.
-        let spans = polygon_spans(sampled.polygon.points());
-        assert_eq!(spans.top, 1);
-        assert_eq!(spans.rows, [[0, 0]; 4]);
-    }
-
-    #[test]
-    fn render_interpolation_preserves_both_native_wave_shapes_and_camera_independence() {
-        use crate::app::presentation::interpolation::RenderInterpolation;
-        use crate::render::wave_geometry::{WaveClipPath, WaveDraw, WavePolygon};
-        use crate::sim::world::Simulation;
-        let six = [
-            [100, 200],
-            [104, 198],
-            [112, 206],
-            [110, 208],
-            [106, 210],
-            [102, 205],
-        ];
-        for polygon in [
-            WavePolygon::Magnetic(std::array::from_fn(|i| six[i])),
-            WavePolygon::Sonic(six),
-        ] {
-            let old = WaveDraw {
-                polygon,
-                source_point: [101, 201],
-                source_z: 0,
-                phase: 3,
-                direction: 2,
-                clip_path: WaveClipPath::Fast,
-            };
-            let mut sim = Simulation::new();
-            sim.session_mut_for_test().set_binary_frame_for_test(1);
-            let mut cache = RenderInterpolation::new(true);
-            cache.observe(&sim, 0, Some(32.), false);
-            super::sample_weapon_wave_draw(old, 7, &cache, 1, [7, 11]);
-            let mut current = old;
-            let points: &mut [[i32; 2]] = match &mut current.polygon {
-                WavePolygon::Magnetic(points) => points,
-                WavePolygon::Sonic(points) => points,
-            };
-            for point in points {
-                point[0] += 12;
-                point[1] += 8;
-            }
-            current.source_point = [113, 209];
-            current.source_z = 104;
-            current.phase = 4;
-            sim.session_mut_for_test().set_binary_frame_for_test(2);
-            cache.observe(&sim, 32, Some(32.), false);
-            super::sample_weapon_wave_draw(current, 7, &cache, 2, [30, -4]);
-            cache.observe(&sim, 48, Some(32.), false);
-            let mid = super::sample_weapon_wave_draw(current, 7, &cache, 2, [30, -4]);
-            for (actual, previous) in mid.polygon.points().iter().zip(old.polygon.points()) {
-                assert_eq!(*actual, [previous[0] + 6 - 30, previous[1] + 4 + 4]);
-            }
-            assert_eq!(mid.source_point, [101 + 6 - 30, 201 + 4 + 4]);
-            assert_eq!(mid.source_z, 52);
-            assert_eq!(mid.phase, 4, "native lifetime is not interpolated");
-            assert_eq!(mid.direction, current.direction);
-            assert_eq!(mid.clip_path, current.clip_path);
-            cache.set_enabled(false);
-            let exact = super::sample_weapon_wave_draw(current, 7, &cache, 2, [0, 0]);
-            assert_eq!(exact, current, "OFF must preserve native geometry exactly");
-        }
     }
 
     /// The sprite is projected from the anim's exact Z. Half a level up lands
@@ -1820,14 +1673,19 @@ mod tests {
             (3, ZGradient::Vertical, -2),
             (4, ZGradient::Flat, -2),
         ] {
-            for level in [0, 1, 4, 14] {
+            // Raw 0xFF is Level -1, on the floor of a terrain-deformation
+            // crater.
+            for level in [0u8, 1, 4, 14, 0xFF] {
                 let depth = ordinary_overlay_z(id, registry.flags(id), 0, level).unwrap();
                 assert_eq!(depth.render_z, RenderZPolicy::ReadWrite);
                 assert_eq!(
                     depth.gradient, gradient,
                     "ordinary overlays have no BUILDNGZ"
                 );
-                assert_eq!(depth.z_adjust as i32, class_term - i32::from(level) * 15);
+                assert_eq!(
+                    depth.z_adjust as i32,
+                    class_term - i32::from(level as i8) * 15
+                );
             }
         }
     }

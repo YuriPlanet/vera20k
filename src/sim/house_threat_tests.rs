@@ -14,6 +14,9 @@ fn signed(value: &serde_json::Value) -> i32 {
     i32::try_from(value.as_i64().unwrap()).unwrap()
 }
 
+/// Stock only: Ares 3.0 ThreatPosedEstimates_GetIndex `1005D4A0` (hook
+/// `0x0056BC54`) moves the kernel these native rows centre on.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn original_signed_indices_and_all_nine_slot_adjustments() {
     let packet = packet();
@@ -111,7 +114,9 @@ fn invalid_grid_dependencies_fail_before_mutation() {
     grid.adjust((75, 75), 7).unwrap();
     let before = grid.values().to_vec();
     for cell in [(i16::MIN, i16::MIN), (i16::MAX, i16::MAX), (0, -8)] {
-        assert!(grid.adjust(cell, 7).is_err());
+        // Ares 3.0 HouseClass_SetThreat_Bounds 1005CC10 (hook 0x004FA2E0)
+        // skips the -1 index 1005D4A0 gives these cells.
+        assert_eq!(grid.adjust(cell, 7).is_err(), !cfg!(feature = "ares"));
         assert_eq!(grid.values(), before);
     }
     assert!(grid.at_padded_index(-1).is_err());
@@ -381,6 +386,9 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
     );
 }
 
+/// Stock only: Ares 3.0 ThreatPosedEstimates_GetIndex `1005D4A0` (hook
+/// `0x0056BC54`) writes row 559 away from the cell read back here.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn large_map_house_threat_keeps_high_coordinate_kernel_and_cleanup() {
     let mut grid = HouseSpatialThreat::default();

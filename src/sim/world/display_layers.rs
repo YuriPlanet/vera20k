@@ -19,6 +19,9 @@ use crate::util::lookup_hash::LookupMap;
 pub struct DisplayLayer(u8);
 
 impl DisplayLayer {
+    /// Layer 0, below the ground: a Tunnel locomotor travelling between
+    /// cells (`TunnelLocomotionClass::In_Which_Layer @ 0x0072A1A0`).
+    pub const UNDERGROUND: Self = Self(0);
     pub const SURFACE: Self = Self(1);
     pub const GROUND: Self = Self(2);
     pub const AIR: Self = Self(3);
@@ -74,6 +77,15 @@ impl DisplayLayers {
 
     pub fn ordered_ids(&self) -> impl Iterator<Item = &u64> {
         self.layers.iter().flatten()
+    }
+
+    /// [`Self::ordered_ids`] with each member's layer, for a caller that
+    /// would otherwise look every member up in [`Self::layer_of`].
+    pub fn members_in_order(&self) -> impl Iterator<Item = (DisplayLayer, u64)> + '_ {
+        self.layers.iter().enumerate().flat_map(|(index, members)| {
+            let layer = DisplayLayer(index as u8);
+            members.iter().map(move |&id| (layer, id))
+        })
     }
 
     /// Display4A9720 removes any old registration before querying/inserting the

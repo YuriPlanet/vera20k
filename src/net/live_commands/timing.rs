@@ -6,6 +6,7 @@ use std::num::NonZeroU8;
 use super::LiveCommandMode;
 use crate::net::reliable::RetryTiming;
 use crate::sim::command::TimingRecord;
+use crate::sim::game_options::GAME_SPEED_90_TPS;
 
 #[derive(Debug, Default)]
 pub(super) struct LiveTiming {
@@ -102,10 +103,12 @@ pub(super) fn adaptive_timing(
     let speed_budget = match game_speed {
         0 => 60,
         1 => 45,
+        // VERA extension; keep the native rows and their arithmetic intact.
+        speed if speed == i32::from(GAME_SPEED_90_TPS) => 90,
         speed => 60 / speed,
     };
     let fps = if process_milliseconds == 0 {
-        60
+        speed_budget.max(60)
     } else {
         (1000 / i32::from(process_milliseconds)).max(1)
     }
@@ -163,6 +166,36 @@ pub(super) fn adaptive_timing(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ninety_tick_preset_keeps_its_budget_until_processing_requires_less() {
+        let timing = |milliseconds, speed| {
+            adaptive_timing(
+                0,
+                120,
+                LiveCommandMode::Wol,
+                milliseconds,
+                speed,
+                60,
+                NonZeroU8::new(10).unwrap(),
+                0,
+                0,
+                1,
+                false,
+            )
+            .0
+        };
+        let speed = i32::from(GAME_SPEED_90_TPS);
+        assert_eq!(timing(0, speed).frames_per_second, 90);
+        let fast = timing(10, speed);
+        assert_eq!(
+            (fast.frames_per_second, fast.frame_send_rate.get()),
+            (90, 10)
+        );
+        assert_eq!(timing(20, speed).frames_per_second, 50);
+        assert_eq!(timing(0, 0).frames_per_second, 60);
+        assert_eq!(timing(0, 1).frames_per_second, 45);
+    }
 
     #[test]
     fn outcome_modal_keeps_one_processing_sample_until_queue_ai() {

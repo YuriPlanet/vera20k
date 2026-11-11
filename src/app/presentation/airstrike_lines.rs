@@ -273,7 +273,25 @@ pub(crate) fn composite(
                 style,
             } => {
                 if let Some(shade) = shades.get(id) {
-                    draws.extend(geometry(from, wobble(to, wall_ms), shade, style, view));
+                    // 70597E stores the dot at its client point, with no
+                    // clip corner added. The original's battlefield starts
+                    // at the surface's corner; a layout's comes in by it.
+                    draws.extend(
+                        geometry(from, wobble(to, wall_ms), shade, style, view)
+                            .into_iter()
+                            .map(|draw| match draw {
+                                SurfaceDraw::OpaqueRect { rect, word } => SurfaceDraw::OpaqueRect {
+                                    rect: [
+                                        rect[0] + view.clip[0],
+                                        rect[1] + view.clip[1],
+                                        rect[2],
+                                        rect[3],
+                                    ],
+                                    word,
+                                },
+                                other => other,
+                            }),
+                    );
                 }
             }
         }

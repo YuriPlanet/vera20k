@@ -34,11 +34,11 @@ pub fn browser_proxy_url() -> &'static str {
     }
 }
 
+use vera20k_relay_protocol::{ABSENT_MS, ClientSession, RelayError, ServerEvent};
 pub use vera20k_relay_protocol::{
     CertificatePacing, MAX_PEERS as RELAY_MAX_PEERS, OrderingCertificate, Ticket as RelayTicket,
     peer_endpoint as relay_peer_endpoint,
 };
-use vera20k_relay_protocol::{ClientSession, RelayError, ServerEvent};
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support {
@@ -83,6 +83,13 @@ const LAN_SCOPE_HEADER_LEN: usize = 4 + 16 + 8;
 // connection, and the next match's newer generation supersedes it
 // (services/relay/README.md).
 const RELAY_LEAVE_ATTEMPTS: u16 = 235;
+// The relay retires a started player it has not heard for `ABSENT_MS`
+// (`retire_absent`, services/relay-protocol/src/sequenced.rs), and drops a
+// lapsed ticket unanswered, so nothing tells a game that its place is gone.
+// A route that has heard nothing for that long and 15 seconds more is
+// released, in 16 ms service buckets: the relay counts from this game's last
+// packet and the game from the relay's last answer.
+const RELAY_ABSENT_TICKS: i32 = ((ABSENT_MS + 15_000) / 16) as i32;
 
 /// One admitted route progresses from the existing global loading channel to
 /// private gameplay. Loading peers may finish on different service passes.
@@ -336,6 +343,8 @@ struct UdpIo {
     global: GlobalChannel,
     broadcast_targets: Vec<SocketAddrV4>,
     relay: Option<RelayRoute>,
+    // The last route was released for silence (`RELAY_ABSENT_TICKS`).
+    relay_absent: bool,
     #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
     relay_gateway: Option<String>,
     lan_scope: Option<LanScopeState>,
@@ -596,6 +605,11 @@ impl LanUdpTransport {
     }
     pub fn relay_expires(&self) -> Option<u64> {
         self.lock().relay_expires()
+    }
+    /// The relay answered nothing for longer than it keeps a silent player's
+    /// place, so the route was released: its match cannot be returned to.
+    pub fn relay_absent(&self) -> bool {
+        self.lock().relay_absent
     }
 
     /// HTTPS admission supplies a lobby-signed immutable match clock/roster.
@@ -942,6 +956,9 @@ struct RelayRoute {
     encoded: Vec<u8>,
     last_probe: Option<u32>,
     last_response: Option<u32>,
+    // The newest answer, else the first service: where its silence began.
+    // A browser route change clears `last_response` and keeps this.
+    heard: Option<u32>,
     peer_probes: Option<Vec<PeerProbe>>,
     ordering_certificate: Option<Vec<u8>>,
     // Dropped excess packets are recovered from the immutable stream cursor.
@@ -1068,6 +1085,7 @@ impl UdpIo {
             global,
             broadcast_targets: Vec::new(),
             relay: None,
+            relay_absent: false,
             #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
             relay_gateway: None,
             lan_scope: None,
@@ -1169,11 +1187,15 @@ impl UdpIo {
         let session =
             ClientSession::new(ticket, packet_key, payload_key).map_err(relay_io_error)?;
         #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
-        {
+        let session = {
+            let mut session = session;
+            // Browser relay datagrams ride the gateway's WebSocket.
+            session.use_stream_transport();
             let gateway = self.relay_gateway.as_deref().unwrap_or(browser_proxy_url());
             self.primary.set_relay(address, gateway)?;
             self.alternate.set_relay(address, gateway)?;
-        }
+            session
+        };
         self.relay = Some(RelayRoute {
             address,
             session,
@@ -1181,6 +1203,7 @@ impl UdpIo {
             encoded: Vec::with_capacity(vera20k_relay_protocol::MAX_DATAGRAM),
             last_probe: None,
             last_response: None,
+            heard: None,
             peer_probes: None,
             ordering_certificate: None,
             ordering_inbox: VecDeque::new(),
@@ -1191,6 +1214,7 @@ impl UdpIo {
             },
             retiring: None,
         });
+        self.relay_absent = false;
         self.global.require_authenticated_acknowledgments();
         self.broadcast_targets = vec![SocketAddrV4::new(Ipv4Addr::BROADCAST, DEFAULT_LAN_PORT)];
         Ok(())
@@ -1219,6 +1243,11 @@ impl UdpIo {
         key: [u8; 32],
         payload_key: [u8; 32],
     ) -> io::Result<()> {
+        if self.relay.is_none() && self.relay_absent {
+            // The lobby's reply to a renewal asked before the route was
+            // released: the place it would renew is gone.
+            return Ok(());
+        }
         let route = self
             .relay
             .as_mut()
@@ -1437,6 +1466,7 @@ impl UdpIo {
             }
         }
         let mut leave_unacknowledged = false;
+        let mut absent = false;
         if let Some(route) = self.relay.as_mut() {
             if let Some(retiring) = route.retiring.as_mut() {
                 let due = retiring
@@ -1472,6 +1502,12 @@ impl UdpIo {
                 {
                     route.session.forget_readiness();
                 }
+                // Signed, as probe_due: a sample one bucket older than the
+                // answer it follows is not 49 days of silence.
+                route.heard = route.last_response.or(route.heard).or(Some(now_ticks));
+                absent = route
+                    .heard
+                    .is_some_and(|heard| now_ticks.wrapping_sub(heard) as i32 > RELAY_ABSENT_TICKS);
                 // Keep the NAT mapping alive even without player input. During
                 // initial admission retry once a second; established routes ping
                 // every two seconds. These wall buckets never enter simulation.
@@ -1530,6 +1566,16 @@ impl UdpIo {
         if leave_unacknowledged {
             log::warn!("The relay did not acknowledge leaving the online match.");
             self.relay = None;
+        }
+        if absent {
+            // Whatever still holds this transport (a match, its failure box,
+            // the score screen) keeps it; only the dead route goes, so the IO
+            // thread stops probing it. No Leave: the relay retired the place.
+            log::warn!(
+                "The game server was silent for ten minutes: this match's connection is released."
+            );
+            self.relay = None;
+            self.relay_absent = true;
         }
         //Portable polling replaces Windows FD_WRITE notification timing.
         //Give each retained FIFO one write opportunity per pass; each later
@@ -1641,6 +1687,20 @@ fn ipv4_addr(socket: &UdpSocket) -> io::Result<SocketAddrV4> {
     }
 }
 
+/// One socket read and its receive time (spec §6.5): the read itself here,
+/// where the native IO pump reads as datagrams arrive.
+#[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
+fn recv_from_at(socket: &UdpSocket, buffer: &mut [u8]) -> io::Result<(usize, SocketAddr, Instant)> {
+    let (length, source) = socket.recv_from(buffer)?;
+    Ok((length, source, Instant::now()))
+}
+
+/// The browser drains between frames; its socket reports the arrival.
+#[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+fn recv_from_at(socket: &UdpSocket, buffer: &mut [u8]) -> io::Result<(usize, SocketAddr, Instant)> {
+    socket.recv_from_at(buffer)
+}
+
 fn drain_socket(
     socket: &UdpSocket,
     ack_socket: &UdpSocket,
@@ -1659,7 +1719,7 @@ fn drain_socket(
     // oversized/truncated datagram on platforms whose recvfrom truncates.
     let mut bytes = [0; vera20k_relay_protocol::MAX_DATAGRAM + 1];
     for _ in 0..receive_budget {
-        let (length, source) = match socket.recv_from(&mut bytes) {
+        let (length, source, received_at) = match recv_from_at(socket, &mut bytes) {
             Ok(packet) => packet,
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
             Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
@@ -1677,7 +1737,6 @@ fn drain_socket(
                 break;
             }
         };
-        let received_at = Instant::now();
         report.received_datagrams += 1;
         let SocketAddr::V4(source) = source else {
             report.malformed_datagrams += 1;

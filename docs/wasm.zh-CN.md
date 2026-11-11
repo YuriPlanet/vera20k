@@ -6,15 +6,17 @@ Wasm 是与 macOS、Windows 和 Linux 并列的第四个可选构建目标，复
 
 ## 构建
 
-需要稳定版 Rust、Python 3.11 或更新版本，以及与 `Cargo.lock` 中 `wasm-bindgen` 版本一致的 `wasm-bindgen-cli`（当前为 0.2.114）。
+需要稳定版 Rust、Python 3.11 或更新版本，以及与 `Cargo.lock` 中 `wasm-bindgen` 版本一致的 `wasm-bindgen-cli`（当前为 0.2.127）。
 
 ```sh
 rustup target add wasm32-unknown-unknown
-cargo install wasm-bindgen-cli --version 0.2.114 --locked
+cargo install wasm-bindgen-cli --version 0.2.127 --locked
 python3 tools/wasm/build.py
 ```
 
-构建工具使用 `--target wasm32-unknown-unknown --no-default-features --features wasm`，按现有 `fast` profile 将客户端库构建为 `cdylib`，再将绑定代码和不含游戏资源的宿主页面打包到 `target/wasm-dist/`。可加 `--profile release` 使用 release 优化。工具会检查绑定 CLI 与 lockfile 的版本是否一致，并为引擎设置 8 MiB 的 Wasm 栈。桌面版的产物类型、默认 feature 和构建命令保持不变。
+构建工具使用 `--target wasm32-unknown-unknown --no-default-features --features wasm` 将客户端库构建为 `cdylib`，再将绑定代码和不含游戏资源的宿主页面打包到 `target/wasm-dist/`。默认使用玩家下载的 `wasm` profile：按体积优化、fat LTO、单个 codegen unit、不含符号名，构建耗时是 `fast` 的数倍（2026-11-09 实测：单人版 Wasm 为 16.5 MB，brotli 压缩后 4.6 MB；`fast` 为 45.6 MB 和 10.3 MB）。修改代码时可加 `--profile fast`，也可加 `--profile release`。工具会检查绑定 CLI 与 lockfile 的版本是否一致，并为引擎设置 8 MiB 的 Wasm 栈。它还会先为主机构建 `src/bin/snapshot-layout.rs`：浏览器版引擎把存档布局 ID（`VERA20K_SNAPSHOT_LAYOUT`）编译进去，而不是在运行时追踪存档类型。桌面版的产物类型、默认 feature 和构建命令保持不变。
+
+浏览器版引擎不内嵌任何界面字体。这些字体（Noto Sans、Noto Sans CJK 及 19 种文字的字体，约 30 MB）和 Unifont 的 CJK 字形表连同许可证复制到 `pkg/fonts/`。引擎加载后立即开始获取用于补画 GAME.FNT 缺字的 Noto Sans 和字形表，两者都到达后 `fonts_ready()` 才 resolve：调用 `start_game` 或 `start_spawn` 前需先 await 它，否则这两个函数会报错。其余字体在文字首次需要只有该字体才有的字符时（例如聊天里的泰文名字）才获取。托管该包的站点也必须提供这个目录。每个 URL 带有文件版本，浏览器在引擎更新后仍可沿用已缓存的字体。浏览器版不设置窗口图标。
 
 可选联机版的构建命令：
 
@@ -67,7 +69,7 @@ python3 tools/wasm/serve.py
 - `util::file_system` 在桌面端重新导出标准文件操作。浏览器导入资源位于 `/retail`，存档位于 `/saves`，配置位于 `/saves/profile`；MIX 归档共享导入字节，不使用内存映射。
 - 浏览器通过现有并行工作接口串行执行工作。桌面端仍选择原生 Rayon 和工作线程路径。
 - GPU 获取通过现有初始化任务让出执行。渲染使用离屏 sRGB 帧和 canvas 呈现 pass。浏览器纹理上传不会阻塞等待 GPU 完成。
-- 没有可用的 WebGPU 适配器时，浏览器构建回退到 WebGL2。WebGL2 没有存储缓冲、计算着色器、片元原子操作和重解释格式的纹理视图，因此用到这些能力的渲染器只在该设备上改用等价的渲染目标实现（`render::webgl`、`gpu::webgl_fallback`）；其他设备的路径不变。原生测试会把这些着色器翻译为 GLSL ES 3.00，设置 `VERA20K_TEST_WEBGL_FALLBACK=1` 可在原生设备上让 GPU 基准测试走回退路径。
+- 没有可用的 WebGPU 适配器时，浏览器构建回退到 WebGL2。WebGL2 没有存储缓冲、计算着色器和重解释格式的纹理视图，因此用到这些能力的渲染器只在该设备上改用等价的渲染目标实现（`render::webgl`、`gpu::webgl_fallback`）；其他设备的路径不变。原生测试会把这些着色器翻译为 GLSL ES 3.00，设置 `VERA20K_TEST_WEBGL_FALLBACK=1` 可在原生设备上让 GPU 基准测试走回退路径。
 - 浏览器入口提供 canvas、状态回调和存储回调；现有 App 继续负责启动和对局生命周期。
 
 只有同时启用 `wasm-net` 和浏览器目标，才会启用 Fetch、WS socket 和延后的联机加载等待。桌面构建（包括启用 `wasm-net` 的构建）仍使用原生 UDP、阻塞 HTTPS 和线程调度。仅启用 `wasm` 的单机包仍会在网络入口明确返回不支持错误。浏览器不支持 LAN 发现和直接 UDP 连接。

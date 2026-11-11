@@ -25,6 +25,9 @@ pub(crate) fn find_naval_base_placement(
 ) -> Option<(u16, u16)> {
     let house = sim.houses.get(&owner)?;
 
+    // No buildable shipyard answers the empty cell, as Ares 3.0
+    // HouseClass_FindPositionForBuilding_FixShipyard 100238A0 (hook
+    // 0x0050610E) returns at 0x005060CE instead of dereferencing it.
     // Native invokes the source-ordered selector twice rather than retaining
     // the first pointer. Keep the two calls independent even though ordinary
     // immutable Rules yield the same type both times.

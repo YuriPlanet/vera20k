@@ -600,8 +600,7 @@ pub(crate) fn reinforcement_world(
         &IniFile::from_str(""),
         true,
     );
-    sim.install_team_ai_registry(&registry, rules)
-        .expect("resolved native Team inputs install");
+    sim.install_team_ai_registry(&registry, rules);
     let mut waypoints = HashMap::from([(
         4,
         Waypoint {
@@ -1164,6 +1163,53 @@ fn droppod_reinforcements_bypass_a_nearby_refinery() {
     }
 }
 
+/// Ares 3.0 TeamTypeClass_CreateInstance_Plane (1003A340, hook 0x65DBB3):
+/// the carrier is the head owner's GetParadropPlane, here its Country's
+/// `ParaDrop.Aircraft=`, not the PDPLANE literal.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_droppod_reinforcement_carrier_is_the_countrys_paradrop_plane() {
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/team_paradrop_transport.json",
+    ))
+    .unwrap();
+    let Some((mut ini, art)) = retail_rules_and_art() else {
+        return;
+    };
+    ini.merge(&crate::rules::ini_parser::IniFile::from_str(
+        "[Americans]\nParaDrop.Aircraft=CARGOPLANE\n",
+    ));
+    let mut rules = RuleSet::from_ini(&ini).expect("patched retail rules");
+    rules.install_art_data(crate::rules::retail_ini_fixture::art_registry(&art));
+    let overlay = OverlayTypeRegistry::from_ini(&ini, Some(&art));
+    let terrain_rules = TerrainRules::from_ini(&ini);
+    let row = corpus
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["case_kind"] == "droppod_transport")
+        .unwrap();
+    let mut sim = reinforcement_world(&rules, &terrain_rules, &row["input"]);
+    let team_type = sim.interner.get("TT").unwrap();
+    assert!(
+        sim.spawn_team_reinforcements(
+            team_type,
+            -1,
+            &rules,
+            Some(&overlay),
+            FrameEffects::default(),
+        )
+        .0
+    );
+    let planes: Vec<_> = sim
+        .entities()
+        .values()
+        .filter(|entity| entity.category() == EntityCategory::Aircraft)
+        .map(|entity| sim.interner.resolve(entity.type_ref()).to_owned())
+        .collect();
+    assert_eq!(planes, ["CARGOPLANE"]);
+}
+
 #[test]
 fn droppod_reinforcement_carrier_matches_original_constructor_cargo_and_orders() {
     let corpus: Value = serde_json::from_str(crate::test_fixture::text(
@@ -1465,7 +1511,7 @@ fn all01_full_transport_inputs_fit_the_selected_retail_cargo_chain() {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     // Literal identities/counts below come from the bound physical map,
     // not from a replicated native transport-selection implementation.
     for (name, expected) in [
@@ -2226,7 +2272,7 @@ fn place_full_team(
     let (_, assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
     let teams = TeamAiIniRegistry::load_retail(&assets, &map.ini, true).unwrap();
     sim.initialize_trigger_definitions(&map, &teams, None, None, None);
-    sim.install_team_ai_registry(&teams, rules).unwrap();
+    sim.install_team_ai_registry(&teams, rules);
     sim.session.install_waypoints(&map.waypoints);
     sim.classify_map_triggers(rules);
     let team_type = sim.interner.get("FULL_MINER").unwrap();

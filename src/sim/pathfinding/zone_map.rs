@@ -18,6 +18,7 @@
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use super::PathGrid;
 use super::zone_build;
@@ -64,6 +65,11 @@ pub(crate) fn raw_zone_invalid(grid: crate::map::cell_index::CellGrid) -> ZoneId
     }
 }
 
+/// Per-cell bridge-layer redirect: the ground cell whose zone a bridge-layer
+/// query reads, or `None` where the cell has no bridge layer. One table serves
+/// every movement row that uses bridges, so the rows share it.
+pub(crate) type BridgeRedirect = Arc<[Option<(u16, u16)>]>;
+
 /// Sentinel for impassable or unassigned cells.
 pub const ZONE_INVALID: ZoneId = 0;
 
@@ -79,7 +85,7 @@ pub struct ZoneMap {
     /// Per-cell bridge redirect: for bridge cells, the ground endpoint cell
     /// whose zone ID should be returned for bridge-layer queries.
     /// None = no bridges on map. Mirrors gamemd.exe GetZoneID redirect (0x0056d230).
-    bridge_redirect: Option<Vec<Option<(u16, u16)>>>,
+    bridge_redirect: Option<BridgeRedirect>,
     width: u16,
     height: u16,
 }
@@ -96,7 +102,7 @@ impl ZoneMap {
     /// Construct a ZoneMap from pre-computed arrays.
     pub(crate) fn new(
         zone_ids: Vec<ZoneId>,
-        bridge_redirect: Option<Vec<Option<(u16, u16)>>>,
+        bridge_redirect: Option<BridgeRedirect>,
         width: u16,
         height: u16,
     ) -> Self {
@@ -130,11 +136,9 @@ impl ZoneMap {
     /// Look up the zone ID for a cell at the given layer in the reduced
     /// PathGrid zone labels, not native GetZoneID (that is
     /// [`ZoneGrid::get_zone_id_native`]). The bridge layer reads a redirect
-    /// table built at zone rebuild, not the live cells. RESIDUAL (#904):
-    /// `ZoneGrid::can_reach` (miner routing, zone_search, move-order
-    /// recovery) still answers through it. Trigger: a structural cell with no
-    /// matching high record, or an inactive deck. Effect: its answer can
-    /// differ from GetZoneID's. Frequency: bridge cells only.
+    /// table built at zone rebuild, not the live cells. Only a search without
+    /// blocker counts reads it, through [`ZoneGrid::can_reach`]; Foot routing,
+    /// miners and move orders answer through `can_reach_native`.
     ///
     /// For bridge-layer queries on a structural cell, returns the ground zone
     /// selected by the matching high-bridge record. Nonstructural cells a high
@@ -169,7 +173,7 @@ impl ZoneMap {
     }
 
     /// Replace the bridge redirect table.
-    pub(crate) fn set_bridge_redirect(&mut self, redirect: Option<Vec<Option<(u16, u16)>>>) {
+    pub(crate) fn set_bridge_redirect(&mut self, redirect: Option<BridgeRedirect>) {
         self.bridge_redirect = redirect;
     }
 }
@@ -548,23 +552,26 @@ impl ZoneGrid {
         width: u16,
         height: u16,
     ) -> BTreeMap<MovementZone, ZoneMap> {
-        MovementZone::all_ground()
-            .iter()
-            .map(|&mz| {
-                let mut zone_map =
-                    zone_build::build_zone_map_from_base_topology(base, mz, width, height);
-                if mz.can_use_bridges() {
-                    zone_map.set_bridge_redirect(zone_build::build_bridge_redirect(
-                        path_grid,
-                        Some(terrain),
-                        bridge_records,
-                        width,
-                        height,
-                    ));
-                }
-                (mz, zone_map)
-            })
-            .collect()
+        // The redirect reads only the terrain and the bridge records, so one
+        // table serves every row that uses bridges. The rows project
+        // independently; `parallel::map` keeps them in row order.
+        let redirect = zone_build::build_bridge_redirect(
+            path_grid,
+            Some(terrain),
+            bridge_records,
+            width,
+            height,
+        );
+        let rows = MovementZone::all_ground();
+        let maps = crate::sim::parallel::map(rows, |&mz| {
+            let mut zone_map =
+                zone_build::build_zone_map_from_base_topology(base, mz, width, height);
+            if mz.can_use_bridges() {
+                zone_map.set_bridge_redirect(redirect.clone());
+            }
+            zone_map
+        });
+        rows.iter().copied().zip(maps).collect()
     }
 
     pub(crate) fn bridge_inputs_match(
@@ -636,7 +643,7 @@ impl ZoneGrid {
     /// raw row value `0xFFFF`. Otherwise it projects the cell's own base
     /// cluster through the movement row. It reads the current native cell
     /// identity and flags rather than a cache.
-    pub(crate) fn get_zone_id_native(
+    pub fn get_zone_id_native(
         &self,
         terrain: &ResolvedTerrainGrid,
         coord: (u16, u16),
@@ -958,6 +965,24 @@ impl ZoneGrid {
     /// without assigning a zone or rebuilding hierarchy. Mutation owners that
     /// have a later native repair callback use this to make the new class/height
     /// visible to earlier ordered neighbor repairs.
+    /// Whether the cell's retained class and level already match `terrain`;
+    /// a shared copy (docs/sim-thread.md) is then left shared.
+    pub(crate) fn base_cell_attributes_current(
+        &self,
+        terrain: &ResolvedTerrainGrid,
+        x: u16,
+        y: u16,
+    ) -> bool {
+        if x >= self.width || y >= self.height {
+            return false;
+        }
+        let index = y as usize * self.width as usize + x as usize;
+        self.base_topology.movement_classes.get(index)
+            == Some(&zone_build::movement_class_for_cell(terrain, x, y))
+            && self.base_topology.levels.get(index)
+                == Some(&terrain.cell(x, y).map_or(0, |cell| cell.level))
+    }
+
     pub(crate) fn refresh_base_cell_attributes_at(
         &mut self,
         terrain: &ResolvedTerrainGrid,
@@ -967,14 +992,12 @@ impl ZoneGrid {
         if x >= self.width || y >= self.height {
             return false;
         }
+        if self.base_cell_attributes_current(terrain, x, y) {
+            return true;
+        }
         let index = y as usize * self.width as usize + x as usize;
         let class = zone_build::movement_class_for_cell(terrain, x, y);
         let level = terrain.cell(x, y).map_or(0, |cell| cell.level);
-        if self.base_topology.movement_classes.get(index) == Some(&class)
-            && self.base_topology.levels.get(index) == Some(&level)
-        {
-            return true;
-        }
         self.invalidate_navigation_history();
         let base = &mut self.base_topology;
         let Some(slot) = base.movement_classes.get_mut(index) else {
@@ -1074,6 +1097,7 @@ impl ZoneGrid {
         let base_topology = zone_build::rebuild_base_zone_topology(
             self.base_topology.movement_classes.clone(),
             self.base_topology.levels.clone(),
+            resolved_terrain.terrain_deformation(),
             bridge_records,
             self.width,
             self.height,

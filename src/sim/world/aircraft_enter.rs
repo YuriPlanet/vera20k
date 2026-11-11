@@ -242,12 +242,75 @@ impl EnterHost for WorldEnter<'_> {
         i32::from(self.transmit(RadioMessage::DockNow).code())
     }
 
-    /// RESIDUAL, dormant: an aircraft receiver answers DOCK_NOW with 5
-    /// (`0x00419300`), so natively an aircraft reaches this only with
-    /// another aircraft as its radio contact, which only a transport
-    /// aircraft's boarding forms; no retail aircraft type has `Passengers=`.
-    /// VERA's aircraft receiver answers CAN_LOAD and DOCK_NOW 0
-    /// (`radio::receive`), so neither the Infantry nor the Unit
-    /// PerCellProcess arm puts a passenger aboard an aircraft.
-    fn board_contact(&mut self) {}
+    /// RESIDUAL: an aircraft receiver answers DOCK_NOW with 5 (`0x00419300`),
+    /// so an aircraft reaches this with another aircraft as its radio
+    /// contact. Natively its Limbo BREAKs that contact first, so the
+    /// AddPassenger that follows runs on a NULL contact's cargo
+    /// (`0x0041A036..0x0041A048`) and faults; VERA enters idle mode
+    /// instead, as any other answer does. Trigger: an aircraft docking with
+    /// an aircraft, which no order or team action forms.
+    fn board_contact(&mut self) {
+        self.enter_idle_mode();
+    }
+
+    /// The Carryall delivery (`0x0041A06D..0x0041A124`): the cargo's head
+    /// comes off the hold (`CargoClass::RemoveFirstPassenger`), the
+    /// Carryall BREAKs its dock, and the cargo HELLOs that dock. ROGER puts
+    /// it back at the head and drops it there between the Carryall's
+    /// Mark(UP) and Mark(DOWN) (`aircraft::carryall`); otherwise the Carryall
+    /// flies to its nearest friendly airfield. Move is queued either way.
+    ///
+    /// RESIDUAL (DRIFT): natively a cargo the dock refused stays out of the
+    /// hold, in limbo for good; VERA puts it back at the head. Trigger: a
+    /// loaded Carryall docking with a building whose HELLO refuses the
+    /// cargo.
+    fn deliver_cargo(&mut self) -> bool {
+        if !self.sim.is_carryall(self.id, self.rules) {
+            return false;
+        }
+        let contact = self.entity().radio_contacts.slot(0);
+        let Some((cargo, size)) = self
+            .sim
+            .substrate
+            .entities
+            .get_mut(self.id)
+            .and_then(|entity| entity.passenger_role.cargo_mut())
+            .and_then(|hold| hold.unload_first())
+        else {
+            return false;
+        };
+        self.transmit(RadioMessage::Break);
+        let accepted = contact.is_some_and(|dock| {
+            radio::transmit(
+                self.sim,
+                cargo,
+                dock,
+                RadioMessage::Hello,
+                radio::RadioPayload::default(),
+                self.rules,
+                self.effects,
+            ) == RadioResponse::Roger
+        });
+        let context = crate::sim::world::UninitContext::new(self.rules, self.registry)
+            .with_effects(self.effects);
+        let _ = self
+            .sim
+            .add_cargo_passenger_chain(self.id, &[(cargo, size)], context);
+        if accepted {
+            self.sim
+                .foot_mark_remove(self.id, self.rules, self.registry, self.effects);
+            self.sim
+                .carryall_unload(self.id, self.rules, self.registry, self.effects);
+            self.sim
+                .foot_mark_put(self.id, self.rules, self.registry, self.effects);
+        } else {
+            let airfield = self
+                .sim
+                .aircraft_nearest_friendly_airfield_cell(self.id, self.rules);
+            self.sim
+                .assign_aircraft_destination(self.id, Some(airfield), self.rules, self.effects);
+        }
+        self.queue(MissionType::Move, false);
+        true
+    }
 }

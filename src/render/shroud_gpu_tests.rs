@@ -415,9 +415,12 @@ fn production_world_a_sampling_matches_cpu_source_at_fractional_scroll_and_zoom(
         wgpu::util::TextureDataOrder::LayerMajor,
         &[0],
     );
+    // Tile pages are encoded, like the production tile atlas's.
+    let tile_page =
+        batch.create_encoded_texture_on_device(&gpu.device, &gpu.queue, &[200, 100, 50, 255], 1, 1);
     let tmp = batch.create_zdepth_bind_group_on_device(
         &gpu.device,
-        &texture.view,
+        &tile_page.view,
         &zero.create_view(&Default::default()),
     );
     let voxel = batch.create_unit_atlas_texture_on_device(&gpu.device, &gpu.queue, 1, 1, &[1]);

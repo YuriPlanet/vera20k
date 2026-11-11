@@ -11,12 +11,14 @@ pub(crate) mod detail;
 #[cfg(feature = "phobos")]
 pub(crate) mod digital_display;
 pub(crate) mod electric_bolts;
+pub(crate) mod field_parts;
+pub(crate) mod layout_parts;
+pub(crate) mod player_layout;
 pub(crate) mod fire_effects;
 #[cfg(feature = "ares")]
 pub(crate) mod flying_credits;
 pub(crate) mod house_ui;
 pub(crate) mod instances;
-pub(crate) mod interpolation;
 pub(crate) mod ion_blasts;
 pub(crate) mod lasers;
 pub(crate) mod line_trails;
@@ -27,6 +29,7 @@ pub(crate) mod placement_preview;
 pub(crate) mod radial_indicators;
 pub(crate) mod radiation_beams;
 pub(crate) mod render;
+pub(crate) mod render_pose;
 pub(crate) mod screen_shake;
 pub(crate) mod selection_brackets;
 pub(crate) mod sidebar_build;

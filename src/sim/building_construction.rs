@@ -57,6 +57,11 @@ pub(crate) struct BuildingBody {
     state: i32,
     queued: i32,
     construction_control: [i32; 3],
+    /// Ares `SellFrameDuration` (BuildingTypeExt `+0x228`), bound with the
+    /// control (`rules::buildup_asset_catalog`).
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    sell_rate: i32,
 }
 
 impl Default for BuildingBody {
@@ -65,6 +70,8 @@ impl Default for BuildingBody {
             state: -1,
             queued: -1,
             construction_control: crate::rules::buildup_asset_catalog::NO_BUILDUP,
+            #[cfg(feature = "ares")]
+            sell_rate: 0,
         }
     }
 }
@@ -72,6 +79,16 @@ impl Default for BuildingBody {
 impl BuildingBody {
     pub(crate) fn bind_control(&mut self, control: [i32; 3]) {
         self.construction_control = control;
+        // Ares: without a bound SellTime the sale runs at the control's own
+        // rate (`1000F450` with `SellTime` unset); `bind_sell_rate` follows.
+        #[cfg(feature = "ares")]
+        {
+            self.sell_rate = control[2];
+        }
+    }
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_sell_rate(&mut self, rate: i32) {
+        self.sell_rate = rate;
     }
     pub(crate) const fn construction_control(&self) -> [i32; 3] {
         self.construction_control
@@ -81,6 +98,10 @@ impl BuildingBody {
     }
     pub(crate) const fn queued(&self) -> i32 {
         self.queued
+    }
+    /// Whether a mode is queued, which [`Self::apply_queued`] applies or clears.
+    pub(crate) const fn is_queued(&self) -> bool {
+        self.queued != -1
     }
     fn control(&self) -> [i32; 3] {
         if self.state == 0 {
@@ -92,38 +113,60 @@ impl BuildingBody {
 
     ///447794 always publishes the request;44779A..4477BC applies an initial
     /// mode or Construction immediately. Map initialization uses its explicit
-    /// scenario-init path below.
-    pub(crate) fn begin(&mut self, mode: BuildingBodyMode, stage: &mut StageClass, now: i32) {
+    /// scenario-init path below. `selling` is the building's current mission
+    /// (`+0xAC`) being Selling, which only the Ares rate reads.
+    pub(crate) fn begin(
+        &mut self,
+        mode: BuildingBodyMode,
+        stage: &mut StageClass,
+        now: i32,
+        selling: bool,
+    ) {
         self.queued = mode.raw();
         if self.state == -1 || mode == BuildingBodyMode::Construction {
-            self.apply(stage, now, false, &GameOptions::default());
+            self.apply(stage, now, false, &GameOptions::default(), selling);
         }
     }
     pub(crate) fn initialize_idle(&mut self, stage: &mut StageClass, now: i32) {
         self.queued = 1;
-        self.apply(stage, now, false, &GameOptions::default());
+        self.apply(stage, now, false, &GameOptions::default(), false);
     }
     ///43FFB4..440042: an identical queued mode only clears the request.
     /// Different stock modes restart through SpeedNormalize, even mode0.
-    pub(crate) fn apply_queued(&mut self, stage: &mut StageClass, now: i32, options: &GameOptions) {
-        if self.queued != -1 {
+    pub(crate) fn apply_queued(
+        &mut self,
+        stage: &mut StageClass,
+        now: i32,
+        options: &GameOptions,
+        selling: bool,
+    ) {
+        if self.is_queued() {
             if self.queued != self.state {
-                self.apply(stage, now, true, options);
+                self.apply(stage, now, true, options, selling);
             } else {
                 self.queued = -1;
             }
         }
     }
+    #[cfg_attr(not(feature = "ares"), allow(unused_variables))]
     fn apply(
         &mut self,
         stage: &mut StageClass,
         now: i32,
         queued_tail: bool,
         options: &GameOptions,
+        selling: bool,
     ) {
         self.state = self.queued;
         self.queued = -1;
         let [start, _, mut rate] = self.control();
+        // Ares 3.0 100144E0 (hook 0x447A63): while the current mission is
+        // Selling, any mode starts at the type's SellFrameDuration instead
+        // of its own rate; the normalization below still applies.
+        #[cfg(feature = "ares")]
+        if selling {
+            rate = self.sell_rate;
+        }
         if queued_tail {
             rate = options.speed_normalize(rate);
         }
@@ -147,7 +190,7 @@ impl BuildingBody {
             return false;
         }
         if !stepped {
-            return self.state == -1 || stage.rate() == 0;
+            return self.ready_unstepped(stage);
         }
         let [start, count, control_rate] = self.control();
         let end = start.wrapping_add(count);
@@ -157,6 +200,11 @@ impl BuildingBody {
             stage.restart(start, now, options.speed_normalize(control_rate));
         }
         done
+    }
+    /// [`Self::update`]'s answer when `stage` does not step: ready while the
+    /// body is unset or its clock stands still.
+    pub(crate) fn ready_unstepped(&self, stage: &StageClass) -> bool {
+        self.state == -1 || stage.rate() == 0
     }
 }
 
@@ -431,7 +479,7 @@ mod tests {
             let mut body = BuildingBody::default();
             body.bind_control(control(input));
             let mut stage = StageClass::constructed(origin);
-            body.begin(BuildingBodyMode::Construction, &mut stage, origin);
+            body.begin(BuildingBodyMode::Construction, &mut stage, origin, false);
             let mut done = false;
             for frame in frames.iter().skip(1) {
                 let now = origin + frame["frame"].as_i64().unwrap() as i32;

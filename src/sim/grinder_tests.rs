@@ -483,7 +483,7 @@ fn sov03_authored_trigger80_teams_walk_and_recycle_all_four_civilian_types() {
             "retail Neutral country is passive"
         );
         sim.houses.register(neutral_state);
-        sim.install_team_ai_registry(&teams, &rules).unwrap();
+        sim.install_team_ai_registry(&teams, &rules);
         sim.session.install_waypoints(&cropped.waypoints);
         spawn(&mut sim, &rules, "YAGRND", "Civie3", CROP_X + 8, CROP_Y + 2);
         let cropped_origin = cropped.waypoints[&26];

@@ -762,6 +762,9 @@ impl LiveCommandSession {
                 context,
                 now_wall_bucket.wrapping_shl(4),
             );
+            if let Err(error) = &result {
+                session.record_failure(error);
+            }
             self.sequenced_failed = result.is_err();
             return result;
         }

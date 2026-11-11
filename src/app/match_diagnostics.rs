@@ -128,7 +128,6 @@ pub(crate) struct ActorPresentation {
     pub screen: [f32; 2],
     pub body: u16,
     pub motion: ActorMotionObservation,
-    pub sampled_from_frame: u32,
     pub gpu_done: GpuCompletion,
 }
 impl ActorPresentation {
@@ -141,7 +140,7 @@ impl ActorPresentation {
 }
 struct ActorPresentationProbe {
     actor: u64,
-    pending: Option<(u32, [f32; 2], u16, ActorMotionObservation, u32)>,
+    pending: Option<(u32, [f32; 2], u16, ActorMotionObservation)>,
     submitted: Option<ActorPresentation>,
 }
 pub(crate) struct CommandTimingObservation {
@@ -241,7 +240,6 @@ impl MatchDiagnosticsState {
         frame: u32,
         screen: [f32; 2],
         body: u16,
-        interpolation: &crate::app::presentation::interpolation::RenderInterpolation,
     ) {
         if let Some(probe) = self.actor_presentation.borrow_mut().as_mut()
             && probe.actor == entity.stable_id()
@@ -251,7 +249,6 @@ impl MatchDiagnosticsState {
                 screen,
                 body,
                 ActorMotionObservation::read(sim, entity),
-                interpolation.sampled_from_frame(entity, frame),
             ));
         }
     }
@@ -261,17 +258,14 @@ impl MatchDiagnosticsState {
                 probe
                     .pending
                     .take()
-                    .map(
-                        |(frame, screen, body, motion, sampled_from_frame)| ActorPresentation {
-                            at: ObservationTime::now(),
-                            frame,
-                            screen,
-                            body,
-                            motion,
-                            sampled_from_frame,
-                            gpu_done: Default::default(),
-                        },
-                    );
+                    .map(|(frame, screen, body, motion)| ActorPresentation {
+                        at: ObservationTime::now(),
+                        frame,
+                        screen,
+                        body,
+                        motion,
+                        gpu_done: Default::default(),
+                    });
             return probe.submitted.as_ref().map(|frame| frame.gpu_done.clone());
         }
         None
@@ -342,6 +336,11 @@ impl MatchDiagnosticsState {
 
     /// Disjoint borrows keep the recorder/observation owner beside playback;
     /// no caller moves the cursor out or temporarily disables the input gate.
+    /// Whether a command execution log observes each applied command.
+    pub(crate) fn observes_commands(&self) -> bool {
+        self.command_executions.is_some()
+    }
+
     pub(crate) fn playback_and_observations_mut(
         &mut self,
     ) -> (
@@ -547,7 +546,7 @@ impl MatchDiagnosticsState {
                 log.header.version = crate::sim::replay::REPLAY_VERSION;
                 log.startup = Some(Box::new(startup));
             }
-            Err(error) => log::debug!("Standalone replay startup unavailable: {error}"),
+            Err(error) => log::warn!("This match's replay cannot be replayed: {error:#}"),
         }
     }
 

@@ -8,9 +8,9 @@
 use super::audio::{AudioVolume, AudioVolumeOperations, apply_volume};
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::ui::main_menu_dialogs::options::{
-    DisplayTarget, HealthBarMode, LauncherCue, LauncherOptionsEvent, LauncherOptionsLabels,
-    LauncherOptionsPacked, LauncherOptionsValues, LauncherParentResult, OptionsDialogState,
-    SidebarSize, Zoom, admitted_initial_position, admitted_volume_position,
+    ColorVisionMode, DisplayTarget, HealthBarMode, LauncherCue, LauncherOptionsEvent,
+    LauncherOptionsLabels, LauncherOptionsPacked, LauncherOptionsValues, LauncherParentResult,
+    OptionsDialogState, SidebarSize, Zoom, admitted_initial_position, admitted_volume_position,
 };
 
 /// Project the retained signed profile into the fresh native-shaped controls.
@@ -34,17 +34,19 @@ pub(crate) fn launcher_values_from_profile(
         full_screen: false,
         original_shape: profile.original_shape,
         yr_original_style: profile.yr_original_style,
-        render_interpolation: profile.render_interpolation,
         mouse_wheel_zoom: profile.mouse_wheel_zoom,
         right_click_orders: profile.right_click_orders,
         lock_cursor: profile.lock_cursor,
         vera_icon: profile.vera_icon,
         hd_radar: profile.hd_radar,
         smooth_sidebar: profile.smooth_sidebar,
+        smooth_online_menus: profile.smooth_online_menus,
         hd_map_previews: profile.hd_map_previews,
         shift_queue: profile.shift_queue,
-        wol_test_service: profile.wol_test_service,
+        auto_repair: profile.auto_repair,
+        terrain_deformation: profile.terrain_deformation,
         performance_stats: false,
+        show_string_keys: profile.show_string_keys,
         skip_intro: profile.skip_intro,
         custom_end_game_banner: profile.custom_end_game_banner,
         custom_end_game_score: profile.custom_end_game_score,
@@ -52,6 +54,7 @@ pub(crate) fn launcher_values_from_profile(
         detailed_eva_text: profile.detailed_eva_text,
         sidebar: profile.sidebar,
         health_bars: profile.health_bars,
+        color_vision: profile.color_vision,
         // The slider's position is the stored level less the retail strength,
         // so gamemd's own bands sit at the left end.
         house_color_position: profile
@@ -102,12 +105,16 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_sidebar(&mut self, size: SidebarSize);
     /// The `[VERA] HealthBars=` list's pick; presentation only.
     fn store_health_bars(&mut self, mode: HealthBarMode);
+    /// The `[VERA] ColorVisionMode=` list's pick; presentation only, read by
+    /// the final frame pass on the very next frame.
+    fn store_color_vision(&mut self, mode: ColorVisionMode);
     /// Move the window to the picked screen, or hand it back to the system.
     fn set_display(&mut self, display: DisplayTarget);
     fn set_full_screen(&mut self, full_screen: bool);
+    /// Put the window back as a launch opens it.
+    fn restore_launch_window(&mut self);
     fn store_original_shape(&mut self, original_shape: bool);
     fn store_yr_original_style(&mut self, yr_original_style: bool);
-    fn store_render_interpolation(&mut self, enabled: bool);
     fn store_mouse_wheel_zoom(&mut self, enabled: bool);
     fn store_right_click_orders(&mut self, enabled: bool);
     fn store_lock_cursor(&mut self, locked: bool);
@@ -117,13 +124,21 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_hd_radar(&mut self, enabled: bool);
     /// Draw the sidebar's art from lightly smoothed xBR copies (`[VERA] SmoothSidebar=`).
     fn store_smooth_sidebar(&mut self, enabled: bool);
+    /// Smooth the online client's enlarged art (`[VERA] SmoothOnlineMenus=`).
+    fn store_smooth_online_menus(&mut self, enabled: bool);
     /// Show VERA's own map pictures in the setup screens (`[VERA] HdMapPreviews=`).
     fn store_hd_map_previews(&mut self, enabled: bool);
     /// Switch VERA's interface to the language `tag` names (`[VERA] Language=`).
     fn store_language(&mut self, tag: String);
     fn store_shift_queue(&mut self, shift_queue: bool);
-    fn store_wol_test_service(&mut self, wol_test_service: bool);
+    /// Send the Repair order for damaged buildings by itself (`[VERA] AutoRepair=`).
+    fn store_auto_repair(&mut self, enabled: bool);
+    /// Let explosions dent the ground from the next game on
+    /// (`[VERA] TerrainDeformation=`).
+    fn store_terrain_deformation(&mut self, enabled: bool);
     fn set_performance_stats(&mut self, shown: bool);
+    /// Show each label's string-table key instead of its text.
+    fn set_show_string_keys(&mut self, shown: bool);
     fn store_skip_intro(&mut self, skip: bool);
     /// Whether a finished match draws the country's own end-game picture.
     fn store_custom_end_game_banner(&mut self, enabled: bool);
@@ -149,19 +164,21 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::ZoomSelected(zoom) => operations.store_zoom(zoom),
         LauncherOptionsEvent::SidebarSelected(size) => operations.store_sidebar(size),
         LauncherOptionsEvent::HealthBarModeSelected(mode) => operations.store_health_bars(mode),
+        LauncherOptionsEvent::ColorVisionModeSelected(mode) => operations.store_color_vision(mode),
         LauncherOptionsEvent::DisplaySelected(display) => operations.set_display(display),
         LauncherOptionsEvent::LanguageSelected(tag) => operations.store_language(tag),
         LauncherOptionsEvent::FullScreenChanged(full_screen) => {
             operations.set_full_screen(full_screen);
         }
+        LauncherOptionsEvent::SetWindowSizeRequested => operations.restore_launch_window(),
+        // The in-game menu opens these dialogs itself (`app::input::pause_menu`).
+        LauncherOptionsEvent::InGameKeyboardRequested
+        | LauncherOptionsEvent::InGameSoundRequested => {}
         LauncherOptionsEvent::OriginalShapeChanged(original_shape) => {
             operations.store_original_shape(original_shape);
         }
         LauncherOptionsEvent::YrOriginalStyleChanged(yr_original_style) => {
             operations.store_yr_original_style(yr_original_style)
-        }
-        LauncherOptionsEvent::RenderInterpolationChanged(enabled) => {
-            operations.store_render_interpolation(enabled);
         }
         LauncherOptionsEvent::MouseWheelZoomChanged(enabled) => {
             operations.store_mouse_wheel_zoom(enabled);
@@ -175,17 +192,26 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::SmoothSidebarChanged(enabled) => {
             operations.store_smooth_sidebar(enabled);
         }
+        LauncherOptionsEvent::SmoothOnlineMenusChanged(enabled) => {
+            operations.store_smooth_online_menus(enabled);
+        }
         LauncherOptionsEvent::HdMapPreviewsChanged(enabled) => {
             operations.store_hd_map_previews(enabled);
         }
         LauncherOptionsEvent::ShiftQueueChanged(shift_queue) => {
             operations.store_shift_queue(shift_queue);
         }
-        LauncherOptionsEvent::WolTestServiceChanged(wol_test_service) => {
-            operations.store_wol_test_service(wol_test_service);
+        LauncherOptionsEvent::AutoRepairChanged(enabled) => {
+            operations.store_auto_repair(enabled);
+        }
+        LauncherOptionsEvent::TerrainDeformationChanged(enabled) => {
+            operations.store_terrain_deformation(enabled);
         }
         LauncherOptionsEvent::PerformanceStatsChanged(shown) => {
             operations.set_performance_stats(shown)
+        }
+        LauncherOptionsEvent::ShowStringKeysChanged(shown) => {
+            operations.set_show_string_keys(shown)
         }
         LauncherOptionsEvent::SkipIntroChanged(skip) => {
             operations.store_skip_intro(skip);
@@ -248,33 +274,57 @@ pub(crate) trait LauncherParentOperations {
 /// gamemd-derived: `OptionsClass__ApplyFromLauncherDialog @ 0x0055FAA0`.
 /// Accepted audio setters are unconditional and cue-silent. Detail refresh is
 /// changed-only; action-line refresh is unconditional.
+///
+/// `opened` is VERA's in-game menu's: what its page showed when it opened, so
+/// that only a control the player moved writes. Unlike gamemd's main menu,
+/// which applies once per visit, that page closes every time the menu does,
+/// and Game Controls' three-step Detail would keep turning its Medium to High.
 fn apply_launcher_parent(
     operations: &mut impl LauncherParentOperations,
     packed: LauncherOptionsPacked,
+    opened: Option<LauncherOptionsPacked>,
 ) {
-    let detail_changed = operations.store_detail_level(packed.detail_level);
-    if detail_changed {
+    let moved = |unchanged: &dyn Fn(LauncherOptionsPacked) -> bool| !opened.is_some_and(unchanged);
+    if moved(&|o| o.detail_level == packed.detail_level)
+        && operations.store_detail_level(packed.detail_level)
+    {
         operations.refresh_detail();
     }
-    operations.store_difficulty(packed.difficulty);
-    operations.store_unit_action_lines(packed.unit_action_lines);
-    operations.refresh_unit_action_lines();
-    operations.store_show_hidden(packed.show_hidden);
-    operations.store_tooltips(packed.tooltips);
-    operations.store_scroll_rate(packed.scroll_rate);
-    operations.store_score_volume(packed.score_volume);
-    operations.apply_score_output(packed.score_volume);
-    if packed.score_volume == 0.0 {
-        operations.queue_then_stop_score_zero();
+    if moved(&|o| o.difficulty == packed.difficulty) {
+        operations.store_difficulty(packed.difficulty);
     }
-    operations.store_sound_volume(packed.sound_volume);
-    operations.apply_sound_output(packed.sound_volume);
-    operations.store_voice_volume(packed.voice_volume);
-    operations.apply_voice_output(packed.voice_volume);
+    if moved(&|o| o.unit_action_lines == packed.unit_action_lines) {
+        operations.store_unit_action_lines(packed.unit_action_lines);
+        operations.refresh_unit_action_lines();
+    }
+    if moved(&|o| o.show_hidden == packed.show_hidden) {
+        operations.store_show_hidden(packed.show_hidden);
+    }
+    if moved(&|o| o.tooltips == packed.tooltips) {
+        operations.store_tooltips(packed.tooltips);
+    }
+    if moved(&|o| o.scroll_rate == packed.scroll_rate) {
+        operations.store_scroll_rate(packed.scroll_rate);
+    }
+    if moved(&|o| o.score_volume == packed.score_volume) {
+        operations.store_score_volume(packed.score_volume);
+        operations.apply_score_output(packed.score_volume);
+        if packed.score_volume == 0.0 {
+            operations.queue_then_stop_score_zero();
+        }
+    }
+    if moved(&|o| o.sound_volume == packed.sound_volume) {
+        operations.store_sound_volume(packed.sound_volume);
+        operations.apply_sound_output(packed.sound_volume);
+    }
+    if moved(&|o| o.voice_volume == packed.voice_volume) {
+        operations.store_voice_volume(packed.voice_volume);
+        operations.apply_voice_output(packed.voice_volume);
+    }
 }
 
 /// Consume one completed parent pass: Pack -> Apply -> physical dialog drop ->
-/// result-specific continuation.
+/// result-specific continuation. See [`apply_launcher_parent`] for `opened`.
 ///
 /// gamemd-derived: `OptionsClass__ShowLauncherDialog @ 0x0055FC80` always
 /// applies and destroys the primary before child preparation/route or the one
@@ -283,10 +333,11 @@ pub(crate) fn dispatch_launcher_parent_result(
     operations: &mut impl LauncherParentOperations,
     dialog: OptionsDialogState,
     result: LauncherParentResult,
+    opened: Option<LauncherOptionsPacked>,
 ) {
     let packed = dialog.pack();
     operations.observe_pack(packed);
-    apply_launcher_parent(operations, packed);
+    apply_launcher_parent(operations, packed, opened);
     drop(dialog);
     operations.primary_dropped();
 
@@ -321,6 +372,105 @@ mod tests {
             };
             assert_eq!(launcher_values_from_profile(&profile).health_bars, mode);
         }
+    }
+
+    /// The writes one accepted page makes.
+    #[derive(Default)]
+    struct WriteRecorder(Vec<&'static str>);
+
+    impl LauncherParentOperations for WriteRecorder {
+        fn observe_pack(&mut self, _: LauncherOptionsPacked) {}
+        fn store_detail_level(&mut self, _: i32) -> bool {
+            self.0.push("detail");
+            true
+        }
+        fn refresh_detail(&mut self) {}
+        fn store_difficulty(&mut self, _: i32) {
+            self.0.push("difficulty");
+        }
+        fn store_unit_action_lines(&mut self, _: bool) {
+            self.0.push("target lines");
+        }
+        fn refresh_unit_action_lines(&mut self) {}
+        fn store_show_hidden(&mut self, _: bool) {
+            self.0.push("show hidden");
+        }
+        fn store_tooltips(&mut self, _: bool) {
+            self.0.push("tooltips");
+        }
+        fn store_scroll_rate(&mut self, _: i32) {
+            self.0.push("scroll rate");
+        }
+        fn store_score_volume(&mut self, _: f32) {
+            self.0.push("music");
+        }
+        fn apply_score_output(&mut self, _: f32) {}
+        fn queue_then_stop_score_zero(&mut self) {
+            self.0.push("stop music");
+        }
+        fn store_sound_volume(&mut self, _: f32) {
+            self.0.push("sound");
+        }
+        fn apply_sound_output(&mut self, _: f32) {}
+        fn store_voice_volume(&mut self, _: f32) {
+            self.0.push("voice");
+        }
+        fn apply_voice_output(&mut self, _: f32) {}
+        fn primary_dropped(&mut self) {}
+        fn persist_profile(&mut self) {}
+        fn route_keyboard(&mut self) {}
+        fn reopen_parent(&mut self) {}
+    }
+
+    /// Game Controls' Medium Detail shows as High on the page's two-step
+    /// slider, so closing the page must not write a slider nobody moved, even
+    /// when another control changed. The main menu's accept still writes all.
+    #[test]
+    fn the_in_game_page_writes_only_what_the_player_moved() {
+        let profile = RetailOptionsProfile {
+            detail_level: 1,
+            ..RetailOptionsProfile::default()
+        };
+        let opened = launcher_dialog_from_profile(
+            &profile,
+            LauncherOptionsLabels::resolve(&|_| None),
+            false,
+            false,
+            true,
+            Vec::new(),
+        )
+        .pack();
+        assert_eq!(opened.detail_level, 2);
+
+        let mut untouched = WriteRecorder::default();
+        apply_launcher_parent(&mut untouched, opened, Some(opened));
+        assert!(untouched.0.is_empty());
+
+        let moved = LauncherOptionsPacked {
+            tooltips: !opened.tooltips,
+            score_volume: 0.0,
+            ..opened
+        };
+        let mut page = WriteRecorder::default();
+        apply_launcher_parent(&mut page, moved, Some(opened));
+        assert_eq!(page.0, ["tooltips", "music", "stop music"]);
+
+        let mut accept = WriteRecorder::default();
+        apply_launcher_parent(&mut accept, opened, None);
+        assert_eq!(
+            accept.0,
+            [
+                "detail",
+                "difficulty",
+                "target lines",
+                "show hidden",
+                "tooltips",
+                "scroll rate",
+                "music",
+                "sound",
+                "voice"
+            ]
+        );
     }
 
     #[test]
@@ -396,10 +546,9 @@ mod tests {
             show_hidden: true,
             yr_original_style: true,
             skip_intro: true,
-            render_interpolation: false,
             mouse_wheel_zoom: true,
             shift_queue: true,
-            wol_test_service: true,
+            terrain_deformation: true,
             ..RetailOptionsProfile::default()
         });
         assert!(!booleans.tooltips);
@@ -407,9 +556,8 @@ mod tests {
         assert!(booleans.show_hidden);
         assert!(booleans.yr_original_style);
         assert!(booleans.skip_intro);
-        assert!(!booleans.render_interpolation);
         assert!(booleans.mouse_wheel_zoom);
         assert!(booleans.shift_queue);
-        assert!(booleans.wol_test_service);
+        assert!(booleans.terrain_deformation);
     }
 }

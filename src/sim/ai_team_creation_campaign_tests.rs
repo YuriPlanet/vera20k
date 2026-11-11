@@ -26,7 +26,7 @@ fn campaign(difficulty: i32) -> (Simulation, RuleSet, InternedId, InternedId) {
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     sim.session
         .initialize_campaign_startup(
             difficulty,
@@ -195,7 +195,7 @@ fn retail_all05_initiate_team_accepts_its_campaign_barracks() {
         &rules,
         Some(&map.ini),
     );
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     let owner = sim
         .house_by_country_index(rules.country_index("BadGuy1").unwrap(), &rules)
         .unwrap();
@@ -217,4 +217,44 @@ fn retail_all05_initiate_team_accepts_its_campaign_barracks() {
         .team_type_definition(team_type_id)
         .unwrap();
     assert!(factories_admit(&sim, &rules, team_type, owner));
+}
+
+/// Ares 100240D0 (hook 0x50965E): a TaskForce entry of two E1 needs room for
+/// both under `BuildLimit=1`, so the barracks no longer admits it and the
+/// entry falls to the campaign recruit scan, which finds no E1. The
+/// difficulty's `AllowBypassBuildLimit` admits it at the factory again.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_team_factory_admission_honours_the_entry_count_build_limit() {
+    let admitted = |bypass: &str| {
+        let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&format!(
+            "[GlobalControls]\nAllowBypassBuildLimit={bypass}\n\
+             [Countries]\n0=C0\n[C0]\nSide=GDI\n\
+             [InfantryTypes]\n0=E1\n[E1]\nStrength=100\nTechLevel=1\nOwner=C0\nBuildLimit=1\n\
+             [BuildingTypes]\n0=BARR\n[BARR]\nStrength=100\nFactory=InfantryType\nOwner=C0\n",
+        )))
+        .unwrap();
+        let fixed = IniFile::from_str(
+            "[TeamTypes]\n0=TT\n[TT]\nScript=S\nTaskForce=F\n\
+             [ScriptTypes]\n0=S\n[S]\n0=5,1\n\
+             [TaskForces]\n0=F\n[F]\n0=2,E1\n",
+        );
+        let registry = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), false);
+        let mut sim = Simulation::with_seed(0x50965E);
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        sim.install_team_ai_registry(&registry, &rules);
+        let owner = sim.interner.intern("Computer");
+        let country = sim.interner.intern("C0");
+        sim.houses
+            .register(HouseState::new(owner, 0, Some(country), false, 0, 10));
+        sim.spawn_object("BARR", "Computer", 10, 10, 0, &rules)
+            .unwrap();
+        let team_type = sim.interner.get("TT").unwrap();
+        let team_type = sim.team_script_vm.team_type_definition(team_type).unwrap();
+        factories_admit(&sim, &rules, team_type, owner)
+    };
+    assert!(!admitted("no,no,no"));
+    assert!(admitted("yes,yes,yes"));
 }

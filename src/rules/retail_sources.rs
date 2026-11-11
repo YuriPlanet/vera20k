@@ -113,9 +113,13 @@ pub(crate) fn expand_ini_with_assets(
             // before parsing. Resolution enforces the remaining budget before
             // reading or retaining the first loose snapshot, not afterwards.
             included_bytes += resolved.bytes.len();
-            let child = parse_physical_ini(&logical, resolved)?;
-            included_sources.push(child.source);
-            Ok(Some(child.ini))
+            log::info!(
+                "Including {logical} ({} bytes) from {}",
+                resolved.bytes.len(),
+                resolved.source_archive
+            );
+            included_sources.push(source_identity(&logical, &resolved));
+            Ok(Some(resolved.bytes.to_vec()))
         },
         options,
     );
@@ -149,14 +153,18 @@ fn parse_physical_ini(name: &str, selected: AssetResolutionRef<'_>) -> Result<Se
         physical_ini: ini,
         included_sources: Vec::new(),
         directive_diagnostics: Vec::new(),
-        source: IniSourceIdentity {
-            logical_name: name.to_owned(),
-            source_archive: selected.source_archive.to_owned(),
-            entry_id: selected.entry_id,
-            payload_len: selected.bytes.len(),
-            source_sha256: sha256_hex(selected.bytes),
-        },
+        source: source_identity(name, &selected),
     })
+}
+
+fn source_identity(name: &str, selected: &AssetResolutionRef<'_>) -> IniSourceIdentity {
+    IniSourceIdentity {
+        logical_name: name.to_owned(),
+        source_archive: selected.source_archive.to_owned(),
+        entry_id: selected.entry_id,
+        payload_len: selected.bytes.len(),
+        source_sha256: sha256_hex(selected.bytes),
+    }
 }
 
 /// Select the native mode object's INI, if there is a mode object.
@@ -655,7 +663,12 @@ mod tests {
     #[test]
     fn random_map_catalog_uses_retained_root_langrule_and_fixed_art() {
         let directory = TestDirectory::new("rmg-retained-rules");
-        directory.write("rulesmd.ini", b"[AI]\nNeutralTechBuildings=TECH1\n");
+        // TECH2 is registered so that Ares's Find-only list read (Buf_AI
+        // 1005B830, hook 0x672B0E) resolves the langrule list too.
+        directory.write(
+            "rulesmd.ini",
+            b"[BuildingTypes]\n0=TECH2\n[AI]\nNeutralTechBuildings=TECH1\n",
+        );
         // The original Reset's ReadCCFile4741F0 accepted this Digest for the
         // exact physical body through the existing RawFile/INI owners.
         directory.write(

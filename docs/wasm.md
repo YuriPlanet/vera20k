@@ -10,20 +10,36 @@ browser package is single-player. Optional online transport uses the separate
 ## Build
 
 Requirements: stable Rust, Python 3.11 or newer, and `wasm-bindgen-cli` at the
-version recorded for `wasm-bindgen` in `Cargo.lock` (currently 0.2.114).
+version recorded for `wasm-bindgen` in `Cargo.lock` (currently 0.2.127).
 
 ```sh
 rustup target add wasm32-unknown-unknown
-cargo install wasm-bindgen-cli --version 0.2.114 --locked
+cargo install wasm-bindgen-cli --version 0.2.127 --locked
 python3 tools/wasm/build.py
 ```
 
 The helper builds the client library as a `cdylib` with
-`--target wasm32-unknown-unknown --no-default-features --features wasm`, uses the
-existing `fast` profile, and packages its bindings and an asset-free host into
-`target/wasm-dist/`. Use `--profile release` for release optimization. It checks that the
-binding CLI matches the lockfile and sets an 8 MiB Wasm stack for the engine.
+`--target wasm32-unknown-unknown --no-default-features --features wasm` and
+packages its bindings and an asset-free host into `target/wasm-dist/`. By default
+it uses the `wasm` profile, which players download: optimized for size, fat LTO,
+one codegen unit and no symbol names; it takes several times as long to build
+(on 2026-11-09 the single-player Wasm was 16.5 MB, 4.6 MB compressed with brotli, against 45.6 MB and 10.3 MB with `fast`). Use `--profile fast` while editing, or `--profile release`. It
+checks that the binding CLI matches the lockfile and sets an 8 MiB Wasm stack
+for the engine. It also builds `src/bin/snapshot-layout.rs` for the host first:
+the browser engine compiles in the saved-game layout id
+(`VERA20K_SNAPSHOT_LAYOUT`) instead of tracing its saved types at run time.
 Desktop artifact types, default features and build commands are unchanged.
+
+The browser engine embeds none of the interface's bundled fonts. They (Noto Sans,
+Noto Sans CJK and 19 script fonts, about 30 MB) and Unifont's CJK glyph table are
+copied with their licences to `pkg/fonts/`. The engine starts fetching Noto Sans
+and the glyph table, which draw GAME.FNT's missing letters, as soon as it
+loads, and `fonts_ready()` resolves once both have arrived: await it before
+`start_game` or `start_spawn`, which fail until then. It fetches each other font
+the first time text needs a character only that font draws, such as a Thai name
+in a chat. A host that serves the package must serve that folder too. Each URL
+carries its file's version, so a browser keeps the fonts across engine updates.
+The engine does not set a window icon in the browser build.
 
 For the optional online build:
 
@@ -129,7 +145,7 @@ the desktop implementations. A browser build without `wasm` is rejected.
   uses an offscreen sRGB frame and a canvas presentation pass. Browser texture
   uploads do not block waiting for GPU completion.
 - Without a WebGPU adapter the browser build falls back to WebGL2. WebGL2 has
-  no storage buffers, compute, fragment atomics or reinterpreting texture views,
+  no storage buffers, compute or reinterpreting texture views,
   so the renderers that use them select render-target equivalents there
   (`render::webgl`, `gpu::webgl_fallback`); every other device keeps its path.
   A native test translates its shaders to GLSL ES 3.00, and
@@ -213,7 +229,8 @@ set_lifecycle_callback(event => {
   and `samples`, `max_jitter_reserve_ms`, `underruns`), `performance`
   (nullable `tick_ms_p50`, `tick_ms_p99`, `fps_p50`, `fps_p5`, and
   `unfocused_seconds`), `pacing` (`slowdowns`, `slowed_by` Houses,
-  `slowed_seconds`) and `outcome` (nullable `desync_frame`, `reconnects`).
+  `slowed_seconds`) and `outcome` (nullable `desync_frame`, `reconnects`,
+  `started`, nullable `failure` and `start_hash`, as in `docs/lobby-protocol.md`).
   These are wall-clock observations of this client; desktop `-SPAWN` writes
   the same object into `spawn_result.json`, and every client logs it once as
   `Network quality:` when the match returns its transport.

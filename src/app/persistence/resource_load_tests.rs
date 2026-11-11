@@ -322,7 +322,8 @@ fn bound_saved_world(
                 rules,
                 terrain_template: Some(terrain),
                 overlay_registry,
-            },
+            }
+            .into(),
         },
         metadata,
         clear_file,
@@ -695,7 +696,11 @@ fn incoming_save(theater: &str, extra_rules: &str) -> Option<IncomingSave> {
         .rules
         .terrain_rules
         .row(crate::rules::terrain_rules::LandType::Rough);
-    let template = incoming.resources.terrain_template.as_mut().unwrap();
+    let template = std::sync::Arc::get_mut(&mut incoming.resources)
+        .expect("unshared resources")
+        .terrain_template
+        .as_mut()
+        .unwrap();
     let cell = template.cell_mut_for_test(8, 8).unwrap();
     cell.land_type = 7;
     cell.base_land_type = 7;
@@ -1344,7 +1349,7 @@ fn unread_cell_anim_loads_its_own_retail_shape_without_replaying_construction() 
     save.owner.install_saved_scenario_rules(processed_rules);
     let loaded = SimRuntime {
         simulation,
-        resources,
+        resources: resources.into(),
     };
     let loaded_hash = loaded.resources.rules.simulation_config_hash();
     let bytes = snapshot_bytes(&loaded, &save.owner, &map, None, loaded_hash);
@@ -1409,7 +1414,9 @@ fn unknown_terrain_type_load_validates_then_commits_and_resaves_its_same_owner()
         &mut save.incoming.simulation,
         save.map.terrain_objects(),
         &mut TerrainConstructionRules::Authored {
-            rules: &mut save.incoming.resources.rules,
+            rules: &mut std::sync::Arc::get_mut(&mut save.incoming.resources)
+                .expect("unshared resources")
+                .rules,
             owner: &mut save.owner,
         },
         false,
@@ -1530,7 +1537,7 @@ fn unknown_terrain_type_load_validates_then_commits_and_resaves_its_same_owner()
     save.owner.install_saved_scenario_rules(processed_rules);
     let runtime = SimRuntime {
         simulation,
-        resources,
+        resources: resources.into(),
     };
     let loaded_hash = runtime.resources.rules.simulation_config_hash();
     let bytes = snapshot_bytes(&runtime, &save.owner, &map, None, loaded_hash);
@@ -1693,7 +1700,7 @@ fn arctic_type_load_validates_before_mutation_and_resaves_the_same_owner() {
     save.owner.install_saved_scenario_rules(processed_rules);
     let runtime = SimRuntime {
         simulation,
-        resources,
+        resources: resources.into(),
     };
     let bytes = snapshot_bytes(
         &runtime,

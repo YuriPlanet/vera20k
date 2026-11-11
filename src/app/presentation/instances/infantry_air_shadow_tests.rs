@@ -15,7 +15,7 @@ fn shadow_atlas() -> SpriteAtlas {
     SpriteAtlas::from_test_entries(HashMap::from([(
         ShpSpriteKey {
             palette_context: ShpPaletteContext::GlobalAnim,
-            type_id: "INFSHDW".to_string(),
+            type_id: "INFSHDW".into(),
             facing: 0,
             frame: 1,
             house_color: HouseColorIndex(0),

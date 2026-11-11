@@ -323,6 +323,7 @@ fn assert_paid_deso_light_lifecycle(packet_path: &'static str, profile_path: &'s
                 size[1] as f32,
                 Some(&lookup),
                 Some(terrain),
+                Vec::new(),
             );
             assert_eq!(instances.normal.len(), 1);
             pool.upload_on_device(
@@ -728,6 +729,7 @@ fn assert_retail_amcv_sight_raster(moving: bool) {
                 size[1] as f32,
                 Some(&lookup),
                 Some(terrain),
+                Vec::new(),
             );
             assert_eq!(instances.normal.len(), 1);
             pool.upload_on_device(
@@ -1189,6 +1191,7 @@ fn assert_retail_tmp_rasters(packet: &Value, filename: &str, sub_tile: u8) {
                 size[1] as f32,
                 Some(&lookup),
                 Some(terrain),
+                Vec::new(),
             );
             if row["output"]["selected_file_index"].as_u64().is_some() {
                 assert_eq!(instances.normal.len(), 1);
@@ -1385,6 +1388,7 @@ fn retail_partial_redraw_continuation_matches_full_reconstruction() {
             size[1] as f32,
             Some(&lookup),
             Some(terrain),
+            Vec::new(),
         );
         assert!(!instances.normal.is_empty());
         let mut pool = InstanceBufferPool::new();

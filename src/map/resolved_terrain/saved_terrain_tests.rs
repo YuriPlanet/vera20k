@@ -1,10 +1,82 @@
 // Included in resolved_terrain::tests to share the existing TMP/asset fixtures.
 
 #[test]
+fn saved_burrowing_permissions_follow_current_tile_and_survive_asset_rebinding() {
+    // ReadTheater546167 defaults true per set. Retail Snow omits the clear
+    // set's key but explicitly refuses burrowing through its water set.
+    let Some(bytes) = crate::rules::retail_ini_fixture::retail_ini_bytes("snowmd.ini") else {
+        return;
+    };
+    let ini = IniFile::from_bytes(&bytes).unwrap();
+    assert!(
+        !ini.section("TileSet0000")
+            .unwrap()
+            .is_present("AllowBurrowing")
+    );
+    let theater = synthetic_theater_from_ini(&bytes);
+    let clear = i32::from(theater.lookup.bounds()[0].start);
+    // Snow's TileSet0001 is an empty legacy row. Its actual water types
+    // are admitted by TileSet0021, whose native reader says false.
+    assert!(
+        !ini.section("TileSet0021")
+            .unwrap()
+            .read_bool("AllowBurrowing", true)
+    );
+    let water = i32::from(theater.lookup.bounds()[21].start);
+    assert!(theater.lookup.allows_burrowing(clear as u16));
+    assert!(!theater.lookup.allows_burrowing(water as u16));
+
+    let mut grid = test_flat_ground_grid(1);
+    grid.bind_asset_catalogs(
+        Some(&theater),
+        None,
+        None,
+        None,
+        false,
+        0,
+        Default::default(),
+    );
+    grid.cell_mut(0, 0).unwrap().final_tile_index = water;
+    let mut replacement = DynamicTerrainCellState::capture(grid.cell(0, 0).unwrap());
+    assert!(!grid.tile_allows_burrowing(replacement.final_tile_index));
+    replacement.final_tile_index = clear;
+    assert!(grid.apply_dynamic_cell_state(0, 0, &replacement));
+    assert!(grid.tile_allows_burrowing(grid.cell(0, 0).unwrap().final_tile_index));
+    assert!(grid.tile_allows_burrowing(-1));
+    assert!(grid.tile_allows_burrowing(theater.lookup.len() as i32));
+
+    let encoded = save_codec::serialize(&grid.capture_saved_template().unwrap()).unwrap();
+    let saved: SavedTerrainTemplate = save_codec::deserialize(&encoded).unwrap();
+    let mut restored = saved.restore_values(SharedCellDummy::fresh()).unwrap();
+    let changed = synthetic_theater_from_ini(
+        format!(
+            "[TileSet0000]\nTilesInSet={water}\nFileName=clear\n\
+             [TileSet0001]\nTilesInSet=1\nFileName=water\nAllowBurrowing=yes\n"
+        )
+        .as_bytes(),
+    );
+    assert!(changed.lookup.allows_burrowing(water as u16));
+    // TileType Save549D70 preserves the admitted flags. Rebinding current
+    // resident assets must not silently change that saved gameplay input.
+    restored.bind_asset_catalogs(
+        Some(&changed),
+        None,
+        None,
+        None,
+        false,
+        0,
+        Default::default(),
+    );
+    replacement.final_tile_index = water;
+    assert!(restored.apply_dynamic_cell_state(0, 0, &replacement));
+    assert!(!restored.tile_allows_burrowing(restored.cell(0, 0).unwrap().final_tile_index));
+}
+
+#[test]
 fn saved_terrain_roundtrip_retains_materialized_values_without_constructor_effects() {
     let mut grid = test_grid(2, 2, test_clear_cell);
-    grid.native_allocated = Some(vec![true, false, true, true]);
-    grid.radar_color_valid = vec![true, false, true, false];
+    grid.native_allocated = Some(vec![true, false, true, true].into());
+    grid.radar_color_valid = vec![true, false, true, false].into();
     grid.cells[0].radar_left = [0; 3];
     grid.cells[0].radar_right = [0; 3];
     grid.cells[1].radar_left = [123, 45, 67];
@@ -136,7 +208,7 @@ fn saved_terrain_load_selector_matches_executed_native_cells_and_main_continuati
         assert_eq!(theater.lookup.total_file_count(0) as usize, files, "{name}");
         let rules = TerrainRules::from_ini(&IniFile::from_str("[Clear]\nWheel=100%\n"));
         let mut grid = test_flat_ground_grid(3);
-        grid.native_allocated = Some(vec![false; 9]);
+        grid.native_allocated = Some(vec![false; 9].into());
         for coord in row["visited_cells"].as_array().unwrap() {
             let (x, y) = (
                 coord[0].as_u64().unwrap() as usize,
@@ -260,7 +332,7 @@ fn saved_terrain_cold_load_then_runtime_selection_shares_process_authority() {
     crate::map::theater::resolve_contiguous_variant_chains_for_test(&mut theater.lookup, &assets);
     let rules = TerrainRules::from_ini(&IniFile::from_str("[Clear]\nWheel=100%\n"));
     let mut grid = test_flat_ground_grid(3);
-    grid.native_allocated = Some(vec![false; 9]);
+    grid.native_allocated = Some(vec![false; 9].into());
     grid.native_allocated.as_mut().unwrap()[7] = true;
     grid.cells[7].final_tile_index = 0;
     let snapshot = grid.capture_saved_template().unwrap();

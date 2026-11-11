@@ -1,7 +1,6 @@
 //! A building's sale as `BuildingClass::DrawIt @ 0x0043D290` draws it, read
 //! through a retail GAWEAP's production sale.
 use super::*;
-use crate::app::presentation::interpolation::RenderInterpolation;
 use crate::app::presentation::render::draw_plan_lowering::{NativeDisplayOrder, ObjectTexture};
 use crate::sim::building_construction::BuildingUp;
 use crate::sim::command::{Command, CommandEnvelope};
@@ -111,7 +110,7 @@ fn retail_gate_make_body_uses_native_gate_and_selling_reflections() {
             (
                 ShpSpriteKey {
                     palette_context: ShpPaletteContext::Legacy,
-                    type_id: "GAGATE_A_MAKE".to_owned(),
+                    type_id: "GAGATE_A_MAKE".into(),
                     facing: 0,
                     frame,
                     house_color: crate::rules::house_colors::NO_REMAP,
@@ -135,7 +134,7 @@ fn retail_gate_make_body_uses_native_gate_and_selling_reflections() {
         .make_frame_counts
         .insert("GAGATE_A_MAKE".to_owned(), make_count);
     let mut runtime = SimRuntime::from_simulation(sim);
-    runtime.resources.rules = rules.clone();
+    runtime.resources_mut().rules = rules.clone();
     let house_colors =
         HouseColorMap::from([("Americans".to_owned(), crate::rules::house_colors::NO_REMAP)]);
 
@@ -199,7 +198,6 @@ fn gate_piece(
     use crate::render::batch::DepthAxis;
     use crate::render::voxel_image_cache::VoxelImageCache;
     use std::cell::RefCell;
-    let interpolation = RenderInterpolation::new(false);
     let lighting = CellLightGrid::new();
     let voxel_images = RefCell::new(VoxelImageCache::default());
     let input = ShpInputs {
@@ -209,7 +207,6 @@ fn gate_piece(
         unit_atlas: None,
         voxel_images: &voxel_images,
         depth_tested_images: None,
-        interpolation: &interpolation,
         camera: [-1000.0, -1000.0],
         render_size: [5000, 5000],
         zoom: 1.0,
@@ -286,7 +283,7 @@ fn an_opening_gate_draws_without_the_buildngz_zshape_or_extra_light() {
             (
                 ShpSpriteKey {
                     palette_context: ShpPaletteContext::Legacy,
-                    type_id: "GAGATE_A".to_owned(),
+                    type_id: "GAGATE_A".into(),
                     facing: 0,
                     frame,
                     house_color: crate::rules::house_colors::NO_REMAP,
@@ -307,7 +304,7 @@ fn an_opening_gate_draws_without_the_buildngz_zshape_or_extra_light() {
         .collect();
     let atlas = SpriteAtlas::from_test_entries(keys);
     let mut runtime = SimRuntime::from_simulation(sim);
-    runtime.resources.rules = rules.clone();
+    runtime.resources_mut().rules = rules.clone();
     let colors =
         HouseColorMap::from([("Americans".to_owned(), crate::rules::house_colors::NO_REMAP)]);
     let zshape = Z_GRADIENT_ZSHAPE_FLAG | Z_GRADIENT_ZSHAPE_CLIP_FLAG;

@@ -1,6 +1,6 @@
 [package]
 name = "vera20k"
-version = "0.2.8"
+version = "0.3.1"
 edition = "2024"
 description = "Vera20k Engine — a from-scratch Rust engine for Red Alert 2: Yuri's Revenge"
 autobins = false
@@ -102,6 +102,8 @@ raw-window-handle = "0.6"
 # `Win32_UI_WindowsAndMessaging` covers ClipCursor/GetClipCursor/GetClientRect;
 # `Win32_Graphics_Gdi` adds ClientToScreen (maps the client rect into screen coords).
 windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi"] }
+# Atlas keys carry an object type name. Already built through winit.
+smol_str = "0.2"
 # bytemuck enables safe transmutation of structs to GPU-friendly byte slices.
 bytemuck = { version = "1", features = ["derive"] }
 
@@ -115,12 +117,15 @@ log = { workspace = true }
 
 # --- UI text ---
 # Layout of every interface string: shaping (harfrust), bidirectional text,
-# line breaking (ICU4X, with the word dictionaries `complex-scripts` adds for
-# Thai, Lao, Khmer and Burmese, which put no spaces between words) and font
-# fallback by script. Only VERA's bundled fonts are registered: fontique's
-# `system` feature (CoreText, DirectWrite, fontconfig) stays off. See
-# src/render/text_engine/mod.rs.
-parley = { version = "0.12", default-features = false, features = ["std", "complex-scripts"] }
+# line breaking (ICU4X) and font fallback by script. Only VERA's bundled fonts
+# are registered: fontique's `system` feature (CoreText, DirectWrite,
+# fontconfig) stays off. See src/render/text_engine/mod.rs.
+# `complex-scripts` stays off: its word dictionaries for Thai, Lao, Khmer and
+# Burmese, which put no spaces between words, add about 3 MB to every build
+# (1.9 MB of the browser download). Without them a run of those scripts too
+# long for its line breaks where the line runs out, at a grapheme cluster
+# (`OverflowWrap::Anywhere` in text_engine), sometimes inside a word.
+parley = { version = "0.12", default-features = false, features = ["std"] }
 # Glyph outlines for the runs parley shapes, through the same skrifa parley
 # reads them with; VERA draws them as whole pixels itself
 # (src/render/text_engine/pixels.rs).
@@ -197,7 +202,15 @@ winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSAlert", "NSApplication", "NSButton", "NSControl", "NSCursor", "NSImage", "NSOpenPanel", "NSPanel", "NSResponder", "NSSavePanel", "NSView", "NSWindow"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSLocale", "NSString", "NSURL"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSGeometry", "NSLocale", "NSString", "NSURL", "objc2-core-foundation"] }
+
+# --- Windows memory allocator ---
+# The game program (src/main.rs) allocates through mimalloc on Windows instead
+# of the process heap. MIT, linked statically, and built by the C compiler that
+# `ring` already needs. No features: the crate's default is mimalloc v3.
+# A trial for slow Windows machines; the gain has not been measured there yet.
+[target.'cfg(windows)'.dependencies]
+mimalloc = { version = "0.1.52", default-features = false }
 
 # --- Windows program icon and version details ---
 # build.rs compiles them into vera20k.exe with the Windows SDK's resource
@@ -297,3 +310,18 @@ incremental = true
 inherits = "release"
 lto = "fat"
 codegen-units = 1
+
+# The browser package (tools/wasm/build.py's default), which every player
+# downloads: optimized for size across every crate as one unit, without the
+# function names only a debugger reads. Optimization levels keep simulation
+# results (Rust has no fast-math; Wasm integer and float operations are
+# exact). Measured on 2026-11-09 with sim-bench built for wasm32-wasip1 under
+# Node (match scenario, amazon.mmx, 900 ticks, about 6,000 objects), each with
+# the same final hash: opt-level 3 took 143.5 ms a tick in an 8.2 MB binary,
+# "s" 162.2 ms in 5.7 MB and "z" 203.9 ms in 5.3 MB.
+[profile.wasm]
+inherits = "release"
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+strip = true

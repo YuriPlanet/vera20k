@@ -1,4 +1,4 @@
-//! Shared helpers for instance builders — depth sorting, interpolation, visibility.
+//! Shared helpers for instance builders — depth sorting, visibility.
 //!
 //! These utilities are used by the unit, SHP, and overlay instance builders.
 //! Split from `presentation::instances` to keep files under the 600-line limit.
@@ -126,7 +126,11 @@ pub(crate) fn observer_draw_context(
             .is_some_and(|observer| sim.fog().senses_object_for_house(observer, entity)),
         cloaking_stages: rules.map_or_else(
             || crate::rules::ruleset::GeneralRules::default().cloaking_stages,
-            |r| r.general.cloaking_stages,
+            |r| {
+                object.map_or(r.general.cloaking_stages, |object| {
+                    object.cloaking_stages(r.general.cloaking_stages)
+                })
+            },
         ),
         invisible: object.is_some_and(|obj| {
             obj.invisible
@@ -253,18 +257,23 @@ fn tactical_bounded_entity_encounter_order(
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|rt| &rt.simulation)
     else {
         return Vec::new();
     };
     let zoom = state.match_state.input.zoom_level.max(f32::EPSILON);
     let margin = 32.0 / zoom;
-    let (width_px, height_px) = crate::app::input::camera::tactical_viewport_size(state);
-    let min_x = state.match_state.input.camera_x - margin;
-    let min_y = state.match_state.input.camera_y - margin;
-    let max_x = state.match_state.input.camera_x + width_px as f32 / zoom + margin;
-    let max_y = state.match_state.input.camera_y + height_px as f32 / zoom + margin;
+    // The world rectangle the battlefield shows: from the camera, the
+    // frame's corner, in by the battlefield's own corner.
+    let (left_px, top_px, width_px, height_px) =
+        crate::app::input::camera::tactical_viewport_px(state);
+    let left = state.match_state.input.camera_x + left_px as f32 / zoom;
+    let top = state.match_state.input.camera_y + top_px as f32 / zoom;
+    let min_x = left - margin;
+    let min_y = top - margin;
+    let max_x = left + width_px as f32 / zoom + margin;
+    let max_y = top + height_px as f32 / zoom + margin;
     let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
     let local_owner_id = local_owner
         .as_deref()
@@ -360,17 +369,25 @@ pub(crate) enum EntityDrawBand {
 /// GetLayer query. Height/locomotor changes take effect here only after their
 /// simulation-owned remove/submit transaction (Fly phase4CD2A0, for example).
 /// Unregistered objects and layers without an entity body stream emit nothing.
-pub(crate) fn entity_draw_band(
-    display: &crate::sim::world::display_layers::DisplayLayers,
-    id: u64,
+pub(crate) fn layer_draw_band(
+    layer: crate::sim::world::display_layers::DisplayLayer,
 ) -> Option<EntityDrawBand> {
     use crate::sim::world::display_layers::DisplayLayer;
-    match display.layer_of(id)? {
+    match layer {
         DisplayLayer::GROUND => Some(EntityDrawBand::Ground),
         DisplayLayer::AIR => Some(EntityDrawBand::Air),
         DisplayLayer::TOP => Some(EntityDrawBand::Top),
         _ => None,
     }
+}
+
+/// The Display's entities that draw a body, in Tactical's order, with their bands.
+pub(crate) fn drawn_display_entities(
+    sim: &crate::sim::world::Simulation,
+) -> impl Iterator<Item = (&crate::sim::game_entity::GameEntity, EntityDrawBand)> {
+    sim.display_layers()
+        .members_in_order()
+        .filter_map(|(layer, id)| Some((sim.entities().get(id)?, layer_draw_band(layer)?)))
 }
 
 /// Convert the screen row an entity is *drawn* at into the row it *sorts* at.
@@ -433,7 +450,7 @@ pub(crate) fn compute_sprite_depth_params(
     screen_y: f32,
     z: u8,
 ) -> f32 {
-    let iso_row: f32 = screen_y + z as f32 * terrain::HEIGHT_STEP;
+    let iso_row: f32 = screen_y + f32::from(z as i8) * terrain::HEIGHT_STEP;
     native_z::depth_for_row(iso_row, origin_y, world_height)
 }
 
@@ -481,13 +498,8 @@ pub(crate) fn apply_shape_z_adjust(depth: f32, z_adjust_px: i32, world_height: f
 /// which is the single owner of the answer. Callers must NOT apply a height
 /// offset of their own on top — doing that in two places is what used to lift
 /// aircraft twice.
-/// Despite its legacy name, this is not the experimental render interpolation:
-/// native comparisons retain this current-state anchor. Live rendering and
-/// picking use `presentation::interpolation` with explicit client state.
 #[cfg(test)]
-pub(crate) fn interpolated_screen_position_entity(
-    entity: &crate::sim::game_entity::GameEntity,
-) -> (f32, f32) {
+pub(crate) fn entity_screen_position(entity: &crate::sim::game_entity::GameEntity) -> (f32, f32) {
     crate::render::locomotor_visual::screen_position(entity)
 }
 
@@ -741,6 +753,16 @@ mod tests {
     use crate::render::locomotor_visual::screen_position;
     use crate::rules::locomotor_type::LocomotorKind;
     use crate::sim::movement::locomotor::LocomotorState;
+
+    #[test]
+    fn a_level_below_zero_keeps_its_ground_row() {
+        // Raw 0xFF is Level -1 on a terrain-deformation crater floor: drawn a
+        // level lower, on the same ground row as Level 0 a level higher.
+        assert_eq!(
+            compute_sprite_depth_params(0.0, 1000.0, 115.0, 0xFF),
+            compute_sprite_depth_params(0.0, 1000.0, 100.0, 0)
+        );
+    }
 
     /// Stock YR sets one global `FlightLevel=1500` for every aircraft.
     const STOCK_FLIGHT_LEVEL_LEPTONS: i32 = 1500;
@@ -1118,8 +1140,8 @@ mod tests {
         );
         hidden_mobile.lifecycle.set_in_limbo_for_test(false);
         hidden_building.lifecycle.set_in_limbo_for_test(false);
-        let mobile_anchor = interpolated_screen_position_entity(&hidden_mobile);
-        let building_anchor = interpolated_screen_position_entity(&hidden_building);
+        let mobile_anchor = entity_screen_position(&hidden_mobile);
+        let building_anchor = entity_screen_position(&hidden_building);
         sim.entities_mut_for_test().insert(hidden_mobile);
         sim.entities_mut_for_test().insert(hidden_building);
         sim.entities_mut_for_test()
@@ -1261,7 +1283,7 @@ mod tests {
             .position
             .set_exact_z_leptons_for_test(Some(0));
         assert_eq!(
-            entity_draw_band(sim.display_layers(), 1),
+            sim.display_layers().layer_of(1).and_then(layer_draw_band),
             Some(EntityDrawBand::Top)
         );
         let ground = crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder::new(
@@ -1276,10 +1298,13 @@ mod tests {
         // Exercise an existing real lifecycle resubmission. This establishes
         // the render consumer contract, not the still-missing landing callback.
         sim.conceal(1);
-        assert_eq!(entity_draw_band(sim.display_layers(), 1), None);
+        assert_eq!(
+            sim.display_layers().layer_of(1).and_then(layer_draw_band),
+            None
+        );
         sim.reveal(1);
         assert_eq!(
-            entity_draw_band(sim.display_layers(), 1),
+            sim.display_layers().layer_of(1).and_then(layer_draw_band),
             Some(EntityDrawBand::Ground)
         );
         let ground = crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder::new(
@@ -1360,7 +1385,7 @@ mod tests {
         };
 
         // Never explored: hidden in both modes; the wall path agrees.
-        let mut fog = FogState::new(16, 16);
+        let fog = FogState::new(16, 16);
         assert!(conceal(&fog, &enemy_entity, "Soviet", false));
         assert!(conceal(&fog, &enemy_entity, "Soviet", true));
         assert!(!conceal(&fog, &own_entity, viewer_name, false));

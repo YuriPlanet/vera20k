@@ -154,6 +154,13 @@ impl GattlingState {
 
     /// `IncreaseGattlingStage(ticks) @ 0x0070DE70`.
     ///
+    /// `ares_cycle` is `None` for gamemd's body and, in Ares builds, the
+    /// type's `Gattling.Cycle`: TechnoClass_UpdateGattling_Cycle (Ares.dll
+    /// 1004B6C0, hook 0x70DEBA) replaces the cap test, so a cyclic type at
+    /// the cap restarts at stage 0 with the loop hard-stopped (`0x405D40` on
+    /// `+0x4A4`) and the latch clear, and the stage test reads the value the
+    /// hook leaves (`[esp+0x10]`) rather than the one the call started from.
+    ///
     /// `report_count(i)` is `GetWeapon(i)->WeaponType->Report.Count`, `None`
     /// when slot `i` names no WeaponType. `next_random` is `g_MainRng.Next()`,
     /// called at most once.
@@ -162,11 +169,13 @@ impl GattlingState {
     /// `GetWeapon(2 * stage)` names no WeaponType (a stage past the authored
     /// weapons); VERA plays nothing and leaves the latch clear. Unreachable
     /// with retail data.
+    #[allow(clippy::too_many_arguments)]
     pub fn increase(
         &mut self,
         table: &GattlingStages,
         elite: bool,
         ticks: i32,
+        ares_cycle: Option<bool>,
         report_count: impl Fn(i32) -> Option<i32>,
         mut stop: impl FnMut(),
         next_random: impl FnOnce() -> u32,
@@ -175,14 +184,27 @@ impl GattlingState {
         // The cap is tested before the add (`JGE`), against the value as
         // it was; the stage test below reads that same value.
         let before = self.value;
-        if before < table.threshold(stages, elite) {
+        let below_cap = before < table.threshold(stages, elite);
+        if below_cap {
             self.value = before.wrapping_add(table.rate_up().wrapping_mul(ticks));
         }
+        let tested = match ares_cycle {
+            None => before,
+            Some(cyclic) => {
+                if !below_cap && cyclic {
+                    self.value = 0;
+                    self.stage = 0;
+                    stop(); // AudioController::DTOR_1 on +0x4A4.
+                    self.report_latch = false;
+                }
+                self.value
+            }
+        };
         let mut effects = Increase::default();
         let mut stage = self.stage;
         if stage >= 0
             && stage < stages.wrapping_sub(1)
-            && table.threshold(stage + 1, elite) <= before
+            && table.threshold(stage + 1, elite) <= tested
         {
             stage += 1;
             self.stage = stage;
@@ -392,9 +414,9 @@ impl crate::sim::world::Simulation {
                 StageCall::Update => self.gattling_update(id, rules, 1, effects),
             }
         }
-        if let Some(entity) = self.substrate.entities.get_mut(id)
-            && unit_turret_anim_advances(is_gattling, outcome, entity.gattling.value())
-        {
+        if let Some(entity) = self.substrate.entities.get_mut_if(id, |entity| {
+            unit_turret_anim_advances(is_gattling, outcome, entity.gattling.value())
+        }) {
             entity.turret_anim_frame.advance();
         }
     }
@@ -426,10 +448,15 @@ impl crate::sim::world::Simulation {
         // Share the process owner's draw capability without retaining its
         // mutex across Stop. The retained source locks output gate -> Main.
         let main_draws = self.main_rng.draws();
+        #[cfg(feature = "ares")]
+        let ares_cycle = Some(obj.techno_combat().gattling_cyclic());
+        #[cfg(not(feature = "ares"))]
+        let ares_cycle = None;
         let effects = state.increase(
             &obj.gattling_stages,
             elite,
             ticks,
+            ares_cycle,
             |index| weapon(index).map(|weapon| weapon.map_or(0, |weapon| weapon.report_count())),
             || {
                 // Native70DF74 and70DF9C finish Stop405D40, including the

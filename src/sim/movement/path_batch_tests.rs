@@ -1716,3 +1716,65 @@ fn an_own_cell_request_claims_the_frames_answer() {
         "a later request east waits for the next batch"
     );
 }
+
+/// AStar `0x0042CAE4` asks Foot+0x320 (`0x004DA1D0`): a mover allowed to leave
+/// the map (here Techno+0x3D4) reaches the cell A* across zones, where any
+/// other mover stops at the refusal `0x0042CB32..0x0042CB3F`.
+#[test]
+fn a_mover_allowed_to_leave_the_map_searches_across_zones() {
+    use crate::map::resolved_terrain::zone_class;
+    use crate::sim::pathfinding::BlockerNeighborCounts;
+    use crate::sim::pathfinding::zone_search::PathSearchFailure as Search;
+
+    let rules = rules();
+    let mut sim = crate::sim::arena_fixture::rival_arena_with_size(&rules, 7, 9);
+    // A ridge down the middle column splits the ground into two zones.
+    let terrain = sim.resolved_terrain.as_mut().expect("arena terrain");
+    for ry in 0..9 {
+        terrain
+            .cell_mut_for_test(4, ry)
+            .expect("arena cell")
+            .zone_type = zone_class::IMPASSABLE;
+    }
+    sim.zone_grid = None;
+    crate::sim::arena_fixture::supply_native_map(&mut sim);
+    let tank = spawn(&mut sim, &rules, "TANK", (1, 4));
+    let goal = DriveCoord::cell(7, 4, 0);
+    let request = FootPathRequest::track(
+        &sim.substrate.entities,
+        tank,
+        goal,
+        0,
+        sim.playfield_bounds(),
+    )
+    .expect("live tank");
+    let grid = sim.path_grid_snapshot().expect("grid");
+    let counts = BlockerNeighborCounts::new(9, 9);
+    let search = |sim: &Simulation| {
+        sim.foot_core_search(
+            &request,
+            goal,
+            &rules,
+            None,
+            &grid,
+            &counts,
+            MoverLift::Marked,
+            None,
+            None,
+        )
+        .0
+    };
+
+    assert_eq!(
+        search(&sim),
+        Err(MovePathFailure::Search(Search::NativeEntryRejected))
+    );
+    sim.substrate
+        .entities
+        .get_mut(tank)
+        .unwrap()
+        .mission_only
+        .mark();
+    // The plain A* does not read the zones, and this ridge is only theirs.
+    assert_eq!(search(&sim).expect("plain A*").last(), Some(&(7, 4)));
+}

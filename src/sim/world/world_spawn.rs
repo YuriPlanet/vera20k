@@ -625,7 +625,6 @@ impl Simulation {
                 }
                 if matches!(outcome, RevealOutcome::Revealed { .. }) {
                     Self::initialize_cloak_after_unlimbo(&sim.interner, &sim.session, &mut sim.substrate, stable_id, rules);
-                    sim.add_unit_sensor_after_unlimbo(stable_id, rules, overlay_registry);
                     // ReadScenarioBuildings (0x0044F820) makes no sensor call:
                     // a map building stamps only if the first opening its
                     // Unlimbo already ran (0x00440D61 / 0x00440E76) passed
@@ -1166,7 +1165,6 @@ impl Simulation {
             stable_id,
             rules,
         );
-        self.add_unit_sensor_after_unlimbo(stable_id, rules, overlay_registry);
         self.substrate.ready_finished_spawn_adapter(stable_id);
         Ok(Some(stable_id))
     }
@@ -1559,6 +1557,7 @@ impl Simulation {
             rules,
             overlay_registry,
             frame_effects,
+            true,
         ) {
             return (outcome == RevealOutcome::Consumed).then_some(stable_id);
         }
@@ -1615,7 +1614,6 @@ impl Simulation {
             stable_id,
             rules,
         );
-        self.add_unit_sensor_after_unlimbo(stable_id, rules, overlay_registry);
         Some(stable_id)
     }
 
@@ -2189,6 +2187,7 @@ impl Simulation {
             rules,
             overlay_registry,
             frame_effects,
+            !scenario_initialization,
         ) {
             return (stable_id, outcome);
         }
@@ -2454,9 +2453,9 @@ impl Simulation {
     /// already facing it, becomes that building. False when it refuses.
     ///
     /// Not carried over to the building: the unit's AttachedTag
-    /// (`+0x34`, `0x007399EE`), its looping sound handles (`+0x4DC..+0x4F4`,
-    /// `0x00739971`), `DiscoveredBy(owner)` (vt+0x198, `0x00739848`) and the
-    /// turret facing a `+0x16CA`/`+0x16C4` type starts at (`0x007397FB`).
+    /// (`+0x34`, `0x007399EE`), `DiscoveredBy(owner)` (vt+0x198,
+    /// `0x00739848`) and the turret facing a `+0x16CA`/`+0x16C4` type starts
+    /// at (`0x007397FB`).
     /// Phobos `TechnoExt::SyncInvulnerability` (`Techno/Body.cpp:156`): a
     /// deploy or undeploy conversion carries an active curtain to the new
     /// object when the source type's `KeptOnDeploy` (else its global) allows
@@ -2488,6 +2487,80 @@ impl Simulation {
             ),
         };
         kept.unwrap_or(fallback).then(|| state.synced())
+    }
+
+    /// The AI half of a construction yard's arrival for a house no human
+    /// controls: `HouseClass::RefreshBuildOptionsAfterDeploy @ 0x00505180`
+    /// (Computer_Paranoid in a nonzero game mode, `0x005051AF`, then Recalc
+    /// for an empty plan, `0x005051C5..0x005051D1`), then node zero and the
+    /// BasePlan center (`+0x5750`) take `cell` and Production,
+    /// AITriggersActive and AutoBaseBuilding are set. `UnitClass::Deploy`
+    /// (`0x007398D9..0x00739919`) runs it with the yard's origin after its
+    /// primary center write; Ares 3.0 MPGameMode_SpawnBaseUnit_BuildConst
+    /// (1001F0B0, hook 0x5D7048) with the house's base cell, before the yard
+    /// exists. Native indexes Recalc's vectors unchecked; a plan VERA cannot
+    /// preflight stays empty.
+    pub(crate) fn refresh_ai_base_after_deploy(
+        &mut self,
+        owner_id: InternedId,
+        cell: (u16, u16),
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) {
+        let Some(house) = self.houses.get(&owner_id) else {
+            return;
+        };
+        if self.session.game_mode_nonzero() && !house.is_controlled_by_human(true) {
+            self.computer_paranoid(rules, registry, frame_effects);
+        }
+        let house = &self.houses[&owner_id];
+        if house.base_plan().nodes().is_empty() {
+            let country_name = house
+                .country()
+                .map(|country| self.interner.resolve(country).to_owned());
+            let (side_index, difficulty, tech_level) =
+                (house.side_index(), house.difficulty(), house.tech_level());
+            match country_name {
+                Some(country_name)
+                    if preflight_recalc(
+                        rules,
+                        &country_name,
+                        side_index,
+                        difficulty,
+                        self.session.game_options().super_weapons,
+                    )
+                    .is_ok() =>
+                {
+                    recalc_base_plan(
+                        self.houses
+                            .get_mut(&owner_id)
+                            .expect("refreshed owner remains registered")
+                            .base_plan_mut(),
+                        rules,
+                        &self.type_tech_levels,
+                        &country_name,
+                        side_index,
+                        difficulty,
+                        tech_level,
+                        self.session.game_options().super_weapons,
+                        &mut self.scenario_rng,
+                    );
+                }
+                _ => log::warn!(
+                    "AI base Recalc skipped: unusable country, difficulty tables or BuildPower/BuildRefinery lists"
+                ),
+            }
+        }
+        let house = self
+            .houses
+            .get_mut(&owner_id)
+            .expect("refreshed owner remains registered");
+        house
+            .base_plan_mut()
+            .anchor_first_node(pack_base_plan_cell(i32::from(cell.0), i32::from(cell.1)));
+        house.anchor_base_plan(cell);
+        house.enable_ai_deploy_latches();
     }
 
     pub(crate) fn deploy_mcv(
@@ -2681,12 +2754,11 @@ impl Simulation {
                     country_name,
                     house.side_index(),
                     house.difficulty(),
-                    house.tech_level(),
                     house.base_plan().nodes().is_empty(),
                 )
             })
         });
-        if let Some((country_name, side_index, difficulty, _, true)) = &recalc_context {
+        if let Some((country_name, side_index, difficulty, true)) = &recalc_context {
             let Some(country_name) = country_name.as_deref() else {
                 // Controlled unavailable Rust prerequisite; no native
                 // constructor/placement transaction has started here.
@@ -2695,7 +2767,16 @@ impl Simulation {
                 }
                 return false;
             };
-            if preflight_recalc(rules, country_name, *side_index, *difficulty).is_err() {
+            if preflight_recalc(
+                rules,
+                country_name,
+                *side_index,
+                *difficulty,
+                self.session.game_options().super_weapons,
+            )
+            .is_err()
+            {
+                log::warn!("MCV deploy refused: no usable AI base plan for {country_name}");
                 if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
                     entity.mcv_deploy_pending.clear();
                 }
@@ -2872,46 +2953,20 @@ impl Simulation {
             new_sid,
             rules,
         );
-        self.add_unit_sensor_after_unlimbo(new_sid, rules, registry);
         self.mission_spawned_entities = true;
-        if let Some((country_name, side_index, difficulty, tech_level, _)) = recalc_context {
+        if recalc_context.is_some() {
             // The new Building's committed north-west anchor is the native
             // `+0x9C/+0xA0` source. This bounded write order is load-bearing:
-            // primary center, Computer_Paranoid, optional Recalc, node zero,
-            // BasePlan center, the three independent House AI activation
-            // latches, then MoveGroundForcesToBase (`0x00739926`). The block
-            // ends before the slave transfer and UnInit below.
+            // primary center, then the shared AI half (Computer_Paranoid,
+            // optional Recalc, node zero, BasePlan center, the three
+            // independent House AI activation latches), then
+            // MoveGroundForcesToBase (`0x00739926`). The block ends before the
+            // slave transfer and UnInit below.
             self.houses
                 .get_mut(&owner_id)
                 .expect("qualifying deploy owner remains registered")
                 .set_base_center((rx, ry));
-            // `0x00505180` turns the computers paranoid for a house no human
-            // controls (`0x005051AF`) before its Recalc.
-            self.computer_paranoid(rules, registry, frame_effects);
-            let house = self
-                .houses
-                .get_mut(&owner_id)
-                .expect("qualifying deploy owner remains registered");
-            if house.base_plan().nodes().is_empty() {
-                recalc_base_plan(
-                    house.base_plan_mut(),
-                    rules,
-                    &self.type_tech_levels,
-                    country_name
-                        .as_deref()
-                        .expect("empty qualifying plan was preflighted with a country"),
-                    side_index,
-                    difficulty,
-                    tech_level,
-                    self.session.game_options().super_weapons,
-                    &mut self.scenario_rng,
-                );
-            }
-            house
-                .base_plan_mut()
-                .anchor_first_node(pack_base_plan_cell(i32::from(rx), i32::from(ry)));
-            house.anchor_base_plan((rx, ry));
-            house.enable_ai_deploy_latches();
+            self.refresh_ai_base_after_deploy(owner_id, (rx, ry), rules, registry, frame_effects);
             // Phobos `[General] GatherWhenMCVDeploy=` skips the native
             // regroup (hook at `0x739920`) while keeping every earlier write.
             #[cfg(feature = "phobos")]
@@ -2926,9 +2981,17 @@ impl Simulation {
         // 0x00739956: a Slave Miner's manager moves to its refinery (the
         // hand-off 0x006B0D10, then SetOwner 0x006AF580) before the unit
         // leaves; the refinery's own fresh slaves are freed.
+        // Ares UnitClass_Deploy_Transfer (10048E90 -> 10045A80): the bomb,
+        // then the original owner.
         #[cfg(feature = "ares")]
-        self.transfer_factory_country(stable_id, new_sid);
+        {
+            self.transfer_ivan_bomb(stable_id, new_sid);
+            self.transfer_factory_country(stable_id, new_sid);
+        }
         self.transfer_slave_manager(stable_id, new_sid, true, rules, registry, frame_effects);
+        // 0x00739971..0x007399B2: the building takes the unit's voice handle
+        // and latch, so a line the unit is speaking plays on.
+        self.move_unit_voice(stable_id, new_sid);
         self.uninit_with_context(
             stable_id,
             super::UninitContext::new(rules, registry).with_effects(frame_effects),
@@ -2981,7 +3044,8 @@ impl Simulation {
     /// managers' children, the building's live attackers are listed
     /// (`0x00449F23..0x00449FDC`, Techno array order) and the building leaves
     /// the map (vt+0xD4, whose Detach_All clears their targets) for the
-    /// unit's Unlimbo (`0x0044A002`). After its health
+    /// unit's Unlimbo (`0x0044A002`), which faces the building type's
+    /// DeployFacing (`0x00449FED..0x00449FFA`). After its health
     /// (`0x0044A010..0x0044A039`) a building's slave manager moves to it
     /// (SetOwner `0x006AF580` at `0x0044A047`, which frees the unit's own
     /// fresh slaves), the unit takes the building's veterancy
@@ -3001,14 +3065,15 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        let Some((unit_type, owner_id, rx, ry, z, was_selected)) =
+        let Some((unit_type, owner_id, rx, ry, z, was_selected, unlimbo_facing)) =
             self.substrate.entities.get(sid).and_then(|entity| {
                 let type_str = self.interner.resolve(entity.type_ref());
                 let unit_type = production::undeploy_target(rules, type_str)?;
+                let building_type = rules.object(type_str)?;
                 let (rx, ry) = undeploy_unit_cell(
                     entity.position.rx(),
                     entity.position.ry(),
-                    &rules.object(type_str)?.foundation,
+                    &building_type.foundation,
                 );
                 Some((
                     unit_type,
@@ -3017,6 +3082,9 @@ impl Simulation {
                     ry,
                     entity.position.z(),
                     entity.selection.is_selected(),
+                    // Selling449FED..44A002: the unit's Unlimbo direction is
+                    // the building type's DeployFacing (+0xEDC, 0x00465D70).
+                    building_type.deploy_facing,
                 ))
             })
         else {
@@ -3052,7 +3120,7 @@ impl Simulation {
                 &owner,
                 rx,
                 ry,
-                0,
+                unlimbo_facing,
                 z,
                 rules,
                 TechnoConstructorInit::FreshScenario,
@@ -3096,12 +3164,14 @@ impl Simulation {
             sid,
             super::UninitContext::new(rules, overlay_registry).with_effects(frame_effects),
         );
+        // Ares 3.0 BuildingClass_Mi_Selling_PutMcv (1005C5D0, hook 0x449FF8)
+        // puts the unit with A8E7AC raised, so no Can_Enter_Cell refuses it.
         let (new_sid, outcome) = self.unlimbo_constructed_parent(
             new_sid,
             position,
             rules,
             overlay_registry,
-            false,
+            crate::rules::ARES_ENABLED,
             frame_effects,
         );
         if !matches!(
@@ -3111,7 +3181,13 @@ impl Simulation {
             //44A16B..44A176 pays the cached signed amount to the live owner.
             //The following tail never deletes the new Unit: its existing
             //limbo identity/Tracking remain, including ShortGame's BaseUnit count.
-            if let Some(refund) = failed_unlimbo_refund
+            // 1005C5D0 ignores the result: no refund, and the building goes
+            // with the unit left in limbo. RESIDUAL: Ares runs the rest of
+            // the conversion (health, veterancy, archive, attackers) on that
+            // limbo unit; VERA stops here. Trigger: a forced Put that still
+            // fails (no cell under the yard). Effect: none visible.
+            if !crate::rules::ARES_ENABLED
+                && let Some(refund) = failed_unlimbo_refund
                 && let Some(owner) = self
                     .substrate
                     .entities
@@ -3133,7 +3209,6 @@ impl Simulation {
             new_sid,
             rules,
         );
-        self.add_unit_sensor_after_unlimbo(new_sid, rules, overlay_registry);
         if let Some(unit) = self.substrate.entities.get_mut(new_sid) {
             converted_health.apply(unit);
             // RESIDUAL: native Selects the new unit (vt+0x14C, `0x0044A137`)
@@ -3149,9 +3224,16 @@ impl Simulation {
             // the unit's own.
             unit.veterancy.inherit(&veterancy);
         }
+        // Ares BuildingClass_Mi_Selling_Transfer (10048E90 -> 10045A80).
         #[cfg(feature = "ares")]
-        self.transfer_factory_country(sid, new_sid);
+        {
+            self.transfer_ivan_bomb(sid, new_sid);
+            self.transfer_factory_country(sid, new_sid);
+        }
         self.transfer_slave_manager(sid, new_sid, false, rules, overlay_registry, frame_effects);
+        // BuildingClass::Mission_Selling 0x0044A0D4..0x0044A115: the unit
+        // takes the building's voice handle and latch.
+        self.move_unit_voice(sid, new_sid);
         // Cell clicks, object clicks (event 0x1E) and the SlaveManager
         // relocation share ArchiveTarget; conversion sends the new Unit to
         // that existing goal, a Cell or an object: vt+0x480

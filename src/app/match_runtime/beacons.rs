@@ -251,7 +251,7 @@ fn coord_cell(coord: [i32; 3]) -> Option<(u16, u16)> {
 
 /// PlayerPtr's House array index (`[PlayerPtr] + 0x30`).
 pub(crate) fn local_house_index(state: &AppState) -> Option<usize> {
-    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     let local = sim.session().current_house()?;
     sim.houses().index_of(local)
 }
@@ -261,7 +261,7 @@ pub(crate) fn local_house_index(state: &AppState) -> Option<usize> {
 /// allied both ways (`0x004F9A10`, `0x004F9A50`, each true for itself), and
 /// whose House is not defeated (`+0x1F5`).
 pub(crate) fn visible_to_player(state: &AppState, house: usize, beacon: &Beacon) -> bool {
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         return false;
     };
     let sim = &runtime.simulation;
@@ -321,7 +321,7 @@ pub(crate) fn place_beacon(
     if !state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_some_and(|runtime| runtime.simulation.houses().order().get(house).is_some())
     {
         return;
@@ -386,7 +386,7 @@ fn admit_radar_event(state: &mut AppState, coord: [i32; 3]) -> bool {
     let Some((rx, ry)) = coord_cell(coord) else {
         return false;
     };
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         return false;
     };
     let tick = runtime.simulation.session().tick();

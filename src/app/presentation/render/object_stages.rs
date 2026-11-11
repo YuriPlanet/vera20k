@@ -13,28 +13,39 @@
 //! included). So every draw goes to the earliest stage after every earlier
 //! draw it overlaps. Same-kind draws that already compose in sequence inside
 //! one transaction (ordinary draws in one render pass, read-only edits in one
-//! reduction interval, read-write edits in one interval, combat lights in one
-//! replayed pass) may share a stage even when they overlap; their order inside
-//! the stage stays parent order.
+//! interval, read-write edits in one interval, combat lights in one replayed
+//! pass) may share a stage even when they overlap; their order inside
+//! the stage stays parent order. Where the adapter has the live depth interval,
+//! destination edits and opaque Z-tested bodies compose too, so a row of
+//! buildings with shadows falling on each other costs one interval instead of
+//! a stage per link (`TerrainDrawRenderer::draw_interval_tail`).
 //! Stages replay in index order.
 //! Footprints are tested on a tile grid: a false overlap only costs a stage.
 
-const TILE: u32 = 16;
+const TILE: u32 = 8;
 
 /// Which transaction family replays a stage.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum StageKind {
     /// One ordinary render pass; draws compose in submission order.
     Ordinary,
+    /// An ordinary draw that a [`Self::DepthTested`] interval can also hold:
+    /// an opaque Z-tested SHP body. Alone it replays as [`Self::Ordinary`].
+    OpaqueBody,
     /// One packed wave: pairwise disjoint, of any selectors and Z policies.
     Packed,
     /// A packed composite with displaced reads, replayed alone.
     PackedAlone,
-    /// One read-only reduction interval; overlapping edits reduce in order.
+    /// One read-only interval; overlapping edits keep their order inside it.
     EditReadOnly,
     /// One read-write interval; overlapping edits keep their order inside it
     /// (waves, replays or the live depth test, `TerrainDrawRenderer::draw_span`).
     EditReadWrite,
+    /// One interval against the live depth test: destination edits of either
+    /// Z policy and opaque bodies, in parent order. Edits of one policy alone
+    /// keep their own scheduling (`TerrainDrawRenderer::draw_span_tail`).
+    /// Never planned on WebGL2, which has no such interval.
+    DepthTested,
     /// Combat lights; overlapping ones edit in order within each pass.
     Light,
     /// Surface-line ranges sharing each snapshot/blend pair, pairwise disjoint.
@@ -46,15 +57,26 @@ impl StageKind {
     fn composes_in_order(self, next: Self) -> bool {
         matches!(
             (self, next),
-            (Self::Ordinary, Self::Ordinary)
-                | (Self::EditReadOnly, Self::EditReadOnly)
+            (
+                Self::Ordinary | Self::OpaqueBody,
+                Self::Ordinary | Self::OpaqueBody
+            ) | (
+                Self::OpaqueBody | Self::DepthTested,
+                Self::OpaqueBody | Self::DepthTested
+            ) | (Self::EditReadOnly, Self::EditReadOnly)
                 | (Self::EditReadWrite, Self::EditReadWrite)
                 | (Self::Light, Self::Light)
         )
     }
 
     fn joins(self, next: Self) -> bool {
-        self == next && self != Self::PackedAlone
+        (self == next && self != Self::PackedAlone) || self.composes_in_order(next)
+    }
+
+    /// The kind of a stage of this kind once a `next` draw has joined it: an
+    /// opaque body takes on what it shares a stage with.
+    fn joined(self, next: Self) -> Self {
+        if self == Self::OpaqueBody { next } else { self }
     }
 }
 
@@ -108,6 +130,7 @@ impl<T> ObjectStages<T> {
                 self.stages.len() - 1
             }
         };
+        self.stages[stage].0 = self.stages[stage].0.joined(kind);
         self.stages[stage].1.push(item);
         let mark = stage as u32 + 1;
         for ty in y0..=y1 {
@@ -225,6 +248,36 @@ mod tests {
                 (StageKind::Ordinary, vec![2]),
                 (edit, vec![3]),
             ]
+        );
+    }
+
+    /// Overlapping shadows and opaque bodies share one interval until a draw
+    /// that needs an ordinary pass meets them. Bodies alone stay ordinary.
+    #[test]
+    fn opaque_bodies_and_depth_tested_edits_share_a_stage_until_an_ordinary_draw_meets_them() {
+        let (body, edit) = (StageKind::OpaqueBody, StageKind::DepthTested);
+        let mut plan = ObjectStages::new([64, 64]);
+        plan.push(body, [0, 0, 8, 8], 0);
+        plan.push(edit, [4, 4, 8, 8], 1);
+        plan.push(body, [6, 6, 8, 8], 2);
+        plan.push(edit, [10, 10, 8, 8], 3);
+        plan.push(StageKind::Ordinary, [12, 12, 8, 8], 4);
+        plan.push(body, [16, 16, 8, 8], 5);
+        plan.push(edit, [18, 18, 8, 8], 6);
+        assert_eq!(
+            stage_items(&mut plan),
+            [
+                (edit, vec![0, 1, 2, 3]),
+                (StageKind::Ordinary, vec![4, 5]),
+                (edit, vec![6]),
+            ]
+        );
+        plan.push(body, [0, 0, 8, 8], 7);
+        plan.push(StageKind::Ordinary, [4, 4, 8, 8], 8);
+        plan.push(body, [40, 40, 8, 8], 9);
+        assert_eq!(
+            stage_items(&mut plan),
+            [(StageKind::Ordinary, vec![7, 8, 9])]
         );
     }
 

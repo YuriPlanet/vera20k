@@ -217,8 +217,10 @@ pub(crate) fn apply_multiplier_crate(
         *slot =
             X87::store_f64_masked_chop(X87::mul(X87::load_f64(magnitude), X87::load_f64(*slot)));
         // Ares Armor2@1005F870 writes Ext+88 then calls RecalculateStats
-        // @1005F89D; Firepower2@1005F997 does the same for Ext+80. Both
-        // aggregate before the recipient callback/next actor (Ares Crates.cpp).
+        // @1005F89D; Firepower2 (1005F970, hook 0x483226) does the same for
+        // Ext+80 at 1005F997. Both store the magnitude into a 1.0 slot, the
+        // product above, and aggregate before the recipient callback/next
+        // actor (Ares Crates.cpp).
         #[cfg(feature = "ares")]
         entity.recompute_ares_attached_stats(rules, interner);
         let owner = entity.owner();
@@ -347,6 +349,7 @@ pub(super) fn apply_heal_base_crate(
 /// the Scenario RNG. `HouseClass::Add_Credits @ 0x004F9950` then adds it.
 pub(super) fn money_crate_amount(
     scenario_rng: &mut SimRng,
+    rules: &RuleSet,
     solo_money: i32,
     magnitude: NativeF64Bits,
 ) -> i32 {
@@ -354,7 +357,16 @@ pub(super) fn money_crate_amount(
         return solo_money;
     }
     let base = magnitude_amount(magnitude);
-    scenario_rng.next_range_i32_inclusive(base, base.wrapping_add(900))
+    // Ares 3.0 1002C8A0 (hook 0x48248D): `base + RandomRanged(0,
+    // [CrateRules] RandomCrateMoney)`; its default 900 draws the same span.
+    #[cfg(feature = "ares")]
+    return base
+        .wrapping_add(scenario_rng.next_range_i32_inclusive(0, rules.ares_random_crate_money()));
+    #[cfg(not(feature = "ares"))]
+    {
+        let _ = rules;
+        scenario_rng.next_range_i32_inclusive(base, base.wrapping_add(900))
+    }
 }
 
 /// `Math__ftol` of one `[Powerups]` magnitude double, the damage base the Gas
@@ -759,9 +771,11 @@ pub(super) enum UnitCrateOutcome {
 /// MCV pre-empt flag; `bases` the lobby Bases byte (`0x00A8B258`).
 ///
 /// A pre-empted pickup asks for the first ownable `BaseUnit=`. Otherwise, a
-/// house with one of the first two `[AI] BuildConst=` types tracked and
-/// neither of the first two `HarvesterUnit=` types tracked gets its first
-/// ownable `HarvesterUnit=`. `[CrateRules] UnitCrateType=` overrides both.
+/// house with one of the first two `[AI] BuildRefinery=` types tracked
+/// (Rules `+0x8E4`, items `+0x8E8`, against House `+0x5500` at
+/// `0x0048208A..0x004820DD`) and neither of the first two `HarvesterUnit=`
+/// types tracked (`0x004820DF..0x00482131`) gets its first ownable
+/// `HarvesterUnit=`. `[CrateRules] UnitCrateType=` overrides both.
 /// With no type yet, draw `RandomRanged(0, UnitTypes.Count - 1)` until a
 /// `CrateGoodie=` type passes: with Bases on, a `BaseUnit=` type is accepted
 /// for a human house or a pre-empted pickup; with Bases off, never.
@@ -797,8 +811,8 @@ pub(super) fn choose_unit_crate_type<'r>(
                 .get(type_id)
                 .map_or(0, |type_id| house.tracking().owned_count(category, type_id))
         };
-        let has_conyard = rules
-            .build_const_types
+        let has_refinery = rules
+            .build_refinery_types
             .iter()
             .take(2)
             .any(|type_id| tracked(EntityCategory::Structure, type_id) > 0);
@@ -807,7 +821,7 @@ pub(super) fn choose_unit_crate_type<'r>(
             .iter()
             .take(2)
             .any(|type_id| tracked(EntityCategory::Unit, type_id) != 0);
-        if has_conyard && !has_harvester {
+        if has_refinery && !has_harvester {
             chosen = first_owner_compatible(
                 rules,
                 &rules.harvester_unit_types,

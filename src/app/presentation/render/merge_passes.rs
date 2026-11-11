@@ -9,7 +9,7 @@ use crate::render::overlay_atlas::OverlayAtlas;
 use crate::render::palette_textures::PaletteSet;
 use crate::render::sprite_atlas::SpriteAtlas;
 use crate::render::terrain_draw::{
-    DestinationEditCommand, PackedComposite, PackedCompositePiece, PackedSpriteKind,
+    DestinationEditCommand, IntervalDraw, PackedComposite, PackedCompositePiece, PackedSpriteKind,
     SurfaceLineBatch, TerrainBatchStats, TerrainDrawRenderer, packed_joins_waves,
 };
 use crate::render::unit_atlas::UnitAtlas;
@@ -143,6 +143,11 @@ pub(super) fn draw_native_object_pass<'a>(
     };
     let mut stages =
         ObjectStages::new([camera.screen_size[0] as u32, camera.screen_size[1] as u32]);
+    // The strict-order test reference keeps every family apart.
+    #[cfg(test)]
+    let intervals = terrain.depth_tested_edits() && !super::object_stages::SERIAL.get();
+    #[cfg(not(test))]
+    let intervals = terrain.depth_tested_edits();
     let mut cursor = 0;
     while cursor < runs.len() {
         let run = &runs[cursor];
@@ -246,10 +251,12 @@ pub(super) fn draw_native_object_pass<'a>(
             continue;
         }
         if let Some((piece, atlas_slot)) = destination_edit(run.target) {
-            // ReadOnly edits reduce in sequence inside one interval; ReadWrite
-            // edits keep their order inside one too: waves, replays, or the
-            // live depth test (`TerrainDrawRenderer::draw_span`).
-            let kind = if run.render_z == RenderZPolicy::ReadOnly {
+            // ReadOnly and ReadWrite edits each keep their order inside one
+            // interval: waves, replays, or the live depth test
+            // (`TerrainDrawRenderer::draw_span`).
+            let kind = if intervals {
+                StageKind::DepthTested
+            } else if run.render_z == RenderZPolicy::ReadOnly {
                 StageKind::EditReadOnly
             } else {
                 StageKind::EditReadWrite
@@ -291,11 +298,12 @@ pub(super) fn draw_native_object_pass<'a>(
                     plan_packed(&mut stages, terrain, tactical, composite);
                 }
             } else if let Some(rect) = terrain.piece_footprint(instance, tactical) {
-                stages.push(
-                    StageKind::Ordinary,
-                    rect,
-                    StageItem::Ordinary { run: cursor, index },
-                );
+                let kind = if intervals && restarts_shadow_count(run, instance) {
+                    StageKind::OpaqueBody
+                } else {
+                    StageKind::Ordinary
+                };
+                stages.push(kind, rect, StageItem::Ordinary { run: cursor, index });
             }
         }
         cursor += 1;
@@ -376,7 +384,7 @@ impl StageReplay<'_> {
         let joins = true;
         let mut tail = None;
         for (kind, items) in stages {
-            if !(joins && kind == StageKind::Ordinary)
+            if !(joins && matches!(kind, StageKind::Ordinary | StageKind::OpaqueBody))
                 && let Some(tail) = tail.take()
             {
                 stats.passes += terrain.flush_tail(
@@ -390,7 +398,13 @@ impl StageReplay<'_> {
                 );
             }
             match kind {
-                StageKind::Ordinary => {
+                StageKind::DepthTested if !one_edit_family(&items) => {
+                    let (span, span_tail) =
+                        self.draw_interval(encoder, terrain, &atlas, buffer(), items);
+                    stats.accumulate(span);
+                    tail = span_tail;
+                }
+                StageKind::Ordinary | StageKind::OpaqueBody => {
                     let mut pass = crate::app::presentation::sidebar_render::begin_main_load_pass(
                         encoder, self.color, self.depth,
                     );
@@ -458,7 +472,7 @@ impl StageReplay<'_> {
                     stats.accumulate(span);
                     tail = span_tail;
                 }
-                StageKind::EditReadOnly | StageKind::EditReadWrite => {
+                StageKind::EditReadOnly | StageKind::EditReadWrite | StageKind::DepthTested => {
                     let commands = items.into_iter().map(|item| match item {
                         StageItem::Edit(command) => command,
                         _ => unreachable!("an edit stage holds destination edits"),
@@ -515,6 +529,71 @@ impl StageReplay<'_> {
         stats
     }
 
+    /// A mixed depth-tested stage: its edits and opaque bodies in parent
+    /// order, adjacent instances of one run as one range.
+    fn draw_interval<'a>(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        terrain: &mut TerrainDrawRenderer,
+        atlas: &impl Fn(usize) -> Option<&'a crate::render::batch::BatchTexture>,
+        buffer: &wgpu::Buffer,
+        items: Vec<StageItem<'_>>,
+    ) -> (
+        TerrainBatchStats,
+        Option<crate::render::terrain_draw::LiveTail>,
+    ) {
+        let mut bodies: Vec<(usize, u32, u32)> = Vec::new();
+        let mut draws = Vec::with_capacity(items.len());
+        for item in items {
+            match item {
+                StageItem::Edit(command) => draws.push(IntervalDraw::Edit(command)),
+                StageItem::Ordinary { run, index } => {
+                    if let Some(IntervalDraw::Body(last)) = draws.last() {
+                        let (last_run, start, count) = &mut bodies[*last as usize];
+                        if *last_run == run && *start + *count == index {
+                            *count += 1;
+                            continue;
+                        }
+                    }
+                    draws.push(IntervalDraw::Body(bodies.len() as u32));
+                    bodies.push((run, index, 1));
+                }
+                _ => unreachable!("a depth-tested stage holds edits and opaque bodies"),
+            }
+        }
+        let [x, y, width, height] = self.tactical;
+        terrain.draw_interval_tail(
+            encoder,
+            self.color,
+            self.depth,
+            self.batch,
+            atlas,
+            buffer,
+            &self.ground.instances,
+            &draws,
+            self.tactical,
+            |pass, body| {
+                let (run, start, count) = bodies[body as usize];
+                let run = &self.runs[run];
+                let ObjectTexture::ShpPage(page) = run.target else {
+                    unreachable!("only SHP pages hold opaque bodies");
+                };
+                if let Some(page) = self.sprite_atlas.and_then(|atlas| atlas.page(page)) {
+                    pass.set_scissor_rect(x, y, width, height);
+                    self.batch.draw_zsprite_counted_range(
+                        pass,
+                        &page.texture,
+                        self.zshape,
+                        buffer,
+                        start,
+                        count,
+                        run.render_z == RenderZPolicy::ReadWrite,
+                    );
+                }
+            },
+        )
+    }
+
     fn draw_ordinary<'pass>(
         &'pass self,
         pass: &mut wgpu::RenderPass<'pass>,
@@ -532,11 +611,6 @@ impl StageReplay<'_> {
             }
             ObjectTexture::TerrainShp(_) | ObjectTexture::SpriteAtlasEdit(_, _) => {
                 unreachable!("native destination edits split normal runs")
-            }
-            ObjectTexture::OverlayAtlas => {
-                if let Some(atlas) = self.overlay_atlas {
-                    batch.draw_passthrough_range(pass, &atlas.texture, buffer, start, count);
-                }
             }
             ObjectTexture::UnitAtlasPage(page) => {
                 if let (Some(palette), Some(texture)) = (
@@ -607,6 +681,37 @@ impl StageReplay<'_> {
             }
         }
     }
+}
+
+/// Whether a depth-tested stage is all edits of one Z policy, which
+/// [`TerrainDrawRenderer::draw_span_tail`] schedules by itself.
+fn one_edit_family(items: &[StageItem<'_>]) -> bool {
+    let mut policy = None;
+    items.iter().all(|item| match item {
+        StageItem::Edit(command) => *policy.get_or_insert(command.render_z) == command.render_z,
+        _ => false,
+    })
+}
+
+/// Whether an ordinary draw can join a depth-tested interval: a Z-tested SHP
+/// body whose every drawn pixel replaces the destination. Such a store leaves
+/// no trace of what it covered, so it restarts the pixel's shadow count. The
+/// alpha these conditions rule out is exactly `opaque_palette`'s and
+/// `apply_fx`'s (zsprite_shader.wgsl); `AlphaReadWrite` may blend per pixel.
+fn restarts_shadow_count(
+    run: &ObjectDrawRun,
+    instance: &crate::render::batch::SpriteInstance,
+) -> bool {
+    matches!(run.target, ObjectTexture::ShpPage(_))
+        && matches!(
+            run.render_z,
+            RenderZPolicy::ReadOnly | RenderZPolicy::ReadWrite
+        )
+        && instance.alpha == 1.0
+        && instance.draw_state.native_selector_bits() == 0
+        && instance.draw_state.fx_flags == 0
+        && instance.draw_state.fx_params[0] == 1.0
+        && instance.palette_light.0[0] >> 24 != 0
 }
 
 /// Only fully opaque, native-paletted body stores have selector0 copy
@@ -689,19 +794,6 @@ fn destination_edit(
     }
 }
 
-/// A shimmered Unit can borrow the same terrain texture as an ordinary tree.
-/// Its packed Convert blit is a fence even though both are TerrainShp sources.
-fn destination_span_end(runs: &[ObjectDrawRun], start: usize) -> usize {
-    let mut end = start;
-    while end < runs.len()
-        && runs[end].packed_parent.is_none()
-        && destination_edit(runs[end].target).is_some()
-    {
-        end += 1;
-    }
-    end
-}
-
 #[cfg(test)]
 mod tests {
     use super::super::draw_plan_lowering::{
@@ -764,6 +856,19 @@ mod tests {
             voxel_needs_manual_depth(&safe, camera),
             "the shared composite rect owns row Z"
         );
+    }
+
+    /// A shimmered Unit can borrow the same terrain texture as an ordinary tree.
+    /// Its packed Convert blit is a fence even though both are TerrainShp sources.
+    fn destination_span_end(runs: &[ObjectDrawRun], start: usize) -> usize {
+        let mut end = start;
+        while end < runs.len()
+            && runs[end].packed_parent.is_none()
+            && destination_edit(runs[end].target).is_some()
+        {
+            end += 1;
+        }
+        end
     }
 
     #[test]

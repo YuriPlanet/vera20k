@@ -5,15 +5,12 @@
 //! so at a larger Sidebar size (Options) the shell grows with the sidebar and
 //! its column covers the battle's.
 
-use super::in_game_options;
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
 use crate::render::scaled_copy::ScaledSurface;
 use crate::render::sidebar_chrome::{SidebarChromeAtlas, SidebarChromeEntry};
-use crate::ui::shell::geom::{self, RectPx};
-use crate::ui::shell::in_game_options::{build_in_game_options_descriptor, control};
+use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::in_game_shell::{InGameShellLayout, InGameShellSizes};
-use crate::ui::shell::layout::{InGameOptionsAnchor, layout_pass_in_game_options};
 use crate::ui::sidebar::command_bar::spacer_pieces;
 
 pub(super) fn shell_layout(
@@ -89,7 +86,6 @@ pub(crate) fn native_in_game_shell_active(state: &AppState) -> bool {
                 | crate::ui::pause_menu::InGameMenuState::AbortConfirm
                 | crate::ui::pause_menu::InGameMenuState::Sound
                 | crate::ui::pause_menu::InGameMenuState::Keyboard
-                | crate::ui::pause_menu::InGameMenuState::Options
                 | crate::ui::pause_menu::InGameMenuState::SavedGame(_)
                 | crate::ui::pause_menu::InGameMenuState::Diplomacy
                 | crate::ui::pause_menu::InGameMenuState::MissionBriefing
@@ -239,80 +235,6 @@ pub(super) fn background_instances(
     out
 }
 
-pub(crate) fn render_in_game_options_shell(
-    state: &mut AppState,
-    encoder: &mut wgpu::CommandEncoder,
-    destination: &wgpu::Texture,
-) -> anyhow::Result<()> {
-    let InGameShellGeometry {
-        width,
-        height,
-        layout,
-        button_size,
-    } = current_in_game_shell_layout(state).expect("active shell geometry");
-    let sound_raw = geom::dlu_rect(425, 122, 108, 23);
-    let anchor = InGameOptionsAnchor {
-        button_canvas_w: button_size[0],
-        button_canvas_h: button_size[1],
-        button_stack_top_y: layout.button_rect(sound_raw, button_size).y,
-        // Original60B350 active branch60B3FC..60B41C, BBB child686.
-        back_button_y: layout.side3.y - button_size[1],
-    };
-    state.match_state.match_presentation.in_game_options_anchor = Some(anchor);
-    let atlas = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
-        .expect("active side art");
-    let mut instances = background_instances(atlas, layout, width, height);
-    let options = &state.match_state.match_presentation.in_game_options;
-    let desc = build_in_game_options_descriptor();
-    for child in layout_pass_in_game_options(&desc, width, height, anchor) {
-        if matches!(child.id, control::BACK | control::KEYBOARD | control::SOUND) {
-            let frame = usize::from(options.buttons.is_pressed(child.id));
-            if let Some(entry) =
-                atlas.in_game_shell.buttons[frame].or(atlas.in_game_shell.buttons[0])
-            {
-                push_art(
-                    &mut instances,
-                    entry,
-                    child.rect,
-                    RectPx::new(0, 0, width, height),
-                );
-            }
-        }
-    }
-    let control_atlas = state
-        .frontend
-        .skirmish_shell_chrome
-        .as_ref()
-        .expect("active control art");
-    let controls = in_game_options::build_in_game_options_instances(
-        &control_atlas.control_chrome(),
-        width,
-        height,
-        anchor,
-        options,
-    );
-    let texts = in_game_options::build_in_game_options_text_instances(
-        &state.renderer.bit_font,
-        state.process_assets.csf.as_ref(),
-        width,
-        height,
-        anchor,
-        options,
-        crate::app::presentation::sidebar_render::current_sidebar_theme(state),
-    );
-    render_in_game_shell_frame(
-        state,
-        encoder,
-        destination,
-        InGameShellFrame {
-            art: instances,
-            controls,
-            texts,
-            label: "Active Game Controls BBB",
-        },
-    )
-}
-
 pub(super) struct InGameShellFrame {
     pub art: Vec<SpriteInstance>,
     pub controls: Vec<SpriteInstance>,
@@ -370,6 +292,9 @@ pub(super) struct ShellFrameOverlay {
     pub texts: Vec<crate::render::shell_text::ShellTextDraw>,
     /// VERA's enlarged map preview, over everything but the cursor.
     pub zoom: Option<super::preview::ZoomDraws>,
+    /// The page's chrome goes through VERA's online client's smoothing
+    /// ([`crate::render::batch::BatchRenderer::draw_chrome`]).
+    pub smooth_art: bool,
 }
 
 /// Shared shell compositor. Only the parent art atlas differs between launcher
@@ -534,7 +459,13 @@ pub(super) fn render_shell_frame(
     if let (Some((buffer, count)), Some(background_texture)) =
         (&background_buffer, background_texture)
     {
-        batch.draw_with_buffer_passthrough(&mut pass, background_texture, buffer, *count);
+        batch.draw_chrome(
+            &mut pass,
+            background_texture,
+            buffer,
+            *count,
+            overlay.smooth_art,
+        );
     }
     if let (Some((buffer, count)), Some(preview)) = (
         &preview_buffer,
@@ -543,7 +474,13 @@ pub(super) fn render_shell_frame(
         batch.draw_with_buffer_passthrough(&mut pass, &preview.texture, buffer, *count);
     }
     if let (Some((buffer, count)), Some(control_atlas)) = (&control_buffer, control_atlas) {
-        batch.draw_with_buffer_passthrough(&mut pass, &control_atlas.texture, buffer, *count);
+        batch.draw_chrome(
+            &mut pass,
+            &control_atlas.texture,
+            buffer,
+            *count,
+            overlay.smooth_art,
+        );
     }
     for (draw, buffer) in texts.iter().zip(&text_buffers) {
         if let Some((buffer, count)) = buffer.as_ref().filter(|_| window_raster.is_none()) {
@@ -567,7 +504,13 @@ pub(super) fn render_shell_frame(
     if let (Some((buffer, count)), Some(atlas), None) =
         (&overlay_buffer, control_atlas, window_raster)
     {
-        batch.draw_with_buffer_passthrough(&mut pass, &atlas.texture, buffer, *count);
+        batch.draw_chrome(
+            &mut pass,
+            &atlas.texture,
+            buffer,
+            *count,
+            overlay.smooth_art,
+        );
     }
     if let (Some((buffer, count)), Some(atlas)) = (
         &progress_buffer,

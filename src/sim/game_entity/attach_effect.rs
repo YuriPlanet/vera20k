@@ -331,7 +331,9 @@ mod tests {
                             .get_mut(target)
                             .unwrap()
                             .cloak
-                            .get_or_insert_with(|| crate::sim::cloak_disguise::CloakRuntime::new(0))
+                            .get_or_insert_with(|| {
+                                Box::new(crate::sim::cloak_disguise::CloakRuntime::new(0))
+                            })
                             .set_state_for_test(if step["action"] == "cloak_on" { 1 } else { 0 });
                     }
                     "pointer_expiry" => {
@@ -554,7 +556,7 @@ mod receiver {
                 );
                 return;
             }
-            let targets = self.ares_effect_ground_targets(impact, warhead.cell_spread_f64, rules);
+            let targets = self.ares_cell_spread_items(impact, warhead.cell_spread_f64, rules);
             for target in targets {
                 let Some(victim) = self.substrate.entities.get(target) else {
                     continue;
@@ -667,20 +669,20 @@ mod receiver {
                     .entities
                     .get(target)
                     .and_then(|victim| self.interner.object_type(victim.type_ref(), rules))
-                    .map(|kind| kind.cloaking_speed);
-                if let Some(speed) = speed
+                    .map(|kind| {
+                        (
+                            kind.cloaking_speed,
+                            kind.cloaking_stages(rules.general.cloaking_stages),
+                        )
+                    });
+                if let Some((speed, stages)) = speed
                     && let Some(cloak) = self
                         .substrate
                         .entities
                         .get_mut(target)
                         .and_then(|victim| victim.cloak.as_mut())
                 {
-                    cloak.start_uncloaking(
-                        self.session.binary_frame() as i32,
-                        speed,
-                        rules.general.cloaking_stages,
-                        true,
-                    );
+                    cloak.start_uncloaking(self.session.binary_frame() as i32, speed, stages, true);
                 }
             }
 
@@ -809,7 +811,8 @@ mod receiver {
                 let Some(victim) = self.substrate.entities.get_mut(target) else {
                     break;
                 };
-                let Some(entry) = victim.attach_effects.entries.get_mut(index) else {
+                let effects = &mut victim.attach_effects;
+                let Some(entry) = effects.entries.get_mut(index) else {
                     break;
                 };
                 if entry.remaining > 0 {
@@ -820,7 +823,7 @@ mod receiver {
                         entry.remaining = 0;
                     }
                     if entry.remaining == 0 {
-                        victim.attach_effects.self_effect = SelfEffectState::Pending(
+                        effects.self_effect = SelfEffectState::Pending(
                             own_settings.expect("current self descriptor").delay(),
                         );
                     }

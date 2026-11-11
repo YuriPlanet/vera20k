@@ -139,7 +139,7 @@ impl Fixture {
         let owner = sim.interner.intern("YuriCountry");
         sim.houses
             .register(HouseState::new(owner, 0, None, false, 0, 10));
-        sim.install_team_ai_registry(&registry, &rules).unwrap();
+        sim.install_team_ai_registry(&registry, &rules);
         let team_type = sim.interner.get("05FBBBEC-G").unwrap();
         assert_eq!(
             sim.team_script_vm.team_type_ini[&team_type].guard_slower,

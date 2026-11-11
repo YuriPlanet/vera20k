@@ -148,7 +148,6 @@ struct StopReaction {
     baseline: Option<ActorPresentation>,
     no_op: bool,
     rendered_travel_before: bool,
-    deceleration_frame: Option<u32>,
     first: Option<ActorPresentation>,
     criterion: Option<&'static str>,
 }
@@ -378,7 +377,7 @@ impl LatencyCapture {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("latency simulation")?
             .simulation;
         let frame = sim.session().binary_frame();
@@ -470,7 +469,7 @@ impl LatencyCapture {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("latency simulation")?
             .simulation;
         if let Some(entity) = self.actor.and_then(|actor| sim.entities().get(actor)) {
@@ -739,11 +738,11 @@ impl LatencyCapture {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("latency simulation")?
             .simulation;
         let entity = sim.entities().get(actor).context("latency actor")?;
-        let pose = crate::app::presentation::interpolation::pose(state, entity, frame);
+        let pose = crate::app::presentation::render_pose::RenderPose::read(entity, frame);
         log::info!(
             "Latency action issued: kind={kind} actor={actor} issue_unix_us={} frame={frame}",
             at.unix_us
@@ -848,7 +847,6 @@ impl LatencyCapture {
             let first_stop_response = action.stop_reaction.first.as_ref().map(|first| {
                 let mut submitted = self.timestamp(first.at, first.frame);
                 submitted["motion"] = json!(first.motion);
-                submitted["sampled_from_frame"] = json!(first.sampled_from_frame);
                 json!({"criterion":action.stop_reaction.criterion,"submitted":submitted,
                     "gpu":first.gpu_completed_at().map(|at|self.timestamp(at,first.frame)),
                     "submitted_ms":latency(first.at),"gpu_ms":first.gpu_completed_at().map(latency)})
@@ -879,8 +877,7 @@ impl LatencyCapture {
                 json!({
                     "submitted":self.timestamp(draw.at,draw.frame),
                     "gpu":draw.gpu_completed_at().map(|at|self.timestamp(at,draw.frame)),
-                    "screen":draw.screen,"body":draw.body,"motion":draw.motion,
-                    "sampled_from_frame":draw.sampled_from_frame
+                    "screen":draw.screen,"body":draw.body,"motion":draw.motion
                 })
             })
             .collect();
@@ -961,15 +958,12 @@ fn observe_stop_reaction(
     {
         return;
     }
-    let first_lowered = *reaction.deceleration_frame.get_or_insert(draw.frame);
-    if draw.sampled_from_frame >= first_lowered {
-        reaction.first = Some(draw.clone());
-        reaction.criterion = Some(if draw.motion.moving == Some(false) {
-            "settled_stop_on_post_deceleration_draw"
-        } else {
-            "lower_applied_speed_with_post_deceleration_endpoints"
-        });
-    }
+    reaction.first = Some(draw.clone());
+    reaction.criterion = Some(if draw.motion.moving == Some(false) {
+        "settled_stop_on_post_deceleration_draw"
+    } else {
+        "lower_applied_speed_after_deceleration"
+    });
 }
 
 /// A catch-up burst is not sustainable cadence. Require a full recent window,
@@ -1072,7 +1066,6 @@ mod tests {
             screen: [x, 0.],
             body: 0,
             motion: test_motion(speed, moving),
-            sampled_from_frame: frame,
             gpu_done: Default::default(),
         };
         let mut preparation = StopPreparation::new(0, start, 0);
@@ -1104,15 +1097,7 @@ mod tests {
             capture.actions[0].stop_reaction.first.is_none(),
             "unchanged speed is insufficient"
         );
-        let mut blended = draw(580, 24, 43., 0.8, false);
-        blended.sampled_from_frame = 23;
-        capture.observe_presented(blended);
-        assert!(
-            capture.actions[0].stop_reaction.first.is_none(),
-            "prior endpoint predates deceleration"
-        );
-        let mut admitted = draw(610, 25, 44., 0.8, false);
-        admitted.sampled_from_frame = 24;
+        let admitted = draw(610, 25, 44., 0.8, false);
         let completed = admitted.gpu_done.clone();
         capture.observe_presented(admitted);
         let first = capture.actions[0].stop_reaction.first.as_ref().unwrap();
@@ -1141,7 +1126,6 @@ mod tests {
                 screen: [0., 0.],
                 body: 0,
                 motion: test_motion(0.0, false),
-                sampled_from_frame: frame,
                 gpu_done: Default::default(),
             };
             capture.observe_presented(draw.clone());
@@ -1160,7 +1144,6 @@ mod tests {
             screen: [0., 0.],
             body: 0,
             motion: test_motion(0.0, false),
-            sampled_from_frame: 70,
             gpu_done: Default::default(),
         });
         assert!(capture.first_move_trace.is_empty());
@@ -1175,7 +1158,6 @@ mod tests {
             screen: [frame as f32, 0.],
             body: 0,
             motion: test_motion(0.7, true),
-            sampled_from_frame: frame.saturating_sub(1),
             gpu_done: Default::default(),
         };
         let mut preparation = StopPreparation::new(0, start, 0);
@@ -1231,7 +1213,6 @@ mod tests {
             screen: [x, 0.],
             body: 0,
             motion: test_motion(fraction, true),
-            sampled_from_frame: frame - 1,
             gpu_done: Default::default(),
         };
         for (name, fractions, positions) in [
@@ -1269,18 +1250,17 @@ mod tests {
     }
 
     #[test]
-    fn stop_braking_requires_fresh_speed_drop_and_post_deceleration_draw_endpoints() {
+    fn stop_braking_requires_a_fresh_speed_drop() {
         let start = ObservationTime::now();
-        let draw = |ms, frame, from, speed| ActorPresentation {
+        let draw = |ms, frame, speed| ActorPresentation {
             at: at(start, ms),
             frame,
             screen: [frame as f32, 0.],
             body: 0,
             motion: test_motion(speed, false),
-            sampled_from_frame: from,
             gpu_done: Default::default(),
         };
-        let mut baseline = draw(100, 10, 9, 0.8);
+        let mut baseline = draw(100, 10, 0.8);
         baseline.motion = test_motion(0.8, true);
         let mut reaction = StopReaction {
             baseline: Some(baseline),
@@ -1289,18 +1269,13 @@ mod tests {
         };
         let mut execution = stop(start, 200, 7, 12);
         execution.motion = Some(test_motion(0.9, false));
-        observe_stop_reaction(&mut reaction, &execution, &draw(250, 13, 12, 0.9));
-        observe_stop_reaction(&mut reaction, &execution, &draw(270, 14, 13, 0.85));
+        observe_stop_reaction(&mut reaction, &execution, &draw(250, 13, 0.9));
+        observe_stop_reaction(&mut reaction, &execution, &draw(270, 14, 0.85));
         assert!(
             reaction.first.is_none(),
             "unchanged speed or only lower than transit speed is insufficient"
         );
-        observe_stop_reaction(&mut reaction, &execution, &draw(300, 15, 14, 0.7));
-        assert!(
-            reaction.first.is_none(),
-            "the blended prior endpoint predates observed deceleration"
-        );
-        let first = draw(340, 16, 15, 0.7);
+        let first = draw(340, 16, 0.7);
         let completed = first.gpu_done.clone();
         observe_stop_reaction(&mut reaction, &execution, &first);
         let observed = reaction.first.as_ref().unwrap();
@@ -1322,7 +1297,6 @@ mod tests {
             screen: [0., 0.],
             body: 0,
             motion: test_motion(0.0, false),
-            sampled_from_frame: 10,
             gpu_done: Default::default(),
         };
         let mut capture = LatencyCapture {
@@ -1365,7 +1339,6 @@ mod tests {
             screen: [0., 0.],
             body: 0,
             motion: test_motion(0.0, false),
-            sampled_from_frame: 4,
             gpu_done: Default::default(),
         };
         view.observe_draw(&draw);
@@ -1554,7 +1527,6 @@ mod tests {
             screen: [x, 0.],
             body: 0,
             motion: test_motion(0.0, false),
-            sampled_from_frame: frame,
             gpu_done: std::sync::Arc::new(std::sync::Mutex::new(Some(at(start, ms + 10)))),
         };
         capture.observe_presented(presentation(150, 12, 1.));
@@ -1597,7 +1569,6 @@ mod tests {
             screen: [0., 0.],
             body: 0,
             motion: motion.clone(),
-            sampled_from_frame: 20,
             gpu_done: std::sync::Arc::new(std::sync::Mutex::new(Some(at(start, ms + 5)))),
         };
         let mut capture = LatencyCapture {

@@ -4,7 +4,7 @@
 use super::lifecycle_tests::{insert_entity, install_common_raw_terrain};
 use super::{PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest, Simulation};
 use crate::map::entities::EntityCategory;
-use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
+use crate::rules::{armor::armor_index, ini_parser::IniFile, ruleset::RuleSet};
 use crate::sim::components::DriveCoord;
 use crate::sim::movement::FacingClass;
 use crate::sim::movement::locomotor::LocomotorState;
@@ -157,8 +157,11 @@ fn lifted_impact_scene(kind: &str, overrides: &str) -> (Simulation, RuleSet, u64
         let warhead = rules.warhead(name).unwrap();
         assert_eq!(warhead.cell_spread_f64, 1.0);
         assert_eq!(warhead.percent_at_max_f64, 1.0);
-        assert_eq!(warhead.verses_f64[0], verses);
-        assert_eq!(warhead.verses_f64[3], 0.0);
+        // Under Ares the native raw11 read is skipped and the extension owns
+        // Verses, so check the interaction both builds consult.
+        let multiplier = |armor| f64::from_bits(warhead.interaction(armor).multiplier().bits());
+        assert_eq!(multiplier(armor_index("none")), verses);
+        assert_eq!(multiplier(armor_index("light")), 0.0);
     }
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 31);
     sim.intern_rule_type_ids(&rules);
@@ -772,15 +775,16 @@ fn rules_for(input: &serde_json::Value) -> RuleSet {
     let mut rules = RuleSet::from_ini(&IniFile::from_str(&format!(
         "[General]\nFlightLevel=1500\n\
          [AudioVisual]\nConditionRed=0.25\nImpactLandSound=RulesLand\nImpactWaterSound=RulesWater\n\
-         [AircraftTypes]\n0=TEST\n[VehicleTypes]\n0=VICTIM\n\
+         [AircraftTypes]\n0=TEST\n[VehicleTypes]\n0=VICTIM\n[Animations]\n0=SGRYSMK1\n\
          [TEST]\nStrength={}\nSpeed={}\nLandable=yes\nPrimary=CrashGun\n\
-         Locomotor={{4A582746-9839-11D1-B709-00A024DDAFD1}}\n{sounds}\
+         Locomotor={{4A582746-9839-11D1-B709-00A024DDAFD1}}\n{sounds}{}\n\
          [VICTIM]\nStrength=1000\nArmor=none\n\
          [CrashGun]\nDamage=150\nWarhead=CrashWH\n\
          [CrashWH]\nCellSpread=1\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
          [Clear]\nTrack=100%\n",
         int(input, "strength", 150),
         int(input, "ini_speed", 14),
+        input["type_extra"].as_str().unwrap_or(""),
     )))
     .unwrap();
     // The oracle records Crash's Stun without running it. VERA's runs, and
@@ -1271,6 +1275,68 @@ fn crash_smoke_matches_native_rows() {
             "{name}"
         );
     }
+}
+
+/// Ares AircraftClass_Update_DamageSmoke (Ares.dll 10047B60, hook
+/// 0x415085), over the native smoke rows: `Smoke.Anim=none` neither puffs
+/// nor draws, and `Smoke.ChanceRed`/`Smoke.ChanceDead` of 100 puff on every
+/// draw.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_smoke_keys_replace_the_aircraft_smoke() {
+    let smoke = |input: &serde_json::Value, extra: &str| {
+        let mut input = input.clone();
+        input["type_extra"] = serde_json::json!(extra);
+        let (mut sim, rules) = fixture(&input);
+        let anims_before = sim.substrate.anims.len();
+        let rng_before = sim.scenario_rng.state();
+        sim.aircraft_crash_smoke(1, &rules);
+        (
+            sim.substrate.anims.len() > anims_before,
+            sim.scenario_rng.state() != rng_before,
+        )
+    };
+    let mut drawn = 0;
+    for row in oracle()["smoke"].as_array().unwrap() {
+        let input = &row["input"];
+        let (_, drew) = smoke(input, "");
+        drawn += usize::from(drew);
+        assert_eq!(smoke(input, "Smoke.Anim=none"), (false, false));
+        assert_eq!(
+            smoke(input, "Smoke.ChanceRed=100\nSmoke.ChanceDead=100"),
+            (drew, drew)
+        );
+    }
+    assert!(drawn > 0);
+}
+
+/// Ares FootClass_Crash_Spin (Ares.dll 10049050, hook 0x4DECAE):
+/// `CrashSpin=no` crashes without the spin and its three draws.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_crash_spin_no_skips_the_spin_draws() {
+    let row = oracle()["crash"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| {
+            row["draws"].as_array().unwrap().len() == 3 && int(&row["input"], "i_know", 0) == 0
+        })
+        .unwrap();
+    let mut input = row["input"].clone();
+    input["crashing"] = serde_json::json!(0);
+    input["type_extra"] = serde_json::json!("CrashSpin=no");
+    let (mut sim, rules) = fixture(&input);
+    let before = sim.scenario_rng.state();
+    assert!(sim.foot_crash(
+        1,
+        None,
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default()
+    ));
+    assert!(sim.substrate.entities.get(1).unwrap().rocking.is_none());
+    assert_eq!(sim.scenario_rng.state(), before);
 }
 
 /// A save in mid-fall restores the latch, its seen edge, the fall counter and

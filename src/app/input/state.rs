@@ -222,6 +222,11 @@ pub(crate) struct MatchInputState {
     /// saved nor simulation state and is discarded when pointer focus changes.
     last_cursor_window: Option<(f32, f32)>,
     pub(crate) keys_held: HashSet<KeyCode>,
+    /// Whether the last window event found the match paused, and the keys
+    /// released since then: a pause admits no held-key change, so its end
+    /// applies them ([`Self::track_pause`]).
+    paused_at_last_event: bool,
+    released_while_paused: HashSet<KeyCode>,
     pub(crate) camera_scroll_keys: super::hotkeys::CameraScrollKeys,
     pub(crate) hotkey_bindings: crate::app::input::hotkeys::HotkeyBindings,
     pub(crate) hotkey_modifiers: ModifiersState,
@@ -230,7 +235,17 @@ pub(crate) struct MatchInputState {
     last_cheer_frame: i32,
     /// Hybrid held/tap state for the retail TypeSelect command.
     pub(crate) type_select: crate::app::types::TypeSelectInputState,
+    /// VERA formation line: its held key and the line being drawn.
+    pub(crate) formation_line: super::formation_line::FormationLineState,
+    /// VERA formation lock: which units keep their places in a move.
+    pub(crate) formation_locks: super::formation_lock::FormationLocks,
     pub(crate) planning: crate::app::input::planning_mode::PlanningInputState,
+    /// VERA ferry order: the armed drop click and the local routes.
+    pub(crate) ferry: super::ferry::FerryState,
+    /// VERA Auto Repair: the Repair orders sent and not yet seen to land.
+    pub(crate) auto_repair: super::auto_repair::AutoRepairState,
+    /// VERA primary rotation: the factory groups that take turns.
+    pub(crate) primary_rotation: super::primary_rotation::PrimaryRotationState,
     pub(crate) category_navigation:
         crate::app::input::dispatch::selection_navigation::CategoryNavigation,
     /// Original CursorCheat toggle A8F7D8, consumed by tactical tooltips.
@@ -256,6 +271,9 @@ pub(crate) struct MatchInputState {
     pub(crate) selection_order: Vec<u64>,
     /// A queued selection command has not yet reached the simulation tick.
     pub(crate) selection_order_pending: bool,
+    /// The ledger as the last frame's reconciliation committed it; the
+    /// per-draw read trusts it while it holds.
+    pub(crate) selection_committed: Option<crate::app::input::dispatch::CommittedSelection>,
     /// Existing selection paths speak by default; held TypeSelect batches
     /// temporarily suppress and restore this latch.
     pub(crate) selection_voice_enabled: bool,
@@ -372,6 +390,11 @@ impl MatchInputState {
         self.last_cursor_window = Some(point);
     }
 
+    /// The OS pointer's last position in window pixels, while one is known.
+    pub(crate) fn pointer_in_window(&self) -> Option<(f32, f32)> {
+        self.last_cursor_window
+    }
+
     /// Begin a fresh physical pointer history after focus or client entry changes.
     pub(crate) fn reset_window_cursor_motion(&mut self) {
         self.last_cursor_window = None;
@@ -449,6 +472,7 @@ impl MatchInputState {
             selection_state: crate::sim::selection::SelectionState::new(),
             selection_order: Vec::new(),
             selection_order_pending: false,
+            selection_committed: None,
             selection_voice_enabled: true,
             queued_order_mode: crate::app::types::OrderMode::Move,
             last_control_group_press: None,
@@ -472,12 +496,19 @@ impl MatchInputState {
             cursor_zoom: None,
             last_cursor_window: None,
             keys_held: HashSet::new(),
+            paused_at_last_event: false,
+            released_while_paused: HashSet::new(),
             camera_scroll_keys: Default::default(),
             hotkey_bindings,
             hotkey_modifiers: ModifiersState::empty(),
             last_cheer_frame: -100,
             type_select: crate::app::types::TypeSelectInputState::default(),
+            formation_line: super::formation_line::FormationLineState::default(),
+            formation_locks: super::formation_lock::FormationLocks::default(),
             planning: Default::default(),
+            ferry: Default::default(),
+            auto_repair: Default::default(),
+            primary_rotation: Default::default(),
             category_navigation: Default::default(),
             cursor_coordinates: false,
             retail_screenshot_requested: false,
@@ -689,6 +720,12 @@ impl MatchInputState {
     pub(crate) fn reset_targeting_for_new_world(&mut self) {
         self.reset_cheer_clock();
         self.planning.reset();
+        self.formation_line = Default::default();
+        self.formation_locks.clear();
+        // Its building ids and frames belong to the world that ended.
+        self.auto_repair = Default::default();
+        // Its factory ids and counts belong to the world that ended.
+        self.primary_rotation = Default::default();
         self.targeting_mode = None;
         self.building_placement_preview = None;
         self.saved_building_placement = None;
@@ -752,6 +789,7 @@ impl MatchInputState {
     pub(crate) fn cancel_tactical_drag(&mut self) {
         self.cancel_minimap_press();
         self.selection_state.cancel_drag();
+        self.formation_line.cancel();
         self.tactical_mouse.cancel_mouse_drag();
         // The touch gesture is the mapper's; without this a finger still down
         // when the drag is torn down would deliver its release into the screen
@@ -768,12 +806,53 @@ impl MatchInputState {
         self.cancel_tactical_drag();
     }
 
+    /// Follow the pause across window events. While paused (Esc menu, shared
+    /// pause, radar movie) gameplay admits no key or modifier change, so a key
+    /// let go then would stay held after the pause: scrolling by itself, or
+    /// force-fire with no Ctrl down. Nothing more is admitted while paused;
+    /// when the pause ends, the gameplay modifiers take the live ones and
+    /// each key released meanwhile leaves `keys_held`, the scroll keys and
+    /// type-select (without its tap). A key pressed again and still down
+    /// stays held. `key` is this event's physical key edge, if it is one.
+    /// VERA-only: native polls the current keys once its gates lift.
+    pub(crate) fn track_pause(
+        &mut self,
+        paused: bool,
+        live_modifiers: ModifiersState,
+        key: Option<(KeyCode, bool)>,
+    ) {
+        if self.paused_at_last_event && !paused {
+            self.hotkey_modifiers = live_modifiers;
+            for released in std::mem::take(&mut self.released_while_paused) {
+                self.camera_scroll_keys.release(released);
+                self.keys_held.remove(&released);
+                if let Some(scroll) = super::hotkeys::physical_scroll_key(released) {
+                    self.keys_held.remove(&scroll);
+                }
+                if self.type_select.owns_key(released) {
+                    self.type_select.clear_held();
+                }
+                self.formation_line.release_key(released);
+            }
+        }
+        self.paused_at_last_event = paused;
+        if paused && let Some((code, pressed)) = key {
+            if pressed {
+                self.released_while_paused.remove(&code);
+            } else {
+                self.released_while_paused.insert(code);
+            }
+        }
+    }
+
     /// KeyboardClear54F720 drains accepted input and Lock/Unlock clear the
     /// command latch. Edges are synchronous in this app, so no second ring
     /// exists; discard only app command latches. Physical key state remains
     /// owned by ordinary press/release delivery, not this bounded receipt.
     pub(crate) fn clear_command_latches(&mut self) {
         self.type_select.clear_held();
+        self.formation_line.clear_key();
+        self.ferry.disarm();
         // A command-latch clear does not end the local planning mode. Keep
         // its physical release owner so an input lock cannot strand paths.
         self.queued_order_mode = crate::app::types::OrderMode::Move;
@@ -840,3 +919,43 @@ mod house_cheer_tests;
 #[cfg(test)]
 #[path = "house_cheer_retail_tests.rs"]
 mod house_cheer_retail_tests;
+
+#[cfg(test)]
+mod pause_resync_tests {
+    use super::*;
+
+    #[test]
+    fn keys_and_modifiers_released_while_paused_are_not_held_after_the_pause() {
+        let mut input = MatchInputState::new(Default::default());
+        let now = crate::util::time::Instant::now();
+        // Held going into the pause: Ctrl, an arrow, a second arrow, T.
+        input.hotkey_modifiers = ModifiersState::CONTROL;
+        input.keys_held.insert(KeyCode::ArrowLeft);
+        input.keys_held.insert(KeyCode::ArrowUp);
+        input.type_select.press(KeyCode::KeyT, now, false);
+        input.track_pause(true, ModifiersState::CONTROL, None);
+        // Released under the Esc menu; the pause itself changes nothing.
+        input.track_pause(
+            true,
+            ModifiersState::empty(),
+            Some((KeyCode::ControlLeft, false)),
+        );
+        input.track_pause(
+            true,
+            ModifiersState::empty(),
+            Some((KeyCode::ArrowLeft, false)),
+        );
+        input.track_pause(true, ModifiersState::empty(), Some((KeyCode::KeyT, false)));
+        assert!(input.keys_held.contains(&KeyCode::ArrowLeft));
+        assert_eq!(input.hotkey_modifiers, ModifiersState::CONTROL);
+        // The first event after the pause applies the live state.
+        input.track_pause(false, ModifiersState::empty(), None);
+        assert!(input.hotkey_modifiers.is_empty());
+        assert!(!input.keys_held.contains(&KeyCode::ArrowLeft));
+        assert!(!input.type_select.held());
+        assert!(
+            input.keys_held.contains(&KeyCode::ArrowUp),
+            "a key still down keeps scrolling"
+        );
+    }
+}

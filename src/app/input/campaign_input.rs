@@ -9,7 +9,7 @@ pub(crate) fn is_locked(state: &AppState) -> bool {
     state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_some_and(|runtime| {
             runtime.simulation.session().input_locked()
                 || (runtime.simulation.session().scenario_paused()

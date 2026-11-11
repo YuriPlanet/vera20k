@@ -1,7 +1,7 @@
 # VERA's interface fonts
 
 The fonts VERA draws its interface text with (`src/render/text_engine/`), all
-under the SIL Open Font License 1.1, which lets them ship inside the program
+under the SIL Open Font License 1.1, which lets them ship with the program
 and must travel with them. The Noto fonts are taken unmodified: `OFL.txt`
 (Noto Sans's copy; every Noto Sans family carries the same licence) covers the
 Noto Sans families and `OFL-CJK.txt` Noto Sans CJK. `Unifont-CJK-15.bin` comes
@@ -51,6 +51,13 @@ db2bc1c62fae2df814edff7705ddb560d47d742274ed9947b7ddf1a6cb1c17b6  NotoSansThai-V
 ```
 
 How each script is sized against GAME.FNT is in `text_engine/fonts.rs`.
+
+The browser build embeds `NotoSans-VF.ttf` and `Unifont-CJK-15.bin` only.
+`tools/wasm/build.py` copies the `.ttf` and `.otf` files and their licences to
+the package's `pkg/fonts/`, and the engine fetches each other font from there
+the first time text needs a character that GAME.FNT lacks and that font is
+the first to draw (`text_engine/web_fonts.rs`); `build.rs` reads which
+characters each font draws from its character map.
 
 ## Unifont-CJK-15.bin
 

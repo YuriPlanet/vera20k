@@ -18,7 +18,7 @@
 //! `--scenario match` plays the middle of a multiplayer match instead (see
 //! `sim_bench_match`): the map loads as a Battle against `--computers`
 //! computer houses (by default the most the lobby admits on the map, at most
-//! 7), the other start waypoints get human players' houses, and every house
+//! 29), the other start waypoints get human players' houses, and every house
 //! has a finished base, harvesters, factories that keep building and a mixed
 //! army. Their own AI plays the computer houses; a script plays the human
 //! ones, sending their armies at the nearest bases in squads until those
@@ -57,6 +57,22 @@
 //! flat 500x500-cell map used for 20,000-unit, 30-house march runs, and with
 //! `--starts 30` the match map with ore and trees. Add `--size 500` for a
 //! literal `Size=0,0,500,500` map using the extended cell array.
+//!
+//! The standard battle benchmark is 1v29: a skirmish against 29 computer
+//! houses on the 30-start match map, timed at the client's step:
+//! `python -m tools.scale_map target/scale/match30.map --starts 30`, then
+//! `sim-bench --map target/scale/match30.map --scenario skirmish
+//! --client-timing --frame-profile`. The map's `MaxPlayers=30` lets the
+//! lobby seat them all.
+//!
+//! `--presentation-frame` keeps a copy of the world after every frame, as the
+//! client's simulation thread does for drawing (docs/sim-thread.md), and
+//! counts the copy and the drop of the previous one in the frame's time.
+//!
+//! Idle objects sleep as in a real match (`sim::world::idle_sleep`):
+//! `--no-sleep` runs every turn, which must give the same hashes, and
+//! `--sleep-check` runs every turn sleeping would skip and stops if one
+//! changed anything. The summary prints how many visits were counted.
 //!
 //! The simulation batches its path searches and target scans as a real
 //! match does; `--serial-paths` searches and `--serial-scans` scans in native
@@ -134,10 +150,13 @@ struct Args {
     csv: Option<PathBuf>,
     serial_paths: bool,
     serial_scans: bool,
+    no_sleep: bool,
+    sleep_check: bool,
     frame_profile: bool,
     lan: bool,
     frame_hashes: Option<PathBuf>,
     client_timing: bool,
+    presentation_frame: bool,
 }
 
 impl Args {
@@ -174,10 +193,13 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
         csv: None,
         serial_paths: false,
         serial_scans: false,
+        no_sleep: false,
+        sleep_check: false,
         frame_profile: false,
         lan: false,
         frame_hashes: None,
         client_timing: false,
+        presentation_frame: false,
     };
     let mut march_flag = None;
     while let Some(flag) = argv.next() {
@@ -232,6 +254,9 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
             "--frame-hashes" => args.frame_hashes = Some(PathBuf::from(value()?)),
             "--client-timing" => args.client_timing = true,
             "--serial-scans" => args.serial_scans = true,
+            "--no-sleep" => args.no_sleep = true,
+            "--sleep-check" => args.sleep_check = true,
+            "--presentation-frame" => args.presentation_frame = true,
             other => return Err(format!("unrecognised argument {other}")),
         }
     }
@@ -256,8 +281,9 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
 
 /// `--computers`, by default the most the skirmish lobby admits on the map:
 /// it refuses more players than the map's capacity (`MapCapacityExceeded`,
-/// `TXT_SCENARIO_TOO_SMALL`), and a Battle has at most seven computer houses.
-/// More would seat houses the map has no start for.
+/// `TXT_SCENARIO_TOO_SMALL`). More would seat houses the map has no start
+/// for. A map's `[Basic] MaxPlayers` (9 to 30) raises it past the eight
+/// retail starts, up to 29 computer houses beside the local one.
 fn seated_computers(args: &Args) -> Result<usize, String> {
     let assets =
         AssetManager::new(&args.ra2_dir, MediaArchiveMode::STOCK_DIGITAL).map_err(|error| {
@@ -479,6 +505,9 @@ struct Bench<'a> {
     runtime: &'a mut SimRuntime,
     plan: &'a mut Plan,
     tick_ms: u32,
+    /// `--presentation-frame`: whether each frame keeps a copy of the world.
+    keep_frame: bool,
+    frame: Option<SimRuntime>,
 }
 
 impl Frames for Bench<'_> {
@@ -491,9 +520,16 @@ impl Frames for Bench<'_> {
     }
 
     fn advance(&mut self, commands: &[CommandEnvelope]) -> Result<Option<u32>, String> {
-        self.runtime
+        let checksum = self
+            .runtime
             .advance_frame_for_tooling(commands, self.tick_ms)
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        if self.keep_frame {
+            // As the client's simulation host does: the new copy replaces
+            // the previous tick's, inside the frame's time.
+            self.frame = Some(self.runtime.clone());
+        }
+        Ok(checksum)
     }
 
     fn state_hash(&self) -> u64 {
@@ -654,7 +690,7 @@ fn main() -> Result<(), String> {
             eprintln!(
                 "usage: sim-bench [--ra2-dir <retail path>] [--map Death.mmx] \
                  [--scenario march|match|skirmish] [--seed S] [--units 20000] [--houses N] \
-                 [--computers N (match, skirmish; default the map's most, at most 7)] \
+                 [--computers N (match, skirmish; default the map's most, at most 29)] \
                  [--ticks 300 (match: 1800, skirmish: 9000)] \
                  [--types E1,E2,MTNK,HTNK] [--order-spread 30] [--return-at T] (march) \
                  [--hash-every N] [--frame-hash-every 15] [--csv <path>] [--serial-paths] [--serial-scans] \
@@ -692,6 +728,8 @@ fn main() -> Result<(), String> {
     if !args.serial_scans {
         scenario.runtime.simulation.batch_target_scans();
     }
+    scenario.runtime.simulation.sleep_idle_objects(!args.no_sleep);
+    scenario.runtime.simulation.check_idle_sleep(args.sleep_check);
     scenario
         .runtime
         .simulation
@@ -763,6 +801,8 @@ fn main() -> Result<(), String> {
             runtime: &mut *runtime,
             plan: &mut plan,
             tick_ms,
+            keep_frame: args.presentation_frame,
+            frame: None,
         },
         ticks,
         args.hash_every,
@@ -787,6 +827,8 @@ fn main() -> Result<(), String> {
     frame_hashes_written?;
     let final_hash = runtime.simulation.state_hash();
     println!("final_hash={final_hash:016x}");
+    let (asleep, counted) = runtime.simulation.idle_sleep_counts();
+    println!("idle_sleep asleep_now={asleep} visits_counted={counted}");
     Ok(())
 }
 

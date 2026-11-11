@@ -196,11 +196,17 @@ pub(super) fn shell_content_fallback_rect(layout: &SkirmishShellLayout) -> RectP
     )
 }
 
+/// VERA: how bright Choose Map draws its background art, so list text
+/// reads over it. gamemd draws it at full brightness, as the saved-seed
+/// browser on the same art still does.
+pub(super) const CHOOSE_MAP_BACKGROUND_BRIGHTNESS: f32 = 0.8;
+
 pub(super) fn push_choose_map_background_instances(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
     shell_layout: &SkirmishShellLayout,
     modal_layout: &ChooseMapModalLayout,
+    brightness: f32,
 ) -> BackdropInteriorPaint {
     let background = choose_map_background_entry(atlas, modal_layout);
     let interior = backdrop_interior(background.is_some());
@@ -216,6 +222,9 @@ pub(super) fn push_choose_map_background_instances(
             modal_layout.scale,
             SHELL_PARENT_BACKGROUND_DEPTH,
         );
+        if let Some(art) = out.last_mut() {
+            art.tint = [brightness; 3];
+        }
     } else {
         let fallback = shell_content_fallback_rect(shell_layout);
         push_solid_rect(
@@ -239,6 +248,7 @@ pub(super) fn push_choose_map_background_instances(
 pub(super) fn push_choose_map_modal_control_instances(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
+    font: &crate::render::bit_font::BitFont,
     layout: &ChooseMapModalLayout,
     interior: BackdropInteriorPaint,
     shell: &SkirmishShellState,
@@ -268,6 +278,29 @@ pub(super) fn push_choose_map_modal_control_instances(
         interior.paints_solid_fill(),
         layout.scale,
     );
+    // VERA: the search box wears the list's frame, with a caret after its
+    // text. It has no focus to lose, so the caret does not blink.
+    if interior.paints_solid_fill() {
+        push_solid_rect(
+            out,
+            atlas,
+            layout.map_search,
+            SHELL_MODAL_PANEL_RGB,
+            SHELL_DROPDOWN_DEPTH - 0.00010,
+        );
+    }
+    super::list::paint_list_frame(out, atlas, layout.map_search);
+    if let Some(caret) =
+        super::text::map_search_caret_rect(font, &modal.search, layout.map_search, layout.scale)
+    {
+        push_solid_rect(
+            out,
+            atlas,
+            caret,
+            SHELL_LABEL_TEXT_RGB,
+            SHELL_DROPDOWN_DEPTH - 0.00012,
+        );
+    }
     // While a slide runs the column replaces the buttons and the preview
     // static is validate-only (`0x00606800`).
     if !steady {
@@ -284,6 +317,7 @@ pub(super) fn push_choose_map_modal_control_instances(
             layout.create_random_map_button,
             ChooseMapModalButton::CreateRandomMap0x583,
         ),
+        (layout.favorite_button, ChooseMapModalButton::Favorite),
     ] {
         push_right_panel_button_shp(
             out,
@@ -468,7 +502,32 @@ pub(super) fn push_random_map_setup_modal_control_instances(
     let chrome = atlas.control_chrome();
     // Rows 0..4 are combos; row 5 is the players trackbar. A collapsed combo
     // occupies only its face, not the dropdown extent the resource reserves.
-    for (row, control) in SETUP_COMBO_ROWS.iter().enumerate() {
+    // VERA: the Advanced view replaces the option rows with its sliders.
+    if modal.advanced {
+        for field in crate::ui::skirmish_shell::AdvancedField::ALL {
+            let rect = layout.advanced_control_rects[field.row()];
+            paint_control(
+                out,
+                &chrome,
+                ControlPaint::Trackbar {
+                    rect,
+                    thumb_left: crate::ui::skirmish_shell::ADVANCED_RANGE.thumb_left_in(
+                        modal.advanced_value(field),
+                        rect,
+                        layout.scale,
+                    ),
+                    plaque: true,
+                    disabled: !modal.is_enabled(RandomMapSetupControl::Advanced(field)),
+                },
+                layout.scale,
+            );
+        }
+    }
+    for (row, control) in SETUP_COMBO_ROWS
+        .iter()
+        .enumerate()
+        .filter(|_| !modal.advanced)
+    {
         let rect = layout.control_rects[row];
         let face = combo_face_rect(rect, layout.scale);
         // Native owner-draw controls preserve their composed background. The
@@ -496,21 +555,38 @@ pub(super) fn push_random_map_setup_modal_control_instances(
         );
     }
     let players = layout.control_rects[PLAYERS_ROW];
-    paint_control(
-        out,
-        &chrome,
-        ControlPaint::Trackbar {
-            rect: players,
-            thumb_left: modal.players_range().thumb_left_in(
-                modal.options.num_players,
-                players,
-                layout.scale,
-            ),
-            plaque: true,
-            disabled: false,
-        },
-        layout.scale,
-    );
+    if !modal.advanced {
+        paint_control(
+            out,
+            &chrome,
+            ControlPaint::Trackbar {
+                rect: players,
+                thumb_left: modal.players_range().thumb_left_in(
+                    modal.options.num_players,
+                    players,
+                    layout.scale,
+                ),
+                plaque: true,
+                disabled: false,
+            },
+            layout.scale,
+        );
+    }
+
+    // Ares' Urban Areas box (control 5000 of Ares' dialog 261), drawn as the
+    // shell's own checkbox; the Advanced view's seventh slider takes its place.
+    #[cfg(feature = "ares")]
+    if !modal.advanced {
+        paint_control(
+            out,
+            &chrome,
+            ControlPaint::Checkbox {
+                checked: modal.options.urban_areas,
+                rect: layout.urban_areas,
+            },
+            layout.scale,
+        );
+    }
 
     // Surprise Me and Generate are owner-draw type 3 for this dialog, so they
     // take the MNBTTN modal button art rather than the generic PCX slices --
@@ -562,10 +638,12 @@ pub(super) fn push_random_map_setup_modal_control_instances(
         (layout.save, RandomMapSetupControl::Save0x6c3),
         (layout.delete, RandomMapSetupControl::Delete0x6c4),
         (layout.cancel, RandomMapSetupControl::Cancel0x5c0),
+        (layout.advanced, RandomMapSetupControl::AdvancedToggle),
     ]
     .into_iter()
-    .filter(|_| steady)
-    {
+    .filter(|(_, control)| {
+        steady && (*control != RandomMapSetupControl::AdvancedToggle || modal.extended)
+    }) {
         push_right_panel_button_shp(
             out,
             atlas,

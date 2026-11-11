@@ -64,6 +64,7 @@ fn playfield_projection_grid(side: u16) -> TerrainGrid {
         origin_x: 0.0,
         origin_y: 0.0,
         bridge_middle_tiles: None,
+        deformation_tiles: Vec::new(),
     }
 }
 
@@ -711,7 +712,7 @@ fn radar_pixel_radar_invisible_precedes_radar_visible_but_alliance_restores() {
         &houses,
         Some(local),
         &fog,
-        &alliances,
+        &test_alliances(alliances.clone()),
         true,
         true,
         Some(&rules),
@@ -729,7 +730,7 @@ fn radar_pixel_radar_invisible_precedes_radar_visible_but_alliance_restores() {
         &houses,
         Some(local),
         &fog,
-        &alliances,
+        &test_alliances(alliances.clone()),
         true,
         true,
         Some(&rules),
@@ -751,7 +752,7 @@ fn radar_pixel_radar_invisible_precedes_radar_visible_but_alliance_restores() {
         &houses,
         Some(local),
         &fog,
-        &alliances,
+        &test_alliances(alliances.clone()),
         true,
         true,
         Some(&rules),

@@ -19,6 +19,8 @@
 
     <application
         android:label="VERA20K"
+        android:icon="@mipmap/ic_launcher_retail"
+        android:roundIcon="@mipmap/ic_launcher_retail"
         android:hasCode="true"
         android:largeHeap="true"
         android:extractNativeLibs="false"
@@ -42,12 +44,55 @@
             <meta-data
                 android:name="android.app.lib_name"
                 android:value="vera20k_android" />
+        </activity>
 
+        <!-- Two launcher entries, one enabled at a time. A launcher icon is a
+             resource compiled into the package, so the VERA Icon box cannot
+             change it directly: `VeraActivity.applyAppIcon` enables the chosen
+             alias and disables the other through PackageManager. The activity
+             itself carries no LAUNCHER filter, or the app would show twice.
+
+             NativeActivity reads `android.app.lib_name` from the component it
+             was launched through, and an alias does not inherit the target's
+             meta-data: without this copy on each alias the process dies in
+             NativeActivity.onCreate looking for the default `libmain.so`. -->
+        <activity-alias
+            android:name="org.vera20k.LauncherRetail"
+            android:targetActivity="org.vera20k.VeraActivity"
+            android:exported="true"
+            android:enabled="true"
+            android:icon="@mipmap/ic_launcher_retail"
+            android:roundIcon="@mipmap/ic_launcher_retail"
+            android:theme="@style/Theme.Vera20k.RetailSplash"
+            android:label="VERA20K">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+
+            <meta-data
+                android:name="android.app.lib_name"
+                android:value="vera20k_android" />
+        </activity-alias>
+
+        <activity-alias
+            android:name="org.vera20k.LauncherVera"
+            android:targetActivity="org.vera20k.VeraActivity"
+            android:exported="true"
+            android:enabled="false"
+            android:icon="@mipmap/ic_launcher_vera"
+            android:roundIcon="@mipmap/ic_launcher_vera"
+            android:theme="@style/Theme.Vera20k.VeraSplash"
+            android:label="VERA20K">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.app.lib_name"
+                android:value="vera20k_android" />
+        </activity-alias>
     </application>
 
 </manifest>

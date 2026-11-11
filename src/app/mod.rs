@@ -54,6 +54,7 @@ pub(crate) mod chrono_screen;
 mod cncnet;
 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
 mod browser_lifecycle;
+#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
 pub(crate) use cncnet::SpawnAction;
 pub(crate) mod commander_feedback;
 mod cooperative_round;
@@ -79,6 +80,7 @@ pub(crate) mod match_audio;
 pub mod match_bootstrap;
 pub(crate) mod match_diagnostics;
 pub(crate) mod match_runtime;
+pub(crate) mod mods;
 pub(crate) mod movie_playback;
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 mod network_goodbye;
@@ -99,6 +101,7 @@ mod shell_campaign;
 pub(crate) mod shell_lan;
 mod shell_load_saved_game;
 mod shell_main_menu;
+mod shell_menu;
 mod shell_movies_credits;
 pub(crate) mod shell_network_setup;
 mod shell_random_map;
@@ -165,9 +168,10 @@ pub(crate) use state::{AppState, PlatformState, reset_scenario_exit_runtime};
 pub struct App {
     state: Option<AppState>,
     pending_initialization: Option<initialize::InitializationJob>,
-    shell_capture: Option<crate::app::diagnostics::shell_capture::ShellCaptureSession>,
+    shell_capture:
+        hidden_run::DesktopRun<crate::app::diagnostics::shell_capture::ShellCaptureSession>,
     /// A tactical capture or a map picture, which the app drives itself.
-    hidden_run: Option<hidden_run::HiddenRun>,
+    hidden_run: hidden_run::DesktopRun<hidden_run::HiddenRun>,
     /// Render admission for hidden captures; service events may wake earlier.
     capture_render_not_before: Option<Instant>,
     /// Retained until `resumed()` so the profile's pre-window Video read can
@@ -178,6 +182,8 @@ pub struct App {
     spawn_result_path: Option<std::path::PathBuf>,
     replay_request: Option<crate::app::frontend::launch::ReplayLaunchRequest>,
     startup_failure: Option<String>,
+    /// `--mod <folder>` or `--no-mod`, in place of config.toml's choice.
+    mod_switch: Option<mods::ModSwitch>,
     /// Make sure config.toml names a game folder before the window opens
     /// ([`app_bundle`]).
     ask_for_game_folder: bool,
@@ -227,14 +233,15 @@ impl App {
         Self {
             state: None,
             pending_initialization: None,
-            shell_capture: None,
-            hidden_run: None,
+            shell_capture: hidden_run::DesktopRun::NONE,
+            hidden_run: hidden_run::DesktopRun::NONE,
             capture_render_not_before: None,
             startup_options,
             spawn_request: None,
             spawn_result_path: None,
             replay_request: None,
             startup_failure: None,
+            mod_switch: None,
             ask_for_game_folder: false,
             dispatching_touch: false,
         }
@@ -246,16 +253,17 @@ impl App {
         Self {
             state: None,
             pending_initialization: None,
-            shell_capture: Some(
+            shell_capture: hidden_run::DesktopRun::new(
                 crate::app::diagnostics::shell_capture::ShellCaptureSession::new(request),
             ),
-            hidden_run: None,
+            hidden_run: hidden_run::DesktopRun::NONE,
             capture_render_not_before: None,
             startup_options: crate::app::frontend::startup_options::RetailStartupOptions::default(),
             spawn_request: None,
             spawn_result_path: None,
             replay_request: None,
             startup_failure: None,
+            mod_switch: None,
             ask_for_game_folder: false,
             dispatching_touch: false,
         }
@@ -267,8 +275,8 @@ impl App {
         Self {
             state: None,
             pending_initialization: None,
-            shell_capture: None,
-            hidden_run: Some(hidden_run::HiddenRun::Capture(Box::new(
+            shell_capture: hidden_run::DesktopRun::NONE,
+            hidden_run: hidden_run::DesktopRun::new(hidden_run::HiddenRun::Capture(Box::new(
                 crate::app::diagnostics::tactical_capture::session::TacticalCaptureSession::new(
                     request,
                 ),
@@ -279,6 +287,7 @@ impl App {
             spawn_result_path: None,
             replay_request: None,
             startup_failure: None,
+            mod_switch: None,
             ask_for_game_folder: false,
             dispatching_touch: false,
         }
@@ -289,8 +298,8 @@ impl App {
         Self {
             state: None,
             pending_initialization: None,
-            shell_capture: None,
-            hidden_run: Some(hidden_run::HiddenRun::Picture(Box::new(
+            shell_capture: hidden_run::DesktopRun::NONE,
+            hidden_run: hidden_run::DesktopRun::new(hidden_run::HiddenRun::Picture(Box::new(
                 crate::app::map_picture::session::MapPictureSession::new(request),
             ))),
             capture_render_not_before: None,
@@ -302,6 +311,7 @@ impl App {
             spawn_result_path: None,
             replay_request: None,
             startup_failure: None,
+            mod_switch: None,
             ask_for_game_folder: false,
             dispatching_touch: false,
         }
@@ -312,6 +322,12 @@ impl App {
     /// AppImage.
     pub fn ask_for_game_folder_first(&mut self) {
         self.ask_for_game_folder = true;
+    }
+
+    /// The launch's own mod choice (`mods::take_switch`), before the window
+    /// opens.
+    pub(crate) fn set_mod_switch(&mut self, switch: Option<mods::ModSwitch>) {
+        self.mod_switch = switch;
     }
 
     pub fn new_replay(request: crate::app::frontend::launch::ReplayLaunchRequest) -> Self {

@@ -5,8 +5,8 @@
 //! `wol`; every shared helper branches on GameMode like the native ones.
 
 mod actions;
-pub(crate) mod bans;
 pub(crate) mod agreement;
+pub(crate) mod bans;
 mod cooperative;
 pub(crate) use cooperative::{
     CooperativeResume, chooser_rows as cooperative_chooser_rows, resume as resume_cooperative,
@@ -744,8 +744,8 @@ impl App {
             wol::resident_seed(state)
         } else {
             let main = crate::app::state::process_main_draws(
-                state.match_state.sim_runtime.as_mut(),
-                &mut state.frontend.frontend_main_rng,
+                state.match_state.sim_runtime.runtime(),
+                &state.frontend.frontend_main_rng,
             );
             initialize_host_seed(&main, &mut state.frontend.legacy_crt_rng)
         };

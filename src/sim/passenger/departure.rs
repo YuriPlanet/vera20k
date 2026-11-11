@@ -27,6 +27,10 @@ pub enum DepartureRoute {
     /// Hospital44B9A8/44B9E0 removes Cargo's head and ignores ExitObject's
     /// return. It neither retries nor reattaches a refused exit.
     Hospital,
+    /// A Carryall's drop (`AircraftClass::Carryall_Unload @ 0x00416AF0`):
+    /// CargoClass's own removal, so no gunner reset, and a refused Unlimbo
+    /// puts the cargo back at the head (`0x00416C4E`).
+    Carryall,
     /// A dying Unit's passenger (`UnitClass::ReceiveDamage` `0x00737FD4`,
     /// `FootClass::RemoveFirstPassenger @ 0x004DE710`). Its attempt never
     /// fails: a refused passenger dies instead of re-boarding.
@@ -161,7 +165,10 @@ fn restore_departure(
         DepartureRoute::DeathEscape | DepartureRoute::Hospital => {
             unreachable!("this departure route never reattaches its passenger")
         }
-        DepartureRoute::Vehicle | DepartureRoute::LandedAircraft | DepartureRoute::Absorber => {
+        DepartureRoute::Vehicle
+        | DepartureRoute::LandedAircraft
+        | DepartureRoute::Absorber
+        | DepartureRoute::Carryall => {
             assert!(
                 matches!(
                     failure,

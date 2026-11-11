@@ -104,8 +104,15 @@ fn entity_terrain_correction(entity: &GameEntity) -> i32 {
 /// `ObjectClass__GetCoords` at `0x005F65A0`, which copies exact XYZ and adds no
 /// walking sine bob. Grounded objects therefore have zero additional lift.
 pub fn height_lift_px(entity: &GameEntity) -> f32 {
-    (crate::util::native_x87::adjust_for_z_standard(entity.position.exact_z_leptons().unwrap_or(0))
-        + entity_terrain_correction(entity)) as f32
+    let z = entity.position.exact_z_leptons().unwrap_or(0);
+    // Standard AdjustForZ(0) is exactly 0, including its +0.5/chop. This
+    // common ground-level case need not enter the x87 evaluator.
+    let lift = if z == 0 {
+        0
+    } else {
+        crate::util::native_x87::adjust_for_z_standard(z)
+    };
+    (lift + entity_terrain_correction(entity)) as f32
 }
 
 /// Where this entity is drawn, in world-space screen pixels.
@@ -123,27 +130,6 @@ pub fn screen_position(entity: &GameEntity) -> (f32, f32) {
         ground_screen_position(&entity.position)
     };
     (sx, sy - height_lift_px(entity))
-}
-
-/// Both render anchors for a consumer that needs position AND lift. Exact-Z
-/// objects share the same native AdjustForZ evaluation rather than requesting
-/// it again through screen_lift_px. Keep the stored-level fallback unchanged:
-/// its projection and depth lift are deliberately different paths.
-pub(crate) fn screen_position_and_lift(entity: &GameEntity) -> ((f32, f32), i32) {
-    if let Some(z) = entity.position.exact_z_leptons() {
-        let (sx, sy) = z_free_screen_position(&entity.position);
-        // Standard AdjustForZ(0) is exactly 0, including its +0.5/chop.
-        // This common ground-level case need not enter the x87 evaluator.
-        let lift = if z == 0 {
-            0
-        } else {
-            crate::util::native_x87::adjust_for_z_standard(z)
-        };
-        let lift = lift + entity_terrain_correction(entity);
-        ((sx, sy - lift as f32), lift)
-    } else {
-        (screen_position(entity), screen_lift_px(entity))
-    }
 }
 
 /// [`screen_position`] of `entity`'s coordinate moved `distance` leptons along
@@ -289,11 +275,10 @@ mod tests {
         for (level, exact_z) in [(14, Some(1456)), (36, Some(3744)), (36, None)] {
             building.position.set_z_for_test(level);
             building.position.set_exact_z_leptons_for_test(exact_z);
-            let ((x, y), lift) = screen_position_and_lift(&building);
+            let (x, y) = screen_position(&building);
+            let lift = screen_lift_px(&building);
             let (tile_x, tile_y) = crate::map::terrain::iso_to_screen(189, 258, level);
             assert_eq!(building_art_anchor(x, y), (tile_x + 30.0, tile_y));
-            assert_eq!(screen_position(&building), (x, y));
-            assert_eq!(screen_lift_px(&building), lift);
             assert_eq!(
                 y + lift as f32,
                 z_free_screen_position(&building.position).1

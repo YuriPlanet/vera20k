@@ -53,7 +53,7 @@ impl Simulation {
             .ok_or("rally search lacks terrain")?;
         let zones = self
             .zone_grid
-            .as_ref()
+            .as_deref()
             .ok_or("rally input lacks native zones")?;
         let bounds = self
             .playfield_bounds
@@ -221,6 +221,8 @@ fn resolve_rally_cell_click(
             footprint: NearbyFootprint::SINGLE,
             allow_bridge_cells: true,
             check_height: false,
+            require_burrowable: false,
+            burrowing_contents: None,
             check_occupancy: false,
             radius_cap: map_owned_radius_cap(size.0, size.1),
             target_cell: None,
@@ -296,7 +298,7 @@ mod tests {
             actor.set_archive_target(Some(TargetKind::Cell(6, 5)));
             sim.substrate.entities.insert(actor);
             sim.resolved_terrain = Some(terrain);
-            sim.zone_grid = Some(zones);
+            sim.zone_grid = Some(zones.into());
             sim.substrate.raw_cell_occupation = raw;
             sim.playfield_bounds = Some(bounds());
             sim.playfield_size_height = Some(8);

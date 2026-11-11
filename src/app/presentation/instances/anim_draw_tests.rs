@@ -387,27 +387,18 @@ fn free_anim_draw(
     free_anim_draw_with("", 0, empty_body, None)
 }
 
-/// Flat ground `ground_level` levels up under the anim, which then rises
-/// `rise` leptons over one observed tick; the draw samples half way.
-#[derive(Clone, Copy)]
-struct RaisedRise {
-    ground_level: u8,
-    rise: i32,
-}
-
 /// One free ANIM, `extra_keys` appended to its art, constructed `level`
 /// height levels up, through the production Display caller: mapless (ground
-/// 0) and uninterpolated without `raised`.
+/// 0) without `ground_level`.
 fn free_anim_draw_with(
     extra_keys: &str,
     level: u8,
     empty_body: bool,
-    raised: Option<RaisedRise>,
+    ground_level: Option<u8>,
 ) -> Vec<crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance> {
     use crate::app::presentation::instances::{
         DisplayEffectInputs, build_display_effect_instances,
     };
-    use crate::app::presentation::interpolation::RenderInterpolation;
     use crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder;
     use crate::sim::{components::AnimClassSpawnDescriptor, world::Simulation};
     use crate::util::fixed_math::SIM_ZERO;
@@ -439,11 +430,11 @@ fn free_anim_draw_with(
         .collect();
     let atlas = SpriteAtlas::from_test_entries(entries);
     let mut sim = Simulation::new();
-    if let Some(raised) = raised {
+    if let Some(ground_level) = ground_level {
         *sim.resolved_terrain_mut_for_test() =
             Some(crate::map::resolved_terrain::test_grid(5, 5, |rx, ry| {
                 let mut cell = crate::map::resolved_terrain::test_flat_cell(rx, ry);
-                cell.level = raised.ground_level;
+                cell.level = ground_level;
                 cell
             }));
     }
@@ -451,20 +442,6 @@ fn free_anim_draw_with(
         AnimClassSpawnDescriptor::new(sim.intern("ANIM"), 4, 4, SIM_ZERO, SIM_ZERO, level);
     descriptor.draw_flags = 0x600;
     let id = sim.spawn_anim_object(&rules, descriptor).unwrap();
-    let mut interpolation = RenderInterpolation::new(true);
-    if let Some(raised) = raised {
-        interpolation.observe(&sim, 0, Some(32.), false);
-        sim.anims_mut_for_test()
-            .get_mut(id)
-            .unwrap()
-            .world_coord_mut_for_test()
-            .z += raised.rise;
-        let next_frame = sim.session().binary_frame() + 1;
-        sim.session_mut_for_test()
-            .set_binary_frame_for_test(next_frame);
-        interpolation.observe(&sim, 32, Some(32.), false);
-        interpolation.observe(&sim, 48, Some(32.), false);
-    }
     let order = NativeDisplayOrder::from_display(sim.display_layers());
     let detail = RefCell::new(crate::app::presentation::detail::DetailState::new());
     let lighting = Default::default();
@@ -474,7 +451,6 @@ fn free_anim_draw_with(
     let mut planned = Vec::new();
     build_display_effect_instances(
         &DisplayEffectInputs {
-            interpolation: raised.map(|_| &interpolation),
             sim: &sim,
             rules: &rules,
             camera: [-1000.0; 2],
@@ -585,7 +561,7 @@ fn bounce_drop_measures_the_drawn_location_against_the_ground_read_only() {
         drop(debris, [stored.x, stored.y, stored.z]),
         Some(adjust_for_z_standard(520 - 208))
     );
-    // A free anim's drawn point may be interpolated between two ticks.
+    // A free anim's height is read at its drawn point.
     assert_eq!(
         drop(debris, [stored.x, stored.y, 400]),
         Some(adjust_for_z_standard(400 - 208))
@@ -607,15 +583,12 @@ fn bounce_drop_measures_the_drawn_location_against_the_ground_read_only() {
 fn free_bouncing_anim_draws_its_ground_shadow_first_at_its_height() {
     use crate::util::native_x87::adjust_for_z_standard;
     // Stock DBRIS1LG's launch keys, three levels (312 leptons) up over
-    // level-2 ground (208), rising to 520 over one tick and drawn at 416.
+    // level-2 ground (208).
     let planned = free_anim_draw_with(
         "Bouncer=yes\nElasticity=0.0\nMaxXYVel=25.0\nMinZVel=25.0\n",
         3,
         false,
-        Some(RaisedRise {
-            ground_level: 2,
-            rise: 208,
-        }),
+        Some(2),
     );
     let pieces = &planned[0].pieces;
     assert_eq!(pieces.len(), 3);
@@ -631,11 +604,9 @@ fn free_bouncing_anim_draws_its_ground_shadow_first_at_its_height() {
         ObjectTexture::SpriteAtlasEdit(2, TerrainPiece::Shadow)
     );
     // GetHeight at the drawn Location, against the ground under it: not the
-    // committed 520, nor the drawn Z without the ground.
-    let drop = adjust_for_z_standard(416 - 208);
-    for wrong in [520 - 208, 416, 520] {
-        assert_ne!(adjust_for_z_standard(wrong), drop);
-    }
+    // drawn Z without the ground.
+    let drop = adjust_for_z_standard(312 - 208);
+    assert_ne!(adjust_for_z_standard(312), drop);
     assert_eq!(
         ground.instance.position,
         [

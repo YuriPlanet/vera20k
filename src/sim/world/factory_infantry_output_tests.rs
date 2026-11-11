@@ -634,7 +634,7 @@ fn ground_command_fixture(
                 sim.playfield_bounds,
             )
             .expect("the existing load owner binds the supplied flat map");
-        sim.zone_grid = Some(zones);
+        sim.zone_grid = Some(zones.into());
         let terrain = sim.resolved_terrain.as_ref().unwrap();
         for cell in map["cells"].as_array().unwrap() {
             let (rx, ry) = fixture_cell(&cell["xy"]);

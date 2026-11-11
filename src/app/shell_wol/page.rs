@@ -170,7 +170,7 @@ fn observer_cannot_page(state: &AppState, name: &str) -> bool {
     let out = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_some_and(|runtime| runtime.simulation.local_player_defeated());
     let session = &state.match_state.session;
     let nodes: Vec<String> = crate::app::match_runtime::network_match::nodes(session)

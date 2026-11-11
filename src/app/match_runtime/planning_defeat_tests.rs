@@ -84,7 +84,7 @@ fn retail_runtime() -> Option<(SimRuntime, [u64; 2])> {
     Some((
         SimRuntime {
             simulation: sim,
-            resources,
+            resources: resources.into(),
         },
         yards,
     ))

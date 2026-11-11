@@ -276,7 +276,7 @@ pub(crate) fn resolve_target_coords(
 /// Source identity comes from the shared Abstract ID space: a live Techno/
 /// Terrain uses the existing coordinate resolver; a Bullet uses its retained
 /// position owner. All callers resolve the same live source they previously read.
-pub(crate) fn object_distance_to(
+pub fn object_distance_to(
     source: u64,
     target: &TargetKind,
     world: &crate::sim::world::Simulation,

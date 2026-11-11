@@ -212,7 +212,7 @@ fn bomb(sim: &Simulation, id: u64) -> Option<&Bomb> {
     sim.substrate
         .entities
         .get(id)
-        .and_then(|entity| entity.bomb.as_ref())
+        .and_then(|entity| entity.bomb.as_deref())
 }
 
 /// The human Americans send every order, a computer House's unit's too:
@@ -288,6 +288,10 @@ fn native_bomb(fields: &serde_json::Value) -> Bomb {
         end_frame: int("end"),
         ticking_sound: None,
         seen_by: 0,
+        #[cfg(feature = "ares")]
+        weapon: None,
+        #[cfg(feature = "ares")]
+        death_bomb: false,
     }
 }
 
@@ -492,7 +496,7 @@ fn native_world(input: &serde_json::Value, rules: &RuleSet) -> NativeWorld {
         if technos[slot]["visible"].as_u64() == Some(1) {
             bomb.seen_by = house_bit(&sim.houses.order(), local);
         }
-        sim.substrate.entities.get_mut(ids[slot]).unwrap().bomb = Some(bomb);
+        sim.substrate.entities.get_mut(ids[slot]).unwrap().bomb = Some(Box::new(bomb));
         sim.bombs.carriers.insert(ids[slot]);
     }
     sim.sound_events.clear_for_test();
@@ -517,6 +521,16 @@ fn check_world_case(case: &NativeBombCase, name: &str, section: &str, delay: i32
     } = native_world(input, &rules);
     let index = |value: &serde_json::Value| value.as_u64().map(|n| ids[n as usize]);
     match section {
+        // Ares BombListClass_Plant_AllTechnos (hook 0x438E86) admits any
+        // Techno planter, so the stock refusal of another has no Ares row.
+        #[cfg(feature = "ares")]
+        "attach"
+            if input["planter"].as_u64().is_some_and(|n| {
+                input["technos"][n as usize]["rtti"]
+                    .as_u64()
+                    .unwrap_or(0x0F)
+                    != 0x0F
+            }) => {}
         "attach" => {
             let planter = index(&input["planter"]).unwrap_or(u64::MAX);
             let target = index(&input["target"]);
@@ -978,9 +992,11 @@ fn removal_and_capture_defuse_silently() {
         None,
         crate::sim::world::FrameEffects::default(),
     );
-    assert!(
-        bomb(&sim, captured).is_none(),
-        "an engineer's capture defuses"
+    // Ares hook 0x448277 (100163B0) resumes past the defuse.
+    assert_eq!(
+        bomb(&sim, captured).is_some(),
+        cfg!(feature = "ares"),
+        "an engineer's capture defuses in stock"
     );
     sim.change_owner_with_rules(
         garrison,
@@ -1001,9 +1017,13 @@ fn removal_and_capture_defuse_silently() {
         crate::sim::world::FrameEffects::default(),
     );
     assert!(bomb(&sim, tank).is_some(), "a unit changing hands keeps it");
+    let mut carriers = vec![garrison, tank];
+    if cfg!(feature = "ares") {
+        carriers.insert(0, captured);
+    }
     assert_eq!(
         sim.bomb_carriers().iter().copied().collect::<Vec<_>>(),
-        vec![garrison, tank]
+        carriers
     );
     assert_eq!(entity(&sim, sold).health.current(), 750, "silently");
 }
@@ -1426,4 +1446,177 @@ fn bomb_rules_keys() {
         (100, 450, 8),
         "RulesClass constructor 0x00666B88..0x00666BA8"
     );
+}
+
+/// The fixture with three Ares bomb weapons: the Russian light tank's
+/// TankBomber (IvanBomb.Delay/Damage), SCOUT3's DeathBomber
+/// (IvanBomb.DeathBomb, not Detachable) and SIVAN's SpreadBomber (a
+/// CellSpread 1 IvanBomb warhead), and a 1x1 BOX.
+#[cfg(feature = "ares")]
+fn ares_rules() -> RuleSet {
+    let text = RULES
+        .replace("2=SCOUT3\n", "2=SCOUT3\n3=SIVAN\n")
+        .replace("2=CABHUT\n", "2=CABHUT\n3=BOX\n")
+        .replace("3=Super\n", "3=Super\n4=SpreadBomb\n")
+        .replace("[LTNK]\n", "[LTNK]\nPrimary=TankBomber\n")
+        .replace("BombSight=3\n", "BombSight=3\nPrimary=DeathBomber\n");
+    let mut rules = rules_from(&format!(
+        "{text}[SIVAN]\nStrength=125\nSpeed=4\nSight=6\n\
+         Locomotor={{4A582744-9839-11D1-B709-00A024DDAFD1}}\nPrimary=SpreadBomber\n\
+         [BOX]\nStrength=750\nFoundation=1x1\n\
+         [TankBomber]\nDamage=1\nROF=50\nRange=3\nProjectile=Invisible\nWarhead=IvanBomb\n\
+         IvanBomb.Delay=100\nIvanBomb.Damage=200\n\
+         [DeathBomber]\nDamage=1\nROF=50\nRange=1.5\nProjectile=Invisible\nWarhead=IvanBomb\n\
+         IvanBomb.DeathBomb=yes\nIvanBomb.Detachable=no\n\
+         [SpreadBomber]\nDamage=1\nROF=50\nRange=1.5\nProjectile=Invisible\nWarhead=SpreadBomb\n\
+         [SpreadBomb]\nIvanBomb=yes\nCellSpread=1\n"
+    ));
+    rules.set_buildup_control_for_test("BOX", [0, 4, 1]);
+    rules
+}
+
+/// Ares builds: a Unit plants (BombListClass_Plant_AllTechnos, hook
+/// 0x438E86), PlantBomb (10055AE0) fuses the bomb its weapon's
+/// IvanBomb.Delay out, and the blast deals IvanBomb.Damage
+/// (BombClass_Detonate1, hook 0x438799).
+#[cfg(feature = "ares")]
+#[test]
+fn ares_a_tank_plants_with_its_weapons_delay_and_damage() {
+    let rules = ares_rules();
+    let (mut sim, grid) = arena(41, &rules);
+    let target = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
+    let tank = spawn(&mut sim, &rules, "LTNK", "Russians", 10, 10);
+    attack(&mut sim, tank, target);
+    run_until(&mut sim, &rules, &grid, 200, |sim| {
+        bomb(sim, target).is_some()
+    })
+    .expect("a tank plants in Ares");
+    let planted = bomb(&sim, target).unwrap();
+    let start = planted.start_frame;
+    assert_eq!(
+        (planted.planter, planted.end_frame),
+        (Some(tank), start + 100)
+    );
+    let went_off = run_until(&mut sim, &rules, &grid, 300, |sim| {
+        entity(sim, target).health.current() < 1000
+    })
+    .expect("the bomb goes off");
+    assert_eq!(went_off, start + 101, "IvanBomb.Delay + 1");
+    assert_eq!(entity(&sim, target).health.current(), 1000 - 200);
+}
+
+/// A CellSpread 1 IvanBomb warhead plants on every Techno one ring around
+/// its target's cell but its planter (Ares.dll 10056AF0 walking
+/// CellSpreadIterator 10056550).
+#[cfg(feature = "ares")]
+#[test]
+fn ares_a_spread_warhead_bombs_the_technos_around_its_target() {
+    let rules = ares_rules();
+    let (mut sim, grid) = arena(42, &rules);
+    let target = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
+    let near = spawn(&mut sim, &rules, "HTNK", "Americans", 13, 11);
+    let far = spawn(&mut sim, &rules, "HTNK", "Americans", 15, 10);
+    let ivan = spawn(&mut sim, &rules, "SIVAN", "Russians", 11, 10);
+    attack(&mut sim, ivan, target);
+    run_until(&mut sim, &rules, &grid, 200, |sim| {
+        bomb(sim, target).is_some()
+    })
+    .expect("planted");
+    assert!(bomb(&sim, near).is_some(), "one ring out");
+    assert!(bomb(&sim, far).is_none(), "three rings out");
+    assert!(bomb(&sim, ivan).is_none(), "never the planter");
+}
+
+/// IvanBomb.DeathBomb turns a bomb on an enemy into a death bomb: its fuse
+/// never runs out (IsTimerExpired, kind 1) but its carrier's death sets it
+/// off; DeathBombOnAllies=no keeps a bomb on an ally timed. A bomb that is
+/// not IvanBomb.Detachable refuses the Engineer's BombDisarm shot (hook
+/// 0x6FCBAD, Ares.dll 10056C60).
+#[cfg(feature = "ares")]
+#[test]
+fn ares_death_bombs_wait_for_their_carrier_and_resist_engineers() {
+    let rules = ares_rules();
+    let mut sim = sim(43);
+    let enemy = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
+    let ally = spawn(&mut sim, &rules, "HTNK", "Russians", 16, 10);
+    let scout = spawn(&mut sim, &rules, "SCOUT3", "Russians", 30, 10);
+    let engineer = spawn(&mut sim, &rules, "ENGINEER", "Americans", 11, 11);
+    let weapon = sim.interner.intern("DeathBomber");
+    sim.session.set_binary_frame_for_test(100);
+    sim.bomb_attach(scout, Some(enemy), Some(weapon), &rules);
+    sim.bomb_attach(scout, Some(ally), Some(weapon), &rules);
+    assert!(bomb(&sim, enemy).unwrap().death_bomb);
+    assert!(
+        !bomb(&sim, ally).unwrap().death_bomb,
+        "DeathBombOnAllies=no"
+    );
+
+    sim.session.set_binary_frame_for_test(100 + 451);
+    sim.bomb_fuse_step(
+        enemy,
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    assert!(bomb(&sim, enemy).is_some(), "a death bomb has no fuse");
+
+    assert!(!sim.bomb_detachable(enemy, &rules));
+    let code = crate::sim::combat::fire_error_world::FireSubject {
+        world: &sim,
+        rules: &rules,
+        overlay_registry: None,
+        fog: None,
+        firer: entity(&sim, engineer),
+        obj: rules.object("ENGINEER").unwrap(),
+        target: Some(crate::sim::combat::TargetKind::Entity(enemy)),
+        weapon_index: 0,
+    }
+    .fire_error(false);
+    assert_eq!(code, crate::sim::combat::fire_error::FireError::Illegal);
+
+    kill(&mut sim, &rules, enemy);
+    assert!(!sim.bomb_carriers().contains(&enemy), "gone off with it");
+    assert_eq!(entity(&sim, engineer).health.current(), 0, "the blast");
+}
+
+/// A sold building's bomb goes off (IvanBomb.DetonateOnSell, on by default;
+/// BuildingClass_Mi_Selling_DetonatePostBuildup, hook 0x44A1FF) before the
+/// sale completes.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_a_sold_buildings_bomb_goes_off() {
+    let rules = ares_rules();
+    let mut sim = sim(44);
+    let sold = spawn(&mut sim, &rules, "BOX", "Americans", 10, 10);
+    let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 11, 10);
+    let ivan = spawn(&mut sim, &rules, "IVAN", "Russians", 30, 10);
+    sim.bomb_attach_for_test(ivan, Some(sold), &rules);
+    assert!(crate::sim::production::sell_building_now_for_test(
+        &mut sim, &rules, sold
+    ));
+    assert!(sim.bomb_carriers().is_empty());
+    assert!(entity(&sim, tank).health.current() < 1000, "the blast");
+}
+
+/// Ares BombClass_GetCurrentFrame (100568C0) over a 13-frame image: six
+/// two-frame stages of `delay / 6`, the second frame in the blink half; a
+/// rate below 1 counts single frames up to the last stage index; a death
+/// bomb shows the last frame; an image of one frame shows frame 0.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_clock_frame_counts_stages_over_the_image() {
+    let mut bomb = native_bomb(&serde_json::json!({"start": 0, "end": 450}));
+    let clock = |bomb: &Bomb, frame, frames, rate| bomb.ares_clock_frame(frame, frames, 450, rate);
+    assert_eq!(clock(&bomb, 0, 13, 8), Some(0));
+    assert_eq!(clock(&bomb, 8, 13, 8), Some(1));
+    assert_eq!(clock(&bomb, 75, 13, 8), Some(3));
+    assert_eq!(
+        clock(&bomb, 1000, 13, 8),
+        Some(11),
+        "capped at the last stage"
+    );
+    assert_eq!(clock(&bomb, 75, 13, 0), Some(2), "75 / (450 / 12)");
+    assert_eq!(clock(&bomb, 75, 1, 8), Some(0));
+    bomb.death_bomb = true;
+    assert_eq!(clock(&bomb, 75, 13, 8), Some(12));
 }

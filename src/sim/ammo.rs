@@ -65,6 +65,12 @@ impl TechnoAmmo {
         self.current
     }
 
+    /// Whether the count is exactly zero, which
+    /// [`Self::refill_empty_from_type`] refills.
+    pub(crate) const fn is_empty(&self) -> bool {
+        self.current == 0
+    }
+
     /// Installed Ares conversion100437A0..100437B3 keeps the lesser signed
     /// count. Dock/release state and the Techno reload clock are preserved;
     /// InitialAmmo belongs only to construction.
@@ -127,6 +133,15 @@ impl TechnoAmmo {
         self.current = self.current.wrapping_add(1);
     }
 
+    /// Ares TechnoClass_Reload_ReloadAmount (Ares.dll 10047A70, hook
+    /// 0x6FB05B) in place of Reload's one round: add `amount` (negative
+    /// removes), then a negative count is zero and the type's `Ammo=` caps it.
+    #[cfg(feature = "ares")]
+    pub(crate) fn reload_rounds(&mut self, amount: i32, type_ammo: i32) {
+        let ammo = self.current.wrapping_add(amount);
+        self.current = if ammo < 0 { 0 } else { ammo.min(type_ammo) };
+    }
+
     /// The SpawnManager's case-6 rearm (`0x006B788F..0x006B78AA`): Ammo from
     /// the type's `Ammo=`.
     pub(crate) fn refill(&mut self) {
@@ -137,7 +152,7 @@ impl TechnoAmmo {
     /// copy the current type's Ammo when this count is exactly zero. Each
     /// caller owns its Hospital/Armory or fear-expiry/IsArmed gates.
     pub(crate) fn refill_empty_from_type(&mut self, type_ammo: i32) {
-        if self.current == 0 {
+        if self.is_empty() {
             self.current = type_ammo;
         }
     }

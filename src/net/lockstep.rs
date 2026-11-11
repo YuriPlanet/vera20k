@@ -23,6 +23,8 @@
 use std::num::NonZeroU8;
 use std::num::NonZeroU32;
 
+use crate::sim::game_options::GAME_SPEED_90_TPS;
+
 #[cfg(any(test, feature = "test-support"))]
 use serde::{Deserialize, Serialize};
 
@@ -116,7 +118,12 @@ pub fn wol_start_timing(
 ) -> WolStartTiming {
     // Jump table 0x79561C; `ja` at 0x794F8B is unsigned.
     let (max_ahead, owner_frame_rate) = speed_frame_budget(game_speed);
-    let frame_send_rate = if matches!(game_speed, 0 | 1) { 10 } else { 5 };
+    let frame_send_rate =
+        if matches!(game_speed, 0 | 1) || game_speed == i32::from(GAME_SPEED_90_TPS) {
+            10
+        } else {
+            5
+        };
     let ping = pings.into_iter().fold(0, i32::max);
     let mut timing = WolStartTiming {
         max_ahead,
@@ -159,8 +166,11 @@ pub fn wol_start_timing(
 /// The game-speed rows both network timing blocks share: MaxAhead
 /// `[0xA8B550]` and PreCalcFrameRate. Anything outside 0..=5, negatives
 /// included, takes the slowest row (both jumps are unsigned `ja`).
+/// VERA's 90-tick preset adds its own row, retaining the fastest native
+/// row's two-thirds of a second of lookahead (40/60, here 60/90).
 fn speed_frame_budget(game_speed: i32) -> (i32, i32) {
     match game_speed as u32 {
+        speed if speed == u32::from(GAME_SPEED_90_TPS) => (60, 90),
         0 => (40, 60),
         1 => (40, 45),
         2 => (30, 30),
@@ -172,11 +182,12 @@ fn speed_frame_budget(game_speed: i32) -> (i32, i32) {
 }
 
 /// The launch speed whose PreCalcFrameRate row is `frames_per_second`: the
-/// inverse of [`speed_frame_budget`] over the in-game speeds 0..=6. The VERA
+/// inverse of [`speed_frame_budget`] over selectable speeds. The VERA
 /// lobby signs this rate into relay ordering certificates
-/// (docs/lobby-protocol.md, launch speed `[60,45,30,20,15,12,10]`).
+/// (docs/lobby-protocol.md, retail rows plus VERA's 90-tick preset).
 pub fn game_speed_for_frame_rate(frames_per_second: u16) -> Option<i32> {
     (0..=i32::from(crate::sim::game_options::IN_GAME_OPTIONS_MAX_SPEED))
+        .chain([i32::from(GAME_SPEED_90_TPS)])
         .find(|&speed| speed_frame_budget(speed).1 == i32::from(frames_per_second))
 }
 
@@ -757,6 +768,19 @@ mod tests {
         assert_eq!(timing.latency_fudge, 2);
         assert!(timing.set_timing.is_some());
         assert_eq!(timing.max_ahead, 30);
+    }
+
+    #[test]
+    fn ninety_tick_preset_seeds_network_timing_and_keeps_existing_speed_ids() {
+        let speed = i32::from(super::GAME_SPEED_90_TPS);
+        let timing = super::wol_start_timing(speed, [0; 2], true);
+        assert_eq!(timing.precalc_frame_rate, 90);
+        assert_eq!(timing.frame_send_rate, 10);
+        assert_eq!((timing.max_ahead, timing.precalc_max_ahead), (60, 60));
+        assert_eq!(super::game_speed_for_frame_rate(90), Some(speed));
+        assert_eq!(super::game_speed_for_frame_rate(60), Some(0));
+        assert_eq!(super::game_speed_for_frame_rate(45), Some(1));
+        assert_eq!(super::speed_frame_budget(7), (10, 10));
     }
 
     #[test]

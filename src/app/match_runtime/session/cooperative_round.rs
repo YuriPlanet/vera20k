@@ -53,10 +53,6 @@ impl CooperativeRoundState {
         self.outcome.is_none() && self.quit_enabled
     }
 
-    pub(crate) fn outcome(&self) -> Option<bool> {
-        self.outcome
-    }
-
     fn all_ready(&self) -> bool {
         self.ready.iter().all(|ready| *ready)
     }
@@ -798,7 +794,7 @@ mod tests {
                 .unwrap(),
             CooperativeRoundStep::Exit(true)
         );
-        assert_eq!(session.cooperative_round().unwrap().outcome(), Some(true));
+        assert_eq!(session.cooperative_round().unwrap().outcome, Some(true));
     }
 
     #[test]
@@ -818,7 +814,7 @@ mod tests {
             session.take_network_loading_requests(),
             vec![NetworkLoadingRequest::CooperativeLeave]
         );
-        assert_eq!(session.cooperative_round().unwrap().outcome(), Some(false));
+        assert_eq!(session.cooperative_round().unwrap().outcome, Some(false));
         assert!(session.freeze_cooperative_round(30, 1, None).is_err());
     }
 
@@ -858,7 +854,7 @@ mod tests {
             session.continue_cooperative_round(1).unwrap(),
             CooperativeRoundStep::ContinueInRoom
         );
-        assert_eq!(session.cooperative_round().unwrap().outcome(), Some(false));
+        assert_eq!(session.cooperative_round().unwrap().outcome, Some(false));
         assert!(session.take_network_loading_requests().is_empty());
 
         let (mut last, _) = frozen_in(NetworkReturnContext::Wol, 0);

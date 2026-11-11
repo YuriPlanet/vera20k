@@ -449,7 +449,7 @@ fn retail_atlas_refresh_costs() {
             sprites
                 .get(&ShpSpriteKey {
                     palette_context: ShpPaletteContext::Legacy,
-                    type_id: building.to_string(),
+                    type_id: building.into(),
                     facing: 0,
                     frame: 0,
                     house_color: owner_color,
@@ -461,7 +461,7 @@ fn retail_atlas_refresh_costs() {
     assert!(
         units
             .get(&UnitSpriteKey {
-                type_id: new_vehicle.to_string(),
+                type_id: new_vehicle.into(),
                 turret_index: 0,
                 facing: 0,
                 layer: VxlLayer::Body,

@@ -393,6 +393,12 @@ impl BuildingOccupants {
         self.ids.clear();
         self.reset_fire_index();
     }
+    /// Ares 3.0 doTraverseTo (`100130E0`): `Occupants.RemoveItem(0)`, the
+    /// head shifted out without changing +69C.
+    #[cfg(feature = "ares")]
+    pub(crate) fn remove_head(&mut self) -> Option<u64> {
+        (!self.ids.is_empty()).then(|| self.ids.remove(0))
+    }
     /// BuildingPointerExpired44EAC0..44EB02 removes the first matching
     /// vector entry by shifting, without changing +69C. Its caller owns
     /// the ScenarioInit(A8E7AC) gate; ordinary Cargo expiry is separate.
@@ -444,6 +450,19 @@ impl Simulation {
         head_first: &[(u64, f64)],
         context: UninitContext<'_>,
     ) -> bool {
+        self.add_passenger_voiced(carrier, head_first, true, context)
+    }
+
+    /// [`Self::add_passenger_with_context`] under VocClass::VoicesEnabled
+    /// `voices`: while it is clear, VocClass::PlayGlobal (`0x00750920`)
+    /// plays nothing, so the entry sound is skipped.
+    fn add_passenger_voiced(
+        &mut self,
+        carrier: u64,
+        head_first: &[(u64, f64)],
+        voices: bool,
+        context: UninitContext<'_>,
+    ) -> bool {
         if !self.add_cargo_passenger_chain(carrier, head_first, context) {
             return false;
         }
@@ -451,7 +470,8 @@ impl Simulation {
             return true;
         };
         let rules = context.rules();
-        if let Some(transport) = self.substrate.entities.get(carrier)
+        if voices
+            && let Some(transport) = self.substrate.entities.get(carrier)
             && let Some(sound_id) = self
                 .entity_object_type(transport, rules)
                 .and_then(|object| object.enter_transport_sound.clone())
@@ -489,6 +509,36 @@ impl Simulation {
             );
         }
         true
+    }
+
+    /// Ares conductAbduction's tail (10054A80), after its Limbo: the
+    /// abductee's Transporter (`+0x11C`) is the abductor, an allied rider of
+    /// an `OpenTopped=` abductor is marked (EnteredOpenTopped `0x00710470`,
+    /// keeping its AI in the logic order), then AddPassenger (vt+0x394).
+    /// CreateInitialPayload's Foot arm (10043C10, `sim::ares_transports`)
+    /// takes the same steps with VocClass::VoicesEnabled cleared around
+    /// AddPassenger (`voices` false). Answers whether the hold took it.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_abduct_into_hold(
+        &mut self,
+        passenger: u64,
+        carrier: u64,
+        size: f64,
+        rider: bool,
+        voices: bool,
+        context: UninitContext<'_>,
+    ) -> bool {
+        if let Some(entity) = self.substrate.entities.get_mut(passenger) {
+            entity.passenger_role.set_carrier_link(CarrierLink {
+                transport_id: carrier,
+                open_topped: rider,
+            });
+            entity.passenger_role.transporter = Some(carrier);
+        }
+        if rider {
+            let _ = self.register_open_topped_passenger(passenger);
+        }
+        self.add_passenger_voiced(carrier, &[(passenger, size)], voices, context)
     }
 
     /// Transporter and SetInOpenTransport710470 belong to the arrival
@@ -575,7 +625,7 @@ enum Role {
     #[default]
     None,
     /// Entity owns a CargoClass hold.
-    Transport { cargo: PassengerCargo },
+    Transport { cargo: Box<PassengerCargo> },
     /// Entity is inside a transport (hidden from map, not targetable).
     Inside {
         transport_id: u64,
@@ -595,7 +645,9 @@ impl PassengerRole {
     /// The role of a Cargo carrier (`Passengers=`), with its empty hold.
     pub fn transport(cargo: PassengerCargo) -> Self {
         Self {
-            role: Role::Transport { cargo },
+            role: Role::Transport {
+                cargo: Box::new(cargo),
+            },
             occupants: BuildingOccupants::default(),
             transporter: None,
         }
@@ -633,27 +685,23 @@ impl PassengerRole {
 
     /// The whole carrier relation, for a caller that restores it.
     pub(crate) fn carrier_link(&self) -> Option<CarrierLink> {
-        let (Role::Inside {
-            transport_id,
-            open_topped,
-        }
-        | Role::Transport {
-            cargo:
-                PassengerCargo {
-                    carrier_relation:
-                        CarrierRelation::Inside {
-                            transport_id,
-                            open_topped,
-                        },
-                    ..
-                },
-        }) = &self.role
-        else {
-            return None;
+        let (transport_id, open_topped) = match &self.role {
+            Role::Inside {
+                transport_id,
+                open_topped,
+            } => (*transport_id, *open_topped),
+            Role::Transport { cargo } => match cargo.carrier_relation {
+                CarrierRelation::Inside {
+                    transport_id,
+                    open_topped,
+                } => (transport_id, open_topped),
+                CarrierRelation::Outside => return None,
+            },
+            Role::None => return None,
         };
         Some(CarrierLink {
-            transport_id: *transport_id,
-            open_topped: *open_topped,
+            transport_id,
+            open_topped,
         })
     }
 
@@ -748,7 +796,9 @@ impl PassengerRole {
             };
             let mut cargo = PassengerCargo::new(0, 0.0);
             cargo.carrier_relation = carrier_relation;
-            self.role = Role::Transport { cargo };
+            self.role = Role::Transport {
+                cargo: Box::new(cargo),
+            };
         }
         match &mut self.role {
             Role::Transport { cargo } => cargo,
@@ -886,13 +936,12 @@ pub fn can_enter_transport(
 /// being sold, it stands in the playfield and is not warped out; the
 /// infantryman is an `Occupier=` of the building's house (or the building's
 /// house is `MultiplayPassive=`), the building is neither full nor at red
-/// health, and the infantryman is not mind-controlled.
+/// health, and the infantryman is not mind-controlled. An infantryman that
+/// is no `Occupier=` (`0x00457D56`) may enter only as an `Assaulter=`
+/// ([`assaulter_admitted`]).
 ///
 /// Map5785F0 tests the building's actual GetCoords through the shared
 /// height-aware playfield owner, rather than the navigation rectangle.
-/// RESIDUALS: the `Assaulter=` arm (`0x00457DAD..0x00457DD3`: an
-/// assaulter may enter an occupied building of a house it is not allied
-/// with) is not represented. No retail infantry is an assaulter.
 /// Native tests the current mission `+0xAC` for Construction and Selling
 /// (`0x00457D07..0x00457D19`); `building_up`/`building_down` ask the
 /// effective mission, so a building whose current mission is still -1 with
@@ -930,24 +979,86 @@ pub fn can_dock_occupier_garrison(
         return false;
     }
     if !passenger_obj.occupier {
-        return false;
+        return assaulter_admitted(
+            passenger,
+            building,
+            passenger_obj,
+            building_obj,
+            occupants,
+            sim,
+        );
     }
-    let same_owner = passenger.owner() == building.owner();
-    if !same_owner && !owner_is_multiplay_passive(building.owner(), &sim.houses) {
-        return false;
-    }
-    if occupants.count() as u32 == building_obj.max_number_occupants {
-        return false;
-    }
-    if is_at_or_below_red_hp(
+    let passive = owner_is_multiplay_passive(building.owner(), &sim.houses);
+    let red_health = is_at_or_below_red_hp(
         building.health.current(),
         building_obj.strength,
         rules.general.condition_red,
-    ) {
-        return false;
+    );
+    // Ares 3.0 10017060 (hook 0x457D58) replaces the occupier arm.
+    #[cfg(feature = "ares")]
+    {
+        crate::sim::ares_garrison::occupier_admitted(
+            sim,
+            passenger,
+            building,
+            passenger_obj,
+            building_obj,
+            occupants.count(),
+            passive,
+            red_health,
+        )
     }
-    // `0x00457D98`: `TechnoClass::IsMindControlled`.
-    !passenger.mind_control.is_mind_controlled()
+    #[cfg(not(feature = "ares"))]
+    {
+        let same_owner = passenger.owner() == building.owner();
+        if !same_owner && !passive {
+            return false;
+        }
+        if occupants.count() as u32 == building_obj.max_number_occupants {
+            return false;
+        }
+        if red_health {
+            return false;
+        }
+        // `0x00457D98`: `TechnoClass::IsMindControlled`.
+        !passenger.mind_control.is_mind_controlled()
+    }
+}
+
+/// CanBeOccupiedBy's `Assaulter=` arm (`0x00457DAD..0x00457DD3`), for an
+/// infantryman that is no `Occupier=`: an assaulter (`+0xEB5`) may enter a
+/// building of a house that does not count him an ally
+/// (`HouseClass::Is_Ally_ByObject @ 0x004F9A90`, asked by the building's
+/// house) while it holds any occupant (vt+0x408). Red health, a full
+/// building and mind control are not asked here.
+///
+/// Ares 3.0 `BuildingClass_CanBeOccupied_SpecificAssaulters @ 10016FD0`
+/// (hook `0x00457DB7`, past the `+0xEB5` test) adds the building type's
+/// `Assaulter.Level`: not negative, and at most the assaulter type's.
+fn assaulter_admitted(
+    passenger: &GameEntity,
+    building: &GameEntity,
+    passenger_obj: &ObjectType,
+    building_obj: &ObjectType,
+    occupants: &BuildingOccupants,
+    sim: &Simulation,
+) -> bool {
+    let assaultable = passenger_obj.assaulter
+        && !crate::sim::combat::combat_weapon::is_ally_by_object(
+            Some(&sim.house_alliances),
+            &sim.interner,
+            building.owner(),
+            passenger.owner(),
+        )
+        && occupants.count() > 0;
+    #[cfg(feature = "ares")]
+    let assaultable = assaultable && {
+        let level = building_obj.techno_combat().assaulter_level();
+        level >= 0 && level <= passenger_obj.techno_combat().assaulter_level()
+    };
+    #[cfg(not(feature = "ares"))]
+    let _ = building_obj;
+    assaultable
 }
 
 /// [`can_dock_occupier_garrison`] by id, as `CanBeOccupiedBy`'s callers that
@@ -1281,10 +1392,13 @@ pub(crate) fn board_passenger(
 /// so once ejected its Guard head seeks a bunker again. Answers whether the
 /// infantryman went in.
 ///
-/// RESIDUALS: the `Assaulter=` arm (`0x00522A09..0x00522A45`: the
-/// building's occupants are killed, and the assaulter drops its destination
-/// and scatters) is not represented; no retail infantry is an assaulter.
-/// VERA's passenger also drops its movement and order state.
+/// An `Assaulter=` infantryman that is no `Occupier=` assaults instead
+/// (`0x00522A09..0x00522A45`): the building's occupants are killed
+/// ([`garrison_eject::kill_building_occupants`] with him as the assaulter),
+/// then he drops his destination and scatters from the building's
+/// coordinate ([`Simulation::turn_away_from_building`]). He never goes in.
+///
+/// RESIDUAL: VERA's passenger also drops its movement and order state.
 pub fn add_garrison_occupant(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -1292,43 +1406,52 @@ pub fn add_garrison_occupant(
     building_id: u64,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
-) -> bool {
+) -> Result<bool, crate::sim::world::FrameAdvanceError> {
     let Some(pax) = sim.substrate.entities.get(pax_id) else {
-        return false;
+        return Ok(false);
     };
     let owner = pax.owner();
     let world =
         crate::sim::movement::ground_pose::object_get_coords(pax, sim.resolved_terrain.as_ref())
             .into();
-    let Some(_) = sim
-        .object_type(pax.type_ref(), rules)
-        .filter(|object| object.occupier)
-    else {
-        return false;
+    let Some(object) = sim.object_type(pax.type_ref(), rules) else {
+        return Ok(false);
     };
+    let (occupier, assaulter) = (object.occupier, object.assaulter);
     if !sim
         .substrate
         .entities
         .get(building_id)
         .is_some_and(|building| building.category() == EntityCategory::Structure)
     {
-        return false;
+        return Ok(false);
     }
     let context = UninitContext::new(rules, registry).with_effects(effects);
+    if !occupier {
+        if assaulter {
+            garrison_eject::kill_building_occupants(sim, building_id, Some(pax_id), context);
+            sim.turn_away_from_building(pax_id, building_id, rules, registry, effects)?;
+        }
+        return Ok(false);
+    }
     if sim.techno_limbo_with_context(pax_id, context) != ConcealOutcome::Concealed {
-        return false;
+        return Ok(false);
     }
     let Some(count) = sim.substrate.entities.get_mut(building_id).map(|building| {
         let occupants = building.passenger_role.occupants_mut();
         occupants.add(pax_id);
         occupants.count()
     }) else {
-        return false;
+        return Ok(false);
     };
     if let Some(pax) = sim.substrate.entities.get_mut(pax_id) {
         // Admission and Limbo keep the occupant's TarCom and passive flag.
         pax.passenger_role.set_inside_transport(building_id, false);
     }
+    // Ares 3.0 10017240 (hook 0x52297F): an occupier of another house
+    // raids the building (sim::ares_garrison).
+    #[cfg(feature = "ares")]
+    sim.ares_occupier_entered(building_id, owner, rules, registry, effects);
     sim.refresh_spatial_threat(building_id, rules, None);
     if count == 1 {
         let type_id = sim
@@ -1349,7 +1472,7 @@ pub fn add_garrison_occupant(
     {
         pax.building_entry.clear_occupy_seeks();
     }
-    true
+    Ok(true)
 }
 
 /// Gunner caller dispatch to UnitClass +4D4 (746420). Temporal ownership
@@ -1726,7 +1849,7 @@ pub(crate) fn reconcile_civilian_garrison_owner_for_building(
     //458313 reads Occupants[0], the earliest admission.
     let first_passenger = occupants.ids().first().copied();
 
-    let Some(civilian_owner) = sim.civilian_side_house(rules) else {
+    let Some(civilian_owner) = sim.civilian_side_house_in_pass(rules) else {
         // A malformed roster can leave the native empty arm passing NULL to
         //ChangeOwner. Preserve the real owner rather than fabricate a house.
         return false;
@@ -1807,6 +1930,9 @@ mod gunner_tests;
 
 #[cfg(test)]
 mod allegiance_tests;
+
+#[cfg(test)]
+pub(crate) mod assault_tests;
 
 #[cfg(test)]
 mod tests {

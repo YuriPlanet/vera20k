@@ -45,7 +45,7 @@ DEFAULT_OUTPUT = Path("src/render/fonts/Unifont-CJK-15.bin")
 # CJK symbols and punctuation, kana, Bopomofo, compatibility jamo, Kanbun,
 # strokes, enclosed and compatibility letters; the unified ideographs; Hangul
 # syllables; compatibility ideographs; vertical forms; fullwidth forms. All
-# draw at GAME.FNT's full-cell CJK size (`fonts::is_cjk_sized`).
+# draw at GAME.FNT's full-cell CJK size (`i18n::is_cjk_sized`).
 BLOCKS = (
     (0x3000, 0x33FF),
     (0x4E00, 0x9FFF),

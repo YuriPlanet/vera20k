@@ -33,7 +33,14 @@ use crate::sim::voxel_anim::VoxelAnimAiStep;
 #[derive(Clone, Copy)]
 pub(crate) enum BounceContactDamage {
     Anim(i32),
+    /// The shared Type field, written back by each receiver.
+    #[cfg_attr(feature = "ares", allow(dead_code))]
     VoxelType(VoxelAnimTypeId),
+    /// Ares 3.0 VoxelAnimClass_Update_Damage (1005D640, hook 0x74A884):
+    /// the Voxel walk with a copy of the type's Damage per object, each
+    /// object's successor read before its receiver.
+    #[cfg(feature = "ares")]
+    AresVoxel(i32),
 }
 
 impl Simulation {
@@ -132,7 +139,10 @@ impl Simulation {
                 return Ok(false);
             }
             VoxelAnimAiStep::Expire => {
-                let changed = self.voxel_anim_expiry(id, rules, effects)?;
+                // Native expiry always reaches UnInit (`0x0074A700`). Ore
+                // VERA cannot place is the expiry's last step: log it, keep
+                // the area damage's bridge notice and retire the piece.
+                let changed = self.voxel_anim_expiry(id, rules, effects);
                 self.uninit_with_context(id, context);
                 return Ok(changed);
             }
@@ -194,14 +204,26 @@ impl Simulation {
                     }
                     if let Some(name) = kind.warhead.as_deref() {
                         let warhead = self.interner.intern(name);
-                        changed |= self.apply_bounce_contact_damage(
-                            body.position_leptons(),
-                            kind.damage_radius,
-                            BounceContactDamage::VoxelType(type_id),
-                            warhead,
-                            rules,
-                            effects,
-                        );
+                        // 1005D640: a negative DamageRadius or a Damage of
+                        // zero skips the walk.
+                        #[cfg(feature = "ares")]
+                        let source = {
+                            let damage = self.voxel_type_damage(type_id, rules);
+                            (kind.damage_radius >= 0 && damage != 0)
+                                .then_some(BounceContactDamage::AresVoxel(damage))
+                        };
+                        #[cfg(not(feature = "ares"))]
+                        let source = Some(BounceContactDamage::VoxelType(type_id));
+                        if let Some(source) = source {
+                            changed |= self.apply_bounce_contact_damage(
+                                body.position_leptons(),
+                                kind.damage_radius,
+                                source,
+                                warhead,
+                                rules,
+                                effects,
+                            );
+                        }
                     }
                 }
             }
@@ -217,12 +239,7 @@ impl Simulation {
     /// Natural Voxel expiry749FA2..74A6FC. The land/deck query reads the
     /// retained Location; the dry Anim, area, light, children and ore read
     /// Bounce coords. A water landing below the deck ends at its splash.
-    fn voxel_anim_expiry(
-        &mut self,
-        id: u64,
-        rules: &RuleSet,
-        effects: FrameEffects<'_>,
-    ) -> Result<bool, RuntimeOverlayError> {
+    fn voxel_anim_expiry(&mut self, id: u64, rules: &RuleSet, effects: FrameEffects<'_>) -> bool {
         let debris = self.substrate.voxel_anims.get(id).unwrap();
         let type_id = debris.type_id();
         let location = debris.world_coord();
@@ -252,7 +269,7 @@ impl Simulation {
                         0,
                     );
                 }
-                return Ok(false);
+                return false;
             }
             self.spawn_named_anim(
                 rules,
@@ -275,9 +292,10 @@ impl Simulation {
                     0,
                 );
             }
-            return Ok(false);
+            return false;
         }
         let changed = self.voxel_anim_expire_damage(type_id, impact, rules, effects);
+        let mut ore = Ok(());
         if kind.is_meteor {
             //74A288..301: two RandomRanged(0, SpawnCount) draws, then that
             // many children at the Bounce coords, each admitted before the
@@ -316,16 +334,19 @@ impl Simulation {
                         (impact.y / 256).wrapping_add(dy) as u16,
                     )
                 });
-                self.voxel_anim_place_tiberium(rules, &ring, effects)?;
+                ore = self.voxel_anim_place_tiberium(rules, &ring, effects);
             }
         } else if kind.is_tiberium
             && !above
             && let Some(cell) = Self::map_coord_cell(&self.resolved_terrain, impact.x, impact.y)
         {
             //74A5B6..6F7: ore in the impact cell (565730).
-            self.voxel_anim_place_tiberium(rules, &[cell], effects)?;
+            ore = self.voxel_anim_place_tiberium(rules, &[cell], effects);
         }
-        Ok(changed)
+        if let Err(error) = ore {
+            log::warn!("voxel debris {id} expired without placing its ore: {error}");
+        }
+        changed
     }
 
     /// Expiry74A13E..225: without ExpireAnim, no anim, area or light.
@@ -455,11 +476,16 @@ impl Simulation {
         let mut current = self.cell_objects(cell, MovementLayer::Ground).next();
         let mut changed = false;
         while let Some(target) = current {
+            #[cfg(feature = "ares")]
+            let ares_next = matches!(source, BounceContactDamage::AresVoxel(_))
+                .then(|| self.next_cell_object(target));
             let center = match target {
                 CellObjectMember::Entity(id) => {
                     self.substrate.entities.get(id).map(|entity| match source {
                         BounceContactDamage::Anim(_) => object_center_xy(entity),
                         BounceContactDamage::VoxelType(_) => position_world_xy(&entity.position),
+                        #[cfg(feature = "ares")]
+                        BounceContactDamage::AresVoxel(_) => position_world_xy(&entity.position),
                     })
                 }
                 CellObjectMember::Terrain(id) => self.terrain_objects.get(id).map(|tree| {
@@ -481,6 +507,8 @@ impl Simulation {
                             self.voxel_type_damage(id, rules),
                             Some(DamageWriteback::VoxelType(id)),
                         ),
+                        #[cfg(feature = "ares")]
+                        BounceContactDamage::AresVoxel(value) => (value, None),
                     };
                     let receipt = match target {
                         CellObjectMember::Entity(id) => self.commit_direct_damage_receiver(
@@ -524,6 +552,11 @@ impl Simulation {
                     };
                     changed |= receipt.bridge_state_changed;
                 }
+            }
+            #[cfg(feature = "ares")]
+            if let Some(next) = ares_next {
+                current = next;
+                continue;
             }
             current = self.next_cell_object(target);
         }

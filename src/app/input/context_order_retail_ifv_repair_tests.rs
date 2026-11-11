@@ -890,8 +890,15 @@ fn unit_repair_vehicle_class_matches_fire_error_including_undeploy_building() {
         FireError::Ok,
         "the same native Building vt+80 fact must reach UnitFireError"
     );
+    // Ares 3.0 UnitClass_CanFire_Heal (1004E540, hook 0x741113) replaces the
+    // vt+80 call with the health-ratio test alone, so a damaged NonVehicle
+    // Unit may be repaired.
     assert_eq!(
         sim.selected_weapon_fire_error(&rules, actor, TargetKind::Entity(targets[1]), true, None),
-        FireError::Illegal
+        if cfg!(feature = "ares") {
+            FireError::Ok
+        } else {
+            FireError::Illegal
+        }
     );
 }

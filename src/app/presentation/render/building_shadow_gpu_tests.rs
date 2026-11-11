@@ -164,7 +164,7 @@ fn assert_retail_embedded_shadow(expected_type: &str, expected_frame_count: u16)
 
     let body_key = ShpSpriteKey {
         palette_context: ShpPaletteContext::Legacy,
-        type_id: type_id.to_owned(),
+        type_id: type_id.into(),
         facing: 0,
         frame: body_frame,
         house_color,

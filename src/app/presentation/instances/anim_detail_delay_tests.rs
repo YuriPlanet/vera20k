@@ -28,7 +28,6 @@ fn render(
     let mut parents = Vec::new();
     build_display_effect_instances(
         &DisplayEffectInputs {
-            interpolation: None,
             sim,
             rules,
             camera: [center.0 - 80., center.1 - 60.],
@@ -106,7 +105,7 @@ fn random_loop_delay_skips_detail_until_real_anim_ai_restarts_it() {
                 (
                     ShpSpriteKey {
                         palette_context: ShpPaletteContext::GlobalAnim,
-                        type_id: "LOOP".to_owned(),
+                        type_id: "LOOP".into(),
                         facing: 0,
                         frame,
                         house_color: HouseColorIndex(0),

@@ -227,7 +227,7 @@ impl crate::sim::world::Simulation {
         CellPassabilityMap {
             terrain: self.resolved_terrain.as_ref(),
             overlays: self.overlay_grid.as_ref(),
-            zones: self.zone_grid.as_ref(),
+            zones: self.zone_grid.as_deref(),
             native_cells: None,
             raw_occupation: Some(&self.substrate.raw_cell_occupation),
             listed_occupancy: None,
@@ -992,6 +992,50 @@ pub fn retained_cell_is_in_playfield(
     let coord = cells.coord(cell);
     let (level, slope) = cells.ground_fields(cell);
     bounds.contains_height_aware_packed(i32::from(coord.0), i32::from(coord.1), level as i8, slope)
+}
+
+/// The native ground lists while GameActive(A8E9A0) is set. An absent
+/// projection means the caller is in the inactive loading/teardown phase;
+/// ScenarioSession.started is a different native byte.
+#[derive(Clone, Copy)]
+pub(crate) struct BurrowingContents<'a> {
+    pub occupancy: &'a OccupancyGrid,
+    pub terrain_objects: &'a BTreeMap<(u16, u16), u64>,
+}
+
+/// CellClass::PassesTileAndOccupancyChecks486FF0. The incoming Cell pointer
+/// survives nested queries: this leaf never resolves its coordinate again.
+/// Outside the playfield succeeds immediately; invalid signed tile indices
+/// skip only the tile permission, not slope, bridge or active ground lists.
+pub(crate) fn cell_allows_burrowing(
+    cells: &crate::map::resolved_terrain::NativeCellQuery<'_>,
+    cell: crate::map::cell_index::NativeCellIdentity,
+    bounds: Option<PlayfieldBounds>,
+    contents: Option<BurrowingContents<'_>>,
+) -> bool {
+    if !retained_cell_is_in_playfield(cell, bounds, cells) {
+        return true;
+    }
+    let terrain = cells.terrain();
+    if !terrain.tile_allows_burrowing(terrain.native_cell_tile_index(cell))
+        || cells.ground_fields(cell).1 != 0
+        || cells.flags(cell) & 0x500 != 0
+    {
+        return false;
+    }
+    if let Some(contents) = contents {
+        let coord = cells.coord(cell);
+        let coord = (coord.0 as u16, coord.1 as u16);
+        if contents
+            .occupancy
+            .first_building_on_layer(coord.0, coord.1, MovementLayer::Ground)
+            .is_some()
+            || contents.terrain_objects.contains_key(&coord)
+        {
+            return false;
+        }
+    }
+    true
 }
 
 pub(crate) fn cell_is_in_playfield_height_aware_in_query(

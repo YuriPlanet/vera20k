@@ -170,6 +170,7 @@ fn original_stage_histories() {
                         &ty.stages,
                         elite,
                         i32_of(&call["arg"]),
+                        None,
                         |weapon| ty.report(weapon, elite).map(|items| items.len() as i32),
                         || reached_stops += 1,
                         || {
@@ -270,6 +271,7 @@ fn original_fault_inputs_play_nothing() {
             &ty.stages,
             false,
             1,
+            None,
             |weapon| ty.report(weapon, false).map(|items| items.len() as i32),
             || {},
             || panic!("no draw without a WeaponType"),
@@ -633,7 +635,13 @@ fn a_gattling_tank_spins_up_while_it_fights() {
         }
         previous = now;
     }
-    assert_eq!(stage_ups, [(1, 201), (2, 401)]);
+    // Ares' stage test reads the charged value (hook 0x70DEBA): a frame earlier.
+    let stage_ups_at = if crate::rules::ARES_ENABLED {
+        [(1, 200), (2, 400)]
+    } else {
+        [(1, 201), (2, 401)]
+    };
+    assert_eq!(stage_ups, stage_ups_at);
     assert_eq!(previous.value(), 600);
     let stage_weapons =
         |stage: i32| -> Vec<String> { weapons_by_stage[&stage].iter().cloned().collect() };
@@ -791,4 +799,39 @@ fn gattling_state_round_trips_and_is_hashed() {
         .unwrap()
         .gattling = GattlingState::from_fields(1, 322, false);
     assert_ne!(restored.state_hash(), hashed, "the value is hashed");
+}
+
+/// Ares TechnoClass_UpdateGattling_Cycle (Ares.dll 1004B6C0, hook 0x70DEBA):
+/// the stage test reads the charged value rather than the starting one, and
+/// a `Gattling.Cycle` type at the cap restarts at stage 0 with its loop
+/// stopped and the latch clear.
+#[test]
+fn ares_cycle_hook_tests_the_charged_value_and_restarts_a_cyclic_type() {
+    let table =
+        GattlingStages::from_fields(3, [50, 100, 150, 0, 0, 0], [50, 100, 150, 0, 0, 0], 10, 5);
+    let charge = |value, stage, ares_cycle| {
+        let mut state = GattlingState::from_fields(stage, value, true);
+        let mut stops = 0;
+        let effects = state.increase(
+            &table,
+            false,
+            1,
+            ares_cycle,
+            |_| Some(0),
+            || stops += 1,
+            || 0,
+        );
+        let stage_up = effects.stage_up;
+        (
+            state.stage(),
+            state.value(),
+            state.report_latch(),
+            stage_up,
+            stops,
+        )
+    };
+    assert_eq!(charge(45, 0, None), (0, 55, true, false, 0));
+    assert_eq!(charge(45, 0, Some(false)), (1, 55, false, true, 1));
+    assert_eq!(charge(150, 2, Some(false)), (2, 150, true, false, 0));
+    assert_eq!(charge(150, 2, Some(true)), (0, 0, false, false, 1));
 }

@@ -117,6 +117,14 @@ impl PassiveScan {
         self.acquired = true;
     }
 
+    /// Ares TechnoClass_Fire_FSW (`10024C00`) stores the same byte (YRpp's
+    /// ShouldLoseTargetNow) when a firestorm wall took the firer's bullet,
+    /// so its next passive scan may drop the target.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_lose_target_now(&mut self) {
+        self.acquired = true;
+    }
+
     /// Assign_Target's first statement (`0x006FCDC4`) and the off-mission
     /// clear (`0x006FA5F0`).
     pub(crate) fn clear_acquired(&mut self) {
@@ -898,6 +906,7 @@ impl Simulation {
         mask: ScanMission,
         scan_coord: Option<[i32; 3]>,
     ) -> crate::sim::combat::greatest_threat::ThreatScanOutcome {
+        let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::TARGETING);
         crate::sim::combat::combat_targeting::greatest_threat_for_entity(
             &self.substrate.entities,
             &self.substrate.occupancy,
@@ -908,11 +917,13 @@ impl Simulation {
             self.resolved_terrain.as_ref(),
             self.playfield_bounds.is_some(),
             mask,
-            self.zone_grid.as_ref(),
+            self.zone_grid.as_deref(),
             crate::sim::combat::line_of_fire::LineOfFireInputs {
                 overlay_grid: self.overlay_grid.as_ref(),
                 overlay_registry,
                 alliances: Some(&self.house_alliances),
+                #[cfg(feature = "ares")]
+                buildings: Some(crate::sim::combat::line_of_fire::CellBuildings::of(self)),
             },
             Some(self),
             scan_coord,

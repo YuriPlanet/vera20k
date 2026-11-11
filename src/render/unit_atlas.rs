@@ -97,8 +97,9 @@ pub enum PoseTilt {
 /// remap architecture — N players no longer multiply atlas size.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UnitSpriteKey {
-    /// Object type ID from rules.ini (e.g., "HTNK").
-    pub type_id: String,
+    /// Object type ID from rules.ini (e.g., "HTNK"). Every drawn object builds
+    /// and clones keys each frame, and a name this short stays inline.
+    pub type_id: smol_str::SmolStr,
     /// Selected gun model for Turret/Barrel (and a transient crash composite).
     /// Body and Shadow keys always use zero, so gun changes share the hull.
     pub turret_index: i32,
@@ -194,7 +195,7 @@ pub struct UnitAtlas {
     entries: LookupMap<UnitSpriteKey, UnitSpriteEntry>,
     /// HVA frame counts per (type_id, layer, turret_index). Missing entries have 1 frame.
     /// A draw takes its HVA frame as `Foot+0x538` modulo the model's count.
-    pub frame_counts: BTreeMap<(String, VxlLayer, i32), u32>,
+    pub frame_counts: BTreeMap<(smol_str::SmolStr, VxlLayer, i32), u32>,
     /// Palette indices of every resident sprite; native shadow masks are
     /// composed from them.
     rendered_cache: Vec<CachedUnitSprite>,
@@ -241,7 +242,9 @@ enum VoxelModel<'a> {
     Turret(&'a str),
 }
 
-/// The voxel model of every object in the world, keyed by its rules type.
+/// The voxel models the world's objects draw with, keyed by rules type, each
+/// once however many objects share it: an object's model follows from its
+/// type, whether it is voxel, and its class.
 /// Buildings keep that identity too: their native loader resolves separate
 /// TurretAnim turret/barrel slots, and the draw consumes their own metadata.
 fn world_voxel_models<'a>(
@@ -250,17 +253,24 @@ fn world_voxel_models<'a>(
     interner: Option<&'a crate::sim::intern::StringInterner>,
 ) -> impl Iterator<Item = VoxelModel<'a>> + 'a {
     use crate::map::entities::EntityCategory;
+    let mut asked = crate::util::lookup_hash::LookupSet::default();
     entities.values().filter_map(move |entity| {
+        let voxel = entity.is_voxel();
+        let category = entity.category();
+        if !voxel && category != EntityCategory::Structure {
+            return None;
+        }
+        let aircraft = category == EntityCategory::Aircraft;
+        if !asked.insert((entity.type_ref(), voxel, aircraft)) {
+            return None;
+        }
         let type_str = interner.map_or("", |i| i.resolve(entity.type_ref()));
-        if entity.is_voxel() {
-            return Some(if entity.category() == EntityCategory::Aircraft {
+        if voxel {
+            return Some(if aircraft {
                 VoxelModel::Air(type_str)
             } else {
                 VoxelModel::Ground(type_str)
             });
-        }
-        if entity.category() != EntityCategory::Structure {
-            return None;
         }
         let obj = rules?.object(type_str)?;
         (obj.turret_anim_is_voxel && obj.turret_anim.is_some())
@@ -270,8 +280,8 @@ fn world_voxel_models<'a>(
 
 /// Whether `atlas` — None while no unit atlas exists — already holds every
 /// voxel model the world draws, so no refresh is needed. This runs on every
-/// tick with a spawn, death or Limbo, so it allocates nothing and stops at
-/// the first miss.
+/// tick with a spawn, death or Limbo, so it asks once for each model and
+/// stops at the first miss.
 pub fn atlas_covers_world(
     atlas: Option<&UnitAtlas>,
     entities: &crate::sim::entity_store::EntityStore,
@@ -730,7 +740,7 @@ fn insert_unit_layer_keys(
             for slope_type in slope_range.clone() {
                 for &barrel_pitch in pitches {
                     needed.insert(UnitSpriteKey {
-                        type_id: type_id.to_string(),
+                        type_id: type_id.into(),
                         turret_index,
                         facing,
                         layer,
@@ -766,7 +776,7 @@ pub(crate) fn unit_barrel_pitches(fire_angle: i32) -> Vec<i8> {
 
 fn seed_unit_variant_keys(
     needed: &mut HashSet<UnitSpriteKey>,
-    frame_counts: &mut BTreeMap<(String, VxlLayer, i32), u32>,
+    frame_counts: &mut BTreeMap<(smol_str::SmolStr, VxlLayer, i32), u32>,
     variant: &str,
     is_ground_vehicle: bool,
     asset_manager: &AssetManager,
@@ -781,7 +791,7 @@ fn seed_unit_variant_keys(
     let shadow = rules.and_then(|rules| ShadowModel::for_type(rules, variant));
     let mut shadow_frames = 1;
     for (layer, turret_index) in layers {
-        let frame_key = (variant.to_string(), layer, turret_index);
+        let frame_key = (variant.into(), layer, turret_index);
         let num_frames = *frame_counts.entry(frame_key).or_insert_with(|| {
             detect_hva_frame_count(asset_manager, variant, layer, turret_index, rules)
         });
@@ -841,7 +851,7 @@ fn seed_unit_variant_keys(
     }
 }
 
-type UnitFrameCounts = BTreeMap<(String, VxlLayer, i32), u32>;
+type UnitFrameCounts = BTreeMap<(smol_str::SmolStr, VxlLayer, i32), u32>;
 
 /// Every unit sprite key the voxel models in `demand` can draw, with their
 /// HVA frame counts.
@@ -1050,30 +1060,53 @@ pub(crate) fn prepare_unit_atlas(
         },
     )
 }
+/// Which logical cores a voxel raster may fill with its workers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RasterCores {
+    /// Map load: no match is running yet, so every core draws.
+    All,
+    /// Live growth: a match is running, so one core stays with it.
+    BesideMatch,
+}
+
+impl RasterCores {
+    /// Worker threads on a machine with `cores` logical cores; never none.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    fn workers(self, cores: usize) -> usize {
+        match self {
+            Self::All => cores,
+            Self::BesideMatch => cores.saturating_sub(1),
+        }
+        .max(1)
+    }
+}
+
 impl UnitRasterWork {
     /// Pure CPU work: all physical files and type metadata were resolved by
     /// prepare_unit_atlas. It owns no simulation, asset manager or GPU handles.
     pub(crate) fn render(self) -> UnitRasterOutput {
-        self.render_cancellable(&std::sync::atomic::AtomicBool::new(false))
+        self.render_cancellable(&std::sync::atomic::AtomicBool::new(false), RasterCores::All)
     }
 
     /// Rasterize on a worker thread, which sends the output once and ends.
     /// Setting `cancelled` stops it between models and poses; the receiver
-    /// may be dropped at any time. Map load and live growth share it.
+    /// may be dropped at any time. Map load and live growth share it, and
+    /// `cores` says which of the two is asking.
     pub(crate) fn spawn(
         self,
         cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        cores: RasterCores,
     ) -> std::io::Result<std::sync::mpsc::Receiver<UnitRasterOutput>> {
         let (sender, receiver) = std::sync::mpsc::channel();
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         {
-            let _ = sender.send(self.render_cancellable(&cancelled));
+            let _ = sender.send(self.render_cancellable(&cancelled, cores));
         }
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         std::thread::Builder::new()
             .name("voxel-atlas-raster".into())
             .spawn(move || {
-                let _ = sender.send(self.render_cancellable(&cancelled));
+                let _ = sender.send(self.render_cancellable(&cancelled, cores));
             })?;
         Ok(receiver)
     }
@@ -1081,11 +1114,15 @@ impl UnitRasterWork {
     pub(crate) fn render_cancellable(
         self,
         cancelled: &std::sync::atomic::AtomicBool,
+        cores: RasterCores,
     ) -> UnitRasterOutput {
         let mut rendered = Vec::new();
         let mut failed = self.failed;
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-        let workers = std::thread::available_parallelism().map_or(1, |n| n.get());
+        let workers = cores.workers(std::thread::available_parallelism().map_or(1, |n| n.get()));
+        // The browser draws on its one thread.
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        let _ = cores;
         for (model, type_keys) in self.models {
             if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
                 break;
@@ -1137,7 +1174,7 @@ impl UnitRasterWork {
                         rendered.extend(legacy_shadow);
                         rendered.push(sprite);
                     }
-                    None => *failed.entry(key.type_id.clone()).or_default() += 1,
+                    None => *failed.entry(key.type_id.to_string()).or_default() += 1,
                 }
             }
         }
@@ -1389,7 +1426,7 @@ impl UnitModel {
             Vec::new()
         };
         Some(Self {
-            type_id: type_id.to_string(),
+            type_id: type_id.into(),
             body,
             guns,
             shadow: rules.and_then(|rules| ShadowModel::for_type(rules, type_id)),

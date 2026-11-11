@@ -86,7 +86,22 @@ fn sound_name(index: &Value) -> String {
 /// with their SHP heights and frames bound, `Sound17` for its one sound, and
 /// a warhead for `LightningWarhead=`.
 fn fixture_rules() -> RuleSet {
-    let rules_ini = IniFile::from_str(
+    // The anims are registered, as retail registers the clouds and bolts, so
+    // that Ares's Find-only WeatherCon* reads (Buf_General 1005BB00, hook
+    // 0x66D55E) resolve them too.
+    let anims: String = FIXTURE_ANIMS
+        .iter()
+        .enumerate()
+        .map(|(index, (name, ..))| format!("{index}={name}\n"))
+        .collect();
+    fixture_rules_with(&format!(
+        "[Animations]\n{anims}[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n"
+    ))
+}
+
+/// [`fixture_rules`] with `extra` sections in place of its empty type lists.
+fn fixture_rules_with(extra: &str) -> RuleSet {
+    let rules_ini = IniFile::from_str(&format!(
         "[General]\n\
          LightningDeferment=250\nLightningDamage=250\nLightningStormDuration=180\n\
          LightningHitDelay=10\nLightningScatterDelay=5\nLightningCellSpread=10\n\
@@ -95,9 +110,8 @@ fn fixture_rules() -> RuleSet {
          MetallicDebris=DBRIS1SM,DBRIS2SM,DBRIS3SM\n\
          [AudioVisual]\nLightningSounds=Sound17\nStormSound=WeatherIntro\n\
          [Warheads]\n0=IonWH\n\
-         [IonWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
-         [InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n",
-    );
+         [IonWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n{extra}"
+    ));
     let art_ini = IniFile::from_str(
         &FIXTURE_ANIMS
             .iter()
@@ -699,6 +713,31 @@ fn storm_process_matches_native_rows() {
     let rows = rows(&oracle, "storm_process");
     assert_eq!(rows.len(), 32);
     for row in rows {
+        // Installed Ares's Process (hook 53A6CF, 10037330) strikes a
+        // manifesting cloud from half its frames on, front to back: a row
+        // with a cloud at exactly half or two striking clouds is the stock
+        // body's only ([`ares_storm_lists_strike_from_half_front_to_back`]).
+        #[cfg(feature = "ares")]
+        {
+            let anims = row["anims_before"].as_array().unwrap();
+            let past_half: Vec<i32> = row["manifesting"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|index| &anims[int(index) as usize])
+                .filter_map(|anim| {
+                    let (_, _, frames) = FIXTURE_ANIMS
+                        .iter()
+                        .find(|(name, ..)| *name == anim[0].as_str().unwrap())
+                        .unwrap();
+                    let stage = int(&anim[2]);
+                    (stage >= frames / 2).then_some(stage - frames / 2)
+                })
+                .collect();
+            if past_half.len() > 1 || past_half.contains(&0) {
+                continue;
+            }
+        }
         let mut rules = fixture_rules();
         let keys = &row["rules"];
         let general = &mut rules.general;
@@ -937,6 +976,7 @@ fn registry_only_warhead_rules() -> RuleSet {
          [VehicleTypes]\n\n\
          [AircraftTypes]\n\n\
          [BuildingTypes]\n0=GAPOWR\n\n\
+         [Animations]\n0=WCLBOLT1\n1=WCLBOLT2\n2=WCLBOLT3\n\n\
          [Warheads]\n0=LWH\n\n\
          [DUMMY]\nStrength=100\nArmor=none\nSpeed=4\n\n\
          [GAPOWR]\nStrength=200\nArmor=wood\n\n\
@@ -980,7 +1020,8 @@ fn strike(
 #[test]
 fn renamed_general_weather_bolt_reaches_ground_strike() {
     let ini = IniFile::from_str(
-        "[General]\nWeatherConBolts=CUSTOMBOLT\nLightningWarhead=LWH\n\
+        "[Animations]\n0=CUSTOMBOLT\n\
+         [General]\nWeatherConBolts=CUSTOMBOLT\nLightningWarhead=LWH\n\
          [Warheads]\n0=LWH\n[LWH]\nCellSpread=0\n",
     );
     let mut rules = RuleSet::from_ini(&ini).expect("renamed bolt rules");
@@ -1008,6 +1049,7 @@ fn a_strikes_explosion_precedes_its_area_damage_on_ore() {
          [AircraftTypes]\n\
          [BuildingTypes]\n\
          [Warheads]\n0=LWH\n\
+         [Animations]\n0=WCLBOLT1\n1=WCLBOLT2\n2=WCLBOLT3\n\
          [OverlayTypes]\n0=ORE\n\
          [SmudgeTypes]\n0=CR1\n\
          [Tiberiums]\n0=Riparius\n\
@@ -1058,9 +1100,14 @@ fn a_strikes_explosion_precedes_its_area_damage_on_ore() {
             .is_none(),
         "the explosion's crater met dense ore"
     );
-    // The bolt's type is the only draw.
+    // The bolt's type is the only stock draw.
     let mut expected = SimRng::new(1);
     let _ = expected.next_u32();
+    // Ares 3.0 CellChainReact (10050DD0, hook 0x48964F): the area damage's
+    // spread walk rolls RandomRanged(0, 99) for the ChainReaction ore the
+    // crater left; with Power 0 a reaction deals nothing.
+    #[cfg(feature = "ares")]
+    let _ = expected.next_range_i32_inclusive(0, 99);
     assert_eq!(sim.scenario_rng.state(), expected.state());
 }
 
@@ -1104,7 +1151,7 @@ fn a_strike_destroying_a_wall_publishes_navigation_and_radar_inline() {
     assert!(!sim.path_grid().unwrap().is_walkable(5, 5));
     let ground_zone = |sim: &Simulation| {
         sim.zone_grid
-            .as_ref()
+            .as_deref()
             .and_then(|zones| zones.map_for(crate::rules::locomotor_type::MovementZone::Normal))
             .expect("normal zone map")
             .zone_at(5, 5, MovementLayer::Ground)
@@ -1270,6 +1317,7 @@ fn a_fatal_strike_runs_the_death_transaction_inline() {
              [AircraftTypes]\n\
              [BuildingTypes]\n\
              [Warheads]\n0=LightningWH\n1=WallWH\n\
+             [Animations]\n0=WCLBOLT1\n1=WCLBOLT2\n2=WCLBOLT3\n\
              [OverlayTypes]\n0=TESTWALL\n\
              [BOOMER]\nStrength=101\nArmor=heavy\nExplodes=yes\nDeathWeapon=DeathBoom\n\
              [DeathBoom]\nDamage=214\nWarhead=WallWH\n\
@@ -1392,10 +1440,14 @@ fn retail_storm_rules() {
         general.weather_con_clouds,
         ["WCCLOUD1", "WCCLOUD2", "WCCLOUD3"]
     );
-    assert_eq!(
-        general.weather_con_bolts,
-        ["WCLBOLT1", "WCLBOLT2", "WCLBOLT3"]
-    );
+    // Retail registers no WCLBOLT2, which Ares's Find-only read (Buf_General
+    // 1005BB00, hook 0x66D55E) therefore drops.
+    let bolts: &[&str] = if cfg!(feature = "ares") {
+        &["WCLBOLT1", "WCLBOLT3"]
+    } else {
+        &["WCLBOLT1", "WCLBOLT2", "WCLBOLT3"]
+    };
+    assert_eq!(general.weather_con_bolts, bolts);
     // ReadGeneral's 0x80-byte read of the twenty names keeps fourteen and a
     // cut `D` (`0x0066DA90`), a type with no image.
     assert_eq!(general.metallic_debris.len(), 15);
@@ -1429,6 +1481,18 @@ fn retail_storm_strikes_through_production_frames() {
     let strength = sim.substrate.entities.get(tank).unwrap().health.current();
     let sw_type = charge_super(&mut sim, americans, STORM);
 
+    // Installed Ares's countdown (10037330) prints Message.Launch and its
+    // Start (10036B00) Message.Activate instead of the stock lines.
+    #[cfg(not(feature = "ares"))]
+    let (warned, began): (fn(&SimSoundEvent) -> bool, fn(&SimSoundEvent) -> bool) = (
+        |event| matches!(event, SimSoundEvent::LightningStormApproaching),
+        began,
+    );
+    #[cfg(feature = "ares")]
+    let (warned, began): (fn(&SimSoundEvent) -> bool, fn(&SimSoundEvent) -> bool) = (
+        |event| matches!(event, SimSoundEvent::AresLightningStormApproaching { .. }),
+        |event| matches!(event, SimSoundEvent::AresSuperWeaponActivated { .. }),
+    );
     click(&mut sim, &rules, americans, STORM, target);
     assert!(!sim.super_weapons[&americans][&sw_type].is_ready);
     assert!(sim.sound_events.iter().any(launched));
@@ -1441,11 +1505,7 @@ fn retail_storm_strikes_through_production_frames() {
         sim.sound_events.clear_for_test();
         step(&mut sim, &rules);
         frames += 1;
-        if sim
-            .sound_events
-            .iter()
-            .any(|event| matches!(event, SimSoundEvent::LightningStormApproaching))
-        {
+        if sim.sound_events.iter().any(warned) {
             warnings.push(frames);
         }
         assert!(frames <= 250, "the countdown ends");
@@ -1498,4 +1558,344 @@ fn retail_storm_strikes_through_production_frames() {
         sim.session.lighting().selected_profile(),
         ScenarioLightingProfile::Normal
     );
+}
+
+/// [`fixture_rules_with`] holding an Ares `Storm` (`Type=LightningStorm`,
+/// `SW.Deferment=0`) with `keys`, a `ROD` lightning rod (Strength 400,
+/// `LightningRod.Modifier=0.5`) and the fixture anims registered.
+#[cfg(feature = "ares")]
+fn ares_storm_rules(keys: &str) -> RuleSet {
+    let anims: String = FIXTURE_ANIMS
+        .iter()
+        .enumerate()
+        .map(|(index, (name, ..))| format!("{index}={name}\n"))
+        .collect();
+    fixture_rules_with(&format!(
+        "[Animations]\n{anims}[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n\
+         [BuildingTypes]\n0=ROD\n\
+         [ROD]\nStrength=400\nArmor=none\nLightningRod=yes\nLightningRod.Modifier=0.5\n\
+         [SuperWeaponTypes]\n0=Storm\n\
+         [Storm]\nType=LightningStorm\nSW.Deferment=0\nLightning.PrintText=yes\n{keys}"
+    ))
+}
+
+/// The fixture world with two Houses that are not allies, H0 the player.
+#[cfg(feature = "ares")]
+fn ares_storm_world(rules: &RuleSet) -> (Simulation, Vec<InternedId>) {
+    let houses = [serde_json::json!([0, false]), serde_json::json!([0, false])];
+    fixture_world(rules, 7, 1000, (60, 60), &[], &houses, Some(0))
+}
+
+/// Launches `H0`'s charged `Storm` at `cell` through the Fire_SW transaction.
+#[cfg(feature = "ares")]
+fn ares_fire_storm(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    cell: (u16, u16),
+) -> bool {
+    let sw_type = charge_super(sim, owner, "Storm");
+    sim.fire_super_weapon(
+        rules,
+        owner,
+        sw_type,
+        cell,
+        None,
+        crate::sim::world::FrameEffects::default(),
+        false,
+    )
+}
+
+/// SW_LightningStorm::Initialize (10072C50) and LoadFromINI (10072CF0) over
+/// two layers: the defaults, the keys, the Find-only anim lists (an unknown
+/// name is skipped, `<default>` returns to the `[General]` list), the
+/// handler's Flags and messages, and BuildingTypeExt `LightningRod.Modifier`
+/// beside TechnoType `LightningRod=`.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_storm_reads_its_handler_keys_over_layers() {
+    use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+    use crate::rules::superweapon_targeting::HouseMask;
+    use crate::rules::superweapon_type::AresSuperWeaponMessage as M;
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[Animations]\n0=CLOUD\n1=BOLT\n2=BANG\n[CLOUD]\nRate=1\n[BOLT]\nRate=1\n[BANG]\nRate=1\n\
+         [BuildingTypes]\n0=ROD\n[ROD]\nLightningRod=yes\nLightningRod.Modifier=0.5\n\
+         [SuperWeaponTypes]\n0=Storm\n1=Plain\n\
+         [Storm]\nType=LightningStorm\nAction=Nuke\nLightning.Duration=90\n\
+         Lightning.HitDelay=4\nLightning.ScatterCount=3\nLightning.CloudHeight=600\n\
+         Lightning.DebrisMax=6\nLightning.PrintText=no\nLightning.IgnoreLightningRod=yes\n\
+         Lightning.BoltExplosion=BANG\nLightning.RadarOutageAffects=all\n\
+         Lightning.Clouds=CLOUD,NOSUCH\nLightning.Bolts=BOLT\n\
+         [Plain]\nType=LightningStorm\n",
+    ));
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str(
+            "[Storm]\nLightning.Bolts=<default>\nLightning.BoltExplosion=none\n\
+             Lightning.Separation=0\n",
+        ),
+    );
+    let processed = layers.process_with_fixed_art(&IniFile::empty()).unwrap();
+    let rules = RuleSet::from_processed_rules(&processed).unwrap();
+    assert!(rules.object("NOSUCH").is_none(), "Find never allocates");
+    let storm = rules.super_weapon("Storm").unwrap();
+    assert_eq!(
+        (
+            storm.action.as_deref(),
+            storm.pre_click,
+            storm.post_click,
+            storm.pre_dependent
+        ),
+        (Some("LightningStorm"), false, false, -1)
+    );
+    let messages = storm.ares_messages();
+    assert_eq!(
+        [M::Launch, M::Activate, M::Abort].map(|message| messages.label(message)),
+        [
+            "TXT_LIGHTNING_STORM_APPROACHING",
+            "TXT_LIGHTNING_STORM",
+            "Msg:LightningStormActive"
+        ]
+    );
+    let read = rules
+        .super_weapon_metadata("Storm")
+        .unwrap()
+        .launch()
+        .lightning()
+        .clone();
+    assert_eq!(
+        (
+            read.duration,
+            read.hit_delay,
+            read.scatter_count,
+            read.cloud_height,
+            read.separation,
+            read.print_text,
+            read.ignore_lightning_rod,
+        ),
+        (Some(90), Some(4), 3, 600, Some(0), Some(false), true)
+    );
+    assert_eq!(
+        (read.debris_min, read.debris_max, read.radar_outage_affects),
+        (2, 6, HouseMask::ALL)
+    );
+    assert_eq!(read.bolt_explosion, Some(None), "an explicit none");
+    assert_eq!(read.clouds, Some(vec!["CLOUD".to_owned()]));
+    assert_eq!(read.bolts, None, "<default> unsets the list");
+    let plain = rules
+        .super_weapon_metadata("Plain")
+        .unwrap()
+        .launch()
+        .lightning()
+        .clone();
+    assert_eq!(
+        (
+            plain.scatter_count,
+            plain.cloud_height,
+            plain.debris_min,
+            plain.debris_max,
+            plain.radar_outage_affects,
+            plain.clouds,
+        ),
+        (1, -1, 2, 4, HouseMask::ENEMIES, None),
+        "Initialize's values"
+    );
+    let rod = rules.object("ROD").unwrap().building_type_ext();
+    assert_eq!(
+        (rod.lightning_rod, rod.lightning_rod_modifier.bits()),
+        (true, 0.5_f64.to_bits())
+    );
+}
+
+/// SW_LightningStorm::Activate (10072B00) through Fire_SW with
+/// `SW.Deferment=0`: Start (10036B00) puts every House
+/// `Lightning.RadarOutageAffects` names (here the owner too) under a
+/// `Lightning.RadarOutage` blackout, applies the type's `Light.*` over the
+/// Ion profile, prints Message.Activate and plays `StormSound`; Process
+/// (10037330) gathers a cloud every `Lightning.HitDelay` frames; AbortFire
+/// (10072AB0) refuses a second launch; the storm's end clears
+/// CurrentLightningStorm and its light.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_storm_starts_with_its_type_keys() {
+    let rules = ares_storm_rules(
+        "Lightning.Duration=30\nLightning.RadarOutage=7\nLightning.RadarOutageAffects=all\n\
+         Lightning.HitDelay=4\nLightning.ScatterDelay=0\nLight.Ambient=12\nLight.Red=7\n",
+    );
+    let (mut sim, houses) = ares_storm_world(&rules);
+    let storm_type = sim.interner.intern("Storm");
+    sim.take_sound_events_for_test();
+    assert!(ares_fire_storm(&mut sim, &rules, houses[0], (40, 40)));
+    let (active, _, _, duration, start, cell, owner) = sim.lightning_storm.globals_for_test();
+    assert_eq!(
+        (active, duration, start, cell, owner),
+        (true, 30, 1000, (40, 40), Some(houses[0]))
+    );
+    for house in &houses {
+        let timer = sim.power_states[house].radar_outage_for_test();
+        assert_eq!((timer.start_frame(), timer.duration()), (1000, 7));
+    }
+    let lighting = sim.session.lighting();
+    assert_eq!(lighting.selected_profile(), ScenarioLightingProfile::Ion);
+    assert_eq!(lighting.target_ambient(), 12);
+    assert_eq!(lighting.alternate_rgb().unwrap()[0], 70);
+    let events = sim.take_sound_events_for_test();
+    assert!(events.iter().any(|event| matches!(
+        event,
+        SimSoundEvent::AresSuperWeaponActivated { owner, sw_type }
+            if *owner == houses[0] && *sw_type == storm_type
+    )));
+    assert!(events.iter().any(|event| matches!(
+        event,
+        SimSoundEvent::VocCentered { sound_id } if sound_id == "WeatherIntro"
+    )));
+    assert!(!events.iter().any(began), "no stock line");
+
+    let process = |sim: &mut Simulation, frame: u32| {
+        sim.session.set_binary_frame_for_test(frame);
+        let _ = lightning_storm::process(
+            sim,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+    };
+    process(&mut sim, 1002);
+    assert!(sim.lightning_storm.clouds_for_test().0.is_empty());
+    process(&mut sim, 1004);
+    assert_eq!(
+        sim.lightning_storm.clouds_for_test().0.len(),
+        1,
+        "Lightning.HitDelay=4, not LightningHitDelay=10"
+    );
+
+    assert!(!ares_fire_storm(&mut sim, &rules, houses[0], (40, 40)));
+    assert!(
+        sim.take_sound_events_for_test()
+            .iter()
+            .any(|event| matches!(
+                event,
+                SimSoundEvent::AresSuperWeaponAborted { owner, .. } if *owner == houses[0]
+            ))
+    );
+
+    process(&mut sim, 1031);
+    assert_eq!(
+        sim.lightning_storm.globals_for_test().1,
+        true,
+        "time to end"
+    );
+    sim.lightning_storm
+        .set_clouds_for_test(Vec::new(), Vec::new());
+    process(&mut sim, 1032);
+    assert!(!lightning_storm::raging(&sim));
+    assert_eq!(sim.lightning_storm.ares_light(), None);
+    assert_eq!(
+        sim.session.lighting().selected_profile(),
+        ScenarioLightingProfile::Normal
+    );
+}
+
+/// Ares GroundStrike (10036F50) on a lightning rod while its storm is
+/// current: the rod's `LightningRod.Modifier` halves `SW.Damage`, and the
+/// explosion SelectAnim picks for the storm's warhead is
+/// `Lightning.BoltExplosion` (hook 48A59A, 100377E0), not
+/// `WeatherConBoltExplosion=`.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_storm_strike_scales_a_lightning_rods_damage() {
+    let rules = ares_storm_rules("SW.Damage=200\nLightning.BoltExplosion=WCCLOUD2\n");
+    let (mut sim, houses) = ares_storm_world(&rules);
+    let at = (30, 30);
+    let rod = 10;
+    let mut building = GameEntity::test_default_of_category(
+        rod,
+        "ROD",
+        "H1",
+        at.0,
+        at.1,
+        EntityCategory::Structure,
+    );
+    building.lifecycle.set_in_limbo_for_test(false);
+    building.lifecycle.set_cell_marked_for_test(true);
+    building.set_owner_for_test(houses[1]);
+    building.set_type_ref_for_test(sim.interner.intern("ROD"));
+    building.health = Health::new(400);
+    sim.substrate.entities.insert(building);
+    sim.substrate.occupancy.add(
+        at.0,
+        at.1,
+        rod,
+        MovementLayer::Ground,
+        None,
+        CellListInsertion::AppendBuilding,
+    );
+    assert!(ares_fire_storm(&mut sim, &rules, houses[0], (40, 40)));
+    let anims_before = sim.anims().count();
+    let _ = lightning_storm::ground_strike(
+        &mut sim,
+        &rules,
+        None,
+        [i32::from(at.0) * 256 + 128, i32::from(at.1) * 256 + 128, 0],
+        crate::sim::world::FrameEffects::default(),
+    );
+    assert_eq!(
+        sim.substrate.entities.get(rod).unwrap().health.current(),
+        300
+    );
+    let made: Vec<String> = sim
+        .anims()
+        .skip(anims_before)
+        .map(|(_, anim)| sim.interner.resolve(anim.type_id()).to_string())
+        .collect();
+    assert!(made.iter().any(|name| name == "WCCLOUD2"), "{made:?}");
+    assert!(!made.iter().any(|name| name == "WCBOLTX"), "{made:?}");
+}
+
+/// Ares Process (hook 53A6CF, 10037330) for any storm, here one without a
+/// current Ares Super: two manifesting clouds at exactly half their frames
+/// both strike, the first listed first (the stock body waits a frame and
+/// strikes the last listed first).
+#[cfg(feature = "ares")]
+#[test]
+fn ares_storm_lists_strike_from_half_front_to_back() {
+    let rules = fixture_rules();
+    let houses = [serde_json::json!([0, false])];
+    let (mut sim, ids) = fixture_world(&rules, 7, 1003, (60, 60), &[], &houses, Some(0));
+    sim.lightning_storm =
+        LightningStorm::for_test(true, false, 0, 180, 900, (40, 40), Some(ids[0]));
+    let clouds: Vec<AnimId> = [(40, 40), (44, 40)]
+        .into_iter()
+        .map(|(x, y)| {
+            let id = super::spawn_super_anim(
+                &mut sim,
+                &rules,
+                "WCCLOUD1",
+                [x * 256 + 128, y * 256 + 128, 1320],
+            )
+            .unwrap();
+            sim.substrate
+                .anims
+                .get_mut(id)
+                .unwrap()
+                .runtime_mut_for_test()
+                .current_frame = 10;
+            id
+        })
+        .collect();
+    sim.lightning_storm
+        .set_clouds_for_test(clouds.clone(), clouds.clone());
+    let _ = lightning_storm::process(
+        &mut sim,
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    assert!(sim.lightning_storm.clouds_for_test().1.is_empty());
+    let bolts: Vec<i32> = sim
+        .anims()
+        .filter(|(_, anim)| sim.interner.resolve(anim.type_id()).starts_with("WCLBOLT"))
+        .map(|(_, anim)| anim.world_coord().x / 256)
+        .collect();
+    assert_eq!(bolts, [40, 44]);
 }

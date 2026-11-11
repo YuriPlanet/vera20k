@@ -104,20 +104,29 @@ use super::ObjectAiCtx;
 use super::target_scan::{can_fire_at, fire_error_at, select_weapon, weapon_at_index};
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::ammo::TechnoAmmo;
 use crate::sim::building_art::requested_damage_state;
 use crate::sim::combat::TargetKind;
 use crate::sim::combat::combat_weapon::{self, WeaponSlot};
 use crate::sim::combat::fire_error::FireError;
 use crate::sim::combat::gattling::{StageCall, is_elite};
 use crate::sim::combat::{BuildingShot, fire_coord};
+use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::StringInterner;
 use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MISSION_STUB_FRAMES, MissionId, MissionType};
+#[cfg(not(feature = "ares"))]
 use crate::sim::projectile::ProjectilePayload;
 use crate::sim::rng::SimRng;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
+
+#[cfg(feature = "ares")]
+#[path = "ares_prism_forwarding.rs"]
+mod ares_prism_forwarding;
+#[cfg(feature = "ares")]
+pub(crate) use ares_prism_forwarding::AresPrismForwarding;
 
 /// A building's delayed fire (`BuildingClass+0x704` mode, `+0x714`
 /// countdown, `+0x708..+0x710` payload), armed by Mission_Attack and served by
@@ -250,12 +259,19 @@ pub(super) fn update_animation(sim: &mut Simulation, id: u64, rules: &RuleSet) {
         crate::sim::production::archive_less_sale(rules.into(), &object.id, entity);
     let now = sim.session.binary_frame() as i32;
     let options = sim.session.game_options();
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+    if let Some(entity) = sim
+        .substrate
+        .entities
+        .get_mut_if(id, |entity| entity.building_body_advances(now, has_turret))
+    {
         entity.advance_building_body(now, archive_less_sale, has_turret, options);
     }
     // 450F9E..451145, between the step and the ready admission, which it
     // does not touch.
     sim.update_super_weapon_anims(id, rules);
+    // 451234..45128C, the tail before the ready admission: the turret
+    // animation in slot 9 takes its frame from the heading.
+    sim.aim_building_turret_anim(id, has_turret);
 }
 
 ///43FE27's first check requires BState!=0;43FF91's second does not.
@@ -281,7 +297,10 @@ pub(super) fn apply_queued_body(
     substrate: &mut ObjectSubstrate,
     id: u64,
 ) {
-    if let Some(entity) = substrate.entities.get_mut(id) {
+    if let Some(entity) = substrate
+        .entities
+        .get_mut_if(id, GameEntity::building_body_queued)
+    {
         entity.apply_queued_building_body(session.binary_frame() as i32, session.game_options());
     }
 }
@@ -330,7 +349,9 @@ pub(super) fn dispatch(
             Some(delay) => delay,
             None => return,
         },
-        Some(MissionType::Missile) => super::building_missile::mission_missile(sim, id, rules),
+        Some(MissionType::Missile) => {
+            super::building_missile::mission_missile(sim, id, rules, ctx, bridge_state_changed)
+        }
         // Every other slot of the building's table, and no mission (above
         // `0x1F`, `0x005B30BB`), is a MissionClass stub; its Capture, Sabotage
         // and Harvest slots jump to them (`0x0044B760`, `0x0044B770`).
@@ -447,6 +468,23 @@ fn mission_unload(
         crate::sim::passenger::garrison_eject::GarrisonEjectMode::Release,
         ctx.effects,
     );
+    // Ares 3.0 BuildingClass_UnloadPassengers_Unload 100145B0 (hook
+    // 0x0044D8A1): a `Hospital=` or `Armory=` building kicks out its first
+    // passenger (BuildingExt::KickOutHospitalArmory, `sim::ares_transports`).
+    #[cfg(feature = "ares")]
+    sim.ares_kick_out_hospital_armory(id, rules, ctx.overlay_registry, ctx.effects);
+    // Ares 3.0 100174A0 (hook 0x0044D8A7): a loaded tunnel entrance unloads
+    // one member of its owner's network (`sim::ares_tunnel`).
+    #[cfg(feature = "ares")]
+    if let Some(delay) = crate::sim::transport_unload::ares_tunnel_mission_unload(
+        sim,
+        rules,
+        id,
+        ctx.overlay_registry,
+        ctx.effects,
+    ) {
+        return Some(delay);
+    }
     let entity = sim.substrate.entities.get(id)?;
     let object = sim.object_type(entity.type_ref(), rules)?;
     let holds_passengers = entity
@@ -559,18 +597,28 @@ fn mission_factory_unload(
                     .map(|loco| loco.active_kind());
                 //44DED8..44DF1A dispatch on the active locomotor's CLSID.
                 //44DF72..44DFA4: a Drive product runs track 0x42 out of the
-                //bay. 44DFAD..44E163: a Teleport one (the Chrono Miner; no
-                //retail type names TS Tunnel, 44DEEA's other arm) first takes
-                //a Drive piggyback over its Teleport, the Unit setter's own
-                //install, then runs the same track. Native ends a carried
+                //bay. 44DFAD..44E163: a Teleport one (the Chrono Miner) or a
+                //Tunnel one (44DEDD; no retail type) first takes a Drive
+                //piggyback over it, then runs the same track. For Teleport
+                //that is the Unit setter's own install. Native ends a carried
                 //piggyback when Is_Piggybacking (IPiggyback vt+0x1C) holds,
                 //where the shared install asks Is_Ok_To_End; a product fresh
-                //from the factory carries none. The no-IPiggyback C4 arm
-                //(44E165) is dead: Drive implements it.
-                if active == Some(LocomotorKind::Teleport)
-                    && let Some(unit) = sim.substrate.entities.get_mut(product)
-                {
-                    crate::sim::movement::locomotor_owner::begin_drive_for_teleporter(unit, now);
+                //from the factory carries none, and Tunnel has no IPiggyback.
+                //The no-IPiggyback C4 arm (44E165) is dead: Drive implements it.
+                if let Some(unit) = sim.substrate.entities.get_mut(product) {
+                    match active {
+                        Some(LocomotorKind::Teleport) => {
+                            crate::sim::movement::locomotor_owner::begin_drive_for_teleporter(
+                                unit, now,
+                            );
+                        }
+                        Some(LocomotorKind::Tunnel) => {
+                            if let Some(locomotor) = unit.locomotor.as_mut() {
+                                locomotor.begin_piggyback(LocomotorKind::Drive, now);
+                            }
+                        }
+                        _ => {}
+                    }
                 }
                 let drive = sim
                     .substrate
@@ -1049,6 +1097,7 @@ impl PrismSupport {
     }
 
     /// Mission_Attack's recruit (`0x0044B4D7`); a native dword, so it wraps.
+    #[cfg(not(feature = "ares"))]
     fn recruit(&mut self) {
         self.count = self.count.wrapping_add(1);
     }
@@ -1158,7 +1207,14 @@ pub(super) fn gattling_idle(
         return;
     };
     let now = session.binary_frame() as i32;
-    let Some(entity) = substrate.entities.get_mut(id) else {
+    let refills = !obj.hospital && !obj.armory();
+    // Only a Gattling type, or an empty count it refills, changes anything.
+    // Ares reloads by its own clock, so there every refilling type is taken.
+    let Some(entity) = substrate.entities.get_mut_if(id, |entity| {
+        obj.is_gattling
+            || (refills
+                && (cfg!(feature = "ares") || entity.ammo().is_some_and(TechnoAmmo::is_empty)))
+    }) else {
         return;
     };
     if obj.is_gattling && entity.gattling.value() > 0 {
@@ -1167,10 +1223,15 @@ pub(super) fn gattling_idle(
     // Building Update43FE8E..43FEB8: after TechnoAI/mission and the first
     // Gattling step, exactly zero refills from the live type. No timer or
     // rearm mutation; Hospital/Armory retain their depleted count.
-    if !obj.hospital
-        && !obj.armory()
-        && let Some(ammo) = entity.ammo_mut()
-    {
+    // Ares 3.0 BuildingClass_Update_Reload (100478E0, hook 0x43FE8E) calls
+    // TechnoClass::Reload (vt+0x424) there instead, with its clock and
+    // `ReloadAmount`.
+    #[cfg(feature = "ares")]
+    if refills {
+        entity.reload_techno_ammo(obj, now);
+    }
+    #[cfg(not(feature = "ares"))]
+    if refills && let Some(ammo) = entity.ammo_mut() {
         ammo.refill_empty_from_type(obj.ammo);
     }
     if !obj.is_gattling {
@@ -1251,8 +1312,15 @@ fn fire_arm(
     else {
         return;
     };
+    #[cfg(not(feature = "ares"))]
     if rules.is_prism_type(obj) {
         prism_arm(sim, id, rules, obj);
+        return;
+    }
+    // Ares BuildingClass_Mi_Attack_IsPrism (100167E0, hook 0x44B2FE) takes
+    // the arm for a `PrismForwarding=` tower in place of the PrismType test.
+    #[cfg(feature = "ares")]
+    if ares_prism_forwarding::mission_attack_prism(sim, id, rules, obj) {
         return;
     }
     match rules
@@ -1328,6 +1396,7 @@ fn arm_delayed_fire(
 /// the type's `DelayedFireDelay=` (`+0x16EC`; the supporter is a PrismType
 /// tower too), and the arm returns 1 either way, so one tower is recruited per
 /// visit.
+#[cfg(not(feature = "ares"))]
 fn prism_arm(
     sim: &mut Simulation,
     id: u64,
@@ -1396,6 +1465,7 @@ fn prism_arm(
 ///
 /// FireAt already started the shooter's actual rearm inside its visit
 /// (`0x006FF2B2..0x006FF2BB`); a zero ROF remains expired, as in native.
+#[cfg(not(feature = "ares"))]
 fn prism_supporter(
     sim: &Simulation,
     id: u64,
@@ -1460,6 +1530,8 @@ fn prism_supporter(
 ///   `+0x664 = 0` (`0x0044ACCA`) and the downtime: the rearm timer
 ///   becomes {Frame, `PrismSupportDelay=`} (`0x0044ACD0..0x0044ACDC`). No
 ///   check, damage or Scenario draw.
+///
+/// Ares replaces the whole body (`ares_prism_forwarding::update_prism`).
 pub(super) fn process_delayed_fire(
     sim: &mut Simulation,
     id: u64,
@@ -1467,14 +1539,38 @@ pub(super) fn process_delayed_fire(
     ctx: ObjectAiCtx<'_>,
     bridge_state_changed: &mut bool,
 ) {
-    let now = sim.session.binary_frame() as i32;
-    let Some(entity) = sim.substrate.entities.get_mut(id) else {
+    let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
     // Health 0 returned before the call (`0x00440072`).
     if entity.death.is_dying() || entity.health.current() == 0 {
         return;
     }
+    #[cfg(feature = "ares")]
+    ares_prism_forwarding::update_prism(sim, id, rules, ctx, bridge_state_changed);
+    #[cfg(not(feature = "ares"))]
+    stock_delayed_fire(sim, id, rules, ctx, bridge_state_changed);
+}
+
+/// The stock body of [`process_delayed_fire`].
+#[cfg(not(feature = "ares"))]
+fn stock_delayed_fire(
+    sim: &mut Simulation,
+    id: u64,
+    rules: &RuleSet,
+    ctx: ObjectAiCtx<'_>,
+    bridge_state_changed: &mut bool,
+) {
+    let now = sim.session.binary_frame() as i32;
+    // Health 0 returned before the call (`0x00440072`), and an unarmed slot
+    // counts nothing.
+    let Some(entity) = sim.substrate.entities.get_mut_if(id, |entity| {
+        !entity.death.is_dying()
+            && entity.health.current() != 0
+            && entity.pending_building_fire.pending().is_some()
+    }) else {
+        return;
+    };
     let Some(fire) = entity.pending_building_fire.count_down() else {
         return;
     };
@@ -1529,6 +1625,7 @@ pub(super) fn process_delayed_fire(
 /// `((PrismSupportModifier * count + 100) << 8) / 100`, the `imul` and add
 /// wrapping in 32 bits and the division unsigned (`mul 0x51EB851F; shr edx,
 /// 5`), in the bullet's 1/256 damage units.
+#[cfg(not(feature = "ares"))]
 fn support_multiplier(modifier: i32, count: i32) -> i32 {
     let scaled = (modifier.wrapping_mul(count).wrapping_add(100) as u32) << 8;
     (scaled / 100) as i32
@@ -1702,10 +1799,24 @@ impl crate::sim::world::ObjectSubstrate {
     /// (`0x00450496..0x004504CD`): a building with a support count (`+0x664`)
     /// gives the bullet the [`support_multiplier`] of it (`+0x150`) and
     /// restarts the count; with none the bullet keeps Construct's
-    /// [`ProjectilePayload::UNSCALED`]. The live receiver asks it for a
+    /// [`ProjectilePayload::UNSCALED`](crate::sim::projectile::ProjectilePayload::UNSCALED). The live receiver asks it for a
     /// launched delayed shot only ([`BuildingShot::Delayed`]); FireAt's early
     /// exits and a refused launch return no bullet and keep the count.
+    ///
+    /// Ares BuildingClass_Update_Prism (100169A0) writes the reserves'
+    /// multiplier instead and clears them after the shot.
     pub(crate) fn take_support_bonus(&mut self, id: u64, rules: &RuleSet) -> i32 {
+        #[cfg(feature = "ares")]
+        {
+            let _ = rules;
+            self.ares_prism_shot_multiplier(id)
+        }
+        #[cfg(not(feature = "ares"))]
+        self.stock_support_bonus(id, rules)
+    }
+
+    #[cfg(not(feature = "ares"))]
+    fn stock_support_bonus(&mut self, id: u64, rules: &RuleSet) -> i32 {
         let Some(entity) = self.entities.get_mut(id) else {
             return ProjectilePayload::UNSCALED;
         };

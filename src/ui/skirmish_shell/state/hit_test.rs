@@ -259,6 +259,8 @@ pub fn status_help_key_for_choose_map_hover(target: ChooseMapHoverTarget) -> Opt
         ChooseMapHoverTarget::Button(ChooseMapModalButton::Cancel0x5c0) => {
             Some("STT:ScenarioButtonCancel")
         }
+        // VERA's button has no status help.
+        ChooseMapHoverTarget::Button(ChooseMapModalButton::Favorite) => None,
     }
 }
 
@@ -280,6 +282,14 @@ pub fn status_help_key_for_random_map_setup(control: RandomMapSetupControl) -> &
         C::Save0x6c3 => "STT:GenerateButtonSaveMap",
         C::Delete0x6c4 => "STT:GenerateButtonDeleteMap",
         C::Cancel0x5c0 => "STT:GenerateButtonCancel",
+        C::AdvancedToggle => "VERA:RandomMapAdvancedHelp",
+        C::Advanced(super::super::layout::AdvancedField::PlateauSize) => {
+            "VERA:RandomMapPlateauSizeHelp"
+        }
+        C::Advanced(_) => "VERA:RandomMapAdvancedSliderHelp",
+        // Ares Game_DialogFunc_Subtext_Load (Ares.dll 10075EC0, hook 0x60411B).
+        #[cfg(feature = "ares")]
+        C::UrbanAreas5000 => "STT:RMGUrbanAreas",
     }
 }
 

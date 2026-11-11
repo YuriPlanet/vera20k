@@ -395,7 +395,6 @@ mod tests {
 // `ground_pose::navigation_should_be_on_bridge`; its consumers include
 // `foot_path::query_foot_zone` (Foot 0x004D38DB and the Infantry
 // `Movement_Actions` recovery 0x005210E9 through
-// `foot_can_reach_navigation_cell`, plus Walk 0x0075B163), `foot_approach.rs`
-// and `move_cell_input.rs`. The remaining unported consumer is the
-// `FootClass::PerCellProcess` zone block 0x004D8B66..0x004D8D99 (0x004D8BE6),
-// recorded as a residual in `per_cell.rs`.
+// `foot_can_reach_navigation_cell`, plus Walk 0x0075B163), `foot_approach.rs`,
+// `move_cell_input.rs` and the Per_Cell zone block 0x004D8B66..0x004D8CA5
+// (0x004D8BE6) in `sim/trigger_runtime.rs`.

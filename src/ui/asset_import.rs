@@ -101,17 +101,6 @@ impl AssetImport {
         self.step = ImportStep::Failed(why.into());
     }
 
-    /// Completion as a fraction, when the source reported a size.
-    pub(crate) fn progress(&self) -> Option<f32> {
-        match &self.step {
-            ImportStep::Copying {
-                done,
-                total: Some(total),
-            } if *total > 0 => Some((*done as f32 / *total as f32).clamp(0.0, 1.0)),
-            _ => None,
-        }
-    }
-
     pub(crate) fn title(&self) -> String {
         crate::i18n::tr("VERA:ImportGameFiles")
     }
@@ -154,36 +143,8 @@ impl AssetImport {
         text
     }
 
-    /// Button labels for the card, left slot first. Cancellation keeps the
-    /// dialog busy until the platform confirms that copying has stopped.
-    pub(crate) fn buttons(&self) -> [Option<&'static str>; 2] {
-        match &self.step {
-            ImportStep::Closed => [Some("Import Game Files"), None],
-            ImportStep::ChooseFolder | ImportStep::Failed(_) => {
-                [Some("Choose Folder"), Some("Cancel")]
-            }
-            ImportStep::Copying { .. } => [None, Some("Cancel")],
-            ImportStep::Cancelling => [None, None],
-            ImportStep::Done => [Some("Close"), None],
-        }
-    }
-
-    /// Which button was pressed, by the card's left/right slot.
-    pub(crate) fn press_left(&mut self) -> ButtonPress {
-        match &self.step {
-            ImportStep::Closed => {
-                self.open();
-                ButtonPress::PickFolder
-            }
-            ImportStep::ChooseFolder | ImportStep::Failed(_) => ButtonPress::PickFolder,
-            ImportStep::Copying { .. } | ImportStep::Cancelling => ButtonPress::Ignored,
-            ImportStep::Done => {
-                self.close();
-                ButtonPress::Ignored
-            }
-        }
-    }
-
+    /// The card's Cancel button. Cancellation keeps the dialog busy until the
+    /// platform confirms that copying has stopped.
     pub(crate) fn press_right(&mut self) -> ButtonPress {
         match self.step {
             ImportStep::ChooseFolder | ImportStep::Failed(_) => self.close(),
@@ -200,8 +161,6 @@ impl AssetImport {
 /// What the pressed button asks the caller to do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ButtonPress {
-    /// Open the platform's folder picker.
-    PickFolder,
     CancelCopy,
     /// Handled inside the dialog.
     Ignored,
@@ -227,10 +186,9 @@ mod tests {
     fn opening_moves_from_the_plain_card_to_the_explanation() {
         let mut dialog = AssetImport::default();
         assert!(!dialog.is_open());
-        assert_eq!(dialog.buttons(), [Some("Import Game Files"), None]);
-        assert_eq!(dialog.press_left(), ButtonPress::PickFolder);
+        dialog.open();
         assert!(dialog.is_open());
-        assert_eq!(dialog.buttons(), [Some("Choose Folder"), Some("Cancel")]);
+        assert_eq!(dialog.step(), &ImportStep::ChooseFolder);
     }
 
     #[test]
@@ -247,28 +205,16 @@ mod tests {
         dialog.open();
         dialog.start_copy(None);
         dialog.advance_copy(8 * 1024 * 1024);
-        assert_eq!(dialog.progress(), None);
         assert!(dialog.body("", "").contains("Copying: 8 MB."));
-        assert_eq!(dialog.buttons(), [None, Some("Cancel")]);
     }
 
     #[test]
-    fn a_copy_with_a_known_size_reports_a_fraction() {
-        let mut dialog = AssetImport::default();
-        dialog.start_copy(Some(100));
-        dialog.advance_copy(25);
-        assert_eq!(dialog.progress(), Some(0.25));
-    }
-
-    #[test]
-    fn a_failure_offers_another_attempt() {
+    fn a_failure_reports_its_reason() {
         let mut dialog = AssetImport::default();
         dialog.open();
         dialog.start_copy(Some(10));
         dialog.fail("not enough space");
         assert!(dialog.body("", "").contains("Failed: not enough space"));
-        assert_eq!(dialog.buttons(), [Some("Choose Folder"), Some("Cancel")]);
-        assert_eq!(dialog.press_left(), ButtonPress::PickFolder);
     }
 
     #[test]
@@ -279,10 +225,8 @@ mod tests {
         dialog.open();
         dialog.advance_copy(16);
         assert_eq!(dialog.step(), &ImportStep::Cancelling);
-        assert_eq!(dialog.buttons(), [None, None]);
-        assert_eq!(dialog.press_left(), ButtonPress::Ignored);
         dialog.close(); // The platform's Cancelled completion event.
         dialog.open();
-        assert_eq!(dialog.press_left(), ButtonPress::PickFolder);
+        assert_eq!(dialog.step(), &ImportStep::ChooseFolder);
     }
 }

@@ -11,12 +11,14 @@ const RULES: &str = "[InfantryTypes]\n0=E1\n\
      [VehicleTypes]\n0=MTNK\n\
      [AircraftTypes]\n\
      [BuildingTypes]\n0=GAPOWR\n1=GAGATE\n2=GAWALL\n3=GAFENCE\n4=NAYARD\n5=GAPAVE\n6=GAPLUG\n\
+     7=NAGATE\n\
      [OverlayTypes]\n0=GASAND\n1=CYCL\n2=GAWALL\n3=TIB01\n\
      [General]\nGDIGateOne=GAGATE\n\
      [E1]\nStrength=125\nSpeed=4\n\
      [MTNK]\nStrength=400\nSpeed=6\n\
      [GAPOWR]\nStrength=750\n\
      [GAGATE]\nStrength=1000\nGate=yes\n\
+     [NAGATE]\nStrength=1000\nGate=yes\n\
      [GAWALL]\nStrength=300\nWall=yes\n\
      [GAFENCE]\nStrength=300\nLaserFence=yes\n\
      [NAYARD]\nStrength=1500\nWaterBound=yes\nNaval=yes\n\
@@ -172,6 +174,25 @@ fn a_gate_stands_on_its_own_house_wall() {
     // Any other overlay refuses every type.
     a.overlay((11, 10), "CYCL", 0, Some(americans));
     assert!(!a.cell_clear((11, 10), "GAGATE", Some(americans)));
+}
+
+/// Ares 10015780 (hook 0x47C8AB): any `Gate=` type stands on its own
+/// house's `Wall=yes` overlay; the stock arms admit only the `[General]`
+/// gates (NAGATE is none of them).
+#[test]
+fn a_gate_outside_the_general_list_stands_on_a_wall_only_under_ares() {
+    let mut a = arena(CLEAR_BUILDABLE);
+    let americans = a.house("Americans");
+    let soviets = a.house("Soviets");
+    a.overlay((10, 10), "GASAND", 0, Some(americans));
+    assert_eq!(
+        a.cell_clear((10, 10), "NAGATE", Some(americans)),
+        cfg!(feature = "ares")
+    );
+    assert!(!a.cell_clear((10, 10), "NAGATE", Some(soviets)));
+    // CYCL is no wall.
+    a.overlay((11, 10), "CYCL", 0, Some(americans));
+    assert!(!a.cell_clear((11, 10), "NAGATE", Some(americans)));
 }
 
 #[test]

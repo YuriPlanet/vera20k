@@ -12,6 +12,10 @@ use super::settings::RmgSettings;
 pub trait RandomRanged {
     /// Returns a value in `[min, max]` inclusive.
     fn ranged(&mut self, min: i32, max: i32) -> i32;
+
+    /// One raw draw (`Randomizer::Random`), for Ares' urban-areas bit.
+    #[cfg(feature = "ares")]
+    fn next_u32(&mut self) -> u32;
 }
 
 // The process Main binding lives with the ui adapter (random_map_setup, F05): map
@@ -92,6 +96,37 @@ pub fn randomize(
     options.theater = i32::from(rng.ranged(0, 100) > THEATER_THRESHOLD);
     options.map_type = rng.ranged(1, 4);
     options.time = rng.ranged(0, 3);
+    randomize_rest(options, settings, rng, description);
+}
+
+/// Ares' Surprise Me, MapSeedClass_DialogFunc_SurpriseMe (Ares.dll 1006A9C0,
+/// hook 0x596786 -> 0x5967C1): the map type, then the theater, as the item
+/// data of a uniform pick over each combo's entries; then the Urban Areas box
+/// from the low bit of one raw draw; then the time draw. The rest follows
+/// [`randomize`].
+#[cfg(feature = "ares")]
+pub fn randomize_from_combos(
+    options: &mut RmgOptions,
+    settings: &RmgSettings,
+    rng: &mut impl RandomRanged,
+    description: &str,
+    map_types: &[i32],
+    theaters: &[i32],
+) {
+    options.map_type = map_types[rng.ranged(0, map_types.len() as i32 - 1) as usize];
+    options.theater = theaters[rng.ranged(0, theaters.len() as i32 - 1) as usize];
+    options.urban_areas = rng.next_u32() & 1 != 0;
+    options.time = rng.ranged(0, 3);
+    randomize_rest(options, settings, rng, description);
+}
+
+/// The draws both Surprise Mes share after the time of day (0x005967C1..).
+fn randomize_rest(
+    options: &mut RmgOptions,
+    settings: &RmgSettings,
+    rng: &mut impl RandomRanged,
+    description: &str,
+) {
     options.resources = rng.ranged(0, 3);
     // One draw drives both size axes.
     let size = rng.ranged(0, 3);

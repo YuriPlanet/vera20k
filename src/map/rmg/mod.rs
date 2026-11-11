@@ -52,6 +52,9 @@ pub enum Stage {
     TechBuildings,
     Tiberium,
     RegionReset,
+    /// Urban areas (`0x005A5020`): Ares hook 0x598FB8 when `RMG::UrbanAreas`
+    /// is set, or VERA's opted-in Urban Presence.
+    UrbanAreas,
     RecalcAfterTiberium,
     Hills,
     LatPatches,
@@ -88,6 +91,7 @@ pub const STAGE_ORDER: &[Stage] = &[
     Stage::TechBuildings,
     Stage::Tiberium,
     Stage::RegionReset,
+    Stage::UrbanAreas,
     Stage::RecalcAfterTiberium,
     Stage::Hills,
     Stage::LatPatches,
@@ -282,6 +286,9 @@ pub fn executed_stages(options: &RmgOptions) -> Vec<Stage> {
                 return false;
             }
             if *stage == Stage::Rocks && options.theater != 0 {
+                return false;
+            }
+            if *stage == Stage::UrbanAreas && !options.urban_pass_runs() {
                 return false;
             }
             true

@@ -4,7 +4,6 @@
 
 use super::helpers::projection_admitted;
 use crate::app::AppState;
-use crate::app::presentation::interpolation::{PointKind, PointPose, PointSample};
 use crate::app::presentation::render::draw_plan_lowering::{
     NativeDisplayOrder, ObjectPieceInstance, ObjectTexture, PlannedObjectInstance,
 };
@@ -70,14 +69,16 @@ pub(crate) fn projectile_visitor<'a>(
     state: &'a AppState,
     order: &'a NativeDisplayOrder,
 ) -> Option<impl FnMut(&mut Vec<PlannedObjectInstance>, u64) + 'a> {
-    let rt = state.match_state.sim_runtime.as_ref()?;
+    let rt = state.match_state.sim_runtime.presentation()?;
     let atlas = state.match_state.match_presentation.sprite_atlas.as_ref();
     let assets = state.process_assets.manager();
     let sim = &rt.simulation;
     let terrain = sim.resolved_terrain()?;
     let rules = &rt.resources.rules;
     let input = &state.match_state.input;
-    let (_, _, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+    // Draw admission measures from the camera, the frame's corner, so it
+    // takes the centring size: the battlefield and its offset on both sides.
+    let (width, height) = crate::app::input::camera::tactical_centring_size(state);
     let width = width as f32 / input.zoom_level;
     let height = height as f32 / input.zoom_level;
     let axis = super::helpers::depth_axis(state);
@@ -116,16 +117,7 @@ pub(crate) fn projectile_visitor<'a>(
             .firer_house()
             .and_then(|house| house_colors.get(sim.interner().resolve(house)).copied())
             .unwrap_or(local_scheme);
-        let painted = state
-            .match_state
-            .match_presentation
-            .interpolation
-            .sample_point(
-                PointKind::Bullet,
-                projectile.id(),
-                PointPose::bullet(projectile),
-                sim.session().binary_frame(),
-            );
+        let position = projectile.position();
         // VERA's translucent fog: enemy bullets and their trails would outline
         // an unseen firing position. Superweapon impact visuals are separate
         // effect owners and stay visible.
@@ -134,7 +126,7 @@ pub(crate) fn projectile_visitor<'a>(
             && super::helpers::translucent_fog_conceals_bullet(
                 sim,
                 projectile,
-                painted.coord,
+                [position.x, position.y, position.z],
                 local_owner.as_deref(),
                 viewer,
                 sim.session().game_options().fog_of_war,
@@ -142,9 +134,9 @@ pub(crate) fn projectile_visitor<'a>(
         {
             return;
         }
-        if let Some(object) = projectile_draw_instance_sampled(
+        if let Some(object) = projectile_draw_instance_for_frame(
             projectile,
-            painted,
+            sim.session().binary_frame(),
             kind,
             type_id,
             scheme,
@@ -203,9 +195,9 @@ pub(crate) fn projectile_draw_instance(
     order: &NativeDisplayOrder,
     render_voxel: impl FnOnce(&str, glam::Mat4) -> Option<crate::render::unit_atlas::UnitSpriteEntry>,
 ) -> Option<PlannedObjectInstance> {
-    projectile_draw_instance_sampled(
+    projectile_draw_instance_for_frame(
         projectile,
-        PointPose::bullet(projectile).current(),
+        0,
         kind,
         type_id,
         scheme,
@@ -220,9 +212,9 @@ pub(crate) fn projectile_draw_instance(
     )
 }
 
-pub(crate) fn projectile_draw_instance_sampled(
+pub(crate) fn projectile_draw_instance_for_frame(
     projectile: &Projectile,
-    painted: PointSample,
+    logic_frame: u32,
     kind: &ProjectileType,
     type_id: &str,
     scheme: HouseColorIndex,
@@ -246,12 +238,14 @@ pub(crate) fn projectile_draw_instance_sampled(
     if kind.inviso || projectile.awaiting_anim() {
         return None;
     }
-    let point = painted.screen;
+    let position = projectile.position();
+    let (x, y) = absolute_leptons_to_screen(position.x, position.y, position.z);
+    let point = [x, y];
     if !projection_admitted(point, camera, viewport) {
         return None;
     }
     let depth = crate::render::native_z::depth_for_row(
-        point[1] + painted.lift,
+        point[1] + adjust_for_z_standard(position.z) as f32,
         axis.origin_y,
         axis.world_height,
     );
@@ -260,7 +254,7 @@ pub(crate) fn projectile_draw_instance_sampled(
         // palette arms. Its retained LoadVoxelAssets5F8110 pair supplies
         // frame0, diffuse lighting, type Color and no owner/cell lighting.
         let image = kind.voxel_image_load()?;
-        let matrix = painted.voxel_matrix()?;
+        let matrix = crate::render::vxl_raster::projectile_voxel_matrix(projectile.velocity())?;
         let entry = render_voxel(image, matrix)?;
         let runtime_scheme = u32::try_from(kind.color_scheme()).ok()?;
         let remap_row = runtime_scheme / 2 + 1;
@@ -310,32 +304,16 @@ pub(crate) fn projectile_draw_instance_sampled(
         };
         return Some(PlannedObjectInstance::object(parent, vec![piece]));
     }
-    let frame = u16::from(crate::sim::projectile::projectile_shp_frame_with_velocity(
-        projectile,
-        kind,
-        painted.bullet_velocity(projectile.velocity()),
-    ));
+    let frame = crate::sim::projectile::projectile_shp_frame(projectile, kind, logic_frame);
     let entry = atlas?.projectile_sprite(type_id, kind, frame, scheme)?;
-    let (ground_z, structural) =
-        super::foot_depth::floor_probe(terrain, painted.coord[0], painted.coord[1]);
-    let mut geometry = geometry(
-        painted.projectile_coord(),
+    let (ground_z, structural) = super::foot_depth::floor_probe(terrain, position.x, position.y);
+    let geometry = geometry(
+        position,
         ground_z,
         structural,
         projectile.on_bridge(),
         kind.shadow,
     );
-    // Keep body and projected ground shadow on the same fractional XY sample;
-    // Z lift belongs to the body alone, not to the ground shadow.
-    let raw = geometry.body.point;
-    let delta = [point[0] - raw[0], point[1] - raw[1]];
-    geometry.body.point = point;
-    geometry.body.z_adjust = (-30. - painted.lift).round() as i32;
-    if let Some(shadow) = geometry.shadow.as_mut() {
-        let raw_lift = adjust_for_z_standard(painted.coord[2]) as f32;
-        shadow.point[0] += delta[0];
-        shadow.point[1] += delta[1] + painted.lift - raw_lift;
-    }
     let mut pieces = Vec::with_capacity(2);
     for (piece, geometry) in geometry
         .shadow

@@ -8,6 +8,9 @@ ra2_dir = "C:/Westwood/RA2"
 # Optional VERA.INI location (defaults to VERA20k's user data folder).
 # Relative paths are resolved beside this config file, outside the game folder.
 # settings_dir = "."
+# Optional mod to play with: the name of a folder in VERA20k's Mods folder,
+# read on top of the game folder (docs/modding.md). Without it, the original game.
+# mod = "MyMod"
 
 [ini]
 # Root-file selection only, not full MOD gameplay or a different MIX mount policy.

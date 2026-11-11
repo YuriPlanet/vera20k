@@ -251,28 +251,31 @@ impl ResolvedTerrainGrid {
             let mut grid = Self {
                 width: 0,
                 height: 0,
-                cells: Vec::new(),
+                cells: super::cow_cells::CowCells::default(),
                 level_span: LevelSpan::of([]),
                 land_speed_costs: land_speed_cost_profiles(None),
-                overlay_passability: Vec::new(),
-                native_tmp_draw_heights: LookupMap::default(),
+                overlay_passability: Default::default(),
+                native_tmp_draw_heights: Default::default(),
                 shared_cell_dummy,
                 mutation_epoch: 0,
-                native_allocated: materialized_size_diamond.then(Vec::new),
-                radar_color_valid: Vec::new(),
-                damaged_radar_metadata: Vec::new(),
+                native_allocated: materialized_size_diamond.then(|| Vec::new().into()),
+                radar_color_valid: Default::default(),
+                damaged_radar_metadata: Default::default(),
                 tube_facts: Vec::new(),
                 native_tube_indices: Vec::new(),
                 tube_native_ids: Vec::new(),
                 clear_tile_id: 0,
                 water_tiles: crate::map::rmg::tiles::TileIds::from_keys(&Default::default()),
                 tile_registry_len: None,
+                tile_burrowing_permissions: None,
                 dummy_accepts_smudge: false,
                 high_bridge_rim_tiles: None,
                 bridge_set_start: None,
                 wood_bridge_set_start: None,
                 tile_animations: Vec::new(),
                 destroyable_cliff_catalog: None,
+                deformation_catalog: None,
+                deformation_enabled: false,
                 bridge_recalc_catalog: None,
                 allocation_caches: Default::default(),
             };
@@ -959,27 +962,30 @@ impl ResolvedTerrainGrid {
             width,
             height,
             level_span: LevelSpan::of(cells.iter().map(|cell| cell.level)),
-            cells,
+            cells: super::cow_cells::CowCells::new(cells),
             land_speed_costs: land_speed_cost_profiles(None),
-            overlay_passability: Vec::new(),
-            native_tmp_draw_heights: LookupMap::default(),
+            overlay_passability: Default::default(),
+            native_tmp_draw_heights: Default::default(),
             shared_cell_dummy,
             mutation_epoch: 0,
-            native_allocated,
-            radar_color_valid,
-            damaged_radar_metadata,
+            native_allocated: native_allocated.map(Into::into),
+            radar_color_valid: radar_color_valid.into(),
+            damaged_radar_metadata: damaged_radar_metadata.into(),
             tube_facts,
             native_tube_indices,
             tube_native_ids,
             clear_tile_id: 0,
             water_tiles: crate::map::rmg::tiles::TileIds::from_keys(&Default::default()),
             tile_registry_len: None,
+            tile_burrowing_permissions: None,
             dummy_accepts_smudge: false,
             high_bridge_rim_tiles: None,
             bridge_set_start: None,
             wood_bridge_set_start: None,
             tile_animations,
             destroyable_cliff_catalog: None,
+            deformation_catalog: None,
+            deformation_enabled: false,
             bridge_recalc_catalog: None,
             allocation_caches: Default::default(),
         };
@@ -1473,16 +1479,26 @@ pub(super) fn height_in_pixels_from_tmp(tile_height: u32, relative_extra_y: i32)
     Some((numerator / 15) as i8)
 }
 
+/// The last record of the 21-row ground slope tables.
+const MAX_TMP_RAMP_TYPE: u8 = 20;
+
 pub(super) fn merge_tmp_metadata(metadata: &mut TileMetadata, tile: &TmpTile) {
     metadata.subtile_entry_valid = Some(true);
     metadata.raw_land_type = tile.terrain_type;
     metadata.land_type =
         crate::rules::terrain_rules::tmp_terrain_to_land_type(tile.terrain_type).as_index();
-    metadata.slope_type = tile.ramp_type;
+    // The slope tables hold 21 records (0..=20). gamemd indexes them with the
+    // raw byte and reads past the table for a larger one; VERA-only: such a
+    // tile (damaged or mod art) is flat ground.
+    metadata.slope_type = if tile.ramp_type <= MAX_TMP_RAMP_TYPE {
+        tile.ramp_type
+    } else {
+        0
+    };
     metadata.template_height = tile.height;
     metadata.render_offset_x = tile.offset_x;
     metadata.render_offset_y = tile.offset_y;
-    metadata.has_ramp = tile.ramp_type != 0;
+    metadata.has_ramp = metadata.slope_type != 0;
     metadata.has_tmp_metadata = true;
     metadata.radar_left = tile.radar_left;
     metadata.radar_right = tile.radar_right;

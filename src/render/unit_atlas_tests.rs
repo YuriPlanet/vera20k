@@ -273,7 +273,7 @@ fn gsi_13_07_no_spawn_alt_composite_seeds_32_facings_by_17_slopes() {
     for facing in (0..=248).step_by(8) {
         for slope_type in 0..=16 {
             assert!(needed.contains(&UnitSpriteKey {
-                type_id: "DREDWO".to_string(),
+                type_id: "DREDWO".into(),
                 turret_index: 0,
                 facing,
                 layer: VxlLayer::Composite,
@@ -826,7 +826,7 @@ fn retail_ifv_models_draw_four_distinct_guns_and_share_body_and_shadow() {
     let vpl = VplFile::from_bytes(assets.get_ref("VOXELS.VPL").unwrap()).unwrap();
     let mut pose = None;
     let mut key = UnitSpriteKey {
-        type_id: "FV".to_string(),
+        type_id: "FV".into(),
         turret_index: 0,
         facing: 64,
         layer: VxlLayer::Body,
@@ -1152,4 +1152,12 @@ fn tumble_selects_one_physical_section_for_body_and_shadow() {
             .len(),
         1
     );
+}
+
+#[test]
+fn live_growth_leaves_one_core_to_the_running_match() {
+    // A 2015 laptop: two cores, four threads.
+    assert_eq!(RasterCores::BesideMatch.workers(4), 3);
+    assert_eq!(RasterCores::BesideMatch.workers(1), 1);
+    assert_eq!(RasterCores::All.workers(4), 4);
 }

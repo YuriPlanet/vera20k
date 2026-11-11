@@ -743,11 +743,11 @@ fn retail_disk_attack_delivers_without_ordinary_bullet_fire() {
     );
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: SimResources {
+        resources: std::sync::Arc::new(SimResources {
             rules,
             overlay_registry: registry,
             ..SimResources::empty()
-        },
+        }),
     };
     let mut commands = vec![command];
     for frame in 0..300 {
@@ -780,4 +780,85 @@ fn retail_disk_attack_delivers_without_ordinary_bullet_fire() {
         }
     }
     panic!("ordinary Attack never delivered the first Disk discharge");
+}
+
+/// Ares DiskLaserClass_Update_Anim (1004CFF0, hook 0x4A76ED): the retail
+/// DISK's hit always asks for the warhead's flash, and with
+/// `[AudioVisual] DiskLaserAnimEnabled=yes` also plays DiskWH's damage
+/// animation (90 damage selects XGRYMED1).
+#[cfg(feature = "ares")]
+#[test]
+fn ares_disk_hit_flashes_and_plays_the_enabled_damage_anim() {
+    for enabled in [false, true] {
+        let patch = crate::rules::ini_parser::IniFile::from_str(if enabled {
+            "[AudioVisual]\nDiskLaserAnimEnabled=yes\n"
+        } else {
+            "[AudioVisual]\nDiskLaserAnimEnabled=no\n"
+        });
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+            "XMP03T4.MAP",
+            &patch,
+        ) else {
+            return;
+        };
+        let mut rules = retail.rules;
+        // The anim's SHP binding comes from the asset loader in the game.
+        rules.bind_anim_frame_count_for_test("XGRYMED1", 10);
+        let registry =
+            OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 31);
+        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+        let source = sim
+            .spawn_object_with_overlay_registry("DISK", "Americans", 10, 10, 64, &rules, &registry)
+            .unwrap();
+        let target = sim
+            .spawn_object_with_overlay_registry("MTNK", "Russians", 16, 10, 0, &rules, &registry)
+            .unwrap();
+        sim.resolve_type_handles(&rules);
+        let health = sim.substrate.entities.get(target).unwrap().health.current();
+        let warhead = sim.interner.intern("DiskWH");
+        let command = CommandEnvelope::new(
+            sim.substrate.entities.get(source).unwrap().owner(),
+            sim.session.tick() + 1,
+            Command::Attack {
+                attacker_id: source,
+                target_id: target,
+            },
+        );
+        let mut runtime = SimRuntime {
+            simulation: sim,
+            resources: std::sync::Arc::new(SimResources {
+                rules,
+                overlay_registry: registry,
+                ..SimResources::empty()
+            }),
+        };
+        let mut commands = vec![command];
+        let mut flashed = false;
+        for _ in 0..300 {
+            let output = runtime
+                .advance_frame(
+                    &std::mem::take(&mut commands),
+                    67,
+                    TickLane::Ordinary,
+                    FrameEffects::default(),
+                )
+                .unwrap();
+            flashed |= output.combat_lights.iter().any(|request| {
+                matches!(request,
+                    crate::sim::combat::CombatLightRequest::Impact { warhead_ref, .. }
+                        if *warhead_ref == warhead)
+            });
+            let sim = &runtime.simulation;
+            if sim.substrate.entities.get(target).unwrap().health.current() < health {
+                break;
+            }
+        }
+        let sim = &runtime.simulation;
+        assert!(flashed, "the hit asks for DiskWH's flash ({enabled})");
+        let explosion = sim
+            .anims()
+            .any(|(_, anim)| sim.interner.resolve(anim.type_id()) == "XGRYMED1");
+        assert_eq!(explosion, enabled);
+    }
 }

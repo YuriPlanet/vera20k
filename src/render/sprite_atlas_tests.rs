@@ -264,7 +264,7 @@ fn loader_uses_stored_shp_rect_for_depth_but_retains_logical_canvas_for_picking(
         for frame in 0..2 {
             let key = ShpSpriteKey {
                 palette_context: crate::render::sprite_atlas::ShpPaletteContext::Legacy,
-                type_id: name.to_string(),
+                type_id: name.into(),
                 facing: 0,
                 frame,
                 house_color: crate::rules::house_colors::NO_REMAP,
@@ -331,7 +331,7 @@ fn loader_uses_stored_shp_rect_for_depth_but_retains_logical_canvas_for_picking(
 fn make_shp_key(type_id: &str, facing: u8) -> ShpSpriteKey {
     ShpSpriteKey {
         palette_context: crate::render::sprite_atlas::ShpPaletteContext::Legacy,
-        type_id: type_id.to_string(),
+        type_id: type_id.into(),
         facing,
         frame: 0,
         house_color: HouseColorIndex::default(),
@@ -412,7 +412,7 @@ fn retail_shp_vehicle_keys_include_the_native_embedded_shadow_half() {
                 assert!(
                     needed.contains(&ShpSpriteKey {
                         palette_context: ShpPaletteContext::Legacy,
-                        type_id: type_id.to_owned(),
+                        type_id: type_id.into(),
                         facing: 0,
                         frame,
                         house_color: color,
@@ -438,7 +438,7 @@ fn retail_shp_vehicle_keys_include_the_native_embedded_shadow_half() {
                         assert!(
                             needed.contains(&ShpSpriteKey {
                                 palette_context: ShpPaletteContext::Legacy,
-                                type_id: type_id.to_owned(),
+                                type_id: type_id.into(),
                                 facing: 0,
                                 frame: selected,
                                 house_color,
@@ -563,7 +563,7 @@ fn ordinary_building_atlas_retains_native_completed_health_frames() {
             assert!(
                 needed.contains(&ShpSpriteKey {
                     palette_context: ShpPaletteContext::Legacy,
-                    type_id: "GAPOWR".to_string(),
+                    type_id: "GAPOWR".into(),
                     facing: 0,
                     frame,
                     house_color: color,
@@ -620,7 +620,7 @@ fn retail_gapowr_atlas_registers_native_embedded_shadow_frames() {
     let extra_building_types = ["GAPOWR"];
     let frozen_body = ShpSpriteKey {
         palette_context: ShpPaletteContext::SelectedScheme,
-        type_id: "GAPOWR".to_string(),
+        type_id: "GAPOWR".into(),
         facing: 0,
         frame: 1,
         house_color: HouseColorIndex(2),
@@ -651,7 +651,7 @@ fn retail_gapowr_atlas_registers_native_embedded_shadow_frames() {
 
     let key = |frame| ShpSpriteKey {
         palette_context: ShpPaletteContext::Legacy,
-        type_id: "GAPOWR".to_string(),
+        type_id: "GAPOWR".into(),
         facing: 0,
         frame,
         house_color: HouseColorIndex(2),
@@ -783,7 +783,7 @@ fn registered_underscore_building_requests_make_frames_from_buildup_asset() {
     for frame in 0..20 {
         assert!(needed.contains(&ShpSpriteKey {
             palette_context: ShpPaletteContext::Legacy,
-            type_id: "GAGATE_A_MAKE".to_string(),
+            type_id: "GAGATE_A_MAKE".into(),
             facing: 0,
             frame,
             house_color: HouseColorIndex(2),
@@ -1234,7 +1234,7 @@ fn infantry_nonempty_shadow_is_uploaded_and_selected_from_the_second_half() {
     .unwrap();
     let key = ShpSpriteKey {
         palette_context: ShpPaletteContext::Legacy,
-        type_id: "RAWGI".to_string(),
+        type_id: "RAWGI".into(),
         facing: 0,
         frame: 0,
         house_color: HouseColorIndex(0),
@@ -1372,7 +1372,7 @@ fn raw_infantry_render_does_not_substitute_an_out_of_asset_key() {
     );
     // Preserve the existing generic class adapter; this does not establish
     // original invalid-frame shape access or full Infantry drawing parity.
-    key.type_id = "LEGACY".to_string();
+    key.type_id = "LEGACY".into();
     assert!(
         render_shp_key(
             &source,
@@ -1654,7 +1654,7 @@ fn cell_anim_remap_registration_covers_every_bound_frame_for_its_color() {
     for frame in 0..3 {
         assert!(needed.contains(&ShpSpriteKey {
             palette_context: ShpPaletteContext::AnimScheme,
-            type_id: "Crate_Spark".to_string(),
+            type_id: "Crate_Spark".into(),
             facing: 0,
             frame,
             house_color: HouseColorIndex(1),
@@ -1696,7 +1696,7 @@ fn gsi_13_08_warpout_keeps_all_frames_and_drives_the_progressive_alpha_ladder() 
     for frame in 0..=20 {
         assert!(needed.contains(&ShpSpriteKey {
             palette_context: ShpPaletteContext::GlobalAnim,
-            type_id: "WARPOUT".to_string(),
+            type_id: "WARPOUT".into(),
             facing: 0,
             frame,
             house_color: HouseColorIndex(0),
@@ -1821,7 +1821,7 @@ fn gsi_13_04_tem_only_tile_root_uses_iso_palette_and_registers_every_frame() {
     for frame in 0..4 {
         assert!(needed.contains(&ShpSpriteKey {
             palette_context: ShpPaletteContext::GlobalAnim,
-            type_id: "CUSTOM_TILE_ANIM".to_string(),
+            type_id: "CUSTOM_TILE_ANIM".into(),
             facing: 0,
             frame,
             house_color: HouseColorIndex(0),
@@ -1837,6 +1837,7 @@ fn collect_effect_names_includes_weapon_anim_entries() {
 [VehicleTypes]\n\n\
 [AircraftTypes]\n\n\
 [BuildingTypes]\n\n\
+[Animations]\n0=MGUN-N\n1=MGUN-NE\n2=MGUN-E\n3=MGUN-SE\n4=MGUN-S\n5=MGUN-SW\n6=MGUN-W\n7=MGUN-NW\n\n\
 [E1]\nStrength=125\nArmor=flak\nSpeed=4\nPrimary=TestWeapon\n\n\
 [TestWeapon]\nDamage=1\nWarhead=TestWH\nAnim=MGUN-N,MGUN-NE,MGUN-E,MGUN-SE,MGUN-S,MGUN-SW,MGUN-W,MGUN-NW\nOccupantAnim=UCFLASH\n\n\
 [TestWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
@@ -2052,7 +2053,7 @@ fn retail_statue_bakes_against_the_theater_lib_palette() {
     let unit = Palette::from_bytes(assets.get_ref("unitubn.pal").unwrap()).unwrap();
     let key = ShpSpriteKey {
         palette_context: ShpPaletteContext::Legacy,
-        type_id: "CANEWY04".to_string(),
+        type_id: "CANEWY04".into(),
         facing: 0,
         frame: 0,
         house_color: HouseColorIndex(3),
@@ -2386,7 +2387,7 @@ fn refreshed_sprites_upload_to_a_growth_page_and_leave_resident_ones_in_place() 
                     mip_level_count: 1,
                     sample_count: 1,
                     dimension: wgpu::TextureDimension::D2,
-                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                    format: wgpu::TextureFormat::Rgba8Unorm,
                     usage: wgpu::TextureUsages::TEXTURE_BINDING,
                     view_formats: &[],
                 },
@@ -3548,4 +3549,26 @@ fn building_type_bounds_publish_with_color_growth_type_growth_and_abort() {
     assert_eq!(extended.building_type_bounds("CANEWY06"), Some(bounds));
     assert!(extended.building_type_bounds("CANEWY01").is_some());
     assert_eq!(extended.building_type_bounds.len(), 2);
+}
+
+/// The coverage check runs on every spawn and death, so objects of one type
+/// and owner give one pair between them; another owner's keeps its own.
+#[test]
+fn object_pairs_give_each_type_and_owner_once() {
+    let colors = HouseColorMap::from([
+        ("Americans".to_string(), HouseColorIndex(2)),
+        ("Russians".to_string(), HouseColorIndex(5)),
+    ]);
+    let mut world = crate::sim::entity_store::EntityStore::new();
+    for (id, owner) in [(1, "Americans"), (2, "Americans"), (3, "Russians")] {
+        let mut entity = crate::sim::game_entity::GameEntity::test_default(id, "E1", owner, 5, 5);
+        entity.set_is_voxel_for_test(false);
+        world.insert(entity);
+    }
+    let interner = crate::sim::intern::test_interner();
+    let pairs: Vec<_> = object_pairs(&world, &colors, &[], Some(&interner)).collect();
+    assert_eq!(
+        pairs,
+        [("E1", HouseColorIndex(2)), ("E1", HouseColorIndex(5))]
+    );
 }

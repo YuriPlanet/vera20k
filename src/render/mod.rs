@@ -34,6 +34,7 @@ pub mod building_zshape;
 pub mod cell_window;
 pub mod chrome_atlas;
 pub(crate) mod chrono_screen;
+pub(crate) mod color_vision;
 pub mod combat_light;
 pub mod cursor_atlas;
 #[cfg(test)]
@@ -42,6 +43,7 @@ pub mod draw_state;
 pub(crate) mod electric_bolt;
 pub(crate) mod entity_atlas_growth;
 pub(crate) mod foot_depth;
+pub(crate) mod frame_handoff;
 pub mod frame_readback;
 pub mod gpu;
 pub(crate) mod gpu_timer;
@@ -60,6 +62,7 @@ pub mod pixel_fx_sparkles;
 pub mod radar;
 pub(crate) mod radial_indicator;
 pub(crate) mod radiation_beam;
+pub(crate) mod depth_shift;
 pub(crate) mod scaled_copy;
 pub(crate) mod screen_presentation;
 pub mod screenshot;
@@ -111,3 +114,5 @@ pub mod xbr;
 
 #[cfg(test)]
 mod sidebar_gpu_tests;
+#[cfg(test)]
+mod smooth_chrome_gpu_tests;

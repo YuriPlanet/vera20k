@@ -109,6 +109,28 @@ pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
     key_press(state, code, event.text.as_deref());
 }
 
+/// [`key_press`] reaches the room: no transfer, verify box, page dialog or
+/// notice is over it.
+fn room_takes_keys(state: &AppState) -> bool {
+    !transfer_active(state)
+        && crate::app::shell_network_setup::verify(state).is_none()
+        && !crate::app::shell_wol::page::open(state)
+        && !notice_active(state)
+        && crate::app::shell_network_setup::view(state).is_some()
+}
+
+/// VERA's Esc menu (`app::shell_menu`): the boxes and popups over the room
+/// keep Esc, and a locked room is about to launch.
+pub(crate) fn leaves_escape(state: &AppState) -> bool {
+    room_takes_keys(state)
+        && crate::app::shell_network_setup::view(state).is_some_and(|view| !view.locked)
+        && state
+            .frontend
+            .multiplayer_setup
+            .as_ref()
+            .is_some_and(|ui| !ui.options_open && ui.map_offer.is_none())
+}
+
 /// The chat NewEdit while it takes keys, for the input method
 /// (`app::input::ime`): [`key_press`] reaches the focused chat with no
 /// transfer, verify box, page dialog, notice or ChooseMap over the dialog.
@@ -121,11 +143,7 @@ pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::
             .choose_map_modal
             .is_none()
         && !shell_transition::blocks_shell_input(state)
-        && !transfer_active(state)
-        && crate::app::shell_network_setup::verify(state).is_none()
-        && !crate::app::shell_wol::page::open(state)
-        && !notice_active(state)
-        && crate::app::shell_network_setup::view(state).is_some();
+        && room_takes_keys(state);
     state
         .frontend
         .multiplayer_setup
@@ -159,16 +177,16 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
         }
         return;
     }
-    let Some(view) = crate::app::shell_network_setup::view(state) else {
+    if crate::app::shell_network_setup::view(state).is_none() {
         return;
-    };
+    }
     let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
         return;
     };
     // NewEdit consumes all keyboard input while chat has focus. Escape is
-    // inert; Enter appends CRLF before shared5EDD00/5DE360 submission.
-    // VERA's Game Options popup takes the keys first and closes on Escape
-    // or Enter.
+    // inert there; a free Escape opens VERA's Esc menu before it gets here.
+    // Enter appends CRLF before shared5EDD00/5DE360 submission. VERA's Game
+    // Options popup takes the keys first and closes on Escape or Enter.
     let action = if let Some(offer) = &ui.map_offer {
         match code {
             // Keys meant for the chat just before it opened do not answer it.
@@ -207,10 +225,7 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
             None
         }
     } else {
-        match code {
-            Some(KeyCode::Escape) if !view.locked => Some(SetupAction::Back),
-            _ => None,
-        }
+        None
     };
     if let Some(action) = action {
         crate::app::shell_network_setup::apply_action(state, action);

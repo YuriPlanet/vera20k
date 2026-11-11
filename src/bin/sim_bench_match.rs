@@ -73,8 +73,11 @@ const ORE_REACH: i32 = 40;
 const DEPLOY_PAD: i32 = 3;
 /// Houses a house attacks: its nearest living ones.
 const FRONTS: usize = 3;
-/// Computer houses by default: the seven the skirmish lobby allows.
-pub(crate) const COMPUTERS: usize = 7;
+/// Computer houses at most: one at every start of a 30-start map
+/// (`tools.scale_map --starts 30`) but the local house's, filling the
+/// lobby's `NETWORK_PLAYER_SLOT_COUNT` slots. A map with fewer starts seats
+/// fewer.
+pub(crate) const COMPUTERS: usize = 29;
 /// The default run, two minutes of game time, in which the armies reach the
 /// nearest bases.
 pub(crate) const TICKS: u64 = 1800;
@@ -82,15 +85,31 @@ pub(crate) const TICKS: u64 = 1800;
 pub(crate) const WARMUP: u64 = 150;
 
 /// The computer houses in launch order: their countries and difficulties.
-pub(crate) const COMPUTER_ROSTER: [(LaunchCountry, AiDifficulty); COMPUTERS] = [
-    (LaunchCountry::Russia, AiDifficulty::Hard),
-    (LaunchCountry::France, AiDifficulty::Normal),
-    (LaunchCountry::Yuri, AiDifficulty::Easy),
-    (LaunchCountry::Iraq, AiDifficulty::Hard),
-    (LaunchCountry::Korea, AiDifficulty::Normal),
-    (LaunchCountry::Cuba, AiDifficulty::Easy),
-    (LaunchCountry::GreatBritain, AiDifficulty::Hard),
-];
+/// Countries rotate over the ten and difficulties over Hard, Normal and
+/// Easy, so a run seating the first seven matches the old seven-house roster.
+pub(crate) const COMPUTER_ROSTER: [(LaunchCountry, AiDifficulty); COMPUTERS] = {
+    const COUNTRIES: [LaunchCountry; 10] = [
+        LaunchCountry::Russia,
+        LaunchCountry::France,
+        LaunchCountry::Yuri,
+        LaunchCountry::Iraq,
+        LaunchCountry::Korea,
+        LaunchCountry::Cuba,
+        LaunchCountry::GreatBritain,
+        LaunchCountry::America,
+        LaunchCountry::Germany,
+        LaunchCountry::Libya,
+    ];
+    const DIFFICULTIES: [AiDifficulty; 3] =
+        [AiDifficulty::Hard, AiDifficulty::Normal, AiDifficulty::Easy];
+    let mut roster = [(COUNTRIES[0], DIFFICULTIES[0]); COMPUTERS];
+    let mut index = 0;
+    while index < COMPUTERS {
+        roster[index] = (COUNTRIES[index % 10], DIFFICULTIES[index % 3]);
+        index += 1;
+    }
+    roster
+};
 
 /// The human houses' countries, in a fixed rotation over the ten; the march
 /// scenario's houses take them too.

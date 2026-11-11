@@ -128,7 +128,8 @@ fn load_campaign(
             rules: result.scenario.rules.take().unwrap(),
             overlay_registry: result.scenario.overlay_registry,
             terrain_template: result.scenario.resolved_terrain.take(),
-        },
+        }
+        .into(),
     }
 }
 

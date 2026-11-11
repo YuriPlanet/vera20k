@@ -62,6 +62,24 @@ fn shadow_slope(terrain: &ResolvedTerrainGrid, entity: &GameEntity) -> u8 {
     lifted_unit_shadow_pose(entity, terrain, 0).unwrap().slope
 }
 
+/// Teleport keeps the base Draw_Matrix (`0x0055A730`, vtable slot
+/// `0x007F5024`), level on any ramp, while every ground body's shadow
+/// (base `0x0055A7D0`) follows the cell under its Location.
+#[test]
+fn a_teleporter_draws_level_on_a_ramp_and_its_shadow_lies_on_it() {
+    let terrain = ramp_terrain();
+    let mut miner = hover_on_ramp(&terrain, "CMIN", 0);
+    miner.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Teleport));
+    assert_eq!(
+        body_slope(&terrain, &miner, [0.; 2]),
+        UnitRenderSlopeState::Stable(0)
+    );
+    assert_eq!(
+        unit_shadow_slope(Some(&NativeCellQuery::isolated(&terrain)), &miner),
+        RAMP
+    );
+}
+
 /// Is_Powered (`0x00516C70`) holds through the powered byte or any height,
 /// and either one draws the level facing matrix (`0x0051407F..0x00514092`).
 /// Only an unpowered Hover resting on its cell takes the ramp
@@ -122,6 +140,23 @@ fn a_floating_hover_draws_its_shadow_on_the_ground_below_its_body() {
     assert!(drop > 0);
     assert_eq!(pose.anchor, [x, y + drop as f32]);
     assert_eq!(pose.slope, 0);
+}
+
+/// A falling Drive Unit (a paradropped vehicle) keeps the same inherited
+/// Shadow_Point (Drive's ILocomotion `+0x30` is `0x0055A8C0`), so its shadow
+/// lies on the ground below it instead of under its body.
+#[test]
+fn a_falling_vehicle_draws_its_shadow_on_the_ground_below_its_body() {
+    let terrain = crate::map::resolved_terrain::test_flat_ground_grid(32);
+    let mut tank = hover_on_ramp(&terrain, "MTNK", 80);
+    tank.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
+    assert!(!has_lifted_unit_shadow(&tank));
+    tank.set_falling_down_for_test(true);
+    assert!(has_lifted_unit_shadow(&tank));
+    let pose = lifted_unit_shadow_pose(&tank, &terrain, 0).unwrap();
+    let (x, y) = crate::render::locomotor_visual::screen_position(&tank);
+    let drop = crate::util::native_x87::adjust_for_z_standard(80);
+    assert_eq!(pose.anchor, [x, y + drop as f32]);
 }
 
 /// Either angle at the double 0.005 gate (`0x00513F53..0x00513F7F`) keys the

@@ -13,6 +13,9 @@ use crate::util::ini_writer::set_ini_values;
 
 /// Section a random-map seed file stores its options under.
 const SECTION: &str = "RandomMap";
+/// VERA's seed key for [`RmgOptions::urban_areas`]; native seeds lack it.
+#[cfg(feature = "ares")]
+const URBAN_AREAS_KEY: &str = "UrbanAreas";
 
 /// One random-map configuration.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,6 +31,12 @@ pub struct RmgOptions {
     pub tiberium_layout: i32,
     pub vegetation: i32,
     pub urban_presence: i32,
+    /// VERA extension: the player set Urban Presence (the Advanced Buildings
+    /// slider), so the urban stage places towns for it. The original never
+    /// reads the presence; without this flag neither does VERA, so every
+    /// original seed generates exactly as before. Saved as `VeraUrban=yes`
+    /// only when set.
+    pub urban_enabled: bool,
     pub width: i32,
     pub height: i32,
     pub accessibility: i32,
@@ -36,7 +45,30 @@ pub struct RmgOptions {
     /// Display description. Stored in `.SED` as comma-separated hex UTF-16 code
     /// units, and used as the random-map row's displayed name.
     pub description: SeedDescription,
+    /// Ares' `RMG::UrbanAreas` (Ares.dll DAT_100c2150): the Urban Areas box
+    /// of the dialog, read by MapSeedClass_Generate_UrbanAreas (1006ABD0,
+    /// hook 0x598FB8). Native Ares keeps it process-global and writes no copy;
+    /// VERA stores it in the seed as `UrbanAreas=` so the launch regeneration
+    /// and every network peer generate the same map. The record digest
+    /// ([`Self::native_digest`]) leaves it out.
+    #[cfg(feature = "ares")]
+    pub urban_areas: bool,
 }
+
+impl RmgOptions {
+    /// Whether the urban pass (`0x005A5020`) runs: Ares' `RMG::UrbanAreas`,
+    /// or VERA's opted-in Urban Presence.
+    pub fn urban_pass_runs(&self) -> bool {
+        #[cfg(feature = "ares")]
+        if self.urban_areas {
+            return true;
+        }
+        self.urban_enabled
+    }
+}
+
+/// VERA's `.SED` key for [`RmgOptions::urban_enabled`].
+const VERA_URBAN_KEY: &str = "VeraUrban";
 
 impl Default for RmgOptions {
     /// The original constructor's defaults (`MapSeedClass` ctor `0x00595680`,
@@ -55,12 +87,15 @@ impl Default for RmgOptions {
             tiberium_layout: 0,
             vegetation: 0,
             urban_presence: 0,
+            urban_enabled: false,
             width: 0,
             height: 0,
             accessibility: 0,
             region_size: 0,
             seed: -1,
             description: SeedDescription::default(),
+            #[cfg(feature = "ares")]
+            urban_areas: false,
         }
     }
 }
@@ -133,6 +168,13 @@ impl RmgOptions {
         read("Vegetation", &mut self.vegetation);
         read("UrbanPresence", &mut self.urban_presence);
         read("Resources", &mut self.resources);
+        // VERA: written only when set, so a seed without the key has no towns,
+        // whatever `self` held.
+        self.urban_enabled = section.read_bool(VERA_URBAN_KEY, false);
+        #[cfg(feature = "ares")]
+        {
+            self.urban_areas = section.read_bool(URBAN_AREAS_KEY, self.urban_areas);
+        }
     }
 
     /// Serialize to `.SED` bytes, writing every key in the original's order.
@@ -157,6 +199,16 @@ impl RmgOptions {
             ("UrbanPresence", self.urban_presence.to_string()),
             ("Resources", self.resources.to_string()),
         ];
+        // VERA: written only when set, so an original seed's bytes are unchanged.
+        let mut values = values;
+        if self.urban_enabled {
+            values.push((VERA_URBAN_KEY, "yes".to_string()));
+        }
+        #[cfg(feature = "ares")]
+        values.push((
+            URBAN_AREAS_KEY,
+            if self.urban_areas { "yes" } else { "no" }.to_string(),
+        ));
         let pairs: Vec<(&str, &str)> = values
             .iter()
             .map(|(key, value)| (*key, value.as_str()))
@@ -205,6 +257,28 @@ mod tests {
     fn sed_description(raw: &str) -> SeedDescription {
         let ini = IniFile::from_str(&format!("[RandomMap]\nDescription={raw}\n"));
         read_description(ini.section_or_empty(SECTION), &SeedDescription::default())
+    }
+
+    /// VERA's towns key is written only when set, so a seed without it turns
+    /// the towns off whatever options it is read over.
+    #[test]
+    fn a_seed_without_the_towns_key_leaves_the_towns_off() {
+        let seed = |urban_enabled| {
+            let options = RmgOptions {
+                seed: 7,
+                urban_enabled,
+                ..RmgOptions::default()
+            };
+            IniFile::from_bytes(&options.to_sed_bytes()).expect("seed INI")
+        };
+        let mut read = RmgOptions {
+            urban_enabled: true,
+            ..RmgOptions::default()
+        };
+        read.apply_sed(&seed(false));
+        assert!(!read.urban_enabled);
+        read.apply_sed(&seed(true));
+        assert!(read.urban_enabled);
     }
 
     #[test]
@@ -263,12 +337,15 @@ mod tests {
             tiberium_layout: 500,
             vegetation: -3,
             urban_presence: 900,
+            urban_enabled: false,
             width: 9,
             height: 9,
             accessibility: 101,
             region_size: -1,
             seed: 0x1_0000,
             description: SeedDescription::default(),
+            #[cfg(feature = "ares")]
+            urban_areas: false,
         };
         options.normalize();
 
@@ -341,12 +418,15 @@ mod tests {
             tiberium_layout: 20,
             vegetation: 70,
             urban_presence: 10,
+            urban_enabled: false,
             width: 2,
             height: 3,
             accessibility: 60,
             region_size: 45,
             seed: 4321,
             description: "Round Trip".into(),
+            #[cfg(feature = "ares")]
+            urban_areas: true,
         };
         original.normalize();
 

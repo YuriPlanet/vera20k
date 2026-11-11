@@ -6,7 +6,8 @@
 //! Move/destruction walk includes those new births, as the original does.
 
 use super::spark::{SparkMotionStep, resolve_collision};
-use super::spark_world::{SparkCollisionWorld, constructor_ground_height};
+use super::spark_world::{SparkCollisionWorld, SparkWorldError, constructor_ground_height};
+use super::system_ai::SparkSystemTickError;
 use super::wind::{GAS_WIND_DX, GAS_WIND_DY};
 use super::{Particle, ParticleSystem};
 use crate::rules::particle_type::{ParticleBehavesLike, ParticleTypeId};
@@ -88,7 +89,11 @@ pub(super) fn tick_system(
             continue;
         };
         if rules.particle_type(p.type_id).behaves_like == ParticleBehavesLike::Gas {
-            tick_particle(&mut p, sim, rules, owner_house, context);
+            if let Err(error) =
+                tick_particle(&mut p, sim, rules, owner_house, owner_entity, context)
+            {
+                super::system_ai::retire_refused(&mut p, &error);
+            }
             super::system_ai::finish_lifetime(&mut p);
         } else {
             super::system_ai::tick_particle(&mut p, sim, rules, owner_house, owner_entity);
@@ -140,14 +145,16 @@ pub(super) fn tick_system(
 
 /// Complete Gas body; the dispatcher separately owns its word-EC tail.
 /// Shared Spark query/reflection owners implement the identical bridge,
-/// ground/contact, building/wall and slope-matrix dependency.
+/// ground/contact, building/wall and slope-matrix dependency. An `Err` is a
+/// cell VERA's query refuses; the caller retires the particle.
 pub(super) fn tick_particle(
     p: &mut Particle,
     sim: &mut Simulation,
     rules: &RuleSet,
     owner_house: Option<InternedId>,
+    owner: Option<u64>,
     context: UninitContext<'_>,
-) {
+) -> Result<(), SparkSystemTickError> {
     if sim.session.binary_frame() & 1 == 0 {
         if sim.particle_rng().next_raw_abs_modulo(8) == 0 {
             let x_axis = sim.particle_rng().next_raw_abs_modulo(2) == 0;
@@ -187,15 +194,13 @@ pub(super) fn tick_particle(
                 persistent_velocity: p.motion,
                 probe_velocity: p.motion,
             };
-            let facts = SparkCollisionWorld::new(sim, rules)
-                .and_then(|world| world.query(motion))
-                .expect("Gas collision requires supported live cell facts");
-            let collision = resolve_collision(motion, facts).expect("finite Gas slope reflection");
+            let facts = SparkCollisionWorld::new(sim, rules)?.query(motion)?;
+            let collision = resolve_collision(motion, facts)?;
             if let Some(vector) = collision.transient_reflection {
                 p.motion = vector;
             }
         }
-        let height = p.coords.z.wrapping_sub(ground(sim, p.coords));
+        let height = p.coords.z.wrapping_sub(ground(sim, p.coords)?);
         p.drift_z = if height > 5 {
             p.drift_z.wrapping_sub(1).max(-5)
         } else {
@@ -206,7 +211,7 @@ pub(super) fn tick_particle(
     p.damage_counter = p.damage_counter.wrapping_sub(1);
     if p.damage_counter == 0 && pt.damage != 0 {
         p.damage_counter = pt.max_dc as i16;
-        apply_damage(p, sim, rules, owner_house, context);
+        apply_damage(p, sim, rules, owner_house, owner, context);
     }
     if super::system_ai::state_advance_due(p, pt.max_ec, pt.state_ai_advance) {
         p.animation_state = p.animation_state.wrapping_add(1);
@@ -218,13 +223,16 @@ pub(super) fn tick_particle(
             p.animation_state = 0;
         }
     }
+    Ok(())
 }
 
+/// `owner` is the system's owner (`+0xE0`); only Ares reads it here.
 fn apply_damage(
     p: &Particle,
     sim: &mut Simulation,
     rules: &RuleSet,
     owner_house: Option<InternedId>,
+    #[cfg_attr(not(feature = "ares"), allow(unused_variables))] owner: Option<u64>,
     context: UninitContext<'_>,
 ) {
     let pt = rules.particle_type(p.type_id);
@@ -233,6 +241,14 @@ fn apply_damage(
     };
     let warhead = sim.interner.intern(warhead);
     let cell = ((p.coords.x >> 8) as u16, (p.coords.y >> 8) as u16);
+    #[cfg(feature = "ares")]
+    {
+        let range = f64::from_bits(pt.ares_damage_range.bits());
+        if range > 0.0 {
+            damage_in_range(p, sim, rules, owner_house, warhead, range, context);
+            return;
+        }
+    }
     let mut current = sim.cell_objects(cell, MovementLayer::Ground).next();
     while let Some(member) = current {
         //62C293 captures NextObject before its synchronous damage callback.
@@ -269,6 +285,17 @@ fn apply_damage(
                     .wrapping_abs()
                     .wrapping_add(p.coords.y.wrapping_sub(coords.y).wrapping_abs()),
             );
+            // Ares 3.0 ParticleClass_Update_Gas (1005CFE0, hook 0x62C2ED):
+            // a Techno system owner is the attacker and its house the source.
+            #[cfg(feature = "ares")]
+            let (attacker, owner_house) = match owner
+                .and_then(|id| sim.entities().get(id).map(|techno| (id, techno.owner())))
+            {
+                Some((id, house)) => (id, Some(house)),
+                None => (RAD_NO_ATTACKER, owner_house),
+            };
+            #[cfg(not(feature = "ares"))]
+            let attacker = RAD_NO_ATTACKER;
             match member {
                 CellObjectMember::Entity(id) => {
                     sim.commit_direct_damage_receiver(
@@ -278,7 +305,7 @@ fn apply_damage(
                             id,
                             pt.damage,
                             distance,
-                            RAD_NO_ATTACKER,
+                            attacker,
                             owner_house,
                             warhead,
                             ReceiverCallFlags {
@@ -313,26 +340,159 @@ fn apply_damage(
     }
 }
 
-fn ground(sim: &Simulation, coords: IVec3) -> i32 {
-    constructor_ground_height(sim, coords.x, coords.y)
-        .expect("Gas movement requires supported ground")
-        .unwrap_or(0)
+/// Ares 3.0 ParticleClass_Update_Gas_DamageRange (100297C0, hook 0x62C23D,
+/// resuming at 0x62C313): the objects of every cell within `ceil(range)`
+/// of the particle's cell, in CellSpreadEnumerator order (100294D0), whose
+/// Location is within `range * 256` leptons (squared, in doubles), each once;
+/// then each that is still alive with Health above zero takes the type's
+/// Damage at the vanilla `|dY| + |dX|` distance adjusted for Z, with no
+/// attacker and the system's owner House.
+#[cfg(feature = "ares")]
+fn damage_in_range(
+    p: &Particle,
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner_house: Option<InternedId>,
+    warhead: InternedId,
+    range: f64,
+    context: UninitContext<'_>,
+) {
+    let pt = rules.particle_type(p.type_id);
+    let leptons = range * 256.0;
+    let range_sq = leptons * leptons;
+    let spread = libm::ceil(range) as i32;
+    let center = (p.coords.x >> 8, p.coords.y >> 8);
+    let location = |sim: &Simulation, member: CellObjectMember| match member {
+        CellObjectMember::Entity(id) => sim.entities().get(id).map(|e| {
+            let c = crate::sim::movement::ground_pose::position_world_coord(&e.position);
+            IVec3::new(c.x, c.y, c.z)
+        }),
+        CellObjectMember::Terrain(id) => sim.terrain_objects.objects().get(&id).map(|e| {
+            let c = e.world_coord();
+            IVec3::new(c.x, c.y, c.z)
+        }),
+    };
+    let mut items: Vec<(CellObjectMember, (u16, u16))> = Vec::new();
+    for (dx, dy) in crate::sim::cell_rect::cell_spread_offsets(spread.max(0) as usize) {
+        let (Ok(rx), Ok(ry)) = (
+            u16::try_from(center.0 + i32::from(dx)),
+            u16::try_from(center.1 + i32::from(dy)),
+        ) else {
+            continue;
+        };
+        if sim
+            .resolved_terrain
+            .as_ref()
+            .is_none_or(|terrain| terrain.cell(rx, ry).is_none())
+        {
+            continue;
+        }
+        let members: Vec<_> = sim.cell_objects((rx, ry), MovementLayer::Ground).collect();
+        for member in members {
+            let Some(at) = location(sim, member) else {
+                continue;
+            };
+            let delta = |a: i32, b: i32| f64::from(a.wrapping_sub(b));
+            let (dx, dy, dz) = (
+                delta(at.x, p.coords.x),
+                delta(at.y, p.coords.y),
+                delta(at.z, p.coords.z),
+            );
+            // The vector lives in a 0x100-entry stack buffer it cannot grow.
+            if dz * dz + dx * dx + dy * dy <= range_sq
+                && items.len() < 0x100
+                && !items.iter().any(|(item, _)| *item == member)
+            {
+                items.push((member, (rx, ry)));
+            }
+        }
+    }
+    for (member, cell) in items {
+        let alive = match member {
+            CellObjectMember::Entity(id) => sim
+                .entities()
+                .get(id)
+                .is_some_and(|e| e.lifecycle.object_alive() && e.health.current() > 0),
+            CellObjectMember::Terrain(id) => sim
+                .terrain_objects
+                .objects()
+                .get(&id)
+                .is_some_and(|e| e.is_live() && e.health() > 0),
+        };
+        let Some(at) = location(sim, member).filter(|_| alive) else {
+            continue;
+        };
+        let distance = adjust_for_z_standard(
+            p.coords
+                .y
+                .wrapping_sub(at.y)
+                .wrapping_abs()
+                .wrapping_add(p.coords.x.wrapping_sub(at.x).wrapping_abs()),
+        );
+        match member {
+            CellObjectMember::Entity(id) => {
+                sim.commit_direct_damage_receiver(
+                    rules,
+                    context.registry(),
+                    EntityDamageEvent::direct_receiver(
+                        id,
+                        pt.damage,
+                        distance,
+                        RAD_NO_ATTACKER,
+                        owner_house,
+                        warhead,
+                        ReceiverCallFlags {
+                            ignore_defenses: false,
+                            arg6: false,
+                        },
+                    ),
+                    context.effects(),
+                );
+            }
+            CellObjectMember::Terrain(id) => {
+                sim.commit_direct_terrain_damage_receiver(
+                    rules,
+                    context.registry(),
+                    TerrainDamageEvent {
+                        damage_writeback: None,
+                        stable_id: id,
+                        rx: cell.0,
+                        ry: cell.1,
+                        damage: pt.damage,
+                        distance_leptons: distance,
+                        warhead_ref: warhead,
+                        near_center_ic_isolation_eligible: false,
+                    },
+                    true,
+                    context.effects(),
+                );
+            }
+        }
+    }
 }
 
-pub(super) fn move_gas(p: &mut Particle, sim: &Simulation, rules: &RuleSet) {
+fn ground(sim: &Simulation, coords: IVec3) -> Result<i32, SparkWorldError> {
+    Ok(constructor_ground_height(sim, coords.x, coords.y)?.unwrap_or(0))
+}
+
+pub(super) fn move_gas(
+    p: &mut Particle,
+    sim: &Simulation,
+    rules: &RuleSet,
+) -> Result<(), SparkWorldError> {
     let pt = rules.particle_type(p.type_id);
     let frame = sim.session.binary_frame() as i32;
     let mut coords = p.coords;
+    // gamemd divides by `10 / WindEffect` (zero above 10) and indexes its
+    // eight-entry tables with `[General] WindDirection` unchecked. VERA gives
+    // either value no wind, as Smoke does.
+    let wind = usize::try_from(rules.general.wind_direction())
+        .ok()
+        .filter(|&i| i < GAS_WIND_DX.len());
     if pt.wind_effect > 0
-        && frame
-            .checked_rem(10 / pt.wind_effect)
-            .expect("native Gas wind requires a nonzero divisor")
-            == 0
+        && frame.checked_rem(10 / pt.wind_effect) == Some(0)
+        && let Some(wind) = wind
     {
-        let wind = usize::try_from(rules.general.wind_direction())
-            .ok()
-            .filter(|&i| i < GAS_WIND_DX.len())
-            .expect("native Gas wind table requires WindDirection in 0..7");
         coords.x = coords.x.wrapping_add(GAS_WIND_DX[wind]);
         coords.y = coords.y.wrapping_add(GAS_WIND_DY[wind]);
     }
@@ -345,14 +505,15 @@ pub(super) fn move_gas(p: &mut Particle, sim: &Simulation, rules: &RuleSet) {
             X87::load_i32(coords.y),
             X87::load_f32(p.motion[1]),
         ));
-        let floor = ground(sim, coords).wrapping_add(5);
+        let floor = ground(sim, coords)?.wrapping_add(5);
         if coords.z > floor {
             coords.z = coords.z.wrapping_sub(coords.z.wrapping_sub(floor).min(2));
         }
         coords = offset(coords, IVec3::new(p.drift_x, p.drift_y, p.drift_z));
-        coords.z = coords.z.max(ground(sim, coords).wrapping_add(5));
+        coords.z = coords.z.max(ground(sim, coords)?.wrapping_add(5));
     }
     p.coords = coords;
+    Ok(())
 }
 
 fn offset(coords: IVec3, delta: IVec3) -> IVec3 {

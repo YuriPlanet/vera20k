@@ -14,11 +14,14 @@ use crate::sim::production;
 pub(crate) fn sound_listener(state: &AppState) -> crate::audio::sfx::SpatialListener {
     let (tactical_width, tactical_height) =
         crate::app::input::camera::tactical_viewport_size(state);
+    // The listener sits at the battlefield's corner, which a layout may set
+    // in from the frame's corner, where the camera is.
+    let origin = crate::app::input::camera::tactical_origin_world(state);
     crate::audio::sfx::SpatialListener {
         tactical_width: tactical_width as i32,
         tactical_height: tactical_height as i32,
-        origin_x: state.match_state.input.camera_x,
-        origin_y: state.match_state.input.camera_y,
+        origin_x: state.match_state.input.camera_x + origin.0,
+        origin_y: state.match_state.input.camera_y + origin.1,
         zoom: state.match_state.input.zoom_level,
     }
 }
@@ -30,7 +33,7 @@ pub(crate) fn refresh_coordinate_sound_gains(state: &mut AppState) {
     let sim = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|runtime| &runtime.simulation);
     let local_owner = preferred_local_owner_name(state);
     let Some(catalog) = state.process_assets.audio_catalog() else {
@@ -146,7 +149,7 @@ impl SoundPlaybackInputs<'_> {
         let source = crate::app::match_runtime::sound_dispatch::anim_world_sound_source(world);
         let gain = self
             .spatial_context(Some(sim), local_owner)
-            .gain_for(&sound, Some(source));
+            .gain_for(sound, Some(source));
         sfx.update_looping_sound(owner, gain, self.catalog.sounds());
     }
 
@@ -186,6 +189,7 @@ impl SoundPlaybackInputs<'_> {
             match event {
                 GameSoundEvent::UnitVoiceVisit { owner } => sfx.visit_unit_voice(*owner, registry),
                 GameSoundEvent::UnitVoiceDestroyed { owner } => sfx.destroy_unit_voice(*owner),
+                GameSoundEvent::UnitVoiceMoved { from, to } => sfx.move_unit_voice(*from, *to),
                 // Unit acknowledgement lines — always full volume (non-positional).
                 // `TechnoClass::Queue_Voice @ 0x00708D90` only latches the line on
                 // the speaking object. Only an actual reached Techno6F9EBB
@@ -319,8 +323,9 @@ impl SoundPlaybackInputs<'_> {
                     // not reach the raw audio-bag fallback.
                     if !sound_id.is_empty() && registry.get(sound_id).is_some() {
                         match source {
-                            // `VocClass::PlayAtCoord @ 0x00750E20` /
-                            // `PlayAt @ 0x007509E0` at the target coordinate.
+                            // A one-shot `VocClass::PlayAt @ 0x007509E0` at
+                            // the target coordinate. Launch's 750E20 cues
+                            // arrive as `VocAtCoord`.
                             Some(source) => {
                                 if let Some(gain) = gain_for(sound_id, Some(*source)) {
                                     let _ =
@@ -378,7 +383,7 @@ pub(crate) fn update_power_bar_anim(state: &mut AppState, wall_ms: u64) {
 
     let anim = &mut state.match_state.match_presentation.power_bar_anim;
     match (
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.presentation(),
         owner_name.as_deref(),
     ) {
         (Some(runtime), Some(owner)) => {
@@ -433,7 +438,7 @@ pub(crate) fn update_radar_state(state: &mut AppState) {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .presentation()
             .map(|rt| &rt.simulation),
         state.rules(),
         preferred_local_owner_name(state).as_deref(),
@@ -501,7 +506,7 @@ fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
     let sim = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|rt| &rt.simulation);
     let (Some(sfx), Some(assets), Some(catalog)) = (
         &mut state.audio.sfx_player,
@@ -641,7 +646,7 @@ fn registry_facts_for_owner(
     owner: u64,
 ) -> Option<crate::audio::sfx::SpatialSource> {
     let key = sfx.handle_sound_id(owner)?;
-    Some(registry.get(&key).map_or_else(
+    Some(registry.get(key).map_or_else(
         || crate::audio::sfx::SpatialSource::from_registry_defaults(registry),
         crate::audio::sfx::SpatialSource::from_entry,
     ))

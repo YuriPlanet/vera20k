@@ -366,7 +366,7 @@ pub(crate) fn may_speak(state: &AppState) -> bool {
         && state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .is_some_and(|runtime| {
                 runtime.simulation.session().game_mode() == ScenarioGameMode::Skirmish
             })
@@ -505,7 +505,7 @@ fn house_name(state: &AppState, house: InternedId) -> String {
     state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|runtime| runtime.simulation.resolve(house).to_string())
         .unwrap_or_else(|| format!("{house:?}"))
 }
@@ -540,7 +540,7 @@ fn say_the_verdict_line_when_clear(state: &mut AppState) {
     {
         return;
     }
-    let Some(outcome) = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+    let Some(outcome) = state.match_state.sim_runtime.runtime().and_then(|runtime| {
         let sim = &runtime.simulation;
         sim.houses().get(&sim.session().current_house()?)?.outcome()
     }) else {
@@ -577,7 +577,7 @@ impl CommanderFeedback {
     /// Read-only sweep. `None` means the layer does not apply at all this
     /// frame; an empty pair means it applies but nothing happened.
     fn observe(&mut self, state: &AppState) -> Option<(Vec<Observed>, Vec<Scan>)> {
-        let runtime = state.match_state.sim_runtime.as_ref()?;
+        let runtime = state.match_state.sim_runtime.runtime()?;
         let sim = &runtime.simulation;
         // `game_mode_nonzero()` is true for LAN, WOL *and* skirmish, so it
         // cannot stand in for "this is a skirmish"; only mode 5 is one.

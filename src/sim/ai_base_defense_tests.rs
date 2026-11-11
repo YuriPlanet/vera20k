@@ -205,6 +205,14 @@ fn defense_rules(wall_tower: Option<&str>) -> RuleSet {
     if let Some(wall_tower) = wall_tower {
         text += &format!("WallTower={wall_tower}\n");
     }
+    // Installed Ares 10024520 (hook 0x505360) checks generic groups through
+    // ListContainsAll10008370, whose POWER members come from [General]
+    // PrerequisitePower rather than the stock [AI] BuildPower family; name the
+    // same member so BUNK's POWER meets the native run's answer. Ares coverage:
+    // `base_plan_generation::ares_tests::generic_stock_groups_replace_ai_families_and_ignore_alternates`.
+    if cfg!(feature = "ares") {
+        text += "PrerequisitePower=POWR\n";
+    }
     text += &format!(
         "[AI]\n{DEFENSE_AI}{DEFENSE_COUNTRIES}[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n{}",
         defense_building_types()

@@ -82,6 +82,13 @@ pub struct ArtEntry {
     pub(crate) cameo_pcx: Option<String>,
     #[cfg(feature = "ares")]
     pub(crate) alt_cameo_pcx: Option<String>,
+    /// Ares TechnoTypeExt+0x11C `CameoPalette` (CustomPalette, read from
+    /// ImageFile by 1003DFB0 after InitialPayload.Nums): the palette file a
+    /// nonempty read names, `~~~` standing for the theater extension.
+    /// StripClass_Draw_Main (Ares.dll 1005E390, hook 0x6A9A2A) draws the SHP
+    /// cameo with it when it loads, else CAMEO.PAL.
+    #[cfg(feature = "ares")]
+    pub(crate) cameo_palette: Option<String>,
     /// Replace 2nd char of filename with theater-specific letter.
     pub new_theater: bool,
     /// Use theater file extension (e.g., `.tem`) instead of `.shp`.
@@ -346,6 +353,19 @@ pub struct AnimTypeRuntimeConfig {
     /// `Victim`): the House a `MakeInfantry=` animation takes.
     #[cfg(feature = "phobos")]
     pub(crate) phobos_make_infantry_owner: crate::rules::ares_warhead::HouseSelector,
+    /// Ares AnimTypeExt+8 `MakeInfantryOwner` (Valueable<OwnerHouseKind>,
+    /// constructor Invoker; LoadFromINI 1000A4B0), the House
+    /// AnimTypeExt::SetMakeInfOwner (1000A5F0) gives the anim.
+    #[cfg(feature = "ares")]
+    pub(crate) ares_make_infantry_owner: crate::rules::ares_warhead::HouseSelector,
+    /// Ares AnimTypeExt+0xC `CustomPalette` (CustomPalette, Temperate
+    /// mode): the palette file a nonempty read names, `~~~` standing for
+    /// the theater extension (`CustomPalette::LoadFromINI`, 1000A4B0 after
+    /// MakeInfantryOwner). AnimClass_Draw_SetPalette (Ares.dll 1000ACE0,
+    /// hook 0x4232CE) draws the anim with it when it loads; the anim atlas
+    /// has no per-type palette, so nothing reads it yet.
+    #[cfg(feature = "ares")]
+    pub(crate) ares_custom_palette: Option<String>,
     /// Phobos `CreateUnit=` + `CreateUnit.Owner` (default `Victim`) +
     /// `CreateUnit.RemapAnim` (default no): `Some` when the animation names a
     /// unit type, which overrides the owner kind and permits remap.
@@ -428,6 +448,23 @@ pub struct AnimTypeRuntimeConfig {
     pub spawns_particle: Option<String>,
     /// art.ini `NumParticles=`, `AnimTypeClass+0x2D0`.
     pub num_particles: i32,
+    /// Ares AnimTypeExt+0x18/+0x1C `SpawnsParticle.RangeMinimum` and
+    /// `SpawnsParticle.RangeMaximum` (Valueable<Leptons>, constructor 0;
+    /// LoadFromINI 1000A4B0 through 1000A5D0): either nonzero spreads the
+    /// SpawnsParticle particles around the anim (`Simulation::anim_middle`).
+    #[cfg(feature = "ares")]
+    pub(crate) ares_spawns_particle_range: [i32; 2],
+    /// Ares AnimTypeExt+0x24 `Damage.Delay` (Valueable<int>, constructor 0):
+    /// above zero, an anim whose `Damage=` is at least 1 delivers its whole
+    /// Damage once every this many frames.
+    #[cfg(feature = "ares")]
+    pub(crate) ares_damage_delay: i32,
+    /// Ares AnimTypeExt+0x20 `Weapon` (Valueable<WeaponTypeClass*>, Find
+    /// only, constructor null): the weapon whose bullet the anim's damage
+    /// detonates instead of the area damage. The ordered Rules processor
+    /// resolves it with the ART body (`AnimTypeReferences`).
+    #[cfg(feature = "ares")]
+    pub(crate) ares_weapon: Option<String>,
     /// art.ini `ShouldFogRemove=`, `AnimTypeClass+0x374`.
     /// Constructor default **true**.
     pub should_fog_remove: bool,
@@ -767,6 +804,11 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         #[cfg(feature = "phobos")]
         phobos_make_infantry_owner: crate::rules::ares_warhead::HouseSelector::Victim
             .read(section, "MakeInfantryOwner"),
+        #[cfg(feature = "ares")]
+        ares_make_infantry_owner: crate::rules::ares_warhead::HouseSelector::Invoker
+            .read(section, "MakeInfantryOwner"),
+        #[cfg(feature = "ares")]
+        ares_custom_palette: section.read_name("CustomPalette", 2048).map(str::to_owned),
         // `CreateUnit` is a `Nullable<TechnoTypeClass*>`: `none` clears it and
         // an authored name is a presence signal here. A name no factory
         // resolves is treated as present (the type itself is not modeled).
@@ -806,6 +848,17 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         flamer: section.read_bool("Flamer", false),
         spawns_particle: None,
         num_particles: section.read_int("NumParticles", 0),
+        // AnimTypeExt::LoadFromINIFile (1000A4B0) reads both Leptons through
+        // INI_EX's double (1000A6D0: cells * 256), then Damage.Delay.
+        #[cfg(feature = "ares")]
+        ares_spawns_particle_range: [
+            section.read_ares_leptons("SpawnsParticle.RangeMinimum", 0),
+            section.read_ares_leptons("SpawnsParticle.RangeMaximum", 0),
+        ],
+        #[cfg(feature = "ares")]
+        ares_damage_delay: section.read_ares_int("Damage.Delay", 0),
+        #[cfg(feature = "ares")]
+        ares_weapon: None,
         // Both constructor defaults are 1, not 0.
         should_fog_remove: section.read_bool("ShouldFogRemove", true),
         should_use_cell_drawer: section.read_bool("ShouldUseCellDrawer", true),
@@ -1081,6 +1134,8 @@ impl ArtRegistry {
             let cameo_pcx = section.read_ares_pcx_filename("CameoPCX");
             #[cfg(feature = "ares")]
             let alt_cameo_pcx = section.read_ares_pcx_filename("AltCameoPCX");
+            #[cfg(feature = "ares")]
+            let cameo_palette = section.read_name("CameoPalette", 2048).map(str::to_owned);
             let new_theater: bool = section.read_bool("NewTheater", false);
             let theater: bool = section.read_bool("Theater", false);
             let scorch: bool = section.read_bool("Scorch", false);
@@ -1262,6 +1317,8 @@ impl ArtRegistry {
                     cameo_pcx,
                     #[cfg(feature = "ares")]
                     alt_cameo_pcx,
+                    #[cfg(feature = "ares")]
+                    cameo_palette,
                     new_theater,
                     theater,
                     scorch,
@@ -1957,6 +2014,15 @@ impl ArtRegistry {
         ]
     }
 
+    /// The type's Ares `CameoPalette`, from the same ImageFile section as its
+    /// PCX cameos.
+    #[cfg(feature = "ares")]
+    pub fn resolve_declared_cameo_palette(&self, type_id: &str, rules_image: &str) -> Option<&str> {
+        let resolved = self.resolve_object_art(type_id, rules_image);
+        self.get(&resolved.base_art_id)
+            .and_then(|entry| entry.cameo_palette.as_deref())
+    }
+
     /// Resolve the declared palette id for an asset, if any.
     pub fn resolve_declared_palette_id(&self, type_id: &str, rules_image: &str) -> Option<String> {
         let resolved: ResolvedObjectArt<'_> = self.resolve_object_art(type_id, rules_image);
@@ -2243,7 +2309,6 @@ const BUILDING_ANIM_KEYS: &[(&str, &[&str], u8)] = &[
     ("ActiveAnim", &["", "Two", "Three", "Four"], 3),
     ("PreProductionAnim", &[""], 7),
     ("ProductionAnim", &[""], 8),
-    ("TurretAnim", &[""], 9),
     ("SpecialAnim", &["", "Two", "Three", "Four"], 10),
     ("SuperAnim", &["", "Two", "Three", "Four"], 14),
     ("IdleAnim", &[""], 18),
@@ -2275,14 +2340,12 @@ const BUILDING_ANIM_KEYS: &[(&str, &[&str], u8)] = &[
 ///
 /// The PowerUp1..3 loop (`0x00464758..0x00464928`) has no such copy.
 ///
-/// RESIDUAL: slot 9's names are read from the rules INI natively
-/// (`0x00464450..0x004645C9`: `TurretAnim`/`TurretAnimDamaged` from the type's
-/// section, `TurretAnimGarrisoned` from its image's), not from ART, and VERA
-/// ports none of Grand_Opening's slot-9 block (`0x00446580..0x004466D5`: for a
-/// `HasTurret @ 0x004527D0` building without `TurretAnimIsVoxel`, a `TurretAnim`
-/// or image-derived name, then a frame from the turret's facing). Dormant in
-/// retail: the eight `Turret=yes` types in RULESMD and the MP mode INIs all set
-/// `TurretAnimIsVoxel=true`, and ART declares no `TurretAnim`.
+/// Slot 9 has no ART key and no row here: ReadINI fills its record from the
+/// rules INI (`0x00464450..0x00464632`), which [`building_turret_anim_config`]
+/// ports, and it has no power-flag reads.
+/// Retail ART declares no `TurretAnim`, and the eight `Turret=yes` types in
+/// RULESMD and the MP mode INIs all set `TurretAnimIsVoxel=true`, so stock
+/// play builds no slot-9 animation by name.
 fn parse_building_anims(section: &IniSection, ini: &IniFile) -> Vec<BuildingAnimConfig> {
     let mut anims: Vec<BuildingAnimConfig> = Vec::new();
 
@@ -2398,6 +2461,60 @@ fn power_up_config(
         start_frame: normal.start_frame,
         ping_pong: normal.ping_pong,
     }
+}
+
+/// Slot 9's record, which `BuildingTypeClass::ReadINI` fills from the type's
+/// own rules section, not from ART (`0x00464450..0x00464632`): `TurretAnim`
+/// and `TurretAnimDamaged` into `char[16]` (`+0x11B0`, `+0x11C0`), an empty
+/// damaged name taking the normal one (`0x004644FD`), then `TurretAnimX`, `Y`,
+/// `ZAdjust` and `YSort` (`+0x11E0..+0x11EC`). The loop and rate fields keep
+/// their defaults, as for a PowerUp slot: `AnimClass` reads its own type.
+///
+/// RESIDUAL: `TurretAnimGarrisoned` (`0x00464553`, read from the rules section
+/// the type's image names) is not read, so the garrisoned name is the normal
+/// one, as natively without the key (`0x00464594`). Trigger: a garrisonable
+/// building with an SHP turret and that key; effect: an occupied one keeps its
+/// normal turret. No retail type sets it and nothing asks slot 9 for it yet.
+pub fn building_turret_anim_config(
+    object: &crate::rules::object_type::ObjectType,
+) -> BuildingAnimConfig {
+    let empty = IniFile::empty();
+    let variant = |name: &str| parse_building_anim_variant(name.to_owned(), &empty);
+    let named = |name: &str| (!name.is_empty()).then(|| variant(name));
+    let name = object.turret_anim.as_deref().unwrap_or("");
+    let normal = variant(name);
+    BuildingAnimConfig {
+        native_slot: 9,
+        anim_type: normal.anim_type,
+        damaged_variant: object.turret_anim_damaged.as_deref().and_then(named),
+        garrisoned_variant: named(name),
+        kind: BuildingAnimKind::Special,
+        is_primary: true,
+        x: object.turret_anim_x,
+        y: object.turret_anim_y,
+        y_sort: object.turret_anim_y_sort,
+        z_adjust: object.turret_anim_z_adjust,
+        loop_start: normal.loop_start,
+        loop_end: normal.loop_end,
+        loop_count: normal.loop_count,
+        rate: normal.rate,
+        start_frame: normal.start_frame,
+        ping_pong: normal.ping_pong,
+    }
+}
+
+/// The slot-9 row of a building whose turret Grand_Opening can build by name
+/// (`0x00446599..0x0044667B`): a `TurretAnim` without `TurretAnimIsVoxel`.
+/// Asset discovery reads it. `Turret=` is not asked, because HasTurret
+/// (`0x004527D0`) also counts an installed upgrade's turret; a name bound for
+/// a building that never builds it costs one lookup.
+pub fn shp_turret_anim_config(
+    object: &crate::rules::object_type::ObjectType,
+) -> Option<BuildingAnimConfig> {
+    (object.category == crate::rules::object_type::ObjectCategory::Building
+        && !object.turret_anim_is_voxel
+        && object.turret_anim.is_some())
+    .then(|| building_turret_anim_config(object))
 }
 
 /// `AddOccupy%d=`/`RemoveOccupy%d=` (`0x0046143C..0x004614C9`): ReadMinMax
@@ -2697,6 +2814,40 @@ mod anim_runtime_metadata_tests {
         assert_eq!(config.trailer_seperation, 0);
         assert_eq!(config.bounce_anim, None);
         assert_eq!(config.expire_anim, None);
+    }
+
+    /// ReadINI `0x00464450..0x00464632` fills slot 9's record from the type's
+    /// rules section; ART `TurretAnim` is never read for it.
+    #[test]
+    fn slot_9_row_comes_from_the_rules_section_not_art() {
+        let art_ini = IniFile::from_str("[GUN]\nTurretAnim=ARTTUR\nActiveAnim=GUN_A\n");
+        let rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[BuildingTypes]\n0=GUN\n1=VOX\n\
+                 [GUN]\nStrength=400\nTurretAnim=guntur\nTurretAnimX=5\nTurretAnimY=-12\n\
+                 TurretAnimZAdjust=-30\nTurretAnimYSort=7\n\
+                 [VOX]\nStrength=400\nTurretAnim=SAM\nTurretAnimIsVoxel=yes\n",
+            ),
+            &art_ini,
+        )
+        .unwrap();
+        let gun = rules.object("GUN").unwrap();
+        let row = shp_turret_anim_config(gun).expect("slot 9");
+        assert_eq!((row.native_slot, row.anim_type.as_str()), (9, "GUNTUR"));
+        assert_eq!(
+            row.damaged_variant.as_ref().unwrap().anim_type,
+            "GUNTUR",
+            "an empty TurretAnimDamaged takes the normal name"
+        );
+        assert_eq!((row.x, row.y, row.z_adjust, row.y_sort), (5, -12, -30, 7));
+        assert!(
+            shp_turret_anim_config(rules.object("VOX").unwrap()).is_none(),
+            "a voxel turret has no slot animation to build"
+        );
+        let art = ArtRegistry::from_ini(&art_ini);
+        let rows = &art.get("GUN").unwrap().building_anims;
+        assert!(rows.iter().any(|row| row.native_slot == 3));
+        assert!(rows.iter().all(|row| row.native_slot != 9));
     }
 
     #[test]

@@ -409,7 +409,6 @@ fn tree_transactions_preserve_tmp_shp_voxel_overlap_and_coalesced_order() {
     let ramps = crate::rules::house_colors::HouseColorRamps::from_schemes(&[]);
     let palettes =
         PaletteSet::new_on_device(&gpu.device, &gpu.queue, &palette, &palette, &ramps, &[]);
-    let white = rgba([248, 252, 248]);
     let ztex = gpu.device.create_texture_with_data(
         &gpu.queue,
         &wgpu::TextureDescriptor {
@@ -426,7 +425,15 @@ fn tree_transactions_preserve_tmp_shp_voxel_overlap_and_coalesced_order() {
         &[0],
     );
     let zview = ztex.create_view(&Default::default());
-    let tmp_group = batch.create_zdepth_bind_group_on_device(&gpu.device, &white.view, &zview);
+    // Tile pages are encoded, like the production tile atlas's.
+    let tile_page = batch.create_encoded_texture_on_device(
+        &gpu.device,
+        &gpu.queue,
+        &[248, 252, 248, 255],
+        1,
+        1,
+    );
+    let tmp_group = batch.create_zdepth_bind_group_on_device(&gpu.device, &tile_page.view, &zview);
     let tmp = sprite([0.0, 4.0], [96.0, 1.0], 4.0); // actual TMP Z32768
     let tmp_buffer = gpu
         .device
@@ -738,7 +745,11 @@ fn offscreen_ordinary_units_neither_fence_nor_split_destination_edits() {
                     crate::render::terrain_draw::TerrainBatchStats {
                         pieces: 2,
                         waves: 1,
-                        passes: if read_only { 4 } else { 2 },
+                        passes: match (read_only, crate::render::gpu::webgl_fallback(&gpu.device)) {
+                            (false, _) => 2,
+                            (true, false) => 3,
+                            (true, true) => 4,
+                        },
                         tile_dependencies: if read_only { 0 } else { 2 }
                     }
                 );

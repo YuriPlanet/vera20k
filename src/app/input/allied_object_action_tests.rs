@@ -75,7 +75,7 @@ fn object_pair(rules: &RuleSet, actor_kind: &str, relation: &str) -> (Simulation
 }
 
 fn picked_target(sim: &Simulation, target: u64) -> HoverTargetKindWithId {
-    let (x, y) = crate::app::presentation::instances::interpolated_screen_position_entity(
+    let (x, y) = crate::app::presentation::instances::entity_screen_position(
         sim.entities().get(target).unwrap(),
     );
     let hover =

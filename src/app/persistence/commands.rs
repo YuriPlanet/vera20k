@@ -1,6 +1,7 @@
 //! User save/load requests; input and dialogs only select the operation.
 
 use crate::app::AppState;
+use crate::app::match_runtime::sim_host::SimWrite;
 
 use std::path::{Path, PathBuf};
 
@@ -59,7 +60,7 @@ pub(crate) fn prepare_initial_campaign_save<'a>(
     let campaign = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_some_and(|runtime| !runtime.simulation.session().game_mode_nonzero());
     state
         .persistence
@@ -124,7 +125,7 @@ fn save(
         &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .ok_or(SaveCommandError::MissingSimulation)?
             .simulation,
         &state.persistence.repository,
@@ -161,7 +162,7 @@ fn prepare_save<'a>(
     let runtime = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .ok_or(SaveCommandError::MissingSimulation)?;
     let map_hash = state
         .match_state
@@ -246,6 +247,18 @@ fn prepare_save<'a>(
         state.match_state.session.local_player_name(),
         state.audio.theme.saved_slots(),
         presentation.radar_movies.scenario_hold(),
+    )
+    // Save_Game's VocClass::SaveStaticSounds (`0x00751620`): the map's
+    // retained coordinate sounds, so a load can restart its ambient loops.
+    // RESIDUAL: the audio owner keeps the list, so a session with no sound
+    // device saves none and a later load with sound stays quiet there.
+    .with_static_sounds(
+        state
+            .audio
+            .sfx_player
+            .as_ref()
+            .map(crate::audio::sfx::SfxPlayer::saved_static_sounds)
+            .unwrap_or_default(),
     );
     let resources = crate::sim::snapshot::scenario_resources::SavedScenarioResourcesRef::capture(
         &runtime.resources,
@@ -512,7 +525,7 @@ fn restore_save_file(
                 current_simulation: state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .map(|runtime| &runtime.simulation),
                 frontend_main: &state.frontend.frontend_main_rng,
                 rules_owner,
@@ -546,7 +559,7 @@ fn restore_save_file(
         state
             .match_state
             .sim_runtime
-            .as_mut()
+            .write_sim(SimWrite::Lifecycle)
             .expect("saved world committed")
             .simulation
             .initialize_random_number_system(seed.value);

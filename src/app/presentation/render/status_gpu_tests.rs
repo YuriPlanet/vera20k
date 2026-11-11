@@ -1617,7 +1617,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     );
                     let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
                     cloak.set_state_for_test(state as i32);
-                    entity.cloak = Some(cloak);
+                    entity.cloak = Some(Box::new(cloak));
                 }
                 if actor["disguised"].as_bool().unwrap_or(false) {
                     let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
@@ -1698,7 +1698,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                         "{} original CountDockedSpawns6B7D50",
                         row["name"]
                     );
-                    entity.spawn_manager = Some(manager);
+                    entity.spawn_manager = Some(Box::new(manager));
                 }
                 if object.passengers > 0 || object.max_number_occupants > 0 {
                     use crate::sim::passenger::{PassengerCargo, PassengerRole};
