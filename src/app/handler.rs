@@ -230,11 +230,15 @@ impl App {
     /// window then comes back on the same screen the choice names
     /// ([`crate::app::display_target`]).
     pub(crate) fn set_full_screen(state: &mut AppState, full_screen: bool) {
-        let window = state.platform.window.clone();
         if !full_screen {
-            window.set_fullscreen(None);
+            // VERA: the game's own switch (the Options and Esc menu boxes, the
+            // Full Screen key) leaves full screen to the launch window, not to
+            // the placement winit saved on entry. The title-bar button and the
+            // system shortcut stay the window system's.
+            Self::restore_launch_window(state);
             return;
         }
+        let window = state.platform.window.clone();
         let displays = crate::app::display_target::current_displays(&window);
         let target = state.persistence.options_profile.display.clone();
         crate::app::display_target::center_windowed(&window, &displays, &target);
@@ -243,7 +247,8 @@ impl App {
         )));
     }
 
-    /// The Esc menu's Set Window Size button: the window as a launch opens it.
+    /// The Esc menu's Set Window Size button, and the Full Screen switch going
+    /// off: the window as a launch opens it.
     /// A full-screen window leaves full screen first and macOS animates that,
     /// so `follow_window_full_screen` does the rest once the window is out.
     pub(crate) fn restore_launch_window(state: &mut AppState) {
