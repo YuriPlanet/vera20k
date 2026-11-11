@@ -176,8 +176,8 @@ impl Simulation {
         // InitManagers6F3F40 classifies the owner after construction; it does
         // not manufacture either discovery-history byte. The launch-owned
         // current house is distinct from the notification/viewer binding.
-        ge.discovery
-            .classify_owner(session.current_house() == Some(ge.owner()));
+        let owner_is_playing = session.current_house() == Some(ge.owner());
+        ge.discovery.classify_owner(owner_is_playing);
 
         #[cfg(feature = "ares")]
         ge.initialize_factory_country(houses.get(&ge.owner()).and_then(|house| {
@@ -507,7 +507,8 @@ fn stamp_building_cell_profile(
         return;
     };
     ge.building_light.stamp(obj.has_spotlight);
-    ge.type_facts.stamp(ge.category(), obj);
+    let category = ge.category();
+    ge.type_facts.stamp(category, obj);
 }
 
 /// `Crushable=` and `DeployedCrushable=`, copied when the object is built for

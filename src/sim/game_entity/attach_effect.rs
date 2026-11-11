@@ -811,7 +811,8 @@ mod receiver {
                 let Some(victim) = self.substrate.entities.get_mut(target) else {
                     break;
                 };
-                let Some(entry) = victim.attach_effects.entries.get_mut(index) else {
+                let effects = &mut victim.attach_effects;
+                let Some(entry) = effects.entries.get_mut(index) else {
                     break;
                 };
                 if entry.remaining > 0 {
@@ -822,7 +823,7 @@ mod receiver {
                         entry.remaining = 0;
                     }
                     if entry.remaining == 0 {
-                        victim.attach_effects.self_effect = SelfEffectState::Pending(
+                        effects.self_effect = SelfEffectState::Pending(
                             own_settings.expect("current self descriptor").delay(),
                         );
                     }

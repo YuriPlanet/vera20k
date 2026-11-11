@@ -1768,6 +1768,13 @@ fn mutable_handouts_and_setters_are_owner_operations() {
              entries, and fixtures reach it through art_entry_mut_for_test",
         ),
         ("sim/command.rs", "payload_mut", PAYLOAD),
+        (
+            "sim/game_entity.rs",
+            "deref_mut",
+            "the object record's seldom part is the same record stored apart \
+             (docs/sim-thread.md); its fields keep their visibility and owning modules, \
+             so the deref opens nothing that was closed",
+        ),
         ("sim/cell_map.rs", "get_mut", CELL_MAP),
         ("sim/cell_map.rs", "get_or_insert_with", CELL_MAP),
         ("sim/cell_map.rs", "values_mut", CELL_MAP),

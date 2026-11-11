@@ -21,8 +21,6 @@ Red Alert 2: Yuri's Revenge.
 VERA20K wird von Spielern für Spieler gemacht, und die Spieler haben das letzte Wort, wohin sich
 das Projekt entwickelt.
 
-**Hab keine Scheu, einen PR zu öffnen.** Er muss nicht perfekt sein; wir helfen dir beim Rest.
-
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K: Gefechtseinstellungen und eine Szene aus dem Spiel" width="100%">
 
 ## Projektziele
@@ -44,6 +42,8 @@ Wie du Einzelspieler-Gefechte oder Kampagnen von YR über einen CnCNet-Client st
 [Offline-Client-Einrichtung](integrations/cncnet/README.md).
 
 ## Mitmachen
+
+**Hab keine Scheu, einen PR zu öffnen.** Er muss nicht perfekt sein; wir helfen dir beim Rest.
 
 Hilfe ist überall willkommen, und diese Bereiche brauchen sie am meisten. Jeder Bereich
 verlinkt auf seine Seite in der Roadmap, mit der laufenden Arbeit und dem nächsten Schritt:
