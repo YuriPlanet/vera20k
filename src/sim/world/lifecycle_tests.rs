@@ -2787,6 +2787,31 @@ fn open_topped_direct_registration_keeps_hidden_passenger_live() {
     assert_eq!(sim.live_object_order_snapshot(), vec![2, 1]);
 }
 
+/// A rider killed inside an open-topped transport is already in limbo, so
+/// UnInit's Limbo returns at its entry guard and leaves it in Logic. Its
+/// destructor takes it out (`ObjectClass::~ObjectClass`, `0x005F3D65..0x005F3D75`);
+/// a slot left behind stops the next multiplayer frame's checksum.
+#[test]
+fn destructor_takes_a_dead_open_topped_rider_out_of_logic() {
+    let mut sim = Simulation::new();
+    insert_entity(&mut sim, 1, EntityCategory::Infantry);
+    insert_entity(&mut sim, 2, EntityCategory::Unit);
+    let _ = sim.reveal(1);
+    let _ = sim.reveal(2);
+    assert_eq!(sim.techno_limbo(1), super::ConcealOutcome::Concealed);
+    sim.substrate.entities.get_mut(1).unwrap().passenger_role =
+        PassengerRole::inside_for_test(2, true);
+    assert!(sim.register_open_topped_passenger(1));
+
+    sim.uninit(1);
+    assert_eq!(sim.live_object_order_snapshot(), vec![2, 1]);
+    sim.process_pending_delete();
+
+    assert!(!sim.substrate.entities.contains(1));
+    assert_eq!(sim.live_object_order_snapshot(), vec![2]);
+    assert!(sim.compute_retail_multiplayer_checksum().is_ok());
+}
+
 #[test]
 fn lifecycle_authority_second_reveal_is_idempotent() {
     let mut sim = Simulation::new();
