@@ -831,7 +831,8 @@ fn ares_disk_hit_flashes_and_plays_the_enabled_damage_anim() {
                 rules,
                 overlay_registry: registry,
                 ..SimResources::empty()
-            },
+            }
+            .into(),
         };
         let mut commands = vec![command];
         let mut flashed = false;
