@@ -817,6 +817,7 @@ fn push_right_panel_text_draws(
     let choose = localized_label(state, "GUI:ChooseMap", "Choose Map");
     let save = tr("VERA:SaveSetup");
     let load = tr("VERA:LoadSetup");
+    let team_starts = tr("VERA:TeamStarts");
     let back = localized_label(state, "GUI:Back", "Back");
     let load_disabled = !crate::app::App::skirmish_setup_saved(state);
 
@@ -846,12 +847,21 @@ fn push_right_panel_text_draws(
             load_disabled,
         ),
         (
+            team_starts.as_str(),
+            layout.team_starts_button,
+            OwnerDrawButton::TeamStarts,
+            false,
+        ),
+        (
             back.as_str(),
             layout.back_button,
             OwnerDrawButton::Back0x5c0,
             false,
         ),
-    ] {
+    ]
+    .into_iter()
+    .filter(|(_, rect, _, _)| rect.w > 0)
+    {
         push_button_label_draw(
             shell_draws,
             state,
@@ -1040,10 +1050,46 @@ pub(super) fn push_random_map_setup_modal_text_draws(
                 RandomMapSetupControl::AdvancedToggle,
             )
         },
+        if modal.exported {
+            (
+                "VERA:RandomMapExported",
+                "Map Exported",
+                layout.export,
+                RandomMapSetupControl::ExportMap,
+            )
+        } else {
+            (
+                "VERA:RandomMapExport",
+                "Export Map",
+                layout.export,
+                RandomMapSetupControl::ExportMap,
+            )
+        },
+        if modal.options.fair_starts {
+            (
+                "VERA:RandomMapFairStartsOn",
+                "Fair Starts: On",
+                layout.fair_starts,
+                RandomMapSetupControl::FairStartsToggle,
+            )
+        } else {
+            (
+                "VERA:RandomMapFairStartsOff",
+                "Fair Starts: Off",
+                layout.fair_starts,
+                RandomMapSetupControl::FairStartsToggle,
+            )
+        },
     ]
     .into_iter()
     .filter(|(_, _, _, control)| {
-        !sliding && (*control != RandomMapSetupControl::AdvancedToggle || modal.extended)
+        let vera = matches!(
+            control,
+            RandomMapSetupControl::AdvancedToggle
+                | RandomMapSetupControl::ExportMap
+                | RandomMapSetupControl::FairStartsToggle
+        );
+        !sliding && (!vera || modal.extended)
     }) {
         push_text_draw(
             out,

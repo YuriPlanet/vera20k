@@ -108,6 +108,11 @@ const SETUP_DELETE_Y: i32 = 203;
 /// VERA: the Advanced/Basic toggle takes the column's next slot below Delete,
 /// at the same 27-unit pitch.
 const SETUP_ADVANCED_Y: i32 = 230;
+/// VERA: Export Map takes the slot after the toggle, at the same pitch.
+const SETUP_EXPORT_Y: i32 = 257;
+/// VERA: the Fair Starts toggle, two slots below the Advanced toggle at the
+/// same pitch (the slot between is Export Map's).
+const SETUP_FAIR_Y: i32 = 284;
 /// VERA: the Advanced view's seven sliders, at the option rows' 24-unit pitch
 /// from the first row; the last ends above the progress widgets (217).
 const SETUP_ADVANCED_ROW_Y: [i32; 7] = [41, 65, 90, 114, 138, 163, 187];
@@ -220,6 +225,9 @@ pub struct SkirmishShellLayout {
     /// Map; gamemd's `0x102` has no such buttons.
     pub save_setup_button: RectPx,
     pub load_setup_button: RectPx,
+    /// VERA's Team Starts, on the tile under Load Setup where the panel has
+    /// one above Back; an empty rect where it has none (640x480).
+    pub team_starts_button: RectPx,
     pub back_button: RectPx,
     pub map_preview: RectPx,
     pub column_labels: SkirmishColumnLabelRects,
@@ -352,6 +360,11 @@ pub enum RandomMapSetupControl {
     AdvancedToggle,
     /// VERA: one of the Advanced view's sliders.
     Advanced(AdvancedField),
+    /// VERA: writes the generated map as a `.yrm` file (offline Skirmish
+    /// only).
+    ExportMap,
+    /// VERA: turns Fair Starts on or off (offline Skirmish only).
+    FairStartsToggle,
     /// Ares' Urban Areas box (`ARES_CHK_RMG_URBAN_AREAS`, Ares' dialog 261).
     #[cfg(feature = "ares")]
     UrbanAreas5000,
@@ -422,6 +435,10 @@ pub struct RandomMapSetupLayout {
     pub cancel: RectPx,
     /// VERA: the Advanced/Basic toggle in the right column.
     pub advanced: RectPx,
+    /// VERA: the Export Map button below the toggle.
+    pub export: RectPx,
+    /// VERA: the Fair Starts toggle in the right column.
+    pub fair_starts: RectPx,
     /// VERA: the Advanced view's labels and slider windows, by
     /// [`AdvancedField::row`].
     pub advanced_label_rects: [RectPx; 7],
@@ -468,6 +485,7 @@ pub fn translate_layout(mut layout: SkirmishShellLayout, dx: i32, dy: i32) -> Sk
     layout.choose_map_button = layout.choose_map_button.translate(dx, dy);
     layout.save_setup_button = layout.save_setup_button.translate(dx, dy);
     layout.load_setup_button = layout.load_setup_button.translate(dx, dy);
+    layout.team_starts_button = layout.team_starts_button.translate(dx, dy);
     layout.back_button = layout.back_button.translate(dx, dy);
     layout.map_preview = layout.map_preview.translate(dx, dy);
     layout.column_labels.players = layout.column_labels.players.translate(dx, dy);
@@ -749,6 +767,13 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
         ],
     };
     let opponent_scrollbar = opponent_scrollbar_rect(&rows);
+    let back_button = back_rect(screen_w, panel);
+    let team_starts_tile = choose_map_button.translate(0, 3 * SDBTNBKGD_H);
+    let team_starts_button = if team_starts_tile.y + team_starts_tile.h <= back_button.y {
+        team_starts_tile
+    } else {
+        RectPx::new(0, 0, 0, 0)
+    };
 
     SkirmishShellLayout {
         scale: ShellScale::RETAIL,
@@ -762,7 +787,8 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
         // Every panel keeps them above Back: it has six tiles at 640x480.
         save_setup_button: choose_map_button.translate(0, SDBTNBKGD_H),
         load_setup_button: choose_map_button.translate(0, 2 * SDBTNBKGD_H),
-        back_button: back_rect(screen_w, panel),
+        team_starts_button,
+        back_button,
         map_preview: right_static(
             AnchorRule::RightAnchor,
             RectPx::new(429, 23, 96, 69),
@@ -1008,6 +1034,8 @@ pub fn compute_random_map_setup_layout(screen_w: u32, screen_h: u32) -> RandomMa
         delete: right_button(SETUP_DELETE_Y),
         cancel: back_rect(screen_w, panel),
         advanced: right_button(SETUP_ADVANCED_Y),
+        export: right_button(SETUP_EXPORT_Y),
+        fair_starts: right_button(SETUP_FAIR_Y),
         advanced_label_rects: std::array::from_fn(|row| {
             dlu_rect(
                 SETUP_LABEL_X,
@@ -1101,6 +1129,12 @@ pub fn random_map_setup_control_at_view(
 ) -> Option<RandomMapSetupControl> {
     if extended && layout.advanced.contains(x, y) {
         return Some(RandomMapSetupControl::AdvancedToggle);
+    }
+    if extended && layout.export.contains(x, y) {
+        return Some(RandomMapSetupControl::ExportMap);
+    }
+    if extended && layout.fair_starts.contains(x, y) {
+        return Some(RandomMapSetupControl::FairStartsToggle);
     }
     if !advanced {
         return random_map_setup_control_at(layout, x, y);
@@ -1402,6 +1436,7 @@ impl ScaledRects for SkirmishShellLayout {
             choose_map_button: self.choose_map_button.scaled_rects(scale),
             save_setup_button: self.save_setup_button.scaled_rects(scale),
             load_setup_button: self.load_setup_button.scaled_rects(scale),
+            team_starts_button: self.team_starts_button.scaled_rects(scale),
             back_button: self.back_button.scaled_rects(scale),
             map_preview: self.map_preview.scaled_rects(scale),
             column_labels: self.column_labels.scaled_rects(scale),
@@ -1461,6 +1496,8 @@ impl ScaledRects for RandomMapSetupLayout {
             delete: self.delete.scaled_rects(scale),
             cancel: self.cancel.scaled_rects(scale),
             advanced: self.advanced.scaled_rects(scale),
+            export: self.export.scaled_rects(scale),
+            fair_starts: self.fair_starts.scaled_rects(scale),
             advanced_label_rects: self.advanced_label_rects.scaled_rects(scale),
             advanced_control_rects: self.advanced_control_rects.scaled_rects(scale),
             status_help: self.status_help.scaled_rects(scale),
@@ -1641,6 +1678,15 @@ mod tests {
         // VERA's Save Setup and Load Setup fill the two tiles above Back.
         assert_eq!(layout.save_setup_button, RectPx::new(484, 325, 156, 42));
         assert_eq!(layout.load_setup_button, RectPx::new(484, 367, 156, 42));
+        // Back takes the next tile at 640x480, so Team Starts has none there;
+        // at 800x600 it sits between Load Setup and Back.
+        assert_eq!(layout.team_starts_button.w, 0);
+        let roomy = compute_layout(800, 600);
+        assert_eq!(
+            roomy.team_starts_button.y,
+            roomy.load_setup_button.y + roomy.load_setup_button.h
+        );
+        assert!(roomy.team_starts_button.y + roomy.team_starts_button.h <= roomy.back_button.y);
         assert_eq!(layout.map_preview, RectPx::new(484, 37, 144, 112));
         assert_eq!(layout.back_button, RectPx::new(484, 409, 156, 42));
     }
@@ -1720,7 +1766,11 @@ mod tests {
         }
         assert!(sliders[6].y + sliders[6].h <= setup.progress_text.y);
         assert!(setup.advanced.y >= setup.delete.y + setup.delete.h);
+        assert!(setup.advanced.y + setup.advanced.h <= setup.export.y);
+        assert!(setup.export.y + setup.export.h <= setup.cancel.y);
         assert!(setup.advanced.y + setup.advanced.h <= setup.cancel.y);
+        assert!(setup.fair_starts.y >= setup.advanced.y + 2 * setup.advanced.h);
+        assert!(setup.fair_starts.y + setup.fair_starts.h <= setup.cancel.y);
 
         let water = sliders[AdvancedField::Water.row()];
         let (cx, cy) = (water.x + water.w / 2, water.y + water.h / 2);

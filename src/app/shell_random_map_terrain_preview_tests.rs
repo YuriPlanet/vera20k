@@ -24,6 +24,7 @@ fn generated_tree_color_survives_progress_and_thumbnail_persistence() {
         vegetation: 30,
         urban_presence: 40,
         urban_enabled: false,
+        fair_starts: false,
         seed: 4242,
         ..Default::default()
     };

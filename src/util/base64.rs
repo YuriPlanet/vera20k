@@ -86,6 +86,26 @@ fn decode_char(ch: char) -> Result<u8, String> {
     }
 }
 
+/// Encode bytes as base64 with the standard alphabet and `=` padding, the
+/// form [`base64_decode`] reads.
+pub fn base64_encode(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for group in bytes.chunks(3) {
+        let combined = u32::from(group[0]) << 16
+            | u32::from(*group.get(1).unwrap_or(&0)) << 8
+            | u32::from(*group.get(2).unwrap_or(&0));
+        for index in 0..4 {
+            if index <= group.len() {
+                out.push(ALPHABET[(combined >> (18 - 6 * index) & 0x3F) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

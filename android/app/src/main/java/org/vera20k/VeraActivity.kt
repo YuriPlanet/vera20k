@@ -7,9 +7,14 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.Uri
 import android.os.Process
 import android.provider.DocumentsContract
+import android.provider.Settings
 import java.io.File
 import java.io.IOException
 
@@ -167,6 +172,107 @@ class VeraActivity : NativeActivity() {
     private var copiedBytes = 0L
     private var reportedBytes = 0L
 
+    private var lanNetworkCallback: ConnectivityManager.NetworkCallback? = null
+
+    /** The Wi-Fi network the process is bound to, to spot a real change. */
+    private var boundLanNetwork: Network? = null
+
+    /**
+     * Last three hex digits of the Android ID, upper-case; empty when the device
+     * gives none.
+     *
+     * The LAN default handle is the same on every install and a visit drops
+     * advertisements that carry the local name, so two fresh installs never see
+     * each other. Android has no text input to change the name with yet, so the
+     * engine appends this to the stock default (`vera20k::util::device_identity`).
+     * The ID is stable across reinstalls and changes only on a factory reset.
+     * Three digits keep the whole name inside the lobby's 134 px name box.
+     */
+    fun defaultHandleSuffix(): String {
+        val id = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: return ""
+        val hex = id.filter { it.isLetterOrDigit() }.takeLast(3).uppercase()
+        return if (hex.length == 3) hex else ""
+    }
+
+    /**
+     * Runs the LAN visit on the Wi-Fi network.
+     *
+     * Android sends a datagram by the process's default network. With Wi-Fi and
+     * cellular both up — and especially when the Wi-Fi network has no internet —
+     * a limited broadcast otherwise leaves by the mobile interface and the lobby
+     * finds nothing. Called from Rust when the LAN lobby opens
+     * (`vera20k::util::lan_network`).
+     */
+    fun bindLanNetwork() {
+        val manager = getSystemService(ConnectivityManager::class.java) ?: return
+        bindWifiNetwork(manager)
+        if (lanNetworkCallback != null) {
+            return
+        }
+        // A Wi-Fi network may appear or go away while the lobby waits.
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) = rebindLanNetwork()
+            override fun onLost(network: Network) = rebindLanNetwork()
+        }
+        val request = NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .build()
+        try {
+            manager.registerNetworkCallback(request, callback)
+            lanNetworkCallback = callback
+        } catch (error: SecurityException) {
+            // Without ACCESS_NETWORK_STATE the visit still runs on the default
+            // network; discovery is what suffers, not the app.
+            lanNetworkCallback = null
+        }
+    }
+
+    /** Leaves the LAN lobby: stop watching and let the system route again. */
+    fun releaseLanNetwork() {
+        val manager = getSystemService(ConnectivityManager::class.java) ?: return
+        lanNetworkCallback?.let { manager.unregisterNetworkCallback(it) }
+        lanNetworkCallback = null
+        manager.bindProcessToNetwork(null)
+    }
+
+    private fun rebindLanNetwork() {
+        val manager = getSystemService(ConnectivityManager::class.java) ?: return
+        val wifi = wifiNetwork(manager)
+        if (wifi != null) {
+            bindWifiNetwork(manager)
+        }
+        // Registering reports the network that is already there; only a network
+        // that really changed makes the visit forget what it learned.
+        val unchanged = wifi != null && wifi == boundLanNetwork
+        boundLanNetwork = wifi
+        if (!unchanged) {
+            nativeOnLanNetworkChanged()
+        }
+    }
+
+    private fun bindWifiNetwork(manager: ConnectivityManager) {
+        val wifi = wifiNetwork(manager) ?: return
+        try {
+            manager.bindProcessToNetwork(wifi)
+            boundLanNetwork = wifi
+        } catch (error: SecurityException) {
+            // Same fallback as above: keep running on the default network.
+        }
+    }
+
+    /** The Wi-Fi network to run the visit on, internet or not. */
+    private fun wifiNetwork(manager: ConnectivityManager): Network? {
+        val wifi = NetworkCapabilities.TRANSPORT_WIFI
+        val active = manager.activeNetwork
+        if (manager.getNetworkCapabilities(active)?.hasTransport(wifi) == true) {
+            return active
+        }
+        return manager.allNetworks.firstOrNull { network ->
+            manager.getNetworkCapabilities(network)?.hasTransport(wifi) == true
+        }
+    }
+
+    private external fun nativeOnLanNetworkChanged()
     /**
      * Copies the chosen tree into the app's own folder and points config.toml at
      * the copy.

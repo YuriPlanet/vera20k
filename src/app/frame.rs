@@ -1499,8 +1499,8 @@ impl App {
                             // The relay drops a lapsed pass, which only the
                             // lobby can renew: then waiting cannot help.
                             let lapsed = live.relay_expires().is_some_and(|expires| {
-                                std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
+                                crate::util::time::SystemTime::now()
+                                    .duration_since(crate::util::time::UNIX_EPOCH)
                                     .is_ok_and(|now| now.as_secs() >= expires)
                             });
                             Some(crate::i18n::tr(if lapsed {

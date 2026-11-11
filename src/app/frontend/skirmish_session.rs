@@ -45,6 +45,22 @@ const MULTIPLAYER_HANDLE_LIMIT_BYTES: usize = 19;
 const DEFAULT_MULTIPLAYER_HANDLE: &[u8] = b"[New Player]";
 const DEFAULT_MULTIPLAYER_GAME_MODE: i32 = 1;
 
+/// The handle a new install starts with.
+///
+/// Native starts every install at `[New Player]` (`WriteMultiPlayerSettings`
+/// writes the same default back), and a LAN visit drops advertisements whose
+/// name matches the local one, so two peers left at the default never see each
+/// other. Android has no text input yet, so the platform appends the last three
+/// hex digits of the Android ID there (`util::device_identity`); every other
+/// platform keeps the stock bytes.
+fn stock_handle_bytes() -> Vec<u8> {
+    crate::util::device_identity::suffixed_handle(
+        DEFAULT_MULTIPLAYER_HANDLE,
+        crate::util::device_identity::handle_suffix().as_deref(),
+        MULTIPLAYER_HANDLE_LIMIT_BYTES,
+    )
+}
+
 /// VERA HTTPS account names also become persona INI section names. Keep their
 /// admission shared by the HTTP response, login continuation and handle owner.
 pub(crate) fn validate_online_handle(name: &str) -> anyhow::Result<()> {
@@ -121,7 +137,7 @@ impl Default for SessionToggles {
 impl Default for LocalMultiplayerPreferences {
     fn default() -> Self {
         Self {
-            handle_bytes: DEFAULT_MULTIPLAYER_HANDLE.to_vec(),
+            handle_bytes: stock_handle_bytes(),
             handle_source: HandleSource::Native,
             side: 0,
             side_ex: 0,
@@ -144,8 +160,9 @@ impl LocalMultiplayerPreferences {
         let handle = encode_multiplayer_handle(
             &self.handle_bytes[..self.handle_bytes.len().min(MULTIPLAYER_HANDLE_LIMIT_BYTES)],
         );
-        let color = self.color_index.to_string();
-        let color_ex = self.color_ex.to_string();
+        let (color, color_ex) = saved_color_pick(self.color_index, self.color_ex);
+        let color = color.to_string();
+        let color_ex = color_ex.to_string();
         let side_ex = self.side_ex.to_string();
         let game_mode = self.game_mode.to_string();
         let updates = [
@@ -225,9 +242,20 @@ pub(crate) struct MultiplayerShellRuntime {
     /// reads whatever an earlier setup left.
     scenario_index: usize,
     gameplay_scenario_return_pending: bool,
+    /// The colours the loaded rules list for a lobby, refreshed with the
+    /// country catalog before each setup dialog: a random colour is drawn
+    /// from them and a saved row keeps only a colour they list.
+    lobby_colors: crate::rules::skirmish_colors::SkirmishColorMode,
 }
 
 impl MultiplayerShellRuntime {
+    pub(crate) fn set_lobby_colors(
+        &mut self,
+        colors: crate::rules::skirmish_colors::SkirmishColorMode,
+    ) {
+        self.lobby_colors = colors;
+    }
+
     pub(crate) fn read_multiplayer_settings(
         &mut self,
         process_assets: &mut crate::app::process_assets::ProcessAssets,
@@ -540,12 +568,12 @@ impl MultiplayerShellRuntime {
                     country: menu_country_from_item_data(persisted.country)
                         .unwrap_or(LaunchCountry::America),
                     country_random: persisted.country == RANDOM_ITEM_DATA,
-                    color_index: if (0..8).contains(&persisted.colour) {
+                    color_index: if self.lobby_colors.is_lobby_priority(persisted.colour) {
                         persisted.colour as u8
                     } else {
                         0
                     },
-                    color_random: !(0..8).contains(&persisted.colour),
+                    color_random: !self.lobby_colors.is_lobby_priority(persisted.colour),
                     start_position: LaunchStartPosition::Auto,
                     team: if mode.allies_allowed {
                         LaunchTeam::Team(3)
@@ -868,7 +896,7 @@ impl MultiplayerShellRuntime {
         let mut draw_country = |role, rng: &mut SimRng| {
             draw_shell_country(registry, progress.as_ref(), roster, role, rng, banned)
         };
-        let mut assignments = ShellRandomAssignmentState::new(session);
+        let mut assignments = ShellRandomAssignmentState::new(session, self.lobby_colors);
         assignments.resolve_humans(&mut self.scenario_rng, &mut draw_country)?;
         assignments.resolve_ai(&mut self.scenario_rng, &mut draw_country)?;
         let resolved = assignments.finish();
@@ -941,6 +969,7 @@ impl MultiplayerShellRuntime {
             scenario_start_header: crate::map::preview::ScenarioStartHeader::default(),
             scenario_start_staging: Default::default(),
             gameplay_scenario_return_pending: false,
+            lobby_colors: Default::default(),
         };
         // The retained VERA.INI bytes are the process INI, so the cache has to
         // carry the whole `ReadMultiPlayer6980C0` read from the start: native
@@ -1047,6 +1076,18 @@ impl MultiplayerShellRuntime {
         state.player_country_random = self.local_preferences.side_ex == RANDOM_ITEM_DATA;
         state.player_color_index = usize::try_from(self.local_preferences.color_index).unwrap_or(0);
         state.player_color_claimed = self.local_preferences.color_ex != RANDOM_ITEM_DATA;
+        // A saved extra colour these rules do not list (another mod's, say)
+        // would stop Start; it comes back as Random instead. Values gamemd
+        // could save keep its handling.
+        if self.local_preferences.color_index
+            > i32::from(crate::rules::skirmish_colors::OBSERVER_PRIORITY)
+            && !state
+                .lobby_colors()
+                .is_lobby_priority(self.local_preferences.color_index)
+        {
+            state.player_color_index = 0;
+            state.player_color_claimed = false;
+        }
 
         for (opponent, persisted) in state.opponents.iter_mut().zip(self.snapshot.slots) {
             opponent.row_type = ai_row_type_from_persisted(persisted.row_type);
@@ -1061,8 +1102,7 @@ impl MultiplayerShellRuntime {
                 opponent.country_random = false;
             }
 
-            opponent.color_claimed =
-                (0..crate::skirmish_launch::HOUSE_COLOR_COUNT as i32).contains(&persisted.colour);
+            opponent.color_claimed = state.lobby_colors.is_lobby_priority(persisted.colour);
             if opponent.color_claimed {
                 opponent.color_index = persisted.colour as usize;
             }
@@ -1120,7 +1160,7 @@ impl MultiplayerShellRuntime {
         // no campaign record takes part here.
         let registry = &self.cooperative_registry;
         let roster = &self.cooperative_country_roster;
-        let mut assignments = ShellRandomAssignmentState::new(&staged_session);
+        let mut assignments = ShellRandomAssignmentState::new(&staged_session, self.lobby_colors);
         let mut draw_country =
             |role, rng: &mut SimRng| draw_shell_country(registry, None, roster, role, rng, &[]);
 
@@ -1905,11 +1945,18 @@ fn read_local_preference_fields(ini: &IniFile, preferences: &mut LocalMultiplaye
     if preferences.handle_source == HandleSource::Native && !handle_bytes.is_empty() {
         preferences.handle_bytes = handle_bytes;
     }
+    // An install that stored the stock default keeps it unique per device, so an
+    // upgrade reaches the same name the fresh-install path starts with.
+    if preferences.handle_bytes == DEFAULT_MULTIPLAYER_HANDLE {
+        preferences.handle_bytes = stock_handle_bytes();
+    }
     //6982E2 supplies the retained raw field as ReadInt default;6982FD stores
     //it without a display-range clamp. Projection never rewrites this cache.
     preferences.color_index = section.read_int("Color", preferences.color_index);
     preferences.side_ex = section.read_int("SideEx", preferences.side_ex);
     preferences.color_ex = section.read_int("ColorEx", preferences.color_ex);
+    (preferences.color_index, preferences.color_ex) =
+        loaded_color_pick(preferences.color_index, preferences.color_ex);
     preferences.game_mode = section.read_int("GameMode", DEFAULT_MULTIPLAYER_GAME_MODE);
     // 0x00698366..0x006983E4: ReadBool 0x005295F0 over the held values,
     // WOL first, taunts then scroll text. WriteMultiPlayerSettings does not
@@ -1964,6 +2011,39 @@ fn persona_pick(value: i32) -> (i32, i32) {
     } else {
         (value, CONCRETE_ITEM_DATA)
     }
+}
+
+/// `[MultiPlayer] Color=` and `ColorEx=` as VERA.INI holds a colour pick.
+///
+/// A game from before VERA's extra lobby colours reads `Color` as one of
+/// gamemd's eight and cannot start a Skirmish with any other, and reads
+/// `ColorEx` only as "Random or not". So an extra colour is saved in
+/// `ColorEx`, beside the first of the eight: that game plays the first colour
+/// and its own next save drops the extra one. A Random pick saves none of it.
+fn saved_color_pick(color: i32, color_ex: i32) -> (i32, i32) {
+    if !is_extra_color(color) {
+        (color, color_ex)
+    } else if color_ex == RANDOM_ITEM_DATA {
+        (0, RANDOM_ITEM_DATA)
+    } else {
+        (0, color)
+    }
+}
+
+/// [`saved_color_pick`] read back: an extra colour in `ColorEx` is the pick.
+fn loaded_color_pick(color: i32, color_ex: i32) -> (i32, i32) {
+    if is_extra_color(color_ex) {
+        (color_ex, CONCRETE_ITEM_DATA)
+    } else {
+        (color, color_ex)
+    }
+}
+
+/// Whether `color` can be one of VERA's extra lobby colours (9..=30).
+fn is_extra_color(color: i32) -> bool {
+    use crate::rules::skirmish_colors::{FIRST_EXTRA_PRIORITY, MAX_EXTRA_COLORS};
+    let first = i32::from(FIRST_EXTRA_PRIORITY);
+    (first..first + MAX_EXTRA_COLORS as i32).contains(&color)
 }
 
 /// A node's seat from its side and colour picks (item data, Ex).
@@ -2189,6 +2269,7 @@ mod tests {
             scenario_start_header: crate::map::preview::ScenarioStartHeader::default(),
             scenario_start_staging: Default::default(),
             gameplay_scenario_return_pending: false,
+            lobby_colors: Default::default(),
         }
     }
 
@@ -2222,6 +2303,7 @@ mod tests {
             scenario_start_header: crate::map::preview::ScenarioStartHeader::default(),
             scenario_start_staging: Default::default(),
             gameplay_scenario_return_pending: false,
+            lobby_colors: Default::default(),
         }
     }
 
@@ -3426,6 +3508,32 @@ WOLTaunts=junk
         runtime.snapshot.game_mode = 999;
         runtime.hydrate_shell(&mut shell, &[map()], &[mode_9, mode()]);
         assert_eq!(shell.selected_mode_id, 9, "unknown mode falls to first row");
+    }
+
+    #[test]
+    fn an_extra_colour_is_saved_where_an_older_game_still_starts() {
+        let mut preferences = LocalMultiplayerPreferences {
+            color_index: 12,
+            color_ex: CONCRETE_ITEM_DATA,
+            ..Default::default()
+        };
+        // The older game needs Color within gamemd's eight; it reads ColorEx
+        // only as "not Random".
+        let text = String::from_utf8(preferences.update_ini_bytes(b"", "Americans")).unwrap();
+        assert!(
+            text.contains("Color=0") && text.contains("ColorEx=12"),
+            "{text}"
+        );
+        let read = read_local_multiplayer_preferences(text.as_bytes());
+        assert_eq!((read.color_index, read.color_ex), (12, CONCRETE_ITEM_DATA));
+
+        // Random with an extra colour last shown: none of it reaches the file.
+        preferences.color_ex = RANDOM_ITEM_DATA;
+        let text = String::from_utf8(preferences.update_ini_bytes(b"", "Americans")).unwrap();
+        assert!(
+            text.contains("Color=0") && text.contains("ColorEx=-2"),
+            "{text}"
+        );
     }
 
     #[cfg(windows)]
