@@ -20,8 +20,6 @@ de ursprungliga spelfilerna, så du behöver en egen kopia av Red Alert 2: Yuri'
 VERA20K görs av spelare, för spelare, och det är spelarna som har sista ordet om vart projektet
 ska gå.
 
-**Var inte rädd för att skicka in en PR.** Den behöver inte vara perfekt; vi hjälper till med resten.
-
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K: inställningar för skirmish och bild från spelet" width="100%">
 
 ## Projektets mål
@@ -43,6 +41,8 @@ För att starta skirmish-matcher eller kampanjer i YR för en spelare från en C
 [installationen av offlineklienten](integrations/cncnet/README.md).
 
 ## Bidra
+
+**Var inte rädd för att skicka in en PR.** Den behöver inte vara perfekt; vi hjälper till med resten.
 
 All hjälp är välkommen, och de här områdena behöver den mest. Varje område länkar till sin sida
 i färdplanen, med pågående arbete och nästa steg:

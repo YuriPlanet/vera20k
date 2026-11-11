@@ -189,7 +189,7 @@ fn harvester(sim: &mut Simulation, rules: &RuleSet, name: &str, bales: u16) -> u
     let mut miner =
         crate::sim::miner::Miner::new(crate::sim::miner::MinerKind::War, &Default::default(), 20);
     miner.add_bales(bale, bales);
-    entity.miner = Some(miner);
+    entity.miner = Some(Box::new(miner));
     sim.substrate.entities.insert(entity);
     id
 }

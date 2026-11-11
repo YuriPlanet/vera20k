@@ -90,7 +90,7 @@ impl GameEntity {
         has_turret: bool,
         options: &GameOptions,
     ) {
-        let ready_allowed = !has_turret || self.constructing_or_selling();
+        let ready_allowed = self.building_ready_allowed(has_turret);
         if self.building_body.as_ref().is_some_and(|body| {
             body.update(
                 &mut self.stage,
@@ -102,6 +102,29 @@ impl GameEntity {
         }) {
             self.mission_leaf.set_building_ready_latch(1);
         }
+    }
+    /// Whether [`Self::advance_building_body`] writes at `now`: the stage
+    /// steps or clears its changed byte, or an unstepped body answers ready
+    /// while `+0x6DD` is still clear.
+    pub(crate) fn building_body_advances(&self, now: i32, has_turret: bool) -> bool {
+        self.building_body.as_ref().is_some_and(|body| {
+            self.stage.advances(now)
+                || (self.building_ready_latch() != 1
+                    && self.building_ready_allowed(has_turret)
+                    && body.ready_unstepped(&self.stage))
+        })
+    }
+    /// UpdateAnimation's ready gate (`0x00451145..0x00451218`): no turret,
+    /// or effective Construction/Selling.
+    fn building_ready_allowed(&self, has_turret: bool) -> bool {
+        !has_turret || self.constructing_or_selling()
+    }
+    /// Whether a body mode is queued, which
+    /// [`Self::apply_queued_building_body`] applies or clears.
+    pub(crate) fn building_body_queued(&self) -> bool {
+        self.building_body
+            .as_ref()
+            .is_some_and(|body| body.is_queued())
     }
     pub(crate) fn apply_queued_building_body(&mut self, now: i32, options: &GameOptions) {
         let selling = self.mission.current().known() == Some(MissionType::Selling);

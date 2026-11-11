@@ -3148,19 +3148,20 @@ mod lifecycle_hash_tests {
                 entity.death.set_dying_for_test(!entity.death.is_dying());
             });
             assert_entity_mutation_changes_hash(|entity| {
+                let eligible = entity.removal_facts.dirty_rect_eligible();
                 entity
                     .removal_facts
-                    .set_dirty_rect_eligible_for_test(!entity.removal_facts.dirty_rect_eligible());
+                    .set_dirty_rect_eligible_for_test(!eligible);
             });
             assert_entity_mutation_changes_hash(|entity| {
+                let recorded = entity.kill_record.is_recorded();
                 entity
                     .kill_record
-                    .set_destruction_recorded_for_test(!entity.kill_record.is_recorded());
+                    .set_destruction_recorded_for_test(!recorded);
             });
             assert_entity_mutation_changes_hash(|entity| {
-                entity
-                    .removal_facts
-                    .set_occupier_for_test(!entity.removal_facts.occupier());
+                let occupier = entity.removal_facts.occupier();
+                entity.removal_facts.set_occupier_for_test(!occupier);
             });
             assert_entity_mutation_changes_hash(|entity| {
                 entity.set_in_playfield(!entity.in_playfield());

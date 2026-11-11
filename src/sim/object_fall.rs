@@ -83,11 +83,16 @@ impl ObjectFallState {
         self.falling = false;
     }
 
+    /// Whether [`Self::observe_falling_edge`] copies +8D over +8E: they differ.
+    pub(crate) fn falling_edge_pending(&self) -> bool {
+        self.falling != self.was_falling
+    }
+
     /// FootClass::AI `0x004DAB3C..0x004DABC2`: when +8D differs from +8E it
     /// is copied over. True for the start of a DropAsBomb fall (+8F), the only
     /// edge on which `VoiceFalling=` plays (`0x004DAB67`).
     pub(crate) fn observe_falling_edge(&mut self) -> bool {
-        if self.falling == self.was_falling {
+        if !self.falling_edge_pending() {
             return false;
         }
         self.was_falling = self.falling;

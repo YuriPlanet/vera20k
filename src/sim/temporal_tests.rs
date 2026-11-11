@@ -221,7 +221,8 @@ fn link(sim: &Simulation, id: u64) -> TemporalLink {
     entity(sim, id)
         .temporal
         .link
-        .clone()
+        .as_deref()
+        .cloned()
         .expect("a Temporal firer")
 }
 
@@ -251,7 +252,7 @@ fn chain(sim: &mut Simulation, target: u64, attackers: &[u64], warp_remaining: i
             .get_mut(attacker)
             .unwrap()
             .temporal
-            .link = Some(link);
+            .link = Some(Box::new(link));
     }
     sim.substrate
         .entities
@@ -2758,7 +2759,7 @@ fn native_initiate_warp_corpus() {
                 .get_mut(target)
                 .unwrap()
                 .temporal
-                .link = Some(TemporalLink::default());
+                .link = Some(Box::default());
             chain(&mut sim, other, &[target], 555);
         }
         sim.substrate

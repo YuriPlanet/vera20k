@@ -33,7 +33,7 @@ fn prior_building(sim: &mut Simulation, rules: &RuleSet, name: &str, x: u16, y: 
     // excludes Unlimbo/discovery. The Unlimbo queues Construction, so its
     // discovery cannot run Grand_Opening; restore the supplied constructor
     // MissionCom before the join.
-    let prior_mission = sim.substrate.entities.get(id).unwrap().mission;
+    let prior_mission = sim.substrate.entities.get(id).unwrap().mission.clone();
     assert!(
         sim.reveal_constructed_object_at_height(
             id,

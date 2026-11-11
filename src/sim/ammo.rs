@@ -65,6 +65,12 @@ impl TechnoAmmo {
         self.current
     }
 
+    /// Whether the count is exactly zero, which
+    /// [`Self::refill_empty_from_type`] refills.
+    pub(crate) const fn is_empty(&self) -> bool {
+        self.current == 0
+    }
+
     /// Installed Ares conversion100437A0..100437B3 keeps the lesser signed
     /// count. Dock/release state and the Techno reload clock are preserved;
     /// InitialAmmo belongs only to construction.
@@ -146,7 +152,7 @@ impl TechnoAmmo {
     /// copy the current type's Ammo when this count is exactly zero. Each
     /// caller owns its Hospital/Armory or fear-expiry/IsArmed gates.
     pub(crate) fn refill_empty_from_type(&mut self, type_ammo: i32) {
-        if self.current == 0 {
+        if self.is_empty() {
             self.current = type_ammo;
         }
     }

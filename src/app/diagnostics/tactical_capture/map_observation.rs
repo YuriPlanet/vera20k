@@ -5277,7 +5277,7 @@ mod tests {
         let hash = sim.state_hash();
         let rng = sim.rng_state();
         let actor = sim.entities().get(sub).unwrap();
-        let cloak = actor.cloak.as_ref().unwrap();
+        let cloak = actor.cloak.as_deref().unwrap();
         let retained = *cloak;
         assert!(actor.in_playfield());
         assert_eq!(
@@ -5415,7 +5415,7 @@ mod tests {
         manager.set_rates_for_test(600, 150);
         manager.set_update_timer_for_test(CdTimer::from_raw(i32::MIN, 10));
         manager.set_target(Some(TargetKind::Entity(42)));
-        entity.spawn_manager = Some(manager.clone());
+        entity.spawn_manager = Some(Box::new(manager.clone()));
         let hash = sim.state_hash();
         let rng = sim.rng_state();
         let snapshot = spawn_observation(&sim, &entity, &rules).unwrap();
@@ -5448,7 +5448,7 @@ mod tests {
             assert_eq!(snapshot["slots"][index]["is_missile"], index == 3);
         }
         assert_eq!(spawn_sample_count(&snapshot), 8);
-        assert_eq!(entity.spawn_manager.as_ref(), Some(&manager));
+        assert_eq!(entity.spawn_manager.as_deref(), Some(&manager));
         assert_eq!(sim.state_hash(), hash);
         assert_eq!(sim.rng_state(), rng);
     }

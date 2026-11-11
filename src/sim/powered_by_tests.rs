@@ -128,13 +128,13 @@ fn ares_powered_by_power_loss_updates_team_selection_and_slaves() {
     let slave_type = sim.interner.intern("DRONE");
     let entity = sim.substrate.entities.get_mut(drone).unwrap();
     entity.selection.set_selected_for_test(true);
-    entity.slave_manager = Some(crate::sim::slave_manager::SlaveManager::new(
+    entity.slave_manager = Some(Box::new(crate::sim::slave_manager::SlaveManager::new(
         slave_type,
         std::iter::empty(),
         10,
         10,
         30,
-    ));
+    )));
     sim.substrate
         .entities
         .get_mut(pwr)

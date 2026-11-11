@@ -634,7 +634,7 @@ mod tests {
             (15, sensed, true, 15),
         ] {
             cloak.set_building_stage_for_test(stage);
-            building.cloak = Some(cloak);
+            building.cloak = Some(Box::new(cloak));
             let body = DrawState::for_entity(&building, 0, 3, observer);
             let anims = DrawState::for_building_slot_anims(&building, 0, 3, observer);
             assert_eq!(body.visible, body_visible, "stage {stage} body");

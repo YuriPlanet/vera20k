@@ -414,9 +414,9 @@ impl crate::sim::world::Simulation {
                 StageCall::Update => self.gattling_update(id, rules, 1, effects),
             }
         }
-        if let Some(entity) = self.substrate.entities.get_mut(id)
-            && unit_turret_anim_advances(is_gattling, outcome, entity.gattling.value())
-        {
+        if let Some(entity) = self.substrate.entities.get_mut_if(id, |entity| {
+            unit_turret_anim_advances(is_gattling, outcome, entity.gattling.value())
+        }) {
             entity.turret_anim_frame.advance();
         }
     }

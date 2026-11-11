@@ -226,7 +226,7 @@ fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_a
         .take();
     let mut cloaked = crate::sim::cloak_disguise::CloakRuntime::new(frame as i32);
     cloaked.establish_unlimbo_fully_cloaked();
-    sim.substrate.entities.get_mut(foot_id).unwrap().cloak = Some(cloaked);
+    sim.substrate.entities.get_mut(foot_id).unwrap().cloak = Some(Box::new(cloaked));
     assert!(
         sim.building_spotlight(light_id, None, &rules).is_none(),
         "cloaked parent suppresses drawing without deleting its light"

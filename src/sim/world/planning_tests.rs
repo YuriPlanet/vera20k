@@ -86,7 +86,7 @@ fn native_loop_consumption_rotates_head_and_updates_pending() {
 #[test]
 fn edit_append_commit_preserves_missions_and_shares_same_frame_nodes() {
     let (mut sim, rules, owner) = fixture();
-    let before = sim.substrate.entities.get(1).unwrap().mission;
+    let before = sim.substrate.entities.get(1).unwrap().mission.clone();
     append(&mut sim, &rules, owner, 1, (12, 15));
     append(&mut sim, &rules, owner, 2, (12, 15));
     assert_eq!(sim.planning.nodes.len(), 1);

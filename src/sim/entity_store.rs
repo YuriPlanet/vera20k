@@ -53,7 +53,7 @@ pub struct EntityStore {
     /// The stored ids in ascending order, one per slot. A removed entity's
     /// slot keeps its id, with no entity, until [`Self::compact`].
     ids: Vec<u64>,
-    /// The entity of each slot. Boxed: an entity is about 3 KB, so insert,
+    /// The entity of each slot. Boxed: an entity is about 2.5 KB, so insert,
     /// remove and compaction move pointers, not entities. serde writes a
     /// `Box<T>` as its `T`.
     entities: Vec<Option<crate::util::shared::Shared<GameEntity>>>,
@@ -144,7 +144,10 @@ pub struct EntityStore {
     anim_holders: BTreeSet<(u64, u64)>,
     /// Which entities may have changed since each reader last took its log
     /// ([`Self::take_touched`]). Every route to a `&mut GameEntity` goes
-    /// through the store, so an entity missing from a log has not changed.
+    /// through the store, so an entity missing from a log has not changed,
+    /// but for the mission AI counter and a building's tint sample, which
+    /// change every frame and no reader derives from
+    /// ([`Self::count_mission_ai_visit`], [`Self::capture_building_tint_sample`]).
     touched: TouchLogs<{ TouchReader::COUNT }>,
 }
 
@@ -315,10 +318,18 @@ impl EntityStore {
             return;
         }
         self.sleep[slot] = SleepCell::default();
-        if cell.owed != 0
-            && let Some(entity) = self.entities[slot].as_deref_mut()
-        {
-            entity.settle_sleep(cell.owed, cell.last_frame);
+        if cell.owed == 0 {
+            return;
+        }
+        // Only a building's relight sample needs the mutable handle, which
+        // copies an entity a presentation frame still shares; the counter
+        // steps through the shared one, as its per-visit step does.
+        if self.categories[slot] == EntityCategory::Structure {
+            if let Some(entity) = self.entities[slot].as_deref_mut() {
+                entity.settle_sleep(cell.owed, cell.last_frame);
+            }
+        } else if let Some(entity) = self.entities[slot].as_deref() {
+            entity.mission.add_owed_ai_visits(cell.owed);
         }
     }
 
@@ -660,12 +671,57 @@ impl EntityStore {
         stable_id: u64,
         admit: impl FnOnce(&GameEntity) -> bool,
     ) -> Option<&mut GameEntity> {
-        let slot = self.slot(stable_id)?;
-        let entity = self.entities[slot as usize].as_deref_mut()?;
-        if !admit(entity) {
+        let slot = self.slot(stable_id)? as usize;
+        // Read through the shared handle: a mutable one copies an entity a
+        // presentation frame still shares, admitted or not.
+        if !admit(self.entities[slot].as_deref()?) {
             return None;
         }
         self.touched.note(stable_id, self.slot_of.len());
+        self.wake_slot(slot);
+        self.entities[slot].as_deref_mut()
+    }
+
+    /// Step `stable_id`'s mission AI counter (`+0xC4`) for one AI visit
+    /// (`0x006FA646..0x006FA64F`) without a note in the touch logs: every
+    /// techno steps it every frame, and no product derived from the logs
+    /// reads it. No-op if the entity is absent.
+    pub(crate) fn count_mission_ai_visit(&mut self, stable_id: u64) {
+        // Through the shared handle: the counter steps without a mutable
+        // hand-out, which would copy an entity a presentation frame shares.
+        if let Some(entity) = self.get(stable_id) {
+            entity.mission.count_ai_visit();
+        }
+    }
+
+    /// Keep a building's relight light at `frame` for the draw
+    /// ([`crate::sim::building_art::BuildingArt::capture_tint_sample`])
+    /// without a note in the touch logs: every building relights every
+    /// frame, and no product derived from the logs reads the sample. No-op
+    /// for an absent entity or one that is not a building.
+    pub(crate) fn capture_building_tint_sample(
+        &mut self,
+        stable_id: u64,
+        frame: u32,
+        airstrike_active: bool,
+    ) {
+        if let Some(entity) = self.unlogged_mut(stable_id)
+            && entity.category() == EntityCategory::Structure
+        {
+            entity.building_art.capture_tint_sample(
+                frame,
+                entity.flashing.flashed(),
+                entity.invulnerability.as_ref(),
+                &entity.airstrike_tint,
+                airstrike_active,
+            );
+        }
+    }
+
+    /// `stable_id`'s entity without a note: only for the writes the touch
+    /// log's contract excepts.
+    fn unlogged_mut(&mut self, stable_id: u64) -> Option<&mut GameEntity> {
+        let slot = *self.slot_of.get(&stable_id)?;
         self.wake_slot(slot as usize);
         self.entities[slot as usize].as_deref_mut()
     }
@@ -1180,6 +1236,34 @@ fn airborne_entry(entity: &GameEntity) -> Option<(u16, u64, u64)> {
 mod tests {
     use super::*;
     use crate::sim::game_entity::GameEntity;
+
+    /// An AI visit steps the counter without handing the entity out, so a
+    /// presentation copy keeps sharing it; a refused `get_mut_if` copies
+    /// nothing either, and a real write does.
+    #[test]
+    fn an_ai_visit_leaves_a_shared_entity_shared() {
+        let mut store = EntityStore::new();
+        store.insert(GameEntity::test_default(7, "MTNK", "Americans", 5, 5));
+        let shared = |store: &EntityStore, frame: &EntityStore| {
+            store.entities[0]
+                .as_ref()
+                .unwrap()
+                .shares_storage_with(frame.entities[0].as_ref().unwrap())
+        };
+        let frame = store.clone();
+        let handed_out = store.hand_outs();
+        store.count_mission_ai_visit(7);
+        store.count_mission_ai_visit(7);
+        assert!(store.get_mut_if(7, |_| false).is_none());
+        assert!(shared(&store, &frame), "the frame's copy is still shared");
+        assert_eq!(store.hand_outs(), handed_out);
+        assert_eq!(store.get(7).unwrap().mission.ai_counter(), 2);
+
+        store.get_mut(7).unwrap().mission.clear_ai_counter();
+        assert!(!shared(&store, &frame), "a real write copies it");
+        assert_eq!(store.get(7).unwrap().mission.ai_counter(), 0);
+        assert_eq!(frame.get(7).unwrap().mission.ai_counter(), 2);
+    }
 
     /// Populated original412B40 ->4137A0 controls. Buckets hold opaque
     /// tokens; the last numeric row deliberately repeats a token in two
