@@ -1745,6 +1745,7 @@ impl Category {
                 Setting::List(List::HealthBars),
                 Setting::Checkbox(Check::RightClickOrders),
                 Setting::Checkbox(Check::ShiftQueue),
+                Setting::Checkbox(Check::AutoRepair),
                 Setting::Checkbox(Check::MouseWheelZoom),
                 Setting::Checkbox(Check::LockCursor),
             ],
