@@ -1731,9 +1731,17 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         "a command's payload bytes under construction, which the simulation decodes";
     const CELL_MAP: &str =
         "a generic cell-keyed container; every CellMap is a private field of its owner";
+    const COW_CELLS: &str = "the resolved terrain grid's private cell storage (pub(super)); \
+                             ResolvedTerrainGrid owns every write to its cells";
+    const SHARED: &str = "generic copy-on-write containers for the presentation frame \
+                          (docs/sim-thread.md); every Shared, DerivedCache and ChunkedVec is a \
+                          field of its owner";
     const LASER: &str = "LaserDraw 0x0054FE60 returns the new laser for its caller's postprocessing \
                          (FireAt 0x006FF50A..0x006FF571); the caller finishes its own frame fact";
     const PINNED_HANDOUTS: &[(&str, &str, &str)] = &[
+        ("map/resolved_terrain/cow_cells.rs", "get_mut", COW_CELLS),
+        ("map/resolved_terrain/cow_cells.rs", "iter_mut", COW_CELLS),
+        ("map/resolved_terrain/cow_cells.rs", "index_mut", COW_CELLS),
         ("map/rmg/grid.rs", "get_mut", RMG),
         ("map/rmg/grid.rs", "ref_cell_mut", RMG),
         ("map/rmg/grid.rs", "cell_native_mut", RMG),
@@ -1780,10 +1788,20 @@ fn mutable_handouts_and_setters_are_owner_operations() {
              invalidates navigation history",
         ),
         (
+            "sim/runtime.rs",
+            "resources_mut",
+            "SimRuntime's bound resources for a write; SimResources is the slot's own type, \
+             shared only with a presentation frame the host drops first (docs/sim-thread.md)",
+        ),
+        (
             "sim/world/frame_channel.rs",
             "emit_and_finish",
             "a producer finishes the fact it just emitted, before the frame tail reads the channel",
         ),
+        ("util/shared.rs", "deref_mut", SHARED),
+        ("util/shared.rs", "get_mut", SHARED),
+        ("util/shared.rs", "iter_mut", SHARED),
+        ("util/shared.rs", "index_mut", SHARED),
     ];
     // (file, method, reason): `set`/`set_*` methods whose body stores one
     // parameter. Each stores one native member; the decision to store it
