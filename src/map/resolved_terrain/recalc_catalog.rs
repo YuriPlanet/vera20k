@@ -141,39 +141,43 @@ pub(crate) struct BridgeRecalcCatalog {
     wood_bridge_start: Option<u16>,
 }
 
-/// Map a saved TMP variant to an index inside the registered file list.
-/// A save records the variant the live session selected; a later asset or
-/// theater change can leave fewer registered files than that session had.
-/// Refusing the whole save over a presentation-only variant loses the game
-/// state, so the last registered file stands in for an out-of-range variant.
-fn variant_slot(len: usize, variant: u8) -> Option<(usize, bool)> {
-    let requested = usize::from(variant);
-    if requested < len {
-        return Some((requested, false));
-    }
-    len.checked_sub(1).map(|last| (last, true))
-}
-
 impl BridgeRecalcCatalog {
     fn file(&self, tile: u16, variant: u8) -> Result<&ResidentBridgeTmp, BridgeRecalcCatalogError> {
-        let files = self.files.get(&tile).ok_or(BridgeRecalcCatalogError::Uncached {
-            tile: i32::from(tile),
-        })?;
-        let (index, fell_back) = variant_slot(files.len(), variant).ok_or_else(|| {
-            BridgeRecalcCatalogError::Unavailable {
+        self.files
+            .get(&tile)
+            .ok_or(BridgeRecalcCatalogError::Uncached {
+                tile: i32::from(tile),
+            })?
+            .get(usize::from(variant))
+            .ok_or_else(|| BridgeRecalcCatalogError::Unavailable {
                 tile,
-                reason: format!("no registered TMP files for saved variant {variant}"),
-            }
-        })?;
-        if fell_back {
-            log::warn!(
-                "recalc tile {tile}: saved variant {variant} exceeds {} registered; using the last",
-                files.len()
-            );
-        }
-        files[index]
+                reason: format!("missing registered TMP file {variant}"),
+            })?
             .as_deref()
             .map_err(Clone::clone)
+    }
+
+    /// A save's cached variant, held inside this session's registered files.
+    /// The saving session can have registered more files for the tile than
+    /// this one (a mod map loaded with other assets). The variant selects only
+    /// radar colours and draw offsets, so the pristine file 0 stands in rather
+    /// than the whole save being refused; file 1 can be a damaged picture.
+    /// VERA load hardening, no native counterpart.
+    fn saved_variant(&self, tile: u16, variant: u8) -> u8 {
+        match self.files.get(&tile) {
+            Some(files) if usize::from(variant) >= files.len() => {
+                static WARNED: std::sync::Once = std::sync::Once::new();
+                WARNED.call_once(|| {
+                    log::warn!(
+                        "saved terrain: tile {tile} variant {variant} exceeds its {} registered \
+                         TMP files; drawing such cells with the first file",
+                        files.len()
+                    );
+                });
+                0
+            }
+            _ => variant,
+        }
     }
 
     pub(super) fn tactical_metadata(
@@ -693,7 +697,7 @@ impl ResolvedTerrainGrid {
                 cell.final_sub_tile,
                 draw_sub,
                 clear_fallback,
-                cell.variant,
+                catalog.saved_variant(tile, cell.variant),
             ),
         }
         .map_err(LoadCellRecalcError::ResidentInput)?;
@@ -730,7 +734,7 @@ impl ResolvedTerrainGrid {
                 cell.final_sub_tile,
                 if fallback { 0 } else { cell.final_sub_tile },
                 fallback,
-                cell.variant,
+                catalog.saved_variant(tile, cell.variant),
             )?;
             self.damaged_radar_metadata[index] = metadata.damaged_radar;
         }
@@ -793,29 +797,5 @@ impl LoadCellRecalcEffects for RejectUnadmittedEffects {
         _: &TerrainTileAnimation,
     ) -> Result<(), Self::Error> {
         Err("runtime bridge Recalc requires an unadmitted terrain animation")
-    }
-}
-
-
-#[cfg(test)]
-mod tests {
-    use super::variant_slot;
-
-    #[test]
-    fn an_in_range_saved_variant_keeps_its_slot() {
-        assert_eq!(variant_slot(4, 2), Some((2, false)));
-        assert_eq!(variant_slot(1, 0), Some((0, false)));
-    }
-
-    #[test]
-    fn an_out_of_range_saved_variant_falls_back_to_the_last_file() {
-        assert_eq!(variant_slot(2, 2), Some((1, true)));
-        assert_eq!(variant_slot(2, 200), Some((1, true)));
-    }
-
-    #[test]
-    fn a_tile_with_no_registered_files_has_no_slot() {
-        assert_eq!(variant_slot(0, 0), None);
-        assert_eq!(variant_slot(0, 9), None);
     }
 }
