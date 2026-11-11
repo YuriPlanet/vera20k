@@ -4,9 +4,11 @@
 //! `[Waypoints]`, `[Terrain]`, the object lists, the three packs and an
 //! optional `[Preview]` thumbnail.
 //!
-//! gamemd has no map writer; the formats are the ones its readers take
-//! (`ReadIsoMapPack5` 0x0056BB93, the overlay packs, `[Terrain]` and
-//! `[Waypoints]` at radix 1000 under `NewINIFormat=4`).
+//! RESIDUAL: gamemd's own writer, `Save_Scenario_Map_File` 0x00687CE0 (its
+//! one caller is `RandomMapSetupDialog__Proc` at 0x00596A8B), is not ported.
+//! This writer emits the formats gamemd's readers take (`ReadIsoMapPack5`
+//! 0x0056BB93, the overlay packs, `[Terrain]` and `[Waypoints]` at radix 1000
+//! under `NewINIFormat=4`).
 
 use std::fmt::Write as _;
 

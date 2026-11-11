@@ -1057,17 +1057,13 @@ fn draws_preview(point: crate::map::rmg::build::GenerationPoint) -> bool {
 }
 
 impl App {
-    /// The folder of `RandMap.Sed`, `RandMap.img` and the saved seeds
-    /// (`map::source::random_map_dir`), never the game folder.
-    /// VERA extension: write the dialog's generated map beside the game's own
-    /// maps as `rmap<seed>.yrm` (a numbered name when that one is taken), so
-    /// Choose Map lists it. False when there is no map, no game folder, or the
-    /// write fails.
-    fn export_generated_map(state: &AppState) -> bool {
-        let (Some(generated), Some(config)) = (
-            state.frontend.random_map_retention.candidate(),
-            state.platform.game_config.as_ref(),
-        ) else {
+    /// VERA extension: keep the dialog's generated map as `rmap<seed>.yrm` in
+    /// VERA's Maps folder through [`crate::app::map_library::keep_map`],
+    /// never the game folder, so Choose Map lists it at once; a name another
+    /// map holds takes the map's hash suffix. False when there is no map or
+    /// the write fails.
+    fn export_generated_map(state: &mut AppState) -> bool {
+        let Some(generated) = state.frontend.random_map_retention.candidate() else {
             return false;
         };
         let modal = state
@@ -1084,29 +1080,10 @@ impl App {
                 height: image.height,
                 rgba: &image.rgba,
             });
-        let dir = &config.paths.ra2_dir;
-        let Some((path, number)) = (1..1000)
-            .map(|number| {
-                let suffix = if number == 1 {
-                    String::new()
-                } else {
-                    format!("_{number}")
-                };
-                (dir.join(format!("rmap{seed}{suffix}.yrm")), number)
-            })
-            .find(|(path, _)| !path.exists())
-        else {
-            return false;
-        };
-        let name = if number == 1 {
-            format!("Random Map {seed}")
-        } else {
-            format!("Random Map {seed} ({number})")
-        };
         let players = generated.start_waypoints.len().max(2) as u32;
         let text = crate::map::map_export::multiplayer_map_text(
             &generated.map_file,
-            &name,
+            &format!("Random Map {seed}"),
             2,
             players,
             preview,
@@ -1117,18 +1094,21 @@ impl App {
                 .preview_source_bounds()
                 .as_ref(),
         );
-        match crate::util::file_system::write(&path, text) {
-            Ok(()) => {
+        let file = format!("rmap{seed}.yrm");
+        match crate::app::map_library::keep_map(state, &file, text.as_bytes()) {
+            Ok(path) => {
                 log::info!("random map: exported {}", path.display());
                 true
             }
             Err(err) => {
-                log::warn!("random map: could not export {}: {err}", path.display());
+                log::warn!("random map: could not export {file}: {err:#}");
                 false
             }
         }
     }
 
+    /// The folder of `RandMap.Sed`, `RandMap.img` and the saved seeds
+    /// (`map::source::random_map_dir`), never the game folder.
     pub(super) fn random_map_dir(state: &AppState) -> Option<std::path::PathBuf> {
         state
             .platform
