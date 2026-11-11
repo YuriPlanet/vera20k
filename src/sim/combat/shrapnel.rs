@@ -58,11 +58,7 @@ pub(super) fn emit_projectile_shrapnel(
     let Some(child_weapon) = rules.weapon(child_weapon_name) else {
         return;
     };
-    let Some(child_projectile) = child_weapon
-        .projectile
-        .as_deref()
-        .and_then(|name| rules.projectile(name))
-    else {
+    let Some(child_projectile) = rules.weapon_projectile(child_weapon) else {
         return;
     };
     let Some(child_warhead_name) = child_weapon.warhead.as_deref() else {
@@ -189,6 +185,12 @@ pub(super) fn emit_projectile_shrapnel(
                 world.interner.intern(child_warhead_name),
                 Some(world.interner.intern(&child_projectile.id)),
                 child_weapon.bright,
+            )
+            // Ares BulletClass_Shrapnel_WeaponType1/2 (1001ABF0, hooks
+            // 0x46A5B2 and 0x46AA27) store the shrapnel weapon in the child's
+            // WeaponType (+0x130) before its Fire.
+            .with_installed_weapon(
+                crate::rules::ARES_ENABLED.then(|| world.interner.intern(&child_weapon.id)),
             ),
             speed_leptons_per_frame: child_weapon.speed.clamp(1, i32::from(u16::MAX)) as u16,
             velocity: crate::sim::projectile::launch::shrapnel_launch_velocity(
@@ -230,6 +232,8 @@ pub(super) fn emit_projectile_shrapnel(
                 gravity: child_projectile.gravity(),
                 elasticity_bits: child_projectile.elasticity.to_bits(),
                 arcing: child_projectile.arcing,
+                #[cfg(feature = "ares")]
+                subject_to_solid: child_projectile.bullet_type_ext.subject_to_solid,
             },
         };
         world.admit_projectile_spawns([spawn], rules);

@@ -110,7 +110,7 @@ pub(crate) fn unit_bridge_split(
     unloading_body: bool,
 ) -> bool {
     unit_bridge_split_in_runtime(
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.presentation(),
         entity,
         unloading_body,
     )
@@ -278,7 +278,7 @@ pub(crate) fn unit_z_adjust(
     world_z_override: Option<i32>,
 ) -> i32 {
     unit_z_adjust_in_runtime(
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.presentation(),
         entity,
         unloading_body,
         world_z_override,

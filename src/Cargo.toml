@@ -1,6 +1,6 @@
 [package]
 name = "vera20k-core"
-version = "0.2.5"
+version = "0.3.0"
 edition = "2024"
 description = "VERA20k's GPU-free engine: assets, rules, map, simulation, lockstep and the headless scenario"
 publish = false
@@ -28,6 +28,11 @@ path = "bin/sim-bench.rs"
 [[bin]]
 name = "autoplay-match"
 path = "bin/autoplay-match.rs"
+
+# The saved-game layout id the browser build compiles in (tools/wasm/build.py).
+[[bin]]
+name = "snapshot-layout"
+path = "bin/snapshot-layout.rs"
 
 # External two-client LAN fault proof; absent from normal game builds.
 [[bin]]
@@ -138,9 +143,11 @@ hashbrown = { version = "0.16", default-features = false, features = ["default-h
 num-traits = { version = "0.2", features = ["libm"] }
 unicode-ident = "1"
 
-# The native client's tungstenite -> rand enables chacha20's RNG support.
+# The native client's tungstenite -> rand enables chacha20's RNG support, and
+# its handshake's sha1 -> hybrid-array enables typenum's const generics.
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dev-dependencies]
 chacha20 = { version = "0.10", default-features = false, features = ["rng"] }
+typenum = { version = "1", features = ["const-generics"] }
 
 # wgpu's Vulkan/DX12 platform package enables gpu-allocator's hashbrown defaults.
 # Match that package's target gate, keeping Metal and browser tests unchanged.

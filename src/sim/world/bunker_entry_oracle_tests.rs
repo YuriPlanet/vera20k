@@ -399,7 +399,8 @@ impl NativeScene {
                 &[],
                 Some((width, width)),
                 Some(bounds),
-            ),
+            )
+            .into(),
         );
         sim.path_grid = Some(std::sync::Arc::new(path));
         sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));

@@ -1656,8 +1656,15 @@ pub(crate) fn mission_repair(
             }
             // Local+41A is resolved by the app, as for ToggleRepair4470B7.
             // Original44C507 announces before the service animation writes.
-            let owner = sim.substrate.entities.get(depot)?.owner();
-            sim.sound_events.emit(SimSoundEvent::Repairing { owner });
+            // This arm names the depot that started the service; the unit
+            // being serviced is not a fact at this emit site.
+            let (owner, type_id) = sim
+                .substrate
+                .entities
+                .get(depot)
+                .map(|building| (building.owner(), building.type_ref()))?;
+            sim.sound_events
+                .emit(SimSoundEvent::Repairing { owner, type_id });
             sim.substrate
                 .entities
                 .get_mut(depot)?
@@ -1745,6 +1752,7 @@ pub(crate) fn mission_repair(
                 let building = sim.substrate.entities.get(depot)?;
                 sim.sound_events.emit(SimSoundEvent::UnitRepaired {
                     owner: building.owner(),
+                    owner_admitted: false,
                     radar: crate::sim::radar::RadarEventRequest::new(
                         crate::sim::radar::RadarEventType::UnitRepaired,
                         building.position.rx(),

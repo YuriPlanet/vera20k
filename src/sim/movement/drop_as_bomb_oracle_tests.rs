@@ -26,6 +26,11 @@ mod tests {
             .map_or(default, |value| value as i32)
     }
 
+    // The stock free-fall gravity these executions record; Ares 3.0
+    // ObjectClass_Update_MaxFallRate (10049BA0, hook 0x5F3FB2) steps by the
+    // type's FallRate.* and selects by the Parachute pointer instead
+    // (`object_fall::tests::ares_fall_rate_steps_by_type_and_parachute_pointer`).
+    #[cfg(not(feature = "ares"))]
     #[test]
     fn production_object_ai_free_fall_matches_native_rate_and_caps() {
         for row in vectors().into_iter().filter(|row| {

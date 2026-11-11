@@ -208,18 +208,24 @@ impl Simulation {
     /// (`SuperClass::Launch 0x006CC7BC..0x006CC858`) and the locomotor imbue
     /// (`0x0046953E..0x004695E6`).
     pub(crate) fn unit_in_contact_war_factory(&self, id: u64, rules: &RuleSet) -> bool {
-        let Some(unit) = self.substrate.entities.get(id) else {
-            return false;
-        };
-        unit.category() == crate::map::entities::EntityCategory::Unit
-            && unit.radio_contacts.slot(0).is_some_and(|contact| {
-                self.is_weapons_factory(contact, rules)
-                    && self.substrate.occupancy.first_building_on_layer(
-                        unit.position.rx(),
-                        unit.position.ry(),
-                        MovementLayer::Ground,
-                    ) == Some(contact)
-            })
+        self.unit_war_factory_contact(id, rules).is_some()
+    }
+
+    /// The war factory of [`Self::unit_in_contact_war_factory`], for the
+    /// ReceiveDamage site whose Ares hook also reads its type.
+    pub(crate) fn unit_war_factory_contact(&self, id: u64, rules: &RuleSet) -> Option<u64> {
+        let unit = self.substrate.entities.get(id)?;
+        if unit.category() != crate::map::entities::EntityCategory::Unit {
+            return None;
+        }
+        unit.radio_contacts.slot(0).filter(|&contact| {
+            self.is_weapons_factory(contact, rules)
+                && self.substrate.occupancy.first_building_on_layer(
+                    unit.position.rx(),
+                    unit.position.ry(),
+                    MovementLayer::Ground,
+                ) == Some(contact)
+        })
     }
 }
 
@@ -572,10 +578,15 @@ mod tests {
         let mut terrain = flat_terrain(20, 20);
         for cell in terrain.cells_mut_for_test() {
             // Retail ground rows used by the compact admission matrix.
-            cell.speed_costs.float = Some(0);
-            cell.base_speed_costs.float = Some(0);
-            cell.speed_costs.hover = Some(50);
-            cell.base_speed_costs.hover = Some(50);
+            cell.speed_costs.float = Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
+            cell.base_speed_costs.float =
+                Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
+            cell.speed_costs.hover = Some(crate::util::native_x87::NativeF32Bits::from_bits(
+                0x3f00_0000,
+            ));
+            cell.base_speed_costs.hover = Some(crate::util::native_x87::NativeF32Bits::from_bits(
+                0x3f00_0000,
+            ));
         }
         sim.resolved_terrain = Some(terrain);
         sim.set_playfield_bounds_for_test(Some(test_playfield_bounds()));
@@ -590,8 +601,8 @@ mod tests {
             .cell_mut_for_test(cell.0, cell.1)
             .unwrap();
         water.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
-        water.speed_costs.float = Some(100);
-        water.base_speed_costs.float = Some(100);
+        water.speed_costs.float = Some(crate::util::native_x87::NativeF32Bits::ONE);
+        water.base_speed_costs.float = Some(crate::util::native_x87::NativeF32Bits::ONE);
     }
 
     #[test]

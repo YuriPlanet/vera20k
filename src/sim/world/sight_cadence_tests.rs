@@ -201,7 +201,9 @@ fn aircraft_uncached_ground_sight_uses_one_cell_radius_without_replacing_its_sou
         let rng = sim.scenario_rng.native_state_hex();
         let ((), trace) = trace_reveal_calls(|| {
             if resize {
-                assert!(sim.change_visible_map_area([2, 2, 16, 12], &rules));
+                assert!(
+                    sim.change_visible_map_area([2, 2, 16, 12], UninitContext::with_rules(&rules))
+                );
                 assert!(sim.entities().get(id).unwrap().in_playfield());
             } else {
                 sim.grow_shroud(UninitContext::with_rules(&rules));
@@ -723,19 +725,47 @@ fn retail_goldst_initial_scenario() -> crate::headless_scenario::HeadlessScenari
     scenario
 }
 
+/// [`retail_goldst_initial_scenario`], with its starting AMCV held to the
+/// oracle's rows ([`assert_retail_goldst_initial_amcv`]) where the oracle
+/// read them: after the unit's Unlimbo, which is all the oracle ran, and
+/// before `ScenarioClass::Post_Map_Init @ 0x00686890` allies the Special
+/// house (`0x006869D2..0x00686ACE`). Each `HouseClass::Make_Ally @
+/// 0x004F9B70` that loop admits walks the unit's footprint twice more (`Map
+/// 0x004ADEE0` at `0x004F9B9A`, `Map 0x004ADCD0` at `0x004F9F4F`), and
+/// `MapCell 0x004A9CA0` recomputes both edge frames on every call
+/// (`0x004A9D09`, `0x004A9D41`). The finished load therefore caches the
+/// frames the whole footprint gives, while the rows keep each cell's fog
+/// frame from its one visit, when the cells after it in the walk had no
+/// `+0x140` bit 2 yet. Returns the finished load, the unit and the witness
+/// cells.
+fn retail_goldst_scenario_checked_after_unlimbo() -> (
+    crate::headless_scenario::HeadlessScenario,
+    u64,
+    Vec<(u16, u16)>,
+) {
+    let (scenario, checked) = crate::sim::scenario_post_map::observe_before_special_allies(
+        assert_retail_goldst_initial_amcv,
+        retail_goldst_initial_scenario,
+    );
+    let (id, witnesses) = checked.expect("a Battle load allies the Special house");
+    (scenario, id, witnesses)
+}
+
 /// Normal production GoldSt Battle initialization, before any frame or draw.
 /// Original6F6D27/5678E0/4A9CA0 plus6F6D61/567DA0 observations are retained
 /// by the existing procedural drawing oracle. Its original scene supplies a
 /// cropped physical map and bounded successful placement, not whole-map boot;
-/// this joins only the selected source and eight pre-presentation Cell states.
+/// this joins only the selected source and eight pre-presentation Cell states,
+/// read after the Unlimbo as the oracle read them.
 #[test]
 #[ignore = "requires RA2_DIR with installed retail RA2/YR assets and stock GoldSt.mmx"]
 fn retail_goldst_initial_amcv_matches_native_before_presentation() {
-    let scenario = retail_goldst_initial_scenario();
-    let _ = assert_retail_goldst_initial_amcv(scenario.sim());
+    let _ = retail_goldst_scenario_checked_after_unlimbo();
 }
 
-/// Shared native1777 prerequisites, before either normal-map experiment runs.
+/// Shared native1777 prerequisites of both normal-map experiments, for the
+/// load as the starting AMCV's Unlimbo left it
+/// ([`retail_goldst_scenario_checked_after_unlimbo`]).
 fn assert_retail_goldst_initial_amcv(sim: &Simulation) -> (u64, Vec<(u16, u16)>) {
     use serde_json::json;
     let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
@@ -856,13 +886,15 @@ fn assert_retail_goldst_initial_amcv(sim: &Simulation) -> (u64, Vec<(u16, u16)>)
         );
     }
     // No refresh, terrain edits, visibility hooks, commands or presentation
-    // ran between normal load and these producer/cache observations.
+    // ran between the unit's Unlimbo and these producer/cache observations.
     (id, witnesses)
 }
 
 /// Ordinary runtime Move -> two Unit arrivals -> Stop/idle on stock GoldSt.
-/// Native1777 supplies the initial prerequisites; the independently executed
-/// moving corpus supplies event-relative Drive/Unit cache and Cell witnesses.
+/// Native1777 supplies the initial prerequisites, read after the Unlimbo
+/// ([`retail_goldst_scenario_checked_after_unlimbo`]); the independently
+/// executed moving corpus supplies event-relative Drive/Unit cache and Cell
+/// witnesses for the moves, which run from the finished load.
 /// Prepared native startup timing is not a whole-match timing golden.
 #[test]
 #[ignore = "requires RA2_DIR with installed retail RA2/YR assets and stock GoldSt.mmx"]
@@ -986,8 +1018,7 @@ fn retail_goldst_amcv_sight_follows_arrivals_then_survives_stop() {
         }
     }
 
-    let mut scene = retail_goldst_initial_scenario();
-    let (id, mut selected) = assert_retail_goldst_initial_amcv(scene.sim());
+    let (mut scene, id, mut selected) = retail_goldst_scenario_checked_after_unlimbo();
     let owner = scene.sim().session.current_house().unwrap();
     let cache = &scene.sim().fog.sight_admissions_for_test()[&(id, owner)];
     let left = *cache.cells.iter().min().unwrap();
@@ -1342,9 +1373,11 @@ fn a_source_event_keeps_one_notification_admission_across_logical_planes() {
         owner < ally,
         "the fixture visits the original player plane first"
     );
+    // A human ally: its client map is a logical plane of its own (a
+    // computer house has none).
     sim.houses
         .register(crate::sim::house_state::HouseState::new(
-            ally, 0, None, false, 0, 10,
+            ally, 0, None, true, 0, 10,
         ));
     // Supplied direct alliance prestate; the test exercises source event
     // admission, not the separate diplomacy producer.
@@ -1490,7 +1523,7 @@ fn retail_goldst_uncached_reveal_border_matches_native_admission_and_transport()
             );
         });
         assert_eq!(
-            trace.walks.len(),
+            trace.map_calls,
             case["map_calls"].as_array().unwrap().len(),
             "Map call count {name}"
         );
@@ -1899,9 +1932,6 @@ fn an_infantry_corpse_keeps_its_sight_until_its_uninit() {
     );
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     let mut sim = Simulation::new();
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
     sim.fog = vision::FogState::new(32, 32);
@@ -2004,8 +2034,8 @@ fn a_reveal_before_navigation_publication_tests_the_cell_heights() {
 
 /// `TechnoClass::ChangeOwner @ 0x007014A0` moves an object's sight within
 /// the call: its ReReveal before the owner store (`0x0070172F`) takes it
-/// off the old owner's map, and its UpdateReveal (`0x0070187B`) opens it on
-/// the new owner's.
+/// off the old owner's map, and its UpdateReveal (`0x0070187B`) would open
+/// it on the new owner's, which a computer house does not have.
 #[test]
 fn an_owner_change_moves_the_sight_to_the_new_owner_within_the_call() {
     let Some((mut sim, rules, _)) = retail_arena() else {
@@ -2020,9 +2050,11 @@ fn an_owner_change_moves_the_sight_to_the_new_owner_within_the_call() {
     assert!(sim.fog.sight_is_latched(id, americans));
     sim.change_owner_with_rules(id, russians, &rules, None, FrameEffects::default());
     assert!(!sim.fog.sight_is_latched(id, americans), "0x0070172F");
-    assert!(sim.fog.sight_is_latched(id, russians), "0x0070187B");
     assert!(!sim.fog.is_cell_visible(americans, 16, 16));
-    assert!(sim.fog.is_cell_visible(russians, 16, 16));
+    // 0x0070187B's UpdateReveal passes the computer owner to RevealArea,
+    // whose gate opens no map for it: it is no client.
+    assert!(!sim.fog.sight_is_latched(id, russians));
+    assert!(!sim.fog.by_owner().contains_key(&russians));
 }
 
 /// MakeAlly and MakeEnemy bracket their ally-bit write with the map
@@ -2053,26 +2085,23 @@ fn an_alliance_moves_the_allys_building_sight_within_the_call() {
         .unwrap();
     // The Spy Plane's kind of reveal: a radius that replaces its Sight=.
     sim.refresh_object_sight(tank, &rules, 7, crate::sim::world::FrameEffects::default());
-    let tank_sight = sim.fog.sight_admission(tank, russians).unwrap().clone();
-    assert_eq!(tank_sight.radius, 7);
+    let tank_source = sim
+        .fog
+        .source_sight(tank, americans)
+        .expect("the American logical client ran UpdateReveal before its map gate");
+    assert_eq!(tank_source.radius, 7);
+    assert!(
+        !sim.fog.by_owner().contains_key(&russians),
+        "a computer house has no map (0x00567AB0..0x00567B12)"
+    );
     assert!(!sim.fog.sight_is_latched(standing, americans));
     let american_source = sim
         .fog
         .source_sight(standing, americans)
         .expect("the American logical client ran UpdateReveal before its map gate");
-    let owner_source = sim
-        .fog
-        .source_sight(standing, russians)
-        .expect("the Russian owner has an independent native source cache");
     assert!(american_source.latched);
-    assert!(owner_source.latched);
     assert!(sim.fog.sight_admission(standing, americans).is_none());
-    let owner_sight = sim
-        .fog
-        .sight_admission(standing, russians)
-        .expect("the Russian House keeps the plant's original sight")
-        .clone();
-    let owner_origin = owner_sight.origin;
+    let owner_origin = american_source.origin;
 
     sim.make_ally(
         russians,
@@ -2083,19 +2112,9 @@ fn an_alliance_moves_the_allys_building_sight_within_the_call() {
         false,
     );
     assert_eq!(
-        sim.fog.sight_admission(standing, russians),
-        Some(&owner_sight),
-        "the Russian contribution keeps its original geometry"
-    );
-    assert_eq!(
         sim.fog.source_sight(standing, americans),
         Some(american_source),
         "MakeAlly cannot reopen a source already latched for that client"
-    );
-    assert_eq!(
-        sim.fog.source_sight(standing, russians),
-        Some(owner_source),
-        "the owner client's independent +0x250/+0x254/+0x260 is unchanged"
     );
     assert!(
         sim.fog.sight_admission(standing, americans).is_none(),
@@ -2115,9 +2134,9 @@ fn an_alliance_moves_the_allys_building_sight_within_the_call() {
         "the frame pass reveals nothing"
     );
     assert_eq!(
-        sim.fog.sight_admission(tank, russians),
-        Some(&tank_sight),
-        "the frame pass keeps the last reveal's footprint"
+        sim.fog.source_sight(tank, americans),
+        Some(tank_source),
+        "the frame pass keeps the last reveal's source"
     );
 
     // A plant placed while the alliance stands opens on the ally's map at
@@ -2126,7 +2145,7 @@ fn an_alliance_moves_the_allys_building_sight_within_the_call() {
     let plant = sim
         .spawn_object("NAPOWR", "Russians", 22, 22, 0, &rules)
         .unwrap();
-    let origin = sim.fog.sight_admission(plant, russians).unwrap().origin;
+    let origin = sim.fog.sight_admission(plant, americans).unwrap().origin;
     assert!(sim.fog.sight_is_latched(plant, americans));
     assert!(sim.fog.is_cell_visible(americans, origin.0, origin.1));
 
@@ -2153,7 +2172,6 @@ fn an_alliance_moves_the_allys_building_sight_within_the_call() {
         "0x004F9FD8's release precedes the bit write"
     );
     assert!(!sim.fog.is_cell_visible(americans, origin.0, origin.1));
-    assert!(sim.fog.sight_is_latched(plant, russians));
 
     sim.make_ally(
         russians,

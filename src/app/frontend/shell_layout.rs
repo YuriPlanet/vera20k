@@ -28,12 +28,11 @@ pub(crate) fn fills_window(state: &AppState) -> bool {
     window_takes_fitted_shell(shell_screen_size(state))
 }
 
-/// Only the two sizes gamemd's shell runs at keep the retail layout: 800x600,
-/// and 640x480 with its own 640-wide art (`AllowModeToggle`). Any other window
-/// gets the 800x600 dialog scaled to fit at its own shape, centred. The startup
-/// splash asks by surface size, before the app state exists.
+/// Whether a window of `size` gets the fitted shell
+/// ([`ShellScale::for_window`](crate::ui::shell::geom::ShellScale::for_window)).
+/// The startup splash asks by surface size, before the app state exists.
 pub(crate) fn window_takes_fitted_shell(size: (u32, u32)) -> bool {
-    !matches!(size, (800, 600) | (640, 480))
+    !shell_scale_for_screen(size).is_retail()
 }
 
 /// How much a menu's software cursor grows: with a fitted menu's art, by the
@@ -74,13 +73,20 @@ fn message_box_layout_for_screen(
     crate::ui::shell::modal::message_box_layout_on(kind, size.0 as i32, size.1 as i32, scale)
 }
 
+/// The settings in VERA's Esc menu, on its message box's mapping.
+pub(crate) fn shell_menu_settings_layout(
+    state: &AppState,
+) -> crate::ui::main_menu_dialogs::options::shell::LauncherOptionsLayout {
+    let size = shell_screen_size(state);
+    crate::ui::main_menu_dialogs::options::shell::LauncherOptionsLayout::esc_menu(
+        size.0 as i32,
+        size.1 as i32,
+        shell_scale_for_screen(size),
+    )
+}
+
 pub(crate) fn shell_scale_for_screen(size: (u32, u32)) -> crate::ui::shell::geom::ShellScale {
-    use crate::ui::shell::geom::ShellScale;
-    if window_takes_fitted_shell(size) {
-        ShellScale::from_screen(size.0 as i32, size.1 as i32)
-    } else {
-        ShellScale::RETAIL
-    }
+    crate::ui::shell::geom::ShellScale::for_window(size.0 as i32, size.1 as i32)
 }
 
 /// The shared right-panel menu pages (`0x100` Single Player, `0x101` Movies &
@@ -178,17 +184,17 @@ pub(crate) fn score_layout(state: &AppState) -> crate::ui::score_shell::ScoreLay
     }
 }
 
-/// Launcher Options `0xD5`, showing `page`.
+/// Launcher Options `0xD5`, showing `category`'s page.
 pub(crate) fn launcher_options_layout(
     state: &AppState,
-    page: crate::ui::main_menu_dialogs::options::OptionsPage,
+    category: crate::ui::main_menu_dialogs::options::Category,
 ) -> crate::ui::main_menu_dialogs::options::shell::LauncherOptionsLayout {
     use crate::ui::main_menu_dialogs::options::shell::LauncherOptionsLayout;
     let (width, height) = (state.render_width() as i32, state.render_height() as i32);
     let layout = if fills_window(state) {
-        LauncherOptionsLayout::responsive(width, height, page)
+        LauncherOptionsLayout::responsive(width, height, category)
     } else {
-        LauncherOptionsLayout::new(width, height, page)
+        LauncherOptionsLayout::new(width, height, category)
     };
     let battle = crate::app::App::match_zoom_geometry(state);
     layout.with_battle_frame((battle.src_width, battle.src_height))
@@ -240,14 +246,14 @@ mod tests {
         use crate::ui::shell::geom::RectPx;
         use crate::ui::shell::modal::ModalKind;
         let layout = super::message_box_layout_for_screen(ModalKind::Confirm, (2560, 1600));
-        assert_eq!(layout.dialog, RectPx::new(680, 365, 1202, 870));
-        assert_eq!(layout.ok, RectPx::new(1509, 1037, 336, 67));
+        assert_eq!(layout.dialog, RectPx::new(456, 323, 1202, 869));
+        assert_eq!(layout.ok, RectPx::new(1285, 995, 336, 66));
         let cancel = layout.cancel.unwrap();
-        assert_eq!(cancel, RectPx::new(1509, 1123, 336, 66));
-        assert!(layout.ok.contains(1673, 1071));
-        assert!(cancel.contains(1673, 1156));
-        assert!(!layout.ok.contains(1673, 1156));
-        assert!(!cancel.contains(1673, 1071));
+        assert_eq!(cancel, RectPx::new(1285, 1080, 336, 67));
+        assert!(layout.ok.contains(1453, 1028));
+        assert!(cancel.contains(1453, 1113));
+        assert!(!layout.ok.contains(1453, 1113));
+        assert!(!cancel.contains(1453, 1028));
         for size in [(800, 600), (640, 480)] {
             let layout = super::message_box_layout_for_screen(ModalKind::Confirm, size);
             assert_eq!((layout.dialog.w, layout.dialog.h), (451, 326));

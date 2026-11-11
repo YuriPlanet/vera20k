@@ -408,7 +408,9 @@ fn the_mutation_arm_matches_native() {
             let terrain = sim.resolved_terrain.as_mut().unwrap();
             let index = terrain.index(cell.0, cell.1).unwrap();
             let foot = row["foot_cost"].as_f64().unwrap();
-            terrain.cells_mut_for_test()[index].speed_costs.foot = Some((foot * 100.0) as u8);
+            terrain.cells_mut_for_test()[index].speed_costs.foot = Some(
+                crate::util::native_x87::NativeF32Bits::from_bits((foot as f32).to_bits()),
+            );
         }
         let victim = sim
             .construct_object_limbo_at_height(
@@ -562,6 +564,12 @@ fn the_make_infantry_end_matches_native() {
         let make_infantry = int(&row["make_infantry"]);
         let count = int(&row["count"]);
         if make_infantry == -1 || make_infantry == count || make_infantry < -1 {
+            continue;
+        }
+        // Ares AnimClass_Update (1005C3E0, hook 0x424B23) ends the anim on a
+        // refused Unlimbo; `anim_class` tests that arm. The row still counts.
+        if cfg!(feature = "ares") && row["unlimbo"] == false && row["end"] != "uninit" {
+            compared += 1;
             continue;
         }
         let [x, y, z] = coord(&row["location"]);

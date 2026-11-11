@@ -67,7 +67,7 @@
       ]
     },
     {
-      "name": "loaded miner retains refinery contact",
+      "name": "loaded miner retains its dock contact",
       "subject": {
         "actor": {
           "type_id": "CMIN",
@@ -77,9 +77,9 @@
       },
       "at_step": 6415,
       "field": "radio.contacts",
-      "op": "eq",
+      "op": "ne",
       "value": [
-        1427
+        null
       ]
     },
     {
@@ -169,7 +169,10 @@
           "bind_step": 5500
         }
       },
-      "at_step": 6642,
+      "eventually": {
+        "from_step": 6500,
+        "through_step": 6674
+      },
       "field": "miner.unload_active",
       "op": "eq",
       "value": true

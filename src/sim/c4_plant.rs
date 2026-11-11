@@ -197,6 +197,19 @@ impl C4Detonation {
     /// sale; the building leaves at that Update either way. Frequency: a
     /// scripted sell landing in that one frame.
     pub(crate) fn arm_destruction(&mut self, frame: i32, duration_frames: i32) {
+        self.restart_fuse(frame, duration_frames);
+    }
+
+    /// Ares `SpyEffect.SabotageDelay` (`BuildingExt::ExtData::InfiltratedBy
+    /// @ 10012000`, hook `0x004571E0`): the latch (`+0x6DF`) is set and the
+    /// fuse starts at `frame`; C4AppliedBy is left as it was.
+    #[cfg(feature = "ares")]
+    pub(crate) fn arm_sabotage(&mut self, frame: i32, duration_frames: i32) {
+        self.restart_fuse(frame, duration_frames);
+    }
+
+    /// A latch whose fuse starts at `frame`, keeping C4AppliedBy.
+    fn restart_fuse(&mut self, frame: i32, duration_frames: i32) {
         let retained_source = self.pending.and_then(|pending| pending.source_entity_id);
         self.pending = Some(PendingC4Detonation::new(
             CdTimer::started(frame, duration_frames),
@@ -285,10 +298,16 @@ impl Simulation {
         let Some(infantry) = self.substrate.entities.get(id) else {
             return Ok(C4Arrival::default());
         };
+        // Ares 3.0 InfantryClass_UpdatePosition_C4Ability 10025730 (hook
+        // 0x0051A4D2) also admits a rank holding the C4 ability.
+        #[cfg(feature = "ares")]
+        let c4 = |object: &crate::rules::object_type::ObjectType| {
+            crate::sim::combat::veterancy::holds_c4(infantry.veterancy.rank_kind(), object)
+        };
+        #[cfg(not(feature = "ares"))]
+        let c4 = |object: &crate::rules::object_type::ObjectType| object.c4;
         if infantry.mission.effective().known() != Some(MissionType::Sabotage)
-            || !self
-                .object_type(infantry.type_ref(), rules)
-                .is_some_and(|object| object.c4)
+            || !self.object_type(infantry.type_ref(), rules).is_some_and(c4)
         {
             return Ok(C4Arrival::default());
         }
@@ -360,6 +379,69 @@ impl Simulation {
         );
         self.scatter_from_building(id, building, rules, registry, effects)?;
         Ok(PLANTED)
+    }
+
+    /// Ares' Saboteur arm of `InfantryClass::Per_Cell_Process`
+    /// (`InfantryClass_UpdatePosition_Saboteur @ 100260D0`, hook
+    /// `0x00519FF8`), for a `Saboteur=` infantryman entering a building it
+    /// may blow up (`InfiltrateAction::Sabotage`):
+    /// - When the building is Iron Curtained, being warped out or being sold
+    ///   (vt+0x160, vt+0x1D4, vt+0x184), the infantryman stops (`0x004DF0D0`)
+    ///   and uncloaks (vt+0x45C(0)).
+    /// - Otherwise, unless it already holds a charge (`+0x6DF`), the charge
+    ///   is planted: the infantryman becomes C4AppliedBy (`+0x540`), the
+    ///   building flashes for half of [`RuleSet::c4_delay_frames`] (integer
+    ///   halving, vt+0x148) and its C4Timer starts for the whole, then its
+    ///   Tag hears event 1 with the infantryman as actor. Answers true:
+    ///   the caller consumes the infantryman (`0x0051A010`).
+    ///
+    /// Answering false, it has rearmed ([`Self::rearm_c4_planter`]) and the
+    /// caller turns it away (`0x0051A03E`). RNG: the rearm's GetROF draw;
+    /// timers: the fuse and the rearm.
+    #[cfg(feature = "ares")]
+    pub(crate) fn infantry_per_cell_sabotage(
+        &mut self,
+        id: u64,
+        building: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        let frame = self.session.binary_frame();
+        let Some(target) = self.substrate.entities.get(building) else {
+            return false;
+        };
+        let refused = crate::sim::superweapon::invulnerability::is_invulnerable(
+            target.invulnerability.as_ref(),
+            frame,
+        ) || target.is_warped_out()
+            || target.mission.effective().known() == Some(MissionType::Selling);
+        if refused {
+            if let Some(infantry) = self.substrate.entities.get_mut(id) {
+                infantry.navigation.stop_moving();
+            }
+            crate::sim::combat::world_fire::start_uncloaking_to_fire(self, rules, id);
+        } else if target.pending_c4_detonation.pending().is_none() {
+            let fuse = rules.c4_delay_frames();
+            self.substrate.flash_building(building, fuse / 2, frame);
+            if let Some(target) = self.substrate.entities.get_mut(building) {
+                target.pending_c4_detonation.plant(frame as i32, fuse, id);
+            }
+            let context = UninitContext::new(rules, registry).with_effects(effects);
+            self.dispatch_object_tag_event(building, 1, Some(id), None, context);
+            return true;
+        }
+        Self::rearm_c4_planter(
+            &self.interner,
+            &self.session,
+            &mut self.scenario_rng,
+            &mut self.substrate,
+            &self.houses,
+            id,
+            building,
+            rules,
+        );
+        false
     }
 
     /// The C4 cell arm (`0x0051A667..0x0051A7F2`): when the cell at the

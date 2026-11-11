@@ -52,8 +52,8 @@ impl CrushImmunity {
 }
 
 /// Event9 DEPLOY4C76BC..4C7812. MCV conversion, simple deployment, the
-/// deploy-fire arm, Unit transports and a tank bunker's occupant share this
-/// event; Infantry uses its existing Mission_Unload deployment branch too.
+/// deploy-fire arm, Unit transports, garrison Buildings and a tank bunker's
+/// occupant share this event. Each class uses its existing Unload branch.
 /// Each concrete Mission_Unload branch owns its effects. A transport's
 /// empty hold does not suppress this event: it still stops and queues Unload.
 /// Native controls: tools/spatial_oracle/transport_unload.py --deploy-event.
@@ -63,12 +63,12 @@ impl CrushImmunity {
 /// sends OVER_OUT to its radio contact 0 (vt+0x274(3), `0x004C77E4`).
 ///
 /// RESIDUAL: native refuses only an aircraft (`0x004C777E`) and the
-/// Construction/Selling missions below; VERA admits Infantry and the Unit kinds
-/// whose Unload arms it ports: an MCV, a simple deployer, a deploy-fire unit, a
-/// Unit transport and a unit in a tank bunker. Other Units fail the deploy key's
-/// CanDeploySlashUnload query; their externally supplied DEPLOY events remain
-/// outside these represented Unload arms. Self-click still uses its separate
-/// clicked-Mission owner and requires cargo for a transport.
+/// Construction/Selling missions below; VERA admits Buildings, Infantry and
+/// the Unit kinds whose Unload arms it ports: an MCV, a simple deployer, a
+/// deploy-fire unit, a Unit transport and a unit in a tank bunker. Other Units
+/// fail the deploy key's CanDeploySlashUnload query; their externally supplied
+/// DEPLOY events remain outside these represented Unload arms. Self-click uses
+/// its separate clicked-Mission owner and requires cargo for a transport.
 pub(crate) fn issue_order(
     sim: &mut Simulation,
     id: u64,
@@ -79,7 +79,9 @@ pub(crate) fn issue_order(
         e.lifecycle.object_alive()
             && !e.lifecycle.in_limbo()
             && e.tether.partner().is_none()
-            && (e.category() == EntityCategory::Infantry
+            // Event9 has no occupant/cargo gate. Selection730B28 owns the
+            // garrison D admission; an accepted Building event may be empty.
+            && (matches!(e.category(), EntityCategory::Structure | EntityCategory::Infantry)
                 || crate::sim::mcv_deploy::is_mcv(sim, e, rules)
                 || crate::sim::unit_simple_deploy::is_simple_deployer(sim, e, rules)
                 || unit_fires_on_deploy(sim, e, rules)
@@ -89,27 +91,18 @@ pub(crate) fn issue_order(
     }) {
         return false;
     }
-    // Event9 4C771C..4C7756 checks the current cell's slope before the
-    // Techno70C620 terrain projection query. It does not test health/dying.
-    // EMP504 has no active state producer in this engine yet.
-    if let Some(terrain) = sim.resolved_terrain.as_ref() {
-        let actor = sim.substrate.entities.get(id).expect("admitted Unit");
-        if !actor.on_bridge() {
-            let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
-            let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&actor.position);
-            if cells.ground_fields(cells.lookup_world(x, y)).1 == 0
-                && crate::sim::movement::ground_pose::terrain_projection_differs(&cells, [x, y])
-            {
-                return false;
-            }
-        }
+    // Event9 checks the current cell's slope before the Techno70C620 terrain
+    // projection query. It does not test health/dying. EMP504 has no active
+    // state producer in this engine yet.
+    if crate::sim::movement::ground_pose::event_hidden_flat_cell(sim, id) {
+        return false;
     }
     //4C7768..4C7774 follows the projection query and its map lookup effects.
     if matches!(
         sim.substrate
             .entities
             .get(id)
-            .expect("admitted Unit")
+            .expect("admitted actor")
             .mission
             .current()
             .known(),
@@ -117,7 +110,7 @@ pub(crate) fn issue_order(
     ) {
         return false;
     }
-    // `0x004C778A..0x004C77DE`: the event is ignored while the Unit's cell
+    // `0x004C778A..0x004C77DE`: the event is ignored while the actor's cell
     // holds a WeaponsFactory= building (Cell_Building `0x0047C520`), so an
     // MCV still leaving its factory stays. Only the first ground Building's
     // type is tested; Mark owns membership independently of death state.
@@ -136,8 +129,8 @@ pub(crate) fn issue_order(
         return false;
     }
     // Event DEPLOY: OVER_OUT to radio contact 0 (`0x004C77E4`), then the
-    // Unit's class setter takes a null destination (`0x004C77F8`, Unit
-    // `0x00741970`) and its class target setter a null target (`0x004C7804`)
+    // actor's class setter takes a null destination (`0x004C77F8`, Building
+    // `0x00455D50` / Unit `0x00741970`) and a null target (`0x004C7804`)
     // before Queue_Mission(Unload) (`0x004C7812`).
     crate::sim::radio::transmit_to_contact(
         sim,
@@ -317,8 +310,12 @@ impl Simulation {
                 // both AI Hunt deploy and Guard→Unload through this owner.
                 // Active-retail EMP producer reachability is not established;
                 // default builds retain their current constructor-zero path.
+                // Ares 3.0 TechnoClass_CanDeploySlashUnload_Immobile
+                // (1005D1C0, hook 0x700E47) also refuses a falling or
+                // warping-in unit, falling first.
                 #[cfg(feature = "ares")]
-                if entity.emp_remaining() > 0 {
+                if entity.is_falling_down() || entity.emp_remaining() > 0 || entity.is_warping_in()
+                {
                     return false;
                 }
                 if entity.low_bridge_tube_state.is_some() {
@@ -343,6 +340,12 @@ impl Simulation {
                 }
                 if object.passengers <= 0 {
                     return true;
+                }
+                // Ares 3.0 10049E70 (hook 0x700EEC): a `NoManualUnload`
+                // transport outside a tank bunker refuses (0x700DCE).
+                #[cfg(feature = "ares")]
+                if object.techno_combat().movement().no_manual_unload() && !bunkered {
+                    return false;
                 }
                 if entity.on_bridge() {
                     return false;
@@ -538,7 +541,12 @@ impl Simulation {
             .get(id)
             .ok_or("Infantry Unload receiver retired")?;
         let object = self
-            .object_type(actor.type_ref(), rules)
+            .interner
+            .object_type_in_category(
+                actor.type_ref(),
+                crate::rules::object_type::ObjectCategory::Infantry,
+                rules,
+            )
             .ok_or("Infantry Unload requires the type")?;
         let doing = actor
             .mission_leaf
@@ -553,6 +561,12 @@ impl Simulation {
             if object.undeploy_delay <= -1 {
                 self.infantry_do_action(id, 31, true, rules, effects)?;
             }
+            // Ares 3.0 InfantryClass_Mi_Unload_Undeploy (1005CD20, hook
+            // 0x51F716): this arm returns 1 after Guard instead of reaching
+            // FootUnload's 450.
+            if crate::rules::ARES_ENABLED {
+                delay = 1;
+            }
         } else {
             self.infantry_do_action(id, 27, true, rules, effects)?;
             //70E120 uses the SprayAttack selector70DD70, not GetCurrentWeapon
@@ -563,10 +577,18 @@ impl Simulation {
                 .and_then(|(weapon, _)| rules.weapon(weapon))
                 .is_some_and(|weapon| weapon.area_fire);
             if area_fire {
-                //5F3E50→410A40 compares native literal82557C "DESO".
-                if object.id.eq_ignore_ascii_case("DESO") {
+                //5F3E50→410A40 compares native literal82557C "DESO";
+                // Ares 3.0 10049790 (hook 0x51F76D) tests `IsDesolator`.
+                #[cfg(feature = "ares")]
+                let desolator = object.techno_combat().roles().is_desolator();
+                #[cfg(not(feature = "ares"))]
+                let desolator = object.id.eq_ignore_ascii_case("DESO");
+                if desolator {
                     delay = rules
-                        .animation_sequence(&object.id)
+                        .animation_sequence_in_category(
+                            crate::rules::object_type::ObjectCategory::Infantry,
+                            &object.id,
+                        )
                         .and_then(|set| set.infantry_action(27))
                         .ok_or("DESO Unload requires its native Deploy sequence record")?
                         .frames_per_facing

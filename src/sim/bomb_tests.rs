@@ -113,7 +113,11 @@ fn rules() -> RuleSet {
 }
 
 fn rules_from(text: &str) -> RuleSet {
-    RuleSet::from_ini(&IniFile::from_str(text)).expect("bomb rules")
+    RuleSet::from_ini_with_sounds_for_test(
+        &IniFile::from_str(text),
+        &["CrazyIvanAttack", "CrazyIvanBombTick"],
+    )
+    .expect("bomb rules")
 }
 
 /// Americans (human) and Russians (computer), in that house order.
@@ -204,11 +208,11 @@ fn kill(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     assert_eq!(entity(sim, id).health.current(), 0);
 }
 
-fn bomb(sim: &Simulation, id: u64) -> Option<Bomb> {
+fn bomb(sim: &Simulation, id: u64) -> Option<&Bomb> {
     sim.substrate
         .entities
         .get(id)
-        .and_then(|entity| entity.bomb)
+        .and_then(|entity| entity.bomb.as_ref())
 }
 
 /// The human Americans send every order, a computer House's unit's too:
@@ -282,7 +286,12 @@ fn native_bomb(fields: &serde_json::Value) -> Bomb {
         planter_house: InternedId::default(),
         start_frame: int("start"),
         end_frame: int("end"),
+        ticking_sound: None,
         seen_by: 0,
+        #[cfg(feature = "ares")]
+        weapon: None,
+        #[cfg(feature = "ares")]
+        death_bomb: false,
     }
 }
 
@@ -482,6 +491,8 @@ fn native_world(input: &serde_json::Value, rules: &RuleSet) -> NativeWorld {
         let mut bomb = native_bomb(fields);
         bomb.planter = fields["planter"].as_u64().map(|n| ids[n as usize]);
         bomb.planter_house = houses[fields["house"].as_u64().unwrap_or(0) as usize];
+        bomb.ticking_sound =
+            (fields["ticking_sound"].as_i64() != Some(-1)).then(|| "CrazyIvanBombTick".to_owned());
         if technos[slot]["visible"].as_u64() == Some(1) {
             bomb.seen_by = house_bit(&sim.houses.order(), local);
         }
@@ -499,6 +510,9 @@ fn check_world_case(case: &NativeBombCase, name: &str, section: &str, delay: i32
     if input["rules"]["attach_sound"].as_i64() == Some(-1) {
         text = text.replace("BombAttachSound=CrazyIvanAttack\n", "");
     }
+    if input["rules"]["ticking_sound"].as_i64() == Some(-1) {
+        text = text.replace("BombTickingSound=CrazyIvanBombTick\n", "");
+    }
     let rules = rules_from(&text);
     let NativeWorld {
         mut sim,
@@ -507,10 +521,20 @@ fn check_world_case(case: &NativeBombCase, name: &str, section: &str, delay: i32
     } = native_world(input, &rules);
     let index = |value: &serde_json::Value| value.as_u64().map(|n| ids[n as usize]);
     match section {
+        // Ares BombListClass_Plant_AllTechnos (hook 0x438E86) admits any
+        // Techno planter, so the stock refusal of another has no Ares row.
+        #[cfg(feature = "ares")]
+        "attach"
+            if input["planter"].as_u64().is_some_and(|n| {
+                input["technos"][n as usize]["rtti"]
+                    .as_u64()
+                    .unwrap_or(0x0F)
+                    != 0x0F
+            }) => {}
         "attach" => {
             let planter = index(&input["planter"]).unwrap_or(u64::MAX);
             let target = index(&input["target"]);
-            let carrier_before = target.and_then(|id| bomb(&sim, id));
+            let carrier_before = target.and_then(|id| bomb(&sim, id)).cloned();
             sim.bomb_attach_for_test(planter, target, &rules);
             let native = case.bombs.first();
             match native {
@@ -529,6 +553,12 @@ fn check_world_case(case: &NativeBombCase, name: &str, section: &str, delay: i32
                         "{name}: the fuse"
                     );
                     assert!(sim.bombs.carriers.contains(&carrier), "{name}");
+                    assert_eq!(
+                        sim.bomb_ticking_sound(carrier),
+                        (native["ticking_sound"].as_i64() != Some(-1))
+                            .then_some("CrazyIvanBombTick"),
+                        "{name}: the ticking cue is captured"
+                    );
                     let countdown = case.list.as_ref().unwrap()["countdown"].as_i64();
                     assert_eq!(
                         Some(i64::from(sim.bombs.visibility_countdown)),
@@ -548,7 +578,7 @@ fn check_world_case(case: &NativeBombCase, name: &str, section: &str, delay: i32
                 None => {
                     assert_eq!(
                         target.and_then(|id| bomb(&sim, id)),
-                        carrier_before,
+                        carrier_before.as_ref(),
                         "{name}: nothing planted"
                     );
                     assert!(sim.sound_events.is_empty(), "{name}");
@@ -570,6 +600,7 @@ fn check_world_case(case: &NativeBombCase, name: &str, section: &str, delay: i32
                 &mut sim.substrate,
                 &sim.resolved_terrain,
                 &mut sim.bombs,
+                &mut sim.sound_events,
                 carrier,
                 &rules,
             );
@@ -604,7 +635,7 @@ fn check_world_case(case: &NativeBombCase, name: &str, section: &str, delay: i32
         }
         "defuse" => {
             let carrier = ids[1];
-            crate::sim::world::Simulation::bomb_defuse(&mut sim.substrate, &mut sim.bombs, carrier);
+            sim.bomb_defuse_for_test(carrier);
             assert!(bomb(&sim, carrier).is_none(), "{name}");
             assert!(!sim.bombs.carriers.contains(&carrier), "{name}");
         }
@@ -664,6 +695,7 @@ fn native_update_all_corpus() {
             &sim.houses,
             &sim.resolved_terrain,
             &mut sim.bombs,
+            &mut sim.sound_events,
             &rules,
         );
         let list = case.list.as_ref().unwrap();
@@ -702,6 +734,11 @@ fn native_update_all_corpus() {
                     let at = sim
                         .bomb_ticking_coord(carrier_of(owner))
                         .unwrap_or_else(|| panic!("{name}: the loop plays"));
+                    assert_eq!(
+                        sim.bomb_ticking_sound(carrier_of(owner)),
+                        Some("CrazyIvanBombTick"),
+                        "{name}: the retained cue plays"
+                    );
                     let native: Vec<i32> = coords
                         .as_array()
                         .unwrap()
@@ -711,20 +748,30 @@ fn native_update_all_corpus() {
                     assert_eq!(vec![at.x, at.y, at.z], native, "{name}: at the Location");
                 }
                 "voc_release" => {
+                    let carrier = carrier_of(&event[1]);
+                    assert!(sim.bomb_ticking_coord(carrier).is_none(), "{name}");
                     assert!(
-                        sim.bomb_ticking_coord(carrier_of(&event[1])).is_none(),
-                        "{name}"
+                        sim.sound_events.iter().any(|event| matches!(
+                            event,
+                            SimSoundEvent::AnimationStopped { anim_id, stop_sound_id: None, .. }
+                                if *anim_id == ticking_sound_owner(carrier)
+                        )),
+                        "{name}: limbo hard-stops the handle before the countdown"
                     );
                 }
                 other => panic!("{name}: unexpected {other}"),
             }
         }
-        // A bomb attached without BombTickingSound= keeps silent: VERA reads the
-        // rules key where native copied it (`Rules+0x20C` at 0x00438EFD).
+        // The ticking pass reads the bomb's retained cue, copied from
+        // Rules+0x20C at 0x00438EFD. A saved -1 stays silent.
         if input["bombs"][0]["ticking_sound"].as_i64() == Some(-1) {
             assert!(case.events.is_empty(), "{name}");
-            let silent = rules_from(&RULES.replace("BombTickingSound=CrazyIvanBombTick\n", ""));
-            assert_eq!(silent.general.bomb_ticking_sound, None, "{name}");
+            assert!(
+                sim.bomb_carriers()
+                    .iter()
+                    .all(|&carrier| sim.bomb_ticking_sound(carrier).is_none()),
+                "{name}"
+            );
         }
         compared += 1;
     }
@@ -747,6 +794,7 @@ fn a_crazy_ivan_bombs_a_tank() {
     })
     .expect("planted");
     let planted = bomb(&sim, tank).unwrap();
+    let start_frame = planted.start_frame;
     assert_eq!(planted.planter, Some(ivan));
     assert_eq!(sim.interner.resolve(planted.planter_house), "Russians");
     assert_eq!(
@@ -762,14 +810,14 @@ fn a_crazy_ivan_bombs_a_tank() {
         if !off {
             assert_eq!(
                 bomb(sim, tank).map(|bomb| bomb.start_frame),
-                Some(planted.start_frame),
+                Some(start_frame),
                 "an Ivan cannot bomb a bombed target"
             );
         }
         off
     })
     .expect("the bomb goes off");
-    assert_eq!(went_off, planted.start_frame + 451, "IvanTimedDelay + 1");
+    assert_eq!(went_off, start_frame + 451, "IvanTimedDelay + 1");
     assert_eq!(entity(&sim, tank).health.current(), 1000 - 450);
     assert!(
         sim.substrate
@@ -944,9 +992,11 @@ fn removal_and_capture_defuse_silently() {
         None,
         crate::sim::world::FrameEffects::default(),
     );
-    assert!(
-        bomb(&sim, captured).is_none(),
-        "an engineer's capture defuses"
+    // Ares hook 0x448277 (100163B0) resumes past the defuse.
+    assert_eq!(
+        bomb(&sim, captured).is_some(),
+        cfg!(feature = "ares"),
+        "an engineer's capture defuses in stock"
     );
     sim.change_owner_with_rules(
         garrison,
@@ -967,9 +1017,13 @@ fn removal_and_capture_defuse_silently() {
         crate::sim::world::FrameEffects::default(),
     );
     assert!(bomb(&sim, tank).is_some(), "a unit changing hands keeps it");
+    let mut carriers = vec![garrison, tank];
+    if cfg!(feature = "ares") {
+        carriers.insert(0, captured);
+    }
     assert_eq!(
         sim.bomb_carriers().iter().copied().collect::<Vec<_>>(),
-        vec![garrison, tank]
+        carriers
     );
     assert_eq!(entity(&sim, sold).health.current(), 750, "silently");
 }
@@ -1128,6 +1182,7 @@ fn a_bomb_survives_a_snapshot() {
         &sim.houses,
         &sim.resolved_terrain,
         &mut sim.bombs,
+        &mut sim.sound_events,
         &rules,
     );
     crate::sim::world::Simulation::bomb_list_update(
@@ -1136,6 +1191,7 @@ fn a_bomb_survives_a_snapshot() {
         &sim.houses,
         &sim.resolved_terrain,
         &mut sim.bombs,
+        &mut sim.sound_events,
         &rules,
     );
     let russians = sim.interner.get("Russians").unwrap();
@@ -1156,6 +1212,71 @@ fn a_bomb_survives_a_snapshot() {
     assert_eq!(restored.state_hash(), sim.state_hash());
     // `BombListClass::Clear` runs before a load and Save skips the countdown.
     assert_eq!(restored.bombs.visibility_countdown, 45);
+}
+
+/// Attach captures the cue; changing rules and saving do not replace it or
+/// allocate gameplay identities. BombClass::CRC (0x00438A90) omits the cue.
+#[test]
+fn ticking_cues_survive_rule_changes_and_load_without_changing_gameplay_ids() {
+    let rules = rules();
+    let later = rules_from(&RULES.replace(
+        "BombTickingSound=CrazyIvanBombTick",
+        "BombTickingSound=CrazyIvanAttack",
+    ));
+    let silent = rules_from(&RULES.replace("BombTickingSound=CrazyIvanBombTick\n", ""));
+    let scene = || {
+        let mut world = sim(31);
+        let old = spawn(&mut world, &rules, "HTNK", "Americans", 12, 10);
+        let new = spawn(&mut world, &rules, "HTNK", "Americans", 14, 10);
+        let ivan = spawn(&mut world, &rules, "IVAN", "Russians", 11, 10);
+        (world, old, new, ivan)
+    };
+    let (mut world, old, new, ivan) = scene();
+    let (mut quiet_world, quiet_old, quiet_new, quiet_ivan) = scene();
+    world.bomb_attach_for_test(ivan, Some(old), &rules);
+    quiet_world.bomb_attach_for_test(quiet_ivan, Some(quiet_old), &silent);
+    assert_eq!(
+        world.interner.intern("LaterGameplayType"),
+        quiet_world.interner.intern("LaterGameplayType"),
+        "sound choice cannot shift a later gameplay ID"
+    );
+    world.bomb_attach_for_test(ivan, Some(new), &later);
+    quiet_world.bomb_attach_for_test(quiet_ivan, Some(quiet_new), &silent);
+    world.bomb_attach_for_test(ivan, Some(old), &later);
+    assert_eq!(world.bomb_ticking_sound(old), Some("CrazyIvanBombTick"));
+    assert_eq!(world.bomb_ticking_sound(new), Some("CrazyIvanAttack"));
+    assert_eq!(quiet_world.bomb_ticking_sound(quiet_old), None);
+    assert_eq!(
+        world.state_hash(),
+        quiet_world.state_hash(),
+        "cue choice leaves gameplay unchanged"
+    );
+
+    let bytes = crate::sim::snapshot::GameSnapshot::save(&world, 0, 0, "cues", 0);
+    let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+        .unwrap()
+        .sim;
+    restored.restore_after_snapshot_load().unwrap();
+    assert_eq!(restored.bomb_ticking_sound(old), Some("CrazyIvanBombTick"));
+    assert_eq!(restored.bomb_ticking_sound(new), Some("CrazyIvanAttack"));
+    assert!(restored.bomb_ticking_coord(old).is_some());
+    assert!(restored.bomb_ticking_coord(new).is_some());
+    // Both silent and audible replacements get a fresh handle in order,
+    // even if the app has not drained the previous bomb's detach yet.
+    for (replacement, expected) in [(&silent, None), (&later, Some("CrazyIvanAttack"))] {
+        restored.sound_events.clear_for_test();
+        restored.bomb_defuse_for_test(old);
+        assert!(restored.bomb_ticking_coord(old).is_none());
+        restored.bomb_attach_for_test(ivan, Some(old), replacement);
+        assert_eq!(restored.bomb_ticking_sound(old), expected);
+        assert!(matches!(restored.sound_events.as_slice(), [
+            SimSoundEvent::ObjectSoundDetached { owner: retired },
+            SimSoundEvent::ObjectSoundDetached { owner: fresh },
+            SimSoundEvent::VocAt { sound_id, .. },
+        ] if *retired == ticking_sound_owner(old)
+            && *fresh == ticking_sound_owner(old)
+            && sound_id == "CrazyIvanAttack"));
+    }
 }
 
 /// The clock shows for the planter's player from the second UpdateAll after
@@ -1231,22 +1352,25 @@ fn who_sees_a_bomb_follows_the_native_refresh() {
         &sim.houses,
         &sim.resolved_terrain,
         &mut sim.bombs,
+        &mut sim.sound_events,
         &rules,
     );
     assert!(sim.bomb_seen_by(tank, americans));
     assert_eq!(sim.state_hash(), before, "BombVisible is presentation");
 }
 
-/// Retail `rulesmd.ini` through the production reader (skipped without it):
+/// Retail startup, Battle mode and map through the production reader (skipped
+/// without assets), including the fixed SOUNDMD catalog:
 /// the `[CombatDamage]` and `[AudioVisual]` keys the bomb reads, the two
 /// Crazy Ivans and three Engineers that use it, and the stock data the
 /// cursor and click rules lean on: no object opts out of `Bombable=`, and
 /// only the Ivans have `AttackCursorOnFriendlies=`.
 #[test]
 fn retail_rules_arm_the_stock_bomb() {
-    let Some(rules) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
     };
+    let rules = retail.rules;
     let damage = &rules.combat_damage;
     assert_eq!(damage.ivan_warhead.as_deref(), Some("IvanWH"));
     assert_eq!(
@@ -1322,4 +1446,177 @@ fn bomb_rules_keys() {
         (100, 450, 8),
         "RulesClass constructor 0x00666B88..0x00666BA8"
     );
+}
+
+/// The fixture with three Ares bomb weapons: the Russian light tank's
+/// TankBomber (IvanBomb.Delay/Damage), SCOUT3's DeathBomber
+/// (IvanBomb.DeathBomb, not Detachable) and SIVAN's SpreadBomber (a
+/// CellSpread 1 IvanBomb warhead), and a 1x1 BOX.
+#[cfg(feature = "ares")]
+fn ares_rules() -> RuleSet {
+    let text = RULES
+        .replace("2=SCOUT3\n", "2=SCOUT3\n3=SIVAN\n")
+        .replace("2=CABHUT\n", "2=CABHUT\n3=BOX\n")
+        .replace("3=Super\n", "3=Super\n4=SpreadBomb\n")
+        .replace("[LTNK]\n", "[LTNK]\nPrimary=TankBomber\n")
+        .replace("BombSight=3\n", "BombSight=3\nPrimary=DeathBomber\n");
+    let mut rules = rules_from(&format!(
+        "{text}[SIVAN]\nStrength=125\nSpeed=4\nSight=6\n\
+         Locomotor={{4A582744-9839-11D1-B709-00A024DDAFD1}}\nPrimary=SpreadBomber\n\
+         [BOX]\nStrength=750\nFoundation=1x1\n\
+         [TankBomber]\nDamage=1\nROF=50\nRange=3\nProjectile=Invisible\nWarhead=IvanBomb\n\
+         IvanBomb.Delay=100\nIvanBomb.Damage=200\n\
+         [DeathBomber]\nDamage=1\nROF=50\nRange=1.5\nProjectile=Invisible\nWarhead=IvanBomb\n\
+         IvanBomb.DeathBomb=yes\nIvanBomb.Detachable=no\n\
+         [SpreadBomber]\nDamage=1\nROF=50\nRange=1.5\nProjectile=Invisible\nWarhead=SpreadBomb\n\
+         [SpreadBomb]\nIvanBomb=yes\nCellSpread=1\n"
+    ));
+    rules.set_buildup_control_for_test("BOX", [0, 4, 1]);
+    rules
+}
+
+/// Ares builds: a Unit plants (BombListClass_Plant_AllTechnos, hook
+/// 0x438E86), PlantBomb (10055AE0) fuses the bomb its weapon's
+/// IvanBomb.Delay out, and the blast deals IvanBomb.Damage
+/// (BombClass_Detonate1, hook 0x438799).
+#[cfg(feature = "ares")]
+#[test]
+fn ares_a_tank_plants_with_its_weapons_delay_and_damage() {
+    let rules = ares_rules();
+    let (mut sim, grid) = arena(41, &rules);
+    let target = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
+    let tank = spawn(&mut sim, &rules, "LTNK", "Russians", 10, 10);
+    attack(&mut sim, tank, target);
+    run_until(&mut sim, &rules, &grid, 200, |sim| {
+        bomb(sim, target).is_some()
+    })
+    .expect("a tank plants in Ares");
+    let planted = bomb(&sim, target).unwrap();
+    let start = planted.start_frame;
+    assert_eq!(
+        (planted.planter, planted.end_frame),
+        (Some(tank), start + 100)
+    );
+    let went_off = run_until(&mut sim, &rules, &grid, 300, |sim| {
+        entity(sim, target).health.current() < 1000
+    })
+    .expect("the bomb goes off");
+    assert_eq!(went_off, start + 101, "IvanBomb.Delay + 1");
+    assert_eq!(entity(&sim, target).health.current(), 1000 - 200);
+}
+
+/// A CellSpread 1 IvanBomb warhead plants on every Techno one ring around
+/// its target's cell but its planter (Ares.dll 10056AF0 walking
+/// CellSpreadIterator 10056550).
+#[cfg(feature = "ares")]
+#[test]
+fn ares_a_spread_warhead_bombs_the_technos_around_its_target() {
+    let rules = ares_rules();
+    let (mut sim, grid) = arena(42, &rules);
+    let target = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
+    let near = spawn(&mut sim, &rules, "HTNK", "Americans", 13, 11);
+    let far = spawn(&mut sim, &rules, "HTNK", "Americans", 15, 10);
+    let ivan = spawn(&mut sim, &rules, "SIVAN", "Russians", 11, 10);
+    attack(&mut sim, ivan, target);
+    run_until(&mut sim, &rules, &grid, 200, |sim| {
+        bomb(sim, target).is_some()
+    })
+    .expect("planted");
+    assert!(bomb(&sim, near).is_some(), "one ring out");
+    assert!(bomb(&sim, far).is_none(), "three rings out");
+    assert!(bomb(&sim, ivan).is_none(), "never the planter");
+}
+
+/// IvanBomb.DeathBomb turns a bomb on an enemy into a death bomb: its fuse
+/// never runs out (IsTimerExpired, kind 1) but its carrier's death sets it
+/// off; DeathBombOnAllies=no keeps a bomb on an ally timed. A bomb that is
+/// not IvanBomb.Detachable refuses the Engineer's BombDisarm shot (hook
+/// 0x6FCBAD, Ares.dll 10056C60).
+#[cfg(feature = "ares")]
+#[test]
+fn ares_death_bombs_wait_for_their_carrier_and_resist_engineers() {
+    let rules = ares_rules();
+    let mut sim = sim(43);
+    let enemy = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
+    let ally = spawn(&mut sim, &rules, "HTNK", "Russians", 16, 10);
+    let scout = spawn(&mut sim, &rules, "SCOUT3", "Russians", 30, 10);
+    let engineer = spawn(&mut sim, &rules, "ENGINEER", "Americans", 11, 11);
+    let weapon = sim.interner.intern("DeathBomber");
+    sim.session.set_binary_frame_for_test(100);
+    sim.bomb_attach(scout, Some(enemy), Some(weapon), &rules);
+    sim.bomb_attach(scout, Some(ally), Some(weapon), &rules);
+    assert!(bomb(&sim, enemy).unwrap().death_bomb);
+    assert!(
+        !bomb(&sim, ally).unwrap().death_bomb,
+        "DeathBombOnAllies=no"
+    );
+
+    sim.session.set_binary_frame_for_test(100 + 451);
+    sim.bomb_fuse_step(
+        enemy,
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    assert!(bomb(&sim, enemy).is_some(), "a death bomb has no fuse");
+
+    assert!(!sim.bomb_detachable(enemy, &rules));
+    let code = crate::sim::combat::fire_error_world::FireSubject {
+        world: &sim,
+        rules: &rules,
+        overlay_registry: None,
+        fog: None,
+        firer: entity(&sim, engineer),
+        obj: rules.object("ENGINEER").unwrap(),
+        target: Some(crate::sim::combat::TargetKind::Entity(enemy)),
+        weapon_index: 0,
+    }
+    .fire_error(false);
+    assert_eq!(code, crate::sim::combat::fire_error::FireError::Illegal);
+
+    kill(&mut sim, &rules, enemy);
+    assert!(!sim.bomb_carriers().contains(&enemy), "gone off with it");
+    assert_eq!(entity(&sim, engineer).health.current(), 0, "the blast");
+}
+
+/// A sold building's bomb goes off (IvanBomb.DetonateOnSell, on by default;
+/// BuildingClass_Mi_Selling_DetonatePostBuildup, hook 0x44A1FF) before the
+/// sale completes.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_a_sold_buildings_bomb_goes_off() {
+    let rules = ares_rules();
+    let mut sim = sim(44);
+    let sold = spawn(&mut sim, &rules, "BOX", "Americans", 10, 10);
+    let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 11, 10);
+    let ivan = spawn(&mut sim, &rules, "IVAN", "Russians", 30, 10);
+    sim.bomb_attach_for_test(ivan, Some(sold), &rules);
+    assert!(crate::sim::production::sell_building_now_for_test(
+        &mut sim, &rules, sold
+    ));
+    assert!(sim.bomb_carriers().is_empty());
+    assert!(entity(&sim, tank).health.current() < 1000, "the blast");
+}
+
+/// Ares BombClass_GetCurrentFrame (100568C0) over a 13-frame image: six
+/// two-frame stages of `delay / 6`, the second frame in the blink half; a
+/// rate below 1 counts single frames up to the last stage index; a death
+/// bomb shows the last frame; an image of one frame shows frame 0.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_clock_frame_counts_stages_over_the_image() {
+    let mut bomb = native_bomb(&serde_json::json!({"start": 0, "end": 450}));
+    let clock = |bomb: &Bomb, frame, frames, rate| bomb.ares_clock_frame(frame, frames, 450, rate);
+    assert_eq!(clock(&bomb, 0, 13, 8), Some(0));
+    assert_eq!(clock(&bomb, 8, 13, 8), Some(1));
+    assert_eq!(clock(&bomb, 75, 13, 8), Some(3));
+    assert_eq!(
+        clock(&bomb, 1000, 13, 8),
+        Some(11),
+        "capped at the last stage"
+    );
+    assert_eq!(clock(&bomb, 75, 13, 0), Some(2), "75 / (450 / 12)");
+    assert_eq!(clock(&bomb, 75, 1, 8), Some(0));
+    bomb.death_bomb = true;
+    assert_eq!(clock(&bomb, 75, 13, 8), Some(12));
 }

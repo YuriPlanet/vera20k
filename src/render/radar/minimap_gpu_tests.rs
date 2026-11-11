@@ -160,9 +160,9 @@ fn new_presentation(gpu: &Gpu, scene: &HeadlessScenario, format: wgpu::TextureFo
     }
 }
 
-/// Sample the uploaded production texture through the ordinary UI batch. This
-/// needs neither COPY_SRC on the original texture nor a fake window context.
-fn read_uploaded(gpu: &Gpu, presented: &Presented) -> Vec<u8> {
+/// Compose the pending picture, then sample it through the ordinary UI batch.
+/// This needs neither COPY_SRC on the picture nor a fake window context.
+fn read_uploaded(gpu: &Gpu, presented: &mut Presented) -> Vec<u8> {
     let size = [MINIMAP_WIDTH, MINIMAP_HEIGHT];
     let instance = SpriteInstance {
         position: [0.0, 0.0],
@@ -180,6 +180,9 @@ fn read_uploaded(gpu: &Gpu, presented: &Presented) -> Vec<u8> {
     let cv = color.create_view(&Default::default());
     let dv = depth.create_view(&Default::default());
     let mut encoder = gpu.device.create_command_encoder(&Default::default());
+    presented
+        .minimap
+        .encode_composition(&gpu.device, &mut encoder);
     clear(
         &mut encoder,
         &cv,
@@ -201,22 +204,59 @@ fn read_uploaded(gpu: &Gpu, presented: &Presented) -> Vec<u8> {
     gpu.finish(encoder, &[read], size).remove(0)
 }
 
+/// The picture a revealed generated surface composes to, in the target's
+/// byte order: each word unpacked at its aperture pixel, the shroud fill
+/// around it, then the update's stores (`RadarClass::Update @ 0x00656EC0`).
+fn revealed_picture(presented: &Presented) -> Vec<u8> {
+    let minimap = &presented.minimap;
+    let terrain = minimap.native_radar_terrain.as_ref().unwrap();
+    let geometry = terrain.geometry();
+    let width = geometry.generated_size().0 as u32;
+    let mut rgba = COLOR_SHROUD.repeat((MINIMAP_WIDTH * MINIMAP_HEIGHT) as usize);
+    for (index, &word) in terrain.generated_rgb565().iter().enumerate() {
+        let pixel = (index as u32 % width, index as u32 / width);
+        let [red, green, blue] = crate::render::native_surface_format::RGB565.unpack_rgb8(word);
+        if let Some((x, y)) = aperture_pixel(Some(geometry), pixel) {
+            set_pixel(&mut rgba, MINIMAP_WIDTH, x, y, [red, green, blue, 255]);
+        }
+    }
+    for store in &minimap.stores {
+        let (x, y) = store.pixel();
+        set_pixel(&mut rgba, MINIMAP_WIDTH, x, y, store.color());
+    }
+    if presented.format == wgpu::TextureFormat::Bgra8UnormSrgb {
+        for pixel in rgba.as_chunks_mut::<4>().0 {
+            pixel.swap(0, 2);
+        }
+    }
+    rgba
+}
+
 fn present(
     gpu: &Gpu,
     scene: &mut HeadlessScenario,
     presentations: &mut [Presented],
 ) -> crate::app::presentation::render::minimap_transaction::MinimapPresentationCommit {
     let before = scene.sim().state_hash();
-    let commit = crate::app::presentation::render::minimap_transaction::present_minimap_frame(
-        &mut scene.runtime,
-        |runtime| {
-            let view = runtime.view();
-            let (cells, generation) = view.radar_terrain_dirty();
-            let colors = HouseColorMap::new();
-            let overlay_colors = HashMap::new();
-            let mut consumed = None;
-            for (index, presented) in presentations.iter_mut().enumerate() {
-                let current = presented.minimap.update_unit_dots(
+    // As a client frame does: move the simulation's marks into each
+    // minimap's own backlog, then draw from the backlog.
+    let cells = scene.runtime.take_radar_terrain_dirty();
+    for presented in presentations.iter_mut() {
+        presented
+            .minimap
+            .queue_radar_terrain_cells(cells.iter().copied());
+    }
+    let runtime = &scene.runtime;
+    let view = runtime.view();
+    let colors = HouseColorMap::new();
+    let overlay_colors = HashMap::new();
+    let mut first = None;
+    for presented in presentations.iter_mut() {
+        let commit = crate::app::presentation::render::minimap_transaction::present_minimap_frame(
+            &mut presented.minimap,
+            |minimap| {
+                Ok::<_, std::convert::Infallible>(minimap.update_unit_dots(
+                    &gpu.device,
                     &gpu.queue,
                     view.entities(),
                     view.logic_order(),
@@ -226,7 +266,7 @@ fn present(
                     view.session().binary_frame(),
                     view.session().current_house(),
                     view.fog(),
-                    view.house_alliances().as_map(),
+                    view.house_alliances(),
                     true,
                     view.session().game_mode_nonzero(),
                     Some(&runtime.resources.rules),
@@ -235,29 +275,30 @@ fn present(
                     Some(&runtime.resources.overlay_registry),
                     &overlay_colors,
                     view.resolved_terrain(),
-                    cells,
-                    generation,
                     None,
-                );
-                if index == 0 {
-                    consumed = current;
-                } else {
-                    assert_eq!(
-                        current, consumed,
-                        "both target formats consume the same batch"
-                    );
-                }
-            }
-            Ok::<_, std::convert::Infallible>(consumed)
-        },
-    )
-    .unwrap();
+                ))
+            },
+        )
+        .unwrap();
+        match first {
+            None => first = Some(commit),
+            Some(first) => assert_eq!(commit, first, "both target formats consume the same batch"),
+        }
+    }
     assert_eq!(
         scene.sim().state_hash(),
         before,
         "presentation/ack preserves simulation/RNG"
     );
-    commit
+    first.expect("at least one presentation")
+}
+
+fn backlogs_empty(presentations: &mut [Presented]) -> bool {
+    presentations.iter_mut().all(|presented| {
+        AsMut::<crate::render::radar::RadarTerrainBacklog>::as_mut(&mut presented.minimap)
+            .cells()
+            .is_empty()
+    })
 }
 
 #[test]
@@ -317,7 +358,7 @@ fn retail_authored_ore_spread_reaches_uploaded_minimap() {
         !grown.is_empty(),
         "ordinary first frame creates ore without supplied queues/RNG/timers"
     );
-    let (dirty, generation) = scene.runtime.view().radar_terrain_dirty();
+    let dirty = scene.sim().radar_terrain_dirty_cells().to_vec();
     for cell in &grown {
         assert!(
             dirty.contains(cell),
@@ -325,11 +366,12 @@ fn retail_authored_ore_spread_reaches_uploaded_minimap() {
         );
     }
     let commit = present(&gpu, &mut scene, &mut presentations);
-    assert_eq!(commit.consumed_generation, Some(generation));
+    assert!(commit.consumed_generation.is_some());
     assert!(commit.acknowledged);
-    assert!(scene.runtime.view().radar_terrain_dirty().0.is_empty());
+    assert!(scene.sim().radar_terrain_dirty_cells().is_empty());
+    assert!(backlogs_empty(&mut presentations));
     let hash = scene.sim().state_hash();
-    for presented in &presentations {
+    for presented in &mut presentations {
         let surface = presented.minimap.native_radar_terrain.as_ref().unwrap();
         let geometry = surface.geometry();
         for &cell in &grown {
@@ -340,21 +382,17 @@ fn retail_authored_ore_spread_reaches_uploaded_minimap() {
                 &before[index..index + 2]
             );
         }
-        let mut expected = presented.minimap.composed_rgba().0.to_vec();
-        if presented.format == wgpu::TextureFormat::Bgra8UnormSrgb {
-            for pixel in expected.as_chunks_mut::<4>().0 {
-                pixel.swap(0, 2);
-            }
-        }
+        let expected = revealed_picture(presented);
         assert_eq!(
             read_uploaded(&gpu, presented),
             expected,
             "uploaded natural ore/{:?}",
             presented.format
         );
+        let surface = presented.minimap.native_radar_terrain.as_ref().unwrap();
         // Original initialization654650/Fill654EA0 consumes current Cell47C060.
         // Retaining authored map overlays must not hide naturally added cells.
-        let fresh = new_presentation(&gpu, &scene, presented.format);
+        let mut fresh = new_presentation(&gpu, &scene, presented.format);
         assert_eq!(
             fresh
                 .minimap
@@ -365,14 +403,9 @@ fn retail_authored_ore_spread_reaches_uploaded_minimap() {
             surface.raw_rgb(),
             "reconstruction and incremental publication share live Cell authority"
         );
-        let mut expected = fresh.minimap.base_terrain_rgba.clone();
-        if fresh.format == wgpu::TextureFormat::Bgra8UnormSrgb {
-            for pixel in expected.as_chunks_mut::<4>().0 {
-                pixel.swap(0, 2);
-            }
-        }
+        let expected = revealed_picture(&fresh);
         assert_eq!(
-            read_uploaded(&gpu, &fresh),
+            read_uploaded(&gpu, &mut fresh),
             expected,
             "constructor uploads current terrain"
         );
@@ -454,7 +487,7 @@ fn retail_ore_depletion_reaches_uploaded_minimap_and_acknowledges_once() {
             );
             let entity = view.entities().get(miner).unwrap();
             assert_eq!((entity.position.rx(), entity.position.ry()), ORE);
-            let (cells, generation) = scene.runtime.view().radar_terrain_dirty();
+            let cells = scene.sim().radar_terrain_dirty_cells().to_vec();
             // Partial reduction itself is tactical-only, but fresh sight
             // notifications (original5865F0) independently enqueue radar cells
             // during this unpresented HARV journey. Consume that real pending
@@ -465,20 +498,20 @@ fn retail_ore_depletion_reaches_uploaded_minimap_and_acknowledges_once() {
             let pending = !cells.is_empty();
             let commit = present(&gpu, &mut scene, &mut presentations);
             if pending {
-                assert_eq!(commit.consumed_generation, Some(generation));
+                assert!(commit.consumed_generation.is_some());
                 assert!(
                     commit.acknowledged,
                     "the pending terrain upload is acknowledged"
                 );
                 assert!(
-                    scene.runtime.view().radar_terrain_dirty().0.is_empty(),
-                    "the successful upload retires the runtime's actual batch"
+                    backlogs_empty(&mut presentations),
+                    "the successful upload retires the drained batch"
                 );
             } else {
                 assert_eq!(commit.consumed_generation, None);
                 assert!(!commit.acknowledged);
             }
-            for presented in &presentations {
+            for presented in &mut presentations {
                 let surface = presented.minimap.native_radar_terrain.as_ref().unwrap();
                 let geometry = surface.geometry();
                 let (x, y) = geometry.cell_to_raw_pixel(ORE);
@@ -487,12 +520,7 @@ fn retail_ore_depletion_reaches_uploaded_minimap_and_acknowledges_once() {
                     serde_json::json!(&surface.raw_rgb()[index..index + 2]),
                     row["color_pair"]
                 );
-                let mut expected = presented.minimap.composed_rgba().0.to_vec();
-                if presented.format == wgpu::TextureFormat::Bgra8UnormSrgb {
-                    for pixel in expected.as_chunks_mut::<4>().0 {
-                        pixel.swap(0, 2);
-                    }
-                }
+                let expected = revealed_picture(presented);
                 assert_eq!(
                     read_uploaded(&gpu, presented),
                     expected,
@@ -527,7 +555,7 @@ fn retail_ore_depletion_reaches_uploaded_minimap_and_acknowledges_once() {
         .find(|row| row["name"] == "empty")
         .unwrap();
     for presented in &presentations {
-        let fresh = new_presentation(&gpu, &scene, presented.format);
+        let mut fresh = new_presentation(&gpu, &scene, presented.format);
         let surface = fresh.minimap.native_radar_terrain.as_ref().unwrap();
         let geometry = surface.geometry();
         let (x, y) = geometry.cell_to_raw_pixel(ORE);
@@ -537,14 +565,9 @@ fn retail_ore_depletion_reaches_uploaded_minimap_and_acknowledges_once() {
             empty["color_pair"],
             "fresh constructor uses current Cell colors"
         );
-        let mut expected = fresh.minimap.base_terrain_rgba.clone();
-        if fresh.format == wgpu::TextureFormat::Bgra8UnormSrgb {
-            for pixel in expected.as_chunks_mut::<4>().0 {
-                pixel.swap(0, 2);
-            }
-        }
+        let expected = revealed_picture(&fresh);
         assert_eq!(
-            read_uploaded(&gpu, &fresh),
+            read_uploaded(&gpu, &mut fresh),
             expected,
             "constructor uploads its current terrain before a dirty update"
         );

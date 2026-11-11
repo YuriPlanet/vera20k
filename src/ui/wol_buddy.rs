@@ -283,6 +283,7 @@ pub(crate) fn join_enabled(
                         quick_match: false,
                         clan_id,
                         local_hash: None,
+                        vera_rooms: false,
                     },
                 )
                 .is_ok()
@@ -330,8 +331,9 @@ pub(crate) struct WolAddBuddy {
     pub(crate) focus_at: Option<crate::util::time::Instant>,
 }
 
-/// `EM_LIMITTEXT 9` and `0x4D1(1)` (byte characters only).
-const NAME_LIMIT: usize = 9;
+/// `EM_LIMITTEXT 9` and `0x4D1(1)` (byte characters only). VERA deviation:
+/// the lobby's names run to 24 characters.
+const NAME_LIMIT: usize = crate::ui::wol_account::NAME_LIMIT;
 
 impl WolAddBuddy {
     /// `0x497`: an empty edit with the focus, Add disabled.
@@ -848,11 +850,12 @@ mod tests {
         assert!(!add.add_enabled);
         add.key(LanEditKey::Backspace, &valid);
         assert!(add.add_enabled);
-        add.insert_text("ABCDEFGH", &valid);
-        assert_eq!(add.text(), "TesteABCD");
+        // The edit keeps VERA's 24 characters.
+        add.insert_text("ABCDEFGHIJKLMNOPQRSTU", &valid);
+        assert_eq!(add.text(), "TesteABCDEFGHIJKLMNOPQRS");
         assert_eq!(
             add.key(LanEditKey::Enter, &valid),
-            Some(WolBuddyAction::Add("TesteABCD".into()))
+            Some(WolBuddyAction::Add("TesteABCDEFGHIJKLMNOPQRS".into()))
         );
         assert_eq!(add.text(), "");
         assert_eq!(add.activate(BACK), Some(WolBuddyAction::CloseAdd));

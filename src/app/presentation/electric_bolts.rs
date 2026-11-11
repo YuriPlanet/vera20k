@@ -102,6 +102,7 @@ impl ElectricBolts {
                     z_adjust: bolt.birth.z_adjust,
                     phase: bolt.phase,
                     alternate_color: bolt.birth.alternate_color,
+                    colors: bolt.birth.colors,
                 };
                 // EBoltMgr::UpdateAndDrawAll @ 0x004C2830 calls Draw4C1F20
                 // before incrementing phase at4C293D, then shifts decay at

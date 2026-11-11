@@ -36,11 +36,15 @@ use crate::util::native_x87::{
     NativeF32Bits, NativeF64Bits, NativeX87Error, X87Chop53, X87Ordering, X87Value, sqrt_approx_f32,
 };
 
-/// Transient Anim4222FF..422433 launch values (Steam gamemd).
-/// Its literal70 lifetime is only an input to the initial displacement.
+/// Transient meteor launch values (Steam gamemd): Anim4222FF..422433 and
+/// VoxelAnim749668..749787 take the same prefix.
 pub(crate) struct MeteorLaunch {
     pub start: IVec3,
     pub velocity: [NativeF32Bits; 3],
+    /// The shortened lifetime. Anim's literal 70 (4223D8) only places the
+    /// start; VoxelAnim shortens its Type Duration and stores it as the
+    /// countdown (74972C..74973F).
+    pub duration: i32,
 }
 
 /// The constructor draws Y, X, then the lifetime shortening. Reflect both
@@ -50,6 +54,7 @@ pub(crate) struct MeteorLaunch {
 /// ftol, signed origins, duration0 and constrained INT_MIN draws.
 pub(crate) fn meteor_launch(
     origin: IVec3,
+    lifetime: i32,
     min_z: NativeF64Bits,
     max_xy: NativeF64Bits,
     rng: &mut SimRng,
@@ -75,7 +80,7 @@ pub(crate) fn meteor_launch(
         x = NativeF32Bits::from_bits(x.bits() ^ 0x8000_0000);
         y = NativeF32Bits::from_bits(y.bits() ^ 0x8000_0000);
     }
-    let duration = 70i32.wrapping_sub(rng.next_raw_abs_modulo(20) as i32);
+    let duration = lifetime.wrapping_sub(rng.next_raw_abs_modulo(20) as i32);
     let place = |coord, velocity| -> Result<i32, NativeX87Error> {
         Ok(X87Chop53::ftol_i64(X87Chop53::sub(
             X87Chop53::load_i32(coord),
@@ -92,6 +97,7 @@ pub(crate) fn meteor_launch(
             place(origin.z, z)?,
         ),
         velocity: [x, y, z],
+        duration,
     })
 }
 

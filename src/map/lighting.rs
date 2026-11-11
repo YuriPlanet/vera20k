@@ -10,16 +10,13 @@
 //! This matches the original engine's point light calculation.
 //!
 //! ## Dependency rules
-//! - Part of map/ — depends on rules/ini_parser for IniFile, map/entities for MapEntity.
+//! - Part of map/ — depends on rules/ini_parser for IniFile.
 
 use std::collections::HashMap;
 
-#[cfg(any(test, feature = "test-support"))]
-use crate::map::entities::{EntityCategory, MapEntity};
 use crate::rules::art_data::AnimTypeRuntimeConfig;
 use crate::rules::ini_parser::IniFile;
-#[cfg(any(test, feature = "test-support"))]
-use crate::rules::ruleset::RuleSet;
+use crate::util::lookup_hash::LookupMap;
 
 /// Internal light unit scale. `1000 == 1.0`.
 pub const LIGHT_UNIT: i32 = 1000;
@@ -34,8 +31,7 @@ pub const LIGHT_CLAMP_MAX: i32 = 2000;
 pub const LIGHT_SCALE16_IDENTITY: i32 = 0x10000;
 
 /// Scenario Ground/Level: original 0068A92E/0068A968 multiply by double
-/// [007E4658] = 1000.0, then add 0.01 and truncate. See the Ground/Level
-/// correction in LIGHTCONVERT_ROW_RGB565_ORACLE_2026_09_09.md.
+/// [007E4658] = 1000.0, then add 0.01 and truncate.
 pub const GROUND_LEVEL_UNIT_SCALE: i32 = LIGHT_UNIT;
 
 /// Leptons per cell in RA2's coordinate system.
@@ -379,7 +375,10 @@ pub fn native_lighting_cells(
 /// Map-level cell lighting container with compatibility tint accessors.
 #[derive(Debug, Clone)]
 pub struct CellLightGrid {
-    cells: HashMap<(u16, u16), CellLight>,
+    /// Every visible tile and object looks its cell up here each draw, so it
+    /// takes the lookup hasher. The walks over it treat each cell on its own
+    /// or sort first, so its order reaches no result.
+    cells: LookupMap<(u16, u16), CellLight>,
     profiles: LightProfileCache,
     detail_level: u32,
     /// ColorScheme Converts survive545000's separate Cell-Convert cache
@@ -402,7 +401,7 @@ pub struct SavedCellLighting {
 impl CellLightGrid {
     pub fn new() -> Self {
         Self {
-            cells: HashMap::new(),
+            cells: LookupMap::default(),
             profiles: LightProfileCache::new(),
             detail_level: 2,
             scheme_profile: LightProfile::neutral_scheme(),
@@ -413,7 +412,7 @@ impl CellLightGrid {
     #[cfg(test)]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            cells: HashMap::with_capacity(capacity),
+            cells: LookupMap::with_capacity_and_hasher(capacity, Default::default()),
             profiles: LightProfileCache::new(),
             detail_level: 2,
             scheme_profile: LightProfile::neutral_scheme(),
@@ -423,7 +422,7 @@ impl CellLightGrid {
 
     fn with_detail_level(detail_level: u32) -> Self {
         Self {
-            cells: HashMap::new(),
+            cells: LookupMap::default(),
             profiles: LightProfileCache::new(),
             detail_level: detail_level.min(2),
             scheme_profile: LightProfile::neutral_scheme(),
@@ -464,6 +463,12 @@ impl CellLightGrid {
             .map(|normal| (self.saved_local_lighting(), normal))
     }
 
+    /// RESIDUAL: `CellClass::Load` clears the cell's Convert (`0x00483A1E`),
+    /// so native's first draw of each cell reruns the full
+    /// `InitLightConvert @ 0x00483E30` from the loaded sources, replacing these
+    /// saved values; a cell not yet drawn keeps them. VERA keeps them for every
+    /// cell. They differ only where a retained refresh (`0x00484680`) left a
+    /// cell apart from a full relight, and only after loading a save.
     pub fn apply_saved_local_lighting(&mut self, saved: &SavedCellLighting) {
         for &(cell, scale16, additive, top) in &saved.cells {
             if let Some(light) = self.cells.get_mut(&cell) {
@@ -674,18 +679,13 @@ impl CellLightGrid {
     /// or colour-shifted map. `None` means no animation art record was found for
     /// the draw, which leaves the flag at its INI default of false.
     ///
-    /// DRIFT, deferred, not a consequence of the flag: gamemd chooses the
-    /// palette convert *separately* from the brightness scalar, and an ordinary
-    /// animation uses the global animation convert allocated once at init
-    /// regardless of which cell it sits on — only the brightness comes from the
-    /// cell. This grid folds hue and brightness into one multiplier, so on the
-    /// unflagged path it also hue-shifts an animation where gamemd only dims it.
-    /// That fires on every muzzle flash, smoke, splash and death animation on
-    /// essentially every stock map, since almost all ship a non-unit `[Lighting]`
-    /// RGB channel. Deferred rather than fixed because what the native convert
-    /// table does internally is UNCHECKED, so the size of the pixel difference is
-    /// unknown; and because the correct repair is a per-consumer split of hue
-    /// from brightness, not a blanket change to this accessor.
+    /// RESIDUAL: animations draw through native palette lighting
+    /// (`presentation::lighting::anim_palette_light`), which picks the Convert
+    /// apart from this scalar. Only the compatibility draws read this tint:
+    /// remapped anims without an instance scheme. It folds the cell's hue into
+    /// the brightness, so on a map whose `[Lighting]` RGB is not neutral, or
+    /// beside a coloured lamp, those anims are hue-shifted where gamemd only
+    /// dims them.
     pub fn anim_tint_at(&self, cell: (u16, u16), art: Option<&AnimTypeRuntimeConfig>) -> [f32; 3] {
         if art.is_some_and(|config| config.use_normal_light) {
             return DEFAULT_TINT;
@@ -937,18 +937,14 @@ where
     grid
 }
 
-/// A point light source placed on the map (lamp post, lit building, etc.).
-///
-/// Created from map entity data during map load. Each light contributes
-/// localized brightness to nearby cells using linear distance falloff.
+/// A `LightSourceClass`: a lit building's (`Building+0x614`) or a radiation
+/// site's. Each contributes localized brightness to nearby cells using linear
+/// distance falloff.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct PointLight {
-    /// Cell position of the light source.
-    pub rx: u16,
-    pub ry: u16,
-    /// Light center X in leptons.
+    /// Location X (`+0x38`) in leptons.
     pub center_x: i32,
-    /// Light center Y in leptons.
+    /// Location Y (`+0x3C`) in leptons.
     pub center_y: i32,
     /// Inclusive visibility radius in leptons.
     pub radius_leptons: i32,
@@ -1139,42 +1135,12 @@ pub fn point_light_area_cells(
     cells
 }
 
-/// Collect point light sources from map-placed buildings with nonzero LightIntensity.
-///
-/// Iterates all structure entities on the map and checks their ObjectType
-/// for light emission properties parsed from rules.ini.
-#[cfg(any(test, feature = "test-support"))]
-pub fn collect_building_lights(entities: &[MapEntity], rules: Option<&RuleSet>) -> Vec<PointLight> {
-    let Some(rules) = rules else {
-        return Vec::new();
-    };
-    let mut lights = Vec::new();
-    for ent in entities {
-        if ent.category != EntityCategory::Structure {
-            continue;
-        }
-        let Some(obj) = rules.object(&ent.type_id) else {
-            continue;
-        };
-        if let Some(light) = point_light_from_object(
-            ent.cell_x,
-            ent.cell_y,
-            obj.building_light().visibility_leptons(),
-            obj.building_light().intensity_units(),
-            obj.building_light().tint_units(),
-        ) {
-            lights.push(light);
-        }
-    }
-    lights
-}
-
 /// Build a point light from the retained BuildingType integer light fields.
 /// Their Rules reader already converted them; LightSource554760 receives the
-/// stored words directly from Building440D9A..440DE6/446703..446750.
+/// stored words directly from Building440D9A..440DE6/446703..446750, at the
+/// building's GetCoords (`center`, vt+0x48 = `0x00447AC0`).
 pub fn point_light_from_object(
-    rx: u16,
-    ry: u16,
+    center: [i32; 2],
     visibility_leptons: i32,
     intensity: i32,
     tint: [i32; 3],
@@ -1187,10 +1153,8 @@ pub fn point_light_from_object(
         return None;
     }
     Some(PointLight {
-        rx,
-        ry,
-        center_x: i32::from(rx) * LEPTONS_PER_CELL + HALF_CELL_LEPTONS,
-        center_y: i32::from(ry) * LEPTONS_PER_CELL + HALF_CELL_LEPTONS,
+        center_x: center[0],
+        center_y: center[1],
         radius_leptons,
         intensity,
         tint,
@@ -1212,8 +1176,6 @@ pub fn radiation_point_light(
     tint: [i32; 3],
 ) -> PointLight {
     PointLight {
-        rx,
-        ry,
         center_x: i32::from(rx) * LEPTONS_PER_CELL + HALF_CELL_LEPTONS,
         center_y: i32::from(ry) * LEPTONS_PER_CELL + HALF_CELL_LEPTONS,
         radius_leptons: radius_leptons.max(0),
@@ -1361,6 +1323,13 @@ fn light_float_to_units(value: f32) -> i32 {
     (value * LIGHT_UNIT as f32).round() as i32
 }
 
+/// The truncated root both light kernels take where native calls
+/// `Sqrt_Approx @ 0x004CAC40`: the area walk ([`point_light_area_cells`]) and
+/// the gather (`0x00484180`, [`accumulate_light_sample`]).
+/// RESIDUAL (invisible): the two agree for every distance below 16,000
+/// leptons between points of the 128-lepton grid that every light and cell
+/// centre sits on, and retail `LightVisibility=` is at most 5000. The native
+/// 32-bit wrapping differs from this only past a 46,340-lepton radius.
 fn integer_sqrt(value: i64) -> i64 {
     (value as f64).sqrt() as i64
 }
@@ -1422,8 +1391,8 @@ fn build_cell_light_from_raw(
     // CellClass 004845C0/C2 seeds both fields from capped top, then passes
     // the common pointer in EDX to 005558E0. The helper scales common (and
     // zeros it for near-black RGB); it does not normalize source additive.
-    // Original 00483F7A..00483FD8 publishes those distinct outputs. See
-    // LIGHTCONVERT_ROW_RGB565_ORACLE_2026_09_09.md and palette_oracle fixtures.
+    // Original 00483F7A..00483FD8 publishes those distinct outputs. Executed:
+    // tools/palette_oracle fixtures.
     let normalized = normalize_light_at_detail(raw_rgb, top_high, detail_level);
     let common_high = normalized.common_scalar;
     let scaled_bottom = ((i64::from(raw_bottom_scalar) * i64::from(normalized.scale16)) >> 16)
@@ -1907,8 +1876,6 @@ mod tests {
         tint: [i32; 3],
     ) -> PointLight {
         PointLight {
-            rx,
-            ry,
             center_x: i32::from(rx) * LEPTONS_PER_CELL + HALF_CELL_LEPTONS,
             center_y: i32::from(ry) * LEPTONS_PER_CELL + HALF_CELL_LEPTONS,
             radius_leptons,
@@ -2046,63 +2013,22 @@ mod tests {
 
     #[test]
     fn light_intensity_zero_allocates_no_static_source() {
-        assert!(point_light_from_object(1, 2, 4096, 0, [1000; 3]).is_none());
+        assert!(point_light_from_object(cell_center(1, 2), 4096, 0, [1000; 3]).is_none());
     }
 
-    #[test]
-    fn test_collect_building_lights_uses_intensity_gate_and_default_radius() {
-        let ini = IniFile::from_str(
-            "[BuildingTypes]\n1=LAMP\n2=DARK\n3=ZERO\n\
-             [LAMP]\nLightIntensity=0.5\n\
-             [DARK]\nLightVisibility=2048\nLightIntensity=-0.25\n\
-             [ZERO]\nLightVisibility=4096\n",
-        );
-        let rules = RuleSet::from_ini(&ini).expect("rules");
-        let entities = vec![
-            test_map_structure("LAMP", 3, 4),
-            test_map_structure("DARK", 5, 6),
-            test_map_structure("ZERO", 7, 8),
-        ];
-
-        let lights = collect_building_lights(&entities, Some(&rules));
-        assert_eq!(lights.len(), 2);
-        assert_eq!(lights[0].radius_leptons, 5000);
-        assert_eq!(lights[0].intensity, 500);
-        assert_eq!(lights[0].center_x, 3 * LEPTONS_PER_CELL + HALF_CELL_LEPTONS);
-        assert_eq!(lights[1].radius_leptons, 2048);
-        assert_eq!(lights[1].intensity, -249);
-    }
-
-    fn test_map_structure(type_id: &str, cell_x: u16, cell_y: u16) -> MapEntity {
-        MapEntity {
-            owner: "Neutral".to_string(),
-            type_id: type_id.to_string(),
-            health: 256,
-            cell_x,
-            cell_y,
-            facing: 0,
-            category: EntityCategory::Structure,
-            sub_cell: 0,
-            veterancy: None,
-            high: false,
-            mission: None,
-            recruitable_a: true,
-            recruitable_b: true,
-            group: -1,
-            follows: None,
-            structure_columns: Default::default(),
-            structure_ai_sellable: false,
-            structure_ai_repairable: false,
-            structure_online: true,
-            trigger_tag: None,
-        }
+    fn cell_center(rx: i32, ry: i32) -> [i32; 2] {
+        [
+            rx * LEPTONS_PER_CELL + HALF_CELL_LEPTONS,
+            ry * LEPTONS_PER_CELL + HALF_CELL_LEPTONS,
+        ]
     }
 
     #[test]
     fn deferred_refresh_commits_only_after_reverse_gather() {
         let config = LightingConfig::default();
         let heights = [((4, 4), 0), ((5, 4), 2), ((6, 4), 4)];
-        let light = point_light_from_object(5, 4, 512, 200, [100, 0, 0]).expect("light");
+        let light =
+            point_light_from_object(cell_center(5, 4), 512, 200, [100, 0, 0]).expect("light");
         let immediate = {
             let mut grid = build_cell_light_grid_from_heights(heights, &config);
             accumulate_point_lights(&mut grid, std::slice::from_ref(&light));
@@ -2128,7 +2054,8 @@ mod tests {
                 .map(|light| light.raw_additive_intensity),
         );
 
-        let light = point_light_from_object(5, 4, 512, 200, [100, 0, 0]).expect("light");
+        let light =
+            point_light_from_object(cell_center(5, 4), 512, 200, [100, 0, 0]).expect("light");
         let mut pending = DeferredCellLightRefresh::new(heights, &config, vec![light]);
         assert!(pending.gather(heights.len()));
         let deferred = pending.commit().expect("complete gather commits");
@@ -2151,7 +2078,8 @@ mod tests {
 
     #[test]
     fn point_light_area_walk_is_outer_y_inner_x_and_radius_gated() {
-        let light = point_light_from_object(2, 2, 256, 200, [100, 0, 0]).expect("light");
+        let light =
+            point_light_from_object(cell_center(2, 2), 256, 200, [100, 0, 0]).expect("light");
         let cells = point_light_area_cells(&light, 5, 5, |_, _| Some(0));
 
         assert_eq!(
@@ -2171,7 +2099,8 @@ mod tests {
         let config = LightingConfig::default();
         let mut grid = build_cell_light_grid_from_heights([((1, 1), 0), ((9, 9), 4)], &config);
         let unaffected = grid.cell_light_at((9, 9)).cloned();
-        let light = point_light_from_object(1, 1, 256, 200, [100, 0, 0]).expect("light");
+        let light =
+            point_light_from_object(cell_center(1, 1), 256, 200, [100, 0, 0]).expect("light");
         let mut pending = DeferredCellLightRefresh::new([((1, 1), 0)], &config, vec![light]);
 
         pending.gather_all();

@@ -241,7 +241,7 @@ fn the_land_row_refuses_after_the_wall_arm() {
         .cell_mut_for_test(16, 15)
         .unwrap()
         .speed_costs
-        .foot = Some(0);
+        .foot = Some(crate::rules::terrain_rules::test_speed_percent(0));
     assert_eq!(entry(&sim, &rules, &registry, WALLI), Ok(7));
 }
 
@@ -562,10 +562,18 @@ fn assert_retail_wall_fire_profile(
     );
     assert!(removed_at.is_some(), "ordinary AP fire opens the fence");
     if paid_wall {
+        // The stage-two branch depends on which damage roll meets the
+        // pristine child. Ares' AI unit choice draws `RandomRanged(0, 99)`
+        // (HouseExt::GetTypeToProduce 100216A0, hooks 0x4FEA60/0x4FEEE0/
+        // 0x4FF210) where stock draws `RandomRanged(0, 0x7FFFFFFE)`, so the
+        // other Houses' Scenario draws move it; only the stock stream pins it.
+        #[cfg(not(feature = "ares"))]
         assert!(
             inline_child_admission_seen,
             "ordinary AP reaches stage two beside a pristine same-type child"
         );
+        #[cfg(feature = "ares")]
+        let _ = inline_child_admission_seen;
         let house = scene.sim().houses.get(&owner).unwrap();
         assert_eq!(house.economy().credits(), 8500);
         assert_eq!(house.economy().spent_credits(), 1500);
@@ -641,13 +649,23 @@ fn retail_unit_per_cell_removes_authored_fence_before_returning() {
         delivered: std::cell::Cell::new(0),
         crushed: std::cell::Cell::new(0),
     };
-    let Some((root, _assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+    let Some((root, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
         return;
     };
     let profile = crate::test_fixture::json("tools/map_observation.authored-fence.example.json");
-    let launch: crate::skirmish_launch::SkirmishLaunchSession =
+    let mut launch: crate::skirmish_launch::SkirmishLaunchSession =
         serde_json::from_value(profile["launch"].clone()).unwrap();
     let map = launch.selected_map_file.as_deref().unwrap().to_owned();
+    let mut bytes = assets.get_ref(&map).unwrap().to_vec();
+    bytes.extend_from_slice(b"\n[CAFNCB]\nCrushSound=Unknown\n");
+    let directory = crate::map::source::test_support::TestDirectory::new("retained-fence-sound");
+    directory.write("fence.map", &bytes);
+    let map = directory
+        .path()
+        .join("fence.map")
+        .to_string_lossy()
+        .into_owned();
+    launch.selected_map_file = Some(map.clone());
     let mut scene = crate::headless_scenario::load_session(
         &root,
         &map,
@@ -922,8 +940,7 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
             // The original component starts before the later Building/Foot
             // population. Run its wall Mark material through the shared owner;
             // do not copy its resulting data/122/zone fields from the packet.
-            sim.dirty_cells
-                .acknowledge_radar(sim.dirty_cells.radar_generation());
+            sim.dirty_cells.take_radar();
             for placement in construction["placements"].as_array().unwrap() {
                 let coordinate = (
                     placement["cell"][0].as_u64().unwrap() as u16,
@@ -1019,8 +1036,7 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
         sim.mapgen_rng = SimRng::new(seed);
         assert_eq!(rng(sim), case["initial"]["rng"]);
         if case.get("construction").is_none() {
-            sim.dirty_cells
-                .acknowledge_radar(sim.dirty_cells.radar_generation());
+            sim.dirty_cells.take_radar();
         }
         assert_eq!(
             json!(sim.dirty_cells.radar()),

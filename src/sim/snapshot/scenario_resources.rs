@@ -158,6 +158,18 @@ pub struct SavedMapMetadata {
     /// Rust media reconstruction policy: release this credit because the
     /// physical Radar video queue is not restored. Other pause holds persist.
     radar_pause_credit: bool,
+    /// VocSave751620's static-sound nodes. The live list remains in audio.
+    static_sounds: Vec<SavedStaticSound>,
+}
+
+/// One node of `VocClass::SaveStaticSounds @ 0x00751620`: the sound and the
+/// Coord of a retained `VocClass::PlayAtCoord @ 0x00750E20` request. Native
+/// writes the sound's vector index; VERA carries its canonical name.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedStaticSound {
+    pub sound_id: String,
+    /// Signed native XYZ in leptons (node `+0x20..+0x28`).
+    pub coordinate: [i32; 3],
 }
 
 impl SavedMapMetadata {
@@ -194,7 +206,14 @@ impl SavedMapMetadata {
             local_player_name: local_player_name.map(str::to_owned),
             theme_slots,
             radar_pause_credit,
+            static_sounds: Vec::new(),
         }
+    }
+
+    /// The audio owner's static-sound nodes at the save boundary.
+    pub fn with_static_sounds(mut self, static_sounds: Vec<SavedStaticSound>) -> Self {
+        self.static_sounds = static_sounds;
+        self
     }
 
     pub fn map_hash(&self) -> u64 {
@@ -236,6 +255,9 @@ impl SavedMapMetadata {
     }
     pub fn theme_slots(&self) -> [i32; 2] {
         self.theme_slots
+    }
+    pub fn static_sounds(&self) -> &[SavedStaticSound] {
+        &self.static_sounds
     }
 }
 
@@ -300,6 +322,11 @@ mod tests {
             payload_len: 27,
             source_sha256: "saved-source-identity".into(),
         };
+        // VocSave751620: one static-sound node, sound and Coord.
+        let ambient = SavedStaticSound {
+            sound_id: "OILDERRICKLOOP".into(),
+            coordinate: [5 * 256 + 128, 7 * 256 + 128, -104],
+        };
         let saved = SavedScenarioResourcesRef::capture(
             &resources,
             owner.saved_scenario_rules().unwrap(),
@@ -324,7 +351,8 @@ mod tests {
                 None,
                 [-1, -1],
                 false,
-            ),
+            )
+            .with_static_sounds(vec![ambient.clone()]),
         );
         // Exercise the production borrowed writer against the owning reader.
         // JSON round trips would miss tagged-enum/bincode incompatibilities.
@@ -333,6 +361,7 @@ mod tests {
             crate::util::save_codec::deserialize(&bytes).unwrap();
         assert_eq!(restored.map().source(), &source);
         assert_eq!(restored.map().map_hash(), 123);
+        assert_eq!(restored.map().static_sounds(), [ambient]);
         assert_eq!(restored.terrain().dimensions(), (3, 3));
         let rules = owner
             .project_saved_scenario_rules(restored.processed_rules())

@@ -192,14 +192,12 @@ fn fetch_catalog(state: &AppState, retried: bool) -> Phase {
 }
 
 /// What an empty Online Maps list says.
-pub(crate) fn empty_online_maps_text(state: &AppState) -> &'static str {
-    match state.frontend.map_library.phase {
-        Phase::NotStarted | Phase::Fetching { .. } => "Loading the online map library...",
-        Phase::Failed { .. } => {
-            "The online map library is unavailable. Check your internet connection."
-        }
-        Phase::Ready => "No maps found.",
-    }
+pub(crate) fn empty_online_maps_text(state: &AppState) -> String {
+    crate::i18n::tr(match state.frontend.map_library.phase {
+        Phase::NotStarted | Phase::Fetching { .. } => "VERA:OnlineMapsLoading",
+        Phase::Failed { .. } => "VERA:OnlineMapsUnavailable",
+        Phase::Ready => "VERA:OnlineMapsEmpty",
+    })
 }
 
 /// An open Choose Map shows the catalog's rows as they are now.
@@ -232,10 +230,15 @@ pub(crate) fn append_online_records(state: &mut AppState) {
     if maps.is_empty() {
         return;
     }
+    // A map in the mod folder in use is one the player has, too.
+    let folders: Vec<&std::path::Path> = crate::map::source::mod_dir()
+        .into_iter()
+        .chain([ra2_dir.as_path(), maps_dir.as_path()])
+        .collect();
     append_rows(
         &mut state.frontend.scenario_catalog.records_mut(),
         maps,
-        &[&ra2_dir, &maps_dir],
+        &folders,
     );
 }
 
@@ -244,7 +247,8 @@ fn append_rows(
     maps: &[OnlineMap],
     folders: &[&std::path::Path],
 ) {
-    // Each folder is listed once, the game folder first; names compare
+    // Each folder is listed once, in the order a map lookup reads them (the
+    // mod folder in use, then the game folder); names compare
     // without case, as macOS and Windows file systems do.
     let mut files = std::collections::HashMap::new();
     for path in folders.iter().flat_map(|folder| {
@@ -301,22 +305,51 @@ fn holds_map(path: &std::path::Path, map: &OnlineMap) -> bool {
             .is_ok_and(|bytes| crate::util::sha256::sha256_hex(&bytes) == map.sha256)
 }
 
-/// The preview of an online row (`record_index` into the scenario catalog),
-/// decoded from its catalog header.
-pub(crate) fn online_preview(
-    state: &AppState,
-    record_index: usize,
-) -> Option<crate::map::preview::DecodedPreview> {
+/// The catalog header of an online row (`record_index` into the scenario
+/// catalog).
+fn online_header(state: &AppState, record_index: usize) -> Option<&[u8]> {
     let record = state
         .frontend
         .scenario_catalog
         .records()
         .get(record_index)?;
     let map = state.frontend.map_library.online_map(record)?;
-    let ini = crate::rules::ini_parser::IniFile::from_bytes(&map.header).ok()?;
+    Some(&map.header)
+}
+
+/// The preview of an online row, decoded from its catalog header.
+pub(crate) fn online_preview(
+    state: &AppState,
+    record_index: usize,
+) -> Option<crate::map::preview::DecodedPreview> {
+    let ini =
+        crate::rules::ini_parser::IniFile::from_bytes(online_header(state, record_index)?).ok()?;
     crate::map::preview::decode_preview_image_from_ini(&ini)
         .ok()
         .flatten()
+}
+
+/// The briefing of the catalog row `record_index` (`map::basic::
+/// briefing_text`): an online row's from its catalog header, which keeps the
+/// map's whole `[Basic]` section, a loose map's from its file. The retail
+/// maps in mixfiles carry none.
+pub(crate) fn briefing(state: &AppState, record_index: usize) -> Option<String> {
+    let record = state
+        .frontend
+        .scenario_catalog
+        .records()
+        .get(record_index)?;
+    match record.source {
+        SkirmishScenarioSource::Online(_) => {
+            crate::map::basic::briefing_text(online_header(state, record_index)?)
+        }
+        SkirmishScenarioSource::LooseYrm(_) => {
+            let path =
+                crate::map::source::local_map_path(state.ra2_dir()?, &record.file_name).ok()?;
+            crate::map::basic::briefing_text(&crate::util::file_system::read(path).ok()?)
+        }
+        _ => None,
+    }
 }
 
 /// The running download's bytes received and its length.
@@ -601,7 +634,7 @@ fn start_catalog(state: &AppState) -> Option<Receiver<Result<Vec<OnlineMap>>>> {
 
 /// One worker thread whose result arrives on the receiver. `None` where
 /// threads cannot start, as in the browser build, which has no library yet.
-fn spawn<T: Send + 'static>(
+pub(crate) fn spawn<T: Send + 'static>(
     name: &str,
     cancel: Arc<AtomicBool>,
     work: impl FnOnce(&AtomicBool) -> Result<T> + Send + 'static,

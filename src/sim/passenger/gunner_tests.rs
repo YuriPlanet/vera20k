@@ -419,6 +419,11 @@ fn retail_vehicle_enter_keeps_live_transport_target() {
 /// Unit ReceiveDamage calls each escaped passenger's Scatter(&EmptyCoord, 1, 0)
 /// at 0x00738130..0x0073813D. For a tank, Unit Scatter installs a cell NavCom
 /// through its ordinary destination setter and Drive Move_To.
+// Stock Unit tail (737F97..73838A); installed Ares 1004C0E0 (hook 0x737F97)
+// replaces it with SpawnSurvivors100464C0, which ejects each passenger through
+// EjectRandomly100445E0 instead of Scatter. Ares coverage:
+// `crew_survival_tests::ares_fatal_vehicle_returns_saved_captor_pilot_and_existing_passenger`.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_tanks_scatter_after_their_transport_is_destroyed() {
     use crate::sim::combat::{EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags};
@@ -877,6 +882,8 @@ fn retail_sniper_ifv_guard_scan_uses_its_boarded_weapon_range() {
         let target = sim
             .spawn_object("E2", "Russians", x + distance, y, 192, rules)
             .expect("spawn visible infantry target");
+        // The player has seen the enemy: the campaign scan gate needs +0x41B.
+        crate::sim::arena_fixture::discover(&mut sim, target);
         let owner = entity(&sim, ifv).owner();
         sim.fog.reveal_all_for_owner(owner);
         let pick = sim
@@ -1176,7 +1183,8 @@ fn retail_a_walking_passenger_runs_mission_enter() {
         gi,
         rules,
         crate::sim::world::ObjectAiCtx::default(),
-    );
+    )
+    .unwrap();
     assert_eq!(sim.scenario_rng.state(), replay.state());
     assert_eq!(entity(&sim, gi).mission.dispatch_timer().delay(), delay);
     assert_eq!(entity(&sim, gi).radio_contacts.slot(0), Some(ifv));
@@ -1373,7 +1381,8 @@ fn retail_a_refused_move_here_breaks_the_passengers_contact() {
         gi,
         rules,
         crate::sim::world::ObjectAiCtx::default(),
-    );
+    )
+    .unwrap();
 
     let pax = entity(&sim, gi);
     assert!(pax.radio_contacts.is_empty(), "the transport broke it");

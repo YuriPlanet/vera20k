@@ -139,6 +139,8 @@ pub struct AttackerFacts {
     /// `AircraftClass+0x6CA` spawn retreat/collision flag
     /// (`SpawnRetreat__Push 0x0054E47D`).
     pub aircraft_spawn_collision: bool,
+    /// `TechnoClass+0x2FC` Ammo, which Ares' NoAmmoWeapon arm reads.
+    pub ammo: i32,
 }
 
 /// Flight virtuals are queried only where the selection ladder asks them.
@@ -323,15 +325,21 @@ pub fn weapon_damage_value(
 
 /// The house (`+0x21C`) of whoever mind-controls (`+0x2C0`) the
 /// `OpenTopped=` transport (`+0x11C`, TechnoType `+0x5E4`) `rider` rides:
-/// the threat scan's (`0x006F7EA2..0x006F7ED8`, `0x006F89D1..0x006F8A0A`)
-/// and the allied-target drop's (`0x006FA30C..0x006FA342`).
+/// the threat scan's (`0x006F7EA2..0x006F7ED8`, `0x006F89D1..0x006F8A0A`),
+/// `Greatest_Threat`'s global walk (`0x006F8FA8..0x006F8FD7`) and the
+/// allied-target drop's (`0x006FA30C..0x006FA342`).
+///
+/// These reads use `TechnoClass+0x11C` Transporter, not VERA's wider carrier
+/// relation: a garrison occupant or a `CargoClass::AddPassenger` cargo rider
+/// stores a carrier without setting Transporter (vera20k#3838), so it has no
+/// controlled-transport house.
 pub(crate) fn controlled_transport_house(
     entities: &EntityStore,
     rules: &RuleSet,
     interner: &StringInterner,
     rider: &GameEntity,
 ) -> Option<InternedId> {
-    let transport = entities.get(rider.passenger_role.inside_transport_id()?)?;
+    let transport = entities.get(rider.passenger_role.transporter()?)?;
     let open_topped = interner
         .object_type(transport.type_ref(), rules)
         .is_some_and(|obj| obj.open_topped);
@@ -357,7 +365,9 @@ pub(crate) fn weapon_for_index(
     }
     let slot_index = usize::try_from(index).ok()?;
     // Ares7177C0/7177E0 ->1003DBC0 exposes the extension WeaponStruct
-    // vectors beyond the original eighteen. The type owns their lifetime.
+    // vectors beyond the original eighteen (TechnoTypeClass_GetWeapon
+    // 10042510, TechnoTypeClass_GetEliteWeapon 100424E0). The type owns
+    // their lifetime.
     let slot_count = obj.weapon_record_count();
     if slot_index >= slot_count {
         return None;
@@ -488,8 +498,7 @@ pub fn is_armed(
 pub(crate) fn aircraft_strafes(rules: &RuleSet, obj: &ObjectType, veterancy: u16) -> bool {
     primary_for_tier(obj, veterancy)
         .and_then(|name| rules.weapon(name))
-        .and_then(|weapon| weapon.projectile.as_deref())
-        .and_then(|name| rules.projectile(name))
+        .and_then(|weapon| rules.weapon_projectile(weapon))
         .is_some_and(|projectile| projectile.rot <= 1 && !projectile.inviso)
 }
 
@@ -650,10 +659,8 @@ pub(crate) fn select_naval_targeting_weapon(obj: &ObjectType, target: Option<&Ta
 }
 
 fn projectile_aa(rules: &RuleSet, weapon: &WeaponType) -> bool {
-    weapon
-        .projectile
-        .as_ref()
-        .and_then(|id| rules.projectile(id))
+    rules
+        .weapon_projectile(weapon)
         .is_some_and(|projectile| projectile.aa)
 }
 
@@ -663,10 +670,8 @@ fn projectile_aa(rules: &RuleSet, weapon: &WeaponType) -> bool {
 /// defaults (AA=no, AG=yes), as weapon selection does; retail weapons always
 /// name one.
 fn weapon_class_bits(rules: &RuleSet, weapon: &WeaponType) -> u32 {
-    let (aa, ag) = weapon
-        .projectile
-        .as_ref()
-        .and_then(|id| rules.projectile(id))
+    let (aa, ag) = rules
+        .weapon_projectile(weapon)
         .map_or((false, true), |projectile| (projectile.aa, projectile.ag));
     let mut bits = 0;
     if aa {
@@ -711,12 +716,8 @@ pub(crate) fn primary_warhead_spares_medium_and_wood(
 ) -> bool {
     let warhead = primary_for_tier(obj, veterancy)
         .and_then(|id| rules.weapon(id))
-        .and_then(|weapon| warhead_of(rules, weapon));
+        .and_then(|weapon| rules.weapon_warhead(weapon));
     warhead.is_some_and(WarheadType::uses_medium_wood_target_mask)
-}
-
-pub(crate) fn warhead_of<'a>(rules: &'a RuleSet, weapon: &WeaponType) -> Option<&'a WarheadType> {
-    weapon.warhead.as_ref().and_then(|id| rules.warhead(id))
 }
 
 /// Native `FCOMP Verses[armor], 0.0` (`0x006F3705` / `0x006F3738`): the
@@ -836,10 +837,19 @@ fn techno_what_weapon_should_i_use<'r>(
     if let Some(slot) = attacker.open_transport_weapon {
         return slot;
     }
+    // Ares TechnoClass_SelectWeapon_NoAmmoWeapon (Ares.dll 10047AE0, hook
+    // 0x6F3410, before H): a type with `Ammo= >= 0` fires `NoAmmoWeapon`
+    // once its count is at or below `NoAmmoAmount`.
+    #[cfg(feature = "ares")]
+    if obj.ammo >= 0
+        && let Some(slot) = obj.techno_combat().ammo().no_ammo_weapon(attacker.ammo)
+    {
+        return slot;
+    }
     let techno = target.techno();
     let secondary_aa = projectile_aa(rules, secondary);
-    let secondary_warhead = warhead_of(rules, secondary);
-    let primary_warhead = warhead_of(rules, primary);
+    let secondary_warhead = rules.weapon_warhead(secondary);
+    let primary_warhead = rules.weapon_warhead(primary);
     // H @ 0x006F3422: gattling stage pair. Note the AA test reads
     // `GetWeapon(1)`'s projectile regardless of the current stage.
     if obj.is_gattling {
@@ -1002,7 +1012,7 @@ pub(crate) fn resolve_weapon_index<'a>(
     Some(SelectedWeapon {
         weapon_id: &weapon.id,
         weapon,
-        warhead: warhead_of(rules, weapon)?,
+        warhead: rules.weapon_warhead(weapon)?,
         slot: if index == 1 {
             WeaponSlot::Secondary
         } else {
@@ -1068,6 +1078,7 @@ pub fn attacker_facts(entity: &GameEntity, obj: &ObjectType) -> AttackerFacts {
         mission_is_unload: entity.mission.effective().known() == Some(MissionType::Unload),
         is_overpowered_building: entity.tesla_charge.is_overpowered(),
         aircraft_spawn_collision: false,
+        ammo: entity.ammo().map_or(-1, |ammo| ammo.current()),
     }
 }
 
@@ -1723,6 +1734,7 @@ mod tests {
             mission_is_unload: false,
             is_overpowered_building: false,
             aircraft_spawn_collision: false,
+            ammo: -1,
         }
     }
 
@@ -1956,11 +1968,100 @@ mod tests {
         }
     }
 
+    /// Ares NoAmmoWeapon (Ares.dll 10047AE0, hook 0x6F3410): once Ammo is
+    /// at or below `NoAmmoAmount` the ladder answers `NoAmmoWeapon` right
+    /// after the open-topped arm; above it the ladder runs on to slot 0.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_no_ammo_weapon_answers_at_low_ammo() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=LAUNCH\n1=TGT\n[LAUNCH]\nStrength=100\nAmmo=4\n\
+             NoAmmoAmount=1\nNoAmmoWeapon=1\nPrimary=W0\nSecondary=W1\n\
+             [TGT]\nStrength=100\n[W0]\nDamage=10\nWarhead=WH\nProjectile=P\n\
+             [W1]\nDamage=10\nWarhead=WH\nProjectile=P\n[P]\nAG=yes\n[WH]\nVerses=100%\n",
+        ))
+        .unwrap();
+        let launcher = rules.object("LAUNCH").unwrap();
+        let target = techno(rules.object("TGT").unwrap(), TechnoKind::Unit);
+        let select = |ammo| {
+            let mut attacker = facts(TechnoKind::Unit);
+            attacker.ammo = ammo;
+            what_weapon_should_i_use(&rules, launcher, &attacker, Some(&target), |index| {
+                rules.weapon(weapon_for_index(launcher, 0, index)?.weapon_id?)
+            })
+        };
+        assert_eq!((select(2), select(1), select(0)), (0, 1, 1));
+    }
+
     // ---- Class overrides ---------------------------------------------------
 
     // ---- GetWeapon of the selected slot ------------------------------------
 
     // ---- Facts builders ----------------------------------------------------
+
+    /// The threat scan and allied-target drop read `TechnoClass+0x11C`
+    /// (`0x006F7EA2`, `0x006F89D1`, `0x006F8FA8`, `0x006FA30C`): a garrison
+    /// occupant or a `CargoClass::AddPassenger` rider stores a carrier
+    /// relation without setting Transporter (vera20k#3838), so it has no
+    /// controlled-transport house.
+    #[test]
+    fn a_cargo_rider_has_no_controlled_transport_house() {
+        use crate::sim::capture_manager::MindControlLink;
+        use crate::sim::passenger::PassengerRole;
+        let ini = IniFile::from_str(
+            "[VehicleTypes]\n0=CARRIER\n[InfantryTypes]\n0=RIDER\n\
+             [BuildingTypes]\n[AircraftTypes]\n\
+             [CARRIER]\nStrength=200\nPassengers=1\nOpenTopped=yes\n\
+             [RIDER]\nStrength=100\n",
+        );
+        let rules = RuleSet::from_ini(&ini).unwrap();
+        assert!(rules.object("CARRIER").unwrap().open_topped);
+        let mut sim = Simulation::with_seed(0x3838);
+        sim.substrate
+            .entities
+            .insert(GameEntity::test_default(1, "CARRIER", "Americans", 10, 10));
+        sim.substrate
+            .entities
+            .insert(GameEntity::test_default_of_category(
+                2,
+                "RIDER",
+                "Americans",
+                11,
+                10,
+                EntityCategory::Infantry,
+            ));
+        sim.substrate
+            .entities
+            .insert(GameEntity::test_default_of_category(
+                3,
+                "RIDER",
+                "Soviet",
+                12,
+                10,
+                EntityCategory::Infantry,
+            ));
+        // The fixture entities' names were interned by `test_default`.
+        sim.interner = crate::sim::intern::test_interner();
+        sim.substrate.entities.get_mut(1).unwrap().mind_control =
+            MindControlLink::controlled_by_for_test(3);
+        sim.substrate.entities.get_mut(2).unwrap().passenger_role =
+            PassengerRole::inside_for_test(1, false);
+        let rider = sim.substrate.entities.get(2).unwrap();
+        assert_eq!(
+            controlled_transport_house(&sim.substrate.entities, &rules, &sim.interner, rider),
+            None,
+            "a garrison occupant or cargo rider stores no Transporter"
+        );
+        sim.substrate.entities.get_mut(2).unwrap().passenger_role =
+            PassengerRole::boarded_for_test(1, true);
+        let expected = sim.substrate.entities.get(3).unwrap().owner();
+        let rider = sim.substrate.entities.get(2).unwrap();
+        assert_eq!(
+            controlled_transport_house(&sim.substrate.entities, &rules, &sim.interner, rider),
+            Some(expected),
+            "a transport-arm rider reaches its OpenTopped carrier's controller"
+        );
+    }
 
     // ---- Garrison ----------------------------------------------------------
 }

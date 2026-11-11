@@ -15,7 +15,7 @@ fn many_ordinary_fences_submit_in_order_and_preserve_native_destination_words() 
     let gpu = Gpu::new();
     let size = [12, 4];
     // Each round fences two Bullet edits with actual UnitAtlas and SHP draws.
-    // The resulting >3200 render passes exceeded the pinned backend's 4096
+    // The resulting >2500 render passes exceeded the pinned backend's 4096
     // native-buffer pool before any submission in the former implementation.
     const ROUNDS: usize = 640;
     let native_half =
@@ -141,7 +141,17 @@ fn many_ordinary_fences_submit_in_order_and_preserve_native_destination_words() 
             None,
         );
         assert_eq!(stats.pieces, ROUNDS * 2);
-        assert_eq!(stats.passes, (ROUNDS + 1) * 4);
+        // A resolve joins the next ordinary pass; only the last draws in one
+        // of its own. WebGL2 reduces each of the ROUNDS + 1 read-only intervals
+        // in three passes. Against the live depth test the first, a lone body,
+        // takes one pass and each interval holding a shadow two.
+        let webgl = crate::render::gpu::webgl_fallback(&gpu.device);
+        let intervals = if webgl {
+            (ROUNDS + 1) * 3
+        } else {
+            1 + ROUNDS * 2
+        };
+        assert_eq!(stats.passes, intervals + 1);
         assert_eq!(stats.tile_dependencies, 0);
         assert!(
             terrain.submissions() > 0,

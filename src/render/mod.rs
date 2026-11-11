@@ -20,6 +20,7 @@
 //! - render/ does NOT depend on: app/, audio/, net/
 
 pub(crate) mod aircraft_shadow;
+pub mod area_scale;
 pub(crate) mod atlas_growth;
 #[cfg(test)]
 mod atlas_refresh_retail_tests;
@@ -33,15 +34,19 @@ pub mod building_zshape;
 pub mod cell_window;
 pub mod chrome_atlas;
 pub(crate) mod chrono_screen;
+pub(crate) mod color_vision;
 pub mod combat_light;
 pub mod cursor_atlas;
 #[cfg(test)]
 pub(crate) mod depth_gpu_tests;
 pub mod draw_state;
 pub(crate) mod electric_bolt;
+pub(crate) mod entity_atlas_growth;
 pub(crate) mod foot_depth;
+pub(crate) mod frame_handoff;
 pub mod frame_readback;
 pub mod gpu;
+pub(crate) mod gpu_timer;
 pub(crate) mod laser;
 pub(crate) mod line_trail;
 pub mod loading_screen_chrome;
@@ -57,6 +62,7 @@ pub mod pixel_fx_sparkles;
 pub mod radar;
 pub(crate) mod radial_indicator;
 pub(crate) mod radiation_beam;
+pub(crate) mod depth_shift;
 pub(crate) mod scaled_copy;
 pub(crate) mod screen_presentation;
 pub mod screenshot;
@@ -72,6 +78,7 @@ pub mod shroud_buffer;
 mod shroud_gpu_tests;
 pub mod sidebar_cameo_atlas;
 pub mod sidebar_chrome;
+pub mod sidebar_smoothing;
 #[cfg(feature = "phobos")]
 pub mod sw_sidebar_art;
 pub mod sidebar_text;
@@ -79,8 +86,7 @@ pub(crate) mod sinking;
 pub mod skirmish_shell_chrome;
 pub mod smudge;
 pub mod sprite_atlas;
-pub mod status_font;
-pub(crate) mod status_font_data;
+pub(crate) mod text_audit;
 pub(crate) mod surface_line;
 pub mod tactical_compat;
 pub mod tactical_draw_plan;
@@ -89,17 +95,24 @@ pub(crate) mod terrain_draw;
 #[cfg(test)]
 pub(crate) mod terrain_draw_gpu_tests;
 pub mod terrain_instances;
+pub mod text_engine;
 pub mod tile_atlas;
+pub(crate) mod uniform_windows;
 pub mod unit_atlas;
 pub mod unit_pose_cache;
 pub(crate) mod unit_shadow;
 pub mod upscale_pass;
+pub mod voxel_image_cache;
+pub(crate) mod voxel_gpu;
 #[cfg(test)]
 mod voxel_parity_tests;
 pub mod vxl_normals;
 pub mod vxl_raster;
 pub mod wave_geometry;
 pub(crate) mod webgl;
+pub mod xbr;
 
 #[cfg(test)]
 mod sidebar_gpu_tests;
+#[cfg(test)]
+mod smooth_chrome_gpu_tests;

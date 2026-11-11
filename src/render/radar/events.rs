@@ -555,13 +555,14 @@ impl ClientRadarEvents {
         self.last_advanced_frame = Some(current_frame);
     }
 
+    /// The outlines' pixels on a `canvas`-sized surface, in draw order:
+    /// `put` stores one.
     pub fn draw(
         &self,
-        rgba: &mut [u8],
-        stride_width: u32,
-        canvas_height: u32,
+        canvas: (u32, u32),
         surface_size: (i32, i32),
         destination_offset: (i32, i32),
+        mut put: impl FnMut((u32, u32), [u8; 4]),
     ) {
         // `TickAndDrawRadarEvents @ 0x00660000` walks ascending insertion order.
         let clip_width = surface_size.0.max(0) as u32;
@@ -574,9 +575,7 @@ impl ClientRadarEvents {
             let color = blend_color(dim, bright, event.fade);
             for edge in 0..4 {
                 draw_line(
-                    rgba,
-                    stride_width,
-                    canvas_height,
+                    canvas,
                     destination_offset.0,
                     destination_offset.1,
                     clip_width,
@@ -590,6 +589,7 @@ impl ClientRadarEvents {
                         corners[(edge + 1) % 4].1.wrapping_add(destination_offset.1),
                     ),
                     color,
+                    &mut put,
                 );
             }
         }
@@ -664,9 +664,7 @@ fn blend_color(dim: [u8; 4], bright: [u8; 4], fade: f32) -> [u8; 4] {
 }
 
 fn draw_line(
-    rgba: &mut [u8],
-    stride_width: u32,
-    canvas_height: u32,
+    (canvas_width, canvas_height): (u32, u32),
     clip_left: i32,
     clip_top: i32,
     clip_width: u32,
@@ -674,6 +672,7 @@ fn draw_line(
     start: (i32, i32),
     end: (i32, i32),
     color: [u8; 4],
+    put: &mut impl FnMut((u32, u32), [u8; 4]),
 ) {
     let (mut x0, mut y0) = start;
     let (x1, y1) = end;
@@ -691,11 +690,10 @@ fn draw_line(
             && y0 >= clip_top
             && x0 < clip_left.wrapping_add(clip_width as i32)
             && y0 < clip_top.wrapping_add(clip_height as i32)
-            && x0 < stride_width as i32
+            && x0 < canvas_width as i32
             && y0 < canvas_height as i32
         {
-            let offset = ((y0 as u32 * stride_width + x0 as u32) * 4) as usize;
-            rgba[offset..offset + 4].copy_from_slice(&color);
+            put((x0 as u32, y0 as u32), color);
         }
         let twice = error * 2;
         if twice >= dy {

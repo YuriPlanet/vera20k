@@ -41,7 +41,9 @@ impl TipRect {
 
 /// One registered tip region. Text is resolved by the driver at sync time
 /// (per frame), matching native 724AD0's resolve-before-draw. EMPTY text reproduces the
-/// native "NULL text ⇒ Show fails ⇒ no tip" outcome.
+/// native "NULL text ⇒ Show fails ⇒ no tip" outcome. A driver may resolve only
+/// the text a pass reads ([`TooltipService::pass_reads_text`]) and leave the
+/// rest empty.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TipRegion {
     pub id: u32,
@@ -208,6 +210,27 @@ impl TooltipService {
 
     pub fn active(&self) -> Option<&ActiveTip> {
         self.active.as_ref()
+    }
+
+    /// Whether the [`Self::sync_regions`] of a pass at `now_ms` and the
+    /// [`Self::poll`] after it read the text of region `id` at `rect`: the
+    /// visible tip's, which its redraw resolves again (724AD0), or, once the
+    /// timer is due, that of a region holding the cursor, which a show
+    /// resolves (724200's WM_TIMER hit test). They read no other text.
+    pub fn pass_reads_text(&self, id: u32, rect: TipRect, now_ms: u64) -> bool {
+        self.active.as_ref().is_some_and(|tip| tip.id == id)
+            || (self.enabled
+                && self
+                    .timer_deadline_ms
+                    .is_some_and(|deadline| now_ms >= deadline)
+                && rect.contains_inclusive(self.mouse_x, self.mouse_y))
+    }
+
+    /// Whether [`Self::on_mouse_move`] shows the tip of the region it moves
+    /// into at once: a zero delay takes 724200's immediate path, which hit
+    /// tests the cursor and resolves the text at that move.
+    pub fn shows_on_move(&self) -> bool {
+        self.enabled && self.delay_ms() == 0
     }
 
     /// Cameo-hover hook (slice A2 consumer; exposed + tested now): zero delay
@@ -494,5 +517,22 @@ mod tests {
         s.on_mouse_move(5, 5, 0);
         s.poll(1000);
         assert_eq!(s.active().unwrap().text.chars().count(), 256);
+    }
+
+    #[test]
+    fn a_pass_reads_only_the_visible_tip_and_a_due_show() {
+        let (a, b) = (region(1, 0, 0, 10, 10, "a"), region(2, 20, 0, 10, 10, "b"));
+        let mut s = service_with(&[a.clone(), b.clone()]);
+        s.on_mouse_move(5, 5, 0);
+        assert!(!s.pass_reads_text(1, a.rect, TOOLTIP_DELAY_MS - 1));
+        assert!(s.pass_reads_text(1, a.rect, TOOLTIP_DELAY_MS));
+        assert!(!s.pass_reads_text(2, b.rect, TOOLTIP_DELAY_MS));
+        s.poll(TOOLTIP_DELAY_MS);
+        assert_eq!(s.active().unwrap().id, 1);
+        assert!(s.pass_reads_text(1, a.rect, TOOLTIP_DELAY_MS + 1));
+        assert!(!s.pass_reads_text(2, b.rect, TOOLTIP_DELAY_MS + 1));
+        assert!(!s.shows_on_move());
+        s.set_delay_override(Some(0));
+        assert!(s.shows_on_move());
     }
 }

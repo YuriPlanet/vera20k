@@ -9,6 +9,24 @@ use super::build::{
 use super::tubes::auto_tube_direction_for_tile;
 use super::*;
 
+/// The CliffBack neighbour test of `CellClass::RecalcAttributes @
+/// 0x0047D2B0` (all three writer sites share it): a cell is behind a cliff
+/// when one of six neighbours, probed in this order and stopping at the first
+/// hit, stands at least four levels above it. `level_at` reads a neighbour's
+/// signed level, a missing cell's through the shared Dummy.
+pub(crate) fn is_behind_cliff(
+    x: i16,
+    y: i16,
+    level: i8,
+    mut level_at: impl FnMut(i16, i16) -> i8,
+) -> bool {
+    const OFFSETS: [(i16, i16); 6] = [(0, -1), (-1, 0), (2, 2), (1, 1), (-1, 1), (1, -1)];
+    let threshold = i16::from(level).wrapping_add(4);
+    OFFSETS
+        .into_iter()
+        .any(|(dx, dy)| i16::from(level_at(x.wrapping_add(dx), y.wrapping_add(dy))) >= threshold)
+}
+
 /// Non-Clone input adapter for `CellClass::RecalcAttributes`. Authored loading
 /// owns its lazy asset cache and animation latch; the admitted runtime bridge
 /// path borrows immutable resident inputs and supplies current playfield bounds.
@@ -305,6 +323,24 @@ impl ResolvedTerrainGrid {
     /// level override, after Tube construction and before dimensions/Anim.
     /// Evidence: tools/spatial_oracle/terrain_recalc.
     pub(crate) fn recalc_cell_attributes<E: LoadCellRecalcEffects>(
+        &mut self,
+        state: &mut LoadCellRecalcState<'_>,
+        index: usize,
+        overlay: FinalizedOverlayCell,
+        level_override: i32,
+        effects: &mut E,
+    ) -> Result<LoadCellRecalcOutcome, LoadCellRecalcError<E::Error>> {
+        // The recalc reads and writes its cell through a private copy, kept
+        // only if it changed (see `cow_cells`); partial writes before an
+        // error are kept as before.
+        self.cells.begin_shadow(index);
+        let outcome =
+            self.recalc_cell_attributes_shadowed(state, index, overlay, level_override, effects);
+        self.cells.end_shadow();
+        outcome
+    }
+
+    fn recalc_cell_attributes_shadowed<E: LoadCellRecalcEffects>(
         &mut self,
         state: &mut LoadCellRecalcState<'_>,
         index: usize,
@@ -673,27 +709,60 @@ impl ResolvedTerrainGrid {
     }
 
     pub(super) fn authored_load_cell_is_behind_cliff(&self, index: usize) -> bool {
-        const OFFSETS: [(i16, i16); 6] = [(0, -1), (-1, 0), (2, 2), (1, 1), (-1, 1), (1, -1)];
+        self.cell_is_behind_cliff(index, true)
+    }
+
+    /// [`Self::authored_load_cell_is_behind_cliff`] for a replay of a Recalc's
+    /// result: the same answer, with a missing neighbour's level read off the
+    /// shared Dummy without the Map lookup that stamps its coordinate.
+    pub(super) fn replayed_cell_is_behind_cliff(&self, index: usize) -> bool {
+        self.cell_is_behind_cliff(index, false)
+    }
+
+    fn cell_is_behind_cliff(&self, index: usize, map_lookup: bool) -> bool {
         let cell = &self.cells[index];
-        let x = cell.rx as i16;
-        let y = cell.ry as i16;
-        let threshold = i16::from(cell.level as i8).wrapping_add(4);
-        for (dx, dy) in OFFSETS {
-            let nx = x.wrapping_add(dx);
-            let ny = y.wrapping_add(dy);
-            let neighbor_level = if let Some(neighbor_index) = self.native_fixed_cell_index(nx, ny)
-            {
-                self.cells[neighbor_index].level as i8
-            } else {
-                self.shared_cell_dummy
-                    .stamp_coord(i32::from(nx), i32::from(ny));
-                self.shared_cell_dummy.snapshot().level
-            };
-            if i16::from(neighbor_level) >= threshold {
-                return true;
-            }
+        is_behind_cliff(
+            cell.rx as i16,
+            cell.ry as i16,
+            cell.level as i8,
+            |nx, ny| {
+                if let Some(neighbor_index) = self.native_fixed_cell_index(nx, ny) {
+                    self.cells[neighbor_index].level as i8
+                } else {
+                    if map_lookup {
+                        self.shared_cell_dummy
+                            .stamp_coord(i32::from(nx), i32::from(ny));
+                    }
+                    self.shared_cell_dummy.snapshot().level
+                }
+            },
+        )
+    }
+
+    /// The Map lookups of one CliffBack neighbour test, for a runtime Recalc
+    /// whose land a projection writes ([`Self::apply_overlay_attributes`]).
+    /// Every `CellClass::RecalcAttributes` (`0x0047D2B0`) of a real cell
+    /// makes them unless `[General] CliffBackImpassability=` is 0: the early
+    /// overlay branch (`0x0047D386..0x0047D393`), a tile without a body
+    /// (`0x0047D5FF..0x0047D60D`) and every other cell
+    /// (`0x0047DB59..0x0047DB66`). A missing neighbour answers with the shared
+    /// Dummy, stamped with its coordinate.
+    ///
+    /// Residual: the Recalc's tile pass (`0x0047CA80`, called at `0x0047D54A`
+    /// and `0x0047D813`) reads neighbours through the same lookup, and the
+    /// projection runs no tile pass. In the early overlay branch that pass
+    /// follows this test, so where it reads a missing neighbour gamemd leaves
+    /// the Dummy there instead.
+    pub(crate) fn read_cliff_back_neighbours(
+        &self,
+        (rx, ry): (u16, u16),
+        cliff_back_impassability: u8,
+    ) {
+        if cliff_back_impassability != 0
+            && let Some(index) = self.index(rx, ry)
+        {
+            let _ = self.authored_load_cell_is_behind_cliff(index);
         }
-        false
     }
 
     fn apply_authored_load_cliff_back_rock(
@@ -708,6 +777,39 @@ impl ResolvedTerrainGrid {
         }
         // The Rock row, as a TMP Rock cell takes it.
         let rock = land_row(state.terrain_rules, LandType::Rock);
+        self.write_cliff_back_rock(index, &rock, apply_base, apply_current)
+    }
+
+    /// The final-normal CliffBack writer of `CellClass::RecalcAttributes @
+    /// 0x0047D2B0` (`0x0047DB59..0x0047DD2A`, then RecalcZoneType at
+    /// `0x0047DD36`) for a runtime tile stamp whose other attributes are
+    /// already written ([`recalc_dynamic_tile_attributes`]).
+    pub(super) fn reclass_cell_behind_cliff(&mut self, index: usize, rock: &LandTypeSemantics) {
+        if !cliff_back_normal_reclass_applies(self.cells[index].land_type)
+            || !self.authored_load_cell_is_behind_cliff(index)
+        {
+            return;
+        }
+        self.write_cliff_back_rock(index, rock, true, true);
+        let cell = &mut self.cells[index];
+        cell.ground_walk_blocked =
+            rock.ground_blocked || cell.terrain_object_blocks || cell.overlay_blocks;
+        cell.zone_type = recalc_zone_type(
+            cell.outside_playfield,
+            cell.overlay_zone_type,
+            cell.land_type,
+            cell.speed_costs.wheel,
+            cell.terrain_object_occupation,
+        );
+    }
+
+    fn write_cliff_back_rock(
+        &mut self,
+        index: usize,
+        rock: &LandTypeSemantics,
+        apply_base: bool,
+        apply_current: bool,
+    ) -> Option<bool> {
         let cell = &mut self.cells[index];
         if apply_base {
             cell.base_land_type = LandType::Rock.as_index();

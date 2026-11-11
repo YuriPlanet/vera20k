@@ -6,8 +6,9 @@ use crate::app::{App, AppState};
 use crate::sim::world::NetworkInterruption;
 use crate::ui::shell::controller::{DialogController, ShellKey};
 use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::layout::LaidOutControl;
-use crate::ui::shell::modal::{body_ok_layout, control};
+use crate::ui::shell::modal::{body_ok_layout_in, control};
 use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::PhysicalKey;
 
@@ -19,7 +20,7 @@ fn interruption(state: &AppState) -> Option<NetworkInterruption> {
     state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .and_then(|rt| rt.simulation.pending_network_interruption())
 }
 
@@ -31,9 +32,14 @@ pub(crate) fn labels(
             ("TXT_SCENARIOS_DO_NOT_MATCH", "Scenarios do not match.")
         }
         Some(NetworkInterruption::QueueFull) => ("TXT_QUEUE_FULL", "Network event queue is full."),
-        // A newer relay's record ends the match in the same box; vera_body
-        // replaces its body.
-        Some(NetworkInterruption::ConnectionFailed | NetworkInterruption::NewerClientRequired) => (
+        // A newer relay's record and a refused start end the match in the
+        // same box; vera_body replaces its body.
+        Some(
+            NetworkInterruption::ConnectionFailed
+            | NetworkInterruption::NewerClientRequired
+            | NetworkInterruption::StartMismatch
+            | NetworkInterruption::StartCancelled,
+        ) => (
             "TXT_SYSTEM_NOT_RESPONDING",
             "The other system is not responding.",
         ),
@@ -48,40 +54,77 @@ pub(crate) fn labels(
 /// this build cannot read, so the box names the cause and the download page.
 /// An online match's connection failure is the relay's ordered stream, not
 /// another player (their silence removes only their House), so it names the
-/// game server rather than "the other system".
+/// game server rather than "the other system". A start the relay refused says
+/// why, so the players can do something about it.
 ///
-/// VERA-only: a frame that failed in a network match (`frame_stopped`) is an
+/// VERA-only: a frame that failed (`frame_stopped`, in any match) is an
 /// error, not a desync, so the box says so and points at the log instead of
 /// the checksum box's own out-of-sync text.
 pub(crate) fn vera_body(state: &AppState) -> Option<String> {
+    let mut body = reason(state)?;
+    if state.match_state.frame_stopped
+        && let Some(path) = crate::util::logging::log_file()
+    {
+        body.push_str("\n\n");
+        body.push_str(&crate::i18n::tr_fill(
+            "VERA:LogFileDetails",
+            &[("path", &path.display())],
+        ));
+    }
+    Some(body)
+}
+
+fn reason(state: &AppState) -> Option<String> {
     if state.match_state.frame_stopped {
-        let mut body = String::from(
-            "VERA20k ran into an internal error, so this match cannot continue. \
-             The players did not go out of sync.",
-        );
-        if let Some(path) = crate::util::logging::log_file() {
-            body.push_str(&format!(
-                "\n\nThe log file has the details:\n{}",
-                path.display()
-            ));
-        }
-        return Some(body);
+        return Some(crate::i18n::tr("VERA:MatchInternalError"));
     }
     match interruption(state)? {
-        NetworkInterruption::NewerClientRequired => Some(format!(
-            "This online match needs a newer VERA20k. Download it from {}",
-            crate::app::shell_wol::RELEASES_URL
+        NetworkInterruption::NewerClientRequired => Some(crate::i18n::tr_fill(
+            "VERA:MatchNeedsNewerVera",
+            &[("url", &crate::app::shell_wol::RELEASES_URL)],
         )),
-        NetworkInterruption::ConnectionFailed
-            if state.match_state.session_mode()
-                == crate::app::match_runtime::session::SessionMode::Wol =>
-        {
-            Some(
-                "The connection to the VERA20k game server failed, so this match cannot continue."
-                    .to_owned(),
-            )
+        NetworkInterruption::ConnectionFailed if online(state) => {
+            Some(crate::i18n::tr("VERA:GameServerConnectionFailed"))
         }
+        NetworkInterruption::StartMismatch => Some(crate::i18n::tr("VERA:MatchStartMismatch")),
+        NetworkInterruption::StartCancelled => Some(crate::i18n::tr("VERA:MatchStartCancelled")),
         _ => None,
+    }
+}
+
+fn online(state: &AppState) -> bool {
+    state.match_state.session_mode() == crate::app::match_runtime::session::SessionMode::Wol
+}
+
+/// VERA: the box closes with the match, so its reason also waits for the
+/// chat the player lands in.
+fn hold_chat_line(state: &mut AppState) {
+    if !online(state) {
+        return;
+    }
+    let line = reason(state).or_else(|| {
+        let ((key, _), _) = labels(state);
+        let csf = state.process_assets.csf.as_ref()?;
+        Some(csf.get(key)?.to_string())
+    });
+    if let Some(line) = line {
+        crate::app::shell_wol::hold_problem_line(state, line);
+    }
+}
+
+/// VERA: Quit on the wait of a match the relay never started shows no box.
+pub(crate) fn hold_quit_line(state: &mut AppState) {
+    let never_started = state
+        .match_state
+        .live_network
+        .as_ref()
+        .and_then(|live| live.delivery_counters())
+        .is_some_and(|counters| !counters.started);
+    if online(state) && never_started {
+        crate::app::shell_wol::hold_problem_line(
+            state,
+            crate::i18n::tr("VERA:MatchStartCancelled"),
+        );
     }
 }
 
@@ -111,7 +154,7 @@ impl NetworkFailureModal {
 pub(crate) fn pending(state: &AppState) -> bool {
     state.frontend.screen == crate::app::GameScreen::InGame
         && (state.match_state.frame_stopped
-            || state.match_state.sim_runtime.as_ref().is_some_and(|rt| {
+            || state.match_state.sim_runtime.runtime().is_some_and(|rt| {
                 rt.simulation.pending_network_failure().is_some()
                     || rt.simulation.pending_network_interruption().is_some()
             }))
@@ -124,7 +167,7 @@ pub(crate) fn show(state: &mut AppState) {
         if let Some(failure) = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .and_then(|rt| rt.simulation.pending_network_failure())
         {
             log::error!("{failure}");
@@ -132,7 +175,7 @@ pub(crate) fn show(state: &mut AppState) {
         if let Some(failure) = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .and_then(|rt| rt.simulation.pending_network_interruption())
         {
             log::error!("{failure}");
@@ -159,6 +202,7 @@ pub(crate) fn take_acknowledged(state: &mut AppState) -> bool {
     {
         return false;
     }
+    hold_chat_line(state);
     state.match_state.network_failure = None;
     if state.frontend.shell_controller.top_id() == Some(DIALOG) {
         state.frontend.shell_controller.pop();
@@ -166,10 +210,11 @@ pub(crate) fn take_acknowledged(state: &mut AppState) -> bool {
     true
 }
 
+/// The box keeps gamemd's centring on the match's frame.
 fn button_feed(width: i32, height: i32) -> [LaidOutControl; 1] {
     [LaidOutControl {
         id: control::OK,
-        rect: body_ok_layout(width, height).ok,
+        rect: body_ok_layout_in(RectPx::new(0, 0, width, height)).ok,
     }]
 }
 

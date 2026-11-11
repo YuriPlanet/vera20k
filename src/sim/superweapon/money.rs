@@ -28,14 +28,31 @@ pub(super) fn configuration_supported(sw: &SuperWeaponType) -> bool {
 }
 
 pub(super) fn can_afford(houses: &Houses, owner: InternedId, sw: &SuperWeaponType) -> bool {
-    // Installed Ares SelectAction10034E2F..10034E45 and automatic
-    // launch100382F2..1003830A bypass the wallet only for a positive reward.
-    // Zero still requires AvailableMoney>=0. Keep the documented i32::MIN
-    // cost limit below rather than overflowing its checked settlement.
+    can_transact(houses, owner, sw.money_amount)
+}
+
+/// HouseClass::CanTransactMoney as Ares inlines it. Installed Ares
+/// SelectAction10034E2F..10034E45, automatic launch100382F2..1003830A and
+/// the drain hook100358A0 bypass the wallet only for a positive amount.
+/// Zero still requires AvailableMoney>=0. Keep the documented i32::MIN cost
+/// limit below rather than overflowing its checked settlement.
+pub(super) fn can_transact(houses: &Houses, owner: InternedId, amount: i32) -> bool {
     houses.get(&owner).is_some_and(|house| {
-        sw.money_amount > 0
-            || i64::from(house.economy().available_money()) >= -i64::from(sw.money_amount)
+        amount > 0 || i64::from(house.economy().available_money()) >= -i64::from(amount)
     })
+}
+
+/// HouseClass::TransactMoney: GiveMoney (Add_Credits) for a positive amount,
+/// TakeMoney (Spend_Money) of its negation otherwise. Callers admit first.
+pub(super) fn settle(houses: &mut Houses, owner: InternedId, amount: i32) {
+    if amount < 0 {
+        // Affordability proves the positive cost fits a signed wallet, so the
+        // checked conversion cannot overflow even for an authored i32::MIN.
+        let cost = amount.checked_neg().expect("admitted signed cost");
+        crate::sim::credit_income::spend_money(houses, owner, cost);
+    } else if amount > 0 {
+        crate::sim::credit_income::add_credits(houses, owner, amount);
+    }
 }
 
 pub(super) fn valid_target(sim: &Simulation, sw: &SuperWeaponType, cell: (u16, u16)) -> bool {
@@ -79,13 +96,6 @@ pub(super) fn transact(
     if !admit(sound_events, houses, owner, sw_type, sw) {
         return false;
     }
-    if sw.money_amount < 0 {
-        // Affordability proves the positive cost fits a signed wallet, so the
-        // checked conversion cannot overflow even for an authored i32::MIN.
-        let cost = sw.money_amount.checked_neg().expect("admitted signed cost");
-        crate::sim::credit_income::spend_money(houses, owner, cost);
-    } else if sw.money_amount > 0 {
-        crate::sim::credit_income::add_credits(houses, owner, sw.money_amount);
-    }
+    settle(houses, owner, sw.money_amount);
     true
 }

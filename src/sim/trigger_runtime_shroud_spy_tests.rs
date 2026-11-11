@@ -170,7 +170,7 @@ fn network_spy_house_event_has_no_current_player_fallback() {
     let disguise = sim.substrate.entities.get_mut(actor).unwrap();
     disguise.disguise.as_mut().unwrap().acquire(0, None, None);
     sim.session.set_current_house_for_test(Some(houses[1]));
-    let mut occurs = |sim: &mut Simulation| {
+    let occurs = |sim: &mut Simulation| {
         let input = TagEventInput {
             kind: 53,
             actor: Some(actor),

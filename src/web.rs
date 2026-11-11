@@ -163,6 +163,11 @@ pub fn initialize() {
         console(info);
     }));
     let _ = console_log::init_with_level(log::Level::Info);
+    // The page's first status lines come before the engine reads its
+    // settings: they follow the browser's languages until then.
+    crate::i18n::init(None, None);
+    // Fetched while the player picks the game folder; `fonts_ready` waits.
+    let _ = crate::render::text_engine::web_fonts::preload();
     crate::util::file_system::set_persistence_callbacks(
         |path, bytes, modified_ms| {
             WRITE.with(|slot| {
@@ -318,7 +323,9 @@ pub fn prepare_audio() -> Result<(), JsValue> {
     if MUSIC.with(|slot| slot.borrow().is_some()) && SFX.with(|slot| slot.borrow().is_some()) {
         Ok(())
     } else {
-        Err(JsValue::from_str("Browser audio output unavailable"))
+        Err(JsValue::from_str(&crate::i18n::tr(
+            "VERA:BrowserAudioUnavailable",
+        )))
     }
 }
 
@@ -327,6 +334,14 @@ pub(crate) fn take_music_output() -> Option<crate::audio::music::MusicPlayer> {
 }
 pub(crate) fn take_sfx_output() -> Option<crate::audio::sfx::SfxPlayer> {
     SFX.with(|slot| slot.borrow_mut().take())
+}
+
+/// Resolves once the fonts the engine's first text draws with have been
+/// fetched from `pkg/fonts/` (`render::text_engine::web_fonts`); rejects if
+/// one cannot be. Await it before `start_game` or `start_spawn`.
+#[wasm_bindgen]
+pub fn fonts_ready() -> js_sys::Promise {
+    crate::render::text_engine::web_fonts::preload()
 }
 
 #[wasm_bindgen]
@@ -354,7 +369,9 @@ pub fn start_spawn(
     spawn_ini: String,
 ) -> Result<(), JsValue> {
     if !LIFECYCLE.with(|slot| slot.borrow().may_start(true)) {
-        return Err(JsValue::from_str("Game already started; reload to restart"));
+        return Err(JsValue::from_str(&crate::i18n::tr(
+            "VERA:GameAlreadyStarted",
+        )));
     }
     let request = read_spawn(spawn_ini)?;
     let mut app = crate::app::App::new(
@@ -409,6 +426,7 @@ pub fn probe(map_name: Option<String>) -> Result<String, JsValue> {
         personal_rules,
         crate::app::frontend::startup_options::RetailStartupOptions::default().media_archive_mode,
         map.as_deref(),
+        None,
     )
     .map_err(error)?;
     serde_json::to_string(&report).map_err(|error| JsValue::from_str(&error.to_string()))
@@ -429,18 +447,23 @@ fn run(
 ) -> Result<(), JsValue> {
     use winit::platform::web::EventLoopExtWebSys;
     if !LIFECYCLE.with(|slot| slot.borrow().may_start(external)) {
-        return Err(JsValue::from_str("Game already started; reload to restart"));
+        return Err(JsValue::from_str(&crate::i18n::tr(
+            "VERA:GameAlreadyStarted",
+        )));
+    }
+    if !crate::render::text_engine::web_fonts::preloads_arrived() {
+        return Err(JsValue::from_str("Await fonts_ready() before starting"));
     }
     let event_loop =
         winit::event_loop::EventLoop::new().map_err(|e| JsValue::from_str(&e.to_string()))?;
     LIFECYCLE
         .with(|slot| slot.borrow_mut().start(external))
-        .map_err(JsValue::from_str)?;
+        .map_err(|error| JsValue::from_str(&error))?;
     install_config();
     WAKE.with(|slot| *slot.borrow_mut() = Some(event_loop.create_proxy()));
     CANVAS.with(|slot| *slot.borrow_mut() = Some(canvas));
     STATUS.with(|slot| *slot.borrow_mut() = Some(on_status));
-    status("Starting engine");
+    status(&crate::i18n::tr("VERA:StartingEngine"));
     event_loop.spawn_app(app);
     Ok(())
 }

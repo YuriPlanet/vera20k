@@ -4,8 +4,10 @@
 //! with the [`step32_from_facing16`](super::step32_from_facing16) bucket of the
 //! velocity angle when the type's inverse ART `Rotates` byte (Type+0x2A1) is
 //! clear, i.e. for `Rotates=yes` bullets such as DRAGON and AAHeatSeeker2.
-//! Ghidra also lists data references from `0x0043EE8E`, `0x004466BE`,
-//! `0x0044FE10` and `0x0045127F`; none of those readers is ported here.
+//! A turret building indexes it the same way for its slot-9 animation, at
+//! `0x004466BE`, `0x0045127F` and `0x0044FE10`
+//! (`Simulation::aim_building_turret_anim`). `0x0043EE8E` is in a function
+//! nothing calls.
 
 /// gamemd DRAGON 32-way frame map `0x007F4890`: `table[i] = (28 - i) & 31`,
 /// i.e. `[28,27,…,1,0,31,30,29]`. `&31` on i32 wraps the negative tail correctly

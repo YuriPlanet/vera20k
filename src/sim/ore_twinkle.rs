@@ -119,7 +119,7 @@ impl Simulation {
         overlay_registry: &OverlayTypeRegistry,
         map_width: u16,
         map_height: u16,
-    ) -> OreTwinkleReceipt {
+    ) -> Result<OreTwinkleReceipt, crate::sim::crates::RuntimeOverlayError> {
         // `DAT_00A8ED78 == 0` gate at `0x00684FF0`: a generated launch already
         // constructed the object inside the synthetic `Full_Init`'s setup.
         let mut receipt = OreTwinkleReceipt {
@@ -127,7 +127,7 @@ impl Simulation {
             ..Default::default()
         };
         let Some(anim_name) = rules.general.ore_twinkle.as_deref() else {
-            return receipt;
+            return Ok(receipt);
         };
         let chance = rules.general.ore_twinkle_chance;
         let type_id = self.interner.intern(anim_name);
@@ -153,7 +153,7 @@ impl Simulation {
                 cell.overlay_data,
                 overlay_registry,
                 &rules.tiberium_types,
-            ) == 0
+            )? == 0
             {
                 continue;
             }
@@ -199,6 +199,9 @@ impl Simulation {
                 },
             ) {
                 Ok(_) => receipt.spawned += 1,
+                Err(crate::sim::anim_class::AnimSpawnError::Tiberium(error)) => {
+                    return Err(error.into());
+                }
                 Err(error) => {
                     receipt.spawn_failures += 1;
                     log::error!(
@@ -207,7 +210,7 @@ impl Simulation {
                 }
             }
         }
-        receipt
+        Ok(receipt)
     }
 }
 
@@ -222,14 +225,21 @@ mod tests {
             "[Tiberiums]\n0=Riparius\n[Riparius]\nImage=1\nValue=2147483647\n\
              [OverlayTypes]\n0=ORE\n1=ROCK\n[ORE]\nTiberium=yes\n[ROCK]\nIsARock=yes\n",
         );
+        let ini = crate::rules::tiberium_type::with_tiberium_image_slots(&ini);
         let overlays = OverlayTypeRegistry::from_ini(&ini, None);
         let tiberiums = TiberiumTypeRegistry::from_ini(&ini);
 
-        assert_eq!(tiberium_value(None, 5, &overlays, &tiberiums), 0);
-        assert_eq!(tiberium_value(Some(1), 5, &overlays, &tiberiums), 0);
-        assert_eq!(tiberium_value(Some(0), 0, &overlays, &tiberiums), i32::MAX);
+        assert_eq!(tiberium_value(None, 5, &overlays, &tiberiums).unwrap(), 0);
         assert_eq!(
-            tiberium_value(Some(0), 1, &overlays, &tiberiums),
+            tiberium_value(Some(1), 5, &overlays, &tiberiums).unwrap(),
+            0
+        );
+        assert_eq!(
+            tiberium_value(Some(0), 0, &overlays, &tiberiums).unwrap(),
+            i32::MAX
+        );
+        assert_eq!(
+            tiberium_value(Some(0), 1, &overlays, &tiberiums).unwrap(),
             i32::MAX.wrapping_mul(2),
             "native imul wraps the signed product"
         );

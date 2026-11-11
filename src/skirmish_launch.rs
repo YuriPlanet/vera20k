@@ -15,8 +15,9 @@ use crate::skirmish_modes::SkirmishGameMode;
 pub const BATTLE_MODE_ID: i32 = 1;
 pub const SKIRMISH_PLAYER_SLOT_COUNT: usize = 8;
 pub const SKIRMISH_AI_SLOT_COUNT: usize = SKIRMISH_PLAYER_SLOT_COUNT - 1;
-/// VERA network rooms extend the retail eight-row setup without changing the
-/// offline shell's resource rows or the eight-colour retail palette.
+/// VERA seats up to thirty players: its network rooms page their roster, and
+/// offline Skirmish scrolls its computer rows through the retail eight
+/// resource rows. The eight-colour retail palette stays.
 pub const NETWORK_PLAYER_SLOT_COUNT: usize = 30;
 pub const HOUSE_COLOR_COUNT: usize = 8;
 
@@ -202,9 +203,8 @@ impl SkirmishLaunchMode {
 
     /// Stock YR `MPModesMD.ini` row `id` after its override INI, the one
     /// versioned copy of the retail rows. Fixed launches (headless, CnCNet
-    /// spawn) take their row here, and the pre-Fill owner accepts a session
-    /// only through [`Self::matching_stock`]. A test pins every row to the
-    /// retail roster.
+    /// spawn) take their row here. A test pins every row to the retail
+    /// roster.
     pub fn stock(id: i32) -> Option<Self> {
         use crate::skirmish_modes::MpModeClass::{
             Battle, Cooperative, FreeForAll, ManBattle, Unholy,

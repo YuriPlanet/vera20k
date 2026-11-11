@@ -20,14 +20,19 @@ export function relayGrant(keyHex, address, matchId, sourceIndex, now, playerId,
   ticket.writeBigUInt64LE(BigInt(generation), 58);
   sign('VERA20k relay ticket v2\0', ticket.subarray(0, 66)).copy(ticket, 66);
   // The clock capability outlives loading and renewals; each control still
-  // needs its own live ticket.
-  const certificate = Buffer.alloc(66);
-  certificate.write('VO1C');
+  // needs its own live ticket. ordering.pacing 'on' or 'off' issues VO2C with
+  // the host's pacing flag; without it, VO1C.
+  const v2 = ordering.pacing === 'on' || ordering.pacing === 'off';
+  const signed = v2 ? 35 : 34;
+  const certificate = Buffer.alloc(signed + 32);
+  certificate.write(v2 ? 'VO2C' : 'VO1C');
   ticket.copy(certificate, 4, 1, 17);
   certificate.writeUInt32LE(ordering.sources_mask, 20);
   certificate.writeUInt16LE(ordering.tick_hz, 24);
   certificate.writeBigUInt64LE(BigInt(now + 86400), 26);
-  sign('VERA20k relay ordering certificate v1\0', certificate.subarray(0, 34)).copy(certificate, 34);
+  if (v2) certificate[34] = ordering.pacing === 'off' ? 1 : 0;
+  sign(`VERA20k relay ordering certificate ${v2 ? 'v2' : 'v1'}\0`, certificate.subarray(0, signed))
+    .copy(certificate, signed);
   return { address, ticket: base64url(ticket), packet_key: base64url(sign('VERA20k relay packet key v2\0', ticket)),
     payload_key: payloadKey, source_index: sourceIndex, ordering_certificate: base64url(certificate) };
 }

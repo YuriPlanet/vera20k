@@ -194,7 +194,7 @@ fn loss_threshold_events_bind_retail_all04_reinforcement_operands() {
         &rules,
         Some(&map.ini),
     );
-    sim.install_team_ai_registry(&teams, &rules).unwrap();
+    sim.install_team_ai_registry(&teams, &rules);
     sim.initialize_trigger_definitions(&map, &teams, None, None, None);
     let routes = corpus["retail_routes"].as_array().unwrap();
     assert_eq!(routes.len(), 2);
@@ -351,9 +351,7 @@ fn naval_land_events_match_original_signed_tracking_and_country_selection() {
                 TagEventInput {
                     kind: integer(&case["raised"]),
                     actor,
-                    source: None,
-                    cell: (0, 0),
-                    force: false,
+                    ..Default::default()
                 },
                 case["incoming_house"]
                     .as_u64()
@@ -648,9 +646,7 @@ fn funds_events_match_original_signed_wallet_predicates() {
                 TagEventInput {
                     kind: integer(&case["raised"]),
                     actor: Some(actor),
-                    source: None,
-                    cell: (0, 0),
-                    force: false,
+                    ..Default::default()
                 },
                 owner,
                 &mut persistence,
@@ -875,10 +871,7 @@ fn funds_event_sov06_retail_cash_taunt_reaches_named_eva_once() {
             tag,
             TagEventInput {
                 kind: EVENT_ANY,
-                actor: None,
-                source: None,
-                cell: (0, 0),
-                force: false,
+                ..Default::default()
             },
             &mut Vec::new(),
             &rules,
@@ -957,9 +950,7 @@ fn building_loss_event_matches_original_tracked_count_and_country_order() {
                 TagEventInput {
                     kind: integer(&case["raised"]),
                     actor,
-                    source: None,
-                    cell: (0, 0),
-                    force: false,
+                    ..Default::default()
                 },
                 case["incoming_house"]
                     .as_u64()
@@ -1142,8 +1133,7 @@ fn damage_source_event44_matches_original_registered_house_index() {
                     kind: integer(&case["inputs"]["raised"]),
                     actor,
                     source,
-                    cell: (0, 0),
-                    force: false,
+                    ..Default::default()
                 },
                 case["inputs"]["incoming_house"]
                     .as_u64()
@@ -1177,6 +1167,9 @@ fn damage_source_event44_matches_original_registered_house_index() {
     assert_eq!(compared, 24);
 }
 
+// The stock tag section of 5F5390; Ares replaces it (hook 0x5F57B5, see the
+// ares tests).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn surviving_object_damage_tag_ingress_matches_original_call_admission() {
     use super::tests::{
@@ -1315,9 +1308,7 @@ fn entered_cell_predicates_match_original_country_and_retained_house_identity() 
                 TagEventInput {
                     kind: integer(&case["inputs"]["raised"]),
                     actor,
-                    source: None,
-                    cell: (0, 0),
-                    force: false,
+                    ..Default::default()
                 },
                 case["inputs"]["incoming_house"]
                     .as_u64()
@@ -3247,7 +3238,7 @@ fn team_member_tag_admission_and_removal_match_original_controls() {
             }
         ));
         let registry = TeamAiIniRegistry::from_sources(&definitions, &IniFile::from_str(""), false);
-        sim.install_team_ai_registry(&registry, &rules).unwrap();
+        sim.install_team_ai_registry(&registry, &rules);
         let author_type = sim.trigger_runtime.definitions.tag_type("author").unwrap();
         let team_type = sim.trigger_runtime.definitions.tag_type("team").unwrap();
         sim.trigger_runtime.definitions.team_types = vec!["TT".into()];
@@ -3735,10 +3726,7 @@ fn physical_retail_sov01_registration_and_enable_timers_match_original_at_all_di
                         intro,
                         TagEventInput {
                             kind: 13,
-                            actor: None,
-                            source: None,
-                            cell: (0, 0),
-                            force: false,
+                            ..Default::default()
                         },
                         false,
                         crate::rules::ruleset::RuleSet::empty_for_test(),
@@ -4251,9 +4239,9 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                             TagEventInput {
                                 kind: integer(&args[2]),
                                 actor: object,
-                                source: None,
                                 cell,
                                 force,
+                                ..Default::default()
                             },
                             &mut effects,
                             &rules,

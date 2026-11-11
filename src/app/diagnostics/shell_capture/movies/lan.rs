@@ -8,6 +8,7 @@ use crate::app::input::multiplayer_setup as setup_input;
 use crate::app::match_runtime::session::{
     NetworkLoadingRequest, NetworkMapMetadata, NetworkVacancy, SessionMode,
 };
+use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::shell_lan::{self as lobby, LanJoinAcceptance, LanServiceEvent, LanServiceRequest};
 use crate::app::shell_network_setup::{self as setup, NetworkSetupEvent, NetworkSetupRequest};
 use crate::skirmish_launch::*;
@@ -83,6 +84,10 @@ pub enum LanTarget {
     /// Runs through the real300-frame prefix and remains in the live match
     /// until the external test driver kills it or blackholes its UDP route.
     OnlineFailureGuest,
+    /// Online Cooperative: the first stage is won, BC6's Continue returns
+    /// both players to the kept room on the next stage, and the host starts it.
+    OnlineCoopHost,
+    OnlineCoopGuest,
     LiveHost,
     LiveGuest,
     LiveTimeoutHost,
@@ -229,6 +234,8 @@ pub(crate) const LAN_CHECKPOINTS: &[(&str, LanTarget)] = &[
     ("online-live-timeout-host", LanTarget::OnlineTimeoutHost),
     ("online-live-quit-host", LanTarget::OnlineQuitHost),
     ("online-live-failure-guest", LanTarget::OnlineFailureGuest),
+    ("online-live-coop-host", LanTarget::OnlineCoopHost),
+    ("online-live-coop-guest", LanTarget::OnlineCoopGuest),
     ("lan-live-host", LanTarget::LiveHost),
     ("lan-live-guest", LanTarget::LiveGuest),
     ("lan-live-timeout-host", LanTarget::LiveTimeoutHost),
@@ -338,6 +345,8 @@ impl LanTarget {
                 | Self::OnlineTimeoutHost
                 | Self::OnlineQuitHost
                 | Self::OnlineFailureGuest
+                | Self::OnlineCoopHost
+                | Self::OnlineCoopGuest
         )
     }
     pub(crate) fn online_failure(self) -> bool {
@@ -347,7 +356,10 @@ impl LanTarget {
         )
     }
     pub(crate) fn online_guest(self) -> bool {
-        matches!(self, Self::OnlineGuest | Self::OnlineFailureGuest)
+        matches!(
+            self,
+            Self::OnlineGuest | Self::OnlineFailureGuest | Self::OnlineCoopGuest
+        )
     }
     pub(crate) fn desync_failure(self) -> bool {
         matches!(self, Self::LiveDesyncHost | Self::LiveDesyncGuest)
@@ -360,6 +372,8 @@ impl LanTarget {
                 | Self::OnlineTimeoutHost
                 | Self::OnlineQuitHost
                 | Self::OnlineFailureGuest
+                | Self::OnlineCoopHost
+                | Self::OnlineCoopGuest
                 | Self::LiveHost
                 | Self::LiveGuest
                 | Self::LiveTimeoutHost
@@ -379,7 +393,9 @@ impl LanTarget {
     pub(crate) fn live_cooperative(self) -> bool {
         matches!(
             self,
-            Self::LiveCoopHost
+            Self::OnlineCoopHost
+                | Self::OnlineCoopGuest
+                | Self::LiveCoopHost
                 | Self::LiveCoopSavedHost
                 | Self::LiveCoopGuest
                 | Self::LiveCoopFinalHost
@@ -1116,7 +1132,7 @@ impl LanCapture {
     }
     /// The controlled host generates its random map from its own `.Sed`
     /// through the production loader, and computes the `'W'` staging the
-    /// way its Generate does (`0x0058B830`).
+    /// way its Generate does (`0x0058B820`).
     fn prepare_controlled_random_map(&mut self, state: &mut AppState) -> Result<()> {
         struct Silent;
         impl crate::app::loading::pump::LoadingProgressSink for Silent {
@@ -1132,16 +1148,30 @@ impl LanCapture {
             ..Default::default()
         };
         let sed = options.to_sed_bytes();
-        fs::write(
-            host_dir.join(crate::map::skirmish_scenarios::RANDMAP_SED),
-            &sed,
-        )?;
+        // A path, as a bare name would be read from VERA's random-map folder.
+        let sed_path = host_dir.join(crate::map::skirmish_scenarios::RANDMAP_SED);
+        fs::write(&sed_path, &sed)?;
+        let mode_file = state
+            .match_state
+            .session
+            .network_setup()
+            .map(|launch| launch.mode.override_file.clone());
+        let the_team_enabled = state
+            .frontend
+            .main_menu_shell_state
+            .typed_codes
+            .the_team_enabled();
         let (manager, rules, _) = state.process_assets.manager_and_rules_with_tile_cache();
         let initial = crate::app::loading::init::load_map_initial_with_assets(
             host_dir,
             manager.context("controlled host assets")?,
             rules,
-            Some(crate::map::skirmish_scenarios::RANDMAP_SED),
+            None,
+            Some(sed_path.to_str().context("controlled host seed path")?),
+            mode_file.as_deref(),
+            SessionMode::Lan,
+            the_team_enabled,
+            None,
             &mut Silent,
         )?;
         let map = initial.map_data();
@@ -1202,7 +1232,8 @@ impl LanCapture {
         Ok(())
     }
     /// A random map's two GO receives land in the install directory,
-    /// overwriting the guest's own files (`0x005DDA31..0x005DDA6F`).
+    /// overwriting the guest's own files (`0x005DDA31..0x005DDA6F`). VERA's
+    /// land in its random-map folder, inside the marked settings root.
     fn deliver_random_map_file(&self, state: &AppState, file: &str) -> Result<()> {
         let random_map = self
             .random_map_host
@@ -1213,7 +1244,10 @@ impl LanCapture {
         } else {
             &random_map.sed
         };
-        fs::write(Self::isolated_root(state)?.join(file), bytes)?;
+        let settings = Self::isolated_settings_root(state)?;
+        let dir = crate::map::source::random_map_dir(&settings);
+        fs::create_dir_all(dir)?;
+        fs::write(dir.join(file), bytes)?;
         Ok(())
     }
     /// RandMap.Sed never verifies, so the map change sends one 0x1B; a
@@ -2271,9 +2305,8 @@ impl LanCapture {
                         .context("trackbar session")?
                         .options;
                     let actual = match control {
-                        SPEED => crate::ui::skirmish_shell::game_speed_visual_position(
-                            options.game_speed,
-                        ),
+                        SPEED => crate::ui::shell::game_speed::SpeedContext::Network
+                            .visual_position(options.game_speed),
                         CREDITS => options.starting_credits,
                         UNITS => options.unit_count,
                         _ => unreachable!(),
@@ -2930,7 +2963,7 @@ impl LanCapture {
                     let sim = &state
                         .match_state
                         .sim_runtime
-                        .as_ref()
+                        .runtime()
                         .context("installed timeout runtime")?
                         .simulation;
                     let owner = sim
@@ -2983,7 +3016,7 @@ impl LanCapture {
                 let sim = &state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .context("installed LAN runtime")?
                     .simulation;
                 ensure!(
@@ -2997,7 +3030,7 @@ impl LanCapture {
                     let runtime = state
                         .match_state
                         .sim_runtime
-                        .as_mut()
+                        .write_sim(SimWrite::Debug)
                         .context("installed co-op runtime")?;
                     let sim = &mut runtime.simulation;
                     let lose = self.target == LanTarget::CoopRetry;
@@ -3071,7 +3104,7 @@ impl LanCapture {
                     let runtime = state
                         .match_state
                         .sim_runtime
-                        .as_ref()
+                        .runtime()
                         .context("installed LAN runtime")?;
                     let map = runtime.simulation.session().map_name().to_string();
                     ensure!(
@@ -3177,7 +3210,7 @@ impl LanCapture {
                 let sim = &state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .context("Observe lost its installed runtime")?
                     .simulation;
                 ensure!(
@@ -3247,7 +3280,7 @@ impl LanCapture {
                 let sim = &state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .context("the peer's EXIT lost the runtime")?
                     .simulation;
                 ensure!(
@@ -3499,7 +3532,7 @@ impl LanCapture {
                     state.match_state.scenario_exit.is_none(),
                     "Quit Game started the EXIT teardown"
                 );
-                if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+                if let Some(runtime) = state.match_state.sim_runtime.runtime() {
                     ensure!(
                         !runtime.simulation.quit_requested()
                             && !runtime.simulation.pending_command_snapshot().iter().any(
@@ -3557,7 +3590,7 @@ impl LanCapture {
                 let sim = &state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .context("the kick lost the runtime")?
                     .simulation;
                 let peer = state
@@ -3831,7 +3864,7 @@ impl LanCapture {
                     let sim = &state
                         .match_state
                         .sim_runtime
-                        .as_ref()
+                        .runtime()
                         .context("EXIT runtime")?
                         .simulation;
                     ensure!(
@@ -3896,7 +3929,10 @@ impl LanCapture {
                     .context("retail root")?
                     .paths
                     .ra2_dir;
-                let sed = std::fs::read(root.join(crate::map::skirmish_scenarios::RANDMAP_SED))?;
+                let sed = std::fs::read(
+                    crate::map::source::random_map_dir(root)
+                        .join(crate::map::skirmish_scenarios::RANDMAP_SED),
+                )?;
                 let mut options = crate::map::rmg::RmgOptions::default();
                 options.apply_sed(&crate::rules::ini_parser::IniFile::from_bytes(&sed)?);
                 ensure!(
@@ -3933,7 +3969,7 @@ impl LanCapture {
             let sim = &state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .context("running match")?
                 .simulation;
             let order = sim.houses().order();
@@ -4017,7 +4053,7 @@ impl LanCapture {
                 let sim = &state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .context("running match")?
                     .simulation;
                 let order = sim.houses().order().to_vec();
@@ -4237,7 +4273,7 @@ impl LanCapture {
         match step {
             0 => {
                 let country = {
-                    let runtime = state.match_state.sim_runtime.as_ref().context("match")?;
+                    let runtime = state.match_state.sim_runtime.runtime().context("match")?;
                     let sim = &runtime.simulation;
                     let local = sim.session().current_house().context("local House")?;
                     let name = sim
@@ -4973,7 +5009,7 @@ fn sim_tick(state: &AppState) -> Result<u64> {
     Ok(state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("installed LAN runtime")?
         .simulation
         .session()

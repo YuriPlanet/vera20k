@@ -1138,9 +1138,14 @@ fn shrapnel_children_and_lasers_match_original_spawn_shrapnel() {
                 child_weapon.projectile.as_deref().unwrap(),
                 "{name}"
             );
+            // Ares stores the shrapnel weapon after Construct (1001ABF0,
+            // hooks 0x46A5B2/0x46AA27).
             assert_eq!(
-                actual.payload().installed_weapon(),
-                None,
+                actual
+                    .payload()
+                    .installed_weapon()
+                    .map(|id| world.interner.resolve(id)),
+                crate::rules::ARES_ENABLED.then_some(child_weapon.id.as_str()),
                 "{name}: Construct does not SetWeapon"
             );
             assert_eq!(

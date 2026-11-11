@@ -20,10 +20,9 @@
 //! rows that stop after three tokens (`HealBase`, `Reveal`, `Veteran`, `Unit`,
 //! …) never write a magnitude, and a token-three value that is neither literal
 //! leaves the flag alone. Because the default string carries only two tokens, a
-//! `[Powerups]` section that omits a name still zeroes its weight and leaves it
-//! with no animation — via the default's bare `NONE`, which is not
-//! `Find_Index`'s `<none>` sentinel and reaches -1 only by failing the type
-//! search, exactly as [`PowerupTable::anim_for`] does.
+//! `[Powerups]` section that omits a name still zeroes its weight and looks up
+//! the default's bare `NONE`. That name is not `Find_Index`'s `<none>` sentinel:
+//! it can resolve to a registered type, and otherwise stores -1 immediately.
 //!
 //! ## Dependency rules
 //! Part of `rules/` — INI parsing and rule data only.
@@ -85,8 +84,8 @@ const DEFAULT_WEIGHTS: [i32; POWERUP_COUNT] = [
 const READ_STRING_CAPACITY: usize = 0x80;
 
 /// The default handed to every `ReadString` call, verified at `0x0083D4AC`.
-/// Two tokens only: an absent row zeroes the weight and leaves the slot with no
-/// resolvable animation, while the flag and magnitude keep their live values.
+/// Two tokens only: an absent row zeroes the weight and looks up `NONE`, while
+/// the flag and magnitude keep their live values.
 const DEFAULT_ROW: &str = "0,NONE";
 
 /// `Powerup_From_Name @ 0x0048DE70`: case-insensitive walk of the same fixed
@@ -102,17 +101,16 @@ pub fn powerup_from_name(name: &str) -> usize {
 
 /// The four parallel `[Powerups]` globals.
 ///
-/// Native keeps these outside `RulesClass`; VERA keeps them beside the other
-/// crate rule data because the ownership distinction has no player-visible
-/// consequence, while the fixed slot order does.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// Native keeps these outside `RulesClass`; the process owner retains this
+/// table across its Rules passes and type-registry resets.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct PowerupTable {
     /// Token 1 — selection weight. `CellClass__PickupCrate` sums all
     /// nineteen and draws `RandomRanged(1, total)`.
     pub weights: [i32; POWERUP_COUNT],
-    /// Token 2 — the pickup animation. `None` is native's `-1`: either the
-    /// no-type sentinel or a name `AnimTypeClass::Find_Index` cannot resolve.
-    pub anims: [Option<String>; POWERUP_COUNT],
+    /// Token 2 — the immediate `AnimTypeClass::Find_Index422B20` result.
+    /// Native `-1` means the sentinel or a name absent at this read boundary.
+    anim_indices: [i32; POWERUP_COUNT],
     /// Token 3 — over-water eligibility, NOT an "enabled" switch. It is read
     /// only when the crate's cell land type is water (`0x00481D52`), and a
     /// cleared flag falls the outcome back to `Money` instead of suppressing
@@ -127,7 +125,7 @@ impl Default for PowerupTable {
         Self {
             weights: DEFAULT_WEIGHTS,
             // `0x0081DAD8` is initialized to -1 across all nineteen slots.
-            anims: [const { None }; POWERUP_COUNT],
+            anim_indices: [-1; POWERUP_COUNT],
             // `0x0089ECC0` and `0x0089EC28` live in zero-initialized storage.
             over_water: [false; POWERUP_COUNT],
             magnitudes: [NativeF64Bits::from_bits(0); POWERUP_COUNT],
@@ -136,34 +134,23 @@ impl Default for PowerupTable {
 }
 
 impl PowerupTable {
-    /// Resolve a slot's animation against the registered `[AnimTypes]` names.
-    ///
-    /// Native resolves at parse time through `AnimTypeClass::Find_Index`, so an
-    /// unregistered name is stored as `-1` and can never spawn. VERA keeps the
-    /// parsed name and applies the same filter here.
-    ///
-    /// These agree for the final rules state, which is the only state gameplay
-    /// reads. They differ for one intermediate case: if a later INI layer
-    /// registers an AnimType that an earlier layer's `[Powerups]` row already
-    /// named, native has already stored `-1` and keeps it, while VERA resolves
-    /// the name against the finished set. That needs a multi-layer mod to
-    /// reach; recorded as a deferred DRIFT rather than claimed equivalent.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn anim_for(&self, slot: usize, registered: &[String]) -> Option<&str> {
-        let name = self.anims.get(slot)?.as_deref()?;
-        registered
-            .iter()
-            .any(|candidate| candidate.eq_ignore_ascii_case(name))
-            .then_some(name)
+    /// The index selected at the last reached read, as PickupCrate4832F9
+    /// consumes it. An invalid slot has no animation.
+    pub fn animation_index(&self, slot: usize) -> i32 {
+        self.anim_indices.get(slot).copied().unwrap_or(-1)
     }
-}
 
-/// Live table retained across successive `RulesClass::Process` passes.
-#[derive(Debug, Clone, Default)]
-pub(crate) struct PowerupsAccumulator(PowerupTable);
+    pub(crate) fn animation_indices(&self) -> &[i32; POWERUP_COUNT] {
+        &self.anim_indices
+    }
 
-impl PowerupsAccumulator {
-    pub(crate) fn apply_pass(&mut self, ini: &IniFile) {
+    /// RulesClass::ReadPowerups673E80 reads against the AnimType registry at
+    /// this physical pass. Unknown names store -1; missing tokens retain.
+    pub(crate) fn apply_pass(
+        &mut self,
+        ini: &IniFile,
+        mut find_animation: impl FnMut(&str) -> Option<usize>,
+    ) {
         // `INIClass__FindSectionByName` gates the whole read: with no
         // `[Powerups]` section the function returns before touching a slot.
         let Some(section) = ini.section("Powerups") else {
@@ -171,8 +158,8 @@ impl PowerupsAccumulator {
         };
         for (slot, name) in POWERUP_NAMES.iter().enumerate() {
             // Native always parses, falling back to the literal `"0,NONE"`, so
-            // an absent row still zeroes the weight and clears the animation
-            // while leaving the flag and magnitude untouched.
+            // an absent row still zeroes the weight and looks up NONE while
+            // leaving the flag and magnitude untouched.
             let raw = section.read_string(name, DEFAULT_ROW, READ_STRING_CAPACITY);
             // `CRT__strtok` collapses runs of the delimiter and skips leading
             // ones, so an empty field is not a token at all: `20,,yes,2000`
@@ -180,25 +167,30 @@ impl PowerupsAccumulator {
             let mut tokens = strtok(&raw, &[',']);
 
             if let Some(token) = tokens.next() {
-                self.0.weights[slot] = crt_atoi(strtrim_ascii(token));
+                self.weights[slot] = crt_atoi(strtrim_ascii(token));
             }
             if let Some(token) = tokens.next() {
                 let token = strtrim_ascii(token);
                 // `AnimTypeClass::Find_Index @ 0x00422B20` special-cases only
                 // the literal `<none>`; every other name falls through to the
-                // array search and yields -1 solely by not matching, which
-                // `anim_for` reproduces against the registered set.
-                self.0.anims[slot] =
-                    (!token.eq_ignore_ascii_case("<none>")).then(|| token.to_ascii_uppercase());
+                // current array search. The returned index is stored even on
+                // failure (673F2A..673F2F); later allocation cannot bind it.
+                self.anim_indices[slot] = if token.eq_ignore_ascii_case("<none>") {
+                    -1
+                } else {
+                    find_animation(token)
+                        .and_then(|index| i32::try_from(index).ok())
+                        .unwrap_or(-1)
+                };
             }
             if let Some(token) = tokens.next() {
                 // Exactly two literals are recognised (`0x00825BF8` "yes" and
                 // `0x00825BF4` "no"); anything else leaves the slot as it was.
                 let token = strtrim_ascii(token);
                 if token.eq_ignore_ascii_case("yes") {
-                    self.0.over_water[slot] = true;
+                    self.over_water[slot] = true;
                 } else if token.eq_ignore_ascii_case("no") {
-                    self.0.over_water[slot] = false;
+                    self.over_water[slot] = false;
                 }
             }
             if let Some(token) = tokens.next() {
@@ -210,13 +202,9 @@ impl PowerupsAccumulator {
                 } else {
                     parse_leading_f64(strtrim_ascii(token))
                 };
-                self.0.magnitudes[slot] = NativeF64Bits::from_bits(value.to_bits());
+                self.magnitudes[slot] = NativeF64Bits::from_bits(value.to_bits());
             }
         }
-    }
-
-    pub(crate) fn finish(self) -> PowerupTable {
-        self.0
     }
 }
 
@@ -224,10 +212,21 @@ impl PowerupsAccumulator {
 mod tests {
     use super::*;
 
+    const ANIMATIONS: &[&str] = &[
+        "MONEY", "ARMOR", "FIREPOWR", "HEALALL", "REVEAL", "SPEED", "VETERAN", "CLOAK", "SHROUDX",
+        "CHEMISLE", "YES",
+    ];
+
+    fn find_animation(name: &str) -> Option<usize> {
+        ANIMATIONS
+            .iter()
+            .position(|candidate| candidate.eq_ignore_ascii_case(name))
+    }
+
     fn table(section: &str) -> PowerupTable {
-        let mut accumulator = PowerupsAccumulator::default();
-        accumulator.apply_pass(&IniFile::from_str(section));
-        accumulator.finish()
+        let mut table = PowerupTable::default();
+        table.apply_pass(&IniFile::from_str(section), find_animation);
+        table
     }
 
     /// `Powerup_From_Name` never fails: an unmatched or empty name is Money.
@@ -249,7 +248,9 @@ mod tests {
         assert_eq!(parsed.weights[POWERUP_MONEY], 50);
         assert_eq!(parsed.weights[POWERUP_SQUAD], 20);
         assert_eq!(parsed.weights[18], 1);
-        assert!(parsed.anims.iter().all(Option::is_none));
+        assert_eq!(parsed.animation_indices(), &[-1; POWERUP_COUNT]);
+        assert_eq!(parsed.animation_index(POWERUP_COUNT), -1);
+        assert_eq!(parsed.animation_index(usize::MAX), -1);
         assert!(parsed.over_water.iter().all(|flag| !flag));
     }
 
@@ -257,23 +258,22 @@ mod tests {
     /// default's first two tokens, and leaves the last two alone.
     #[test]
     fn absent_row_zeroes_weight_and_anim_but_keeps_flag_and_magnitude() {
-        let mut accumulator = PowerupsAccumulator::default();
-        accumulator.apply_pass(&IniFile::from_str("[Powerups]\nMoney=20,MONEY,yes,2000\n"));
+        let mut parsed = table("[Powerups]\nMoney=20,MONEY,yes,2000\n");
         // Second pass: the section exists but Money is gone.
-        accumulator.apply_pass(&IniFile::from_str("[Powerups]\nArmor=10,ARMOR,yes,1.5\n"));
-        let parsed = accumulator.finish();
+        parsed.apply_pass(
+            &IniFile::from_str("[Powerups]\nArmor=10,ARMOR,yes,1.5\n"),
+            find_animation,
+        );
         assert_eq!(
             parsed.weights[POWERUP_MONEY], 0,
             "the default's first token"
         );
         // The default row's second token is a bare `NONE`, which is NOT
         // Find_Index's `<none>` sentinel: it falls through the array search and
-        // yields -1 only by failing to match. `anim_for` is the resolution
-        // point, so that is where the absence becomes observable.
-        assert_eq!(parsed.anims[POWERUP_MONEY].as_deref(), Some("NONE"));
+        // yields -1 by failing to match the registry at this read boundary.
         assert_eq!(
-            parsed.anim_for(POWERUP_MONEY, &["MONEY".to_owned(), "ARMOR".to_owned()]),
-            None,
+            parsed.animation_index(POWERUP_MONEY),
+            -1,
             "no registered AnimType is called NONE, so the slot has no animation"
         );
         assert!(
@@ -322,10 +322,10 @@ mod tests {
         );
         assert_eq!(parsed.weights.iter().sum::<i32>(), 110);
 
-        // `<none>` is the no-type sentinel; a real name is retained uppercased.
-        assert_eq!(parsed.anims[POWERUP_UNIT], None);
-        assert_eq!(parsed.anims[POWERUP_MONEY].as_deref(), Some("MONEY"));
-        assert_eq!(parsed.anims[POWERUP_FIREPOWER].as_deref(), Some("FIREPOWR"));
+        // `<none>` is the no-type sentinel; real names resolve immediately.
+        assert_eq!(parsed.animation_index(POWERUP_UNIT), -1);
+        assert_eq!(parsed.animation_index(POWERUP_MONEY), 0);
+        assert_eq!(parsed.animation_index(POWERUP_FIREPOWER), 2);
 
         // Over-water eligibility, not an enable switch: Unit is weighted 20 and
         // still drops on land, but is redirected to Money over water.
@@ -365,7 +365,7 @@ mod tests {
             f64::from_bits(parsed.magnitudes[POWERUP_SPEED].bits()),
             1.25
         );
-        assert_eq!(parsed.anims[POWERUP_ARMOR].as_deref(), Some("ARMOR"));
+        assert_eq!(parsed.animation_index(POWERUP_ARMOR), 1);
         assert!(parsed.over_water[POWERUP_ARMOR]);
     }
 
@@ -394,33 +394,55 @@ mod tests {
     /// Token three recognises exactly two literals; anything else is inert.
     #[test]
     fn unrecognised_third_token_leaves_the_live_flag_untouched() {
-        let mut accumulator = PowerupsAccumulator::default();
-        accumulator.apply_pass(&IniFile::from_str("[Powerups]\nArmor=1,ARMOR,yes,1\n"));
-        accumulator.apply_pass(&IniFile::from_str("[Powerups]\nArmor=1,ARMOR,true,1\n"));
+        let mut parsed = table("[Powerups]\nArmor=1,ARMOR,yes,1\n");
+        parsed.apply_pass(
+            &IniFile::from_str("[Powerups]\nArmor=1,ARMOR,true,1\n"),
+            find_animation,
+        );
         assert!(
-            accumulator.finish().over_water[POWERUP_ARMOR],
+            parsed.over_water[POWERUP_ARMOR],
             "`true` is neither literal, so the `yes` from the earlier pass stands"
         );
 
-        let mut accumulator = PowerupsAccumulator::default();
-        accumulator.apply_pass(&IniFile::from_str("[Powerups]\nArmor=1,ARMOR,yes,1\n"));
-        accumulator.apply_pass(&IniFile::from_str("[Powerups]\nArmor=1,ARMOR,no,1\n"));
-        assert!(!accumulator.finish().over_water[POWERUP_ARMOR]);
+        parsed.apply_pass(
+            &IniFile::from_str("[Powerups]\nArmor=1,ARMOR,no,1\n"),
+            find_animation,
+        );
+        assert!(!parsed.over_water[POWERUP_ARMOR]);
     }
 
-    /// An animation name that no `[AnimTypes]` entry registers behaves exactly
-    /// like native's `Find_Index` returning -1.
+    /// A missing token retains the prior index; an unknown name replaces it
+    /// with -1, even when a later pass can resolve that name.
     #[test]
-    fn unregistered_anim_resolves_to_none() {
-        let parsed = table("[Powerups]\nMoney=20,BOGUSANIM,yes,2000\n");
-        let registered = vec!["MONEY".to_owned(), "ARMOR".to_owned()];
-        assert_eq!(parsed.anim_for(POWERUP_MONEY, &registered), None);
-
-        let parsed = table("[Powerups]\nMoney=20,money,yes,2000\n");
+    fn animation_lookup_retains_only_resolved_indices() {
+        let mut parsed = table("[Powerups]\nMoney=20,money,yes,2000\n");
         assert_eq!(
-            parsed.anim_for(POWERUP_MONEY, &registered),
-            Some("MONEY"),
+            parsed.animation_index(POWERUP_MONEY),
+            0,
             "resolution is case-insensitive, like Find_Index"
+        );
+        parsed.apply_pass(&IniFile::from_str("[Powerups]\nMoney=30\n"), find_animation);
+        assert_eq!(parsed.animation_index(POWERUP_MONEY), 0);
+        parsed.apply_pass(
+            &IniFile::from_str("[Powerups]\nMoney=20,BOGUSANIM,yes,2000\n"),
+            find_animation,
+        );
+        assert_eq!(parsed.animation_index(POWERUP_MONEY), -1);
+        let mut lookups = 0;
+        let mut later_catalog = |name: &str| {
+            lookups += 1;
+            name.eq_ignore_ascii_case("BOGUSANIM").then_some(11)
+        };
+        parsed.apply_pass(&IniFile::from_str("[General]\n"), &mut later_catalog);
+        assert_eq!(parsed.animation_index(POWERUP_MONEY), -1);
+        parsed.apply_pass(
+            &IniFile::from_str("[Powerups]\nMoney=20,BOGUSANIM\n"),
+            &mut later_catalog,
+        );
+        assert_eq!(parsed.animation_index(POWERUP_MONEY), 11);
+        assert_eq!(
+            lookups, POWERUP_COUNT,
+            "only the last pass performs lookups"
         );
     }
 
@@ -431,8 +453,8 @@ mod tests {
         let parsed = table("[Powerups]\nMoney=20,,yes,2000\n");
         assert_eq!(parsed.weights[POWERUP_MONEY], 20);
         assert_eq!(
-            parsed.anims[POWERUP_MONEY].as_deref(),
-            Some("YES"),
+            parsed.animation_index(POWERUP_MONEY),
+            10,
             "the third field became the second token"
         );
         assert!(
@@ -472,21 +494,31 @@ mod tests {
     fn tokens_are_trimmed_with_the_native_ascii_rule() {
         let parsed = table("[Powerups]\nMoney=\u{1}20\u{1},\u{b}MONEY\u{b},yes,3\n");
         assert_eq!(parsed.weights[POWERUP_MONEY], 20);
-        assert_eq!(parsed.anims[POWERUP_MONEY].as_deref(), Some("MONEY"));
+        assert_eq!(parsed.animation_index(POWERUP_MONEY), 0);
         assert_eq!(f64::from_bits(parsed.magnitudes[POWERUP_MONEY].bits()), 3.0);
     }
 
     /// Only the literal `<none>` is Find_Index's sentinel; a bare `NONE` is an
-    /// ordinary name that simply fails to resolve.
+    /// ordinary name that can resolve, including the absent row's default.
     #[test]
     fn only_angle_bracket_none_is_the_anim_sentinel() {
         let parsed = table("[Powerups]\nMoney=1,<NONE>,yes\nArmor=1,none,yes\n");
-        assert_eq!(parsed.anims[POWERUP_MONEY], None);
-        assert_eq!(parsed.anims[POWERUP_ARMOR].as_deref(), Some("NONE"));
+        assert_eq!(parsed.animation_index(POWERUP_MONEY), -1);
+        assert_eq!(parsed.animation_index(POWERUP_ARMOR), -1);
+        let mut parsed = PowerupTable::default();
+        parsed.apply_pass(
+            &IniFile::from_str("[Powerups]\nMoney=1,<NONE>,yes\nArmor=1,none,yes\n"),
+            |name| {
+                assert!(!name.eq_ignore_ascii_case("<none>"));
+                name.eq_ignore_ascii_case("none").then_some(5)
+            },
+        );
+        assert_eq!(parsed.animation_index(POWERUP_MONEY), -1);
+        assert_eq!(parsed.animation_index(POWERUP_ARMOR), 5);
         assert_eq!(
-            parsed.anim_for(POWERUP_ARMOR, &["MONEY".to_owned()]),
-            None,
-            "an unregistered name still resolves to no animation"
+            parsed.animation_index(POWERUP_UNIT),
+            5,
+            "an absent row looks up its literal NONE default"
         );
     }
 }

@@ -29,6 +29,12 @@ const fn initial_map_regrowth_timer() -> CdTimer {
     CdTimer::started(0, 0)
 }
 
+/// `ScenarioClass::Set_Defaults @ 0x00683610` stores true.
+#[cfg(feature = "ares")]
+const fn tiberium_death_to_visceroid_default() -> bool {
+    true
+}
+
 /// One map-authored global lighting profile in the native integer scales.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ScenarioLightProfileUnits {
@@ -173,9 +179,15 @@ impl NukeFlash {
 
     /// The timer test of `LightningStorm::Process`'s head (`0x0053A6D1..
     /// 0x0053A6EA`): a running timer whose start plus duration (wrapping) is
-    /// less than the frame (signed).
+    /// less than the frame (signed). Installed Ares's rewrite of that head
+    /// (`10037330`, hook `0x53A6CF`) runs only a nonnegative duration, so a
+    /// `NukeFlash.Duration` below -1 never ends the flash there.
     fn ran_out(&self, frame: i32) -> bool {
-        self.duration != -1 && self.start.wrapping_add(self.duration) < frame
+        #[cfg(feature = "ares")]
+        let running = self.duration >= 0;
+        #[cfg(not(feature = "ares"))]
+        let running = self.duration != -1;
+        running && self.start.wrapping_add(self.duration) < frame
     }
 }
 
@@ -207,6 +219,12 @@ pub struct ScenarioLightingState {
     /// supplies untouched inputs; retirement returns writes to the process
     /// Rules owner before its next prefix/read/reset sequence.
     ambient_change_overrides: [Option<NativeF64Bits>; 2],
+    /// Ares UpdateLightingColor's `Light.Ambient`/`.Red`/`.Green`/`.Blue`
+    /// over the selected profile (SWTypeExt of the active superweapon), set
+    /// by [`Self::select_ares`]; `None` after a stock [`Self::select`].
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_light: Option<[Option<i32>; 4]>,
 }
 
 impl ScenarioLightingState {
@@ -299,6 +317,8 @@ impl ScenarioLightingState {
             nuke_change_rate,
             nuke_flash: NukeFlash::OFF,
             ambient_change_overrides: [None; 2],
+            #[cfg(feature = "ares")]
+            ares_light: None,
         }
     }
 
@@ -349,10 +369,17 @@ impl ScenarioLightingState {
     /// with its RGB times 10 and 1): [`Self::select`] of
     /// [`ScenarioLightingProfile::Nuke`]. The caller publishes the relight.
     pub(crate) fn start_nuke_flash(&mut self, frame: i32) {
+        self.start_nuke_flash_for(frame, 30);
+    }
+
+    /// [`Self::start_nuke_flash`] fading in for `duration` frames: Ares's
+    /// impact hook (467E59, 10036960) writes the status, start and duration
+    /// itself.
+    pub(crate) fn start_nuke_flash_for(&mut self, frame: i32, duration: i32) {
         self.nuke_flash = NukeFlash {
             status: NukeFlashStatus::FadingIn,
             start: frame,
-            duration: 30,
+            duration,
         };
         self.transition_timer.start(frame, 1);
         self.select(ScenarioLightingProfile::Nuke);
@@ -441,6 +468,36 @@ impl ScenarioLightingState {
     pub fn select(&mut self, profile: ScenarioLightingProfile) {
         self.selected_profile = profile;
         self.target_ambient = self.profile(profile).ambient_percent;
+        #[cfg(feature = "ares")]
+        {
+            self.ares_light = None;
+        }
+    }
+
+    /// Ares SWTypeExt::GetLightingColor (hook 53C280, 10037B50) for a special
+    /// `profile` whose superweapon type has `light`: `Light.Enabled=no`
+    /// leaves no value, so the default lighting returns (the target is the
+    /// normal ambient, RecalcLighting restores); otherwise the type's set,
+    /// nonnegative overrides replace the profile's ambient (x1) and RGB
+    /// (x10 in RecalcLighting).
+    #[cfg(feature = "ares")]
+    pub(crate) fn select_ares(
+        &mut self,
+        profile: ScenarioLightingProfile,
+        light: Option<crate::rules::superweapon_type::AresSuperWeaponLighting>,
+    ) {
+        match light {
+            Some(light) if !light.enabled() => self.select(ScenarioLightingProfile::Normal),
+            Some(light) => {
+                self.select(profile);
+                let overrides = light.overrides();
+                if let Some(ambient) = overrides[0] {
+                    self.target_ambient = ambient;
+                }
+                self.ares_light = Some(overrides);
+            }
+            None => self.select(profile),
+        }
     }
 
     /// Execute1426E2E60 /1436E2EB0 /1446E2F00 retains the raw signed
@@ -516,8 +573,19 @@ impl ScenarioLightingState {
     /// alternate profile's percentages times 10, none for the ordinary one
     /// (`-1, -1, -1`).
     pub fn alternate_rgb(&self) -> Option<[i32; 3]> {
-        (self.selected_profile != ScenarioLightingProfile::Normal)
-            .then(|| self.profile(self.selected_profile).alternate_rgb())
+        (self.selected_profile != ScenarioLightingProfile::Normal).then(|| {
+            #[cfg_attr(not(feature = "ares"), allow(unused_mut))]
+            let mut rgb = self.profile(self.selected_profile).alternate_rgb();
+            #[cfg(feature = "ares")]
+            if let Some([_, red, green, blue]) = self.ares_light {
+                for (slot, value) in rgb.iter_mut().zip([red, green, blue]) {
+                    if let Some(value) = value {
+                        *slot = value.wrapping_mul(10);
+                    }
+                }
+            }
+            rgb
+        })
     }
 
     /// Restart the ambient fade timer (`ScenarioClass+0x1248`), as
@@ -696,9 +764,11 @@ pub struct ScenarioDescriptor {
     /// session's Harvester Truce byte `0x00A8B31D` in this bit
     /// (`0x005E7495..0x005E74D4`). The skirmish dialog clears the truce byte
     /// (`0x006AD89D`), so every skirmish leaves it off; LAN/WOL lobbies can
-    /// set it. Its reader is `Evaluate_Candidate`'s HarvesterImmune gate
-    /// (`0x006F8009..0x006F8047`): while set, a candidate whose type is in
-    /// Rules' `HarvesterUnit=` list is refused.
+    /// set it. While set, a Unit whose type is in Rules' `HarvesterUnit=`
+    /// list ([`Self::truce_harvester_types`]) is refused by
+    /// `Evaluate_Candidate` (`0x006F8009..0x006F8047`) and gets no
+    /// `Apply_area_damage` record (`0x00489710..0x00489759`); the
+    /// hunter-seeker skips `Harvester=` units (`0x004CFFB9`).
     pub harvester_immune: bool,
     /// Map-authored global-light profiles plus their tick-zero mutable state.
     pub lighting: ScenarioLightingState,
@@ -852,6 +922,13 @@ pub struct ScenarioSession {
     train_crate: bool,
     #[serde(default)]
     truck_crate: bool,
+    /// Scenario+0x34B3, map `[Basic] TiberiumDeathToVisceroid`
+    /// (`BasicSection`): `Set_Defaults @ 0x00683610` stores true and a map
+    /// key replaces it. Ares' tiberium death visceroid (`TechnoExt::
+    /// SpawnVisceroid @ 100468B0`) is its only reader.
+    #[cfg(feature = "ares")]
+    #[serde(default = "tiberium_death_to_visceroid_default")]
+    tiberium_death_to_visceroid: bool,
     /// Scenario+34A8. Execute87 stores the literal low byte at6DDBE1;
     /// Basic's bool reader normalizes only when it actually reads a value.
     /// Retain the byte even though no ice-growth simulation leaf is ported.
@@ -990,6 +1067,25 @@ impl ScenarioSession {
 
     pub const fn harvester_immune(&self) -> bool {
         self.harvester_immune
+    }
+
+    /// The Rules `[General] HarvesterUnit=` types (`+0xB3C`, filled at
+    /// `0x0066F973`, VehicleTypes only) that bit `0x800` protects, as
+    /// interned ids for native's type-pointer compares; empty while the bit
+    /// is clear.
+    pub fn truce_harvester_types(
+        &self,
+        rules: &crate::rules::ruleset::RuleSet,
+        interner: &crate::sim::intern::StringInterner,
+    ) -> Vec<InternedId> {
+        if !self.harvester_immune {
+            return Vec::new();
+        }
+        rules
+            .harvester_unit_types
+            .iter()
+            .filter_map(|type_id| interner.get(type_id))
+            .collect()
     }
 
     pub const fn lighting(&self) -> &ScenarioLightingState {
@@ -1791,6 +1887,10 @@ impl ScenarioSession {
         if s.truck_crate {
             b"scenario-truck-crate-v1".hash(hasher);
         }
+        #[cfg(feature = "ares")]
+        if !s.tiberium_death_to_visceroid {
+            b"scenario-no-tiberium-death-to-visceroid-v1".hash(hasher);
+        }
         if s.vein_growth != 1 {
             b"scenario-vein-growth".hash(hasher);
             s.vein_growth.hash(hasher);
@@ -1880,6 +1980,11 @@ impl ScenarioSession {
             0x1668u16.hash(hasher);
             lighting.ambient_change_overrides.hash(hasher);
         }
+        #[cfg(feature = "ares")]
+        if let Some(light) = lighting.ares_light {
+            b"ares-sw-light-v1".hash(hasher);
+            light.hash(hasher);
+        }
     }
 
     /// Hash per-match game options for lockstep verification.
@@ -1919,6 +2024,20 @@ impl ScenarioSession {
 
     pub const fn truck_crate(&self) -> bool {
         self.truck_crate
+    }
+
+    /// Scenario+0x34B3 (`TiberiumDeathToVisceroid`).
+    #[cfg(feature = "ares")]
+    pub(crate) const fn tiberium_death_to_visceroid(&self) -> bool {
+        self.tiberium_death_to_visceroid
+    }
+
+    /// `ScenarioClass::Read_INI_Basic @ 0x00689E90`: the map's
+    /// `TiberiumDeathToVisceroid`, else the fresh `Set_Defaults` true.
+    #[cfg(feature = "ares")]
+    pub(crate) fn read_map_tiberium_death_to_visceroid(&mut self, map_value: Option<bool>) {
+        self.tiberium_death_to_visceroid =
+            map_value.unwrap_or(tiberium_death_to_visceroid_default());
     }
 
     /// Retained native Scenario+34A8; not a claim of an active ice grower.
@@ -1982,6 +2101,8 @@ impl ScenarioSession {
             ignore_global_ai_triggers: desc.ignore_global_ai_triggers,
             train_crate: desc.train_crate,
             truck_crate: desc.truck_crate,
+            #[cfg(feature = "ares")]
+            tiberium_death_to_visceroid: tiberium_death_to_visceroid_default(),
             ice_growth: u8::from(desc.ice_growth_enabled.unwrap_or(true)),
             vein_growth: u8::from(desc.vein_growth_enabled.unwrap_or(true)),
             tiberium_grows_flag: desc.tiberium_grows_flag,

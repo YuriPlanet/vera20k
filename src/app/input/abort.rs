@@ -20,7 +20,7 @@ fn select_abort_secondary(state: &AppState) -> AbortSecondary {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|runtime| &runtime.simulation),
     )
 }

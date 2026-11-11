@@ -35,16 +35,30 @@ pub(crate) enum SparkSystemTickError {
 /// Fire62CBD6. EC is zero-extended; additions wrap before signed IDIV.
 /// Smoke/Gas pass the type byte; Fire passes its constructor-adjusted byte.
 /// Source: original gamemd, tools/spatial_oracle/damage_smoke.md.
+///
+/// gamemd traps on a zero divisor (`StateAIAdvance=0` with an even ID, `=255`
+/// with an odd one) and on `INT_MIN / -1`; VERA calls the advance never due,
+/// and the particle still ages out through its EC.
 pub(super) fn state_advance_due(p: &super::Particle, max_ec: i32, advance: u8) -> bool {
     let numerator = p
         .native_unique_id()
         .wrapping_add(max_ec)
         .wrapping_sub(i32::from(p.lifetime_remaining as u16));
     let divisor = (p.native_unique_id() & 1) + i32::from(advance as i8);
-    numerator
-        .checked_rem(divisor)
-        .expect("native particle cadence requires valid IDIV")
-        == 0
+    numerator.checked_rem(divisor) == Some(0)
+}
+
+/// Native particle AI and movement have no failure exit: every particle ages
+/// and its system's destroy walk always runs. A particle VERA refuses (a
+/// collision or ground input it does not model, e.g. a `LaserFence=` building
+/// or a slope type above 20 in the cell) is marked here, so that walk retires
+/// it instead of the system holding it for ever.
+pub(super) fn retire_refused(p: &mut super::Particle, error: &dyn std::fmt::Display) {
+    log::warn!(
+        "particles: particle {} retired, its tick was refused: {error}",
+        p.native_unique_id()
+    );
+    p.marked_for_deletion = true;
 }
 
 /// ParticleClass::AI_Dispatch62CE40 tail. Even a class body that returns
@@ -71,10 +85,7 @@ pub(super) fn tick_particle(
             SparkCollisionWorld::new(sim, rules)?.query(motion)
         })
     {
-        log::warn!(
-            "particles: particle {} AI failed: {error}",
-            p.native_unique_id()
-        );
+        retire_refused(p, &error);
     }
 }
 
@@ -95,6 +106,9 @@ where
 {
     let pt = rules.particle_type(p.type_id);
     match pt.behaves_like {
+        // ParticleClass::AI_Dispatch62CE40: unsigned >4 skips subtype AI
+        // but still reaches the shared RemainingEC decrement at62CE86.
+        ParticleBehavesLike::Unknown => {}
         ParticleBehavesLike::Smoke => {
             super::smoke::tick_particle(p, pt, sim.session.binary_frame(), sim.particle_rng())
         }
@@ -106,8 +120,9 @@ where
             sim,
             rules,
             source_house,
+            owner,
             crate::sim::world::UninitContext::with_rules(rules),
-        ),
+        )?,
         ParticleBehavesLike::Fire => super::fire::tick_particle(
             p,
             sim,
@@ -140,16 +155,26 @@ where
 /// `ParticleClass::Move_Dispatch @ 0x0062D5E0`, which AI_Gas, AI_Smoke and
 /// AI_Fire call for each particle, by the particle's own behavior: Gas
 /// (`0x0062D2A0`), Smoke (`0x0062D3F0`) or Fire (`0x0062D609`). Spark and
-/// Railgun particles do not move here.
+/// Railgun particles do not move here. A refused move leaves the particle
+/// where it is and marks it; like a move's own bridge-deck mark, the next
+/// destroy walk removes it.
 pub(super) fn move_dispatch(p: &mut super::Particle, sim: &Simulation, rules: &RuleSet) {
     let pt = rules.particle_type(p.type_id);
-    match pt.behaves_like {
+    let moved = match pt.behaves_like {
         ParticleBehavesLike::Gas => super::gas::move_gas(p, sim, rules),
         ParticleBehavesLike::Smoke => {
             super::smoke::move_smoke(p, pt, rules.general.wind_direction(), sim)
         }
-        ParticleBehavesLike::Fire => super::fire::move_fire(p, sim),
-        ParticleBehavesLike::Spark | ParticleBehavesLike::Railgun => {}
+        ParticleBehavesLike::Fire => {
+            super::fire::move_fire(p, sim);
+            Ok(())
+        }
+        ParticleBehavesLike::Spark
+        | ParticleBehavesLike::Railgun
+        | ParticleBehavesLike::Unknown => Ok(()),
+    };
+    if let Err(error) = moved {
+        retire_refused(p, &error);
     }
 }
 
@@ -242,6 +267,9 @@ pub fn tick_particle_systems(sim: &mut Simulation, rules: &RuleSet) {
 fn tick_one_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules: &RuleSet) {
     let behaves_like = rules.particle_system_type(sys.type_id).behaves_like;
     match behaves_like {
+        // SystemAI62FD60 skips subtype work (including child visits) for -1,
+        // then still reaches its lifetime and retirement tail.
+        ParticleSystemBehavesLike::Unknown => {}
         ParticleSystemBehavesLike::Smoke => unreachable!("Smoke retains its body during callbacks"),
         ParticleSystemBehavesLike::Gas => unreachable!("Gas retains its body during callbacks"),
         ParticleSystemBehavesLike::Fire => unreachable!("Fire retains its body during callbacks"),
@@ -255,11 +283,16 @@ fn tick_one_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules: &RuleS
 /// per-particle dispatch and the backward destroy walk at `0x0062ECE9`.
 fn tick_spark(sys: &mut ParticleSystem, sim: &mut Simulation, rules: &RuleSet) {
     if let Err(error) = super::spark_spawn::spark_spawn_pass(sys, sim, rules) {
+        // Native has no failure exit, and the countdown at the end of the
+        // spawn half runs every frame. A refused burst left it untouched, so
+        // the system never finished spawning. It stops spawning here; the
+        // particles it holds still age and retire below.
         log::warn!(
-            "particles: Spark system {} spawn pass failed: {error}",
+            "particles: Spark system {} stops spawning, its burst was refused: {error}",
             sys.stable_id
         );
-        return;
+        sys.spark_spawn_frames = 0;
+        sys.mark_done_spawning();
     }
     if let Err(error) = tick_spark_system_compat(sys, sim, rules) {
         log::warn!(
@@ -299,14 +332,25 @@ where
     ) -> Result<SparkCollisionFacts, SparkWorldError>,
 {
     for particle in &mut sys.particles {
-        tick_particle_with_query(
+        // Native `AI_Spark` has no failure exit: every particle ages and the
+        // destroy walk below always runs. A VERA-only refusal (a collision
+        // input it does not model, e.g. a `LaserFence=` building in the cell)
+        // used to leave the loop here, so nothing in the system aged and it
+        // never emptied. The refused particle is retired instead.
+        if let Err(error) = tick_particle_with_query(
             particle,
             sim,
             rules,
             sys.owner_house,
             sys.owner_entity,
             &mut query,
-        )?;
+        ) {
+            log::warn!(
+                "particles: Spark particle {} retired, its tick was refused: {error}",
+                particle.stable_id()
+            );
+            particle.marked_for_deletion = true;
+        }
     }
 
     // Native container cleanup walks backward so removals cannot perturb the
@@ -325,6 +369,99 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn particle_births_share_state_across_system_behaviors() {
+        let root = "[ParticleSystems]\n0=S\n[S]\nBehavesLike=Spark\nHoldsWhat=P\n\
+                    ParticleCap=2\nSparkSpawnFrames=1\nLifetime=20\n\
+                    [Particles]\n0=P\n1=F\n2=U\n\
+                    [P]\nBehavesLike=Railgun\nMaxEC=100\nColorList=(12,34,56)\n\
+                    [F]\nBehavesLike=Fire\nMaxEC=100\nEndStateAI=7\nStartStateAI=2\n\
+                    [U]\nName=Unknown\n";
+        let rules = RuleSet::from_ini(&IniFile::from_str(root)).unwrap();
+        let mut sim = Simulation::with_seed(29);
+        let origin = IVec3::new(128, 128, 100);
+        let system = sim
+            .spawn_particle_system(
+                rules.ps_type_id_by_name("S").unwrap(),
+                origin,
+                None,
+                None,
+                origin,
+                None,
+                &rules,
+            )
+            .unwrap();
+        tick_particle_system(
+            &mut sim,
+            &rules,
+            system,
+            crate::sim::world::UninitContext::with_rules(&rules),
+        );
+        let child = &sim.particle_systems().get(system).unwrap().particles()[0];
+        assert_eq!(child.start_rgb(), [12, 34, 56]);
+        assert!(child.lifetime_remaining() >= 99);
+        assert_eq!(child.origin(), origin);
+        assert_eq!(child.target(), origin);
+        assert_ne!(child.color_accumulator(), NativeF64Bits::POSITIVE_ZERO);
+        let saved_child: Particle =
+            serde_json::from_slice(&serde_json::to_vec(child).unwrap()).unwrap();
+        assert_eq!(saved_child.float_position(), child.float_position());
+        assert_eq!(saved_child.color_accumulator(), child.color_accumulator());
+
+        // An unknown system skips even existing children but still ages itself.
+        let mut layers =
+            crate::rules::native_processing::RulesLayerStack::new(IniFile::from_str(root));
+        layers.push(
+            crate::rules::native_processing::RulesLayerKind::Scenario,
+            IniFile::from_str("[S]\nLifetime=20\n"),
+        );
+        let unknown_system_rules = RuleSet::from_rules_layers(&layers).unwrap();
+        let child_lifetime = child.lifetime_remaining();
+        let old_lifetime = sim.particle_systems().get(system).unwrap().lifetime();
+        let old_rng = sim.main_rng.logical_state();
+        tick_particle_system(
+            &mut sim,
+            &unknown_system_rules,
+            system,
+            crate::sim::world::UninitContext::with_rules(&unknown_system_rules),
+        );
+        let system = sim.particle_systems().get(system).unwrap();
+        assert_eq!(system.lifetime(), old_lifetime - 1);
+        assert_eq!(system.particles()[0].lifetime_remaining(), child_lifetime);
+        assert_eq!(sim.main_rng.logical_state(), old_rng);
+
+        let unknown_id = rules.p_type_id_by_name("U").unwrap();
+        let mut unknown = Particle::new(
+            unknown_id,
+            origin,
+            origin,
+            rules.particle_type(unknown_id),
+            &mut sim,
+        );
+        let old_rng = sim.main_rng.logical_state();
+        tick_particle(&mut unknown, &mut sim, &rules, None, None);
+        assert!(unknown.marked_for_deletion());
+        assert_eq!(unknown.coords(), origin);
+        assert_eq!(unknown.draw_frame(rules.particle_type(unknown_id)), 0);
+        assert_eq!(sim.main_rng.logical_state(), old_rng);
+
+        let fire_id = rules.p_type_id_by_name("F").unwrap();
+        let fire = Particle::new(
+            fire_id,
+            origin,
+            IVec3::new(128, 1024, 100),
+            rules.particle_type(fire_id),
+            &mut sim,
+        );
+        assert_eq!(fire.draw_frame(rules.particle_type(fire_id)), 9);
+        let restored: Particle =
+            serde_json::from_slice(&serde_json::to_vec(&fire).unwrap()).unwrap();
+        assert_eq!(restored.draw_frame(rules.particle_type(fire_id)), 9);
+        let mut signed_type = rules.particle_type(fire_id).clone();
+        signed_type.end_state_ai = (-7_i8) as u8;
+        assert_eq!(restored.draw_frame(&signed_type), -5);
+    }
 
     #[test]
     fn smoke_host_stays_visible_when_gas_child_damage_creates_another_smoke_system() {
@@ -380,7 +517,7 @@ mod tests {
     use crate::rules::ini_parser::IniFile;
     use crate::rules::particle_system_type::ParticleSystemTypeId;
     use crate::rules::particle_type::ParticleTypeId;
-    use crate::sim::particles::{Particle, ParticleSystem, SparkRuntimeState};
+    use crate::sim::particles::{Particle, ParticleSystem};
     use crate::sim::rng::SimRng;
     use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
     use glam::IVec3;
@@ -461,7 +598,7 @@ mod tests {
             "[General]\nWindDirection=1\n[ParticleSystems]\n\
              1=Sys\n\
              [Sys]\n\
-             BehavesLike={behaves_like}\n\
+             BehavesLike={behaves_like}\nHoldsWhat=<none>\n\
              SpawnCutoff=13\n\
              Lifetime={lifetime}\n",
         );
@@ -497,14 +634,7 @@ mod tests {
         let mut particle = Particle::test_fixture(ParticleTypeId(0), IVec3::new(x, 0, 100));
         particle.origin = IVec3::ZERO;
         particle.lifetime_remaining = lifetime;
-        particle.spark = Some(SparkRuntimeState {
-            velocity_x: NativeF32Bits::POSITIVE_ZERO,
-            velocity_y: NativeF32Bits::POSITIVE_ZERO,
-            velocity_z: NativeF32Bits::POSITIVE_ZERO,
-            start_rgb: [255; 3],
-            color_index: 0,
-            color_accumulator: NativeF64Bits::POSITIVE_ZERO,
-        });
+        particle.start_rgb = [255; 3];
         particle
     }
 
@@ -655,30 +785,65 @@ SpawnSparkPercentage=1
         assert_eq!(sim.rng_views().scenario, expected_rng.logical_view());
     }
 
+    /// A refused collision query (a `LaserFence=` building under the spark,
+    /// which only a mod sets) must not hold the system open: native
+    /// `AI_Spark` has no failure exit and always reaches its destroy walk
+    /// (`0x0062ECE9`). The particle is retired with no draw.
     #[test]
-    fn unavailable_query_keeps_persistent_z_but_consumes_no_rng_or_lifetime() {
+    fn refused_spark_query_retires_the_particle_without_a_draw() {
         let rules = spark_rules(6);
         let mut sim = Simulation::with_seed(456);
         let rng_before = sim.rng_state().scenario;
         let mut sys = fake_system(ParticleSystemTypeId(0), 100);
         sys.particles.push(spark_particle(11, 9));
 
-        let error = tick_spark_system_with_query(&mut sys, &mut sim, &rules, |_, _, _| {
+        tick_spark_system_with_query(&mut sys, &mut sim, &rules, |_, _, _| {
             Err(SparkWorldError::MissingTerrain)
         })
-        .unwrap_err();
+        .unwrap();
 
-        assert!(matches!(
-            error,
-            SparkSystemTickError::World(SparkWorldError::MissingTerrain)
-        ));
-        assert_eq!(sys.particles[0].coords, IVec3::new(11, 0, 100));
-        assert_eq!(sys.particles[0].lifetime_remaining, 9);
-        assert_eq!(
-            sys.particles[0].spark.unwrap().velocity_z.bits(),
-            0xc0c0_0000
-        );
+        assert!(sys.particles.is_empty());
         assert_eq!(sim.rng_state().scenario, rng_before);
+    }
+
+    fn smoke_host_rules(particle: &str) -> RuleSet {
+        RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[General]\nFixtureOnly=1\n[AudioVisual]\nGravity=6\n\
+             [ParticleSystems]\n1=Host\n[Host]\nBehavesLike=Smoke\n\
+             [Particles]\n1=P\n[P]\n{particle}\n"
+        )))
+        .expect("host rules parse")
+    }
+
+    /// Ticks a finished Smoke system holding `particle` once and reports
+    /// whether the system emptied and retired.
+    fn smoke_host_retires_with(rules: &RuleSet, particle: Particle) -> bool {
+        let mut sim = Simulation::with_seed(456);
+        let mut system = fake_system(ParticleSystemTypeId(0), -1);
+        system.done_spawning = true;
+        system.particles.push(particle);
+        let id = insert_live_system(&mut sim, system);
+        tick_particle_systems(&mut sim, rules);
+        sim.substrate.pending_delete.contains_object(&id)
+    }
+
+    /// A Spark particle hosted in a Smoke system whose collision query is
+    /// refused (no terrain here) is retired by that system's destroy walk
+    /// (`0x0062EDE0`), not left unaged to hold the system open.
+    #[test]
+    fn refused_spark_particle_in_a_smoke_system_is_retired() {
+        let rules = smoke_host_rules("BehavesLike=Spark\nColorList=255,255,255\nColorSpeed=.13");
+        assert!(smoke_host_retires_with(&rules, spark_particle(11, 9)));
+    }
+
+    /// `StateAIAdvance=0` with an even particle ID is a zero IDIV divisor in
+    /// gamemd. VERA never advances the state; the particle still ages out.
+    #[test]
+    fn zero_state_advance_cadence_does_not_stop_a_particle_ageing() {
+        let rules = smoke_host_rules("BehavesLike=Smoke\nStateAIAdvance=0\nEndStateAI=10");
+        let mut particle = Particle::test_fixture(ParticleTypeId(0), IVec3::new(0, 0, 100));
+        particle.lifetime_remaining = 1;
+        assert!(smoke_host_retires_with(&rules, particle));
     }
 
     #[test]

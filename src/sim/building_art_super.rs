@@ -69,7 +69,9 @@ impl Simulation {
     /// block `0x004463F0..0x00446580`: for each of the owner's Supers
     /// matching the type's `SuperWeapon=`, construct slot 16 when its charge
     /// is (all but) complete, else slot 14, in the damaged or garrisoned
-    /// variant the opening's other slots take.
+    /// variant the opening's other slots take. Ares 3.0
+    /// BuildingClass_Place_SuperWeaponAnimsB 10034AE0 (hook `0x0044656D`)
+    /// skips the stock second loop to `0x00446580`, the end of this block.
     pub(crate) fn open_super_weapon_anims(
         &mut self,
         id: u64,
@@ -124,7 +126,9 @@ impl Simulation {
     }
 
     /// `BuildingClass::UpdateAnimation @ 0x004509D0`'s SuperAnim block
-    /// `0x00450F9E..0x00451145`, reached on every visit. Outside
+    /// `0x00450F9E..0x00451145`, reached on every visit (Ares 3.0
+    /// BuildingClass_ProcessAnims_SuperWeaponsB 10034B60, hook `0x00451132`,
+    /// skips the stock second pass to its end). Outside
     /// Construction and Selling, for a type with `ChargedAnimTime=` at most
     /// 990: for each of the owner's Supers matching the type's
     /// `SuperWeapon=`, a charge within `ChargedAnimTime` minutes of ready

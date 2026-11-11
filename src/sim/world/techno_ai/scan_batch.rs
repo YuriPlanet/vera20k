@@ -40,7 +40,9 @@
 //! effects), kept so target scans stay off the main thread at 20,000 units:
 //! an answered scan sees the world as it stood when the pass began, not as
 //! the scanner's turn finds it. A target that an earlier turn in the same
-//! pass admits, brings into reach or makes better is seen one scan later:
+//! pass admits (for a campaign player's scanner, discovers: the target's own
+//! vt+0x4A0 prelude or a reveal, read by the `0x006F81BE` gate), brings into
+//! reach or makes better is seen one scan later:
 //! the targeting slot's `[General] NormalTargetingDelay=` frames later, plus
 //! the 0..2 draw; Area Guard's at its next handler run with the timer run
 //! out; Hunt's at its next handler run. An estimate another scan debited
@@ -103,7 +105,7 @@ use crate::util::fixed_math::SimFixed;
 /// This live object pass's answered scans. Every field is serde-skipped:
 /// saves encode `Option<ScanBatch>` as the setting alone, the same bytes the
 /// retired empty struct wrote.
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ScanBatch {
     /// The pass's answers in ascending object id, each until a scan takes
     /// it. Empty between passes, so a save carries only the setting.
@@ -122,7 +124,7 @@ pub(crate) struct ScanBatch {
     used: usize,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct BatchedScan {
     /// The scan the answer is for.
     mask: ScanMission,
@@ -249,6 +251,7 @@ impl Simulation {
         rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
     ) {
+        let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::TARGETING);
         let (Some(terrain), Some(_)) = (self.resolved_terrain.as_ref(), self.scan_batch.as_ref())
         else {
             return;

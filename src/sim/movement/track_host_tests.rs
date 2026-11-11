@@ -640,8 +640,8 @@ fn accepted_chain_preserves_call_budget_and_reloads_callback_queue_once() {
                     (0..32).map(move |x| {
                         let mut cell =
                             crate::map::resolved_terrain::ResolvedTerrainCell::clear_for_test(x, y);
-                        cell.speed_costs.track = Some(100);
-                        cell.speed_costs.float = Some(100);
+                        cell.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::ONE);
+                        cell.speed_costs.float = Some(crate::util::native_x87::NativeF32Bits::ONE);
                         if family == TrackFamily::Ship {
                             cell.zone_type = crate::map::resolved_terrain::zone_class::WATER;
                             cell.ground_walk_blocked = true;
@@ -821,7 +821,7 @@ fn bridge_placement_retains_selected_cell_but_reads_fresh_world_attributes() {
         DriveCoord::cell(10, 9, 0),
         (10, 10),
         false,
-        false,
+        None,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
         &mut |sim, id, event| {
@@ -963,6 +963,7 @@ fn repeated_foot_limbo_does_not_clear_a_new_raw_head_claim() {
             &mut sim.substrate,
             &sim.path_grid,
             &sim.resolved_terrain,
+            1,
             supplied,
             true,
         );
@@ -1094,6 +1095,24 @@ fn factory_per_cell_fixture(
     producer_on_bridge: bool,
     unit_reader_lines: &str,
 ) -> (Simulation, RuleSet) {
+    per_cell_partner_fixture(
+        tethered,
+        producer_on_bridge,
+        unit_reader_lines,
+        "GAWEAP",
+        "WeaponsFactory=yes",
+    )
+}
+
+/// Unit 1 (MTNK) in radio contact with Building 2 (`partner`, read with
+/// `partner_lines`) on its Cell (10, 10), and tethered to it when `tethered`.
+fn per_cell_partner_fixture(
+    tethered: bool,
+    producer_on_bridge: bool,
+    unit_reader_lines: &str,
+    partner: &str,
+    partner_lines: &str,
+) -> (Simulation, RuleSet) {
     use crate::rules::ini_parser::IniFile;
     use crate::sim::mission::state::MissionTestFixture;
     use crate::sim::mission::{MissionDispatchTimer, MissionId, MissionType};
@@ -1103,7 +1122,7 @@ fn factory_per_cell_fixture(
     sim.session.set_binary_frame_for_test(57);
     let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
         "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=300\nSpeed=6\n{unit_reader_lines}\n\
-         [BuildingTypes]\n0=GAWEAP\n[GAWEAP]\nWeaponsFactory=yes\n",
+         [BuildingTypes]\n0={partner}\n[{partner}]\n{partner_lines}\n",
     )))
     .unwrap();
     let type_ref = sim.intern("MTNK");
@@ -1136,13 +1155,13 @@ fn factory_per_cell_fixture(
         ));
     let mut producer = GameEntity::test_default_of_category(
         2,
-        "GAWEAP",
+        partner,
         "Americans",
         10,
         10,
         EntityCategory::Structure,
     );
-    producer.set_type_ref_for_test(sim.intern("GAWEAP"));
+    producer.set_type_ref_for_test(sim.intern(partner));
     producer.set_owner_for_test(owner);
     producer.type_facts.set_foundation_for_test("1x1".into());
     producer.set_on_bridge(producer_on_bridge);
@@ -1835,7 +1854,12 @@ fn idle_receiver_cancels_burst_through_the_shared_target_setter() {
                 crate::sim::world::FrameEffects::default(),
             );
             let entity = sim.substrate.entities.get(1).unwrap();
-            assert_eq!(entity.weapon_burst.index(), i32::from(has_destination));
+            // Ares TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53)
+            // keeps the index through the NULL target.
+            assert_eq!(
+                entity.weapon_burst.index(),
+                i32::from(has_destination || cfg!(feature = "ares"))
+            );
             assert_eq!(entity.passive_scan.acquired(), has_destination);
             assert_eq!(
                 entity.attack_target.target(),
@@ -2635,6 +2659,136 @@ fn per_cell_factory_clearance_scatters_a_harvester_off_the_factory() {
     }
 }
 
+/// `0x0073AAF7..0x0073AB66`: a refinery answers its tethered miner's
+/// clearance 8 with 1, not 0x17. A Harvester holding an archived ore Cell
+/// queues Harvest, heads back to that Cell and clears the archive; the
+/// Ready/Commence after the clearance (`0x0073ACC2`) starts the Harvest. One
+/// with no archive and no NavCom scatters and stays on Guard. The miner has
+/// left the refinery's foundation, so the building tail cannot scatter it.
+#[test]
+fn per_cell_refinery_clearance_returns_a_tethered_harvester_to_its_ore() {
+    use crate::sim::combat::TargetKind;
+    use crate::sim::components::NavTargetRef;
+    use crate::sim::mission::MissionType;
+
+    for archive in [Some(TargetKind::Cell(14, 14)), None] {
+        let (mut sim, rules) =
+            per_cell_partner_fixture(true, false, "Harvester=yes", "GAREFN", "Refinery=yes");
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        let refinery = sim.substrate.entities.get_mut(2).unwrap();
+        refinery.position.put_location(DriveCoord::cell(12, 12, 0));
+        sim.substrate.occupancy =
+            crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
+        let unit = sim.substrate.entities.get_mut(1).unwrap();
+        unit.navigation.set_nav_com_for_test(None);
+        unit.set_archive_target(archive);
+        sim.per_cell_process(
+            1,
+            super::super::PerCellReason::Arrival,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            crate::sim::radio::take_transmit_log()
+                .first()
+                .map(|send| (send.msg, send.reply)),
+            Some((8, Some(1)))
+        );
+        let unit = sim.substrate.entities.get(1).unwrap();
+        assert_eq!(unit.tether.partner(), None);
+        assert_eq!(unit.archive_target(), None);
+        if archive.is_some() {
+            assert_eq!(unit.mission.current().known(), Some(MissionType::Harvest));
+            assert_eq!(unit.navigation.nav_com(), Some(NavTargetRef::cell(14, 14)));
+        } else {
+            assert_eq!(unit.mission.current().known(), Some(MissionType::Guard));
+            assert!(unit.navigation.nav_com().is_some(), "the arm scatters it");
+        }
+    }
+}
+
+/// `0x0073AE1B..0x0073AFD3`: a stopped Unit on a building's Cell with no
+/// radio contact, which its Can_Enter_Cell refuses with 7, Scatters on Enter
+/// and otherwise takes the C4Warhead flash and its own strength as damage. In
+/// contact, at or past the building's NumberImpassableRows=, the Cell admits
+/// it (`0x0073F57C..0x0073F5A2`) and nothing happens.
+#[test]
+fn per_cell_end_handles_a_unit_its_own_cell_refuses() {
+    use crate::sim::mission::state::MissionTestFixture;
+    use crate::sim::mission::{MissionDispatchTimer, MissionId, MissionType};
+    use crate::sim::radio::{RadioMessage, RadioPayload, transmit};
+
+    for (contact, mission) in [
+        (true, MissionType::Guard),
+        (false, MissionType::Guard),
+        (false, MissionType::Enter),
+    ] {
+        let (mut sim, rules) = per_cell_partner_fixture(
+            false,
+            false,
+            "",
+            "GAPOWR",
+            "NumberImpassableRows=0\n[CombatDamage]\nC4Warhead=Super\n[Warheads]\n\
+             0=Super\n[Super]\n\
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%",
+        );
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        if !contact {
+            transmit(
+                &mut sim,
+                1,
+                2,
+                RadioMessage::Break,
+                RadioPayload::default(),
+                &rules,
+                crate::sim::world::FrameEffects::default(),
+            );
+            crate::sim::radio::take_transmit_log();
+        }
+        let unit = sim.substrate.entities.get_mut(1).unwrap();
+        let strength = unit.health.current();
+        unit.navigation.set_nav_com_for_test(None);
+        unit.mission.apply_test_fixture(MissionTestFixture {
+            current: MissionId::from_known(mission),
+            suspended: MissionId::NONE,
+            queued: MissionId::NONE,
+            movement_bypass_latch: 0,
+            handler_state: 4,
+            mission_start_frame: 3,
+            ai_counter: 11,
+            dispatch_timer: MissionDispatchTimer::from_raw(3, 90),
+        });
+        sim.per_cell_process(
+            1,
+            super::super::PerCellReason::Arrival,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
+
+        let blown_up = !contact && mission == MissionType::Guard;
+        let unit = sim.substrate.entities.get(1).unwrap();
+        assert_eq!(
+            unit.health.current(),
+            if blown_up { 0 } else { strength },
+            "{contact} {mission:?}"
+        );
+        assert_eq!(
+            sim.combat_light_requests.as_slice().len(),
+            usize::from(blown_up),
+            "{contact} {mission:?}: Flash at 0x0073AF8B"
+        );
+        assert_eq!(
+            unit.navigation.nav_com().is_some(),
+            !contact && mission == MissionType::Enter,
+            "{contact} {mission:?}: Scatter at 0x0073AFCE"
+        );
+    }
+}
+
 /// A retail world on flat ground with an Americans House at `iq`, human or
 /// not, and a `type_name` Unit at (10, 10) on Move with nothing queued.
 fn retail_unit_on_move(
@@ -3369,4 +3523,138 @@ fn retail_battle_fortress_preserves_nonaccelerating_speed_during_crush() {
         sim.path_grid.as_deref(),
     );
     assert_eq!(actor.foot_speed.applied_fraction(), SIM_ONE);
+}
+
+/// Unit vt+0xF0 (`0x007441B0`) needs the Cell's structural bridge bit to
+/// mark the deck, and vt+0xF4 (`0x00744210`) picks the plane by height
+/// alone. A retail Grizzly put down at deck height (four levels) over a Cell
+/// with no bridge marks that Cell's ground 0x20; when an ordinary Move
+/// drives it off, the stock unmark clears the deck, the ground bit stays and
+/// a second Grizzly ordered onto the Cell never gets there. Ares 3.0
+/// UnitClass_MarkOccupationBits `1004BFF0` and
+/// UnitClass_UnmarkOccupationBits `1004C3E0` (hooks `0x007441B6`,
+/// `0x00744216`) remember the ground plane and clear it too. No retail
+/// bridge crossing or collapse reaches this state in VERA, so the Unlimbo
+/// height stands in for a deck-high Unit over a Cell without the bridge bit.
+#[test]
+fn a_unit_marked_at_deck_height_off_a_bridge_leaves_its_cell_passable() {
+    use crate::sim::command::{Command, CommandEnvelope};
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = retail.rules;
+    let mut sim = Simulation::with_seed(0x744216);
+    let owner = sim.interner.intern("Americans");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
+    let grid = crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+    let cell = (10, 10);
+    let first = sim
+        .spawn_object_at_height("MTNK", "Americans", cell.0, cell.1, 0, 4, &rules)
+        .expect("MTNK spawns");
+    let ground = |sim: &Simulation| {
+        sim.substrate
+            .raw_cell_occupation
+            .ground_bits(cell.0, cell.1)
+    };
+    assert_eq!(ground(&sim) & 0x20, 0x20, "the put marks the ground");
+    let order = |sim: &mut Simulation, entity_id: u64, target: (u16, u16)| {
+        let at = sim.session.tick() + 1;
+        let command = Command::Move {
+            entity_id,
+            target_rx: target.0,
+            target_ry: target.1,
+        };
+        sim.queue_command(CommandEnvelope::new(owner, at, command));
+    };
+    let step = |sim: &mut Simulation, frames: usize| {
+        for _ in 0..frames {
+            let commands = sim.take_due_commands();
+            sim.advance_tick(&commands, Some(&rules), Some(&grid), None, 33);
+        }
+    };
+    let at = |sim: &Simulation, id: u64| {
+        let entity = sim.substrate.entities.get(id).unwrap();
+        (entity.position.rx() as u16, entity.position.ry() as u16)
+    };
+    order(&mut sim, first, (16, 10));
+    step(&mut sim, 200);
+    assert_ne!(at(&sim, first), cell, "the first Grizzly drives off");
+    let second = sim
+        .spawn_object_at_height("MTNK", "Americans", 10, 14, 0, 0, &rules)
+        .expect("MTNK spawns");
+    order(&mut sim, second, cell);
+    step(&mut sim, 200);
+    assert_eq!(
+        at(&sim, second) == cell,
+        cfg!(feature = "ares"),
+        "the second Grizzly reaches the Cell; its ground bits {:#x}",
+        ground(&sim)
+    );
+}
+
+/// Drive `0x004B185C..0x004B197E`: an `IsTrain=` Unit entering a cell kills
+/// every object there that `Is_Crushable_By` refuses, allies included, with
+/// 10000 C4Warhead damage and takes 20 for each. A crushable enemy is left
+/// to the crush loop, and a follower car (Unit+0x6D0) smashes nothing.
+#[test]
+fn a_train_smashes_what_it_cannot_crush_in_the_cell_it_enters() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &crate::rules::ini_parser::IniFile::from_str("[MTNK]\nIsTrain=yes\n"),
+    ) else {
+        return;
+    };
+    let rules = retail.rules;
+    let run = |follower: bool, entered: Option<(u16, u16)>| {
+        let (mut sim, invocation, budget) = fixture(TrackFamily::Drive, 8);
+        let train = sim.substrate.entities.get_mut(1).unwrap();
+        train.set_is_unit_follower(follower);
+        assert!(
+            train
+                .locomotor
+                .as_mut()
+                .unwrap()
+                .store_track_head(TrackFamily::Drive, Some(DriveCoord::cell(10, 7, 0)))
+        );
+        let before = train.health.current();
+        if let Some((x, y)) = entered {
+            let mut ally = GameEntity::test_default(2, "HTNK", "Americans", x, y);
+            ally.set_category_for_test(EntityCategory::Unit);
+            let mut enemy = GameEntity::test_default(3, "E1", "Russians", x, y);
+            enemy.set_category_for_test(EntityCategory::Infantry);
+            enemy.crushable_facts.set_crushable_for_test(true);
+            for mut entity in [ally, enemy] {
+                entity.lifecycle.set_object_alive_for_test(true);
+                entity.lifecycle.set_in_limbo_for_test(false);
+                entity.lifecycle.set_cell_marked_for_test(true);
+                sim.substrate.entities.insert(entity);
+            }
+            sim.substrate.occupancy =
+                crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
+        }
+        sim.interner = crate::sim::intern::test_interner();
+        sim.interner.bind_types(&rules);
+        let mut crossed = None;
+        sim.run_track_points_observed(invocation, budget, Some(&rules), None, &mut |sim, id, e| {
+            if e == TrackWorldEvent::SetCoords && crossed.is_none() {
+                let p = &sim.substrate.entities.get(id).unwrap().position;
+                crossed = Some((p.rx(), p.ry()));
+            }
+        });
+        let alive = |id| {
+            sim.substrate
+                .entities
+                .get(id)
+                .is_some_and(|e: &GameEntity| e.lifecycle.object_alive() && e.health.current() > 0)
+        };
+        let lost = before - sim.substrate.entities.get(1).unwrap().health.current();
+        (crossed.unwrap(), alive(2), alive(3), lost)
+    };
+    let (entered, ..) = run(false, None);
+    assert_ne!(entered, (10, 10));
+    assert_eq!(run(false, Some(entered)), (entered, false, true, 20));
+    assert_eq!(run(true, Some(entered)), (entered, true, true, 0));
 }

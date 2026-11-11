@@ -316,9 +316,21 @@ impl Simulation {
             }
         }
         self.dispatch_object_tag_event(id, 48, Some(id), None, context);
-        if let Some(building) = self.substrate.entities.get(building_id)
+        let grinding = self
+            .substrate
+            .entities
+            .get(building_id)
+            .and_then(|building| self.object_type(building.type_ref(), rules))
+            .is_some_and(|object| object.grinding);
+        // Ares 3.0 100498D0 (hook 0x5198AD) / 1004C460 (hook 0x73A1BC), first
+        // in the Grinding arm: reverse engineering and the hijacker refund.
+        #[cfg(feature = "ares")]
+        if grinding {
+            self.ares_entered_grinder(id, building_id, rules, context);
+        }
+        if grinding
+            && let Some(building) = self.substrate.entities.get(building_id)
             && let Some(object) = self.object_type(building.type_ref(), rules)
-            && object.grinding
         {
             let damaged = building.building_art.anim_slots()[3].map(|_| {
                 crate::sim::building_art::requested_damage_state(

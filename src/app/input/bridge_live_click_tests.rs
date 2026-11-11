@@ -41,7 +41,7 @@ fn runtime(direction: u8) -> SimRuntime {
     );
     let template = sim.resolved_terrain().cloned().unwrap();
     let mut runtime = SimRuntime::from_simulation(sim);
-    runtime.resources.terrain_template = Some(template);
+    runtime.resources_mut().terrain_template = Some(template);
     runtime
 }
 

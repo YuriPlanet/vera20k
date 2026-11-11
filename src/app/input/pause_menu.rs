@@ -31,7 +31,9 @@ impl InternetPauseControls {
         Self {
             positions: [
                 InternetSlider::Connection.range().set_up(3 - latency_fudge),
-                InternetSlider::Speed.range().set_up(6 - game_speed),
+                InternetSlider::Speed.range().set_up(
+                    crate::ui::shell::game_speed::SpeedContext::Network.visual_position(game_speed),
+                ),
             ],
             ..Self::default()
         }
@@ -57,7 +59,8 @@ impl InternetPauseControls {
 /// VERA's Display group. The Options profile owns the zoom, sidebar size and
 /// shape, and the window owns full screen; the group copies them each frame.
 /// Each applies at once, as on the main menu's Options pages, and the
-/// profile saves them with the rest of its values.
+/// profile saves them with the rest of its values. The Performance Stats box reads
+/// and switches the performance panel itself, which no profile saves.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct DisplayPauseControls {
     /// The window's `Zoom::choices`, one list row each.
@@ -102,10 +105,14 @@ impl DisplayPauseControls {
     }
 
     /// A row's text.
-    pub(crate) fn row_label(&self, list: DisplayList, row: usize) -> &str {
+    pub(crate) fn row_label(&self, list: DisplayList, row: usize) -> String {
         match list {
-            DisplayList::Zoom => self.zoom_labels.get(row).map_or("", String::as_str),
-            DisplayList::Sidebar => self.sidebar_choices.get(row).map_or("", |s| s.label()),
+            DisplayList::Zoom => self.zoom_labels.get(row).cloned().unwrap_or_default(),
+            DisplayList::Sidebar => self
+                .sidebar_choices
+                .get(row)
+                .map(|size| size.label())
+                .unwrap_or_default(),
         }
     }
 
@@ -212,6 +219,13 @@ fn display_press(state: &mut AppState, layout: &PauseMenuLayout) -> bool {
         play_checkbox_sound(state);
         return true;
     }
+    if box_at(controls.performance_stats) {
+        // Ctrl+Alt+F's switch: the panel shows or hides at once, over the
+        // menu too, and starts hidden at the next launch.
+        state.renderer.performance_overlay.toggle();
+        play_checkbox_sound(state);
+        return true;
+    }
     false
 }
 
@@ -226,7 +240,7 @@ fn select_template(state: &AppState) -> PauseMenuTemplate {
     let local_defeated = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_some_and(|runtime| runtime.simulation.local_player_defeated());
     PauseMenuTemplate::select(
         mode.is_single_player(),
@@ -300,23 +314,72 @@ pub(crate) fn toggle_multiplayer_pause(state: &mut AppState) -> bool {
         return false;
     };
     if control.enabled
-        && state.match_state.scenario_exit.is_none()
-        && state.match_state.scenario_outcome.is_none()
-        && let Some(live) = state.match_state.live_network.as_mut()
-        && let Some(pause) = live.multiplayer_pause()
+        && let Some(pause) = live_pause(state)
     {
-        live.request_multiplayer_pause(!pause.paused);
-        state.platform.window.request_redraw();
+        request_multiplayer_pause(state, !pause.paused);
     }
     true
+}
+
+fn live_pause(state: &AppState) -> Option<crate::net::live_commands::MultiplayerPauseStatus> {
+    state.match_state.live_network.as_ref()?.multiplayer_pause()
+}
+
+/// Asks the relay to pause or resume, unless the match is ending. True when
+/// the request went out.
+fn request_multiplayer_pause(state: &mut AppState, paused: bool) -> bool {
+    let sent = state.match_state.scenario_exit.is_none()
+        && state.match_state.scenario_outcome.is_none()
+        && state
+            .match_state
+            .live_network
+            .as_mut()
+            .is_some_and(|live| live.request_multiplayer_pause(paused));
+    if sent {
+        state.platform.window.request_redraw();
+    }
+    sent
+}
+
+/// What a `/pause` (`want`) or `/resume` chat line does with the shared
+/// pause `control`: whether to ask the relay, and the [`crate::i18n`] label
+/// that answers the player. A match without the shared pause says so; a
+/// pause that is already there or on its way shows its status instead.
+fn chat_command_for(
+    control: Option<MultiplayerPauseControl>,
+    paused: bool,
+    want: bool,
+) -> (bool, Option<&'static str>) {
+    match control {
+        None => (false, Some("VERA:PauseNotAvailable")),
+        Some(control) if !control.enabled || paused == want => (false, control.status),
+        Some(_) if want => (true, Some("VERA:PauseRequested")),
+        Some(_) => (true, Some("VERA:ResumeRequested")),
+    }
+}
+
+/// VERA: `/pause` and `/resume` typed in match chat (`input::chat`) ask for
+/// the Pause key's shared pause and answer with a message row.
+pub(crate) fn chat_command(state: &mut AppState, want: bool) {
+    let paused = live_pause(state).is_some_and(|pause| pause.paused);
+    let (ask, answer) = chat_command_for(multiplayer_control(state), paused, want);
+    if let Some(label) = answer
+        && (!ask || request_multiplayer_pause(state, want))
+    {
+        crate::app::input::messages::post_chat_command_answer(state, &crate::i18n::tr(label));
+    }
 }
 
 /// The applied GameSpeed FF's init (4F1720) reads; a queued speed event
 /// changes it only when it executes.
 fn current_game_speed(state: &AppState) -> i32 {
-    state.match_state.sim_runtime.as_ref().map_or(0, |runtime| {
-        runtime.simulation.session().game_options().game_speed
-    })
+    state
+        .match_state
+        .sim_runtime
+        .runtime()
+        .map_or(0, |runtime| {
+            runtime.simulation.session().game_options().game_speed
+        })
 }
 
 /// Entering state 1 recreates the dialog: 4F10E0 picks its template and FF's
@@ -479,7 +542,7 @@ fn activate(state: &mut AppState, button: PauseMenuButton) {
             if state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .is_some_and(|runtime| runtime.simulation.session().wol_tournament_game())
             {
                 crate::app::input::surrender::open(state);
@@ -533,7 +596,8 @@ pub(crate) fn internet_resume(
             log::info!("Ignoring latency change to avoid congestion");
         }
     }
-    let speed = 6 - controls.positions[InternetSlider::Speed as usize];
+    let speed = crate::ui::shell::game_speed::SpeedContext::Network
+        .stored_speed(controls.positions[InternetSlider::Speed as usize]);
     if speed != game_speed {
         if limiters.speed.remaining(now_bucket) == 0 {
             limiters.speed =
@@ -552,7 +616,7 @@ fn resume_internet_events(state: &mut AppState) {
     let local_defeated = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_some_and(|runtime| runtime.simulation.local_player_defeated());
     if current_template(state) != PauseMenuTemplate::Internet
         || state.match_state.session_mode() != SessionMode::Wol
@@ -665,6 +729,40 @@ mod tests {
     }
 
     #[test]
+    fn chat_pause_commands_ask_only_for_a_change_the_control_allows() {
+        let mut pause = crate::net::live_commands::MultiplayerPauseStatus {
+            available: true,
+            ..Default::default()
+        };
+        let running = multiplayer_control_for(pause, false);
+        assert_eq!(
+            chat_command_for(running, false, true),
+            (true, Some("VERA:PauseRequested"))
+        );
+        // `/resume` with nothing paused does nothing.
+        assert_eq!(chat_command_for(running, false, false), (false, None));
+        pause.paused = true;
+        let stopped = multiplayer_control_for(pause, true);
+        assert_eq!(
+            chat_command_for(stopped, true, false),
+            (true, Some("VERA:ResumeRequested"))
+        );
+        assert_eq!(
+            chat_command_for(stopped, true, true),
+            (false, Some("VERA:PausedForAllPlayers"))
+        );
+        // The barrier frame is not finished here yet: no resume.
+        assert_eq!(
+            chat_command_for(multiplayer_control_for(pause, false), true, false),
+            (false, Some("VERA:FinishingPause"))
+        );
+        assert_eq!(
+            chat_command_for(None, false, true),
+            (false, Some("VERA:PauseNotAvailable"))
+        );
+    }
+
+    #[test]
     fn ff_init_projects_latency_and_speed_onto_the_trackbars() {
         let controls = InternetPauseControls::open(1, 3);
         assert_eq!(controls.positions, [2, 3]);
@@ -685,10 +783,10 @@ mod tests {
     fn a_changed_position_updates_the_right_static() {
         let mut controls = InternetPauseControls::open(1, 3);
         assert!(!controls.set(InternetSlider::Speed, 3));
-        assert!(controls.set(InternetSlider::Speed, 6));
+        assert!(controls.set(InternetSlider::Speed, 7));
         assert_eq!(
             controls.value_caption(InternetSlider::Speed).0,
-            "TXT_FASTEST"
+            "VERA:GameSpeed90"
         );
         assert!(controls.set(InternetSlider::Connection, 0));
         assert_eq!(

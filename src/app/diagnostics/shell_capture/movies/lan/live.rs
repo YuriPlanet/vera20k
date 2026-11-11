@@ -199,7 +199,7 @@ impl AiActivity {
         let runtime = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("AI diagnostic simulation")?;
         let sim = &runtime.simulation;
         let owner = self
@@ -258,7 +258,7 @@ impl AiActivity {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("AI live simulation")?
             .simulation;
         let owner = sim
@@ -476,8 +476,12 @@ impl LiveLanCapture {
                         LanTarget::LiveCoopFinalGuest => cooperative::CoopEnding::CampaignEnd {
                             continue_to_shell: true,
                         },
+                        LanTarget::OnlineCoopHost | LanTarget::OnlineCoopGuest => {
+                            cooperative::CoopEnding::Advance
+                        }
                         _ => cooperative::CoopEnding::Retry,
                     },
+                    target.online(),
                 )
             }),
             country_selected: false,
@@ -513,6 +517,7 @@ impl LiveLanCapture {
             LanTarget::OnlineHost
                 | LanTarget::OnlineTimeoutHost
                 | LanTarget::OnlineQuitHost
+                | LanTarget::OnlineCoopHost
                 | LanTarget::LiveHost
                 | LanTarget::LiveTimeoutHost
                 | LanTarget::LiveQuitHost
@@ -745,9 +750,14 @@ impl LiveLanCapture {
     /// The battle observer checks each command at its execution boundary and
     /// repair on consecutive frames. Ordinary pacing runs every due frame in
     /// one pass, for example the next frame right after a network wait ends,
-    /// so the battle asks for one frame per render.
+    /// so the battle asks for one frame per render. A co-op win holds both
+    /// processes at one frame, which a pass of several frames would overshoot.
     pub(super) fn observes_every_frame(&self) -> bool {
         self.battle.is_some()
+            || self
+                .cooperative
+                .as_ref()
+                .is_some_and(cooperative::CooperativeRun::flags_win)
     }
 
     pub(super) fn owns_simulation_steps(&self, state: &AppState) -> bool {
@@ -788,7 +798,7 @@ impl LiveLanCapture {
             state.match_state.network_failure.is_none() || expected_checksum || expected_startup,
             "unexpected network failure modal during live capture"
         );
-        if let Some(runtime) = &state.match_state.sim_runtime {
+        if let Some(runtime) = state.match_state.sim_runtime.runtime() {
             ensure!(
                 runtime.simulation.pending_network_failure().is_none() || expected_checksum,
                 "live LAN checksum failure: {:?}",
@@ -1249,7 +1259,7 @@ impl LiveLanCapture {
             let simulation = &state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .context("live simulation")?
                 .simulation;
             // A pending native frame may already have applied commands, but
@@ -1262,7 +1272,7 @@ impl LiveLanCapture {
         let simulation = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("live simulation")?
             .simulation;
         let committed = simulation.session().binary_frame();
@@ -1313,7 +1323,7 @@ impl LiveLanCapture {
             self.checksums.push(
                 state
                     .match_state
-                    .session
+                    .sim_runtime
                     .checksum_history()
                     .get(self.checksums.len() as u32),
             );
@@ -1460,7 +1470,7 @@ impl LiveLanCapture {
             let entity = state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .context("simulation")?
                 .simulation
                 .entities()
@@ -1655,15 +1665,22 @@ impl LiveLanCapture {
         if let Some(crash) = &self.setup_crash {
             return crash.receipt();
         }
-        if let Some(online) = &self.rounds {
-            return online.receipt(state);
-        }
         if let Some(run) = &self.cooperative {
+            if let Some(online) = &self.rounds {
+                return Ok(json!({"target":format!("{:?}",self.target),
+                    "service_boundary":"two independent App processes; normal WOL UI, deployed HTTPS lobby, authenticated UDP relay; ordinary frame boundary",
+                    "scope":"online Cooperative: C0 campaign in the room's options, the first stage won on both, BC6 Continue, the kept room on the next stage and its loading over the relay; bounded runtime validation, not native parity",
+                    "process_id":std::process::id(),"startup":self.startup,
+                    "online":online.cooperative_receipt(),"cooperative":run.receipt(state)?}));
+            }
             return Ok(json!({"target":format!("{:?}",self.target),
                 "service_boundary":"two independent App processes; real UDP/global/private queues; ordinary frame boundary",
                 "scope":"LAN Cooperative: C0 campaign, B6 Observe by both, BC6 records and the retried mission's loading over real UDP; bounded runtime validation, not native parity",
                 "process_id":std::process::id(),"startup":self.startup,"route":self.route,
                 "cooperative":run.receipt(state)?}));
+        }
+        if let Some(online) = &self.rounds {
+            return online.receipt(state);
         }
         self.round_receipt(state)
     }
@@ -1697,7 +1714,7 @@ impl LiveLanCapture {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("simulation")?
             .simulation;
         let live = state.match_state.live_network.as_ref();
@@ -1780,7 +1797,7 @@ fn terminal_simulation_receipt(state: &AppState) -> Result<Value> {
     let sim = &state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("terminal simulation")?
         .simulation;
     ensure!(
@@ -1822,7 +1839,7 @@ fn startup_receipt(state: &AppState) -> Result<Value> {
     let sim = &state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("simulation")?
         .simulation;
     crate::app::diagnostics::shell_capture::network_startup_receipt(state, launch, Some(sim))

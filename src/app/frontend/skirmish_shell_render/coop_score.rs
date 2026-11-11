@@ -47,7 +47,13 @@ pub(crate) fn render_coop_score(
         (model.can_continue, model.map_index)
     };
     match map_index.filter(|_| can_continue) {
-        Some(index) => ensure_map_preview_texture(state, index),
+        Some(index) => ensure_map_preview_texture(
+            state,
+            index,
+            layout
+                .control_rect(PREVIEW)
+                .unwrap_or(crate::ui::skirmish_shell::RectPx::new(0, 0, 0, 0)),
+        ),
         None => state.frontend.skirmish_preview_texture = None,
     }
     let shown = |id: u16| can_continue || !hidden_on_final_mission(id);
@@ -131,7 +137,7 @@ pub(crate) fn render_coop_score(
     texts.push(text(
         &title,
         layout.page.title,
-        ShellAlign::H_CENTER,
+        ShellAlign::PANEL_TITLE,
         SHELL_LABEL_TEXT_RGB,
     ));
     texts.push(text(
@@ -377,7 +383,7 @@ pub(crate) fn render_coop_score(
                 &localized_label(state, spec.csf_key, spec.csf_key),
                 button_text_rect(button.rect, pressed, scale),
                 super::text::button_label_color_for_disabled(!enabled),
-                ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+                ShellAlign::BUTTON_CAPTION,
                 [0.0; 2],
                 SHELL_CONTROL_TEXT_DEPTH,
                 scale.factor(),

@@ -96,9 +96,7 @@ fn fs_resolve(@builtin(position) position: vec4f) -> Resolve {
     if !admitted(p) { discard; }
     var word = snapshot_word(p);
     if params.offset_words < 0 { word = results[local_index(p)]; }
-    let encoded = vec3f(f32(RETAIL_FIVE[(word >> 11u) & 31u]),
-        f32(RETAIL_SIX[(word >> 5u) & 63u]), f32(RETAIL_FIVE[word & 31u])) / 255.0;
-    return Resolve(vec4f(srgb_decode(encoded),1.0), stored_native_depth(i32(textureLoad(candidates,vec2i(p),0).r)));
+    return Resolve(vec4f(retail_linear(word),1.0), stored_native_depth(i32(textureLoad(candidates,vec2i(p),0).r)));
 }
 struct Clear { @location(0) word: u32, @location(1) candidate: f32 };
 @fragment

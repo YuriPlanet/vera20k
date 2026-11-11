@@ -61,7 +61,7 @@ fn runtime() -> SimRuntime {
     simulation.install_resolved_terrain_for_new_map(terrain);
     SimRuntime {
         simulation,
-        resources,
+        resources: resources.into(),
     }
 }
 
@@ -269,7 +269,7 @@ fn composite_factory_split_requires_navcom_and_slot_zero_weapons_factory() {
         .get_mut(17)
         .unwrap()
         .set_category_for_test(EntityCategory::Structure);
-    runtime.resources.rules = RuleSet::from_ini(&IniFile::from_str(
+    runtime.resources_mut().rules = RuleSet::from_ini(&IniFile::from_str(
         &RULES.replace("WeaponsFactory=yes", "WeaponsFactory=no"),
     ))
     .unwrap();

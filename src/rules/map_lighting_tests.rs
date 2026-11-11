@@ -49,6 +49,7 @@ fn av_ambient_inputs_follow_native_reads_cold_handoffs_save_and_type_reset() {
             &IniFile::empty(),
             None,
             &crate::rules::sound_ini::EvaRegistry::default(),
+            &crate::rules::sound_ini::SoundRegistry::default(),
         )
         .unwrap()
         .into_registry_state_discarding_events();

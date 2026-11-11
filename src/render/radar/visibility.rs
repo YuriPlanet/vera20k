@@ -312,7 +312,7 @@ pub(super) fn build_radar_object_update(
     houses: &crate::sim::houses::Houses,
     local_owner: Option<InternedId>,
     fog: &FogState,
-    alliances: &crate::map::houses::HouseAllianceMap,
+    alliances: &crate::sim::house_diplomacy::HouseAlliances,
     full_visibility: bool,
     game_mode_nonzero: bool,
     rules: Option<&RuleSet>,
@@ -322,8 +322,9 @@ pub(super) fn build_radar_object_update(
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
 ) -> RadarObjectUpdate {
     let resolved_terrain = cells.map(crate::map::resolved_terrain::NativeCellQuery::terrain);
-    let type_str = interner.map_or("", |i| i.resolve(entity.type_ref()));
-    let object = rules.and_then(|rules| rules.object(type_str));
+    let object = rules
+        .zip(interner)
+        .and_then(|(rules, interner)| interner.object_type(entity.type_ref(), rules));
     let [raw_x, raw_y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
     let origin = projection.native_surface.map_or_else(
         || {
@@ -389,11 +390,7 @@ pub(super) fn build_radar_object_update(
         || local_owner.is_some_and(|local_owner| {
             entity.owner() == local_owner
                 || interner.is_some_and(|interner| {
-                    crate::map::houses::is_allied_with(
-                        alliances,
-                        interner.resolve(local_owner),
-                        interner.resolve(entity.owner()),
-                    )
+                    alliances.is_allied(interner, local_owner, entity.owner())
                 })
         });
     let effective_type_invisible =
@@ -445,6 +442,8 @@ pub(super) fn build_radar_object_update(
         origin,
         event_source_cell,
         enemy_sensed_prefilter,
+        #[cfg(feature = "ares")]
+        sensor_array_warn: object.is_none_or(|object| object.sensor_array_warn()),
         foundation,
         radar_scale: projection.cell_axis_scale(),
         discovery_observed,
@@ -638,7 +637,7 @@ mod tests {
                 sim.houses(),
                 None,
                 sim.fog(),
-                sim.house_alliances().as_map(),
+                sim.house_alliances(),
                 true,
                 false,
                 Some(&rules),
@@ -1146,7 +1145,7 @@ mod tests {
                 &houses,
                 Some(local),
                 &fog,
-                &alliances,
+                &super::super::helpers::test_alliances(alliances),
                 false,
                 true,
                 Some(&rules),

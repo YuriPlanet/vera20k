@@ -123,6 +123,20 @@ pub enum DeathAnimFollowUp {
     /// scheme's `+0x30C` from the array `0x00B054D4`); then, house or not,
     /// the anim's MarkCellOccupancy (vt+0xF0 = `0x00426270`).
     Mutate(Option<InternedId>),
+    /// AnimTypeExt::SetMakeInfOwner (installed 1000A5F0) with these houses
+    /// ([`Simulation::ares_set_make_inf_owner`]), then `tail`. The Ares
+    /// InfantryClass::ReceiveDamage hooks pass the killing source's owner
+    /// (else the house argument) as killer and the infantryman's owner as
+    /// victim: InfDeath (10025DE0, hook 0x5185C8) and the InfantryVirus and
+    /// InfantryMutate arms (10025F50, 10025EB0) also as invoker, the other
+    /// anim arms (10025D20) none.
+    #[cfg(feature = "ares")]
+    AresMakeInfOwner {
+        invoker: Option<InternedId>,
+        victim: InternedId,
+        killer: Option<InternedId>,
+        tail: AresMakeInfTail,
+    },
     /// BuildingClass::DestructionEffects' frozen GetRemapColour result
     /// (`0x00441D37..0x00441D41`). Original441D2F requires a custom group;
     /// Ares441D25 ->441D37 assigns the result for ordinary types as well.
@@ -132,6 +146,20 @@ pub enum DeathAnimFollowUp {
     /// takes its scheme 0; a restored VERA anim keeps the owner's. Retail's
     /// only such anim, CANY04DM, has no 16..31 pixels and draws at full light.
     Remap(crate::sim::anim_class::AnimRemap),
+}
+
+/// What an Ares death-anim producer does after SetMakeInfOwner.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AresMakeInfTail {
+    None,
+    /// InfantryClass_ReceiveDamage_InfantryVirus2 (10025F50, hook
+    /// 0x51887B): an `invoker` MakeInfantryOwner clears the anim's
+    /// LightConvert (`+0xD4 = 0`).
+    ClearInvokerRemap,
+    /// InfantryClass_ReceiveDamage_InfantryMutate (10025EB0, hook 0x518A96)
+    /// resumes at 0x518AFF: the anim's MarkCellOccupancy (vt+0xF0).
+    MarkCellOccupancy,
 }
 
 impl Simulation {
@@ -253,8 +281,87 @@ impl Simulation {
             Some(DeathAnimFollowUp::Remap(remap)) => {
                 self.substrate.anims.set_anim_remap(anim, remap);
             }
+            #[cfg(feature = "ares")]
+            Some(DeathAnimFollowUp::AresMakeInfOwner {
+                invoker,
+                victim,
+                killer,
+                tail,
+            }) => {
+                let kind = self.ares_set_make_inf_owner(
+                    anim,
+                    type_id,
+                    invoker,
+                    Some(victim),
+                    killer,
+                    rules,
+                );
+                match tail {
+                    AresMakeInfTail::None => {}
+                    AresMakeInfTail::ClearInvokerRemap => {
+                        if kind == crate::rules::ares_warhead::HouseSelector::Invoker {
+                            self.substrate.anims.clear_anim_remap(anim);
+                        }
+                    }
+                    AresMakeInfTail::MarkCellOccupancy => {
+                        Self::anim_mark_cell_occupancy(
+                            &mut self.substrate,
+                            &self.resolved_terrain,
+                            anim,
+                        );
+                    }
+                }
+            }
         }
         Some(anim)
+    }
+
+    /// Ares AnimTypeExt::SetMakeInfOwner (installed 1000A5F0), after the
+    /// anim's constructor: HouseExt::GetHouseKind (10021310) of the type's
+    /// `MakeInfantryOwner` with random allowed (one Scenario
+    /// `RandomRanged(0, houses - 1)` for `random`) and no default. A House it
+    /// finds becomes the anim's owner (`+0x180`), and for a `MakeInfantry=`
+    /// type its colour scheme's Convert the anim's remap (`+0xD4`). Answers
+    /// the type's `MakeInfantryOwner`.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_set_make_inf_owner(
+        &mut self,
+        anim: crate::sim::anim_class::AnimId,
+        type_id: InternedId,
+        invoker: Option<InternedId>,
+        victim: Option<InternedId>,
+        killer: Option<InternedId>,
+        rules: &RuleSet,
+    ) -> crate::rules::ares_warhead::HouseSelector {
+        use crate::rules::ares_warhead::HouseSelector;
+        let (selector, make_infantry) = rules
+            .art()
+            .anim_runtime_config(&self.interner.resolve(type_id).to_ascii_uppercase())
+            .map_or((HouseSelector::Invoker, -1), |config| {
+                (config.ares_make_infantry_owner, config.make_infantry)
+            });
+        let order = self.houses.order();
+        let random_house = (selector == HouseSelector::Random && !order.is_empty()).then(|| {
+            let last = order.len() as i32 - 1;
+            let index = self.scenario_rng.next_range_i32_inclusive(0, last);
+            order.get(index as usize).copied()
+        });
+        let Some(house) = self.house_kind(
+            selector,
+            None,
+            invoker,
+            killer,
+            victim,
+            rules,
+            random_house.flatten(),
+        ) else {
+            return selector;
+        };
+        self.substrate.set_anim_owner_house(anim, house);
+        if make_infantry > -1 {
+            self.substrate.anims.set_anim_house_remap(anim, house);
+        }
+        selector
     }
 
     /// The shared low dropped-bomb water gate in Techno ReceiveDamage
@@ -360,7 +467,11 @@ impl Simulation {
         rules: &RuleSet,
         unit_id: u64,
         anims: &mut Vec<ExplosionEffect>,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
     ) {
+        #[cfg(not(feature = "ares"))]
+        let _ = (registry, effects);
         let Some(entity) = self.substrate.entities.get(unit_id) else {
             return;
         };
@@ -396,7 +507,10 @@ impl Simulation {
         }
         // `0x00738749..0x007387FC` sums the stored ore's value into a local
         // nothing reads and calls the ShakeScreen stub (`0x0048DED0`, a bare
-        // `RET`): no effect.
+        // `RET`): no effect. Ares 3.0 1004BD90 (hook 0x738749) puts the
+        // TiberiumExplosive blast there (`sim::ares_tiberium`).
+        #[cfg(feature = "ares")]
+        self.ares_unit_tiberium_explosive(unit_id, rules, registry, effects);
         if !object.destroy_anims.is_empty() {
             let anim = pick_death_anim(&mut self.scenario_rng, &object.destroy_anims);
             self.emit_death_anim(rules, anims, anim, DeathAnimSpawn::at(coord, 0));
@@ -456,6 +570,16 @@ impl Simulation {
     ) {
         // 1. `0x004415F9..0x00441617`.
         self.clear_building_damage_fire_slots(building_id, rules);
+        // Ares 3.0 10015A90 (hook 0x0044161C): the destroyed building shows
+        // its production to nobody (`sim::spy_infiltration`).
+        #[cfg(feature = "ares")]
+        if let Some(building) = self.substrate.entities.get_mut(building_id) {
+            building.display_production_to.clear();
+        }
+        // Ares Destroy_SensorArray10016CA0 (hook4416A2) removes an active
+        // sensor array ahead of the gap and RevealToAll steps.
+        #[cfg(feature = "ares")]
+        self.ares_sensor_array_dispatch(building_id, false, rules, None);
         let Some(entity) = self.substrate.entities.get(building_id) else {
             return;
         };
@@ -579,6 +703,14 @@ impl Simulation {
                 }
             }
         }
+
+        // 10. Ares 3.0 BuildingClass_Destroy_Refinery (10023DA0, hook
+        // 0x441B30) replaces the stock spill to 0x441C0C: the store leaves
+        // the building and House, spilling with TiberiumSpill
+        // (`sim::ares_tiberium_storage`). The stock spill has no store to
+        // read in default builds.
+        #[cfg(feature = "ares")]
+        self.ares_destroy_refinery_storage(building_id, rules, effects);
 
         // 12. `0x00441C3D..0x00441CA9`: the fuse (`+0x528`) restarts at the
         // frame, 0 long for an `Explodes=` type (TechnoType `+0xD15`) or a

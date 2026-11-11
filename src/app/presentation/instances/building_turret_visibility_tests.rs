@@ -1,10 +1,10 @@
 //! Real retail construction/sale state feeds the production building emitter.
 //! Sentinel atlas entries test part presence, not raster or pixel equivalence.
 use super::*;
-use crate::app::presentation::interpolation::RenderInterpolation;
 use crate::map::{houses::HouseColorMap, lighting::CellLightGrid};
 use crate::render::sprite_atlas::SpriteAtlas;
-use crate::render::unit_atlas::{BarrelImagePitches, UnitAtlas, UnitSpriteEntry};
+use crate::render::unit_atlas::{UnitAtlas, UnitSpriteEntry};
+use crate::render::voxel_image_cache::VoxelImageCache;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::runtime::SimRuntime;
 use std::cell::RefCell;
@@ -47,7 +47,7 @@ impl Patriot {
             Some(&rules),
         ));
         let mut runtime = SimRuntime::from_simulation(sim);
-        runtime.resources.rules = rules;
+        runtime.resources_mut().rules = rules;
         let mut shp = SpriteAtlas::from_test_entries(Default::default());
         shp.make_frame_counts.insert("NASAM_MAKE".into(), 8);
         let entries = (0..32)
@@ -110,17 +110,16 @@ impl Patriot {
     }
 
     fn turret_drawn(&self) -> bool {
-        let interpolation = RenderInterpolation::new(false);
         let lighting = CellLightGrid::new();
-        let pitches = RefCell::new(BarrelImagePitches::default());
+        let voxel_images = RefCell::new(VoxelImageCache::default());
         let colors = HouseColorMap::default();
         let input = ShpInputs {
             runtime: &self.runtime,
             atlas: Some(&self.shp),
             overlay_atlas: None,
             unit_atlas: Some(&self.voxel),
-            barrel_image_pitches: &pitches,
-            interpolation: &interpolation,
+            voxel_images: &voxel_images,
+            depth_tested_images: None,
             camera: [-1000.0; 2],
             render_size: [5000; 2],
             zoom: 1.0,

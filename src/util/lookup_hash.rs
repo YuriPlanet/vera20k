@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasherDefault, Hasher};
 
 #[derive(Default)]
-pub(crate) struct LookupHasher(u64);
+pub struct LookupHasher(u64);
 
 impl Hasher for LookupHasher {
     /// Eight bytes a step, little-endian whatever the platform, then the
@@ -32,7 +32,7 @@ impl Hasher for LookupHasher {
 }
 
 /// A lookup-only map hashed with [`LookupHasher`].
-pub(crate) type LookupMap<K, V> = HashMap<K, V, BuildHasherDefault<LookupHasher>>;
+pub type LookupMap<K, V> = HashMap<K, V, BuildHasherDefault<LookupHasher>>;
 
 /// A membership-only set hashed with [`LookupHasher`].
-pub(crate) type LookupSet<K> = HashSet<K, BuildHasherDefault<LookupHasher>>;
+pub type LookupSet<K> = HashSet<K, BuildHasherDefault<LookupHasher>>;

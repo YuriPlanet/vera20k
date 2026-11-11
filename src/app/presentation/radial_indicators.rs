@@ -433,12 +433,9 @@ fn push_placement_rings(
     let center = (cell_x as i16, cell_y as i16);
     let nearby: Vec<_> = sim
         .entities()
-        .iter_sorted()
-        .filter_map(|(_, entity)| {
-            if entity.category() != EntityCategory::Structure
-                || entity.owner() != player
-                || !entity.lifecycle.object_alive()
-            {
+        .values_of_category(EntityCategory::Structure)
+        .filter_map(|entity| {
+            if entity.owner() != player || !entity.lifecycle.object_alive() {
                 return None;
             }
             let kind = sim.interner().object_type(entity.type_ref(), rules)?;

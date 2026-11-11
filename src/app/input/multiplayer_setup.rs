@@ -46,6 +46,20 @@ pub(crate) fn update_geometry(state: &mut AppState) {
     );
 }
 
+/// Whether the room's map thumbnail shows a picture with nothing over it: no
+/// combo list, Game Options or missing-map offer.
+fn preview_box_shows(state: &AppState, view: &SetupView, layout: &MultiplayerSetupLayout) -> bool {
+    !view.preview_hidden
+        && !view.options_open
+        && !view.map_offer_open
+        && state.frontend.skirmish_preview_texture.is_some()
+        && state
+            .frontend
+            .multiplayer_setup
+            .as_ref()
+            .is_some_and(|ui| ui.popup_geometry(view, layout).is_none())
+}
+
 fn notice_active(state: &AppState) -> bool {
     state
         .frontend
@@ -95,6 +109,28 @@ pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
     key_press(state, code, event.text.as_deref());
 }
 
+/// [`key_press`] reaches the room: no transfer, verify box, page dialog or
+/// notice is over it.
+fn room_takes_keys(state: &AppState) -> bool {
+    !transfer_active(state)
+        && crate::app::shell_network_setup::verify(state).is_none()
+        && !crate::app::shell_wol::page::open(state)
+        && !notice_active(state)
+        && crate::app::shell_network_setup::view(state).is_some()
+}
+
+/// VERA's Esc menu (`app::shell_menu`): the boxes and popups over the room
+/// keep Esc, and a locked room is about to launch.
+pub(crate) fn leaves_escape(state: &AppState) -> bool {
+    room_takes_keys(state)
+        && crate::app::shell_network_setup::view(state).is_some_and(|view| !view.locked)
+        && state
+            .frontend
+            .multiplayer_setup
+            .as_ref()
+            .is_some_and(|ui| !ui.options_open && ui.map_offer.is_none())
+}
+
 /// The chat NewEdit while it takes keys, for the input method
 /// (`app::input::ime`): [`key_press`] reaches the focused chat with no
 /// transfer, verify box, page dialog, notice or ChooseMap over the dialog.
@@ -107,11 +143,7 @@ pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::
             .choose_map_modal
             .is_none()
         && !shell_transition::blocks_shell_input(state)
-        && !transfer_active(state)
-        && crate::app::shell_network_setup::verify(state).is_none()
-        && !crate::app::shell_wol::page::open(state)
-        && !notice_active(state)
-        && crate::app::shell_network_setup::view(state).is_some();
+        && room_takes_keys(state);
     state
         .frontend
         .multiplayer_setup
@@ -145,16 +177,16 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
         }
         return;
     }
-    let Some(view) = crate::app::shell_network_setup::view(state) else {
+    if crate::app::shell_network_setup::view(state).is_none() {
         return;
-    };
+    }
     let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
         return;
     };
     // NewEdit consumes all keyboard input while chat has focus. Escape is
-    // inert; Enter appends CRLF before shared5EDD00/5DE360 submission.
-    // VERA's Game Options popup takes the keys first and closes on Escape
-    // or Enter.
+    // inert there; a free Escape opens VERA's Esc menu before it gets here.
+    // Enter appends CRLF before shared5EDD00/5DE360 submission. VERA's Game
+    // Options popup takes the keys first and closes on Escape or Enter.
     let action = if let Some(offer) = &ui.map_offer {
         match code {
             // Keys meant for the chat just before it opened do not answer it.
@@ -193,10 +225,7 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
             None
         }
     } else {
-        match code {
-            Some(KeyCode::Escape) if !view.locked => Some(SetupAction::Back),
-            _ => None,
-        }
+        None
     };
     if let Some(action) = action {
         crate::app::shell_network_setup::apply_action(state, action);
@@ -229,8 +258,14 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
     };
     let layout = layout(state);
     let (x, y) = state.match_state.input.cursor_px();
-    let help = layout
-        .control_at(&view, x, y)
+    let over = layout.control_at(&view, x, y);
+    // `0x468` is no control the room's hit test finds; VERA's enlarged preview
+    // gives the box its thumbnail help and the hint.
+    let over_preview = over.is_none()
+        && layout.map_preview.contains(x, y)
+        && preview_box_shows(state, &view, &layout);
+    let help = over
+        .or(over_preview.then_some(MAP_PREVIEW))
         .and_then(|id| tooltip_key(view.dialog, id))
         .and_then(|key| {
             state
@@ -241,6 +276,11 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
                 .map(str::to_owned)
         })
         .unwrap_or_default();
+    let help = if over_preview {
+        crate::app::frontend::preview_zoom::box_help(state, help)
+    } else {
+        help
+    };
     let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
         return;
     };
@@ -316,6 +356,13 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     let over = layout
         .control_at(&view, x, y)
         .filter(|id| view.enabled(*id));
+    if pressed
+        && over.is_none()
+        && preview_box_shows(state, &view, &layout)
+        && crate::app::frontend::preview_zoom::press_on_box(state, layout.map_preview)
+    {
+        return;
+    }
     let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
         return;
     };

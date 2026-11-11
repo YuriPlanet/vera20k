@@ -93,6 +93,26 @@ pub struct PowerState {
     /// and owned buildings; the projection updates only at the reached
     /// House+5779 receiver.
     radar_available: bool,
+    /// Ares HouseExt power the Battery super weapon lends.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares: AresHousePower,
+}
+
+/// Ares HouseExt's battery fields (`src/Ext/House/Body.h`): AuxPower
+/// (+0x0C), BatteryCount (+0x10), BatteryKeepOnline (+0x70) and
+/// BatteryOverpower (+0x7C), written only by SW_Battery's Activate
+/// (`0x1006EBD0`) and Deactivate (`0x1006EC40`) here. Lists hold one entry per
+/// active battery's BuildingType. Trigger action 0x92 also adds AuxPower
+/// ([`PowerState::add_aux_power`]); script action 0x41 does natively but is
+/// not ported.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AresHousePower {
+    aux_power: i32,
+    battery_count: i32,
+    keep_online: Vec<String>,
+    overpower: Vec<String>,
 }
 
 impl Default for PowerState {
@@ -113,6 +133,8 @@ impl Default for PowerState {
             radar_dirty: true,
             radar_outage_timer: crate::sim::timer::CdTimer::started(0, 0),
             radar_available: false,
+            #[cfg(feature = "ares")]
+            ares: AresHousePower::default(),
         }
     }
 }
@@ -266,6 +288,84 @@ impl PowerState {
             b"radar-outage-v1".hash(hasher);
             self.radar_outage_timer.hash(hasher);
         }
+        // Likewise a House no battery ever reached.
+        #[cfg(feature = "ares")]
+        if self.ares != AresHousePower::default() {
+            b"ares-house-power-v1".hash(hasher);
+            self.ares.hash(hasher);
+        }
+    }
+
+    /// SW_Battery::Activate1006EBD0's House writes, then RecheckPower.
+    #[cfg(feature = "ares")]
+    pub(crate) fn activate_battery(
+        &mut self,
+        power: i32,
+        keep_online: &[String],
+        overpower: &[String],
+    ) {
+        self.ares.battery_count = self.ares.battery_count.wrapping_add(1);
+        self.ares.aux_power = self.ares.aux_power.wrapping_add(power);
+        self.ares.keep_online.extend_from_slice(keep_online);
+        self.ares.overpower.extend_from_slice(overpower);
+        self.invalidate(false);
+    }
+
+    /// Ares trigger action 0x92 (TActionExt::Execute 100396C0, hook
+    /// 0x6DD8D7): HouseExt AuxPower += the action's Value2, then
+    /// RecheckPower (House+5778).
+    #[cfg(feature = "ares")]
+    pub(crate) fn add_aux_power(&mut self, power: i32) {
+        self.ares.aux_power = self.ares.aux_power.wrapping_add(power);
+        self.invalidate(false);
+    }
+
+    /// SW_Battery::Deactivate1006EC40: the reverse writes; each list item
+    /// erases its first equal entry (1006EB70), then RecheckPower.
+    #[cfg(feature = "ares")]
+    pub(crate) fn deactivate_battery(
+        &mut self,
+        power: i32,
+        keep_online: &[String],
+        overpower: &[String],
+    ) {
+        self.ares.battery_count = self.ares.battery_count.wrapping_sub(1);
+        self.ares.aux_power = self.ares.aux_power.wrapping_sub(power);
+        for (list, items) in [
+            (&mut self.ares.keep_online, keep_online),
+            (&mut self.ares.overpower, overpower),
+        ] {
+            for item in items {
+                if let Some(index) = list.iter().position(|entry| entry == item) {
+                    list.remove(index);
+                }
+            }
+        }
+        self.invalidate(false);
+    }
+
+    /// HouseExt BatteryCount > 0: the radar hook508E66 (Ares.dll 10024780).
+    #[cfg(feature = "ares")]
+    pub(crate) fn has_battery(&self) -> bool {
+        self.ares.battery_count > 0
+    }
+
+    /// BatteryKeepOnline holds this BuildingType (hook4555D5, 100140B0).
+    #[cfg(feature = "ares")]
+    pub(crate) fn keeps_online(&self, building_type: &str) -> bool {
+        self.ares
+            .keep_online
+            .iter()
+            .any(|id| id.eq_ignore_ascii_case(building_type))
+    }
+
+    /// BatteryOverpower holds this BuildingType (hook44019D, 10014690).
+    #[cfg(feature = "ares")]
+    pub(crate) fn overpowers(&self, building_type: &str) -> bool {
+        self.ares
+            .overpower
+            .iter()
+            .any(|id| id.eq_ignore_ascii_case(building_type))
     }
 
     /// House4FCE30 and508D99..DC9: produced>=drained or drained==0 gives1;
@@ -448,6 +548,9 @@ pub(crate) struct OperationalFacts {
     /// Building `+0x660` online latch and `+0x67C` Tesla charger count.
     pub online: bool,
     pub tesla_chargers: i32,
+    /// The charger count that bypasses power (`0x004555D5` EDI = 2). Ares's
+    /// hook there (100140B0) passes 0 for a `Battery.KeepOnline` type.
+    pub charger_bypass: i32,
     /// `+0x504` EMP time and `+0x6C` Health.
     pub emp_remaining: i32,
     pub health: i32,
@@ -473,13 +576,17 @@ pub(crate) fn is_operational_for_output(
     facts: &OperationalFacts,
     power_below_full: impl FnOnce() -> bool,
 ) -> bool {
-    if !facts.online && facts.tesla_chargers < 2 {
+    if !facts.online && facts.tesla_chargers < facts.charger_bypass {
         return false;
     }
     if facts.emp_remaining > 0 || facts.health == 0 {
         return false;
     }
-    if facts.powered && facts.power_drain > 0 && power_below_full() && facts.tesla_chargers < 2 {
+    if facts.powered
+        && facts.power_drain > 0
+        && power_below_full()
+        && facts.tesla_chargers < facts.charger_bypass
+    {
         return false;
     }
     if facts.powered_special && facts.owner_outage {
@@ -609,8 +716,16 @@ fn recalculate_power_for_owner(
     binary_frame: u32,
     require_discovery: bool,
 ) {
-    let mut produced: i32 = 0;
-    let mut drained: i32 = 0;
+    // Ares HouseClass_UpdatePower_Auxiliary10024650 (hook 508C7F) starts
+    // the counters from HouseExt AuxPower: positive as output, negative as
+    // drain (the 32-bit negation wraps).
+    #[cfg(feature = "ares")]
+    let (mut produced, mut drained) = (
+        state.ares.aux_power.max(0),
+        state.ares.aux_power.wrapping_neg().max(0),
+    );
+    #[cfg(not(feature = "ares"))]
+    let (mut produced, mut drained): (i32, i32) = (0, 0);
     let mut has_drained_power_source = false;
     // Phobos `HouseExt::PowerPlantEnhancers`: this owner's active registered
     // enhancer buildings. The list is derived from the same building order the
@@ -721,6 +836,16 @@ fn recalculate_power_for_owner(
             }
             (output_contribution, 0)
         };
+        // Ares 3.0 BuildingClass_PowerProduced_EMP 10014440 (hook
+        // 0x0044E855): an EMP'd plant (`+0x504` > 0) skips the positive sum
+        // to 0x0044E873 and outputs nothing; Ares EMP leaves its online latch
+        // set. Phobos' replacement above already zeroes it.
+        #[cfg(all(feature = "ares", not(feature = "phobos")))]
+        let (power, extra_power) = if entity.emp_remaining() > 0 {
+            (0, 0)
+        } else {
+            (power, extra_power)
+        };
         if power.wrapping_add(extra_power) > 0 {
             // Original44E85F calls5F5C60, then FIMUL and _ftol; House508CFF
             // adds the signed returned dword with wrapping ADD. No max(1),
@@ -738,7 +863,44 @@ fn recalculate_power_for_owner(
             produced = produced.wrapping_add(output);
             //508D1E calls70FEC0 (DrainingMe != null), then repeats the
             // live GetPowerOutput getter and tests its signed result >0.
-            has_drained_power_source |= entity.drain.draining_me().is_some() && output > 0;
+            if let Some(drainer) = entity.drain.draining_me()
+                && output > 0
+            {
+                // Ares 3.0 10024690 (hook 0x508D32): when the plant or its
+                // drainer is `Drain.Local`, the plant gives up `output`
+                // limited by the drainer's and then the plant's
+                // `Drain.Amount` (a non-positive amount n: at least -n), in
+                // place of zeroing the whole House output.
+                #[cfg(feature = "ares")]
+                let local = {
+                    let drainer = entities
+                        .get(drainer)
+                        .filter(|drainer| interner.try_resolve(drainer.type_ref()).is_some())
+                        .and_then(|drainer| interner.object_type(drainer.type_ref(), rules))
+                        .map_or((false, 0), |kind| kind.techno_combat().roles().drain());
+                    let plant = obj.techno_combat().roles().drain();
+                    (plant.0 || drainer.0).then(|| {
+                        let limit = |value: i32, limit: i32| {
+                            if limit <= 0 {
+                                value.max(limit.wrapping_neg())
+                            } else {
+                                value.min(limit)
+                            }
+                        };
+                        limit(limit(output, drainer.1), plant.1)
+                    })
+                };
+                #[cfg(not(feature = "ares"))]
+                let local: Option<i32> = {
+                    let _ = drainer;
+                    None
+                };
+                match local {
+                    Some(drain) if drain > 0 => produced = produced.wrapping_sub(drain),
+                    Some(_) => {}
+                    None => has_drained_power_source = true,
+                }
+            }
         }
 
         // Drain branch: always full rated value regardless of health.
@@ -748,6 +910,12 @@ fn recalculate_power_for_owner(
 
     //508D4A stores the assessment byte;508D79 forces output to zero for
     // either the outage timer or a drained positive-output contributor.
+    // Ares 3.0 10024760 (hook 0x508D4A) first raises a negative total, which
+    // only a local drain leaves, to zero.
+    #[cfg(feature = "ares")]
+    {
+        produced = produced.max(0);
+    }
     state.has_drained_power_source = has_drained_power_source;
     if state.blackout_remaining(binary_frame) > 0 || has_drained_power_source {
         produced = 0;
@@ -871,7 +1039,13 @@ fn radar_provider_available(
     interner: &crate::sim::intern::StringInterner,
     require_discovery: bool,
 ) -> bool {
-    if state.low_power() {
+    // Ares HouseClass_UpdateRadar_Battery10024780 (hook 508E66): on low
+    // power the radar buildings are checked only while a battery is active.
+    #[cfg(feature = "ares")]
+    let low_power_blocks = !state.has_battery();
+    #[cfg(not(feature = "ares"))]
+    let low_power_blocks = true;
+    if state.low_power() && low_power_blocks {
         return false;
     }
     // Native House+68 order chooses the first otherwise eligible provider;
@@ -893,6 +1067,18 @@ fn radar_provider_available(
                 .is_some_and(|obj| obj.radar)
         {
             continue;
+        }
+        // Ares Radar_Update_CheckEligible10024550 (hook508EBC) skips a
+        // jammed or EMPed (+504 > 0) radar to the next one; a remaining
+        // nonzero counter still ends the scan as508F12 does.
+        #[cfg(feature = "ares")]
+        {
+            if entity.radar_jam.is_jammed() || entity.emp_remaining() > 0 {
+                continue;
+            }
+            if entity.emp_remaining() != 0 {
+                return false;
+            }
         }
         // Building+504 EMP starts zero. VERA has no EMP writer yet; its
         // online latch has independent map/trigger and Temporal writers.
@@ -1037,7 +1223,7 @@ mod tests {
             tick_power_states(&mut states, &mut entities, &rules, &interner, 0);
             assert_eq!(
                 states[&owner].total_output,
-                row["output"].as_i64().unwrap() as i32,
+                ares_power_output(row["output"].as_i64().unwrap() as i32),
                 "{row}"
             );
             assert_eq!(
@@ -1052,6 +1238,32 @@ mod tests {
                 .drain
                 .set_draining_me_for_test(None);
             tick_power_states(&mut states, &mut entities, &rules, &interner, 0);
+            assert!(!states[&owner].has_drained_power_source);
+        }
+    }
+
+    /// Ares 3.0 HouseClass_UpdatePower_LocalDrain1/2 (10024690/10024760,
+    /// hooks 0x508D32/0x508D4A): a `Drain.Local` plant gives up its output
+    /// limited by `Drain.Amount` (a positive cap, a non-positive floor)
+    /// instead of zeroing the House, and the total never stays negative.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_local_drain_takes_the_drained_amount() {
+        for (amount, output) in [(50, 150), (0, 0), (-300, 0)] {
+            let rules = rules_from_ini(&format!(
+                "[BuildingTypes]\n0=B\n[B]\nPower=200\nStrength=100\n\
+                 Drain.Local=yes\nDrain.Amount={amount}\n"
+            ));
+            let mut plant = make_building(1, "B", "A", 100);
+            plant.drain.set_draining_me_for_test(Some(99));
+            let owner = plant.owner();
+            let interner = test_interner();
+            let mut entities = EntityStore::default();
+            entities.insert(plant);
+            let mut states =
+                PowerStates::from_map_for_test(BTreeMap::from([(owner, PowerState::default())]));
+            tick_power_states(&mut states, &mut entities, &rules, &interner, 0);
+            assert_eq!(states[&owner].total_output, output, "Drain.Amount={amount}");
             assert!(!states[&owner].has_drained_power_source);
         }
     }
@@ -1113,6 +1325,16 @@ mod tests {
 
     fn test_interner() -> intern::StringInterner {
         intern::test_interner()
+    }
+
+    /// A stock total as an Ares build stores it: HouseClass_UpdatePower_
+    /// LocalDrain2 (10024760, hook 0x508D4A) raises a negative one to zero.
+    fn ares_power_output(native: i32) -> i32 {
+        if cfg!(feature = "ares") {
+            native.max(0)
+        } else {
+            native
+        }
     }
 
     /// Build a minimal RuleSet with the given INI text.
@@ -1235,7 +1457,7 @@ BuildSpeed=0.02
             let state = &states[&owner];
             assert_eq!(
                 state.total_output,
-                row["output"]["total_output"].as_i64().unwrap() as i32,
+                ares_power_output(row["output"]["total_output"].as_i64().unwrap() as i32),
                 "{row}"
             );
             assert_eq!(
@@ -1427,7 +1649,7 @@ BuildSpeed=0.02
 
     // -------- ExtraPower (Yuri Bio-Reactor) bonus tests -----------------
 
-    #[cfg(feature = "phobos")]
+    #[cfg(any(feature = "phobos", feature = "ares"))]
     fn building_at(id: u64, type_ref: &str, owner: &str, rx: u16, ry: u16, hp: i32) -> GameEntity {
         let mut e = GameEntity::test_default_of_category(
             id,
@@ -1444,7 +1666,7 @@ BuildSpeed=0.02
         e
     }
 
-    #[cfg(feature = "phobos")]
+    #[cfg(any(feature = "phobos", feature = "ares"))]
     fn output_for(rules: &RuleSet, buildings: Vec<GameEntity>) -> i32 {
         let interner = test_interner();
         let owner = buildings[0].owner();
@@ -1455,6 +1677,19 @@ BuildSpeed=0.02
         let mut states = PowerStates::default();
         tick_power_states(&mut states, &mut store, rules, &interner, 0);
         states[&owner].total_output
+    }
+
+    /// Ares 10014440 (hook 0x44E855): a plant under EMP keeps its online
+    /// latch but outputs nothing.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_emp_power_plant_outputs_nothing() {
+        let rules = rules_from_ini("[BuildingTypes]\n0=PLANT\n[PLANT]\nPower=100\nStrength=100\n");
+        let plant = || building_at(1, "PLANT", "A", 10, 10, 100);
+        assert_eq!(output_for(&rules, vec![plant()]), 100);
+        let mut emp = plant();
+        emp.set_emp_remaining_for_test(10);
+        assert_eq!(output_for(&rules, vec![emp]), 0);
     }
 
     /// Phobos `GetEnhancedPower`: a registered enhancer naming the plant adds

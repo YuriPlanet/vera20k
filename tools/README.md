@@ -17,6 +17,7 @@ oracle families index their own fixtures and producers.
 | Measure an autoplay change: build, run the retail tests, and play the pinned matches side by side | `python -m tools.autoplay_check` (below) |
 | Compile and test one optional capability (`ares`, `phobos`, `npatch`, diagnostic builds), or all of them | [capabilities](../docs/capabilities.md), `python -m tools.capability_tests` |
 | Run a committed test map headless or interactive, by scenario name | [capabilities](../docs/capabilities.md#test-maps), `python -m tools.run_test_map` |
+| Generate a large map, such as 500×500 with 30 starts | `python -m tools.scale_map large500.map --size 500 --starts 30` |
 | Find a built or preserved host executable for shell use | `python -m tools.cargo_run --resolve asset --profile release` (below) |
 | Run retail corpus checks or export a decoder-baseline candidate | [retail corpus](retail_corpus.md) |
 | Check hermetic gameplay fixtures against production-selected retail sources | [retail fixture contracts](retail_fixture_contracts.md), ordinary library tests with `RA2_DIR` |
@@ -49,6 +50,7 @@ oracle families index their own fixtures and producers.
 | Validate retained map captures or compare exact production observations | [map observation](map_observation.md), `python -m tools.map_observation compare` |
 | Name scenario command targets, inspect timelines and assert observed effects | [named commands and inspection](map_observation.md#named-commands-and-outcome-inspection), `python -m tools.map_observation inspect` |
 | Load a chosen retail map, step, capture and exit | [map observation](map_observation.md), `python -m tools.map_observation` |
+| Render a whole map as one picture, such as its preview on vera20k.org | `python3 -m tools.map_render --help` |
 | Run one bounded child with retained diagnostics | `tools.child_process.run_child` (shared by capture wrappers) |
 | Check shell UI matrices | [exact shell matrix](exact_shell_ui_matrix/README.md) |
 | Synchronize authoritative skill sources | `python tools/skill_sync.py --write`, then `--check` |
@@ -288,11 +290,11 @@ are adopted only when their live checkout/common Git directory and namespace
 prove ownership. A registered cache whose checkout no longer exists is abandoned
 once it has been idle ten minutes (`ABANDONED_SECONDS`), it sits in this repository's
 cache root under its checkout's namespace, and no run holds that checkout's lock.
-Every pass then removes the Cargo profile output in it, whatever the budgets, apart
-from files a preserved or latest build still names; its latest record goes first,
-since only its live checkout could resolve it. Empty directories go with it, and a
-cache left empty leaves the registry. Unregistered or unverifiable caches stay
-untouched.
+Every pass then removes the Cargo profile output in it, `--target` builds of any
+profile included, whatever the budgets, apart from files a preserved or latest build
+still names; its latest record goes first, since only its live checkout could resolve
+it. Empty directories go with it, and a cache left empty leaves the registry.
+Unregistered or unverifiable caches stay untouched.
 Only orphaned `deps/*.rcgu.o`, complete finalized incremental sessions and older
 Mach-O/ELF executables in `deps` are eligible; paths must belong to exact Cargo
 profile directories. An older executable is a `<name>-<16 hex>` file with a newer

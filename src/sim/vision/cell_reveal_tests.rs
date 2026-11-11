@@ -91,13 +91,11 @@ fn cached_border_geometry_keeps_height_ring_and_viewer_inputs() {
         (viewer, (12, 12, 208), 6, 2),
     ] {
         let mut direct = fog.clone();
-        direct.by_owner.write(
-            owner,
-            (24, 24),
-            PlaneWrite::Border,
-            &super::super::sight_border_cells(origin, radius, inner),
-            None,
-        );
+        let cells = super::super::sight_border_cells(origin, radius, inner);
+        let bounds = CellBounds::of(&cells).unwrap();
+        direct
+            .by_owner
+            .write(owner, (24, 24), PlaneWrite::Border { bounds }, &cells, None);
         fog.refresh_sight_border(owner, origin, radius, inner, None);
         assert_eq!(
             save_codec::serialize(&fog).unwrap(),
@@ -471,8 +469,10 @@ fn seed_cell(view: &mut OwnerVisibility, key: VisibilityCell, input: &Value) {
         ],
         ..Default::default()
     };
-    // This fixture writes native storage directly, outside the cell writers.
+    // This fixture writes native storage directly, outside the cell writers,
+    // so it drops what they derive.
     view.edge_inputs_cache.take();
+    view.stale_frames = StaleFrames::default();
     if let VisibilityCell::Real(index) = key {
         view.publish_knowledge(index);
     }
@@ -1022,8 +1022,13 @@ fn border_refresh_interior_matches_native_lookup_fallback() {
             .is_none()
     );
     let border = [(5, 5), (6, 5), (5, 5)];
-    interior.refresh_ground_frames(&border, Some(&NativeCellQuery::canonical(&terrain)));
-    looked_up.refresh_ground_frames(&border, Some(&NativeCellQuery::canonical(&fallback)));
+    let bounds = CellBounds::of(&border).unwrap();
+    interior.refresh_ground_frames(&border, bounds, Some(&NativeCellQuery::canonical(&terrain)));
+    looked_up.refresh_ground_frames(
+        &border,
+        bounds,
+        Some(&NativeCellQuery::canonical(&fallback)),
+    );
     assert_eq!(
         save_codec::serialize(&interior).unwrap(),
         save_codec::serialize(&looked_up).unwrap()
@@ -1033,4 +1038,94 @@ fn border_refresh_interior_matches_native_lookup_fallback() {
     assert_eq!(interior.ground_flags[65], 8);
     assert_eq!(interior.shroud_knowledge[65].counter(), -3);
     assert_eq!(interior.shroud_knowledge[65].gap_counter(), 2);
+}
+
+/// Each `cells` ground frame on `viewer`'s map is the one its bits give.
+fn assert_border_frames_current(fog: &FogState, viewer: InternedId, cells: &[(u16, u16)]) {
+    for &cell in cells {
+        assert_eq!(
+            fog.by_owner[&viewer].map_cell_edge_cache_for_test(cell).0[0],
+            fog.map_cell_edge_frame(viewer, cell, false, None),
+            "{cell:?}"
+        );
+    }
+}
+
+/// A bulk map shroud (`store_bulk_map_cell`) leaves its cell's and
+/// neighbours' ground frames stale; the next sight border recomputes them,
+/// though the border before it left every frame there current.
+#[test]
+fn a_sight_border_recomputes_the_frames_a_bulk_shroud_left() {
+    let viewer = crate::sim::intern::test_intern("Player");
+    let border = super::super::sight_border_cells((12, 12, 0), 3, 0);
+    let mut fog = FogState::new(24, 24);
+    for cell in [(12, 12), (13, 12), (11, 11)] {
+        fog.reveal_forced_map_cell(viewer, cell, None);
+    }
+    fog.refresh_sight_border(viewer, (12, 12, 0), 3, 0, None);
+    assert_border_frames_current(&fog, viewer, &border);
+    let shrouded = fog.by_owner.get_mut(&viewer).unwrap();
+    shrouded.store_bulk_map_cell((12, 12), true);
+    shrouded.store_bulk_map_cell((13, 12), true);
+    fog.refresh_sight_border(viewer, (12, 12, 0), 3, 0, None);
+    assert_border_frames_current(&fog, viewer, &border);
+}
+
+/// A loaded map's first sight border recomputes every ground frame, the
+/// stale ones its save held included.
+#[test]
+fn a_loaded_maps_first_sight_border_recomputes_its_frames() {
+    let viewer = crate::sim::intern::test_intern("Player");
+    let border = super::super::sight_border_cells((12, 12, 0), 3, 0);
+    let mut fog = FogState::new(24, 24);
+    for cell in [(12, 12), (13, 12), (11, 11)] {
+        fog.reveal_forced_map_cell(viewer, cell, None);
+    }
+    fog.refresh_sight_border(viewer, (12, 12, 0), 3, 0, None);
+    fog.by_owner
+        .get_mut(&viewer)
+        .unwrap()
+        .store_bulk_map_cell((12, 12), true);
+    let mut loaded: FogState =
+        save_codec::deserialize(&save_codec::serialize(&fog).unwrap()).unwrap();
+    assert_ne!(
+        loaded.by_owner[&viewer]
+            .map_cell_edge_cache_for_test((12, 12))
+            .0[0],
+        loaded.map_cell_edge_frame(viewer, (12, 12), false, None)
+    );
+    loaded.refresh_sight_border(viewer, (12, 12, 0), 3, 0, None);
+    assert_border_frames_current(&loaded, viewer, &border);
+}
+
+/// A stale frame on the far column of a sight border's disc is recomputed:
+/// the border's bounds hold every cell of its disc.
+#[test]
+fn a_sight_border_recomputes_a_stale_frame_on_its_edge() {
+    let viewer = crate::sim::intern::test_intern("Player");
+    let border = super::super::sight_border_cells((12, 12, 0), 3, 0);
+    let edge = border.iter().copied().max().unwrap();
+    let east = (edge.0 + 1, edge.1);
+    let mut fog = FogState::new(24, 24);
+    for y in edge.1 - 1..=edge.1 + 1 {
+        for x in edge.0 - 1..=edge.0 + 1 {
+            if (x, y) != east {
+                fog.reveal_forced_map_cell(viewer, (x, y), None);
+            }
+        }
+    }
+    // A wider border leaves every frame within the narrow one's bounds
+    // current; a bulk store, which does not propagate, then leaves only the
+    // edge's column there stale.
+    fog.refresh_sight_border(viewer, (12, 12, 0), 5, 0, None);
+    fog.by_owner
+        .get_mut(&viewer)
+        .unwrap()
+        .store_bulk_map_cell(east, false);
+    assert_ne!(
+        fog.by_owner[&viewer].map_cell_edge_cache_for_test(edge).0[0],
+        fog.map_cell_edge_frame(viewer, edge, false, None)
+    );
+    fog.refresh_sight_border(viewer, (12, 12, 0), 3, 0, None);
+    assert_border_frames_current(&fog, viewer, &border);
 }

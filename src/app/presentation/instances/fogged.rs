@@ -20,10 +20,11 @@ use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::vision::{
     FoggedDrawKind, FoggedObjectFootprintRecord, FoggedObjectId, FrozenBuilding,
 };
+use smol_str::StrExt;
 
 pub(crate) fn build_fogged_instances(state: &AppState) -> ObjectLayerPass {
     let (Some(runtime), Some(atlas)) = (
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.presentation(),
         state.match_state.match_presentation.sprite_atlas.as_ref(),
     ) else {
         return ObjectLayerPass::default();
@@ -121,7 +122,9 @@ fn frozen_building_pieces(
         location.y.wrapping_sub(128),
         location.z,
     );
-    let lift = crate::util::native_x87::adjust_for_z_standard(location.z);
+    let correction = crate::render::locomotor_visual::building_terrain_correction(frozen.level);
+    let y = y - correction as f32;
+    let lift = crate::util::native_x87::adjust_for_z_standard(location.z) + correction;
     let depth = super::compute_sprite_depth_params_lifted(
         input.axis.origin_y,
         input.axis.world_height,
@@ -139,16 +142,13 @@ fn frozen_building_pieces(
         .map_or(1000, |light| light.top_scalar)
         .wrapping_add(art.map_or(0, |art| i32::from(art.extra_light as i16)));
     //4D1E96..4D1EE9 selects cell Convert for TerrainPalette, but keeps the
-    // same top-plus-ExtraLight intensity as the house-Convert arm.
+    // same top-plus-ExtraLight intensity as the house-Convert arm. The owner's
+    // ColorScheme Convert (`0x004D1C8A..0x004D1CA4`) carries the scheme RGB,
+    // which a cell Convert reset or a load can leave apart from the cells'.
     let palette = if art.is_some_and(|art| art.terrain_palette) {
         PaletteLight::cell(input.lighting, cell, false).with_brightness(brightness)
     } else {
-        PaletteLight::color_scheme(
-            input
-                .lighting
-                .palette_rgb(input.lighting.profiles().default_profile_id()),
-            brightness,
-        )
+        PaletteLight::color_scheme(input.lighting.color_scheme_rgb(), brightness)
     };
     let Ok(frame) = u16::try_from(body.frame) else {
         return pieces;
@@ -157,7 +157,7 @@ fn frozen_building_pieces(
         palette_context: art.map_or(ShpPaletteContext::SelectedScheme, |art| {
             crate::render::sprite_atlas::building_art_palette_context(art)
         }),
-        type_id: name.to_string(),
+        type_id: name.into(),
         facing: 0,
         frame,
         house_color,
@@ -216,7 +216,7 @@ fn frozen_building_pieces(
     {
         let key = ShpSpriteKey {
             palette_context: crate::render::sprite_atlas::building_art_palette_context(art),
-            type_id: bib.to_ascii_uppercase(),
+            type_id: bib.to_ascii_uppercase_smolstr(),
             facing: 0,
             frame,
             house_color,
@@ -243,7 +243,7 @@ fn frozen_building_pieces(
         let context = crate::render::sprite_atlas::frozen_anim_palette_context(config);
         let key = ShpSpriteKey {
             palette_context: context,
-            type_id: name.to_string(),
+            type_id: name.into(),
             facing: 0,
             frame,
             house_color: if context == ShpPaletteContext::AnimPalette {
@@ -266,12 +266,7 @@ fn frozen_building_pieces(
         let palette = if context == ShpPaletteContext::AnimPalette {
             PaletteLight::plain(53, brightness)
         } else {
-            PaletteLight::color_scheme(
-                input
-                    .lighting
-                    .palette_rgb(input.lighting.profiles().default_profile_id()),
-                brightness,
-            )
+            PaletteLight::color_scheme(input.lighting.color_scheme_rgb(), brightness)
         };
         let mut instance = sprite(entry, [x, y], depth, palette);
         instance.z_adjust = super::lifted_z_adjust(lift, record.z_adjust.wrapping_sub(2));
@@ -391,7 +386,12 @@ mod tests {
         }
         let mut atlas = SpriteAtlas::from_test_entries(entries);
         atlas.set_object_shp_frame_count_for_test("TEST", 8);
-        let lighting = CellLightGrid::new();
+        // A trigger retint (`0x0053AD00`), then an in-game detail change
+        // (`0x00545000`) that rebuilds only the cell Converts as neutral: the
+        // house schemes keep the retint.
+        let mut lighting = CellLightGrid::new();
+        lighting.retint_normal_rgb([1200, 800, 600]);
+        lighting.reset_cell_converts(None);
         let colors = [("A".into(), HouseColorIndex(1))].into_iter().collect();
         let input = FrozenDrawInputs {
             interner: &interner,
@@ -440,11 +440,25 @@ mod tests {
         assert!(pieces.iter().all(|piece| piece.instance.alpha == 1.0
             && piece.instance.draw_state.native_selector_bits() == 0
             && piece.instance.palette_light.colour_word() == 0));
+        let scheme = PaletteLight::color_scheme([1200, 800, 600], 1000);
+        assert_eq!(pieces[0].instance.palette_light, scheme, "body");
+        assert_eq!(pieces[3].instance.palette_light, scheme, "anim");
         assert_eq!(pieces[3].render_z, RenderZPolicy::ReadOnly);
         assert_eq!(
             pieces[3].instance.z_adjust,
             11.0 - crate::util::native_x87::adjust_for_z_standard(104) as f32
         );
+
+        let mut raised = selected[0].1.clone();
+        raised.level = 36;
+        raised.location.z = 3744;
+        let raised = frozen_building_pieces(&input, &raised);
+        assert_eq!(raised.len(), pieces.len());
+        for (low, high) in pieces.iter().zip(&raised) {
+            assert_eq!(high.instance.position[1], low.instance.position[1] - 525.0);
+            assert_eq!(high.instance.z_adjust, low.instance.z_adjust - 525.0);
+            assert_eq!(high.instance.depth, low.instance.depth);
+        }
     }
 }
 

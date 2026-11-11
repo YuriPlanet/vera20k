@@ -9,8 +9,10 @@
 use crate::app::AppState;
 use crate::app::presentation::instances::{CellBodyAtlas, CellBodyDraw};
 use crate::app::presentation::sidebar_render::{begin_main_load_pass, begin_main_pass};
-use crate::app::presentation::sidebar_surface::SidebarPart;
-use crate::app::presentation::ui_overlays::current_software_cursor_texture;
+use crate::app::presentation::sidebar_surface::{
+    SIDEBAR_STREAMS, SidebarPart, SidebarPicture, SidebarRedraw, TEXT_LAYERS, VIEWPORT_OUTLINE,
+};
+use crate::app::presentation::ui_overlays::software_cursor_texture;
 use crate::render::batch::{BatchRenderer, BatchTexture, InstanceBufferPool, SpriteInstance};
 use crate::render::bridge_atlas::BridgeAtlas;
 use crate::render::overlay_atlas::OverlayAtlas;
@@ -18,6 +20,7 @@ use crate::render::tactical_draw_plan::RenderZPolicy;
 use crate::render::tile_atlas::TileAtlas;
 
 use super::merge_passes;
+use super::terrain_picture::{GroundFrame, TERRAIN_STREAMS, TerrainInputs, TerrainStep};
 
 /// One isolated pass for the Phobos placement preview artwork. The texture is
 /// owned by a `RefCell` cache, so the pass must end inside this call and the
@@ -45,6 +48,10 @@ fn draw_placement_ghost_pass(
 /// depth values that match the uploaded GPU buffers.
 pub(super) struct DrawPassData<'a> {
     pub cell_body_draws: &'a [CellBodyDraw],
+    /// The ground's instances, as uploaded to the `terrain` and `smudge`
+    /// streams.
+    pub terrain: &'a [SpriteInstance],
+    pub smudge: &'a [SpriteInstance],
     pub bridge_shadows: &'a [SpriteInstance],
     pub object_layers: &'a [super::draw_plan_lowering::ObjectLayerPass; 5],
     pub fogged_objects: &'a super::draw_plan_lowering::ObjectLayerPass,
@@ -56,6 +63,13 @@ pub(super) struct DrawPassData<'a> {
     pub sidebar_unavailable: &'a [SpriteInstance],
     pub sidebar_flash: &'a [SpriteInstance],
     pub sidebar_gclock: &'a [SpriteInstance],
+    /// The quad that shows the minimap's composition, if any.
+    pub minimap: &'a [SpriteInstance],
+    /// The radar's viewport outline over it.
+    pub viewport_rect: &'a [SpriteInstance],
+    /// `SidebarInstances::smooth_chrome` and `smooth_command_bar`.
+    pub smooth_chrome: bool,
+    pub smooth_command_bar: bool,
 }
 
 /// Draw the sidebar into its own surface, as gamemd draws `g_SidebarSurface`
@@ -73,6 +87,12 @@ fn draw_sidebar_surface(
     encoder: &mut wgpu::CommandEncoder,
     data: &DrawPassData<'_>,
 ) {
+    encode_radar_pictures(state, encoder);
+    // The column's text draws here only where its pixels are the window's.
+    let text_in_surface = matches!(
+        crate::app::presentation::sidebar_surface::column_text(state),
+        crate::app::presentation::sidebar_surface::ColumnText::Surface(_)
+    );
     let side_index = crate::app::presentation::sidebar_render::current_sidebar_side(state);
     let presentation = &state.match_state.match_presentation;
     let chrome = presentation
@@ -80,23 +100,99 @@ fn draw_sidebar_surface(
         .as_ref()
         .and_then(|set| set.resolve_side(side_index))
         .map(|resolved| resolved.atlas);
+    // Instances moved to the smooth sidebar's chrome copy draw from it.
+    let chrome_texture = |smooth: bool| {
+        chrome.and_then(|atlas| {
+            if smooth {
+                atlas.smooth_texture()
+            } else {
+                Some(&atlas.texture)
+            }
+        })
+    };
     let renderer = &mut state.renderer;
-    let Some(surface) = renderer.sidebar_surface.as_ref() else {
+    let cameo_overlay_tex = renderer.bit_font.darken_texture().or_else(|| {
+        presentation
+            .selection_overlay
+            .as_ref()
+            .map(|o| o.white_texture())
+    });
+    let Some(surface) = renderer.sidebar_surface.as_mut() else {
         return;
     };
     let batch = &renderer.batch_renderer;
     let pool = &renderer.instance_pool;
+    let minimap = presentation.minimap.as_ref();
+    let radar_anim = presentation.radar_anim.as_ref();
+    let darken = chrome.and_then(|atlas| atlas.darken.as_ref());
+    let outline_on_minimap = data
+        .minimap
+        .first()
+        .and_then(|quad| surface.column_area(quad))
+        .is_some_and(|area| surface.quads_within(area, data.viewport_rect));
+    let redraw = surface.redraw_for(SidebarPicture {
+        streams: SIDEBAR_STREAMS
+            .iter()
+            .filter(|stream| text_in_surface || !TEXT_LAYERS.contains(stream))
+            .map(|stream| pool.generation(stream))
+            .collect(),
+        textures: [
+            chrome_texture(data.smooth_chrome),
+            chrome_texture(data.smooth_command_bar),
+            presentation
+                .sidebar_cameo_atlas
+                .as_ref()
+                .map(|atlas| atlas.sidebar_texture()),
+            presentation
+                .selection_overlay
+                .as_ref()
+                .map(|overlay| overlay.white_texture()),
+            darken.map(|mask| &mask.texture),
+            cameo_overlay_tex,
+            chrome.and_then(|atlas| atlas.gclock_texture.as_ref()),
+            Some(renderer.bit_font.atlas()),
+            radar_anim.map(|ra| ra.texture()),
+            minimap.map(|m| m.map_texture()),
+            minimap.map(|m| m.white_texture()),
+        ]
+        .iter()
+        .map(|texture| texture.map(|texture| texture.bind_group.clone()))
+        .collect(),
+        radar: [
+            minimap.map_or(0, |m| m.picture_generation()),
+            radar_anim.map_or(0, |ra| ra.picture_generation()),
+        ],
+        outline: pool.generation(VIEWPORT_OUTLINE),
+        outline_on_minimap,
+        text_in_surface,
+    });
+    let surface = &*surface;
+    let minimap_area = match redraw {
+        SidebarRedraw::Nothing => return,
+        SidebarRedraw::Minimap => {
+            let area = data.minimap.first().and_then(|q| surface.column_area(q));
+            let Some(area) = area else { return };
+            Some(area)
+        }
+        SidebarRedraw::Whole => None,
+    };
+    // The strip's own layers and the bar stay clear of the minimap's quad.
+    let whole = minimap_area.is_none();
     let camera = surface.camera(SidebarPart::Column);
-    let mut pass = surface.begin_pass(SidebarPart::Column, encoder, super::CLEAR_COLOR);
+    let text_camera = surface.text_camera();
+    let mut pass = match minimap_area {
+        Some(area) => surface.begin_area_pass(encoder, area),
+        None => surface.begin_pass(SidebarPart::Column, encoder, super::CLEAR_COLOR),
+    };
     let mut draw = |tex: Option<&BatchTexture>, key: &'static str| {
         draw_pooled_with_camera(&mut pass, batch, camera, pool, tex, key);
     };
-    draw(chrome.map(|atlas| &atlas.texture), "sidebar_chrome");
+    draw(chrome_texture(data.smooth_chrome), "sidebar_chrome");
     draw(
         presentation
             .sidebar_cameo_atlas
             .as_ref()
-            .map(|atlas| &atlas.texture),
+            .map(|atlas| atlas.sidebar_texture()),
         "sidebar_cameo",
     );
     // StripDraw6A9AF8 outlines the hovered slot before its masks.
@@ -115,21 +211,18 @@ fn draw_sidebar_surface(
         (
             "sidebar_unavailable",
             data.sidebar_unavailable,
-            chrome
-                .and_then(|atlas| atlas.darken.as_ref())
-                .map(|mask| &mask.texture),
+            darken.map(|mask| &mask.texture),
             crate::render::terrain_draw::PackedSpriteKind::IndexMask,
         ),
         (
             "sidebar_flash",
             data.sidebar_flash,
-            chrome
-                .and_then(|atlas| atlas.darken.as_ref())
-                .map(|mask| &mask.texture),
+            darken.map(|mask| &mask.texture),
             crate::render::terrain_draw::PackedSpriteKind::UiPalette,
         ),
     ] {
-        if let (Some((buffer, count)), Some(texture)) = (pool.get(key), texture)
+        if whole
+            && let (Some((buffer, count)), Some(texture)) = (pool.get(key), texture)
             && count > 0
         {
             assert_eq!(count as usize, instances.len());
@@ -145,16 +238,16 @@ fn draw_sidebar_surface(
         }
     }
 
-    let cameo_overlay_tex = renderer.bit_font.darken_texture().or_else(|| {
-        presentation
-            .selection_overlay
-            .as_ref()
-            .map(|o| o.white_texture())
-    });
-    {
+    if whole {
         // Count badge rect/fill6A9D0C/6A9D4C and glyph6A9D7B precede
         // the clock. Its404 packed destination read includes these pixels.
         let mut pass = surface.begin_load_pass(SidebarPart::Column, encoder);
+        let text = |pass: &mut wgpu::RenderPass<'_>, key| {
+            if text_in_surface {
+                let atlas = Some(renderer.bit_font.atlas());
+                draw_pooled_with_camera(pass, batch, text_camera, pool, atlas, key);
+            }
+        };
         draw_pooled_with_camera(
             &mut pass,
             batch,
@@ -163,14 +256,7 @@ fn draw_sidebar_surface(
             cameo_overlay_tex,
             "sidebar_queue_overlay",
         );
-        draw_pooled_with_camera(
-            &mut pass,
-            batch,
-            camera,
-            pool,
-            Some(renderer.bit_font.atlas()),
-            "sidebar_queue_text",
-        );
+        text(&mut pass, "sidebar_queue_text");
         // Ready and Super labels6A9D94 also precede the clock6A9E97.
         draw_pooled_with_camera(
             &mut pass,
@@ -180,19 +266,14 @@ fn draw_sidebar_surface(
             cameo_overlay_tex,
             "sidebar_label_overlay",
         );
-        draw_pooled_with_camera(
-            &mut pass,
-            batch,
-            camera,
-            pool,
-            Some(renderer.bit_font.atlas()),
-            "sidebar_label_text",
-        );
+        text(&mut pass, "sidebar_label_text");
     }
-    if let (Some((buffer, count)), Some(texture)) = (
-        pool.get("sidebar_gclock"),
-        chrome.and_then(|atlas| atlas.gclock_texture.as_ref()),
-    ) && count > 0
+    if whole
+        && let (Some((buffer, count)), Some(texture)) = (
+            pool.get("sidebar_gclock"),
+            chrome.and_then(|atlas| atlas.gclock_texture.as_ref()),
+        )
+        && count > 0
     {
         assert_eq!(count as usize, data.sidebar_gclock.len());
         surface.draw_packed_layer(
@@ -207,20 +288,28 @@ fn draw_sidebar_surface(
     }
     // The production HOLD label6AA014 is the only text after the clock.
     let mut pass = surface.begin_load_pass(SidebarPart::Column, encoder);
-    let mut draw = |tex: Option<&BatchTexture>, key: &'static str| {
+    if let Some([x, y, width, height]) = minimap_area {
+        pass.set_scissor_rect(x, y, width, height);
+    }
+    let mut draw = |camera, tex: Option<&BatchTexture>, key: &'static str| {
         draw_pooled_with_camera(&mut pass, batch, camera, pool, tex, key);
     };
-    draw(cameo_overlay_tex, "sidebar_cameo_overlay");
-    draw(Some(renderer.bit_font.atlas()), "sidebar_text");
+    draw(camera, cameo_overlay_tex, "sidebar_cameo_overlay");
+    if text_in_surface {
+        draw(text_camera, Some(renderer.bit_font.atlas()), "sidebar_text");
+    }
+    draw(camera, radar_anim.map(|ra| ra.texture()), "radar_anim");
+    draw(camera, minimap.map(|m| m.map_texture()), "minimap");
+    draw(camera, minimap.map(|m| m.white_texture()), "viewport_rect");
     draw(
-        presentation.radar_anim.as_ref().map(|ra| ra.texture()),
-        "radar_anim",
+        camera,
+        minimap.map(|m| m.white_texture()),
+        "radar_content_boundary",
     );
-    let minimap = presentation.minimap.as_ref();
-    draw(minimap.map(|m| m.map_texture()), "minimap");
-    draw(minimap.map(|m| m.white_texture()), "viewport_rect");
-    draw(minimap.map(|m| m.white_texture()), "radar_content_boundary");
     drop(pass);
+    if !whole {
+        return;
+    }
 
     // The bottom command bar (6D0A20) shares the chrome art.
     let mut pass = surface.begin_pass(SidebarPart::Bar, encoder, super::CLEAR_COLOR);
@@ -229,9 +318,29 @@ fn draw_sidebar_surface(
         batch,
         surface.camera(SidebarPart::Bar),
         pool,
-        chrome.map(|atlas| &atlas.texture),
+        chrome_texture(data.smooth_command_bar),
         "command_bar",
     );
+}
+
+/// The radar's pictures for this frame: the minimap's composition
+/// (`RadarClass::Update @ 0x00656EC0`), then the housing's paints
+/// (`RadarClass::Draw @ 0x00653100`), whose retained online draw samples it.
+/// Every frame encodes them, sidebar drawn or not, so neither waits a frame.
+fn encode_radar_pictures(state: &mut AppState, encoder: &mut wgpu::CommandEncoder) {
+    let renderer = &state.renderer;
+    let presentation = &mut state.match_state.match_presentation;
+    if let Some(minimap) = presentation.minimap.as_mut() {
+        minimap.encode_composition(&renderer.gpu.device, encoder);
+    }
+    if let Some(radar) = presentation.radar_anim.as_mut() {
+        radar.encode_paints(
+            &renderer.gpu.device,
+            &renderer.gpu.queue,
+            &renderer.batch_renderer,
+            encoder,
+        );
+    }
 }
 
 /// Create the main render pass and dispatch all draw calls in the correct order.
@@ -251,6 +360,13 @@ pub(super) fn dispatch_draw_passes(
     view: &wgpu::TextureView,
     data: &DrawPassData<'_>,
 ) {
+    // The posed voxel images the world draws sample.
+    state.renderer.vxl_pose_frame_cache.borrow_mut().encode(
+        &state.renderer.gpu.device,
+        &state.renderer.gpu.queue,
+        &state.renderer.batch_renderer,
+        encoder,
+    );
     // The sidebar's surface is complete before the frame begins; the
     // screen-fixed block copies it in.
     draw_sidebar_surface(state, encoder, data);
@@ -262,7 +378,6 @@ pub(super) fn dispatch_draw_passes(
         .as_ref()
         .map_or(&state.renderer.depth_view, |zoom| zoom.depth_view())
         .clone();
-    let mut pass = begin_main_pass(encoder, view, &world_depth);
 
     // Everything from here to the screen-fixed chrome block is battlefield: it
     // belongs to the tactical viewport and must not be able to paint a pixel
@@ -280,46 +395,154 @@ pub(super) fn dispatch_draw_passes(
         .world_zoom_pass
         .as_ref()
         .map_or([x, y, w, h], |zoom| zoom.world_clip([x, y, w, h]));
+    let ground = GroundFrame {
+        terrain: data.terrain,
+        smudge: data.smudge,
+        a_plane: state.match_state.match_presentation.shroud_buffer.as_ref(),
+    };
+    let terrain_step = {
+        let presentation = &state.match_state.match_presentation;
+        let batch = &state.renderer.batch_renderer;
+        let overlay_atlas = presentation.overlay_atlas.as_ref();
+        let inputs = TerrainInputs {
+            streams: TERRAIN_STREAMS.map(|stream| pool.generation(stream)),
+            cell_bodies: data.cell_body_draws.to_vec(),
+            camera: batch.camera_uniform(),
+            camera_group: batch.camera_bind_group().clone(),
+            a_plane: presentation
+                .shroud_buffer
+                .as_ref()
+                .map_or(0, |shroud| shroud.generation()),
+            tactical: [tac_x, tac_y, tac_w, tac_h],
+            atlases: [
+                presentation
+                    .tile_atlas
+                    .as_ref()
+                    .map(|atlas| atlas.zdepth_bind_group.clone()),
+                overlay_atlas.map(|atlas| atlas.texture.bind_group.clone()),
+                overlay_atlas.and_then(|atlas| atlas.zshape_bind_group().cloned()),
+                presentation
+                    .bridge_atlas
+                    .as_ref()
+                    .map(|atlas| atlas.texture.bind_group.clone()),
+            ],
+            targets: [view.texture().clone(), world_depth.texture().clone()],
+        };
+        state
+            .renderer
+            .terrain_picture
+            .step(&state.renderer.gpu.device, inputs, ground)
+    };
+    let mut pass = match terrain_step {
+        TerrainStep::Restore => {
+            state.renderer.terrain_picture.restore(encoder);
+            begin_main_load_pass(encoder, view, &world_depth)
+        }
+        TerrainStep::Shift(shift) => {
+            // The clear leaves the strips as a full draw would start them.
+            drop(begin_main_pass(encoder, view, &world_depth));
+            state.renderer.terrain_picture.shift(
+                &state.renderer.gpu.queue,
+                encoder,
+                &world_depth,
+                shift,
+            );
+            begin_main_load_pass(encoder, view, &world_depth)
+        }
+        TerrainStep::Draw { .. } => begin_main_pass(encoder, view, &world_depth),
+    };
     pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
 
-    // --- Step 1: Terrain (Z-depth pipeline for per-pixel depth from TMP Z-data) ---
-    draw_pooled_zdepth(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        state.match_state.match_presentation.tile_atlas.as_ref(),
-        "terrain",
-    );
+    for [x, y, width, height] in terrain_step.ground_areas([tac_x, tac_y, tac_w, tac_h]) {
+        if width == 0 || height == 0 {
+            continue;
+        }
+        pass.set_scissor_rect(x, y, width, height);
+        // --- Step 1: Terrain (Z-depth pipeline for per-pixel depth from TMP Z-data) ---
+        draw_pooled_zdepth(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            state.match_state.match_presentation.tile_atlas.as_ref(),
+            "terrain",
+        );
 
-    // --- Step 1.5: Smudges (static decals: craters + scorches) ---
-    // The native terrain-tile pass dispatches each cell's smudge right after
-    // blitting that cell's tile, so smudges land in the terrain layer — well
-    // before the cell-content layer that draws overlays. Drawing them after
-    // overlays instead put every crater and scorch mark on top of the ore and
-    // walls it should be lying under.
-    draw_pooled_passthrough_overlay(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        state.match_state.match_presentation.overlay_atlas.as_ref(),
-        "smudge",
-    );
+        // --- Step 1.5: Smudges (static decals: craters + scorches) ---
+        // The native terrain-tile pass dispatches each cell's smudge right after
+        // blitting that cell's tile, so smudges land in the terrain layer — well
+        // before the cell-content layer that draws overlays. Drawing them after
+        // overlays instead put every crater and scorch mark on top of the ore and
+        // walls it should be lying under.
+        draw_pooled_passthrough_overlay(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            state.match_state.match_presentation.overlay_atlas.as_ref(),
+            "smudge",
+        );
+    }
+    if terrain_step != TerrainStep::Restore {
+        pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
+        if let TerrainStep::Draw {
+            keep_ground: true, ..
+        } = terrain_step
+        {
+            drop(pass);
+            state
+                .renderer
+                .terrain_picture
+                .keep_ground(&state.renderer.gpu.device, encoder, ground);
+            pass = begin_main_load_pass(encoder, view, &world_depth);
+            pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
+        }
 
-    // --- Step 2: The cell body sweep (SHP depth read + write) ---
-    // High bridges, walls and ordinary overlays are 0x4E00 CC_Draw_Shape
-    // draws at 0x0047F6A0, reached through one 0x006D6D10 sweep. They are not
-    // the TMP tile path at 0x00480350. Their class gradient, stored frame
-    // rectangle and height adjustment keep them above the ground and let them
-    // occlude later buildings/units. The native cell-content layer runs this
-    // whole sweep before its overlay shadow sweep, below.
-    draw_pooled_cell_bodies(
+        // --- Step 2: The cell body sweep (SHP depth read + write) ---
+        // High bridges, walls and ordinary overlays are 0x4E00 CC_Draw_Shape
+        // draws at 0x0047F6A0, reached through one 0x006D6D10 sweep. They are not
+        // the TMP tile path at 0x00480350. Their class gradient, stored frame
+        // rectangle and height adjustment keep them above the ground and let them
+        // occlude later buildings/units. The native cell-content layer runs this
+        // whole sweep before its overlay shadow sweep, below.
+        draw_pooled_cell_bodies(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            state.match_state.match_presentation.overlay_atlas.as_ref(),
+            state.match_state.match_presentation.bridge_atlas.as_ref(),
+            "cell_body",
+            data.cell_body_draws,
+        );
+    }
+    if let TerrainStep::Draw {
+        keep_whole: true, ..
+    } = terrain_step
+    {
+        drop(pass);
+        state
+            .renderer
+            .terrain_picture
+            .keep(&state.renderer.gpu.device, encoder);
+        pass = begin_main_load_pass(encoder, view, &world_depth);
+        pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
+    }
+
+    let bracket_tex = state
+        .match_state
+        .match_presentation
+        .selection_overlay
+        .as_ref()
+        .map(|o| o.white_texture());
+    // VERA ground marks (the formation line's dots, the ferry's pick-up and
+    // drop circles) lie on the ground. They follow the kept terrain picture,
+    // so are never stored in it, and precede the fogged snapshots, the
+    // building bases and every object, which cover them. Surface stores: no
+    // Z read or write.
+    draw_pooled_surface_lines(
         &mut pass,
         &state.renderer.batch_renderer,
         pool,
-        state.match_state.match_presentation.overlay_atlas.as_ref(),
-        state.match_state.match_presentation.bridge_atlas.as_ref(),
-        "cell_body",
-        data.cell_body_draws,
+        bracket_tex,
+        "ground_marks",
     );
 
     // Cell::DrawOverlay_Shadow0047F510 uses native destination halving and
@@ -449,12 +672,6 @@ pub(super) fn dispatch_draw_passes(
         pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
     }
 
-    let bracket_tex = state
-        .match_state
-        .match_presentation
-        .selection_overlay
-        .as_ref()
-        .map(|o| o.white_texture());
     // Original6D4648 draws the first rally pass BEFORE the object loop at
     // 6D465F. Building bases have already primed Z; mobile bodies and Anim
     // slots can cover the line. The second pass follows effects and BandBox.
@@ -555,19 +772,11 @@ pub(super) fn dispatch_draw_passes(
         }
     }
 
-    let mut pass = begin_main_load_pass(encoder, view, &world_depth);
-    pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
-
     // (There is no separate building-turret pass. gamemd draws a building's
     // voxel turret inside the building's retained Display slot, after the
     // body. Atlas page changes preserve that parent and its piece order.)
 
-    // Finish remaining Layer3 families before the distinct retained Top4.
-    drop(pass);
-    state
-        .renderer
-        .terrain_draw_renderer
-        .note_external_passes(encoder, 1);
+    // The distinct retained Top4 follows the Layer3 families.
     let layer = 4;
     merge_passes::draw_native_object_pass(
         encoder,
@@ -606,83 +815,94 @@ pub(super) fn dispatch_draw_passes(
         Some(&state.renderer.combat_light_renderer),
     );
 
-    let mut pass = begin_main_load_pass(encoder, view, &world_depth);
-    pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
-
     // --- Step 8: Debug overlays ---
-    // Drawn above entities, below fog and UI.
-    // Use filled-diamond texture so cells appear as isometric diamonds, not rectangles.
-    let debug_diamond_tex = state
-        .match_state
-        .match_presentation
-        .selection_overlay
-        .as_ref()
-        .map(|o| o.diamond_filled_texture());
-    draw_pooled_no_depth(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        debug_diamond_tex,
+    // Drawn above entities, below fog and UI, in a pass that opens only while
+    // one of them is on.
+    const DEBUG_OVERLAYS: [&str; 7] = [
         "debug_pathgrid",
-    );
-    let grid_tex = state
-        .match_state
-        .match_presentation
-        .selection_overlay
-        .as_ref()
-        .map(|o| o.diamond_outline_texture());
-    draw_pooled_no_depth(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        grid_tex,
         "debug_cell_grid",
-    );
-    draw_pooled_no_depth(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        debug_diamond_tex,
         "debug_path",
-    );
-    // Numbered foot route. The stroke wants the solid white texture: on a
-    // one-pixel-wide line the iso diamond's transparent corners leave a dotted
-    // trail. Nodes mark cells, so the diamond stays right for them. The step
-    // indices are GAME.FNT glyphs — a third texture, hence a third batch.
-    let white_tex = state
-        .match_state
-        .match_presentation
-        .selection_overlay
-        .as_ref()
-        .map(|o| o.white_texture());
-    draw_pooled_no_depth(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        white_tex,
         "debug_foot_stroke",
-    );
-    draw_pooled_no_depth(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        debug_diamond_tex,
         "debug_foot_nodes",
-    );
-    draw_pooled_no_depth(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        Some(state.renderer.bit_font.atlas()),
         "debug_foot_text",
-    );
-    draw_pooled_no_depth(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        debug_diamond_tex,
         "debug_heightmap",
-    );
+    ];
+    if DEBUG_OVERLAYS.iter().any(|&key| pool.get(key).is_some()) {
+        let mut pass = begin_main_load_pass(encoder, view, &world_depth);
+        pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
+        // Use filled-diamond texture so cells appear as isometric diamonds, not rectangles.
+        let debug_diamond_tex = state
+            .match_state
+            .match_presentation
+            .selection_overlay
+            .as_ref()
+            .map(|o| o.diamond_filled_texture());
+        draw_pooled_no_depth(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            debug_diamond_tex,
+            "debug_pathgrid",
+        );
+        let grid_tex = state
+            .match_state
+            .match_presentation
+            .selection_overlay
+            .as_ref()
+            .map(|o| o.diamond_outline_texture());
+        draw_pooled_no_depth(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            grid_tex,
+            "debug_cell_grid",
+        );
+        draw_pooled_no_depth(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            debug_diamond_tex,
+            "debug_path",
+        );
+        // Numbered foot route. The stroke wants the solid white texture: on a
+        // one-pixel-wide line the iso diamond's transparent corners leave a dotted
+        // trail. Nodes mark cells, so the diamond stays right for them. The step
+        // indices are GAME.FNT glyphs — a third texture, hence a third batch.
+        let white_tex = state
+            .match_state
+            .match_presentation
+            .selection_overlay
+            .as_ref()
+            .map(|o| o.white_texture());
+        draw_pooled_no_depth(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            white_tex,
+            "debug_foot_stroke",
+        );
+        draw_pooled_no_depth(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            debug_diamond_tex,
+            "debug_foot_nodes",
+        );
+        draw_pooled_no_depth(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            Some(state.renderer.bit_font.atlas()),
+            "debug_foot_text",
+        );
+        draw_pooled_no_depth(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            debug_diamond_tex,
+            "debug_heightmap",
+        );
+    }
 
     // A is consumed by each world blitter, before storing its source color.
     // Native surface stores and destination shadows must not be multiplied
@@ -694,7 +914,6 @@ pub(super) fn dispatch_draw_passes(
     // Evidence: tools/procedural_drawing_oracle/action_lines instruction packet.
     // Native6D9789: the later Extras sweep uses the same Display order,
     // completed body destination and live Z;4BFD30 never writes that Z.
-    drop(pass);
     for (layer, objects) in data.object_layers.iter().enumerate() {
         super::object_extras::draw_object_extras(
             encoder,
@@ -716,18 +935,17 @@ pub(super) fn dispatch_draw_passes(
     }
     // Original6D4664 -> Spotlight5FFFA0 edits the destination after the first
     // rally pass. Preserve this overlap, including the rally's black shadow.
-    for record in data.persistent_lights.clone() {
-        if state.renderer.combat_light_renderer.draw_record(
-            encoder,
-            [tac_x, tac_y, tac_w, tac_h],
-            record,
-        ) {
-            state
-                .renderer
-                .terrain_draw_renderer
-                .note_external_passes(encoder, 1);
-        }
-    }
+    // The lights edit in persistent-vector order, many to a pass.
+    let records: Vec<_> = data.persistent_lights.clone().collect();
+    let passes = state.renderer.combat_light_renderer.draw_records(
+        encoder,
+        [tac_x, tac_y, tac_w, tac_h],
+        &records,
+    );
+    state
+        .renderer
+        .terrain_draw_renderer
+        .note_external_passes(encoder, passes);
 
     // Tactical LaserDraw550240, EBolt, LineTrail556D40, then selected
     // radial indicators6D467F edit the destination and
@@ -736,7 +954,7 @@ pub(super) fn dispatch_draw_passes(
     state
         .renderer
         .terrain_draw_renderer
-        .draw_surface_lines(encoder, view, data.surface_effects);
+        .draw_surface_lines(encoder, view, &[data.surface_effects]);
     let mut pass = begin_main_load_pass(encoder, view, &world_depth);
     pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
 
@@ -809,10 +1027,11 @@ pub(super) fn dispatch_draw_passes(
     // batch contains action rectangles and the beams between object visits.
     if !data.tactical_lines.is_empty() {
         drop(pass);
-        state
-            .renderer
-            .terrain_draw_renderer
-            .draw_surface_lines(encoder, view, data.tactical_lines);
+        state.renderer.terrain_draw_renderer.draw_surface_lines(
+            encoder,
+            view,
+            &[data.tactical_lines],
+        );
         pass = begin_main_load_pass(encoder, view, &world_depth);
         pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
     }
@@ -966,29 +1185,35 @@ pub(super) fn dispatch_draw_passes(
             );
         }
     }
+    // A zoomed match draws the battlefield's screen-fixed text, with its
+    // boxes, at the window's pixels after the zoom (`window_ui`); their
+    // layers are left out of the frame.
+    let text_in_frame = crate::app::presentation::window_ui::battlefield_raster(state).is_none();
     // --- Step 10.6: timer lines ---
     // TacticalClass::Draw's Scenario, Super and blackout timers
     // (`0x006D4941..0x006D4B25`) follow the sparkles: black boxes, then text,
     // screen-fixed but clipped to the tactical view.
-    draw_pooled_ui_passthrough(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        state
-            .match_state
-            .match_presentation
-            .selection_overlay
-            .as_ref()
-            .map(|o| o.white_texture()),
-        "super_timer_fill",
-    );
-    draw_pooled_ui_passthrough(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        Some(state.renderer.bit_font.atlas()),
-        "super_timer_text",
-    );
+    if text_in_frame {
+        draw_pooled_ui_passthrough(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            state
+                .match_state
+                .match_presentation
+                .selection_overlay
+                .as_ref()
+                .map(|o| o.white_texture()),
+            "super_timer_fill",
+        );
+        draw_pooled_ui_passthrough(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            Some(state.renderer.bit_font.atlas()),
+            "super_timer_text",
+        );
+    }
 
     // TacticalDraw6D4B25->6D4E20 is its last battlefield draw: centred
     // GRFXTXT frame, or white text if the shape/converter is unavailable.
@@ -1003,17 +1228,31 @@ pub(super) fn dispatch_draw_passes(
         crate::app::presentation::outcome_banner::texture(state),
         "outcome_shape",
     );
-    draw_pooled_ui(
+    if text_in_frame {
+        draw_pooled_ui(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            Some(state.renderer.bit_font.atlas()),
+            "outcome_text",
+        );
+    }
+    // VERA: the pictures of the buttons a layout adds over the battlefield,
+    // from the sidebar's picture atlas, after the tactical view's own last
+    // draw: screen-fixed, clipped to the view, and zoomed with the frame.
+    draw_pooled_ui_passthrough(
         &mut pass,
         &state.renderer.batch_renderer,
         pool,
-        Some(state.renderer.bit_font.atlas()),
-        "outcome_text",
+        crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
+            .map(|atlas| &atlas.texture),
+        "layout_field_art",
     );
 
     // Original4F4480's53BAE0 gate skips tactical redraw during ChronoScreen,
     // but sidebar/UI still follow. Surface stores therefore precede chrome.
     drop(pass);
+    let bar_under = state.sidebar_frame().places().bar == Some(crate::ui::sidebar::Edge::Bottom);
     state
         .match_state
         .match_presentation
@@ -1023,6 +1262,7 @@ pub(super) fn dispatch_draw_passes(
             encoder,
             state.renderer.game_frame_texture(),
             [tac_x, tac_y, tac_w, tac_h],
+            bar_under,
         );
     let page_draw = crate::app::frontend::skirmish_shell_render::in_match_page_draw(state);
     let mut pass = begin_main_load_pass(encoder, view, frame_depth);
@@ -1039,6 +1279,23 @@ pub(super) fn dispatch_draw_passes(
     // size. The copies scissor themselves.
     if let Some(surface) = state.renderer.sidebar_surface.as_ref() {
         surface.composite(&mut pass);
+    }
+    // The column's text, where its copy would resample it, over the copy
+    // within the column (`sidebar_surface::column_text`).
+    if let crate::app::presentation::sidebar_surface::ColumnText::Frame(_) =
+        crate::app::presentation::sidebar_surface::column_text(state)
+    {
+        let (x, y, width, height) = state.sidebar_frame().column();
+        pass.set_scissor_rect(x, y, width, height);
+        for key in crate::app::presentation::sidebar_surface::TEXT_LAYERS {
+            draw_pooled_ui_passthrough(
+                &mut pass,
+                &state.renderer.batch_renderer,
+                pool,
+                Some(state.renderer.bit_font.atlas()),
+                key,
+            );
+        }
     }
     pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
     // Phobos SuperWeaponSidebar: left-edge screen-fixed layers. Drawn after
@@ -1100,57 +1357,36 @@ pub(super) fn dispatch_draw_passes(
     // text engine with the row's opaque-background style, which fills a black
     // box one pixel out on every side (0x4A5EB0 @ 0x4A5F61) behind each line
     // before its glyphs. Fill first, then the text, in the same screen-fixed
-    // pass group.
-    draw_pooled_ui(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        state
-            .match_state
-            .match_presentation
-            .selection_overlay
-            .as_ref()
-            .map(|o| o.white_texture()),
-        "message_fill",
-    );
-    draw_pooled_ui(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        Some(state.renderer.bit_font.atlas()),
-        "message_text",
-    );
-    // Both solid tooltip quads come from one tintable texel — the fill is tinted
-    // pure black and the 1 px frame takes the tip's text colour, which is what
-    // the retail pop-up shows. The darken strip would have blended the tip into
-    // whatever it covers, so it is not used here.
-    let tooltip_solid = state
+    // pass group; then the tooltip.
+    //
+    // The boxes and both solid tooltip quads come from one tintable texel —
+    // the tooltip's fill is tinted pure black and its 1 px frame takes the
+    // tip's text colour, which is what the retail pop-up shows. The darken
+    // strip would have blended the tip into whatever it covers, so it is not
+    // used here.
+    let solid = state
         .match_state
         .match_presentation
         .selection_overlay
         .as_ref()
         .map(|o| o.white_texture());
-    draw_pooled_ui(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        tooltip_solid,
-        "tooltip_fill",
-    );
-    draw_pooled_ui(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        tooltip_solid,
-        "tooltip_border",
-    );
-    draw_pooled_ui(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        Some(state.renderer.bit_font.atlas()),
-        "tooltip_text",
-    );
+    if text_in_frame {
+        for (texture, key) in [
+            (solid, "message_fill"),
+            (Some(state.renderer.bit_font.atlas()), "message_text"),
+            (solid, "tooltip_fill"),
+            (solid, "tooltip_border"),
+            (Some(state.renderer.bit_font.atlas()), "tooltip_text"),
+        ] {
+            draw_pooled_ui(
+                &mut pass,
+                &state.renderer.batch_renderer,
+                pool,
+                texture,
+                key,
+            );
+        }
+    }
     // State 7's 0xCF window over the live battlefield (0x0077D840).
     if let Some(page) = page_draw.as_ref() {
         page.draw(&mut pass, state);
@@ -1170,53 +1406,63 @@ pub(super) fn dispatch_draw_passes(
     // `stage_pre_cursor_composition`, so the text is inside the
     // ScreenCapture-retained pre-cursor composition (0x537BC0 hides the mouse
     // while copying).
-    draw_pooled_ui_passthrough(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        state
-            .match_state
-            .match_presentation
-            .selection_overlay
-            .as_ref()
-            .map(|o| o.white_texture()),
-        "build_text_fill",
-    );
-    draw_pooled_ui_passthrough(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        Some(state.renderer.bit_font.atlas()),
-        "build_text_text",
-    );
+    if text_in_frame {
+        draw_pooled_ui_passthrough(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            solid,
+            "build_text_fill",
+        );
+        draw_pooled_ui_passthrough(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            Some(state.renderer.bit_font.atlas()),
+            "build_text_text",
+        );
+    }
 
     // Active YR ScreenCaptureCommandClass::Execute (0x00537BC0) hides
-    // WWMouse while copying the already-presented client. Preserve the same
-    // composition boundary without changing the displayed frame: retain every
-    // completed UI/sidebar surface here, then resume and draw the cursor into
-    // the ordinary presentation target.
+    // WWMouse while copying the already-presented client. This frame keeps
+    // every completed UI/sidebar surface and no cursor: the cursor goes over
+    // its copies (`draw_software_cursor`, `window_ui::draw_battlefield`).
     drop(pass);
-    let screenshot_source = state.renderer.game_frame_texture().clone();
     state
         .renderer
         .retail_screenshot_frame_cache
-        .stage_pre_cursor_composition(
-            &state.renderer.gpu.device,
-            encoder,
-            &screenshot_source,
+        .stage_in_place_composition(
+            state.renderer.game_frame_texture(),
             state.renderer.gpu.config.format,
             state.render_width(),
             state.render_height(),
             state.renderer.gpu.config.width,
             state.renderer.gpu.config.height,
         );
+}
+
+/// An unzoomed match's software cursor, over the window's copy of the frame.
+pub(crate) fn draw_software_cursor(
+    state: &AppState,
+    encoder: &mut wgpu::CommandEncoder,
+    view: &wgpu::TextureView,
+    cursor: Option<crate::app::presentation::ui_overlays::SoftwareCursorDraw>,
+) {
+    let Some(texture) = cursor.and_then(|draw| software_cursor_texture(state, draw)) else {
+        return;
+    };
+    let frame_depth = state
+        .renderer
+        .world_zoom_pass
+        .as_ref()
+        .map_or(&state.renderer.depth_view, |zoom| zoom.frame_depth_view());
     let mut pass = begin_main_load_pass(encoder, view, frame_depth);
     pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
     draw_pooled_ui(
         &mut pass,
         &state.renderer.batch_renderer,
-        pool,
-        current_software_cursor_texture(state),
+        &state.renderer.instance_pool,
+        Some(texture),
         "software_cursor",
     );
 }
@@ -1324,6 +1570,7 @@ fn composite_world_with_drag_rect(
 }
 
 /// Native path/rally pixels belong to the world surface, before wheel zoom.
+/// Their dashed stores keep or skip each pixel by the live A on the GPU.
 pub(super) fn draw_pooled_surface_lines<'a>(
     pass: &mut wgpu::RenderPass<'a>,
     batch: &'a BatchRenderer,
@@ -1332,7 +1579,7 @@ pub(super) fn draw_pooled_surface_lines<'a>(
     key: &'static str,
 ) {
     if let (Some(t), Some((buf, count))) = (tex, pool.get(key)) {
-        batch.draw_with_buffer_passthrough(pass, t, buf, count);
+        batch.draw_surface_stores(pass, t, buf, count);
     }
 }
 
@@ -1488,16 +1735,26 @@ mod tests {
     }
 
     #[test]
+    fn ground_marks_follow_the_kept_ground_and_precede_buildings_and_objects() {
+        let kept = source_offset(".keep(&state.renderer.gpu.device, encoder)");
+        let marks = source_offset("\"ground_marks\"");
+        let fogged = source_offset("pool.get(\"fogged_objects\")");
+        let building_bases = source_offset("ObjectDrawPhase::BuildingBase");
+        let objects = source_offset("for layer in 0..=3 {");
+        assert!(kept < marks, "the kept ground must not store the marks");
+        assert!(marks < fogged && marks < building_bases && marks < objects);
+    }
+
+    #[test]
     fn gsi_13_01_pixel_fx_and_timers_precede_native_outcome_and_chrono_capture() {
         let first_rally = source_offset("\"factory_rally_first\"");
         let ion_blasts = source_offset(".draw_ion_blasts(encoder, view)");
         let building_bases = source_offset("ObjectDrawPhase::BuildingBase");
         let objects = source_offset("for layer in 0..=3 {");
-        let combat_lights = source_offset("for record in data.persistent_lights.clone()");
+        let combat_lights = source_offset("data.persistent_lights.clone().collect()");
         let second_rally = source_offset("\"factory_rally_second\"");
         let target_lines = source_offset("\"target_lines\"");
-        let tactical_lines =
-            source_offset(".draw_surface_lines(encoder, view, data.tactical_lines)");
+        let tactical_lines = source_offset("&[data.tactical_lines]");
         let status = source_offset("super::object_extras::draw_object_extras(");
         let placement = source_offset("pool.get(\"placement\")");
         let sparkle = source_offset("pool.get(\"cell_sparkles\")");
@@ -1516,7 +1773,7 @@ mod tests {
         let tooltip_text = source_offset("\"tooltip_text\"");
         let build_fill = source_offset("\"build_text_fill\"");
         let build_text = source_offset("\"build_text_text\"");
-        let pre_cursor_capture = source_offset(".stage_pre_cursor_composition(");
+        let pre_cursor_capture = source_offset(".stage_in_place_composition(");
         let cursor = source_offset("\"software_cursor\"");
 
         // Original6D4648,6D4656,6D465F: IonBlast DrawAll between the first
@@ -1649,7 +1906,7 @@ mod tests {
     #[test]
     fn gsi_04_01_sidebar_surface_is_finished_before_its_blit() {
         let surface_pass = source_offset("draw_sidebar_surface(state, encoder, data);");
-        let frame_pass = source_offset("let mut pass = begin_main_pass(");
+        let frame_pass = source_offset("begin_main_pass(encoder, view, &world_depth)");
         let timer_text = source_offset("\"super_timer_text\"");
         let blit = source_offset("surface.composite(&mut pass)");
         let message = source_offset("\"message_text\"");
@@ -1660,6 +1917,8 @@ mod tests {
 
         // No sidebar or bar layer draws in the frame pass, so the frame keeps
         // no sidebar depth: the tooltips and the cursor show over the radar.
+        // The column's text may go over the copy there, without depth
+        // (`sidebar_surface::column_text`).
         let production = SOURCE.split("#[cfg(test)]").next().unwrap();
         for layer in [
             "\"sidebar_chrome\"",
@@ -1683,7 +1942,7 @@ mod tests {
     /// reads as a translucent box, which is what this pins out.
     #[test]
     fn tooltip_fill_binds_the_solid_texel_not_the_darken_strip() {
-        let binding = source_offset("let tooltip_solid");
+        let binding = source_offset("let solid = state");
         let fill = source_offset("\"tooltip_fill\"");
         let border = source_offset("\"tooltip_border\"");
         assert!(binding < fill);

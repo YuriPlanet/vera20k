@@ -22,9 +22,10 @@ use crate::sim::superweapon::SuperWeaponView;
 use crate::sim::world::{LifecycleOutput, Simulation, TickLane};
 use crate::ui::sidebar::cameo_order::{
     Cameo, CameoId, CameoKey, CameoRequestState, CameoStrips, pending_production_affordability,
-    pending_production_prediction_rate, pending_production_smoothed_stage,
+    pending_production_prediction_rate, pending_production_smoothed_stage, strip_rejects_entry,
 };
-use crate::ui::sidebar::{SidebarTab, SidebarView};
+use crate::ui::sidebar::gadget_flash::SidebarGadgetState;
+use crate::ui::sidebar::{ArmedSidebarEntry, SidebarChromeLayoutSpec, SidebarTab, SidebarView};
 
 /// One changed `CreditsClass::AI` step: the `animating(+0xA)` latch plus the
 /// `counting_up(+0x9)` direction that `CreditsClass::Draw @ 0x004A2370` reads
@@ -44,6 +45,8 @@ pub(crate) struct SidebarProjectionState {
     /// Retained native strip order, keyed to the local house. `None` is the
     /// scenario-init window (`[0xA8E7AC] != 0`), where insertions are silent.
     cameos: Option<(InternedId, CameoStrips)>,
+    /// The layout's cameo columns, which every strip counts its rows in.
+    cameo_columns: crate::ui::sidebar::cameo_order::StripColumns,
     /// A saved strip replacement must bind its buttons before its first
     /// refreshed view. Cleared by that reconciliation or a fresh seed/reset.
     pending_tab_initialization: bool,
@@ -92,6 +95,57 @@ pub(crate) struct SidebarProjectionState {
     /// The cameo candidates of those inputs, with the right strip's
     /// superweapons they were derived with.
     kept_cameos: Option<(SimInputsKey, Vec<SuperWeaponView>, Arc<Vec<Cameo>>)>,
+    /// What `current_view` was built from, while it stands for those inputs.
+    view_basis: Option<ViewBasis>,
+}
+
+/// What a refresh builds the view from besides the projection's own strips
+/// and Factory links: the layout, the gadgets, the credits shown and the
+/// [`SidebarSimInputs`] of one world revision. The cameo atlas is installed
+/// with a new world and its rules (`loading::transitions`), so it never
+/// changes under one [`SidebarSimInputs`].
+#[derive(Debug)]
+pub(crate) struct SidebarViewInputs {
+    pub(crate) spec: SidebarChromeLayoutSpec,
+    pub(crate) screen: (f32, f32),
+    pub(crate) tab: SidebarTab,
+    pub(crate) credits: i32,
+    /// Compared by identity: [`SidebarProjectionState::sim_inputs`] derives
+    /// one per world revision, rules and owner.
+    pub(crate) sim: Arc<SidebarSimInputs>,
+    /// Tab, Repair, Sell, scroll down, scroll up and the two top buttons.
+    pub(crate) button_sizes: [Option<[f32; 2]>; 7],
+    pub(crate) armed: Option<ArmedSidebarEntry>,
+    /// The right strip's superweapons.
+    pub(crate) supers: Vec<SuperWeaponView>,
+    pub(crate) gadgets: SidebarGadgetState,
+    /// The grids of build pictures the side's layout adds, each with the
+    /// row it is scrolled to.
+    pub(crate) grids: Vec<crate::ui::sidebar::AddedGrid>,
+}
+
+impl PartialEq for SidebarViewInputs {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.sim, &other.sim)
+            && self.spec == other.spec
+            && self.screen == other.screen
+            && self.tab == other.tab
+            && self.credits == other.credits
+            && self.button_sizes == other.button_sizes
+            && self.armed == other.armed
+            && self.supers == other.supers
+            && self.gadgets == other.gadgets
+            && self.grids == other.grids
+    }
+}
+
+/// The inputs of a built view, with the strips and Factory links it was
+/// built and drawn from.
+#[derive(Debug)]
+struct ViewBasis {
+    inputs: SidebarViewInputs,
+    cameos: Option<(InternedId, CameoStrips)>,
+    factory_links: HashMap<InternedId, CameoFactoryLink>,
 }
 
 /// What one projection refresh reads from the simulation for the local owner.
@@ -261,7 +315,30 @@ impl SidebarProjectionState {
         self.view_revision
     }
 
+    /// Whether the retained view was built from `inputs` and the strips and
+    /// Factory links as they stand now, so that building it again would give
+    /// an equal view. The per-pass gadget refresh then keeps it.
+    pub(crate) fn view_holds_for(&self, inputs: &SidebarViewInputs) -> bool {
+        self.view_basis.as_ref().is_some_and(|basis| {
+            basis.inputs == *inputs
+                && basis.cameos == self.cameos
+                && basis.factory_links == self.factory_links
+        })
+    }
+
+    /// Retain a view just built from `inputs` and the current strips and
+    /// Factory links.
+    pub(crate) fn replace_built_view(&mut self, view: SidebarView, inputs: SidebarViewInputs) {
+        self.replace_view(Some(view));
+        self.view_basis = Some(ViewBasis {
+            inputs,
+            cameos: self.cameos.clone(),
+            factory_links: self.factory_links.clone(),
+        });
+    }
+
     pub(crate) fn replace_view(&mut self, view: Option<SidebarView>) {
+        self.view_basis = None;
         if self.current_view != view {
             self.view_revision = self.view_revision.wrapping_add(1);
         }
@@ -322,6 +399,9 @@ impl SidebarProjectionState {
                 self.prediction_categories.clear();
             }
             self.cameos = Some((owner, CameoStrips::default()));
+        }
+        if let Some((_, strips)) = self.cameos.as_mut() {
+            strips.set_columns(self.cameo_columns);
         }
         let recalculate_builds = !initialized || self.pending_cameo_recheck == Some(owner);
         self.pending_cameo_recheck = None;
@@ -686,6 +766,7 @@ impl SidebarProjectionState {
         let Some(mut view) = self.current_view.take() else {
             return;
         };
+        self.view_basis = None;
         self.apply_cameo_draw_state(&mut view, sim, rules, owner, armed_building);
         self.current_view = Some(view);
         // Committed frames only; the world revision moves with them anyway.
@@ -1138,16 +1219,13 @@ impl SidebarProjectionState {
                         )
                         .is_some()
                     {
-                        let mut duration = crate::sim::production::type_base_build_time(
-                            object.cost,
-                            rules.production.build_speed,
-                        );
+                        let mut duration = crate::sim::production::type_build_time(object, rules);
                         // Select6AB8B6..6AB8DA: Building Wall's coefficient
                         // follows the shared type vt+88 duration. The actual
                         // Time_To_Build has its own later wall arm6F4917.
-                        if object.category == crate::rules::object_type::ObjectCategory::Building
-                            && object.wall
-                        {
+                        // Ares SelectClass_ProcessInput_BuildTime (hook
+                        // 6AB8BB ->10041950) skips it with BuildTime.Speed.
+                        if object.wall_build_speed_applies() {
                             use crate::util::native_x87::MaskedX87Chop53 as X87;
                             duration = X87::ftol_i32_low_masked(X87::mul(
                                 X87::load_i32(duration),
@@ -1172,6 +1250,10 @@ impl SidebarProjectionState {
 
     /// The original Infantry set/clear arm5005CC/5007BE falls through to
     /// the Naval-selected Vehicle slot; its getter reads only Infantry.
+    /// Ares 3.0 sets only the Infantry flag: HouseClass_SetFactoryCreatedManually
+    /// (1005CBD0, hook 0x5005CC), HouseClass_ClearFactoryCreatedManually
+    /// (1005CB30, hook 0x50067C) and HouseClass_SetFactoryCreatedManually2
+    /// (1005CBF0, hook 0x5007BE).
     fn set_prediction_category(&mut self, category: ProductionCategory, naval: bool, set: bool) {
         let mut update = |category| {
             if set {
@@ -1181,7 +1263,7 @@ impl SidebarProjectionState {
             }
         };
         update(category);
-        if category == ProductionCategory::Infantry {
+        if category == ProductionCategory::Infantry && !crate::rules::ARES_ENABLED {
             update(if naval {
                 ProductionCategory::Ship
             } else {
@@ -1237,6 +1319,11 @@ impl SidebarProjectionState {
         self.cameos
             .as_ref()
             .is_some_and(|(_, strips)| strips.redraw_requested(frame))
+    }
+
+    /// The layout's cameo columns, taken by the strips at the next reconcile.
+    pub(crate) fn set_cameo_columns(&mut self, columns: usize) {
+        self.cameo_columns = crate::ui::sidebar::cameo_order::StripColumns::new(columns);
     }
 
     pub(crate) fn set_cameo_frame(&mut self, frame: i32) {
@@ -1328,8 +1415,18 @@ impl SidebarProjectionState {
         }
     }
 
-    /// Return the owner's retained display value, seeding a newly observed
-    /// owner from the actual balance without animating during projection build.
+    /// A fresh scenario's counter starts at zero and counts up to the balance:
+    /// InitializeScenarioFromINI reaches InitSideMixFiles, whose
+    /// TabClass::LoadSHPs @ 0x006D02B0 (call 0x00535347) clears
+    /// CreditsClass+4. Saved games run it before MouseClass::Load
+    /// (0x0067E761, 0x0067E870), so loads keep the saved value instead.
+    pub(crate) fn start_scenario_credits_counter(&mut self, owner: Option<&str>) {
+        self.restore_credits_counter(owner, Some(0));
+    }
+
+    /// Return the owner's retained display value. An owner neither started
+    /// nor restored (a save without the counter) is seeded from the actual
+    /// balance without animating during projection build.
     pub(crate) fn displayed_credits_or_seed(&mut self, owner: &str, actual: i32) -> i32 {
         *self
             .displayed_credits
@@ -1338,8 +1435,7 @@ impl SidebarProjectionState {
     }
 
     /// Advance one native CreditsClass AI step for an already observed owner.
-    /// A newly observed owner starts at the actual balance, matching the former
-    /// first-view behavior without making a view read mutate state.
+    /// An owner neither started nor restored starts at the actual balance.
     ///
     /// Returns the step's [`CreditTick`]: `Some(CreditTick { counting_up })`
     /// when the displayed value changed (native sets `animating(+0xA) = 1` and
@@ -1542,7 +1638,9 @@ pub(crate) fn prepare_saved_order(
                 "saved sidebar strip {index} has an invalid request state"
             ));
         }
-        if identities.len() > 76 {
+        // AddCameo admits one entry past 75 (cameo_order.rs); an Ares strip is
+        // unbounded (Ares.dll 1002C160, hook 0x6A63B7).
+        if strip_rejects_entry(identities.len().saturating_sub(1)) {
             return Err(format!(
                 "saved sidebar strip {index} exceeds native admission capacity"
             ));
@@ -1798,6 +1896,10 @@ mod tests {
         assert!(restored.production_factory_visits(&sim).is_empty());
     }
 
+    // The Infantry request mark falls through to the Vehicle one only without
+    // Ares (FactoryClass flag fixes 1005CBD0/1005CB30/1005CBF0, hooks
+    // 0x5005CC/0x50067C/0x5007BE).
+    #[cfg(not(feature = "ares"))]
     #[test]
     fn begin_attempt_clears_the_first_request_gate_without_discarding_failed_request() {
         use crate::app::input::sidebar_eva::{CameoClick, CameoOrder};
@@ -2200,6 +2302,25 @@ mod tests {
             !projection
                 .reconcile_fixture(owner, &[candidate(a)], 3)
                 .build_inserted()
+        );
+    }
+
+    /// TabClass::LoadSHPs 0x006D02B0 zeroes the counter on every fresh
+    /// scenario, even over the previous match's value for the same House, so
+    /// a 10000 start rolls up from 0 by the 0x8F step cap with up ticks.
+    #[test]
+    fn fresh_scenario_counter_rolls_up_from_zero() {
+        let mut projection = SidebarProjectionState::default();
+        projection.displayed_credits_or_seed("Americans", 10_000);
+        projection.start_scenario_credits_counter(Some("Americans"));
+        assert_eq!(projection.displayed_credits_or_seed("Americans", 10_000), 0);
+        assert_eq!(
+            projection.advance_credits("Americans", 10_000),
+            Some(CreditTick { counting_up: true })
+        );
+        assert_eq!(
+            projection.displayed_credits_for_test("Americans"),
+            Some(0x8F)
         );
     }
 

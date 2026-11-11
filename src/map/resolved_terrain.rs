@@ -42,6 +42,7 @@ use crate::rules::overlay_types::{
 use crate::rules::ruleset::RuleSet;
 use crate::rules::terrain_object_type::TerrainObjectType;
 use crate::rules::terrain_rules::{LandType, LandTypeSemantics, SpeedCostProfile, TerrainRules};
+use crate::util::lookup_hash::LookupMap;
 use crate::util::pixel_conversion::PixelConversionBounds;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{
@@ -54,6 +55,8 @@ mod bridge_flags;
 mod build;
 mod cell_recalc;
 mod cliffs;
+mod cow_cells;
+mod deformation;
 mod mutation;
 mod native_cell;
 mod pavement;
@@ -71,11 +74,12 @@ mod tests;
 pub(crate) use allocated_order::{AllocatedCellOrder, ROW_NEIGHBORS};
 pub(crate) use bridge_flags::RealCellBridgeFlags0x1180;
 pub use build::OverlayLoadSource;
+pub(crate) use build::cliff_back_normal_reclass_applies;
 pub use build::{AuthoredTerrainFill, RadarColorMetadata, current_tile_permissions};
 use build::{presentation_tile_parts, wheel_speed_at_or_below_one_percent};
 pub(crate) use cell_recalc::{
     AutomaticTubeAllocation, AutomaticTubeRequest, LoadCellRecalcEffects, LoadCellRecalcError,
-    LoadCellRecalcOutcome, LoadCellRecalcState,
+    LoadCellRecalcOutcome, LoadCellRecalcState, is_behind_cliff,
 };
 use cliffs::DestroyableCliffCatalog;
 pub(crate) use native_cell::{
@@ -117,7 +121,60 @@ pub(crate) fn recalc_zone_type(
     outside: bool,
     overlay_zone_type: Option<u8>,
     land_type: u8,
-    wheel_speed: Option<u8>,
+    wheel_speed: Option<crate::util::native_x87::NativeF32Bits>,
+    terrain_object_occupation: Option<i32>,
+) -> u8 {
+    recalc_zone_type_for_wheel_block(
+        outside,
+        overlay_zone_type,
+        land_type,
+        wheel_speed_at_or_below_one_percent(wheel_speed),
+        terrain_object_occupation,
+    )
+}
+
+/// [`recalc_zone_type`] with the object list's building arm
+/// (`0x00483D94..0x00483DB0`), which runs after the wheel test and before
+/// any later object: `building_impassable` is a building there whose cell is
+/// Impassable (6, `0x00483D6B`). The stock arm's FirestormWall= branch
+/// needs `HouseClass::FirestormActive` (`+0x1FA`), which only Ares sets
+/// (its `Firestorm.Wall` sections take that branch: Ares 3.0 10014B70, hook
+/// 0x483D94), so default builds have no caller; the LaserFence branch is
+/// not ported (no retail type is a laser fence).
+#[cfg(feature = "ares")]
+pub(crate) fn recalc_zone_type_with_buildings(
+    outside: bool,
+    overlay_zone_type: Option<u8>,
+    land_type: u8,
+    wheel_speed: Option<crate::util::native_x87::NativeF32Bits>,
+    terrain_object_occupation: Option<i32>,
+    building_impassable: bool,
+) -> u8 {
+    let wheel_blocked = wheel_speed_at_or_below_one_percent(wheel_speed);
+    let reaches_objects = !outside
+        && overlay_zone_type.is_none()
+        && land_type != LandType::Water.as_index()
+        && land_type != LandType::Beach.as_index()
+        && !wheel_blocked;
+    if building_impassable && reaches_objects {
+        return zone_class::IMPASSABLE;
+    }
+    recalc_zone_type_for_wheel_block(
+        outside,
+        overlay_zone_type,
+        land_type,
+        wheel_blocked,
+        terrain_object_occupation,
+    )
+}
+
+/// [`recalc_zone_type`] for a caller that holds the land row's
+/// `Wheel <= 1%` result (`0x00483D57..0x00483D69`) instead of the speed.
+pub(crate) fn recalc_zone_type_for_wheel_block(
+    outside: bool,
+    overlay_zone_type: Option<u8>,
+    land_type: u8,
+    wheel_blocked: bool,
     terrain_object_occupation: Option<i32>,
 ) -> u8 {
     if outside {
@@ -128,7 +185,7 @@ pub(crate) fn recalc_zone_type(
         zone_class::WATER
     } else if land_type == LandType::Beach.as_index() {
         zone_class::BEACH
-    } else if wheel_speed_at_or_below_one_percent(wheel_speed) {
+    } else if wheel_blocked {
         zone_class::IMPASSABLE
     } else if terrain_object_occupation == Some(7) {
         zone_class::WALL
@@ -219,6 +276,10 @@ pub struct ResolvedTerrainCell {
     /// by Engineer CABHUT bridge-repair dispatch.
     pub is_wood_bridge_repair_tile: bool,
     pub level: u8,
+    /// Raw CellClass+0x119 from ReadIsoMapPack5 (gamemd.exe 0x0056BAC0).
+    /// Constructor47BBF0 initializes zero; Cell Save483C10/Load4839F0 retain
+    /// the whole byte. Tile/overlay mutations do not reinterpret or reset it.
+    pub legacy_ice_byte: u8,
     pub filled_clear: bool,
     pub tileset_index: Option<u16>,
     /// `CellClass+0xEC` LandType after TMP and overlay derivation: the one
@@ -714,19 +775,22 @@ pub struct ResolvedTerrainGrid {
     /// type through the live `CellClass+0x44` identity (`OverlayGrid` for a
     /// real cell, the shared Dummy's own). Bound beside `land_speed_costs`
     /// from the same scenario's registry; empty when no registry was bound.
-    overlay_passability: Vec<OverlayPassability>,
+    overlay_passability: crate::util::shared::Shared<Vec<OverlayPassability>>,
     /// Pristine TMP dimensions used by Techno draw depth (0x547150/0x704350).
     /// Derived asset data, keyed by tile identity rather than mutable cell:
-    /// never serialized or included in simulation hashes.
-    native_tmp_draw_heights: HashMap<u16, PristineTmpHeader>,
-    cells: Vec<ResolvedTerrainCell>,
+    /// never serialized or included in simulation hashes. Every drawn object
+    /// asks it each frame and nothing walks it, so it takes the lookup hasher.
+    native_tmp_draw_heights: crate::util::shared::Shared<LookupMap<u16, PristineTmpHeader>>,
+    /// Copy-on-write ([`cow_cells::CowCells`]): the presentation frame
+    /// shares them until a real change copies them.
+    cells: cow_cells::CowCells,
     /// Derived bound on the signed levels in `cells`, always holding 0 (the
     /// level presentation assumes for a cell the grid lacks). Every
     /// constructor computes it from `cells`; [`Self::set_cell_level`], the one
     /// level writer, widens it and nothing narrows it. The raw test accessors
     /// widen it to [`LevelSpan::FULL`]. A restored cell (the rollback in
     /// [`Self::apply_dynamic_cell_state`]) brings back a level it already held.
-    /// Presentation bounds a cell's projected height with it;
+    /// Presentation and tactical picking bound a cell's projected height with it;
     /// [`Self::level_span`] checks it in debug builds.
     level_span: LevelSpan,
     /// One live identity handle, normally bound to the process owner before
@@ -741,15 +805,16 @@ pub struct ResolvedTerrainGrid {
     mutation_epoch: u64,
     /// Production-only membership for native Size-diamond CellClass slots.
     /// `None` keeps synthetic/from_cells grids rectangular for focused tests.
-    native_allocated: Option<Vec<bool>>,
+    native_allocated: Option<crate::util::shared::Shared<Vec<bool>>>,
     /// Selected TMP subimage-pointer validity, aligned with `cells`. Black
     /// header RGB remains valid and therefore cannot be used as the sentinel.
-    radar_color_valid: Vec<bool>,
+    radar_color_valid: crate::util::shared::Shared<Vec<bool>>,
     /// Parsed first sibling TMP radar metadata for pristine cells whose
     /// subimage advertises damaged data. `None` means native VariantCount is
     /// below two (or the sibling could not be loaded), so bit 0x2000 wraps to
     /// the pristine chain head instead of inventing a damaged color.
-    damaged_radar_metadata: Vec<Option<Result<RadarColorMetadata, BridgeRecalcCatalogError>>>,
+    damaged_radar_metadata:
+        crate::util::shared::Shared<Vec<Option<Result<RadarColorMetadata, BridgeRecalcCatalogError>>>>,
     tube_facts: Vec<TubeFact>,
     /// Exact signed `CellClass+0x116` authority aligned with `cells`.
     native_tube_indices: Vec<NativeTubeCellIndex>,
@@ -768,6 +833,10 @@ pub struct ResolvedTerrainGrid {
     /// Active theater tile registry length. Positive out-of-range ids present
     /// as ClearTile while their stored semantic id remains untouched.
     tile_registry_len: Option<usize>,
+    /// Saved IsometricTileTypeClass+0x305 values in physical registry order.
+    /// Cell486FF0 indexes these using its current signed tile, independently
+    /// of the rendered ClearTile fallback. None means no bound tile registry.
+    tile_burrowing_permissions: Option<Vec<bool>>,
     /// Smudge CanPlace's Morphable read of the shared dummy's constructor
     /// tile 0xFFFF, derived once from the active theater registry: every
     /// index below 0 or at least the count reads theater tile 0. False
@@ -785,6 +854,13 @@ pub struct ResolvedTerrainGrid {
     /// Immutable active-theater sparse TMP authority used only by the two
     /// verified destroyable-cliff callers.
     destroyable_cliff_catalog: Option<DestroyableCliffCatalog>,
+    /// Immutable active-theater clear and ramp stamps for terrain
+    /// deformation.
+    deformation_catalog: Option<deformation::DeformationCatalog>,
+    /// Whether the scenario's rules switched terrain deformation on
+    /// (`[CombatDamage] TerrainDeformation=`); see
+    /// [`Self::set_terrain_deformation`].
+    deformation_enabled: bool,
     /// Immutable pristine/policy inputs, shared by derived clones and snapshot
     /// templates. Mutable terrain, bounds and overlays remain separate owners.
     bridge_recalc_catalog: Option<Arc<BridgeRecalcCatalog>>,
@@ -798,9 +874,10 @@ pub struct ResolvedTerrainGrid {
 #[cfg(any(test, feature = "test-support"))]
 pub fn test_flat_ground_grid(size: u16) -> ResolvedTerrainGrid {
     let costs = SpeedCostProfile {
-        foot: Some(100),
-        track: Some(100),
-        wheel: Some(100),
+        foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
         ..Default::default()
     };
     test_grid(size, size, |rx, ry| ResolvedTerrainCell {
@@ -818,15 +895,16 @@ pub(crate) const TEST_RETAIL_CLEAR_INI: &str = "[Clear]\nFoot=100%\nTrack=100%\n
 
 /// The row the production land reader makes of retail `[Clear]`.
 #[cfg(any(test, feature = "test-support"))]
-pub(crate) const TEST_RETAIL_CLEAR_SPEED_COSTS: SpeedCostProfile = SpeedCostProfile {
-    foot: Some(100),
-    track: Some(100),
-    wheel: Some(100),
-    float: Some(0),
-    amphibious: Some(80),
-    float_beach: Some(0),
-    hover: Some(50),
-};
+pub(crate) fn test_retail_clear_speed_costs() -> SpeedCostProfile {
+    static ROW: std::sync::OnceLock<SpeedCostProfile> = std::sync::OnceLock::new();
+    *ROW.get_or_init(|| {
+        TerrainRules::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+            TEST_RETAIL_CLEAR_INI,
+        ))
+        .row(LandType::Clear)
+        .speed_costs
+    })
+}
 
 /// Retail `[Clear]` read by the production land reader, for binding a test
 /// grid's land rows as a scenario load binds its rules.
@@ -841,8 +919,8 @@ pub fn test_retail_clear_rules() -> TerrainRules {
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn test_retail_clear_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
     ResolvedTerrainCell {
-        speed_costs: TEST_RETAIL_CLEAR_SPEED_COSTS,
-        base_speed_costs: TEST_RETAIL_CLEAR_SPEED_COSTS,
+        speed_costs: test_retail_clear_speed_costs(),
+        base_speed_costs: test_retail_clear_speed_costs(),
         ..test_clear_cell(rx, ry)
     }
 }
@@ -876,13 +954,14 @@ pub fn test_grid(
 /// Every SpeedType at 100%.
 #[cfg(any(test, feature = "test-support"))]
 pub const TEST_OPEN_SPEED_COSTS: SpeedCostProfile = SpeedCostProfile {
-    foot: Some(100),
-    track: Some(100),
-    wheel: Some(100),
-    float: Some(100),
-    amphibious: Some(100),
-    float_beach: Some(100),
-    hover: Some(100),
+    foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+    track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+    wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+    float: Some(crate::util::native_x87::NativeF32Bits::ONE),
+    amphibious: Some(crate::util::native_x87::NativeF32Bits::ONE),
+    float_beach: Some(crate::util::native_x87::NativeF32Bits::ONE),
+    hover: Some(crate::util::native_x87::NativeF32Bits::ONE),
+    winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
 };
 
 /// [`test_flat_cell`], named for the Clear land it carries.
@@ -935,6 +1014,7 @@ pub fn test_loader_clear_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
 #[cfg(any(test, feature = "test-support"))]
 pub fn test_flat_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
     ResolvedTerrainCell {
+        legacy_ice_byte: 0,
         rx,
         ry,
         source_tile_index: 0,
@@ -1047,7 +1127,7 @@ impl ResolvedTerrainGrid {
                     })
             })
             .collect();
-        let radar_color_valid = cells
+        let radar_color_valid: Vec<bool> = cells
             .iter()
             .map(|cell| cell.radar_left != [0, 0, 0] || cell.radar_right != [0, 0, 0])
             .collect();
@@ -1056,29 +1136,52 @@ impl ResolvedTerrainGrid {
             width,
             height,
             level_span: LevelSpan::of(cells.iter().map(|cell| cell.level)),
-            cells,
+            cells: cow_cells::CowCells::new(cells),
             land_speed_costs: land_speed_cost_profiles(None),
-            overlay_passability: Vec::new(),
-            native_tmp_draw_heights: HashMap::new(),
+            overlay_passability: Default::default(),
+            native_tmp_draw_heights: Default::default(),
             shared_cell_dummy: SharedCellDummy::fresh(),
             mutation_epoch: 0,
             native_allocated: None,
-            radar_color_valid,
-            damaged_radar_metadata,
+            radar_color_valid: radar_color_valid.into(),
+            damaged_radar_metadata: damaged_radar_metadata.into(),
             tube_facts,
             native_tube_indices,
             tube_native_ids,
             clear_tile_id: 0,
             water_tiles: crate::map::rmg::tiles::TileIds::from_keys(&Default::default()),
             tile_registry_len: None,
+            tile_burrowing_permissions: None,
             dummy_accepts_smudge: false,
             bridge_set_start: None,
             high_bridge_rim_tiles: None,
             wood_bridge_set_start: None,
             tile_animations: Vec::new(),
             destroyable_cliff_catalog: None,
+            deformation_catalog: None,
+            deformation_enabled: false,
             bridge_recalc_catalog: None,
             allocation_caches: Default::default(),
+        }
+    }
+
+    /// Cell486FF0 skips the AllowBurrowing read when Cell+38 is outside the
+    /// active tile array; valid indices read the saved TileType+0x305 value.
+    pub fn tile_allows_burrowing(&self, tile: i32) -> bool {
+        usize::try_from(tile)
+            .ok()
+            .and_then(|index| self.tile_burrowing_permissions.as_ref()?.get(index))
+            .copied()
+            .unwrap_or(true)
+    }
+
+    /// VERA's future-affecting terrain identity includes the retained flags.
+    /// Native Tile ComputeCRC549B70 omits +0x305; this is not that diagnostic.
+    pub(crate) fn hash_burrowing_permissions(&self, hasher: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        if let Some(permissions) = &self.tile_burrowing_permissions {
+            b"tile-burrowing-permissions-v1".hash(hasher);
+            permissions.hash(hasher);
         }
     }
 
@@ -1112,7 +1215,7 @@ impl ResolvedTerrainGrid {
 
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_overlay_types_for_test(&mut self, registry: &OverlayTypeRegistry) {
-        self.overlay_passability = overlay_passability_flags(Some(registry));
+        self.overlay_passability = overlay_passability_flags(Some(registry)).into();
     }
 
     /// Terrain animations to spawn once at map load, in native creation order.
@@ -1325,8 +1428,9 @@ impl ResolvedTerrainGrid {
     }
 
     /// Immutable cells in the grid's established storage order.
-    pub fn cells(&self) -> &[ResolvedTerrainCell] {
-        &self.cells
+    /// Shared in chunks with presentation frames (see `cow_cells`).
+    pub fn cells(&self) -> &crate::util::shared::ChunkedVec<ResolvedTerrainCell> {
+        self.cells.all()
     }
 
     /// Mutable cell access that moves `mutation_epoch`, private to this
@@ -1358,9 +1462,11 @@ impl ResolvedTerrainGrid {
     /// The cell storage, for fixtures that reshape a grid. Does not move
     /// `mutation_epoch`; widens the level span to [`LevelSpan::FULL`].
     #[cfg(any(test, feature = "test-support"))]
-    pub fn cells_mut_for_test(&mut self) -> &mut Vec<ResolvedTerrainCell> {
+    pub fn cells_mut_for_test(
+        &mut self,
+    ) -> &mut crate::util::shared::ChunkedVec<ResolvedTerrainCell> {
         self.level_span = LevelSpan::FULL;
-        &mut self.cells
+        self.cells.all_mut()
     }
 
     /// The one writer of a stored cell's level; keeps [`Self::level_span`].
@@ -1379,6 +1485,14 @@ impl ResolvedTerrainGrid {
             "a cell level was written past set_cell_level"
         );
         self.level_span
+    }
+
+    /// Tiles terrain deformation may write at runtime, for the atlas
+    /// pre-load; empty without the theater's tiles.
+    pub fn deformation_atlas_tiles(&self) -> Vec<u16> {
+        self.deformation_catalog
+            .as_ref()
+            .map_or_else(Vec::new, deformation::DeformationCatalog::tile_ids)
     }
 
     /// Epoch of mutable cell access; see the field note.
@@ -1463,6 +1577,14 @@ impl ResolvedTerrainGrid {
 }
 
 impl crate::map::terrain::TacticalCellLookup for ResolvedTerrainGrid {
+    fn max_cell_level(&self) -> i8 {
+        self.level_span().max
+    }
+
+    fn min_cell_level(&self) -> i8 {
+        self.level_span().min
+    }
+
     fn cell_level(&self, rx: u16, ry: u16) -> Option<u8> {
         // Original6D6753 reads the current candidate, not a load-time level.
         self.cell(rx, ry).map(|cell| cell.level)
@@ -1488,7 +1610,8 @@ impl ResolvedTerrainCell {
     /// overlay fields are the knobs a test turns.
     pub fn clear_for_test(rx: u16, ry: u16) -> Self {
         let speed_costs = SpeedCostProfile {
-            wheel: Some(100),
+            wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
             ..Default::default()
         };
         Self {

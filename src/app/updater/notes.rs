@@ -16,8 +16,8 @@ use crate::ui::shell::list::{
 use crate::ui::shell::modal::{MessageBoxLayout, ModalKind};
 use crate::util::time::Instant;
 
-/// The list's first row.
-const CAPTION: &str = "What's new:";
+/// The label of the list's first row.
+const CAPTION: &str = "VERA:WhatsNew";
 /// Rows the list shows at once: from the lowest button's bottom up to below
 /// the question.
 const VISIBLE_ROWS: i32 = 8;
@@ -68,7 +68,7 @@ impl ReleaseNotes {
         }
         if !rows.is_empty() {
             let caption = Row {
-                text: CAPTION.to_owned(),
+                text: crate::i18n::tr(CAPTION),
                 indent: 0,
             };
             rows.insert(0, caption);
@@ -237,7 +237,7 @@ mod tests {
         let notes = ReleaseNotes::new(&font, &[note.to_owned()]);
         let indent = font.text_width(BULLET) as i32;
         assert!(notes.rows.len() > 3);
-        assert_eq!(notes.rows[0].text, CAPTION);
+        assert_eq!(notes.rows[0].text, crate::i18n::tr(CAPTION));
         assert!(notes.rows[1].text.starts_with("\u{2022} Play online"));
         assert!(notes.rows[2..].iter().all(|row| row.indent == indent));
         assert!(

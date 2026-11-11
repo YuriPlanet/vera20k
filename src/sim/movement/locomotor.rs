@@ -208,7 +208,8 @@ impl LocomotorState {
             | LocomotorKind::Walk
             | LocomotorKind::Hover
             | LocomotorKind::Ship
-            | LocomotorKind::Teleport => MovementLayer::Ground,
+            | LocomotorKind::Teleport
+            | LocomotorKind::Tunnel => MovementLayer::Ground,
             LocomotorKind::Fly | LocomotorKind::Jumpjet | LocomotorKind::Rocket => {
                 MovementLayer::Air
             }
@@ -396,6 +397,24 @@ impl LocomotorState {
         }
     }
 
+    /// The active Tunnel object's state.
+    pub fn tunnel_runtime(&self) -> Option<&super::tunnel_movement::TunnelRuntime> {
+        match (self.kind, &self.runtime_payload) {
+            (LocomotorKind::Tunnel, LocomotorRuntimePayload::Tunnel(runtime)) => Some(runtime),
+            _ => None,
+        }
+    }
+
+    /// The active Tunnel object's state, lent to `world::tunnel_process`.
+    pub(crate) fn tunnel_runtime_mut(
+        &mut self,
+    ) -> Option<&mut super::tunnel_movement::TunnelRuntime> {
+        match (self.kind, &mut self.runtime_payload) {
+            (LocomotorKind::Tunnel, LocomotorRuntimePayload::Tunnel(runtime)) => Some(runtime),
+            _ => None,
+        }
+    }
+
     pub(crate) fn teleport_runtime(&self) -> Option<&super::teleport_movement::TeleportRuntime> {
         match (self.kind, &self.runtime_payload) {
             (LocomotorKind::Teleport, LocomotorRuntimePayload::Teleport(runtime)) => Some(runtime),
@@ -434,6 +453,18 @@ impl LocomotorState {
             return self.teleport_runtime_mut();
         }
         self.piggyback.as_mut()?.warp_teleport_mut()
+    }
+
+    /// Teleport Process's own Stop_Moving after a relocation (`0x00719725`,
+    /// body `0x00718230`). Process calls it on itself, so it reaches the
+    /// Teleport even when the arrival's Per_Cell_Process had the Unit
+    /// setter's Drive suspend it (`0x0074276F`).
+    pub(crate) fn teleport_process_stop(&mut self) {
+        if let Some(runtime) = self.teleport_runtime_mut() {
+            runtime.stop();
+        } else if let Some(stash) = self.piggyback.as_mut() {
+            stash.teleport_process_stop();
+        }
     }
 
     /// Foot warp-effect readers see an effect held by the complete suspended
@@ -765,8 +796,17 @@ impl LocomotorState {
         self.runtime_payload = payload;
     }
 
-    /// The Foot's layer, cached on the active object.
+    /// The Foot's layer, cached on the active object. An active Tunnel
+    /// answers from its State instead (`In_Which_Layer @ 0x0072A1A0`):
+    /// underground while it travels below the cells, else the cached ground
+    /// layer.
     pub(crate) fn layer(&self) -> MovementLayer {
+        if self
+            .tunnel_runtime()
+            .is_some_and(super::tunnel_movement::TunnelRuntime::underground)
+        {
+            return MovementLayer::Underground;
+        }
         self.layer
     }
 

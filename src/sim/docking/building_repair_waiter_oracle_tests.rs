@@ -164,7 +164,8 @@ fn native_marked_foundation_entry_parking_and_retry_match_shared_owners() {
                         scene.tank,
                         &scene.rules,
                         ObjectAiCtx::default(),
-                    );
+                    )
+                    .unwrap();
                 }
                 "busy_retry"
                 | "free_outside_retry"

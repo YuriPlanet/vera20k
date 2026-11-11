@@ -4,18 +4,18 @@
 //! terrain-dirty generation changes. Full reconstruction and these updates
 //! both consume `CurrentRadarCellAuthority`.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use super::current_cell::CurrentRadarCellAuthority;
 use super::geometry::NativeRadarSurfaceGeometry;
-use super::helpers::{MINIMAP_WIDTH, OverlayPixel, RadarSurfacePixel, TerrainPixels, set_pixel};
-use super::projection::{aperture_pixel, rasterize_native_terrain};
+use super::helpers::{MINIMAP_WIDTH, OverlayPixel, TerrainPixels, set_pixel};
+use super::projection::aperture_pixel;
 use super::terrain::{NativeRadarCellColors, NativeRadarCellUpdate, NativeRadarTerrainSurface};
 
 pub(crate) struct RadarTerrainUpdateLayers<'a> {
+    /// The mapless fallback's terrain; a generated surface keeps its own.
     pub base_rgba: &'a mut Vec<u8>,
     pub terrain_pixels: &'a TerrainPixels,
-    pub surface_pixels: &'a mut Vec<RadarSurfacePixel>,
     pub overlay_pixels: &'a mut Vec<OverlayPixel>,
     pub native_surface: Option<NativeRadarSurfaceGeometry>,
     pub native_terrain: &'a mut Option<NativeRadarTerrainSurface>,
@@ -23,7 +23,7 @@ pub(crate) struct RadarTerrainUpdateLayers<'a> {
 
 /// A retained-radar terrain update staged before final frame composition.
 ///
-/// CPU pixels may already have changed when an upload fails. The retained
+/// Retained pixels may already have changed when an upload fails. The retained
 /// generation is deliberately committed only by [`Self::finish_with_upload`],
 /// so the next presentation visit re-runs the idempotent CellClass projection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,6 +57,68 @@ impl StagedRadarTerrainUpdate {
             Ok(generation) => generation,
             Err(never) => match never {},
         }
+    }
+}
+
+/// Radar terrain cells drained from the simulation and not yet uploaded.
+///
+/// The client moves the simulation's pending batch here every frame
+/// (`SimRuntime::take_radar_terrain_dirty`), so the minimap presents and
+/// retries from its own state and never writes the simulation. A cell joins
+/// once; the generation advances whenever one joins, and only an upload of
+/// the current generation clears the backlog, so a failed or skipped upload
+/// retries and a stale acknowledgement cannot drop newer cells.
+#[derive(Debug, Default)]
+pub struct RadarTerrainBacklog {
+    cells: Vec<(u16, u16)>,
+    index: BTreeSet<(u16, u16)>,
+    generation: u64,
+}
+
+impl RadarTerrainBacklog {
+    pub fn extend(&mut self, cells: impl IntoIterator<Item = (u16, u16)>) {
+        let mut changed = false;
+        for cell in cells {
+            if self.index.insert(cell) {
+                self.cells.push(cell);
+                changed = true;
+            }
+        }
+        if changed {
+            self.generation = self.generation.wrapping_add(1);
+        }
+    }
+
+    pub fn cells(&self) -> &[(u16, u16)] {
+        &self.cells
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    /// Clears the backlog after an upload of `generation` completed. A stale
+    /// generation or an empty backlog is refused.
+    pub fn acknowledge(&mut self, generation: u64) -> bool {
+        if generation != self.generation || self.cells.is_empty() {
+            return false;
+        }
+        self.cells.clear();
+        self.index.clear();
+        true
+    }
+
+    /// Drops cells from an abandoned timeline: a restore rebuilds the radar
+    /// from the restored cells, not from a replay of earlier marks.
+    pub(super) fn clear(&mut self) {
+        self.cells.clear();
+        self.index.clear();
+    }
+}
+
+impl AsMut<RadarTerrainBacklog> for RadarTerrainBacklog {
+    fn as_mut(&mut self) -> &mut RadarTerrainBacklog {
+        self
     }
 }
 
@@ -115,9 +177,10 @@ pub(super) fn apply_radar_terrain_dirty_cells(
         return;
     };
     // The generated surface bakes overlay precedence into its raw RGB and a
-    // changed batch re-rasterizes the whole base. The mapless per-cell terrain
-    // and overlay layers are not drawn beside it, so they are not maintained;
-    // stamping them would leave a non-native pixel when nothing changed.
+    // changed batch regenerates it for the GPU to compose. The mapless
+    // per-cell terrain and overlay layers are not drawn beside it, so they are
+    // not maintained; stamping them would leave a non-native pixel when
+    // nothing changed.
     let terrain_brightness = surface.terrain_brightness();
     let changes = cells.iter().filter_map(|&(rx, ry)| {
         let (left, right) = authority.tile_radar_colors(rx, ry, terrain_brightness)?;
@@ -132,11 +195,7 @@ pub(super) fn apply_radar_terrain_dirty_cells(
                 .map(|(color, _)| color),
         })
     });
-    if surface.set_cell_states(changes) {
-        let (rgba, pixels) = rasterize_native_terrain(surface);
-        *layers.base_rgba = rgba;
-        *layers.surface_pixels = pixels;
-    }
+    surface.set_cell_states(changes);
 }
 
 /// Mapless fallback (no generated surface): restamp each dirty cell's terrain

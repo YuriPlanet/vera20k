@@ -542,7 +542,10 @@ pub(super) fn retail_hills_collapsed_scene(
             (cell.level, cell.slope_type, cell.base_land_type),
             (6, 0, 7)
         );
-        assert_eq!(cell.base_speed_costs.track, Some(100));
+        assert_eq!(
+            cell.base_speed_costs.track,
+            Some(crate::util::native_x87::NativeF32Bits::ONE)
+        );
         assert!(!cell.base_ground_walk_blocked);
         assert_ne!(cell.bridge_facts.raw_flags & 0x100, 0);
     }

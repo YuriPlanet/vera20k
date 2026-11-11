@@ -1,0 +1,90 @@
+[
+  {
+    "name": "30p-mixed-idle",
+    "players": 30,
+    "apm": 0,
+    "network": {
+      "link": {
+        "delay_ms": 20
+      }
+    },
+    "groups": [
+      {
+        "label": "good",
+        "first": 0,
+        "last": 9,
+        "network": {
+          "link": {
+            "delay_ms": 20
+          }
+        }
+      },
+      {
+        "label": "loss-5pct",
+        "first": 10,
+        "last": 19,
+        "network": {
+          "link": {
+            "delay_ms": 20,
+            "loss": 0.05
+          }
+        }
+      },
+      {
+        "label": "rtt200-jitter50",
+        "first": 20,
+        "last": 29,
+        "network": {
+          "link": {
+            "delay_ms": 100,
+            "jitter_ms": 50
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "30p-mixed-300apm",
+    "players": 30,
+    "apm": 300,
+    "network": {
+      "link": {
+        "delay_ms": 20
+      }
+    },
+    "groups": [
+      {
+        "label": "good",
+        "first": 0,
+        "last": 9,
+        "network": {
+          "link": {
+            "delay_ms": 20
+          }
+        }
+      },
+      {
+        "label": "loss-5pct",
+        "first": 10,
+        "last": 19,
+        "network": {
+          "link": {
+            "delay_ms": 20,
+            "loss": 0.05
+          }
+        }
+      },
+      {
+        "label": "rtt200-jitter50",
+        "first": 20,
+        "last": 29,
+        "network": {
+          "link": {
+            "delay_ms": 100,
+            "jitter_ms": 50
+          }
+        }
+      }
+    ]
+  }
+]

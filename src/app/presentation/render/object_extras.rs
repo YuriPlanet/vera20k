@@ -110,7 +110,7 @@ pub(super) fn draw_object_extras(
     let mut next = 0;
     while next < layer.extras_runs.len() {
         if let ObjectExtrasRun::Lines { batch, .. } = &layer.extras_runs[next] {
-            terrain.draw_surface_lines(encoder, color, *batch);
+            terrain.draw_surface_lines(encoder, color, std::slice::from_ref(batch));
             next += 1;
             continue;
         }
@@ -211,23 +211,64 @@ pub(super) fn draw_status_runs(
             continue;
         }
         let end = rank_run_end(runs, next);
-        let run = &runs[next];
-        draw_status_prefix(&mut pass, batch, overlay, buffer, run, (end - next) as u32);
-        let ObjectExtrasRun::Status { self_heal, .. } = run else {
-            unreachable!("line parents fence status attachment passes");
-        };
-        if let (Some(index), Some(shape)) = (self_heal, overlay.pips()) {
-            assert_eq!(
-                instances[*index as usize].draw_state.native_selector_bits(),
-                0
-            );
-            batch.draw_with_buffer_passthrough_range(&mut pass, shape.texture(), buffer, *index, 1);
-        }
-        draw_status_group(&mut pass, batch, overlay, buffer, font, run);
+        draw_status_run(
+            &mut pass,
+            batch,
+            overlay,
+            buffer,
+            font,
+            instances,
+            &runs[next],
+            (end - next) as u32,
+        );
         next = end;
     }
     drop(pass);
     terrain.note_external_passes(encoder, 1);
+}
+
+/// One status parent without a pulse marker: only ordinary stores, which
+/// compose in submission order inside any main load pass. `rank_count`
+/// extends its rank pip over that many following rank-only parents.
+pub(super) fn draw_status_run<'a>(
+    pass: &mut wgpu::RenderPass<'a>,
+    batch: &'a BatchRenderer,
+    overlay: &'a SelectionOverlay,
+    buffer: &'a wgpu::Buffer,
+    font: Option<&'a BatchTexture>,
+    instances: &[SpriteInstance],
+    run: &ObjectExtrasRun,
+    rank_count: u32,
+) {
+    draw_status_prefix(pass, batch, overlay, buffer, run, rank_count);
+    let ObjectExtrasRun::Status { self_heal, .. } = run else {
+        unreachable!("line parents fence status attachment passes");
+    };
+    if let (Some(index), Some(shape)) = (self_heal, overlay.pips()) {
+        assert_eq!(
+            instances[*index as usize].draw_state.native_selector_bits(),
+            0
+        );
+        batch.draw_with_buffer_passthrough_range(pass, shape.texture(), buffer, *index, 1);
+    }
+    draw_status_group(pass, batch, overlay, buffer, font, run);
+}
+
+/// Whether this status parent's self-heal marker is a packed composite,
+/// which needs passes of its own rather than ordinary stores.
+pub(super) fn has_pulse_marker(run: &ObjectExtrasRun, instances: &[SpriteInstance]) -> bool {
+    pulse_marker(run, instances).is_some()
+}
+
+/// Every pixel one status parent's stores can reach, or `None` when none is
+/// visible.
+pub(super) fn status_footprint(
+    terrain: &TerrainDrawRenderer,
+    tactical: [u32; 4],
+    run: &ObjectExtrasRun,
+    instances: &[SpriteInstance],
+) -> Option<[u32; 4]> {
+    terrain.sprites_footprint(status_instances(run, instances), tactical)
 }
 
 fn pulse_marker<'a>(
@@ -268,7 +309,7 @@ fn status_instances<'a>(
         ..
     } = run
     else {
-        unreachable!("a pulse belongs to a status run");
+        unreachable!("only a status run has status instances");
     };
     let mut first = u32::MAX;
     let mut last = 0;

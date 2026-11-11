@@ -52,6 +52,7 @@ use super::foot_path::{FindPathResult, FootPathOutcome, coord_cell};
 use super::ground_pose;
 use super::infantry_entry::InfantryEntryArgs;
 use super::movement_tick::FootPathRequest;
+use super::path_batch::WaitingRequest;
 use super::track_fresh_dispatch::{
     FreshDispatch, FreshStage, coerce_entry_code, dispatch_entry, normalize_second_direction,
 };
@@ -94,6 +95,36 @@ impl ProcessMovementArgs {
         allow_retry: false,
         force_single: false,
     };
+
+    /// The request a batched no-queue arm with these arguments waits as: the
+    /// outer call's (1, 0), a retry recursion's (0, 0), or the second stage's
+    /// code-4/5 re-entry (argument 2, 1); see `path_batch`.
+    fn waiting_request(self) -> WaitingRequest {
+        match self {
+            Self {
+                allow_retry,
+                force_single: true,
+            } => WaitingRequest::StraightReentry { allow_retry },
+            Self {
+                allow_retry: false, ..
+            } => WaitingRequest::RetryRecursion,
+            Self {
+                allow_retry: true, ..
+            } => WaitingRequest::NoQueue,
+        }
+    }
+
+    /// The arguments of the recursion `request` waited for.
+    fn of_recursion(request: WaitingRequest) -> Option<Self> {
+        match request {
+            WaitingRequest::RetryRecursion => Some(Self::RETRY),
+            WaitingRequest::StraightReentry { allow_retry } => Some(Self {
+                allow_retry,
+                force_single: true,
+            }),
+            WaitingRequest::NoQueue | WaitingRequest::Code2Ladder { .. } => None,
+        }
+    }
 }
 
 /// Mark0/Mark1 and the per-call services the arm reaches.
@@ -229,20 +260,31 @@ impl Simulation {
         let destination = track_destination(actor).ok_or("no-queue arm without destination")?;
         // A batched request waits for the next frame's batch as if the timer
         // still ran (`path_batch`, a sim-scale deviation). So does a
-        // recursion's (the retries at 0x4B397F, 0x4B4480 and the 0x4B4541
-        // tail, the second stage's re-entries at 0x4B41B3 and 0x4B420B),
-        // unless it is the Foot's first request in a frame the batch answered.
-        // A request for the Foot's own cell never waits.
+        // recursion's, unless it is the Foot's first request in a frame the
+        // batch answered: a retry's (Drive 0x4B397F, 0x4B4480 and the 0x4B4541
+        // tail at 0x4B4552; Ship 0x6A2FCE, 0x6A3AAC, 0x6A3B7E) and the second
+        // stage's code-4/5 re-entry, which clears the path (Drive 0x4B41F7,
+        // Ship 0x6A3823). A recursion's request registers as that recursion,
+        // and the request that takes its answer resumes with the recursion's
+        // arguments, as the recursion runs. A request for the Foot's own cell
+        // never waits.
+        let resumed = self
+            .answered_recursion(id)
+            .and_then(ProcessMovementArgs::of_recursion);
         if Self::defer_path_search(
             &mut self.path_batch,
             &self.resolved_terrain,
             &self.overlay_grid,
             &self.substrate.entities,
             id,
-            super::path_batch::WaitingRequest::NoQueue,
+            call.args.waiting_request(),
         ) {
             return Ok(false);
         }
+        let call = &match resumed {
+            Some(args) => call.with_args(args),
+            None => *call,
+        };
         let request = self.track_path_request(call, destination, 0)?;
         match self.run_track_path_request(
             &request,
@@ -1073,6 +1115,21 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<(), String> {
+        self.scatter_blocked_track_list(id, cell, cell, rules, registry, frame_effects)
+    }
+
+    /// The same call with the deck flag read from `deck_cell` and the
+    /// objects taken from `list_cell`, which only the chain arm separates
+    /// (`0x004B1EC0..0x004B1F43`).
+    pub(super) fn scatter_blocked_track_list(
+        &mut self,
+        id: u64,
+        deck_cell: (i16, i16),
+        list_cell: (i16, i16),
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> Result<(), String> {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return Ok(());
         };
@@ -1080,12 +1137,12 @@ impl Simulation {
             return Ok(());
         };
         let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
-        let native = cells.lookup(cell);
+        let native = cells.lookup(deck_cell);
         let level = i32::from(cells.ground_fields(native).0 as i8);
         let location = ground_pose::position_world_coord(&actor.position);
         let deck = cells.flags(native) & 0x100 != 0
             && (location.z / GROUND_LEVEL_HEIGHT_LEPTONS - level).abs() > 2;
-        self.scatter_cell_contacts(cell, deck, true, rules, registry, frame_effects)
+        self.scatter_cell_contacts(list_cell, deck, true, rules, registry, frame_effects)
     }
 
     /// `CellClass::Scatter_Objects(null, 1, no_kidding, deck)` on `cell`

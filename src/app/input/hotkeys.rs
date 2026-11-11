@@ -19,8 +19,46 @@ const VK_ESCAPE: u16 = 0x1b;
 const VK_SPACE: u16 = 0x20;
 const VK_DELETE: u16 = 0x2e;
 
+/// VERA's own commands that come with a key: Performance Stats Ctrl+Alt+F, Lock
+/// Cursor to Window Ctrl+Alt+L, Full Screen Alt+Enter, String Keys Ctrl+Alt+K,
+/// Edit Layout Ctrl+Alt+E, Formation Line F, Formation Lock O and Ferry J.
+/// Retail `KEYBOARDMD.INI` binds none of these keys but F, which is its
+/// Follow; [`HotkeyBindings::move_follow_off_formation_key`] moves that.
+const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 8] = [
+    (HotkeyCommand::PerformanceStats, CTRL_BIT | ALT_BIT | 0x46),
+    (HotkeyCommand::LockCursor, CTRL_BIT | ALT_BIT | 0x4c),
+    (HotkeyCommand::FullScreen, ALT_BIT | 0x0d),
+    (HotkeyCommand::StringKeys, CTRL_BIT | ALT_BIT | 0x4b),
+    (HotkeyCommand::LayoutEdit, CTRL_BIT | ALT_BIT | 0x45),
+    (HotkeyCommand::FormationLine, FORMATION_LINE_KEY),
+    (HotkeyCommand::FormationLock, 0x4f),
+    (HotkeyCommand::Ferry, 0x4a),
+];
+/// F: Formation Line's default key and retail Follow's.
+const FORMATION_LINE_KEY: u16 = 0x46;
+/// V: where Follow goes when Formation Line takes F. Retail binds nothing to it.
+const FOLLOW_MOVED_KEY: u16 = 0x56;
+/// VeraX AutoLoad's Ctrl+D.
+#[cfg(feature = "verax")]
+const VERAX_DEFAULT_KEYS: [(HotkeyCommand, u16); 1] = [(HotkeyCommand::AutoLoad, CTRL_BIT | 0x44)];
+
+fn vera_default_keys() -> impl Iterator<Item = (HotkeyCommand, u16)> {
+    let keys = VERA_DEFAULT_KEYS.into_iter();
+    #[cfg(feature = "verax")]
+    let keys = keys.chain(VERAX_DEFAULT_KEYS);
+    keys
+}
+
+fn has_vera_default(command: HotkeyCommand) -> bool {
+    vera_default_keys().any(|(owner, _)| owner == command)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum HotkeyCommand {
+    CameraUp,
+    CameraDown,
+    CameraLeft,
+    CameraRight,
     CenterView,
     Options,
     CenterOnRadarEvent,
@@ -59,6 +97,31 @@ pub(crate) enum HotkeyCommand {
     Taunt(usize),
     ScreenCapture,
     SetView(usize),
+    /// VERA's built-in keys in the `vera20k` keyboard category, each with a
+    /// default in [`VERA_DEFAULT_KEYS`]. These four work on every screen
+    /// ([`HotkeyBindings::window_command`]).
+    PerformanceStats,
+    LockCursor,
+    FullScreen,
+    /// Swap the interface between each label's text and its string-table key
+    /// while the Developer page's String Keys box is ticked.
+    StringKeys,
+    /// In a match: turn the layout edit mode on or off, in which the mouse
+    /// drags the interface's parts (`input::layout_edit`). It comes with a
+    /// default key like the four above but works in a match only.
+    LayoutEdit,
+    /// Held while a left drag draws a formation line, or with Shift a
+    /// block (`input::formation_line`). In the `vera20k` keyboard category
+    /// with the F default.
+    FormationLine,
+    /// Lock the selected units' places for later moves, or unlock them
+    /// (`input::formation_lock`). In the `vera20k` keyboard category with
+    /// the O default.
+    FormationLock,
+    /// In a match: arm the ferry order's drop click for the selected
+    /// transports (`input::ferry`). It comes with a default key like the
+    /// five above.
+    Ferry,
     /// VERA's own: install or remove the auto play host. Registered after the
     /// retail commands so the original catalog indices are untouched.
     ToggleAutoPlay,
@@ -83,6 +146,44 @@ pub(crate) enum HotkeyCommand {
     /// Phobos: collapse/expand the left superweapon sidebar.
     #[cfg(feature = "phobos")]
     ToggleSwSidebar,
+}
+
+/// VERA camera bindings supplement the retail held-arrow fallback at
+/// ProcessCommand55DF80. Track the physical source so releasing one alias
+/// cannot cancel another held key, and rebinding cannot strand a direction.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct CameraScrollKeys(std::collections::HashMap<KeyCode, KeyCode>);
+
+impl CameraScrollKeys {
+    pub(crate) fn press(&mut self, physical: KeyCode, direction: KeyCode) {
+        self.0.insert(physical, direction);
+    }
+
+    pub(crate) fn release(&mut self, physical: KeyCode) -> bool {
+        self.0.remove(&physical).is_some()
+    }
+
+    pub(crate) fn held(
+        &self,
+        keys: &std::collections::HashSet<KeyCode>,
+        direction: KeyCode,
+    ) -> bool {
+        (keys.contains(&direction) && !self.0.contains_key(&direction))
+            || self
+                .0
+                .iter()
+                .any(|(physical, arrow)| *arrow == direction && keys.contains(physical))
+    }
+}
+
+pub(crate) fn camera_command_key(resolution: HotkeyResolution) -> Option<KeyCode> {
+    match resolution {
+        HotkeyResolution::Command(HotkeyCommand::CameraUp) => Some(KeyCode::ArrowUp),
+        HotkeyResolution::Command(HotkeyCommand::CameraDown) => Some(KeyCode::ArrowDown),
+        HotkeyResolution::Command(HotkeyCommand::CameraLeft) => Some(KeyCode::ArrowLeft),
+        HotkeyResolution::Command(HotkeyCommand::CameraRight) => Some(KeyCode::ArrowRight),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -137,6 +238,8 @@ impl HotkeyCommand {
                 modifiers.shift_key()
             }
             Self::PlanningMode => modifier_bits(modifiers) != 0,
+            // VERA: Shift with the held key makes the drag a block.
+            Self::FormationLine => modifier_bits(modifiers) & !SHIFT_BIT == 0,
             _ => modifier_bits(modifiers) == 0,
         }
     }
@@ -149,6 +252,8 @@ impl HotkeyCommand {
                 encoded & SHIFT_BIT != 0
             }
             Self::PlanningMode => encoded & (SHIFT_BIT | CTRL_BIT | ALT_BIT) != 0,
+            // VERA: Formation Line takes Shift alone, as above.
+            Self::FormationLine => encoded & (SHIFT_BIT | CTRL_BIT | ALT_BIT) == SHIFT_BIT,
             _ => false,
         }
     }
@@ -192,10 +297,9 @@ pub(crate) fn physical_scroll_key(
 #[derive(Debug, Clone, Default)]
 pub(crate) struct HotkeyBindings {
     by_key: BTreeMap<u16, HotkeyCommand>,
-    /// VeraX AutoLoad was explicitly unbound (`AutoLoad=0`); reloads and
-    /// startups keep it unbound instead of restoring the Ctrl+D default.
-    #[cfg(feature = "verax")]
-    vera_autoload_cleared: bool,
+    /// VERA commands explicitly unbound (`Name=0`): reloads and startups keep
+    /// them unbound instead of restoring their default key.
+    vera_cleared: Vec<HotkeyCommand>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -229,9 +333,10 @@ impl HotkeyBindings {
                 };
                 // Reload `0x00533D20`: ReadInt over 0 for each entry name.
                 let value = section.read_int(name, 0);
-                #[cfg(feature = "verax")]
-                if command == HotkeyCommand::AutoLoad && value == 0 {
-                    bindings.vera_autoload_cleared = true;
+                if value == 0 && has_vera_default(command) {
+                    if !bindings.vera_cleared.contains(&command) {
+                        bindings.vera_cleared.push(command);
+                    }
                     continue;
                 }
                 let Some(encoded) = Some(value)
@@ -243,21 +348,45 @@ impl HotkeyBindings {
                 bindings.by_key.insert(encoded, command);
             }
         }
-        // VeraX AutoLoad keeps Ctrl+D whenever the profile neither remaps it,
-        // explicitly clears it, nor gives Ctrl+D to another command. Installing
-        // it here, rather than only at startup, also makes Cancel and Reset All
-        // show and restore the default.
-        #[cfg(feature = "verax")]
-        if !bindings.vera_autoload_cleared
-            && bindings.first_key(HotkeyCommand::AutoLoad).is_none()
-            && !bindings.by_key.contains_key(&(CTRL_BIT | 0x44))
-        {
-            bindings
-                .by_key
-                .insert(CTRL_BIT | 0x44, HotkeyCommand::AutoLoad);
+        bindings.move_follow_off_formation_key();
+        // A VERA command keeps its default key whenever the profile neither
+        // remaps it, explicitly clears it, nor gives the key to another
+        // command, and only where Assign could put it. Installing it here,
+        // rather than only at startup, also makes Cancel and Reset All show
+        // and restore the default.
+        for (command, key) in vera_default_keys() {
+            if !bindings.vera_cleared.contains(&command)
+                && bindings.first_key(command).is_none()
+                && !bindings.by_key.contains_key(&key)
+                && bindings.assignment_error(command, key).is_none()
+            {
+                bindings.by_key.insert(key, command);
+            }
         }
 
         bindings
+    }
+
+    /// Formation Line's default key is F, which retail `KEYBOARDMD.INI` and
+    /// every profile saved from it give to Follow. Where the profile says
+    /// nothing about Formation Line and Follow still sits on F, Follow moves
+    /// to V (kept on any other key it has, dropped if V is taken) so the
+    /// default below can take F. A player who puts Follow back on F unbinds
+    /// Formation Line ([`Self::assign`]), which is saved as `FormationLine=0`
+    /// and ends this.
+    fn move_follow_off_formation_key(&mut self) {
+        if self.vera_cleared.contains(&HotkeyCommand::FormationLine)
+            || self.first_key(HotkeyCommand::FormationLine).is_some()
+            || self.command_at(FORMATION_LINE_KEY) != Some(HotkeyCommand::Follow)
+        {
+            return;
+        }
+        self.by_key.remove(&FORMATION_LINE_KEY);
+        if self.first_key(HotkeyCommand::Follow).is_none()
+            && !self.by_key.contains_key(&FOLLOW_MOVED_KEY)
+        {
+            self.by_key.insert(FOLLOW_MOVED_KEY, HotkeyCommand::Follow);
+        }
     }
 
     pub(crate) fn command_at(&self, encoded: u16) -> Option<HotkeyCommand> {
@@ -272,6 +401,24 @@ impl HotkeyBindings {
             .find_map(|(&key, &owner)| (owner == command).then_some(key))
     }
 
+    /// Assign's two modifier rejections (5FBB38..5FBDF1): the command itself
+    /// takes the modifiers, or the bare key's owner already takes them.
+    fn assignment_error(
+        &self,
+        command: HotkeyCommand,
+        encoded: u16,
+    ) -> Option<BindingAssignmentError> {
+        if encoded & (SHIFT_BIT | CTRL_BIT | ALT_BIT) == 0 {
+            return None;
+        }
+        if command.accepts_native_modifiers(encoded) {
+            return Some(BindingAssignmentError::CannotMap);
+        }
+        self.command_at(encoded & 0xff)
+            .is_some_and(|owner| owner.accepts_native_modifiers(encoded))
+            .then_some(BindingAssignmentError::CannotRemap)
+    }
+
     /// Original 5FBB38..5FBDF1; executable comparisons in keyboard_bindings.json.
     /// Zero unassigns the first existing shortcut. Rejections leave all bindings intact.
     pub(crate) fn assign(
@@ -279,26 +426,29 @@ impl HotkeyBindings {
         command: HotkeyCommand,
         encoded: u16,
     ) -> Result<(), BindingAssignmentError> {
-        if encoded & (SHIFT_BIT | CTRL_BIT | ALT_BIT) != 0 {
-            if command.accepts_native_modifiers(encoded) {
-                return Err(BindingAssignmentError::CannotMap);
-            }
-            if self
-                .command_at(encoded & 0xff)
-                .is_some_and(|owner| owner.accepts_native_modifiers(encoded))
-            {
-                return Err(BindingAssignmentError::CannotRemap);
-            }
+        if let Some(error) = self.assignment_error(command, encoded) {
+            return Err(error);
         }
-        #[cfg(feature = "verax")]
-        if command == HotkeyCommand::AutoLoad {
-            self.vera_autoload_cleared = encoded == 0;
+        if has_vera_default(command) {
+            self.vera_cleared.retain(|&owner| owner != command);
+            if encoded == 0 {
+                self.vera_cleared.push(command);
+            }
         }
         if let Some(key) = self.first_key(command) {
             self.by_key.remove(&key);
         }
-        if encoded != 0 {
-            self.by_key.insert(encoded, command);
+        if encoded != 0
+            && let Some(displaced) = self.by_key.insert(encoded, command)
+            && displaced != command
+            && has_vera_default(displaced)
+            && self.first_key(displaced).is_none()
+            && !self.vera_cleared.contains(&displaced)
+        {
+            // Taking a VERA command's last key unbinds it for good, as an
+            // explicit unbind does; otherwise its default would come back
+            // the moment the key is free again.
+            self.vera_cleared.push(displaced);
         }
         Ok(())
     }
@@ -325,11 +475,15 @@ impl HotkeyBindings {
                 entries.push((metadata.ini_name, key));
             }
         }
-        #[cfg(feature = "verax")]
-        if self.vera_autoload_cleared {
-            // An explicit zero keeps a deliberate unbind through reloads and
-            // the next startup; an absent row would restore the default.
-            entries.push(("AutoLoad", 0));
+        // An explicit zero keeps a deliberate unbind through reloads and the
+        // next startup; an absent row would restore the default.
+        for command in &self.vera_cleared {
+            if let Some(metadata) = catalog::registered_commands()
+                .iter()
+                .find(|row| row.command == *command)
+            {
+                entries.push((metadata.ini_name, 0));
+            }
         }
         let mut output = String::from("[Hotkey]\n");
         for (name, key) in entries {
@@ -373,6 +527,31 @@ impl HotkeyBindings {
             .unwrap_or(HotkeyResolution::Unhandled)
     }
 
+    /// VERA's every-screen commands (Performance Stats, Lock Cursor to Window,
+    /// Full Screen, String Keys), which the window owner runs before any
+    /// screen's own keys. A binding on a key that types text, held without Ctrl
+    /// or Alt, is left to the battle's hotkey dispatch, which serves the chat
+    /// edit first, so text boxes keep their letters.
+    pub(crate) fn window_command(
+        &self,
+        logical_key: &Key,
+        location: KeyLocation,
+        modifiers: ModifiersState,
+    ) -> Option<HotkeyCommand> {
+        let HotkeyResolution::Command(
+            command @ (HotkeyCommand::PerformanceStats
+            | HotkeyCommand::LockCursor
+            | HotkeyCommand::FullScreen
+            | HotkeyCommand::StringKeys),
+        ) = self.resolve_event(logical_key, location, modifiers)
+        else {
+            return None;
+        };
+        let chord = modifier_bits(modifiers) & (CTRL_BIT | ALT_BIT) != 0;
+        let typing = logical_virtual_key(logical_key, location).is_some_and(types_text);
+        (chord || !typing).then_some(command)
+    }
+
     #[cfg(test)]
     fn resolve(
         &self,
@@ -385,6 +564,15 @@ impl HotkeyBindings {
             HotkeyResolution::Fallback(_) | HotkeyResolution::Unhandled => None,
         }
     }
+}
+
+/// Keys that type a character into a text box: Space, the digits and
+/// letters, the keypad's digits and operators and the OEM punctuation keys.
+fn types_text(virtual_key: u16) -> bool {
+    matches!(
+        virtual_key,
+        0x20 | 0x30..=0x39 | 0x41..=0x5a | 0x60..=0x6f | 0xba..=0xc0 | 0xdb..=0xdf | 0xe2
+    )
 }
 
 fn fallback_for_virtual_key(virtual_key: u16) -> Option<HotkeyFallback> {
@@ -653,6 +841,16 @@ fn named_virtual_key(key: NamedKey) -> Option<u16> {
     })
 }
 
+/// A registered command by its keyboard-file name, without regard to
+/// capitals: what a layout file's `Command=` names. The keyboard file itself
+/// compares exact bytes ([`command_from_name`]).
+pub(crate) fn command_named(name: &str) -> Option<HotkeyCommand> {
+    catalog::registered_commands()
+        .iter()
+        .find(|row| row.ini_name.eq_ignore_ascii_case(name))
+        .map(|row| row.command)
+}
+
 fn command_from_name(name: &str) -> Option<HotkeyCommand> {
     // Reload 533DE4..533E29 walks registered vtable+4 names and compares exact
     // bytes. Numbered commands are registered names, not a permissive grammar.
@@ -665,6 +863,85 @@ fn command_from_name(name: &str) -> Option<HotkeyCommand> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn camera_bindings_use_normal_assignment_conflicts_and_persistence() {
+        let mut bindings = HotkeyBindings::from_ini_bytes(Some(
+            b"[Hotkey]\nStopObject=83\nDeployObject=68\nGuardObject=65\nScatterObject=87\n",
+        ));
+        assert_eq!(bindings.first_key(HotkeyCommand::CameraUp), None);
+        assert_eq!(bindings.command_at(83), Some(HotkeyCommand::StopObject));
+        bindings.assign(HotkeyCommand::StopObject, 79).unwrap();
+        let moves = [
+            (HotkeyCommand::CameraUp, 87, "w", KeyCode::ArrowUp),
+            (HotkeyCommand::CameraLeft, 65, "a", KeyCode::ArrowLeft),
+            (HotkeyCommand::CameraDown, 83, "s", KeyCode::ArrowDown),
+            (HotkeyCommand::CameraRight, 68, "d", KeyCode::ArrowRight),
+        ];
+        for (command, key, _, _) in moves {
+            bindings.assign(command, key).unwrap();
+            assert!(catalog::registered_commands().iter().any(|row| {
+                row.command == command && row.category_key == catalog::VERA_CATEGORY_KEY
+            }));
+        }
+        let saved = bindings.to_ini_string();
+        let mut restored = HotkeyBindings::reload_from_ini_bytes(Some(saved.as_bytes()));
+        for (command, key, logical, direction) in moves {
+            assert_eq!(restored.first_key(command), Some(key));
+            let resolution = restored.resolve_event(
+                &character(logical),
+                KeyLocation::Standard,
+                ModifiersState::empty(),
+            );
+            assert_eq!(resolution, HotkeyResolution::Command(command));
+            assert_eq!(camera_command_key(resolution), Some(direction));
+        }
+        assert_eq!(restored.command_at(79), Some(HotkeyCommand::StopObject));
+        assert_eq!(restored.first_key(HotkeyCommand::DeployObject), None);
+        assert_eq!(restored.first_key(HotkeyCommand::GuardObject), None);
+        assert_eq!(restored.first_key(HotkeyCommand::ScatterObject), None);
+        restored.assign(HotkeyCommand::CameraDown, 0).unwrap();
+        restored.assign(HotkeyCommand::StopObject, 83).unwrap();
+        let saved = restored.to_ini_string();
+        let restored = HotkeyBindings::reload_from_ini_bytes(Some(saved.as_bytes()));
+        assert_eq!(restored.first_key(HotkeyCommand::CameraDown), None);
+        assert_eq!(restored.command_at(83), Some(HotkeyCommand::StopObject));
+        assert_eq!(
+            restored.resolve_event(
+                &Key::Named(NamedKey::ArrowUp),
+                KeyLocation::Standard,
+                ModifiersState::empty()
+            ),
+            HotkeyResolution::Fallback(HotkeyFallback::ArrowUp)
+        );
+    }
+
+    #[test]
+    fn camera_holds_release_by_physical_source_and_respect_arrow_rebindings() {
+        use std::collections::HashSet;
+        let mut scroll = CameraScrollKeys::default();
+        let mut keys = HashSet::from([KeyCode::KeyW, KeyCode::ArrowUp]);
+        scroll.press(KeyCode::KeyW, KeyCode::ArrowUp);
+        assert!(scroll.held(&keys, KeyCode::ArrowUp));
+        scroll.release(KeyCode::KeyW);
+        keys.remove(&KeyCode::KeyW);
+        assert!(scroll.held(&keys, KeyCode::ArrowUp));
+        scroll.press(KeyCode::KeyW, KeyCode::ArrowUp);
+        keys.insert(KeyCode::KeyW);
+        keys.remove(&KeyCode::ArrowUp);
+        assert!(scroll.held(&keys, KeyCode::ArrowUp));
+        // A direction is retained from the admitted press, not re-resolved
+        // from bindings or modifiers that can change before the release.
+        assert!(scroll.release(KeyCode::KeyW));
+        keys.remove(&KeyCode::KeyW);
+        assert!(!scroll.held(&keys, KeyCode::ArrowUp));
+        keys.insert(KeyCode::ArrowDown);
+        scroll.press(KeyCode::ArrowDown, KeyCode::ArrowLeft);
+        assert!(scroll.held(&keys, KeyCode::ArrowLeft));
+        assert!(!scroll.held(&keys, KeyCode::ArrowDown));
+        keys.clear(); // A focus loss clears all active sources.
+        assert!(!scroll.held(&keys, KeyCode::ArrowLeft));
+    }
 
     fn native_keyboard_fixture() -> &'static serde_json::Value {
         crate::test_fixture::json("tools/storage_oracle/keyboard_bindings.json")
@@ -771,9 +1048,10 @@ mod tests {
             writeln!(ini, "{}={key}", row["ini_name"].as_str().unwrap()).unwrap();
         }
         let loaded = HotkeyBindings::reload_from_ini_bytes(Some(ini.as_bytes()));
-        assert_eq!(loaded.by_key.len(), 87);
-        // Only the retail 87 have a name in the fixture; VERA's own commands
-        // are not bound by it.
+        // The 87 retail rows, plus VERA's eight default keys (the five above
+        // 0x256, Formation Line's F and Formation Lock's O over retail Follow's
+        // F, and Ferry's J). Auto play's four carry no default, so they add none.
+        assert_eq!(loaded.by_key.len(), 95);
         for (index, metadata) in catalog::retail_commands().iter().enumerate() {
             assert_eq!(
                 loaded.command_at(0x200 + index as u16),
@@ -781,6 +1059,12 @@ mod tests {
             );
         }
         let saved = loaded.to_ini_string();
+        ini.push_str("FullScreen=1037\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n");
+        let ini = ini.replacen(
+            "[Hotkey]\n",
+            "[Hotkey]\nFormationLine=70\nFerry=74\nFormationLock=79\n",
+            1,
+        );
         assert_eq!(saved, ini);
         let reloaded = HotkeyBindings::reload_from_ini_bytes(Some(saved.as_bytes()));
         assert_eq!(reloaded.by_key, loaded.by_key);
@@ -813,17 +1097,16 @@ mod tests {
             writeln!(ini, "{alias}={}", 0x200 + index).unwrap();
         }
         let rejected = HotkeyBindings::reload_from_ini_bytes(Some(ini.as_bytes()));
-        #[cfg(not(feature = "verax"))]
-        assert!(rejected.by_key.is_empty());
-        #[cfg(feature = "verax")]
-        {
-            // Only the VeraX startup default survives; no alias row is parsed.
-            assert_eq!(
-                rejected.first_key(HotkeyCommand::AutoLoad),
-                Some(CTRL_BIT | 0x44)
-            );
-            assert_eq!(rejected.by_key.len(), 1);
+        // Only VERA's own default keys survive; no alias row is parsed.
+        for index in 0..aliases.len() {
+            assert_eq!(rejected.command_at(0x200 + index as u16), None);
         }
+        assert!(
+            rejected
+                .by_key
+                .values()
+                .all(|&command| has_vera_default(command))
+        );
         // The stock team10 -> engine slot0 mapping remains valid through metadata.
         assert_eq!(
             command_from_name("TeamSelect_10"),
@@ -889,9 +1172,9 @@ mod tests {
         assert_eq!(startup.first_key(HotkeyCommand::Delete), Some(46));
         let serialized = startup.to_ini_string();
         #[cfg(feature = "verax")]
-        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nStopObject=83\nAutoLoad=580\n";
+        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nFerry=74\nFormationLock=79\nStopObject=83\nAutoLoad=580\nFullScreen=1037\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n";
         #[cfg(not(feature = "verax"))]
-        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nStopObject=83\n";
+        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nFerry=74\nFormationLock=79\nStopObject=83\nFullScreen=1037\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n";
         assert_eq!(serialized, expected);
         let mut reloaded = HotkeyBindings::reload_from_ini_bytes(Some(serialized.as_bytes()));
         assert_eq!(reloaded.command_at(46), None);
@@ -1062,6 +1345,118 @@ mod tests {
         assert_eq!(
             HotkeyBindings::reload_from_ini_bytes(None).first_key(HotkeyCommand::AutoLoad),
             Some(CTRL_BIT | 0x44)
+        );
+    }
+
+    /// Formation Line takes F from a profile that still has retail's Follow
+    /// there, and Follow moves to V. Putting Follow back on F unbinds
+    /// Formation Line, and that survives the profile round trip.
+    #[test]
+    fn formation_line_takes_f_and_follow_moves_until_the_player_moves_it_back() {
+        let mut bindings = HotkeyBindings::from_ini_bytes(Some(b"[Hotkey]\nFollow=70\n"));
+        assert_eq!(bindings.command_at(70), Some(HotkeyCommand::FormationLine));
+        assert_eq!(bindings.first_key(HotkeyCommand::Follow), Some(86));
+        // Shift with the key is still the key, for the block; Ctrl is not.
+        for (held, command) in [
+            (
+                modifiers(true, false, false),
+                Some(HotkeyCommand::FormationLine),
+            ),
+            (modifiers(false, true, false), None),
+        ] {
+            assert_eq!(
+                bindings.resolve(&character("f"), KeyLocation::Standard, held),
+                command
+            );
+        }
+
+        bindings.assign(HotkeyCommand::Follow, 70).unwrap();
+        let saved = bindings.to_ini_string();
+        assert!(saved.contains("\nFormationLine=0\n"), "{saved}");
+        let reloaded = HotkeyBindings::reload_from_ini_bytes(Some(saved.as_bytes()));
+        assert_eq!(reloaded.command_at(70), Some(HotkeyCommand::Follow));
+        assert_eq!(reloaded.first_key(HotkeyCommand::FormationLine), None);
+
+        // V already used: Follow keeps no key and Formation Line still gets F.
+        let taken = HotkeyBindings::from_ini_bytes(Some(b"[Hotkey]\nFollow=70\nStopObject=86\n"));
+        assert_eq!(taken.command_at(70), Some(HotkeyCommand::FormationLine));
+        assert_eq!(taken.command_at(86), Some(HotkeyCommand::StopObject));
+    }
+
+    /// VERA's built-in keys keep their defaults beside the retail
+    /// KEYBOARDMD.INI rows, and an unbind survives the profile round trip.
+    #[test]
+    fn vera_shortcuts_keep_their_default_keys_beside_retail_bindings() {
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let archive = assets.get_archive_ref("KEYBOARDMD.INI");
+        assert!(archive.is_some(), "retail KEYBOARDMD.INI");
+        let mut bindings = HotkeyBindings::from_ini_bytes(archive);
+        for (command, key) in [
+            (HotkeyCommand::PerformanceStats, 0x646),
+            (HotkeyCommand::LockCursor, 0x64c),
+            (HotkeyCommand::FullScreen, 0x40d),
+            (HotkeyCommand::StringKeys, 0x64b),
+            (HotkeyCommand::LayoutEdit, 0x645),
+            (HotkeyCommand::FormationLock, 0x4f),
+            // Retail leaves J unbound.
+            (HotkeyCommand::Ferry, 0x4a),
+        ] {
+            assert_eq!(bindings.first_key(command), Some(key), "{command:?}");
+        }
+        assert_eq!(
+            bindings.window_command(
+                &character("f"),
+                KeyLocation::Standard,
+                modifiers(false, true, true)
+            ),
+            Some(HotkeyCommand::PerformanceStats)
+        );
+        #[cfg(not(windows))]
+        assert_eq!(crate::app::input::keyboard::key_name(0x40d), "Alt+Enter");
+
+        bindings.assign(HotkeyCommand::PerformanceStats, 0).unwrap();
+        let saved = bindings.to_ini_string();
+        assert!(saved.contains("\nPerformanceStats=0\n"), "{saved}");
+        let reloaded = HotkeyBindings::reload_from_ini_bytes(Some(saved.as_bytes()));
+        assert_eq!(reloaded.first_key(HotkeyCommand::PerformanceStats), None);
+        assert_eq!(reloaded.first_key(HotkeyCommand::LockCursor), Some(0x64c));
+    }
+
+    /// The every-screen keys run from the window owner only as a Ctrl or Alt
+    /// chord or on a key that types nothing; a typing key stays a battle key.
+    #[test]
+    fn vera_window_keys_leave_typing_keys_to_the_battle() {
+        let mut bindings = HotkeyBindings::from_ini_bytes(None);
+        bindings.assign(HotkeyCommand::FullScreen, 0x7a).unwrap(); // F11
+        bindings
+            .assign(HotkeyCommand::PerformanceStats, 0x47)
+            .unwrap(); // G
+        bindings
+            .assign(HotkeyCommand::LockCursor, ALT_BIT | 0x47)
+            .unwrap();
+        let none = ModifiersState::empty();
+        let standard = KeyLocation::Standard;
+        assert_eq!(
+            bindings.window_command(&Key::Named(NamedKey::F11), standard, none),
+            Some(HotkeyCommand::FullScreen)
+        );
+        assert_eq!(
+            bindings.window_command(&character("g"), standard, none),
+            None
+        );
+        assert_eq!(
+            bindings.resolve(&character("g"), standard, none),
+            Some(HotkeyCommand::PerformanceStats)
+        );
+        assert_eq!(
+            bindings.window_command(&character("g"), standard, modifiers(false, false, true)),
+            Some(HotkeyCommand::LockCursor)
+        );
+        assert_eq!(
+            bindings.window_command(&character("k"), standard, modifiers(false, true, true)),
+            Some(HotkeyCommand::StringKeys)
         );
     }
 

@@ -27,7 +27,10 @@ struct Params {
     white_height: u32,
     origin_x: u32,
     origin_y: u32,
-    _pad2: [u32; 2],
+    /// The battlefield's first row in the retained column.
+    field_y: u32,
+    /// The rows the warp turns, from the battlefield's first.
+    rows: u32,
 }
 
 pub(crate) struct ChronoScreenRenderer {
@@ -231,6 +234,7 @@ impl ChronoScreenRenderer {
         target: &wgpu::Texture,
         draw: ChronoScreenDraw,
         tactical: [u32; 4],
+        bar_under: bool,
     ) {
         let (mode, weight, amplitude) = match draw {
             ChronoScreenDraw::Warp { step, duration } => {
@@ -258,7 +262,8 @@ impl ChronoScreenRenderer {
                 white_height: tactical[3],
                 origin_x: self.origin[0],
                 origin_y: self.origin[1],
-                _pad2: [0; 2],
+                field_y: tactical[1],
+                rows: warp_rows(self.extent.height, tactical, bar_under),
             }),
         );
         let view = target.create_view(&wgpu::TextureViewDescriptor {
@@ -318,6 +323,19 @@ pub(crate) fn shader_source(webgl: bool) -> String {
     )
 }
 
+/// The rows the warp turns. The original's surface is the battlefield with
+/// the command bar under it, and `7F5BFC` leaves the bar's 32 rows at the
+/// foot of the surface alone. A layout with no bar under the battlefield has
+/// no rows to leave: the warp takes the battlefield's own.
+fn warp_rows(surface_height: u32, tactical: [u32; 4], bar_under: bool) -> u32 {
+    let [_, top, _, height] = tactical;
+    if bar_under {
+        surface_height.saturating_sub(top).saturating_sub(32)
+    } else {
+        height
+    }
+}
+
 fn draw_amplitude(step: i32) -> f32 {
     let mut velocity = 0.0_f64;
     let mut amplitude = 0.0_f64;
@@ -333,4 +351,19 @@ fn draw_amplitude(step: i32) -> f32 {
     let value = X87Chop53::load_f64(NativeF64Bits::from_bits(amplitude.to_bits()))
         .expect("finite chrono amplitude");
     f32::from_bits(X87Chop53::store_f32_masked_chop(value).bits())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::warp_rows;
+
+    #[test]
+    fn the_warp_leaves_only_a_bar_under_the_battlefield() {
+        // The original: every surface row but the bar's 32, at any sidebar size.
+        assert_eq!(warp_rows(600, [0, 0, 632, 568], true), 568);
+        assert_eq!(warp_rows(1200, [0, 0, 1264, 1136], true), 1168);
+        // The bar on top, or left out: the battlefield's own rows.
+        assert_eq!(warp_rows(600, [168, 32, 632, 568], false), 568);
+        assert_eq!(warp_rows(600, [0, 0, 632, 600], false), 600);
+    }
 }

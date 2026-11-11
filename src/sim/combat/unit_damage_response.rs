@@ -99,6 +99,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: crate::sim::world::FrameEffects<'_>,
     ) {
         use crate::rules::locomotor_type::{MovementZone, SpeedType};
         use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
@@ -141,7 +142,16 @@ impl Simulation {
             && self.session.game_options().crates
             && let Some(registry) = registry
         {
-            crate::sim::crates::place_crate(self, rules, registry, (x as i16, y as i16), Some(20));
+            if let Err(error) = crate::sim::crates::place_crate(
+                self,
+                rules,
+                registry,
+                (x as i16, y as i16),
+                Some(20),
+                effects,
+            ) {
+                log::error!("Unit cargo crate placement failed: {error}");
+            }
         }
     }
 

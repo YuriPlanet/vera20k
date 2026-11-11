@@ -11,8 +11,10 @@ use crate::render::native_surface_format::{
     ACTIVE_RETAIL_RGB565_PRESENTATION, RGB565, interpolate_rgb8,
 };
 use crate::render::surface_line::{clip_line, patterned_line, solid_line};
+use crate::rules::ruleset::RuleSet;
 use crate::sim::components::DriveCoord;
-use crate::sim::world::{PlanningBadgeKind, PlanningDrawSegment};
+use crate::sim::intern::InternedId;
+use crate::sim::world::{PlanningBadgeKind, PlanningDrawSegment, Simulation};
 
 // Original static bytes836880;63D8B8 negates the presentation wall clock.
 const PATTERN: [u8; 16] = [1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0];
@@ -29,117 +31,20 @@ pub(super) fn build(
     if !state.match_state.input.planning.active() {
         return (out, highlights);
     }
-    let Some(rt) = state.match_state.sim_runtime.as_ref() else {
+    let Some(rt) = state.match_state.sim_runtime.presentation() else {
         return (out, highlights);
     };
     let sim = &rt.simulation;
     let Some(viewer) = sim.session().current_house() else {
         return (out, highlights);
     };
-    let mut graph = sim.planning_draw_graph(
+    let graph = sim.planning_draw_graph(
         viewer,
-        &crate::app::input::planning_mode::selected_in_order(state),
-        crate::app::input::planning_mode::hover_native_screen(state),
+        crate::app::input::planning_mode::hover_node(state),
         state.match_state.input.planning.highlighted_node(),
     );
-    // This is a disposable read projection. Node identity/membership and every
-    // actual command stay in the authoritative planning graph.
-    let cache = &state.match_state.match_presentation.interpolation;
-    let sample = |kind, id, owner, c: DriveCoord| {
-        use crate::app::presentation::interpolation::PointPose;
-        let [x, y, z] = cache
-            .sample_draw_point(
-                kind,
-                id,
-                PointPose::new([c.x, c.y, c.z], 0, owner),
-                sim.session().binary_frame(),
-            )
-            .coord;
-        DriveCoord { x, y, z }
-    };
-    use crate::app::presentation::interpolation::PointKind;
-    let mut projected_nodes = std::collections::HashMap::new();
-    for node in &mut graph.nodes {
-        let owner = node.members.first().copied();
-        let raw = node.coord;
-        node.coord = sample(PointKind::PlanningNode, node.id, owner, raw);
-        projected_nodes.insert((raw.x, raw.y, raw.z), node.coord);
-        for (i, line) in node
-            .incoming
-            .iter_mut()
-            .chain(node.loop_segment.iter_mut())
-            .enumerate()
-        {
-            line.source = sample(
-                PointKind::PlanningEdge((i * 2) as u16),
-                node.id,
-                owner,
-                line.source,
-            );
-            line.target = sample(
-                PointKind::PlanningEdge((i * 2 + 1) as u16),
-                node.id,
-                owner,
-                line.target,
-            );
-        }
-    }
-    for actor in &mut graph.actors {
-        let mut slot = 0;
-        for line in actor
-            .current_leg
-            .iter_mut()
-            .chain(actor.mega_leg.iter_mut())
-            .chain(actor.connection.iter_mut())
-        {
-            line.source = sample(
-                PointKind::PlanningActor(slot),
-                actor.actor_id,
-                Some(actor.actor_id),
-                line.source,
-            );
-            line.target = sample(
-                PointKind::PlanningActor(slot + 1),
-                actor.actor_id,
-                Some(actor.actor_id),
-                line.target,
-            );
-            slot += 2;
-        }
-        actor.marker_only = actor.marker_only.map(|c| {
-            sample(
-                PointKind::PlanningActor(6),
-                actor.actor_id,
-                Some(actor.actor_id),
-                c,
-            )
-        });
-    }
-    for coord in [&mut graph.hovered_coord, &mut graph.highlighted_coord] {
-        if let Some(c) = coord.as_mut() {
-            *c = projected_nodes.get(&(c.x, c.y, c.z)).copied().unwrap_or(*c);
-        }
-    }
-    let phase = ((wall_ms as i32).wrapping_neg() >> 5) & 15;
-    let color = |owner, bright| {
-        let name = sim.interner().resolve(owner);
-        let index = state
-            .match_state
-            .match_presentation
-            .house_color_map
-            .get(name)
-            .copied()
-            .unwrap_or(crate::rules::house_colors::NO_REMAP);
-        let rgb = crate::render::palette_light::house_color_rgb(
-            &rt.resources.rules.house_color_ramps,
-            index,
-        );
-        if bright {
-            interpolate_rgb8(rgb, [255; 3], 100)
-        } else {
-            interpolate_rgb8(rgb, [0; 3], 80)
-        }
-    };
+    let phase = stroke_phase(wall_ms);
+    let color = |owner, bright| stroke_rgb(state, sim, &rt.resources.rules, owner, bright);
     // A derived frame-local membership index avoids scanning the whole graph
     // once per badge in large selected groups. It dies with this projection.
     let highlighted_members: std::collections::HashSet<_> =
@@ -316,8 +221,10 @@ pub(super) fn build(
         );
     }
     // Map6D491A calls63B2F0 after the ordinary selected action lines.
-    // AC4CCC hover is16x16; retained AC4BF0 uses the node's8x8 rect
-    // expanded twice by4, giving24x24. Both draw three white outlines.
+    // AC4CCC hover is16x16 (GetSurfacePoint634400, CenteredSquare634510's 8
+    // grown by4 inline); retained AC4BF0 uses the node's8x8 rect
+    // (GetSurfaceRect6345A0) grown twice by4 (Inflate6357D0), giving24x24.
+    // Both draw three white outlines.
     for (coord, size) in [(graph.hovered_coord, 16), (graph.highlighted_coord, 24)] {
         if let Some(coord) = coord {
             let at = project(coord, view);
@@ -339,7 +246,39 @@ pub(super) fn build(
     (out, highlights)
 }
 
-fn project(coord: DriveCoord, view: TacticalViewport) -> [i32; 2] {
+/// The patterned strokes' phase: 63D8B8 negates the presentation wall clock.
+pub(super) fn stroke_phase(wall_ms: u32) -> i32 {
+    ((wall_ms as i32).wrapping_neg() >> 5) & 15
+}
+
+/// A house's stroke and marker colour: toward white for a stroke not yet
+/// committed, toward black otherwise.
+pub(super) fn stroke_rgb(
+    state: &AppState,
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    bright: bool,
+) -> [u8; 3] {
+    let name = sim.interner().resolve(owner);
+    let index = state
+        .match_state
+        .match_presentation
+        .house_color_map
+        .get(name)
+        .copied()
+        .unwrap_or(crate::rules::house_colors::NO_REMAP);
+    let rgb = crate::render::palette_light::house_color_rgb(&rules.house_color_ramps, index);
+    if bright {
+        interpolate_rgb8(rgb, [255; 3], 100)
+    } else {
+        interpolate_rgb8(rgb, [0; 3], 80)
+    }
+}
+
+/// `Planning__CoordsToSurfacePoint @ 0x006339E0`: `CoordsToClient2`, then
+/// the tactical view's surface offset.
+pub(super) fn project(coord: DriveCoord, view: TacticalViewport) -> [i32; 2] {
     let (x, y) = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
     [
         x as i32 - view.camera[0] + view.clip[0],
@@ -357,14 +296,15 @@ fn emit_rect(out: &mut Vec<SpriteInstance>, rect: [i32; 4], rgb: [u8; 3], view: 
     push_surface_rect(out, rect, tint(rgb), view);
 }
 
-fn emit_marker(
+pub(super) fn emit_marker(
     out: &mut Vec<SpriteInstance>,
     at: [i32; 2],
     size: i32,
     rgb: [u8; 3],
     view: TacticalViewport,
 ) {
-    //635490 fills6x6;63D480 fills4x4.
+    //635490 fills6x6;63D480 fills4x4. Squares are Rect_CenteredSquare
+    //634510; 63BE60's4x4 is its6 shrunk by1 (Rect_Inflate_Uniform6357D0).
     emit_rect(
         out,
         [at[0] - size / 2, at[1] - size / 2, size, size],
@@ -385,7 +325,7 @@ fn emit_outline(
     emit_rect(out, [x + w - 1, y, 1, h], rgb, view);
 }
 
-fn emit_marker_outer(
+pub(super) fn emit_marker_outer(
     out: &mut Vec<SpriteInstance>,
     at: [i32; 2],
     size: i32,
@@ -443,7 +383,8 @@ fn emit_badge(
     ];
     emit_outline(out, [mid[0] - 9, mid[1] - 9, 19, 19], rgb, view);
     emit_rect(out, [mid[0] - 8, mid[1] - 8, 17, 17], interior, view);
-    //731CE0/731CD0 cursor rows76/77 are mouse frames433/434, not text.
+    //731CE0/731CD0 cursor rows76/77 are mouse frames433/434, not text:
+    // MouseClass::GetCursorBaseFrame (0x005BDB90) with small flag 0.
     let frame = match kind {
         PlanningBadgeKind::AreaGuard => 433,
         PlanningBadgeKind::AttackMove => 434,
@@ -474,7 +415,7 @@ fn emit_badge(
     }
 }
 
-fn emit_segment(
+pub(super) fn emit_segment(
     out: &mut Vec<SpriteInstance>,
     from: [i32; 2],
     to: [i32; 2],
@@ -501,7 +442,7 @@ fn emit_segment(
     }
 }
 
-fn emit_solid_segment(
+pub(super) fn emit_solid_segment(
     out: &mut Vec<SpriteInstance>,
     from: [i32; 2],
     to: [i32; 2],

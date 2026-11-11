@@ -431,6 +431,25 @@ fn equal_ammo_retarget_transfers_marker_and_gives_planes_object_targets() {
     }
 }
 
+/// The abort voice's IsHumanPlayer (`0x0041D5A5`) accepts a campaign
+/// `PlayerControl=` house that is not the player.
+#[test]
+#[ignore = "slow; run when changing what it covers"]
+fn a_campaign_player_control_designators_abort_voice_plays() {
+    let Some(mut f) = Fixture::new() else { return };
+    let house = f.sim.substrate.entities.get(f.boris).unwrap().owner();
+    let state = f.sim.houses.get_mut(&house).unwrap();
+    state.set_is_human_for_test(false);
+    state.set_player_control_for_test(true);
+    f.hit(f.boris, f.target);
+    f.sim
+        .airstrike_pointer_expired(f.boris, f.boris, &f.rules, FrameEffects::default());
+    assert!(f.sim.sound_events.iter().any(|event| matches!(event,
+        SimSoundEvent::VocAt { sound_id, audible_to: Some(houses), .. }
+            if sound_id == "MIGMissionAborted" && *houses == [house, house]
+    )));
+}
+
 #[test]
 #[ignore = "slow; run when changing what it covers"]
 fn owner_expiry_unlinks_surviving_planes_and_clears_the_designation() {
@@ -744,5 +763,48 @@ fn designation_coordinates_follow_the_existing_sortie_target_through_departure_a
             f.sim.resolved_terrain.as_ref()
         ),
         "Phobos draws the Tactical beam to a foot target"
+    );
+}
+
+/// Ares AirstrikeClass_Fire_AirstrikeAttackVoice (10048D60, hook 0x41D940)
+/// and AirstrikeClass_PointerGotInvalid_AirstrikeAbortSound (10048DE0, hook
+/// 0x41D5AE): the first aircraft's `VoiceAirstrikeAttack`/`Abort` replaces
+/// the Rules sound, the designator's replaces that, and `none` silences it.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_airstrike_voices_take_the_aircraft_then_the_designator() {
+    use crate::rules::ini_parser::IniFile;
+    let ini = IniFile::from_str(
+        "[AudioVisual]\nAirstrikeAttackVoice=Rules\nAirstrikeAbortSound=Rules\n\
+         [InfantryTypes]\n0=SPOTTER\n1=PLAIN\n[AircraftTypes]\n0=JET\n1=OTHERJET\n\
+         [SPOTTER]\nVoiceAirstrikeAbort=none\n[PLAIN]\nStrength=1\n\
+         [JET]\nVoiceAirstrikeAttack=Jet\nVoiceAirstrikeAbort=Jet\n[OTHERJET]\nStrength=1\n",
+    );
+    let mut rules = RuleSet::from_ini(&ini).unwrap();
+    let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
+        "[SoundList]\n0=Rules\n1=Jet\n",
+    ));
+    rules.bind_type_sound_references(&ini, &sounds);
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+    let mut spawn = |name, x| {
+        sim.spawn_object(name, "Americans", x, 5, 0, &rules)
+            .unwrap()
+    };
+    let [spotter, plain, jet, other] = [
+        spawn("SPOTTER", 4),
+        spawn("PLAIN", 6),
+        spawn("JET", 8),
+        spawn("OTHERJET", 10),
+    ];
+    assert_eq!(
+        sim.airstrike_voice(false, other, plain, &rules),
+        Some("Rules")
+    );
+    assert_eq!(sim.airstrike_voice(false, jet, plain, &rules), Some("Jet"));
+    assert_eq!(sim.airstrike_voice(true, jet, plain, &rules), Some("Jet"));
+    assert_eq!(sim.airstrike_voice(true, jet, spotter, &rules), None);
+    assert_eq!(
+        sim.airstrike_voice(false, other, spotter, &rules),
+        Some("Rules")
     );
 }

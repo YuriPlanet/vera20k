@@ -274,11 +274,11 @@ pub(crate) fn render_keyboard_shell(
     ));
     let mut texts = Vec::new();
     if let Some(window) = title {
-        texts.push(shell_text::draw_in_rect_path_a(
+        texts.push(shell_text::draw_in_rect_path_a_scaled(
             font,
             &title_text,
             rect_to_text_rect(layout.title),
-            ShellAlign::H_CENTER,
+            ShellAlign::PANEL_TITLE,
             [0.0; 2],
             SHELL_CONTROL_TEXT_DEPTH,
             PathAReveal {
@@ -287,6 +287,7 @@ pub(crate) fn render_keyboard_shell(
                 base_rgb: [255, 255, 0],
                 highlight_rgb: [255; 3],
             },
+            glyph_scale,
         ));
     }
     for (key, rect, centered) in layout.labels {
@@ -429,9 +430,12 @@ pub(crate) fn render_keyboard_shell(
             SHELL_CONTROL_TEXT_DEPTH,
         ));
     }
-    texts.extend(shell_paint::paint_labels(
+    // The status line is a family static like the heading: it scales with the
+    // page, as `paint_labels_scaled` does for every other family page.
+    texts.extend(shell_paint::paint_labels_scaled(
         font,
         &status_label.into_iter().collect::<Vec<_>>(),
+        layout.scale.factor(),
     ));
     let mut overlay = ShellFrameOverlay::default();
     if dialog.category_open {

@@ -474,23 +474,6 @@ pub enum TeamAiInstallDiagnostic {
     },
 }
 
-impl TeamAiInstallDiagnostic {
-    pub(crate) fn source(&self) -> TeamAiDefinitionSource {
-        match self {
-            Self::UnknownTaskForceMember { source, .. }
-            | Self::MissingTeamTypeScript { source, .. }
-            | Self::MissingTeamTypeTaskForce { source, .. }
-            | Self::MissingAiTriggerTeamType { source, .. }
-            | Self::UnknownAiTriggerOwner { source, .. }
-            | Self::UnknownAiTriggerObject { source, .. } => *source,
-        }
-    }
-
-    pub(crate) fn is_fixed_source_refusal(&self) -> bool {
-        self.source() == TeamAiDefinitionSource::FixedAimd
-    }
-}
-
 /// A candidate member passed to a test seam's TaskForce admission.
 #[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -559,6 +542,12 @@ impl From<crate::sim::combat::TargetKind> for TeamTarget {
 pub struct TeamScriptState {
     id: u64,
     owner: InternedId,
+    /// Team+30, Script_Scout6EE800's selected House. Constructor6E8AB0
+    /// clears it; Load6EC51E..527 fixes its pointer. It persists across
+    /// action visits. Houses never retire during a Rust scenario; a new
+    /// scenario replaces both registries, so entity-u64 expiry cannot alias it.
+    #[serde(default)]
+    scout_house: Option<InternedId>,
     team_type_id: Option<InternedId>,
     task_force_id: Option<InternedId>,
     script_id: InternedId,
@@ -730,6 +719,12 @@ impl TeamScriptState {
         self.formed
     }
 
+    /// The team's mission target, for cross-module script tests.
+    #[cfg(all(feature = "ares", any(test, feature = "test-support")))]
+    pub(crate) fn mission_target_for_test(&self) -> Option<TeamTarget> {
+        self.mission_target
+    }
+
     pub(crate) const fn created_frame(&self) -> i32 {
         self.created_frame
     }
@@ -753,17 +748,17 @@ impl TeamScriptState {
 /// state.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TeamScriptVm {
-    scripts: BTreeMap<InternedId, TeamScriptDefinition>,
+    scripts: crate::util::shared::Shared<BTreeMap<InternedId, TeamScriptDefinition>>,
     #[serde(default)]
     script_order: Vec<InternedId>,
-    task_forces: BTreeMap<InternedId, TeamTaskForceDefinition>,
+    task_forces: crate::util::shared::Shared<BTreeMap<InternedId, TeamTaskForceDefinition>>,
     #[serde(default)]
     task_force_order: Vec<InternedId>,
     team_types: BTreeMap<InternedId, TeamTypeDefinition>,
     #[serde(default)]
     team_type_ini: BTreeMap<InternedId, TeamTypeIniMetadata>,
     #[serde(default)]
-    ai_triggers: BTreeMap<InternedId, TeamAiTriggerDefinition>,
+    ai_triggers: crate::util::shared::Shared<BTreeMap<InternedId, TeamAiTriggerDefinition>>,
     #[serde(default)]
     ai_trigger_order: Vec<InternedId>,
     /// Live teams by id, which increases with construction, so key order is
@@ -998,10 +993,7 @@ impl TeamScriptVm {
     }
 
     /// The TaskForce of TeamType `team_type_id`, if it resolved.
-    pub(crate) fn task_force_of(
-        &self,
-        team_type_id: InternedId,
-    ) -> Option<&TeamTaskForceDefinition> {
+    pub fn task_force_of(&self, team_type_id: InternedId) -> Option<&TeamTaskForceDefinition> {
         let team_type = self.team_types.get(&team_type_id)?;
         self.task_forces.get(&team_type.task_force_id)
     }
@@ -1283,6 +1275,7 @@ impl TeamScriptState {
         Self {
             id,
             owner,
+            scout_house: None,
             team_type_id,
             task_force_id,
             script_id,
@@ -1382,6 +1375,10 @@ impl TeamScriptVm {
             team.task_force_id.hash(hasher);
             team.script_id.hash(hasher);
             team.owner.hash(hasher);
+            if let Some(house) = team.scout_house {
+                b"team-scout-house-v1".hash(hasher);
+                house.hash(hasher);
+            }
             team.cursor.hash(hasher);
             team.advance_pending.hash(hasher);
             // The retired test-only wait counter, always 0.
@@ -1632,8 +1629,6 @@ pub(crate) fn join_team_for_test(
 }
 
 #[cfg(test)]
-mod type_conversion_tests;
-#[cfg(test)]
 mod firesale_retail_tests;
 #[cfg(test)]
 mod group_recruitment_tests;
@@ -1644,9 +1639,13 @@ mod packed_cell_tests;
 #[cfg(test)]
 mod path_threat_input_tests;
 #[cfg(test)]
+mod recruit_candidates_tests;
+#[cfg(test)]
 mod recruit_oracle_tests;
 #[cfg(test)]
 pub(crate) mod reinforcements_tests;
+#[cfg(test)]
+mod type_conversion_tests;
 
 #[cfg(test)]
 mod tests {

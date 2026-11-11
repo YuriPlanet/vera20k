@@ -151,11 +151,11 @@ impl Transfers {
         if !self.failed {
             super::notice(
                 state,
-                if interrupted {
-                    "The map transfer stopped because the connection to VERA20k Online kept failing. Rejoin the game to try again."
+                &crate::i18n::tr(if interrupted {
+                    "VERA:MapTransferInterrupted"
                 } else {
-                    "Map transfer or include verification failed. Rejoin after checking the map and its required include files."
-                },
+                    "VERA:MapTransferFailed"
+                }),
             );
         }
         self.failed = true;
@@ -503,16 +503,18 @@ impl Transfers {
                         .network_map_metadata()
                         .expect("transfer metadata");
                     // Only custom maps are kept (`keep_for_choose_map`).
-                    let kept = if metadata.official {
-                        ""
+                    let offer = if metadata.official {
+                        "VERA:MissingMapOffer"
                     } else {
-                        " It is saved in VERA20k's Maps folder."
+                        "VERA:MissingMapOfferKept"
                     };
-                    let message = format!(
-                        "You don't have the map {} ({} players, {} KB). Download it to play in this game?{kept}",
-                        metadata.display_name,
+                    let message = crate::i18n::tr_count(
+                        offer,
                         metadata.player_capacity,
-                        (metadata.byte_length.max(0) as u32).div_ceil(1024)
+                        &[
+                            ("size", &(metadata.byte_length.max(0) as u32).div_ceil(1024)),
+                            ("map", &metadata.display_name),
+                        ],
                     );
                     let name = metadata.display_name.clone();
                     crate::app::shell_network_setup::offer_missing_map(state, name, message);
@@ -536,7 +538,8 @@ impl Transfers {
                             .as_ref()
                             .ok_or_else(|| anyhow!("no asset directory"))?;
                         let source = crate::map::source::transfer_file_source(
-                            &config.paths.ra2_dir.join("RandMap.img"),
+                            &crate::map::source::random_map_dir(&config.paths.ra2_dir)
+                                .join("RandMap.img"),
                             resource,
                         )?;
                         ensure!(

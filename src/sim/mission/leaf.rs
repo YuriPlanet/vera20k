@@ -147,6 +147,14 @@ impl MissionLeafState {
         }
     }
 
+    /// BuildingLoad453ECF -> NoInit43B68D..43B6C3 reconstructs only this
+    /// independent Stage. Internal snapshot continuations retain its progress.
+    pub(crate) fn reconstruct_building_repair_progress_after_player_load(&mut self, now: i32) {
+        if let Self::Building(leaf) = self {
+            leaf.repair_progress = crate::sim::stage::StageClass::constructed(now);
+        }
+    }
+
     /// Repair44C577 starts the building-owned progress clock.
     pub(crate) fn start_building_repair_progress(&mut self, now: i32) {
         self.expect_building_mut()

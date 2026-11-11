@@ -42,6 +42,11 @@ pub(crate) struct IonBlast {
     coord: [i32; 3],
     frame: i32,
     skip_forces: bool,
+    /// Ares `WarheadTypeExt::IonExt` (saved with the Ares globals,
+    /// 100523D0): the warhead whose applyRipples (10051AE0) raised the blast.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_warhead: Option<crate::sim::intern::InternedId>,
 }
 
 pub(super) fn save<S: serde::Serializer>(
@@ -67,6 +72,8 @@ impl Simulation {
             coord,
             frame: 0,
             skip_forces: true,
+            #[cfg(feature = "ares")]
+            ares_warhead: None,
         });
     }
 
@@ -80,8 +87,60 @@ impl Simulation {
             coord,
             frame: 0,
             skip_forces: false,
+            #[cfg(feature = "ares")]
+            ares_warhead: None,
         });
         true
+    }
+
+    /// Ares WarheadTypeExt::applyRipples (installed 10051AE0), first in
+    /// BulletClass_Detonate (100536E0) at its effect coordinate: an
+    /// `IonCannon` or positive `Ripple.Radius` warhead constructs a blast,
+    /// with DisableIonBeam (+0x10, the flag that skips the beam and the
+    /// ripple forces) set unless `IonCannon=yes`, and maps it to the warhead.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_apply_ripples(
+        &mut self,
+        coord: [i32; 3],
+        warhead: &crate::rules::warhead_type::WarheadType,
+    ) {
+        let Some(ion) = warhead
+            .ares_combat()
+            .map(|combat| combat.ion_cannon())
+            .filter(|ion| ion.raises_blast())
+        else {
+            return;
+        };
+        let skip_forces = !ion.enabled();
+        let ares_warhead = Some(self.interner.intern(&warhead.id));
+        self.ion_blasts.push(IonBlast {
+            coord,
+            frame: 0,
+            skip_forces,
+            ares_warhead,
+        });
+    }
+
+    /// The Lifetime below which a blast lives (`0x0053CBF5`: 79). Ares
+    /// IonBlastClass_Update_Duration (hook 0x53CBF5, installed 100541B0)
+    /// takes a mapped warhead's `Ripple.Radius + 1` when lower.
+    fn ion_blast_lifetime(&self, blast: &IonBlast, rules: &RuleSet) -> i32 {
+        #[cfg(feature = "ares")]
+        if let Some(ion) = self.ares_ion_cannon(blast, rules) {
+            return ion.blast_lifetime();
+        }
+        let _ = (blast, rules);
+        LAST_FRAME
+    }
+
+    #[cfg(feature = "ares")]
+    fn ares_ion_cannon<'r>(
+        &self,
+        blast: &IonBlast,
+        rules: &'r RuleSet,
+    ) -> Option<&'r crate::rules::ares_warhead::IonCannonRules> {
+        let warhead = rules.warhead(self.interner.resolve(blast.ares_warhead?))?;
+        Some(warhead.ares_combat()?.ion_cannon())
     }
 
     pub(super) fn hash_ion_blasts(&self, hasher: &mut impl Hasher) {
@@ -107,41 +166,85 @@ impl Simulation {
         let mut bridge_changed = false;
         for index in (0..self.ion_blasts.len()).rev() {
             let blast = self.ion_blasts[index];
-            if blast.frame >= LAST_FRAME {
+            if blast.frame >= self.ion_blast_lifetime(&blast, rules) {
                 self.ion_blasts.remove(index);
                 continue;
             }
             if !blast.skip_forces {
+                let mut rock = true;
                 if blast.frame == 0 {
-                    bridge_changed |= self.start_ion_blast(blast.coord, rules, overlays, effects);
+                    let (changed, rocks) = self.start_ion_blast(&blast, rules, overlays, effects);
+                    bridge_changed |= changed;
+                    rock = rocks;
                 }
-                self.apply_ion_blast_forces(blast, rules);
+                if rock {
+                    self.apply_ion_blast_forces(blast, rules);
+                }
             }
             self.ion_blasts[index].frame += 1;
         }
         bridge_changed
     }
 
+    /// Frame 0 of a blast (`0x0053CC63..0x0053CE0A`): the splash or blast
+    /// anim and the beam, the area damage and the flash. Returns whether a
+    /// bridge changed and whether this frame's ripple forces run. Ares
+    /// IonBlastClass_Update_Beam (hook 0x53CC63, installed 10053F10) gives a
+    /// mapped warhead's blast `IonCannon.Blast`/`.Beam`/`.Warhead`/`.Damage`
+    /// over the Rules values (a null anim or warhead builds or damages
+    /// nothing) and skips the frame's forces for `IonCannon.Rock=no`.
     fn start_ion_blast(
         &mut self,
-        coord: [i32; 3],
+        blast: &IonBlast,
         rules: &RuleSet,
         overlays: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
-    ) -> bool {
+    ) -> (bool, bool) {
+        let coord = blast.coord;
+        let general = &rules.general;
+        let ion_cannon_warhead = rules.bridge_warheads.ion_cannon_name.as_str();
+        #[cfg(feature = "ares")]
+        let ares = self.ares_ion_cannon(blast, rules);
+        #[cfg(feature = "ares")]
+        let (blast_anim, beam_anim, warhead_name, damage, rock) = match ares {
+            Some(ion) => (
+                ion.blast(&general.ion_blast_anim),
+                ion.beam(&general.ion_beam_anim),
+                ion.warhead(ion_cannon_warhead),
+                ion.damage(general.ion_cannon_damage),
+                ion.rock(),
+            ),
+            None => (
+                Some(general.ion_blast_anim.as_str()),
+                Some(general.ion_beam_anim.as_str()),
+                Some(ion_cannon_warhead),
+                general.ion_cannon_damage,
+                true,
+            ),
+        };
+        #[cfg(not(feature = "ares"))]
+        let (blast_anim, beam_anim, warhead_name, damage, rock) = (
+            Some(general.ion_blast_anim.as_str()),
+            Some(general.ion_beam_anim.as_str()),
+            Some(ion_cannon_warhead),
+            general.ion_cannon_damage,
+            true,
+        );
         let impact = ProjectileCoord::new(coord[0], coord[1], coord[2]);
         //53CC63..53CD14 selects raw cell land, not overlay/nav passability.
         let anim = if detonation_anim::land_at(self, impact) == 2 {
-            rules
-                .combat_damage
-                .splash_list
-                .last()
-                .map(String::as_str)
-                .unwrap_or("")
+            Some(
+                rules
+                    .combat_damage
+                    .splash_list
+                    .last()
+                    .map(String::as_str)
+                    .unwrap_or(""),
+            )
         } else {
-            &rules.general.ion_blast_anim
+            blast_anim
         };
-        for name in [anim, rules.general.ion_beam_anim.as_str()] {
+        for name in [anim, beam_anim].into_iter().flatten() {
             let type_id = self.interner.intern(name);
             let point = AnimWorldCoord {
                 x: coord[0],
@@ -169,8 +272,8 @@ impl Simulation {
             );
             dummy.raw_flags()
         };
-        let Some(warhead) = rules.warhead(&rules.bridge_warheads.ion_cannon_name) else {
-            return false;
+        let Some(warhead) = warhead_name.and_then(|name| rules.warhead(name)) else {
+            return (false, rock);
         };
         let wh = self.interner.intern(&warhead.id);
         let mut bridge_changed = false;
@@ -184,7 +287,7 @@ impl Simulation {
                     coord[1],
                     coord[2].wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS),
                 ),
-                rules.general.ion_cannon_damage,
+                damage,
                 warhead,
                 true,
                 (RAD_NO_ATTACKER, None, wh),
@@ -197,7 +300,7 @@ impl Simulation {
             rules,
             overlays,
             impact,
-            rules.general.ion_cannon_damage,
+            damage,
             warhead,
             true,
             (RAD_NO_ATTACKER, None, wh),
@@ -206,13 +309,13 @@ impl Simulation {
         .bridge_state_changed;
         self.combat_light_requests.emit(CombatLightRequest::Impact {
             target_id: None,
-            damage: rules.general.ion_cannon_damage,
+            damage,
             warhead_ref: wh,
             coord: impact,
             force_create: false,
             flags: 0,
         });
-        bridge_changed
+        (bridge_changed, rock)
     }
 
     fn apply_ion_blast_forces(&mut self, blast: IonBlast, rules: &RuleSet) {

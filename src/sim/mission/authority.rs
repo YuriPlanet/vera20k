@@ -1282,7 +1282,6 @@ mod tests {
         let Some(art) = crate::rules::retail_ini_fixture::retail_ini("artmd.ini") else {
             return;
         };
-        let registry = crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art);
         let rules: std::collections::BTreeMap<_, _> = ["yes", "no"]
             .into_iter()
             .map(|raw| {
@@ -1295,7 +1294,6 @@ mod tests {
                     RuleSet::from_processed_rules(&layers.process_with_fixed_art(&art).unwrap())
                         .unwrap();
                 rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-                rules.bind_animation_sequences(&registry);
                 (raw, rules)
             })
             .collect();

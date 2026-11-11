@@ -9,12 +9,16 @@ lang: zh-CN
 [English](../) · **简体中文**
 
 VERA20K 用 Rust 独立重写游戏行为，不加载 `Ares.dll`、`Phobos.dll` 或
-NPatch 补丁，不导入它们的源码，也不重新分发其二进制。下面按扩展列出已支持
-的实现及其原作者；技术细节和原生地址见对应的英文文档。
+NPatch 补丁，也不重新分发其二进制。除可选的 Ares 支持外，不导入它们的源码：
+Ares 支持的部分代码译自 Ares 源码（包括从 Ares 3.0 DLL 还原的源码），并保留
+Ares 的版权声明和[许可证](https://github.com/YuriPlanet/vera20k/blob/main/LICENSES/Ares.txt)。
+下面按扩展列出已支持的实现及其原作者；技术细节和原生地址见对应的英文文档。
 
 ## Ares
 
 技术细节：[Ares 扩展支持](../ares.md)
+
+This product includes software developed by the Ares Contributors.
 
 Ares 由 **pd** 于 2007 年发起，现由
 [The Ares Contributors](https://ares-developers.github.io/Ares-docs/credits.html)
@@ -106,6 +110,15 @@ GitHub 用户名标注每个链条对应的合并 PR 作者：
   盟友列表、步兵装填与按武器弹药、按类型晋升音效、击杀赏金。
 - **baixiong443** — GenericWarhead、超武建筑门槛、单段/两段超武费用与
   奖励、UnitDelivery、INI include 与继承（含 ra2-mono `IniFile` 改编）。
+- **libi** — Ares 的武器光束/电弧/波视觉、弹头伤害修正与效果（铁幕时长、
+  永久心控、武器禁用、离子炮）、建筑渗透与破坏、隐形/PoweredBy/雷达干扰/
+  传感器阵列、超武通用键与 Battery/Protect/SonarPulse、晋升、学院、建造
+  时间与克隆、恐怖分子炸弹与绑架者、建筑与单位类型键，时空传送（含建筑
+  传送）、核弹、心灵控制器、基因突变器、侦察机与闪电风暴超武类型，以及
+  光棱塔传能、触发事件与动作、矿石与采矿车、射线判定、电磁脉冲、火墙、
+  鼠标光标、原版缺陷修复、动画与粒子扩展、其余单位、建筑、阵营与步兵
+  钩子、最后一批 ExtData 键，以及战斗、建筑、地道、空投舱、逆向工程、运输、
+  精炼厂存储、秘密实验室、前置条件列表与侧栏等链。
 - **hrusten** — Ares 超武掩码/AI 模式原生读取、赏金标签的原生槽位、
   读档后的辐射衰减时钟修复。
 - **Krisztiaan** — 护盾伤害/恢复钩子顺序修复。

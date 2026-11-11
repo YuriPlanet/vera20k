@@ -64,7 +64,7 @@ impl Client {
         let (status, body): (u16, String) =
             serde_json::from_str(&encoded).map_err(|_| RequestFailure::Status(0))?;
         if !(200..300).contains(&status) {
-            return Err(RequestFailure::response(status, body.as_bytes()));
+            return Err(RequestFailure::answer(path, status, body.as_bytes()));
         }
         serde_json::from_str(&body).map_err(|_| RequestFailure::Status(0))
     }

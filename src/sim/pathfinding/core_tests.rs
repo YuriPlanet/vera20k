@@ -876,7 +876,8 @@ fn infantry_under_span_cell(rx: u16, foot_cost: u8, transition: bool) -> Resolve
     ResolvedTerrainCell {
         level: 2,
         speed_costs: SpeedCostProfile {
-            foot: Some(foot_cost),
+            foot: Some(crate::rules::terrain_rules::test_speed_percent(foot_cost)),
+            winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
             ..Default::default()
         },
         has_bridge_deck: true,

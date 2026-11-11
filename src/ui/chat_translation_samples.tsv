@@ -1,0 +1,56 @@
+en	lobby	th	Niran	บุกรถขุดแร่ของเขาเลย เขาไม่มีป้องกัน	[Translated from Thai] Attack his harvester, he has no defense
+en	room	es	Carlos	ataca sus mineros, no tiene defensa	[Translated from Spanish] attack his ore miners, he has no defense
+en	match	ru	Ivan	у него нет ПВО, шли кировов	[Translated from Russian] he has no anti-air, send Kirovs
+en	private	ru	Ivan	кто хочет сыграть два на два?	[Translated from Russian] who wants to play 2v2?
+zh-Hans	lobby	th	Niran	บุกรถขุดแร่ของเขาเลย เขาไม่มีป้องกัน	[从泰语翻译] 直接冲他矿车，他没防守。
+zh-Hans	room	ko	Minsu	저 사람 방어 없어요, 바로 공격하세요	[从韩语翻译] 那人没防守，快攻吧
+zh-Hans	match	en	Alex	he has no air defense, send kirovs	[翻译自英文] 他没防空，派基洛夫去
+zh-Hans	private	ru	Ivan	кто хочет сыграть два на два?	[翻译自俄语] 有人想玩 2v2 吗？
+zh-Hant	lobby	th	Niran	บุกรถขุดแร่ของเขาเลย เขาไม่มีป้องกัน	[從泰文翻譯] 直接去打他的礦車，他沒防守
+zh-Hant	room	ko	Minsu	저 사람 방어 없어요, 바로 공격하세요	[從韓文翻譯] 那個人沒防守，快攻吧
+zh-Hant	match	en	Alex	he has no air defense, send kirovs	[從英文翻譯] 他沒防空，派基洛夫去
+zh-Hant	private	ru	Ivan	кто хочет сыграть два на два?	[從俄文翻譯] 有人想玩 2v2 嗎？
+ja	lobby	th	Niran	บุกรถขุดแร่ของเขาเลย เขาไม่มีป้องกัน	[タイ語から翻訳] あいつの採掘機を攻めろ、防御がないぞ
+ja	room	ko	Minsu	저 사람 방어 없어요, 바로 공격하세요	[韓国語から翻訳] あいつ防御なし、すぐ攻めて
+ja	match	en	Alex	he has no air defense, send kirovs	[英語から翻訳] 対空がないからキロフ送れ
+ja	private	ru	Ivan	кто хочет сыграть два на два?	[ロシア語から翻訳] 2v2 やりたい人？
+ko	lobby	th	Niran	บุกรถขุดแร่ของเขาเลย เขาไม่มีป้องกัน	[태국어에서 번역됨] 쟤 채광차 바로 밀어버려 방어 시설 없음
+ko	room	zh-Hans	Mei	他没防守，快冲	[중국어에서 번역됨] 쟤 방어 안 함, 빨리 돌격해
+ko	match	en	Alex	he has no air defense, send kirovs	[영어에서 번역됨] 대공 방어 없음, 키로프 보내자
+ko	private	ru	Ivan	кто хочет сыграть два на два?	[러시아어에서 번역됨] 2v2 할 사람?
+de	lobby	th	Niran	บุกรถขุดแร่ของเขาเลย เขาไม่มีป้องกัน	[Aus dem Thailändischen übersetzt] Greif seinen Ore Collector an, er hat keine Verteidigung.
+de	room	es	Carlos	ataca sus mineros, no tiene defensa	[Aus dem Spanischen übersetzt] Attackier seine Miner, er hat keine Verteidigung
+de	match	en	Alex	he has no air defense, send kirovs	[Aus dem Englischen übersetzt] Er hat keine Fliegerabwehr, schick Kirovs
+de	private	ru	Ivan	кто хочет сыграть два на два?	[Aus dem Russischen übersetzt] wer hat Bock auf 2v2?
+fr	lobby	th	Niran	บุกรถขุดแร่ของเขาเลย เขาไม่มีป้องกัน	[Traduit du thaï] Rush son harvester, il n'a pas de défense.
+fr	room	es	Carlos	ataca sus mineros, no tiene defensa	[Traduit de l'espagnol] attaque ses mineurs, il a pas de défense
+fr	match	en	Alex	he has no air defense, send kirovs	[Traduit de l'anglais] il a pas d'anti-air, envoie les Kirov
+fr	private	ru	Ivan	кто хочет сыграть два на два?	[Traduit du russe] qui veut faire un 2v2 ?
+es	lobby	th	Niran	บุกรถขุดแร่ของเขาเลย เขาไม่มีป้องกัน	[Traducido del tailandés] Ataca su harvester, no tiene defensa
+es	room	en	Alex	attack his miners, he has no defense	[Traducido del inglés] ataca sus miners, no tiene defensa
+es	match	en	Alex	he has no air defense, send kirovs	[Traducido del inglés] no tiene defensa antiaérea, manda kirovs
+es	private	ru	Ivan	кто хочет сыграть два на два?	[Traducido del ruso] ¿quién quiere jugar 2v2?
+pt	lobby	th	Niran	บุกรถขุดแร่ของเขาเลย เขาไม่มีป้องกัน	[Traduzido do tailandês] Ataca o harvester dele, ele não tem defesa
+pt	room	es	Carlos	ataca sus mineros, no tiene defensa	[Traduzido do espanhol] ataca os mineros dele, não tem defesa
+pt	match	en	Alex	he has no air defense, send kirovs	[Traduzido do inglês] ele não tem defesa antiaérea, manda kirovs
+pt	private	ru	Ivan	кто хочет сыграть два на два?	[Traduzido do russo] quem quer jogar 2v2?
+ru	lobby	th	Niran	บุกรถขุดแร่ของเขาเลย เขาไม่มีป้องกัน	[Переведено с тайского] Нападай на его майнера, у него нет защиты
+ru	room	es	Carlos	ataca sus mineros, no tiene defensa	[Переведено с испанского] атакуй его минеров, у него нет защиты
+ru	match	en	Alex	he has no air defense, send kirovs	[Переведено с английского] у него нет ПВО, шли кировов
+ru	private	en	Alex	anyone want to play 2v2?	[Переведено с английского] кто хочет 2v2?
+ar	lobby	th	Niran	บุกรถขุดแร่ของเขาเลย เขาไม่มีป้องกัน	[مترجم من التايلاندية] اهجم على الـ harvester حقه، ما عنده دفاع
+ar	room	es	Carlos	ataca sus mineros, no tiene defensa	[مترجم من الإسبانية] اضرب المينرز عنده، ما عنده دفاع
+ar	match	en	Alex	he has no air defense, send kirovs	[مترجم من الإنجليزية] ما عنده دفاع جوي، أرسل kirovs
+ar	private	ru	Ivan	кто хочет сыграть два на два?	[مترجم من الروسية] مين يبي يلعب 2v2؟
+th	lobby	zh-Hans	Mei	他没防守，快冲	[แปลจากภาษาจีน] มันไม่กันเลย บุกเลย!
+th	room	es	Carlos	ataca sus mineros, no tiene defensa	[แปลจากภาษาสเปน] ตีพวกมินเนอร์มันเลย มันไม่มีป้องกัน
+th	match	en	Alex	he has no air defense, send kirovs	[แปลจากภาษาอังกฤษ] มันไม่มีกันแอร์เลย ส่ง Kirov ไปเลย
+th	private	ru	Ivan	кто хочет сыграть два на два?	[แปลจากภาษารัสเซีย] ใครอยากเล่น 2v2 บ้าง?
+tr	lobby	th	Niran	บุกรถขุดแร่ของเขาเลย เขาไม่มีป้องกัน	[Tayca'dan çevrildi] Maden kamyonuna saldır, savunması yok
+tr	room	es	Carlos	ataca sus mineros, no tiene defensa	[İspanyolcadan çevrildi] saldır sus madenciler, savunması yok
+tr	match	en	Alex	he has no air defense, send kirovs	[İngilizceden çevrildi] hava savunması yok, kirov gönder
+tr	private	ru	Ivan	кто хочет сыграть два на два?	[Rusçadan çevrildi] 2v2 oynamak isteyen var mı?
+sv	lobby	th	Niran	บุกรถขุดแร่ของเขาเลย เขาไม่มีป้องกัน	[Översatt från thailändska] Attackera hans ore harvester direkt, han har inget försvar
+sv	room	es	Carlos	ataca sus mineros, no tiene defensa	[Översatt från spanska] attackera hans miners, han har ingen försvar
+sv	match	en	Alex	he has no air defense, send kirovs	[Översatt från engelska] han har inget luftförsvar, skicka kirovs
+sv	private	ru	Ivan	кто хочет сыграть два на два?	[Översatt från ryska] vem vill köra 2v2?

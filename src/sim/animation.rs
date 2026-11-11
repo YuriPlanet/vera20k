@@ -373,12 +373,15 @@ pub(crate) fn commit_unit_firing_counter(
 /// Aircraft414DA3. Only the HoverAttack arm asks for a Unit; the ordinary
 /// moving/idle/DeployToLand arms serve every Foot. Original concrete-class
 /// controls: tools/spatial_oracle/unit_simple_deploy.json.
+///
+/// `air_rate` is the type's Ares `AirRate` (0 in stock builds).
 pub(crate) fn tick_foot_body_frame_counter(
     entity: &mut crate::sim::game_entity::GameEntity,
     rules: crate::sim::movement::SpeedRules<'_>,
     cadence: FootBodyCadence,
     hover_attack: bool,
     deploy_to_land: bool,
+    air_rate: i32,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
     binary_frame: u32,
 ) {
@@ -396,6 +399,16 @@ pub(crate) fn tick_foot_body_frame_counter(
         || entity.is_warped_out()
         || entity.is_warping_in()
     {
+        return;
+    }
+    // Ares 3.0 FootClass_Update_AnimRate (100493D0, hook 0x4DA8B2), past the
+    // same warp and locomotor-swap refusals: a nonzero `AirRate` alone
+    // decides an airborne (GetHeight > 0) Foot's step.
+    if air_rate != 0 && crate::sim::movement::air_movement::current_fly_height(entity, terrain) > 0
+    {
+        if (binary_frame as i32).wrapping_rem(air_rate) == 0 {
+            entity.body_frame_counter.advance();
+        }
         return;
     }
     // Foot4DA886..4DAA01: the same+538 feeds SHP and voxel drawing.
@@ -535,7 +548,31 @@ fn tick_animations_impl(
     tick_dying: bool,
 ) -> Vec<u64> {
     let mut dying_finished: Vec<u64> = Vec::new();
-    let keys: Vec<u64> = entities.keys_sorted();
+    // Only a Unit or an Aircraft is built with an Animation
+    // (`world_spawn::construction`), and an Infantry leaves below whatever it
+    // holds, so the frame-end step reads those two classes alone (VERA-only,
+    // results unchanged). The whole-store walk also reports dying objects
+    // that hold none.
+    let animated = |category| {
+        matches!(
+            category,
+            crate::map::entities::EntityCategory::Unit
+                | crate::map::entities::EntityCategory::Aircraft
+        )
+    };
+    debug_assert!(
+        tick_dying
+            || !crate::sim::touch_log::live_read_check_enabled()
+            || entities
+                .values_of_category(crate::map::entities::EntityCategory::Structure)
+                .all(|entity| entity.animation.is_none()),
+        "a Structure holds an Animation the frame-end step would not advance"
+    );
+    let keys: Vec<u64> = if tick_dying {
+        entities.keys_sorted()
+    } else {
+        entities.ids_of_categories(animated)
+    };
 
     for &id in &keys {
         let Some(entity) = entities.get(id) else {

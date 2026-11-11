@@ -51,6 +51,51 @@ struct MapAudioProfile {
     coordinate_request_scope: Option<MapCoordinateRequestScope>,
 }
 
+/// The battle's Options presentation choices for one capture, as their
+/// `[VERA]` values. Absent, a capture keeps zoom 100%, the Normal sidebar,
+/// the native radar and the sidebar's own pixels.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct MapPresentationProfile {
+    /// `Zoom=`: 0 for Auto, otherwise a percent.
+    zoom: i32,
+    /// `Sidebar=`: 100, 150 or 200.
+    sidebar: i32,
+    /// `HdRadar=`: optional, off when absent.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    hd_radar: bool,
+    /// `SmoothSidebar=`: optional, off when absent.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    smooth_sidebar: bool,
+}
+
+impl MapPresentationProfile {
+    fn validate(&self) -> Result<()> {
+        use crate::ui::main_menu_dialogs::options::{SidebarSize, Zoom};
+        ensure!(
+            Zoom::from_ini_value(self.zoom).ini_value() == self.zoom,
+            "presentation.zoom must be 0 (Auto) or a 50-step percent from 100"
+        );
+        ensure!(
+            SidebarSize::from_ini_value(self.sidebar).ini_value() == self.sidebar,
+            "presentation.sidebar must be 100, 150 or 200"
+        );
+        Ok(())
+    }
+
+    fn apply(&self, state: &mut AppState) {
+        use crate::ui::main_menu_dialogs::options::{SidebarSize, Zoom};
+        state.platform.capture_presentation = crate::app::state::CapturePresentation {
+            zoom: Zoom::from_ini_value(self.zoom),
+            sidebar: SidebarSize::from_ini_value(self.sidebar),
+            hd_radar: self.hd_radar,
+            smooth_sidebar: self.smooth_sidebar,
+            map_picture: false,
+        };
+        crate::app::App::sync_zoom_pass(state);
+    }
+}
+
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 enum MapCoordinateRequestScope {
@@ -601,6 +646,15 @@ pub(crate) struct MapCaptureProfile {
         skip_serializing_if = "Option::is_none"
     )]
     observe_sidebar_steps: Option<Vec<u32>>,
+    /// Zoom and Sidebar size for the battle frame. The frame
+    /// readback stays the window size; incompatible with gestures and the
+    /// cursor, whose coordinates are frame pixels at zoom 100%.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    presentation: Option<MapPresentationProfile>,
 }
 
 impl MapCaptureProfile {
@@ -653,8 +707,16 @@ impl MapCaptureProfile {
                     && self.terrain_cells.is_none()
                     && self.observe_super_weapons.is_none()
                     && self.observe_diplomacy.is_none()
-                    && self.observe_sidebar_steps.is_none(),
+                    && self.observe_sidebar_steps.is_none()
+                    && self.presentation.is_none(),
                 "map observation profile v1 cannot declare v2 extension fields"
+            );
+        }
+        if let Some(presentation) = &self.presentation {
+            presentation.validate()?;
+            ensure!(
+                self.gestures.is_none() && self.cursor_position.is_none(),
+                "presentation cannot combine with gestures or cursor_position"
             );
         }
         ensure!(
@@ -1051,7 +1113,7 @@ impl MapClock {
         let session = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("clock simulation absent")?
             .simulation
             .session();
@@ -1077,7 +1139,7 @@ fn sound_state(state: &AppState, profile: &MapCaptureProfile) -> Result<Value> {
     let sim = &state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("sound observation simulation absent")?
         .simulation;
     let rng = sim.rng_views();
@@ -1395,7 +1457,7 @@ impl MapInputObservation {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("gesture observation requires a simulation")?
             .simulation;
         let lines = &state.match_state.match_presentation.target_lines;
@@ -1711,7 +1773,7 @@ impl MapCommandBarThumbState {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("thumb observation requires a simulation")?
             .simulation;
         let owner = sim.session().current_house();
@@ -2076,7 +2138,7 @@ fn disguise_inputs(
     let runtime = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("disguise simulation absent")?;
     let sim = &runtime.simulation;
     let draw = if entity.category() == crate::map::entities::EntityCategory::Unit {
@@ -2277,7 +2339,7 @@ impl MapLaserObservation {
         let runtime = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("laser observation simulation absent")?;
         let sim = &runtime.simulation;
         let presentation = &state.match_state.match_presentation;
@@ -2390,7 +2452,7 @@ impl MapElectricBoltObservation {
         let runtime = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("electric observation simulation absent")?;
         let sim = &runtime.simulation;
         let rules = &runtime.resources.rules;
@@ -2674,7 +2736,7 @@ fn terrain_render_observation(state: &AppState, rx: u16, ry: u16) -> Value {
     let grid = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .and_then(|runtime| runtime.view().resolved_terrain());
     let cell = grid.and_then(|grid| grid.cell(rx, ry));
     let tactical_variant = grid.and_then(|grid| grid.tactical_draw_variant(rx, ry));
@@ -2709,8 +2771,17 @@ fn terrain_render_observation(state: &AppState, rx: u16, ry: u16) -> Value {
     let a_source = (!state.match_state.sandbox_full_visibility)
         .then_some(presentation.shroud_buffer.as_ref())
         .flatten();
-    let a_center =
-        center.and_then(|point| a_source?.sample_world(point[0], point[1], camera[0], camera[1]));
+    let gpu = &state.renderer.gpu;
+    let a_center = center.and_then(|point| {
+        a_source?.read_world(
+            &gpu.device,
+            &gpu.queue,
+            point[0],
+            point[1],
+            camera[0],
+            camera[1],
+        )
+    });
     json!({
         "phase": "after_draw",
         "variant": cell.map(|cell| cell.variant),
@@ -3136,6 +3207,9 @@ impl TacticalCaptureSession {
             state.renderer.upscale_pass.is_none(),
             "map observation requires native-resolution rendering (no zoom)"
         );
+        if let Some(presentation) = profile.presentation {
+            presentation.apply(state);
+        }
         let cwd = std::env::current_dir()?;
         let inputs = json!({
             "config": artifact(&cwd.join("config.toml"), "config.toml")?,
@@ -3197,7 +3271,7 @@ impl TacticalCaptureSession {
             let sim = &state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .context("simulation absent")?
                 .simulation;
             ensure!(
@@ -3440,7 +3514,7 @@ impl TacticalCaptureSession {
             let issued_tick = state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .context("command simulation absent")?
                 .simulation
                 .session()
@@ -3454,7 +3528,7 @@ impl TacticalCaptureSession {
             let sim = &state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .context("command simulation absent")?
                 .simulation;
             let rules = state.rules().context("command rules absent")?;
@@ -3530,7 +3604,7 @@ impl TacticalCaptureSession {
             let sim = &state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .context("gesture simulation absent")?
                 .simulation;
             let issued_simulation_tick = sim.session().tick();
@@ -3707,7 +3781,14 @@ impl TacticalCaptureSession {
                     } else if scheduled.gesture.is_minimap() {
                         state.match_state.input.minimap_press_active() && !mouse.captured
                     } else {
+                        // A plain click lands on the battlefield, or on a
+                        // button the side's layout added.
                         mouse.captured
+                            || gadgets
+                                .out
+                                .consumed_by
+                                .or(gadgets.focus.sticky)
+                                .is_some_and(|handle| gadgets.is_layout_button(handle))
                     };
                 if matches!(scheduled.gesture, MapGesture::Drag { .. }) {
                     let shown = |state: &AppState| {
@@ -3769,6 +3850,19 @@ impl TacticalCaptureSession {
                     command_bar.map(|(receipt, _)| receipt),
                 )
             };
+            if scheduled.gesture.is_quickload() {
+                // The key queues the ordinary two-phase loader. This sealed
+                // gesture must finish its loading frame and restoration before
+                // recording the rewound clock, without advancing simulation.
+                ensure!(
+                    crate::app::persistence::commands::pump_saved_game_load(state) == Some(true),
+                    "literal quickload did not present its loading frame"
+                );
+                ensure!(
+                    crate::app::persistence::commands::pump_saved_game_load(state) == Some(false),
+                    "literal quickload did not finish its queued restoration"
+                );
+            }
             let neutral_input_restored = crate::app::input::camera::camera_input_idle(state)
                 && state.match_state.input.hotkey_modifiers.is_empty()
                 && !state.match_state.input.selection_state.is_band_box_active()
@@ -3816,7 +3910,7 @@ impl TacticalCaptureSession {
             let sim = &state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .context("gesture simulation disappeared")?
                 .simulation;
             ensure!(
@@ -3901,7 +3995,7 @@ impl TacticalCaptureSession {
         let runtime = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("observation simulation absent")?;
         let sim = &runtime.simulation;
         let grid = runtime.view().resolved_terrain();
@@ -4397,7 +4491,7 @@ impl TacticalCaptureSession {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("map simulation absent")?
             .simulation;
         let step = self.exact_step_receipts.len() as u64;
@@ -4515,7 +4609,7 @@ impl TacticalCaptureSession {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("simulation absent")?
             .simulation;
         Ok(json!(FinalFingerprint {
@@ -4552,7 +4646,10 @@ impl TacticalCaptureSession {
         ensure!(
             ready && static_default_cursor && camera_input_idle,
             "map observation requires every draw ready with a static cursor and idle camera input: ready={ready}, static_cursor={static_default_cursor}, camera_idle={camera_input_idle}, cursor_feedback={:?}, cursor_position={cursor_position:?}",
-            crate::app::input::cursor::current_cursor_feedback_kind(state)
+            crate::app::input::cursor::current_cursor_feedback_kind(
+                state,
+                &crate::app::input::cursor::CursorTargets::read(state),
+            )
         );
         let profile = &self
             .request
@@ -4973,6 +5070,29 @@ mod tests {
         assert!(checked > 1, "found {checked} example profiles");
     }
 
+    /// The presentation block takes only values the Options page can save.
+    #[test]
+    fn presentation_takes_only_options_values() {
+        let mut profile = example();
+        profile.cursor_position = None;
+        profile.presentation = Some(MapPresentationProfile {
+            zoom: 0,
+            sidebar: 150,
+            hd_radar: true,
+            smooth_sidebar: true,
+        });
+        profile.validate().unwrap();
+        for (zoom, sidebar) in [(125, 100), (100, 120)] {
+            profile.presentation = Some(MapPresentationProfile {
+                zoom,
+                sidebar,
+                hd_radar: false,
+                smooth_sidebar: false,
+            });
+            assert!(profile.validate().is_err(), "{zoom} {sidebar}");
+        }
+    }
+
     #[test]
     fn ordinary_capture_admission_uses_canonical_color_and_source_roster() {
         let mut profile = example();
@@ -5069,12 +5189,12 @@ mod tests {
                 z_adjust: -32,
                 color: [0, 255, 0],
                 house: None,
-                house_color: false,
+                house_color: crate::sim::combat::radiation_beam::BeamHouseColor::None,
                 duration: 15,
                 amplitude: NativeF64Bits::from_bits(40.0_f64.to_bits()),
                 eruption: false,
             },
-            |_| [0; 3],
+            |_, _| [0; 3],
         );
         let initial =
             serde_json::to_value(MapRadiationBeamObservation::capture(&beams).unwrap()).unwrap();

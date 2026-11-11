@@ -662,11 +662,26 @@ fn placing_a_pillbox_rings_the_cursor_and_its_nearest_pillboxes() {
         ]
     );
     // Both pillboxes 4 cells away draw their own ring, without rays.
+    let viewport = SurfaceLineViewport {
+        camera: [0; 2],
+        clip: [0, 0, 1024, 768],
+        z_origin_y: 0,
+        zoom: 1.0,
+    };
     for (draw, id) in draws[1..].iter().zip([west, east]) {
-        let own = selected(id);
-        assert_eq!(draw.center, own[0].center);
-        assert!(!draw.rays && own[0].rays);
+        let position = crate::sim::movement::ground_pose::object_get_coords(
+            sim.entities().get(id).unwrap(),
+            sim.resolved_terrain(),
+        );
+        assert_eq!(
+            draw.center,
+            screen_center(viewport, position.x, position.y, position.z)
+        );
+        assert!(!draw.rays);
     }
+    // Selected, a retail pillbox draws no ring of its own: 0x006DBE59 tests
+    // the type's HasRadialIndicator (+0x238), which [GAPILL] leaves unset.
+    assert!(selected(west).is_empty());
 }
 
 /// 0x006DBE74: with Unit Action Lines off, neither the placement nor the

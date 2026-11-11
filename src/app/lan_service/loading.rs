@@ -214,7 +214,7 @@ pub(super) fn decode_progress(
             .iter()
             .enumerate()
             .find_map(|(source, human)| {
-                (human.name.eq_ignore_ascii_case(&progress.name())
+                (crate::net::lan_messages::wire_name_matches(&human.name, progress.name_bytes())
                     && session
                         .network_endpoint(source)
                         .is_some_and(|endpoint| endpoint.ip() == incoming.source.ip()))
@@ -434,6 +434,53 @@ mod tests {
                 .unwrap()
                 .is_some()
         );
+    }
+
+    /// An online name may be 24 characters; the message's name field holds 19.
+    #[test]
+    fn online_name_longer_than_the_name_field_still_reports_loading() {
+        use crate::app::match_runtime::session::NetworkReturnContext;
+        use crate::net::udp::relay_peer_endpoint;
+
+        let long = "Host_with_24_letter_name";
+        assert_eq!(long.len(), 24);
+        let (_, _, _, _, original_guest, _) = super::super::loading_test_pair();
+        let mut setup = original_guest.network_setup().unwrap().clone();
+        setup.humans[0].name = long.to_owned();
+        let mut session = MatchSession::default();
+        session.enter_network(NetworkReturnContext::Wol);
+        session
+            .accept_network_setup(setup.clone(), false, None, false)
+            .unwrap();
+        let host_endpoint = relay_peer_endpoint(0).unwrap();
+        session.bind_network_endpoint(long, host_endpoint).unwrap();
+        session.prepare_wol_timing([0; 2], false).unwrap();
+        session.freeze_network_start(77).unwrap();
+
+        // The long-named player's own report must encode, not fail the load.
+        let mut sender = setup;
+        sender.local_player_index = 0;
+        let mut sending = MatchSession::default();
+        sending.enter_network(NetworkReturnContext::Wol);
+        sending
+            .accept_network_setup(sender, true, None, false)
+            .unwrap();
+        let packets = progress_packets(&sending, None, 50).unwrap();
+        assert_eq!(packets.len(), 1);
+
+        // The receiver binds it to that player's row by the same cut name.
+        let decoded = decode_progress(
+            &session,
+            None,
+            GlobalMessageRef {
+                source: host_endpoint,
+                product_id: 0xaa04,
+                sequence: 1,
+                payload: &packets[0].0,
+            },
+        )
+        .unwrap();
+        assert_eq!(decoded, Some((0, 50)));
     }
 
     #[test]

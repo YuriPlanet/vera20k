@@ -60,7 +60,7 @@ pub(crate) fn fixture_with_rules_and_fixed_art(
     sim.session.set_map_height_for_test(33);
     sim.overlay_grid = Some(OverlayGrid::new(33, 33));
     sim.bridge_state = Some(parts.bridges.clone());
-    sim.zone_grid = Some(parts.zones.clone());
+    sim.zone_grid = Some(parts.zones.clone().into());
     sim.path_grid = Some(Arc::new(parts.path.clone()));
     sim.install_resolved_terrain_for_new_map(terrain);
     // Map load also sizes the ore queue stores from the same `[Map] Size`

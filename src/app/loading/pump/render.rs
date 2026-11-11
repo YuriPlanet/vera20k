@@ -87,7 +87,8 @@ pub(super) fn present_blank(
     gpu: &GpuContext,
     presenter: &ShellSurfacePresenter,
     batch: &BatchRenderer,
-    fps_overlay: &crate::app::diagnostics::fps_overlay::FpsOverlay,
+    performance_overlay: &crate::app::diagnostics::performance_overlay::PerformanceOverlay,
+    font: &BitFont,
 ) -> anyhow::Result<()> {
     let Some(output) = gpu
         .acquire_frame()
@@ -101,7 +102,10 @@ pub(super) fn present_blank(
             label: Some("Game Mode Blank"),
         });
     encode_blank(presenter, &mut encoder, &output.texture);
-    fps_overlay.encode(gpu, batch, &mut encoder, &output.texture);
+    performance_overlay.encode(gpu, batch, &mut encoder, &output.texture, font, None);
+    // Synchronous repaints present outside the frame loop: the shared filter
+    // keeps the loading screen corrected like every other presented frame.
+    gpu.encode_color_vision(&mut encoder, &output.texture);
     gpu.queue.submit(std::iter::once(encoder.finish()));
     output.present(&gpu.queue);
     Ok(())
@@ -853,7 +857,7 @@ pub(super) fn present_native_loading(
     depth_view: &wgpu::TextureView,
     batch: &BatchRenderer,
     font: &BitFont,
-    fps_overlay: &crate::app::diagnostics::fps_overlay::FpsOverlay,
+    performance_overlay: &crate::app::diagnostics::performance_overlay::PerformanceOverlay,
     atlas: &LoadingScreenAtlas,
     composition: Option<&LoadingCompositionSnapshot>,
     campaign: Option<&CampaignLoadingPresentation>,
@@ -899,7 +903,10 @@ pub(super) fn present_native_loading(
         &mut encoder,
         &output.texture,
     )?;
-    fps_overlay.encode(gpu, batch, &mut encoder, &output.texture);
+    performance_overlay.encode(gpu, batch, &mut encoder, &output.texture, font, None);
+    // Synchronous repaints present outside the frame loop: the shared filter
+    // keeps the loading screen corrected like every other presented frame.
+    gpu.encode_color_vision(&mut encoder, &output.texture);
     gpu.queue.submit(std::iter::once(encoder.finish()));
     output.present(&gpu.queue);
     Ok(())

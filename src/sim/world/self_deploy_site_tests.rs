@@ -47,11 +47,16 @@ fn an_mcv_offers_no_deploy_where_its_yard_cannot_stand() {
 }
 
 /// An Amphibious Transport (`[LCRF] SpeedType=Hover`) whose first passenger
-/// is a GI refuses its unload on a Beach (Foot 0%), not on Clear ground or
-/// on Water.
+/// is a GI refuses below1% on Beach, but admits Clear just above1% and the
+/// explicit Water exception. The old integer-percent gate admitted0.5%.
 #[test]
 fn a_loaded_transport_on_a_beach_offers_no_deploy() {
-    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &crate::rules::ini_parser::IniFile::from_str(
+            "[Clear]\nFoot=1.00001%\n[Beach]\nFoot=0.5%\n",
+        ),
+    ) else {
         return;
     };
     let rules = &retail.rules;

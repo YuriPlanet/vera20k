@@ -81,6 +81,11 @@ mod tests {
             .as_array()
             .expect("synthetic controls")
         {
+            // Ares's `INIClass_Parse_Override` (`0x5260D9`) keeps only the later
+            // of two equal keys; this control records the vanilla reader.
+            if cfg!(feature = "ares") && case["name"] == "duplicate_key" {
+                continue;
+            }
             let ini = if case["absent"].as_bool() == Some(true) {
                 IniFile::empty()
             } else {

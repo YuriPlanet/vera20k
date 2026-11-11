@@ -290,6 +290,7 @@ mod tests {
                 description: format!("Save {i}").into(),
                 last_write_time: (count - i) as u64,
                 visible: true,
+                loadable: true,
             })
             .collect();
         let browser = SavedSeedBrowserState::open_rows(

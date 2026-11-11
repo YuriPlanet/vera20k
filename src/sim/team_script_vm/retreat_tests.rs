@@ -43,7 +43,7 @@ fn retail_guard_retreat(ramp: bool) {
         .insert_for_test(crate::sim::house_state::HouseState::new(
             owner, 0, None, false, 0, 10,
         ));
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     sim.session.set_binary_frame_for_test(100);
     sim.spawn_object("GAPOWR", "Americans", 5, 5, 0, &rules)
         .unwrap();
@@ -260,6 +260,9 @@ fn foot_nearby_matches_original_whole_infantry_and_unit_admission() {
 /// projection, GetWeapon, threat owner and class admission. The native selector
 /// controls supply entry replies; separate whole-class controls above establish
 /// the admitted ramp input used here. Coordinates are declared by native rows.
+/// Stock only: Ares 3.0 ThreatPosedEstimates_GetIndex `1005D4A0` (hook
+/// `0x0056BC54`) moves the threat writes these native rows read back.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn retreat_building_selection_matches_original_controls() {
     let rules = synthetic_rules();

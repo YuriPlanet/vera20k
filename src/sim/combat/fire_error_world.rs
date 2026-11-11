@@ -271,11 +271,8 @@ impl<'a> FireSubject<'a> {
     }
 
     fn weapon_facts(&self, weapon: &WeaponType, target_obj: Option<&ObjectType>) -> WeaponFacts {
-        let warhead = combat_weapon::warhead_of(self.rules, weapon);
-        let projectile = weapon
-            .projectile
-            .as_deref()
-            .and_then(|id| self.rules.projectile(id));
+        let warhead = self.rules.weapon_warhead(weapon);
+        let projectile = self.rules.weapon_projectile(weapon);
         let armor = target_obj.map(ObjectType::armor_id);
         WeaponFacts {
             damage: weapon.damage,
@@ -343,9 +340,13 @@ impl<'a> FireSubject<'a> {
             EntityCategory::Aircraft => FirerClass::Aircraft,
             EntityCategory::Structure => FirerClass::Building,
         };
+        // T9 (`0x006FC13F`) compares the target with the firer's `+0x11C`
+        // without testing `+0x82`; T32/T33 test `+0x82` themselves
+        // (`0x006FC57D`, `0x006FC5C7`). A garrison occupant or cargo rider
+        // stores no Transporter (vera20k#3838).
         let transport = firer
             .passenger_role
-            .inside_transport_id()
+            .transporter()
             .and_then(|id| self.world.substrate.entities.get(id));
         // U5 reads the `+0x418` tether latch (`radio::tether`) and
         // `RadioLinks[0]`.
@@ -358,6 +359,10 @@ impl<'a> FireSubject<'a> {
             warped_out: firer.is_warped_out(),
             warping_in: firer.is_warping_in(),
             robot_offline: firer.deactivated.is_offline(),
+            #[cfg(feature = "ares")]
+            weapons_disabled: firer.ares_disable_weapons.start_frame()
+                != crate::sim::timer::PAUSED_START_FRAME
+                && firer.ares_disable_weapons.remaining(frame as i32) > 0,
             emp_remaining: firer.emp_remaining(),
             on_bridge: firer.on_bridge(),
             z: self.terrain().map_or(0, |terrain| {
@@ -371,11 +376,24 @@ impl<'a> FireSubject<'a> {
             transporter: match transport {
                 None => Transporter::None,
                 Some(transport) if transport.is_warped_out() => Transporter::WarpedOut,
-                Some(transport) if transport.passenger_role.is_inside_transport() => {
+                Some(transport) if transport.passenger_role.transporter().is_some() => {
                     Transporter::Nested
                 }
                 Some(_) => Transporter::Plain,
             },
+            #[cfg(feature = "ares")]
+            transporter_gunner_open_topped: transport.is_some_and(|transport| {
+                self.world
+                    .object_type(transport.type_ref(), self.rules)
+                    .is_some_and(|object| object.gunner && object.open_topped)
+            }),
+            #[cfg(feature = "ares")]
+            transporter_cloaked: transport.is_some_and(|transport| {
+                transport
+                    .cloak
+                    .as_ref()
+                    .is_some_and(|cloak| cloak.state() != 0)
+            }),
             wave_live: self.world.active_wave_id(firer.stable_id()).is_some(),
             // FireError reads the actual Techno+304 Fire pointer.
             fire_particles_live: firer.fire_particle_system.system().is_some(),
@@ -397,6 +415,23 @@ impl<'a> FireSubject<'a> {
             drain_target: Link::None,
             locomotor_target: Link::None,
             temporal: None,
+            #[cfg(feature = "ares")]
+            temporal_gunner_weapon: obj.turret_count > 0 && !obj.is_gattling && {
+                let entities = &self.world.substrate.entities;
+                let interner = &self.world.interner;
+                let slot = combat_weapon::what_weapon_should_i_use(
+                    self.rules,
+                    obj,
+                    &combat_weapon::attacker_facts(firer, obj),
+                    None,
+                    |slot| {
+                        combat_weapon::get_weapon(firer, obj, slot, entities, self.rules, interner)
+                    },
+                );
+                combat_weapon::get_weapon(firer, obj, slot, entities, self.rules, interner)
+                    .and_then(|weapon| self.rules.weapon_warhead(weapon))
+                    .is_some_and(|warhead| warhead.temporal)
+            },
             owner_is_human: crate::sim::house_state::house_state_for_owner_id(
                 &self.world.houses,
                 firer.owner(),
@@ -440,6 +475,14 @@ impl<'a> FireSubject<'a> {
                 .map_or(-1, |leaf| leaf.doing()),
             effective_mission: firer.mission.effective().raw(),
             delayed_fire_counter: firer.pending_building_fire.remaining_ticks(),
+            building_has_turret: class == FirerClass::Building
+                && firer
+                    .building_upgrades()
+                    .has_turret(obj, self.rules, &self.world.interner),
+            #[cfg(feature = "ares")]
+            prism_breaks_support: self
+                .world
+                .ares_prism_breaks_support(firer.stable_id(), self.rules),
             ..FirerFacts::default()
         };
         let firer_type = FirerTypeFacts {
@@ -510,6 +553,9 @@ impl<'a> FireSubject<'a> {
                             EntityCategory::Structure => FireTargetKind::Building,
                         },
                         bomb: entity.bomb.is_some(),
+                        #[cfg(feature = "ares")]
+                        bomb_fixed: entity.bomb.is_some()
+                            && !self.world.bomb_detachable(entity.stable_id(), self.rules),
                         in_limbo: entity.lifecycle.in_limbo(),
                         sinking: entity.sinking.is_active(),
                         on_bridge: entity.on_bridge(),
@@ -540,7 +586,18 @@ impl<'a> FireSubject<'a> {
                         drainable: target_obj.drainable,
                         berserk_friendly: target_obj.berserk_friendly,
                         unnatural: target_obj.unnatural,
+                        // Ares TechnoClass_CanFire_PsionicsImmune (10049EF0,
+                        // hook 0x6FC417): the rank's PSIONICSIMMUNE joins the
+                        // type flag and `ImmuneToBerserk` overrides both.
+                        #[cfg(not(feature = "ares"))]
                         immune_to_psionics: target_obj.immune_to_psionics,
+                        #[cfg(feature = "ares")]
+                        immune_to_psionics: target_obj.techno_combat().combat().immune_to_berserk(
+                            target_obj.immune_to_psionics
+                                || target_obj.promotion_abilities().is_some_and(|abilities| {
+                                    abilities.psionics_immune(entity.veterancy.raw())
+                                }),
+                        ),
                         spawned: target_obj.spawned,
                         balloon_hover: target_obj.balloon_hover,
                         jumpjet: target_obj.jumpjet,
@@ -737,6 +794,8 @@ impl FireQuery for WorldQuery<'_, '_> {
                         overlay_grid: subject.world.overlay_grid.as_ref(),
                         overlay_registry: subject.overlay_registry,
                         alliances: subject.fog.map(|fog| fog.alliances),
+                        #[cfg(feature = "ares")]
+                        buildings: Some(line_of_fire::CellBuildings::of(subject.world)),
                     },
                     Some(&subject.world.substrate.entities),
                 )
@@ -764,6 +823,8 @@ impl FireQuery for WorldQuery<'_, '_> {
                         overlay_grid: subject.world.overlay_grid.as_ref(),
                         overlay_registry: subject.overlay_registry,
                         alliances: subject.fog.map(|fog| fog.alliances),
+                        #[cfg(feature = "ares")]
+                        buildings: Some(line_of_fire::CellBuildings::of(subject.world)),
                     },
                 )
             }),
@@ -832,7 +893,7 @@ impl FireQuery for WorldQuery<'_, '_> {
             )
         });
         i32::from(target.visual_character(
-            subject.rules.general.cloaking_stages,
+            obj.cloaking_stages(subject.rules.general.cloaking_stages),
             invisible,
             subject.world.shared_owned_by_current_house(target),
             crate::sim::cloak_disguise::VisualCharacterQuery::sensor(true, sensed, false),
@@ -1021,8 +1082,21 @@ impl FireQuery for WorldQuery<'_, '_> {
         })
     }
 
+    /// Every retail locomotor answers Ok; Tunnel's (`0x0072A1C0`) answers
+    /// FIRE_MOVING while its State is set.
     fn locomotor_can_fire(&mut self) -> FireError {
-        FireError::Ok
+        let digging = self
+            .subject
+            .firer
+            .locomotor
+            .as_ref()
+            .and_then(|locomotor| locomotor.tunnel_runtime())
+            .is_some_and(crate::sim::movement::tunnel_movement::TunnelRuntime::blocks_fire);
+        if digging {
+            FireError::Moving
+        } else {
+            FireError::Ok
+        }
     }
 
     fn jumpjet_locomotor(&mut self) -> bool {

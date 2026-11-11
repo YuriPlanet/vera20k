@@ -18,13 +18,43 @@ import shlex
 import shutil
 import subprocess
 import tempfile
+import time
+
+
+class CommandFailed(RuntimeError):
+    def __init__(self, message: str, status: int):
+        super().__init__(message)
+        self.status = status
 
 
 def command(args: list[str]) -> str:
     result = subprocess.run(args, capture_output=True, text=True)
     if result.returncode:
-        raise RuntimeError(f"{args[0]} failed ({result.returncode}): {result.stderr.strip()}")
+        # stapler reports on stdout and leaves stderr empty.
+        detail = result.stderr.strip() or result.stdout.strip()[-2000:]
+        raise CommandFailed(f"{args[0]} failed ({result.returncode}): {detail}", result.returncode)
     return result.stdout
+
+
+# stapler's status when it cannot reach Apple's ticket server (sysexits
+# EX_NOHOST). GitHub's macOS 15 runners got it now and then in Release run
+# 41904984092, for images Apple had accepted and whose tickets validated on
+# another Mac.
+STAPLER_NO_HOST = 68
+
+
+def stapler(action: str, image: Path, *, attempts: int = 5, wait: float = 30) -> None:
+    """`xcrun stapler <action> <image>`, tried again while Apple is unreachable."""
+    for attempt in range(1, attempts + 1):
+        try:
+            command(["xcrun", "stapler", action, str(image)])
+            return
+        except CommandFailed as error:
+            if error.status != STAPLER_NO_HOST or attempt == attempts:
+                raise
+        print(f"stapler {action} could not reach Apple (attempt {attempt} of {attempts}); "
+              f"trying again in {wait:.0f} s.", flush=True)
+        time.sleep(wait)
 
 
 @contextmanager
@@ -158,7 +188,7 @@ def notarize(image: Path, output: Path, records: Path, identity: str, team: str,
             command(["codesign", "--verify", "--strict", str(output)])
             submit_and_wait(output, keychain, records, timeout)
         # No signing credentials remain when the distribution checks run.
-        command(["xcrun", "stapler", "staple", str(output)])
+        stapler("staple", output)
         verify_distribution(output)
     print("Developer ID signing, notarization and ticket validation succeeded.", flush=True)
 
@@ -172,7 +202,7 @@ def verify_distribution(image: Path, *, smoke_test: bool = False):
     if image.is_symlink() or not image.is_file():
         raise RuntimeError("Expected a regular macOS disk image.")
     command(["codesign", "--verify", "--strict", str(image)])
-    command(["xcrun", "stapler", "validate", str(image)])
+    stapler("validate", image)
     command(["spctl", "--assess", "--type", "open", "--context", "context:primary-signature",
              "--verbose=4", str(image)])
     command(["hdiutil", "verify", str(image)])

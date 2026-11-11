@@ -67,6 +67,25 @@ pub(super) fn accept_enabled(state: &AppState) -> bool {
         && crate::app::shell_wol::local_choices_agreed(state)
 }
 
+/// The room's map in the scenario catalog, when this player shows its own
+/// copy of it. A guest shows its own copy only when it verified the map, and
+/// on WOL only from a mixfile (0x005E74E0); otherwise its preview is the
+/// host's Preview.bin.
+pub(super) fn local_map_index(state: &AppState) -> Option<usize> {
+    let session = &state.match_state.session;
+    let protocol = state.frontend.network_setup_protocol.as_ref()?;
+    if !session.host() && !protocol.local_preview() {
+        return None;
+    }
+    let file = session.network_setup()?.selected_map_file.as_deref()?;
+    state
+        .frontend
+        .scenario_catalog
+        .shell_maps()
+        .iter()
+        .position(|map| map.file_name.eq_ignore_ascii_case(file))
+}
+
 pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let session = &state.match_state.session;
     let launch = session.network_setup()?;
@@ -79,22 +98,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     // 0x4E5C5B..0x4E5C90, 0x4E5FD5..0x4E6004: a WOL clan room hides every
     // team combo and the team header 0x794.
     let clan_room = profile_is_wol(state) && room.clan;
-    // A guest shows its own copy of the map only when it verified, and on
-    // WOL only from a mixfile (0x005E74E0); otherwise its preview is the
-    // host's Preview.bin.
-    let local_map = host || protocol.local_preview();
-    let map_index = launch
-        .selected_map_file
-        .as_deref()
-        .filter(|_| local_map)
-        .and_then(|file| {
-            state
-                .frontend
-                .scenario_catalog
-                .shell_maps()
-                .iter()
-                .position(|map| map.file_name.eq_ignore_ascii_case(file))
-        });
+    let map_index = local_map_index(state);
     let capacity = session
         .network_setup_capacity()?
         .clamp(0, crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32)
@@ -263,7 +267,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             };
             let seat = adding || ai.is_some() || vacancy == Some(NetworkVacancy::Open);
             if adding {
-                players.push(item(3, "Add slot".to_owned()));
+                players.push(item(3, crate::i18n::tr("VERA:AddSlot")));
             }
             if !(host && ai.is_some()) {
                 players.push(item(
@@ -284,14 +288,14 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 players.push(item(2, label(state, "GUI:Open")));
             }
             if host && human.is_some() && !is_local {
-                players.push(item(2, "Kick".to_owned()));
+                players.push(item(2, crate::i18n::tr("VERA:Kick")));
             }
             if host
                 && !adding
                 && (ai.is_some() || vacancy == Some(NetworkVacancy::Open))
                 && may_remove
             {
-                players.push(item(3, "Remove slot".to_owned()));
+                players.push(item(3, crate::i18n::tr("VERA:RemoveSlot")));
             }
         } else {
             if human.is_some() || !host {
@@ -515,15 +519,16 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let trackbars = vec![
         SetupTrackbar {
             id: SPEED,
-            value: skirmish_shell::game_speed_visual_position(options.game_speed),
+            value: crate::ui::shell::game_speed::SpeedContext::Network
+                .visual_position(options.game_speed),
             range: bounds.range(SkirmishTrackbarId::GameSpeed0x529),
             enabled: host,
             visible: true,
         },
         SetupTrackbar {
             id: CREDITS,
-            value: options.starting_credits,
-            range: bounds.range(SkirmishTrackbarId::Credits0x511),
+            value: bounds.credits_visual_position(options.starting_credits),
+            range: bounds.visual_range(SkirmishTrackbarId::Credits0x511),
             enabled: host,
             visible: true,
         },

@@ -8,6 +8,10 @@
 //! The surviving aircraft then drops a NavCom or Target that names the
 //! shared dummy cell (`0x00414FDF..0x00415046`), before Ready/Commence.
 //! A Spy Plane's next Overfly visit can then choose another exit cell.
+//!
+//! The preceding Trailer/SpawnDelay step (`0x00414ED0..0x00414F42`) is
+//! owned by [`Simulation::emit_aircraft_trailer`]. No retail aircraft image
+//! supplies Trailer, but authored fixed-ART values reach that producer.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;

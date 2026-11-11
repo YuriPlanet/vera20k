@@ -149,7 +149,7 @@ pub(crate) fn enqueue(state: &mut AppState, index: i32, pause_simulation: bool) 
     if state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_none_or(|rt| rt.simulation.session().game_mode_nonzero())
     {
         return;
@@ -200,11 +200,7 @@ pub(crate) fn enqueue_file(state: &mut AppState, stem: &str, pause_simulation: b
         Ok(surface) => {
             // BinkMovie_Open 0x00432750 resolves cues when the clip is admitted.
             let header = &surface.file().header;
-            let subtitles = state
-                .process_assets
-                .manager()
-                .and_then(|assets| assets.get_ref(movie_subtitles::SUBTITLE_FILE))
-                .and_then(|file| movie_subtitles::movie_subtitles(file, stem))
+            let subtitles = movie_subtitles::cues_for_movie(state.process_assets.manager(), stem)
                 .and_then(|cues| SubtitleTrack::new(cues, header.fps_num, header.fps_den));
             log::info!(
                 "Radar movie admitted: {file_name}, source={}, pause={pause_simulation}",
@@ -282,7 +278,8 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
         _ => true,
     };
     let streams_ready = state.audio.movie_streams_ready();
-    // Admission and the prelude run from RadarClass vt+0x28 (`0x006539A2`)
+    // Admission and the prelude run from `RadarClass::AI @ 0x00653850`
+    // (vt+0x28, `0x006539A2`)
     // on the main loop's input path, which an in-game modal does not pump.
     let menu_open = state.match_state.match_presentation.in_game_menu.is_open();
     let Some(radar) = state.match_state.match_presentation.radar_anim.as_mut() else {
@@ -418,11 +415,7 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
         .radar_anim
         .as_mut()
         .expect("radar draw owner")
-        .paint_movie(
-            &state.renderer.gpu,
-            surface.rgba(),
-            [surface.width(), surface.height()],
-        );
+        .paint_movie(surface.batch_texture(), [surface.width(), surface.height()]);
     let mut due = Vec::new();
     if active
         && let Some(subtitles) = state

@@ -183,7 +183,7 @@ impl Simulation {
     /// zone grid (headless fixtures) asks no zone.
     fn airfield_search(&self, seed: (i16, i16), size: i32) -> Option<(i16, i16)> {
         let terrain = self.resolved_terrain.as_ref()?;
-        let zone = self.zone_grid.as_ref().and_then(|zones| {
+        let zone = self.zone_grid.as_deref().and_then(|zones| {
             zones.get_zone_id_native(
                 terrain,
                 (seed.0 as u16, seed.1 as u16),

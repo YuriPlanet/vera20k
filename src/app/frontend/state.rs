@@ -18,9 +18,15 @@ pub(crate) struct FrontendState {
     /// External offline launch: returning from the session closes the process for its client.
     pub(crate) external_launch: bool,
     pub(crate) external_launch_error: Option<String>,
-    /// The external launch's local result, first decided wins
-    /// (docs/spawn.md); see `App::external_match_result`.
-    pub(crate) external_match_result: Option<crate::app::cncnet::ExternalMatchResult>,
+    /// The external launch's or online lobby match's local result, first
+    /// decided wins (docs/spawn.md); see `App::record_match_result`.
+    pub(crate) match_result: Option<crate::app::cncnet::ExternalMatchResult>,
+    /// The decided network match's winners still in it, for the online
+    /// lobby's `finish` (docs/lobby-protocol.md).
+    pub(crate) match_winners: Option<Vec<String>>,
+    /// VERA: when `match_result` was decided, for the online lobby's
+    /// `finish` (`ended_ago`), which the score screen holds back.
+    pub(crate) match_result_at: Option<Instant>,
     /// Frames, duration and opponent departure for the launch report.
     pub(crate) external_progress: crate::app::cncnet::ExternalLaunchProgress,
     /// The game is closing and waits until this for its network goodbyes
@@ -108,6 +114,9 @@ pub(crate) struct FrontendState {
     pub(crate) shell_message_box: Option<ShellMessageBox>,
     /// Retained active-YR launcher Options `0xD5` parent snapshot.
     pub(crate) options_dialog: Option<crate::ui::main_menu_dialogs::OptionsDialogState>,
+    /// The page the launcher Options dialog reopens on after its key-mapping
+    /// child `0xA3` closes, so the page the player came from comes back.
+    pub(crate) options_reopen_at: Option<crate::ui::main_menu_dialogs::options::Category>,
     /// Shared A3 child, reached from launcher Options or paused Game Controls.
     pub(crate) keyboard_dialog: Option<crate::ui::shell::keyboard::KeyboardState>,
     /// Movie list `0x129` instance while `ShellRoute::MovieList` is shown.
@@ -117,6 +126,9 @@ pub(crate) struct FrontendState {
     pub(crate) movie_list_selection: i32,
     /// Full-screen Play_Movie session (Sneak Peeks or a movie-list entry).
     pub(crate) fullscreen_movie: Option<crate::app::frontend::fullscreen_movie::FullscreenMovie>,
+    /// The "import game files" dialog on the startup-failure card: what step it
+    /// is on, and therefore which buttons the card shows.
+    pub(crate) asset_import: crate::ui::asset_import::AssetImport,
     /// Show_Credits session.
     pub(crate) credits_roll: Option<crate::app::frontend::credits_roll::CreditsRollSession>,
     /// Campaign selection `0x94` instance while its route shows.
@@ -150,10 +162,11 @@ pub(crate) struct FrontendState {
     /// The host's last Room name in VERA's online lobby, which its next
     /// Create Game shows; `None` until one is typed.
     pub(crate) wol_room_name: Option<String>,
+    /// The host unticked Ranked game at its last Create Game in VERA's
+    /// online lobby, which its next Create Game shows.
+    pub(crate) wol_room_unranked: bool,
     /// VERA: how this player returns to its LAN room after the match.
     pub(crate) lan_rematch: Option<crate::app::shell_lan::LanRematch>,
-    /// Options' Network child D7, retained until its teardown completes.
-    pub(crate) network_options: Option<crate::ui::network_options::NetworkOptionsState>,
     /// `0x10E`'s background and icon art (`0x0072C7E0`).
     pub(crate) wol_welcome_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
     /// `0x10F`'s background art (`0x0072C600`), freed with the dialog
@@ -240,6 +253,8 @@ pub(crate) struct FrontendState {
     pub(crate) random_map_retention: RandomMapGenerationRetention,
     pub(crate) skirmish_preview_texture:
         Option<crate::app::frontend::skirmish_shell_render::SkirmishPreviewTexture>,
+    /// VERA's enlarged map preview, while it shows.
+    pub(crate) preview_zoom: Option<crate::app::frontend::preview_zoom::PreviewZoom>,
     /// Minimap renderer — created at map load time.
     pub(crate) loading_screen_atlas:
         Option<crate::render::loading_screen_chrome::LoadingScreenAtlas>,
@@ -255,6 +270,12 @@ pub(crate) struct FrontendState {
     pub(crate) shell_preview_overlay_registry: Option<OverlayTypeRegistry>,
     /// The online map library's catalog and Choose Map's map download.
     pub(crate) map_library: crate::app::map_library::MapLibrary,
+    /// The online login page's lobby counts.
+    pub(crate) login_info: crate::app::shell_wol::login_info::LoginInfo,
+    /// VERA's own map pictures for the setup screens' previews.
+    pub(crate) map_pictures: crate::app::map_picture::MapPictures,
+    /// The mod this run reads on top of the game folder (`app::mods`).
+    pub(crate) mods: crate::app::mods::Mods,
     /// The release check, its main-menu offer and the download (desktop only).
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     pub(crate) updater: crate::app::updater::Updater,
@@ -267,8 +288,38 @@ pub(crate) struct ShellMessageBox {
     pub(crate) purpose: ShellMessageBoxPurpose,
 }
 
+impl ShellMessageBox {
+    /// VERA's Esc menu asks over the page that is showing. gamemd's callers
+    /// destroy their dialog first and ask over the empty backdrop.
+    pub(crate) fn keeps_page(&self) -> bool {
+        matches!(self.purpose, ShellMessageBoxPurpose::ShellMenu(_))
+    }
+
+    /// The settings VERA's Esc menu shows.
+    pub(crate) fn menu_settings(
+        &self,
+    ) -> Option<&crate::ui::main_menu_dialogs::OptionsDialogState> {
+        match &self.purpose {
+            ShellMessageBoxPurpose::ShellMenu(settings) => Some(settings),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn menu_settings_mut(
+        &mut self,
+    ) -> Option<&mut crate::ui::main_menu_dialogs::OptionsDialogState> {
+        match &mut self.purpose {
+            ShellMessageBoxPurpose::ShellMenu(settings) => Some(settings),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) enum ShellMessageBoxPurpose {
+    /// VERA's Esc menu (`app::shell_menu`): Options, Exit Game or Cancel, with
+    /// a few settings from the Options page.
+    ShellMenu(Box<crate::ui::main_menu_dialogs::OptionsDialogState>),
     /// Main_Game state 6: OK quits, Cancel rebuilds `0xE2`.
     ExitGame,
     /// GameExit::Defeat `0x006860E5`: Yes restarts this start, if VERA can
@@ -287,7 +338,7 @@ pub(crate) enum ShellMessageBoxPurpose {
     /// button stops waiting.
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     UpdateCheck,
-    /// The updater's notice (`0xCE`): a failure, or what a check found.
-    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    UpdateNotice,
+    /// An OK notice (`0xCE`): the updater's failure or what its check found,
+    /// or why a mod is not in use (`app::mods`).
+    Notice,
 }

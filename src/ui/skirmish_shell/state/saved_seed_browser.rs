@@ -84,6 +84,10 @@ pub struct SavedSeedBrowserRow<I = NativeFileName> {
     /// Metadata admission belongs to the file format. SED uses nonempty
     /// descriptions; a valid game header can admit an empty description.
     pub visible: bool,
+    /// Whether Load may open this row. VERA-only: a saved game another build
+    /// wrote stays listed in Load and Delete (gamemd hides it at
+    /// `0x005599DF`), so the player can see why it is gone and delete it.
+    pub loadable: bool,
 }
 
 impl<I> SavedSeedBrowserRow<I> {
@@ -310,6 +314,7 @@ impl SavedSeedBrowserState<NativeFileName> {
                 .map(|entry| SavedSeedBrowserRow {
                     file_name: Some(entry.file_name),
                     visible: !entry.description.is_empty(),
+                    loadable: true,
                     description: entry.description,
                     last_write_time: entry.last_write_time,
                 })
@@ -365,6 +370,7 @@ impl<I: Clone + PartialEq> SavedSeedBrowserState<I> {
                 description: empty_slot_label,
                 last_write_time: new_slot_time,
                 visible: true,
+                loadable: true,
             });
         }
         rows.extend(entries);
@@ -599,6 +605,7 @@ mod tests {
                 description: "Saved description".into(),
                 last_write_time: 110,
                 visible: true,
+                loadable: true,
             }],
             "Working".into(),
             "[EMPTY SLOT]".into(),
@@ -640,6 +647,7 @@ mod tests {
                 description: SeedDescription::default(),
                 last_write_time: 1,
                 visible: true,
+                loadable: true,
             }],
             SeedDescription::default(),
             "[EMPTY SLOT]".into(),

@@ -24,8 +24,6 @@
 //! holds it. A network visit's mode follows from the service it visits
 //! (`NetworkReturnContext`), so the visit stores no copy either.
 
-use crate::sim::command_queue::MultiplayerChecksumHistory;
-use crate::sim::command_queue::{ChecksumMismatch, FrameChecksumState, FrameInfo};
 use crate::skirmish_launch::{
     NETWORK_PLAYER_SLOT_COUNT, SkirmishAiSlot, SkirmishLaunchOptions, SkirmishLaunchSession,
     SkirmishLocalSlot,
@@ -340,9 +338,6 @@ pub(crate) struct MatchSession {
     offline_player_name: Option<String>,
     network: Option<NetworkSession>,
     host: bool,
-    /// Process-lifetime checksum history and comparison timer. Launch/load
-    /// retain this owner; only Queue_AI_Multiplayer's reset branch clears it.
-    frame_checksums: FrameChecksumState,
     /// Process byte B07788, set by the first ReadMultiPlayerSettings call.
     /// It survives dialog, match and saved-game transitions.
     multiplayer_settings_initialized: bool,
@@ -416,7 +411,6 @@ impl Default for MatchSession {
             offline_player_name: None,
             network: None,
             host: false,
-            frame_checksums: FrameChecksumState::new(),
             multiplayer_settings_initialized: false,
             latency_fudge: 0,
             pause_event_limiters: PauseEventLimiters::default(),
@@ -1867,6 +1861,72 @@ impl MatchSession {
         }
     }
 
+    /// Whether later arrivals may watch in a VERA room: its host allowed
+    /// spectators at Create Game and its mode keeps an observer row.
+    fn network_spectators_welcome(&self) -> bool {
+        matches!(
+            self.network.as_ref().map(|network| &network.phase),
+            Some(NetworkPhase::Setup {
+                observer_row: Some(_),
+                open_spectators: true,
+                several_observers: true,
+                ..
+            })
+        )
+    }
+
+    /// The most people a VERA room takes, the join limit its host gives the
+    /// online lobby: its Max players, and when no one else may watch, no
+    /// more than the people in it and the seats a newcomer can take, an
+    /// AI's among them ([`Self::free_network_seat_for_newcomer`]).
+    pub(crate) fn network_people_capacity(&self) -> Option<i32> {
+        let Some(NetworkPhase::Setup {
+            launch,
+            people_limit,
+            several_observers: true,
+            ..
+        }) = self.network.as_ref().map(|network| &network.phase)
+        else {
+            return None;
+        };
+        let limit = i32::from(*people_limit);
+        if self.network_spectators_welcome() {
+            return Some(limit);
+        }
+        let seats = (0..self.network_player_row_limit())
+            .filter(|row| {
+                self.network_vacancy(*row) == Some(NetworkVacancy::Open)
+                    || self.network_display_ai(*row).is_some()
+            })
+            .count();
+        Some(limit.min((launch.humans.len() + seats) as i32))
+    }
+
+    /// The seat a newcomer to a VERA room under its host's Max players gets
+    /// when every seat is taken: the AI's on the last row. AI never fill a
+    /// VERA room.
+    pub(crate) fn network_newcomer_ai_seat(&self) -> Option<u8> {
+        if !self.host
+            || !self.network_several_observers()
+            || self.network_room_full()
+            || !self.network_no_open_player_row()
+        {
+            return None;
+        }
+        let launch = self.network_setup()?;
+        launch.opponents.iter().map(|ai| ai.raw_slot_index).max()
+    }
+
+    /// Frees [`Self::network_newcomer_ai_seat`] for the newcomer as the
+    /// host's Remove does ([`Self::choose_network_row_kind`]), and returns it.
+    pub(crate) fn free_network_seat_for_newcomer(&mut self) -> anyhow::Result<Option<u8>> {
+        let Some(row) = self.network_newcomer_ai_seat() else {
+            return Ok(None);
+        };
+        self.choose_network_row_kind(row, NetworkRowKind::Open)?;
+        Ok(Some(row))
+    }
+
     /// The host's own Player choice for a row (`0x005EC9F0`), after which a
     /// VERA room places its open spectator row again.
     pub(crate) fn choose_network_row_kind(
@@ -1888,9 +1948,7 @@ impl MatchSession {
             phase:
                 NetworkPhase::Setup {
                     launch,
-                    observer_row,
                     several_observers: true,
-                    open_spectators,
                     ..
                 },
             ..
@@ -1901,7 +1959,7 @@ impl MatchSession {
         if !self.host {
             return Ok(());
         }
-        let open = *open_spectators && observer_row.is_some() && launch.opponents.is_empty();
+        let open = self.network_spectators_welcome() && launch.opponents.is_empty();
         let seated = |row: u8| {
             launch
                 .humans
@@ -2892,41 +2950,6 @@ impl MatchSession {
         self.offline_player_name = None;
     }
 
-    /// Store one multiplayer frame's checksum at `history[frame & 0xFF]`.
-    ///
-    /// On frame 0 `Queue_AI_Multiplayer` stores the value (`0x006476A5`), then
-    /// takes `0x006476B1 -> 0x00647825` and zeroes all 256 slots
-    /// (`0x00647879`), so frame 0's own slot ends at 0. The same reset also
-    /// runs while `[0x00A8B8B8]` is set; that flag belongs to the network
-    /// timing service of a later stage and VERA has no writer for it yet.
-    pub(crate) fn record_frame_checksum(&mut self, frame: u32, checksum: u32) {
-        self.frame_checksums.record_frame_checksum(frame, checksum);
-    }
-
-    /// Queue_AI_Multiplayer647849..647879 resets both the history and its
-    /// comparison grace timer. The native period is literally Frame+256,
-    /// even at a nonzero-frame restart. The other native trigger is A8B8B8;
-    /// its transport writer is not yet implemented here.
-    pub(crate) fn reset_frame_checksum_history(&mut self, frame: u32) {
-        self.frame_checksums.reset_frame_checksum_history(frame);
-    }
-
-    /// Execute_DoList64C668..64C6F2 checks the grace timer before comparing
-    /// an on-time FRAMEINFO against history[(event frame - delay) &255]. The
-    /// queue owns on-time/House admission; this owner stores and compares the
-    /// process checksum state. Source: original gamemd.exe instructions.
-    pub(crate) fn compare_frame_info(
-        &self,
-        info: FrameInfo,
-        current_frame: i32,
-    ) -> Result<bool, ChecksumMismatch> {
-        self.frame_checksums.compare_frame_info(info, current_frame)
-    }
-
-    pub(crate) fn checksum_history(&self) -> &MultiplayerChecksumHistory {
-        self.frame_checksums.checksum_history()
-    }
-
     /// Whether this client owns the match setup: it reads the seed and fixes
     /// the participant list. Every offline session is its own host.
     pub(crate) fn host(&self) -> bool {
@@ -3032,7 +3055,7 @@ fn host_extra_row(
 }
 
 #[derive(Clone, Copy)]
-enum PeerChoicePolicy<'a> {
+pub(crate) enum PeerChoicePolicy<'a> {
     Lan,
     Wol {
         countries: Option<&'a [crate::skirmish_launch::LaunchCountry]>,
@@ -3040,7 +3063,8 @@ enum PeerChoicePolicy<'a> {
 }
 
 /// Shared69B600/5E9720 collision checks; caller selects the native country/team policy.
-fn apply_peer_choices(
+/// A Quick Match host seats the matchbot's guest through it too.
+pub(crate) fn apply_peer_choices(
     launch: &mut SkirmishLaunchSession,
     inactive_ai_options: &[NetworkAiOptions; NETWORK_PLAYER_SLOT_COUNT],
     index: usize,
@@ -3262,7 +3286,6 @@ fn admit_network_start_roster(launch: &SkirmishLaunchSession) -> anyhow::Result<
 #[cfg(test)]
 mod tests {
     use super::{MatchSession, NetworkRoom, SessionMode};
-    use crate::net::lockstep::{ChecksumMismatch, FrameInfo, FrameInfoCompareGate};
 
     pub(super) fn network_fixture() -> crate::skirmish_launch::SkirmishLaunchSession {
         let profile: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
@@ -3554,6 +3577,40 @@ mod tests {
             .select_network_map(mode, "EIGHT.MAP".into(), 8)
             .unwrap();
         assert!((2..8).all(|row| session.network_vacancy(row) == Some(NetworkVacancy::Open)));
+    }
+
+    /// A VERA room stays open until its host's Max players: with every seat
+    /// taken, a newcomer gets the last AI's seat. With spectators off its
+    /// limit is the people in it and the seats AI hold or leave open.
+    #[test]
+    fn a_vera_room_gives_a_newcomer_the_last_ai_seat_until_its_limit() {
+        use super::NetworkRowKind;
+        let easy = NetworkRowKind::Ai(crate::skirmish_launch::AiDifficulty::Easy);
+        let mut session = vera_room();
+        for row in [2, 3] {
+            session.choose_network_row_kind(row, easy).unwrap();
+        }
+        assert!(session.network_no_open_player_row());
+        assert_eq!(session.network_people_capacity(), Some(30));
+        session.set_network_spectators(false).unwrap();
+        assert_eq!(session.network_people_capacity(), Some(4));
+        // At its Max players the AI keep their seats.
+        session.set_network_people_limit(2).unwrap();
+        assert_eq!(session.network_people_capacity(), Some(2));
+        assert_eq!(session.network_newcomer_ai_seat(), None);
+        assert_eq!(session.free_network_seat_for_newcomer().unwrap(), None);
+        session.set_network_people_limit(30).unwrap();
+        assert_eq!(session.network_newcomer_ai_seat(), Some(3));
+        assert_eq!(session.free_network_seat_for_newcomer().unwrap(), Some(3));
+        assert_eq!(session.network_free_row(false), Some(3));
+        let ai_rows: Vec<u8> = session
+            .network_setup()
+            .unwrap()
+            .opponents
+            .iter()
+            .map(|ai| ai.raw_slot_index)
+            .collect();
+        assert_eq!(ai_rows, [2]);
     }
 
     /// A larger map's players take the spectators' rows: they move on past
@@ -4677,106 +4734,6 @@ mod tests {
         ] {
             assert_eq!(mode.command_queue_route(), route, "{mode:?}");
         }
-    }
-
-    #[test]
-    fn frame_zero_resets_the_checksum_ring_and_launches_do_not() {
-        let mut session = MatchSession::default();
-        assert_eq!(session.frame_checksums.compare_gate(), None);
-        session.record_frame_checksum(0x1_05, 0xdead_beef);
-        assert_eq!(session.checksum_history().get(0x05), 0xdead_beef);
-        assert_eq!(session.checksum_history().get(0x2_05), 0xdead_beef);
-        assert_eq!(
-            session.frame_checksums.compare_gate(),
-            Some(FrameInfoCompareGate::new(0x1_05, 0))
-        );
-        session.begin_offline(SessionMode::Skirmish, Some("Commander".to_owned()));
-        assert_eq!(session.checksum_history().get(0x05), 0xdead_beef);
-        assert_eq!(
-            session.frame_checksums.compare_gate(),
-            Some(FrameInfoCompareGate::new(0x1_05, 0))
-        );
-
-        session.record_frame_checksum(0, 0x1234_5678);
-        assert_eq!(session.checksum_history().get(0), 0);
-        assert_eq!(session.checksum_history().get(0x05), 0);
-        assert_eq!(
-            session.frame_checksums.compare_gate(),
-            Some(FrameInfoCompareGate::new(0, 256))
-        );
-        session.record_frame_checksum(1, 0x1234_5678);
-        assert_eq!(session.checksum_history().get(1), 0x1234_5678);
-    }
-
-    #[test]
-    fn frame_info_comparison_starts_at_frame_256_and_reads_current_checksum() {
-        let mut session = MatchSession::default();
-        session.record_frame_checksum(0, 1);
-        session.record_frame_checksum(255, 0x1122_3344);
-        let info = |frame, checksum| FrameInfo {
-            house_id: 2,
-            event_frame: frame,
-            checksum,
-            timing_word: 0,
-            delay: 0,
-        };
-        assert_eq!(session.compare_frame_info(info(255, 0), 255), Ok(false));
-
-        session.record_frame_checksum(256, 0x5566_7788);
-        assert_eq!(
-            session.compare_frame_info(info(256, 0x5566_7788), 256),
-            Ok(true)
-        );
-        assert_eq!(
-            session.compare_frame_info(info(256, 0x99), 256),
-            Err(ChecksumMismatch {
-                house_id: 2,
-                event_frame: 256,
-                delay: 0,
-                history_index: 0,
-                local_checksum: 0x5566_7788,
-                remote_checksum: 0x99,
-            })
-        );
-    }
-
-    #[test]
-    fn first_nonzero_frame_opens_comparison_without_startup_grace() {
-        let mut session = MatchSession::default();
-        session.record_frame_checksum(73, 0x1234_5678);
-        let info = FrameInfo {
-            house_id: 1,
-            event_frame: 73,
-            checksum: 0x1234_5678,
-            timing_word: 0,
-            delay: 0,
-        };
-        assert_eq!(session.compare_frame_info(info, 73), Ok(true));
-    }
-
-    #[test]
-    fn nonzero_checksum_restart_uses_frame_plus_256_as_timer_period() {
-        let mut session = MatchSession::default();
-        session.record_frame_checksum(100, 0x1234_5678);
-        session.reset_frame_checksum_history(100);
-        assert_eq!(session.checksum_history().get(100), 0);
-        assert_eq!(
-            session.frame_checksums.compare_gate(),
-            Some(FrameInfoCompareGate::new(100, 356))
-        );
-        let info = |frame, checksum| FrameInfo {
-            house_id: 1,
-            event_frame: frame,
-            checksum,
-            timing_word: 0,
-            delay: 0,
-        };
-        assert_eq!(session.compare_frame_info(info(455, 1), 455), Ok(false));
-        session.record_frame_checksum(456, 0x8765_4321);
-        assert_eq!(
-            session.compare_frame_info(info(456, 0x8765_4321), 456),
-            Ok(true)
-        );
     }
 
     #[test]

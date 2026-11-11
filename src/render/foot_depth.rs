@@ -125,17 +125,45 @@ fn offset(coord: CellCoord, delta: CellCoord) -> CellCoord {
     ]
 }
 
+/// Distinct cells one evaluation can keep: it reads about ten, some 29 times.
+const KEPT_CELLS: usize = 16;
+
 /// A render-local view of dummy identity. Native failed lookups stamp the same
 /// object's coordinate, so a retained dummy pointer sees the latest request.
 /// Only that stamp is reproduced locally; simulation state remains untouched.
 struct Cells<F> {
     lookup: F,
     dummy_coord: CellCoord,
+    /// Cells already looked up. The lookup is a pure read of the map, so a
+    /// cell read again is taken from here; the dummy stamp still follows
+    /// every read.
+    kept: [(CellCoord, DepthCell); KEPT_CELLS],
+    kept_len: usize,
 }
 
 impl<F: FnMut(CellCoord) -> DepthCell> Cells<F> {
+    fn new(lookup: F) -> Self {
+        Self {
+            lookup,
+            dummy_coord: [0, 0],
+            kept: [([0, 0], DepthCell::default()); KEPT_CELLS],
+            kept_len: 0,
+        }
+    }
+
     fn get(&mut self, coord: CellCoord) -> DepthCell {
-        let mut cell = (self.lookup)(coord);
+        let kept = self.kept[..self.kept_len]
+            .iter()
+            .find(|(at, _)| *at == coord)
+            .map(|&(_, cell)| cell);
+        let mut cell = kept.unwrap_or_else(|| {
+            let cell = (self.lookup)(coord);
+            if self.kept_len < KEPT_CELLS {
+                self.kept[self.kept_len] = (coord, cell);
+                self.kept_len += 1;
+            }
+            cell
+        });
         if cell.is_dummy {
             self.dummy_coord = coord;
             cell.coord = coord;
@@ -289,15 +317,13 @@ impl<F: FnMut(CellCoord) -> DepthCell> Cells<F> {
 
 /// Evaluate selectors in the same order as 0x004DAFC0. The signed maximum
 /// includes a zero bridge candidate only when the bridge predicate is false.
+/// `lookup` must be a pure read: each cell is looked up once.
 pub(crate) fn foot_depth_terms(
     context: FootDepthContext,
     coefficients: FootDepthCoefficients,
     lookup: impl FnMut(CellCoord) -> DepthCell,
 ) -> FootDepthTerms {
-    let mut cells = Cells {
-        lookup,
-        dummy_coord: [0, 0],
-    };
+    let mut cells = Cells::new(lookup);
     let column_score = cells.column_score(context);
     let tunnel_score = cells.tunnel_score(context);
     let cliff_score = cells.cliff_score(context);
@@ -345,10 +371,7 @@ pub(crate) fn unit_composite_split(
     if !too_big {
         return false;
     }
-    let mut cells = Cells {
-        lookup,
-        dummy_coord: [0, 0],
-    };
+    let mut cells = Cells::new(lookup);
     (cells.near_bridge(context, 0x100) && cells.column_score(context) == 0)
         || navigating_to_weapons_factory
 }
@@ -442,34 +465,53 @@ mod tests {
             cell: [10, 10],
             ..Default::default()
         };
-        let mut cells = Cells {
-            lookup: |coord| DepthCell {
-                coord,
-                low_bridge: matches!(coord, [10, 10] | [10, 9] | [10, 7]),
-                ..Default::default()
-            },
-            dummy_coord: [0, 0],
-        };
+        let mut cells = Cells::new(|coord| DepthCell {
+            coord,
+            low_bridge: matches!(coord, [10, 10] | [10, 9] | [10, 7]),
+            ..Default::default()
+        });
         // Current is chosen before N. N's second step qualifies; current's does not.
         assert_eq!(cells.tunnel_score(context), 0);
 
         let mut probes = Vec::new();
-        let mut cells = Cells {
-            lookup: |coord| {
-                probes.push(coord);
-                DepthCell {
-                    coord,
-                    low_bridge: matches!(coord, [10, 10] | [9, 9]),
-                    is_dummy: matches!(coord, [10, 9] | [9, 10]),
-                    ..Default::default()
-                }
-            },
-            dummy_coord: [0, 0],
-        };
+        let mut cells = Cells::new(|coord| {
+            probes.push(coord);
+            DepthCell {
+                coord,
+                low_bridge: matches!(coord, [10, 10] | [9, 9]),
+                is_dummy: matches!(coord, [10, 9] | [9, 10]),
+                ..Default::default()
+            }
+        });
         // Both first steps retain the same dummy. The west lookup stamps its
         // coordinate before the north pointer is used to construct step two.
         assert_eq!(cells.tunnel_score(context), 1);
         assert_eq!(&probes[probes.len() - 2..], &[[9, 9], [8, 10]]);
+    }
+
+    #[test]
+    fn an_evaluation_looks_each_cell_up_once() {
+        let mut probes = Vec::new();
+        foot_depth_terms(
+            FootDepthContext {
+                cell: [10, 10],
+                ..Default::default()
+            },
+            FootDepthCoefficients::default(),
+            |coord| {
+                probes.push(coord);
+                // Ramps, bridge flags and tubes make every selector read.
+                DepthCell {
+                    coord,
+                    ramp: 1,
+                    flags: 0x500,
+                    low_bridge: true,
+                    ..Default::default()
+                }
+            },
+        );
+        let distinct: std::collections::BTreeSet<_> = probes.iter().collect();
+        assert_eq!(probes.len(), distinct.len(), "{probes:?}");
     }
 
     #[test]

@@ -30,10 +30,9 @@
 //! any other answer enters idle mode. Those set `+0x6D4` and return 1; a
 //! state past 7 returns 1.
 //!
-//! RESIDUAL, dormant: a ROGER for a `Carryall=` type with passengers hands
-//! its first passenger over (`0x0041A07B..0x0041A124`); no retail aircraft
-//! is a Carryall (`retail_aircraft_types_are_not_carryalls`), so it queues
-//! Guard here.
+//! A ROGER for a `Carryall=` type with cargo delivers it to the dock
+//! instead of queueing Guard (`0x0041A059..0x0041A124`,
+//! [`EnterHost::deliver_cargo`]).
 //!
 //! Evidence: tools/spatial_oracle/aircraft_enter.py runs the original
 //! 0x00419C80 over every state with each combination of what it reads,
@@ -119,6 +118,10 @@ pub(crate) trait EnterHost {
     /// Limbo (vt+0xD4, `0x004DB260`), then `CargoClass::AddPassenger @
     /// 0x004733A0` on contact 0's cargo (`+0x114`).
     fn board_contact(&mut self);
+    /// DOCK_NOW's ROGER for a `Carryall=` type (`+0xDFC`) with a first
+    /// passenger (`+0x118`): its delivery (`0x0041A06D..0x0041A124`). False,
+    /// doing nothing, for any other aircraft.
+    fn deliver_cargo(&mut self) -> bool;
 }
 
 /// One Mission_Enter visit and the frames it returns.
@@ -191,7 +194,11 @@ pub(crate) fn enter_visit(host: &mut impl EnterHost) -> i32 {
             host.set_transition_ready(true);
             match host.dock_now() {
                 5 => host.board_contact(),
-                1 => host.queue(MissionType::Guard, false),
+                1 => {
+                    if !host.deliver_cargo() {
+                        host.queue(MissionType::Guard, false);
+                    }
+                }
                 _ => host.enter_idle_mode(),
             }
             1

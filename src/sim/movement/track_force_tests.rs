@@ -118,6 +118,10 @@ fn owner_state(entity: &GameEntity, exclude_bunker_speed_write: bool) -> Value {
             .unwrap()
             .remove("applied_fraction");
     }
+    // Ares TechnoExt AltOccupation (hooks 0x007441B6/0x00744216) is outside
+    // the native Unit these rows describe.
+    #[cfg(feature = "ares")]
+    value.as_object_mut().unwrap().remove("ares_alt_occupation");
     value
 }
 

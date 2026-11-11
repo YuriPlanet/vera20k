@@ -46,6 +46,10 @@ impl Simulation {
 
     /// ReceiveDamage_Aftermath1004AB50, after protected-Techno responses and
     /// before the native Uncloak70281D. Unlike EMP this is not a Bullet AoE.
+    /// A damaging hit first restarts the victim's self-heal combat timer with
+    /// its type's `SelfHealing.CombatDelay`. Behind the EffectsRequireDamage/
+    /// EffectsRequireVerses gates it applies KillDriver (10052B40), then
+    /// `Sonar.Duration`, `DisableWeapons.Duration` and `Flash.Duration`.
     pub(crate) fn ares_driver_kill_aftermath(
         &mut self,
         event: &EntityDamageEvent,
@@ -56,15 +60,35 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
+        //1004AB9C..1004ABC4: a nonzero result of an initially positive hit
+        // starts SelfHealingCombatTimer (TechnoExt+5C) for a positive delay,
+        // before the warhead is read.
+        if state != DamageState::Unaffected && initially_positive {
+            let frame = self.session.binary_frame() as i32;
+            let delay = self
+                .substrate
+                .entities
+                .get(event.target_id)
+                .and_then(|target| self.entity_object_type(target, rules))
+                .map_or(0, |kind| kind.techno_combat().self_healing().combat_delay());
+            if delay > 0
+                && let Some(target) = self.substrate.entities.get_mut(event.target_id)
+            {
+                target.ares_self_heal_combat.start(frame, delay);
+            }
+        }
         let Some(warhead) = rules.warhead(self.interner.resolve(event.warhead_ref)) else {
             return;
         };
-        let Some(settings) = warhead
-            .ares_rules()
-            .filter(|rules| rules.kill_driver().enabled())
-        else {
+        let Some(settings) = warhead.ares_rules() else {
             return;
         };
+        let flash = settings.combat().flash_duration();
+        let disable_weapons = settings.combat().disable_weapons_duration();
+        let sonar = settings.combat().sonar_duration();
+        if !settings.kill_driver().enabled() && flash <= 0 && disable_weapons <= 0 && sonar <= 0 {
+            return;
+        }
         if state == DamageState::Unaffected
             && !event.receiver_flags.ignore_defenses
             && initially_positive
@@ -88,6 +112,59 @@ impl Simulation {
         {
             return;
         }
+        if settings.kill_driver().enabled() {
+            self.ares_apply_kill_driver(event, warhead, settings, rules, registry, effects);
+        }
+        // Sonar.Duration (WarheadExt+F8) and then DisableWeapons.Duration
+        // (+FC) restart SonarTimer (TechnoExt+44) and DisableWeaponTimer
+        // (+50) when longer than the timer's GetTimeLeft.
+        let frame = self.session.binary_frame() as i32;
+        if sonar > 0
+            && let Some(target) = self.substrate.entities.get_mut(event.target_id)
+            && target.sonar_timer.remaining(frame) < sonar
+        {
+            target.sonar_timer.start(frame, sonar);
+        }
+        if disable_weapons > 0
+            && let Some(target) = self.substrate.entities.get_mut(event.target_id)
+            && target.ares_disable_weapons.remaining(frame) < disable_weapons
+        {
+            target.ares_disable_weapons.start(frame, disable_weapons);
+        }
+        // 1004AB50 last: a Flash.Duration above Flashing (+0xF0) calls vt+0x148.
+        if flash > 0
+            && self
+                .substrate
+                .entities
+                .get(event.target_id)
+                .is_some_and(|target| flash > target.flashing.frames())
+        {
+            Simulation::flash_object(
+                &self.interner,
+                &self.session,
+                &self.fog,
+                &self.house_alliances,
+                &mut self.substrate,
+                event.target_id,
+                flash,
+            );
+        }
+    }
+
+    /// WarheadTypeExt::applyKillDriver 10052B40 for an aftermath that passed
+    /// its gates.
+    fn ares_apply_kill_driver(
+        &mut self,
+        event: &EntityDamageEvent,
+        warhead: &crate::rules::warhead_type::WarheadType,
+        settings: &crate::rules::ares_warhead::AresWarheadRules,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        let Some(target) = self.substrate.entities.get(event.target_id) else {
+            return;
+        };
         //10052B4D/5F: no invoker or non-Foot target never attempts the draw.
         let Some(invoker) = (event.attacker_id != RAD_NO_ATTACKER)
             .then(|| self.substrate.entities.get(event.attacker_id))
@@ -153,7 +230,7 @@ impl Simulation {
         if let Some(owner) = owner {
             self.ares_replace_driver(
                 event.target_id,
-                event.attacker_id,
+                Some(event.attacker_id),
                 owner,
                 settings.kill_driver().remove_veterancy(),
                 rules,
@@ -165,7 +242,12 @@ impl Simulation {
 
     /// CanKillDriver100434C0: live class/radio/type/XP/health facts. Cell
     /// lookup is canonical here (runtime), unlike cursor-only admission.
-    fn ares_can_kill_driver(&self, id: u64, threshold: NativeF64Bits, rules: &RuleSet) -> bool {
+    pub(crate) fn ares_can_kill_driver(
+        &self,
+        id: u64,
+        threshold: NativeF64Bits,
+        rules: &RuleSet,
+    ) -> bool {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
@@ -248,27 +330,30 @@ impl Simulation {
 
     /// TechnoExt::KillDriver100456D0: the admitted vehicle changes driver,
     /// preserving the distinct operator-death, ejection and cleanup order.
-    fn ares_replace_driver(
+    /// `invoker` is the killer (none for trigger action 147). Answers whether
+    /// the owner changed: a vehicle already owned by `owner` only takes the
+    /// DriverKilled byte (100456F1..10045708).
+    pub(crate) fn ares_replace_driver(
         &mut self,
         target: u64,
-        invoker: u64,
+        invoker: Option<u64>,
         owner: crate::sim::intern::InternedId,
         remove_veterancy: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
-    ) {
+    ) -> bool {
         let Some(passive) = self.houses.get(&owner).map(|house| {
             rules.country_multiplay_passive(self.interner.resolve(house.house_type_id()))
         }) else {
-            return;
+            return false;
         };
         let Some(actor) = self.substrate.entities.get_mut(target) else {
-            return;
+            return false;
         };
         actor.vehicle_driver.set_killed_from_owner(passive);
         if actor.owner() == owner {
-            return;
+            return false;
         }
         let context = UninitContext::new(rules, registry).with_effects(effects);
         let operator = self
@@ -295,7 +380,7 @@ impl Simulation {
                     target,
                     DepartureRoute::DeathEscape,
                     |sim, id| {
-                        sim.record_kill_and_uninit(id, Some(invoker), context);
+                        sim.record_kill_and_uninit(id, invoker, context);
                         Ok(())
                     },
                     effects,
@@ -316,7 +401,7 @@ impl Simulation {
                         })
                     {
                         self.remove_cargo_passenger(target, Some(passenger), rules, effects);
-                        self.record_kill_and_uninit(passenger, Some(invoker), context);
+                        self.record_kill_and_uninit(passenger, invoker, context);
                         //100457D0 falls through to100457D6 after the first
                         //matching operator; only nonmatches advance the list.
                         break;
@@ -396,7 +481,7 @@ impl Simulation {
         let _ = self.assign_target_represented(target, None, rules, registry, effects);
         // ReplaceDriver10045995 passes mode 0; the later AI enforcement uses 1.
         let _ = self.assign_destination_keeping_queue(target, None, rules, registry, effects);
-        self.dispatch_object_tag_event(target, 68, Some(target), Some(invoker), context);
+        self.dispatch_object_tag_event(target, 68, Some(target), invoker, context);
         if self
             .substrate
             .entities
@@ -405,6 +490,7 @@ impl Simulation {
         {
             self.dispatch_object_tag_event(target, 67, Some(target), None, context);
         }
+        true
     }
 }
 

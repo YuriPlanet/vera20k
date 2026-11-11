@@ -543,7 +543,7 @@ fn simulation(state: &AppState) -> Result<&crate::sim::world::Simulation> {
     Ok(&state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("mass simulation")?
         .simulation)
 }

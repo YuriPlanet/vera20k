@@ -45,7 +45,6 @@ fn view(screen: [i32; 2], side: usize, count: usize, scroll: usize) -> SidebarVi
     let options: Vec<_> = (0..count)
         .map(|i| BuildOption {
             type_id: interner.intern(&format!("T{i}")),
-            display_name: format!("T{i}"),
             cost: 1,
             object_category: ObjectCategory::Building,
             queue_category: ProductionCategory::Building,

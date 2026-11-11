@@ -937,8 +937,8 @@ fn a_blocked_bio_reactor_restores_and_retries_its_cargo_head() {
             .unwrap()
             .cell_mut_for_test(cell.0, cell.1)
             .unwrap();
-        cell.speed_costs.foot = Some(cost);
-        cell.base_speed_costs.foot = Some(cost);
+        cell.speed_costs.foot = Some(crate::rules::terrain_rules::test_speed_percent(cost));
+        cell.base_speed_costs.foot = Some(crate::rules::terrain_rules::test_speed_percent(cost));
     };
     for &cell in &adjacent {
         block_foot(&mut sim, cell, true);
@@ -1195,8 +1195,8 @@ fn a_bio_reactor_scan_uses_location_cell_on_a_multi_cell_foundation() {
             .unwrap()
             .cell_mut_for_test(cell.0, cell.1)
             .unwrap();
-        terrain.speed_costs.foot = Some(cost);
-        terrain.base_speed_costs.foot = Some(cost);
+        terrain.speed_costs.foot = Some(crate::rules::terrain_rules::test_speed_percent(cost));
+        terrain.base_speed_costs.foot = Some(crate::rules::terrain_rules::test_speed_percent(cost));
     };
     let step = |cell: (u16, u16), delta: (i32, i32), scale: i32| {
         (
@@ -1328,8 +1328,8 @@ fn a_bio_reactor_relaxed_scan_wraps_from_octant_seven() {
             .unwrap()
             .cell_mut_for_test(cell.0, cell.1)
             .unwrap();
-        terrain.speed_costs.foot = Some(cost);
-        terrain.base_speed_costs.foot = Some(cost);
+        terrain.speed_costs.foot = Some(crate::rules::terrain_rules::test_speed_percent(cost));
+        terrain.base_speed_costs.foot = Some(crate::rules::terrain_rules::test_speed_percent(cost));
     };
     for delta in directions {
         set_foot(&mut sim, step(delta, 1), 0);
@@ -1884,8 +1884,13 @@ fn the_nearest_own_bunker_with_room_takes_an_occupier() {
         .unwrap()
         .health
         .set_for_test(100);
-    assert!(!garrison_seek(&mut sim, &rules, infantry));
-    assert!(!entity(&sim, infantry).building_entry.seeking());
+    // Ares 3.0 10017060 (hook 0x457D58) refuses a red building only when it
+    // is civilian (TechLevel -1).
+    #[cfg(not(feature = "ares"))]
+    {
+        assert!(!garrison_seek(&mut sim, &rules, infantry));
+        assert!(!entity(&sim, infantry).building_entry.seeking());
+    }
 }
 
 /// Script action 63 (`0x006E9EC8`) through the team pass: the occupier a
@@ -1935,14 +1940,17 @@ fn occupants_are_admitted_in_order_and_a_human_drops_its_seek() {
     sim.sound_events.clear_for_test();
 
     for id in [first, second] {
-        assert!(crate::sim::passenger::add_garrison_occupant(
-            &mut sim,
-            &rules,
-            id,
-            bunker,
-            None,
-            FrameEffects::default(),
-        ));
+        assert!(
+            crate::sim::passenger::add_garrison_occupant(
+                &mut sim,
+                &rules,
+                id,
+                bunker,
+                None,
+                FrameEffects::default(),
+            )
+            .unwrap()
+        );
     }
 
     assert_eq!(occupants(&sim, bunker), [first, second]);
@@ -1962,7 +1970,9 @@ fn occupants_are_admitted_in_order_and_a_human_drops_its_seek() {
         .sound_events
         .iter()
         .filter_map(|event| match *event {
-            crate::sim::world::SimSoundEvent::StructureGarrisoned { owner } => Some((owner, None)),
+            crate::sim::world::SimSoundEvent::StructureGarrisoned { owner, .. } => {
+                Some((owner, None))
+            }
             crate::sim::world::SimSoundEvent::BuildingGarrisonedSfx { owner, world } => {
                 let (rx, ry, ..) = world.to_cell_sub_z();
                 Some((owner, Some((rx, ry))))
@@ -2053,14 +2063,17 @@ fn an_ejected_human_occupant_drops_its_seek() {
     for (owner, ry) in [("Americans", 10), ("YuriCountry", 16)] {
         let bunker = spawn(&mut sim, &rules, "NABNKR", owner, 16, ry);
         let occupant = spawn(&mut sim, &rules, "E1", owner, 12, ry);
-        assert!(crate::sim::passenger::add_garrison_occupant(
-            &mut sim,
-            &rules,
-            occupant,
-            bunker,
-            None,
-            FrameEffects::default(),
-        ));
+        assert!(
+            crate::sim::passenger::add_garrison_occupant(
+                &mut sim,
+                &rules,
+                occupant,
+                bunker,
+                None,
+                FrameEffects::default(),
+            )
+            .unwrap()
+        );
         set_should_enter_occupiable_for_test(
             sim.substrate.entities.get_mut(occupant).unwrap(),
             true,
@@ -2808,16 +2821,13 @@ fn retail_all01_script64_conscript_admits_a_map_civilian_garrison() {
             .ini
     });
     let mut owner = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
-    let (mut rules, _, fixed_art, _) = owner
+    let (rules, _, _, _) = owner
         .load_scenario(
             NativeScenarioRulesPrefix::Campaign(named.as_ref()),
             &map.ini,
         )
         .unwrap()
         .into_parts();
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&fixed_art),
-    );
     assert!(rules.object("E2").expect("retail Conscript").occupier);
     let civilian = map
         .entities
@@ -2850,4 +2860,67 @@ fn retail_all01_script64_conscript_admits_a_map_civilian_garrison() {
         entity(&sim, conscript).navigation.nav_com(),
         Some(NavTargetRef::object(building))
     );
+}
+
+/// Ares 100145B0 (hook 0x44D8A1): an `Armory=` building's Mission_Unload
+/// kicks its first passenger out through ExitObject, and Ares 10014100
+/// (hook 0x444D26) gives a human Armory's trainee the exit post's
+/// Area_Guard as a Hospital's patient gets.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_armory_unload_kicks_out_its_trainee_on_guard() {
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini(&format!(
+            "{}[ARMORY]\nStrength=500\nArmory=yes\nPassengers=5\n",
+            RULES.replace("5=NATBNK\n", "5=NATBNK\n6=ARMORY\n")
+        )),
+        &IniFile::from_str(&format!("{ART}[ARMORY]\nFoundation=2x2\n")),
+    )
+    .unwrap();
+    let (mut sim, _) = arena(&rules);
+    let armory = spawn(&mut sim, &rules, "ARMORY", "Americans", 16, 10);
+    let trainee = sim
+        .construct_object_limbo_at_height(
+            "INIT",
+            "Americans",
+            1,
+            1,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
+    sim.substrate
+        .entities
+        .get_mut(trainee)
+        .unwrap()
+        .passenger_role = PassengerRole::inside_for_test(armory, false);
+    sim.substrate
+        .entities
+        .get_mut(armory)
+        .unwrap()
+        .passenger_role
+        .cargo_mut()
+        .unwrap()
+        .board_forced_chain(&[(trainee, 1.0)]);
+    let now = sim.session.binary_frame();
+    sim.substrate
+        .mission_assign_exact(armory, MissionId::from_known(MissionType::Unload), now)
+        .unwrap();
+    sim.object_ai_visit_one(
+        armory,
+        Some(&rules),
+        crate::sim::world::ObjectAiCtx::default(),
+    );
+    assert!(
+        entity(&sim, armory)
+            .passenger_role
+            .cargo()
+            .is_none_or(|cargo| cargo.is_empty())
+    );
+    let trainee = entity(&sim, trainee);
+    assert!(!trainee.lifecycle.in_limbo());
+    let area_guard = MissionId::from_known(MissionType::AreaGuard);
+    assert!(trainee.mission.current() == area_guard || trainee.mission.queued() == area_guard);
 }

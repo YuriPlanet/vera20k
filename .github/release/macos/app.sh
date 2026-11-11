@@ -11,7 +11,7 @@
 # Release job applies Developer ID signing and notarization before publishing.
 # The image
 # window shows only the app, an arrow and Applications (dmg_settings.py);
-# README.txt and the licenses are in the app's Resources.
+# README.txt, the licenses and the languages folder are in the app's Resources.
 set -euo pipefail
 package="$1"
 dmg="$2"
@@ -29,9 +29,9 @@ sed -e "s/@VERSION@/$VERSION/g" -e "s/@BUILD@/${STAMP/-/.}/g" \
 plutil -lint "$app/Contents/Info.plist" "$here/zh-Hans.lproj/InfoPlist.strings"
 # Named like the app, so its menu reads "Quit VERA20K".
 cp "$package/vera20k" "$app/Contents/MacOS/VERA20K"
-cp "$package/README.txt" "$package/LICENSE-GPL" "$package/LGPL-2.1-or-later.txt" \
-  "$package/THIRD_PARTY_LICENSES.html" "$app/Contents/Resources/"
-cp -R "$here/zh-Hans.lproj" "$app/Contents/Resources/"
+cp "$package/README.txt" "$package/LICENSE-GPL" "$package/THIRD_PARTY_LICENSES.html" \
+  "$app/Contents/Resources/"
+cp -R "$package/languages" "$here/zh-Hans.lproj" "$app/Contents/Resources/"
 # The icon at every size macOS uses: Red Alert 2's red star on a tile that fills
 # macOS's icon grid (icon_tile.swift).
 swift "$here/icon_tile.swift" "$here/../icon.png" "$stage/icon.png"

@@ -5,10 +5,12 @@
 //! `wol`; every shared helper branches on GameMode like the native ones.
 
 mod actions;
-pub(crate) mod bans;
 pub(crate) mod agreement;
+pub(crate) mod bans;
 mod cooperative;
-pub(crate) use cooperative::chooser_rows as cooperative_chooser_rows;
+pub(crate) use cooperative::{
+    CooperativeResume, chooser_rows as cooperative_chooser_rows, resume as resume_cooperative,
+};
 pub(crate) mod maps;
 mod service;
 pub(crate) use service::{
@@ -23,10 +25,10 @@ pub(crate) use actions::{
 };
 pub(crate) use view::view;
 pub(crate) use wol::{
-    WolStartUser, guest_users_listed, kicked_key, local_left, map_status, play_player_left,
-    player_choices, player_ready, preview_request, resident_seed, send_first_choices, user_joined,
-    user_kicked, user_left, verify, verify_cursor_moved, verify_layout, verify_mouse,
-    verify_poll_scroll,
+    WolStartUser, balance_teams, guest_users_listed, kicked_key, local_left, map_status,
+    play_player_left, player_choices, player_ready, preview_request, resident_seed,
+    send_first_choices, user_joined, user_kicked, user_left, verify, verify_cursor_moved,
+    verify_layout, verify_mouse, verify_poll_scroll,
 };
 
 use super::{App, AppState};
@@ -182,6 +184,11 @@ pub(crate) struct NetworkSetupProtocol {
     /// Derived from the same admitted source as the received image.
     received_preview_bounds: Option<crate::map::preview::PreviewSourceBounds>,
     received_preview_count: u32,
+    /// VERA: a kept WOL room came back after BC6's Continue
+    /// (`cooperative::resume`) in place of `+0xAC`'s rematch (`0x005C46E0`),
+    /// which seats both players without a join. The next join is the
+    /// partner coming back to that seat.
+    cooperative_rematch_seat: bool,
     requests: Vec<NetworkSetupRequest>,
 }
 
@@ -368,6 +375,7 @@ impl NetworkSetupProtocol {
             received_preview: None,
             received_preview_bounds: None,
             received_preview_count: 0,
+            cooperative_rematch_seat: false,
             requests: if wol_host {
                 // C2 0x497: advertisement 78F000, then one ping per user.
                 vec![
@@ -393,6 +401,17 @@ impl NetworkSetupProtocol {
 
     pub(crate) fn start_in_progress(&self) -> bool {
         self.wol_start_pending || self.online_start_preparing
+    }
+
+    /// VERA: the next join is the kept room's partner coming back.
+    pub(crate) fn await_cooperative_rematch_seat(&mut self) {
+        self.cooperative_rematch_seat = true;
+    }
+
+    /// Whether this join is the kept room's partner coming back: only the
+    /// first join after [`Self::await_cooperative_rematch_seat`].
+    pub(crate) fn take_cooperative_rematch_seat(&mut self) -> bool {
+        std::mem::take(&mut self.cooperative_rematch_seat)
     }
 
     pub(crate) fn lan_go_send_pending(&self) -> bool {
@@ -725,8 +744,8 @@ impl App {
             wol::resident_seed(state)
         } else {
             let main = crate::app::state::process_main_draws(
-                state.match_state.sim_runtime.as_mut(),
-                &mut state.frontend.frontend_main_rng,
+                state.match_state.sim_runtime.runtime(),
+                &state.frontend.frontend_main_rng,
             );
             initialize_host_seed(&main, &mut state.frontend.legacy_crt_rng)
         };

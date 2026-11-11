@@ -178,7 +178,7 @@ fn bullet_frame_lookup_preserves_native_stencil_and_rejects_out_of_range() {
         }
     }
     let palette = Palette::from_bytes(&raw).unwrap();
-    let rendered = render_shp_frame(
+    let rendered = render_shp_key(
         &source,
         &palette,
         false,
@@ -192,7 +192,7 @@ fn bullet_frame_lookup_preserves_native_stencil_and_rejects_out_of_range() {
     assert_eq!([rendered.offset_x, rendered.offset_y], [-2.0, -2.0]);
     assert_eq!(rendered.canvas_rect, [-12.0, -12.0, 24.0, 24.0]);
     assert!(
-        render_shp_frame(
+        render_shp_key(
             &source,
             &palette,
             false,
@@ -339,7 +339,7 @@ fn retail_hills_projectile_assets_match_original_reader_and_physical_bytes() {
     source.draw_offsets = (0, 0);
     let palette = Palette::from_bytes(assets.get_ref("palette.pal").unwrap()).unwrap();
     let mut palettes = ShpPalettes::default();
-    let sprite = render_shp_frame(
+    let sprite = render_shp_key(
         &source,
         &palette,
         false,

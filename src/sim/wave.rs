@@ -23,6 +23,7 @@ const STEP_F32: NativeF32Bits = NativeF32Bits::from_bits(0x3d4c_cccd);
 const SNAP_FADE_F64: NativeF64Bits = NativeF64Bits::from_bits(0x3fef_5c28_f5c2_8f5c);
 const AUTO_DECAY_F64: NativeF64Bits = NativeF64Bits::from_bits(0x3fb9_9999_9999_999a);
 const ENDPOINT_Z_ADJUST: i32 = 50;
+const LASER_ENDPOINT_FACTOR_F32: NativeF32Bits = NativeF32Bits::from_bits(0x3f86_6666);
 const CONSTRUCTOR_MIN_XY_DISTANCE: i32 = 240;
 const MAX_TRACKING_DISTANCE_LEPTONS: i32 = 2172;
 
@@ -102,6 +103,10 @@ pub struct WaveDamageRequest {
     pub firer_id: u64,
     pub recorded_cells: Vec<WaveRecordedCell>,
     pub wave_z: i32,
+    /// Ares WaveClass_DamageCell (Ares.dll 10056FA0, hook 0x75F38F): the
+    /// wave's own weapon replaces the owner's GetWeapon(0). Always `None` in
+    /// default builds.
+    pub ares_weapon: Option<crate::sim::intern::InternedId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -153,6 +158,24 @@ pub struct WaveUpdateContext {
     pub target_position: Option<ProjectileCoord>,
     /// Native What_Am_I==1 reverses type3's geometry arguments.
     pub target_is_unit: bool,
+    /// Ares WaveClass_Update_Beam's verdict for a wave with WaveExt data;
+    /// always `None` in default builds.
+    pub ares: Option<AresWaveTracking>,
+}
+
+/// Ares 3.0 WaveClass_Update_Beam (Ares.dll 10057290, hook 0x762B62)
+/// replaces Update_Wave's target checks and drawing: the wave keeps tracking
+/// while `in_range`, and draws from the owner's GetFLH for its wave slot
+/// (`owner_fire_coordinate`) to the target, swapped when `reversed`. It
+/// supersedes the 2172-lepton rule and the type3 Unit reversal.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AresWaveTracking {
+    /// Magnetron: the owner's IsCloseEnough (vt+0x3A8) for its wave slot;
+    /// other types: the wave weapon's Range at least the owner-target 3D
+    /// distance over sqrt(2).
+    pub in_range: bool,
+    /// `IsWaveReversedAgainst` (100553F0) for the target's class.
+    pub reversed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -182,6 +205,11 @@ pub struct Wave {
     direction_octant: i32,
     intensity: i32,
     recorded_cells: Vec<WaveRecordedCell>,
+    /// Ares `WeaponTypeExt::WaveExt[this]`: the weapon CreateWave (Ares.dll
+    /// 10055160) registered for this wave before its constructor.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_weapon: Option<crate::sim::intern::InternedId>,
 }
 
 impl Wave {
@@ -342,7 +370,21 @@ impl Wave {
             direction_octant: 0,
             intensity: Self::DEFAULT_LASER_INTENSITY,
             recorded_cells: Vec::new(),
+            #[cfg(feature = "ares")]
+            ares_weapon: None,
         }
+    }
+
+    /// CreateWave 10055160 registers the firing weapon in WaveExt.
+    #[cfg(feature = "ares")]
+    pub(crate) fn with_ares_weapon(mut self, weapon: crate::sim::intern::InternedId) -> Self {
+        self.ares_weapon = Some(weapon);
+        self
+    }
+
+    #[cfg(feature = "ares")]
+    pub const fn ares_weapon(&self) -> Option<crate::sim::intern::InternedId> {
+        self.ares_weapon
     }
 
     pub const fn new_owned(
@@ -403,8 +445,10 @@ impl Wave {
 
     /// Native761640/762F60 six-point geometry. Pixel75EDF0 reads its retained
     /// source origin as well; both use this one projection/camera frame.
+    /// Draw_NonMagnetic builds the same polygon for the TS laser types 1 and
+    /// 2, which `Draw_Laser @ 0x007609E0` fills.
     pub fn sonic_draw_geometry(&self, camera: [i32; 2]) -> Option<SonicWaveGeometry> {
-        if self.wave_type != 0 {
+        if !matches!(self.wave_type, 0..=2) {
             return None;
         }
         let [a, b, c, d] = [
@@ -440,16 +484,30 @@ impl Wave {
         // `WaveClass::Constructor @ 0x0075E950` builds the initial quad and
         // stores +0x1CC before Logic registration invokes the lifecycle once.
         // Later lifecycle refreshes must never overwrite this selector.
-        if matches!(self.wave_type, 0 | 3) {
+        if self.wave_type <= 3 {
             let geometry = wave_geometry(self.wave_type, self.source, self.target);
             self.apply_geometry(geometry);
             self.direction_octant = geometry.direction_octant;
+        }
+        // The constructor's type 1/2 block after Unlimbo: the TS laser types
+        // (1 Laser, 2 BigLaser; only Ares creates them) start fully drawn,
+        // dFront 1.0, with nLaserIntensity 160 (`Self::new`'s value) before
+        // the Update_Wave below. Ares WaveClass_Update (100571A0) never calls
+        // Update_Wave for them again, so these are the cells their whole
+        // life damages.
+        if matches!(self.wave_type, 1 | 2) {
+            self.fade_in = NativeF64Bits::ONE;
+            self.intensity = Self::DEFAULT_LASER_INTENSITY;
         }
         self.update_geometry_and_cells(context, terrain)
     }
 
     /// gamemd-derived: `WaveClass::AI @ 0x00760F50` and lifecycle owner
     /// `0x00762AF0`.
+    /// Ares WaveClass_Update (Ares.dll 100571A0, hook 0x760F50) keeps the
+    /// lifecycle but moves the cell damage ahead of the update
+    /// (`Simulation::ares_wave_damage_request`), so a tracked wave requests
+    /// none here.
     pub fn advance(
         &mut self,
         context: WaveUpdateContext,
@@ -457,8 +515,9 @@ impl Wave {
     ) -> WaveTickResult {
         match self.wave_type {
             0 | 3 => {
+                let ares = context.ares.is_some();
                 let terminal_from_fade = self.update_geometry_and_cells(context, terrain);
-                let damage_recorded_cells = self.wave_type == 0;
+                let damage_recorded_cells = self.wave_type == 0 && !ares;
                 self.lifetime = self.lifetime.wrapping_sub(1);
                 let terminal_from_lifetime = self.lifetime < 0;
                 WaveTickResult {
@@ -509,16 +568,17 @@ impl Wave {
             self.type3_cycle_count = self.type3_cycle_count.wrapping_add(1);
         }
 
-        if context.target_position.is_none()
-            || context.owner_position.is_none()
-            || self.lifetime == stop_phase
-            || self.target_ref != context.owner_current_target
-        {
+        let tracking = context.target_position.is_some()
+            && context.owner_position.is_some()
+            && self.lifetime != stop_phase
+            && self.target_ref == context.owner_current_target;
+        if !tracking || context.ares.is_some_and(|ares| !ares.in_range) {
             self.active_geometry = false;
             self.decaying = true;
         }
 
-        if self.wave_type != 3
+        if context.ares.is_none()
+            && self.wave_type != 3
             && let (Some(owner), Some(target)) = (context.owner_position, context.target_position)
             && distance_3d_leptons([owner.x, owner.z, owner.y], [target.x, target.z, target.y])
                 > MAX_TRACKING_DISTANCE_LEPTONS
@@ -531,7 +591,11 @@ impl Wave {
             if let (Some(owner), Some(target)) =
                 (context.owner_fire_coordinate, context.target_position)
             {
-                let (first, second) = if self.wave_type == 3 && context.target_is_unit {
+                let reversed = match context.ares {
+                    Some(ares) => ares.reversed,
+                    None => self.wave_type == 3 && context.target_is_unit,
+                };
+                let (first, second) = if reversed {
                     (target, owner)
                 } else {
                     (owner, target)
@@ -573,6 +637,9 @@ impl Wave {
 
     /// gamemd-derived: `WaveClass::UpdateCells @ 0x007610F0`.
     fn update_cells(&mut self, terrain: Option<&ResolvedTerrainGrid>) {
+        // Stock Clear frees the vector; Ares 3.0 WaveClass_RecalculateAffected
+        // Cells_Clear (10057180, hook 0x76110B) only zeroes its count. Either
+        // leaves it empty, which `Vec::clear` is.
         self.recorded_cells.clear();
         if self.active_geometry {
             let mut previous = lepton_cell(self.source);
@@ -695,6 +762,11 @@ impl std::hash::Hash for Wave {
         self.direction_octant.hash(state);
         self.intensity.hash(state);
         self.recorded_cells.hash(state);
+        #[cfg(feature = "ares")]
+        if let Some(weapon) = self.ares_weapon {
+            b"ares-wave-weapon-v1".hash(state);
+            weapon.hash(state);
+        }
     }
 }
 
@@ -771,6 +843,22 @@ impl WaveStore {
         id
     }
 
+    /// Ares WaveClass_Update (Ares.dll 100571A0, hook 0x760F50): the cells
+    /// the previous update recorded, for the damage it runs before updating.
+    /// A wave without an owner damages nothing (DamageArea's +0x1D4 test).
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_damage_request(&self, id: u64) -> Option<WaveDamageRequest> {
+        let wave = self.get(id)?;
+        Some(WaveDamageRequest {
+            wave_id: id,
+            firer_id: wave.owner_id?,
+            recorded_cells: wave.recorded_cells.clone(),
+            // DamageArea75F3C6 reads B4.Z, here still the previous update's.
+            wave_z: wave.source.z,
+            ares_weapon: wave.ares_weapon,
+        })
+    }
+
     pub(crate) fn advance_one(
         &mut self,
         id: u64,
@@ -786,6 +874,7 @@ impl WaveStore {
                 recorded_cells: wave.recorded_cells.clone(),
                 // DamageArea75F3C6 reads B4.Z, not the C0+50 endpoint.
                 wave_z: wave.source.z,
+                ares_weapon: None,
             })
         } else {
             None
@@ -851,8 +940,6 @@ pub fn sonic_wave_table() -> &'static [i16; 500] {
 // Direction75F230 calls Sin4CACB0/Cos4CAD00(pi/8): retail entries512/2560
 // are 3EC3EF15/3F6C835E. Their Chop53 ratio and its reciprocal give these
 // exact thresholds; analytic tan(pi/8) would change boundary comparisons.
-const TAN_PI_OVER_EIGHT_F64: NativeF64Bits = NativeF64Bits::from_bits(0x3fda_8279_a061_eb64);
-const INV_TAN_PI_OVER_EIGHT_F64: NativeF64Bits = NativeF64Bits::from_bits(0x4003_504f_2e96_fc59);
 
 /// Outputs shared by the two active Wave geometry helpers.
 #[derive(Debug, Clone, Copy)]
@@ -886,64 +973,60 @@ fn draw_point(coord: ProjectileCoord, camera: [i32; 2]) -> [i32; 2] {
     ]
 }
 
-/// `0x0075F230`: the octant (0 north, clockwise) from `from` to `to`. Wave
-/// passes projected screen points; Fire's stream wobble (`0x0062FCEB`) passes
-/// lepton X/Y.
-pub(crate) fn direction_from_projected(from: (i32, i32), to: (i32, i32)) -> i32 {
-    // `0x0075F230`: dx=to.x-from.x and n=from.y-to.y. The four equality
-    // boundaries are intentionally asymmetric.
-    let dx = to.0.wrapping_sub(from.0);
-    let n = from.1.wrapping_sub(to.1);
-    if dx == 0 {
-        return if n > 0 { 0 } else { 4 };
-    }
-
-    let slope = X87Chop53::div(X87Chop53::load_i32(n), X87Chop53::load_i32(dx))
-        .expect("nonzero projected dx divides exactly in the verified finite domain");
-    let tan = load_f64(TAN_PI_OVER_EIGHT_F64);
-    let inv_tan = load_f64(INV_TAN_PI_OVER_EIGHT_F64);
-    let neg_tan = X87Chop53::neg(tan);
-    let neg_inv_tan = X87Chop53::neg(inv_tan);
-
-    let band = if X87Chop53::compare(slope, tan) != X87Ordering::Less
-        && X87Chop53::compare(slope, inv_tan) == X87Ordering::Less
-    {
-        Some(5)
-    } else if X87Chop53::compare(slope, neg_tan) != X87Ordering::Less
-        && X87Chop53::compare(slope, tan) == X87Ordering::Less
-    {
-        Some(6)
-    } else if X87Chop53::compare(slope, neg_inv_tan) != X87Ordering::Less
-        && X87Chop53::compare(slope, neg_tan) == X87Ordering::Less
-    {
-        Some(7)
-    } else {
-        None
+/// Draw_NonMagnetic 0x761640's endpoint factor for the TS laser types 1 and 2
+/// (binary32 1.05 at 0x7F6BB8/0x7F6BBC; Sonic's and MagBeam's entries are
+/// 1.0): each endpoint moves past the other, `ftol(other * (1 - f) + own * f)`
+/// per axis, the target first.
+fn laser_endpoints(
+    source: ProjectileCoord,
+    target: ProjectileCoord,
+) -> (ProjectileCoord, ProjectileCoord) {
+    let factor = load_f32(LASER_ENDPOINT_FACTOR_F32);
+    let rest = X87Chop53::sub(load_f64(NativeF64Bits::ONE), factor);
+    let push = |other: ProjectileCoord, own: ProjectileCoord| {
+        let axis = |other: i32, own: i32| {
+            x87_ftol_i32(X87Chop53::add(
+                X87Chop53::mul(X87Chop53::load_i32(other), rest),
+                X87Chop53::mul(X87Chop53::load_i32(own), factor),
+            ))
+        };
+        ProjectileCoord::new(
+            axis(other.x, own.x),
+            axis(other.y, own.y),
+            axis(other.z, own.z),
+        )
     };
-    match band {
-        Some(base) if dx > 0 => base - 4,
-        Some(base) => base,
-        None if n > 0 => 0,
-        None => 4,
-    }
+    let target_moved = push(source, target);
+    (push(target, source), target_moved)
 }
 
 /// Shared arithmetic in Draw_NonMagnetic761640 and Draw_Magnetic762070.
-/// Both active types use endpoint factor 1.0. Type3 has zero longitudinal
-/// offsets, half-width50 and a 3D Z divisor; Sonic has ±30/100 and an XY divisor.
+/// Sonic and Magnetron use endpoint factor 1.0 and raise the target's Z by 50;
+/// the TS lasers move both endpoints ([`laser_endpoints`]) and keep their Z.
+/// Type3 has zero longitudinal offsets, half-width50 and a 3D Z divisor; the
+/// others an XY divisor and their row of Draw_NonMagnetic's corner table
+/// (0x00B45DA8, 0x30 bytes per type): Sonic ±30/100, Laser ±34/44, BigLaser
+/// ±27/34.
 fn wave_geometry(
     wave_type: u8,
-    source: ProjectileCoord,
+    raw_source: ProjectileCoord,
     raw_target: ProjectileCoord,
 ) -> WaveGeometry {
-    debug_assert!(matches!(wave_type, 0 | 3));
+    debug_assert!(wave_type <= 3);
     let (trig, acos) = (TrigTable::embedded(), AcosTable::retail());
     // Both helpers store firstarg at+B4 and secondarg(+50Z) at+C0.
-    let target = ProjectileCoord::new(
-        raw_target.x,
-        raw_target.y,
-        raw_target.z.wrapping_add(ENDPOINT_Z_ADJUST),
-    );
+    let (source, target) = if matches!(wave_type, 1 | 2) {
+        laser_endpoints(raw_source, raw_target)
+    } else {
+        (
+            raw_source,
+            ProjectileCoord::new(
+                raw_target.x,
+                raw_target.y,
+                raw_target.z.wrapping_add(ENDPOINT_Z_ADJUST),
+            ),
+        )
+    };
     let first_dx = X87Chop53::load_i32(target.x.wrapping_sub(source.x));
     let first_dy = X87Chop53::load_i32(target.y.wrapping_sub(source.y));
     let first_squared = X87Chop53::add(
@@ -953,7 +1036,12 @@ fn wave_geometry(
     let sqrt_bits =
         sqrt_approx_f32(first_squared).expect("Wave horizontal squared length is finite");
     let horizontal = x87_ftol_i32(load_f32(sqrt_bits));
-    let (longitudinal, half_width) = if wave_type == 3 { (0, 50) } else { (30, 100) };
+    let (longitudinal, half_width) = match wave_type {
+        1 => (34, 44),
+        2 => (27, 34),
+        3 => (0, 50),
+        _ => (30, 100),
+    };
     let local_x = [
         horizontal.wrapping_sub(longitudinal),
         horizontal.wrapping_sub(longitudinal),
@@ -1075,7 +1163,10 @@ fn wave_geometry(
         source,
         target,
         edges,
-        direction_octant: direction_from_projected(source_screen, firer_b_screen),
+        direction_octant: crate::util::direction::direction_from_projected(
+            source_screen,
+            firer_b_screen,
+        ),
     }
 }
 
@@ -1086,3 +1177,49 @@ mod magnetic_tests;
 #[cfg(test)]
 #[path = "wave_native_tests.rs"]
 mod native_tests;
+
+#[cfg(test)]
+mod laser_tests {
+    use super::*;
+
+    /// `WaveClass::Constructor @ 0x0075E950` for the TS laser types 1 and 2:
+    /// Draw_NonMagnetic (0x761640) moves both endpoints past each other by
+    /// the binary32 1.05 at 0x7F6BB8/0x7F6BBC, without Sonic's +50 Z, and
+    /// takes the type's row of the corner table at 0x00B45DA8 (Laser 34 along
+    /// and 44 across, BigLaser 27 and 34); the wave starts fully drawn with
+    /// nLaserIntensity 160.
+    #[test]
+    fn laser_wave_constructor_extends_its_beam_and_takes_its_type_size() {
+        let source = ProjectileCoord::new(1000, 1000, 0);
+        let target = ProjectileCoord::new(2000, 1000, 0);
+        for (wave_type, along, across) in [(1, 34, 44), (2, 27, 34)] {
+            let mut wave = Wave::new(wave_type, source, target);
+            assert!(!wave.initialize(WaveUpdateContext::default(), None));
+            assert!(
+                wave.source().x < source.x && wave.target().x > target.x,
+                "type {wave_type}"
+            );
+            assert_eq!(
+                [wave.source().z, wave.target().z],
+                [0, 0],
+                "type {wave_type}"
+            );
+            assert_eq!(
+                (wave.fade_in(), wave.intensity()),
+                (NativeF64Bits::ONE, 160),
+                "type {wave_type}"
+            );
+            let edges = wave.edge_geometry();
+            // The trig tables can leave the beam's angle a hair off zero.
+            let near = |value: i32, expected: i32| (value - expected).abs() <= 1;
+            assert!(
+                near(edges.target_a.x - wave.source().x, along),
+                "type {wave_type}: {edges:?}"
+            );
+            assert!(
+                near(edges.firer_b.y - edges.firer_a.y, 2 * across),
+                "type {wave_type}: {edges:?}"
+            );
+        }
+    }
+}

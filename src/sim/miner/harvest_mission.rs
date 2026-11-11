@@ -9,7 +9,7 @@
 //! returns 105 without drawing. The slave-master prologue73E5E9 runs returned
 //! slaves before its Rate tail; a non-harvester returns450 at73E62F.
 
-use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::overlay_types::{OverlayTypeRegistry, TiberiumImageError};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
@@ -29,10 +29,12 @@ pub(crate) fn mission_harvest(
     overlay_registry: Option<&OverlayTypeRegistry>,
     id: u64,
     frame_effects: FrameEffects<'_>,
-) -> Option<i32> {
-    let entity = sim.substrate.entities.get(id)?;
+) -> Result<Option<i32>, TiberiumImageError> {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return Ok(None);
+    };
     if entity.death.is_dying() {
-        return None;
+        return Ok(None);
     }
     // The slave-master arm precedes the real-harvester gate in original
     //73E5E9..73E62F. A Slave Miner component is only an order marker.
@@ -42,21 +44,26 @@ pub(crate) fn mission_harvest(
             .is_some_and(|object| object.resource_destination && object.resource_gatherer);
     if slave_master {
         sim.handle_returned_slaves(id, rules, frame_effects);
-        return Some(Simulation::mission_rate_epilogue_for(
+        return Ok(Some(Simulation::mission_rate_epilogue_for(
             &mut sim.scenario_rng,
             &sim.substrate,
             rules,
             id,
             crate::sim::mission::MissionType::Harvest,
-        ));
+        )));
     }
     if !entity.is_harvester() {
-        return Some(450);
+        return Ok(Some(450));
     }
-    let mut snap = build_miner_snapshot(sim, id)?;
-    harvest_mission_step(sim, rules, overlay_registry, &mut snap, frame_effects);
+    let Some(mut snap) = build_miner_snapshot(sim, id) else {
+        return Ok(None);
+    };
+    let result = harvest_mission_step(sim, rules, overlay_registry, &mut snap, frame_effects);
+    // Snapshot fields written before a failing resource read remain native
+    // state; do not roll them back or run the mission timer epilogue.
     commit_miner_snapshot(&mut sim.substrate, &snap);
-    Some(snap.dispatch_delay)
+    result?;
+    Ok(Some(snap.dispatch_delay))
 }
 
 fn harvest_mission_step(
@@ -65,7 +72,7 @@ fn harvest_mission_step(
     overlay_registry: Option<&OverlayTypeRegistry>,
     snap: &mut MinerSnapshot,
     frame_effects: FrameEffects<'_>,
-) {
+) -> Result<(), TiberiumImageError> {
     // Cursor sanity (debug-only, never hashed): the working cursor must have
     // decoded from the entity's handler state — pins the cursor round-trip the
     // substate-authority flip relies on.
@@ -81,5 +88,5 @@ fn harvest_mission_step(
         );
     }
 
-    process_miner(sim, rules, overlay_registry, snap, frame_effects);
+    process_miner(sim, rules, overlay_registry, snap, frame_effects)
 }

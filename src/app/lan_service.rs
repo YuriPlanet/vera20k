@@ -6,6 +6,7 @@
 //! explicit VERA transport adaptation; application messages remain the native
 //! 455-byte protocol from5DF9E0/5DFE00/5E00B0.
 
+use crate::app::match_runtime::sim_host::SimWrite;
 use std::net::{Ipv4Addr, SocketAddrV4};
 
 use super::AppState;
@@ -1109,18 +1110,12 @@ pub(super) fn verify_setup_agreement(state: &mut AppState) -> anyhow::Result<()>
     let actual = match super::shell_network_setup::agreement::local(state) {
         Ok(actual) => actual,
         Err(error) => {
-            reject_setup_compatibility(
-                state,
-                "The selected multiplayer retail rules or generated-map inputs are unavailable.",
-            );
+            reject_setup_compatibility(state, &crate::i18n::tr("VERA:LanRulesUnavailable"));
             return Err(error);
         }
     };
     if expected != actual {
-        reject_setup_compatibility(
-            state,
-            "VERA20k build, gameplay features or selected-mode rules differ between LAN clients.",
-        );
+        reject_setup_compatibility(state, &crate::i18n::tr("VERA:LanClientsDiffer"));
         anyhow::bail!("LAN selected-mode agreement mismatch");
     }
     Ok(())
@@ -1207,10 +1202,7 @@ pub(crate) fn open(state: &mut AppState) {
         return;
     }
     if online_retirement_pending(state) {
-        super::shell_lan::report_error(
-            state,
-            "Waiting to confirm departure from the previous online match.",
-        );
+        super::shell_lan::report_error(state, "VERA:WaitingForOnlineDeparture");
         return;
     }
     if state.match_state.lan_service.is_some() {
@@ -1244,7 +1236,7 @@ pub(crate) fn report_ports_unavailable(state: &mut AppState) {
         if state.frontend.native_shell_ui {
             "TXT_UNABLE_TO_CONNECT"
         } else {
-            "Could not open the LAN network ports (UDP 1234 and 1236). Another program, perhaps another copy of VERA20k, may be using them. Close it, then try again."
+            "VERA:LanPortsUnavailable"
         },
     );
 }
@@ -1849,7 +1841,8 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
     {
         //48D7AA..48D7EF: no source or session check precedes the manager.
         let message = crate::net::lan_messages::ingame::BeaconMessage::decode(&incoming.payload)?;
-        if state.match_state.live_network.is_some() && state.match_state.sim_runtime.is_some() {
+        if state.match_state.live_network.is_some() && state.match_state.sim_runtime.is_installed()
+        {
             super::match_runtime::beacons::receive(state, message.record());
         }
         return Ok(());
@@ -1884,7 +1877,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
         );
         super::loading::pump::cancel_network_loading(
             state,
-            "A player left while the map was loading.",
+            &crate::i18n::tr("VERA:PlayerLeftWhileLoading"),
         );
         return Ok(());
     }
@@ -1893,9 +1886,10 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
             //ProcessGlobalPackets48D81A uses the active private endpoint;
             //the packet name is irrelevant. This is not a synchronized EXIT.
             let matched = &mut state.match_state;
-            let destroyed = if let (Some(live), Some(runtime)) =
-                (matched.live_network.as_mut(), matched.sim_runtime.as_mut())
-            {
+            let destroyed = if let (Some(live), Some(runtime)) = (
+                matched.live_network.as_mut(),
+                matched.sim_runtime.write_sim(SimWrite::Network),
+            ) {
                 super::match_runtime::network_match::receive_departure(
                     &mut matched.session,
                     &mut runtime.simulation,
@@ -1924,7 +1918,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
             super::input::taunt::receive(state, taunt.byte);
             return Ok(());
         }
-        if let Some(runtime) = &state.match_state.sim_runtime
+        if let Some(runtime) = state.match_state.sim_runtime.runtime()
             && let Some(event) = super::match_runtime::network_match::decode_kick_proposal(
                 &state.match_state.session,
                 &runtime.simulation,
@@ -2896,6 +2890,8 @@ fn join_denial(
             .session
             .network_join_row(request.observer_request == 1)
             .is_none()
+        // VERA's room gives a newcomer the last AI's seat.
+        && state.match_state.session.network_newcomer_ai_seat().is_none()
     {
         Some(1)
     } else if Some(request.compatibility) != compatibility(state) {
@@ -3122,20 +3118,27 @@ fn confirm_join(
             .is_some();
         if !same_peer {
             let request = request.join_fields().expect("confirmed request");
-            let (row, observer) = state
-                .match_state
-                .session
-                .network_join_row(request.observer_request == 1)
-                .expect("validated row");
             let initial = state
                 .frontend
                 .multiplayer_shell_runtime
                 .local_participant()
                 .slot;
+            let slot = received_choices(request.country, request.color, &initial)?;
+            // With every seat taken, VERA's room seats the newcomer on the
+            // last AI's, which it frees.
+            let freed = state.match_state.session.free_network_seat_for_newcomer()?;
+            let (row, observer) = match freed {
+                Some(row) => (row, false),
+                None => state
+                    .match_state
+                    .session
+                    .network_join_row(request.observer_request == 1)
+                    .expect("validated row"),
+            };
             let mut human = crate::skirmish_launch::SkirmishHumanSlot {
                 name: name.clone(),
                 raw_slot_index: Some(row),
-                slot: received_choices(request.country, request.color, &initial)?,
+                slot,
                 role: crate::skirmish_launch::LaunchHumanRole::from_observer(observer),
             };
             if !human.slot.color_random
@@ -3273,7 +3276,7 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
     let sim = &state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .ok_or_else(|| anyhow::anyhow!("LAN startup has no constructed world"))?
         .simulation;
     let timing = state
@@ -3407,7 +3410,7 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
     let sim = &mut state
         .match_state
         .sim_runtime
-        .as_mut()
+        .write_sim(SimWrite::Network)
         .expect("constructed world")
         .simulation;
     sim.network_command_queues().install_timing(
@@ -3434,6 +3437,14 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
         rate,
         sim.state_hash(),
     )?;
+    if ordering_clock.is_some() {
+        let parts = agreement
+            .report_parts()
+            .into_iter()
+            .chain(sim.state_hash_owners())
+            .collect();
+        state.match_state.network_quality.record_start_parts(parts);
+    }
     if state.match_state.session_mode() == SessionMode::Lan {
         let service = state.match_state.lan_service.as_mut().expect("visit");
         let scope = service
@@ -3496,6 +3507,9 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
 /// End private channels on leaving gameplay, retaining the LAN visit's same
 /// socket pair for BB. It is dropped only when that visit itself ends.
 pub(crate) fn return_transport(state: &mut AppState) {
+    if let Some(report) = crate::app::match_runtime::network_quality::close(state) {
+        crate::app::shell_wol::keep_network_report(state, &report);
+    }
     let online = state.match_state.session_mode() == SessionMode::Wol;
     let Some(live) = state.match_state.live_network.take() else {
         return;
@@ -3590,7 +3604,7 @@ fn drain_match_requests(state: &mut AppState) {
                 }
             }
             NetworkLoadingRequest::ProposeKick { target_source } => {
-                if let Some(runtime) = &state.match_state.sim_runtime
+                if let Some(runtime) = state.match_state.sim_runtime.runtime()
                     && let Some(message) = super::match_runtime::network_match::encode_kick_proposal(
                         &state.match_state.session,
                         &runtime.simulation,
@@ -3612,7 +3626,7 @@ fn drain_match_requests(state: &mut AppState) {
                 }
             }
             NetworkLoadingRequest::Disconnect { source_index, .. } => {
-                if let Some(runtime) = &state.match_state.sim_runtime
+                if let Some(runtime) = state.match_state.sim_runtime.runtime()
                     && let Some(house) = super::match_runtime::network_match::source_house(
                         &state.match_state.session,
                         &runtime.simulation,
@@ -5896,7 +5910,7 @@ fn service_transport(state: &mut AppState, now: u32) -> bool {
         if let Some(service) = state.match_state.lan_service.as_mut() {
             LanService::flush_setup_queue(&mut service.pending_setup, &mut *live.global_mut());
         }
-        if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Network) {
             live.service_pending_commands(&mut runtime.simulation.network_command_queues(), now);
         } else {
             live.service_transport(now);

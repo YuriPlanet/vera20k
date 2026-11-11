@@ -13,12 +13,26 @@ directories (docs/spawn.md). Nothing here is used by ordinary play.
   cursor, `relay_ready`/`latency_ready`/`renew_relay`/`finish`/`leave`,
   `match/resume`; `start_confirmed`, `timing_confirmed`, `relay_renewed`).
   Grants and ordering certificates are signed by `relay_grant.mjs` in the
-  lobby's format (docs/lobby-protocol.md). Results go to `OUT/results.json`.
+  lobby's format (docs/lobby-protocol.md): `VO1C`, or `VO2C` with
+  `--pacing on|off` (`run.sh`: `PACING=on|off`). Results go to `OUT/results.json`.
+  `run.sh` takes `RELAY_PORT` and `SERVICE_PORT` when 5000 or 8787 is in use.
 * `run.sh` builds nothing; it starts the relay (relay mode) and the mock, then
   both clients, waits for both processes to exit, and prints each client's
   exit status and `spawn_result.json` (docs/spawn.md "Results"; exit status 0
   `quit`, 1 `failed`, 10 `won`, 11 `lost`, 12 `draw`, 13 `disconnected`).
   The mock records `finish.result` and `finish.opponents_left`.
+
+* `run.sh browser` is relay mode with browser players: it also starts the
+  WebSocket gateway (`tools/wasm/gateway`, forwarding to the local relay) and
+  writes `[Relay] GatewayUrl`, then `browser.mjs` serves the online package
+  (`target/wasm-dist`, or `VERA20K_WASM_DIST`), the retail files and a test
+  host page (`browser-host.js`) on `http://localhost:8000` and opens one
+  headless Chrome per player (`CHROME` overrides the macOS Chrome path). Each
+  page imports the retail folder, starts the spawn and calls `spawn_leave()`
+  ACT seconds into the match (source 1; the others ACT+BOUND). Logs:
+  `OUT/pN/browser.log` (console), `OUT/pN/events.jsonl` (lifecycle events,
+  whose `match-ended` carries `network_quality`), `OUT/gateway.log`. Exit
+  status 0 means every page ended its match and exited.
 
 Clients never show a window: `run.sh` sets `VERA20K_SPAWN_HIDDEN_WINDOW=1`,
 which (for `-SPAWN` launches only) creates the window invisible, keeps the
@@ -43,6 +57,9 @@ python3 -m tools.cargo_run -- build -p vera20k-relay
 RA2=/path/to/Yuri_s_Revenge_1.001
 tools/spawn/run.sh direct /tmp/spawn-direct "$RA2" 40 300
 tools/spawn/run.sh relay  /tmp/spawn-relay  "$RA2" 40 300
+# Browser players: the online package and the gateway's dependencies first.
+python3 tools/wasm/build.py --network && npm --prefix tools/wasm/gateway ci
+tools/spawn/run.sh browser /tmp/spawn-browser "$RA2" 40 400
 ```
 
 Logs: `OUT/pN/logs/ra2.log` (client), `OUT/pN/stdout.log` (exit status),
@@ -62,7 +79,11 @@ A launcher can copy `version`, `rules_digest` and `map.source_sha256` into
 `[Settings] ExpectedVersion`, `ExpectedRulesDigest`, `ExpectedMapDigest`.
 `rules_digest` is Battle's. `[Settings] GameMode` selects a stock `MPModesMD.ini`
 row (default 1), and the digest covers that row's INI, so another mode takes its
-digest from the report's `game_modes`. Cooperative plays one mission: the launcher
+digest from the report's `game_modes`. A mod chosen in `config.toml`
+(`[paths] mod`, [modding guide](../../docs/modding.md)) is read by the probe as by
+the launch, so its rules are in the digest; `--mod <folder>` and `--no-mod` choose
+for both. A launch whose mod cannot be used fails, with the reason in its result.
+Cooperative plays one mission: the launcher
 writes its enemy AI houses, and no next mission or progress follows.
 
 Useful log lines: `Direct spawn: source=`, `Direct spawn: every guest answered`,

@@ -75,7 +75,7 @@ fn object_pair(rules: &RuleSet, actor_kind: &str, relation: &str) -> (Simulation
 }
 
 fn picked_target(sim: &Simulation, target: u64) -> HoverTargetKindWithId {
-    let (x, y) = crate::app::presentation::instances::interpolated_screen_position_entity(
+    let (x, y) = crate::app::presentation::instances::entity_screen_position(
         sim.entities().get(target).unwrap(),
     );
     let hover =
@@ -459,7 +459,7 @@ fn allied_object_shared_grants_match_original_without_forking_weapon_selection()
         }
         let before = sim.state_hash();
         assert_eq!(
-            friendly_attack_is_admitted(&sim, &battle.rules, actor, target),
+            object_attack_is_admitted(&sim, &battle.rules, actor, target),
             row["action"] == 5,
             "{}: Techno admission boundary only",
             input["name"]

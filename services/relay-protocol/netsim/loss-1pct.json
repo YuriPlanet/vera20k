@@ -1,0 +1,46 @@
+[
+  {
+    "name": "2p-loss-1pct-idle",
+    "players": 2,
+    "apm": 0,
+    "network": {
+      "link": {
+        "delay_ms": 20,
+        "loss": 0.01
+      }
+    }
+  },
+  {
+    "name": "2p-loss-1pct-300apm",
+    "players": 2,
+    "apm": 300,
+    "network": {
+      "link": {
+        "delay_ms": 20,
+        "loss": 0.01
+      }
+    }
+  },
+  {
+    "name": "30p-loss-1pct-idle",
+    "players": 30,
+    "apm": 0,
+    "network": {
+      "link": {
+        "delay_ms": 20,
+        "loss": 0.01
+      }
+    }
+  },
+  {
+    "name": "30p-loss-1pct-300apm",
+    "players": 30,
+    "apm": 300,
+    "network": {
+      "link": {
+        "delay_ms": 20,
+        "loss": 0.01
+      }
+    }
+  }
+]

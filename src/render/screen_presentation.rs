@@ -222,7 +222,7 @@ fn copy_rect(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::render::frame_readback::PendingBgra8Readback;
+    use crate::render::frame_readback::PendingTextureReadback;
     use crate::render::gpu::block_on;
     use std::time::Duration;
     use wgpu::util::DeviceExt;
@@ -285,8 +285,8 @@ mod tests {
             &self,
             encoder: &mut wgpu::CommandEncoder,
             texture: &wgpu::Texture,
-        ) -> PendingBgra8Readback {
-            PendingBgra8Readback::encode(&self.device, encoder, texture, FORMAT, WIDTH, HEIGHT)
+        ) -> PendingTextureReadback {
+            PendingTextureReadback::encode(&self.device, encoder, texture, FORMAT, WIDTH, HEIGHT)
                 .expect("encode output readback")
         }
     }
@@ -408,19 +408,26 @@ mod tests {
         cache.commit_presented([1, -1]);
         let mut capture_encoder = gpu.device.create_command_encoder(&Default::default());
         let capture = cache
-            .capture_previous_if_requested(
+            .previous_composition(
                 true,
+                false,
                 &gpu.device,
                 &mut capture_encoder,
                 FORMAT,
                 WIDTH,
                 HEIGHT,
                 None,
+            )
+            .expect("copy shaken prior frame")
+            .expect("capture requested")
+            .read_back(
+                &gpu.device,
+                &mut capture_encoder,
+                FORMAT,
                 &mut pass,
                 [0, 0, CENTRAL_WIDTH, HEIGHT],
             )
-            .expect("capture shaken prior frame")
-            .expect("capture requested");
+            .expect("capture shaken prior frame");
         let submission = gpu.queue.submit([capture_encoder.finish()]);
         let captured = capture
             .finish(&gpu.device, submission, Duration::from_secs(5))

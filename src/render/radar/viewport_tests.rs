@@ -61,7 +61,7 @@ fn native_radar_screen_geometry_rejects_letterbox_and_maps_half_open_edges() {
 fn native_viewport_rect_matches_wide_and_tall_binary_arithmetic() {
     let wide = NativeRadarSurfaceGeometry::from_raw_rect(0, 0, 300, 180).unwrap();
     assert_eq!(
-        native_viewport_rect(wide, (80, 50), 632, 570),
+        native_viewport_rect(wide, (80, 50), 632, 570, 1.0),
         NativeRadarRect {
             x: 9,
             y: 52,
@@ -70,7 +70,7 @@ fn native_viewport_rect_matches_wide_and_tall_binary_arithmetic() {
         }
     );
     assert_eq!(
-        native_viewport_rect(wide, (0, 0), 632, 570),
+        native_viewport_rect(wide, (0, 0), 632, 570, 1.0),
         NativeRadarRect {
             x: 0,
             y: 0,
@@ -81,7 +81,7 @@ fn native_viewport_rect_matches_wide_and_tall_binary_arithmetic() {
 
     let tall = NativeRadarSurfaceGeometry::from_raw_rect(0, 0, 180, 300).unwrap();
     assert_eq!(
-        native_viewport_rect(tall, (80, 60), 632, 570),
+        native_viewport_rect(tall, (80, 60), 632, 570, 1.0),
         NativeRadarRect {
             x: 4,
             y: 44,
@@ -90,7 +90,7 @@ fn native_viewport_rect_matches_wide_and_tall_binary_arithmetic() {
         }
     );
     assert_eq!(
-        native_viewport_rect(tall, (179, 0), 632, 570),
+        native_viewport_rect(tall, (179, 0), 632, 570, 1.0),
         NativeRadarRect {
             x: 55,
             y: 58,
@@ -98,6 +98,90 @@ fn native_viewport_rect_matches_wide_and_tall_binary_arithmetic() {
             h: 13
         }
     );
+}
+
+#[test]
+fn wheel_zoom_viewport_tracks_visible_world_extents() {
+    let surface = NativeRadarSurfaceGeometry::from_raw_rect(0, 0, 300, 180).unwrap();
+    let normal = native_viewport_rect(surface, (140, 50), 632, 570, 1.0);
+    let zoomed_in = native_viewport_rect(surface, (140, 50), 632, 570, 1.25);
+    let zoomed_out = native_viewport_rect(surface, (140, 50), 632, 570, 2.0 / 3.0);
+    assert!(zoomed_in.w < normal.w && zoomed_in.h < normal.h);
+    assert!(zoomed_out.w > normal.w && zoomed_out.h > normal.h);
+    assert_eq!(
+        native_viewport_rect(surface, (140, 50), 1264, 1140, 2.0),
+        normal,
+        "the same visible world extent keeps the same radar rectangle"
+    );
+}
+
+#[test]
+#[ignore = "requires a wgpu adapter"]
+fn wheel_zoom_viewport_gpu_pixels_follow_visible_world_extents() {
+    use crate::render::batch::{BatchRenderer, InstanceBufferPool};
+    use crate::render::terrain_draw_gpu_tests::{Gpu, camera, clear};
+
+    let gpu = Gpu::new();
+    let size = [140, 108];
+    let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+    let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+    batch.write_camera(&gpu.queue, camera(size));
+    let white = batch.create_texture_on_device(&gpu.device, &gpu.queue, &[255; 16], 2, 2, None);
+    let surface = NativeRadarSurfaceGeometry::from_raw_rect(0, 0, 300, 180).unwrap();
+    let screen = NativeRadarScreenGeometry::new(surface, [0.0, 0.0, 140.0, 108.0]);
+    let mut pool = InstanceBufferPool::new();
+    let mut extents = Vec::new();
+    for zoom in [1.0, 1.25, 2.0 / 3.0] {
+        let rect = native_viewport_rect(surface, (100, 30), 632, 570, zoom);
+        let lines = native_viewport_outline_instances(
+            (0.0, 0.0),
+            screen,
+            rect,
+            [0.0, 0.0, 168.0, 220.0],
+            [1.0; 3],
+        );
+        pool.upload_on_device(&gpu.device, &gpu.queue, "viewport", &lines);
+        let (buffer, count) = pool.get("viewport").unwrap();
+        let color = gpu.target(size, format);
+        let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
+        let cv = color.create_view(&Default::default());
+        let dv = depth.create_view(&Default::default());
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        clear(
+            &mut encoder,
+            &cv,
+            &dv,
+            u16::MAX,
+            wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+        );
+        {
+            let mut pass = crate::app::presentation::sidebar_render::begin_main_load_pass(
+                &mut encoder,
+                &cv,
+                &dv,
+            );
+            batch.draw_with_buffer_ui_passthrough(&mut pass, &white, buffer, count);
+        }
+        let read = gpu.read(&mut encoder, &color);
+        let rgba = gpu.finish(encoder, &[read], size).remove(0);
+        let pixels: BTreeSet<_> = rgba
+            .chunks_exact(4)
+            .enumerate()
+            .filter(|(_, pixel)| pixel[3] != 0)
+            .map(|(i, _)| ((i % 140) as i32, (i / 140) as i32))
+            .collect();
+        assert!(!pixels.is_empty());
+        let width = pixels.iter().map(|p| p.0).max().unwrap()
+            - pixels.iter().map(|p| p.0).min().unwrap()
+            + 1;
+        let height = pixels.iter().map(|p| p.1).max().unwrap()
+            - pixels.iter().map(|p| p.1).min().unwrap()
+            + 1;
+        extents.push((width, height));
+    }
+    assert_eq!(extents[0], (10, 17));
+    assert!(extents[1].0 < extents[0].0 && extents[1].1 < extents[0].1);
+    assert!(extents[2].0 > extents[0].0 && extents[2].1 > extents[0].1);
 }
 
 #[test]

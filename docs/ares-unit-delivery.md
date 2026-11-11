@@ -77,7 +77,9 @@ the save layout id, so older saves are rejected.
 Empty payloads, invalid targets, missing owners and unsupported charge drain
 refuse before charge or effects. The type remains one-click even if PreClick or
 PostClick is authored. Missing/Custom Action is normalized once to ParaDrop for
-both cameo admission and cursor display. Explicit other actions retain their
+cameo admission. The cursor is the handled type's SWTypeExt `Cursor` (Attack
+by default, since `SW_UnitDelivery::Initialize` sets none) and `NoCursor`
+(Disallowed); see [ares-cursors.md](ares-cursors.md). Explicit other actions retain their
 normal meaning. Extension identifiers cannot enter the stock EVA table or serve
 as a native PreDependent type.
 

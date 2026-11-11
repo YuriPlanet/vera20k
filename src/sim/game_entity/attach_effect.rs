@@ -554,7 +554,7 @@ mod receiver {
                 );
                 return;
             }
-            let targets = self.ares_effect_ground_targets(impact, warhead.cell_spread_f64, rules);
+            let targets = self.ares_cell_spread_items(impact, warhead.cell_spread_f64, rules);
             for target in targets {
                 let Some(victim) = self.substrate.entities.get(target) else {
                     continue;
@@ -667,20 +667,20 @@ mod receiver {
                     .entities
                     .get(target)
                     .and_then(|victim| self.interner.object_type(victim.type_ref(), rules))
-                    .map(|kind| kind.cloaking_speed);
-                if let Some(speed) = speed
+                    .map(|kind| {
+                        (
+                            kind.cloaking_speed,
+                            kind.cloaking_stages(rules.general.cloaking_stages),
+                        )
+                    });
+                if let Some((speed, stages)) = speed
                     && let Some(cloak) = self
                         .substrate
                         .entities
                         .get_mut(target)
                         .and_then(|victim| victim.cloak.as_mut())
                 {
-                    cloak.start_uncloaking(
-                        self.session.binary_frame() as i32,
-                        speed,
-                        rules.general.cloaking_stages,
-                        true,
-                    );
+                    cloak.start_uncloaking(self.session.binary_frame() as i32, speed, stages, true);
                 }
             }
 

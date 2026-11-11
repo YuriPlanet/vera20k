@@ -25,17 +25,14 @@ fn snapshot_at(position: vec4f) -> Snapshot {
 @fragment
 fn fs_main(@builtin(position) position: vec4f) -> Snapshot { return snapshot_at(position); }
 
-// Read-only span scratch is derived only from this snapshot and admitted source
-// fragments. Every covered pixel is reset before any body/shadow atomics run.
-struct ReadOnlyPixel { body: atomic<u32>, shadows: atomic<u32> };
-@group(1) @binding(0) var<storage, read_write> read_only_pixels: array<ReadOnlyPixel>;
+// The packed source pass rasters its stencil into attachments 0 and 1 and
+// takes this snapshot into 2 and 3 (terrain_packed.rs).
+struct PackedSnapshot {
+    @location(2) word: u32,
+    @location(3) depth: f32,
+};
 @fragment
-fn fs_read_only(@builtin(position) position: vec4f) -> Snapshot {
-    let p = vec2u(position.xy);
-    let width = textureDimensions(scene).x;
-    let rows = arrayLength(&read_only_pixels) / width;
-    let index = (p.y % rows) * width + p.x;
-    atomicStore(&read_only_pixels[index].body, 0u);
-    atomicStore(&read_only_pixels[index].shadows, 0u);
-    return snapshot_at(position);
+fn fs_packed_snapshot(@builtin(position) position: vec4f) -> PackedSnapshot {
+    let snapshot = snapshot_at(position);
+    return PackedSnapshot(snapshot.word, snapshot.depth);
 }

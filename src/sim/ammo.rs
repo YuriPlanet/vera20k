@@ -127,6 +127,15 @@ impl TechnoAmmo {
         self.current = self.current.wrapping_add(1);
     }
 
+    /// Ares TechnoClass_Reload_ReloadAmount (Ares.dll 10047A70, hook
+    /// 0x6FB05B) in place of Reload's one round: add `amount` (negative
+    /// removes), then a negative count is zero and the type's `Ammo=` caps it.
+    #[cfg(feature = "ares")]
+    pub(crate) fn reload_rounds(&mut self, amount: i32, type_ammo: i32) {
+        let ammo = self.current.wrapping_add(amount);
+        self.current = if ammo < 0 { 0 } else { ammo.min(type_ammo) };
+    }
+
     /// The SpawnManager's case-6 rearm (`0x006B788F..0x006B78AA`): Ammo from
     /// the type's `Ammo=`.
     pub(crate) fn refill(&mut self) {

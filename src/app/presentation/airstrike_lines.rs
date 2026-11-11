@@ -194,6 +194,8 @@ pub(crate) enum TacticalLineCall {
     Opaque {
         rect: [i32; 4],
         word: u16,
+        /// The A offset of a store kept only where A is nonzero.
+        a_offset: Option<[i32; 2]>,
     },
     Designation {
         /// The designating Techno.
@@ -207,13 +209,19 @@ pub(crate) enum TacticalLineCall {
 /// At logical zoom1 their resolved rectangles and RGB565 words can feed the
 /// same surface command stream as the following translucent beam. Geometry
 /// and action-line admission remain with target_lines, not another producer.
+/// A psychic detection dash keeps its A gate: `a_offset` takes a drained
+/// pixel to the A pixel its gate reads (the stores' rounded camera minus the
+/// floored camera of the surface and A planes).
 pub(crate) fn drain_opaque(
     calls: &mut Vec<TacticalLineCall>,
     instances: &mut Vec<crate::render::batch::SpriteInstance>,
     camera: [i32; 2],
+    a_offset: [i32; 2],
 ) {
+    use crate::render::draw_state::{FX_SURFACE_A_NONZERO, FX_SURFACE_A_ZERO};
     for instance in instances.drain(..) {
         debug_assert_eq!(instance.alpha, 1.);
+        debug_assert_eq!(instance.draw_state.fx_flags & FX_SURFACE_A_ZERO, 0);
         let rect = [
             instance.position[0] as i32 - camera[0],
             instance.position[1] as i32 - camera[1],
@@ -222,7 +230,13 @@ pub(crate) fn drain_opaque(
         ];
         let word = crate::render::native_surface_format::RGB565
             .pack_rgb8(instance.tint.map(|v| (v * 255.).round() as u8));
-        calls.push(TacticalLineCall::Opaque { rect, word });
+        let a_offset =
+            (instance.draw_state.fx_flags & FX_SURFACE_A_NONZERO != 0).then_some(a_offset);
+        calls.push(TacticalLineCall::Opaque {
+            rect,
+            word,
+            a_offset,
+        });
     }
 }
 
@@ -239,16 +253,45 @@ pub(crate) fn composite(
     let mut draws = Vec::new();
     for call in calls {
         match *call {
-            TacticalLineCall::Opaque { rect, word } => {
-                draws.push(SurfaceDraw::OpaqueRect { rect, word })
-            }
+            TacticalLineCall::Opaque {
+                rect,
+                word,
+                a_offset: None,
+            } => draws.push(SurfaceDraw::OpaqueRect { rect, word }),
+            TacticalLineCall::Opaque {
+                rect,
+                word,
+                a_offset: Some(a_offset),
+            } => draws.push(SurfaceDraw::GatedOpaqueRect {
+                rect,
+                word,
+                a_offset,
+            }),
             TacticalLineCall::Designation {
                 id,
                 coords: [from, to],
                 style,
             } => {
                 if let Some(shade) = shades.get(id) {
-                    draws.extend(geometry(from, wobble(to, wall_ms), shade, style, view));
+                    // 70597E stores the dot at its client point, with no
+                    // clip corner added. The original's battlefield starts
+                    // at the surface's corner; a layout's comes in by it.
+                    draws.extend(
+                        geometry(from, wobble(to, wall_ms), shade, style, view)
+                            .into_iter()
+                            .map(|draw| match draw {
+                                SurfaceDraw::OpaqueRect { rect, word } => SurfaceDraw::OpaqueRect {
+                                    rect: [
+                                        rect[0] + view.clip[0],
+                                        rect[1] + view.clip[1],
+                                        rect[2],
+                                        rect[3],
+                                    ],
+                                    word,
+                                },
+                                other => other,
+                            }),
+                    );
                 }
             }
         }

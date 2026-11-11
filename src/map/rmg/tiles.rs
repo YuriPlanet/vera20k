@@ -66,7 +66,35 @@ impl TileIds {
     pub fn resolve(theater: &TheaterData) -> Self {
         let mut ids = Self::from_keys(&theater.rmg_tiles);
         ids.cliffs = theater.cliff_ranges;
+        ids.drop_empty_waterfall_sets(theater);
         ids
+    }
+
+    /// VERA extension: a waterfall set the theater authors with no tiles
+    /// (DESERT's four) is absent to the generator, so it stamps no waterfall
+    /// there rather than the next set's tiles. The original's dialog offers
+    /// only TEMPERATE and SNOW, whose waterfall sets all hold tiles, so this
+    /// changes nothing it can reach.
+    fn drop_empty_waterfall_sets(&mut self, theater: &TheaterData) {
+        let Ok(ini) = crate::rules::ini_parser::IniFile::from_bytes(&theater.ini_data) else {
+            return;
+        };
+        let general = ini.section_or_empty("General");
+        let bounds = theater.lookup.bounds();
+        for (key, base) in [
+            ("WaterfallNorth", &mut self.cliffs.waterfall_north),
+            ("WaterfallEast", &mut self.cliffs.waterfall_east),
+            ("WaterfallSouth", &mut self.cliffs.waterfall_south),
+            ("WaterfallWest", &mut self.cliffs.waterfall_west),
+        ] {
+            let empty = usize::try_from(general.read_int(key, -1))
+                .ok()
+                .and_then(|ordinal| bounds.get(ordinal))
+                .is_some_and(|set| set.count == 0);
+            if empty {
+                *base = None;
+            }
+        }
     }
 
     pub fn from_keys(keys: &crate::map::theater::RmgTileKeys) -> Self {

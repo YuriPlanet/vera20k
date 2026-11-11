@@ -79,7 +79,12 @@ fn ore_rung_publishes_native_cell_attributes_before_live_object_turns() {
     let name = row["input"]["name"].as_str().unwrap();
     sim.session
         .set_binary_frame_for_test(row["input"]["frame"].as_i64().unwrap() as u32);
-    sim.tick_ore_growth_rungs(&rules, Some(&registry));
+    sim.tick_ore_growth_rungs(
+        &rules,
+        Some(&registry),
+        crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
     compare_overlay_state(&sim, &row["steps"][0]["state"], name);
     compare_dummy(
         sim.resolved_terrain.as_ref().unwrap(),
@@ -273,17 +278,19 @@ fn ore_rung_spreads_no_ore_under_a_landed_aircraft() {
         grid.place_overlay(source.0, source.1, tib01, 11);
         let _ = grid.take_dirty_cells();
         let mut state = crate::sim::ore_growth::OreGrowthState::new(33, 33);
-        state.rebuild_native_tiberium_queues_from_overlays(
-            sim.overlay_grid.as_ref().expect("overlay grid"),
-            &registry,
-            &rules.tiberium_types,
-            sim.resolved_terrain.as_ref(),
-            &std::collections::BTreeSet::new(),
-            true,
-            true,
-            sim.session.binary_frame(),
-            (32, 32),
-        );
+        state
+            .rebuild_native_tiberium_queues_from_overlays(
+                sim.overlay_grid.as_ref().expect("overlay grid"),
+                &registry,
+                &rules.tiberium_types,
+                sim.resolved_terrain.as_ref(),
+                &std::collections::BTreeSet::new(),
+                true,
+                true,
+                sim.session.binary_frame(),
+                (32, 32),
+            )
+            .unwrap();
         sim.ore_growth_state = state;
         sim.ore_growth_config = OreGrowthConfig::for_test(true, true, false);
         if landed {
@@ -298,7 +305,12 @@ fn ore_rung_spreads_no_ore_under_a_landed_aircraft() {
                 "the aircraft stands landed on the cell"
             );
         }
-        sim.tick_ore_growth_rungs(&rules, Some(&registry));
+        sim.tick_ore_growth_rungs(
+            &rules,
+            Some(&registry),
+            crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
         sim.overlay_grid
             .as_ref()
             .expect("overlay grid")

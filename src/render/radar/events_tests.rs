@@ -228,7 +228,7 @@ fn type5_draw_is_one_cyan_outline_in_insertion_order() {
     event.fade = 1.0;
     event.expanding = false;
     let mut rgba = vec![7_u8; 24 * 24 * 4];
-    queue.draw(&mut rgba, 24, 24, (24, 24), (0, 0));
+    draw_into(&queue, &mut rgba, 24, (24, 24), (0, 0));
     let pixel = |x: usize, y: usize| {
         let offset = (y * 24 + x) * 4;
         &rgba[offset..offset + 4]
@@ -248,7 +248,7 @@ fn type5_draw_clips_to_generated_primary_extent_not_host_texture() {
     event.fade = 1.0;
     event.expanding = false;
     let mut rgba = vec![7_u8; 200 * 200 * 4];
-    queue.draw(&mut rgba, 200, 200, (140, 84), (0, 0));
+    draw_into(&queue, &mut rgba, 200, (140, 84), (0, 0));
     let pixel = |x: usize, y: usize| {
         let offset = (y * 200 + x) * 4;
         &rgba[offset..offset + 4]
@@ -269,7 +269,7 @@ fn type5_draw_applies_only_the_centered_primary_surface_copy() {
     event.fade = 1.0;
     event.expanding = false;
     let mut rgba = vec![7_u8; 140 * 108 * 4];
-    queue.draw(&mut rgba, 140, 108, (64, 108), (38, 0));
+    draw_into(&queue, &mut rgba, 140, (64, 108), (38, 0));
     let pixel = |x: usize, y: usize| {
         let offset = (y * 140 + x) * 4;
         &rgba[offset..offset + 4]
@@ -464,7 +464,7 @@ fn non_drawing_event_never_paints_and_dedupes_for_its_own_lifetime() {
 
     let mut rgba = vec![7_u8; 24 * 24 * 4];
     queue.events[0].needs_draw = true;
-    queue.draw(&mut rgba, 24, 24, (24, 24), (0, 0));
+    draw_into(&queue, &mut rgba, 24, (24, 24), (0, 0));
     assert!(
         rgba.iter().all(|&byte| byte == 7),
         "default colour arm draws nothing"
@@ -787,4 +787,19 @@ fn native_unit_ready_marker_matches_every_original_tick_and_cleanup() {
         Some(cell),
         "native review ring survives expiry"
     );
+}
+
+/// The outlines stored into a `width`-wide RGBA canvas.
+fn draw_into(
+    queue: &ClientRadarEvents,
+    rgba: &mut [u8],
+    width: u32,
+    surface_size: (i32, i32),
+    offset: (i32, i32),
+) {
+    let height = (rgba.len() / 4) as u32 / width;
+    queue.draw((width, height), surface_size, offset, |(x, y), color| {
+        let at = ((y * width + x) * 4) as usize;
+        rgba[at..at + 4].copy_from_slice(&color);
+    });
 }

@@ -78,6 +78,13 @@ fn production_line_trail_matches_original_full_line_pixels() {
                 z_origin_y: input["z_origin_y"].as_i64().unwrap() as i32,
                 zoom: 1.,
             };
+            terrain.bind_surface_line_a_fixture(&gpu.device, &gpu.queue, size, |[x, y]| {
+                if input["alpha"] == "mixed" {
+                    [0, 1, 63, 127, 255][((x / 9 + y / 7) % 5) as usize]
+                } else {
+                    input["alpha"].as_u64().unwrap() as u16
+                }
+            });
             terrain.begin_surface_lines();
             let prepared_lines = terrain.prepare_surface_lines(
                 &gpu.device,
@@ -89,17 +96,10 @@ fn production_line_trail_matches_original_full_line_pixels() {
                 &[],
                 viewport,
                 |_| true,
-                |[x, y]| {
-                    if input["alpha"] == "mixed" {
-                        [0, 1, 63, 127, 255][((x / 9 + y / 7) % 5) as usize]
-                    } else {
-                        input["alpha"].as_u64().unwrap() as u16
-                    }
-                },
             );
             let mut encoder = gpu.device.create_command_encoder(&Default::default());
             clear(&mut encoder, &cv, &dv, old_z, wgpu::LoadOp::Load);
-            terrain.draw_surface_lines(&mut encoder, &cv, prepared_lines);
+            terrain.draw_surface_lines(&mut encoder, &cv, &[prepared_lines]);
             let reads = [
                 gpu.read(&mut encoder, &color),
                 gpu.read(&mut encoder, &depth),
@@ -187,6 +187,9 @@ fn production_line_trail_preserves_native_overlap_across_chunks() {
                 terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
                 terrain.surface_lines.test_operation_limit = forced_chunk;
                 let segments = overlapping_segments(row);
+                terrain.bind_surface_line_a_fixture(&gpu.device, &gpu.queue, size, |_| {
+                    row["input"]["alpha"].as_u64().unwrap() as u16
+                });
                 terrain.begin_surface_lines();
                 let prepared_lines = terrain.prepare_surface_lines(
                     &gpu.device,
@@ -198,7 +201,6 @@ fn production_line_trail_preserves_native_overlap_across_chunks() {
                     &[],
                     ordered_viewport(row),
                     |_| true,
-                    |_| row["input"]["alpha"].as_u64().unwrap() as u16,
                 );
                 let mut encoder = gpu.device.create_command_encoder(&Default::default());
                 clear(
@@ -208,7 +210,7 @@ fn production_line_trail_preserves_native_overlap_across_chunks() {
                     65535,
                     wgpu::LoadOp::Clear(wgpu::Color::WHITE),
                 );
-                terrain.draw_surface_lines(&mut encoder, &cv, prepared_lines);
+                terrain.draw_surface_lines(&mut encoder, &cv, &[prepared_lines]);
                 let reads = [
                     gpu.read(&mut encoder, &color),
                     gpu.read(&mut encoder, &depth),
@@ -242,12 +244,41 @@ fn production_line_trail_preserves_native_overlap_across_chunks() {
     }
 }
 
+/// Pixels in opposite corners of a 1080p frame snapshot only their tiles,
+/// clipped to the blends' scissor, not the box between them.
+#[test]
+fn surface_line_snapshot_copies_only_the_tiles_its_blends_read() {
+    let mut cover = SnapshotCover::default();
+    cover.reset([1920, 1080]);
+    cover.add(5, 6, 6, 7);
+    cover.add(1900, 1070, 1902, 1072);
+    assert_eq!(cover.scissor(), [5, 6, 1897, 1066]);
+    let mut rects = Vec::new();
+    cover.snapshot_rects(&mut rects);
+    assert_eq!(rects, [[5, 6, 27, 26], [1888, 1056, 14, 16]]);
+}
+
+/// A zoomed pixel across a tile edge reads both tiles, which one run copies;
+/// a pixel past the target's edge copies nothing.
+#[test]
+fn surface_line_snapshot_joins_tile_runs_and_skips_pixels_off_the_target() {
+    let mut cover = SnapshotCover::default();
+    cover.reset([100, 50]);
+    cover.add(31, 0, 33, 2);
+    cover.add(70, 40, 71, 41);
+    cover.add(120, 10, 121, 11);
+    assert_eq!(cover.scissor(), [31, 0, 69, 41]);
+    let mut rects = Vec::new();
+    cover.snapshot_rects(&mut rects);
+    assert_eq!(rects, [[31, 0, 33, 32], [64, 32, 32, 9]]);
+}
+
 #[test]
 #[ignore = "requires quiet GPU; run in release; bounded preparation/completed submission timing, not FPS"]
 fn line_trail_native_fixture_submission_timings() {
     use crate::render::tactical_compat::{
-        SparkPointCommand, SparkPointPlanes, SparkPointPreparation, TacticalPointViewport,
-        TacticalRect, prepare_spark_point, welding_tests as fixture,
+        SparkPointCommand, SparkPointPreparation, TacticalPointViewport, TacticalRect,
+        prepare_spark_point, welding_tests as fixture,
     };
     use std::time::Instant;
     let native: Value = serde_json::from_str(crate::test_fixture::text(
@@ -271,6 +302,7 @@ fn line_trail_native_fixture_submission_timings() {
                        alpha: u16| {
             let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
             let mut terrain = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
+            terrain.bind_surface_line_a_fixture(&gpu.device, &gpu.queue, size, |_| alpha);
             let mut lights = crate::render::combat_light::CombatLightRenderer::new_with_device(
                 &gpu.device,
                 &gpu.queue,
@@ -293,14 +325,7 @@ fn line_trail_native_fixture_submission_timings() {
                 let point_prepared = if let Some((commands, colors, viewport)) = spark {
                     prepared_points.clear();
                     for &command in commands {
-                        match prepare_spark_point(
-                            command,
-                            colors,
-                            viewport,
-                            SparkPointPlanes::Deferred,
-                        )
-                        .unwrap()
-                        {
+                        match prepare_spark_point(command, colors, viewport).unwrap() {
                             SparkPointPreparation::Ready { point, .. } => {
                                 prepared_points.push(SurfaceDraw::Point(point));
                             }
@@ -348,7 +373,6 @@ fn line_trail_native_fixture_submission_timings() {
                     radials,
                     viewport,
                     |_| true,
-                    |_| alpha,
                 );
                 let prepared = prepare_begin.elapsed().as_secs_f64() * 1000.;
                 chunks = prepared_lines.end - prepared_lines.start;
@@ -362,14 +386,14 @@ fn line_trail_native_fixture_submission_timings() {
                     wgpu::LoadOp::Clear(wgpu::Color::WHITE),
                 );
                 // Native Systems occupy GROUND2; their children occupy AIR3.
-                // One immutable light upload and the same bounded submission
-                // accounting are used by production retained-object replay.
+                // The same bounded submission accounting is used by
+                // production retained-object replay.
                 for index in 0..light_records.len() {
-                    if lights.draw_record(&mut encoder, [0, 0, size[0], size[1]], index) {
-                        terrain.note_external_passes(&mut encoder, 1);
-                    }
+                    let passes =
+                        lights.draw_records(&mut encoder, [0, 0, size[0], size[1]], &[index]);
+                    terrain.note_external_passes(&mut encoder, passes);
                 }
-                terrain.draw_surface_lines(&mut encoder, &cv, prepared_lines);
+                terrain.draw_surface_lines(&mut encoder, &cv, &[prepared_lines]);
                 submissions = terrain.submissions();
                 if light_records.len() >= 256 {
                     assert!(
@@ -458,7 +482,7 @@ fn line_trail_native_fixture_submission_timings() {
                         z_origin_y: 0,
                         zoom: 1.,
                     },
-                    0x100,
+                    255,
                 );
             }
         }

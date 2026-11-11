@@ -24,7 +24,7 @@ from unicorn.x86_const import (UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EDX,
                                UC_X86_REG_EIP, UC_X86_REG_ESP, UC_X86_REG_ESI,
                                UC_X86_REG_EDI, UC_X86_REG_EBP, UC_X86_REG_EBX,
                                UC_X86_REG_FPCW)
-from tools.native_oracle import RET_MAGIC, finish_vectors, provenance, run_checked
+from tools.native_oracle import RET_MAGIC, finish_vectors, provenance, run_checked, stored_value
 from tools.spatial_oracle.map_queries import dwords
 from tools.spatial_oracle.track_destination import make_destination_fixture, ACTOR, LOCO
 from tools.spatial_oracle.unit_entry import EXTRA, HOUSE
@@ -672,7 +672,8 @@ class DockInputReader:
             pc = u.reg_read(UC_X86_REG_EIP)
             if pc in (0x45E28A, 0x45E292, 0x45E298, 0x45E2BA,
                       0x45E4D2, 0x45E4D6, 0x45E4D9):
-                constructor_writes.append(dict(pc=hex(pc), address=hex(address), size=size, value=value))
+                constructor_writes.append(dict(pc=hex(pc), address=hex(address), size=size,
+                                               value=stored_value(size, value)))
 
         hook = self.u.hook_add(UC_HOOK_MEM_WRITE, dock_constructor_write)
         try:
@@ -745,7 +746,7 @@ class DockInputReader:
         if address in self.watched or CONTROLS <= address < CONTROLS + 32 * 32:
             self.writes.append(dict(layer=self.current, pc=hex(u.reg_read(UC_X86_REG_EIP)),
                                     field=self.watched.get(address, 'mission_control'),
-                                    size=size, value=value))
+                                    size=size, value=stored_value(size, value)))
 
     def begin_layer(self, filename, raw, sections, lines):
         self.current = filename
@@ -857,7 +858,7 @@ class DockInputReader:
             items = m.read32(ptr + 0x1788)
             if ptr + 0x1784 <= address < ptr + 0x1792 or (items and items <= address < items + count * 12):
                 writes.append(dict(pc=hex(u.reg_read(UC_X86_REG_EIP)),
-                                   address=hex(address), size=size, value=value))
+                                   address=hex(address), size=size, value=stored_value(size, value)))
 
         hook = u.hook_add(UC_HOOK_MEM_WRITE, written)
         try:
@@ -1081,7 +1082,8 @@ class DockContinuation:
             field = 'bypass_counter'
         if field:
             self.writes.append(dict(pc=hex(u.reg_read(UC_X86_REG_EIP)), phase=self.phase,
-                                    frame=self.read32(FRAME), field=field, size=size, value=value))
+                                    frame=self.read32(FRAME), field=field, size=size,
+                                    value=stored_value(size, value)))
 
     def invoke(self, entry, this=ACTOR, args=()):
         self.call(entry, this, list(args))
@@ -1663,7 +1665,7 @@ def building_contact_constructor_controls():
         def write(uc, access, address, size, value, data):
             if building + 0xE0 <= address < building + 0xF0 or slot_start <= address < machine.cursor:
                 writes.append(dict(phase=phase, pc=hex(u.reg_read(UC_X86_REG_EIP)),
-                                   address=hex(address), size=size, value=value))
+                                   address=hex(address), size=size, value=stored_value(size, value)))
 
         hooks = [u.hook_add(UC_HOOK_CODE, code), u.hook_add(UC_HOOK_MEM_READ, read),
                  u.hook_add(UC_HOOK_MEM_WRITE, write)]

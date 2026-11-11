@@ -505,6 +505,31 @@ pub struct ObjectSubstrate {
     /// the state hash folds queue identities in insertion order.
     #[serde(default)]
     pub(crate) pending_delete: DeferredDeleteQueue,
+    /// Buildings whose Temporal online latch changed since the last factory
+    /// sweep, in order, for the Ares factory queue refresh
+    /// (`Simulation::ares_refresh_temporal_factories`).
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_temporal_factory_refresh: Vec<u64>,
+}
+
+#[cfg(feature = "ares")]
+impl ObjectSubstrate {
+    /// The buildings waiting for the Ares factory queue refresh, in order.
+    pub(crate) fn ares_temporal_factory_refresh(&self) -> &[u64] {
+        &self.ares_temporal_factory_refresh
+    }
+
+    /// A building's Temporal online latch changed: queue it for the next
+    /// factory sweep.
+    pub(crate) fn queue_ares_temporal_factory_refresh(&mut self, id: u64) {
+        self.ares_temporal_factory_refresh.push(id);
+    }
+
+    /// The factory sweep takes the queued buildings and leaves none.
+    pub(crate) fn take_ares_temporal_factory_refresh(&mut self) -> Vec<u64> {
+        std::mem::take(&mut self.ares_temporal_factory_refresh)
+    }
 }
 
 impl ObjectSubstrate {
@@ -529,6 +554,8 @@ impl ObjectSubstrate {
             spotlights: Default::default(),
             particle_systems: ParticleSystemStore::default(),
             pending_delete: DeferredDeleteQueue::default(),
+            #[cfg(feature = "ares")]
+            ares_temporal_factory_refresh: Vec::new(),
         }
     }
 }

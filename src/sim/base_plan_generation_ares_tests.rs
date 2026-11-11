@@ -116,3 +116,18 @@ fn planned_members_do_not_recurse_into_another_group() {
         &rules
     ));
 }
+
+/// Hook 0x505360 -> `PrerequisitesListed @ 10021C50`: any one of the
+/// candidate's lists among the planned types admits it.
+#[test]
+fn planner_admits_any_prerequisite_list() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=A\n1=B\n2=Q\n\
+         [Q]\nPrerequisite=A\nPrerequisite.Lists=1\nPrerequisite.List1=B\n",
+    ))
+    .unwrap();
+    let candidate = rules.object("Q").unwrap();
+    let planned = rules.object("B").unwrap();
+    assert!(prerequisites_satisfied(candidate, &[planned], &rules));
+    assert!(!prerequisites_satisfied(candidate, &[], &rules));
+}

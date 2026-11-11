@@ -3,14 +3,13 @@
 //! The simulation supplies retained Display order. Builders attach pieces to
 //! those parent slots before lowering them to atlas draw runs.
 
-use std::collections::BTreeMap;
-
 use crate::render::batch::SpriteInstance;
 use crate::render::surface_line::SurfaceDraw;
 use crate::render::tactical_draw_plan::{
     BlitPolicy, BuildingOwnedPlan, BuildingPiece, BuildingPieceKind, DrawId, ObjectDraw,
     RenderZPolicy, SpriteEncoding, TacticalDrawInput, TacticalDrawPlan, TacticalLayer,
 };
+use crate::util::lookup_hash::{LookupMap, LookupSet};
 
 /// One GPU sprite that remains owned by a single building during lowering.
 ///
@@ -36,7 +35,6 @@ pub(crate) enum ObjectTexture {
     CombatLight(usize),
     /// Initial Building Extras status, sharing the late run's instance range.
     Status(usize),
-    OverlayAtlas,
     /// Per-piece native destination edit; never a texture-only coalesced draw.
     TerrainShp(crate::render::terrain_draw::TerrainPiece),
     /// An atlas SHP whose source mask performs a native destination edit.
@@ -198,26 +196,27 @@ pub(crate) struct ObjectLayerPass {
 
 /// Frame-local lookup derived solely from the five retained Display vectors.
 /// The sim owns all registration and sorting; atlas builders only read ranks.
+/// Rebuilt each frame for every Display member and only looked up, so it
+/// takes the lookup hasher, sized up front.
 #[derive(Default)]
 pub(crate) struct NativeDisplayOrder {
-    positions: BTreeMap<DrawId, (TacticalLayer, u64)>,
+    positions: LookupMap<DrawId, (TacticalLayer, u64)>,
 }
 
 impl NativeDisplayOrder {
     pub(crate) fn from_display(display: &crate::sim::world::display_layers::DisplayLayers) -> Self {
-        Self {
-            positions: (0..5u8)
-                .flat_map(|index| {
-                    let layer = crate::sim::world::display_layers::DisplayLayer::from_index(index)
-                        .expect("native Display layer index");
-                    display
-                        .members(layer)
-                        .iter()
-                        .enumerate()
-                        .map(move |(rank, &id)| (id, (TacticalLayer(index), rank as u64)))
-                })
-                .collect(),
+        use crate::sim::world::display_layers::DisplayLayer;
+        let layer = |index| DisplayLayer::from_index(index).expect("native Display layer index");
+        let members: usize = (0..5u8)
+            .map(|index| display.members(layer(index)).len())
+            .sum();
+        let mut positions = LookupMap::with_capacity_and_hasher(members, Default::default());
+        for index in 0..5u8 {
+            for (rank, &id) in display.members(layer(index)).iter().enumerate() {
+                positions.insert(id, (TacticalLayer(index), rank as u64));
+            }
         }
+        Self { positions }
     }
 
     #[cfg(test)]
@@ -250,14 +249,19 @@ impl NativeDisplayOrder {
 /// Native Tactical6D8F39 reads members in order; neither sprite depth nor a new
 /// GetYSort query participates. Building pieces remain contiguous in their slot.
 pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [ObjectLayerPass; 5] {
-    let mut ordinary = BTreeMap::new();
-    let mut buildings = BTreeMap::new();
-    let mut brackets = BTreeMap::new();
-    let mut status = BTreeMap::new();
-    let mut body_draws = BTreeMap::new();
-    let mut tail_draws = BTreeMap::new();
-    let mut tether_redraws = BTreeMap::new();
-    let mut drawn_by_tether = std::collections::BTreeSet::new();
+    // Side tables of the frame's Display parents, keyed by parent id. They
+    // are only filled and then taken by key in plan order, never walked, so
+    // they take the lookup hasher: a B-tree shifted the large status values
+    // on every insert, each frame for every drawn object.
+    let parents = entries.len();
+    let mut ordinary = LookupMap::with_capacity_and_hasher(parents, Default::default());
+    let mut buildings = LookupMap::default();
+    let mut brackets = LookupMap::default();
+    let mut status = LookupMap::with_capacity_and_hasher(parents, Default::default());
+    let mut body_draws = LookupMap::default();
+    let mut tail_draws = LookupMap::default();
+    let mut tether_redraws = LookupMap::default();
+    let mut drawn_by_tether = LookupSet::default();
     let mut inputs = Vec::with_capacity(entries.len());
 
     for entry in entries {
@@ -285,25 +289,18 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
             assert!(status.insert(id, strip).is_none());
         }
         if let Some(pieces) = entry.building_pieces {
-            let mut resolved = BTreeMap::new();
+            // A building's pieces carry their own index as local id.
+            let mut resolved = Vec::with_capacity(pieces.len());
             let planned = pieces
                 .into_iter()
                 .enumerate()
                 .map(|(index, piece)| {
                     let piece_id = index as DrawId;
-                    assert!(
-                        resolved
-                            .insert(
-                                piece_id,
-                                ObjectPieceInstance {
-                                    target: piece.target,
-                                    render_z: piece.policy.render_z,
-                                    instance: piece.instance,
-                                },
-                            )
-                            .is_none(),
-                        "each building-owned piece must have a unique local id"
-                    );
+                    resolved.push(Some(ObjectPieceInstance {
+                        target: piece.target,
+                        render_z: piece.policy.render_z,
+                        instance: piece.instance,
+                    }));
                     BuildingPiece {
                         id: piece_id,
                         kind: piece.kind,
@@ -331,7 +328,7 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
 
     // A tether redraw repeats each contact's own draw, sprites and tail stores
     // alike, whichever of the two Display slots comes first.
-    let mut redrawn: BTreeMap<DrawId, Vec<(DrawId, Vec<ObjectPieceInstance>, Vec<SurfaceDraw>)>> =
+    let mut redrawn: LookupMap<DrawId, Vec<(DrawId, Vec<ObjectPieceInstance>, Vec<SurfaceDraw>)>> =
         tether_redraws
             .into_iter()
             .map(|(building, contacts)| {
@@ -617,8 +614,10 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                         .remove(&owner)
                         .expect("planned building must retain its owned sprites");
                     for planned in building.pieces {
-                        let piece = pieces
-                            .remove(&planned.id)
+                        let piece = usize::try_from(planned.id)
+                            .ok()
+                            .and_then(|index| pieces.get_mut(index))
+                            .and_then(Option::take)
                             .expect("planned building piece must retain its sprite");
                         let run = push_object_piece(lowered, owner, piece);
                         // Building6D9920 ->43CEA0(...,0) draws43D290's base
@@ -792,7 +791,7 @@ mod tests {
                     policy: BlitPolicy::z_read(SpriteEncoding::Rle),
                 },
                 vec![ObjectPieceInstance {
-                    target: ObjectTexture::OverlayAtlas,
+                    target: ObjectTexture::ShpPage(0),
                     render_z: RenderZPolicy::ReadOnly,
                     instance: SpriteInstance::default(),
                 }],
@@ -848,7 +847,7 @@ mod tests {
         };
         let parent = |id, display_order, tail_draws: Vec<SurfaceDraw>| {
             let piece = || ObjectPieceInstance {
-                target: ObjectTexture::OverlayAtlas,
+                target: ObjectTexture::ShpPage(0),
                 render_z: RenderZPolicy::ReadOnly,
                 instance: SpriteInstance::default(),
             };
@@ -876,9 +875,9 @@ mod tests {
                 .map(|run| (run.target, run.start, run.count))
                 .collect::<Vec<_>>(),
             [
-                (ObjectTexture::OverlayAtlas, 0, 2),
+                (ObjectTexture::ShpPage(0), 0, 2),
                 (ObjectTexture::SurfaceLines(0), 2, 0),
-                (ObjectTexture::OverlayAtlas, 2, 2),
+                (ObjectTexture::ShpPage(0), 2, 2),
             ]
         );
     }
@@ -906,7 +905,7 @@ mod tests {
                 kind: BuildingPieceKind::Body,
                 z_bias: 0,
                 policy: BlitPolicy::z_read(SpriteEncoding::Rle),
-                target: ObjectTexture::OverlayAtlas,
+                target: ObjectTexture::ShpPage(0),
                 instance: SpriteInstance::default(),
             }],
         );
@@ -959,7 +958,7 @@ mod tests {
                 .iter()
                 .map(|run| run.target)
                 .collect::<Vec<_>>(),
-            [ObjectTexture::OverlayAtlas]
+            [ObjectTexture::ShpPage(0)]
         );
     }
 
@@ -1421,7 +1420,7 @@ mod tests {
         let pass = lower_ground_object_instances(vec![
             PlannedObjectInstance::object(
                 order.object_draw(10, SpriteEncoding::Terrain).unwrap(),
-                vec![marked_piece(ObjectTexture::OverlayAtlas, 10)],
+                vec![marked_piece(ObjectTexture::ShpPage(1), 10)],
             ),
             building,
             PlannedObjectInstance::object(
@@ -1433,7 +1432,7 @@ mod tests {
         assert_eq!(pass.owners, [20, 30, 10]);
         assert_eq!(
             pass.runs.iter().map(|run| run.target).collect::<Vec<_>>(),
-            [ObjectTexture::UnitAtlasPage(9), ObjectTexture::OverlayAtlas,]
+            [ObjectTexture::UnitAtlasPage(9), ObjectTexture::ShpPage(1),]
         );
         assert_eq!(
             pass.building_base_runs
@@ -1481,7 +1480,7 @@ mod tests {
             ),
             PlannedObjectInstance::object(
                 plain_parent(&order, 1),
-                vec![marked_piece(ObjectTexture::OverlayAtlas, 1)],
+                vec![marked_piece(ObjectTexture::ShpPage(2), 1)],
             ),
         ]);
 

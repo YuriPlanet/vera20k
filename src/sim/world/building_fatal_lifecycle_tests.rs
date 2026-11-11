@@ -218,9 +218,6 @@ impl Fixture {
             &IniFile::from_str(&text),
             &crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(&sound_text)),
         );
-        rules.bind_animation_sequences(
-            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-        );
         for anim in corpus["native_fatal_anim_inputs"].as_array().unwrap() {
             rules.bind_anim_frame_count_for_test(
                 anim["name"].as_str().unwrap(),

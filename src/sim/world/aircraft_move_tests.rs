@@ -663,3 +663,83 @@ fn retail_aircraft_types_are_not_carryalls() {
         assert!(!rules.object(name).unwrap().carryall, "{name}");
     }
 }
+
+/// The fixture's HORNET (Landable, not Spawned, with `extra` rules) at
+/// (15, 15), a tree on `tree`, `order` applied, and the first Cell NavCom the
+/// aircraft takes within 200 frames.
+fn first_cell_destination_for_a_tree_order(
+    extra: &str,
+    tree: (u16, u16),
+    order: impl FnOnce(u64, u64) -> crate::sim::command::Command,
+) -> Option<(u16, u16)> {
+    use crate::sim::terrain_object::{TerrainObjectState, mark_terrain_raw_occupation};
+    const TREE: u64 = 900;
+    let (mut sim, rules, registry) =
+        crate::sim::world::entry_test_fixture::fixture_with_rules(extra);
+    assert!(!rules.object("HORNET").unwrap().spawned);
+    let owner = sim.interner.intern("Americans");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
+    sim.session.set_current_house_for_test(Some(owner));
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
+    sim.session.game_options_mut_for_test().short_game = false;
+    let actor = sim
+        .spawn_object_with_overlay_registry("HORNET", "Americans", 15, 15, 0, &rules, &registry)
+        .unwrap();
+    let type_ref = sim.interner.intern("TREE01");
+    sim.terrain_objects.objects_mut_for_test().insert(
+        TREE,
+        TerrainObjectState::for_test(TREE, type_ref, tree.0, tree.1),
+    );
+    sim.terrain_objects
+        .cell_index_mut_for_test()
+        .insert(tree, TREE);
+    mark_terrain_raw_occupation(&mut sim.substrate.raw_cell_occupation, tree, 5);
+    assert!(sim.apply_command("Americans", &order(actor, TREE), Some(&rules)));
+    let grid = sim.path_grid.clone();
+    for _ in 0..200 {
+        let due = sim.take_due_commands();
+        sim.advance_tick(&due, Some(&rules), grid.as_deref(), Some(&registry), 67);
+        let nav = sim.substrate.entities.get(actor)?.navigation.nav_com();
+        if let Some(NavTargetRef::Cell { rx, ry }) = nav {
+            return Some((rx, ry));
+        }
+    }
+    None
+}
+
+/// A move order onto a tree gives the aircraft a Terrain NavCom, which
+/// Find_Attack_Cell `0x00418E20` and IsLandZoneClear `0x004DDC60` ask for its
+/// center (vt+0x48) like any other target. The center lookup knew only
+/// Technos and panicked here (#4136).
+#[test]
+fn an_aircraft_sent_to_a_tree_lands_beside_it() {
+    let tree = (18, 15);
+    let (rx, ry) = first_cell_destination_for_a_tree_order("", tree, |actor, tree| {
+        crate::sim::command::Command::MoveToObject {
+            entity_id: actor,
+            target_id: tree,
+        }
+    })
+    .expect("Mission_Move picks a cell for the tree order");
+    assert_ne!((rx, ry), tree);
+    assert!(rx.abs_diff(tree.0) <= 1 && ry.abs_diff(tree.1) <= 1);
+}
+
+/// FindFireLocation `0x004197C0` reads a tree's center the same way: an
+/// attack order on one flies to a firing cell instead of dropping the order.
+#[test]
+fn an_aircraft_attacking_a_tree_takes_a_firing_cell() {
+    let armed = "[HORNET]\nPrimary=TreeGun\nAmmo=2\n[TreeGun]\nDamage=10\nROF=20\nRange=4\n\
+                 Projectile=TreeShot\nWarhead=SA\n[TreeShot]\nInviso=yes\n";
+    let cell = first_cell_destination_for_a_tree_order(armed, (22, 15), |actor, tree| {
+        crate::sim::command::Command::Attack {
+            attacker_id: actor,
+            target_id: tree,
+        }
+    });
+    assert!(cell.is_some(), "Mission_Attack flies to a firing cell");
+}

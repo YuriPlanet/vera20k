@@ -1,0 +1,70 @@
+[
+  {
+    "name": "2p-congested-severe-idle",
+    "players": 2,
+    "apm": 0,
+    "network": {
+      "up": {
+        "delay_ms": 20,
+        "bandwidth_bps": 64000,
+        "queue_ms": 1000
+      },
+      "down": {
+        "delay_ms": 20,
+        "bandwidth_bps": 256000,
+        "queue_ms": 1000
+      }
+    }
+  },
+  {
+    "name": "2p-congested-severe-300apm",
+    "players": 2,
+    "apm": 300,
+    "network": {
+      "up": {
+        "delay_ms": 20,
+        "bandwidth_bps": 64000,
+        "queue_ms": 1000
+      },
+      "down": {
+        "delay_ms": 20,
+        "bandwidth_bps": 256000,
+        "queue_ms": 1000
+      }
+    }
+  },
+  {
+    "name": "30p-congested-severe-idle",
+    "players": 30,
+    "apm": 0,
+    "network": {
+      "up": {
+        "delay_ms": 20,
+        "bandwidth_bps": 64000,
+        "queue_ms": 1000
+      },
+      "down": {
+        "delay_ms": 20,
+        "bandwidth_bps": 256000,
+        "queue_ms": 1000
+      }
+    }
+  },
+  {
+    "name": "30p-congested-severe-300apm",
+    "players": 30,
+    "apm": 300,
+    "network": {
+      "up": {
+        "delay_ms": 20,
+        "bandwidth_bps": 64000,
+        "queue_ms": 1000
+      },
+      "down": {
+        "delay_ms": 20,
+        "bandwidth_bps": 256000,
+        "queue_ms": 1000
+      }
+    }
+  }
+]

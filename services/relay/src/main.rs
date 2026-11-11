@@ -7,7 +7,8 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use vera20k_relay_protocol::{
-    ForwardDatagram, MAX_DATAGRAM, PaceCounts, RelayError, RelayServer, SecretKey,
+    ForwardDatagram, MAX_DATAGRAM, MacFailureCounts, OrderingCounts, RelayError, RelayServer,
+    SecretKey,
 };
 
 /// Aggregate operational counts only. No request, endpoint, room identity,
@@ -26,6 +27,10 @@ struct TrafficCounts {
     rate_limited: u64,
     counter_exhausted: u64,
     entropy_unavailable: u64,
+    // Ordering push datagrams and their bytes; each also counts in `forwarded`
+    // or `send_errors`.
+    pushed: u64,
+    pushed_bytes: u64,
 }
 
 impl TrafficCounts {
@@ -44,11 +49,12 @@ impl TrafficCounts {
         *count += 1;
     }
 
-    fn report(&self, seconds: u64, rooms: usize, pace: PaceCounts) {
+    fn report(&self, seconds: u64, rooms: usize, ordering: OrderingCounts, mac: MacFailureCounts) {
         eprintln!(
-            "VERA20k relay interval_s={seconds} rooms={rooms} slowdowns={} catching_up_s={} received={} forwarded={} send_errors={} malformed={} authentication={} expired={} replay={} unregistered={} full={} rate_limited={} counter_exhausted={} entropy_unavailable={}",
-            pace.slowdowns,
-            pace.catching_up_s,
+            "VERA20k relay interval_s={seconds} rooms={rooms} slowdowns={} raises={} catching_up_s={} received={} forwarded={} send_errors={} malformed={} authentication={} expired={} replay={} unregistered={} full={} rate_limited={} counter_exhausted={} entropy_unavailable={} pushed={} pushed_bytes={} pull_replies={} desyncs={} push_packets={:?} push_bytes={:?} piggybacked_records={} down_lost={} retransmitted_records={} readers_avg={:?} offline_unsent={} mac_failures={} unknown_sessions={} session_alerts={}",
+            ordering.slowdowns,
+            ordering.raises,
+            ordering.catching_up_s,
             self.received,
             self.forwarded,
             self.send_errors,
@@ -61,6 +67,26 @@ impl TrafficCounts {
             self.rate_limited,
             self.counter_exhausted,
             self.entropy_unavailable,
+            self.pushed,
+            self.pushed_bytes,
+            ordering.pull_replies,
+            ordering.desyncs,
+            ordering.push_packets,
+            ordering.push_bytes,
+            ordering.piggybacked_records,
+            ordering.down_lost_packets,
+            ordering.retransmitted_records,
+            // Average subscribed readers per state: good, lossy, congested,
+            // offline (spec §10.2).
+            ordering
+                .reader_states
+                .map(|seen| seen as f64 / ordering.reader_passes.max(1) as f64),
+            ordering.offline_unsent_packets,
+            // Statistics only: no count drops a datagram (compaction spec
+            // §6.4). An alert is a session failing over 4096 tags a minute.
+            mac.failures,
+            mac.unknown_sessions,
+            mac.session_alerts,
         );
     }
 }
@@ -73,26 +99,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let state_dir = std::env::var_os("STATE_DIRECTORY")
         .or_else(|| std::env::var_os("VERA_RELAY_STATE_DIR"))
         .map(PathBuf::from)
-        .ok_or("relay encrypted journal requires STATE_DIRECTORY or VERA_RELAY_STATE_DIR")?;
+        .ok_or("relay journal requires STATE_DIRECTORY or VERA_RELAY_STATE_DIR")?;
     let mut server = RelayServer::with_journal(SecretKey::new(key), 1024, &state_dir)?;
     let mut buffer = [0u8; MAX_DATAGRAM + 1];
     let mut counts = TrafficCounts::default();
     let mut reported_at = Instant::now();
     let clock_origin = Instant::now();
-    // The millisecond the last pass over every room ended, and whether the
-    // server has accepted a datagram since.
+    // The millisecond the last pass over every room ended.
     let mut passed_ms = None;
-    let mut accepted = false;
     eprintln!("VERA20k relay listening on {}", socket.local_addr()?);
     loop {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
         let monotonic_ms = clock_origin.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
         // A pass costs time in every room, so it starts a millisecond after
-        // the last one ended, even when a full relay's pass takes longer, and
-        // before the next receive after an accepted datagram, which may owe
-        // pushes or link packets. A rejected one, junk included, adds none.
-        if accepted || passed_ms.is_none_or(|passed| monotonic_ms > passed) {
-            accepted = false;
+        // the last one ended, even when a full relay's pass takes longer. No
+        // datagram adds one: the pushes or link packets an accepted one may
+        // owe go out with the next pass, as a sealed frame's do.
+        if passed_ms.is_none_or(|passed| monotonic_ms > passed) {
             // Clock advancement is independent of datagram arrivals and readers.
             server.advance_clock(monotonic_ms, now);
             // Federated relays exchange what they just sealed before players read it.
@@ -101,16 +124,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &mut counts,
                 server.drain_federation(monotonic_ms, now),
             );
-            send_datagrams(
-                &socket,
-                &mut counts,
-                server.drain_ordering_push(monotonic_ms, now),
-            );
+            let pushed = server.drain_ordering_push(monotonic_ms, now);
+            counts.pushed += pushed.len() as u64;
+            counts.pushed_bytes += pushed
+                .iter()
+                .map(|datagram| datagram.bytes.len() as u64)
+                .sum::<u64>();
+            send_datagrams(&socket, &mut counts, pushed);
             passed_ms = Some(clock_origin.elapsed().as_millis().min(u128::from(u64::MAX)) as u64);
         }
         let elapsed = reported_at.elapsed().as_secs();
         if elapsed >= 60 {
-            counts.report(elapsed, server.room_count(), server.take_pace_counts());
+            counts.report(
+                elapsed,
+                server.room_count(),
+                server.take_ordering_counts(),
+                server.take_mac_failure_counts(),
+            );
             counts = TrafficCounts::default();
             reported_at = Instant::now();
         }
@@ -142,10 +172,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Rejections expose no packet, key, ticket, address or player data.
         // Ordinary UDP loss is handled by the existing client reliable owner.
         match server.process_at(source, &buffer[..length], now, monotonic_ms) {
-            Ok(forward) => {
-                accepted = true;
-                send_datagrams(&socket, &mut counts, forward);
-            }
+            Ok(forward) => send_datagrams(&socket, &mut counts, forward),
             Err(error) => counts.reject(error),
         }
     }

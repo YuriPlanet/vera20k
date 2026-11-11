@@ -37,7 +37,7 @@ fn team_lookup_fixed_ai_uses_final_map_names_and_dependencies() {
             sim.initialize_trigger_definitions(&map, &registry, None, None, None);
         }
         let rng = sim.scenario_rng.native_state_hex();
-        let diagnostics = sim.install_team_ai_registry(&registry, &rules).unwrap();
+        let diagnostics = sim.install_team_ai_registry(&registry, &rules);
         assert!(diagnostics.is_empty(), "{diagnostics:?}");
         let trigger = sim.team_script_vm.ai_triggers_in_order().next().unwrap().0;
         assert_eq!(trigger.primary_team_type, sim.interner.get("FIRST"));
@@ -637,7 +637,7 @@ fn retail_all05_elapsed_stop_keeps_explicit_teams_and_saved_activation() {
         Some(&map.ini),
     );
     sim.session.install_waypoints(&map.waypoints);
-    sim.install_team_ai_registry(&teams, &rules).unwrap();
+    sim.install_team_ai_registry(&teams, &rules);
     sim.initialize_trigger_definitions(&map, &teams, None, None, None);
     let targets: Vec<_> = retail["target_houses"]
         .as_array()

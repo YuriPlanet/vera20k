@@ -63,6 +63,7 @@ fn retail_riparius_and_vinifera_pay_on_separate_unload_gates() {
                     bounds.contains_geometry_packed(i32::from(entry.rx), i32::from(entry.ry))
                         && overlays
                             .tiberium_type_for_overlay(&rules.tiberium_types, entry.overlay_id)
+                            .unwrap()
                             == Some(kind)
                 })
                 .expect("stock map contains this native type inside LocalSize");
@@ -199,6 +200,10 @@ fn retail_riparius_and_vinifera_pay_on_separate_unload_gates() {
             credits,
             "one native type per gate"
         );
+        // Ares' DepositTiberium (10044230, hook 0x73E4A2) adds no score.
+        #[cfg(feature = "ares")]
+        let _ = score;
+        #[cfg(not(feature = "ares"))]
         assert_eq!(sim.houses[&owner].economy().score(), score);
         assert_eq!(
             sim.substrate

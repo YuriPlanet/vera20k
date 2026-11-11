@@ -30,10 +30,47 @@ pub fn find(directory: &Path, name: &str) -> Option<PathBuf> {
 /// store by bytes), and the archive registered first wins the names it shares
 /// with later ones, so every enumeration that registers files takes this one.
 pub fn native_listing(directory: &Path) -> std::io::Result<Vec<PathBuf>> {
-    let mut entries: Vec<PathBuf> = crate::util::file_system::read_dir(directory)?
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .collect();
+    native_listing_over(&[directory])
+}
+
+/// [`native_listing`] of the first directory with each later one's entries
+/// copied on top of it: an entry takes the place of an earlier directory's
+/// entry of the same name, ignoring ASCII case, and the whole lists in the
+/// native order. VERA: a mod folder over the game folder (`app::mods`). A
+/// directory that does not exist lists nothing; that is the error only when
+/// none exists.
+pub fn native_listing_over<P: AsRef<Path>>(directories: &[P]) -> std::io::Result<Vec<PathBuf>> {
+    let mut entries: Vec<PathBuf> = Vec::new();
+    let mut missing = None;
+    let mut listed_any = false;
+    for directory in directories {
+        let listed = match crate::util::file_system::read_dir(directory.as_ref()) {
+            Ok(listed) => listed,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                missing = Some(error);
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
+        listed_any = true;
+        let over: Vec<PathBuf> = listed
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .collect();
+        // Every spelling an earlier directory holds gives way; two spellings
+        // in one directory are two files.
+        entries.retain(|kept| {
+            !over.iter().any(|path| {
+                kept.file_name()
+                    .zip(path.file_name())
+                    .is_some_and(|(kept, name)| kept.eq_ignore_ascii_case(name))
+            })
+        });
+        entries.extend(over);
+    }
+    if let Some(error) = missing.filter(|_| !listed_any) {
+        return Err(error);
+    }
     entries.sort_by_cached_key(|path| {
         let name = path.file_name().unwrap_or_default().as_encoded_bytes();
         (name.to_ascii_uppercase(), name.to_vec())

@@ -223,6 +223,25 @@ pub(crate) struct FixturePolicy {
     pub(crate) admitted_spawns: Vec<(u64, bool, crate::sim::projectile::ProjectileSpawn)>,
 }
 
+/// A world copy (the presentation frame, docs/sim-thread.md) never runs a
+/// fixture frame: it keeps the policy and starts with no observations.
+impl Clone for FixturePolicy {
+    fn clone(&self) -> Self {
+        Self {
+            current_tick: self.current_tick,
+            require_playfield_membership: self.require_playfield_membership,
+            fog_enabled: self.fog_enabled,
+            radiation_enabled: self.radiation_enabled,
+            sound_enabled: self.sound_enabled,
+            terrain_collection: self.terrain_collection,
+            trace: FixtureTrace::default(),
+            deferred_tiberium: Vec::new(),
+            tail_effects: Vec::new(),
+            admitted_spawns: Vec::new(),
+        }
+    }
+}
+
 /// Adapters preserve the old phase's supplied state, without bootstrapping a
 /// scenario or admitting fixture objects into the production Logic vector.
 fn with_world<R>(

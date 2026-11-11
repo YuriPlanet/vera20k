@@ -1,9 +1,10 @@
-//! Lossless BGRA8 readback for an already-composited GPU frame.
+//! Lossless readback of an already-composed GPU texture: a BGRA8 frame or a
+//! rectangle of the R8 tactical A plane.
 //!
-//! This module never renders a replacement frame. The app gives it the actual
-//! swapchain texture after every production draw has been encoded, and it adds
-//! one copy into a CPU-mappable buffer. Readback is synchronous by design and
-//! is used only by the explicit one-shot shell-capture mode.
+//! This module never renders a replacement. The app gives it the actual
+//! texture after the production draws have been encoded, and it adds one copy
+//! into a CPU-mappable buffer. Readback is synchronous by design and is used
+//! only by explicit captures, diagnostics and tests.
 
 use thiserror::Error;
 
@@ -16,7 +17,7 @@ pub enum FrameReadbackError {
     BrowserCaptureUnsupported,
     #[error("frame readback requires non-zero dimensions, got {width}x{height}")]
     EmptyExtent { width: u32, height: u32 },
-    #[error("frame readback only supports BGRA8 surfaces, got {0:?}")]
+    #[error("frame readback does not support {0:?} here")]
     UnsupportedFormat(wgpu::TextureFormat),
     #[error("frame readback row-size arithmetic overflowed for width {0}")]
     RowSizeOverflow(u32),
@@ -35,7 +36,7 @@ pub enum FrameReadbackError {
 }
 
 /// One encoded texture-to-buffer copy awaiting queue submission and mapping.
-pub struct PendingBgra8Readback {
+pub struct PendingTextureReadback {
     buffer: wgpu::Buffer,
     width: u32,
     height: u32,
@@ -43,8 +44,9 @@ pub struct PendingBgra8Readback {
     padded_bytes_per_row: u32,
 }
 
-impl PendingBgra8Readback {
-    /// Encode a copy from the final production texture into a mappable buffer.
+impl PendingTextureReadback {
+    /// Encode a copy from the final production BGRA8 texture into a mappable
+    /// buffer.
     ///
     /// The caller must submit `encoder` before calling [`Self::finish`].
     pub fn encode(
@@ -55,18 +57,50 @@ impl PendingBgra8Readback {
         width: u32,
         height: u32,
     ) -> Result<Self, FrameReadbackError> {
-        if width == 0 || height == 0 {
-            return Err(FrameReadbackError::EmptyExtent { width, height });
-        }
         if !matches!(
             format,
             wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
         ) {
             return Err(FrameReadbackError::UnsupportedFormat(format));
         }
+        Self::encode_rect(
+            device,
+            encoder,
+            texture,
+            [0, 0],
+            [width, height],
+            BGRA8_BYTES_PER_PIXEL,
+        )
+    }
 
+    /// Encode a copy of one rectangle of a one-byte-per-texel texture, such
+    /// as the tactical A plane. The same submission rule applies.
+    pub fn encode_r8(
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        texture: &wgpu::Texture,
+        origin: [u32; 2],
+        size: [u32; 2],
+    ) -> Result<Self, FrameReadbackError> {
+        if texture.format().block_copy_size(None) != Some(1) {
+            return Err(FrameReadbackError::UnsupportedFormat(texture.format()));
+        }
+        Self::encode_rect(device, encoder, texture, origin, size, 1)
+    }
+
+    fn encode_rect(
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        texture: &wgpu::Texture,
+        origin: [u32; 2],
+        [width, height]: [u32; 2],
+        bytes_per_texel: u32,
+    ) -> Result<Self, FrameReadbackError> {
+        if width == 0 || height == 0 {
+            return Err(FrameReadbackError::EmptyExtent { width, height });
+        }
         let tight_bytes_per_row = width
-            .checked_mul(BGRA8_BYTES_PER_PIXEL)
+            .checked_mul(bytes_per_texel)
             .ok_or(FrameReadbackError::RowSizeOverflow(width))?;
         let padded_bytes_per_row =
             align_up(tight_bytes_per_row, wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
@@ -76,7 +110,7 @@ impl PendingBgra8Readback {
             .ok_or(FrameReadbackError::BufferSizeOverflow { width, height })?;
 
         let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Shell Capture BGRA8 Readback"),
+            label: Some("Texture Readback"),
             size: buffer_size,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
@@ -86,7 +120,11 @@ impl PendingBgra8Readback {
             wgpu::TexelCopyTextureInfo {
                 texture,
                 mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
+                origin: wgpu::Origin3d {
+                    x: origin[0],
+                    y: origin[1],
+                    z: 0,
+                },
                 aspect: wgpu::TextureAspect::All,
             },
             wgpu::TexelCopyBufferInfo {
@@ -114,7 +152,7 @@ impl PendingBgra8Readback {
     }
 
     /// Wait for the submitted copy, remove GPU row padding, and return tight
-    /// top-left BGRA8 pixels.
+    /// top-left texels.
     pub fn finish(
         self,
         device: &wgpu::Device,

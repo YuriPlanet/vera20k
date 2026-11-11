@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Stock CAHSE01/E1 selected Building D producer and two resolved Event9 target-clear/Queue controls.",
+  "assumptions": [
+    "Reuse garrison_fatal_inputs/joined_fixture original selected Rules/ART readers, CAHSE01/E1 constructors, flat32-cell map, House and successful allocations. RULESMD, optional LANGRULE, MPBattleMD and Hills.map layers; ARTMD separate.",
+    "Runtime gameMode5, original Unlimbo18,16, explicit Idle/body transition/Commence and unoccupied Guard dispatch establish current5/pending-1/clock0+100 at frame1. Original occupant-vector resize precedes supplied one-E1 garrison membership, stored position and Transporter; no natural boarding or ownership transfer.",
+    "Producer supplies singleton selection/local House and stops before encoding. Receivers supply the resolved actor after token/planning prefix; original class/lifecycle/factory gates and all setters/Queue execute. One begins NULL, the other with Cell22,16 accepted by the original Building target setter.",
+    "Each component asserts unchanged current Guard5, occupants1, status/ready/burst/archive/clock, all three full RNG states, executable sections and Building/Infantry primary tables. Traced call sequence excludes RNG/detach. No-contact/burst0 inputs do not establish live-contact or fired-burst effects.",
+    "No post-event Commence, Mission_Unload, later world tick, whole UI/delivery or complete frame equivalence. Corpus retains only Rust-consumed outcomes."
+  ],
+  "substitutions": [
+    "Existing Engineer/Construction reader-cache, physical requested-file byte IO, bump allocator/delete, COM/CRT TLS, original audioIDX/qsort/BAG/backend device transport boundaries are reused. Native Drive/Bullet/Walk COM factories execute rather than fabricated locomotor/projectile responses.",
+    "Only listed existing Mission OS/COM/presentation transport arms are delegated. Supplied640x480surface prior executes original vtable rectangle getter; original sound registry/readers/event allocation execute, hardware sample output is not audible parity. Existing UpdateAnimation presentation callbacks are retained; no selected gameplay body or numeric decision is replaced."
+  ],
+  "entry_points": {
+    "deploy_command": "0x00730AF0",
+    "event_producer": "0x006FFE00",
+    "deploy_receiver": "0x004C76D7",
+    "deploy_receiver_stop": "0x004C7818",
+    "building_ctor": "0x0043B740",
+    "building_unlimbo": "0x00440580",
+    "infantry_ctor": "0x00517A50",
+    "building_operational": "0x004555D0",
+    "occupant_count": "0x004581F0",
+    "building_destination": "0x00455D50",
+    "building_target": "0x00443B90",
+    "techno_target": "0x006FCDB0",
+    "queue": "0x005B35E0"
+  },
+  "evidence_sidecar": "transport_unload.md#building-garrison-deploy",
+  "replay_command": "python -m tools.spatial_oracle.transport_unload --building-garrison-deploy",
+  "payload_sha256": "26c5db41bfa2e85c67885e939d026a90f8e4ce1445831fd7ed9f9fbe89f971f2"
+}

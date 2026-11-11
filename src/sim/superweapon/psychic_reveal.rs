@@ -95,11 +95,11 @@ pub fn launch(
     observe(Observed::RevealArea(coord, radius));
     let config = sim.sight_reveal_config(rules);
     let viewers = vision::direct_reveal_viewers(
-        &sim.fog,
         sim.house_alliances.as_map(),
         owner,
         &config,
         &sim.interner,
+        &sim.fog_viewers(),
     );
     for final_pass in [false, true] {
         let _ = sim.reveal_area(

@@ -192,17 +192,29 @@ pub(crate) fn mission_open(sim: &mut Simulation, id: u64, rules: &RuleSet) -> i3
                     MissionType::Open,
                 );
             }
-            if phase == DoorPhase::Closing {
+            let opened = if phase == DoorPhase::Closing {
                 entity.reverse_door(now);
+                false
             } else if phase != DoorPhase::Opening {
                 entity.open_door(deploy_ticks, now);
-            }
+                true
+            } else {
+                false
+            };
             entity.mission.set_handler_state(1);
             entity
                 .building_gate
                 .get_or_insert_with(Default::default)
                 .hold_timer
                 .arm(now, hold_ticks);
+            //44E550 plays GateDown after starting the door; default builds
+            // leave that stock sound and its redraw a residual.
+            #[cfg(feature = "ares")]
+            if opened {
+                play_gate_sound(sim, id, object, false, rules);
+            }
+            #[cfg(not(feature = "ares"))]
+            let _ = opened;
             0
         }
         1 | 4 => {
@@ -245,10 +257,12 @@ pub(crate) fn mission_open(sim: &mut Simulation, id: u64, rules: &RuleSet) -> i3
             )
         }
         3 => {
-            //44E5DA: Close, state4, no cadence RNG.
+            //44E5DA: Close, state4, no cadence RNG; then44E61E's GateUp.
             let entity = sim.substrate.entities.get_mut(id).unwrap();
             entity.close_door(deploy_ticks, now);
             entity.mission.set_handler_state(4);
+            #[cfg(feature = "ares")]
+            play_gate_sound(sim, id, object, true, rules);
             0
         }
         //44E464: states above4 share the cadence exit44E4BA.
@@ -260,6 +274,33 @@ pub(crate) fn mission_open(sim: &mut Simulation, id: u64, rules: &RuleSet) -> i3
             MissionType::Open,
         ),
     }
+}
+
+/// Mission_Open's `VocClass::PlayAt` at the gate's Location of GateUp as it
+/// closes (`up`) or GateDown as it opens. Ares BuildingClass_Mi_Open_GateUp
+/// (100156B0, hook 0x44E61E) and _GateDown (10015670, hook 0x44E550) take
+/// the type's `GateUpSound`/`GateDownSound` before `[AudioVisual]`'s.
+#[cfg(feature = "ares")]
+fn play_gate_sound(
+    sim: &mut Simulation,
+    id: u64,
+    object: &crate::rules::object_type::ObjectType,
+    up: bool,
+    rules: &RuleSet,
+) {
+    let sound = object
+        .building_type_ext()
+        .gate_sound(up)
+        .unwrap_or(rules.general.gate_sound(up));
+    let (Some(sound), Some(entity)) = (sound, sim.substrate.entities.get(id)) else {
+        return;
+    };
+    let event = crate::sim::world::SimSoundEvent::voc_at_location(
+        sound.to_owned(),
+        entity,
+        sim.resolved_terrain.as_ref(),
+    );
+    sim.sound_events.emit(event);
 }
 
 #[cfg(test)]
@@ -802,5 +843,75 @@ mod tests {
             rng,
             "an admitted centre request draws its row (0x0048138A)"
         );
+    }
+
+    /// Ares BuildingClass_Mi_Open_GateDown (10015670, hook 0x44E550) and
+    /// _GateUp (100156B0, hook 0x44E61E): starting to open plays the type's
+    /// GateDownSound, else `[AudioVisual] GateDown`; state 3's close plays
+    /// GateUpSound, else GateUp.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_gate_sounds_take_the_type_sound_before_the_rules_one() {
+        let ini = IniFile::from_str(
+            "[AudioVisual]\nGateDown=Rules\nGateUp=Rules\n[BuildingTypes]\n0=GATE\n\
+             [GATE]\nStrength=1000\nFoundation=2x2\nGate=yes\nDeployTime=.044\n\
+             GateDownSound=Down\n",
+        );
+        let mut rules = RuleSet::from_ini(&ini).unwrap();
+        let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
+            "[SoundList]\n0=Rules\n1=Down\n",
+        ));
+        rules.bind_type_sound_references(&ini, &sounds);
+        let mut sim = Simulation::with_seed(1);
+        sim.install_resolved_terrain_for_new_map(test_flat_ground_grid(24));
+        sim.session.set_binary_frame_for_test(100);
+        let owner = sim.interner.intern("Americans");
+        let ty = sim.interner.intern("GATE");
+        let mut gate = GameEntity::new_at_frame_for_test(
+            GATE,
+            12,
+            12,
+            0,
+            0,
+            owner,
+            Health::new(1000),
+            ty,
+            EntityCategory::Structure,
+            0,
+            0,
+            false,
+            100,
+        );
+        gate.mission.apply_test_fixture(MissionTestFixture {
+            current: MissionId::from_known(MissionType::Open),
+            suspended: MissionId::NONE,
+            queued: MissionId::NONE,
+            movement_bypass_latch: 0,
+            handler_state: 0,
+            mission_start_frame: 100,
+            ai_counter: 0,
+            dispatch_timer: MissionDispatchTimer::from_raw(100, 0),
+        });
+        sim.substrate.entities.insert(gate);
+        let played = |sim: &mut Simulation| {
+            sim.sound_events
+                .take_for_test()
+                .into_iter()
+                .filter_map(|event| match event {
+                    crate::sim::world::SimSoundEvent::VocAt { sound_id, .. } => Some(sound_id),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(mission_open(&mut sim, GATE, &rules), 0);
+        assert_eq!(played(&mut sim), ["Down"]);
+        sim.substrate
+            .entities
+            .get_mut(GATE)
+            .unwrap()
+            .mission
+            .set_handler_state(3);
+        mission_open(&mut sim, GATE, &rules);
+        assert_eq!(played(&mut sim), ["Rules"]);
     }
 }

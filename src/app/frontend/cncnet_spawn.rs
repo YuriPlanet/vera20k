@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail, ensure};
 
 use crate::rules::ini_parser::{IniFile, IniSection};
+use crate::sim::game_options::is_selectable_game_speed;
 use crate::skirmish_launch::{
     AiDifficulty, LaunchCountry, LaunchHumanRole, LaunchStartPosition, LaunchTeam,
     NETWORK_PLAYER_SLOT_COUNT, PreFillHouseRoster, SKIRMISH_PLAYER_SLOT_COUNT, SkirmishAiSlot,
@@ -343,13 +344,11 @@ impl SpawnRequest {
             );
         }
 
-        let mut game_speed = ranged(
-            settings,
-            "GameSpeed",
-            0,
-            0,
-            i32::from(crate::sim::game_options::IN_GAME_OPTIONS_MAX_SPEED),
-        )?;
+        let mut game_speed = integer(settings, "GameSpeed", 0)?;
+        ensure!(
+            u8::try_from(game_speed).is_ok_and(is_selectable_game_speed),
+            "GameSpeed={game_speed} is not a selectable game speed"
+        );
         let seed = settings
             .is_present("Seed")
             .then(|| integer(settings, "Seed", 0))
@@ -473,24 +472,16 @@ fn skirmish(
         "SpecialHouseIsAlly=Yes is unsupported; use the VERA client profile"
     );
     let multiplayer = player_count > 1 || ini.section("Relay").is_some();
-    // Skirmish lists only these classes (`0x005D6263`), and network setup
-    // offers AI rows only under them (`view.rs`' add-AI gate).
-    ensure!(
-        multiplayer || mode.class.lists_in_skirmish(),
-        "GameMode={} needs more than one human",
-        mode.id
-    );
-    let house_slots = if multiplayer {
-        NETWORK_PLAYER_SLOT_COUNT
-    } else {
-        SKIRMISH_PLAYER_SLOT_COUNT
-    };
+    // *(VERA)* One human is admitted as a network room admits it, in any stock
+    // mode and with up to thirty houses, because a lobby plays every one-human
+    // game without a relay. Retail Skirmish lists only Battle and Free for All
+    // (`0x005D6263`), which VERA's Skirmish screen keeps.
     let ai_count = ranged(
         settings,
         "AIPlayers",
         0,
         0,
-        (house_slots - player_count) as i32,
+        (NETWORK_PLAYER_SLOT_COUNT - player_count) as i32,
     )? as usize;
     let handicaps = ini.section_or_empty("HouseHandicaps");
     let mut active = Vec::new();
@@ -540,7 +531,7 @@ fn skirmish(
         } else {
             (country(section, "Side")?, color(section, "Color")?)
         };
-        let start = start(ini, house, house_slots, &mut used_starts)?;
+        let start = start(ini, house, &mut used_starts)?;
         ensure!(
             !observer || start == LaunchStartPosition::Auto,
             "spectator Multi{} cannot have a start location",
@@ -582,7 +573,7 @@ fn skirmish(
         .collect();
 
     let mut opponents = Vec::new();
-    for raw_slot in player_count..house_slots {
+    for raw_slot in player_count..NETWORK_PLAYER_SLOT_COUNT {
         let key = format!("Multi{}", raw_slot + 1);
         let difficulty = integer(handicaps, &key, -1)?;
         ensure!(
@@ -609,7 +600,7 @@ fn skirmish(
             country_random: false,
             color_index,
             color_random: false,
-            start_position: start(ini, raw_slot, house_slots, &mut used_starts)?,
+            start_position: start(ini, raw_slot, &mut used_starts)?,
             team: LaunchTeam::None,
             difficulty: match difficulty {
                 0 => AiDifficulty::Hard,
@@ -791,12 +782,11 @@ fn color(section: &IniSection, key: &str) -> Result<u8> {
     Ok(ranged(section, key, -1, 0, max_spawn_color_index())? as u8)
 }
 
-/// Waypoints 0..house_slots-1: eight for a single player, thirty in network
-/// rooms; the map decides which exist.
+/// Waypoints 0..29, for one human as in network rooms; the map decides which
+/// exist.
 fn start(
     ini: &IniFile,
     raw_slot: usize,
-    house_slots: usize,
     used: &mut [bool; NETWORK_PLAYER_SLOT_COUNT],
 ) -> Result<LaunchStartPosition> {
     let key = format!("Multi{}", raw_slot + 1);
@@ -805,7 +795,7 @@ fn start(
         &key,
         -2,
         -2,
-        house_slots as i32 - 1,
+        NETWORK_PLAYER_SLOT_COUNT as i32 - 1,
     )?;
     if value < 0 {
         return Ok(LaunchStartPosition::Auto);
@@ -992,8 +982,8 @@ fn transport(
             certificate.sources_mask == (1u32 << player_count) - 1,
             "[Relay] OrderingCertificate roster does not match PlayerCount={player_count}"
         );
-        // The lobby derives this clock from the launch speed table
-        // [60,45,30,20,15,12,10], the native PreCalcFrameRate rows.
+        // The lobby derives this clock from the native PreCalcFrameRate
+        // rows plus VERA's 90-tick preset.
         let game_speed = crate::net::lockstep::game_speed_for_frame_rate(certificate.tick_hz)
             .with_context(|| {
                 format!(

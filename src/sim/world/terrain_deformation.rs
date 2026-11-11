@@ -1,0 +1,547 @@
+//! Terrain deformation. gamemd still reads every warhead's `Deform=`
+//! (`WarheadTypeClass+0x98`) and `DeformThreshhold=` (`+0x100`) but nothing
+//! uses them. Tiberian Sun rolled them in its explosion damage to lower the
+//! ground; this ports that roll and reshapes the ground with gamemd's own
+//! hills corner engine (`RandomMapGenerator::CreateHills @ 0x005A35F0`) over
+//! a window of the live map. See `docs/terrain-deformation.md`.
+
+use crate::map::bridge_pavement::DAMAGED_PAVEMENT;
+use crate::map::corner_heights::{self, CornerCells, CornerGrid, FinalCell};
+use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
+use crate::rules::ruleset::RuleSet;
+use crate::rules::warhead_type::WarheadType;
+use crate::sim::entity_store::EntityStore;
+use crate::sim::game_entity::GameEntity;
+use crate::sim::movement::locomotor::MovementLayer;
+use crate::sim::occupancy::OccupancyGrid;
+use crate::sim::overlay_grid::OverlayGrid;
+use crate::sim::projectile::ProjectileCoord;
+use crate::sim::terrain_object::{TerrainObjectState, TerrainObjectStore};
+use crate::sim::world::Simulation;
+
+/// Cells from the hit cell to the corner window's edge. A reshape that would
+/// move a corner on the edge rolls back, which bounds how far one hit can
+/// pull a slope.
+const WINDOW_RADIUS: i32 = 16;
+
+/// The widest `DeformRadius=`: the widest band of gamemd's cell-spread table
+/// (`sim::combat::cell_spread`), so a crater can be as wide as any blast. The
+/// window leaves room past it for the ramps a crater pulls along.
+const MAX_CRATER_RADIUS: i32 = 11;
+
+/// TS `LEVEL_LEPTON_H`: one level in leptons, the close-to-ground tolerance.
+const LEVEL_LEPTONS: i32 = 104;
+
+/// The live map as the corner engine reads it: Level and slope, overlay
+/// identity, the living objects on the ground and the tile.
+struct LiveCornerCells<'a> {
+    terrain: &'a ResolvedTerrainGrid,
+    overlays: Option<&'a OverlayGrid>,
+    occupancy: &'a OccupancyGrid,
+    entities: &'a EntityStore,
+    terrain_objects: &'a TerrainObjectStore,
+}
+
+impl LiveCornerCells<'_> {
+    fn cell(&self, x: i32, y: i32) -> Option<&ResolvedTerrainCell> {
+        let (Ok(x), Ok(y)) = (u16::try_from(x), u16::try_from(y)) else {
+            return None;
+        };
+        self.terrain.cell(x, y)
+    }
+
+    /// Whether a living object stands on the cell: one on its ground object
+    /// list with Health above 0, or a live terrain object such as a tree. The
+    /// corner engine's own test reads FirstObject (`CellClass+0xE4`); what the
+    /// blast just killed is listed there until its death is delivered later
+    /// in the tick, but it no longer holds the ground up.
+    fn living_object_at(&self, (x, y): (u16, u16)) -> bool {
+        self.occupancy.get(x, y).is_some_and(|cell| {
+            cell.iter_layer(MovementLayer::Ground).any(|occupant| {
+                self.entities
+                    .get(occupant.entity_id)
+                    .is_none_or(GameEntity::is_alive)
+            })
+        }) || self.terrain_objects.members_at((x, y)).any(|id| {
+            self.terrain_objects
+                .get(id)
+                .is_none_or(TerrainObjectState::is_live)
+        })
+    }
+}
+
+impl CornerCells for LiveCornerCells<'_> {
+    fn in_diamond(&self, x: i32, y: i32) -> bool {
+        self.cell(x, y).is_some()
+    }
+
+    fn level_slope(&self, x: i32, y: i32) -> (i32, u8) {
+        self.cell(x, y).map_or((0, 0), |cell| {
+            // The engine's table stops at slope 18. A map's slopes 19 and 20
+            // share 17's and 18's surface records in
+            // `CellClass::ComputeGroundHeightAtCoord @ 0x0047B3A0`, so their
+            // corners are those slopes'.
+            let slope = match cell.slope_type {
+                19 => 17,
+                20 => 18,
+                slope => slope,
+            };
+            (i32::from(cell.level as i8), slope)
+        })
+    }
+
+    fn editable(&self, x: i32, y: i32) -> bool {
+        let Some(cell) = self.cell(x, y) else {
+            return false;
+        };
+        let coord = (x as u16, y as u16);
+        // The RMG's protected flag has no live counterpart; the border outside
+        // the playfield keeps the shape the map gave it.
+        !cell.outside_playfield
+            // The RMG runs before bridges exist. Only a high bridge's anchors
+            // hold an overlay; its other cells carry deck and repair flags a
+            // stamp would clear.
+            && !cell.has_bridge_deck
+            && cell.bridge_facts.raw_flags & !DAMAGED_PAVEMENT == 0
+            && self
+                .overlays
+                .is_none_or(|grid| grid.cell(coord.0, coord.1).overlay_id.is_none())
+            && !self.living_object_at(coord)
+            && self.terrain.deformation_tile_diggable(cell)
+    }
+}
+
+impl Simulation {
+    /// Tiberian Sun's crater roll, from its explosion damage after the
+    /// explosive-overlay branch, inside the block it runs only for a blast
+    /// within one level of the ground under it: damage above
+    /// `DeformThreshhold=` spends one Scenario `Random_Pick(0, 99)` draw and
+    /// lowers the hit cell when the draw is below
+    /// `trunc(damage * 0.01 * Deform * 100.0)`. TS skips a hit on a high
+    /// bridge after that draw; a bridge deck is four levels up, so the ground
+    /// gate already excludes it.
+    pub(crate) fn roll_terrain_deformation(
+        &mut self,
+        rules: &RuleSet,
+        warhead: &WarheadType,
+        impact: ProjectileCoord,
+        cell: (u16, u16),
+        damage: i32,
+    ) {
+        if !rules.combat_damage.terrain_deformation {
+            return;
+        }
+        let ground = self.resolved_terrain.as_ref().and_then(|terrain| {
+            let cell = terrain.cell(cell.0, cell.1)?;
+            crate::util::lepton::ground_height_leptons(
+                cell.level,
+                cell.slope_type,
+                impact.x,
+                impact.y,
+            )
+            .ok()
+        });
+        let Some(ground) = ground else {
+            return;
+        };
+        if (impact.z - ground).abs() >= LEVEL_LEPTONS || damage <= warhead.deform_threshold {
+            return;
+        }
+        // IEEE double arithmetic, as TS's percent; `as` truncates like ftol.
+        let chance = (f64::from(damage) * 0.01 * warhead.deform_f64 * 100.0) as i32;
+        if (self.scenario_rng.next_range_u32_inclusive(0, 99) as i32) < chance {
+            self.deform_terrain(cell, rules, warhead);
+        }
+    }
+
+    /// Dig `warhead`'s crater at `cell` (VERA's `DeformDepth=` and
+    /// `DeformRadius=`) with the hills corner engine (mask `0x006B4240`,
+    /// adjust `0x006B3E60` downward, finalize `0x006B3850`) over a window of
+    /// the live map, no corner below `DeformLowestLevel=`, then stamp and
+    /// publish the cells whose ground moved. Returns whether any did.
+    pub(crate) fn deform_terrain(
+        &mut self,
+        cell: (u16, u16),
+        rules: &RuleSet,
+        warhead: &WarheadType,
+    ) -> bool {
+        let Some(finals) = self.deformation_finals(cell, rules, warhead) else {
+            return false;
+        };
+        let Some(terrain) = self.resolved_terrain.as_mut() else {
+            return false;
+        };
+        let changed = terrain.stamp_deformation(&finals);
+        if changed.is_empty() {
+            return false;
+        }
+        // A smudge lies flat; a cell the crater tilts loses it.
+        if let Some(grid) = self.smudge_grid.as_mut() {
+            for f in &finals {
+                if f.slope_tile.is_some_and(|(slope, _)| slope != 0) {
+                    let _ = grid.clear_cell_slot(f.x as u16, f.y as u16);
+                }
+            }
+        }
+        self.publish_cell_lighting_levels(changed.iter().copied());
+        // Every stamped tile is a passable Clear or ramp tile, as the
+        // flat land it replaced: zones stay, the path view republishes.
+        self.publish_recalculated_cells(rules, &changed);
+        for &coord in &changed {
+            self.dirty_cells.mark_radar([coord]);
+            self.dirty_cells.mark_tactical_once(coord);
+        }
+        let terrain = self.resolved_terrain.as_ref().expect("deformed terrain");
+        for &(x, y) in &changed {
+            if let Some(cell) = terrain.cell(x, y) {
+                self.dynamic_terrain_cells.record(cell);
+            }
+        }
+        true
+    }
+
+    /// The corner engine's run for [`Self::deform_terrain`]: the finalized
+    /// cells whose Level or slope differ from the map's, or None when nothing
+    /// moved.
+    fn deformation_finals(
+        &self,
+        cell: (u16, u16),
+        rules: &RuleSet,
+        warhead: &WarheadType,
+    ) -> Option<Vec<FinalCell>> {
+        let terrain = self.resolved_terrain.as_ref()?;
+        let tiles = terrain.deformation_tiles()?;
+        let cells = LiveCornerCells {
+            terrain,
+            overlays: self.overlay_grid.as_ref(),
+            occupancy: &self.substrate.occupancy,
+            entities: &self.substrate.entities,
+            terrain_objects: &self.terrain_objects,
+        };
+        let (cx, cy) = (i32::from(cell.0), i32::from(cell.1));
+        let depth = warhead.deform_depth.clamp(1, WINDOW_RADIUS);
+        let radius = warhead.deform_radius.clamp(0, MAX_CRATER_RADIUS);
+        // Only a crater with a radius digs around a hit cell it cannot move.
+        if radius == 0 && !cells.editable(cx, cy) {
+            return None;
+        }
+        let origin = (cx - WINDOW_RADIUS, cy - WINDOW_RADIUS);
+        let stride = 2 * WINDOW_RADIUS + 2;
+        let heights = (
+            rules.combat_damage.deform_lowest_level * corner_heights::LEVEL,
+            i32::from(i8::MAX) * corner_heights::LEVEL,
+        );
+        let mut corners = CornerGrid::build(&cells, origin, stride, heights);
+        // The crater's cells row by row, those within radius + 1/2 cells of
+        // the hit: their squared distance from the hit cell and their highest
+        // corner before the dent. The half cell gives the rim straight edges
+        // instead of a lone cell sticking out on each axis.
+        let area: Vec<_> = (cy - radius..=cy + radius)
+            .flat_map(|y| (cx - radius..=cx + radius).map(move |x| (x, y)))
+            .map(|(x, y)| (x, y, (x - cx).pow(2) + (y - cy).pow(2)))
+            .filter(|&(_, _, d2)| 4 * d2 <= (2 * radius + 1).pow(2))
+            .map(|(x, y, d2)| (x, y, d2, corners.top_height(x, y)))
+            .collect();
+        // Level k sinks each cell within (radius + 1/2) * (depth - k + 1) /
+        // depth cells of the hit whose top is not yet k levels down, so the
+        // crater is a terraced bowl; radius 0 sinks the hit cell `depth`
+        // times. A sink is one adjustment of the cell's corners above its
+        // lowest; one that would move a corner it cannot rolls back, so the
+        // crater bends around ground it cannot dig.
+        for level in 1..=depth {
+            // Twice the level's reach, times depth.
+            let reach = (2 * radius + 1) * (depth - level + 1);
+            for &(x, y, d2, top) in &area {
+                if 4 * d2 * depth * depth > reach * reach
+                    || corners.top_height(x, y) <= top - level * corner_heights::LEVEL
+                {
+                    continue;
+                }
+                let mask = corners.pick_mask(x, y, -1);
+                if mask != 0 {
+                    corners.apply(-1, x, y, mask);
+                }
+            }
+        }
+        let domain = (origin.1..origin.1 + stride - 1)
+            .flat_map(|y| (origin.0..origin.0 + stride - 1).map(move |x| (x, y)));
+        // The engine also rewrites touched cells whose corners came back where
+        // they were; on a live map only cells whose ground moved change.
+        let finals: Vec<_> = corners
+            .finalize(&cells, domain, tiles)
+            .into_iter()
+            .filter(|f| {
+                f.slope_tile
+                    .is_some_and(|(slope, _)| cells.level_slope(f.x, f.y) != (f.level, slope))
+            })
+            .collect();
+        (!finals.is_empty()).then_some(finals)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::map::bridge_facts::{BRIDGE_FLAG_STRUCTURAL, BridgeCellFacts};
+    use crate::map::resolved_terrain::{test_clear_cell, test_grid, test_smudge_cell};
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::terrain_rules::LandType;
+    use crate::sim::occupancy::CellListInsertion;
+    use crate::sim::snapshot::GameSnapshot;
+
+    const RAMP_BASE: u16 = 600;
+
+    /// `crater` adds keys to the test warhead's section.
+    fn rules(enabled: bool, crater: &str) -> RuleSet {
+        RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+             [CombatDamage]\nTerrainDeformation={}\n\
+             [Warheads]\n0=CRATERWH\n\
+             [CRATERWH]\nDeform=100%\nDeformThreshhold=100\n{crater}\
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+            if enabled { "yes" } else { "no" },
+        )))
+        .expect("deformation rules")
+    }
+
+    /// Flat level-0 Morphable ground, 12 cells square, with one overlay.
+    fn flat_sim(overlay: (u16, u16)) -> Simulation {
+        sim_of(12, test_smudge_cell, overlay)
+    }
+
+    /// Level-0 ground of `cell`s, `size` cells square, with one overlay.
+    fn sim_of(
+        size: u16,
+        cell: fn(u16, u16) -> ResolvedTerrainCell,
+        overlay: (u16, u16),
+    ) -> Simulation {
+        let mut sim = Simulation::new();
+        let mut terrain = test_grid(size, size, cell);
+        terrain.test_install_deformation_catalog(0, RAMP_BASE);
+        sim.resolved_terrain = Some(terrain);
+        let mut overlays = OverlayGrid::new(size, size);
+        overlays.place_overlay(overlay.0, overlay.1, 0, 0);
+        sim.overlay_grid = Some(overlays);
+        sim
+    }
+
+    fn level_slope(sim: &Simulation, x: u16, y: u16) -> (i8, u8) {
+        let cell = sim.resolved_terrain.as_ref().unwrap().cell(x, y).unwrap();
+        (cell.level as i8, cell.slope_type)
+    }
+
+    #[test]
+    fn a_crater_sinks_below_level_zero_around_an_overlay_cell_it_cannot_move() {
+        // The overlay north-east of the hit locks the hit cell's NE corner.
+        let mut sim = flat_sim((6, 4));
+        let rules = rules(true, "");
+        assert!(sim.deform_terrain((5, 5), &rules, rules.warhead("CRATERWH").unwrap()));
+
+        // Three corners sank: [0, 15, 0, 0] above the lowest is slope 8.
+        assert_eq!(level_slope(&sim, 5, 5), (-1, 8));
+        let hit = sim.resolved_terrain.as_ref().unwrap().cell(5, 5).unwrap();
+        assert_eq!(hit.final_tile_index, i32::from(RAMP_BASE) + 7);
+        // The sides ramp down to it; the overlay cell keeps its ground.
+        assert_eq!(level_slope(&sim, 5, 4), (-1, 12));
+        assert_eq!(level_slope(&sim, 4, 5), (-1, 3));
+        assert_eq!(level_slope(&sim, 6, 4), (0, 0));
+        assert!(sim.dynamic_terrain_cells.get(&(6, 4)).is_none());
+        assert_eq!(
+            sim.dynamic_terrain_cells.get(&(5, 5)).unwrap().level as i8,
+            -1
+        );
+        assert_eq!(sim.dynamic_terrain_cells.len(), 8);
+    }
+
+    #[test]
+    fn the_crater_roll_draws_only_when_enabled_near_the_ground_above_the_threshold() {
+        let centre = |z| ProjectileCoord::new(5 * 256 + 128, 5 * 256 + 128, z);
+        // (switch, impact height, damage, draws)
+        for (enabled, z, damage, draws) in [
+            (false, 0, 500, 0),
+            (true, 4 * LEVEL_LEPTONS, 500, 0),
+            (true, 0, 100, 0),
+            (true, LEVEL_LEPTONS - 1, 101, 1),
+        ] {
+            let rules = rules(enabled, "");
+            let warhead = rules.warhead("CRATERWH").expect("crater warhead");
+            let mut sim = flat_sim((0, 0));
+            let mut expected = sim.scenario_rng.clone();
+            for _ in 0..draws {
+                let _ = expected.next_range_u32_inclusive(0, 99);
+            }
+            sim.roll_terrain_deformation(&rules, warhead, centre(z), (5, 5), damage);
+            assert_eq!(
+                sim.scenario_rng.logical_state(),
+                expected.logical_state(),
+                "draws for {enabled} {z} {damage}"
+            );
+            // Deform=100% of 101 damage is a 101% chance.
+            assert_eq!(level_slope(&sim, 5, 5).0, -(draws as i8));
+        }
+    }
+
+    #[test]
+    fn a_deeper_crater_widens_a_cell_per_level_until_ground_it_cannot_move() {
+        let rules = rules(true, "DeformDepth=3\n");
+        let warhead = rules.warhead("CRATERWH").expect("crater warhead");
+        let centre = ProjectileCoord::new(5 * 256 + 128, 5 * 256 + 128, 0);
+        // Open ground: the hit cell sinks three levels and each ring around
+        // it ramps up a level, so the fourth ring keeps its ground.
+        let mut sim = flat_sim((0, 0));
+        sim.roll_terrain_deformation(&rules, warhead, centre, (5, 5), 500);
+        assert_eq!(level_slope(&sim, 5, 5), (-3, 0));
+        assert_eq!(level_slope(&sim, 5, 4), (-3, 4));
+        assert_eq!(level_slope(&sim, 5, 2), (-1, 4));
+        assert_eq!(level_slope(&sim, 5, 1), (0, 0));
+        // The third level would pull down the corners of the overlay cell
+        // three cells east, so the crater stops two levels deep.
+        let mut sim = flat_sim((8, 5));
+        sim.roll_terrain_deformation(&rules, warhead, centre, (5, 5), 500);
+        assert_eq!(level_slope(&sim, 5, 5), (-2, 0));
+    }
+
+    #[test]
+    fn a_crater_radius_digs_a_terraced_bowl_around_ground_it_cannot_move() {
+        let rules = rules(true, "DeformDepth=2\nDeformRadius=3\n");
+        let warhead = rules.warhead("CRATERWH").expect("crater warhead");
+        // Open ground: the middle 3x3 sinks two levels, the rest of the
+        // radius one, and a ring of ramps climbs back to the ground.
+        let mut sim = flat_sim((0, 0));
+        assert!(sim.deform_terrain((5, 5), &rules, warhead));
+        assert_eq!(level_slope(&sim, 5, 5), (-2, 0));
+        assert_eq!(level_slope(&sim, 5, 3), (-2, 4));
+        assert_eq!(level_slope(&sim, 5, 2), (-1, 0));
+        assert_eq!(level_slope(&sim, 5, 1), (-1, 4));
+        assert_eq!(level_slope(&sim, 5, 0), (0, 0));
+        // The rim reaches half a cell past the radius, so the cell (3, 1) off
+        // the hit sinks too.
+        assert_eq!(level_slope(&sim, 8, 6), (-1, 0));
+        // An overlay on the hit cell keeps its ground, and the crater forms
+        // around it.
+        let mut sim = flat_sim((5, 5));
+        assert!(sim.deform_terrain((5, 5), &rules, warhead));
+        assert_eq!(level_slope(&sim, 5, 5), (0, 0));
+        assert_eq!(level_slope(&sim, 5, 3), (-1, 0));
+        assert_eq!(level_slope(&sim, 5, 2), (-1, 0));
+    }
+
+    #[test]
+    fn a_crater_radius_reaches_the_widest_cell_spread_and_no_further() {
+        let rules = rules(true, "DeformRadius=12\n");
+        let mut sim = sim_of(30, test_smudge_cell, (0, 0));
+        assert!(sim.deform_terrain((15, 15), &rules, rules.warhead("CRATERWH").unwrap()));
+        // Radius 11: the cell 11 east sinks, 12 east ramps back up, 13 east
+        // keeps its ground.
+        assert_eq!(level_slope(&sim, 26, 15), (-1, 0));
+        assert_eq!(level_slope(&sim, 28, 15), (0, 0));
+    }
+
+    #[test]
+    fn a_crater_digs_flat_road_except_beside_water() {
+        // Road tiles are not Morphable; one water cell east of the crater.
+        let mut sim = sim_of(
+            12,
+            |rx, ry| ResolvedTerrainCell {
+                land_type: if (rx, ry) == (9, 5) {
+                    LandType::Water
+                } else {
+                    LandType::Road
+                }
+                .as_index(),
+                ..test_clear_cell(rx, ry)
+            },
+            (0, 0),
+        );
+        let rules = rules(true, "DeformRadius=3\n");
+        assert!(sim.deform_terrain((5, 5), &rules, rules.warhead("CRATERWH").unwrap()));
+        assert_eq!(level_slope(&sim, 5, 5), (-1, 0));
+        assert_eq!(level_slope(&sim, 2, 5), (-1, 0));
+        // The road beside the water keeps its ground, as a shore cell would.
+        assert_eq!(level_slope(&sim, 8, 5), (0, 0));
+    }
+
+    #[test]
+    fn a_crater_leaves_a_high_bridge_lane_that_holds_no_overlay() {
+        let mut sim = sim_of(
+            12,
+            |rx, ry| ResolvedTerrainCell {
+                has_bridge_deck: (rx, ry) == (5, 5),
+                bridge_facts: BridgeCellFacts {
+                    raw_flags: if (rx, ry) == (5, 5) {
+                        BRIDGE_FLAG_STRUCTURAL
+                    } else {
+                        0
+                    },
+                    ..Default::default()
+                },
+                ..test_smudge_cell(rx, ry)
+            },
+            (0, 0),
+        );
+        let rules = rules(true, "DeformRadius=3\n");
+        assert!(sim.deform_terrain((5, 5), &rules, rules.warhead("CRATERWH").unwrap()));
+        assert_eq!(level_slope(&sim, 5, 5), (0, 0));
+        let lane = sim.resolved_terrain.as_ref().unwrap().cell(5, 5).unwrap();
+        assert!(lane.has_bridge_deck);
+        assert_eq!(lane.bridge_facts.raw_flags, BRIDGE_FLAG_STRUCTURAL);
+        assert_eq!(level_slope(&sim, 5, 2), (-1, 0));
+    }
+
+    #[test]
+    fn a_crater_survives_a_save_and_load_and_the_switch_follows_the_rules() {
+        let rules = rules(true, "DeformDepth=2\n");
+        let warhead = rules.warhead("CRATERWH").expect("crater warhead");
+        let mut sim = flat_sim((0, 0));
+        // The map's own terrain, as a load rebuilds from it: switched off, as
+        // every new grid starts.
+        let mut pristine = sim.resolved_terrain.clone().expect("terrain");
+        pristine.set_terrain_deformation(false);
+        // Scenario start's capture, which a load checks against the grid.
+        sim.real_cell_bridge_flags_0x1180 = pristine.capture_real_cell_bridge_flags_0x1180();
+        assert!(sim.deform_terrain((5, 5), &rules, warhead));
+
+        let bytes = GameSnapshot::save(&sim, 0, 0, "crater", 0);
+        let mut restored = GameSnapshot::load(&bytes).expect("load").sim;
+        restored.restore_after_snapshot_load().expect("restore");
+        restored.rebuild_caches_after_load(pristine, Default::default(), &rules);
+        restored
+            .restore_map_authority_after_snapshot_load(&rules, rules.overlay_registry(), None)
+            .expect("map authority");
+
+        assert_eq!(level_slope(&restored, 5, 5), (-2, 0));
+        assert_eq!(level_slope(&restored, 5, 3), level_slope(&sim, 5, 3));
+        assert_eq!(restored.dynamic_terrain_cells, sim.dynamic_terrain_cells);
+        assert!(
+            restored
+                .resolved_terrain
+                .as_ref()
+                .expect("restored terrain")
+                .terrain_deformation()
+        );
+    }
+
+    #[test]
+    fn a_crater_digs_under_what_the_blast_killed_but_not_the_living() {
+        let mut sim = flat_sim((0, 0));
+        for ((x, y), health) in [((5, 5), 0), ((2, 5), 100)] {
+            let id = sim.substrate.allocate_stable_id();
+            let mut unit = GameEntity::test_default(id, "MTNK", "Americans", x, y);
+            unit.health.set_for_test(health);
+            sim.substrate.entities.insert(unit);
+            sim.substrate.occupancy.add(
+                x,
+                y,
+                id,
+                MovementLayer::Ground,
+                None,
+                CellListInsertion::PrependNonBuilding,
+            );
+        }
+        let rules = rules(true, "DeformRadius=3\n");
+        assert!(sim.deform_terrain((5, 5), &rules, rules.warhead("CRATERWH").unwrap()));
+        assert_eq!(level_slope(&sim, 5, 5), (-1, 0));
+        assert_eq!(level_slope(&sim, 2, 5), (0, 0));
+        assert_eq!(level_slope(&sim, 8, 5), (-1, 0));
+    }
+}

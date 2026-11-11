@@ -7,8 +7,8 @@
 //!   sRGB view itself; shaders re-encode what they load and decode what they
 //!   store, so the stored bytes are the same.
 //! - Read-only storage arrays become 2D data textures (`table_texture`).
-//! - Fragment atomics and compute become ordered render-target passes in the
-//!   owning renderer.
+//! - Compute and independent blending become ordered render-target passes in
+//!   the owning renderer.
 //!
 //! wgpu-hal 30 GLES reports no VIEW_FORMATS, storage or compute on WebGL:
 //! https://docs.rs/crate/wgpu-hal/30.0.1/source/src/gles/adapter.rs

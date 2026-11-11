@@ -97,7 +97,7 @@ fn put(sim: &mut Simulation, id: u64, cell: (u16, u16), upper: bool) {
         None,
         CellListInsertion::from_category(sim.substrate.entities.get(id).unwrap().category()),
     );
-    sim.discover_cell_put_object(id, cell, UninitContext::default());
+    sim.discover_by_player(id, Some(cell), UninitContext::default());
 }
 
 fn discovery(sim: &Simulation, id: u64) -> Value {
@@ -1824,7 +1824,8 @@ fn initial_house_sight_matches_original_update_tail() {
                         skirmish_session: None,
                         campaign_map: None,
                     },
-                );
+                )
+                .unwrap();
             });
             let events = startup["events"].as_array().unwrap();
             assert_eq!(
@@ -1948,4 +1949,106 @@ fn initial_house_sight_pending_survives_snapshot_and_current_house_change() {
         restored.update_initial_house_sight(other, UninitContext::default());
         assert_eq!(restored.state_hash(), after, "repeat is inert");
     }
+}
+
+/// `0x005678E0`'s house gate (`0x00567AB0..0x00567B12`) still receives the
+/// source's reveal even when it rejects the Owner: the call returns at
+/// `0x00567D88` before any cell, so the client's map is entered once and
+/// changes nothing (vera20k#3900).
+#[test]
+fn a_rejected_owner_still_enters_the_client_map_once() {
+    use crate::rules::ini_parser::IniFile;
+    let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+        "[General]\n[VehicleTypes]\n0=TANK\n[InfantryTypes]\n[BuildingTypes]\n\
+         [AircraftTypes]\n[TANK]\nStrength=300\nSight=6\n",
+    ))
+    .expect("rejected-owner fixture rules");
+    let mut sim = Simulation::with_seed(7);
+    let player = sim.interner.intern("Player");
+    let enemy = sim.interner.intern("Enemy");
+    sim.session.set_current_house_for_test(Some(player));
+    for (owner, human) in [(player, true), (enemy, false)] {
+        sim.houses
+            .register(HouseState::new(owner, 0, None, human, 0, 10));
+    }
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    let id = sim
+        .spawn_object("TANK", "Enemy", 8, 8, 0, &rules)
+        .expect("the computer house's tank");
+    let ((), trace) = trace_reveal_calls(|| {
+        sim.reveal_uncached_object_sight(id, false, false, None, UninitContext::with_rules(&rules));
+    });
+    assert_eq!(trace.map_calls, 1, "the rejected call still happens");
+    assert!(trace.notifications.is_empty(), "and writes no cell");
+    assert!(
+        !sim.fog.is_cell_visible(player, 8, 8),
+        "a computer house opens no client map"
+    );
+}
+
+/// The player's client and a computer house, each with a `Sight=6` tank, on
+/// a mapped arena: `(sim, rules, player, the enemy's tank, the player's)`.
+fn arrival_scene() -> (
+    Simulation,
+    crate::rules::ruleset::RuleSet,
+    InternedId,
+    u64,
+    u64,
+) {
+    use crate::rules::ini_parser::IniFile;
+    let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+        "[General]\n[VehicleTypes]\n0=TANK\n[InfantryTypes]\n[BuildingTypes]\n\
+         [AircraftTypes]\n[TANK]\nStrength=300\nSight=6\n",
+    ))
+    .expect("arrival fixture rules");
+    let mut sim = Simulation::with_seed(7);
+    let player = sim.interner.intern("Player");
+    let enemy = sim.interner.intern("Enemy");
+    sim.session.set_current_house_for_test(Some(player));
+    for (owner, human) in [(player, true), (enemy, false)] {
+        sim.houses
+            .register(HouseState::new(owner, 0, None, human, 0, 10));
+    }
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    let theirs = sim
+        .spawn_object("TANK", "Enemy", 8, 8, 0, &rules)
+        .expect("the computer house's tank");
+    let ours = sim
+        .spawn_object("TANK", "Player", 20, 20, 0, &rules)
+        .expect("the player's tank");
+    (sim, rules, player, theirs, ours)
+}
+
+/// A cell arrival (`ReReveal` then `UpdateReveal`, `0x0073AC5F`/`0x0073AC74`)
+/// reads the reveal settings once for the pair.
+#[test]
+fn an_arrival_reads_the_reveal_settings_once() {
+    let (mut sim, rules, _, theirs, ours) = arrival_scene();
+    for id in [theirs, ours] {
+        let ((), trace) = trace_reveal_calls(|| {
+            sim.refresh_object_sight(id, &rules, 0, FrameEffects::default());
+        });
+        assert_eq!(trace.settings_reads, 1);
+    }
+}
+
+/// `UpdateReveal` derives a footprint only for a source some client's map
+/// admits. An enemy's tank still publishes its geometry on the player's
+/// client (`+0x250/+0x254/+0x260`), and opens none of the player's map.
+#[test]
+fn an_arrival_derives_a_footprint_only_for_an_admitting_map() {
+    let (mut sim, rules, player, theirs, ours) = arrival_scene();
+    for (id, footprints) in [(theirs, 0), (ours, 1)] {
+        let ((), trace) = trace_reveal_calls(|| {
+            sim.refresh_object_sight(id, &rules, 0, FrameEffects::default());
+        });
+        assert_eq!(trace.footprints, footprints);
+        let source = sim.fog.source_sight(id, player).expect("a published cache");
+        assert!(source.latched);
+        assert_eq!(source.radius, 6);
+    }
+    assert!(!sim.fog.is_cell_visible(player, 8, 8));
+    assert!(sim.fog.is_cell_visible(player, 20, 20));
 }

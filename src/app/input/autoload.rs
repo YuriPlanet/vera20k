@@ -331,7 +331,7 @@ pub(crate) fn hotkey_pressed(state: &mut AppState) {
         return;
     };
     let orders = {
-        let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+        let Some(runtime) = state.match_state.sim_runtime.runtime() else {
             return;
         };
         let sim = &runtime.simulation;

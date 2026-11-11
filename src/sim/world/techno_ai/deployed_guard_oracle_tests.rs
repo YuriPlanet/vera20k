@@ -140,9 +140,6 @@ fn supplied_rules(input: &Value) -> RuleSet {
     let art = IniFile::from_str(&text);
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     rules.install_art_data(ArtRegistry::from_ini(&art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     let object = rules.object(name).unwrap();
     assert_eq!(object.deploy_fire, input["deploy_fire"] != 0);
     assert_eq!(object.immune_to_radiation, input["immune"] != 0);
@@ -412,7 +409,7 @@ fn native_gi_reacquire_uses_deployed_weapon_range_and_clears_firing_latch() {
     assert_eq!(rows.len(), 10);
     for row in rows {
         let (mut sim, rules, id) = supplied_fixture(row);
-        dispatch_foot_mission(&mut sim, id, &rules, ObjectAiCtx::default());
+        dispatch_foot_mission(&mut sim, id, &rules, ObjectAiCtx::default()).unwrap();
         assert_actor(
             sim.substrate.entities.get(id).unwrap(),
             &row["guard_after"],
@@ -463,9 +460,6 @@ fn stock_deployed_guard_readers_bind_physical_type_weapon_and_raw_action_gates()
     let art = IniFile::from_bytes(&art_bytes).unwrap();
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     rules.install_art_data(ArtRegistry::from_ini(&art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     // Physical values are separate from the synthetic signed-record controls.
     // This checks their production binding; the companion does not execute INI
     // loading and cannot certify the complete retail reader/scenario chain.
@@ -557,7 +551,7 @@ fn native_deployed_guard_full_returns_match_state_cadence_and_three_rng_streams(
             );
         }
         let (_, observations) = trace_fire_visits(|| {
-            dispatch_foot_mission(&mut sim, id, &rules, ObjectAiCtx::default())
+            dispatch_foot_mission(&mut sim, id, &rules, ObjectAiCtx::default()).unwrap()
         });
         assert!(
             observations.iter().all(|state| state["phase"] != "entry"),
@@ -613,7 +607,7 @@ fn native_deployed_guard_accepted_prefix_matches_actual_fireat_entry() {
         assert!(row["return_signed"].is_null());
         let (mut sim, rules, id) = supplied_fixture(row);
         let (_, observations) = trace_fire_visits(|| {
-            dispatch_foot_mission(&mut sim, id, &rules, ObjectAiCtx::default())
+            dispatch_foot_mission(&mut sim, id, &rules, ObjectAiCtx::default()).unwrap()
         });
         let entry = observation(&observations, "entry", row);
         let _return = observation(&observations, "return", row);
@@ -643,7 +637,7 @@ fn native_deployed_guard_callback_tail_matches_projected_class_effects() {
         assert_eq!(row["execution"]["base_fire_callback_count"], 1);
         let (mut sim, rules, id) = supplied_fixture(row);
         let (_, observations) = trace_fire_visits(|| {
-            dispatch_foot_mission(&mut sim, id, &rules, ObjectAiCtx::default())
+            dispatch_foot_mission(&mut sim, id, &rules, ObjectAiCtx::default()).unwrap()
         });
         let _entry = observation(&observations, "entry", row);
         let _return = observation(&observations, "return", row);

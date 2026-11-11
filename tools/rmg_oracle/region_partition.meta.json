@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "9 runs of the original Generate region slice 0x00598C89..0x00598D01 over 3 declared scenes: PartitionRegions over water, shore, waterfall and green/LAT seeds; ExpandRegionRings with Generate's pass counts for map types 1-4, ring claims and both aborts; PropagateRegionWater over flagged cells; FloodUnownedRegions with first-blob dissolves (draws, success and fall-through), merges into the left or upper cell, edge construction and the MapSeed +0x30C level fallback",
+  "assumptions": [
+    "Existing CliffFixture and SplitFixture own original-constructed Cell backing, admission, the stride-33 scratch with in-diamond coordinates, the native theater tile-set globals and the region list; bounds 16..48. Regions and stamps start -1 and the list empty, as Generate's teardown before 0x00598C89 leaves them.",
+    "Declared scenes: tile, level and scratch +0x4B flag per in-diamond cell, subtile 0. The tile codes name the native water, shore, waterfall, green, green LAT and CliffSet bases and 0xFFFF. MapSeed +0x30C is 4 and the generated size (+0x180, +0x184) 16 x 16. The dialog record at [ESP+0x18] holds only the map type (+0x3C). FPCW 0E7F. All streams seeded by original 65C6D0."
+  ],
+  "substitutions": [
+    "Existing PaletteReader CRT allocation/free/TLS; native code bytes unchanged. No region, owner, level, tile, flag or RNG result is supplied; hooks only read state between the slice's calls."
+  ],
+  "entry_points": {
+    "slice": "0x00598C89",
+    "partition": "0x0058CF90",
+    "flood_build": "0x0058C800",
+    "expand": "0x0058E740",
+    "propagate": "0x0058E9B0",
+    "flood_unowned": "0x0058D010",
+    "border_for_region": "0x0058D410",
+    "border_by_id": "0x005A0700",
+    "next": "0x0065C780"
+  },
+  "replay_command": "python -m tools.rmg_oracle.region_partition",
+  "payload_sha256": "cac434445cb9d292ed38360eb6d832aa1c661190214bf26b4ee5d64b1fad3289"
+}

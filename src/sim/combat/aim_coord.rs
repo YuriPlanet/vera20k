@@ -101,15 +101,14 @@ pub fn led_target_coordinate(
     else {
         return target_coord;
     };
-    let projectile = current_weapon
-        .projectile
-        .as_deref()
-        .and_then(|id| rules.projectile(id))
-        .map(|projectile| LaunchSpeedProjectile {
-            rot: projectile.rot,
-            floater: projectile.floater,
-            gravity: projectile.gravity(),
-        });
+    let projectile =
+        rules
+            .weapon_projectile(current_weapon)
+            .map(|projectile| LaunchSpeedProjectile {
+                rot: projectile.rot,
+                floater: projectile.floater,
+                gravity: projectile.gravity(),
+            });
     lead_aim(
         target_coord,
         target.body_facing_current(world.session.binary_frame()),

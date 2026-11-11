@@ -53,6 +53,8 @@ impl RmgRng {
     /// The multiply truncates: the original loads the draw as an integer and
     /// multiplies under round-toward-zero, so an ordinary `f64` product rounds
     /// the wrong way and drifts by an ulp on some draws.
+    ///
+    /// Native: `RandomMapGenerator::NextUniform01 @ 0x00598000`.
     pub fn next_unit(&mut self) -> f64 {
         let draw = TruncF64::from_f64(f64::from(self.next_u32()));
         draw.mul(TruncF64::from_f64(f64::from_bits(RANGE_K_BITS)))

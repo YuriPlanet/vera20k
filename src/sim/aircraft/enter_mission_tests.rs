@@ -158,6 +158,11 @@ impl EnterHost for Recorder {
         self.log(json!(["limbo"]));
         self.log(json!(["add_passenger", "contact", "aircraft"]));
     }
+
+    /// The rows' aircraft is no Carryall.
+    fn deliver_cargo(&mut self) -> bool {
+        false
+    }
 }
 
 /// Drops a write that repeats the entry before it. State 6 rewrites `+0x6D4`

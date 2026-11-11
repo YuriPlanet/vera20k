@@ -1,0 +1,327 @@
+{
+  "format": 1,
+  "pass": "2026-11-05 lighting audit corrections",
+  "tag": "[2026-11-05 lighting audit]",
+  "planned_against": "Saved shared gamemd.exe on 2026-11-05. Each paragraph is appended after the existing plate; no earlier text is changed.",
+  "atomic": true,
+  "description": "Renames ten lighting and chrono-screen functions whose names were wrong or missing, and appends paragraphs that correct stale lighting plates and document three light-related data items.",
+  "ops": [
+    {
+      "op": "rename_function",
+      "address": "0x0053B460",
+      "from": "NukeFlash__StartScreenFlash",
+      "to": "ChronoScreenEffect__Start"
+    },
+    {
+      "op": "append_plate",
+      "address": "0x0053B460",
+      "function": [
+        "NukeFlash__StartScreenFlash",
+        "ChronoScreenEffect__Start"
+      ],
+      "text": "Renamed from NukeFlash__StartScreenFlash: this starts the chrono screen effect, not a nuke flash; the nuke flash is ScreenNukeFlash 0x53AB70, on status 0xA9FABC. ECX is the duration, and 0 or less does nothing (0x53B463..0x53B465). It makes a surface the size of the composite at 0xA9FA9C (0x53B486..0x53B4D4), stores the duration in 0xA9FA98 and 0xA9FAA8 (0x53B4EB, 0x53B4F1) and sets status 0xA9FAB0, which ChronoScreenEffect__Active 0x53BAD0 tests, to 1 (0x53B4F7). It plays Rules+0x284, LetsDoTheTimeWarpOutAgain (key 0x83A6A0, read at 0x66A2D7..0x66A304), at 0x53B52B..0x53B531, and does not relight the map. Callers: TActionClass__Execute action 127 (ECX = the action's +0x90, 0x6DFABF..0x6DFAC5) and its unreferenced copy TActionClass__SetChronoScreenEffectState (0x6E2F96). YRpp binds ChronoScreenEffect::Start(int duration) here. VERA: src/sim/superweapon/chrono_screen.rs. The plates at PTR_00a9fa9c and g_pCompositeSurface still use the NukeFlash__ names."
+    },
+    {
+      "op": "rename_function",
+      "address": "0x0053B560",
+      "from": "NukeFlash__ProcessScreenFlash",
+      "to": "ChronoScreenEffect__Update"
+    },
+    {
+      "op": "append_plate",
+      "address": "0x0053B560",
+      "function": [
+        "NukeFlash__ProcessScreenFlash",
+        "ChronoScreenEffect__Update"
+      ],
+      "text": "Renamed from NukeFlash__ProcessScreenFlash. Corrects the 2026-08-08 paragraph: this steps the chrono screen effect that ChronoScreenEffect__Start 0x53B460 begins, not the nuke flash, and plays no explosion. It switches on status 0xA9FAB0 through table 0x53B770. State 1 (0x53B575) draws ChronoScreenEffect__RenderDistortion with CL 0 and counts 0xA9FA98 down, then sets state 2 with 45 frames (0x53B58D..0x53B597). State 2 (0x53B5A2) fills the composite white over rect 0x886FA0; when its count ends it swaps the 0xA9FA9C surface into g_pCompositeSurface for one frame (0x53B649..0x53B68A), sets state 3 with the full duration from 0xA9FAA8 (0x53B670..0x53B68F) and plays Rules+0x288, LetsDoTheTimeWarpInAgain (key 0x83A684), at 0x53B6BC..0x53B6C2. State 3 (0x53B6CE) draws the distortion with CL 1; at its end it sets state 0 (0x53B732), restores the composite from 0xA9FA9C (0x53B743) and deletes that surface (0x53B754). YRpp binds ChronoScreenEffect::Update() here. VERA: src/sim/superweapon/chrono_screen.rs (the states) and src/app/chrono_screen.rs (surfaces and sounds)."
+    },
+    {
+      "op": "rename_function",
+      "address": "0x0053BBA0",
+      "from": "NukeFlash__RenderScreenDistortion",
+      "to": "ChronoScreenEffect__RenderDistortion"
+    },
+    {
+      "op": "append_plate",
+      "address": "0x0053BBA0",
+      "function": [
+        "NukeFlash__RenderScreenDistortion",
+        "ChronoScreenEffect__RenderDistortion"
+      ],
+      "text": "Renamed from NukeFlash__RenderScreenDistortion: it draws the chrono screen distortion and has no part in the nuke flash. Its only caller is ChronoScreenEffect__Update (calls at 0x53B577 and 0x53B6D0). The globals its body (0x53BBA0..0x53C092) reads are only the chrono ones, 0xA9FA98, 0xA9FAA0, 0xA9FAA4 and 0xA9FAA8, the 0xA9FA9C surface and g_pCompositeSurface; it never reads the nuke flash status 0xA9FABC. VERA: src/render/chrono_screen.rs."
+    },
+    {
+      "op": "rename_function",
+      "address": "0x0053A0B0",
+      "from": "FUN_0053a0b0",
+      "to": "LightningStorm__StopNow"
+    },
+    {
+      "op": "append_plate",
+      "address": "0x0053A0B0",
+      "function": [
+        "FUN_0053a0b0",
+        "LightningStorm__StopNow"
+      ],
+      "text": "Stops a raging lightning storm at once. When g_LightningStorm_Active 0xA9FAB4 is set it clears it (0x53A0BC) and the owner 0xA9FACC (0x53A0C1), copies the zero cell CellStruct_00a9f9f8 into g_LightningStorm_Coords 0xA9F9CC (0x53A0C6..0x53A0CB) and tail-jumps to ScenarioClass__UpdateLighting 0x53C280 (0x53A0D0). LightningStorm__RequestStop 0x53A090, by contrast, only sets the end request 0xA9FAD0 (0x53A099). No direct reference found to this entry, so the name comes from the body alone."
+    },
+    {
+      "op": "rename_function",
+      "address": "0x00531680",
+      "from": "Show_Loading_Screen",
+      "to": "Init_Bulk_Data"
+    },
+    {
+      "op": "append_plate",
+      "address": "0x00531680",
+      "function": [
+        "Show_Loading_Screen",
+        "Init_Bulk_Data"
+      ],
+      "text": "Renamed from Show_Loading_Screen: it draws nothing. It caches the CONQMD, CONQUER, CAMEOMD and CAMEO mixes (0x531698, 0x5316B4, 0x5316D0, 0x5316EC), returning 0 when one is missing or fails, then runs MouseClass__One_Time (0x531708), the pip loads (0x531721..0x531744), InitSpotlightResources (0x531753), IonBlast_BuildRippleFrames (0x531758) and the DPOD.VXL and DPOD.HVA loads (0x531761, 0x5317D4). Only caller Init_Game, at 0x52C946. The name is a lead from Red Alert's GPL INIT.CPP, where Init_Game calls Init_Bulk_Data to cache the mixes and run the one-time setup."
+    },
+    {
+      "op": "rename_function",
+      "address": "0x00545000",
+      "from": "FUN_00545000",
+      "to": "LightConvertClass__ResetCellConverts"
+    },
+    {
+      "op": "append_plate",
+      "address": "0x00545000",
+      "function": [
+        "FUN_00545000",
+        "LightConvertClass__ResetCellConverts"
+      ],
+      "text": "Static; LightConvertClass is a module label. It deletes every Convert in the cell Convert vector 0x87F698 (0x545011..0x545054), creates a neutral 53-row LightConvertClass (1000, 1000, 1000) as entry 0 (0x54505B..0x5450EC), clears and relights the dummy cell 0xABDC50 with CellClass__InitLightConvert(NULL, 0x10000, 0, 1000, 1000, 1000) (0x5450EF..0x545116), and clears every map cell's +0x34 without touching reference counts (0x54511B..0x545147). Callers: Read_Theater_TileSets_INI 0x5454EB, ScenarioClass__Read_INI_Basic 0x68AD47 and DisplayClass__ReinitCellDrawers 0x4AE453. VERA: reset_cell_converts (src/map/lighting.rs)."
+    },
+    {
+      "op": "rename_function",
+      "address": "0x005558E0",
+      "from": "FUN_005558e0",
+      "to": "CellClass__NormalizeLightTint"
+    },
+    {
+      "op": "append_plate",
+      "address": "0x005558E0",
+      "function": [
+        "FUN_005558e0",
+        "CellClass__NormalizeLightTint"
+      ],
+      "text": "Static __fastcall; CellClass is a module label, since it touches no cell. ECX points to the scale (out), EDX to the common light (in and out), then R, G and B pointers on the stack (RET 0xC). It clamps R, G and B to 0..2000 (0x5558EE..0x55594F) and sets the scale to 0x10000 (0x555951). Unless all three are 1000 (0x555958..0x55596B), the largest component c gives scale = ftol(c * 65536.0 * 0.001) (constants 0x7ED088 and 0x7E3818; 0x55597F..0x555991, 0x5559D9..0x5559E9, 0x555A4A..0x555A58); that component becomes 1000 and each other one x * 65536 / scale. A scale below 0x42 resets the tint to 1000s, the scale to 0x10000 and the common light to 0 (0x5559F6..0x555A13). Last, common = common * scale >> 16, at most 2000 (0x555A8F..0x555AB4). Only caller CellClass__ProcessColourComponents, at 0x4845CF, with ECX = its scaleOut and EDX = its tintedAmbientOut (0x4845B0..0x4845CD). VERA: normalize_light_at_detail (src/map/lighting.rs)."
+    },
+    {
+      "op": "rename_function",
+      "address": "0x0046B0C0",
+      "from": "VoxelAnim__Draw",
+      "to": "BulletClass__DrawVoxel"
+    },
+    {
+      "op": "append_plate",
+      "address": "0x0046B0C0",
+      "function": [
+        "VoxelAnim__Draw",
+        "BulletClass__DrawVoxel"
+      ],
+      "text": "Renamed from VoxelAnim__Draw: this draws a voxel bullet; VoxelAnimClass's draw is VoxelAnimClass__DrawIt 0x749B70. Only caller BulletClass__DrawSHPOrVoxel, at 0x46824A with ECX = the bullet (0x468247); RET 0x1C. The Convert is +0x30C of the ColorScheme that BulletType +0x2D4 selects (key \"Color\", read at 0x46BF9D..0x46BFAA; used at 0x46B1E3..0x46B23C). It draws on g_pTempSurface (0x46B242) through FUN_004af2a0 (0x46B248) with dwColour 0 and nIntensity from its 7th argument (passed on at 0x46B210), for which the caller pushes 1000 (0x46820D). The caller's 6th argument, 0x800, is the blit flags (0x468212). BulletType +0x2F7 (key \"Flat\", read at 0x46C27E..0x46C292) adds blit flag 0x2000 and changes the Z arguments (0x46B1AC..0x46B1BF, 0x46B1F2..0x46B218). FUN_004af2a0's plate still lists this function as VoxelAnim__Draw."
+    },
+    {
+      "op": "rename_function",
+      "address": "0x0068C860",
+      "from": "FUN_0068c860",
+      "to": "ColorScheme__RebuildLightConvert"
+    },
+    {
+      "op": "append_plate",
+      "address": "0x0068C860",
+      "function": [
+        "FUN_0068c860",
+        "ColorScheme__RebuildLightConvert"
+      ],
+      "text": "Deletes the ColorScheme's Convert at +0x30C (0x68C863..0x68C873) and builds a new one with ColorScheme__BuildRampPalette 0x68C3B0 from the shade count +0x310, the light mask 0x83E1AC and the three RGB arguments (0x68C87D..0x68C8B2), stored at +0x30C (0x68C8B7). RET 0x14. Only caller Init_Theater, at 0x534D77, in its loop over the ColorScheme array [0xB054D4] with RGB 1000, 1000, 1000 (0x534D55..0x534D72)."
+    },
+    {
+      "op": "rename_function",
+      "address": "0x004BBB00",
+      "from": "FUN_004bbb00",
+      "to": "ConvertClass__BuildShadeTable"
+    },
+    {
+      "op": "append_plate",
+      "address": "0x004BBB00",
+      "function": [
+        "FUN_004bbb00",
+        "ConvertClass__BuildShadeTable"
+      ],
+      "text": "Static __fastcall; ConvertClass is a module label. ECX is the table, EDX the row count N, and the stack holds the RGB palette (3 bytes per colour); RET 4. Row r scales each channel by r * 0x20000 / (N-1), or by 0x10000 when N is 1 (0x4BBB36..0x4BBB4C, 0x4BBBFC..0x4BBC13), shifts right by 16 and clamps to 255 (0x4BBB6B..0x4BBBAF), and packs each of the 256 colours into one word with the surface shifts 0x8A0DD0..0x8A0DE4 (0x4BBBB4..0x4BBBF6). Only caller ConvertClass__Constructor, at 0x48EB51. VERA: PaletteLight::plain (src/render/palette_light.rs)."
+    },
+    {
+      "op": "append_plate",
+      "address": "0x006EE0A0",
+      "function": [
+        "TeamClass__Script_Ion_Storm_Start"
+      ],
+      "text": "Corrects \"LightningStorm__Start(0xB0E948, 0)\" in the paragraph above. The call (0x6EE0C7) is LightningStorm__Start 0x539EB0 with ECX = the action's argument (pAction +4) as the duration (0x6EE0BA..0x6EE0C4); EDX = Rules+0x1794, LightningDeferment (0x6EE0BE; read by RulesClass__ReadGeneral at 0x670F82..0x670F8F); the cell CellStruct 0xB0E948 by value (0x6EE0AC, 0x6EE0B9; written only by StaticInit_ZeroCell_00B0E948 at 0x6E8A22); and house NULL (0x6EE0B7)."
+    },
+    {
+      "op": "append_plate",
+      "address": "0x0048A620",
+      "function": [
+        "WarheadFlash__CreateAt"
+      ],
+      "text": "Corrects the 2026-10-02 paragraph: Rules +0xFA8 is C4Warhead, not CrushWarhead. Key \"C4Warhead\" (0x83B1D4) is read into +0xFA8 at 0x66C30A..0x66C346; CrushWarhead (0x83B1C4) goes into +0xFAC at 0x66C351..0x66C384. Three callers pass [Rules+0xFA8] with BypassWarheadFlag 0 and Flags 0: BuildingClass__AdjustWallConnections 0x4531DE (pushes 0x4531B7, 0x4531BD), FlyLocomotionClass__UpdateFlightMotion 0x4CD99D (0x4CD976, 0x4CD978) and UnitClass__PerCellProcess 0x73AF8B (0x73AF64, 0x73AF6A). Retail rulesmd.ini sets C4Warhead=Super and gives [Super] no Bright (WarheadType +0x150: constructor 0 at 0x75CF9B, key read at 0x75D5FF..0x75D60C), so with retail data these calls return at 0x48A65A..0x48A662 without a flash."
+    },
+    {
+      "op": "append_plate",
+      "address": "0x00445F80",
+      "function": [
+        "BuildingClass__OnConstructionComplete"
+      ],
+      "text": "This is the Grand_Opening(bool captured) step; Red Alert's GPL BuildingClass::Grand_Opening has the same guard: when +0x6E4 is already set it does nothing unless captured (0x445F89..0x445F99). Light block (0x4466D5..0x44676C): when the type's LightIntensity +0xE34 (key 0x81A91C, read at 0x460CCD..0x460CE9) is not 0, it creates a 0x4C LightSourceClass if +0x614 is NULL (0x4466E9..0x446750), at BuildingClass__GetCoords (vtable +0x48 = 0x447AC0, called at 0x446736) with type +0xE30 visibility, +0xE34 intensity and +0xE38/+0xE3C/+0xE40 tint, and stores it at +0x614 (0x446759). It then calls LightSourceClass__Enable(0) on +0x614 (0x44675F..0x446767), so a light the building already had is switched on again. VERA: grand_opening (src/sim/building_art.rs) calls Simulation::light_building (src/sim/light_sources.rs)."
+    },
+    {
+      "op": "append_plate",
+      "address": "0x00440580",
+      "function": [
+        "BuildingClass__Unlimbo"
+      ],
+      "text": "Unlimbo makes the building's light itself only when g_GameMode 0xA8B238 is 0 and either +0x41B is set or the cell's +0x12C bit 0x10 is clear (0x440D25..0x440D54). Otherwise it calls BuildingClass__DiscoveredBy(g_pPlayerPtr 0xA83D4C) through vtable +0x198 (0x440D56..0x440D61), and the light comes at Grand_Opening (BuildingClass__OnConstructionComplete). The light block (0x440D6C..0x440E02) is the same as Grand_Opening's: a LightSource at GetCoords (0x440D8A..0x440DEF), then Enable(0) (0x440DF5..0x440DFD). VERA: Simulation::light_building_at_unlimbo (src/sim/world/lifecycle.rs)."
+    },
+    {
+      "op": "append_plate",
+      "address": "0x00449C30",
+      "function": [
+        "BuildingClass__Mission_Selling"
+      ],
+      "text": "Stage 2's UndeploysInto branch also turns the light off: LightSourceClass__Deactivate(0) when +0x614 is set (0x449F12..0x449F1E), before the attacker list (0x449F23). The sale branch's light off is at 0x44A1FF..0x44A20B, before the refund (0x44A215). VERA turns the undeploying building's light off in finish_undeploy (src/sim/world/world_spawn.rs)."
+    },
+    {
+      "op": "append_plate",
+      "address": "0x005550C0",
+      "function": [
+        "LightSourceClass__Load"
+      ],
+      "text": "AbstractClass__Load 0x410380 reads the whole object raw, Size() bytes through vtable +0x30 (0x4103C3..0x4103CD), so the active byte +0x48 (set by Enable at 0x554A6B, cleared by Deactivate at 0x554A8B), the intensity, the tint and the location come back as saved. The object comes from TClassFactory<LightSourceClass>__CreateInstance (new 0x4C and LightSourceClass__Constructor_Default 0x554830, 0x6BFCBC..0x6BFCCC), which appends it to the light vector 0xABCA10 (0x5548BD..0x5548D2); Save_Game_Content_To_Stream saves that vector (0x67E074..0x67E07B). BuildingClass__Load does not restore the building's +0x614 (0x454174), so a loaded light has no owner."
+    },
+    {
+      "op": "append_plate",
+      "address": "0x00453E20",
+      "function": [
+        "BuildingClass__Load"
+      ],
+      "text": "Sets +0x614, the building's LightSource, to NULL (0x454174) after the swizzle loop (0x45415F..0x45416E); it is not swizzled. The light-off sites reach the light only through +0x614 and test it first (Mission_Selling 0x449F12..0x449F1A and 0x44A1FF..0x44A207, BuildingClass__ReceiveDamage 0x442640..0x442648), so after a load the saved light stays in the light vector 0xABCA10 as an ownerless source its building can no longer switch off. VERA records this as a residual and gives every building its light back after a load (Simulation::rebuild_lighting_sources_after_load, src/sim/light_sources.rs)."
+    },
+    {
+      "op": "append_plate",
+      "address": "0x00554D50",
+      "function": [
+        "LightSourceClass__UpdateLightConverts"
+      ],
+      "text": "Its queue (vector 0xABCA40, count 0xABCA50) stays empty in the retail game, so the per-tick call (0x55B5F1) finds nothing. LightSourceClass__ApplyAreaLightConvert 0x554AF0 queues a 0x14-byte record only when fDeferred is set (0x554C4B..0x554CDD); otherwise it relights each cell at once (CellClass__InitLightConvert at 0x554D46) and skips the flush call (0x554B1D..0x554B2E). Enable and Deactivate pass fDeferred on (0x554A67..0x554A70, 0x554A87..0x554A90), and all 15 call sites of Enable, Deactivate and ChangeLevels 0x554AA0 push 0 (for example 0x440DFB, 0x446765, 0x449F1C, 0x44A209, 0x44264A, 0x65B7C8, 0x65B7E2, 0x65B881, 0x65BEA2), as do both destructors (0x554986, 0x5551C6)."
+    },
+    {
+      "op": "append_plate",
+      "address": "0x0053AB50",
+      "function": [
+        "LightningStorm__Init"
+      ],
+      "text": "Not a storm init but a post-load relight: it calls ScenarioClass__UpdateLighting 0x53C280 (0x53AB50), then sets byte +0x5779 of the player house g_pPlayerPtr (YRpp's HouseClass RecheckRadar) to 1 (0x53AB55..0x53AB5A). Only caller Post_Load_Game, at 0x6851AC. VERA: reinitialize_lighting_after_user_load (src/sim/light_sources.rs)."
+    },
+    {
+      "op": "append_plate",
+      "address": "0x0053AD00",
+      "function": [
+        "ScenarioClass__RecalcLighting"
+      ],
+      "text": "The vector at 0x87F698 (items 0x87F69C, count 0x87F6A8) holds only cell Converts: entries are added only at 0x544FC6 (LightConvertClass__InitLightConvert 0x544E70) and 0x5450E0 (LightConvertClass__ResetCellConverts). LightConvertClass__Constructor 0x555DA0 does not add itself, so the Converts that ColorScheme__BuildRampPalette makes (0x68C4E2) are reached only through the ColorScheme loop. AtExit_Free_Game_Resources deletes the vector's entries (0x6BE56C..0x6BE598)."
+    },
+    {
+      "op": "append_plate",
+      "address": "0x00483E30",
+      "function": [
+        "CellClass__InitLightConvert"
+      ],
+      "text": "Field map, from the stores at 0x483F7A..0x483FD1. With pDrawer NULL, CellClass__ProcessColourComponents 0x484180 (call at 0x483EDA) gets eight output pointers (pushed at 0x483EB0..0x483ED7), and its outputs scaleOut to blueOut land in order in +0x104 (tint scale, 0x10000 = none), +0x108, +0x10A (top light), +0x10C (common light, after CellClass__NormalizeLightTint), +0x10E (bottom light) and +0x110/+0x112/+0x114 (normalized tint). The tint picks the Convert through LightConvertClass__InitLightConvert 0x544E70 (0x483F5B..0x483F74) unless the current Convert still matches after quantizing with 0x555AC0 (0x483EDF..0x483F54). With pDrawer set, arguments 2 to 6 go straight to +0x104..+0x10E and the tint comes from pDrawer +0x198..+0x1A0 (0x483E65..0x483E82), so YRpp's Red1, Green1 and Blue1 (arguments 4 to 6) are the top, common and bottom light. Readers include TerrainClass__Draw_It, which uses +0x10A with the Convert at 0x87F6BC (0x71C294..0x71C29A) or +0x10C with the cell's +0x34 Convert (0x71C2B2..0x71C2B5), and CellClass__DrawOverlay_Body, which reads +0x10E (0x47F7E0)."
+    },
+    {
+      "op": "append_plate",
+      "address": "0x005FF420",
+      "function": [
+        "InitSpotlightResources"
+      ],
+      "text": "The first paragraph is stale: the function is named, and its only caller is Init_Bulk_Data (Show_Loading_Screen before this pass), at 0x531753. The resources are built once per process: flag 0xAC1834 is read only at 0x5FF420 and set only at 0x5FF727. The mask uses SpotlightRadius (Rules+0x7A8: constructor 175 at 0x66613F, read by RulesClass__ReadGeneral at 0x671809..0x671816) as read at 0x5FF675 during that one build, so later rules or map values do not resize it."
+    },
+    {
+      "op": "append_plate",
+      "address": "0x005FF850",
+      "function": [
+        "SpotLightClass__Draw"
+      ],
+      "text": "Corrects the 2026-10-07 paragraph: the mask is blitted over the surface in [0x887314] (g_pTempSurface, read at 0x5FF8D3), not g_PrimarySurface. Its scenario flag 0x1000 fog test (0x5FF898..0x5FF8B2) calls MapClass__IsLocationFogged 0x5865E0 (0x5FF8AB), which always returns false, so that test never skips a light."
+    },
+    {
+      "op": "append_plate",
+      "address": "0x00435BE0",
+      "function": [
+        "BuildingLightClass__Draw_It"
+      ],
+      "text": "Corrects the 2026-10-07 paragraph: the tangent lines go through g_pTempSurface ([0x887314], read at 0x436130 and 0x436184), not g_PrimarySurface. The flag 0x1000 Location test calls MapClass__IsLocationFogged (0x435C86), which always returns false, so of the fog tests only the building's +0x6E7 byte (0x435C44..0x435C4C) hides the light. VERA checks that byte in src/sim/world/spotlight.rs."
+    },
+    {
+      "op": "append_plate",
+      "address": "0x0073C5F0",
+      "function": [
+        "UnitClass__Draw_Body_And_Turret"
+      ],
+      "text": "Corrects the first paragraph. \"Slot 0x1C8 of 0x7F6000\" is the word 0x7F61C8, slot +0x558 of the UnitClass vtable 0x7F5C70. vtable +0x50C (word 0x7F617C) is FootClass__Draw_A_SHP 0x41C090, so the calls at 0x73CC36, 0x73CD08, 0x73CE5E and 0x73CEAD draw SHP frames, not voxels. UnitClass__DrawIt calls this slot (0x73D38F) only when the type's Voxel flag +0x236 is clear (key 0x832AEC, read by ObjectTypeClass__ReadINI at 0x5F9623..0x5F9634; tested at 0x73D317..0x73D31F); voxel types take slot +0x554, UnitClass__DrawVoxelBody 0x73B470 (0x73D359). It draws into the surface [0xB1D13C], to which g_pTempSurface is pointed at 0x73C7B2..0x73C7C3, and blits that out through slot +0x55C (0x73CDDB)."
+    },
+    {
+      "op": "append_plate",
+      "address": "0x0073B140",
+      "function": [
+        "UnitClass__Draw_Sprite_With_BridgeFudge"
+      ],
+      "text": "Corrects the first paragraph: this is slot +0x55C (word 0x7F61CC) and it blits no SHP. Its two callers, UnitClass__DrawVoxelBody (0x73C1A5) and UnitClass__Draw_Body_And_Turret (0x73CDDB), first point g_pTempSurface at the surface [0xB1D13C] (0x73B547..0x73B55B, 0x73C7B2..0x73C7C3; restored at 0x73C1C8 and 0x73CDF3). This function copies rect 0xB1CFC0 out of that buffer with Bit_Blit_ClipRects 0x4373B0 (0x73B377, 0x73B3E5, 0x73B446), using a blitter from Select_Blitter. vtable +0x2EC and +0x2F0 are FootClass__GetZAdjustment 0x4DAFC0 and FootClass__GetZGradient 0x4DB0A0 (words 0x7F5F5C, 0x7F5F60)."
+    },
+    {
+      "op": "append_plate",
+      "address": "0x00706ED0",
+      "function": [
+        "TechnoClass__Render"
+      ],
+      "text": "Nine stack arguments (RET 0x24). It passes its 8th and 9th arguments (read at 0x7071E8 and 0x7071DB, pushed at 0x7071F7 and 0x7071EF) unchanged as nIntensity and dwColour of FUN_004af2a0 (call at 0x707235), whose arguments are pDest (ECX) and pConvert (EDX), then pSource, pSourceRect, pPosition, pDestClip, pRemap, pBlitter, nZAdjust, nZGradient, nIntensity, dwColour and nUnused on the stack. Only caller TechnoClass__Draw, at 0x7068BB."
+    },
+    {
+      "op": "append_plate",
+      "address": "0x004AED70",
+      "function": [
+        "CC_Draw_Shape"
+      ],
+      "text": "Corrects \"0x800=remap\" in the first paragraph: ConvertClass__Select_Blitter 0x490B90 maps 0x800 to the Alpha blitters (its 2026-10-08 ConvertClass paragraph), and remap is 0x10, as the 2026-10-08 Blitter paragraph above says. AnimClass__DrawIt adds 0x800 unless the Darken bit 0x1 is set (TEST BL,1 at 0x4230FE; OR BH,0x8 at 0x423103)."
+    },
+    {
+      "op": "append_plate",
+      "address": "0x004D1890",
+      "function": [
+        "FoggedObjectClass__DrawAll"
+      ],
+      "text": "Anim records: with the type's UseNormalLight +0x35D (key 0x818380) the intensity is 1000 (0x4D20EB, 0x4D20FA..0x4D2106), otherwise the record cell's top light +0x10A (0x4D2108..0x4D2139). With ShouldUseCellDrawer +0x35C (key 0x818390) and a non-NULL Convert held at [ESP+0x18], the anim is drawn with that Convert (0x4D2140..0x4D2156), otherwise with the ANIM Convert 0x87F6C0 (0x4D2158..0x4D215E)."
+    },
+    {
+      "op": "append_plate",
+      "address": "0x0087F6BC",
+      "text": "Not the tiberium palette's Convert. Its only recorded write, in Init_Game at 0x52C1EA..0x52C1FB, copies g_FileSystem_UNITx_PAL (0x87F6B4, built at 0x52C05E..0x52C075), so it is a second pointer to the UNITx Convert. Readers: TerrainClass__Draw_It 0x71C294, TerrainClass__DrawAgain 0x71C423 and VoxelAnimClass__DrawIt 0x749E6A."
+    },
+    {
+      "op": "append_plate",
+      "address": "0x0083E1AC",
+      "text": "256-byte light mask for the ColorScheme Converts: 1 for indices 0..239 and 255, 0 for 240..254. ColorScheme__Constructor (0x68C758) and ColorScheme__RebuildLightConvert (0x68C889) pass it to ColorScheme__BuildRampPalette. A LightConvertClass keeps its mask at +0x190, and LightConvertClass__UpdateColors 0x556090 passes it to the row builder (0x5562E5..0x5562F8). VERA applies the masked rows in src/render/palette_light.rs."
+    },
+    {
+      "op": "append_plate",
+      "address": "0x00829C20",
+      "text": "The default light mask, 256 bytes of 1. LightConvertClass__Constructor stores it at +0x190 when its mask argument is NULL (0x555E2F..0x555E33), and LightConvertClass__UpdateColors does the same (0x5560A8..0x5560B2)."
+    }
+  ]
+}

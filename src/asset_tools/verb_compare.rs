@@ -475,7 +475,7 @@ fn archive_leaf(archive: &str) -> &str {
 ///
 /// Everything else advances the pen and renders blank, so a label spelled with
 /// `#`, `,`, `.` or `(` silently comes out full of gaps. Kept in sync with
-/// `render::bit_font::fallback_5x7_glyphs`, whose table is space, `-`, `:`, `/`,
+/// `asset_tools::canvas::fallback_5x7_glyphs`, whose table is space, `-`, `:`, `/`,
 /// the digits and both letter cases.
 fn is_drawable_glyph(character: char) -> bool {
     matches!(character, ' ' | '-' | ':' | '/')

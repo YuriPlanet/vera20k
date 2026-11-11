@@ -36,8 +36,8 @@ pub(in crate::sim) fn formed_sim(seed: u64, level: u8) -> Simulation {
         c.level = level;
         c.allows_tiberium = true;
         //Declared passable Clear-land input, including the actual 89EA40 row.
-        c.speed_costs.track = Some(100);
-        c.base_speed_costs.track = Some(100);
+        c.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::ONE);
+        c.base_speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::ONE);
         c
     });
     terrain.shared_cell_dummy().set_level_slope(level as i8, 0);
@@ -111,13 +111,18 @@ fn original_anim_ore_loop_keeps_direction_aliasing_density_and_constructor_refus
     let rows = corpus["rows"].as_array().unwrap();
     assert_eq!(rows.len(), 14);
     let text = "[OverlayTypes]\n0=TIB01\n1=TIB02\n2=TIB03\n3=TIB04\n[TIB01]\nTiberium=yes\nLand=Clear\n[TIB02]\nTiberium=yes\nLand=Clear\n[TIB03]\nTiberium=yes\nLand=Clear\n[TIB04]\nTiberium=yes\nLand=Clear\n[Clear]\nTrack=100%\n";
-    let ini = IniFile::from_str(text);
+    let ini = crate::rules::tiberium_type::with_tiberium_image_slots(&IniFile::from_str(&format!(
+        "{text}\n[Tiberiums]\n0=Riparius\n[Riparius]\nImage=1\nValue=25\n"
+    )));
     let registry = OverlayTypeRegistry::from_ini(&ini, None);
-    let rules = formed_rules("");
+    let mut rules = formed_rules("");
+    rules.tiberium_types = crate::rules::tiberium_type::TiberiumTypeRegistry::from_ini(&ini);
     for row in rows {
         let input = &row["input"];
         let expected = &row["expected"];
         let mut sim = formed_sim(input["seed"].as_u64().unwrap(), 0);
+        sim.native_unique_ids =
+            Some(crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(0));
         let mut config = rules.art().anim_runtime_config("METSMALL").unwrap().clone();
         config.tiberium_spread_radius = input["radius"].as_i64().unwrap() as i32;
         config.is_tiberium = input["ore"].as_bool().unwrap();
@@ -139,13 +144,16 @@ fn original_anim_ore_loop_keeps_direction_aliasing_density_and_constructor_refus
             position.z = BRIDGE_DECK_HEIGHT_LEPTONS;
         }
         assert_rng(&sim, expected, "before");
-        assert!(!sim.anim_bounce_landing(
-            &config,
-            &rules,
-            Some(&registry),
-            position,
-            FrameEffects::empty()
-        ));
+        assert!(
+            !sim.anim_bounce_landing(
+                &config,
+                &rules,
+                Some(&registry),
+                position,
+                FrameEffects::empty()
+            )
+            .unwrap()
+        );
         assert_rng(&sim, expected, "after");
         for cell in expected["cells"].as_array().unwrap() {
             let x = cell["cell"][0].as_u64().unwrap() as u16;
@@ -186,13 +194,16 @@ fn meteor_landing_runs_children_without_expire_and_uses_last_water_splash() {
     assert!(count > 0);
     assert_eq!(config.spawns.as_deref(), Some("CHILD"));
     assert_eq!(config.spawn_count, 3);
-    assert!(!sim.anim_bounce_landing(
-        config,
-        &rules,
-        None,
-        glam::IVec3::new(10368, 10368, 0),
-        FrameEffects::empty()
-    ));
+    assert!(
+        !sim.anim_bounce_landing(
+            config,
+            &rules,
+            None,
+            glam::IVec3::new(10368, 10368, 0),
+            FrameEffects::empty()
+        )
+        .unwrap()
+    );
     assert_eq!(sim.anims().count(), count as usize);
     assert_eq!(
         sim.scenario_rng.native_state_hex(),
@@ -206,13 +217,17 @@ fn meteor_landing_runs_children_without_expire_and_uses_last_water_splash() {
         .cell_mut_for_test(40, 40)
         .unwrap()
         .land_type = 2;
-    assert!(!water.anim_bounce_landing(
-        config,
-        &rules,
-        None,
-        glam::IVec3::new(10368, 10368, 0),
-        FrameEffects::empty()
-    ));
+    assert!(
+        !water
+            .anim_bounce_landing(
+                config,
+                &rules,
+                None,
+                glam::IVec3::new(10368, 10368, 0),
+                FrameEffects::empty()
+            )
+            .unwrap()
+    );
     let anims: Vec<_> = water.anims().map(|(_, a)| a).collect();
     assert_eq!(anims.len(), 1);
     assert_eq!(water.interner.resolve(anims[0].type_id), "SPLASH2");
@@ -314,7 +329,8 @@ fn meteor_flight_restores_native_rng_prior_and_cleans_up() {
     assert!(sim.trigger_meteor_shower(&rules, 0, 7));
     let ids: Vec<_> = sim.anims().map(|(&id, _)| id).collect();
     assert!(!ids.is_empty());
-    sim.visit_anim(ids[0], &rules, None, FrameEffects::empty());
+    sim.visit_anim(ids[0], &rules, None, FrameEffects::empty())
+        .unwrap();
     let bytes =
         crate::sim::snapshot::GameSnapshot::save_validated(&sim, 17, 23, "meteor flight", 0);
     let mut restored = crate::sim::snapshot::GameSnapshot::load_validated(&bytes, 17, 23, "")
@@ -354,7 +370,9 @@ fn meteor_flight_restores_native_rng_prior_and_cleans_up() {
                 .session
                 .set_binary_frame_for_test(world.session.binary_frame().wrapping_add(1));
             for &id in &ids {
-                world.visit_anim(id, &rules, None, FrameEffects::empty());
+                world
+                    .visit_anim(id, &rules, None, FrameEffects::empty())
+                    .unwrap();
             }
             world.flush_pending_delete();
         }

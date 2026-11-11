@@ -49,7 +49,11 @@ fn fs_main(
             row = effects.height - 1u - y;
         }
         if (row < effects.fade_rows) {
-            units = (units * credits_fade_factor(row)) >> vec3u(8u);
+            // Map output rows back to Show_Credits' 32 logical fade rows
+            // before the native arithmetic (0x004C3E30). Larger windows must
+            // stretch the band, not feed rows >= 32 into its unsigned math.
+            let native_row = row * 32u / effects.fade_rows;
+            units = (units * credits_fade_factor(native_row)) >> vec3u(8u);
         }
     }
     let red = codebook[units.r];

@@ -74,10 +74,10 @@ fn fixture(rules: &RuleSet, producer: &str, backup: bool) -> (SimRuntime, Intern
     (
         SimRuntime {
             simulation: sim,
-            resources: SimResources {
+            resources: std::sync::Arc::new(SimResources {
                 rules: rules.clone(),
                 ..SimResources::empty()
-            },
+            }),
         },
         owner,
         factory,

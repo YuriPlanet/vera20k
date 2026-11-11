@@ -162,6 +162,7 @@ static DOWNLOADED_MAPS_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::
 /// VERA's folder for maps it downloads or receives (`PathsConfig::
 /// downloaded_maps_dir`), set once at start. Map lookups and Choose Map's
 /// scan read it after the game folder; without it only the game folder counts.
+/// It also holds the random-map dialog's files ([`random_map_dir`]).
 pub fn set_downloaded_maps_dir(dir: PathBuf) {
     let _ = DOWNLOADED_MAPS_DIR.set(dir);
 }
@@ -170,17 +171,72 @@ pub fn downloaded_maps_dir() -> Option<&'static Path> {
     DOWNLOADED_MAPS_DIR.get().map(PathBuf::as_path)
 }
 
-/// A map file by name: the game folder first, then VERA's downloaded maps.
-pub fn local_map_path(ra2_dir: &Path, map_name: &str) -> Result<PathBuf> {
-    local_map_path_in(ra2_dir, downloaded_maps_dir(), map_name)
+static MOD_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+/// VERA: the mod folder in use (`app::mods`), set once at start. Its maps
+/// read as if they had been copied on top of the game folder: a lookup finds
+/// a mod's file first, and Choose Map's scan lists it in place of a
+/// game-folder file of the same name.
+pub fn set_mod_dir(dir: PathBuf) {
+    let _ = MOD_DIR.set(dir);
 }
 
-fn local_map_path_in(ra2_dir: &Path, downloaded: Option<&Path>, map_name: &str) -> Result<PathBuf> {
+pub fn mod_dir() -> Option<&'static Path> {
+    MOD_DIR.get().map(PathBuf::as_path)
+}
+
+/// The folders a listing of the game folder reads, for
+/// `case_insensitive_path::native_listing_over`: `ra2_dir`, then the mod's.
+pub fn game_folders(ra2_dir: &Path) -> Vec<&Path> {
+    std::iter::once(ra2_dir).chain(mod_dir()).collect()
+}
+
+/// The file `name` of the game folder: the mod's when it has one.
+pub fn game_folder_file(ra2_dir: &Path, name: &str) -> PathBuf {
+    mod_dir()
+        .map(|dir| dir.join(name))
+        .filter(|path| crate::util::file_system::exists(path))
+        .unwrap_or_else(|| ra2_dir.join(name))
+}
+
+/// Where the random-map dialog's files live: `RandMap.Sed`, its `RandMap.img`
+/// preview and the saved seeds. VERA: gamemd keeps them in its own folder
+/// (`RandomMapSetupDialog__Run` 0x00595BC0 writes `RandMap.img`, its accepted
+/// caller 0x005E8590 `RandMap.Sed`); VERA never writes the game folder, so
+/// they are in its Maps folder. Without that folder (tests and tools), `root`.
+pub fn random_map_dir(root: &Path) -> &Path {
+    downloaded_maps_dir().unwrap_or(root)
+}
+
+/// A map file by name: the mod folder in use, then the game folder, then
+/// VERA's downloaded maps. A seed is only looked for in [`random_map_dir`].
+pub fn local_map_path(ra2_dir: &Path, map_name: &str) -> Result<PathBuf> {
+    local_map_path_in(mod_dir(), ra2_dir, downloaded_maps_dir(), map_name)
+}
+
+fn local_map_path_in(
+    mod_dir: Option<&Path>,
+    ra2_dir: &Path,
+    downloaded: Option<&Path>,
+    map_name: &str,
+) -> Result<PathBuf> {
     let direct = PathBuf::from(map_name);
     if direct.is_absolute() && crate::util::file_system::exists(&direct) {
         return Ok(direct);
     }
-    for root in std::iter::once(ra2_dir).chain(downloaded) {
+    // An older `RandMap.Sed` in the game folder is not the dialog's.
+    let seed = crate::map::rmg::is_seed_selection(map_name);
+    let first = if seed {
+        downloaded.unwrap_or(ra2_dir)
+    } else {
+        ra2_dir
+    };
+    let roots = mod_dir
+        .filter(|_| !seed)
+        .into_iter()
+        .chain(std::iter::once(first))
+        .chain(downloaded.filter(|_| !seed));
+    for root in roots {
         let exact = root.join(map_name);
         if crate::util::file_system::exists(&exact) {
             return Ok(exact);
@@ -429,6 +485,17 @@ pub fn load_map_by_name_or_path_with_assets(
     load_map_input_with_assets(ra2_dir, map_name, assets, None, |input| {
         decode_map_with_assets(input, assets)
     })
+}
+
+/// The file a game of `map_name` would load, chosen as metadata and gameplay
+/// choose it (loose before MIX) but not parsed: its source, whose
+/// `physical_identity` is the file's length and SHA-256.
+pub fn map_source_identity(
+    ra2_dir: &Path,
+    map_name: &str,
+    assets: &AssetManager,
+) -> Result<LoadedMapSource> {
+    load_map_input_with_assets(ra2_dir, map_name, assets, None, |input| Ok(input.source))
 }
 
 pub fn load_map_ini_by_name_or_path_with_assets(
@@ -750,8 +817,9 @@ pub fn keep_received_map(
     let sha256 = sha256_hex(bytes);
     let stem = name.strip_suffix(".yrm").unwrap_or(&name);
     for name in [name.clone(), format!("{stem}-{}.yrm", &sha256[..8])] {
-        if let Some(path) = [ra2_dir, maps_dir]
+        if let Some(path) = mod_dir()
             .into_iter()
+            .chain([ra2_dir, maps_dir])
             .find_map(|dir| held_file(dir, &name))
         {
             let same = read_loose_map_input_bounded(&path, Some(MAX_TRANSFER_MAP_BYTES))
@@ -1004,7 +1072,7 @@ mod tests {
         );
         // Found by name after the game folder, as every map lookup does.
         assert_eq!(
-            local_map_path_in(game.path(), Some(&maps), "FrozenLakes.yrm").unwrap(),
+            local_map_path_in(None, game.path(), Some(&maps), "FrozenLakes.yrm").unwrap(),
             maps.join("FrozenLakes.yrm")
         );
         let record =
@@ -1033,6 +1101,40 @@ mod tests {
         );
         assert!(keep_received_map(&maps, game.path(), "../Escape.yrm", map).is_err());
         assert!(keep_received_map(&maps, game.path(), "What?.yrm", map).is_err());
+    }
+
+    #[test]
+    fn a_random_map_seed_is_only_read_from_veras_folder() {
+        let game = TestDirectory::new("seed-lookup-game");
+        let vera = TestDirectory::new("seed-lookup-vera");
+        // An older seed the original game left in its folder is never the
+        // random-map dialog's: not even when VERA's folder has none yet.
+        game.write("RandMap.Sed", b"[RandomMap]\nSeed=1\n");
+        assert!(local_map_path_in(None, game.path(), Some(vera.path()), "RandMap.Sed").is_err());
+        vera.write("RandMap.Sed", b"[RandomMap]\nSeed=2\n");
+        assert_eq!(
+            local_map_path_in(None, game.path(), Some(vera.path()), "RandMap.Sed").unwrap(),
+            vera.path().join("RandMap.Sed")
+        );
+        // Maps still come from the game folder first.
+        game.write("Lakes.map", b"[Basic]\n");
+        vera.write("Lakes.map", b"[Basic]\n");
+        assert_eq!(
+            local_map_path_in(None, game.path(), Some(vera.path()), "Lakes.map").unwrap(),
+            game.path().join("Lakes.map")
+        );
+        // A mod folder in use reads as if copied on top of the game folder:
+        // its map first, the game folder's where it has none, never its seed.
+        let mod_dir = TestDirectory::new("seed-lookup-mod");
+        mod_dir.write("Lakes.map", b"[Basic]\n");
+        mod_dir.write("RandMap.Sed", b"[RandomMap]\nSeed=3\n");
+        game.write("Hills.map", b"[Basic]\n");
+        let found = |name| {
+            local_map_path_in(Some(mod_dir.path()), game.path(), Some(vera.path()), name).unwrap()
+        };
+        assert_eq!(found("Lakes"), mod_dir.path().join("Lakes.map"));
+        assert_eq!(found("Hills.map"), game.path().join("Hills.map"));
+        assert_eq!(found("RandMap.Sed"), vera.path().join("RandMap.Sed"));
     }
     use super::*;
     use crate::assets::mix_hash::mix_hash;

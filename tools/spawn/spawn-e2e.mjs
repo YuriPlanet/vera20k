@@ -3,11 +3,14 @@
 //
 //   node tools/spawn/spawn-e2e.mjs relay  --out DIR --ra2 RETAIL [--players 2] [--port 8787]
 //                                         [--relay 127.0.0.1:5000] [--key HEX] [--cors ORIGIN]
+//                                         [--pacing on|off] (a VO2C certificate; default VO1C)
+//                                         [--gateway ws://localhost:8788] (browser players)
 //   node tools/spawn/spawn-e2e.mjs direct --out DIR --ra2 RETAIL [--players 2] [--base-port 1300]
 //                                         [--ips A,B,...]
 // Both accept --spectators S,T (SourceIndex list, [IsSpectator]).
 // --ips gives each source's address in the other files (default 127.0.0.1).
 // --cors ORIGIN answers the browser's CORS preflight for that page origin.
+// --gateway ORIGIN names the WebSocket gateway browser players reach the relay by.
 //
 // Both write one directory per player (DIR/p0, DIR/p1, ...) holding spawn.ini,
 // the map as spawnmap.ini and a config.toml pointing at RETAIL with settings
@@ -92,7 +95,7 @@ async function relay(opts) {
   if (!/^[0-9a-f]{64}$/i.test(key ?? '')) throw new Error('--key or VERA_RELAY_TICKET_KEY must be 64 hex digits');
   const matchId = randomUUID();
   const payloadKey = base64url(randomBytes(32));
-  const ordering = { sources_mask: 2 ** opts.players - 1, tick_hz: LAUNCH_HZ[opts.speed] };
+  const ordering = { sources_mask: 2 ** opts.players - 1, tick_hz: LAUNCH_HZ[opts.speed], pacing: opts.pacing };
   const now = () => Math.floor(Date.now() / 1000);
   const users = Array.from({ length: opts.players }, (_, source) => ({
     source, player_id: randomUUID(), token: base64url(randomBytes(32)),
@@ -106,7 +109,7 @@ async function relay(opts) {
     const section = `[Relay]\nAddress=${opts.relay}\nMatchId=${matchId}\nPlayerId=${user.player_id}\n` +
       `Ticket=${relayGrantValue.ticket}\nPacketKey=${relayGrantValue.packet_key}\nPayloadKey=${payloadKey}\n` +
       `OrderingCertificate=${relayGrantValue.ordering_certificate}\nServiceUrl=${service}\n` +
-      `Token=${user.token}\nAdmissionTimeout=60\n`;
+      `Token=${user.token}\nAdmissionTimeout=60\n${opts.gateway ? `GatewayUrl=${opts.gateway}\n` : ''}`;
     console.log(`wrote ${playerDirectory(opts, user.source, spawnIni(opts, user.source, '', () => '', section))}`);
   }
   const log = (...args) => console.log(new Date().toISOString(), ...args);

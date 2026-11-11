@@ -28,7 +28,9 @@ fn project_speed_control(value: i32) -> u32 {
 /// accepted bounded dialog selection replaces them.
 pub(crate) fn in_game_options_from_profile(profile: &RetailOptionsProfile) -> InGameOptionsState {
     InGameOptionsState {
-        game_speed: project_speed_control(profile.game_speed),
+        game_speed: u32::from(crate::sim::game_options::clamp_game_speed(
+            profile.game_speed,
+        )),
         scroll_rate: project_speed_control(profile.scroll_rate),
         detail_level: profile.detail_level.clamp(0, OPTIONS_DETAIL_MAX as i32) as u32,
         unit_action_lines: profile.unit_action_lines,
@@ -109,7 +111,7 @@ fn apply_in_game_options(state: &mut AppState) {
             .in_game_options
             .game_speed,
     );
-    if state.match_state.sim_runtime.is_some() {
+    if state.match_state.sim_runtime.is_installed() {
         let owner = crate::app::input::commands::preferred_local_owner_name(state);
         let speed = u8::try_from(
             state
@@ -121,7 +123,7 @@ fn apply_in_game_options(state: &mut AppState) {
         .ok();
         let command = speed.and_then(|speed| {
             in_game_speed_command(
-                &state.match_state.sim_runtime.as_ref().unwrap().simulation,
+                &state.match_state.sim_runtime.runtime().unwrap().simulation,
                 speed,
             )
         });

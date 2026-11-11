@@ -181,6 +181,20 @@ impl Simulation {
         };
         state.restore_flight_level(flight_level);
         let in_phase = state.has_phase_callback();
+        // Ares 3.0 FlyLocomotionClass_ILocomotion_Process_HunterSeeker
+        // (1004D7A0, hook 0x4CCB84) runs first; a reacquired hunter stops
+        // landing.
+        #[cfg(feature = "ares")]
+        let in_phase = if self.ares_hunter_seeker_process(id, rules, registry, frame_effects) {
+            self.substrate
+                .entities
+                .get(id)
+                .and_then(|entity| entity.locomotor.as_ref())
+                .and_then(|locomotor| locomotor.fly_runtime())
+                .is_some_and(|state| state.has_phase_callback())
+        } else {
+            in_phase
+        };
         if living && !in_phase && self.mission_ready_to_commence(id, rules) {
             let _ = self
                 .substrate
@@ -269,6 +283,10 @@ impl Simulation {
         if self.fly_crash_fall(id, rules, registry, frame_effects) {
             return true;
         }
+        // Ares 3.0 FlyLocomotionClass_sub_4CD600_HunterSeeker_UpdateTarget
+        // (1004DA90, hook 0x4CD9C8).
+        #[cfg(feature = "ares")]
+        self.ares_hunter_seeker_update_target(id, rules);
         self.substrate.fly_guard_to_move(id);
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -679,6 +697,29 @@ impl Simulation {
             (!locked).then_some(toward)
         };
 
+        // Ares 3.0 FlyLocomotionClass_sub_4CEFB0_HunterSeeker (1004DC30,
+        // hook 0x4CF3D0) takes the height block of a hunter with a Target.
+        // Its detonation leaves the step (0x4CF5F2) with the facings the
+        // two blocks above have already set.
+        #[cfg(feature = "ares")]
+        let ares_level = match self.ares_hunter_seeker_height(id, rules) {
+            crate::sim::hunter_seeker::HunterSeekerHeight::Stock => None,
+            crate::sim::hunter_seeker::HunterSeekerHeight::Level(level) => Some(level),
+            crate::sim::hunter_seeker::HunterSeekerHeight::Detonate => {
+                let entity = self.substrate.entities.get_mut(id).unwrap();
+                if let Some(primary) = primary {
+                    entity.body_facing.set(primary, frame);
+                }
+                if let Some(secondary) = secondary {
+                    entity.ensure_fly_secondary_facing();
+                    if let Some(facing) = entity.barrel_facing.as_mut() {
+                        facing.set(secondary, frame);
+                    }
+                }
+                self.ares_hunter_seeker_detonate(id, rules, registry, frame_effects);
+                return 0;
+            }
+        };
         let flight_level = self.fly_type_flight_level(id, rules);
         let entity = self.substrate.entities.get(id).unwrap();
         let state = entity
@@ -707,6 +748,8 @@ impl Simulation {
         } else {
             flight_level
         };
+        #[cfg(feature = "ares")]
+        let level = ares_level.unwrap_or(level);
         let slow = air_movement::fly_speed_facts(
             entity,
             distance,
@@ -756,12 +799,9 @@ impl Simulation {
     /// `FootClass::Stun @ 0x004D5660`) and UnInit (vt+0xF8). Without MapClass
     /// authority (headless fixtures) nothing happens.
     ///
-    /// RESIDUAL: a passenger infantry of a `Civilian=` type that is no
-    /// survivor (`0x00413CD0`: InfantryType `+0xEC1`, Infantry `+0x6D9`) sets
-    /// its house's CiviliansEvacuated (`+0x1F9`), which VERA does not
-    /// represent. Trigger: a retreating transport aircraft carrying
-    /// civilians off the map, in campaigns. Effect: the trigger event that
-    /// reads the flag does not fire.
+    /// Before Team/teardown, a qualifying Civilian passenger sets its own
+    /// House's CiviliansEvacuated byte (4CD580..4CD58F), later read by
+    /// event18. Source: original gamemd.exe instructions.
     ///
     /// RESIDUAL: each passenger is deleted at once (`0x004CD5AE`); VERA
     /// UnInits it, which announces the same expiry but removes the object at
@@ -807,6 +847,12 @@ impl Simulation {
             .and_then(|owner| owner.passenger_role.cargo_mut())
             .and_then(|cargo| cargo.unload_first())
         {
+            if self.is_evacuation_civilian(passenger, rules) {
+                let owner = self.substrate.entities.get(passenger).unwrap().owner();
+                if let Some(house) = self.houses.get_mut(&owner) {
+                    house.mark_civilians_evacuated();
+                }
+            }
             self.team_script_vm.mark_member_team_leaving_map(passenger);
             // RemoveFirstPassenger leaves the passenger's own hold for its
             // teardown.

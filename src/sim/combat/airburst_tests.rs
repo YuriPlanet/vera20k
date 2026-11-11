@@ -13,20 +13,26 @@ use serde_json::Value;
 
 #[cfg(not(feature = "phobos"))]
 fn rules() -> RuleSet {
+    rules_with("")
+}
+
+/// The fixture with `parent_extra` appended to `[PARENT_SHOT]`.
+#[cfg(not(feature = "phobos"))]
+fn rules_with(parent_extra: &str) -> RuleSet {
     // Secondary registers the child BEFORE the stock Weapon sweep. The
     // Airburst factory in the later Bullet sweep never recursively reads it.
-    let ini = crate::sim::arena_fixture::clear_ground_ini(
+    let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
         "[VehicleTypes]\n0=SOURCE\n1=VICTIM\n\
          [SOURCE]\nStrength=100\nPrimary=PARENT_GUN\nSecondary=CHILD_GUN\nSpeed=4\n\
          [VICTIM]\nStrength=1000\nArmor=none\nSpeed=4\n\
          [PARENT_GUN]\nProjectile=PARENT_SHOT\nWarhead=QUIET\nDamage=0\nRange=10\n\
          [CHILD_GUN]\nProjectile=CHILD_SHOT\nWarhead=CHILD_WH\nDamage=37\nSpeed=73\nBright=yes\nRange=4\n\
-         [PARENT_SHOT]\nAirburst=yes\nAirburstWeapon=CHILD_GUN\nCluster=2\n\
+         [PARENT_SHOT]\nAirburst=yes\nAirburstWeapon=CHILD_GUN\nCluster=2\n{parent_extra}\
          [CHILD_SHOT]\nFirersPalette=yes\n\
          [Warheads]\n0=QUIET\n1=CHILD_WH\n\
          [QUIET]\nVerses=0%,0%,0%,0%,0%,0%,0%,0%,0%,0%,0%\n\
-         [CHILD_WH]\nCellSpread=0\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
-    );
+         [CHILD_WH]\nCellSpread=0\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
+    ));
     let mut rules = RuleSet::from_ini(&ini).unwrap();
     // The native fixture supplies a post-Process Weapon field73, independent
     // of the already-tested ROT0 ballistic Speed postpass.
@@ -36,7 +42,11 @@ fn rules() -> RuleSet {
 
 #[cfg(not(feature = "phobos"))]
 fn scene(z: i32) -> (Simulation, RuleSet, u64, ProjectileDetonation) {
-    let rules = rules();
+    scene_with(z, rules())
+}
+
+#[cfg(not(feature = "phobos"))]
+fn scene_with(z: i32, rules: RuleSet) -> (Simulation, RuleSet, u64, ProjectileDetonation) {
     let mut world = crate::sim::arena_fixture::rival_arena(&rules, 31);
     world.intern_rule_type_ids(&rules);
     world.resolve_type_handles(&rules);
@@ -250,12 +260,77 @@ fn stock_airburst_reads_live_source_and_requires_a_represented_parent() {
     assert_eq!(world.scenario_rng.native_state_hex(), rng);
 }
 
+/// The children of one detonation, in creation order.
+#[cfg(all(feature = "ares", not(feature = "phobos")))]
+fn children(world: &Simulation, parent: u64) -> Vec<&crate::sim::projectile::Projectile> {
+    let mut children: Vec<_> = world
+        .projectiles
+        .iter()
+        .filter(|(id, _)| **id != parent)
+        .collect();
+    children.sort_by_key(|(id, _)| **id);
+    children.into_iter().map(|(_, child)| child).collect()
+}
+
+/// Ares 3.0 BulletClass_DetonateAt_Splits (1001A090, hook 0x469EBA): an
+/// `Airburst=` shot without `Splits=` sends one `CreateBullet` child to each
+/// cell within `AirburstSpread=` (1.5) of its cell, row-major, each after one
+/// Scenario `RandomRanged(0, 31)`; Cluster= does not count them.
 #[test]
 #[cfg(all(feature = "ares", not(feature = "phobos")))]
-fn stock_airburst_does_not_run_in_ares_build() {
-    let (mut world, rules, _, request) = scene(600);
-    let rng = world.scenario_rng.native_state_hex();
+fn ares_airburst_sends_one_child_to_each_cell_within_the_spread() {
+    let (mut world, rules, source, request) = scene(600);
+    let mut expected_rng = world.scenario_rng.clone();
+    for _ in 0..9 {
+        expected_rng.next_range_i32_inclusive(0, 31);
+    }
     detonate(&mut world, &rules, request);
-    assert_eq!(world.projectiles.iter().count(), 1);
-    assert_eq!(world.scenario_rng.native_state_hex(), rng);
+    let children = children(&world, request.projectile_id);
+    let cells: Vec<_> = [(9, 19), (10, 19), (11, 19), (9, 20), (10, 20), (11, 20)]
+        .into_iter()
+        .chain([(9, 21), (10, 21), (11, 21)])
+        .map(|(rx, ry)| ProjectileTarget::Cell { rx, ry })
+        .collect();
+    assert_eq!(
+        children
+            .iter()
+            .map(|child| child.target())
+            .collect::<Vec<_>>(),
+        cells
+    );
+    for child in &children {
+        assert_eq!(child.source_id(), source);
+        assert_eq!(child.payload().base_damage, 37);
+        assert!(child.payload().bright(), "CreateBullet passes Bright=");
+        let origin = child.launch_origin();
+        assert_eq!([origin.x, origin.y, origin.z], [2688, 5248, 600]);
+    }
+    assert_eq!(
+        world.scenario_rng.native_state_hex(),
+        expected_rng.native_state_hex()
+    );
+}
+
+/// The same hook with `Splits=yes`: exactly `Cluster=` children, each at a
+/// Techno within 1280 leptons (here the firer, `RetargetSelf=` default) or
+/// at one of the random cells within 3 of the burst's cell.
+#[test]
+#[cfg(all(feature = "ares", not(feature = "phobos")))]
+fn ares_splits_send_cluster_children_to_nearby_technos_or_random_cells() {
+    let (mut world, rules, source, request) = scene_with(600, rules_with("Splits=yes\n"));
+    detonate(&mut world, &rules, request);
+    let children = children(&world, request.projectile_id);
+    assert_eq!(children.len(), 2);
+    for child in &children {
+        match child.target() {
+            ProjectileTarget::Entity(id) => assert_eq!(id, source),
+            ProjectileTarget::Cell { rx, ry } => {
+                assert!(
+                    (7..=13).contains(&rx) && (17..=23).contains(&ry),
+                    "{rx},{ry}"
+                );
+            }
+            other => panic!("unexpected split target {other:?}"),
+        }
+    }
 }

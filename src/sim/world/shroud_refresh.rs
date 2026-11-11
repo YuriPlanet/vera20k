@@ -152,6 +152,9 @@ impl SightHeights {
 #[cfg(any(test, feature = "test-support"))]
 #[derive(Default)]
 struct RevealCalls {
+    /// `MapClass::RevealArea` entries, including the ones its house gate
+    /// rejects before any cell.
+    map_calls: usize,
     walks: Vec<Vec<(u16, u16)>>,
     border_scans: Vec<((u16, u16, i32), i32)>,
     /// Actual567DA0 receiver calls, in order.
@@ -162,6 +165,10 @@ struct RevealCalls {
     /// Map578100 receiver calls.
     edge_visits: usize,
     edge_notifications: Vec<(bool, (u16, u16), bool)>,
+    /// [`Simulation::sight_reveal_config`] builds.
+    settings_reads: usize,
+    /// Footprints UpdateReveal derived for a map that admitted its source.
+    footprints: usize,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -240,11 +247,12 @@ impl Simulation {
     /// `MapClass::IsFogged @ 0x005865E0` is `xor al, al; ret 4`, so it never
     /// deselects. Without a player house or map nothing is asked.
     ///
-    /// Three movement steps run it, each with its own owner test:
+    /// Four movement steps run it, each with its own owner test:
     /// - Foot's `PerCellProcess` (`0x004D8DA7..0x004D8DF5`), on every Unit
     ///   and Infantry cell arrival, and Fly's `Horizontal_Step`
     ///   (`0x004CF55D..0x004CF5EC`) ask `0x0050B6F0`
-    ///   ([`Self::house_is_human_player`]);
+    ///   ([`Self::house_is_human_player`]), as does Tunnel's `Process`
+    ///   (`0x007290F6..0x0072918F`);
     /// - Jumpjet's `Process` (`0x0054B07D..0x0054B10C`) compares the owner
     ///   with PlayerPtr (`0x00A83D4C`).
     ///
@@ -708,7 +716,7 @@ impl Simulation {
         let target_zone = {
             let (Some(terrain), Some(zones)) = (
                 context.terrain().or(self.resolved_terrain.as_ref()),
-                self.zone_grid.as_ref(),
+                self.zone_grid.as_deref(),
             ) else {
                 return false;
             };
@@ -746,7 +754,7 @@ impl Simulation {
             let half_level = {
                 let (Some(terrain), Some(zones)) = (
                     context.terrain().or(self.resolved_terrain.as_ref()),
-                    self.zone_grid.as_ref(),
+                    self.zone_grid.as_deref(),
                 ) else {
                     return false;
                 };
@@ -881,6 +889,17 @@ impl Simulation {
         projection: vision::MapRevealProjection,
         notification_viewer: Option<crate::sim::intern::InternedId>,
     ) -> Option<(u16, u16, i32)> {
+        #[cfg(any(test, feature = "test-support"))]
+        REVEAL_CALLS.with_borrow_mut(|trace| {
+            if let Some(trace) = trace {
+                trace.map_calls += 1;
+            }
+        });
+        // `0x00567AB0..0x00567B12` rejects the source's House and returns at
+        // `0x00567D88`: the call happens but nothing is collected or walked.
+        if projection == vision::MapRevealProjection::Rejected {
+            return None;
+        }
         // Original5678E0 resolves/substitutes its House once at567AB4..567B12,
         // before the loop (backedge567D82→567B2A). Map5673A0 shares this gate
         // at567570..5675D0. Its admitted House is passed through4A9D88/8D
@@ -1263,6 +1282,23 @@ impl Simulation {
         self.transition_house_map(owner, vision::MapTransition::ResetShroud, rules);
     }
 
+    /// Whole-map fixture setup for a loaded world. Unlike FogState's
+    /// footprint-only adapters, this keeps live Techno release/admission and
+    /// the House map-clear state with their production owners.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_map_explored_for_test(
+        &mut self,
+        owner: crate::sim::intern::InternedId,
+        explored: bool,
+        rules: &RuleSet,
+    ) {
+        if explored {
+            self.reveal_map_for_owner(owner, rules);
+        } else {
+            self.reset_shroud_for_owner(owner, rules);
+        }
+    }
+
     /// Execute51 -> Map577C90. Its nonnull House loses241 even when it is
     /// not PlayerPtr; only null/current Player changes the local map. The
     /// allocated-cell receiver leaves487690 counters rather than overwriting
@@ -1412,7 +1448,7 @@ impl Simulation {
         // Native holds one local viewer. VERA retains each human's plane
         // in stable House order, so selecting a different local player cannot
         // alter shared fog hashes, snapshot IDs or the timer's effects.
-        for viewer in self.fog_viewers() {
+        for &viewer in self.fog_viewers().iter() {
             self.for_each_allocated_map_cell(context, |sim, cell| {
                 let cells = context
                     .terrain()
@@ -1436,7 +1472,24 @@ impl Simulation {
         }
     }
 
-    pub(super) fn fog_viewers(&self) -> Vec<crate::sim::intern::InternedId> {
+    /// The logical clients, in House order: the represented human maps in a
+    /// network game, else the current House and every human one. The object
+    /// pass asks them for every sight event, so it remembers them
+    /// ([`vision::RevealViewers::begin`]); debug builds check each answer
+    /// against a fresh read.
+    pub(crate) fn fog_viewers(&self) -> std::sync::Arc<[crate::sim::intern::InternedId]> {
+        let Some(clients) = self.reveal_viewers.pass_clients() else {
+            return self.read_fog_viewers().into();
+        };
+        debug_assert!(
+            !crate::sim::touch_log::live_read_check_enabled()
+                || *clients == *self.read_fog_viewers(),
+            "the client maps changed during the object pass"
+        );
+        clients
+    }
+
+    fn read_fog_viewers(&self) -> Vec<crate::sim::intern::InternedId> {
         if self.session.game_mode().is_network() {
             return self.represented_player_maps();
         }
@@ -1456,11 +1509,39 @@ impl Simulation {
         viewers
     }
 
+    /// The logical clients ([`Self::fog_viewers`]) on which
+    /// `HouseClass::IsHumanPlayer @ 0x0050B6F0` passes for `house`, each
+    /// asking with its own PlayerPtr ([`Self::is_human_player_on`]). A
+    /// nonzero mode's clients are its human houses, and its PlayerPtr test
+    /// (`0x0050B716`) passes only on `house`'s own. Mode zero reads `house`'s
+    /// human and PlayerControl flags (`+0x1EC`, `+0x1ED`), so a campaign
+    /// PlayerControl house passes on the player's client too.
+    pub(crate) fn human_player_clients(
+        &self,
+        house: crate::sim::intern::InternedId,
+    ) -> Vec<crate::sim::intern::InternedId> {
+        let candidates = if self.session.game_mode_nonzero() {
+            if self.owner_is_human(house) {
+                vec![house]
+            } else {
+                Vec::new()
+            }
+        } else {
+            self.fog_viewers().to_vec()
+        };
+        candidates
+            .into_iter()
+            .filter(|&client| {
+                Self::is_human_player_on(&self.session, &self.houses, house, Some(client))
+            })
+            .collect()
+    }
+
     fn fog_clients_current_first(&self) -> Vec<crate::sim::intern::InternedId> {
         if self.session.game_mode().is_network() {
             return self.represented_player_maps();
         }
-        let mut clients = self.fog_viewers();
+        let mut clients = self.fog_viewers().to_vec();
         if let Some(current) = self.session.current_house() {
             clients.retain(|&viewer| viewer != current);
             clients.insert(0, current);
@@ -1548,7 +1629,7 @@ impl Simulation {
         if !self.session.game_options().fog_of_war {
             return;
         }
-        for viewer in self.fog_viewers() {
+        for &viewer in self.fog_viewers().iter() {
             self.for_each_allocated_map_cell(context, |sim, cell| {
                 let initialized = {
                     let cells = context
@@ -1614,8 +1695,10 @@ impl Simulation {
     /// Satellite byte (`+0x577A`), which its caller changes only afterwards.
     /// The map-clear byte (`+0x241`) is written whatever the map does. A
     /// reveal is skipped once the map is revealed (`+0x240`); a reset never
-    /// is. Natively only `PlayerPtr`'s shroud changes; VERA keeps one plane
-    /// per house.
+    /// is. Natively only `PlayerPtr`'s shroud changes: after the `+0x241`
+    /// store, `0x00577DB6..0x00577DC0` and `0x00577AD0..0x00577ADA` leave
+    /// for any other house. VERA keeps one plane per represented client, so a
+    /// computer house's transition stops there.
     fn transition_house_map(
         &mut self,
         owner: crate::sim::intern::InternedId,
@@ -1635,7 +1718,8 @@ impl Simulation {
                 house.mark_map_clear();
             }
         }
-        if !self.fog.begin_map_transition(owner, transition) {
+        if !self.fog_viewers().contains(&owner) || !self.fog.begin_map_transition(owner, transition)
+        {
             return;
         }
         let context = UninitContext::with_rules(rules);
@@ -1774,51 +1858,36 @@ impl Simulation {
         heights: Option<&SightHeights>,
         context: UninitContext<'_>,
     ) {
-        let Some(entity) = self.substrate.entities.get(id) else {
-            return;
+        // Every logical client executes the event; the owner's direct maps
+        // ([`vision::direct_reveal_viewers`]) are among them.
+        let clients;
+        let requested = match &only_viewer {
+            Some(viewer) => std::slice::from_ref(viewer),
+            None => {
+                clients = self.fog_viewers();
+                &clients[..]
+            }
         };
-        let map_viewers = match only_viewer {
-            Some(viewer) => vec![viewer],
-            None => self
-                .reveal_viewers
-                .direct(
-                    &self.fog,
-                    self.house_alliances.as_map(),
-                    entity.owner(),
-                    config,
-                    &self.interner,
-                )
-                .to_vec(),
-        };
-        let requested = match only_viewer {
-            Some(viewer) => vec![viewer],
-            None => self.sight_event_viewers(id, entity.owner(), &map_viewers, true, false),
-        };
-        self.update_object_sight_for_viewers(id, radius, &requested, config, heights, context);
+        self.update_object_sight_for_viewers(id, radius, requested, config, heights, context);
     }
 
-    /// The logical clients that execute this source event: the active human
-    /// and current-house planes, its owner plane, any direct map projections,
-    /// and (for a release) clients that previously retained this source.
-    /// Registration order is shared with the House owner, not reconstructed
-    /// from interned-name or contribution-map ordering.
-    fn sight_event_viewers(
-        &self,
-        id: u64,
-        owner: crate::sim::intern::InternedId,
-        map_viewers: &[crate::sim::intern::InternedId],
-        include_active: bool,
-        include_cached: bool,
-    ) -> Vec<crate::sim::intern::InternedId> {
-        let mut selected = std::collections::BTreeSet::new();
-        if include_active {
-            selected.extend(self.fog_viewers());
+    /// The logical clients that execute a release: every client
+    /// ([`Self::fog_viewers`]) and any other map that retained the source,
+    /// in House order, then any unregistered one, ascending. The owner's
+    /// direct maps ([`vision::direct_reveal_viewers`]) are among the
+    /// clients. Registration order is shared with the House owner, not
+    /// reconstructed from interned-name or contribution-map ordering.
+    fn release_viewers(&self, id: u64) -> std::sync::Arc<[crate::sim::intern::InternedId]> {
+        let clients = self.fog_viewers();
+        let mut others = self.fog.source_sight_viewers(id);
+        others.retain(|viewer| !clients.contains(viewer));
+        if others.is_empty() {
+            // The clients already stand in that order: they follow the House
+            // order, and an unregistered current House comes last.
+            return clients;
         }
-        selected.insert(owner);
-        selected.extend(map_viewers.iter().copied());
-        if include_cached {
-            selected.extend(self.fog.source_sight_viewers(id));
-        }
+        let mut selected: std::collections::BTreeSet<_> =
+            clients.iter().copied().chain(others).collect();
         let mut ordered = Vec::with_capacity(selected.len());
         for &house in self.houses.order() {
             if selected.remove(&house) {
@@ -1826,7 +1895,7 @@ impl Simulation {
             }
         }
         ordered.extend(selected);
-        ordered
+        ordered.into()
     }
 
     /// Each active logical client executes its native UpdateReveal state
@@ -1857,35 +1926,51 @@ impl Simulation {
             return;
         }
         let override_radius = (radius != 0).then_some(radius);
-        let Some(admission) = vision::entity_sight_admission(
-            &self.fog,
+        // An unallocated map admits nothing ([`vision::sight_admission`]).
+        if self.fog.width() == 0 || self.fog.height() == 0 {
+            return;
+        }
+        let terrain = context.terrain().or(self.resolved_terrain.as_ref());
+        let geometry = vision::entity_sight_geometry(
             entity,
             owner,
             config,
-            heights.and_then(|heights| heights.cell_levels(self.resolved_terrain.as_ref())),
-            context.terrain().or(self.resolved_terrain.as_ref()),
+            terrain,
             config.sight_ability(entity, &self.interner, context.rules()),
             override_radius,
-        ) else {
-            return;
-        };
-        let fresh: Vec<_> = requested_viewers
-            .iter()
-            .copied()
-            .filter(|&viewer| !self.fog.source_sight_is_latched(id, viewer))
-            .collect();
+        );
         // Each logical PlayerPtr has its own native Techno +250/+254/+260.
-        // Publish all source state before any RevealArea receiver can reenter.
-        for &viewer in &fresh {
-            self.fog.retain_source_sight(id, viewer, owner, &admission);
-        }
-        let admitted: Vec<_> = fresh
+        // Publish all source state before any RevealArea receiver can reenter;
+        // a client whose +250 is already set takes no part.
+        let admitted: Vec<_> = requested_viewers
             .iter()
             .copied()
+            .filter(|&viewer| self.fog.retain_source_sight(id, viewer, owner, geometry))
             .filter(|&viewer| {
                 vision::reveal_admits(&self.house_alliances, owner, viewer, config, &self.interner)
             })
             .collect();
+        // The footprint indexes an admitting map's source counts. A source no
+        // requested map admits has published its geometry and needs none
+        // (VERA-only: a computer house's unit on a human's client).
+        if admitted.is_empty() {
+            return;
+        }
+        #[cfg(any(test, feature = "test-support"))]
+        REVEAL_CALLS.with_borrow_mut(|trace| {
+            if let Some(trace) = trace {
+                trace.footprints += 1;
+            }
+        });
+        let Some(admission) = vision::sight_admission(
+            &self.fog,
+            geometry,
+            config,
+            heights.and_then(|heights| heights.cell_levels(self.resolved_terrain.as_ref())),
+            terrain,
+        ) else {
+            return;
+        };
         // Register each accepted map contribution before walking any cells.
         // A newly latched source may follow a rejected release while its old
         // knowledge counts remain; retire that stale index without changing
@@ -1919,21 +2004,25 @@ impl Simulation {
         context: UninitContext<'_>,
     ) {
         let config = self.sight_reveal_config(context.rules());
-        let viewers = if let Some(entity) = self.substrate.entities.get(id) {
-            let projected = self.reveal_viewers.direct(
-                &self.fog,
-                self.house_alliances.as_map(),
-                entity.owner(),
-                &config,
-                &self.interner,
-            );
-            self.sight_event_viewers(id, entity.owner(), &projected, true, true)
+        self.release_object_sight_in_view(id, &config, context);
+    }
+
+    /// [`Self::release_object_sight_with_context`] under settings the caller
+    /// has read.
+    fn release_object_sight_in_view(
+        &mut self,
+        id: u64,
+        config: &vision::VisionConfig,
+        context: UninitContext<'_>,
+    ) {
+        let viewers = if self.substrate.entities.contains(id) {
+            self.release_viewers(id)
         } else {
             // Some existing release callers drop their entity-index entry
             // before clearing retained sight. In that case only visit the
             // clients already cached for this source; each release reads its
             // own canonical owner and geometry below.
-            self.fog.source_sight_viewers(id)
+            self.fog.source_sight_viewers(id).into()
         };
         if viewers.is_empty() {
             return;
@@ -1941,7 +2030,7 @@ impl Simulation {
         self.release_object_sight_event(
             id,
             &viewers,
-            &config,
+            config,
             context,
             self.session.current_house(),
         );
@@ -2079,7 +2168,6 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        let config = self.sight_reveal_config(context.rules());
         let origin = (
             entity.position.rx(),
             entity.position.ry(),
@@ -2088,22 +2176,17 @@ impl Simulation {
                 context.terrain().or(self.resolved_terrain.as_ref()),
             ),
         );
-        let viewers = match only_viewer {
-            Some(viewer) => vec![viewer],
+        //567DA0 has no RevealArea house gate: an enemy's source still
+        //refreshes the active client's existing ground edges.
+        let clients;
+        let viewers = match &only_viewer {
+            Some(viewer) => std::slice::from_ref(viewer),
             None => {
-                let projected = self.reveal_viewers.direct(
-                    &self.fog,
-                    self.house_alliances.as_map(),
-                    entity.owner(),
-                    &config,
-                    &self.interner,
-                );
-                //567DA0 has no RevealArea house gate: an enemy's source
-                //still refreshes the active client's existing ground edges.
-                self.sight_event_viewers(id, entity.owner(), &projected, true, false)
+                clients = self.fog_viewers();
+                &clients[..]
             }
         };
-        for &viewer in viewers.iter() {
+        for &viewer in viewers {
             //The border reads this client's native +0x260, not a
             //viewer-local contribution. An alternate RevealToAll walk leaves
             //that ordinary cache intact; constructor `0x006F2D96` starts it
@@ -2229,12 +2312,13 @@ impl Simulation {
                 );
                 let cell = ((location.x / 256) as u16, (location.y / 256) as u16);
                 let config = self.sight_reveal_config(context.rules());
+                let clients = self.fog_viewers();
                 let viewers = self.reveal_viewers.direct(
-                    &self.fog,
                     self.house_alliances.as_map(),
                     owner,
                     &config,
                     &self.interner,
+                    &clients,
                 );
                 let viewers: Vec<_> = viewers
                     .iter()
@@ -2280,18 +2364,39 @@ impl Simulation {
         if geometry.radius == 0 {
             return;
         }
-        let viewers = self.reveal_viewers.direct(
-            &self.fog,
+        let clients = self.fog_viewers();
+        let projected = self.reveal_viewers.direct(
             self.house_alliances.as_map(),
             entity.owner(),
             &config,
             &self.interner,
+            &clients,
         );
-        let viewers: Vec<_> = viewers
+        let viewers: Vec<_> = projected
             .iter()
             .copied()
             .filter(|viewer| only_viewer.is_none_or(|only| *viewer == only))
             .collect();
+        if projected.is_empty() {
+            // `0x005678E0`'s house gate (`0x00567AB0..0x00567B12`) still
+            // receives the call and returns at `0x00567D88`; every client
+            // map runs its own instance, so each is called once.
+            let radius = geometry.radius.clamp(0, i32::from(vision::MAX_SIGHT_RANGE)) as u16;
+            for _client in clients.iter() {
+                let _ = self.reveal_area(
+                    &[],
+                    (geometry.origin.0, geometry.origin.1),
+                    geometry.origin.2,
+                    radius,
+                    None,
+                    false,
+                    &config,
+                    context,
+                    vision::MapRevealProjection::Rejected,
+                    None,
+                );
+            }
+        }
         let heights = self.sight_height_grid(&config);
         for &viewer in viewers.iter() {
             let border_origin = self.reveal_area(
@@ -2389,7 +2494,8 @@ impl Simulation {
         context: UninitContext<'_>,
     ) {
         // Each owner's viewers are asked once (`vision::RevealViewers`).
-        self.reveal_viewers.begin();
+        let clients = self.fog_viewers();
+        self.reveal_viewers.begin(clients);
         //IDs alone cross callbacks. Requery the live object at every turn.
         for id in self.substrate.entities.keys_sorted() {
             if self
@@ -2411,6 +2517,17 @@ impl Simulation {
     /// house does, the map's `Size=` diamond bounds them, and the rules'
     /// sight keys and `AllyReveal=` shape them.
     pub(crate) fn sight_reveal_config(&self, rules: &RuleSet) -> vision::VisionConfig {
+        #[cfg(any(test, feature = "test-support"))]
+        REVEAL_CALLS.with_borrow_mut(|trace| {
+            if let Some(trace) = trace {
+                trace.settings_reads += 1;
+            }
+        });
+        self.read_sight_reveal_config(rules)
+    }
+
+    /// [`Self::sight_reveal_config`]'s read of the settings as they stand.
+    fn read_sight_reveal_config(&self, rules: &RuleSet) -> vision::VisionConfig {
         let passive_owners = self
             .houses
             .iter()
@@ -2457,8 +2574,17 @@ impl Simulation {
         }
         let context = UninitContext::new(rules, None).with_effects(effects);
         //The two functions each re-read their receiver after callbacks.
-        self.release_object_sight_with_context(stable_id, context);
-        self.update_object_sight_with_context(stable_id, radius, None, context);
+        self.release_object_sight_in_view(stable_id, &config, context);
+        // The pair shares one read of the settings: the rules, the map's
+        // size and playfield and each House's construction make them, and
+        // no release callback writes those (VERA-only; debug builds check).
+        debug_assert!(
+            !crate::sim::touch_log::live_read_check_enabled()
+                || config == self.read_sight_reveal_config(rules),
+            "a release changed the reveal settings"
+        );
+        let heights = self.sight_height_grid(&config);
+        self.update_object_sight_in_view(stable_id, radius, None, &config, Some(&heights), context);
     }
 
     /// Whether the ally brackets visit `entity` at all
@@ -2667,8 +2793,8 @@ impl Simulation {
     /// independently decides whether that client's map receives the walk.
     /// Whole-map reveal/reshroud and live diplomacy share this visitor.
     ///
-    /// It visits every House's map in House order, or `only_viewers`' maps
-    /// in their order. Each map's callbacks read and write only that map
+    /// It visits every client map in House order, or `only_viewers`' client
+    /// maps in their order. Each map's callbacks read and write only that map
     /// ([`ParanoidMaps`]), so leaving maps out changes nothing on the rest.
     fn walk_map_sight(
         &mut self,
@@ -2678,8 +2804,14 @@ impl Simulation {
         skip_buildings: bool,
     ) {
         let count = self.substrate.entities.techno_registry_len();
-        let viewers = only_viewers.map_or_else(|| self.houses.order().to_vec(), <[_]>::to_vec);
         let clients = self.fog_clients_current_first();
+        // Map4ADEE0/4ADCD0 walk only Map0087F7E8, PlayerPtr's: a computer
+        // house is no client and has no map to walk.
+        let viewers: Vec<_> = only_viewers
+            .map_or_else(|| self.houses.order().to_vec(), <[_]>::to_vec)
+            .into_iter()
+            .filter(|viewer| clients.contains(viewer))
+            .collect();
         let config = self.sight_reveal_config(context.rules());
         let network = self.session.game_mode().is_network();
         // Map4ADEE0/4ADCD0 retain registration and viewer order. Scratch is
@@ -2956,10 +3088,8 @@ impl Simulation {
         // cache BEFORE choosing explicit alternate House at70B0EC..70B12C.
         // MakeEnemy's allied pre-release can produce this state for a live
         // RevealToAll building. Metadata does not reveal the owner's map.
-        if !self.fog.source_sight_is_latched(stable_id, current) {
-            self.fog
-                .retain_source_sight(stable_id, current, source_owner, &footprint);
-        }
+        self.fog
+            .retain_source_sight(stable_id, current, source_owner, &footprint);
         if footprint.radius == 0 {
             return;
         }
@@ -3125,11 +3255,12 @@ impl Simulation {
         }
         //4DA6B4 loads SOURCE House before4F9A50; reverse-only alliance
         //does not admit this event or mutate this viewer's countdown.
+        let clients = self.fog_viewers();
         let viewers = self.reveal_viewers.allied(
-            &self.fog,
             self.house_alliances.as_map(),
             entity.owner(),
             &self.interner,
+            &clients,
         );
         let due: Vec<_> = viewers
             .iter()

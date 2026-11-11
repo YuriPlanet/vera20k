@@ -6,6 +6,7 @@ use crate::rules::ini_parser::IniFile;
 use super::super::layout::{
     RectPx, SkirmishCheckboxId, SkirmishShellLayout, SkirmishTrackbarId, checkbox_icon_rect,
 };
+use super::opponent_scroll::{move_opponent_scrollbar, press_opponent_scrollbar, wheel_opponents};
 use super::{
     SkirmishShellAction, SkirmishShellState, SkirmishShellUiSound, handle_combo_mouse_down,
     handle_combo_mouse_move, set_open_combo_top_index, top_index_from_thumb_y,
@@ -13,7 +14,7 @@ use super::{
 use crate::ui::shell::trackbar::{TrackbarPress, TrackbarRange};
 
 pub const GAME_SPEED_MIN: i32 = 0;
-pub const GAME_SPEED_MAX: i32 = 6;
+pub const GAME_SPEED_MAX: i32 = crate::ui::shell::game_speed::MAX_POSITION;
 pub const GAME_SPEED_STEP: i32 = 1;
 /// The RulesClass constructor's `[MultiplayerDialogSettings]` defaults
 /// (`0x00667245..0x00667279`): MinMoney 2500, MaxMoney 10000,
@@ -25,6 +26,7 @@ pub const CREDITS_STEP: i32 = 100;
 pub const UNIT_COUNT_MIN: i32 = 1;
 pub const UNIT_COUNT_MAX: i32 = 20;
 pub const UNIT_COUNT_STEP: i32 = 1;
+const EXTRA_CREDITS: [i32; 2] = [30_000, 100_000];
 
 /// Credits and Unit Count slider ranges for dialog 0x102.
 ///
@@ -34,8 +36,8 @@ pub const UNIT_COUNT_STEP: i32 = 1;
 /// MinUnitCount..MaxUnitCount at `0x006AED72..0x006AED8E`, each packed as
 /// 16-bit words. `RulesClass__ReadMultiplayerDialogSettings` (`0x00671EA0`)
 /// reads the keys with `ReadInt` over the constructor's values, so a missing
-/// key keeps the constructor default. GameSpeed's range is a literal 0..6, so
-/// it is not stored here.
+/// key keeps the constructor default. VERA extends the controls with a 90-tick
+/// speed and high-credit choices without changing the native bounds reader.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SkirmishTrackbarBounds {
     pub credits_min: i32,
@@ -58,10 +60,86 @@ impl Default for SkirmishTrackbarBounds {
 }
 
 impl SkirmishTrackbarBounds {
-    /// A trackbar's range and step. GameSpeed is a hardcoded range (matching
-    /// gamemd's literal 0..6); Credits and Unit Count come from the seeded
-    /// bounds. Unit Count has no increment message in gamemd, so its step
-    /// stays `UNIT_COUNT_STEP`.
+    fn preset_span(&self) -> i32 {
+        let step = self
+            .range(SkirmishTrackbarId::Credits0x511)
+            .step
+            .saturating_abs()
+            .max(1);
+        // Give each extra choice about a tenth of the ordinary rail. A single
+        // MoneyIncrement would leave it narrower than a pixel in many mods.
+        let span = self.credits_max.saturating_sub(self.credits_min) / 10;
+        (span / step).max(1) * step
+    }
+
+    /// VERA appends two exact credit choices after the rules-owned range.
+    /// Compressing them into two notches keeps ordinary MoneyIncrement values
+    /// usable on the short rail and makes both high amounts reachable by mouse.
+    pub fn visual_range(&self, id: SkirmishTrackbarId) -> TrackbarRange {
+        let mut range = self.range(id);
+        if id == SkirmishTrackbarId::Credits0x511 {
+            let extra = EXTRA_CREDITS
+                .iter()
+                .filter(|&&v| v > self.credits_max)
+                .count();
+            range.max = range
+                .max
+                .saturating_add((extra as i32).saturating_mul(self.preset_span()));
+        }
+        range
+    }
+
+    pub fn credits_visual_position(&self, credits: i32) -> i32 {
+        let step = self.preset_span();
+        EXTRA_CREDITS
+            .iter()
+            .filter(|&&v| v > self.credits_max)
+            .position(|&v| v == credits)
+            .map_or(credits, |index| {
+                self.credits_max + (index as i32 + 1) * step
+            })
+    }
+
+    pub fn credits_from_visual_position(&self, position: i32) -> i32 {
+        if position <= self.credits_max {
+            return position;
+        }
+        let step = self.preset_span();
+        let index = (position - self.credits_max - 1) / step;
+        EXTRA_CREDITS
+            .iter()
+            .copied()
+            .filter(|&v| v > self.credits_max)
+            .nth(index as usize)
+            .unwrap_or(self.credits_max)
+    }
+
+    pub fn accepts_credits(&self, credits: i32) -> bool {
+        (self.credits_min..=self.credits_max).contains(&credits)
+            || (credits > self.credits_max && EXTRA_CREDITS.contains(&credits))
+    }
+
+    /// Added presets survive reopening; ordinary values retain TBM_SETPOS's
+    /// native handling of values outside the rules-owned range.
+    pub fn set_up_credits(&self, credits: i32) -> i32 {
+        if self.accepts_credits(credits) {
+            credits
+        } else {
+            self.range(SkirmishTrackbarId::Credits0x511).set_up(credits)
+        }
+    }
+
+    pub fn credits_value(&self, credits: i32) -> i32 {
+        if credits > self.credits_max && EXTRA_CREDITS.contains(&credits) {
+            credits
+        } else {
+            self.range(SkirmishTrackbarId::Credits0x511)
+                .stepped(credits)
+        }
+    }
+
+    /// Native money/unit bounds, and VERA's extended speed range. Rendering
+    /// and pointer input use `visual_range` to include high-credit choices.
     pub fn range(&self, id: SkirmishTrackbarId) -> TrackbarRange {
         match id {
             SkirmishTrackbarId::GameSpeed0x529 => {
@@ -98,18 +176,8 @@ impl SkirmishShellState {
     /// MoneyIncrement. The value text shows it (`0x0061E27A`), the game
     /// starts with it and the settings keep it (`0x006AD799`).
     pub fn credits(&self) -> i32 {
-        self.trackbar_bounds
-            .range(SkirmishTrackbarId::Credits0x511)
-            .stepped(self.starting_credits)
+        self.trackbar_bounds.credits_value(self.starting_credits)
     }
-}
-
-pub const fn game_speed_visual_position(stored_speed: i32) -> i32 {
-    GAME_SPEED_MAX - stored_speed
-}
-
-pub const fn game_speed_from_visual_position(visual_position: i32) -> i32 {
-    GAME_SPEED_MAX - visual_position
 }
 
 fn checkbox_value_mut(state: &mut SkirmishShellState, id: SkirmishCheckboxId) -> &mut bool {
@@ -132,27 +200,13 @@ pub(super) fn trackbar_rect(layout: &SkirmishShellLayout, id: SkirmishTrackbarId
 
 pub fn trackbar_visual_value(state: &SkirmishShellState, id: SkirmishTrackbarId) -> i32 {
     match id {
-        SkirmishTrackbarId::GameSpeed0x529 => game_speed_visual_position(state.game_speed),
-        SkirmishTrackbarId::Credits0x511 => state.starting_credits,
-        SkirmishTrackbarId::UnitCount0x50c => state.unit_count,
-    }
-}
-
-fn set_trackbar_visual_value(
-    state: &mut SkirmishShellState,
-    id: SkirmishTrackbarId,
-    visual_value: i32,
-) {
-    match id {
         SkirmishTrackbarId::GameSpeed0x529 => {
-            state.game_speed = game_speed_from_visual_position(visual_value);
+            crate::ui::shell::game_speed::SpeedContext::Offline.visual_position(state.game_speed)
         }
-        SkirmishTrackbarId::Credits0x511 => {
-            state.starting_credits = visual_value;
-        }
-        SkirmishTrackbarId::UnitCount0x50c => {
-            state.unit_count = visual_value;
-        }
+        SkirmishTrackbarId::Credits0x511 => state
+            .trackbar_bounds
+            .credits_visual_position(state.starting_credits),
+        SkirmishTrackbarId::UnitCount0x50c => state.unit_count,
     }
 }
 
@@ -161,10 +215,24 @@ fn set_trackbar_visual_value_if_changed(
     id: SkirmishTrackbarId,
     visual_value: i32,
 ) -> bool {
-    if trackbar_visual_value(state, id) == visual_value {
+    let value = match id {
+        SkirmishTrackbarId::GameSpeed0x529 => {
+            crate::ui::shell::game_speed::SpeedContext::Offline.stored_speed(visual_value)
+        }
+        SkirmishTrackbarId::Credits0x511 => state
+            .trackbar_bounds
+            .credits_from_visual_position(visual_value),
+        SkirmishTrackbarId::UnitCount0x50c => visual_value,
+    };
+    let stored = match id {
+        SkirmishTrackbarId::GameSpeed0x529 => &mut state.game_speed,
+        SkirmishTrackbarId::Credits0x511 => &mut state.starting_credits,
+        SkirmishTrackbarId::UnitCount0x50c => &mut state.unit_count,
+    };
+    if *stored == value {
         return false;
     }
-    set_trackbar_visual_value(state, id, visual_value);
+    *stored = value;
     true
 }
 
@@ -185,7 +253,9 @@ pub fn handle_option_mouse_down(
 ) -> SkirmishShellAction {
     state.trackbar_hold = None;
 
-    if handle_combo_mouse_down(state, layout, maps, x, y) {
+    if handle_combo_mouse_down(state, layout, maps, x, y)
+        || press_opponent_scrollbar(state, layout, maps, x, y, crate::util::time::Instant::now())
+    {
         return SkirmishShellAction::None;
     }
 
@@ -200,7 +270,7 @@ pub fn handle_option_mouse_down(
 
     for id in trackbar_ids() {
         let rect = trackbar_rect(layout, id);
-        let range = state.trackbar_bounds.range(id);
+        let range = state.trackbar_bounds.visual_range(id);
         let visual_value = trackbar_visual_value(state, id);
         let press = range.press_in(visual_value, x, y, rect, layout.scale);
         let Some(hold) = press.hold(id) else {
@@ -233,6 +303,10 @@ pub fn handle_option_mouse_move(
         }
         return SkirmishShellAction::None;
     }
+    if state.opponent_scroll.captured() {
+        move_opponent_scrollbar(state, layout, maps, x, y);
+        return SkirmishShellAction::None;
+    }
 
     handle_combo_mouse_move(state, layout, maps, x, y);
 
@@ -243,7 +317,7 @@ pub fn handle_option_mouse_move(
     let rect = trackbar_rect(layout, hold.id);
     let value = state
         .trackbar_bounds
-        .range(hold.id)
+        .visual_range(hold.id)
         .value_at_in(x, rect, layout.scale);
     if set_trackbar_visual_value_if_changed(state, hold.id, value) {
         state.push_ui_sound(SkirmishShellUiSound::GenericClick);
@@ -253,6 +327,7 @@ pub fn handle_option_mouse_move(
 
 pub fn handle_option_mouse_up(state: &mut SkirmishShellState) -> SkirmishShellAction {
     state.trackbar_hold = None;
+    state.opponent_scroll.cancel();
     state.dropdown_scroll_drag = None;
     state.dropdown_scroll_press = None;
     SkirmishShellAction::None
@@ -262,15 +337,16 @@ pub fn handle_option_mouse_up(state: &mut SkirmishShellState) -> SkirmishShellAc
 ///
 /// There is no verified evidence that retail scrolls an open dropdown via the
 /// mouse wheel: no wheel handler exists in the owner-draw combo, popup, or
-/// scrollbar callbacks. Until a runtime capture proves otherwise, the wheel is
-/// inert in the shell and does not consume the event. Do NOT reintroduce a
-/// wheel-driven dropdown scroll without that evidence.
+/// scrollbar callbacks. Until a runtime capture proves otherwise, the wheel
+/// leaves the dropdowns alone. Do NOT reintroduce a wheel-driven dropdown
+/// scroll without that evidence. VERA's scrollbar beside the computer rows
+/// takes it instead; returns whether the rows moved.
 pub fn handle_option_mouse_wheel(
-    _state: &mut SkirmishShellState,
-    _maps: &[MapMenuEntry],
-    _lines: f32,
+    state: &mut SkirmishShellState,
+    maps: &[MapMenuEntry],
+    lines: f32,
 ) -> bool {
-    false
+    wheel_opponents(state, maps, lines)
 }
 
 #[cfg(test)]

@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "6 whole original RmgFinalizeWaterShore calls: erosion, thin-water cleanup, both piece-selection passes and the shared TMP placement, on physical shore TMPs",
+  "assumptions": [
+    "Existing CliffFixture owns original-constructed Cell backing, admission, the stride-33 scratch and the physical clear/cliff/shore TMP registration; bounds 16..48. Scratch coordinates stamped for in-diamond records only; region and stamp 0, mask cache -1, shore enable 1.",
+    "Declared scene: clear level-0 cells, water-set base cells with a region id, optional owned land cells. Not a complete Generate prefix.",
+    "Shore-piece anchor table filled by its original static initializer 57A9C0. Linear neighbour offsets written as PathfinderClass::ResizeMapArrays 42AC00 computes them for stride 33. FPCW 0E7F. All streams seeded by original 65C6D0."
+  ],
+  "substitutions": [
+    "Existing PaletteReader CRT allocation/free/TLS; native code bytes unchanged. No shore, tile, RNG or region result is supplied."
+  ],
+  "entry_points": {
+    "finalize_water_shore": "0x0057A0C0",
+    "anchor_init": "0x0057A9C0",
+    "next": "0x0065C780"
+  },
+  "replay_command": "python -m tools.rmg_oracle.water_shore",
+  "payload_sha256": "e62f8d19fc7d555f17ce00b57451ae6ad09f9413cb0c3fdd8a3e983d6c097091"
+}

@@ -71,7 +71,8 @@ pub(super) struct RecruitCandidate {
 /// `Recruit`'s search (`0x006EAB86..0x006EAE19`) over one class array in
 /// order: a candidate in the team's `group` (any with -2), or any for a
 /// `Recruiter=` TeamType, is keyed by its squared XY distance to `origin`
-/// (`0x005F6560`, wrapping) plus `0x3200` outside the group (wrapping); it
+/// (`0x005F6560`, `native_coord::squared_xy_distance`) plus `0x3200` outside
+/// the group (wrapping); it
 /// wins when it passes its own tests, its key is below the best (signed) or
 /// the best is still -1, and `can_add` admits it.
 pub(super) fn recruit_pick(
@@ -87,7 +88,7 @@ pub(super) fn recruit_pick(
         if !(group == -2 || candidate.group == group || recruiter) {
             continue;
         }
-        let mut key = super::team_ai::squared_xy_distance(candidate.xy, origin);
+        let mut key = crate::util::native_coord::squared_xy_distance(candidate.xy, origin);
         if candidate.group != group {
             key = key.wrapping_add(OTHER_GROUP_PENALTY);
         }
@@ -354,9 +355,10 @@ impl Simulation {
     /// against the first entry of its type, leaves the list, drops its
     /// suspended mission, destination and target (`+0xB0`, `+0x5A8`,
     /// `+0x2B8`) and, active, not falling (`+0x425`), out of limbo and
-    /// unless `no_idle`, enters its idle mode (`vt+0x484(0, 1)`). If no
-    /// member left is initiated, the head is, and the team loses its centre.
-    /// The team is marked altered.
+    /// unless `no_idle`, enters its idle mode (`vt+0x484(0, 1)`), which an
+    /// object-placement scope skips: `0x006EAA1E` tests `[0x00A8E7AC]` first.
+    /// If no member left is initiated, the head is, and the team loses its
+    /// centre. The team is marked altered.
     pub(crate) fn team_remove_member(
         &mut self,
         team_id: u64,
@@ -415,7 +417,7 @@ impl Simulation {
                     && !entity.crash.is_crashing()
                     && !entity.lifecycle.in_limbo()
             });
-        if idles && !no_idle {
+        if idles && !no_idle && !self.object_placement_scope_active() {
             crate::sim::world::enter_idle_mode(self, entity_id, rules, None, frame_effects);
         }
         if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
@@ -545,21 +547,34 @@ impl Simulation {
         // same order. Another house's object can neither win nor move the
         // best key: the unit search's own house test fails it, and for an
         // infantryman or aircraft `Can_Add` refuses it, before any write.
+        // Nor can an object of a type the search cannot take: a unit not of
+        // the entry's type fails the search's own type test, and `Can_Add`
+        // (`0x006EA610`) refuses an infantryman or aircraft of no entry's
+        // type, also before any write. VERA reads such an object's type and
+        // nothing more.
         let entities = &self.substrate.entities;
         let candidates = entities
             .owned_ids(team.owner, class)
             .iter()
             .filter_map(|&id| entities.get(id).map(|entity| (id, entity)))
+            .filter(|(_, entity)| {
+                let member_type = member_type_identity(entity);
+                if class == EntityCategory::Unit {
+                    member_type == entry.member_type
+                } else {
+                    entries.iter().any(|entry| entry.member_type == member_type)
+                }
+            })
             .map(|(id, entity)| RecruitCandidate {
                 id,
                 xy: position_world_xy(&entity.position),
                 // gamemd.exe Recruit6EAA90 reads Techno+214, including
                 // authored campaign groups (6EAC7A for Infantry).
                 group: entity.object_group(),
-                // The unit search's own house and type test; every object
-                // walked is the team's house's.
-                matches: class != EntityCategory::Unit
-                    || member_type_identity(entity) == entry.member_type,
+                // The unit search's own house and type test: every object
+                // weighed is the team's house's, and a unit of the entry's
+                // type.
+                matches: true,
             });
         let winner = recruit_pick(candidates, origin, group, recruiter, |id| {
             self.team_can_add(team_id, id, false, rules).is_some()

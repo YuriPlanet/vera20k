@@ -351,7 +351,8 @@ fn projectile_trailer_retail_constructor_rng_and_complete_lifetime_match_native(
                 &rules,
                 None,
                 crate::sim::world::FrameEffects::default(),
-            );
+            )
+            .unwrap();
             assert_eq!(
                 anim_state(&sim, sim.anim(bubble).unwrap()),
                 frame["anim"],
@@ -485,12 +486,14 @@ fn projectile_trailer_save_load_preserves_live_and_pending_cleanup_boundaries() 
                 loaded
                     .session
                     .set_binary_frame_for_test(frame["frame"].as_u64().unwrap() as u32);
-                loaded.visit_anim(
-                    bubble,
-                    &rules,
-                    None,
-                    crate::sim::world::FrameEffects::default(),
-                );
+                loaded
+                    .visit_anim(
+                        bubble,
+                        &rules,
+                        None,
+                        crate::sim::world::FrameEffects::default(),
+                    )
+                    .unwrap();
                 assert_eq!(
                     anim_state(loaded, loaded.anim(bubble).unwrap()),
                     frame["anim"]

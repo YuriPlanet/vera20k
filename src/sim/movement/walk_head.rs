@@ -961,6 +961,10 @@ pub(super) fn select_step_head_at(
     };
     let next = ((input.x / 256) as u16, (input.y / 256) as u16);
     let mut priority = false;
+    // RESIDUAL: 0x0075C2F3..0x0075C333 ask Get_Mission (0x005B3040: current,
+    // else queued); this reads current. They differ only while current is
+    // NONE with one of these missions queued, before the first Commence
+    // (rare): native already grants the target cell's priority, VERA waits.
     if [7, 8, 9, 11, 25].contains(&entity.mission.current().raw()) {
         let target = match entity.navigation.nav_com() {
             Some(crate::sim::components::NavTargetRef::Object { id }) => entities.get(id),

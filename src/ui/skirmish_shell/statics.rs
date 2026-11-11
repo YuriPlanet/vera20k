@@ -105,10 +105,12 @@ impl SkirmishStatics {
         }
     }
 
-    pub(crate) fn commit_presented(&mut self) {
-        self.dialog.commit_presented();
+    /// Returns whether the presented frame showed a new status-line step.
+    pub(crate) fn commit_presented(&mut self) -> bool {
+        let status_step = self.dialog.commit_presented();
         self.game_type.commit_presented();
         self.map_label.commit_presented();
+        status_step
     }
 
     /// Every reveal ran to completion and its last paint is on screen.

@@ -1,5 +1,6 @@
-//! Loading-only band decoding and nonblocking GPU retirement. Existing live
-//! growth keeps the synchronous entry; both consume the parent atlas owners.
+//! Loading-only band decoding and nonblocking GPU retirement. Live growth
+//! appends through [`ShpAtlasUpload::finish`]; both consume the parent atlas
+//! owners.
 
 use super::*;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -24,6 +25,7 @@ struct InFlightBand {
 /// Private candidate: it is never visible to a scene until every band retires.
 struct LoadingUpload {
     completion: Option<ShpAtlasUpload>,
+    unrenderable: Vec<ShpSpriteKey>,
     atlas: Option<SpriteAtlas>,
     indices: Vec<wgpu::Texture>,
     #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
@@ -49,15 +51,15 @@ impl PreparedSpriteAtlas {
         queue: &wgpu::Queue,
         batch: &BatchRenderer,
     ) -> anyhow::Result<SpriteAtlasLoadingJob> {
-        let mut completion = match self {
-            Self::Ready(atlas) => return Ok(SpriteAtlasLoadingJob::ready(atlas)),
-            Self::Upload(upload) => upload,
+        let (work, completion) = match self {
+            Self::Unchanged => return Ok(SpriteAtlasLoadingJob::ready(None)),
+            Self::Raster(work, upload) => (work, upload),
         };
-        anyhow::ensure!(
-            completion.previous_atlas.is_none(),
-            "loading must not replace a live atlas"
-        );
-        let rendered = std::mem::take(&mut completion.rendered);
+        anyhow::ensure!(completion.initial, "loading must not replace a live atlas");
+        // A map-load build that cannot draw a required frame fails here.
+        let Some((rendered, unrenderable, palettes)) = completion.drawn(work.render()) else {
+            return Ok(SpriteAtlasLoadingJob::ready(None));
+        };
         let added = rendered.len();
         if rendered.is_empty() {
             log::warn!("No SHP sprites rendered");
@@ -65,7 +67,6 @@ impl PreparedSpriteAtlas {
         }
         let texture_limit = device.limits().max_texture_dimension_2d;
         let mut plan = plan_shp_pages(rendered, texture_limit);
-        let palettes = std::mem::take(&mut completion.palettes);
         let (atlas, indices) = create_packed_shp_atlas(device, queue, batch, &mut plan, palettes);
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         let (send, messages) = mpsc::sync_channel(1);
@@ -135,6 +136,7 @@ impl PreparedSpriteAtlas {
             ready: None,
             upload: Some(LoadingUpload {
                 completion: Some(completion),
+                unrenderable,
                 atlas: Some(atlas),
                 indices,
                 messages,
@@ -210,13 +212,17 @@ impl SpriteAtlasLoadingJob {
                 Ok(Poll::Pending)
             }
             Ok(RasterMessage::Finished) => {
-                let atlas = upload.atlas.take().expect("unpublished loading candidate");
+                let mut atlas = upload.atlas.take().expect("unpublished loading candidate");
                 log_shp_atlas_pack(&atlas, upload.texture_limit);
-                let atlas = upload
+                upload
                     .completion
                     .take()
                     .expect("one completion owner")
-                    .publish(atlas, upload.added, true);
+                    .publish(
+                        &mut atlas,
+                        upload.added,
+                        std::mem::take(&mut upload.unrenderable),
+                    );
                 self.upload = None;
                 Ok(Poll::Ready(Some(atlas)))
             }

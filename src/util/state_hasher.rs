@@ -60,16 +60,33 @@ pub(crate) fn hash_records<T, const N: usize>(
     hasher: &mut impl Hasher,
     record: impl Fn(&T) -> [u8; N],
 ) {
+    hash_record_iter(items.len(), items, hasher, record);
+}
+
+/// [`hash_records`] over `len` items from any iterator, in the same batches,
+/// so the bytes written match the slice form's exactly.
+pub(crate) fn hash_record_iter<'a, T: 'a, const N: usize>(
+    len: usize,
+    items: impl IntoIterator<Item = &'a T>,
+    hasher: &mut impl Hasher,
+    record: impl Fn(&T) -> [u8; N],
+) {
     const BATCH_BYTES: usize = 4096;
     const { assert!(N > 0 && N <= BATCH_BYTES) };
-    items.len().hash(hasher);
+    len.hash(hasher);
+    let per_batch = BATCH_BYTES / N;
     let mut buffer = [0u8; BATCH_BYTES];
-    for batch in items.chunks(BATCH_BYTES / N) {
-        let bytes = &mut buffer[..batch.len() * N];
-        for (slot, item) in bytes.as_chunks_mut::<N>().0.iter_mut().zip(batch) {
-            *slot = record(item);
+    let mut filled = 0;
+    for item in items {
+        buffer[filled * N..(filled + 1) * N].copy_from_slice(&record(item));
+        filled += 1;
+        if filled == per_batch {
+            hasher.write(&buffer[..filled * N]);
+            filled = 0;
         }
-        hasher.write(bytes);
+    }
+    if filled > 0 {
+        hasher.write(&buffer[..filled * N]);
     }
 }
 

@@ -2,6 +2,7 @@
 //! Simulation's ScenarioSession owns62C/630 and the input-lock transitions.
 //! This leaf supplies no gameplay clock, RNG or competing pause counter.
 use crate::app::AppState;
+use crate::app::match_runtime::sim_host::SimWrite;
 use crate::sim::replay::ScenarioServiceInput;
 use crate::sim::timer::CdTimer;
 
@@ -131,7 +132,7 @@ pub(crate) fn poll(state: &mut AppState, wall_ms: u64) {
         .match_presentation
         .scenario_pause
         .elapsed(wall_ms)
-        && let Some(rt) = state.match_state.sim_runtime.as_ref()
+        && let Some(rt) = state.match_state.sim_runtime.runtime()
         && rt.simulation.session().scenario_pause_timed()
     {
         apply_service(state, ScenarioServiceInput::ExpireTimedPause);
@@ -141,7 +142,7 @@ pub(crate) fn poll(state: &mut AppState, wall_ms: u64) {
 /// Ordered external service ingress shared by timers, Chrono and Radar.
 /// Record the transition itself, never a wall clock or a second state owner.
 pub(crate) fn apply_service(state: &mut AppState, input: ScenarioServiceInput) {
-    let Some(rt) = state.match_state.sim_runtime.as_mut() else {
+    let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Tick) else {
         return;
     };
     let effects = match state.match_state.match_diagnostics.get_or_begin_replay(rt) {

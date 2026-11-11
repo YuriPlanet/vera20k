@@ -19,11 +19,11 @@ fn eligible_air_target(sim: &Simulation, rules: &RuleSet, aegis: u64) -> Option<
         sim.resolved_terrain.as_ref(),
         true,
         ScanMission::Guard,
-        sim.zone_grid.as_ref(),
+        sim.zone_grid.as_deref(),
         LineOfFireInputs {
             overlay_grid: sim.overlay_grid.as_ref(),
-            overlay_registry: None,
             alliances: Some(&sim.house_alliances),
+            ..Default::default()
         },
         Some(sim),
         None,
@@ -68,6 +68,9 @@ impl GuardScene {
             let id = sim
                 .spawn_object_at_height("ZEP", "Russians", x, y, 0, 6, &rules)
                 .expect("retail Kirov high Unlimbo");
+            // The player has seen the Kirov, a VehicleType: the campaign scan
+            // gate needs +0x41B.
+            crate::sim::arena_fixture::discover(&mut sim, id);
             let actor = sim.substrate.entities.get(id).unwrap();
             assert!(!actor.lifecycle.in_limbo());
             assert!(actor.lifecycle.cell_marked());
@@ -178,11 +181,15 @@ fn distributed_guard_normal_and_elite_cycle_live_targets_and_reset_only_burst() 
                 !source.passive_scan.acquired(),
                 "class NULL assignment clears passive acquisition"
             );
-            assert_eq!(
-                source.weapon_burst.index(),
-                0,
-                "changed NULL target resets elite Burst2 too"
-            );
+            // Ares TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53)
+            // keeps the index instead.
+            if !cfg!(feature = "ares") {
+                assert_eq!(
+                    source.weapon_burst.index(),
+                    0,
+                    "changed NULL target resets elite Burst2 too"
+                );
+            }
             assert_eq!(
                 source.weapon_burst.radial_index(),
                 index + 1,
@@ -800,7 +807,7 @@ fn distributed_collection_flat_entry_clears_but_class_early_return_preserves() {
         sim.resolved_terrain.as_ref(),
         true,
         ScanMission::Guard,
-        sim.zone_grid.as_ref(),
+        sim.zone_grid.as_deref(),
         LineOfFireInputs::default(),
         Some(&sim),
         None,

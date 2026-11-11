@@ -457,3 +457,19 @@ fn saved_placement_and_sell_mode_survive_roundtrip() {
     assert!(sidebar.sell_mode_on && !sidebar.repair_mode_on);
     assert_eq!(outgoing.targeting_mode, None);
 }
+
+/// MouseLoad 5BDF70 restores TabClass IsCommandBarOpen (+0x5544) with the raw
+/// Mouse body, so a bar saved closed stays closed over an outgoing open bar.
+#[test]
+fn saved_closed_command_bar_survives_roundtrip() {
+    let (sim, rules, idle) = fixture();
+    let mut closed = SidebarGadgetState::new();
+    closed.command_bar_closed = true;
+    let saved = serialized_capture_with(&idle, &closed, &sim, &rules);
+    let mut sidebar = SidebarGadgetState::new();
+    let mut outgoing = MatchInputState::new(Default::default());
+    PreparedSavedLocalView::new(saved, &sim, &rules)
+        .unwrap()
+        .commit_into(&mut outgoing, &mut sidebar);
+    assert!(sidebar.command_bar_closed);
+}

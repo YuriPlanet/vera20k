@@ -47,14 +47,14 @@ impl RawTubeSection {
 }
 
 /// Native constructor identity retained beside the successful Tube fact.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TubeNativeInit {
     pub source_entry_ordinal: usize,
     pub native_unique_id: i32,
 }
 
 /// One successfully allocated, assigned, and parsed authored Tube record.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConstructedMapTube {
     pub fact: TubeFact,
     pub native_init: TubeNativeInit,
@@ -63,19 +63,19 @@ pub struct ConstructedMapTube {
 /// Consumed-once successful/partial receipt for the raw Tube boundary. `Some`
 /// with zero entries distinguishes an empty section whose reservation ran from
 /// a load that never reached the boundary.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct NativeMapTubeReceipt {
     pub entries: Vec<ConstructedMapTube>,
 }
 
 /// Consumed-once ownership of the raw `[Tubes]` boundary: a fresh map read
 /// installs one receipt, and terrain binding takes it once.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct NativeMapTubes {
     state: NativeMapTubesState,
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 enum NativeMapTubesState {
     #[default]
     Unconstructed,

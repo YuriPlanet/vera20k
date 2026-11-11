@@ -68,13 +68,7 @@ fn response_world(frame: u32, attacker_at: (u16, u16)) -> Simulation {
 fn with_clear_map(sim: &mut Simulation) {
     let terrain = clear_terrain(8, 8);
     let path_grid = PathGrid::from_resolved_terrain(&terrain);
-    sim.zone_grid = Some(ZoneGrid::build_with_terrain(
-        &path_grid,
-        &terrain,
-        &[],
-        8,
-        8,
-    ));
+    sim.zone_grid = Some(ZoneGrid::build_with_terrain(&path_grid, &terrain, &[], 8, 8).into());
     sim.resolved_terrain = Some(terrain);
     sim.session.set_map_width_for_test(8);
     sim.session.set_map_height_for_test(8);
@@ -702,7 +696,7 @@ fn run_native_bridge_response_seams(victim_is_slave: bool) {
         .unwrap();
         let mut sim = response_world(41, (5, 5));
         let terrain = native::terrain(input);
-        sim.zone_grid = Some(native::zones(&terrain, row));
+        sim.zone_grid = Some(native::zones(&terrain, row).into());
         sim.resolved_terrain = Some(terrain);
         sim.set_playfield_bounds_for_test(Some(
             crate::map::playfield::PlayfieldBounds::from_normalized_local_size(8, 0, 0, 8, 8),
@@ -814,7 +808,7 @@ fn retail_bridge_base_response_runs_through_the_protected_damage_receiver() {
             cell.slope_type = supplied["slope"].as_u64().unwrap() as u8;
             cell.bridge_facts.raw_flags = supplied["flags"].as_u64().unwrap() as u32;
         }
-        sim.zone_grid = Some(native::zones(terrain, row));
+        sim.zone_grid = Some(native::zones(terrain, row).into());
         sim.set_playfield_bounds_for_test(Some(
             crate::map::playfield::PlayfieldBounds::from_normalized_local_size(8, 0, 0, 8, 8),
         ));

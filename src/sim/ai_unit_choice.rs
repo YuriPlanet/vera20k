@@ -47,10 +47,13 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
 use crate::sim::production::{CanBuild, can_build};
 use crate::sim::world::Simulation;
+#[cfg(not(feature = "ares"))]
 use crate::util::native_random::unit_draw_threshold;
+#[cfg(not(feature = "ares"))]
 use crate::util::native_x87::{NativeF64Bits, X87Chop53};
 
 /// `0.01` (`[0x007E3808]`).
+#[cfg(not(feature = "ares"))]
 const PERCENT_SCALE: NativeF64Bits = NativeF64Bits::from_bits(0x3F84_7AE1_47AE_147B);
 
 /// One of the house's mobile production choices.
@@ -301,8 +304,20 @@ fn harvester_decision(facts: &HarvesterFacts) -> Option<i32> {
         && !facts.no_ore
         && !facts.human
         && facts.gatherers < limit
-        && (harvester_tech as u32) <= (facts.tech_level as u32);
+        && tech_admits(harvester_tech, facts.tech_level);
     admitted.then_some(harvester)
+}
+
+/// The harvester's TechLevel against the house's: unsigned in gamemd's
+/// harvester branch (`0x004FEA7D..0x004FEBD7`), signed in Ares 3.0
+/// HouseClass_AI_UnitProduction 10023410 (hook `0x004FEA60`).
+fn tech_admits(harvester_tech: i32, house_tech: i32) -> bool {
+    #[cfg(feature = "ares")]
+    return harvester_tech <= house_tech;
+    #[cfg(not(feature = "ares"))]
+    {
+        (harvester_tech as u32) <= (house_tech as u32)
+    }
 }
 
 /// A type the house's teams need and the house may buy now.
@@ -481,6 +496,7 @@ fn pick(
     fill_earliest_percent: i32,
     mut draw: impl FnMut(i32, i32) -> i32,
 ) -> Option<i32> {
+    #[cfg(not(feature = "ares"))]
     type X = X87Chop53;
     let mut most_needed: Vec<i32> = Vec::new();
     let mut best_need = -1;
@@ -495,13 +511,23 @@ fn pick(
             earliest = Some(candidate);
         }
     }
-    let roll = draw(0, 0x7FFF_FFFE) as u32;
-    let fill = X::store_f64(X::mul(
-        X::load_i32(fill_earliest_percent),
-        X::load_f64(PERCENT_SCALE).expect("0.01 is finite"),
-    ))
-    .expect("a percent of 0.01 is a finite double");
-    if roll < unit_draw_threshold(f64::from_bits(fill.bits())) {
+    // Ares 3.0 HouseExt::GetTypeToProduce 100216A0 (the "100 unit bug"
+    // replacement behind hooks 0x004FEA60 10023410, 0x004FEEE0 100233B0 and
+    // 0x004FF210 10023350) draws `RandomRanged(0, 99)` and takes the
+    // earliest team's type below `FillEarliestTeamProbability`.
+    #[cfg(feature = "ares")]
+    let earliest_wins = draw(0, 99) < fill_earliest_percent;
+    #[cfg(not(feature = "ares"))]
+    let earliest_wins = {
+        let roll = draw(0, 0x7FFF_FFFE) as u32;
+        let fill = X::store_f64(X::mul(
+            X::load_i32(fill_earliest_percent),
+            X::load_f64(PERCENT_SCALE).expect("0.01 is finite"),
+        ))
+        .expect("a percent of 0.01 is a finite double");
+        roll < unit_draw_threshold(f64::from_bits(fill.bits()))
+    };
+    if earliest_wins {
         return earliest.map(|candidate| candidate.index);
     }
     if most_needed.is_empty() {

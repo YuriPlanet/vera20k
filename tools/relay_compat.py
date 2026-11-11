@@ -16,7 +16,9 @@ has no cooperating worktrees, and which a local checkout must leave to
 
 `--allow-break` reports client failures as warnings. A PR carries the
 `relay-compat-break` label when it changes the relay's records on purpose, after
-a client that reads them has shipped.
+a client that reads them has shipped. A break may also change the protocol API
+the example reads, so a release the checkout's example no longer builds against
+plays the example it tracks instead.
 """
 from __future__ import annotations
 
@@ -91,6 +93,10 @@ def restore_example(tree: Path, original: bytes | None) -> None:
         (tree / EXAMPLE).write_bytes(original)
 
 
+class BuildFailed(SystemExit):
+    """A target that did not build; uncaught, it ends the run like any SystemExit."""
+
+
 def build(tree: Path, package: str, target: list[str], output: Path) -> Path:
     """Builds one target and copies its executable, named by Cargo's artifact report, to OUTPUT.
 
@@ -109,9 +115,27 @@ def build(tree: Path, package: str, target: list[str], output: Path) -> Path:
     code = invoke(["build", "--locked", "--message-format=json-render-diagnostics", "-p", package, *target],
                   cwd=tree, isolated_ci=True, on_line=artifact)
     if code or len(executables) != 1:
-        raise SystemExit(f"Building {package} {' '.join(target)} in {tree} failed")
+        raise BuildFailed(f"Building {package} {' '.join(target)} in {tree} failed")
     shutil.copy2(executables[0], output)
     return output
+
+
+def released_client(tree: Path, original: bytes | None, output: Path, allow_break: bool) -> Path:
+    """Builds TREE's client from the checkout's example in it.
+
+    Under `allow_break`, a release the checkout's example does not build against
+    builds the copy it tracks (ORIGINAL), which reads records as that release does.
+    """
+    target = ["--example", "relay_compat"]
+    try:
+        return build(tree, "vera20k-relay-protocol", target, output)
+    except BuildFailed:
+        if not allow_break or original is None:
+            raise
+    print(f"::warning::The checkout's relay_compat example does not build against {tree.name}; "
+          "playing the example that release tracks", flush=True)
+    restore_example(tree, original)
+    return build(tree, "vera20k-relay-protocol", target, output)
 
 
 def start_relay(relay: Path, state: Path) -> tuple[subprocess.Popen, str]:
@@ -164,8 +188,8 @@ def main(argv: list[str] | None = None) -> int:
                 git("worktree", "add", "--quiet", "--detach", str(tree), commit)
                 trees[tree] = None  # removed below even if the copy fails
                 trees[tree] = use_checkout_example(tree)
-                clients[" = ".join(labels)] = build(tree, "vera20k-relay-protocol", ["--example", "relay_compat"],
-                                                    scratch / f"{commit[:12]}-client")
+                clients[" = ".join(labels)] = released_client(tree, trees[tree], scratch / f"{commit[:12]}-client",
+                                                              args.allow_break)
             server, address = start_relay(relay, scratch / "relay-state")
             try:
                 print(f"Playing {len(clients)} clients against the checkout's relay at {address}; "

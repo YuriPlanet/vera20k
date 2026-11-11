@@ -73,6 +73,14 @@ folder. Unless a file there says otherwise, it is licensed under
 Art you contribute to that folder is licensed on the same terms. There is no such art yet: the
 current icon and screenshots show Electronic Arts' game art.
 
+## Code from Ares
+
+Parts of the optional Ares support are translated from
+[Ares](https://github.com/Ares-Developers/Ares). They keep Ares' copyright notice and
+[license](LICENSES/Ares.txt), which you must also keep when you share them.
+
+This product includes software developed by the Ares Contributors.
+
 ## Game files
 
 VERA20K contains none of the game's files. They belong to Electronic Arts, and no VERA20K

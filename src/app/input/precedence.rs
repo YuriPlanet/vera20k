@@ -10,7 +10,9 @@
 //!   sits over the Keyboard page A3: A3's pump (`0x005FBF2E`) runs
 //!   `ProcessModalServicePump 0x00623120`, which in network modes enters
 //!   `Main_Tick 0x0055D360` and from it `Wait_For_Players 0x00648710`, which
-//!   opens 0xEA.
+//!   opens 0xEA. Last, a shell message box over a page that keeps drawing
+//!   under it (VERA's Esc menu, and the updater's boxes after Options); the
+//!   main menu paints its own boxes.
 //! - The current screen's page: a main-menu overlay or route page, the
 //!   loading screen, an in-game modal or the battlefield, or a score page.
 //!   An in-game modal or a result without its retail page is a status card.
@@ -29,7 +31,8 @@ pub(crate) enum ModalPage {
     NetworkWait,
     /// A3, from the launcher or in-game Options.
     Keyboard,
-    NetworkOptions,
+    /// A shell message box over a page other than the main menu.
+    ShellMessageBox,
 }
 
 /// The page that owns the current screen when no modal page is open.
@@ -92,7 +95,7 @@ struct Layers {
     network_failure: bool,
     network_wait: bool,
     keyboard: bool,
-    network_options: bool,
+    shell_message_box: bool,
     screen: Screen,
     route: ShellRoute,
     fullscreen_movie: bool,
@@ -122,7 +125,8 @@ impl Layers {
             network_wait: frontend.screen == GameScreen::InGame
                 && state.match_state.network_wait.dialog_open(),
             keyboard: frontend.keyboard_dialog.is_some(),
-            network_options: frontend.network_options.is_some(),
+            shell_message_box: frontend.screen == GameScreen::MainMenu
+                && frontend.shell_message_box.is_some(),
             screen: match frontend.screen {
                 GameScreen::MainMenu => Screen::MainMenu,
                 GameScreen::Loading => Screen::Loading,
@@ -153,10 +157,20 @@ impl Layers {
             (self.network_failure, ModalPage::NetworkFailure),
             (self.network_wait, ModalPage::NetworkWait),
             (self.keyboard, ModalPage::Keyboard),
-            (self.network_options, ModalPage::NetworkOptions),
+            (self.message_box_over_page(), ModalPage::ShellMessageBox),
         ]
         .into_iter()
         .find_map(|(open, page)| open.then_some(page))
+    }
+
+    /// The main menu paints its boxes in its own pass; a movie or the credits
+    /// run with no dialog to ask over.
+    fn message_box_over_page(self) -> bool {
+        self.shell_message_box
+            && !matches!(
+                self.screen_page(),
+                ScreenPage::MainMenu | ScreenPage::FullscreenMovie | ScreenPage::CreditsRoll
+            )
     }
 
     fn screen_page(self) -> ScreenPage {
@@ -172,13 +186,14 @@ impl Layers {
                     // Play_Movie and Show_Credits run after their dialog is gone.
                     (self.fullscreen_movie, ScreenPage::FullscreenMovie),
                     (self.credits_roll, ScreenPage::CreditsRoll),
+                    // The Esc menu opens Options over any route's page.
+                    (self.launcher_options, ScreenPage::LauncherOptions),
                     (self.movie_list, ScreenPage::MovieList),
                     (self.campaign, ScreenPage::Campaign),
                     (self.route.lan_lobby(), ScreenPage::LanLobby),
                     (self.route.network_setup(), ScreenPage::NetworkSetup),
                     (self.wol, ScreenPage::Wol),
                     (self.load_saved_game, ScreenPage::LoadSavedGame),
-                    (self.launcher_options, ScreenPage::LauncherOptions),
                     (self.route.skirmish(), ScreenPage::Skirmish),
                     (self.route.single_player(), ScreenPage::SinglePlayer),
                     (
@@ -311,5 +326,49 @@ mod tests {
             stopped_slide.input(),
             InputLayer::Page(ModalPage::ShellError)
         );
+    }
+
+    /// A box over a page takes the input while the page stays the one drawn
+    /// beneath it. Over the main menu it stays on that page's own paths.
+    #[test]
+    fn a_message_box_over_a_page_takes_input_and_keeps_the_page() {
+        let over_page = Layers {
+            shell_message_box: true,
+            route: ShellRoute::LanLobby,
+            ..Default::default()
+        };
+        assert_eq!(
+            over_page.input(),
+            InputLayer::Page(ModalPage::ShellMessageBox)
+        );
+        assert_eq!(over_page.screen_page(), ScreenPage::LanLobby);
+
+        let over_menu = Layers {
+            shell_message_box: true,
+            ..Default::default()
+        };
+        assert_eq!(over_menu.page(), None);
+        assert_eq!(over_menu.input(), InputLayer::Screen(ScreenPage::MainMenu));
+    }
+
+    /// Options opened from a page is what shows and takes input; the route
+    /// stays, so closing Options returns to that page.
+    #[test]
+    fn options_opened_from_a_page_covers_it() {
+        for (route, campaign) in [
+            (ShellRoute::Campaign, true),
+            (ShellRoute::NetworkSetup, false),
+        ] {
+            let layers = Layers {
+                launcher_options: true,
+                route,
+                campaign,
+                ..Default::default()
+            };
+            assert_eq!(
+                layers.input(),
+                InputLayer::Screen(ScreenPage::LauncherOptions)
+            );
+        }
     }
 }

@@ -196,14 +196,6 @@ pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
         campaign_score: false,
     },
     SlideDialogSpec {
-        dialog_id: 0x00D7,
-        top_buttons: 1,
-        bottom_button: true,
-        map_button: false,
-        top_panel: false,
-        campaign_score: false,
-    },
-    SlideDialogSpec {
         dialog_id: 0x00E2,
         top_buttons: 5,
         bottom_button: true,
@@ -293,6 +285,15 @@ pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
         bottom_button: true,
         map_button: false,
         top_panel: true,
+        campaign_score: false,
+    },
+    // VERA's Chat Translation page: OK, then Cancel.
+    SlideDialogSpec {
+        dialog_id: crate::ui::wol_chat_translation::DIALOG.0,
+        top_buttons: 1,
+        bottom_button: true,
+        map_button: false,
+        top_panel: false,
         campaign_score: false,
     },
     // WOL Options 0x2BC: OK and Sound Options, then Cancel. Its nested

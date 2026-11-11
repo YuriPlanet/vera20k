@@ -50,12 +50,15 @@ fn native_e2_category_gates(phase_name: &str) -> Vec<ProductionCategory> {
         .unwrap();
     // Original House5005B0 stores Infantry at53D1 and falls through to
     // nonnaval Vehicle53D2. These are observed bytes, not derived gates.
+    // Ares HouseClass_SetFactoryCreatedManually (1005CBD0, hook 0x5005CC)
+    // stops at Infantry; this E2-only history sets Vehicle by nothing else.
     let bytes = phase["after"]["category_request_bytes"].as_array().unwrap();
     [
         (1, ProductionCategory::Infantry),
         (2, ProductionCategory::Vehicle),
     ]
     .into_iter()
+    .filter(|&(offset, _)| !(cfg!(feature = "ares") && offset == 2))
     .filter_map(|(offset, category)| (bytes[offset].as_u64().unwrap() != 0).then_some(category))
     .collect()
 }
@@ -276,6 +279,10 @@ fn pending_first_e2_right_holds_one_real_head_then_resumes_its_paid_exit() {
     }
 }
 
+// The Infantry request mark falls through to the Vehicle one only without
+// Ares (FactoryClass flag fixes 1005CBD0/1005CB30/1005CBF0, hooks
+// 0x5005CC/0x50067C/0x5007BE).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn held_e2_resume_suppresses_a_vehicle_pending_request_before_dispatch() {
     let Some(mut fixture) = stock_base_fixture(

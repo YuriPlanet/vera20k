@@ -12,6 +12,7 @@ use crate::sim::smudge_grid::SimCoord;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::art_data::ArtRegistry;
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
+use crate::rules::overlay_types::TiberiumImageError;
 use crate::rules::smudge_type::SmudgeTypeRegistry;
 use crate::sim::cell_rect::{
     CellPassabilityArgs, CellPassabilityMap, CellRef, check_cell_passability,
@@ -61,7 +62,7 @@ impl SmudgeTiberiumContext<'_> {
         amount: u16,
         terrain: &mut ResolvedTerrainGrid,
         rng: &mut SimRng,
-    ) {
+    ) -> Result<(), TiberiumImageError> {
         let mut ctx = ReduceTiberiumContext {
             overlay_grid: Some(&mut *self.overlay_grid),
             ore_growth_state: &mut *self.ore_growth_state,
@@ -75,7 +76,7 @@ impl SmudgeTiberiumContext<'_> {
             spread_enabled: self.spread_enabled,
             dirty_cells: Some(&mut *self.dirty_cells),
         };
-        reduce_tiberium(&mut ctx, cell, i32::from(amount));
+        reduce_tiberium(&mut ctx, cell, i32::from(amount)).map(|_| ())
     }
 }
 
@@ -95,7 +96,7 @@ pub struct AnimMiddleMarks {
 /// Where Middle's marks land.
 pub(crate) trait MiddleMarkSink {
     /// `CellClass::Reduce_Tiberium(6)` (`0x00480A80`) on the anim's cell.
-    fn reduce_tiberium(&mut self, amount: u16, rng: &mut SimRng);
+    fn reduce_tiberium(&mut self, amount: u16, rng: &mut SimRng) -> Result<(), TiberiumImageError>;
     /// The scorch placer (`0x006B59A0`, Burn types) or the crater placer
     /// (`0x006B5C90`, Crater types).
     fn place(&mut self, kind: SmudgeKind, width: i32, height: i32, force: bool, rng: &mut SimRng);
@@ -111,19 +112,20 @@ pub(crate) fn anim_middle_marks(
     marks: &AnimMiddleMarks,
     sink: &mut impl MiddleMarkSink,
     rng: &mut SimRng,
-) {
+) -> Result<(), TiberiumImageError> {
     if marks.scorch && (!marks.crater || rng_below_half_normalized(rng)) {
         sink.place(SmudgeKind::Burn, marks.width, marks.height, false, rng);
-        return;
+        return Ok(());
     }
     if marks.crater {
-        sink.reduce_tiberium(CRATER_ORE_REDUCTION, rng);
+        sink.reduce_tiberium(CRATER_ORE_REDUCTION, rng)?;
         if marks.force_big_craters {
             sink.place(SmudgeKind::Crater, 300, 300, true, rng);
         } else {
             sink.place(SmudgeKind::Crater, marks.width, marks.height, false, rng);
         }
     }
+    Ok(())
 }
 
 /// The world's [`MiddleMarkSink`]: the smudge grid at the anim's coordinate.
@@ -138,7 +140,7 @@ struct GridMarks<'g, 't, 'c, 's> {
 }
 
 impl MiddleMarkSink for GridMarks<'_, '_, '_, '_> {
-    fn reduce_tiberium(&mut self, amount: u16, rng: &mut SimRng) {
+    fn reduce_tiberium(&mut self, amount: u16, rng: &mut SimRng) -> Result<(), TiberiumImageError> {
         // Middle's cell is the coordinate divided toward zero
         // (`0x00424F17..0x00424F3E`), then MapClass::GetCell.
         let (rx, ry) = (self.coord.x / 256, self.coord.y / 256);
@@ -146,8 +148,9 @@ impl MiddleMarkSink for GridMarks<'_, '_, '_, '_> {
             && (0..i32::from(self.smudge_grid.height())).contains(&ry)
         {
             self.tiberium
-                .reduce((rx as u16, ry as u16), amount, self.terrain, rng);
+                .reduce((rx as u16, ry as u16), amount, self.terrain, rng)?;
         }
+        Ok(())
     }
 
     fn place(&mut self, kind: SmudgeKind, width: i32, height: i32, force: bool, rng: &mut SimRng) {
@@ -179,7 +182,7 @@ pub(crate) fn dispatch_anim_middle_marks(
     tiberium: &mut SmudgeTiberiumContext<'_>,
     rng: &mut SimRng,
     construction: Option<&mut SmudgeConstruction<'_>>,
-) {
+) -> Result<(), TiberiumImageError> {
     let mut sink = GridMarks {
         coord,
         smudge_grid,
@@ -189,7 +192,7 @@ pub(crate) fn dispatch_anim_middle_marks(
         tiberium,
         construction,
     };
-    anim_middle_marks(marks, &mut sink, rng);
+    anim_middle_marks(marks, &mut sink, rng)
 }
 
 /// gamemd's anim scorch-vs-crater 50/50 (`AnimClass::Middle`,
@@ -382,7 +385,7 @@ pub(crate) fn dispatch_smudge_request(
     tiberium: &mut SmudgeTiberiumContext<'_>,
     rng: &mut SimRng,
     construction: Option<&mut SmudgeConstruction<'_>>,
-) {
+) -> Result<(), TiberiumImageError> {
     match req {
         SmudgeSpawnRequest::AnimMiddle { coord, marks } => {
             dispatch_anim_middle_marks(
@@ -395,7 +398,7 @@ pub(crate) fn dispatch_smudge_request(
                 tiberium,
                 rng,
                 construction,
-            );
+            )?;
         }
         SmudgeSpawnRequest::BuildingCenter {
             rx,
@@ -436,6 +439,7 @@ pub(crate) fn dispatch_smudge_request(
             );
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -493,8 +497,13 @@ mod oracle_tests {
     }
 
     impl MiddleMarkSink for OracleMarks<'_> {
-        fn reduce_tiberium(&mut self, amount: u16, _rng: &mut SimRng) {
+        fn reduce_tiberium(
+            &mut self,
+            amount: u16,
+            _rng: &mut SimRng,
+        ) -> Result<(), TiberiumImageError> {
             self.events.push(format!("reduce {amount}"));
+            Ok(())
         }
 
         fn place(
@@ -591,7 +600,7 @@ mod oracle_tests {
                     width,
                     height,
                 };
-                anim_middle_marks(&marks, &mut sink, &mut rng);
+                anim_middle_marks(&marks, &mut sink, &mut rng).unwrap();
             }
             let native: Vec<String> = row["events"]
                 .as_array()
@@ -647,13 +656,17 @@ mod dispatch_tests {
         crate::rules::overlay_types::OverlayTypeRegistry,
         crate::rules::tiberium_type::TiberiumTypeRegistry,
     ) {
-        let ini = crate::rules::ini_parser::IniFile::from_bytes(
-            b"[Tiberiums]\n0=Riparius\n\
-              [Riparius]\nImage=1\nValue=25\n\
-              [OverlayTypes]\n0=ORE\n\
-              [ORE]\nTiberium=yes\n",
-        )
-        .unwrap();
+        // The flagged test overlay is a range miss (native fallback slot0),
+        // but Image=1 must bind the actual Overlay vector's slot102.
+        let mut text = String::from(
+            "[Tiberiums]\n0=Riparius\n[Riparius]\nImage=1\nValue=25\n\
+             [OverlayTypes]\n0=ORE\n",
+        );
+        for slot in 1..=102 {
+            text.push_str(&format!("{slot}=PAD{slot}\n"));
+        }
+        text.push_str("[ORE]\nTiberium=yes\n");
+        let ini = crate::rules::ini_parser::IniFile::from_str(&text);
         (
             crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None),
             crate::rules::tiberium_type::TiberiumTypeRegistry::from_ini(&ini),
@@ -687,7 +700,8 @@ mod dispatch_tests {
     fn test_default_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
         ResolvedTerrainCell {
             speed_costs: crate::rules::terrain_rules::SpeedCostProfile {
-                track: Some(100),
+                track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
                 ..Default::default()
             },
             ..crate::map::resolved_terrain::test_filled_smudge_cell(rx, ry)
@@ -726,7 +740,8 @@ mod dispatch_tests {
                 &mut tiberium,
                 &mut rng,
                 None,
-            );
+            )
+            .unwrap();
         }
         assert_eq!(grid.iter_occupied().count(), 0);
         assert_eq!(overlay.cell(0, 0).overlay_id, Some(ore_id));
@@ -814,13 +829,14 @@ mod dispatch_tests {
             assert!(!survivor_smudge_cell_passable(
                 1, 3, &raw, &terrain, &overlay,
             ));
-            terrain.cell_mut_for_test(1, 4).unwrap().speed_costs.track = Some(0);
+            terrain.cell_mut_for_test(1, 4).unwrap().speed_costs.track =
+                Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
             assert!(!survivor_smudge_cell_passable(
                 1, 4, &raw, &terrain, &overlay,
             ));
 
             let bridge = terrain.cell_mut_for_test(1, 5).unwrap();
-            bridge.speed_costs.track = Some(0);
+            bridge.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
             bridge.bridge_facts.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
             raw.mark_ground(1, 5, 0x40);
             assert!(
@@ -833,7 +849,8 @@ mod dispatch_tests {
             ));
 
             let wall_bridge = terrain.cell_mut_for_test(1, 6).unwrap();
-            wall_bridge.speed_costs.track = Some(0);
+            wall_bridge.speed_costs.track =
+                Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
             wall_bridge.bridge_facts.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
             overlay.place_overlay(1, 6, 0, 0);
             assert!(!survivor_smudge_cell_passable(

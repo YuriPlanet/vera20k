@@ -210,6 +210,15 @@ impl InteriorCells {
         x < self.width && self.contains_index(index)
     }
 
+    /// Whether [`Self::contains`] holds for every cell of row `y` from
+    /// `x0` to `x1`, both included.
+    pub(crate) fn contains_row(&self, y: u16, x0: u16, x1: u16) -> bool {
+        let row = usize::from(y) * usize::from(self.width);
+        x1 < self.width
+            && crate::util::bit_span::span_words(row + usize::from(x0), row + usize::from(x1))
+                .all(|(word, mask)| self.bits.get(word).is_some_and(|bits| bits & mask == mask))
+    }
+
     /// The index of the cell one `(dx, dy)` step from the cell with storage
     /// `index` when that cell is interior: the real cell a lookup of the
     /// neighbour's coordinate finds. `None` for any other cell.

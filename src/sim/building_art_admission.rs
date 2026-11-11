@@ -25,6 +25,12 @@ impl Simulation {
     /// operational visit. Dormant LaserFencePost/CloakGenerator tails still
     /// require their separate, currently unported mechanisms.
     pub(crate) fn set_building_stuff_enabled(&mut self, id: u64, enabled: bool, rules: &RuleSet) {
+        // Ares BuildingClass_DisableThings10016D00 (hook4524A3) updates a
+        // sensor array at DisableStuff452480's head.
+        #[cfg(feature = "ares")]
+        if !enabled {
+            self.update_ares_sensor_array(id, rules, None);
+        }
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return;
         };
@@ -75,6 +81,18 @@ impl Simulation {
         {
             self.set_building_stuff_enabled(id, false, rules);
         }
+    }
+
+    /// Ares 3.0 `10024150` after a structure's return to its first owner: a
+    /// `NeedsEngineer=` one loses HasEngineer and is disabled again
+    /// (`DisableStuff @ 0x00452480`), as an unengineered tech building is.
+    #[cfg(feature = "ares")]
+    pub(crate) fn disable_returned_tech_building(&mut self, id: u64, rules: &RuleSet) {
+        let Some(entity) = self.substrate.entities.get_mut(id) else {
+            return;
+        };
+        entity.building_has_engineer.set = false;
+        self.set_building_stuff_enabled(id, false, rules);
     }
 
     /// Every changed-owner Building path writes HasEngineer (4484AF), including
@@ -332,8 +350,11 @@ mod tests {
             .set_for_test(25);
         sim.refresh_building_damage_state(id, &rules);
         let replaced = sim.entities().get(id).unwrap().building_art.anim_slots[3].unwrap();
-        assert!(
-            !sim.anim(replaced).unwrap().runtime().paused,
+        // Ares 3.0 10014400 (hook 0x451A54) counts the unengineered
+        // NeedsEngineer type as Powered, so its replacement starts paused.
+        assert_eq!(
+            sim.anim(replaced).unwrap().runtime().paused,
+            cfg!(feature = "ares"),
             "replacement does not copy pause; TypePowered is false"
         );
         assert!(!sim.entities().get(id).unwrap().building_art.stuff_enabled);

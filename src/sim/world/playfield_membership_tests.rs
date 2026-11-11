@@ -121,8 +121,7 @@ fn reinforcement_scene(
     let (_, assets) = crate::rules::retail_ini_fixture::retail_scenario_assets()?;
     let registry = TeamAiIniRegistry::load_retail(&assets, &map.ini, true).unwrap();
     let mut sim = arena(&retail.rules);
-    sim.install_team_ai_registry(&registry, &retail.rules)
-        .unwrap();
+    sim.install_team_ai_registry(&registry, &retail.rules);
     sim.session.install_waypoints(&map.waypoints);
     sim.initialize_trigger_definitions(&map, &registry, None, None, None);
     sim.classify_map_triggers(&retail.rules);

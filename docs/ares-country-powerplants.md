@@ -31,9 +31,6 @@ or a Tesla reactor at random, where stock gamemd always splices NAPOWR.
 
 ## Residuals
 
-- `0x10021CA0` is met by any of the type's prerequisite lists; VERA reads only
-  `Prerequisite=` (list 0), not `Prerequisite.Lists=`/`Prerequisite.List#=`.
-  No retail INI sets either key.
 - A house with no candidate at all (a side past 2, or unset `[General]`
   plants) is a fatal error natively (`0x1001DEF6`); VERA splices nothing.
 - The fallback's debug log line is not written.

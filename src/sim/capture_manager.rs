@@ -65,9 +65,6 @@
 //! state. Tactical presentation consumes the shared GetFLH/live coordinates.
 //!
 //! RESIDUALS:
-//! - A type's `MindClearedSound=` naming an unknown sound is -1 natively and
-//!   FreeUnit falls back to the global (`0x00472057`); VERA keeps the name
-//!   and plays nothing. No stock type authors the key.
 //! - `AICaptureWoundedMark=` is read natively as a double and stored with
 //!   `FSTP float` under the process chop control word (`0x00670504..
 //!   0x00670509`); VERA parses to the nearest `f32`. Equal for stock `.25`;
@@ -618,7 +615,7 @@ pub(crate) fn init_capture_manager(
     let weapon_name =
         crate::sim::combat::combat_weapon::weapon_for_index(object_type, 0, 0)?.weapon_id?;
     let weapon = rules.weapon(weapon_name)?;
-    let warhead = rules.warhead(weapon.warhead.as_deref()?)?;
+    let warhead = rules.weapon_warhead(weapon)?;
     warhead
         .mind_control
         .then(|| CaptureManagerState::constructed(weapon.damage, weapon.infinite_mind_control))
@@ -785,6 +782,27 @@ impl Simulation {
         )
     }
 
+    /// The announce=1 that CaptureUnit (`0x00471DAE`) and FreeUnit
+    /// (`0x004720D5`) pass to the target's ChangeOwner (vt+0x3D4). Only
+    /// `BuildingClass::ChangeOwner @ 0x00448260` reads it: radar event 10 and
+    /// `EVA_BuildingCaptured` for the player on either side. Run before the
+    /// owner swap, as that block reads the old owner.
+    fn announce_controlled_building(
+        &mut self,
+        target_id: u64,
+        new_owner: InternedId,
+        rules: &RuleSet,
+    ) {
+        if self
+            .substrate
+            .entities
+            .get(target_id)
+            .is_some_and(|target| target.category() == EntityCategory::Structure)
+        {
+            self.announce_building_capture(target_id, new_owner, rules);
+        }
+    }
+
     /// `CaptureManagerClass::CaptureUnit @ 0x00471D40`.
     pub(crate) fn capture_unit(
         &mut self,
@@ -930,6 +948,7 @@ impl Simulation {
         };
         // 0x00471DB8: ChangeOwner(controller's house, 1). It refuses only an
         // unchanged house, which CanCapture already excluded.
+        self.announce_controlled_building(target_id, controller_owner, rules);
         self.change_owner_with_rules(target_id, controller_owner, rules, registry, frame_effects);
         if let Some(manager) = self
             .substrate
@@ -1023,6 +1042,97 @@ impl Simulation {
             object.mind_control.permanent = true;
         }
         if let Some(ring) = rules.mind_control.perma_controlled_anim.as_deref() {
+            self.attach_control_ring(id, ring, rules);
+        }
+    }
+
+    /// Ares TechnoExt::ApplyPermaMC (installed 10045E30), the body of a
+    /// `MindControl.Permanent=yes` warhead's applyPermaMC (10052CD0): a type
+    /// that is `ImmuneToPsionics=` or has the rank's `PSIONICSIMMUNE` ability
+    /// refuses. Otherwise, like the Dominator's [`Self::perma_capture`], its
+    /// controller lets it go and it joins `house` with its `+0x2C4` set; then
+    /// it queues Guard (vt+0x1E8 `(Guard, 0)`), the ring it wears is UnInit
+    /// (vt+0xF8) and `PermaControlledAnimationType=` rings it
+    /// (CreateMindControlRingAnim 10043F90 inlined: a building's ring at its
+    /// height with ZAdjust -1024). Buildings are not refused.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_apply_perma_mc(
+        &mut self,
+        id: u64,
+        house: InternedId,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> bool {
+        let Some(object) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        let Some(object_type) = self.object_type(object.type_ref(), rules) else {
+            return false;
+        };
+        if object_type.immune_to_psionics
+            || object_type
+                .promotion_abilities()
+                .is_some_and(|abilities| abilities.psionics_immune(object.veterancy.raw()))
+        {
+            return false;
+        }
+        if let Some(controller) = object.mind_control.controller {
+            self.free_unit(controller, id, rules, registry, frame_effects);
+        }
+        self.change_owner_with_rules(id, house, rules, registry, frame_effects);
+        let ring = self.substrate.entities.get_mut(id).and_then(|object| {
+            object.mind_control.permanent = true;
+            crate::sim::mission::authority::queue_entity_mission_deferred(
+                object,
+                MissionId::from_known(MissionType::Guard),
+            );
+            object.mind_control.ring_anim.take()
+        });
+        if let Some(ring) = ring {
+            self.destroy_anim(ring, rules);
+        }
+        if let Some(ring) = rules.mind_control.perma_controlled_anim.as_deref() {
+            self.attach_control_ring(id, ring, rules);
+        }
+        true
+    }
+
+    /// The capture of SW_PsychicDominator's Dominate lambda (Ares 3.0
+    /// `10035FE0`, from the PsyDom_Fire hook 53B080): a controller lets the
+    /// object go (FreeUnit), it joins `house` (SetOwningHouse), its `+0x2C4`
+    /// takes `permanent` (`Dominator.PermanentCapture`), the ring it wears is
+    /// UnInit and `ring` (`Dominator.ControlAnim`, else
+    /// `PermaControlledAnimationType=`) rings it through
+    /// CreateMindControlRingAnim. Unlike ApplyPermaMC it queues nothing.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_dominate(
+        &mut self,
+        id: u64,
+        house: InternedId,
+        permanent: bool,
+        ring: Option<&str>,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) {
+        if let Some(controller) = self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|object| object.mind_control.controller)
+        {
+            self.free_unit(controller, id, rules, registry, frame_effects);
+        }
+        self.change_owner_with_rules(id, house, rules, registry, frame_effects);
+        let old_ring = self.substrate.entities.get_mut(id).and_then(|object| {
+            object.mind_control.permanent = permanent;
+            object.mind_control.ring_anim.take()
+        });
+        if let Some(old_ring) = old_ring {
+            self.destroy_anim(old_ring, rules);
+        }
+        if let Some(ring) = ring {
             self.attach_control_ring(id, ring, rules);
         }
     }
@@ -1349,6 +1459,8 @@ impl Simulation {
                     self.sound_events.emit(event);
                 }
             }
+            // 0x004720D5..0x004720DA: ChangeOwner(original house, 1).
+            self.announce_controlled_building(victim_id, original_owner, rules);
             self.change_owner_with_rules(victim_id, original_owner, rules, registry, frame_effects);
             // DecideUnitFate runs while `+0x2C0` still names the controller.
             // Back with its own house, the unit cannot join the controller's
@@ -1444,6 +1556,21 @@ impl Simulation {
             .get(&unit_owner)
             .is_none_or(|house| house.is_human())
         {
+            return;
+        }
+        // Ares 3.0 CaptureManagerClass_DecideUnitFate_BuildingFate
+        // (1005C680, hook 0x47243F): a building queues Guard, with no roll;
+        // the other fates do nothing for a building.
+        #[cfg(feature = "ares")]
+        if !unit_is_foot {
+            let now = self.session.binary_frame();
+            let _ = self.mission_queue_exact(
+                unit_id,
+                MissionId::from_known(MissionType::Guard),
+                0,
+                now,
+                &crate::sim::mission::authority::LiveReadyInputProvider { rules },
+            );
             return;
         }
         let Some(controller_owner) = self

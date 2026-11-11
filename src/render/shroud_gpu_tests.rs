@@ -415,9 +415,12 @@ fn production_world_a_sampling_matches_cpu_source_at_fractional_scroll_and_zoom(
         wgpu::util::TextureDataOrder::LayerMajor,
         &[0],
     );
+    // Tile pages are encoded, like the production tile atlas's.
+    let tile_page =
+        batch.create_encoded_texture_on_device(&gpu.device, &gpu.queue, &[200, 100, 50, 255], 1, 1);
     let tmp = batch.create_zdepth_bind_group_on_device(
         &gpu.device,
-        &texture.view,
+        &tile_page.view,
         &zero.create_view(&Default::default()),
     );
     let voxel = batch.create_unit_atlas_texture_on_device(&gpu.device, &gpu.queue, 1, 1, &[1]);
@@ -455,7 +458,14 @@ fn production_world_a_sampling_matches_cpu_source_at_fractional_scroll_and_zoom(
             let mut source =
                 ShroudBuffer::fixture(&gpu.device, &gpu.queue, virtual_size, scroll, &a);
             assert_eq!(
-                source.sample_world(scroll[0], scroll[1], scroll[0], scroll[1]),
+                source.read_world(
+                    &gpu.device,
+                    &gpu.queue,
+                    scroll[0],
+                    scroll[1],
+                    scroll[0],
+                    scroll[1]
+                ),
                 Some(a[0]),
                 "the production source defaults to native A"
             );
@@ -465,10 +475,33 @@ fn production_world_a_sampling_matches_cpu_source_at_fractional_scroll_and_zoom(
             source.set_translucent_fog(&gpu.queue, translucent);
             if translucent {
                 assert_ne!(
-                    source.sample_world(scroll[0], scroll[1], scroll[0], scroll[1]),
+                    source.read_world(
+                        &gpu.device,
+                        &gpu.queue,
+                        scroll[0],
+                        scroll[1],
+                        scroll[0],
+                        scroll[1]
+                    ),
                     Some(a[0])
                 );
             }
+            // The plane's lattice starts at the floored scroll; off it reads
+            // the neutral 127. The lift is the one readbacks apply.
+            let cpu_a = |world: [f32; 2]| {
+                let [x, y] = [0, 1].map(|axis| (world[axis] - scroll[axis].floor()).floor() as i64);
+                if x < 0
+                    || y < 0
+                    || x >= i64::from(virtual_size[0])
+                    || y >= i64::from(virtual_size[1])
+                {
+                    return 127;
+                }
+                crate::render::shroud_buffer::fog_lifted_a(
+                    a[(y * i64::from(virtual_size[0]) + x) as usize],
+                    if translucent { 500 } else { 1000 },
+                )
+            };
             // Every iteration replaces the source view, even at identical size.
             batch.bind_shroud(&gpu.device, Some(&source));
             let instance = SpriteInstance {
@@ -520,14 +553,10 @@ fn production_world_a_sampling_matches_cpu_source_at_fractional_scroll_and_zoom(
                             let a = if disabled {
                                 127
                             } else {
-                                source
-                                    .sample_world(
-                                        (x as f32 + 0.5) / zoom + cam.camera_pos[0],
-                                        (y as f32 + 0.5) / zoom + cam.camera_pos[1],
-                                        scroll[0],
-                                        scroll[1],
-                                    )
-                                    .unwrap_or(127)
+                                cpu_a([
+                                    (x as f32 + 0.5) / zoom + cam.camera_pos[0],
+                                    (y as f32 + 0.5) / zoom + cam.camera_pos[1],
+                                ])
                             };
                             let offset = ((y * size[0] + x) * 4) as usize;
                             // The elective style has no native color golden.

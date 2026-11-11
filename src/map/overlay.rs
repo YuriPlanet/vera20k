@@ -231,6 +231,9 @@ pub fn parse_overlay_packs(ini: &IniFile, grid: CellGrid) -> ParsedOverlayPacks 
 /// selects radix128 for signed NewINIFormat<4, otherwise1000 (71CAE3..71CB44).
 /// The caller supplies ReadBasic's retained format, whose native default is0.
 /// Values are object names like "INTREE01", "CACTUS01", "ROCK01".
+/// The writer `TerrainClass::Write_Map_Section @ 0x0071CB90` has no port: its
+/// one caller, Save_Scenario_Map_File 0x00687CE0, is reached only from the
+/// random-map dialog under the map-editor flag 0x00A8ED6B (0x00596A38..72).
 pub fn parse_terrain_objects(ini: &IniFile, signed_new_ini_format: i32) -> Vec<TerrainObject> {
     let section = match ini.section("Terrain") {
         Some(s) => s,

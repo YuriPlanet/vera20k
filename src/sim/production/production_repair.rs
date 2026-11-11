@@ -213,6 +213,9 @@ pub fn toggle_repair(
         RepairControl::Start => entity.repairing.on = true,
     }
     let owner = entity.owner();
+    // The building being repaired is already resolved here; carry its type
+    // out so the EVA line can name it without a second lookup.
+    let type_id = entity.type_ref();
     let position = entity.position;
     let sound = if entity.repairing.on && entity.health.current() == strength {
         rules.general.scold_sound.clone()
@@ -226,7 +229,8 @@ pub fn toggle_repair(
                 sim.substrate
                     .flash_building(id, 7, sim.session.binary_frame());
             }
-            sim.sound_events.emit(SimSoundEvent::Repairing { owner });
+            sim.sound_events
+                .emit(SimSoundEvent::Repairing { owner, type_id });
         }
         rules.general.generic_click_sound.clone()
     };
@@ -314,16 +318,15 @@ pub fn can_repair_building(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
 /// just below .15, so per-step shares of 20, 40 and 100 cost 2, 5 and 14.
 pub fn repair_step_cost(rules: &RuleSet, object: &ObjectType) -> i32 {
     let step = rules.general.repair_step;
-    let steps = object.strength.checked_div(step).unwrap_or_else(|| {
-        panic!(
-            "native repair step cost IDIV fault at 007120EC: strength={} step={step}",
-            object.strength
-        )
-    });
+    // gamemd traps at 0x007120EC on `RepairStep=0`; VERA carries on with the
+    // floor of 1 below: no step count exists to share the cost over.
+    let Some(steps) = object.strength.checked_div(step) else {
+        return 1;
+    };
     let cost = rules.type_cost(object);
-    let share = cost.checked_div(steps).unwrap_or_else(|| {
-        panic!("native repair step cost IDIV fault at 007120F7: cost={cost} steps={steps}")
-    });
+    // gamemd traps at 0x007120F7 when Strength is below RepairStep (no whole
+    // step); VERA carries on: the one step that repairs it bears the cost.
+    let share = cost.checked_div(steps).unwrap_or(cost);
     X87::ftol_i32_low_masked(X87::mul(
         X87::load_i32(share),
         X87::load_f64(NativeF64Bits::from_bits(
@@ -485,19 +488,38 @@ fn repair_step(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     let period =
         crate::sim::combat::veterancy::self_heal_interval_frames(rules.general.repair_rate_minutes);
     let frame = sim.session.binary_frame() as i32;
-    let remainder = frame.checked_rem(period).unwrap_or_else(|| {
-        panic!("native repair step IDIV fault at 0045083F: frame={frame} period={period}")
-    });
-    if remainder != 0 {
+    // gamemd traps at 0x0045083F on a zero period (`RepairRate` below 1/900
+    // minute); VERA carries on: such a repair is never due.
+    if frame.checked_rem(period) != Some(0) {
         return;
     }
     let Some(object) = sim.object_type(entity.type_ref(), rules) else {
         return;
     };
+    // `RepairStep=0` heals nothing (gamemd traps on it in the cost at
+    // 0x007120EC): the repair is switched off, where paying each period for
+    // no health would drain the house.
+    if rules.general.repair_step == 0 {
+        if let Some(entity) = sim.substrate.entities.get_mut(id) {
+            entity.repairing.on = false;
+        }
+        return;
+    }
     let (strength, cost) = (object.strength, repair_step_cost(rules, object));
     let owner = entity.owner();
     if available_money(&sim.houses, owner) < cost {
-        if let Some(entity) = sim.substrate.entities.get_mut(id) {
+        // Ares 3.0 10014630 (hook 0x4509B4): with [General]
+        // RepairStopOnInsufficientFunds=no a human-controlled house's repair
+        // stays on (0x4509BB) and retries on a later period.
+        #[cfg(feature = "ares")]
+        let keeps_repairing = !rules.ares_repair_stop_on_insufficient_funds()
+            && sim
+                .houses
+                .get(&owner)
+                .is_some_and(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
+        #[cfg(not(feature = "ares"))]
+        let keeps_repairing = false;
+        if !keeps_repairing && let Some(entity) = sim.substrate.entities.get_mut(id) {
             entity.repairing.on = false;
         }
         return;
@@ -516,4 +538,59 @@ fn repair_step(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     }
     sim.refresh_building_damage_state(id, rules);
     Simulation::retire_damage_smoke_after_heal(&sim.interner, &mut sim.substrate, id, rules);
+}
+
+#[cfg(test)]
+mod invalid_rule_tests {
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+
+    fn cost(general: &str) -> i32 {
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[General]\nRepairPercent=15%\n{general}[BuildingTypes]\n0=B\n[B]\nStrength=5\nCost=100\n"
+        )))
+        .unwrap();
+        repair_step_cost(&rules, rules.object("B").unwrap())
+    }
+
+    /// gamemd traps at 0x007120EC (`RepairStep=0`) and 0x007120F7
+    /// (`Strength < RepairStep`); VERA charges the floor and the whole share.
+    #[test]
+    fn repair_step_cost_survives_zero_divisors() {
+        assert_eq!(cost("RepairStep=0\n"), 1);
+        assert_eq!(cost("RepairStep=8\n"), 14);
+    }
+
+    /// `RepairRate` below 1/900 minute is a zero period: gamemd traps at
+    /// 0x0045083F, VERA's repair is never due.
+    #[test]
+    fn a_zero_repair_period_is_never_due() {
+        let (mut sim, mut rules, id) = crate::sim::building_art::slot_test_fixture_with("");
+        rules.general.repair_rate_minutes = 0.001;
+        let entity = sim.substrate.entities.get_mut(id).unwrap();
+        entity.health.set_for_test(50);
+        entity.repairing.set_for_test(true);
+        repair_step(&mut sim, &rules, id);
+        let entity = sim.substrate.entities.get(id).unwrap();
+        assert_eq!(entity.health.current(), 50);
+        assert!(entity.repairing.is_on());
+    }
+
+    /// `RepairStep=0` can never finish a repair, so the step switches it off
+    /// without charging.
+    #[test]
+    fn a_zero_repair_step_switches_the_repair_off_unpaid() {
+        let (mut sim, mut rules, id) = crate::sim::building_art::slot_test_fixture_with("");
+        rules.general.repair_step = 0;
+        let owner = sim.substrate.entities.get(id).unwrap().owner();
+        let money = available_money(&sim.houses, owner);
+        let entity = sim.substrate.entities.get_mut(id).unwrap();
+        entity.health.set_for_test(50);
+        entity.repairing.set_for_test(true);
+        repair_step(&mut sim, &rules, id);
+        let entity = sim.substrate.entities.get(id).unwrap();
+        assert_eq!(entity.health.current(), 50);
+        assert!(!entity.repairing.is_on());
+        assert_eq!(available_money(&sim.houses, owner), money);
+    }
 }

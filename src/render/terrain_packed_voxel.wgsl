@@ -9,7 +9,7 @@ fn fs_packed(input: VertexOutput) -> PackedSource {
     let index = textureLoad(atlas, texel, 0).r;
     if index == 0u { discard; }
     let rgb = voxel_source_rgb(index, input.remap_row, input.source_palette);
-    var word = native_palette_word(vec3u(round(srgb_encode(rgb) * 255.0)), index,
+    var word = native_palette_word(vec3u(round(rgb * 255.0)), index,
         input.palette_light, tactical_a_at(input.clip_position.xy));
     if (u32(input.fx_params.y) & 6u) == 0u {
         word = native_colour_word(word, index, input.palette_light);

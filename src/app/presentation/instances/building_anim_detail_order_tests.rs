@@ -106,7 +106,7 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
             HashMap::from([(
                 ShpSpriteKey {
                     palette_context: ShpPaletteContext::AnimScheme,
-                    type_id: "GAPOWR_A".to_owned(),
+                    type_id: "GAPOWR_A".into(),
                     facing: 0,
                     frame: 0,
                     house_color: HouseColorIndex(0),
@@ -182,7 +182,6 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
         let mut parents = Vec::new();
         build_display_effect_instances(
             &DisplayEffectInputs {
-                interpolation: None,
                 sim: &sim,
                 rules: &rules,
                 camera,

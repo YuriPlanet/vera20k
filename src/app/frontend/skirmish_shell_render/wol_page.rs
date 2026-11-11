@@ -479,16 +479,31 @@ pub(crate) struct InMatchPageDraw {
     )>,
 }
 
+/// A zoomed match draws the dialog's text at the window's pixels after the
+/// zoom (`window_ui`), laid out in the frame as ever.
 pub(crate) fn in_match_page_draw(state: &AppState) -> Option<InMatchPageDraw> {
+    let window_ui = &state.renderer.window_ui;
+    window_ui.set_page_texts(Vec::new());
+    let raster = crate::app::presentation::window_ui::dialog_raster(state);
+    let frame_raster = state
+        .renderer
+        .bit_font
+        .set_raster(raster.unwrap_or(crate::render::bit_font::TextRaster::NATIVE));
     let paint = match state.match_state.match_presentation.in_game_menu {
-        crate::ui::pause_menu::InGameMenuState::Page => paint_wol_page_dialog(
-            state,
-            crate::app::shell_wol::page::page_dialog(state)?,
-            &crate::app::shell_wol::page::page_layout(state),
-        ),
-        crate::ui::pause_menu::InGameMenuState::Surrender => paint_surrender_box(state),
-        _ => return None,
+        crate::ui::pause_menu::InGameMenuState::Page => {
+            crate::app::shell_wol::page::page_dialog(state).map(|page| {
+                paint_wol_page_dialog(
+                    state,
+                    page,
+                    &crate::app::shell_wol::page::page_layout(state),
+                )
+            })
+        }
+        crate::ui::pause_menu::InGameMenuState::Surrender => Some(paint_surrender_box(state)),
+        _ => None,
     };
+    state.renderer.bit_font.set_raster(frame_raster);
+    let paint = paint?;
     let batch = &state.renderer.batch_renderer;
     let gpu = &state.renderer.gpu;
     // The UI camera follows the world camera's scroll (see the message
@@ -509,11 +524,24 @@ pub(crate) fn in_match_page_draw(state: &AppState) -> Option<InMatchPageDraw> {
             .collect();
         batch.create_instance_buffer(gpu, &shifted)
     };
+    let texts = paint.texts.iter();
+    if raster.is_some() {
+        window_ui.set_page_texts(
+            texts
+                .map(|text| {
+                    let buffer = batch.create_instance_buffer(gpu, &text.instances);
+                    (text.scissor, buffer)
+                })
+                .collect(),
+        );
+        return Some(InMatchPageDraw {
+            controls: screen(&paint.controls),
+            texts: Vec::new(),
+        });
+    }
     Some(InMatchPageDraw {
         controls: screen(&paint.controls),
-        texts: paint
-            .texts
-            .iter()
+        texts: texts
             .map(|text| (text.scissor, screen(&text.instances)))
             .collect(),
     })

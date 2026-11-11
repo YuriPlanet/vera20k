@@ -258,3 +258,64 @@ fn railgun_line_damage_matches_native_hits_and_ground_stop() {
         assert_eq!(struck, expected, "{name}: struck objects");
     }
 }
+
+/// Ares TechnoClass_Fire_DetachedRailgun/2 (Ares.dll 1004D0C0/1004D0F0,
+/// hooks 0x6FF1FB/0x6FF26E): an IsDetachedRailgun weapon strikes the line
+/// and builds its system without linking +0x314, so the next shot follows
+/// its ROF instead of waiting for the particles.
+#[cfg(feature = "ares")]
+#[test]
+fn a_detached_railgun_never_holds_its_particle_system() {
+    let Some(patched) =
+        crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&IniFile::from_str(
+            "[MTNK]\nPrimary=LtRail\n\
+             [LtRail]\nDamage=0\nAmbientDamage=150\nROF=20\nRange=6\n\
+             Projectile=InvisibleLow\nSpeed=100\nWarhead=RailShot2\n\
+             IsRailgun=true\nIsDetachedRailgun=yes\nAttachedParticleSystem=SmallRailgunSys\n",
+        ))
+    else {
+        return;
+    };
+    let rules = &patched.rules;
+    let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x7A11_6A01);
+    sim.fog = FogState::new(32, 32);
+    let owner = sim.interner.intern("Americans");
+    sim.session.set_current_house_for_test(Some(owner));
+    sim.intern_rule_type_ids(rules);
+    sim.resolve_type_handles(rules);
+    let source = sim
+        .spawn_object("MTNK", "Americans", 16, 16, 64, rules)
+        .unwrap();
+    let target = sim
+        .spawn_object("SMCV", "Russians", 20, 16, 192, rules)
+        .unwrap();
+    sim.fog.mark_visible_for_owner(owner, 20, 16);
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::Attack {
+            attacker_id: source,
+            target_id: target
+        },
+        Some(rules),
+    ));
+    let grid = sim.path_grid_snapshot().unwrap();
+    let mut shots = 0;
+    for _ in 0..64 {
+        sim.fire_events.clear_for_test();
+        sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
+        if sim
+            .fire_events
+            .iter()
+            .any(|shot| shot.attacker_id == source)
+        {
+            shots += 1;
+            let firer = sim.substrate.entities.get(source).unwrap();
+            assert!(firer.railgun_particle_system.system().is_none());
+            assert!(!sim.particle_systems().is_empty());
+        }
+    }
+    assert!(
+        shots >= 2,
+        "only {shots} detached railgun shots in 64 ticks"
+    );
+}

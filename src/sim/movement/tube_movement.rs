@@ -527,6 +527,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> Result<TubeObjectTurn, FrameAdvanceError> {
+        let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::MOVEMENT);
         let mut turn = TubeObjectTurn::default();
         self.complete_pending_order(id, rules, registry, effects);
         let Some(terrain) = self.resolved_terrain.as_ref() else {
@@ -1035,7 +1036,8 @@ mod tests {
         .expect("rules");
         let mut terrain = explicit_terrain(vec![2, 2]);
         for x in 0..=3 {
-            terrain.cell_mut_for_test(x, 0).unwrap().speed_costs.foot = Some(100);
+            terrain.cell_mut_for_test(x, 0).unwrap().speed_costs.foot =
+                Some(crate::util::native_x87::NativeF32Bits::ONE);
         }
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("Americans");

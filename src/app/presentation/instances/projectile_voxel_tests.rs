@@ -203,6 +203,8 @@ fn stock_submarine_attack_has_a_visible_flat_voxel_torpedo(elite: bool) {
             0,
             true,
             crate::render::vxl_raster::VxlLighting::Diffuse,
+            false,
+            None,
         )
         .expect("physical SUBT VXL/HVA/VPL must rasterize before the draw assertion");
     assert!(body.pixel_size.iter().all(|&size| size > 0.0));
@@ -234,6 +236,8 @@ fn stock_submarine_attack_has_a_visible_flat_voxel_torpedo(elite: bool) {
                 0,
                 true,
                 crate::render::vxl_raster::VxlLighting::Diffuse,
+                false,
+                None,
             )
         },
     )
@@ -337,6 +341,8 @@ fn admitted_stock_kirov_bomb_has_a_visible_voxel_body() {
                     0,
                     true,
                     crate::render::vxl_raster::VxlLighting::Diffuse,
+                    false,
+                    None,
                 )
             },
         )

@@ -591,9 +591,14 @@ def read_png_rgb(data):
 
 
 def write_png_rgb(path, width, height, pixels):
+    """Write an 8-bit RGB PNG of `pixels`: (r, g, b) tuples or packed RGB bytes, row by row."""
     rows = bytearray()
+    packed = isinstance(pixels, (bytes, bytearray, memoryview))
     for y in range(height):
         rows.append(0)
+        if packed:
+            rows += pixels[y * width * 3 : (y + 1) * width * 3]
+            continue
         for r, g, b in pixels[y * width : (y + 1) * width]:
             rows.extend((r, g, b))
 

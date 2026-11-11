@@ -18,7 +18,7 @@ fn original_manager_histories_match_without_logic_ticks_or_rng() {
         let main = crate::sim::rng::MainRng::new(1).draws();
         let mut beams = RadiationBeams::default();
         for &birth in &births {
-            beams.create(birth, |_| [0; 3]);
+            beams.create(birth, |_, _| [0; 3]);
         }
         let mut viewport = native::viewport(&native::corpus()["geometry_rows"][0]);
         if row["name"] == "clipped_lifetime" {
@@ -95,7 +95,7 @@ fn eruptions_cull_below_the_requested_rate_and_draw_twenty_lepton_segments() {
         z_adjust: 0,
         color: [0, 255, 0],
         house: None,
-        house_color: false,
+        house_color: crate::sim::combat::radiation_beam::BeamHouseColor::None,
         duration: 10,
         amplitude: crate::util::native_x87::NativeF64Bits::from_bits(300.0_f64.to_bits()),
         eruption: true,
@@ -110,7 +110,7 @@ fn eruptions_cull_below_the_requested_rate_and_draw_twenty_lepton_segments() {
     let main = crate::sim::rng::MainRng::new(5);
     let mut reference = crate::sim::rng::SimRng::new(5);
     let mut beams = RadiationBeams::default();
-    beams.create(birth, |_| [0; 3]);
+    beams.create(birth, |_, _| [0; 3]);
     beams.composite(30, viewport, &main.draws(), |_| true);
     reference.next_range_i32_inclusive(0, 99);
     assert_eq!(main.logical_state(), reference.logical_state());

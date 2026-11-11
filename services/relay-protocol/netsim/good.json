@@ -1,0 +1,42 @@
+[
+  {
+    "name": "2p-good-idle",
+    "players": 2,
+    "apm": 0,
+    "network": {
+      "link": {
+        "delay_ms": 20
+      }
+    }
+  },
+  {
+    "name": "2p-good-300apm",
+    "players": 2,
+    "apm": 300,
+    "network": {
+      "link": {
+        "delay_ms": 20
+      }
+    }
+  },
+  {
+    "name": "30p-good-idle",
+    "players": 30,
+    "apm": 0,
+    "network": {
+      "link": {
+        "delay_ms": 20
+      }
+    }
+  },
+  {
+    "name": "30p-good-300apm",
+    "players": 30,
+    "apm": 300,
+    "network": {
+      "link": {
+        "delay_ms": 20
+      }
+    }
+  }
+]

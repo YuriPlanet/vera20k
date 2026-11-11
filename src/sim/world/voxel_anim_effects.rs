@@ -1,12 +1,12 @@
-//! VoxelAnim749F30's ordinary debris visit and the shared bounce-contact walk.
+//! VoxelAnim749F30's debris and meteor visit, the shared bounce-contact walk
+//! and trigger action 43's constructor call.
 //!
 //! The object stays registered during constructors and damage callbacks.
 //! Bounce owns physics; Object.Location advances only at the flight tail.
 //! Remaining native paths: StartSound749F43 maintenance, Trailer74A70E's
-//! distinct height conversion, AttachedSystem construction, and meteor child/
-//! ore expiry. Stock GASTANK/PIECE author none of those producers; authored
-//! types which do still miss those effects. No stock-activation exclusion is
-//! claimed for the whole class.
+//! distinct height conversion and AttachedSystem construction. No retail
+//! [VoxelAnims] type authors StartSound, TrailerAnim or AttachedSystem;
+//! authored types which do still miss those effects.
 
 use glam::IVec3;
 
@@ -23,6 +23,7 @@ use crate::sim::intern::InternedId;
 use crate::sim::movement::ground_pose::{object_center_xy, position_world_xy};
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::CellObjectMember;
+use crate::sim::overlay_mark_host::RuntimeOverlayError;
 use crate::sim::projectile::ProjectileCoord;
 use crate::sim::voxel_anim::VoxelAnimAiStep;
 
@@ -32,7 +33,14 @@ use crate::sim::voxel_anim::VoxelAnimAiStep;
 #[derive(Clone, Copy)]
 pub(crate) enum BounceContactDamage {
     Anim(i32),
+    /// The shared Type field, written back by each receiver.
+    #[cfg_attr(feature = "ares", allow(dead_code))]
     VoxelType(VoxelAnimTypeId),
+    /// Ares 3.0 VoxelAnimClass_Update_Damage (1005D640, hook 0x74A884):
+    /// the Voxel walk with a copy of the type's Damage per object, each
+    /// object's successor read before its receiver.
+    #[cfg(feature = "ares")]
+    AresVoxel(i32),
 }
 
 impl Simulation {
@@ -72,20 +80,54 @@ impl Simulation {
         self.voxel_type_damage.take()
     }
 
-    /// One ordinary VoxelAnimClass::AI749F30 visit. Original gamemd:
-    /// prefix749F67, dry expiry74A144..225, contact74A7EF..949 and common
-    /// UnInit74A700. The caller publishes the returned bridge notification.
+    /// Original TAction43 PlayVoxelAnimAtWP6E2520, reached at6DECEF: the
+    /// shared signed waypoint/Ground/bridge coordinate, then constructor
+    /// 7493B0(VoxelAnimTypes[+90], coord, null owner); native returns true.
+    /// Invalid Rust input fails instead of taking the original unchecked
+    /// array read.
+    pub(crate) fn trigger_play_voxel_anim_at_waypoint(
+        &mut self,
+        rules: &RuleSet,
+        type_index: i32,
+        waypoint: i32,
+    ) -> bool {
+        let Some(type_id) = u32::try_from(type_index)
+            .ok()
+            .filter(|&index| (index as usize) < rules.voxel_anim_type_count())
+            .map(VoxelAnimTypeId)
+        else {
+            return false;
+        };
+        let Some([x, y, z]) = self.trigger_waypoint_coord(waypoint) else {
+            return false;
+        };
+        if let Err(error) = self.emit_debris_voxel(
+            type_id,
+            rules.voxel_anim_type(type_id),
+            None,
+            IVec3::new(x, y, z),
+            true,
+            &mut Vec::new(),
+        ) {
+            log::warn!("trigger voxel anim {type_index} left the supported launch domain: {error}");
+        }
+        true
+    }
+
+    /// One VoxelAnimClass::AI749F30 visit. Original gamemd: prefix749F67,
+    /// expiry749FA2..74A6FC, flight74A7AB..949 and common UnInit74A700.
+    /// The caller publishes the returned bridge notification.
     pub fn visit_voxel_anim(
         &mut self,
         id: u64,
         rules: &RuleSet,
         effects: FrameEffects<'_>,
-    ) -> bool {
+    ) -> Result<bool, RuntimeOverlayError> {
         let Some(debris) = self.substrate.voxel_anims.get_mut(id) else {
-            return false;
+            return Ok(false);
         };
         if !debris.lifecycle().object_alive() {
-            return false;
+            return Ok(false);
         }
         let step = debris.begin_ai_visit();
         let type_id = debris.type_id();
@@ -94,12 +136,15 @@ impl Simulation {
         match step {
             VoxelAnimAiStep::Delete => {
                 self.uninit_with_context(id, context);
-                return false;
+                return Ok(false);
             }
             VoxelAnimAiStep::Expire => {
+                // Native expiry always reaches UnInit (`0x0074A700`). Ore
+                // VERA cannot place is the expiry's last step: log it, keep
+                // the area damage's bridge notice and retire the piece.
                 let changed = self.voxel_anim_expiry(id, rules, effects);
                 self.uninit_with_context(id, context);
-                return changed;
+                return Ok(changed);
             }
             VoxelAnimAiStep::Flight => {}
         }
@@ -111,12 +156,19 @@ impl Simulation {
             let terrain = super::bounce_terrain::ResolvedBounceTerrain { sim: self, rules };
             body.update(&terrain)
         };
+        //74A7B8..74A7D4: a meteor adds gravity back after Update.
+        let outcome = outcome.and_then(|outcome| {
+            if rules.voxel_anim_type(type_id).is_meteor {
+                body.compensate_meteor_gravity()?;
+            }
+            Ok(outcome)
+        });
         let outcome = match outcome {
             Ok(outcome) => outcome,
             Err(error) => {
                 log::warn!("voxel debris {id} left the supported bounce domain: {error}");
                 self.uninit_with_context(id, context);
-                return false;
+                return Ok(false);
             }
         };
         self.substrate
@@ -152,14 +204,26 @@ impl Simulation {
                     }
                     if let Some(name) = kind.warhead.as_deref() {
                         let warhead = self.interner.intern(name);
-                        changed |= self.apply_bounce_contact_damage(
-                            body.position_leptons(),
-                            kind.damage_radius,
-                            BounceContactDamage::VoxelType(type_id),
-                            warhead,
-                            rules,
-                            effects,
-                        );
+                        // 1005D640: a negative DamageRadius or a Damage of
+                        // zero skips the walk.
+                        #[cfg(feature = "ares")]
+                        let source = {
+                            let damage = self.voxel_type_damage(type_id, rules);
+                            (kind.damage_radius >= 0 && damage != 0)
+                                .then_some(BounceContactDamage::AresVoxel(damage))
+                        };
+                        #[cfg(not(feature = "ares"))]
+                        let source = Some(BounceContactDamage::VoxelType(type_id));
+                        if let Some(source) = source {
+                            changed |= self.apply_bounce_contact_damage(
+                                body.position_leptons(),
+                                kind.damage_radius,
+                                source,
+                                warhead,
+                                rules,
+                                effects,
+                            );
+                        }
                     }
                 }
             }
@@ -169,11 +233,12 @@ impl Simulation {
         if let Some(debris) = self.substrate.voxel_anims.get_mut(id) {
             debris.finish_flight();
         }
-        changed
+        Ok(changed)
     }
 
-    /// Natural Voxel expiry749FA2..74A225. The land/deck query reads the
-    /// retained Location; the dry Anim, area and light read Bounce coords.
+    /// Natural Voxel expiry749FA2..74A6FC. The land/deck query reads the
+    /// retained Location; the dry Anim, area, light, children and ore read
+    /// Bounce coords. A water landing below the deck ends at its splash.
     fn voxel_anim_expiry(&mut self, id: u64, rules: &RuleSet, effects: FrameEffects<'_>) -> bool {
         let debris = self.substrate.voxel_anims.get(id).unwrap();
         let type_id = debris.type_id();
@@ -186,10 +251,26 @@ impl Simulation {
             &self.effective_shared_cell_dummy(),
             ProjectileCoord::new(location.x, location.y, location.z),
         );
-        if water
-            && location.z < ground.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS)
-            && !kind.is_meteor
-        {
+        let above =
+            location.z >= ground.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+        if water && !above {
+            if kind.is_meteor {
+                //74A035..099: the last SplashList entry at Location+5.
+                if let Some(splash) = rules.combat_damage.splash_list.last() {
+                    self.spawn_named_anim(
+                        rules,
+                        splash,
+                        AnimWorldCoord {
+                            z: location.z.wrapping_add(5),
+                            ..anim_coord(location)
+                        },
+                        0,
+                        0x600,
+                        0,
+                    );
+                }
+                return false;
+            }
             self.spawn_named_anim(
                 rules,
                 &rules.general.wake.name,
@@ -213,6 +294,70 @@ impl Simulation {
             }
             return false;
         }
+        let changed = self.voxel_anim_expire_damage(type_id, impact, rules, effects);
+        let mut ore = Ok(());
+        if kind.is_meteor {
+            //74A288..301: two RandomRanged(0, SpawnCount) draws, then that
+            // many children at the Bounce coords, each admitted before the
+            // next. A Spawns name outside [VoxelAnims] still draws, but
+            // constructs nothing: native would allocate a default Type.
+            if let Some(child) = kind.spawns.as_deref().filter(|_| kind.spawn_count > 0) {
+                let first = self
+                    .scenario_rng
+                    .next_range_i32_inclusive(0, kind.spawn_count);
+                let second = self
+                    .scenario_rng
+                    .next_range_i32_inclusive(0, kind.spawn_count);
+                if let Some(child_id) = rules.voxel_anim_type_id_by_name(child) {
+                    for _ in 0..first.wrapping_add(second) {
+                        if let Err(error) = self.emit_debris_voxel(
+                            child_id,
+                            rules.voxel_anim_type(child_id),
+                            None,
+                            impact,
+                            true,
+                            &mut Vec::new(),
+                        ) {
+                            log::warn!("meteor child {child} left the launch domain: {error}");
+                            break;
+                        }
+                    }
+                }
+            }
+            //74A303..572: ore in the eight neighbours of the impact cell,
+            // AdjacentCell89F688 order, never the impact cell itself; each
+            // looked up through GetCell5657A0.
+            if kind.is_tiberium && !above {
+                let ring = crate::sim::tiberium::ADJACENT_OFFSETS.map(|(dx, dy)| {
+                    (
+                        (impact.x / 256).wrapping_add(dx) as u16,
+                        (impact.y / 256).wrapping_add(dy) as u16,
+                    )
+                });
+                ore = self.voxel_anim_place_tiberium(rules, &ring, effects);
+            }
+        } else if kind.is_tiberium
+            && !above
+            && let Some(cell) = Self::map_coord_cell(&self.resolved_terrain, impact.x, impact.y)
+        {
+            //74A5B6..6F7: ore in the impact cell (565730).
+            ore = self.voxel_anim_place_tiberium(rules, &[cell], effects);
+        }
+        if let Err(error) = ore {
+            log::warn!("voxel debris {id} expired without placing its ore: {error}");
+        }
+        changed
+    }
+
+    /// Expiry74A13E..225: without ExpireAnim, no anim, area or light.
+    fn voxel_anim_expire_damage(
+        &mut self,
+        type_id: VoxelAnimTypeId,
+        impact: IVec3,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        let kind = rules.voxel_anim_type(type_id);
         let Some(expire) = kind.expire_anim.as_deref() else {
             return false;
         };
@@ -248,6 +393,70 @@ impl Simulation {
         changed
     }
 
+    /// Expiry ore74A385..566 (meteor ring) / 74A5F0..6F7 (ordinary): an
+    /// inline copy of PlaceTiberium487190's new-cell arm with amount 0
+    /// ([`crate::sim::tiberium::place_new_tiberium`]), for the Tiberium of
+    /// overlay 0x7F (OverlayToTiberiumIndex5FDD20; TIB2_01, Vinifera, in
+    /// retail). The ring dirties one union rectangle and the ordinary arm
+    /// none; both mark radar per cell. When overlay 0x7F is not Tiberium,
+    /// native reads Tiberiums[-1]; VERA places nothing there.
+    fn voxel_anim_place_tiberium(
+        &mut self,
+        rules: &RuleSet,
+        cells: &[(u16, u16)],
+        effects: FrameEffects<'_>,
+    ) -> Result<(), RuntimeOverlayError> {
+        use crate::sim::tiberium::{NewTiberiumAdmission, TiberiumPlacementObjectContext};
+
+        let registry = rules.overlay_registry();
+        let mut placed = Vec::new();
+        for &requested in cells {
+            // VoxelAI74A38C..74A3A2 /74A5ED..74A602 first admits this
+            // cell, then classifies literal Overlay127. A blocked landing
+            // must not dereference an otherwise unused null Tiberium image.
+            let admitted = {
+                let (Some(terrain), Some(grid)) =
+                    (self.resolved_terrain.as_ref(), self.overlay_grid.as_ref())
+                else {
+                    return Ok(());
+                };
+                let objects = TiberiumPlacementObjectContext::new(
+                    &self.substrate.entities,
+                    &self.substrate.occupancy,
+                    &self.substrate.raw_cell_occupation,
+                    rules,
+                    &self.interner,
+                    self.terrain_objects.cell_index(),
+                );
+                crate::sim::tiberium::admit_new_tiberium_target(
+                    grid,
+                    self.terrain_objects.spawning_cells(),
+                    NewTiberiumAdmission::runtime(terrain, objects),
+                    requested,
+                )
+            };
+            let Some(cell) = admitted else {
+                continue;
+            };
+            let Some(type_id) = registry.tiberium_type_for_overlay(&rules.tiberium_types, 0x7F)?
+            else {
+                continue;
+            };
+            if let Some(placement) = crate::sim::tiberium::place_new_tiberium(
+                self, rules, registry, cell, type_id, 0, effects,
+            )? {
+                placed.push(placement.cell());
+            }
+        }
+        // Ordinary ore keeps the existing batch Recalc policy. The shared
+        // constructor has already completed each lifecycle and special Mark
+        // callback, including nested CellAnim/Start, before the next cell.
+        if !placed.is_empty() {
+            self.publish_tiberium_cells(rules, registry, &placed);
+        }
+        Ok(())
+    }
+
     /// Anim4239D3..23A88 / Voxel74A884..929: select the live ground-list
     /// head, test wrapping Manhattan XY radius, dispatch one concrete
     /// receiver, then read Object.Next after all synchronous callbacks.
@@ -267,11 +476,16 @@ impl Simulation {
         let mut current = self.cell_objects(cell, MovementLayer::Ground).next();
         let mut changed = false;
         while let Some(target) = current {
+            #[cfg(feature = "ares")]
+            let ares_next = matches!(source, BounceContactDamage::AresVoxel(_))
+                .then(|| self.next_cell_object(target));
             let center = match target {
                 CellObjectMember::Entity(id) => {
                     self.substrate.entities.get(id).map(|entity| match source {
                         BounceContactDamage::Anim(_) => object_center_xy(entity),
                         BounceContactDamage::VoxelType(_) => position_world_xy(&entity.position),
+                        #[cfg(feature = "ares")]
+                        BounceContactDamage::AresVoxel(_) => position_world_xy(&entity.position),
                     })
                 }
                 CellObjectMember::Terrain(id) => self.terrain_objects.get(id).map(|tree| {
@@ -293,6 +507,8 @@ impl Simulation {
                             self.voxel_type_damage(id, rules),
                             Some(DamageWriteback::VoxelType(id)),
                         ),
+                        #[cfg(feature = "ares")]
+                        BounceContactDamage::AresVoxel(value) => (value, None),
                     };
                     let receipt = match target {
                         CellObjectMember::Entity(id) => self.commit_direct_damage_receiver(
@@ -336,6 +552,11 @@ impl Simulation {
                     };
                     changed |= receipt.bridge_state_changed;
                 }
+            }
+            #[cfg(feature = "ares")]
+            if let Some(next) = ares_next {
+                current = next;
+                continue;
             }
             current = self.next_cell_object(target);
         }

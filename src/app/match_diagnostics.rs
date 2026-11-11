@@ -128,7 +128,6 @@ pub(crate) struct ActorPresentation {
     pub screen: [f32; 2],
     pub body: u16,
     pub motion: ActorMotionObservation,
-    pub sampled_from_frame: u32,
     pub gpu_done: GpuCompletion,
 }
 impl ActorPresentation {
@@ -141,7 +140,7 @@ impl ActorPresentation {
 }
 struct ActorPresentationProbe {
     actor: u64,
-    pending: Option<(u32, [f32; 2], u16, ActorMotionObservation, u32)>,
+    pending: Option<(u32, [f32; 2], u16, ActorMotionObservation)>,
     submitted: Option<ActorPresentation>,
 }
 pub(crate) struct CommandTimingObservation {
@@ -241,7 +240,6 @@ impl MatchDiagnosticsState {
         frame: u32,
         screen: [f32; 2],
         body: u16,
-        interpolation: &crate::app::presentation::interpolation::RenderInterpolation,
     ) {
         if let Some(probe) = self.actor_presentation.borrow_mut().as_mut()
             && probe.actor == entity.stable_id()
@@ -251,7 +249,6 @@ impl MatchDiagnosticsState {
                 screen,
                 body,
                 ActorMotionObservation::read(sim, entity),
-                interpolation.sampled_from_frame(entity, frame),
             ));
         }
     }
@@ -261,17 +258,14 @@ impl MatchDiagnosticsState {
                 probe
                     .pending
                     .take()
-                    .map(
-                        |(frame, screen, body, motion, sampled_from_frame)| ActorPresentation {
-                            at: ObservationTime::now(),
-                            frame,
-                            screen,
-                            body,
-                            motion,
-                            sampled_from_frame,
-                            gpu_done: Default::default(),
-                        },
-                    );
+                    .map(|(frame, screen, body, motion)| ActorPresentation {
+                        at: ObservationTime::now(),
+                        frame,
+                        screen,
+                        body,
+                        motion,
+                        gpu_done: Default::default(),
+                    });
             return probe.submitted.as_ref().map(|frame| frame.gpu_done.clone());
         }
         None
@@ -328,20 +322,25 @@ impl MatchDiagnosticsState {
 
     pub(crate) fn playback_status(&self) -> Option<String> {
         Some(match self.replay_playback.as_ref()? {
-            ReplayPlaybackState::Loading(_) => "Loading replay".to_owned(),
-            ReplayPlaybackState::Failed(error) => format!("Replay failed: {error} — Esc to exit"),
+            ReplayPlaybackState::Loading(_) => crate::i18n::tr("VERA:LoadingReplay"),
+            ReplayPlaybackState::Failed(error) => {
+                crate::i18n::tr_fill("VERA:ReplayFailed", &[("error", error)])
+            }
             ReplayPlaybackState::Playing(playback) => match playback.failure() {
-                Some(error) => format!("Replay failed: {error} — Esc to exit"),
-                None if playback.is_finished() => {
-                    "Replay ended — camera controls available; Esc to exit".to_owned()
-                }
-                None => "Replay — camera controls available; Esc to exit".to_owned(),
+                Some(error) => crate::i18n::tr_fill("VERA:ReplayFailed", &[("error", &error)]),
+                None if playback.is_finished() => crate::i18n::tr("VERA:ReplayEnded"),
+                None => crate::i18n::tr("VERA:ReplayPlaying"),
             },
         })
     }
 
     /// Disjoint borrows keep the recorder/observation owner beside playback;
     /// no caller moves the cursor out or temporarily disables the input gate.
+    /// Whether a command execution log observes each applied command.
+    pub(crate) fn observes_commands(&self) -> bool {
+        self.command_executions.is_some()
+    }
+
     pub(crate) fn playback_and_observations_mut(
         &mut self,
     ) -> (

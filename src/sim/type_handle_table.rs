@@ -124,7 +124,19 @@ impl TypeHandleTable {
         category: ObjectCategory,
         rules: &'r RuleSet,
     ) -> Option<&'r ObjectType> {
-        let handle = match self.category_handles.get(id.index() as usize) {
+        self.handle_in_category(interner, id, category, rules)
+            .map(|handle| rules.object_by_handle(handle))
+    }
+
+    /// The same cached concrete-class lookup, for consumers of type-owned banks.
+    pub fn handle_in_category(
+        &self,
+        interner: &StringInterner,
+        id: InternedId,
+        category: ObjectCategory,
+        rules: &RuleSet,
+    ) -> Option<TypeHandle> {
+        match self.category_handles.get(id.index() as usize) {
             Some(handles) if self.rules_serial == rules.serial() => {
                 let handle = handles[class_slot(category)];
                 debug_assert!(
@@ -135,8 +147,7 @@ impl TypeHandleTable {
                 handle
             }
             _ => rules.type_handle_in_category(category, interner.try_resolve(id)?),
-        };
-        handle.map(|handle| rules.object_by_handle(handle))
+        }
     }
 
     /// The object `id` names in `rules`, as `rules.object(interner.resolve(id))`

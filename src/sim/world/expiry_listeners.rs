@@ -19,7 +19,7 @@ use super::Simulation;
 use super::substrate::ObjectKind;
 use crate::sim::anim_class::{AnimStore, AnimTouchReader};
 use crate::sim::entity_store::{EntityStore, TouchReader};
-use crate::sim::particles::ParticleSystemStore;
+use crate::sim::particles::{ParticleSystemStore, ParticleTouchReader};
 use crate::sim::projectile::ProjectileStore;
 use crate::sim::terrain_object::TerrainObjectStore;
 use crate::sim::touch_log::Touched;
@@ -126,7 +126,7 @@ impl ExpiryListeners {
             anims.get(id).map(|anim| named(names, anim.expiry_names()))
         });
         let ids = self.particle_systems.rereads(
-            particle_systems.take_touched(),
+            particle_systems.take_touched(ParticleTouchReader::ExpiryListeners),
             particle_systems.len(),
             || particle_systems.iter().map(|(&id, _)| id).collect(),
         );

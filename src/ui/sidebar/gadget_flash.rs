@@ -15,7 +15,7 @@
 /// separate +0x1e disabled gate. All four are byte-for-byte semantic
 /// counterparts of the binary; the field names use plain-English meanings
 /// rather than the binary offsets.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct GadgetFlash {
     /// "Draw as pressed" bit. 0 = idle visual, 1 = pressed-look visual.
     /// Toggled by `tick` when a flash period elapses.
@@ -135,7 +135,7 @@ pub fn shape_button_frame(
 /// Lives on `AppState` (one instance per app session). Ticked once per sim
 /// tick by `sidebar_gadgets::update_sidebar_gadget_state`. Read by the
 /// per-frame `SidebarView` builder to populate gadget `frame_index` fields.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct SidebarGadgetState {
     /// One flash per tab gadget, indexed by `SidebarTab::tab_index()`.
     /// Building/Defense flash for linked completed buildings; Defense also

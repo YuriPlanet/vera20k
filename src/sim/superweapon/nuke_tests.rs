@@ -481,6 +481,18 @@ fn flash_matches_native() {
     }
 }
 
+/// Installed Ares's Process head (`10037330`, hook `0x53A6CF`) steps only a
+/// nonnegative flash duration: one below -1 never fades out there (stock's
+/// `!= -1` test fades it at once).
+#[cfg(feature = "ares")]
+#[test]
+fn ares_flash_with_a_negative_duration_never_steps() {
+    let mut lighting = ScenarioLightingState::default();
+    lighting.set_nuke_flash_for_test(1, 100, -5);
+    assert!(!lighting.step_nuke_flash(5000));
+    assert_eq!(flash_state(&lighting), [1, 100, -5]);
+}
+
 /// The map's `NukeAmbientChangeRate=` against the native rows: Set_Defaults'
 /// value, a missing key and authored tokens through the production reader.
 #[test]

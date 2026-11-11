@@ -455,3 +455,51 @@ fn installed_upgrade_scan_does_not_filter_online_health_or_selling() {
         "the installed host's health, online and Selling state are unread"
     );
 }
+
+/// Ares `PrerequisitesMet @ 10021CA0`, CanBuild's human arm: any one of the
+/// type's lists (`Prerequisite.Lists=` / `Prerequisite.List#=`, read by
+/// `1003DFB0`) on the map admits it, not only `Prerequisite=`.
+#[test]
+fn any_prerequisite_list_admits_a_human() {
+    let (mut sim, rules, owner) = lifecycle_world(
+        "TechLevel=1\nPrerequisite=MISSING\nPrerequisite.Lists=1\nPrerequisite.List1=MEMBER",
+    );
+    let product = rules.object("Q").unwrap();
+    assert_eq!(
+        can_build(&sim, &rules, owner, product, false, false),
+        CanBuild::No
+    );
+    sim.spawn_object("MEMBER", "H0", 10, 10, 0, &rules).unwrap();
+    assert_eq!(
+        can_build(&sim, &rules, owner, product, false, false),
+        CanBuild::Yes
+    );
+}
+
+/// RequirementsMet's Ares head (`10021FF0`): a theater outside
+/// `Prerequisite.RequiredTheaters` is Unbuildable, missing
+/// `Prerequisite.StolenTechs` bits are Incomplete (negative and >= 32
+/// indexes are dropped), and an owned `Prerequisite.Negative` entry forbids
+/// the type ahead of both other answers.
+#[test]
+fn ares_requirement_gates_answer_in_dll_order() {
+    let (mut sim, rules, owner) = lifecycle_world(
+        "TechLevel=1\nPrerequisite.RequiredTheaters=SNOW,lunar\n\
+         Prerequisite.Negative=MEMBER\nPrerequisite.StolenTechs=3,-1,40",
+    );
+    let product = rules.object("Q").unwrap();
+    let status =
+        |sim: &Simulation| requirements_met(sim, &rules, owner, &sim.houses[&owner], product);
+    sim.session.set_theater_for_test("TEMPERATE".into());
+    assert_eq!(status(&sim), RequirementStatus::Unbuildable);
+    assert_eq!(
+        can_build(&sim, &rules, owner, product, false, false),
+        CanBuild::No
+    );
+    sim.session.set_theater_for_test("LUNAR".into());
+    assert_eq!(status(&sim), RequirementStatus::Incomplete);
+    sim.houses.get_mut(&owner).unwrap().steal_ares_tech(1 << 3);
+    assert_eq!(status(&sim), RequirementStatus::Complete);
+    sim.spawn_object("MEMBER", "H0", 10, 10, 0, &rules).unwrap();
+    assert_eq!(status(&sim), RequirementStatus::Forbidden);
+}

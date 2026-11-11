@@ -57,6 +57,33 @@ pub fn rival_arena_with_size(rules: &RuleSet, seed: u64, size: u16) -> Simulatio
     sim
 }
 
+/// The player has discovered `id` (Techno `+0x41B`), as a campaign object in
+/// explored ground is from its first AI tick (`update_techno_discovery_from_shroud`).
+/// The arena runs the campaign without a current player, so nothing is
+/// discovered there, and a human player's unit acquires only what the player
+/// owns or has discovered (Evaluate_Candidate `0x006F81BE..0x006F81F4`).
+pub fn discover(sim: &mut Simulation, id: u64) {
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .expect("discovered object")
+        .discovery
+        .set_discovered_by_current_house_for_test(true);
+}
+
+/// The player owns `id` (Techno `+0x41A`), as every object of the campaign
+/// player's house does (InitManagers `0x006F3F40`): a human player's healer
+/// or repairer takes its own side's units only with it, for the reason
+/// [`discover`] gives.
+pub fn own(sim: &mut Simulation, id: u64) {
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .expect("owned object")
+        .discovery
+        .set_owned_by_current_house_for_test(true);
+}
+
 /// The rival-house arena with flat Water cells and the production rules'
 /// land semantics. Ships enter through ordinary Unlimbo; no movement tuning
 /// or missing-terrain placement bypass is needed.
@@ -149,7 +176,7 @@ fn flat_ground_with_size(sim: &mut Simulation, rules: &RuleSet, size: u16) -> Pa
 /// arena that already holds objects, bridges or navigation builds its own.
 fn install_empty_arena_navigation(
     substrate: &ObjectSubstrate,
-    zone_grid: &mut Option<ZoneGrid>,
+    zone_grid: &mut Option<crate::util::shared::Shared<ZoneGrid>>,
     path_grid: &mut Option<Arc<PathGrid>>,
     resolved_terrain: &Option<ResolvedTerrainGrid>,
     bridge_state: &Option<BridgeRuntimeState>,
@@ -190,13 +217,16 @@ fn install_empty_arena_navigation(
 /// A `size` x `size` grid of clear ground cells.
 fn clear_ground(size: u16) -> crate::map::resolved_terrain::ResolvedTerrainGrid {
     let clear = crate::rules::terrain_rules::SpeedCostProfile {
-        foot: Some(100),
-        track: Some(100),
-        wheel: Some(100),
+        foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
         float: None,
-        amphibious: Some(80),
+        amphibious: Some(crate::rules::terrain_rules::test_speed_percent(80)),
         float_beach: None,
-        hover: Some(50),
+        hover: Some(crate::util::native_x87::NativeF32Bits::from_bits(
+            0x3f00_0000,
+        )),
+        winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
     };
     let cell = |x, y| {
         let mut cell = crate::map::resolved_terrain::test_flat_cell(x, y);
@@ -235,13 +265,16 @@ pub fn supply_native_map(sim: &mut Simulation) {
         // Every supplied clear ground has the same zones; a fixture builds
         // them once per test process and installs a copy.
         static CLEAR_GROUND_ZONES: std::sync::OnceLock<ZoneGrid> = std::sync::OnceLock::new();
-        sim.zone_grid = Some(if supplies_ground {
-            CLEAR_GROUND_ZONES
-                .get_or_init(|| native_zones(&grid, terrain))
-                .clone()
-        } else {
-            native_zones(&grid, terrain)
-        });
+        sim.zone_grid = Some(
+            if supplies_ground {
+                CLEAR_GROUND_ZONES
+                    .get_or_init(|| native_zones(&grid, terrain))
+                    .clone()
+            } else {
+                native_zones(&grid, terrain)
+            }
+            .into(),
+        );
     }
     if sim.playfield_bounds().is_none() {
         let span = size.0.max(size.1);
@@ -274,7 +307,7 @@ pub fn supply_native_map_keyed<K: Ord + Send + 'static>(sim: &mut Simulation, te
             })
             .expect("keyed fixture zones");
         dummy.adopt_prepared_load_state(&built);
-        sim.zone_grid = Some(zones);
+        sim.zone_grid = Some(zones.into());
     }
     supply_native_map(sim);
 }

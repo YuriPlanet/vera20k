@@ -40,7 +40,10 @@
 //!   answer false. No retail type sets either key, so every retail member
 //!   answers false. That includes the "Soviet SChop" teams' Siege Choppers,
 //!   which action 9 sets unloading just before the team's attack actions:
-//!   natively, as in VERA, those actions take them off Unload in the air.
+//!   natively, as in VERA, those actions queue Attack over the Unload, and
+//!   each takes it once it is down, undeployed (a descending jumpjet is
+//!   moving, and `UnitClass::Is_Ready_To_Commence @ 0x00744270` holds the
+//!   queued mission meanwhile).
 //!   Trigger: a member of a modded type deploying when its team attacks.
 //!   Effect: it stops deploying and attacks.
 
@@ -75,9 +78,16 @@ use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::team_script_vm::TeamScriptVm;
 use crate::sim::world::ObjectSubstrate;
 
+#[path = "scout_houses.rs"]
+mod scout_houses;
+
 #[cfg(test)]
 #[path = "scout_tests.rs"]
 mod scout_tests;
+
+#[cfg(test)]
+#[path = "scout_houses_tests.rs"]
+mod scout_houses_tests;
 
 #[cfg(test)]
 #[path = "result_tests.rs"]
@@ -154,6 +164,8 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 27
             | 30
             | 31
+            | 32
+            | 33
             | 34
             | 37
             | 38
@@ -164,6 +176,7 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 43
             | 46
             | 47
+            | 48
             | 49
             | 50
             | 51
@@ -292,6 +305,7 @@ impl Simulation {
     ) {
         let current_frame = self.session.binary_frame() as i32;
         match action.action_id {
+            48 => self.team_action_scout_houses(team_id, rules, registry, frame_effects),
             0 => self.team_action_attack_quarry(
                 team_id,
                 action.argument,
@@ -829,6 +843,39 @@ impl Simulation {
                     team.advance_pending = true;
                 }
             }
+            // Case 32 (`0x006E9A74..0x006E9A9F`), named Ion Storm Start but
+            // the Lightning Storm in YR, like trigger action 44: unless
+            // IsActive `0x0053A100`, Start `0x00539EB0` with the argument as
+            // duration, LightningDeferment (Rules `+0x1794`), the zero cell
+            // `[0x00B0E948]` and no house. Then Team+80=1 either way.
+            32 => {
+                if !crate::sim::superweapon::lightning_storm::raging(self) {
+                    crate::sim::superweapon::lightning_storm::start(
+                        self,
+                        rules,
+                        action.argument,
+                        rules.general.lightning_deferment,
+                        (0, 0),
+                        None,
+                    );
+                }
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.advance_pending = true;
+                }
+            }
+            // Case 33 (`0x006E9AAE..0x006E9AC0`), like trigger action 45: a
+            // raging storm gets Stop `0x0053A090`'s end request. Then
+            // Team+80=1 either way.
+            33 => {
+                if crate::sim::superweapon::lightning_storm::raging(self) {
+                    crate::sim::superweapon::lightning_storm::request_end(
+                        &mut self.lightning_storm,
+                    );
+                }
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.advance_pending = true;
+                }
+            }
             43 => Self::team_action_wait_until_loaded(
                 &self.interner,
                 &self.substrate,
@@ -882,13 +929,27 @@ impl Simulation {
             ),
             53 => self.team_action_gather_at_enemy_base(
                 team_id,
+                action.argument,
                 first,
                 rules,
                 registry,
                 frame_effects,
             ),
-            54 => self.team_action_regroup_at_base(team_id, first, rules, registry, frame_effects),
-            55 => self.team_action_iron_curtain(team_id, rules, registry, frame_effects),
+            54 => self.team_action_regroup_at_base(
+                team_id,
+                action.argument,
+                first,
+                rules,
+                registry,
+                frame_effects,
+            ),
+            55 => self.team_action_iron_curtain(
+                team_id,
+                action.argument,
+                rules,
+                registry,
+                frame_effects,
+            ),
             56 => self.team_action_chronoshift(
                 team_id,
                 ChronoshiftTarget::Building(action.argument),
@@ -996,7 +1057,7 @@ impl Simulation {
     ) {
         if first {
             let index = argument & 0xffff;
-            let type_name = rules.anim_type_name_by_index(index).map(str::to_owned);
+            let type_name = rules.anim_type_runtime_key_by_index(index);
             if let Some(type_name) = type_name {
                 let type_id = self.interner.intern(&type_name);
                 let members: Vec<u64> = self
@@ -1816,10 +1877,13 @@ impl Simulation {
     /// with `RandomRanged(0, 255)` on the Scenario stream without an enemy):
     /// the passable 3x3 area nearest that cell (FNPC), or the off-map cell
     /// `(0, 0)` without one, which the action does not check. Each frame the
-    /// team moves there.
+    /// team moves there. Ares TeamClass_GatherAtFriendlyBase_Distance
+    /// (1003A2A0, hook 0x6EFB69) makes the distance `argument` plus
+    /// `[General] AIFriendlyDistance=`, else `AISafeDistance=`.
     fn team_action_regroup_at_base(
         &mut self,
         team_id: u64,
+        argument: i32,
         first: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
@@ -1846,7 +1910,18 @@ impl Simulation {
                 let [x, y, _] = self.house_base_coordinate(enemy, cells.as_ref());
                 [x, y]
             });
-            let seed = regroup_seed_cell(own, enemy, rules.general.ai_safe_distance, || {
+            #[cfg(feature = "ares")]
+            let distance = argument.wrapping_add(
+                rules
+                    .ares_general()
+                    .ai_friendly_distance(rules.general.ai_safe_distance),
+            );
+            #[cfg(not(feature = "ares"))]
+            let distance = {
+                let _ = argument;
+                rules.general.ai_safe_distance
+            };
+            let seed = regroup_seed_cell(own, enemy, distance, || {
                 self.scenario_rng.next_range_i32_inclusive(0, 255)
             });
             self.team_assign_gather_cell(team_id, seed, speed_type, rules, registry, frame_effects);
@@ -1861,10 +1936,12 @@ impl Simulation {
     /// base), or the off-map cell `(0, 0)` without one, which the action
     /// does not check. Without members, or when the leader's house has no
     /// enemy with a base, the action finishes at once instead. Each later
-    /// frame the team moves there.
+    /// frame the team moves there. Ares TeamClass_GatherAtEnemyBase_Distance
+    /// (1003A270, hook 0x6EF8A1) adds `argument` to `AISafeDistance=`.
     fn team_action_gather_at_enemy_base(
         &mut self,
         team_id: u64,
+        argument: i32,
         first: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
@@ -1890,11 +1967,18 @@ impl Simulation {
                 return None;
             }
             let own = self.house_base_coordinate(owner, cells.as_ref());
+            #[cfg(feature = "ares")]
+            let distance = argument.wrapping_add(rules.general.ai_safe_distance);
+            #[cfg(not(feature = "ares"))]
+            let distance = {
+                let _ = argument;
+                rules.general.ai_safe_distance
+            };
             let seed = gather_seed_cell(
                 [own[0], own[1]],
                 [enemy[0], enemy[1]],
                 crate::sim::movement::ground_pose::position_world_xy(&entity.position),
-                rules.general.ai_safe_distance,
+                distance,
             )?;
             let speed_type = self
                 .object_type(entity.type_ref(), rules)
@@ -2038,7 +2122,7 @@ impl Simulation {
             (leader_location.y / 256) as u16,
         );
         let terrain = self.resolved_terrain.as_ref()?;
-        let zone = self.zone_grid.as_ref()?.get_zone_id_native(
+        let zone = self.zone_grid.as_deref()?.get_zone_id_native(
             terrain,
             leader_cell,
             object.movement_zone,
@@ -2344,7 +2428,7 @@ impl Simulation {
                             self,
                             member,
                             rules,
-                            None,
+                            registry,
                             frame_effects,
                         );
                     }

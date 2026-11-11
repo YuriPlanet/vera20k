@@ -4,10 +4,11 @@ use std::collections::BTreeSet;
 
 /// Radar and tactical redraw marks for runtime cell changes.
 ///
-/// Radar: cells whose minimap terrain pixel must refresh. Presentation reads
-/// the pending batch with its generation and acknowledges it once its radar
-/// update completes, so a stale acknowledgement cannot clear a newer batch.
-/// Active `RadarClass` dirty processing at `0x00655250` drains and clears its
+/// Radar: cells whose minimap terrain pixel must refresh. The client drains
+/// the pending batch once per frame into the minimap's own backlog
+/// (`render::radar::RadarTerrainBacklog`), which keeps it until an upload
+/// completes, so presentation never writes simulation state. Active
+/// `RadarClass` dirty processing at `0x00655250` drains and clears its
 /// retained cell list the same way.
 ///
 /// Tactical: the cells native marks for a tactical redraw. VERA's tactical
@@ -51,15 +52,11 @@ impl DirtyCells {
         }
     }
 
-    /// Acknowledges one completed radar update. A stale generation or an
-    /// empty batch is refused.
-    pub(crate) fn acknowledge_radar(&mut self, generation: u64) -> bool {
-        if generation != self.radar_generation || self.radar.is_empty() {
-            return false;
-        }
-        self.radar.clear();
+    /// Hands the pending radar batch to its consumer and empties it. The
+    /// generation stays: it still counts every batch that gained a cell.
+    pub(crate) fn take_radar(&mut self) -> Vec<(u16, u16)> {
         self.radar_index.clear();
-        true
+        std::mem::take(&mut self.radar)
     }
 
     /// Native's tactical redraw mark for `cell`. Every call is kept in order,

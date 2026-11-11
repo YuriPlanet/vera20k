@@ -630,8 +630,7 @@ pub(crate) fn assign_target_stored(
                             actor, kind, 0, entities, rules, interner,
                         )
                     })
-                    .and_then(|weapon| weapon.warhead.as_deref())
-                    .and_then(|warhead| rules.warhead(warhead))
+                    .and_then(|weapon| rules.weapon_warhead(weapon))
                     .is_some_and(|warhead| warhead.is_locomotor)
             })
             || actor.airstrike_link() == Some(receiver))
@@ -721,6 +720,9 @@ pub(crate) fn represented_assign_target_admitted(
         if let Some(manager) = entity.spawn_manager.as_mut() {
             manager.set_target(None);
         }
+        // `0x006FCF53..0x006FCF5B` resets CurrentBurstIndex; Ares 3.0
+        // TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53) keeps it.
+        #[cfg(not(feature = "ares"))]
         entity.weapon_burst.reset();
     }
     // The store (`0x006FCF3E`).

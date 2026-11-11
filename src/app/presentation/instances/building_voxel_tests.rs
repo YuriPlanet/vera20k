@@ -1,5 +1,6 @@
 use super::*;
-use crate::render::unit_atlas::{BarrelImagePitches, UnitAtlas, UnitSpriteEntry};
+use crate::render::unit_atlas::{UnitAtlas, UnitSpriteEntry};
+use crate::render::voxel_image_cache::VoxelImageCache;
 use std::collections::HashMap;
 
 /// Exercise the production emitter against original 43DA80 submissions.
@@ -74,7 +75,9 @@ fn building_voxel_parts_follow_native_frames_order_and_translation() {
         let mut pieces = Vec::new();
         emit_building_turret_vxl(
             &atlas,
-            &mut BarrelImagePitches::default(),
+            &mut VoxelImageCache::default(),
+            None,
+            Default::default(),
             "BUILDING",
             primary,
             elevation,
@@ -243,7 +246,9 @@ fn retail_building_guns_draw_the_native_crop_at_the_native_origin() {
         let mut pieces = Vec::new();
         emit_building_turret_vxl(
             &atlas,
-            &mut BarrelImagePitches::default(),
+            &mut VoxelImageCache::default(),
+            None,
+            Default::default(),
             building,
             primary,
             elevation,
@@ -313,7 +318,9 @@ fn building_voxel_guns_seed_their_blit_z_with_turret_anim_z_adjust() {
         let mut pieces = Vec::new();
         emit_building_turret_vxl(
             &atlas,
-            &mut BarrelImagePitches::default(),
+            &mut VoxelImageCache::default(),
+            None,
+            Default::default(),
             "BUILDING",
             0,
             0x4000,

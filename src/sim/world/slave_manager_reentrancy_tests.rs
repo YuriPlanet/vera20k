@@ -112,7 +112,7 @@ fn scene(recruitable: bool, tagged: bool) -> Option<Scene> {
             );
         }
     }
-    sim.install_team_ai_registry(&teams, &rules).unwrap();
+    sim.install_team_ai_registry(&teams, &rules);
     sim.initialize_trigger_definitions(&map, &teams, None, None, None);
     sim.classify_map_triggers(&rules);
     let team_type = sim.interner.get("FREE_SLAVES_TEAM").unwrap();

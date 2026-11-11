@@ -634,8 +634,11 @@ pub(crate) fn emit_crush_kill_sounds_at(
     interner: &mut crate::sim::intern::StringInterner,
     sound_events: &mut crate::sim::world::FrameChannel<crate::sim::world::SimSoundEvent>,
 ) {
-    let type_str = interner.resolve(victim.type_ref()).to_string();
-    let Some(obj) = rules.object(&type_str) else {
+    // Unit7418CE/7418D4 and Jumpjet54CD06/54CD0C read the victim's
+    // concrete Type+1F0, even when another class registers the same ID.
+    let Some(obj) =
+        interner.object_type_in_category(victim.type_ref(), victim.category().into(), rules)
+    else {
         return;
     };
     if let Some(ref crush_sound) = obj.crush_sound {

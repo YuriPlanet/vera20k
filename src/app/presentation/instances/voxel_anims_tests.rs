@@ -70,7 +70,8 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
     assert!(!ids.is_empty(), "the death threw no tyre");
     for _ in 0..6 {
         for &id in &ids {
-            sim.visit_voxel_anim(id, rules, crate::sim::world::FrameEffects::default());
+            sim.visit_voxel_anim(id, rules, crate::sim::world::FrameEffects::default())
+                .unwrap();
             sim.process_pending_delete_with(
                 rules,
                 Some(rules.overlay_registry()),
@@ -141,7 +142,7 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
             &order,
             |image, section, m| {
                 rendered = Some(m);
-                cache.render_tumble(&assets, image, section, m)
+                cache.render_tumble(&assets, image, section, m, false, None)
             },
         )
         .expect("an admitted piece in view draws");
@@ -194,7 +195,8 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
     // Expiry removes every piece from the store and the Air layer.
     for _ in 0..200 {
         for &id in &ids {
-            sim.visit_voxel_anim(id, rules, crate::sim::world::FrameEffects::default());
+            sim.visit_voxel_anim(id, rules, crate::sim::world::FrameEffects::default())
+                .unwrap();
             sim.process_pending_delete_with(
                 rules,
                 Some(rules.overlay_registry()),
@@ -244,7 +246,8 @@ fn an_unowned_retail_tyre_draws_with_the_global_plain_convert() {
     assert_eq!(ids.len(), 1);
     let id = ids[0];
     for _ in 0..6 {
-        sim.visit_voxel_anim(id, rules, crate::sim::world::FrameEffects::default());
+        sim.visit_voxel_anim(id, rules, crate::sim::world::FrameEffects::default())
+            .unwrap();
         sim.process_pending_delete_with(
             rules,
             Some(rules.overlay_registry()),
@@ -303,7 +306,7 @@ fn an_unowned_retail_tyre_draws_with_the_global_plain_convert() {
         palette,
         &view,
         &order,
-        |image, section, matrix| cache.render_tumble(&assets, image, section, matrix),
+        |image, section, matrix| cache.render_tumble(&assets, image, section, matrix, false, None),
     )
     .expect("an unowned admitted tyre reaches the physical TIRE pose page");
     assert_eq!(object.parent.layer.0, DisplayLayer::AIR.index());

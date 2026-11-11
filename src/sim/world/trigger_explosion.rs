@@ -34,7 +34,7 @@ impl Simulation {
         let damage = weapon.damage;
         // A null Warhead makes SelectAnim (48A4FF), Flash (48A652) and
         // AreaDamage (4892D7) each return early; 6E2513 still succeeds.
-        let Some(warhead) = weapon.warhead.as_deref().and_then(|id| rules.warhead(id)) else {
+        let Some(warhead) = rules.weapon_warhead(weapon) else {
             return Some(false);
         };
 

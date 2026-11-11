@@ -25,8 +25,8 @@ Source paths below are under `src/`. The workspace has two crates:
 - `app/` — window, input, loading and saving; wires sim, render, ui, audio and net together.
 - `ui/` — menus, dialogs, in-game screens and the sidebar.
 - `audio/` — sound effects and music.
-- `net/` — LAN UDP transport, reliable delivery and synchronized command exchange.
-  [Networking.md](Networking.md) describes the current behavior and remaining work.
+- `net/` — LAN and online UDP transport, reliable delivery and synchronized command exchange.
+  [Networking.md](Networking.md) describes how LAN and online play work.
 - `rules/` — the retail INI files and their layers.
 - `map/` — maps, theaters, terrain, triggers and the random map generator.
 - `assets/` — parsers for the original file formats (`.mix`, `.shp`, `.vxl`, `.pal`, Bink video and more).
@@ -40,6 +40,8 @@ the deterministic frame phases.
 
 The app turns player input into commands for the simulation. After each frame it hands the new state to the renderer and plays the sounds the frame produced. Rendering only reads simulation state, and `sim/` never depends on `render/`, `ui/`, `audio/` or `net/`.
 
+![Application sends commands to simulation, which returns world state; application sends draw data to rendering.](images/architecture.png)
+
 ## Determinism
 
 The same state, inputs and random seed must give the same result on every platform and CPU.
@@ -52,3 +54,17 @@ Normal play hashes the whole state once every 15 frames for its diagnostic repla
 log; tests and benchmarks can hash every frame. Multiplayer has a separate
 per-frame sync checksum, with calculation, exchange and comparison handled by the
 simulation, session and network command owners.
+
+## Feature docs
+
+- [Colour-vision filter](color-vision-config.md): the `[VERA] ColorVisionMode=` whole-viewport daltonization option.
+- [End-game screens](ini-end-game-screens.md): the verdict card, its theme and the score page's own art.
+- [Ferry order](ferry.md): press J and click a drop spot to have a transport carry units there and come back for more.
+- [Formation line](formation-line.md): hold F and drag with the left button to line a group up along a drawn line.
+- [Health-strip modes](health-bars.md): the `[VERA] HealthBars=` client option.
+- [Interface layout](interface-layout.md): `veraui.ini`, a mod's own places for the sidebar, the command bar and the sidebar's parts.
+- [Jumpjets land beside a taken cell](jumpjet-land-nearby.md): the `[JumpjetControls] LandNearby=` rules key that sends a Nighthawk refused its landing cell to the nearest clear one.
+- [Smooth Jumpjet facing](jumpjet-smooth-facing.md): the `[JumpjetControls] SmoothFacing=` rules key that stops a Nighthawk's body snapping at take-off and unload.
+- [SHP building turrets](ini-shp-turret-anims.md): the rules keys for a building turret drawn as a 32-frame animation.
+- [Terrain deformation](terrain-deformation.md): the Options box that lets explosions dent the ground and nukes leave craters.
+- [Stock rules retail leaves off](dormant-stock-rules.md): `Assaulter=`, `CanDetonateTimeBomb=` and other gamemd keys only a mod or map switches on.

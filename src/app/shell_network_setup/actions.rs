@@ -228,9 +228,19 @@ fn trackbar(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()
         match control {
             SPEED => {
                 options.game_speed =
-                    crate::ui::skirmish_shell::game_speed_from_visual_position(value)
+                    crate::ui::shell::game_speed::SpeedContext::Network.stored_speed(value)
             }
-            CREDITS => options.starting_credits = value,
+            CREDITS => {
+                let credits = state
+                    .frontend
+                    .skirmish_shell_state
+                    .trackbar_bounds
+                    .credits_from_visual_position(value);
+                if options.starting_credits == credits {
+                    return Ok(());
+                }
+                options.starting_credits = credits;
+            }
             UNITS => options.unit_count = value,
             _ => anyhow::bail!("unknown setup slider"),
         }
@@ -431,17 +441,12 @@ pub(crate) fn commit_start(state: &mut AppState, agreed_seed: u32) {
             None,
         )
     } else {
-        let random_map = selected.as_deref().is_some_and(|file| {
-            file.eq_ignore_ascii_case(crate::map::skirmish_scenarios::RANDMAP_SED)
-        });
-        let staging = state.frontend.multiplayer_shell_runtime.start_staging();
         (
             None,
-            (random_map && staging.defined_cells().next().is_some()).then(|| {
-                crate::app::shell_random_map::AcceptedRmgStartStaging::from_scenario_staging(
-                    &staging,
-                )
-            }),
+            crate::app::shell_random_map::AcceptedRmgStartStaging::from_retained_staging(
+                &state.frontend.multiplayer_shell_runtime.start_staging(),
+                selected.as_deref(),
+            ),
         )
     };
     if accepted_random_map.is_none()

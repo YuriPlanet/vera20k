@@ -5,6 +5,7 @@
 
 use super::chat_notice as message;
 use super::*;
+use crate::skirmish_launch::LaunchTeam;
 use crate::ui::lan_shell::LanChatLine;
 use crate::ui::wol_chat;
 use std::time::Duration;
@@ -28,7 +29,7 @@ pub(crate) fn resident_seed(state: &AppState) -> u32 {
     state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map_or(state.frontend.startup_rng_seed, |runtime| {
             runtime.simulation.session().seed() as u32
         })
@@ -166,17 +167,21 @@ pub(crate) fn send_first_choices(state: &mut AppState) {
 /// it through `0x5E9240`: a player on the first Open row, an observer on
 /// the first open observer row when no Open player row is left
 /// (`0x5E9510`); with neither (`0x5E9560`) the joiner is kicked
-/// (`0x7A6BC7`).
+/// (`0x7A6BC7`). VERA's room first frees the last AI's seat when every seat
+/// is taken, so it stays open until its host's Max players.
 /// RESIDUAL: the host's node takes the mode's default country (mode
 /// vt+0x28) natively; it is unset here.
 pub(crate) fn user_joined(state: &mut AppState, name: String) -> anyhow::Result<()> {
-    let session = &state.match_state.session;
     let pending = start_pending(state)
         || state
             .frontend
             .network_setup_protocol
             .as_ref()
             .is_some_and(|protocol| protocol.locked);
+    if !pending {
+        state.match_state.session.free_network_seat_for_newcomer()?;
+    }
+    let session = &state.match_state.session;
     let row = if !session.host() {
         Some(None)
     } else if session.network_room_full() {
@@ -252,8 +257,10 @@ pub(crate) fn user_left(state: &mut AppState, name: &str, operator: bool) -> any
 
 /// The private-options sink `0x7A8260`'s gates for a guest's `R`: nothing
 /// while a WOL match runs (`[0xB77DC1]`) or a start is requested
-/// (`[0xB77E28]`); the sender must be a channel user (the caller's check)
-/// and own a node here. Only a host receives it.
+/// (`[0xB77E28]`), and nothing in Quick Match (`[0xA8B244]` 1-3 take only
+/// `Z`), where the matchbot's options seat both players; the sender must be
+/// a channel user (the caller's check) and own a node here. Only a host
+/// receives it.
 pub(crate) fn player_choices(
     state: &mut AppState,
     name: &str,
@@ -262,6 +269,7 @@ pub(crate) fn player_choices(
 ) -> anyhow::Result<()> {
     if crate::app::shell_wol::in_match(state)
         || start_pending(state)
+        || super::quick_match(state)
         || !state.match_state.session.host()
     {
         return Ok(());
@@ -277,6 +285,49 @@ pub(crate) fn player_choices(
             observer,
         },
     )
+}
+
+/// The VERA lobby's `balance` event, its answer to the host's `/balance` (no
+/// native counterpart): a team for each named player. It has `player_choices`'
+/// gates, and acts only in a mode that lets players ally outside a clan room,
+/// where the team combos show.
+pub(crate) fn balance_teams(state: &mut AppState, teams: &[(String, u8)]) -> anyhow::Result<()> {
+    if crate::app::shell_wol::in_match(state)
+        || start_pending(state)
+        || super::quick_match(state)
+        || !state.match_state.session.host()
+    {
+        return Ok(());
+    }
+    let session = &state.match_state.session;
+    let Some(launch) = session.network_setup() else {
+        return Ok(());
+    };
+    if !launch.mode.allies_allowed || session.network_room().clan {
+        return Ok(());
+    }
+    let moves = team_moves(launch, teams);
+    if moves.is_empty() {
+        return Ok(());
+    }
+    service::service_event(state, service::NetworkSetupEvent::Teams(moves))
+}
+
+/// The participants `teams` move to another team: playing humans with a row,
+/// on a team the combos list (0..3, `team_choices`).
+fn team_moves(launch: &SkirmishLaunchSession, teams: &[(String, u8)]) -> Vec<(usize, u8)> {
+    teams
+        .iter()
+        .filter_map(|(name, team)| {
+            let index = participant_in(launch, name)?;
+            let human = &launch.humans[index];
+            (*team <= 3
+                && !human.is_observer()
+                && human.raw_slot_index.is_some()
+                && human.slot.team != LaunchTeam::Team(*team))
+            .then_some((index, *team))
+        })
+        .collect()
 }
 
 /// A user's `A<n>` (`0x5E3D10` arm `'A'`, `0x5E4388` → `0x77E900`): the
@@ -327,7 +378,8 @@ fn quick_match_start(state: &mut AppState, name: &str) {
 /// (`0x007A7F72..0x007A8014`): its own node with a side and a colour, and
 /// exactly two channel users, accept at once: `"A1"` channel-wide
 /// (API+0x3C). The text is the host's digit-led options, and the parse
-/// already dropped it while a match runs or a start is pending.
+/// already dropped it while a match runs or a start is pending. VERA: the
+/// online lobby's verified map runs it again (`accept_network_map_source`).
 /// RESIDUAL: the channel-owner gate (`0x007931A0`, the first operator is
 /// not this user) holds for every guest the matchbot names.
 pub(super) fn quick_match_accept(state: &mut AppState) {
@@ -498,12 +550,15 @@ fn participant(state: &AppState, name: &str) -> Option<usize> {
         .match_state
         .session
         .network_setup()
-        .and_then(|launch| {
-            // strcmpi 0x7C8D20 (0x7A8416).
-            launch.humans.iter().position(|human| {
-                crate::util::native_string::crt_strcmpi(&human.name, name).is_eq()
-            })
-        })
+        .and_then(|launch| participant_in(launch, name))
+}
+
+fn participant_in(launch: &SkirmishLaunchSession, name: &str) -> Option<usize> {
+    // strcmpi 0x7C8D20 (0x7A8416).
+    launch
+        .humans
+        .iter()
+        .position(|human| crate::util::native_string::crt_strcmpi(&human.name, name).is_eq())
 }
 
 /// The kick sink `0x7AB670` for another user in this game channel: its
@@ -725,6 +780,10 @@ pub(super) fn negotiated(state: &mut AppState, result: u8) -> anyhow::Result<()>
                 .session
                 .network_start_seed()
                 .ok_or_else(|| anyhow::anyhow!("WOL start has no admitted seed"))?;
+            // VERA: a guest's match, or a Quick Match the matchbot paired,
+            // starts without a click. Call back a player in another window
+            // now: a hidden window's slide waits for its frames.
+            state.platform.request_attention(true);
             let protocol = state
                 .frontend
                 .network_setup_protocol
@@ -749,6 +808,8 @@ pub(super) fn negotiated(state: &mut AppState, result: u8) -> anyhow::Result<()>
             }
             if let Some(visit) = state.frontend.wol.as_mut() {
                 visit.back_to_room = back_to_room;
+                // A new match voids an earlier BC6 resume no room took.
+                visit.cooperative_resume = None;
             }
             state.frontend.skirmish_preview_texture = None;
             if quick_match {
@@ -989,4 +1050,43 @@ pub(super) fn ping(state: &mut AppState, name: String, ping: i32) -> anyhow::Res
         None => protocol.pings.push((name, ping)),
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn balance_moves_seated_players_only_onto_listed_teams() {
+        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/map_observation.command-bar.example.json",
+        ))
+        .unwrap();
+        let mut launch: SkirmishLaunchSession =
+            serde_json::from_value(fixture["launch"].clone()).unwrap();
+        let player = launch.humans[0].clone();
+        launch.humans = ["Host", "Guest", "Watcher", "Gone"]
+            .into_iter()
+            .enumerate()
+            .map(|(row, name)| {
+                let mut human = player.clone();
+                human.name = name.into();
+                human.raw_slot_index = Some(row as u8);
+                human.slot.team = LaunchTeam::Team(0);
+                human
+            })
+            .collect();
+        launch.humans[2].set_observer(true);
+        launch.humans[3].raw_slot_index = None;
+        let teams = [
+            ("host", 1),
+            ("Guest", 0),
+            ("Watcher", 1),
+            ("Gone", 1),
+            ("Nobody", 1),
+        ];
+        let teams: Vec<_> = teams.map(|(name, team)| (name.to_owned(), team)).into();
+        assert_eq!(team_moves(&launch, &teams), [(0, 1)]);
+        assert_eq!(team_moves(&launch, &[("Guest".into(), 4)]), []);
+    }
 }

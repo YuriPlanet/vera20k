@@ -116,7 +116,7 @@ impl FailureCapture {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("startup world")?
             .simulation;
         let Some(info) = live.wait_info() else {
@@ -268,7 +268,7 @@ impl FailureCapture {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("held startup world")?
             .simulation;
         let live = state

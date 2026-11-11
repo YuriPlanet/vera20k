@@ -42,6 +42,10 @@ struct AirstrikeManager {
 }
 
 impl AirstrikeState {
+    /// Whether Techno+294 names `id`, as a designating Techno's own link does.
+    pub fn links_to(&self, id: u64) -> bool {
+        self.link == Some(id)
+    }
     pub(crate) fn owns_manager(&self) -> bool {
         self.manager.is_some()
     }
@@ -211,13 +215,8 @@ impl Simulation {
         }
         m.target = Some(target);
         if let Some(first) = first {
-            self.airstrike_sound(
-                first,
-                rules.general.airstrike_attack_voice.as_deref(),
-                None,
-                rules,
-                effects,
-            );
+            let voice = self.airstrike_voice(false, first, owner, rules);
+            self.airstrike_sound(first, voice, None, rules, effects);
         }
         Self::airstrike_mark_target(&self.session, &mut self.substrate, owner, target);
     }
@@ -374,6 +373,38 @@ impl Simulation {
         self.substrate.airstrike_manager_mut(owner).unwrap().target = None;
     }
 
+    /// The sound an airstrike plays as it starts (`abort` false) or is
+    /// called off: `[AudioVisual] AirstrikeAttackVoice`/`AirstrikeAbortSound`.
+    /// Ares AirstrikeClass_Fire_AirstrikeAttackVoice (10048D60, hook
+    /// 0x41D940) and AirstrikeClass_PointerGotInvalid_AirstrikeAbortSound
+    /// (10048DE0, hook 0x41D5AE) let the first aircraft's type and then the
+    /// designator's `VoiceAirstrikeAttack`/`VoiceAirstrikeAbort` replace it.
+    fn airstrike_voice<'r>(
+        &self,
+        abort: bool,
+        first: u64,
+        designator: u64,
+        rules: &'r RuleSet,
+    ) -> Option<&'r str> {
+        let general = if abort {
+            rules.general.airstrike_abort_sound.as_deref()
+        } else {
+            rules.general.airstrike_attack_voice.as_deref()
+        };
+        #[cfg(feature = "ares")]
+        let general = [first, designator].into_iter().fold(general, |voice, id| {
+            self.substrate
+                .entities
+                .get(id)
+                .and_then(|entity| self.interner.object_type(entity.type_ref(), rules))
+                .and_then(|object| object.techno_combat().presentation().airstrike_voice(abort))
+                .unwrap_or(voice)
+        });
+        #[cfg(not(feature = "ares"))]
+        let _ = (first, designator);
+        general
+    }
+
     fn airstrike_sound(
         &mut self,
         source: u64,
@@ -446,19 +477,16 @@ impl Simulation {
                     .entities
                     .get(owner)
                     .and_then(|e| self.houses.get(&e.owner()))
-                    .is_some_and(|h| h.is_human())
+                    .is_some_and(|h| h.is_controlled_by_human(self.session.game_mode_nonzero()))
             {
-                // IsHumanPlayer50B6F0 in skirmish means this machine's local
-                // house. The common sound boundary resolves that audience;
-                // another human player's Boris must not play our abort voice.
+                // IsHumanPlayer (`0x0041D5A5 CALL 0x0050B6F0`): in a campaign
+                // the human or `PlayerControl=` flag. In a multiplayer game it
+                // means this machine's local house; any human house passes
+                // here and the common sound boundary resolves that audience,
+                // so another human player's Boris does not play our abort voice.
                 let house = self.substrate.entities.get(owner).unwrap().owner();
-                self.airstrike_sound(
-                    first,
-                    rules.general.airstrike_abort_sound.as_deref(),
-                    Some([house, house]),
-                    rules,
-                    effects,
-                );
+                let voice = self.airstrike_voice(true, first, owner, rules);
+                self.airstrike_sound(first, voice, Some([house, house]), rules, effects);
             }
             self.airstrike_clear_target(owner, rules, effects);
             for id in aircraft {
@@ -517,7 +545,7 @@ impl Simulation {
         use crate::sim::combat::fire_coord::{FireSource, fire_coordinate};
         use crate::sim::movement::ground_pose::object_get_coords;
         let source = self.substrate.entities.get(owner)?;
-        if source.airstrike.link != Some(owner) {
+        if !source.airstrike.links_to(owner) {
             return None;
         }
         let target = self

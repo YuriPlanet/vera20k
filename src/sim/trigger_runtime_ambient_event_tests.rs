@@ -146,6 +146,7 @@ fn saved_pending_ambient_event_fires_after_the_production_frame_fade() {
     // republishes it before resuming frames (app/persistence/mod.rs).
     restored.session.publish_started();
     for sim in [&mut original, &mut restored] {
+        sim.record_trigger_springs(true);
         let frame = sim
             .advance_app_frame(
                 &[],
@@ -159,8 +160,23 @@ fn saved_pending_ambient_event_fires_after_the_production_frame_fade() {
         assert!(frame.tick.frame_committed);
         assert_eq!(sim.session.lighting().current_ambient(), 90);
         assert!(
+            !sim.trigger_runtime.dirty[2],
+            "a frame whose fade does not step leaves 34AB clear"
+        );
+        assert!(
             sim.trigger_local_is_set_for_test(0),
             "Logic sees the preceding frame's fade value"
+        );
+        // The fade's step set Scenario+34AB (0x0055B4BA), saved with the
+        // game, so this poll raises event 45 before event 13.
+        let (springs, _) = sim.take_trigger_trace();
+        assert_eq!(
+            springs
+                .iter()
+                .filter(|spring| spring.trigger == "BELOW")
+                .map(|spring| spring.raised_kind)
+                .collect::<Vec<_>>(),
+            [45]
         );
         assert!(
             sim.trigger_runtime.logic_tags.is_empty(),

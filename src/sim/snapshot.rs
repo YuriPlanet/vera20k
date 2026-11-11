@@ -35,14 +35,31 @@ use crate::util::save_codec;
 /// layouts. A change in what an unchanged field means renames that field. The
 /// top bit is always set; the hand-kept counter used before stayed far below
 /// it, so those saves read as another layout.
+///
+/// The browser build takes the same id from the build instead
+/// (`VERA20K_SNAPSHOT_LAYOUT`, which tools/wasm/build.py sets from
+/// `src/bin/snapshot-layout.rs`), so the tracing code stays out of the
+/// package every player downloads.
 fn snapshot_layout() -> u32 {
-    static LAYOUT: OnceLock<u32> = OnceLock::new();
-    *LAYOUT.get_or_init(|| {
-        let description = save_codec::layout::describe::<GameSnapshot>()
-            .unwrap_or_else(|error| panic!("cannot describe the snapshot layout: {error}"));
-        let digest = crate::util::sha256::sha256_bytes(description.as_bytes());
-        u32::from_le_bytes([digest[0], digest[1], digest[2], digest[3]]) | 0x8000_0000
-    })
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    {
+        env!("VERA20K_SNAPSHOT_LAYOUT")
+            .parse()
+            .expect("VERA20K_SNAPSHOT_LAYOUT is a snapshot layout id")
+    }
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    {
+        static LAYOUT: OnceLock<u32> = OnceLock::new();
+        *LAYOUT.get_or_init(traced_snapshot_layout)
+    }
+}
+
+/// [`snapshot_layout`], traced from the saved types.
+pub fn traced_snapshot_layout() -> u32 {
+    let description = save_codec::layout::describe::<GameSnapshot>()
+        .unwrap_or_else(|error| panic!("cannot describe the snapshot layout: {error}"));
+    let digest = crate::util::sha256::sha256_bytes(description.as_bytes());
+    u32::from_le_bytes([digest[0], digest[1], digest[2], digest[3]]) | 0x8000_0000
 }
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
@@ -326,6 +343,8 @@ pub enum SnapshotError {
 /// Structural failures found before a deserialized simulation is admitted.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SnapshotRestoreError {
+    #[error(transparent)]
+    Tiberium(#[from] crate::rules::overlay_types::TiberiumImageError),
     #[cfg(feature = "ares")]
     #[error("object {object_id} has invalid attached stats: {reason}")]
     InvalidAttachedStatsState {
@@ -1371,7 +1390,7 @@ fn restore_object_references(
 
         // A bomb's planter (`BombClass+0x24`) is a pointer its expiry nulls
         // (`BombListClass::PointerGotInvalid @ 0x00439150`).
-        if let Some(planter) = entity.bomb.and_then(|bomb| bomb.planter()) {
+        if let Some(planter) = entity.bomb.as_ref().and_then(|bomb| bomb.planter()) {
             require_resolved_reference(
                 entity_ids.contains(&planter),
                 "EntityStore",
@@ -1526,10 +1545,7 @@ fn restore_object_references(
         }
 
         for (field, system_id) in [
-            (
-                "fire_particle_system",
-                entity.fire_particle_system.system(),
-            ),
+            ("fire_particle_system", entity.fire_particle_system.system()),
             (
                 "spark_particle_system",
                 entity.spark_particle_system.system(),
@@ -1760,6 +1776,18 @@ fn restore_object_references(
 }
 
 impl Simulation {
+    /// BuildingLoad453ECF invokes NoInit43B680 after the saved global Frame
+    /// has loaded. Reconstruct its independent repair Stage at the player-file
+    /// boundary, preserving mission state, radio links and internal continuations.
+    pub fn reconstruct_building_repair_progress_after_player_load(&mut self) {
+        let frame = self.session.binary_frame() as i32;
+        for entity in self.substrate.entities.values_mut() {
+            entity
+                .mission_leaf
+                .reconstruct_building_repair_progress_after_player_load(frame);
+        }
+    }
+
     /// Validate and re-register a deserialized simulation before it can resume.
     ///
     /// Native load registers old identities and pointer slots, resolves them,
@@ -2224,7 +2252,7 @@ impl Simulation {
             // MouseLoad restores Map+68/raw rows before LoadContent67E8CD's
             // hierarchy pass. A user file cannot invent that saved topology
             // from the Cell+4C values which CellLoad has just reset to zero.
-            let zones = self.zone_grid.as_ref().ok_or(
+            let zones = self.zone_grid.as_deref().ok_or(
                 SnapshotRestoreError::MissingMapAuthorityComponent {
                     component: "ZoneGrid",
                 },
@@ -2321,6 +2349,10 @@ impl Simulation {
                 .map_err(|error| SnapshotRestoreError::InvalidSavedCellLand(error.to_string()))?;
         }
 
+        // Ares 3.0 10014B70 (hook 0x483D94): a powered firestorm section's
+        // Impassable class is a Recalc product the template lacks.
+        #[cfg(feature = "ares")]
+        self.ares_firestorm_restore_zone_classes(rules);
         if !self.rebuild_dynamic_navigation(rules) {
             return Err(SnapshotRestoreError::NavigationAuthorityPublicationFailed);
         }
@@ -2403,7 +2435,7 @@ impl Simulation {
                 spreads,
                 current_frame,
                 native_rect,
-            ))
+            )?)
     }
 }
 
@@ -2562,10 +2594,16 @@ mod tests {
         use std::collections::BTreeSet;
 
         fn tiberium_fixture() -> (RuleSet, OverlayTypeRegistry, u8) {
-            let ini = IniFile::from_str(
+            tiberium_fixture_with_general("")
+        }
+
+        /// [`tiberium_fixture`] with `general` added to `[General]`.
+        fn tiberium_fixture_with_general(general: &str) -> (RuleSet, OverlayTypeRegistry, u8) {
+            let ini = IniFile::from_str(&format!(
                 "[General]\n\
                  TiberiumGrows=yes\n\
                  TiberiumSpreads=yes\n\
+                 {general}\
                  [InfantryTypes]\n\
                  [VehicleTypes]\n\
                  [AircraftTypes]\n\
@@ -2585,7 +2623,8 @@ mod tests {
                  GrowthPercentage=1\n\
                  Spread=23\n\
                  SpreadPercentage=1\n",
-            );
+            ));
+            let ini = crate::rules::tiberium_type::with_tiberium_image_slots(&ini);
             let rules = RuleSet::from_ini(&ini).expect("post-load tiberium fixture rules");
             let registry = OverlayTypeRegistry::from_ini(&ini, None);
             let ore_id = registry.id_for_name("ORE").expect("fixture ORE id");
@@ -2695,12 +2734,14 @@ mod tests {
                                 &rules.tiberium_types,
                                 overlay.cell(ore_cell.0, ore_cell.1).overlay_id.unwrap()
                             )
+                            .unwrap()
                             .unwrap(),
                         ore_cell.0,
                         ore_cell.1,
                         41,
                         &mut throwaway_rng,
                     )
+                    .unwrap()
                     .is_some()
             );
             assert!(
@@ -2711,6 +2752,7 @@ mod tests {
                                 &rules.tiberium_types,
                                 overlay.cell(ore_cell.0, ore_cell.1).overlay_id.unwrap()
                             )
+                            .unwrap()
                             .unwrap(),
                         overlay,
                         registry,
@@ -2724,6 +2766,7 @@ mod tests {
                         true,
                         &mut throwaway_rng,
                     )
+                    .unwrap()
                     .is_some()
             );
         }
@@ -2859,7 +2902,8 @@ mod tests {
                         true,
                         7,
                         (8, 8),
-                    );
+                    )
+                    .unwrap();
                 assert_eq!(fresh.growth_entries, 2);
             }
             assert_eq!(sim.ore_growth_state.native_rect(), (8, 8));
@@ -2881,6 +2925,28 @@ mod tests {
             assert_eq!(
                 class.growth.capacity(),
                 crate::sim::ore_growth::native_tiberium_queue_capacity((8, 8))
+            );
+        }
+
+        /// No load function calls `CellClass::RecalcAttributes`
+        /// (`0x0047D2B0`), and MapClass::Resize's whole-map pass
+        /// (`0x00567110`, through `0x00568BB0`) comes before it reconstructs
+        /// the Dummy (`0x005670E7..0x005670F2`). The rebuild's overlay sweep
+        /// stands for no Recalc, so it leaves the shared Dummy cell where it
+        /// was. Ore cell (0, 5) lacks the neighbours (-1, 5) and (-1, 6).
+        #[test]
+        fn postload_overlay_sweep_reads_no_cell_through_the_dummy() {
+            let (rules, registry, ore_id) =
+                tiberium_fixture_with_general("CliffBackImpassability=2\n");
+            let sim = base_sim_sized(ore_id, 12, &[(0, 5)]);
+            let mut restored = restore_before_map_authority(&sim);
+            restored.effective_shared_cell_dummy().stamp_coord(7, 9);
+            restored
+                .restore_map_authority_after_snapshot_load(&rules, &registry, None)
+                .expect("all map-authority rebuild dependencies");
+            assert_eq!(
+                restored.effective_shared_cell_dummy().snapshot().coord,
+                (7, 9)
             );
         }
 
@@ -2930,6 +2996,7 @@ mod tests {
                 live_grid.as_ref(),
                 (8, 8),
             )
+            .unwrap()
             .expect("overlay grid present");
             sim.overlay_grid = live_grid;
 
@@ -3104,7 +3171,7 @@ mod tests {
         assert!(
             restored
                 .zone_grid
-                .as_ref()
+                .as_deref()
                 .unwrap()
                 .is_native_load_pending()
         );
@@ -3133,7 +3200,7 @@ mod tests {
         assert!(!path.is_walkable(2, 0));
         let normal_zones = restored
             .zone_grid
-            .as_ref()
+            .as_deref()
             .and_then(|zones| zones.map_for(MovementZone::Normal))
             .expect("canonical restored ground zones");
         assert_ne!(
@@ -3168,8 +3235,8 @@ mod tests {
             loaded_authority.len()
         );
         assert_zone_grids_equivalent(
-            sim.zone_grid.as_ref().unwrap(),
-            restored.zone_grid.as_ref().unwrap(),
+            sim.zone_grid.as_deref().unwrap(),
+            restored.zone_grid.as_deref().unwrap(),
         );
         assert_eq!(restored.state_hash(), authoritative_hash);
     }
@@ -3945,7 +4012,7 @@ mod tests {
                 .as_ref()
                 .expect("overlay authority")
                 .retained_neighbor_counts(),
-            &[0, 7, 255, 4][..]
+            &[0u8, 7, 255, 4][..]
         );
     }
 
@@ -4860,6 +4927,7 @@ mod tests {
                 owner_fire_coordinate: Some(active_source),
                 owner_current_target: Some(active_target),
                 target_position: Some(active_endpoint),
+                ares: None,
                 target_is_unit: false,
             },
             None,
@@ -4872,6 +4940,7 @@ mod tests {
                 owner_fire_coordinate: Some(active_source),
                 owner_current_target: Some(active_target),
                 target_position: Some(moved_endpoint),
+                ares: None,
                 target_is_unit: false,
             },
             None,
@@ -8015,8 +8084,8 @@ mod tests {
             loaded_authority.len()
         );
         assert_zone_grids_equivalent(
-            live.zone_grid.as_ref().unwrap(),
-            restored.zone_grid.as_ref().unwrap(),
+            live.zone_grid.as_deref().unwrap(),
+            restored.zone_grid.as_deref().unwrap(),
         );
         assert_eq!(
             restored.state_hash(),
@@ -8813,7 +8882,7 @@ mod tests {
         assert_ne!(
             restored
                 .zone_grid
-                .as_ref()
+                .as_deref()
                 .and_then(|zones| zones.map_for(MovementZone::Normal))
                 .expect("normal zone map")
                 .zone_at(destroyed_cell.0, destroyed_cell.1, MovementLayer::Ground),
@@ -8896,8 +8965,8 @@ mod tests {
         a.rebuild_zone_grid(&path_a);
         b.rebuild_zone_grid(&path_b);
         assert_zone_grids_equivalent(
-            a.zone_grid.as_ref().expect("zone grid rebuilt"),
-            b.zone_grid.as_ref().expect("zone grid rebuilt"),
+            a.zone_grid.as_deref().expect("zone grid rebuilt"),
+            b.zone_grid.as_deref().expect("zone grid rebuilt"),
         );
         assert_eq!(a.state_hash(), b.state_hash());
     }

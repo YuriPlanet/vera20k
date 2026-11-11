@@ -1875,6 +1875,19 @@ fn spent_on_the_enemy(kind: SuperWeaponKind) -> bool {
         | SuperWeaponKind::ChronoWarp
         | SuperWeaponKind::ForceShield
         | SuperWeaponKind::NoEffect => false,
+        // Ares powers AI_TryFireSW leaves to team scripts
+        // ([`super::super::super::super::superweapon::ai_fire::AiFireArm::None`]):
+        // Protect is an Iron Curtain over the house's own force, Battery and
+        // Firestorm spend on its own power, SonarPulse and EMPulse act from the
+        // cannon's own cell, and DropPod is a paradrop, which `aim_of` sites on
+        // the army. None of them is aimed at an enemy cell here, so the policy
+        // does not fire them rather than invent a target the ported AI does not.
+        SuperWeaponKind::Protect
+        | SuperWeaponKind::Battery
+        | SuperWeaponKind::SonarPulse
+        | SuperWeaponKind::EMPulse
+        | SuperWeaponKind::Firestorm
+        | SuperWeaponKind::DropPod => false,
     }
 }
 

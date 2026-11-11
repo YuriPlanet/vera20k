@@ -42,6 +42,14 @@ pub enum NetworkInterruption {
     /// VERA relay adaptation: the relay sent a record this build cannot read.
     #[error("this online match needs a newer VERA20k")]
     NewerClientRequired,
+    /// VERA relay adaptation: the relay refused this game's start because it
+    /// differs from the start another player's game already offered.
+    #[error("this game's match start differs from another player's")]
+    StartMismatch,
+    /// VERA relay adaptation: the relay closed the match before it started,
+    /// which a player leaving does.
+    #[error("another player left before the match started")]
+    StartCancelled,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -342,7 +350,7 @@ mod tests {
     /// Building4439C5/44367B uses each actor's House; ARCHIVE4C6780
     /// occupies one OutList slot per selected producer, in click order.
     #[test]
-    fn local_rally_records_preserve_each_actor_and_the_accepted_prefix() {
+    fn local_rally_records_preserve_each_actor_and_refuse_a_partial_batch() {
         let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
             return;
         };
@@ -393,10 +401,12 @@ mod tests {
             }
         }
         sim.take_frame_commands_for_test();
+        // Sim-scale deviation: native ARCHIVE appends keep a prefix of the
+        // producers; VERA refuses a batch its queue cannot hold whole.
         let stop = sim.encode_stop_record(local, first).unwrap();
-        for _ in 0..127 {
-            assert!(sim.issue_local_command(CommandEnvelope::synchronized(stop.clone(), 41)));
-        }
+        let stop = CommandEnvelope::synchronized(stop, 41);
+        let free = sim.available_local_command_slots() - 1;
+        assert!(sim.issue_local_commands(std::iter::repeat_n(stop, free)));
         assert!(!sim.issue_local_command(CommandEnvelope::new(
             local,
             41,
@@ -406,13 +416,10 @@ mod tests {
                 producer_ids: vec![second, first],
             }
         )));
-        let queues = sim.network_command_queues();
-        let records = queues.local_records().unwrap();
-        assert_eq!(records.len(), 128);
-        assert_eq!(records[127].opcode(), 0x1e);
         assert_eq!(
-            ArchiveRecord::decode(records[127]).unwrap().entity_id,
-            second as i32
+            sim.pending_local_command_count(),
+            free,
+            "neither producer's rally is queued"
         );
     }
 
@@ -498,15 +505,13 @@ mod tests {
         .encode()
         .unwrap();
         let mut queues = NetworkCommandQueues::new(&mut sim);
-        for _ in 0..crate::sim::command_queue::DO_LIST_CAPACITY {
+        let capacity = crate::sim::command_queue::SINGLE_PLAYER_DOLIST_CAPACITY;
+        for _ in 0..capacity {
             assert!(queues.admit_received(record.clone()));
         }
         assert_eq!(queues.mirror_allowance(), 0);
         assert!(!queues.admit_received(record));
-        assert_eq!(
-            queues.synchronized_len(),
-            crate::sim::command_queue::DO_LIST_CAPACITY
-        );
+        assert_eq!(queues.synchronized_len(), capacity);
         assert!(
             sim.pending_commands
                 .iter()

@@ -237,7 +237,7 @@ impl HostLossObserver<'_> {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("installed world")?
             .simulation;
         ensure!(
@@ -397,7 +397,7 @@ impl LoadingHostLoss {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("loading-loss live world")?
             .simulation;
         let launch = state
@@ -491,7 +491,7 @@ impl LoadingHostLoss {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("loading-loss world")?
             .simulation;
         let active = state.match_state.session.network_connected_source_indices();

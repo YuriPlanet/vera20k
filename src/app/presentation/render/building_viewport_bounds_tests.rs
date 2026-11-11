@@ -5,13 +5,12 @@
 use super::draw_plan_lowering::{NativeDisplayOrder, lower_object_instances};
 use super::merge_passes::{ObjectDrawPhase, draw_native_object_pass};
 use crate::app::presentation::instances::{ShpInputs, build_shp_instances_from_inputs};
-use crate::app::presentation::interpolation::RenderInterpolation;
 use crate::map::{houses::HouseColorMap, lighting::CellLightGrid};
 use crate::render::batch::{BatchRenderer, DepthAxis, InstanceBufferPool};
 use crate::render::sprite_atlas::build_sprite_atlas;
 use crate::render::terrain_draw::TerrainDrawRenderer;
 use crate::render::terrain_draw_gpu_tests::{Gpu, camera, clear};
-use crate::render::unit_atlas::BarrelImagePitches;
+use crate::render::voxel_image_cache::VoxelImageCache;
 use crate::rules::house_colors::NO_REMAP;
 use std::cell::RefCell;
 
@@ -40,8 +39,10 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
         rules.object("CANEWY06").unwrap().strength
     );
     assert!(building.passenger_role.occupants().is_empty());
-    let interpolation = RenderInterpolation::new(false);
-    let pose = interpolation.sample_entity(building, sim.session().binary_frame());
+    let pose = crate::app::presentation::render_pose::RenderPose::read(
+        building,
+        sim.session().binary_frame(),
+    );
     let anchor =
         crate::render::locomotor_visual::building_art_anchor(pose.screen[0], pose.screen[1]);
     assert_eq!(anchor, (1260., 2895.));
@@ -118,7 +119,7 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
     );
     let zbind = batch.create_zshape_bind_group_on_device(&gpu.device, &zview);
     let lighting = CellLightGrid::new();
-    let pitches = RefCell::new(BarrelImagePitches::default());
+    let voxel_images = RefCell::new(VoxelImageCache::default());
     let order = NativeDisplayOrder::from_display(sim.display_layers());
     let before = (sim.state_hash(), sim.rng_state());
     let mut parents = Vec::new();
@@ -128,8 +129,8 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
             atlas: Some(&atlas),
             overlay_atlas: None,
             unit_atlas: None,
-            barrel_image_pitches: &pitches,
-            interpolation: &interpolation,
+            voxel_images: &voxel_images,
+            depth_tested_images: None,
             camera: [1160., 2502.],
             render_size: [1024, 768],
             zoom: 4.,

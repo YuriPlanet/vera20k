@@ -7,7 +7,15 @@
 //! overlay-free cell counts toward the target even when it matches neither rock
 //! terrain — a native quirk this reproduces.
 //!
-//! Non-temperate theaters skip this phase entirely (the orchestrator gates it).
+//! Non-temperate theaters skip this phase entirely (the orchestrator gates it):
+//! `PaintLatPatchesTrees_NonTemperate @ 0x005A4280` has no rock pass.
+//! Native comparison: `tools/rmg_oracle/rock_pass.py`.
+//!
+//! Native: the tail of `RandomMapGenerator::PaintLatPatchesTreesRocks_Temperate
+//! @ 0x005A3AE0` (0x005A40C3..0x005A4271). The target is drawn against
+//! `SurfaceDataCount @ 0x0042B1F0` (`(H + 4) * W * 2`) / 200; the variant draws
+//! multiply by `5 * K` in one constant (0x007EDAB0), which equals
+//! `uniform(0, 4)`'s two multiplies exactly.
 
 use crate::map::rmg::rng::RmgRng;
 use crate::map::rmg::scratch::RmgScratch;
@@ -72,6 +80,10 @@ pub fn run(ctx: &mut RockCtx<'_>, args: &RockArgs) -> i32 {
             (cell.overlay, cell.tile)
         };
         if overlay == -1 {
+            // 0x005A4253: every overlay-free pick zeroes the density byte.
+            // Residual: its `Recalc_Attributes(-1)` (0x005A4259) is not ported;
+            // it matters only if a later generator pass reads those attributes.
+            ctx.grid.get_mut(x, y).unwrap().density = 0;
             if is_sand_lat_transition(ctx.ids, tile) {
                 let variant = ctx.rng.uniform(0, ROCK_VARIANT_MAX);
                 ctx.grid.get_mut(x, y).unwrap().overlay = variant + SROCK_BASE;
@@ -114,8 +126,10 @@ fn draw_nonborder_slot(
 /// — the original's sand-rock predicate checks only `[sand_lat, sand_lat+0x10)`,
 /// while its green predicate (used below via `is_green_lat`) does include the
 /// green base tile. The asymmetry is real and reproduced.
+/// `CellClass::Tile_Is_ClearToSandLAT @ 0x00486790`, which compares even an
+/// absent (-1) base.
 fn is_sand_lat_transition(ids: &TileIds, tile: i32) -> bool {
-    ids.sand_lat != -1 && tile >= ids.sand_lat && tile < ids.sand_lat + LAT_SPAN
+    tile >= ids.sand_lat && tile < ids.sand_lat + LAT_SPAN
 }
 
 #[cfg(test)]
@@ -176,8 +190,14 @@ mod tests {
     }
 
     fn run_once(seed: u16) -> (i32, World) {
+        run_with(seed, ids(), 0)
+    }
+
+    fn run_with(seed: u16, identity: TileIds, density: u8) -> (i32, World) {
         let mut w = world();
-        let identity = ids();
+        for (x, y) in w.grid.native_cells().collect::<Vec<_>>() {
+            w.grid.get_mut(x, y).unwrap().density = density;
+        }
         let mut rng = RmgRng::new(seed);
         let placed = {
             let mut ctx = RockCtx {
@@ -191,6 +211,98 @@ mod tests {
         (placed, w)
     }
 
+    /// The original temperate rock tail (`0x005A40C3..0x005A4277`) from
+    /// `tools/rmg_oracle/rock_pass.py`: a declared scene (not a full Generate
+    /// prefix), and every rock, cleared density and draw the original made.
+    /// Native's `RecalcAttributes` calls, one per counted pick, give the count.
+    #[test]
+    fn native_rock_pass_controls() {
+        let doc = crate::test_fixture::json("tools/rmg_oracle/rock_pass.json");
+        let int = |v: &serde_json::Value| v.as_i64().unwrap() as i32;
+        let tiles = &doc["scene"]["tiles"];
+        let identity = TileIds {
+            sand_lat: int(&tiles["sand_lat"]),
+            green: int(&tiles["green"]),
+            green_lat: int(&tiles["green_lat"]),
+            ..ids()
+        };
+        let rows = doc["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 7);
+        for row in rows {
+            let input = &row["input"];
+            let context = input["id"].as_str().unwrap();
+            let mut grid = RmgGrid::new(33, 16, 48);
+            let scratch = RmgScratch::new(33, 16, 48);
+            for (x, y) in grid.native_cells().collect::<Vec<_>>() {
+                let cell = grid.get_mut(x, y).unwrap();
+                (cell.tile, cell.overlay, cell.density) = (0, -1, 0);
+            }
+            for t in input["tiles"].as_array().unwrap() {
+                let family = int(&tiles[t[2].as_str().unwrap()]);
+                grid.get_mut(int(&t[0]), int(&t[1])).unwrap().tile = family + int(&t[3]);
+            }
+            for c in input["overlay"].as_array().unwrap() {
+                grid.get_mut(int(&c[0]), int(&c[1])).unwrap().overlay = 0;
+            }
+            for c in input["density"].as_array().unwrap() {
+                grid.get_mut(int(&c[0]), int(&c[1])).unwrap().density = int(&c[2]) as u8;
+            }
+            let state = |grid: &RmgGrid| {
+                let mut out = Vec::new();
+                for y in 0..33 {
+                    for x in 0..33 {
+                        if scratch.in_diamond(x, y) {
+                            let cell = grid.get(x, y).unwrap();
+                            out.push([x, y, cell.overlay, i32::from(cell.density)]);
+                        }
+                    }
+                }
+                out
+            };
+            let before = state(&grid);
+            let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
+            let size = &input["size"];
+            let args = RockArgs {
+                map_w: int(&size[0]),
+                map_h: int(&size[1]),
+                stride: 33,
+            };
+            let placed = {
+                let mut ctx = RockCtx {
+                    grid: &mut grid,
+                    scratch: &scratch,
+                    ids: &identity,
+                    rng: &mut rng,
+                };
+                run(&mut ctx, &args)
+            };
+            assert_eq!(
+                placed,
+                int(&row["recalc_count"]),
+                "{context}: counted picks"
+            );
+            let changed: Vec<[i32; 4]> = state(&grid)
+                .into_iter()
+                .zip(before)
+                .filter(|(now, before)| now != before)
+                .map(|(now, _)| now)
+                .collect();
+            let native: Vec<[i32; 4]> = row["changed"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| std::array::from_fn(|i| int(&c[i])))
+                .collect();
+            assert_eq!(changed, native, "{context}: overlays and densities");
+            assert_eq!(
+                rng.into_continuation().into_native_parts(),
+                super::super::cliff_native_tests::native_state(&doc, &row["rng_after"])
+                    .into_native_parts(),
+                "{context}: exit RNG"
+            );
+        }
+    }
+
     #[test]
     fn rock_placement_is_deterministic() {
         let snapshot = |seed| {
@@ -202,5 +314,40 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert_eq!(snapshot(2024), snapshot(2024));
+    }
+
+    /// 0x005A4253 zeroes the density byte of every overlay-free pick.
+    #[test]
+    fn a_rocked_cell_loses_its_density() {
+        let (placed, world) = run_with(2024, ids(), 5);
+        assert!(placed > 0);
+        for (x, y) in world.grid.native_cells() {
+            let cell = world.grid.get(x, y).unwrap();
+            if cell.overlay != -1 {
+                assert_eq!(cell.density, 0);
+            }
+        }
+    }
+
+    /// 0x00486790 has no absent-base guard: with no sand LAT, the clear tile
+    /// falls in `[-1, 15)` and takes sand rocks.
+    #[test]
+    fn an_absent_sand_lat_base_still_matches_low_tiles() {
+        let mut identity = ids();
+        identity.sand_lat = -1;
+        let (placed, world) = run_with(2024, identity, 0);
+        assert!(placed > 0);
+        let overlays: Vec<i32> = world
+            .grid
+            .native_cells()
+            .map(|(x, y)| world.grid.get(x, y).unwrap().overlay)
+            .filter(|&overlay| overlay != -1)
+            .collect();
+        assert!(!overlays.is_empty());
+        assert!(
+            overlays
+                .iter()
+                .all(|o| (SROCK_BASE..SROCK_BASE + 5).contains(o))
+        );
     }
 }

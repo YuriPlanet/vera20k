@@ -91,11 +91,6 @@ impl BinkMovieSurface {
         self.current_frame
     }
 
-    /// The actual decoded frame, for the retained sidebar surface consumer.
-    pub fn rgba(&self) -> &[u8] {
-        &self.rgba
-    }
-
     pub fn file(&self) -> &BinkFile {
         &self.file
     }

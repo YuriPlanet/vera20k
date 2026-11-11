@@ -239,7 +239,13 @@ fn target_replacement_and_null_preserve_the_next_radial_shot() {
             )
             .is_ok()
     );
-    assert_eq!((scene.radial_index(), scene.burst_index()), (1, 0));
+    // Ares TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53) keeps the
+    // burst word through the NULL target, so the next shot ends the burst.
+    let ares = cfg!(feature = "ares");
+    assert_eq!(
+        (scene.radial_index(), scene.burst_index()),
+        (1, i32::from(ares))
+    );
     assert!(
         scene
             .world
@@ -253,7 +259,10 @@ fn target_replacement_and_null_preserve_the_next_radial_shot() {
             .is_ok()
     );
     scene.fire(140);
-    assert_eq!((scene.radial_index(), scene.burst_index()), (2, 1));
+    assert_eq!(
+        (scene.radial_index(), scene.burst_index()),
+        (2, i32::from(!ares))
+    );
 }
 
 /// Unit's native Size746DD0 includes +43C and Load70BF50 does not reset it.

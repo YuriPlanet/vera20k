@@ -19,13 +19,14 @@ use crate::sim::world::Simulation;
 
 fn gsi_04_12_terrain(width: u16, height: u16) -> ResolvedTerrainGrid {
     let speed_costs = SpeedCostProfile {
-        foot: Some(100),
-        track: Some(100),
-        wheel: Some(100),
-        float: Some(100),
-        amphibious: Some(100),
-        float_beach: Some(100),
-        hover: Some(100),
+        foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        float: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        amphibious: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        float_beach: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        hover: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
     };
     let cells = (0..height)
         .flat_map(|ry| {
@@ -348,7 +349,7 @@ fn gsi_04_12_interaction_order_entry_threads_exact_blocker_counts() {
     }));
     sim.set_playfield_size_height_for_test(Some(4));
     sim.install_resolved_terrain_for_new_map(terrain);
-    sim.zone_grid = Some(zone_grid);
+    sim.zone_grid = Some(zone_grid.into());
     let engineer_id = sim
         .spawn_object("ENGINEER", "Americans", 1, 0, 0, &rules)
         .expect("engineer should spawn");
@@ -599,7 +600,7 @@ fn tube_hierarchy_gate_uses_raw_invalid_labels_and_goal_bridge_flag() {
     zones
         .map_mut(MovementZone::Normal)
         .unwrap()
-        .set_bridge_redirect(Some(vec![None, Some((0, 0)), None, None]));
+        .set_bridge_redirect(Some(vec![None, Some((0, 0)), None, None].into()));
     zones.set_hierarchy(level0_hierarchy(vec![1; 4], 2, 2, &[]));
     terrain.cell_mut_for_test(0, 0).unwrap().level = 4;
     {

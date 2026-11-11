@@ -253,7 +253,8 @@ fn walk_tick(sim: &mut Simulation, terrain: &ResolvedTerrainGrid, grid: &PathGri
             width,
             height,
             Some((i32::from(width), i32::from(height))),
-        ),
+        )
+        .into(),
     );
     crate::sim::arena_fixture::supply_native_map(sim);
     sim.install_fixture_path_grid(Some(grid));
@@ -1086,11 +1087,12 @@ fn cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
         // Every row the Drive/Ship fixtures use admits, so the native
         // Unit+1AC (the chain query) answers from occupancy alone.
         speed_costs: crate::rules::terrain_rules::SpeedCostProfile {
-            foot: Some(100),
-            track: Some(100),
-            wheel: Some(100),
-            float: Some(100),
-            amphibious: Some(100),
+            foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            float: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            amphibious: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
             ..Default::default()
         },
         ..crate::map::resolved_terrain::test_flat_cell(rx, ry)

@@ -105,6 +105,7 @@ struct PendingJoin {
 
 pub(crate) struct LanShellRuntime {
     pub(crate) lobby: LanLobbyState,
+    /// The single-OK box's label, a CSF or `VERA:` one ([`crate::i18n::label`]).
     pub(crate) modal: Option<&'static str>,
     /// VERA's Create Game box while it is up: the room's limits.
     pub(crate) create: Option<RoomLimitsPicker>,
@@ -187,10 +188,7 @@ impl App {
     /// The retained preference owner supplies the edit; admission stays empty.
     pub(crate) fn open_lan_lobby(state: &mut AppState) {
         crate::app::shell_main_menu::clear_typed_codes_for_network_session(state);
-        Self::prepare_multiplayer_settings(
-            state,
-            crate::app::shell_main_menu::MultiplayerSettingsContext::Shell,
-        );
+        Self::prepare_multiplayer_settings(state);
         if !Self::ensure_skirmish_shell_chrome(state) {
             return;
         }
@@ -250,7 +248,7 @@ impl App {
                 Self::commit_lan_create(state, observe);
             }
             Some(LanRematch::Guest { host }) => {
-                let text = format!("Waiting for {host} to open the game room again...");
+                let text = crate::i18n::tr_fill("VERA:LanWaitingForHost", &[("host", &host)]);
                 if let Some(runtime) = state.frontend.lan.as_mut() {
                     runtime.rejoin = Some(Rejoin {
                         host,
@@ -351,7 +349,7 @@ fn denial_modal(reason: u32, observer: bool) -> Option<&'static str> {
         7 => Some("TXT_SERIAL_DUP"),
         // VERA direct-client admission extends native version checks with the
         // actual source build and enabled gameplay feature identity.
-        8 => Some("VERA20k build or enabled gameplay features differ."),
+        8 => Some("VERA:LanBuildDiffers"),
         // VERA's rooms: the host kicked this player within five minutes;
         // the online join ban's text (`0x7A5890`'s 0x80040072).
         9 => Some("TXT_JOINBAN"),
@@ -457,8 +455,13 @@ fn append_chat_to(
     }
 }
 
+/// Append the line `key` (a CSF or `VERA:` label, [`crate::i18n::label`]) to
+/// the active lobby's or room's chat ([`append_chat`]), with the system error
+/// sound.
 pub(crate) fn report_error(state: &mut AppState, key: &str) {
-    let text = App::csf_label(state, key, key).encode_utf16().collect();
+    let text = crate::i18n::label(state.process_assets.csf.as_ref(), key, key)
+        .encode_utf16()
+        .collect();
     //5E2700 uses -1 for the ordinary yellow message color.
     append_chat(
         state,
@@ -679,7 +682,7 @@ fn rejoin_host(state: &mut AppState) {
     else {
         return;
     };
-    let text = format!("{host} did not open the game room again.");
+    let text = crate::i18n::tr_fill("VERA:LanHostDidNotReturn", &[("host", &host)]);
     append_chat(
         state,
         LanChatLine {
@@ -799,6 +802,15 @@ fn acknowledge(state: &mut AppState) {
     }
     state.frontend.shell_controller.pop();
     state.platform.window.request_redraw();
+}
+
+/// VERA's Esc menu (`app::shell_menu`): the create box and notices keep Esc.
+pub(crate) fn leaves_escape(state: &AppState) -> bool {
+    state
+        .frontend
+        .lan
+        .as_ref()
+        .is_some_and(|runtime| runtime.create.is_none() && runtime.modal.is_none())
 }
 
 pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
@@ -1144,7 +1156,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
             if state.frontend.native_shell_ui {
                 "TXT_REQUEST_DENIED"
             } else {
-                "The game didn't answer. It may have closed, or a firewall may be blocking LAN games."
+                "VERA:LanJoinNoAnswer"
             },
         );
     }
@@ -1328,5 +1340,21 @@ mod tests {
         assert_eq!(denial_modal(4, false), None);
         assert_eq!(denial_modal(7, false), Some("TXT_SERIAL_DUP"));
         assert_eq!(denial_modal(9, false), Some("TXT_JOINBAN"));
+    }
+
+    /// With the game's string table loaded, VERA's own refusal still shows
+    /// its sentence, not the table's MISSING:'…', and the game's labels keep
+    /// the table's text.
+    #[test]
+    fn vera_refusal_shows_its_sentence_beside_the_string_table() {
+        let csf = crate::assets::csf_file::test_csf(&[("TXT_REQUEST_DENIED", "Request denied")]);
+        assert_eq!(
+            crate::i18n::label(Some(&csf), denial_modal(8, false).unwrap(), ""),
+            "VERA20k build or enabled gameplay features differ."
+        );
+        assert_eq!(
+            crate::i18n::label(Some(&csf), "TXT_REQUEST_DENIED", ""),
+            "Request denied"
+        );
     }
 }

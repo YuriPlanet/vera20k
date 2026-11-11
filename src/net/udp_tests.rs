@@ -103,7 +103,7 @@ fn relay_uses_existing_reliable_owner_across_a_lost_and_duplicated_datagram() {
         .unwrap();
     let deadline = Instant::now() + Duration::from_secs(3);
     let mut tick = 0;
-    let mut relay = |server: &mut RelayServer| {
+    let relay = |server: &mut RelayServer| {
         let mut buffer = [0; MAX_DATAGRAM + 1];
         loop {
             let (length, source) = match socket.recv_from(&mut buffer) {
@@ -146,8 +146,6 @@ fn relay_uses_existing_reliable_owner_across_a_lost_and_duplicated_datagram() {
     assert_eq!(first_sample[0].0, 29);
     assert_eq!(second_sample[0].0, 0);
     assert!(first_sample[0].1 > 0 && second_sample[0].1 > 0);
-    // Release closure borrows so the impairment applies only after admission.
-    drop(relay);
     let mut drop_next = true;
     assert!(
         first
@@ -248,8 +246,10 @@ fn relay_uses_existing_reliable_owner_across_a_lost_and_duplicated_datagram() {
             for output in outputs {
                 if !lost_ready
                     && output.endpoint == endpoint
-                    && output.bytes[4] == 1
-                    && output.bytes[21..37] == [99; 16]
+                    // A READY with the relay's first sequence answers the
+                    // renewal's CONFIRM (compaction spec §6.1).
+                    && output.bytes[0] & 0x1F == 1
+                    && output.bytes[5..9] == 1u32.to_le_bytes()
                 {
                     lost_ready = true;
                     continue;
@@ -375,6 +375,7 @@ fn ordered_relay() -> (
         sources_mask: 3,
         tick_hz: 45,
         expires: 2000,
+        pacing: Default::default(),
     }
     .sign(&key)
     .unwrap();

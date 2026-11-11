@@ -312,8 +312,8 @@ fn opening_view_averages_player_technos_else_takes_the_base() {
     );
     // The non-campaign post-map pass publishes it for the loader.
     let roster = crate::map::houses::HouseRoster::default();
-    let output =
-        sim.finalize_scenario_post_map(crate::sim::scenario_post_map::ScenarioPostMapInput {
+    let output = sim
+        .finalize_scenario_post_map(crate::sim::scenario_post_map::ScenarioPostMapInput {
             map_width: 33,
             map_height: 33,
             fill_silos: false,
@@ -322,7 +322,8 @@ fn opening_view_averages_player_technos_else_takes_the_base() {
             house_roster: &roster,
             skirmish_session: None,
             campaign_map: None,
-        });
+        })
+        .unwrap();
     assert_eq!(output.opening_view_coord, Some([x, y, 0]));
     assert_eq!(
         output.opening_view_cell,

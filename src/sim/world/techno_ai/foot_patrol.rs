@@ -452,7 +452,7 @@ fn zone_cost(
     goal_bridge: bool,
     rules: &RuleSet,
 ) -> i32 {
-    sim.estimate_zone_cost_in_query(id, start, goal, start_bridge, goal_bridge, rules)
+    sim.estimate_zone_cost_in_query(id, start, goal, start_bridge, goal_bridge, rules, None)
         .expect("Patrol zone-cost topology")
 }
 
@@ -470,7 +470,7 @@ fn bridge_post(
     let seed = terrain.native_cell_coord(post);
     let zone = sim
         .zone_grid
-        .as_ref()
+        .as_deref()
         .expect("Patrol FNPC zones")
         .get_zone_id_native(
             terrain,

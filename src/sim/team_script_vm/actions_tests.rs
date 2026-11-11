@@ -1,5 +1,6 @@
-//! Rust regression tests for script actions that act on every member, and
-//! for the building actions 46 and 47.
+//! Rust regression tests for script actions that act on every member, for
+//! the building actions 46 and 47, and for a member leaving its team inside
+//! an object-placement scope.
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
@@ -70,14 +71,14 @@ fn terrain_attack_scene() -> Option<(SimRuntime, u64, u64, u64)> {
         .spawn_object("HTNK", "Russians", 20, 20, 0, &rules)
         .unwrap();
     let registry = TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, false);
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     let owner = sim.interner.get("Russians").unwrap();
     let ty = sim.interner.get("TREE-TEAM").unwrap();
     let team = sim.create_team(ty, Some(owner), &rules).unwrap();
     sim.session.publish_started();
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: SimResources::new(rules),
+        resources: std::sync::Arc::new(SimResources::new(rules)),
     };
     // Formation, recruitment and dispatch use the ordinary Team AI caller.
     for _ in 0..30 {
@@ -757,6 +758,48 @@ fn rules() -> RuleSet {
     .expect("team action rules")
 }
 
+/// `TeamClass::Remove_Member @ 0x006EA870` enters a leaving member's idle
+/// mode only while the object-placement counter `[0x00A8E7AC]` is zero
+/// (`0x006EAA1E`). `BuildingClass::SellBuilding @ 0x00457DE0` raises it from
+/// `0x00458092` to `0x004581B2`, around its Remove_Member call at `0x0045812B`.
+#[test]
+fn a_member_leaving_inside_a_placement_scope_skips_idle_mode() {
+    let rules = rules();
+    let mut sim = Simulation::with_seed(0x6EAA1E);
+    crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+    let (team, members, _) = building_team(&mut sim, &rules, &[], &[]);
+    let hunt = MissionId::from_known(MissionType::Hunt);
+    for &member in &members[..2] {
+        let entity = sim.substrate.entities.get_mut(member).unwrap();
+        entity.mission.set_current_for_test(hunt, 0);
+    }
+    sim.with_object_placement_scope(|sim| {
+        sim.team_remove_member(team, members[0], false, &rules, FrameEffects::default());
+    });
+    sim.team_remove_member(team, members[1], false, &rules, FrameEffects::default());
+    let queued = |id| sim.substrate.entities.get(id).unwrap().mission.queued();
+    assert_eq!(queued(members[0]), MissionId::NONE, "inside the scope");
+    assert_ne!(queued(members[1]), MissionId::NONE, "outside the scope");
+}
+
+/// `FootClass::Detach_All @ 0x004D9720` removes the object from its team only
+/// while `[0x00A8E7AC]` is zero (`0x004D9736..0x004D9744`). Neither member
+/// heads the list, which `TeamClass::PointerExpired @ 0x006EAE60` would
+/// unlink either way (`0x006EAE71..0x006EAE84`).
+#[test]
+fn a_member_detached_inside_a_placement_scope_stays_in_its_team() {
+    let rules = rules();
+    let mut sim = Simulation::with_seed(0x4D9736);
+    crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+    let (team, members, _) = building_team(&mut sim, &rules, &[], &[]);
+    let context = crate::sim::world::UninitContext::new(&rules, None);
+    sim.with_object_placement_scope(|sim| sim.detach_all(members[1], true, context));
+    sim.detach_all(members[2], true, context);
+    let team_of = |id| sim.team_script_vm.member_team.get(&id).copied();
+    assert_eq!(team_of(members[1]), Some(team), "inside the scope");
+    assert_eq!(team_of(members[2]), None, "outside the scope");
+}
+
 #[test]
 fn script17_replacement_and_next_visit_match_original_controls() {
     let native: serde_json::Value =
@@ -859,7 +902,7 @@ fn retail_sov01_script17_uses_the_production_script_registry() {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     let vm = &sim.team_script_vm;
     let mut switches = Vec::new();
     for (name, ordinal) in [
@@ -955,6 +998,56 @@ fn sound_movie_and_music_actions_play_and_advance() {
             }
         ]
     ));
+}
+
+/// Script actions 32 (`0x006E9A74`) and 33 (`0x006E9AAE`) start and end the
+/// Lightning Storm as trigger actions 44 and 45 do, and finish either way
+/// instead of leaving the team stalled.
+#[test]
+fn lightning_storm_actions_start_and_end_the_storm_and_advance() {
+    use crate::sim::superweapon::lightning_storm::LightningStorm;
+    let rules = rules();
+    let mut sim = Simulation::new();
+    let owner = sim.interner.intern("Russians");
+    sim.houses
+        .register(HouseState::new(owner, 1, None, false, 0, 10));
+    let script = sim.interner.intern("STORM SCRIPT");
+    sim.team_script_vm.register_script(TeamScriptDefinition {
+        id: script,
+        source: TeamAiDefinitionSource::FixedAimd,
+        actions: [(32, 600), (33, 0), (33, 0), (32, 900)]
+            .map(|(action_id, argument)| TeamScriptAction {
+                action_id,
+                argument,
+            })
+            .to_vec(),
+    });
+    let team = sim.team_script_vm.create_team(owner, script, Vec::new(), 0);
+    {
+        let state = sim.team_script_vm.teams.get_mut(&team).unwrap();
+        state.cursor = -1;
+        state.advance_pending = true;
+    }
+    let deferment = rules.general.lightning_deferment;
+    assert_ne!(deferment, 0);
+    let step = |sim: &mut Simulation| {
+        sim.team_step_script(team, &rules, None, FrameEffects::default());
+        sim.lightning_storm.globals_for_test()
+    };
+    // No storm: the argument becomes the deferred storm's duration.
+    assert_eq!(
+        step(&mut sim),
+        (false, false, deferment, 600, -1, (0, 0), None)
+    );
+    // Only a raging storm takes the end request.
+    assert!(!step(&mut sim).1);
+    sim.lightning_storm = LightningStorm::raging_for_test(owner, (5, 5));
+    assert!(step(&mut sim).1);
+    // A raging storm is not restarted.
+    assert_eq!(step(&mut sim), (true, true, 0, -1, -1, (5, 5), Some(owner)));
+    let state = sim.team_script_vm.team(team).unwrap();
+    assert_eq!(state.cursor(), 3);
+    assert!(state.refusal().is_none());
 }
 
 /// Script34 uses Zone GetCoords, then the same ground/deck owners as the
@@ -1266,7 +1359,7 @@ fn retail_all01_script59_inputs_fit_the_existing_ammunition_owner() {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     let programs: Vec<_> = sim
         .team_script_vm
         .scripts
@@ -1408,8 +1501,7 @@ fn the_retail_scatter_script_runs_ported_actions() {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules)
-        .expect("retail AIMD installs");
+    sim.install_team_ai_registry(&registry, &rules);
     let vm = &sim.team_script_vm;
     let scripts: Vec<_> = vm
         .scripts
@@ -1553,6 +1645,11 @@ fn attack_building_target(
 /// (1, 5) and 400 at (7, 5) spill 500 onto A's Location block and 200 onto
 /// B's GetCoords block, so mode 1 (most threat) takes B and mode 0 (least)
 /// takes A, where Location reads would pick the other.
+///
+/// Stock only: Ares 3.0 ThreatPosedEstimates_GetIndex `1005D4A0` (hook
+/// `0x0056BC54`) moves the row 21 writes away from the blocks these reads
+/// take ([`ares_threat_index_moves_a_pillbox_s_threat_off_its_cell`]).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn the_threat_modes_read_each_building_s_getcoords_cell() {
     let rules = rules();
@@ -1580,6 +1677,35 @@ fn the_threat_modes_read_each_building_s_getcoords_cell() {
             "threat {threat}, mode {mode}"
         );
     }
+}
+
+/// Retail GAPILLs threaten the computer Russians, whose team picks the
+/// least-threatened (mode 0) of them to attack. Each pillbox's Unlimbo writes
+/// its `ThreatPosed=` through Cell UpdateThreat (`0x00481884`, which calls
+/// `0x0056BC50`); the pick reads it at the pillbox's cell (`0x0056BCD0`,
+/// inline). In stock both read the same threat and the first built wins.
+/// Ares 3.0 ThreatPosedEstimates_GetIndex `1005D4A0` (hook `0x0056BC54`)
+/// scales the row before dividing it, so the write for row 22 lands 65
+/// slots on and the second pillbox reads none; row 12's write stays put.
+#[test]
+fn ares_threat_index_moves_a_pillbox_s_threat_off_its_cell() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = retail.rules;
+    let mut sim = Simulation::with_seed(0x56BC54);
+    let grid = crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+    let pillbox = rules.building_type_index("GAPILL").unwrap();
+    let (team, _, _) = building_team(&mut sim, &rules, &[(24, 0), (46, pillbox), (5, 100)], &[]);
+    let pillboxes = [(20, 12), (20, 22)].map(|(rx, ry)| {
+        sim.spawn_object_at_height("GAPILL", "Americans", rx, ry, 0, 0, &rules)
+            .expect("GAPILL spawns")
+    });
+    let russians = sim.interner.get("Russians").unwrap();
+    assert!(sim.house_threat_at_cell(russians, (20, 12)).unwrap() > 0);
+    let (_, target) = attack_building_target(&mut sim, &rules, &grid, team);
+    let pick = if cfg!(feature = "ares") { 1 } else { 0 };
+    assert_eq!(target, Some(TeamTarget::Object(pillboxes[pick])));
 }
 
 /// The search's admission inputs (`0x006EEC27..0x006EEC6A`, `0x006EE32B`):
@@ -1683,8 +1809,7 @@ fn the_retail_tech_capture_scripts_run_ported_actions() {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules)
-        .expect("retail AIMD installs");
+    sim.install_team_ai_registry(&registry, &rules);
     let vm = &sim.team_script_vm;
     let capture: Vec<_> = vm
         .scripts

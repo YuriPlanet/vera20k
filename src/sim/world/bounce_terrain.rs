@@ -73,7 +73,8 @@ impl<'a> BounceTerrain for ResolvedBounceTerrain<'a> {
                 return matches!(
                     crate::sim::cell_kernel::wall_connection_step(
                         cell.overlay_identity_state().0,
-                        -1
+                        -1,
+                        Some(self.rules.overlay_registry()),
                     ),
                     crate::sim::cell_kernel::WallConnectionStep::Return(true)
                 );
@@ -94,7 +95,8 @@ impl<'a> BounceTerrain for ResolvedBounceTerrain<'a> {
                 .and_then(|entity| self.sim.object_type(entity.type_ref(), self.rules))
                 .is_some_and(|kind| !kind.is_1x1_with_undeploy());
         }
-        // 480510(-1,-1) accepts these three raw overlay IDs only.
+        // 480510(-1,-1) accepts these three raw overlay IDs only (any
+        // `Wall=yes` overlay under Ares, hook 0x480534).
         self.sim
             .overlay_grid
             .as_ref()
@@ -104,6 +106,7 @@ impl<'a> BounceTerrain for ResolvedBounceTerrain<'a> {
                     crate::sim::cell_kernel::wall_connection_step(
                         grid.cell(cell.rx, cell.ry).overlay_id.map_or(-1, i32::from),
                         -1,
+                        Some(self.rules.overlay_registry()),
                     ),
                     crate::sim::cell_kernel::WallConnectionStep::Return(true)
                 )

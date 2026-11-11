@@ -344,6 +344,9 @@ pub struct TilesetLookup {
     /// Per-tileset AllowTiberium= flag — parsed from `[TileSetNNNN] AllowTiberium=`.
     /// Default `false`. Tiberium/ore only places on opt-in in-range tile types.
     allow_tiberium_flags: Vec<bool>,
+    /// Per-tileset IsometricTileTypeClass+0x305, copied to every pristine and
+    /// suffix tile by Read_Theater_TileSets_INI545150. Fresh default true.
+    allow_burrowing_flags: Vec<bool>,
     /// Per-tileset IsometricTileTypeClass+0x2E1 (`ShadowCaster` with a
     /// nonzero `ShadowTiles`); see [`TilesetLookup::casts_tile_shadow`].
     shadow_caster_flags: Vec<bool>,
@@ -475,6 +478,16 @@ impl TilesetLookup {
             .unwrap_or(false)
     }
 
+    /// Read_Theater_TileSets_INI546167 reads AllowBurrowing with a fresh true
+    /// default and copies it to each tile at546460/546A97. Cell486FF0 skips
+    /// the flag for an out-of-range physical index; it does not use ClearTile.
+    pub fn allows_burrowing(&self, tile_id: u16) -> bool {
+        self.tileset_index(tile_id)
+            .and_then(|index| self.allow_burrowing_flags.get(usize::from(index)))
+            .copied()
+            .unwrap_or(true)
+    }
+
     /// IsometricTileTypeClass+0x2E1, the gate of the tile-shadow draw
     /// (CellClass::DrawTileShadow `0x004802A0`) and of the shadow-cell offsets
     /// RecalcAttributes applies (GetShadowCellOffsets `0x00547C80`, called at
@@ -548,6 +561,7 @@ fn parse_tileset_sections(ini: &IniFile, extension: &str) -> Result<TilesetLooku
     let mut set_names: Vec<String> = Vec::new();
     let mut morphable_flags: Vec<bool> = Vec::new();
     let mut allow_tiberium_flags: Vec<bool> = Vec::new();
+    let mut allow_burrowing_flags: Vec<bool> = Vec::new();
     let mut shadow_caster_flags: Vec<bool> = Vec::new();
     let mut tile_anims: Vec<Option<TileAnimAttachment>> = Vec::new();
     let mut legacy_tile_index_exceptions = Vec::new();
@@ -602,6 +616,9 @@ fn parse_tileset_sections(ini: &IniFile, extension: &str) -> Result<TilesetLooku
         morphable_flags.push(morphable);
         let allow_tiberium: bool = section.read_bool("AllowTiberium", false);
         allow_tiberium_flags.push(allow_tiberium);
+        // IsometricTileTypeClass ctor5448B5 and ReadTheater546167 default
+        // true independently for each admitted TileSet%04d section.
+        allow_burrowing_flags.push(section.read_bool("AllowBurrowing", true));
         // ReadBool `0x00546204` (default false); only a set ShadowCaster reads
         // ShadowTiles (ReadInt `0x00546248`, default 0). Each tile stores
         // +0x2E1 only when both are nonzero (`0x005464A6`, `0x00546AF8`). The
@@ -690,6 +707,7 @@ fn parse_tileset_sections(ini: &IniFile, extension: &str) -> Result<TilesetLooku
         set_names,
         morphable_flags,
         allow_tiberium_flags,
+        allow_burrowing_flags,
         shadow_caster_flags,
         tile_anims,
         legacy_tile_index_exceptions,
@@ -1058,10 +1076,8 @@ pub(crate) fn resolve_rmg_tile_keys(
     general: Option<&IniSection>,
     slope_set_pieces: Option<u16>,
 ) -> RmgTileKeys {
-    let resolve = |key: &str| {
-        let ordinal = general.map_or(-1, |section| section.read_int(key, -1));
-        resolve_tileset_start(lookup, ordinal)
-    };
+    let read = |key: &str| general.map_or(-1, |section| section.read_int(key, -1));
+    let resolve = |key: &str| resolve_tileset_start(lookup, read(key));
     RmgTileKeys {
         clear_tile: resolve("ClearTile"),
         ramp_base: resolve("RampBase"),
@@ -1083,8 +1099,18 @@ pub(crate) fn resolve_rmg_tile_keys(
         misc_pave_tile: resolve("MiscPaveTile"),
         paved_roads: resolve("PavedRoads"),
         paved_road_ends: resolve("PavedRoadEnds"),
-        medians: resolve("Medians"),
+        medians: resolve_tileset_start(lookup, medians_ordinal(read("Medians"))),
     }
+}
+
+/// The `[General] Medians=` ordinal ReadTheater545150 keeps. Ares' MediansFix
+/// (Ares.dll 1006A920, hook 0x545904 right after the ReadInt) turns the
+/// missing-key -1 into 71: SNOWMD.INI, the one shipped theater without the
+/// key, holds its "Paved road bits" medians there. Every build applies it:
+/// the urban pass is this value's only reader, and VERA's opted-in Urban
+/// Presence runs that pass without Ares.
+fn medians_ordinal(read: i32) -> i32 {
+    if read == -1 { 71 } else { read }
 }
 
 fn resolve_cliff_ranges(
@@ -1245,44 +1271,42 @@ pub fn inject_bridge_middle_tiles(
     asset_manager: &crate::assets::asset_manager::AssetManager,
 ) {
     for &tile_id in &table.tile_ids {
-        let Some(filename) = lookup.filename(tile_id as i32) else {
+        if let Err(error) = inject_template_tiles(needed, tile_id, lookup, asset_manager) {
             log::warn!(
-                "Bridge anchor variant tile_id {} has no entry in TilesetLookup; skipping pre-load",
-                tile_id
+                "Bridge anchor variant tile_id {tile_id}: {error}; cell will render as native tile_id on damage"
             );
-            continue;
-        };
-        let filename: String = filename.to_string();
-        let Some(tmp_data) = asset_manager.get_ref(&filename) else {
-            log::warn!(
-                "Bridge anchor variant TMP {} missing from MIX archives; cell will render as native tile_id on damage",
-                filename
-            );
-            continue;
-        };
-        let tmp = match TmpFile::from_bytes(tmp_data) {
-            Ok(t) => t,
-            Err(e) => {
-                log::warn!(
-                    "Bridge anchor variant TMP {} failed to parse: {:#}",
-                    filename,
-                    e
-                );
-                continue;
-            }
-        };
-        let cell_count = (tmp.template_width * tmp.template_height) as usize;
-        for sub_tile in 0..cell_count {
-            if tmp.tiles[sub_tile].is_none() {
-                continue;
-            }
-            needed.insert(TileKey {
-                tile_id,
-                sub_tile: sub_tile as u8,
-                variant: 0,
-            });
         }
     }
+}
+
+/// Inject a TileKey for every subtile image of `tile_id`'s TMP template into
+/// the atlas pre-loader's `needed` set. The error says why none were added.
+pub fn inject_template_tiles(
+    needed: &mut HashSet<TileKey>,
+    tile_id: u16,
+    lookup: &TilesetLookup,
+    asset_manager: &crate::assets::asset_manager::AssetManager,
+) -> Result<(), String> {
+    let filename = lookup
+        .filename(tile_id as i32)
+        .ok_or("no entry in TilesetLookup")?;
+    let tmp_data = asset_manager
+        .get_ref(filename)
+        .ok_or_else(|| format!("TMP {filename} missing from MIX archives"))?;
+    let tmp = TmpFile::from_bytes(tmp_data)
+        .map_err(|error| format!("TMP {filename} failed to parse: {error:#}"))?;
+    let cell_count = (tmp.template_width * tmp.template_height) as usize;
+    for sub_tile in 0..cell_count {
+        if tmp.tiles[sub_tile].is_none() {
+            continue;
+        }
+        needed.insert(TileKey {
+            tile_id,
+            sub_tile: sub_tile as u8,
+            variant: 0,
+        });
+    }
+    Ok(())
 }
 
 /// Load RGBA tile images for tiles needed by the map. Groups by tile_id

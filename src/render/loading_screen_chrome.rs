@@ -219,7 +219,7 @@ pub struct LoadingScreenCompositionAtlasInput<'a> {
     pub marker_remaps: &'a [MmpbMarkerRemap],
 }
 
-/// Named background replaces only the country SHP/PAL, never progress or icons.
+/// Named country/co-op background replaces only the SHP/PAL, never progress or icons.
 /// Borrowed names are decoded once into the loading attempt's existing atlas;
 /// dropping that atlas on success/failure retires its palette as well.
 #[derive(Debug, Clone, Copy)]
@@ -884,6 +884,40 @@ mod tests {
             .is_none(),
             "missing Country SHP skips the background and retains progress"
         );
+    }
+
+    #[test]
+    fn cooperative_loading_art_keeps_the_literal_800_asset_at_640_width() {
+        let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        assert!(assets.register_loading_archives().unwrap());
+        let registry =
+            crate::app::frontend::skirmish_session::cooperative::CooperativeRegistry::from_assets(
+                &assets,
+            )
+            .unwrap();
+        let (name, palette_name) = registry.loading_art("c2s01md.map").unwrap();
+        assert_eq!(name, "LS800CS.shp");
+        assert_eq!(palette_name, "LS800CS.pal");
+        let palette = super::load_named_ui_palette(&assets, palette_name).unwrap();
+        let rendered = super::render_loading_background(
+            &assets,
+            super::LoadingScreenArtInput {
+                variant: Some(LoadingArtVariant::Americans),
+                background: Some(super::LoadingCountryBackground {
+                    name,
+                    palette: Some(&palette),
+                    palette_name,
+                }),
+            },
+            LoadingScreenWidth::W640,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(rendered.label, "ls800cs.shp");
+        assert_eq!([rendered.width, rendered.height], [800, 600]);
+        assert!(rendered.rgba.chunks_exact(4).any(|pixel| pixel[3] != 0));
     }
 
     #[test]

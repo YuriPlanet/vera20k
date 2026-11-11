@@ -176,7 +176,10 @@ fn ordinary_lethal_fire_commits_debris_animations_and_sparks_once() {
         delivery_sounds(&sim),
         ["DieA", "DEATHREPORT", "DESTROYREPORT"]
     );
-    assert_eq!(sim.particle_systems().len(), 1);
+    // No second spark system. This world has no terrain, so the first one's
+    // particles are refused their collision query and retire with their
+    // system (`tick_spark_system_with_query`) instead of holding it open.
+    assert_eq!(sim.particle_systems().len(), 0);
 }
 
 #[test]

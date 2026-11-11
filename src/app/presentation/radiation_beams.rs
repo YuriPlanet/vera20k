@@ -6,7 +6,7 @@
 
 use crate::render::radiation_beam::{BeamGeometry, eruption_cull_percent, segment_spacing};
 use crate::render::surface_line::{SurfaceDraw, SurfaceLineViewport};
-use crate::sim::combat::radiation_beam::RadiationBeamBirth;
+use crate::sim::combat::radiation_beam::{BeamHouseColor, RadiationBeamBirth};
 use crate::sim::rng::MainRngDraws;
 
 struct Beam {
@@ -57,17 +57,17 @@ pub(crate) struct RadiationBeams {
 }
 
 impl RadiationBeams {
-    /// `house_rgb` resolves Phobos `Beam.IsHouseColor` to the firing House's
-    /// laser color before the copied birth is stored.
+    /// `house_rgb` resolves Phobos and Ares `Beam.IsHouseColor` to the firing
+    /// House's laser or House colour before the copied birth is stored.
     pub(crate) fn create(
         &mut self,
         mut birth: RadiationBeamBirth,
-        house_rgb: impl FnOnce(crate::sim::intern::InternedId) -> [u8; 3],
+        house_rgb: impl FnOnce(crate::sim::intern::InternedId, BeamHouseColor) -> [u8; 3],
     ) {
-        if birth.house_color
+        if birth.house_color != BeamHouseColor::None
             && let Some(owner) = birth.house
         {
-            birth.color = house_rgb(owner);
+            birth.color = house_rgb(owner, birth.house_color);
         }
         // Allocate659189: the constructor's spacing is10 for kind1, else20.
         self.live.push(Beam {
@@ -144,6 +144,9 @@ impl RadiationBeams {
 
     pub(crate) fn draws(&self) -> &[SurfaceDraw] {
         &self.draws
+    }
+    pub(crate) fn is_empty(&self) -> bool {
+        self.live.is_empty()
     }
     /// The last composite's lines under the current camera.
     pub(crate) fn shown(&mut self, camera: [i32; 2]) -> &[SurfaceDraw] {

@@ -73,7 +73,15 @@ use crate::sim::world::Simulation;
 /// v29: `session` — which match a stream belongs to: map name, `GameMode`, the
 /// game speed the pacer uses, the local player and its accepted result, and the
 /// running binary's version stamp.
-pub const TELEMETRY_SCHEMA_VERSION: u32 = 29;
+/// v30: `network` — an online relay match's backlog, catch-up state, skipped
+/// draws and relay slowdown.
+/// v31: `render` splits the old catch-all `other_ms` into combat lights, effect
+/// lines, draw calls and handing the frame to the driver; `other_ms` keeps the
+/// remainder.
+/// v32: `profile.phases_ms` splits the object pass into unit AI, pathfinding,
+/// targeting, movement, firing, buildings, bullets and effects, and drops four
+/// slots no step ever filled.
+pub const TELEMETRY_SCHEMA_VERSION: u32 = 32;
 
 /// One house row of a [`ReportPoint`]: just what the report's party table and
 /// pie captions read.
@@ -290,6 +298,19 @@ pub struct TerrainGrid {
     pub deck_rises: String,
 }
 
+/// An online relay match's delivery state, measured by the app.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct NetworkSample {
+    /// Frames the relay has sealed past the local simulation.
+    pub backlog_frames: u32,
+    /// The playout pacer is running buffered frames to catch up.
+    pub catching_up: bool,
+    /// Draws skipped while catching up, this match.
+    pub skipped_draws: u64,
+    /// The relay seals slower than the match's own rate for a slow player.
+    pub relay_slowed: bool,
+}
+
 /// Frame-timing sample, filled by the app layer (the simulation never
 /// measures wall time). `budget_utilization` is `tick_ms` over `budget_ms`;
 /// values above 1.0 mean the tick cost exceeded its budget and the pacer can
@@ -480,7 +501,15 @@ pub struct RenderTimingReport {
     pub sidebar_ms: f32,
     /// Phase 6 — instance upload to the GPU buffer pool.
     pub upload_ms: f32,
-    /// Prep before phase 1 and everything after phase 6.
+    /// Combat lights and spotlights.
+    pub lights_ms: f32,
+    /// Effect lines and rings, and ion blasts.
+    pub effects_ms: f32,
+    /// Phase 7 — recording the render passes.
+    pub draw_calls_ms: f32,
+    /// Encoding, submitting and presenting the frame.
+    pub handoff_ms: f32,
+    /// Prep before phase 1 and between the lights and the effects.
     pub other_ms: f32,
 }
 
@@ -672,6 +701,8 @@ pub struct TelemetrySnapshot {
     pub render: Option<RenderTimingReport>,
     /// App-filled log records since the previous snapshot.
     pub logs: Option<LogBatch>,
+    /// App-filled online relay match delivery state; `None` otherwise.
+    pub network: Option<NetworkSample>,
     #[cfg(feature = "debug-tools")]
     pub debug_tools: DebugToolsReport,
 }
@@ -900,6 +931,7 @@ impl Simulation {
             report_point: None,
             render: None,
             logs: None,
+            network: None,
             #[cfg(feature = "debug-tools")]
             debug_tools: {
                 let flags = self.cheat_flags();

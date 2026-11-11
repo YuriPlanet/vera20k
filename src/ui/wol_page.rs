@@ -27,8 +27,10 @@ pub(crate) const CANCEL: u16 = 2;
 /// `0x11E`'s Back.
 pub(crate) const BACK: u16 = 0x686;
 
-/// `EM_LIMITTEXT 9` on `0xCF`'s name (`0x0078D855`).
-const NAME_LIMIT: usize = 9;
+/// `EM_LIMITTEXT 9` on `0xCF`'s name (`0x0078D855`), which its locates
+/// read into 10 bytes and Send cuts to (`0x0078D39A`). VERA deviation: the
+/// lobby's names run to 24 characters, so all three take 24.
+const NAME_LIMIT: usize = crate::ui::wol_account::NAME_LIMIT;
 /// `EM_LIMITTEXT 0x78` on `0x11E`'s reply.
 const REPLY_LIMIT: usize = 120;
 
@@ -116,8 +118,9 @@ impl WolPageDialog {
         Self::default()
     }
 
-    /// `0x497` (`0x0078D855..0x0078D91B`): the name edit limited to 9 byte
-    /// characters (`0x4D1(1)`) and emptied with `0x4B4`, which notifies
+    /// `0x497` (`0x0078D855..0x0078D91B`): the name edit limited to
+    /// [`NAME_LIMIT`] byte characters (`0x4D1(1)`) and emptied with `0x4B4`,
+    /// which notifies
     /// nothing. Focus stays on the dialog (`0x00622B50`'s
     /// `SetFocus(hDialog)`) unless the reply window has time left: then the
     /// name is the last pager `[0xB77E30]` (again `0x4B4`), the text edit
@@ -132,12 +135,20 @@ impl WolPageDialog {
         let mut page = Self::new();
         let mut actions = Vec::new();
         if window.remaining(now) > 0 {
-            page.name
-                .set_units_limited(last_pager.unwrap_or_default().encode_utf16(), 0);
-            page.focus_to(Some(TEXT), last, &mut actions);
+            actions = page.address(last_pager.unwrap_or_default(), last);
             window.arm(now, 0);
         }
         (page, actions)
+    }
+
+    /// The name set with `0x4B4` and the focus moved to the text edit, as
+    /// `0x497` addresses the last pager; VERA's player card addresses its
+    /// player the same way.
+    pub(crate) fn address(&mut self, name: &str, last: &mut u16) -> Vec<WolPageAction> {
+        let mut actions = Vec::new();
+        self.name.set_units_limited(name.encode_utf16(), 0);
+        self.focus_to(Some(TEXT), last, &mut actions);
+        actions
     }
 
     fn name_text(&self) -> String {
@@ -242,7 +253,7 @@ impl WolPageDialog {
                 let other = if control == NAME { TEXT } else { NAME };
                 self.focus_to(Some(other), last, &mut actions);
                 if control == NAME {
-                    actions.push(WolPageAction::Locate(self.name.narrow_text(10)));
+                    actions.push(WolPageAction::Locate(self.name.narrow_text(NAME_LIMIT + 1)));
                     self.status.clear();
                     *last = TEXT;
                 }
@@ -279,7 +290,7 @@ impl WolPageDialog {
             // 0x0078D39A..0x0078D626.
             SEND if self.send_enabled => {
                 if *last == NAME {
-                    actions.push(WolPageAction::Locate(self.name.narrow_text(10)));
+                    actions.push(WolPageAction::Locate(self.name.narrow_text(NAME_LIMIT + 1)));
                     self.status.clear();
                 }
                 *last = SEND;
@@ -291,8 +302,9 @@ impl WolPageDialog {
                 self.text.set_units_limited([], 0);
                 self.send_enabled = false;
                 self.focus_to(Some(TEXT), last, &mut actions);
-                let mut name = self.name_text();
-                name.truncate(NAME_LIMIT);
+                // `Wstring__truncate` to the limit, by byte character: an
+                // addressed name (`0x4B4`) may be longer than typing allows.
+                let name = self.name.narrow_text(NAME_LIMIT + 1);
                 actions.push(match (name.is_empty(), text.is_empty()) {
                     (false, false) => WolPageAction::Send { name, text },
                     (true, _) => WolPageAction::Notice("TXT_NAME_ERROR"),
@@ -467,13 +479,12 @@ mod tests {
         let mut page = WolPageDialog::new();
         assert!(page.insert_text("x", &mut last).is_empty());
         assert!(page.press(NAME, &mut last).is_empty());
-        page.insert_text("Tanya123456", &mut last);
-        assert_eq!(page.name_text(), "Tanya1234");
+        page.insert_text("Tanya123", &mut last);
         assert!(!page.send_enabled && last == NAME);
         // Clicking into the text field locates the name once.
         assert_eq!(
             page.press(TEXT, &mut last),
-            vec![WolPageAction::Locate("Tanya1234".into())]
+            vec![WolPageAction::Locate("Tanya123".into())]
         );
         assert!(page.insert_text("hi", &mut last).is_empty());
         assert!(page.send_enabled);
@@ -481,7 +492,7 @@ mod tests {
         assert_eq!(
             sent,
             vec![WolPageAction::Send {
-                name: "Tanya1234".into(),
+                name: "Tanya123".into(),
                 text: "hi".encode_utf16().collect()
             }]
         );
@@ -489,6 +500,51 @@ mod tests {
         assert!(page.text.units.is_empty() && !page.send_enabled && last == SEND);
         // A second Enter with Page disabled does nothing.
         assert!(page.key(LanEditKey::Enter, &mut last).is_empty());
+    }
+
+    /// VERA's player card addresses a page to a name longer than WOL's 9
+    /// characters, and Send keeps all of it.
+    #[test]
+    fn an_addressed_page_sends_a_long_vera_name_whole() {
+        let mut last = TEXT;
+        let mut page = WolPageDialog::new();
+        assert!(page.address("Commander_Tanya", &mut last).is_empty());
+        assert_eq!(page.focus, Some(TEXT));
+        page.insert_text("gg", &mut last);
+        assert_eq!(
+            page.key(LanEditKey::Enter, &mut last),
+            vec![WolPageAction::Send {
+                name: "Commander_Tanya".into(),
+                text: "gg".encode_utf16().collect()
+            }]
+        );
+    }
+
+    /// A typed name keeps VERA's 24 characters through the edit, both
+    /// locates and Send, cut by character: `ø` is two bytes in UTF-8.
+    #[test]
+    fn a_typed_page_name_keeps_24_characters() {
+        let mut last = TEXT;
+        let mut page = WolPageDialog::new();
+        page.press(NAME, &mut last);
+        let name = format!("Bjørn{}", "x".repeat(19));
+        page.insert_text(&format!("{name}y"), &mut last);
+        assert_eq!(page.name_text(), name);
+        assert_eq!(
+            page.key(LanEditKey::Tab, &mut last),
+            vec![
+                WolPageAction::Locate(name.clone()),
+                WolPageAction::Locate(name.clone())
+            ]
+        );
+        page.insert_text("hi", &mut last);
+        assert_eq!(
+            page.key(LanEditKey::Enter, &mut last),
+            vec![WolPageAction::Send {
+                name,
+                text: "hi".encode_utf16().collect()
+            }]
+        );
     }
 
     #[test]

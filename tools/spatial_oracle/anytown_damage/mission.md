@@ -111,8 +111,7 @@ does not recompute mission timing or weapon/RNG arithmetic. All shot, impact
 and dispatch frame labels denote the Logic frame. Actor snapshots explicitly
 retain their own pre- or post-commit frame boundary.
 
-CliffBack's native constructor0 versus the production missing-key default2
-remains a follow-up. This retail layer explicitly supplies2, so the mismatch
-does not change these witnesses. Full Engineer admission/repair lifetime,
+CliffBack's native constructor value is0, as the production missing-key
+default is. This retail layer explicitly supplies2. Full Engineer admission/repair lifetime,
 ordinary movement, rendering, audio and general mission families need their
 own connected evidence; these results do not close the whole bridge audit.

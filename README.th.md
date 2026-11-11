@@ -7,8 +7,9 @@
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="การทดสอบไลบรารีบน macOS ครั้งล่าสุด (สั่งรันด้วยตนเอง)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="การทดสอบไลบรารีบน macOS" height="23" align="middle"></a>
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="การทดสอบไลบรารีบน Linux ครั้งล่าสุด (สั่งรันด้วยตนเอง)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="การทดสอบไลบรารีบน Linux" height="23" align="middle"></a>
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml?query=branch%3Amain" title="การทดสอบไลบรารีบน Windows ครั้งล่าสุด (สั่งรันด้วยตนเอง)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml/badge.svg?branch=main" alt="การทดสอบไลบรารีบน Windows" height="23" align="middle"></a>
+  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml?query=branch%3Amain" title="การบิลด์ WebAssembly ครั้งล่าสุด (สั่งรันด้วยตนเอง)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml/badge.svg?branch=main" alt="การบิลด์ WebAssembly" height="23" align="middle"></a>
   <a href="https://discord.gg/kmjRUn5m5F"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat&amp;logo=discord&amp;logoColor=white" alt="เข้าร่วม Discord" height="23" align="middle"></a>
-  <img src="https://img.shields.io/badge/QQ_group-1097193563-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="กลุ่ม QQ" height="23" align="middle">
+  <img src="https://img.shields.io/badge/QQ-1097193563-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="กลุ่ม QQ" height="23" align="middle">
 </p>
 
 # VERA20K
@@ -17,6 +18,8 @@ VERA20K คือโครงการที่ขับเคลื่อนโ
 โดยใช้ไฟล์จากเกมต้นฉบับ คุณจึงต้องมี Red Alert 2: Yuri's Revenge ของตัวเอง
 
 VERA20K สร้างโดยเกมเมอร์ เพื่อเกมเมอร์ และเกมเมอร์คือผู้ตัดสินใจขั้นสุดท้ายว่าโครงการจะไปในทิศทางใด
+
+**ไม่ต้องกลัวที่จะส่ง PR** ไม่จำเป็นต้องสมบูรณ์แบบ ที่เหลือเราช่วยคุณเอง
 
 <img src="docs/images/vera20k-screenshots.png" alt="หน้าตั้งค่าการต่อสู้และภาพขณะเล่น VERA20K" width="100%">
 
@@ -27,18 +30,7 @@ VERA20K สร้างโดยเกมเมอร์ เพื่อเก�
 3. เพิ่มฟีเจอร์ RTS ที่เป็นที่รู้จัก รวมถึงฟีเจอร์ที่ไม่เคยมีมาก่อน
 4. ไคลเอนต์ผู้เล่นหลายคนในตัว
 
-## สถานะปัจจุบัน
-
-**กำลังพัฒนาอย่างต่อเนื่อง**
-
-- **การต่อสู้ภายในเครื่อง:** เล่นได้บน Windows, Linux และ macOS รองรับแผนที่จากเกมต้นฉบับ
-  และแผนที่สุ่ม การสร้างฐาน การเก็บทรัพยากร การต่อสู้ และการบันทึก/โหลดเกม
-- **แคมเปญ:** เริ่มภารกิจได้แล้ว แต่การรองรับยังไม่สมบูรณ์
-- **AI:** บางส่วนของ AI ต้นฉบับสามารถสร้างฐานและโจมตีตามสคริปต์ได้แล้ว
-- **งานที่กำลังดำเนินการ:** ความแม่นยำของพฤติกรรมในเกม ภาพ และประสิทธิภาพ
-- **โหมดผู้เล่นหลายคน:** รุ่นที่สร้างจากซอร์สโค้ดปัจจุบันรองรับการเล่นผ่าน LAN และออนไลน์บน macOS และ Linux
-- **ขนาดการต่อสู้:** แมตช์ออนไลน์สองแมตช์ติดต่อกันผ่านการตรวจสอบการทำงาน โดยแต่ละแมตช์มีโปรเซสไคลเอนต์อิสระ 30 โปรเซสและยูนิตเคลื่อนที่ที่ทำงานอยู่มากกว่า 20,000 ตัว
-  ไคลเอนต์ Linux ใช้เครื่องเสมือนร่วมกัน ผลนี้ยังไม่ยืนยันประสิทธิภาพที่ลื่นไหลแบบเรียลไทม์
+ดูงานที่ให้ความสำคัญในตอนนี้และแผนในอนาคตได้ใน[แผนการพัฒนา](https://github.com/orgs/YuriPlanet/projects/1)
 
 ## ดาวน์โหลดและเล่น
 
@@ -46,15 +38,20 @@ VERA20K สร้างโดยเกมเมอร์ เพื่อเก�
 ได้จาก[หน้ารุ่นที่เผยแพร่](https://github.com/YuriPlanet/vera20k/releases) ตัวติดตั้งจะค้นหา
 Yuri's Revenge ของคุณ แล้วติดตั้ง VERA20K ไว้ในโฟลเดอร์ใหม่
 
-ใช้ **Options** สำหรับเสียงและการควบคุม และ **Vera Options** สำหรับฟีเจอร์เฉพาะของ VERA
-
 หากต้องการเริ่มการต่อสู้ภายในเครื่องหรือแคมเปญของ YR แบบผู้เล่นคนเดียวผ่านไคลเอนต์ CnCNet
 โปรดดู[การตั้งค่าไคลเอนต์แบบออฟไลน์](integrations/cncnet/README.md)
 
 ## ร่วมพัฒนา
 
-ยินดีรับความช่วยเหลือ คุณจะเขียนโค้ด รีแฟกเตอร์เอนจิน ทดสอบเกม เสนอไอเดีย หรือเล่นเทียบกับเกมต้นฉบับ
-แล้วบอกเราว่าตรงไหนรู้สึกผิดไปก็ได้ เปิด PR มาได้เลย ที่เหลือเราจัดการเอง
+ยินดีรับความช่วยเหลือทุกด้าน แต่ด้านต่อไปนี้ต้องการคนช่วยมากที่สุด แต่ละด้านลิงก์ไปยังหน้าของด้านนั้นในแผนการพัฒนา ซึ่งบอกงานที่กำลังทำและขั้นตอนถัดไป:
+
+- **[รูปแบบการเล่นและการต่อสู้](https://github.com/YuriPlanet/vera20k/issues/3830):** พฤติกรรมของยูนิต ความเสียหาย และความเสถียรของการต่อสู้ภายในเครื่อง
+- **[ประสิทธิภาพ](https://github.com/YuriPlanet/vera20k/issues/3831):** อัตราเฟรมและการตอบสนองในการต่อสู้ขนาดใหญ่และบนฮาร์ดแวร์รุ่นเก่า
+- **[โหมดผู้เล่นหลายคน](https://github.com/YuriPlanet/vera20k/issues/3832):** การเข้าร่วม เริ่ม และเล่นแมตช์ออนไลน์ต่อเนื่อง รวมถึงความเสถียรของการเล่นแบบร่วมมือ
+- **[UI และเสียง](https://github.com/YuriPlanet/vera20k/issues/3833):** เมนู ข้อความ [การแปล](src/i18n/README.md) และเสียง
+- **[แคมเปญ](https://github.com/YuriPlanet/vera20k/issues/3834):** เริ่มภารกิจได้แล้ว แต่การเล่นให้จบยังต้องพัฒนาต่อ: เป้าหมาย ทริกเกอร์ การเปลี่ยนฉากตามสคริปต์ การบันทึก/โหลด และการไปภารกิจถัดไป
+- **[ความเข้ากันได้กับม็อด](https://github.com/YuriPlanet/vera20k/issues/3835):** ฟีเจอร์ของ Ares และ Phobos โดยไม่เปลี่ยนค่าเริ่มต้นของเกมต้นฉบับ
+- **[การทดสอบ](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity):** เล่น VERA20K เทียบกับเกมต้นฉบับ แล้วรายงานส่วนที่เล่นต่างไป
 
 ผู้ร่วมพัฒนาสามารถรับผิดชอบส่วนต่าง ๆ ของเอนจินได้ โดยมีอิสระอย่างมากในการเปลี่ยนแปลงที่ช่วยผลักดัน VERA20K ไปข้างหน้า
 
@@ -85,8 +82,6 @@ Yuri's Revenge ของคุณ แล้วติดตั้ง VERA20K ไ�
 - **เครื่องมือบิลด์:** บน Windows ใช้ C++ build tools ของ Visual Studio ซึ่งตัวติดตั้ง Rust จะเสนอให้ติดตั้ง
   บน macOS รัน `xcode-select --install` บน Debian และ Ubuntu รัน `sudo apt install build-essential libasound2-dev libxkbcommon-x11-0 pkg-config`
 
-มีการเล่น VERA20K บน Windows, Linux และ macOS แล้ว
-
 ```sh
 git clone https://github.com/YuriPlanet/vera20k.git
 cd vera20k
@@ -103,17 +98,19 @@ cargo run --release --bin vera20k
 
 ## การปรับแต่ง
 
-ระบบเลือกความจุแผนที่อัตโนมัติโดยไม่ต้องใช้แฟล็กบิลด์: ผลรวมความกว้างและความสูงของ `Size` สูงสุดคือ 1024 หากไม่เกิน 512 จะคงการระบุพิกัดแบบเดิม ส่วนแผนที่ที่ใหญ่กว่าจะใช้กริดขยาย ดูวิธีสร้างแผนที่ เวอร์ชันไฟล์บันทึก และขอบเขตการตรวจสอบที่[แผนที่ขนาดใหญ่](README.md#large-maps)
+ระบบเลือกความจุแผนที่อัตโนมัติโดยไม่ต้องใช้แฟล็กบิลด์: ผลรวมความกว้างและความสูงของ `Size` สูงสุดคือ 1024
 
 โดยค่าเริ่มต้น VERA20K จะเล่นได้เหมือนเกมต้นฉบับ ฟีเจอร์ใหม่อื่น ๆ รวมถึงส่วนขยายจากม็อดอย่าง Ares
 ต้องปิดไว้จนกว่าจะเปิดด้วยวิธีใดวิธีหนึ่งต่อไปนี้:
 
-- **ตัวเลือกของผู้เล่นใน VERA** อยู่ใน **Options → Vera Options** และบันทึกในส่วน `[VERA]` ของ `VERA.INI`
+- **ตัวเลือกของผู้เล่นใน VERA** อยู่ใน **Options** และบันทึกในส่วน `[VERA]` ของ `VERA.INI`
 - **ตัวเลือกตอนบิลด์** เช่น `--features ares` สำหรับ[ส่วนขยาย Ares](docs/ares.md)ที่รองรับ
 - **คีย์ INI** ที่ม็อดหรือแผนที่กำหนด
 
 การตั้งค่าเสียง กราฟิก และการควบคุมจะบันทึกไว้ใน `VERA.INI` กฎการเล่นมาจากการตั้งค่าล็อบบี้
 ม็อด หรือแผนที่
+
+[คู่มือการทำม็อด](docs/modding.md)อธิบายวิธีสร้างม็อดของคุณเอง
 
 ## สนับสนุนโครงการ
 
@@ -138,11 +135,14 @@ Command & Conquer และ Red Alert เป็นเครื่องหมา
 ภาพหน้าจอและไอคอนแอป (ดาวแดงของ Red Alert 2) แสดงงานภาพจากเกมที่เป็นของ Electronic Arts
 VERA20K ไม่มีความเกี่ยวข้องกับ Electronic Arts และไม่ได้รับการรับรองจาก Electronic Arts
 
+This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
 **โปรดอ่าน[ประกาศทางกฎหมาย](LEGAL.md)ก่อนแชร์ ขาย หรือ fork VERA20K**
 
 ## เอกสาร
 
-- [บิลด์และรัน](#บิลด์และรัน): สิ่งที่ต้องมีและการบิลด์จากซอร์สโค้ด
+- [รุ่นทดลอง WebAssembly](docs/wasm.md): บิลด์สำหรับผู้เล่นคนเดียวแบบเลือกใช้ได้ ซึ่งทำงานในเบราว์เซอร์
+- [คู่มือการทำม็อด](docs/modding.md): สิ่งที่ม็อดทำได้และทำไม่ได้ และ VERA20K แตกต่างจากเกมต้นฉบับอย่างไร
 - [โปรไฟล์ INI](docs/ini-roots.md): การเลือกไฟล์กฎ ไฟล์ art และไฟล์ AI
 - [Ares](docs/ares.md), [Phobos](docs/phobos.md) และ [NPatch](docs/npatch.md): การรองรับส่วนขยายและข้อจำกัด
 - [ภาพรวมของเอนจิน](docs/index.md): โครงสร้างโค้ดและการทำงานร่วมกันของส่วนต่าง ๆ ในเอนจิน

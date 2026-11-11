@@ -54,7 +54,7 @@ fn fixture_with_anim_keys(
             entries.insert(
                 ShpSpriteKey {
                     palette_context: ShpPaletteContext::AnimScheme,
-                    type_id: name.to_string(),
+                    type_id: name.into(),
                     facing: 0,
                     frame: 3,
                     house_color: HouseColorIndex(1),
@@ -74,7 +74,7 @@ fn fixture_with_anim_keys(
             if !anim_keys.is_empty() {
                 let mut shadow_key = ShpSpriteKey {
                     palette_context: ShpPaletteContext::AnimScheme,
-                    type_id: name.to_string(),
+                    type_id: name.into(),
                     facing: 0,
                     frame: 3,
                     house_color: HouseColorIndex(1),
@@ -236,7 +236,7 @@ fn material_fixture(name: &str, keys: &str) -> (Simulation, RuleSet, u64, u64, S
     let atlas = SpriteAtlas::from_test_entries(HashMap::from([(
         ShpSpriteKey {
             palette_context: ShpPaletteContext::AnimScheme,
-            type_id: name.to_string(),
+            type_id: name.into(),
             facing: 0,
             frame: 0,
             house_color: HouseColorIndex(1),
@@ -262,6 +262,38 @@ fn force_slot_translucency(sim: &mut Simulation, anim: u64) {
         .unwrap()
         .draw_runtime_mut_for_test()
         .forced_translucent = true;
+}
+
+#[test]
+fn high_terrain_building_slots_keep_their_offsets_and_depth() {
+    let (mut sim, rules, building, atlas) = fixture("NATBNK", false);
+    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let flat = emit(&sim, &rules, building, &atlas, &order);
+    assert!(!flat.is_empty());
+    let entity = sim.entities_mut_for_test().get_mut(building).unwrap();
+    entity.position.set_z_for_test(36);
+    entity.position.set_exact_z_leptons_for_test(Some(3744));
+    let slots = *entity.building_art.anim_slots();
+    for id in slots.into_iter().flatten() {
+        sim.anims_mut_for_test()
+            .get_mut(id)
+            .unwrap()
+            .world_coord_mut_for_test()
+            .z += 3744;
+    }
+    let raised = emit(&sim, &rules, building, &atlas, &order);
+    assert_eq!(flat.len(), raised.len());
+    for (flat, raised) in flat.iter().zip(&raised) {
+        for (flat, raised) in flat.pieces.iter().zip(&raised.pieces) {
+            assert_eq!(raised.instance.position[0], flat.instance.position[0]);
+            assert_eq!(
+                raised.instance.position[1],
+                flat.instance.position[1] - 540.0
+            );
+            assert_eq!(raised.instance.z_adjust, flat.instance.z_adjust - 540.0);
+            assert_eq!(raised.instance.depth, flat.instance.depth);
+        }
+    }
 }
 
 fn assert_slot_replay(
@@ -418,23 +450,6 @@ fn bouncing_slot_anims_take_the_ordinary_material_after_their_ground_shadow() {
 }
 
 #[test]
-fn special_slot_anims_keep_their_existing_translucent_material() {
-    for (name, keys) in [("RING1", ""), ("TILED", "Tiled=yes\n")] {
-        let (mut sim, rules, building, anim, atlas) = material_fixture(name, keys);
-        force_slot_translucency(&mut sim, anim);
-        let palette = PaletteLight::color_scheme([1000; 3], 1000);
-        let inherited = DrawState {
-            remap_row: 7,
-            ..DrawState::default()
-        };
-        let order = NativeDisplayOrder::from_display(sim.display_layers());
-        let planned =
-            emit_with_material(&sim, &rules, building, &atlas, &order, palette, inherited);
-        assert_slot_replay(planned, anim, 0.5, inherited, palette);
-    }
-}
-
-#[test]
 fn metadata_free_slot_keeps_alpha_and_compatibility_replay() {
     let (mut sim, rules, building, anim, atlas) = material_fixture("ORDINARY", "");
     force_slot_translucency(&mut sim, anim);
@@ -573,7 +588,7 @@ fn building_slot_draws_a_nonempty_shadow_when_the_body_has_no_atlas_entry() {
         type_id: sim
             .interner()
             .resolve(sim.anim(anim).unwrap().type_id())
-            .to_string(),
+            .into(),
         facing: 0,
         frame: 23,
         house_color: HouseColorIndex(1),

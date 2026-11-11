@@ -163,6 +163,9 @@ pub(crate) struct ExternalLaunchReport {
     pub(crate) opponents_left: bool,
     /// The failure message of a `failed` launch.
     pub(crate) reason: Option<String>,
+    /// Relay matches only: the match's network quality record.
+    pub(crate) network_quality:
+        Option<crate::app::match_runtime::network_quality::NetworkQualityReport>,
 }
 
 impl ExternalLaunchReport {
@@ -196,12 +199,41 @@ impl ExternalLaunchReport {
             duration_seconds: duration,
             opponents_left: progress.opponents_left,
             reason: failure.map(str::to_owned),
+            network_quality: None,
         }
     }
 
     pub(crate) fn json(&self) -> String {
         serde_json::to_string(self).expect("report serializes")
     }
+}
+
+/// The players of a decided network match whose Houses won
+/// ([`crate::sim::world::Simulation::network_match_winners`]) and who were
+/// still connected, by their launch names; `None` while the match runs.
+fn match_winners(
+    session: &crate::app::match_runtime::session::MatchSession,
+    sim: &crate::sim::world::Simulation,
+) -> Option<Vec<String>> {
+    let winners = sim.network_match_winners()?;
+    let launch = session.network_setup()?;
+    let connected = session.network_connected_source_indices();
+    Some(
+        launch
+            .humans
+            .iter()
+            .enumerate()
+            .filter(|&(source, human)| {
+                !human.is_observer()
+                    && connected.contains(&source)
+                    && session
+                        .network_source_owner(source)
+                        .and_then(|owner| sim.interner().get(&owner))
+                        .is_some_and(|owner| winners.contains(&owner))
+            })
+            .map(|(_, human)| human.name.clone())
+            .collect(),
+    )
 }
 
 /// docs/spawn.md "Opponent departure": true when the local player plays,
@@ -368,6 +400,12 @@ impl App {
                 SpawnTransport::Relay(_) => {}
             }
         }
+        // The mod this launch asked for is not in use (`app::mods`): end on
+        // the reason, which a start without the mod would bury in a rules
+        // mismatch with the other players.
+        if let Some(reason) = state.frontend.mods.refusal() {
+            anyhow::bail!("{reason}");
+        }
         Self::check_spawn_expectations(state, &request)?;
         state.frontend.external_launch = true;
         state.frontend.external_progress = ExternalLaunchProgress::default();
@@ -513,7 +551,7 @@ impl App {
         {
             return;
         }
-        let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+        let Some(runtime) = state.match_state.sim_runtime.runtime() else {
             return;
         };
         let frame = runtime.simulation.session().binary_frame();
@@ -550,11 +588,13 @@ impl App {
     ) -> ExternalLaunchReport {
         let failure = failure
             .or_else(|| state.and_then(|state| state.frontend.external_launch_error.as_deref()));
-        ExternalLaunchReport::new(
-            state.and_then(Self::external_match_result),
+        let mut report = ExternalLaunchReport::new(
+            state.and_then(Self::match_result),
             state.map(|state| &state.frontend.external_progress),
             failure,
-        )
+        );
+        report.network_quality = state.and_then(|state| state.match_state.network_quality.report());
+        report
     }
 
     /// Desktop: write `spawn_result.json` beside spawn.ini and return the
@@ -664,7 +704,7 @@ impl App {
         use crate::ui::shell::abort::{AbortButton, AbortSecondary};
         match &state.frontend.screen {
             GameScreen::InGame => {
-                if state.match_state.sim_runtime.is_none()
+                if !state.match_state.sim_runtime.is_installed()
                     || state.match_state.scenario_exit.is_some()
                     || state.match_state.scenario_outcome.is_some()
                     || Self::house_outcome_wait_pending(state)
@@ -732,7 +772,11 @@ impl App {
     pub fn spawn_hidden_window_requested() -> bool {
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         {
-            std::env::var_os("VERA20K_SPAWN_HIDDEN_WINDOW").is_some_and(|value| value == "1")
+            // Read once: a launch sets it, and every pass asks.
+            static REQUESTED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+            *REQUESTED.get_or_init(|| {
+                std::env::var_os("VERA20K_SPAWN_HIDDEN_WINDOW").is_some_and(|value| value == "1")
+            })
         }
         #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
         {
@@ -747,17 +791,73 @@ impl App {
             && state.platform.window.is_visible() == Some(false)
     }
 
-    /// The local result of the external launch, once its match ended; the
-    /// relay `finish` reports it, and launch hosts read it here.
-    pub(crate) fn external_match_result(state: &AppState) -> Option<ExternalMatchResult> {
-        state.frontend.external_match_result
+    /// The local result of an external launch's or online lobby match's
+    /// match, once it ended; the relay `finish` reports it, and launch hosts
+    /// read it here.
+    pub(crate) fn match_result(state: &AppState) -> Option<ExternalMatchResult> {
+        state.frontend.match_result
     }
 
-    /// Record the end-of-match owner's decision for an external launch only.
-    pub(crate) fn record_external_match_result(state: &mut AppState, result: ExternalMatchResult) {
-        if state.frontend.external_launch {
-            state.frontend.external_match_result.get_or_insert(result);
+    /// The decided network match's winners still in it, for the online
+    /// lobby's `finish`.
+    pub(crate) fn match_winners(state: &AppState) -> Option<&[String]> {
+        state.frontend.match_winners.as_deref()
+    }
+
+    /// When the match's local result was decided, for the online lobby's
+    /// `finish`.
+    pub(crate) fn match_result_at(state: &AppState) -> Option<Instant> {
+        state.frontend.match_result_at
+    }
+
+    /// An online match starts: no earlier match's result may stand for it.
+    pub(crate) fn clear_match_result(state: &mut AppState) {
+        state.frontend.match_result = None;
+        state.frontend.match_winners = None;
+        state.frontend.match_result_at = None;
+    }
+
+    /// Record the end-of-match owner's decision for an external launch or an
+    /// online lobby match; the first decision wins. A player who leaves or
+    /// drops after the game decided their House keeps that result: won once
+    /// Flag_To_Win (`0x004FC9E0`) set it, lost once Flag_To_Lose
+    /// (`0x004FCBDE..0x004FCC42`) or MPlayer_Defeated (`+0x1F5` at
+    /// `0x004FC0C2`) did, though the result route had not run yet. A decided
+    /// network match also records the players who won it.
+    pub(crate) fn record_match_result(state: &mut AppState, result: ExternalMatchResult) {
+        use crate::app::match_runtime::session::SessionMode;
+        if (!state.frontend.external_launch && state.match_state.session_mode() != SessionMode::Wol)
+            || state.frontend.match_result.is_some()
+        {
+            return;
         }
+        let sim = state
+            .match_state
+            .sim_runtime
+            .runtime()
+            .map(|runtime| &runtime.simulation);
+        let local = sim.and_then(|sim| {
+            sim.session()
+                .current_house()
+                .and_then(|owner| sim.houses().get(&owner))
+        });
+        let result = match (result, local) {
+            (ExternalMatchResult::Quit | ExternalMatchResult::Disconnected, Some(house))
+                if house.has_won() =>
+            {
+                ExternalMatchResult::Won
+            }
+            (ExternalMatchResult::Quit | ExternalMatchResult::Disconnected, Some(house))
+                if house.has_lost() || house.is_defeated() =>
+            {
+                ExternalMatchResult::Lost
+            }
+            (result, _) => result,
+        };
+        let winners = sim.and_then(|sim| match_winners(&state.match_state.session, sim));
+        state.frontend.match_result = Some(result);
+        state.frontend.match_winners = winners;
+        state.frontend.match_result_at = Some(Instant::now());
     }
 
     /// An external launch that cannot reach or finish its match ends the
@@ -839,7 +939,7 @@ mod tests {
             value,
             serde_json::json!({"result":"won","exit_code":10,"mode":"relay","match_id":"m",
                 "source_index":1,"frames":781,"duration_seconds":0.0,"opponents_left":true,
-                "reason":null})
+                "reason":null,"network_quality":null})
         );
         let quit = ExternalLaunchReport::new(None, None, None);
         assert_eq!(

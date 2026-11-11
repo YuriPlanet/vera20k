@@ -3,6 +3,7 @@
 //! Split from the presentation render path. Part of the app layer — may depend on everything.
 
 use crate::app::AppState;
+use crate::app::match_runtime::sim_host::SimWrite;
 use crate::map::entities::EntityCategory;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::intern::InternedId;
@@ -18,7 +19,7 @@ fn intern_in_sim(state: &mut AppState, s: &str) -> InternedId {
     state
         .match_state
         .sim_runtime
-        .as_mut()
+        .write_sim(SimWrite::Command)
         .map(|rt| &mut rt.simulation)
         .map(|sim| sim.intern(s))
         .unwrap_or_default()
@@ -59,7 +60,7 @@ pub(crate) fn suspend_build(state: &mut AppState, type_id: &str) {
     let Some(owner) = preferred_local_owner(state) else {
         return;
     };
-    let record = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+    let record = state.match_state.sim_runtime.runtime().and_then(|runtime| {
         let sim = &runtime.simulation;
         sim.encode_production_record(
             sim.interner().get(&owner)?,
@@ -104,7 +105,7 @@ fn visible_object_under_point(state: &AppState, world_x: f32, world_y: f32) -> O
     let sim = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation)?;
     let owner = preferred_local_owner(state)?;
     crate::app::input::entity_pick::hover_target_at_point(
@@ -148,7 +149,7 @@ pub(crate) fn super_weapon_pointer_target_at_cursor_is_valid(
     state: &AppState,
     section: &str,
 ) -> bool {
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         return true;
     };
     let Some(sw) = runtime.resources.rules.super_weapon(section) else {
@@ -179,7 +180,7 @@ fn own_building_id(state: &AppState, stable_id: u64) -> Option<u64> {
     let sim = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation)?;
     let owner = preferred_local_owner(state)?;
     let entity = sim.entities().get(stable_id)?;
@@ -207,7 +208,7 @@ pub(crate) fn own_repairable_building_under_point(
 
 fn own_repairable_building_id(state: &AppState, stable_id: u64) -> Option<u64> {
     let id = own_building_id(state, stable_id)?;
-    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     crate::sim::production::can_repair_building(sim, state.rules()?, id).then_some(id)
 }
 
@@ -224,8 +225,34 @@ pub(crate) fn own_sellable_building_under_point(
 
 fn own_sellable_building_id(state: &AppState, stable_id: u64) -> Option<u64> {
     let id = own_building_id(state, stable_id)?;
-    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     crate::sim::production::can_sell_building(sim, state.rules()?, id).then_some(id)
+}
+
+/// The local player's own Unit or Aircraft under the given world point when
+/// the sell cursor takes it: Ares 3.0 DisplayClass_ChooseAction_CanSell
+/// (10057E70, hook 0x6929FC) answers SellUnit once `DetermineAction
+/// 0x006929F2` found the object's owner the player and its CanBeSold
+/// (`production::foot_can_be_sold`) true.
+#[cfg(feature = "ares")]
+pub(crate) fn own_sellable_unit_under_point(
+    state: &AppState,
+    world_x: f32,
+    world_y: f32,
+) -> Option<u64> {
+    own_sellable_unit_id(state, visible_object_under_point(state, world_x, world_y)?)
+}
+
+#[cfg(feature = "ares")]
+fn own_sellable_unit_id(state: &AppState, stable_id: u64) -> Option<u64> {
+    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
+    let owner = preferred_local_owner(state)?;
+    let entity = sim.entities().get(stable_id)?;
+    (sim.interner()
+        .resolve(entity.owner())
+        .eq_ignore_ascii_case(&owner)
+        && crate::sim::production::foot_can_be_sold(sim, state.rules()?, stable_id))
+    .then_some(stable_id)
 }
 
 pub(crate) fn sell_wall_under_cursor_is_eligible(state: &AppState) -> bool {
@@ -249,7 +276,7 @@ pub(crate) fn sell_wall_under_cursor_is_eligible(state: &AppState) -> bool {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation),
         state.overlay_registry(),
     ) {
@@ -347,6 +374,14 @@ pub(crate) fn try_repair_sell_mode_click(state: &mut AppState) -> bool {
             own_sellable_building_id(state, id)
         }
     });
+    // `DisplayClass::BandBox_LeftUp @ 0x004AB9B0`'s action 0xD (SellUnit)
+    // arm: a Unit or Aircraft target queues the same SELL event.
+    #[cfg(feature = "ares")]
+    let building = building.or_else(|| {
+        object_under_cursor
+            .filter(|_| !repair)
+            .and_then(|id| own_sellable_unit_id(state, id))
+    });
     if let Some(entity_id) = building {
         let Some(owner) = preferred_local_owner(state) else {
             return true;
@@ -370,7 +405,7 @@ pub(crate) fn try_repair_sell_mode_click(state: &mut AppState) -> bool {
             state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .map(|rt| &rt.simulation),
             state.overlay_registry(),
         ) {
@@ -408,7 +443,7 @@ pub(crate) fn place_ready_building_at_cell(
     let Some(owner) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|runtime| runtime.simulation.interner().resolve(issuer).to_string())
     else {
         return;
@@ -418,7 +453,7 @@ pub(crate) fn place_ready_building_at_cell(
     let (origin, in_build_area) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .and_then(|runtime| {
             let sim = &runtime.simulation;
             let rules = &runtime.resources.rules;
@@ -585,7 +620,7 @@ pub(crate) fn queue_super_weapon_click(
     sw_type_id: InternedId,
     cell: (u16, u16),
 ) {
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         return;
     };
     let sim = &runtime.simulation;
@@ -645,7 +680,7 @@ pub(crate) fn reconcile_paid_super_weapon_cursor(state: &mut AppState) {
     let Some(owner) = preferred_local_owner(state) else {
         return;
     };
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         return;
     };
     let sim = &runtime.simulation;
@@ -745,7 +780,7 @@ pub(crate) fn schedule_command_in_sim(
     let execute_tick = sim.session().tick();
     let owner_id = match &payload {
         Command::SetGameSpeed { speed } => {
-            if *speed > crate::sim::game_options::IN_GAME_OPTIONS_MAX_SPEED {
+            if !crate::sim::game_options::is_selectable_game_speed(*speed) {
                 return None;
             }
             let owner_id = sim.interner().get(owner)?;
@@ -799,10 +834,10 @@ pub(crate) fn schedule_command_in_sim(
         payload => CommandEnvelope::new(owner_id, execute_tick, payload),
     };
     let envelope = encode_ordinary_local_command(sim, envelope)?;
-    // PlayerSend6FFDE6 ignores a full OutList's false return. The click is
-    // still handled and its voice/action-line effects are not rolled back.
-    let accepted = sim.issue_local_command(envelope);
-    if sim.session().game_mode().is_network() && !accepted {
+    // Sim-scale deviation: PlayerSend6FFDE6 ignores a full OutList's false
+    // return. Every mode reports the refusal instead, so a full queue fails
+    // closed and can show backpressure rather than dropping the order.
+    if !sim.issue_local_command(envelope) {
         return None;
     }
     Some(execute_tick)
@@ -960,7 +995,7 @@ pub(crate) fn try_schedule_command(
     {
         return None;
     }
-    let runtime = state.match_state.sim_runtime.as_mut()?;
+    let runtime = state.match_state.sim_runtime.write_sim(SimWrite::Command)?;
     schedule_rules_command_in_sim(
         &mut runtime.simulation,
         &runtime.resources.rules,
@@ -1021,11 +1056,8 @@ pub(crate) fn schedule_command(state: &mut AppState, owner: &str, payload: Comma
         && state
             .match_state
             .sim_runtime
-            .as_ref()
-            .is_some_and(|runtime| {
-                runtime.simulation.session().game_mode().is_network()
-                    && runtime.simulation.available_local_command_slots() == 0
-            })
+            .runtime()
+            .is_some_and(|runtime| runtime.simulation.available_local_command_slots() == 0)
     {
         super::messages::post_command_backpressure(state);
     }
@@ -1035,11 +1067,8 @@ pub(super) fn selection_input_has_capacity(state: &mut AppState, count: usize) -
     let blocked = state
         .match_state
         .sim_runtime
-        .as_ref()
-        .is_some_and(|runtime| {
-            runtime.simulation.session().game_mode().is_network()
-                && count > runtime.simulation.available_local_command_slots()
-        });
+        .runtime()
+        .is_some_and(|runtime| count > runtime.simulation.available_local_command_slots());
     if blocked {
         super::messages::post_command_backpressure(state);
     }
@@ -1052,7 +1081,7 @@ pub(crate) fn queue_house_cheer(state: &mut AppState) {
     let Some(owner) = preferred_local_owner_name(state) else {
         return;
     };
-    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
     let _ = queue_house_cheer_in_sim(
@@ -1101,7 +1130,7 @@ mod tests {
     use crate::sim::world::Simulation;
 
     #[test]
-    fn repair_click_publishes_a_raw_target_and_still_handles_a_full_outlist() {
+    fn repair_click_publishes_a_raw_target_and_is_refused_by_a_full_queue() {
         let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
             return;
         };
@@ -1132,17 +1161,15 @@ mod tests {
         );
         assert_eq!(&record.payload()[..4], &(building as i32).to_le_bytes());
         assert_eq!(record.payload()[4], 0x34);
-        for _ in 1..128 {
-            assert!(sim.issue_local_command(CommandEnvelope::synchronized(record.clone(), 41)));
-        }
+        let free = sim.available_local_command_slots();
+        let repair = CommandEnvelope::synchronized(record, 41);
+        assert!(sim.issue_local_commands(std::iter::repeat_n(repair, free)));
         assert_eq!(
             schedule_command_in_sim(&mut sim, "Americans", command),
-            Some(41)
+            None,
+            "a full queue refuses the click instead of dropping it"
         );
-        assert_eq!(
-            sim.network_command_queues().local_records().unwrap().len(),
-            128
-        );
+        assert_eq!(sim.pending_local_command_count(), free + 1);
         assert_eq!(sim.state_hash(), before);
     }
 
@@ -1485,12 +1512,12 @@ mod tests {
     }
 
     #[test]
-    fn local_outlist_overflow_keeps_click_success_and_local_options() {
+    fn full_local_queue_refuses_clicks_but_keeps_local_options() {
         let (mut sim, _, _) = two_human_sim();
-        // TryAppend6521C0 admits 128 events globally, before any payload
-        // receiver runs. A stale Stop still occupies its slot. PlayerSend
-        // 6FFDE6..6FFDEE ignores a full OutList's refusal and returns true.
-        for _ in 0..127 {
+        // Sim-scale deviation: TryAppend6521C0 admits 128 events and PlayerSend
+        // 6FFDE6..6FFDEE ignores a full OutList's refusal. VERA's larger queue
+        // refuses the click instead. A stale Stop still occupies its slot.
+        for _ in 1..sim.available_local_command_slots() {
             assert_eq!(
                 schedule_command_in_sim(&mut sim, "Local", Command::Stop { entity_id: 42 }),
                 Some(41)
@@ -1502,8 +1529,8 @@ mod tests {
         );
         assert_eq!(
             schedule_command_in_sim(&mut sim, "Peer", Command::LiveGameSpeed { speed: 6 }),
-            Some(41),
-            "overflow does not turn ordinary input feedback into a refusal"
+            None,
+            "a full queue refuses the click instead of dropping it"
         );
         assert_eq!(
             schedule_command_in_sim(&mut sim, "Local", Command::SetGameSpeed { speed: 2 }),
@@ -1516,13 +1543,13 @@ mod tests {
         // batch cannot free the event queue's occupied slots.
         assert_eq!(
             schedule_command_in_sim(&mut sim, "Peer", Command::LiveGameSpeed { speed: 6 }),
-            Some(41)
+            None
         );
         sim.advance_tick(&due, None, None, None, 33);
         assert_eq!(
             sim.session().game_options().game_speed,
             4,
-            "local Options runs first, then slot 128; the peer's 129th event was dropped"
+            "local Options runs first, then the last slot; the refused peer event never ran"
         );
         assert_eq!(
             schedule_command_in_sim(&mut sim, "Peer", Command::LiveGameSpeed { speed: 6 }),

@@ -159,6 +159,10 @@ impl WolAutoLoginQuery {
     }
 }
 
+/// `WOL:Locale00..37`: every locale the retail CSF names. WOLAPI asked the
+/// server for the count (API+0xD0); VERA's services answer with this one.
+pub(crate) const LOCALE_COUNT: i32 = 38;
+
 /// One row of `0xFE`'s list: the `WOL:Locale%02d` text and its item data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LocaleRow {

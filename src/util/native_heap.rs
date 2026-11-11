@@ -94,7 +94,8 @@ impl<T: Copy> NativeHeap<T> {
         true
     }
 
-    /// Remove the root, moving the last item to the root and sifting it down.
+    /// Remove the root, moving the last item to the root and sifting it down
+    /// (`FloatMinHeap::PopMinimum @ 0x005AC960`).
     pub(crate) fn pop(&mut self, less: impl Fn(&T, &T) -> bool) -> Option<T> {
         let first = *self.slots.first()?;
         let last = self.slots.pop().expect("nonempty heap");

@@ -31,6 +31,7 @@ fn context(input: &Value) -> WaveUpdateContext {
         owner_fire_coordinate: Some(coord(&input["source_flh"])),
         owner_current_target: Some(TargetKind::Entity(2)),
         target_position: Some(coord(&input["target_center"])),
+        ares: None,
         target_is_unit: true,
     }
 }
@@ -350,6 +351,8 @@ fn sonic_damage_request_uses_the_native_b4_bridge_plane() {
     }
 }
 
+// Ares CreateWave swaps the constructor's coordinates (ares_wave tests).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn original_fire_at_births_match_the_production_magnetic_commit() {
     // Each row is one original FireAt tail (0x006FF5F5..0x006FF656) for the
@@ -410,7 +413,7 @@ fn original_fire_at_births_match_the_production_magnetic_commit() {
         let mut event = crate::sim::world::SimFireEvent::for_test(source);
         event.target = TargetKind::Entity(target);
         event.fire_coord = fire.coord;
-        sim.commit_fired_wave(rules, &event, 3);
+        sim.commit_fired_wave(rules, &event, 3, 0, None);
         let wave = sim.waves.get(sim.active_wave_id(source).unwrap()).unwrap();
         assert_state(wave, &row["after"], true);
     }
@@ -441,6 +444,7 @@ fn original_update_reverses_only_a_unit_target() {
         owner_fire_coordinate: Some(coord(&input["source_flh"])),
         owner_current_target: Some(cell),
         target_position: Some(coord(&input["target_center"])),
+        ares: None,
         target_is_unit: false,
     };
     let terminal = wave.initialize(context, Some(&terrain));

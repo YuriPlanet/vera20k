@@ -586,6 +586,7 @@ impl Simulation {
             owner,
             other,
             anger.wrapping_neg(),
+            self.session.game_mode_nonzero(),
         );
         if let Some(house) = self.houses.get_mut(&owner)
             && house.enemy_house() == Some(other)
@@ -732,6 +733,7 @@ impl Simulation {
             owner,
             other,
             1,
+            self.session.game_mode_nonzero(),
         );
         // 0x004F9FE7..0x004FA01A: only an alliance is broken.
         if is_ally_by_object(Some(&self.house_alliances), &self.interner, owner, other) {
@@ -765,6 +767,7 @@ impl Simulation {
                     other,
                     other,
                     1,
+                    self.session.game_mode_nonzero(),
                 );
             }
             if !self.object_placement_scope_active() {

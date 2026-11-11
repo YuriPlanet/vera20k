@@ -91,11 +91,23 @@ fn native_superweapon_cameo_controls_match_modes_and_requests() {
         if supplied["granted"] == false {
             continue;
         }
+        // Installed Ares hands MultiMissile to SW_NuclearMissile, whose custom
+        // action ignores Action=; an unredirected stock type keeps the read.
+        let kind = if cfg!(feature = "ares") {
+            "PsychicReveal"
+        } else {
+            "MultiMissile"
+        };
         let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
-            "[SuperWeaponTypes]\n0=SUPER\n[SUPER]\nType=MultiMissile\nAction={}\nUseChargeDrain={}\n",
-            if supplied["action"] == 0 { "None" } else { "Nuke" },
+            "[SuperWeaponTypes]\n0=SUPER\n[SUPER]\nType={kind}\nAction={}\nUseChargeDrain={}\n",
+            if supplied["action"] == 0 {
+                "None"
+            } else {
+                "Nuke"
+            },
             supplied["drain"].as_bool().unwrap_or(false)
-        ))).unwrap();
+        )))
+        .unwrap();
         let mut sim = Simulation::new();
         let owner = sim.intern("Americans");
         sim.houses_mut_for_test()

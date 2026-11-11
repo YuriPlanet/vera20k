@@ -173,9 +173,6 @@ impl Fixture {
             &IniFile::from_str(&extra),
             &crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(&sounds)),
         );
-        rules.bind_animation_sequences(
-            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-        );
         // The native packet also carries constructor inputs for other
         // buildings and debris. This bounded fixture installs only GAPOWR's
         // normal/damaged ART, so bind its native SHP counts alone.
@@ -723,6 +720,9 @@ impl Fixture {
     }
 }
 
+/// Ares replaces the hostile arm (hooks `0x51E5BB`, `0x51E5E1`; see
+/// `sim::ares_rubble`'s tests).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn original_half_threshold_and_friendly_repair_object_actions() {
     let native = corpus();

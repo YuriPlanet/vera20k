@@ -736,7 +736,7 @@ fn harness_ini() -> IniFile {
     // DO set both keys. Closing this half needs a projectile section plus a
     // wall overlay or a level step in the fixture terrain, and the same
     // re-baseline.
-    IniFile::from_str(
+    let ini = IniFile::from_str(
         "[InfantryTypes]\n0=E1\n\n\
          [VehicleTypes]\n0=MTNK\n1=HARV\n\n\
          [AircraftTypes]\n\n\
@@ -755,7 +755,8 @@ fn harness_ini() -> IniFile {
          [105mm]\nDamage=65\nROF=50\nRange=6\nWarhead=AP\n\n\
          [SA]\nVerses=100%,100%,100%,90%,70%,25%,100%,25%,25%,0%,0%\n\n\
          [AP]\nVerses=100%,100%,90%,75%,75%,75%,60%,30%,20%,0%,0%\n",
-    )
+    );
+    crate::rules::tiberium_type::with_tiberium_image_slots(&ini)
 }
 
 fn harness_rules() -> RuleSet {
@@ -768,9 +769,6 @@ fn harness_rules() -> RuleSet {
     ));
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     rules
 }
 
@@ -895,7 +893,8 @@ fn seed_scenario(sim: &mut Simulation, rules: &RuleSet, overlays: &OverlayTypeRe
             &[],
             sim.map_size_diamond(),
             sim.playfield_bounds,
-        ),
+        )
+        .into(),
     );
     // Native MegaMission and IDLE select the actor from their payload, without
     // comparing its House to the Event header. Keep the fixture's two AI actor
@@ -1540,7 +1539,7 @@ fn fresh_drive_turn_publishes_on_request_frame_and_restores_before_admission() {
         assert!(
             restored
                 .zone_grid
-                .as_ref()
+                .as_deref()
                 .unwrap()
                 .is_native_load_pending()
         );
@@ -1555,7 +1554,7 @@ fn fresh_drive_turn_publishes_on_request_frame_and_restores_before_admission() {
         assert!(
             !restored
                 .zone_grid
-                .as_ref()
+                .as_deref()
                 .unwrap()
                 .is_native_load_pending()
         );

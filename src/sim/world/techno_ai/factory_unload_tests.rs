@@ -1256,7 +1256,7 @@ fn original_unit_move_deployment_guards_match_mission_dispatch() {
 
         // The arena's pose differs from the native crop. Only dispatch inputs
         // and effects are compared: this guard never resolves coordinates.
-        super::super::dispatch_foot_mission(&mut sim, id, &rules, ObjectAiCtx::default());
+        super::super::dispatch_foot_mission(&mut sim, id, &rules, ObjectAiCtx::default()).unwrap();
 
         let entity = sim.substrate.entities.get(id).unwrap();
         let expected = &after["actor"];

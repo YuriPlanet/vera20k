@@ -177,6 +177,36 @@ impl InfantryPips {
     }
 }
 
+/// InfantryType's fixed-ART reads, retained by the process-resident type.
+/// The constructor sets Crawls (`+0xEBD`) to true (`0x00523788`) and clears
+/// the four discharge frames (`+0xE40..+0xE4C`, `0x005236D7..0x005236F9`).
+/// Every reached ReadINI pass reads all five from the ART section its Image
+/// names, each with its current value as the default
+/// (`InfantryTypeClass::ReadINI`, `0x005246A1..0x0052472D`), so a pass whose
+/// section lacks a key keeps the value an earlier pass read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct InfantryArt {
+    crawls: bool,
+    discharge_frames: [i32; 4],
+}
+
+impl Default for InfantryArt {
+    fn default() -> Self {
+        Self {
+            crawls: true,
+            discharge_frames: [0; 4],
+        }
+    }
+}
+
+impl InfantryArt {
+    /// One pass's reads from its Image's ART section.
+    pub(crate) fn read_pass(&mut self, section: &IniSection) {
+        self.crawls = section.read_bool("Crawls", self.crawls);
+        crate::rules::art_data::read_infantry_discharge_frames(section, &mut self.discharge_frames);
+    }
+}
+
 /// InfantryType constructor clears EBE/EC2..EC6. ReadINI reads these
 /// current-default flags, then 52466E..52469A forces Infiltrate for C4,
 /// Engineer or Agent, independently of either theft byte.
@@ -394,6 +424,33 @@ impl HouseMasks {
             forbidden: rules.house_type_mask(&object.forbidden_houses),
         }
     }
+}
+
+/// The `VoxelBarrelOffsetTo*` pivot triples of a `BarrelAnimIsVoxel=`
+/// (`+0x16C6`) building type. `BuildingTypeClass::ReadINI @ 0x0045FE50` reads
+/// them in native field order right after `BarrelAnimIsVoxel=` (and the
+/// unread `VoxelBarrelFile=` name) through `Get_TripleInt @ 0x00529CA0`
+/// (`0x00464697`, `0x004646C0`, `0x004646E9`), each pass using the current
+/// triple as its self-default. The constructor `0x0045DD90` never writes
+/// them, so native's first default is uninitialized heap memory; VERA's is
+/// `(0,0,0)` (a `fire_coordinate` residual). The barrel matrix chain
+/// `0x00458810` composes them for `BuildingClass::GetTurretDrawPosition`
+/// (`0x00453BF0`) and for the unported barrel draw (`0x0043E63E`);
+/// `BuildingTypeClass::ComputeCRC` (`0x00464B30`) also hashes them. The
+/// fourth triple, `VoxelBarrelOffsetToBarrelEnd=` (`+0x1754`, read at
+/// `0x00464712`), is the point VERA's zero chain scale (`+0x1728`)
+/// multiplies away, so VERA does not read it.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct BarrelVoxelOffsets {
+    /// `VoxelBarrelOffsetToPitchPivotPoint=` (`+0x1730/34/38`), the pitch
+    /// pivot the chain translates by after the barrel-elevation turn.
+    pub pitch_pivot: [i32; 3],
+    /// `VoxelBarrelOffsetToRotatePivotPoint=` (`+0x173C/40/44`), translated
+    /// between the body-facing turn and the elevation turn.
+    pub rotate_pivot: [i32; 3],
+    /// `VoxelBarrelOffsetToBuildingPivotPoint=` (`+0x1748/4C/50`), the first
+    /// translation off the identity.
+    pub building_pivot: [i32; 3],
 }
 
 /// A game object definition parsed from a rules.ini section.
@@ -638,7 +695,9 @@ pub struct ObjectType {
     /// through INIClass::ReadBool 0x5295F0 over the constructor's false. No
     /// retail type sets it; Drive/Ship Process_Movement coerces codes below 7
     /// to 0 for a train (0x4B34DE / 0x6A2B2D) and passes it as Find_Path's
-    /// append flag (0x4B3EF2).
+    /// append flag (0x4B3EF2). Process_Drive_Track kills what the train
+    /// cannot crush in each cell it enters (0x4B185C / 0x6A0EE8,
+    /// `Simulation::track_train_smash`).
     pub is_train: bool,
     /// Lepton distance from destination at which braking begins (SlowdownDistance=).
     /// Native default500 leptons.
@@ -882,6 +941,11 @@ pub struct ObjectType {
     /// The same retained reader stores at713109. Capture708DC0 falls to
     /// Enter709020 for -1; registered scalars queue without a Main draw.
     voice_capture: Option<String>,
+    /// Ares TechnoTypeExt `VoiceRepair` (ValueableIdx<VocClass>, unset -1):
+    /// the attack voice of a repairing weapon (TechnoClass_SelectFiringVoice
+    /// 1004B1D0, hook 0x7090A8).
+    #[cfg(feature = "ares")]
+    ares_voice_repair: Option<String>,
     /// `PreventAttackMove=` — the type refuses attack-move orders even when it
     /// carries a real `Primary=`.
     ///
@@ -1077,20 +1141,40 @@ pub struct ObjectType {
     /// uses exact `RadialFireSegments`, ReadInt5276D0 and the current value.
     /// Signed and unclamped: FireAt distinguishes zero, negative and positive.
     pub radial_fire_segments: i32,
-    /// VXL turret model name for buildings (TurretAnim= in rules.ini, e.g., "SAM").
-    /// The engine loads `{TurretAnim}.VXL` + `{TurretAnim}.HVA` as the turret model.
+    /// A building's turret name (`TurretAnim=` in rules, `BuildingType
+    /// +0x11B0`, e.g. "SAM"). With `TurretAnimIsVoxel=` the engine loads
+    /// `{TurretAnim}.VXL` + `{TurretAnim}.HVA` as the turret model; without it
+    /// the name is the building's slot-9 animation
+    /// ([`crate::rules::art_data::building_turret_anim_config`]).
     pub turret_anim: Option<String>,
+    /// Slot 9's name for a damaged building (`+0x11C0`): `TurretAnimDamaged=`
+    /// (`0x004644BC`), or the normal name when that is empty (`0x004644FD`).
+    pub turret_anim_damaged: Option<String>,
     /// Whether the turret anim is a VXL model (TurretAnimIsVoxel=, default false).
-    /// When false, the TurretAnim is an SHP overlay handled by the building anim system.
+    /// When false, the TurretAnim is an SHP animation in the building's slot 9.
     pub turret_anim_is_voxel: bool,
     /// Pixel X offset for building turret placement (TurretAnimX=).
     pub turret_anim_x: i32,
     /// Pixel Y offset for building turret placement (TurretAnimY=).
     pub turret_anim_y: i32,
+    /// `TurretAnimYSort=` (`+0x11EC`, read at `0x0046462D`): slot 9's YSort.
+    pub turret_anim_y_sort: i32,
     /// Z-seed adjustment for a voxel turret's blit (TurretAnimZAdjust=, negative
     /// = nearer the camera). Building vtable `0x7E3EBC+0x2EC` folds it into the
     /// draw Z only when `TurretAnimIsVoxel`; it is not a ground-layer sort key.
     pub turret_anim_z_adjust: i32,
+    /// `BarrelAnimIsVoxel=` (`BuildingType +0x16C6`): arms the
+    /// `BuildingClass::GetFLH @ 0x00453840` arm (`0x004539A1..0x004539DE`)
+    /// that replaces the whole coordinate with `GetTurretDrawPosition`
+    /// (`0x00453BF0`). ReadINI reads it at `0x00464661` through
+    /// `INIClass::ReadBool @ 0x005295F0` with the current byte as default; the
+    /// constructor zeroes it (`0x0045E16F`), so it defaults false.
+    /// `VoxelBarrelFile=` (`+0x1714`, read at `0x0046467E`) names the barrel
+    /// model but nothing on this fire path consumes it.
+    pub barrel_anim_is_voxel: bool,
+    /// The `VoxelBarrelOffsetTo*` pivot triples ([`BarrelVoxelOffsets`]) the
+    /// barrel arm's matrix chain composes.
+    pub barrel_voxel: BarrelVoxelOffsets,
     /// Scan radius in cells for auto-targeting idle enemies. If None, defaults
     /// to the primary weapon's range at runtime.
     pub guard_range: Option<SimFixed>,
@@ -1110,6 +1194,62 @@ pub struct ObjectType {
     /// retaliation and script-issued missions retain their existing owners.
     #[cfg(feature = "ares")]
     no_manual_fire: bool,
+    /// Ares TechnoTypeExt+304 `ImmuneToAbduction=` (constructor false): no
+    /// `Abductor=` weapon takes this type (conductAbduction 10054A80).
+    #[cfg(feature = "ares")]
+    pub(crate) ares_immune_to_abduction: bool,
+    /// ObjectType `IgnoresFirestorm=` (`+0x239`, constructor false), which
+    /// `ObjectTypeClass::ReadINI @ 0x005F92D0` reads with ReadBool for every
+    /// type. Only the Ares firestorm walls read it (`sim::ares_firestorm`),
+    /// so only Ares builds keep it.
+    #[cfg(feature = "ares")]
+    pub(crate) ignores_firestorm: bool,
+    /// Ares TechnoTypeExt+4C4 `Passengers.BySize=` (constructor true): the
+    /// hold counts passengers' `Size=` against `Passengers=`, else heads
+    /// (CanHoldPassenger 100448E0, abduction only here).
+    #[cfg(feature = "ares")]
+    pub(crate) ares_passengers_by_size: bool,
+    /// Ares TechnoTypeExt+46C `Saboteur=` (constructor false, Valueable read
+    /// in `TechnoTypeExt::ExtData::LoadFromINIFile`): an `Infiltrate=`
+    /// infantryman blows up the buildings it enters
+    /// (`InfantryExt::GetInfiltrateAction @ 100252D0`).
+    #[cfg(feature = "ares")]
+    saboteur: bool,
+    /// BuildingTypeExt's `SpyEffect.*` and `ImmuneToSaboteurs=`, projected
+    /// from the retained rules reader (`rules::ares_infiltration`).
+    #[cfg(feature = "ares")]
+    infiltration: crate::rules::ares_infiltration::InfiltrationTypeRules,
+    /// BuildingTypeExt's rubble and repair keys, projected from the retained
+    /// rules reader (`rules::ares_building_type`).
+    #[cfg(feature = "ares")]
+    building_type_ext: crate::rules::ares_building_type::BuildingTypeExtRules,
+    /// TechnoTypeExt Experience.* and Promote.* (TypeExt+17B..+1B0,
+    /// +503..+540), projected from the retained rules reader
+    /// (`rules::ares_veterancy`).
+    #[cfg(feature = "ares")]
+    veterancy: crate::rules::ares_veterancy::VeterancyTypeRules,
+    /// TypeExt+524/+528 `EVA.VeteranPromoted`/`EVA.ElitePromoted`
+    /// (ValueableIdx<VoxClass>): Initialize1003DEC0 seeds both with
+    /// `EVA_UnitPromoted`; `none` silences the cue.
+    #[cfg(feature = "ares")]
+    promotion_eva: [Option<String>; 2],
+    /// BuildingTypeExt+184 `LostEvaEvent` (ValueableIdx<VoxClass>): the
+    /// Initialize of `1000DCF0` seeds it with `EVA_TechBuildingLost`; `none`
+    /// silences the cue.
+    #[cfg(feature = "ares")]
+    lost_eva: Option<String>,
+    /// BuildingTypeExt Academy.* (+138..+170), projected from the retained
+    /// rules reader (`rules::ares_veterancy`).
+    #[cfg(feature = "ares")]
+    academy: crate::rules::ares_veterancy::AcademyTypeRules,
+    /// TechnoTypeExt BuildTime.*, FactoryPlant.Multiplier and cloning and
+    /// BuildingTypeExt CloningFacility (`rules::ares_production`).
+    #[cfg(feature = "ares")]
+    production: crate::rules::ares_production::ProductionTypeRules,
+    /// TechnoTypeExt `Cursor.*` and BuildingTypeExt `Cursor.Spy`
+    /// (`rules::ares_mouse_cursor`); presentation only.
+    #[cfg(feature = "ares")]
+    ares_cursors: crate::rules::ares_mouse_cursor::TechnoCursors,
     /// Ares3.0 TypeExt+646/+647. Unset uses the class/score default at the
     /// Add/Remove_Tracking owner; an explicit false is a distinct retained input.
     #[cfg(feature = "ares")]
@@ -1134,6 +1274,19 @@ pub struct ObjectType {
     bounty: crate::rules::ares_bounty::BountyTypeRules,
     #[cfg(feature = "ares")]
     crew: crate::rules::ares_crew::CrewTypeRules,
+    /// TechnoTypeExt combat and movement keys, projected from the retained
+    /// rules reader (`rules::ares_techno_type`).
+    #[cfg(feature = "ares")]
+    techno_combat: crate::rules::ares_techno_type::AresTechnoTypeRules,
+    /// Ares TypeExt+278/+280/+1F8/+1F9/+1FC/+204, projected from the retained
+    /// rules reader (`rules::ares_cloak_power`).
+    #[cfg(feature = "ares")]
+    cloak_power: crate::rules::ares_cloak_power::CloakPowerTypeRules,
+    /// Ares TypeExt+1E8/+1EC CloakSound and +1F0/+1F4 DecloakSound
+    /// (constructor unset): unset, explicit silence and a resolved
+    /// Voc ID remain distinct.
+    #[cfg(feature = "ares")]
+    cloak_sounds: [Option<Option<String>>; 2],
     /// Immutable projection of the retained TechnoTypeExt+308/+314/+320/+321
     /// reader. Country identities bind during Process, never from merged INI.
     #[cfg(feature = "ares")]
@@ -1398,14 +1551,20 @@ pub struct ObjectType {
     /// `TechnoType+0xD4C`, `SlaveReloadRate=`: frames a slave waits inside
     /// after paying its load. ReadInt at `0x00714E4A`; constructor 0.
     pub slave_reload_rate: i32,
-    /// Whether this infantry is a slave unit (Slaved=yes in rules.ini).
-    /// Slave units are bound to a master (Slave Miner) and have restricted AI.
+    /// `Slaved=` (TechnoType `+0xD3E`). gamemd reads the key, but no gameplay
+    /// code reads the field, natively or here: a slave's ties to its master
+    /// come from the master's `Enslaves=` and SlaveManager.
     pub slaved: bool,
     /// `Fearless=yes` on InfantryType. Suppresses fear/prone panic changes.
     pub fearless: bool,
     /// `Fraidycat=yes` on InfantryType. First fear hit immediately maxes fear.
     pub fraidycat: bool,
-    /// `Crawls=yes` from art.ini. Controls the prone movement speed branch.
+    /// InfantryType+EC1, retained Civilian ReadINI52455F. The instance
+    /// predicate413CD0 also excludes the separate nominal-survivor byte.
+    /// Its type-CRC524840/report64DEA0 consumer remains a separate residual.
+    pub civilian: bool,
+    /// `Crawls=` from ARTMD (InfantryTypeClass `+0xEBD`), the last reached
+    /// pass's read ([`InfantryArt`]). Gates Down and the prone speed.
     pub crawls: bool,
     /// Phobos `InfantryTypeExt::ProneSpeed`: the prone movement multiplier for
     /// this type. Unset defers to the `[General]` value `Crawls=` selects.
@@ -1472,6 +1631,11 @@ pub struct ObjectType {
     /// independent of original Unit TechnoType+D95 (10048CB5..10048CDB).
     #[cfg(feature = "ares")]
     aircraft_crashable: Option<bool>,
+    /// Ares TypeExt+150 `IronCurtain.Modifier` and +158
+    /// `ForceShield.Modifier` (constructor 1.0), projected from the retained
+    /// rules reader.
+    #[cfg(feature = "ares")]
+    curtain_modifiers: [NativeF64Bits; 2],
     /// `TiltCrashJumpjet=` (`TechnoTypeClass+0xD22`, constructor false at
     /// `0x007114CA`, `TechnoTypeClass::ReadINI 0x00713377..0x00713391`, key
     /// string `0x00844118`): the Jumpjet Draw_Matrix tilts the body by its
@@ -1503,6 +1667,12 @@ pub struct ObjectType {
     /// Constructor defaults and executed reads: anytown_damage/unit_unlimbo.
     pub(crate) small_visceroid: bool,
     pub(crate) large_visceroid: bool,
+    /// `TiberiumHeal=` (`TechnoTypeClass+0xC92`): constructor false
+    /// (`0x00710AF0`), ReadBool over the current value at `0x00714C09`. Only
+    /// Ares reads it in play: the Foot heal (`10014BA0`) and the
+    /// TiberiumRemains default (`1004B050`).
+    #[cfg(feature = "ares")]
+    pub(crate) tiberium_heal: bool,
     /// `DeployToLand=` (`TechnoTypeClass+0x6AD`, `TechnoTypeClass::ReadINI`
     /// `0x00714809..0x00714816`, key string `0x00843A90`). Stock sets it on the
     /// Siege Chopper (`[SCHP]`, `[SCHD]`). A Jumpjet Unit with it keeps full
@@ -1521,6 +1691,9 @@ pub struct ObjectType {
     /// AircraftType+DFC, Carryall reader41CC9B..41CCC7; ctor41C8D0=false.
     /// Aircraft's landing-base query41B6A0 combines it with live cargo/radio.
     pub(crate) carryall: bool,
+    /// AircraftType's retained ART Trailer/SpawnDelay (41CCEF..41CD4E),
+    /// projected only by the ordered Rules process owner.
+    aircraft_trailer: crate::rules::aircraft_trailer::AircraftTrailer,
     /// `JumpJet=` in rules.ini — `TechnoTypeClass+0xD94`, a sibling of the
     /// nine parameters below rather than a gate on them.
     pub jumpjet: bool,
@@ -1947,10 +2120,8 @@ pub struct ObjectType {
     /// Immutable projection of the retained InfantryType Pip/OccupyPip state.
     infantry_pips: InfantryPips,
 
-    /// ReadSequenceData's sound pairs from every reached rules pass,
-    /// projected from the native type registry; bound by
-    /// [`Self::bind_sequence_sounds`].
-    sequence_sound_reads: Vec<crate::rules::infantry_sequence::SequenceSoundRead>,
+    /// Immutable projection of the type's retained ReadSequenceData523D00 bank.
+    infantry_sequence_bank: Option<crate::rules::infantry_sequence::InfantrySequenceBank>,
 
     /// The bound record sounds: at most two per DoType (record `+0x10`).
     sequence_sounds: Vec<crate::rules::infantry_sequence::SequenceSound>,
@@ -2008,7 +2179,7 @@ pub struct ObjectType {
     pub elite_weapon_list: Vec<Option<String>>,
     /// Derived: the weapons `weapon_list`, `elite_weapon_list`,
     /// `occupy_weapon` and `elite_occupy_weapon` name, as the RuleSet that
-    /// built the type resolved them (`RuleSet::resolve_type_weapons`).
+    /// built the type resolved them (`RuleSet::resolve_handles`).
     resolved_weapons: crate::rules::ruleset::TypeWeapons,
     /// Retained WeaponStruct and transport-port coordinates, projected from
     /// the ordered type reader rather than reconstructed from the final Image.
@@ -2094,6 +2265,9 @@ pub struct ObjectType {
     /// Ares TechnoTypeExt+3DC; AcquireHunterSeekerTarget10042E40 checks1004306C.
     #[cfg(feature = "ares")]
     hunter_seeker_ignore: bool,
+    /// Ares TechnoTypeExt `Chronoshift.*` (+0x160..+0x162).
+    #[cfg(feature = "ares")]
+    chronoshift: crate::rules::superweapon_influence::ChronoshiftRules,
     pub non_vehicle: bool,
     pub jumpjet_turn: bool,
     pub emp_pulse_cannon: bool,
@@ -2454,11 +2628,17 @@ pub struct ObjectType {
     concentric_radial_indicator: bool,
     /// TechnoType+CD2: ReadInt713FBC stores AL without a clamp;4566EC
     /// sign-extends it. The constructor's default is zero, not General.GapRadius.
-    pub gap_radius_in_cells: i8,
+    /// Ares reads it as a whole int into TechnoTypeExt+0x650 (constructor 0),
+    /// which every gap radius read takes instead: CreateGap/RemoveGap
+    /// (1004D330, hooks 0x6FB1B5/0x6FB4A3), the operational edge (1004D250,
+    /// hook 0x454BDC), GetSensorRange (1004D170, hook 0x4566D5) and the
+    /// Mission_Unload toggle (1004D1B0, hook 0x44E2B0).
+    pub gap_radius_in_cells: i32,
     /// TechnoType+CD3 `SuperGapRadiusInCells=`: the gap radius while
     /// super-charged. Mission_Unload's gap arm needs it nonzero
-    /// (`0x0044E2B0`) and caches it in `+0x26C` (`0x0044E2DC`).
-    pub super_gap_radius_in_cells: i8,
+    /// (`0x0044E2B0`) and caches it in `+0x26C` (`0x0044E2DC`). Ares: the
+    /// whole int at TechnoTypeExt+0x654, as above.
+    pub super_gap_radius_in_cells: i32,
     /// BuildingType+170C: signed ReadInt460C41, current default zero.
     pub psychic_detection_radius: i32,
     /// `SensorArray=` — building sensor-array flag used by GetSensorRange.
@@ -2631,7 +2811,9 @@ impl ObjectType {
         &self.shp_image_loads
     }
 
-    pub(crate) fn voxel_image_load(&self) -> Option<&str> {
+    /// The voxel this scenario's `TechnoTypeClass::ReadINI` loaded
+    /// (`0x0071609C`), if a pass reached the load.
+    pub fn voxel_image_load(&self) -> Option<&str> {
         self.voxel_image_load.as_deref()
     }
 
@@ -2726,9 +2908,27 @@ impl ObjectType {
         self.bounty = bounty.clone();
     }
 
+    /// AircraftType's retained fixed-ART Trailer and signed SpawnDelay.
+    pub fn aircraft_trailer(&self) -> &crate::rules::aircraft_trailer::AircraftTrailer {
+        &self.aircraft_trailer
+    }
+
+    pub(crate) fn project_aircraft_trailer(
+        &mut self,
+        trailer: &crate::rules::aircraft_trailer::AircraftTrailer,
+    ) {
+        self.aircraft_trailer.clone_from(trailer);
+    }
+
     #[cfg(feature = "ares")]
     pub(crate) fn aircraft_crashable_override(&self) -> Option<bool> {
         self.aircraft_crashable
+    }
+
+    /// Ares `IronCurtain.Modifier` and `ForceShield.Modifier`, in that order.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_curtain_modifiers(&self) -> [NativeF64Bits; 2] {
+        self.curtain_modifiers
     }
 
     #[cfg(feature = "ares")]
@@ -2739,6 +2939,80 @@ impl ObjectType {
     #[cfg(feature = "ares")]
     pub(crate) fn bind_crew_rules(&mut self, crew: &crate::rules::ares_crew::CrewTypeRules) {
         self.crew = crew.clone();
+    }
+
+    /// The type's TechnoTypeExt combat and movement keys.
+    #[cfg(feature = "ares")]
+    pub(crate) fn techno_combat(&self) -> &crate::rules::ares_techno_type::AresTechnoTypeRules {
+        &self.techno_combat
+    }
+
+    /// Ares TechnoTypeExt `PrerequisiteLists` (+0x40): `Prerequisite=`
+    /// (list 0, also `Prerequisite.List0=`), then `Prerequisite.List1=` on.
+    /// A human needs any one of them on the map (`PrerequisitesMet @
+    /// 10021CA0`); the planner any one among its types (`10021C50`).
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_prerequisite_lists(
+        &self,
+    ) -> impl Iterator<Item = &[crate::rules::prerequisite::Prerequisite]> {
+        std::iter::once(self.prerequisite.as_slice()).chain(
+            self.techno_combat
+                .prerequisites()
+                .extra_lists()
+                .iter()
+                .map(Vec::as_slice),
+        )
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_techno_combat_rules(
+        &mut self,
+        rules: &crate::rules::ares_techno_type::AresTechnoTypeRules,
+    ) {
+        self.techno_combat = rules.clone();
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn cloak_power(&self) -> &crate::rules::ares_cloak_power::CloakPowerTypeRules {
+        &self.cloak_power
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_cloak_power_rules(
+        &mut self,
+        rules: &crate::rules::ares_cloak_power::CloakPowerTypeRules,
+    ) {
+        self.cloak_power = rules.clone();
+    }
+
+    /// The progress stages of this type's cloak: Ares Cloakable.Stages
+    /// (StartUncloaking hook7036EB ->10048400, VisualCharacter hook703A79 ->
+    /// 100484D0), else `[General]CloakingStages`.
+    pub fn cloaking_stages(&self, general: i32) -> i32 {
+        #[cfg(feature = "ares")]
+        {
+            self.cloak_power.cloaking_stages(general)
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            general
+        }
+    }
+
+    /// Ares `SensorArray.Warn=` (TypeExt+204, default true): a sensed
+    /// enemy of this type raises the radar event (hook70DA95).
+    #[cfg(feature = "ares")]
+    pub fn sensor_array_warn(&self) -> bool {
+        self.cloak_power.sensor_array_warn()
+    }
+
+    /// The cloak (`false`) or decloak (`true`) sound override, `None` when
+    /// unset. Hooks70380A/70375B use it before their Rules fallbacks.
+    #[cfg(feature = "ares")]
+    pub(crate) fn cloak_sound_override(&self, decloak: bool) -> Option<Option<&str>> {
+        self.cloak_sounds[usize::from(decloak)]
+            .as_ref()
+            .map(|cue| cue.as_deref())
     }
 
     #[cfg(feature = "ares")]
@@ -2773,6 +3047,7 @@ impl ObjectType {
         cloak_allowed: bool,
         turret_rot_override: Option<i32>,
         aircraft_crashable: Option<bool>,
+        curtain_modifiers: [NativeF64Bits; 2],
     ) {
         self.emp = emp.cloned();
         #[cfg(feature = "ares")]
@@ -2782,6 +3057,7 @@ impl ObjectType {
             self.cloak_allowed = cloak_allowed;
             self.turret_rot_override = turret_rot_override;
             self.aircraft_crashable = aircraft_crashable;
+            self.curtain_modifiers = curtain_modifiers;
         }
         #[cfg(not(feature = "ares"))]
         let _ = (
@@ -2790,6 +3066,7 @@ impl ObjectType {
             cloak_allowed,
             turret_rot_override,
             aircraft_crashable,
+            curtain_modifiers,
         );
     }
 
@@ -2823,13 +3100,18 @@ impl ObjectType {
     #[cfg(feature = "ares")]
     pub(crate) fn bind_super_weapon_techno_rules(
         &mut self,
-        designator: Option<i32>,
-        inhibitor: Option<i32>,
-        hunter_seeker_ignore: bool,
+        retained: &crate::rules::superweapon_influence::TechnoSuperWeaponRules,
     ) {
-        self.designator_range = designator;
-        self.inhibitor_range = inhibitor;
-        self.hunter_seeker_ignore = hunter_seeker_ignore;
+        self.designator_range = retained.designator_range;
+        self.inhibitor_range = retained.inhibitor_range;
+        self.hunter_seeker_ignore = retained.hunter_seeker_ignore;
+        self.chronoshift = retained.chronoshift;
+    }
+
+    /// TechnoTypeExt `Chronoshift.Allow`/`.IsVehicle`/`.Crushable`.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_chronoshift(&self) -> crate::rules::superweapon_influence::ChronoshiftRules {
+        self.chronoshift
     }
 
     #[cfg(feature = "ares")]
@@ -2878,10 +3160,218 @@ impl ObjectType {
     /// The optional Ares manual-action restriction, shared by cursor and
     /// click through the existing action owner. INIs cannot enable it in a
     /// retail-only build.
+    /// Ares `Saboteur=` ([`Self::saboteur`] field doc).
+    #[cfg(feature = "ares")]
+    pub(crate) const fn saboteur(&self) -> bool {
+        self.saboteur
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn infiltration_rules(
+        &self,
+    ) -> &crate::rules::ares_infiltration::InfiltrationTypeRules {
+        &self.infiltration
+    }
+
+    /// Ares `SpyEffect.RevealProduction`, which the status text asks.
+    #[cfg(feature = "ares")]
+    pub fn spy_reveals_production(&self) -> bool {
+        self.infiltration.reveal_production
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_infiltration_rules(
+        &mut self,
+        infiltration: &crate::rules::ares_infiltration::InfiltrationTypeRules,
+    ) {
+        self.infiltration = infiltration.clone();
+    }
+
+    /// Ares BuildingTypeExt rubble and repair keys (`rules::ares_building_type`).
+    #[cfg(feature = "ares")]
+    pub(crate) fn building_type_ext(
+        &self,
+    ) -> &crate::rules::ares_building_type::BuildingTypeExtRules {
+        &self.building_type_ext
+    }
+
+    /// BuildingTypeExt `Fake=`, which DrawExtraInfo (Ares 10015F10, hook
+    /// 0x70AA60) labels `TXT_FAKE` in place of its other texts.
+    #[cfg(feature = "ares")]
+    pub fn ares_fake(&self) -> bool {
+        self.building_type_ext.fake()
+    }
+
+    /// BuildingTypeExt `Firestorm.Wall` (`sim::ares_firestorm`), for the
+    /// client's health bar (hook `0x6F64CB`).
+    #[cfg(feature = "ares")]
+    pub fn ares_firestorm_wall(&self) -> bool {
+        self.building_type_ext.firestorm_wall
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_building_type_ext(
+        &mut self,
+        ext: &crate::rules::ares_building_type::BuildingTypeExtRules,
+    ) {
+        self.building_type_ext = ext.clone();
+    }
+
+    /// Ares CompleteInitialization (`1000D380`, hook 0x679CAF) over this
+    /// building's final foundation; `foundation_of` resolves a BuildingType
+    /// by name.
+    #[cfg(feature = "ares")]
+    pub(crate) fn complete_building_type_ext<'a>(
+        &mut self,
+        foundation_of: impl Fn(&str) -> Option<&'a crate::rules::foundation::Foundation>,
+    ) {
+        self.building_type_ext
+            .complete_initialization(&self.id, &self.foundation, foundation_of);
+    }
+
+    /// Ares Experience.*/Promote.* (`rules::ares_veterancy`).
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_veterancy(&self) -> &crate::rules::ares_veterancy::VeterancyTypeRules {
+        &self.veterancy
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_ares_veterancy(
+        &mut self,
+        veterancy: &crate::rules::ares_veterancy::VeterancyTypeRules,
+    ) {
+        self.veterancy = veterancy.clone();
+    }
+
+    /// The EVA cue a promotion to veteran or elite queues, `None` silent.
+    #[cfg(feature = "ares")]
+    pub(crate) fn promotion_eva(&self, elite: bool) -> Option<&str> {
+        self.promotion_eva[usize::from(elite)].as_deref()
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_promotion_eva(&mut self, eva: [Option<String>; 2]) {
+        self.promotion_eva = eva;
+    }
+
+    /// Ares BuildingTypeExt `LostEvaEvent`.
+    #[cfg(feature = "ares")]
+    pub(crate) fn lost_eva(&self) -> Option<&str> {
+        self.lost_eva.as_deref()
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_lost_eva(&mut self, eva: Option<String>) {
+        self.lost_eva = eva;
+    }
+
+    /// Ares TechnoTypeExt `EnemyUIName`, the CSF label a non-allied player
+    /// reads for a building of this type (BuildingClass_GetUIName, Ares.dll
+    /// 10015DA0, hook 0x459ED0).
+    #[cfg(feature = "ares")]
+    pub fn enemy_ui_name(&self) -> Option<&str> {
+        self.techno_combat.presentation().enemy_ui_name()
+    }
+
+    /// Ares BuildingTypeExt `SlamSound`: `None` keeps `[AudioVisual]
+    /// BuildingSlam`, `Some(None)` silences it.
+    #[cfg(feature = "ares")]
+    pub fn slam_sound(&self) -> Option<Option<&str>> {
+        self.building_type_ext.slam_sound()
+    }
+
+    /// Ares TechnoTypeExt `EVA.Lost` (`rules::ares_techno_type`).
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_unit_lost_eva(&mut self, eva: Option<String>) {
+        self.techno_combat.bind_unit_lost_eva(eva);
+    }
+
+    /// Ares TechnoTypeExt `EVA.Lost`: `Some(None)` is the silent -1, `None`
+    /// rules read without the EVA catalog, where Initialize's seed applies
+    /// (`EVA_UnitLost` for a non-building, -1 for a building).
+    #[cfg(feature = "ares")]
+    pub(crate) fn unit_lost_eva(&self) -> Option<Option<&str>> {
+        self.techno_combat.unit_lost_eva()
+    }
+
+    /// Ares BuildingTypeExt Academy.* (`rules::ares_veterancy`).
+    #[cfg(feature = "ares")]
+    pub(crate) fn academy(&self) -> &crate::rules::ares_veterancy::AcademyTypeRules {
+        &self.academy
+    }
+
+    /// Ares BuildTime.*, FactoryPlant.Multiplier and cloning
+    /// (`rules::ares_production`).
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_production(&self) -> &crate::rules::ares_production::ProductionTypeRules {
+        &self.production
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_ares_production(
+        &mut self,
+        production: &crate::rules::ares_production::ProductionTypeRules,
+    ) {
+        self.production = production.clone();
+    }
+
+    /// The type's Ares `[MouseCursors]` keys (`Cursor.Move`, `Cursor.Spy`, ...).
+    #[cfg(feature = "ares")]
+    pub fn ares_cursors(&self) -> &crate::rules::ares_mouse_cursor::TechnoCursors {
+        &self.ares_cursors
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_ares_cursors(
+        &mut self,
+        cursors: crate::rules::ares_mouse_cursor::TechnoCursors,
+    ) {
+        self.ares_cursors = cursors;
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_production_mut(
+        &mut self,
+    ) -> &mut crate::rules::ares_production::ProductionTypeRules {
+        &mut self.production
+    }
+
+    /// Whether `[General] WallBuildSpeedCoefficient=` scales this type's
+    /// build time: a `Wall=` BuildingType (Time_To_Build6F4917,
+    /// Select6AB8BB), with Ares only while `BuildTime.Speed` is unset
+    /// (10041C6C..10041C87, 10041950).
+    pub fn wall_build_speed_applies(&self) -> bool {
+        let wall = self.category == ObjectCategory::Building && self.wall;
+        #[cfg(feature = "ares")]
+        let wall = wall && self.production.build_time_speed().is_none();
+        wall
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_academy(
+        &mut self,
+        academy: &crate::rules::ares_veterancy::AcademyTypeRules,
+    ) {
+        self.academy = academy.clone();
+    }
+
     pub const fn no_manual_fire(&self) -> bool {
         #[cfg(feature = "ares")]
         {
             self.no_manual_fire
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            false
+        }
+    }
+
+    /// Ares TechnoTypeExt+4C5 `NoManualUnload` (`rules::ares_techno_type`);
+    /// false in stock builds.
+    pub fn no_manual_unload(&self) -> bool {
+        #[cfg(feature = "ares")]
+        {
+            self.techno_combat.movement().no_manual_unload()
         }
         #[cfg(not(feature = "ares"))]
         {
@@ -3274,14 +3764,24 @@ impl ObjectType {
     /// GetCurrentWeapon70E1A0's resolved range; Option already represents the
     /// null WeaponStruct/WeaponType test70E240. No General.GapRadius fallback.
     pub fn building_sensor_range(&self, gap_supercharged: bool, weapon_range: Option<i32>) -> i32 {
+        // Ares BuildingClass_GetRangeOfRadial_Radius (10048E60, hook
+        // 0x4566B0) answers a set RadialIndicatorRadius at the entry.
+        #[cfg(feature = "ares")]
+        if let Some(radius) = self.techno_combat.presentation().radial_indicator_radius() {
+            return radius;
+        }
         if self.psychic_detection_radius > 0 {
             self.psychic_detection_radius
         } else if self.gap_generator {
-            i32::from(if gap_supercharged {
+            if gap_supercharged {
                 self.super_gap_radius_in_cells
             } else {
                 self.gap_radius_in_cells
-            })
+            }
+        } else if crate::rules::ARES_ENABLED && self.sensor_array {
+            // Ares GetRangeOfRadial_SensorArray10016D30 (hook4566F9) shows
+            // the SensorsSight the array deposits.
+            i32::from(self.sensors_sight)
         } else if self.sensor_array || self.cloak_generator {
             i32::from(self.cloak_radius_in_cells)
         } else {
@@ -3326,17 +3826,36 @@ impl ObjectType {
         self.infantry_pips = pips;
     }
 
-    pub(crate) fn project_sequence_sound_reads(
-        &mut self,
-        reads: &[crate::rules::infantry_sequence::SequenceSoundRead],
-    ) {
-        self.sequence_sound_reads = reads.to_vec();
+    pub(crate) fn project_infantry_art(&mut self, art: InfantryArt) {
+        self.crawls = art.crawls;
+        [
+            self.fire_up_frame,
+            self.fire_prone_frame,
+            self.secondary_fire_frame,
+            self.secondary_prone_frame,
+        ] = art.discharge_frames;
     }
 
-    /// Resolve the projected pairs through `find` (VocClass::FindByName).
-    pub(crate) fn bind_sequence_sounds(&mut self, find: impl FnMut(&str) -> Option<String>) {
-        self.sequence_sounds =
-            crate::rules::infantry_sequence::bind_sequence_sounds(&self.sequence_sound_reads, find);
+    pub(crate) fn project_infantry_sequence_bank(
+        &mut self,
+        bank: &crate::rules::infantry_sequence::InfantrySequenceBank,
+    ) {
+        self.infantry_sequence_bank = Some(bank.clone());
+    }
+
+    pub(crate) fn infantry_sequence_bank(
+        &self,
+    ) -> Option<&crate::rules::infantry_sequence::InfantrySequenceBank> {
+        self.infantry_sequence_bank.as_ref()
+    }
+
+    /// Derive presentation names from saved Voc ordinals, without rereading ART.
+    pub(crate) fn bind_sequence_sounds(&mut self, sounds: &crate::rules::sound_ini::SoundRegistry) {
+        self.sequence_sounds = self
+            .infantry_sequence_bank
+            .as_ref()
+            .map(|bank| bank.bound_sounds(sounds))
+            .unwrap_or_default();
     }
 
     /// The sounds of DoType `action`'s record, in slot order.
@@ -3364,6 +3883,20 @@ impl ObjectType {
     /// callers own allocation/fill bounds. Uses the live bound base weapon0,
     /// not a capture manager's retained admission capacity or elite weapon.
     pub fn pip_max(&self, rules: &crate::rules::ruleset::RuleSet) -> i32 {
+        // Ares 3.0 BuildingTypeClass_GetMaxPips 10010150 (hook 0x45ECE0): a
+        // building on a custom foundation answers its `Foundation.X` width
+        // for every PipScale. (VERA lacks the stock BuildingType override
+        // 0x0045ECE0 itself, which sizes Tiberium and Power pips by the
+        // foundation width; buildings take the TechnoType answer below.)
+        #[cfg(feature = "ares")]
+        if self.category == ObjectCategory::Building
+            && matches!(
+                self.foundation,
+                crate::rules::foundation::Foundation::Custom(_)
+            )
+        {
+            return i32::from(self.foundation.dimensions().0);
+        }
         match self.pip_scale {
             PipScale::None => 0,
             PipScale::Ammo => self.ammo,
@@ -3379,10 +3912,32 @@ impl ObjectType {
             // Native7162B0 dereferences an admitted primary. Preserve the
             // existing host's safe0 for an invalid missing binding; stock
             // MindControl has a bound weapon and follows the original read.
+            #[cfg(not(feature = "ares"))]
             PipScale::MindControl => self
                 .weapon_at(0)
                 .and_then(|name| rules.weapon(name))
                 .map_or(0, |weapon| weapon.damage),
+            // Ares TechnoTypeClass_GetPipMax_MindControl (1004B910, hook
+            // 0x7162B0): the first of the two base weapons whose warhead is
+            // `MindControl=` with a positive Damage, else the second's
+            // MindControl Damage, else 0.
+            #[cfg(feature = "ares")]
+            PipScale::MindControl => {
+                let mind_damage = |slot| {
+                    self.weapon_at(slot)
+                        .and_then(|name| rules.weapon(name))
+                        .filter(|weapon| {
+                            weapon
+                                .warhead
+                                .as_deref()
+                                .and_then(|warhead| rules.warhead(warhead))
+                                .is_some_and(|warhead| warhead.mind_control)
+                        })
+                        .map_or(0, |weapon| weapon.damage)
+                };
+                let primary = mind_damage(0);
+                if primary > 0 { primary } else { mind_damage(1) }
+            }
         }
     }
 
@@ -3465,16 +4020,27 @@ impl ObjectType {
             sounds.read_rules_sound_list(section, "VoiceAttack")
         });
         self.voice_enter =
-            section.and_then(|section| sounds.read_rules_reference(section, "VoiceEnter"));
+            section.and_then(|section| sounds.read_rules_reference(section, "VoiceEnter", None));
         self.voice_capture =
-            section.and_then(|section| sounds.read_rules_reference(section, "VoiceCapture"));
+            section.and_then(|section| sounds.read_rules_reference(section, "VoiceCapture", None));
         self.voice_attack_overrides = [
             "VoicePrimaryWeaponAttack",
             "VoicePrimaryEliteWeaponAttack",
             "VoiceSecondaryWeaponAttack",
             "VoiceSecondaryEliteWeaponAttack",
         ]
-        .map(|key| section.and_then(|section| sounds.read_rules_reference(section, key)));
+        .map(|key| section.and_then(|section| sounds.read_rules_reference(section, key, None)));
+        #[cfg(feature = "ares")]
+        {
+            self.ares_voice_repair = section
+                .and_then(|section| sounds.read_rules_reference(section, "VoiceRepair", None));
+        }
+    }
+
+    /// Ares `VoiceRepair`, see [`Self::ares_voice_repair`]'s field.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_voice_repair(&self) -> Option<&str> {
+        self.ares_voice_repair.as_deref()
     }
 
     pub fn voice_deploy(&self) -> Option<&str> {
@@ -3493,11 +4059,11 @@ impl ObjectType {
         sounds: &SoundRegistry,
     ) {
         self.voice_harvest =
-            section.and_then(|section| sounds.read_rules_reference(section, "VoiceHarvest"));
+            section.and_then(|section| sounds.read_rules_reference(section, "VoiceHarvest", None));
         self.voice_deploy =
-            section.and_then(|section| sounds.read_rules_reference(section, "VoiceDeploy"));
+            section.and_then(|section| sounds.read_rules_reference(section, "VoiceDeploy", None));
         self.voice_undeploy =
-            section.and_then(|section| sounds.read_rules_reference(section, "VoiceUndeploy"));
+            section.and_then(|section| sounds.read_rules_reference(section, "VoiceUndeploy", None));
     }
 
     pub fn damage_sound(&self) -> Option<&str> {
@@ -3524,9 +4090,13 @@ impl ObjectType {
         sounds: &SoundRegistry,
     ) {
         self.create_sound =
-            section.and_then(|section| sounds.read_rules_reference(section, "CreateSound"));
+            section.and_then(|section| sounds.read_rules_reference(section, "CreateSound", None));
         self.damage_sound =
-            section.and_then(|section| sounds.read_rules_reference(section, "DamageSound"));
+            section.and_then(|section| sounds.read_rules_reference(section, "DamageSound", None));
+        // TechnoType ReadINI713949..713985: current fixed Voc ID, with
+        // ctor710FA5=-1. Unknown/empty later reads retain a valid override.
+        self.mind_cleared_sound = section
+            .and_then(|section| sounds.read_rules_reference(section, "MindClearedSound", None));
         #[cfg(feature = "ares")]
         for (slot, key) in ["Promote.VeteranSound", "Promote.EliteSound"]
             .into_iter()
@@ -3535,6 +4105,12 @@ impl ObjectType {
             // TypeExt LoadFromINI1003F0C5/1003F0DB reuses NullableIdx<Voc>
             // 1000E9D0:2048-byte read, fixed-catalog lookup, unknown retains.
             self.promotion_sounds[slot] =
+                section.and_then(|section| sounds.read_ares_reference(section, key));
+        }
+        #[cfg(feature = "ares")]
+        for (slot, key) in ["CloakSound", "DecloakSound"].into_iter().enumerate() {
+            // TypeExt LoadFromINI1003DFB0: NullableIdx<Voc>1000E9D0.
+            self.cloak_sounds[slot] =
                 section.and_then(|section| sounds.read_ares_reference(section, key));
         }
         #[cfg(feature = "ares")]
@@ -3547,6 +4123,13 @@ impl ObjectType {
             self.vehicle_thief_sounds[slot] = section
                 .and_then(|section| sounds.read_ares_reference(section, key))
                 .flatten();
+        }
+        #[cfg(feature = "ares")]
+        self.techno_combat.bind_sound_references(section, sounds);
+        #[cfg(feature = "ares")]
+        if self.category == ObjectCategory::Building {
+            self.building_type_ext
+                .bind_sound_references(section, sounds);
         }
     }
 
@@ -3564,6 +4147,9 @@ impl ObjectType {
 
     /// Storage reached by GetWeapon7177C0/7177E0; Ares1003DBC0 adds
     /// extension records while the original build keeps its fixed bound.
+    /// Ares TechnoTypeClass_LoadFromINI_Weapons1 (10042570, hook 0x7128C0)
+    /// replaces the stock WeaponN block with LoadWeapons 10040020, which
+    /// `native_processing::WeaponSlots` ports.
     pub fn weapon_record_count(&self) -> usize {
         if cfg!(feature = "ares") {
             self.weapon_list.len()
@@ -3771,8 +4357,24 @@ impl ObjectType {
     ///
     /// gamemd-derived: `BuildingClass` vtable `+0x80` resolves through
     /// `0x00457620` to `BuildingTypeClass__Is1x1WithUndeploy @ 0x00465D40`.
+    /// Ares 3.0 BuildingTypeClass_IsUndeployable 100101D0 (hook 0x465D4A)
+    /// tests a custom foundation's own width and height, which
+    /// `Foundation::dimensions` already answers.
     pub fn is_1x1_with_undeploy(&self) -> bool {
         self.undeploys_into.is_some() && self.foundation.dimensions() == (1, 1)
+    }
+
+    /// BuildingClass::CanBeSelectedNow's type test (`0x00459C03`): whether a
+    /// band box may select the building, [`Self::is_1x1_with_undeploy`]; Ares
+    /// 3.0 BuildingClass_CanBeSelectedNow_MassSelectable 10013CF0 lets
+    /// `MassSelectable=` override it.
+    pub fn band_selectable(&self) -> bool {
+        #[cfg(feature = "ares")]
+        return self
+            .building_type_ext
+            .mass_selectable(self.is_1x1_with_undeploy());
+        #[cfg(not(feature = "ares"))]
+        self.is_1x1_with_undeploy()
     }
 
     /// The slot the per-class House and HouseType factor getters select by the
@@ -3791,8 +4393,16 @@ impl ObjectType {
         }
     }
 
-    /// BuildingType gate used by the native base-reservation setter.
+    /// BuildingType gate used by the native base-reservation setter. In Ares
+    /// builds `BuildingExt::ExtData::IsBaseNormal @ 10011810` (hooks
+    /// `0x00440C08` Unlimbo, `0x00445A72` Limbo, `0x00456370` the neighbour
+    /// repair) answers `AIBaseNormal=` when set; a delivery's per-building
+    /// `NoBaseNormal` belongs to the superweapon chain.
     pub fn base_reservation_writer_eligible(&self) -> bool {
+        #[cfg(feature = "ares")]
+        if let Some(normal) = self.building_type_ext.ai_base_normal {
+            return self.category == ObjectCategory::Building && normal;
+        }
         self.category == ObjectCategory::Building
             && (self.undeploys_into.is_none() || !self.resource_gatherer)
             && !self.is_1x1_with_undeploy()
@@ -3816,6 +4426,20 @@ impl ObjectType {
             Some(FactoryType::InfantryType | FactoryType::UnitType)
         ) || self.unit_repair
             || self.cloning
+            || self.ares_cloning_facility()
+    }
+
+    /// Ares BuildingClass_IsFactory_CloningFacility (hook `0x00455DA0` ->
+    /// `10041560`): a `CloningFacility=` building answers true.
+    fn ares_cloning_facility(&self) -> bool {
+        #[cfg(feature = "ares")]
+        {
+            self.production.cloning_facility()
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            false
+        }
     }
 
     /// Parse an ObjectType from a rules.ini section.
@@ -3842,8 +4466,6 @@ impl ObjectType {
             } else {
                 (false, false, false, false, false)
             };
-        // `IsGattling=` gates the Stage loop read beside it (`0x0071407E`).
-        let is_gattling = section.read_bool("IsGattling", false);
         // `GuardRange=` and `AirRangeBonus=` are ReadRange whole leptons
         // (`0x007122B3`, `0x007147A9`), kept here as cells; `None` marks an
         // absent key.
@@ -3852,21 +4474,28 @@ impl ObjectType {
                 .is_present(key)
                 .then(|| SimFixed::from_bits(section.read_range(key, 0) << 8))
         };
-        // The house lists (`0x004750D0`) read `char[128]`. The two
+        // The house lists (`0x004750D0`) read `char[128]`; Ares 3.0
+        // INIClass_ReadHouseTypesList (1005BED0 hook 0x4750EC, strtok
+        // 1005BEF0 hook 0x475107) swaps in its 0x800 buffer. The two
         // prerequisite lists name BuildingTypes, so `RuleSet` parses them.
+        let house_list_capacity = if crate::rules::ARES_ENABLED {
+            0x800
+        } else {
+            0x80
+        };
         let owner: Vec<String> = section
-            .read_list("Owner", 0x80)
+            .read_list("Owner", house_list_capacity)
             .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
             .unwrap_or_default();
 
-        let required_tokens = section.read_list("RequiredHouses", 0x80);
+        let required_tokens = section.read_list("RequiredHouses", house_list_capacity);
         let required_houses_explicitly_empty = required_tokens.as_ref().is_some_and(Vec::is_empty);
         let required_houses: Vec<String> = required_tokens
             .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
             .unwrap_or_default();
 
         let forbidden_houses: Vec<String> = section
-            .read_list("ForbiddenHouses", 0x80)
+            .read_list("ForbiddenHouses", house_list_capacity)
             .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
             .unwrap_or_default();
 
@@ -4238,6 +4867,8 @@ impl ObjectType {
             voice_deploy: None,
             voice_undeploy: None,
             voice_enter: None,
+            #[cfg(feature = "ares")]
+            ares_voice_repair: None,
             voice_capture: None,
             prevent_attack_move: section.read_bool("PreventAttackMove", false),
             voice_die: section
@@ -4282,7 +4913,9 @@ impl ObjectType {
                 .map(str::to_owned),
             voice_feedback: Vec::new(),
             voice_special_attack: Vec::new(),
-            crush_sound: section.read_name("CrushSound", 0x80).map(str::to_owned),
+            // ObjectTypeCtor5F713A; ProcessedType projects the retained
+            // fixed-Voc binding from inherited ReadINI5F938B..5F93D5.
+            crush_sound: None,
             deploy_sound: section.read_name("DeploySound", 0x80).map(str::to_owned),
             buildup_sound: None,
             working_sound: None,
@@ -4315,11 +4948,40 @@ impl ObjectType {
             recoil: crate::rules::recoil::RecoilConfig::default(),
             airstrike: crate::rules::airstrike::AirstrikeSettings::default(),
             radial_fire_segments: 0,
+            // Slot 9's record, which ReadINI fills from the rules INI in this
+            // order (`0x00464450..0x00464647`): the two names into `char[16]`,
+            // then X, Y, ZAdjust, YSort and the voxel flag.
+            //
+            // RESIDUAL: gamemd copies the normal name into an empty damaged
+            // one in each pass (`0x004644FD`), so the copy from the first pass
+            // stays. Trigger: a later rules layer (mode INI or map) renames
+            // `TurretAnim` and no layer sets `TurretAnimDamaged`; effect: the
+            // damaged building shows the new name here, the first layer's
+            // name in gamemd. No retail type has an SHP turret.
             turret_anim: section.read_name("TurretAnim", 0x10).map(str::to_uppercase),
+            turret_anim_damaged: section
+                .read_name("TurretAnimDamaged", 0x10)
+                .or_else(|| section.read_name("TurretAnim", 0x10))
+                .map(str::to_uppercase),
             turret_anim_is_voxel: section.read_bool("TurretAnimIsVoxel", false),
             turret_anim_x: section.read_int("TurretAnimX", 0),
             turret_anim_y: section.read_int("TurretAnimY", 0),
             turret_anim_z_adjust: section.read_int("TurretAnimZAdjust", 0),
+            turret_anim_y_sort: section.read_int("TurretAnimYSort", 0),
+            // Native order after TurretAnimIsVoxel (0x00464647): the
+            // `BarrelAnimIsVoxel` bool (0x00464661), the VoxelBarrelFile name
+            // this port does not read (0x0046467E, retained above), then the
+            // `Read3Int` pivot triples (0x00464697..0x004646E9) whose
+            // self-default keeps an earlier layer's triple. VERA does not
+            // read the barrel-end triple (0x00464712); see `BarrelVoxelOffsets`.
+            barrel_anim_is_voxel: section.read_bool("BarrelAnimIsVoxel", false),
+            barrel_voxel: BarrelVoxelOffsets {
+                pitch_pivot: section.read_coord3_fold("VoxelBarrelOffsetToPitchPivotPoint", [0; 3]),
+                rotate_pivot: section
+                    .read_coord3_fold("VoxelBarrelOffsetToRotatePivotPoint", [0; 3]),
+                building_pivot: section
+                    .read_coord3_fold("VoxelBarrelOffsetToBuildingPivotPoint", [0; 3]),
+            },
             guard_range: present_range("GuardRange"),
             air_range_bonus: present_range("AirRangeBonus"),
             // Default no (passive acquisition off unless the type opts in).
@@ -4328,6 +4990,31 @@ impl ObjectType {
             can_retaliate: section.read_bool("CanRetaliate", true),
             #[cfg(feature = "ares")]
             no_manual_fire: section.read_ares_bool("NoManualFire", false),
+            // TechnoTypeExt +0x304 and +0x4C4 (constructor false/true).
+            #[cfg(feature = "ares")]
+            ares_immune_to_abduction: section.read_ares_bool("ImmuneToAbduction", false),
+            #[cfg(feature = "ares")]
+            ignores_firestorm: section.read_bool("IgnoresFirestorm", false),
+            #[cfg(feature = "ares")]
+            ares_passengers_by_size: section.read_ares_bool("Passengers.BySize", true),
+            #[cfg(feature = "ares")]
+            saboteur: section.read_ares_bool("Saboteur", false),
+            #[cfg(feature = "ares")]
+            infiltration: Default::default(),
+            #[cfg(feature = "ares")]
+            building_type_ext: Default::default(),
+            #[cfg(feature = "ares")]
+            veterancy: Default::default(),
+            #[cfg(feature = "ares")]
+            promotion_eva: [None, None],
+            #[cfg(feature = "ares")]
+            lost_eva: None,
+            #[cfg(feature = "ares")]
+            academy: Default::default(),
+            #[cfg(feature = "ares")]
+            production: Default::default(),
+            #[cfg(feature = "ares")]
+            ares_cursors: Default::default(),
             #[cfg(feature = "ares")]
             keep_alive: section.read_ares_nullable_bool("KeepAlive", None),
             #[cfg(feature = "ares")]
@@ -4348,6 +5035,12 @@ impl ObjectType {
             bounty: Default::default(),
             #[cfg(feature = "ares")]
             crew: Default::default(),
+            #[cfg(feature = "ares")]
+            techno_combat: Default::default(),
+            #[cfg(feature = "ares")]
+            cloak_power: Default::default(),
+            #[cfg(feature = "ares")]
+            cloak_sounds: [None, None],
             #[cfg(feature = "ares")]
             factory_owners: Default::default(),
             #[cfg(feature = "ares")]
@@ -4448,7 +5141,13 @@ impl ObjectType {
             slaved: section.read_bool("Slaved", false),
             fearless: section.read_bool("Fearless", false),
             fraidycat: section.read_bool("Fraidycat", false),
-            crawls: false,
+            // InfantryTypeCtor5237A1; only the ordered retained reader
+            // supplies Civilian, independently of Image or House identity.
+            civilian: false,
+            // InfantryTypeClass's constructor sets Crawls (`+0xEBD`) to true
+            // (`0x00523788`); the per-pass ART read projects over it
+            // ([`InfantryArt`]). Other types have no such field.
+            crawls: category == ObjectCategory::Infantry,
             fire_up_frame: 0,
             fire_prone_frame: 0,
             secondary_fire_frame: 0,
@@ -4513,6 +5212,8 @@ impl ObjectType {
             crashable: section.read_bool("Crashable", false),
             #[cfg(feature = "ares")]
             aircraft_crashable: None,
+            #[cfg(feature = "ares")]
+            curtain_modifiers: [NativeF64Bits::ONE; 2],
             teleporter: section.read_bool("Teleporter", false),
             move_to_shroud: section.read_bool("MoveToShroud", category != ObjectCategory::Aircraft),
             hover_attack: section.read_bool("HoverAttack", false),
@@ -4523,6 +5224,8 @@ impl ObjectType {
                 && section.read_bool("SmallVisceroid", false),
             large_visceroid: category == ObjectCategory::Vehicle
                 && section.read_bool("LargeVisceroid", false),
+            #[cfg(feature = "ares")]
+            tiberium_heal: section.read_bool("TiberiumHeal", false),
             deploy_to_land: section.read_bool("DeployToLand", false),
             airport_bound: section.read_bool("AirportBound", false),
             fighter: section.read_bool("Fighter", false),
@@ -4530,6 +5233,7 @@ impl ObjectType {
             fly_back: section.read_bool("FlyBack", false),
             landable: section.read_bool("Landable", false),
             carryall: section.read_bool("Carryall", false),
+            aircraft_trailer: Default::default(),
             // gamemd-derived: `TechnoTypeClass::ReadINI` reads `JumpJet` into
             // its own boolean at `+0xD94` (`0x007151EC PUSH 0x843640` ->
             // `0x00715200 MOV [EBP+0xD94],AL`), the last member of the same
@@ -4580,11 +5284,9 @@ impl ObjectType {
             bombable: section.read_bool("Bombable", true),
             bomb_sight: section.read_int("BombSight", 0),
             mind_control_ring_offset: section.read_int("MindControlRingOffset", 0x8C),
-            // "none" finds no sound (-1), which FreeUnit reads as unset.
-            mind_cleared_sound: section
-                .read_name("MindClearedSound", 0x80)
-                .map(str::to_owned)
-                .filter(|sound| !sound.is_empty() && !sound.eq_ignore_ascii_case("none")),
+            // Ctor710FA5=-1; bind_scalar_sound_references owns the fixed
+            // Voc lookup, including registered none spellings.
+            mind_cleared_sound: None,
             #[cfg(feature = "phobos")]
             mind_control_range_limit: section.read_phobos_leptons("MindControlRangeLimit", 0),
             #[cfg(feature = "phobos")]
@@ -4711,7 +5413,7 @@ impl ObjectType {
             elite_occupy_weapon: None,
             // Constructor values; only the ordered Process owner reads them.
             infantry_pips: InfantryPips::default(),
-            sequence_sound_reads: Vec::new(),
+            infantry_sequence_bank: (category == ObjectCategory::Infantry).then(Default::default),
             sequence_sounds: Vec::new(),
             pip_scale: section
                 .read_name("PipScale", 0x20)
@@ -4754,6 +5456,8 @@ impl ObjectType {
             #[cfg(feature = "ares")]
             designator_range: None,
             #[cfg(feature = "ares")]
+            chronoshift: Default::default(),
+            #[cfg(feature = "ares")]
             inhibitor_range: None,
             #[cfg(feature = "ares")]
             hunter_seeker_ignore: false,
@@ -4768,11 +5472,9 @@ impl ObjectType {
             tick_tank: category == ObjectCategory::Building && section.read_bool("TickTank", false),
             artillary: category == ObjectCategory::Building
                 && section.read_bool("Artillary", false),
-            is_gattling,
-            gattling_stages: crate::rules::gattling_type::GattlingStages::read(
-                section,
-                is_gattling,
-            ),
+            // Retained per-pass flag/table from the ordered Rules owner.
+            is_gattling: false,
+            gattling_stages: Default::default(),
             turret_count: 0,
             has_turret_tooltips: section.read_bool("HasTurretTooltips", false),
             drainable: section.read_bool("Drainable", false),
@@ -4861,6 +5563,13 @@ impl ObjectType {
             max_debris,
             min_debris,
             debris_types: Vec::new(),
+            // Ares 3.0 TechnoTypeClass_LoadFromINI_ListLength (1005BF90,
+            // hook 0x7125DF) reads it through ParseList<int> (1005B030).
+            #[cfg(feature = "ares")]
+            debris_maximums: section
+                .read_ares_int_list("DebrisMaximums")
+                .unwrap_or_default(),
+            #[cfg(not(feature = "ares"))]
             debris_maximums: section.read_int_list("DebrisMaximums").unwrap_or_default(),
             debris_anims: Vec::new(),
             close_range: section.read_bool("CloseRange", false),
@@ -4890,8 +5599,15 @@ impl ObjectType {
             // The reached-pass history folds current-default reads before
             // this immutable projection. Low-byte storage commutes with
             // absent/default reads; it must not become a saturation clamp.
-            gap_radius_in_cells: section.read_int("GapRadiusInCells", 0) as i8,
-            super_gap_radius_in_cells: section.read_int("SuperGapRadiusInCells", 0) as i8,
+            #[cfg(not(feature = "ares"))]
+            gap_radius_in_cells: i32::from(section.read_int("GapRadiusInCells", 0) as i8),
+            #[cfg(not(feature = "ares"))]
+            super_gap_radius_in_cells: i32::from(section.read_int("SuperGapRadiusInCells", 0) as i8),
+            // Ares TechnoTypeExt::LoadFromINIFile Valueable<int> reads.
+            #[cfg(feature = "ares")]
+            gap_radius_in_cells: section.read_ares_int("GapRadiusInCells", 0),
+            #[cfg(feature = "ares")]
+            super_gap_radius_in_cells: section.read_ares_int("SuperGapRadiusInCells", 0),
             psychic_detection_radius: section.read_int("PsychicDetectionRadius", 0),
             sensor_array: section.read_bool("SensorArray", false),
             sensors: section.read_bool("Sensors", false),
@@ -5898,10 +6614,14 @@ mod tests {
 
         let harvester = rules.object("MODHARV").unwrap();
         assert!(harvester.harvester);
-        assert_eq!(
-            harvester.dock,
-            vec!["MODPROC".to_string(), "NAREFN".to_string()]
-        );
+        // Ares reads Dock= Find-only (TechnoTypeClass_LoadFromINI_ListLength
+        // 1005BF90, hook 0x7125DF): the unregistered NAREFN is dropped.
+        let dock: &[&str] = if cfg!(feature = "ares") {
+            &["MODPROC"]
+        } else {
+            &["MODPROC", "NAREFN"]
+        };
+        assert_eq!(harvester.dock, dock);
     }
 
     #[test]
@@ -6406,7 +7126,9 @@ mod tests {
         // A death spends a count drawn from [MinDebris, MaxDebris] on
         // DebrisTypes VoxelAnims and DebrisAnims SHP anims.
         let rules = rules(
-            "[BuildingTypes]\n0=GAPOWR\n1=NAPOWR\n\
+            // Registered for Ares's Find-only debris lists.
+            "[VoxelAnims]\n0=TIRE\n[Animations]\n0=DBRIS1LG\n1=DBRIS1SM\n2=DBRIS4LG\n\
+             [BuildingTypes]\n0=GAPOWR\n1=NAPOWR\n\
              [GAPOWR]\n\
              MinDebris=4\nMaxDebris=9\n\
              DebrisTypes=TIRE\nDebrisMaximums=3\n\
@@ -6492,6 +7214,8 @@ mod tests {
     }
     /// `0x00713C37`: ReadString 0x80, then each `strtok` token as written to
     /// `ParticleSystemTypeClass::FindOrAllocate` (`0x00644890`).
+    // Ares reads these lists Find-only through ParseList (Misc/Bugfixes.Buffer.cpp).
+    #[cfg(not(feature = "ares"))]
     #[test]
     fn techno_type_parses_damage_particle_systems_csv() {
         let rules = rules(

@@ -106,25 +106,24 @@ impl CellSet {
 impl Simulation {
     /// Target+48 is its physical center, independently of the destination
     /// receiver+4C. In particular, do not read a Building's helipad offset here.
+    ///
+    /// The callers ask whatever object they hold, with no class test
+    /// (Find_Attack_Cell `0x00418EC1`, IsLandZoneClear `0x004DDC60`), so an
+    /// object target answers through the shared vt+0x48 owner: a tree an
+    /// aircraft was sent to is a Terrain NavCom, not a Techno.
     pub(super) fn fire_location_center(&self, target: NavTargetRef) -> Option<DriveCoord> {
-        let id = match target {
-            NavTargetRef::Cell { rx, ry } => {
-                return Some(target_cell_coord(
-                    rx,
-                    ry,
-                    self.resolved_terrain
-                        .as_ref()
-                        .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
-                        .as_ref(),
-                ));
-            }
-            NavTargetRef::Object { id } => id,
-        };
-        let entity = self.substrate.entities.get(id)?;
-        Some(ground_pose::object_get_coords(
-            entity,
-            self.resolved_terrain.as_ref(),
-        ))
+        let cells = self
+            .resolved_terrain
+            .as_ref()
+            .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+        match target {
+            NavTargetRef::Cell { rx, ry } => Some(target_cell_coord(rx, ry, cells.as_ref())),
+            NavTargetRef::Object { id } => ground_pose::target_get_coords(
+                crate::sim::combat::TargetKind::Entity(id),
+                self,
+                cells.as_ref(),
+            ),
+        }
     }
 
     pub(crate) fn aircraft_find_fire_location(

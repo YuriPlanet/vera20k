@@ -1,0 +1,9 @@
+{
+ "producer": {
+  "event_opcode": 9
+ },
+ "receiver": [
+  {"name":"null_target","occupants":1,"queued_mission":16,"target_is_set":false},
+  {"name":"existing_cell_target","occupants":1,"queued_mission":16,"target_is_set":false}
+ ]
+}

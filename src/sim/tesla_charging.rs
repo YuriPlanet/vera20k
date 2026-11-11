@@ -108,12 +108,36 @@ impl Simulation {
         let Some(building) = substrate.entities.get(id) else {
             return;
         };
-        if !interner
-            .object_type(building.type_ref(), rules)
-            .is_some_and(|object| object.overpowerable)
-        {
+        let Some(object) = interner.object_type(building.type_ref(), rules) else {
             return;
+        };
+        // Ares BuildingClass_Update_Battery10014690 (hook 44019D), after the
+        // stock sample below and for every building: a `Battery.Overpower`
+        // type of an active battery is overpowered. Nothing clears it again
+        // for a type that is not Overpowerable.
+        #[cfg(feature = "ares")]
+        let battery = power_states
+            .get(&building.owner())
+            .is_some_and(|state| state.overpowers(&object.id));
+        #[cfg(not(feature = "ares"))]
+        let battery = false;
+        if object.overpowerable {
+            Self::sample_tesla_charge(substrate, power_states, id);
         }
+        if battery {
+            substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .tesla_charge
+                .overpowered = true;
+        }
+    }
+
+    /// The stock Overpowerable block (4400F9..440196): prune changed
+    /// chargers, then sample +661.
+    fn sample_tesla_charge(substrate: &mut ObjectSubstrate, power_states: &PowerStates, id: u64) {
+        let building = substrate.entities.get(id).unwrap();
         let count = building.tesla_charge.chargers.len();
         // Reverse stable removal is native's order; no temporary list or
         // unconditional mutable store access is needed for unchanged chargers.
@@ -170,8 +194,7 @@ impl Simulation {
         };
         if entity.attack_target.target().is_some()
             || !crate::sim::world::weapon_at_index(self, rules, id, 1)
-                .and_then(|weapon| weapon.warhead.as_deref())
-                .and_then(|name| rules.warhead(name))
+                .and_then(|weapon| rules.weapon_warhead(weapon))
                 .is_some_and(|warhead| warhead.electric_assault)
         {
             return false;
@@ -243,11 +266,12 @@ impl crate::sim::world::ObjectSubstrate {
     /// Bullet::Detonate46937A..4693CE. Only the two concrete object classes
     /// are checked here; alliance, range and Overpowerable are not impact gates.
     pub(crate) fn electric_assault_detonation(&mut self, source: u64, target: Option<u64>) {
-        if !self
-            .entities
-            .get(source)
-            .is_some_and(|entity| entity.category() == EntityCategory::Infantry)
-        {
+        // Ares 3.0 BulletClass_Fire_Overpower (1005C650, hook 0x4693B0): a
+        // Unit owner charges the building too.
+        if !self.entities.get(source).is_some_and(|entity| {
+            entity.category() == EntityCategory::Infantry
+                || crate::rules::ARES_ENABLED && entity.category() == EntityCategory::Unit
+        }) {
             return;
         }
         let Some(target) = target.filter(|&id| {

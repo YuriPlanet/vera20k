@@ -1,6 +1,7 @@
 //! Match-session focus, modal, return, quit and scenario-exit control.
 
 use super::{App, AppState, GameScreen, Instant, ModifiersState};
+use crate::app::match_runtime::sim_host::SimWrite;
 
 impl App {
     /// Return the live Scenario cursor and header to the multiplayer shell.
@@ -8,7 +9,7 @@ impl App {
         let gameplay_rng = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)
             .map(|simulation| {
                 (
@@ -39,7 +40,7 @@ impl App {
     }
 
     pub(super) fn return_to_main_menu(state: &mut AppState) {
-        if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {
             // Main55D283 calls BattleControlTerminated686570 on shell return;
             // its retained Scenario mission counter resets to the ctor's 1.
             runtime
@@ -56,7 +57,7 @@ impl App {
     /// Main_Game returns past the router without 0x00686570's EVA and fades
     /// (0x0064806C..0x006482A6, 0x0055D347).
     pub(super) fn return_disconnected_to_main_menu(state: &mut AppState) {
-        Self::record_external_match_result(state, super::cncnet::ExternalMatchResult::Disconnected);
+        Self::record_match_result(state, super::cncnet::ExternalMatchResult::Disconnected);
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         Self::browser_match_ended(state, super::cncnet::ExternalMatchResult::Disconnected);
         Self::return_to_main_menu(state);
@@ -65,10 +66,11 @@ impl App {
     /// Quit Game's leave: a frame suspended in Wait_For_Players finishes its
     /// tail before the result-8 return.
     pub(super) fn leave_network_wait_to_main_menu(state: &mut AppState) {
+        crate::app::match_runtime::network_failure::hold_quit_line(state);
         if state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .is_some_and(|rt| rt.simulation.pending_network_wait())
         {
             crate::app::match_runtime::sim_tick::leave_network_wait(state);
@@ -90,7 +92,7 @@ impl App {
         crate::app::radar_movie::retire(state, wall_ms);
         crate::app::commander_feedback::retire(state);
         crate::app::chrono_screen::retire(state, wall_ms);
-        if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {
             // Main_Game48CCC0 clears ScenarioStarted[A8ED5C] at48CEBF
             // after the match returns (EBX=0 from48CCD4); the restart clears
             // it at686424. The runtime may remain retained, but Tag
@@ -148,7 +150,7 @@ impl App {
         let game_speed = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map_or(state.persistence.options_profile.game_speed, |runtime| {
                 runtime.simulation.session().game_options().game_speed
             });
@@ -178,7 +180,7 @@ impl App {
         log::info!("Restarting campaign mission {}", startup.scenario());
         // The router clears all four termination bytes before 6863E0: an
         // executed EXIT edge cannot follow the restart into the shell.
-        if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {
             let _ = runtime.simulation.take_executed_exit_owner();
         }
         Self::retire_running_scenario(state);
@@ -222,7 +224,7 @@ impl App {
         let Some(sim) = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)
         else {
             return false;
@@ -239,7 +241,7 @@ impl App {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .is_some_and(|rt| rt.simulation.pending_outcome_wait().is_some())
     }
 
@@ -257,6 +259,9 @@ impl App {
             return;
         }
         state.platform.window_active = active;
+        if active {
+            state.platform.clear_attention();
+        }
         let movie_active = crate::app::radar_movie::playback_active(state);
         state
             .match_state
@@ -264,6 +269,8 @@ impl App {
             .radar_movies
             .set_active(movie_active);
         state.match_state.input.keys_held.clear();
+        // VERA formation line: its held key's release may never arrive.
+        state.match_state.input.formation_line.clear_key();
         state.match_state.input.hotkey_modifiers = ModifiersState::empty();
         state.platform.live_modifiers = ModifiersState::empty();
         state.platform.held_modifier_keys.clear();
@@ -475,7 +482,7 @@ impl App {
         let sim = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|runtime| &runtime.simulation);
         let latch = Self::state_machine_admission(
             state.match_state.session_mode().is_nonzero(),
@@ -588,10 +595,7 @@ impl App {
         if crate::app::commander_feedback::verdict_is_waiting_for_clip(state) {
             let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
             crate::app::commander_feedback::skip_verdict_clip(state, wall_ms);
-            Self::enter_in_game_menu_state(
-                state,
-                crate::ui::pause_menu::InGameMenuState::Closed,
-            );
+            Self::enter_in_game_menu_state(state, crate::ui::pause_menu::InGameMenuState::Closed);
             return;
         }
         log::info!("Abort Mission confirmed — queueing EXIT event");
@@ -640,15 +644,26 @@ impl App {
             state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .map(|rt| &rt.simulation)
                 .and_then(|sim| sim.interner().get(owner))
         });
         let local_outcome_exit_ready = Self::local_outcome_exit_ready(state);
+        // Almost every pass has no EXIT to take. Only one that does takes
+        // the world for writing, which waits for a tick on the simulation
+        // thread and drops the published frame.
+        if !state
+            .match_state
+            .sim_runtime
+            .runtime()
+            .is_some_and(|rt| rt.simulation.executed_exit_owner_pending())
+        {
+            return;
+        }
         let executed_owner = state
             .match_state
             .sim_runtime
-            .as_mut()
+            .write_sim(SimWrite::Lifecycle)
             .map(|rt| &mut rt.simulation)
             .and_then(|sim| sim.take_executed_exit_owner());
         let Some(executed_owner) = executed_owner else {
@@ -677,7 +692,7 @@ impl App {
         // Abort is the independent EXIT-event route: it never inherits the
         // victory/defeat HouseClass SavourDelay or its outcome-voice wait.
         state.match_state.scenario_outcome = None;
-        Self::record_external_match_result(state, super::cncnet::ExternalMatchResult::Quit);
+        Self::record_match_result(state, super::cncnet::ExternalMatchResult::Quit);
         //686570 clears the movie queue before its independent audio fade.
         crate::app::radar_movie::retire(state, wall_ms);
         crate::app::commander_feedback::retire(state);
@@ -689,16 +704,16 @@ impl App {
         // audio master, bounds its voice pump to 300 timer buckets, and
         // finally hard-stops audio.
         state.audio.fade_out_theme(wall_ms);
-        let destination = Self::aborted_score_destination(state, elapsed_seconds).unwrap_or(
-            crate::app::match_runtime::scenario_exit::ScenarioExitDestination::MainMenu,
-        );
+        let destination = Self::aborted_score_destination(state, elapsed_seconds)
+            .unwrap_or(crate::app::match_runtime::scenario_exit::ScenarioExitDestination::MainMenu);
         let showed_score = !matches!(
             &destination,
             crate::app::match_runtime::scenario_exit::ScenarioExitDestination::MainMenu
         );
         let mut scenario_exit =
             crate::app::match_runtime::scenario_exit::ScenarioExitCascade::start(
-                wall_ms, destination,
+                wall_ms,
+                destination,
             );
         if showed_score {
             scenario_exit = scenario_exit.with_battle_control_terminated();
@@ -727,7 +742,7 @@ impl App {
         let eligible = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .is_some_and(|runtime| runtime.simulation.session().game_mode_nonzero())
             && state.match_state.live_network.is_none()
             && !crate::app::cooperative_round::applies(state)
@@ -743,9 +758,8 @@ impl App {
             crate::app::match_runtime::scenario_exit::ScenarioExitDestination::Score {
                 title: crate::app::match_runtime::scenario_exit::outcome_title(
                     crate::sim::house_state::HouseOutcomeKind::Defeat,
-                )
-                .to_string(),
-                detail: "You left the battle.".to_string(),
+                ),
+                detail: crate::i18n::tr("VERA:YouLeftTheBattle"),
                 model: crate::app::match_runtime::sim_tick::build_aborted_score_screen_model(
                     state,
                     elapsed_seconds,

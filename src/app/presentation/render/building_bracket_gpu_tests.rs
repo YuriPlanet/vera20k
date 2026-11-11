@@ -63,6 +63,13 @@ fn native_bracket_pixels_reach_display_replay_without_writing_z() {
             );
             parent.brackets = Some(lines);
             let mut layer = lower_ground_object_instances(vec![parent]);
+            terrain.bind_surface_line_a_fixture(&gpu.device, &gpu.queue, size, |[x, y]| {
+                if input["alpha"] == "mixed" {
+                    [0, 1, 63, 127, 255][((x / 9 + y / 7) % 5) as usize]
+                } else {
+                    127
+                }
+            });
             terrain.begin_surface_lines();
             let viewport = SurfaceLineViewport {
                 camera,
@@ -81,13 +88,6 @@ fn native_bracket_pixels_reach_display_replay_without_writing_z() {
                     &[],
                     viewport,
                     |_| false,
-                    |[x, y]| {
-                        if input["alpha"] == "mixed" {
-                            [0, 1, 63, 127, 255][((x / 9 + y / 7) % 5) as usize]
-                        } else {
-                            127
-                        }
-                    },
                 ));
             }
             let initial = encoded(input["background"].as_u64().unwrap() as u16, format)

@@ -190,8 +190,15 @@ impl RadSite {
         // replaces the whole activation with `RadSiteExt::CreateLight`, which
         // tints from the bound type's `RadColor` alone (all three channels,
         // clamped at 2000) with no theater test anywhere in `Ext/RadSite`.
-        // The compiled capability decides which owner runs.
-        let channels = if !crate::rules::PHOBOS_ENABLED && theater.eq_ignore_ascii_case("SNOW") {
+        // The compiled capability decides which owner runs. Ares removes the
+        // snow test outright: RadSiteClass_Radiate_UnhardcodeSnow (hook
+        // `0x65B5FB` -> `0x10056DB0`) always resumes at `0x65B604`, past
+        // the substitution, so Mental Omega's `RadColor=200,100,0` stays
+        // amber on snow maps.
+        let channels = if !crate::rules::PHOBOS_ENABLED
+            && !crate::rules::ARES_ENABLED
+            && theater.eq_ignore_ascii_case("SNOW")
+        {
             [-128, i32::from(effective.color.1), -128]
         } else {
             [effective.color.0, effective.color.1, effective.color.2].map(i32::from)
@@ -1019,6 +1026,34 @@ mod tests {
             firing_house: None,
             invoker: None,
         }
+    }
+
+    /// Ares's RadSiteClass_Radiate_UnhardcodeSnow (`0x65B5FB`) keeps every
+    /// `RadColor=` channel on a snow map: Mental Omega's amber field, not the
+    /// retail snow substitution's green-only light.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_radiation_keeps_rad_color_on_snow() {
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[Radiation]\nRadLevelFactor=0.2\nRadColor=200,100,0\nRadSiteWarhead=RadSite\n",
+            ))
+            .expect("amber radiation rules");
+        let mut rad = RadiationState::default();
+        rad.apply_detonation(
+            desolator_det(10, 10),
+            0,
+            "SNOW",
+            &rules,
+            None,
+            &mut crate::sim::light_sources::LightingSources::default(),
+        );
+        let tint = rad
+            .site_at((10, 10))
+            .and_then(RadSite::light_source)
+            .expect("an active site's light")
+            .tint;
+        assert!(tint[0] > tint[1] && tint[1] > 0 && tint[2] == 0, "{tint:?}");
     }
 
     /// Square bounds clamp at the map edge without wrapping or panicking.

@@ -160,11 +160,32 @@ fn original_smoke_move_uses_old_live_bridge_and_retains_move_death_coords() {
             rules.particle_type(ty),
             rules.general.wind_direction(),
             &sim,
-        );
+        )
+        .unwrap();
         assert_particle(&p, &case["after"]);
         assert_eq!(
             sim.scenario_rng.native_state_hex(),
             case["scenario_after"].as_str().unwrap()
+        );
+    }
+}
+
+/// A mod's `[General] WindDirection` outside 0..=7 (or the -1 of a missing
+/// key) must not stop the game: the smoke moves by its own drift alone.
+#[test]
+fn a_wind_direction_outside_the_table_moves_smoke_with_no_wind() {
+    let data = corpus();
+    let case = &data["movement"][0];
+    for wind in [-1, 8] {
+        let rules = rules(&data, &case["input"]);
+        let mut sim = sim(false);
+        let mut p = declared_particle(&mut sim, &rules, &case["before"]);
+        let before = p.coords;
+        let ty = p.type_id;
+        move_smoke(&mut p, rules.particle_type(ty), wind, &sim).unwrap();
+        assert_eq!(
+            (p.coords.x - before.x, p.coords.y - before.y),
+            (p.drift_x, p.drift_y)
         );
     }
 }

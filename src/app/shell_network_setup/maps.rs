@@ -76,7 +76,7 @@ pub(crate) fn host_generated_manifest(state: &AppState) -> Result<Option<Generat
         .paths
         .ra2_dir;
     let source = crate::map::source::transfer_file_source(
-        &root.join("RandMap.img"),
+        &crate::map::source::random_map_dir(root).join("RandMap.img"),
         TransferResource::Preview,
     )?;
     let (length, digest) = source.physical_identity().expect("physical preview");
@@ -300,7 +300,7 @@ pub(crate) fn local_transfer_source(
     if resource == TransferResource::Preview {
         return if state.match_state.session.host() {
             Ok(Some(crate::map::source::transfer_file_source(
-                &config.paths.ra2_dir.join("RandMap.img"),
+                &crate::map::source::random_map_dir(&config.paths.ra2_dir).join("RandMap.img"),
                 resource,
             )?))
         } else {

@@ -61,7 +61,7 @@ fn sov01_transport_crosses_water_below_golden_gate() {
             .unwrap();
         let zones = sim
             .zone_grid
-            .as_ref()
+            .as_deref()
             .unwrap()
             .map_for(MovementZone::Amphibious)
             .unwrap();

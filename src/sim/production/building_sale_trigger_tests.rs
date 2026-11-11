@@ -87,7 +87,7 @@ fn building_sale_sentinel_suppresses_only_the_victim_building_loss() {
             }
         );
         assert!(sim.entities().get(1).unwrap().kill_record.is_recorded());
-        Simulation::record_destruction_once(&mut sim.substrate, &mut sim.houses, 1);
+        Simulation::close_kill_record(&mut sim.substrate, 1);
         assert_eq!(
             sim.houses[&victim].stats().losses(),
             losses,
@@ -97,17 +97,21 @@ fn building_sale_sentinel_suppresses_only_the_victim_building_loss() {
 }
 
 #[test]
-fn nested_zero_health_uninit_honors_sale_sentinel_before_outer_kill_bookkeeping() {
-    // This is the legacy fallback boundary a synchronous Tag removal can
-    // reach before outer RecordKill returns, not a fabricated trigger action.
-    for (index, expected) in [(-1, 0), (0, 1)] {
-        let (mut sim, _rules) = accounting_fixture(EntityCategory::Structure, index);
-        let owner = sim.intern("VICTIM");
-        assert!(!sim.entities().get(1).unwrap().kill_record.is_recorded());
-        Simulation::record_destruction_once(&mut sim.substrate, &mut sim.houses, 1);
-        assert_eq!(sim.houses[&owner].stats().buildings_lost(), expected);
-        assert!(sim.entities().get(1).unwrap().kill_record.is_recorded());
-        Simulation::record_destruction_once(&mut sim.substrate, &mut sim.houses, 1);
-        assert_eq!(sim.houses[&owner].stats().buildings_lost(), expected);
-    }
+fn nested_zero_health_uninit_books_no_loss_before_the_outer_kill() {
+    // A synchronous Tag removal can reach UnInit before the outer RecordKill
+    // returns. UnInit books nothing, since only RecordKill `0x00702D40` and
+    // RegisterKill `0x00703230` write the House loss counts, so the outer
+    // kill books the building once.
+    let (mut sim, rules) = accounting_fixture(EntityCategory::Structure, 0);
+    let owner = sim.intern("VICTIM");
+    let killer = sim.intern("KILLER");
+    sim.uninit_with_context(1, UninitContext::with_rules(&rules));
+    assert_eq!(sim.houses[&owner].stats().buildings_lost(), 0);
+    sim.record_the_kill(
+        1,
+        KillSource::House(Some(killer)),
+        KillCallback::Terminal,
+        UninitContext::with_rules(&rules),
+    );
+    assert_eq!(sim.houses[&owner].stats().buildings_lost(), 1);
 }

@@ -1,7 +1,6 @@
 //! The ring walk's wall fallback (`TechnoClass::Cell_Threat_Fallback @
 //! 0x006F8C10`) through the production scan owner on retail rules.
 
-use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::sim::combat::TargetKind;

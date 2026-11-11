@@ -36,8 +36,7 @@ pub(crate) const MENU_PAGE_BUTTON_POLICY: ButtonPolicy = ButtonPolicy {
     hover_flash: false,
     art_sink_y: 0.0,
 };
-const MENU_PAGE_BUTTON_ALIGN: ShellAlign =
-    ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0);
+const MENU_PAGE_BUTTON_ALIGN: ShellAlign = ShellAlign::BUTTON_CAPTION;
 
 pub(crate) enum MenuPageRenderResult {
     Rendered,
@@ -130,7 +129,7 @@ fn paint_labels<'a>(
         out.push(PaintLabel {
             text: resolve_csf(state, view.spec.title_key),
             rect: layout.title,
-            align: ShellAlign::H_CENTER,
+            align: ShellAlign::PANEL_TITLE,
             rgb: SHELL_TEXT_RGB_ENABLED,
             path_a_reveal: Some(shell_reveal_path_a(window)),
         });
@@ -182,7 +181,7 @@ pub(crate) fn paint_shell_status_line(
     let reveal = status.paint(now)?;
     (!text.is_empty()).then(|| PaintLabel {
         text: text.into(),
-        rect: window,
+        rect: crate::ui::shell::layout::status_text_rect(window),
         align: ShellAlign::NONE,
         rgb: SHELL_TEXT_RGB_ENABLED,
         path_a_reveal: Some(shell_reveal_path_a(reveal)),
@@ -222,6 +221,7 @@ pub(crate) fn active_page_title_text(
         ShellSlideKind::WolLobby => crate::ui::wol_shell::WOL_LOBBY_TITLE_KEY,
         ShellSlideKind::WolOptions => crate::ui::wol_options::PAGE.title_key,
         ShellSlideKind::WolSoundOptions => crate::ui::shell::sound::SHELL_SOUND_PAGE.title_key,
+        ShellSlideKind::WolChatTranslation => crate::ui::wol_chat_translation::PAGE.title_key,
         ShellSlideKind::WolAutoLoginQuery => crate::ui::wol_persona::AUTO_LOGIN_PAGE.title_key,
         ShellSlideKind::WolLocale => crate::ui::wol_persona::LOCALE_PAGE.title_key,
         ShellSlideKind::WolMyInformation => crate::ui::wol_my_info::PAGE.title_key,
@@ -229,13 +229,12 @@ pub(crate) fn active_page_title_text(
         ShellSlideKind::WolQuickMatch => crate::ui::wol_quick_match::PAGE.title_key,
         ShellSlideKind::WolAddBuddyQuery => crate::ui::wol_persona::ADD_BUDDY_PAGE.title_key,
         ShellSlideKind::Keyboard => crate::ui::shell::keyboard::KEYBOARD_PAGE.title_key,
-        ShellSlideKind::NetworkOptions => crate::ui::network_options::PAGE.title_key,
         ShellSlideKind::LanLobby => crate::ui::lan_shell::PAGE.title_key,
         ShellSlideKind::NetworkSetup(dialog) => dialog.page().title_key,
         ShellSlideKind::ChooseMap => crate::ui::skirmish_shell::CHOOSE_MAP_TITLE_KEY,
         ShellSlideKind::RandomMap => crate::ui::skirmish_shell::RANDOM_MAP_TITLE_KEY,
         // The Options heading is the dialog's own resolved label.
-        ShellSlideKind::Options | ShellSlideKind::VeraOptions => {
+        ShellSlideKind::Options => {
             return state
                 .frontend
                 .options_dialog
@@ -348,7 +347,7 @@ pub(crate) fn render_menu_page(
         state
             .frontend
             .main_menu_shell_error
-            .get_or_insert_with(|| "Required game-menu resources could not be loaded.".to_owned());
+            .get_or_insert_with(|| crate::i18n::tr("VERA:MenuResourcesMissing"));
         return Ok(MenuPageRenderResult::Fallback);
     }
 
@@ -377,8 +376,10 @@ pub(crate) fn render_menu_page(
                 "Failed to step RA2TS movie for dialog 0x{:X}: {err:#}",
                 view.spec.dialog.0
             );
-            state.frontend.main_menu_shell_error =
-                Some(format!("Could not play the menu movie: {err:#}"));
+            state.frontend.main_menu_shell_error = Some(crate::i18n::tr_fill(
+                "VERA:MenuMovieFailed",
+                &[("error", &format!("{err:#}"))],
+            ));
             return Ok(MenuPageRenderResult::Fallback);
         }
     }
@@ -492,6 +493,7 @@ pub(crate) fn render_menu_page(
             text: &text,
             cursor: software_cursor(state, CURSOR_DEPTH),
             effects: None,
+            smooth_art: false,
         },
     );
 

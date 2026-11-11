@@ -195,7 +195,7 @@ fn crate_land_type(sim: &Simulation, cell: (i16, i16)) -> u8 {
         })
 }
 
-/// `VocClass::PlayAt @ 0x007509E0` of one `[AudioVisual]` crate sound at the
+/// `VocClass::PlayAt @ 0x007509E0` of one configured crate sound at the
 /// crate centre. Every arm but Reveal plays it only when `HouseClass::
 /// IsControlledByCurrentPlayer @ 0x0050B6F0` admits the actor's house
 /// (`heard_by`): the sim cannot see the local player, so the event carries
@@ -468,7 +468,19 @@ pub(crate) fn pickup_crate(
     );
     let _ = remove_pickup_crate(sim, rules, registry, cell);
     if multiplayer && sim.session.game_options().crates {
-        let _ = place_one_random_crate(sim, rules, registry, ForcedPostPrecheckFailure::None);
+        if let Err(error) = place_one_random_crate(
+            sim,
+            rules,
+            registry,
+            ForcedPostPrecheckFailure::None,
+            frame_effects,
+        ) {
+            // The bool pickup receiver has no fallible continuation. Native
+            // would fault in the replacement's invalid Image/Mark chain;
+            // refuse the remaining pickup effect while keeping prior writes.
+            log::error!("crate pickup replacement at {cell:?} stopped: {error}");
+            return false;
+        }
     }
     if powerup == POWERUP_SQUAD {
         powerup = POWERUP_MONEY;
@@ -537,6 +549,7 @@ pub(crate) fn pickup_crate(
             POWERUP_MONEY => {
                 let amount = effects::money_crate_amount(
                     &mut sim.scenario_rng,
+                    rules,
                     selection.solo_money,
                     magnitude,
                 );
@@ -564,6 +577,9 @@ pub(crate) fn pickup_crate(
                     cell,
                     center,
                 );
+                // PickupCrate482C13 plays before the first healing receiver
+                // at482C8C, including that receiver's sound/RNG effects.
+                frame_effects.flush_sound(sim, rules);
                 effects::apply_heal_base_crate(sim, rules, Some(registry), actor_id, frame_effects);
             }
             POWERUP_DARKNESS => {
@@ -714,7 +730,14 @@ pub(crate) fn pickup_crate(
                 );
             }
             POWERUP_TIBERIUM => {
-                effects::apply_tiberium_crate(sim, rules, registry, cell, center);
+                if let Err(error) =
+                    effects::apply_tiberium_crate(sim, rules, registry, cell, center, frame_effects)
+                {
+                    // Native-invalid Image: stop this pickup arm after its
+                    // preceding writes, with no later placement/animation draw.
+                    log::error!("Tiberium crate failed: {error}");
+                    return false;
+                }
             }
             _ => {}
         }
@@ -724,7 +747,7 @@ pub(crate) fn pickup_crate(
 
 /// `0x004832F5..0x00483389`: the slot's `[Powerups]` anim 200 leptons above
 /// the crate centre, `AnimClass(type, coord, 0, 1, 0x600, 0, 0)`; a slot whose
-/// anim name resolved to no AnimType (`-1`) spawns nothing. Always true.
+/// retained animation index is `-1` spawns nothing. Always true.
 fn spawn_pickup_anim(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -732,7 +755,10 @@ fn spawn_pickup_anim(
     cell: (i16, i16),
     receiver: Option<NativeCellIdentity>,
 ) -> bool {
-    let Some(anim) = rules.powerups.anims.get(slot).and_then(Option::as_deref) else {
+    // Preserve the existing bounded lookup for a saved index whose Type was
+    // deleted without a replacement. Native only checks -1 before indexing.
+    let Some(anim) = rules.anim_type_runtime_key_by_index(rules.powerups.animation_index(slot))
+    else {
         return true;
     };
     let (Ok(rx), Ok(ry)) = (u16::try_from(cell.0), u16::try_from(cell.1)) else {
@@ -740,7 +766,7 @@ fn spawn_pickup_anim(
     };
     // 483307..483334 rereads the retained Cell only for an admitted anim.
     let center = crate_center(sim, cell, receiver);
-    let type_name = sim.interner.intern(anim);
+    let type_name = sim.interner.intern(&anim);
     let mut descriptor = crate::sim::components::AnimClassSpawnDescriptor::new(
         type_name,
         rx,
@@ -754,9 +780,9 @@ fn spawn_pickup_anim(
     descriptor.draw_flags = 0x600;
     descriptor.z_adjust = 0;
     descriptor.reverse = false;
-    // An unregistered anim name is native's `-1` index: no anim. Every other
-    // failure is a loader gap (`effect_asset_catalog::anim_class_roots` binds
-    // the `[Powerups]` names), worth a warning rather than silence.
+    // The retained index selects the current AnimTypeArray (483371..48337E),
+    // including a reused slot after Type reset. No later name lookup admits a
+    // failed INI read. Missing bound artwork remains an asset-loader gap.
     if let Err(error) = sim.spawn_anim_at_world(
         rules,
         descriptor,

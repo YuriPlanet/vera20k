@@ -6,7 +6,8 @@ Run against a supported original executable:
 VERA20K_GAMEMD_EXE='<original-gamemd.exe>' python -m tools.spatial_oracle.building_upgrades --check
 ```
 
-The corpus contains 15 admission/install, 6 power and 4 removal controls. It uses
+The corpus contains 15 admission/install, 6 power, 4 ordinary removal and 4
+top/earlier/host Turret removal controls. It uses
 the existing `building_art_transition.ArtFixture`, original executable mapping,
 and checked Unicorn execution. The metadata records the original byte slices,
 fixture priors and substituted callout boundaries. No game
@@ -110,7 +111,84 @@ clears slot 2 and becomes count 2; a null last slot still decrements; count zero
 does nothing. No pointer compaction occurs. Cloaking and superweapon PowerDown
 arms remain outside these ordinary power-up controls.
 
+## WallTower first installation
+
+PowerUp's `0x4514F3` identity check precedes the ordinary capacity gate. When
+the host is Rules `WallTower`, `0x45150B..0x4515E8` advances the retained
+Building `+0x5FC` image variant and increments the count even at capacity zero.
+The Building constructor `0x43B768/0x43B7BF` initializes that variant to -1;
+the normal cycle is -1, 0, 1, 2, 0. This is separate from the gunner's turret
+index. A voxel turret skips the art/variant change but still increments count.
+The selected non-voxel arm clears slot9 with `0x451E40`, requests
+`Image + '_' + ('B' + variant)` directly through `0x451890`, then stores the
+variant. The raw next=-1 arm skips both allocation and the variant store.
+
+Reproduce a zero-capacity component control with the existing fixture:
+
+```sh
+VERA20K_GAMEMD_EXE='<original-gamemd.exe>' python - <<'PY'
+from tools.spatial_oracle.building_upgrades import UpgradeFixture, UPGRADE_TYPE
+from tools.spatial_oracle.object_health import OBJ, TYPE, RULES, dwords
+f = UpgradeFixture()
+f.prepare_upgrade(slots=0, host='GADUMY', requested='GADUMY')
+u = f.u
+u.mem_write(TYPE + 0x1F8, b'NTIRON\0')
+u.mem_write(RULES + 0x87C, dwords(TYPE))
+u.mem_write(TYPE + 0x16C5, b'\0')
+u.mem_write(OBJ + 0x5FC, dwords(-1))
+u.mem_write(OBJ + 0x55C, bytes(21 * 4))
+assert f.admit()
+result = f.install()
+assert result['count'] == 1 and result['slots'][0] == UPGRADE_TYPE
+assert f.read(OBJ + 0x5FC) == 0
+f.unchanged()
+PY
+```
+
+These component values and the ordinary/voxel contrasts are pinned in
+`building_upgrades::tests::wall_tower_identity_bypasses_only_the_ordinary_power_up_capacity_check`.
+This fixture supplies the type identity and replaces animation allocation,
+House refresh and temporary-object UnInit; it does not execute retail startup.
+
+The retail-backed GADUMY/GAPILL authored-map test uses production layered
+Rules and fixed ART: General.WallTower is GADUMY, Image is NTIRON, capacity is
+zero, and NTIRON_B is unregistered. The original allocator synchronizes6E6
+before its failed AnimType lookup; absence of an animation cannot suppress
+the count/variant change. Rust's existing allocator, animation deletion and
+temporary-object lifecycle remain their single owners. The new variant uses
+BuildingArt serialization and world_hash; codec roundtrips do not certify
+production PreparedLoad asset restoration.
+
+Registering a dynamic turret animation in a map/mod reaches the separate
+Rules slot9/SHP-turret reader and asset-binding residual. Its placement or
+recreation can still be wrong or absent; the selected unregistered NTIRON_B
+does not consume those coordinates. The full WallTower/SHP-turret mechanism
+and whole451400 remain open. PowerDown451690 resets the variant only when
+the final upgrade type has `Turret=true`; its ordinary branch preserves it.
+GAPILL's native-default `Turret=false` does not reach that reset; the
+turret-removal branch of `power_down_building_upgrade` applies it through
+`BuildingArt`.
+
 ## Coverage limits
+
+`451690` tests the removed top type's own `Turret` byte (`+CA1`). When true,
+it clears animation slot 9, then re-reads the live signed count, clears only
+its last type pointer and sets count to zero. Earlier pointers remain retained.
+Only a lower upgrade or host having Turret does not select that branch.
+The four `turret_removal` controls execute those alternatives with distinct
+type pointers, empty animation slots, first SuperWeapon=-1 and variant5FC=-1.
+Rust consumes both pointer identities and the selected animation slot; its
+occupied-slot regression uses real Anim objects through the existing cleanup
+owner, with provided slot occupancy rather than a slot9 producer claim.
+
+The connected refund/constructor comparison lives in the existing
+[`captured_building_sale`](captured_building_sale.md) owner. Count-zero stale
+prefixes must not be eagerly cleared: native PowerDown clears only the top
+pointer. A later explicit-level install might expose retained pointers again;
+that joined history is not covered here. The raw variant5FC reset is an explicit
+native store, but VERA has no authoritative producer/consumer for the broader
+SHP turret variant mechanism. Fresh non-WallTower hosts remain at native -1;
+that separate mechanism and malformed signed counts outside 1..3 remain residuals.
 
 The controls supply an already resolved ordinary host and incoming building,
 not physical INI loading, world lookup or Building construction. Original

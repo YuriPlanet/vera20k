@@ -1,17 +1,17 @@
 # Multiplayer behavior and ownership
 
-Current macOS and Linux source builds provide LAN and online multiplayer through
+Windows, macOS and Linux builds provide LAN and online multiplayer through
 the normal game menus. Both paths use the existing
 owners for session setup, synchronized commands, reliable UDP delivery, frame
-pacing, checksums, disconnects, results and rematches. The function-level
-active-retail `gamemd.exe` parity audit remains separate from runtime validation.
+pacing, checksums, disconnects, results and rematches.
 
 Legacy IPX sockets and the IPX protocol are excluded. Shared behavior in
 IPX-named classes remains relevant. Retail's Network menu constructs the IPX
 interface (`52E3D2`); VERA uses IPv4 UDP for this LAN entry point. That replacement,
 including limited broadcast on port 1234, is an explicit transport adaptation.
-Online play uses the Cloudflare HTTPS lobby and an authenticated UDP gameplay
-relay on DigitalOcean. Relay admission handles client source-address changes;
+Online play uses the Cloudflare HTTPS lobby and authenticated UDP gameplay relays;
+the lobby gives each match a relay near its players, or spreads it over several
+relays when they are far apart. Relay admission handles client source-address changes;
 the relay orders modern online commands while clients retain simulation authority. Matches are between
 VERA20k clients; legacy IPX and gamemd wire compatibility are not supported.
 
@@ -28,11 +28,19 @@ The HTTPS service supplies match-specific relay credentials before the same load
 and command handoff. Both paths transfer selected authored maps or generated
 seed/preview data and verify build, rules and effective-map agreement before start.
 
-Typing `/translate zh` (or `en`, `zh-tw`, `ja`, `ko`, `de`, `fr`, `es`, `pt`) in an
-online chat edit turns on chat translation, saved as `[VERA] TranslateChat=`;
-`/translate off` stops it. Received lobby, room and match chat written in the other
-script (Latin versus CJK) is sent to the lobby's translation service. The original
-stays; its translation follows as a line from the same sender marked `»`.
+Typing `/translate zh` (or `en`, `zh-tw`, `ja`, `ko`, `de`, `fr`, `es`, `pt`, `ru`,
+`ar`, `th`, `tr`, `sv`) in an online chat edit turns on chat translation, saved as `[VERA] TranslateChat=`;
+`/translate off` stops it. The online lobby's Chat Translation page picks the same
+languages or Off, and sets where lines are translated (lobby, game rooms, matches,
+private messages), whether the source language is named, whether languages sharing the
+reader's alphabet are translated, and which languages the player already reads, all
+saved as `[VERA] Translate*=`. Choosing a language other than English starts with
+shared-alphabet lines translated too. Received chat in another script is sent to the lobby's
+translation service: for a Latin-script language a line with any letter outside it, for
+any other language a line with none of its letters. The original stays; its translation
+follows as a line from the same sender marked `»`, starting with a bracketed note in the
+reader's language that names the source language, unless it only repeats the original
+or the service says it was already in a language the player reads.
 
 The app services reliable messages and intermediate progress while loading, and
 continues servicing transport during frame waits. Gameplay uses the same
@@ -53,27 +61,38 @@ never finishes loading leaves in the first frame once silent for 60 seconds, or 
 minutes after the first client was ready; the native loading timeout leaves that
 departure to the relay. A match spread over several relays is cancelled instead.
 At each deadline, missing input is empty; a command joins the next unsealed
-frame. The sender also waits for that commit. Each new command batch goes out
-twice, so one lost uplink datagram does not hold it and every later batch for
-the 100 ms retry.
+frame. The sender also waits for that commit.
 Frames use the existing Event codec and simulation queues, with a fresh compression
-cache per self-contained encrypted batch. The relay never receives payload keys.
-A batch that fails the payload key's authentication or does not decode makes its
-sender leave at that frame on every client, as if by Leave; the rest of its
-stream is ignored.
+cache per self-contained batch. Batches travel in plain text: the relay can read
+them, and only the per-hop MAC authenticates them. A batch's Event packet header
+is not sent; each client rebuilds it from the batch's source and frame. A batch
+that does not decode, or whose House is not its source's, makes its sender leave
+at that frame on every client, as if by Leave; the rest of its stream is ignored.
 
-Clients negotiate server-pushed updates from that same retained history. Healthy
-clients send cumulative receive watermarks instead of continually requesting new
-frames; gaps use the existing replay reader. The relay pushes each
-unacknowledged entry once more about 8 ms after the first copy, so one lost
-datagram costs about that delay rather than a repair round trip. Repeats use
-only capacity fresh entries leave, under their own relay budget, so heavy load
-drops repeats before it delays a fresh entry. Older relays fall back to
-polling, and older clients can still pull from an upgraded relay.
+Redundancy follows each player's measured link
+(`services/relay/adaptive-transport/spec.md`). One merged UPLINK request carries
+unacknowledged batches, the receive watermark, the per-hop receipt feedback,
+checksums and pace. The relay pushes each turn packed, with the reader's
+unacknowledged records piggybacked into the space the turn leaves. A good link
+sends each batch and turn once. A lossy or jittery link also gets 16 ms uplink
+copies and 8 ms downlink repeats. A congested link gets neither, and a silent
+one only probes. Losses that the receipt feedback shows are retransmitted by the
+relay; a lasting gap falls back to the existing replay reader. Clients and relay
+ship together: older clients are not supported.
+
+Every datagram uses the compact envelope
+(`services/relay/bandwidth-compaction/spec.md`): a 32-bit session the relay
+assigns at admission, a 32-bit hop sequence and a 4-byte truncated HMAC, 13 bytes
+in all. History packs encode each record relative to the previous one and decode
+alone. The receiving client rebuilds the same canonical records, so journal,
+replay and federation are unchanged. Measured traffic is in
+`services/relay/adaptive-transport/results.md`.
 
 When every active player and the relay support synchronized pause, any player
 can use the Pause key or Options' **Pause All Players** / **Resume All Players**
-button. A pause marker follows the relay's last committed frame; clients finish
+button, or type `/pause` or `/resume` as a whole line in match chat. Such a line is
+not sent as chat; in a match without synchronized pause it answers that pausing is
+not available. A pause marker follows the relay's last committed frame; clients finish
 that same frame and stop. Resume uses a separate authenticated control, so it
 works while simulation ticks are stopped. Both markers use the normal ordered
 history and replay recovery. Connections, chat and ticket renewal keep running;
@@ -91,8 +110,13 @@ schedule earlier, so no hold exceeds that reserve. Stable delivery gradually
 reduces the reserve. The relay still owns the clock; local pacing never changes
 commands, simulation order or another player's progress. A stalled or slow client
 catches up through at most eight ordinary simulation transactions or eight
-milliseconds per service wake, then yields to input/rendering. It never skips
-simulation ticks, and pacing never interrupts an already-started frame transaction.
+milliseconds per service wake, then yields to input. It draws once no frame is
+due, so a client that draws slower than the match rate shows a steady number of
+frames per picture instead of falling behind and catching up in bursts. A
+picture stands at most four recent draw times (at least 50 ms): the simulation
+may take the four fifths of the time the relay expects a player's tick cost to
+hold. It never skips simulation ticks, and pacing never interrupts an
+already-started frame transaction.
 An agreed resume resets the local playout clock so paused time creates no catch-up debt.
 
 A player whose PC cannot keep up slows the match, within limits. Each client
@@ -114,12 +138,16 @@ every active client to report; a room with an older client or one spread over
 several relays keeps its speed. Native lockstep instead slows every match to its
 slowest player (ProcessNetwork `0x00647BF4..0x00647E6D`).
 
-The relay keeps a bounded RAM cache and the full encrypted match journal on
-disk. Temporary connection loss keeps the player's identity, units, input cursor
+The relay keeps a bounded RAM cache and the full match journal on disk. The
+journal is not encrypted: it holds plain commands and relies on file permissions. Temporary connection loss keeps the player's identity, units, input cursor
 and world in the match; the client renews its ticket and reads missed frames when
 connectivity returns. The UI shows Reconnecting or Catching up while healthy
 clients continue. After ten minutes of silence the relay removes the player
-through the same stream. Like a native lost connection, a removal for silence
+through the same stream. A game that has had no answer from the relay for that
+long, and 15 seconds more, releases its relay route and sends it nothing more:
+its place is gone, and a game whose ticket lapsed gets no answer that says so.
+A match of two or more players then ends with the game-server connection
+message; a one-human match plays on without the relay. Like a native lost connection, a removal for silence
 destroys the player's House and shows "connection lost"; a player who quits still
 leaves through EXIT. While Reconnecting, the relay cannot sequence that EXIT, so
 a confirmed Abort Mission returns to the shell once the relay has been silent for
@@ -218,36 +246,13 @@ modern online ordering above is an intentional adaptation.
 - Ordinary waits use the private response maximum from `542450`; primary-global
   acknowledgement history is excluded. The native optional extra channel at
   manager `+50` remains an unimplemented dependency.
+- The LAN application message's name field holds 19 bytes and a terminator. An
+  online name may be 24 characters, so VERA writes the first 19 bytes of a longer
+  name and receivers match a sender by that same prefix (together with its
+  endpoint, as before). LAN names are at most 19 and travel unchanged.
 - Setup Back retains transport history within a lobby visit. A fresh post-match
   visit resets queues, sequence history, observations and lobby timing while
   retaining the portable socket bindings.
-
-## Validation and native audit
-
-Two consecutive online matches passed functional validation with 30 independent
-client processes and more than 20,000 active mobile units per match. The clients
-ran across seven machines: two local macOS clients on one Mac and 28 Linux clients
-cohosted on six VMs. The run covered real Move/Stop input, matching shared
-simulation checksums and hashes, both results screens and lobby returns, a rematch
-in the same client processes, and final Main Menu return.
-
-The Linux clients used software rendering. Sampled host traces showed approximately
-0.74 simulation frames per wall-clock second in each match. These samples
-measure observed simulation progress, not display FPS or the selected TIMING rate.
-This establishes functional scale behavior; smooth, real-time performance remains
-unproven. Exhaustive fault coverage and Windows multiplayer validation are not
-claimed here.
-
-The native-function audit continues through the existing owners, including wider
-gameplay command producers and cooperative handoffs. Native extra-channel/router
-behavior, interface selection and local MoveFlash drawing retain their separate
-audit scope. VERA's IPv4/relay transport and bounded command admission do not claim
-legacy wire compatibility or exhaustive gamemd behavior.
-
-Solo AI validation also completed two 600-frame online rounds with Move and Stop
-applied in their issue frame, real AI activity, lobby return, rematch and acknowledged
-logout. This covers local input scheduling; it does not measure human-to-human
-Internet latency or establish complete AI or cooperative-campaign behavior.
 
 ## Reproducible validation tools
 
@@ -300,3 +305,11 @@ Campaign; seed its settings folder with a `coopsave.ini` section for the pair
 `CurrentMap` is the campaign's last stage: at native frame 150 both processes flag every
 human House to win, BC6 offers only Quit, both press it and the campaign-end dialog
 `0xBC7` opens. The host stays on it; the guest presses Continue back to the lobby.
+The `online-live-coop-host` and `online-live-coop-guest` targets play the same campaign
+in a VERA room on the deployed lobby and relay, with the offline test service off. Each
+takes `--online-account <name>`; the guest also takes `--online-host <host name>`. The
+host uses the Soviet row through Choose Map and the guest joins. At native frame 150
+both flag every human House to win, both press BC6's Continue, and the kept room comes
+back on the next stage with no `TXT_SAVE_CAMP_AVAILABLE` line in either setup's chat;
+the host starts it and it must run 90 frames. The manifest's
+`lan.cooperative` records the BC6 result, the room's next map and its startup.

@@ -226,6 +226,9 @@ fn busy_factory_exit_player_uses_house_order_without_moving_primary() {
     assert!(!sim.object_placement_scope_active());
 }
 
+/// Stock type match; Ares admits NAWEAP
+/// ([`ares_busy_factory_exit_takes_another_type_that_can_build_the_product`]).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn busy_factory_exit_skips_attached_different_type_and_non_guard_buildings() {
     let Some((mut sim, rules, owner)) = busy_factory_exit_world() else {
@@ -274,6 +277,29 @@ fn busy_factory_exit_skips_attached_different_type_and_non_guard_buildings() {
     );
     assert!(sim.production.factories().building_factory(5).is_none());
     assert!(sim.production.is_primary_factory(1));
+}
+
+/// Ares 3.0 BuildingClass_KickOutUnit_FindAlternateKickout (100415E0, hook
+/// 0x4444E2): a guarding NAWEAP, another type with GAWEAP's `Factory=` and
+/// `Naval=` that MTNK can be built at, takes the busy factory's product.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_busy_factory_exit_takes_another_type_that_can_build_the_product() {
+    let Some((mut sim, rules, owner)) = busy_factory_exit_world() else {
+        return;
+    };
+    spawn_structure(&mut sim, &rules, 4, "Americans", "NAWEAP", 20, 20);
+    busy_factory_exit_mission(&mut sim, 4, crate::sim::mission::MissionType::Guard);
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .base_projection_mut()
+        .replace_buildings_for_test(vec![1, 4, 3, 2]);
+    let product = busy_factory_exit_product(&mut sim, &rules, owner, false);
+    assert!(dispatch_production_changes_for_tests(
+        &mut sim, &rules, None
+    ));
+    assert_busy_factory_exit_receiver(&sim, &rules, product, 4);
 }
 
 #[test]
@@ -512,6 +538,9 @@ fn busy_factory_exit_without_an_alternate_refunds_player_product_and_promotes_qu
     assert!(sim.production.factories().building_factory(1).is_none());
 }
 
+/// Stock gamemd rows; Ares 100415E0 (hook 0x4444E2) admits other factory
+/// types they hold as refused candidates.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng() {
     use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -1174,13 +1203,9 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
         .unwrap()
         .entity_id
         .unwrap();
-    for _ in 0..128 {
-        assert!(live.issue_local_command(CommandEnvelope::new(
-            owner,
-            0,
-            Command::Stop { entity_id: 999 },
-        )));
-    }
+    let free = live.available_local_command_slots();
+    let stop = CommandEnvelope::new(owner, 0, Command::Stop { entity_id: 999 });
+    assert!(live.issue_local_commands(std::iter::repeat_n(stop, free)));
     // The app's pre-Logic drain must not free any of the local slots.
     let due = live.take_due_commands();
     assert!(due.is_empty());
@@ -1226,7 +1251,7 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
         )
         .unwrap();
     let admitted = output.take_admitted_commands();
-    assert_eq!(admitted.len(), 129);
+    assert_eq!(admitted.len(), free + 1);
     assert_eq!(admitted[0], future);
     assert!(
         admitted[1..]
@@ -1927,7 +1952,12 @@ fn forbidden_houses_leave_americans_one_airforce_command() {
     let americans = build_options_for_owner(&sim, &rules, "Americans");
     let airforce: Vec<_> = americans
         .iter()
-        .filter(|opt| opt.display_name == "Airforce Command")
+        .filter(|opt| {
+            rules
+                .object(sim.interner.resolve(opt.type_id))
+                .and_then(|obj| obj.name.as_deref())
+                == Some("Airforce Command")
+        })
         .collect();
 
     assert_eq!(
@@ -2195,8 +2225,8 @@ fn failed_vehicle_exit_promotes_a_fresh_identity_that_can_deliver_after_cells_cl
     assert_eq!(credits_for_owner(&sim, "Americans"), 50_700);
     for cell in terrain.cells_mut_for_test() {
         cell.land_type = crate::rules::terrain_rules::LandType::Clear.as_index();
-        cell.speed_costs.track = Some(100);
-        cell.speed_costs.wheel = Some(100);
+        cell.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::ONE);
+        cell.speed_costs.wheel = Some(crate::util::native_x87::NativeF32Bits::ONE);
         cell.zone_type = crate::map::resolved_terrain::zone_class::GROUND;
     }
     let clear_grid = PathGrid::from_resolved_terrain(&terrain);
@@ -2841,7 +2871,8 @@ fn a_computer_barracks_sends_its_infantry_to_a_listed_post() {
                 product,
                 &rules,
                 crate::sim::world::ObjectAiCtx::default(),
-            );
+            )
+            .unwrap();
             let e1 = sim.substrate.entities.get(product).unwrap();
             assert_eq!(e1.navigation.nav_com(), Some(post), "{context}");
             assert_eq!(e1.navigation.nav_list(), [], "{context}");

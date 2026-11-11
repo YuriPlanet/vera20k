@@ -13,7 +13,7 @@
 use glam::{IVec3, Mat4, Vec3};
 use thiserror::Error;
 
-use super::{Particle, ParticleSystem, RailgunRuntimeState};
+use super::{Particle, ParticleSystem};
 use crate::rules::particle_type::ParticleType;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::rng::SimRng;
@@ -40,8 +40,6 @@ pub(crate) enum RailgunParticleError {
     NativeX87(#[from] NativeX87Error),
     #[error(transparent)]
     World(#[from] super::spark_world::SparkWorldError),
-    #[error("Railgun particle has no behavior-4 state")]
-    MissingRuntimeState,
     #[error("Railgun spiral point left the finite affine domain")]
     NonFiniteRing,
 }
@@ -236,7 +234,7 @@ fn lay_spiral(
         );
 
         // 62F5FA..62F654: the constructor, both coordinates the point.
-        let (mut particle, start_rgb) = Particle::new_with_ground(
+        let mut particle = Particle::new_with_ground(
             particle_type_id,
             point,
             point,
@@ -310,18 +308,7 @@ fn lay_spiral(
             Fpu::load_f32(particle_type.velocity)?,
         ))?;
 
-        // Constructor62B707..62B71B: the float position is the point itself.
-        let position = [point.x, point.y, point.z]
-            .map(|axis| Fpu::store_f32(Fpu::load_i32(axis)))
-            .into_iter()
-            .collect::<Result<Vec<_>, _>>()?;
         particle.direction = direction;
-        particle.railgun = Some(RailgunRuntimeState {
-            position: [position[0], position[1], position[2]],
-            start_rgb,
-            color_index: 0,
-            color_accumulator: NativeF64Bits::POSITIVE_ZERO,
-        });
         Simulation::reveal_particle(&mut sim.substrate, particle.stable_id());
         sys.particles.push(particle);
     }
@@ -336,9 +323,6 @@ pub(super) fn tick_particle(
     particle_type: &ParticleType,
     rng: &mut SimRng,
 ) -> Result<(), RailgunParticleError> {
-    let mut state = particle
-        .railgun
-        .ok_or(RailgunParticleError::MissingRuntimeState)?;
     let speed = Fpu::load_f32(particle.velocity)?;
     let mut step = [NativeF32Bits::POSITIVE_ZERO; 3];
     for (axis, direction) in particle.direction.into_iter().enumerate() {
@@ -357,27 +341,26 @@ pub(super) fn tick_particle(
     );
     particle.velocity = Fpu::store_f32(Fpu::add(jitter, speed))?;
     for axis in 0..3 {
-        state.position[axis] = Fpu::store_f32(Fpu::add(
+        particle.float_position[axis] = Fpu::store_f32(Fpu::add(
             Fpu::load_f32(step[axis])?,
-            Fpu::load_f32(state.position[axis])?,
+            Fpu::load_f32(particle.float_position[axis])?,
         ))?;
     }
     // vt+0x1B4 at 0x0062C48E is a plain Location write for a particle.
     let mut location = [0; 3];
-    for (axis, value) in state.position.into_iter().enumerate() {
+    for (axis, value) in particle.float_position.into_iter().enumerate() {
         location[axis] = Fpu::ftol_i32_low_masked(Fpu::load_f32(value)?);
     }
     particle.coords = IVec3::from_array(location);
     let color_count = i32::try_from(particle_type.color_list.len()).unwrap_or(i32::MAX);
     let sample = rng.next_range_u32_inclusive(0, MAX_SAMPLE);
     super::spark::advance_point_color(
-        &mut state.color_index,
-        &mut state.color_accumulator,
+        &mut particle.color_index,
+        &mut particle.color_accumulator,
         particle_type.color_speed,
         sample,
         color_count,
     )?;
-    particle.railgun = Some(state);
     Ok(())
 }
 

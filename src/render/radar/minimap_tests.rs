@@ -64,6 +64,7 @@ fn playfield_projection_grid(side: u16) -> TerrainGrid {
         origin_x: 0.0,
         origin_y: 0.0,
         bridge_middle_tiles: None,
+        deformation_tiles: Vec::new(),
     }
 }
 
@@ -456,12 +457,16 @@ fn native_radar_event_surface_rebuild_uses_current_playfield_without_baseline_re
         (rebuilt_local.0 as u32, rebuilt_local.1 as u32),
         "terrain and overlay rebuild in the same generated-primary frame"
     );
-    let destination = rebuilt_surface.surface_to_aperture_pixel(rebuilt_local);
-    let offset = ((destination.1 as u32 * MINIMAP_WIDTH + destination.0 as u32) * 4) as usize;
+    let width = rebuilt_surface.generated_size().0;
+    let word = rebuilt
+        .native_radar_terrain
+        .as_ref()
+        .expect("rebuilt terrain surface")
+        .generated_rgb565()[(rebuilt_local.1 * width + rebuilt_local.0) as usize];
     assert_eq!(
-        &rebuilt.base_rgba[offset..offset + 4],
-        &[168, 168, 128, 255],
-        "stock no-CellAnim tiberium reaches the aperture as packed khaki"
+        crate::render::native_surface_format::RGB565.unpack_rgb8(word),
+        [168, 168, 128],
+        "stock no-CellAnim tiberium reaches the generated surface as packed khaki"
     );
     assert_ne!(
         initial
@@ -568,20 +573,6 @@ fn playfield_projection_updates_camera_bounds_and_click_inverse_mapping() {
     assert_ne!(initial_geometry, shrunk_geometry);
 }
 
-fn radar_gate_projection() -> RadarProjectionFacts {
-    RadarProjectionFacts {
-        native_surface: None,
-        world_origin_x: 0.0,
-        world_origin_y: 0.0,
-        world_width: 1.0,
-        world_height: 1.0,
-        map_offset_x: 0.0,
-        map_offset_y: 0.0,
-        map_pixel_w: 1.0,
-        map_pixel_h: 1.0,
-    }
-}
-
 fn radar_gate_rules(fields: &str) -> RuleSet {
     RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(&format!(
         "[VehicleTypes]\n0=DOT\n[DOT]\nStrength=100\n{fields}\n"
@@ -629,8 +620,7 @@ fn radar_pixel_shroud_is_tested_at_the_cells_floor() {
             .expect("wide generated surface");
     let (x, y) = surface.cell_to_surface_pixel((10, 10));
     let entry = RadarTrackerEntry { stable_id: 1, x, y };
-    let mut projection = radar_gate_projection();
-    projection.native_surface = Some(surface);
+    let pixel_cell = Some(surface.surface_pixel_to_visibility_cell((x, y)));
     let rules = radar_gate_rules("");
     let eligible = |revealed: (u16, u16)| {
         let mut fog = FogState::default();
@@ -646,7 +636,7 @@ fn radar_pixel_shroud_is_tested_at_the_cells_floor() {
             true,
             Some(&rules),
             Some(&interner),
-            projection,
+            pixel_cell,
             Some(&cells),
         )
     };
@@ -684,7 +674,7 @@ fn radar_pixel_shroud_exception_distinguishes_local_pointer_from_singleplayer_hu
         false,
         Some(&rules),
         Some(&interner),
-        radar_gate_projection(),
+        Some((0, 0)),
         None,
     ));
     assert!(!radar_pixel_candidate_eligible(
@@ -698,7 +688,7 @@ fn radar_pixel_shroud_exception_distinguishes_local_pointer_from_singleplayer_hu
         true,
         Some(&rules),
         Some(&interner),
-        radar_gate_projection(),
+        Some((0, 0)),
         None,
     ));
 }
@@ -722,12 +712,12 @@ fn radar_pixel_radar_invisible_precedes_radar_visible_but_alliance_restores() {
         &houses,
         Some(local),
         &fog,
-        &alliances,
+        &test_alliances(alliances.clone()),
         true,
         true,
         Some(&rules),
         Some(&interner),
-        radar_gate_projection(),
+        Some((0, 0)),
         None,
     ));
 
@@ -740,12 +730,12 @@ fn radar_pixel_radar_invisible_precedes_radar_visible_but_alliance_restores() {
         &houses,
         Some(local),
         &fog,
-        &alliances,
+        &test_alliances(alliances.clone()),
         true,
         true,
         Some(&rules),
         Some(&interner),
-        radar_gate_projection(),
+        Some((0, 0)),
         None,
     ));
     // The player's alliance with the enemy alone restores it.
@@ -762,12 +752,12 @@ fn radar_pixel_radar_invisible_precedes_radar_visible_but_alliance_restores() {
         &houses,
         Some(local),
         &fog,
-        &alliances,
+        &test_alliances(alliances.clone()),
         true,
         true,
         Some(&rules),
         Some(&interner),
-        radar_gate_projection(),
+        Some((0, 0)),
         None,
     ));
 }
@@ -800,7 +790,7 @@ fn radar_pixel_insignificant_passive_owner_requires_radar_visible() {
         true,
         Some(&hidden),
         Some(&interner),
-        radar_gate_projection(),
+        Some((0, 0)),
         None,
     ));
     assert!(radar_pixel_candidate_eligible(
@@ -814,7 +804,7 @@ fn radar_pixel_insignificant_passive_owner_requires_radar_visible() {
         true,
         Some(&restored),
         Some(&interner),
-        radar_gate_projection(),
+        Some((0, 0)),
         None,
     ));
 }
@@ -846,7 +836,7 @@ fn radar_pixel_fogged_but_explored_cell_passes_render_gate_without_gap_proxy() {
         true,
         Some(&radar_gate_rules("")),
         Some(&interner),
-        radar_gate_projection(),
+        Some((0, 0)),
         None,
     ));
 }

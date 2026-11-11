@@ -143,3 +143,42 @@ fn promotion_sound_ai_selects_overrides_silence_and_stock_fallback() {
         );
     }
 }
+
+/// The EVA voice says only "Unit promoted". The promoted object's own interned
+/// type is already on the entity at the emit point, so the accessibility row
+/// can name it without a second lookup, a coordinate guess, or a translation.
+#[test]
+fn promotion_event_carries_the_promoted_objects_type() {
+    let (_, rules) = scene_rules(SOUNDS);
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 31);
+    let ids: Vec<_> = [("HERO", 10), ("SILENT", 12), ("DEFAULT", 14)]
+        .into_iter()
+        .map(|(name, x)| {
+            sim.spawn_object(name, "Americans", x, 10, 0, &rules)
+                .unwrap()
+        })
+        .collect();
+    sim.object_ai_stage(Some(&rules)); // first sampling caches silently
+    let _ = sim.take_sound_events_for_test();
+    for id in &ids {
+        sim.substrate
+            .entities
+            .get_mut(*id)
+            .unwrap()
+            .veterancy
+            .set_veteran();
+    }
+    sim.object_ai_stage(Some(&rules));
+    let mut types: Vec<_> = sim
+        .take_sound_events_for_test()
+        .iter()
+        .filter_map(|event| match event {
+            SimSoundEvent::UnitPromoted { type_id, .. } => {
+                Some(sim.interner.resolve(*type_id).to_owned())
+            }
+            _ => None,
+        })
+        .collect();
+    types.sort();
+    assert_eq!(types, ["DEFAULT", "HERO", "SILENT"]);
+}

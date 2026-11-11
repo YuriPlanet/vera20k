@@ -354,14 +354,13 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
         }
     }
 
-    /// `0x0050B6F0` asks whether the owner is the local player; each human
-    /// house's map takes what its own client would. RESIDUAL: in a campaign
-    /// (GameMode 0) it also admits a `PlayerControl=` house, whose shot then
-    /// asks and maps the player's map (through RevealArea's house gate,
-    /// `0x00567AB0..0x00567B12`); VERA asks and maps that house's own.
-    fn owner_is_player(&mut self) -> bool {
-        self.entity()
-            .is_some_and(|entity| self.strike.world.owner_is_human(entity.owner()))
+    /// [`Simulation::human_player_clients`] of the owner: each human house's
+    /// map takes what its own client would, and in a campaign a
+    /// `PlayerControl=` house's shot asks the player's map too.
+    fn player_clients(&mut self) -> Vec<InternedId> {
+        self.entity().map_or_else(Vec::new, |entity| {
+            self.strike.world.human_player_clients(entity.owner())
+        })
     }
 
     fn location(&mut self) -> ProjectileCoord {
@@ -376,20 +375,17 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
             })
     }
 
-    /// On the owner's map, as [`Self::owner_is_player`] reads it. A world
-    /// without a map (a fixture) has nothing to ask.
-    fn is_shrouded(&mut self, point: ProjectileCoord) -> bool {
+    /// On `client`'s map. A world without a map (a fixture) has nothing to
+    /// ask.
+    fn is_shrouded(&mut self, client: InternedId, point: ProjectileCoord) -> bool {
         let world = &*self.strike.world;
-        let (Some(owner), Some(terrain)) = (
-            self.entity().map(GameEntity::owner),
-            world.resolved_terrain.as_ref(),
-        ) else {
+        let Some(terrain) = world.resolved_terrain.as_ref() else {
             return false;
         };
         crate::sim::vision::point_is_shrouded(
             &world.fog,
             &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),
-            owner,
+            client,
             crate::sim::components::DriveCoord {
                 x: point.x,
                 y: point.y,
@@ -398,10 +394,13 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
         )
     }
 
-    /// On the owner's map only: the other houses' clients do not run it.
+    /// On `client`'s map, when RevealArea's house gate
+    /// (`0x00567AB0..0x00567B12`, [`crate::sim::vision::reveal_admits`])
+    /// admits the owner there: the owner's own map, or an ally's under
+    /// `AllyReveal=`.
     /// RESIDUAL: a negative `AttackingAircraftSightRange=` indexes before
     /// RevealArea's count table natively; VERA reveals nothing. Retail is 2.
-    fn reveal_area(&mut self, final_pass: bool) {
+    fn reveal_area(&mut self, client: InternedId, final_pass: bool) {
         let strike = &mut *self.strike;
         let world = &mut *strike.world;
         let Some(entity) = world.substrate.entities.get(strike.id) else {
@@ -418,9 +417,18 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
             .attacking_aircraft_sight_range
             .clamp(0, i32::from(u16::MAX)) as u16;
         let config = world.sight_reveal_config(strike.rules);
+        if !crate::sim::vision::reveal_admits(
+            &world.house_alliances,
+            owner,
+            client,
+            &config,
+            &world.interner,
+        ) {
+            return;
+        }
         let heights = world.sight_height_grid(&config);
         let _ = world.reveal_area(
-            &[owner],
+            &[client],
             (
                 location.x.div_euclid(256) as u16,
                 location.y.div_euclid(256) as u16,

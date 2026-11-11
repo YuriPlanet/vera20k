@@ -282,8 +282,8 @@ fn retail_siege_chopper_draws_schd_only_after_deployment_completes() {
         .body_frame_counter
         .set_for_test(1);
     let frame_counts = std::collections::BTreeMap::from([
-        (("SCHP".to_string(), VxlLayer::Body, 0), 2),
-        (("SCHD".to_string(), VxlLayer::Body, 0), 1),
+        (("SCHP".into(), VxlLayer::Body, 0), 2),
+        (("SCHD".into(), VxlLayer::Body, 0), 1),
     ]);
     for (deployed, begin, reverse, expected) in [
         (false, false, false, Some(("SCHP", true))),
@@ -331,8 +331,8 @@ fn unit_hva_frames_match_native_selected_model_remainders() {
         ("unloading", physical_frames("schd.hva")),
         ("disguise", 3), // supplied native control HVA header
     ] {
-        frame_counts.insert((model.to_string(), VxlLayer::Body, 0), frames);
-        frame_counts.insert((model.to_string(), VxlLayer::Turret, 0), 4);
+        frame_counts.insert((model.into(), VxlLayer::Body, 0), frames);
+        frame_counts.insert((model.into(), VxlLayer::Turret, 0), 4);
     }
     let mut entity =
         crate::sim::game_entity::GameEntity::test_default(1, "SCHP", "Americans", 10, 10);
@@ -362,7 +362,7 @@ fn unit_hva_frames_match_native_selected_model_remainders() {
     // Aircraft4145B0..4145C0 consumes this same retained Foot counter,
     // using the selected model's physical HVA header for signed IDIV.
     frame_counts.insert(
-        ("SPYP".to_string(), VxlLayer::Composite, 0),
+        ("SPYP".into(), VxlLayer::Composite, 0),
         physical_frames("spyp.hva"),
     );
     let mut aircraft = crate::sim::game_entity::GameEntity::test_default_of_category(
@@ -518,7 +518,11 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
         {
             continue;
         }
-        let band = entity_draw_band(sim.display_layers(), plane.stable_id()).unwrap();
+        let band = sim
+            .display_layers()
+            .layer_of(plane.stable_id())
+            .and_then(super::super::helpers::layer_draw_band)
+            .unwrap();
         let parent = NativeDisplayOrder::from_display(sim.display_layers())
             .object_draw(plane.stable_id(), SpriteEncoding::Voxel)
             .unwrap();
@@ -558,7 +562,7 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
     )
     .expect("physical SPYP atlas");
     assert_eq!(
-        atlas.frame_counts[&("SPYP".to_string(), VxlLayer::Composite, 0)],
+        atlas.frame_counts[&(smol_str::SmolStr::new("SPYP"), VxlLayer::Composite, 0)],
         hva.frame_count
     );
     let palette = Palette::from_bytes(assets.get_ref("UNITTEM.PAL").unwrap()).unwrap();
@@ -613,7 +617,7 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
             assert_eq!(i64::from(frame), original["body_frame"].as_i64().unwrap());
             let entry = atlas
                 .get(&UnitSpriteKey {
-                    type_id: model.into_owned(),
+                    type_id: model.into(),
                     turret_index: 0,
                     facing: 0,
                     layer: VxlLayer::Composite,
@@ -1090,9 +1094,9 @@ fn indexed_turret_animation_uses_its_selected_hva_count() {
         crate::sim::game_entity::GameEntity::test_default(1, "FV", "Americans", 10, 10);
     entity.turret_anim_frame.set_for_test(1);
     let frames = std::collections::BTreeMap::from([
-        (("FV".to_string(), VxlLayer::Body, 0), 1),
-        (("FV".to_string(), VxlLayer::Turret, 0), 1),
-        (("FV".to_string(), VxlLayer::Turret, 1), 2),
+        (("FV".into(), VxlLayer::Body, 0), 1),
+        (("FV".into(), VxlLayer::Turret, 0), 1),
+        (("FV".into(), VxlLayer::Turret, 1), 2),
     ]);
     assert_eq!(unit_animation_frames(&entity, "FV", 0, &frames), (0, 0));
     assert_eq!(unit_animation_frames(&entity, "FV", 1, &frames), (0, 1));

@@ -56,10 +56,21 @@ pub struct EntityStore {
     /// The entity of each slot. Boxed: an entity is about 3 KB, so insert,
     /// remove and compaction move pointers, not entities. serde writes a
     /// `Box<T>` as its `T`.
-    entities: Vec<Option<Box<GameEntity>>>,
+    entities: Vec<Option<crate::util::shared::Shared<GameEntity>>>,
     /// stable_id -> slot, for every slot that holds an entity. Only looked
     /// up, never iterated, so its order cannot reach a result.
     slot_of: LookupMap<u64, u32>,
+    /// VERA-only: the id last given to [`Self::focus`] and its slot (`None`:
+    /// not stored), so an object's turn, which looks its own id up about a
+    /// hundred times, hashes it once ([`Self::slot`]). `slot_of` is the
+    /// source of truth: every function that writes it re-reads the focused
+    /// id's slot ([`Self::refocus`]), so a lookup answers the same with or
+    /// without it. Never saved or hashed.
+    focus: (u64, Option<u32>),
+    /// Lookups by id so far, and those of them the id index answered (test
+    /// builds only), for checks of what a turn looks up.
+    #[cfg(any(test, feature = "test-support"))]
+    lookups: [std::sync::atomic::AtomicU64; 2],
     /// VERA-only: each slot's owner, beside the boxed entities for walks that
     /// ask only whose an object is ([`Self::owner_of`]). The entity's own
     /// owner is the source of truth: [`Self::insert`] copies it and
@@ -153,6 +164,9 @@ impl Clone for EntityStore {
             ids: self.ids.clone(),
             entities: self.entities.clone(),
             slot_of: self.slot_of.clone(),
+            focus: self.focus,
+            #[cfg(any(test, feature = "test-support"))]
+            lookups: Default::default(),
             owners: self.owners.clone(),
             categories: self.categories.clone(),
             owned: self.owned.clone(),
@@ -179,12 +193,26 @@ impl EntityStore {
         self.touched.hand_outs()
     }
 
+    /// How many lookups by id the store has answered, and how many of them
+    /// through the id index rather than the focused slot (test builds only).
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn lookups(&self) -> (u64, u64) {
+        let count = |counter: &std::sync::atomic::AtomicU64| {
+            counter.load(std::sync::atomic::Ordering::Relaxed)
+        };
+        (count(&self.lookups[0]), count(&self.lookups[1]))
+    }
+
     /// Create an empty store.
     pub fn new() -> Self {
         Self {
             ids: Vec::new(),
             entities: Vec::new(),
             slot_of: HashMap::default(),
+            // An empty store holds no id.
+            focus: (0, None),
+            #[cfg(any(test, feature = "test-support"))]
+            lookups: Default::default(),
             owners: Vec::new(),
             categories: Vec::new(),
             owned: LookupMap::default(),
@@ -227,7 +255,7 @@ impl EntityStore {
         }
         self.anim_holders
             .extend(entity.held_anims().map(|anim| (anim, id)));
-        let entity = Some(Box::new(entity));
+        let entity = Some(crate::util::shared::Shared::new(entity));
         if let Some(&slot) = self.slot_of.get(&id) {
             self.entities[slot as usize] = entity;
             self.owners[slot as usize] = owner;
@@ -254,6 +282,7 @@ impl EntityStore {
                 self.reindex_from(slot);
             }
         }
+        self.refocus();
         if let Err(index) = self.techno_registry.binary_search(&id) {
             self.techno_registry.insert(index, id);
         }
@@ -288,7 +317,10 @@ impl EntityStore {
     /// Remove an entity by stable_id. Returns the removed entity if it existed.
     pub fn remove(&mut self, stable_id: u64) -> Option<GameEntity> {
         let slot = self.slot_of.remove(&stable_id)? as usize;
-        let removed = self.entities[slot].take().map(|entity| *entity);
+        self.refocus();
+        let removed = self.entities[slot]
+            .take()
+            .map(crate::util::shared::Shared::into_inner);
         if let Some(entity) = &removed {
             self.unlist_owned(stable_id, (entity.owner(), entity.category()));
             if let Some(entry) = airborne_entry(entity) {
@@ -344,6 +376,41 @@ impl EntityStore {
                 self.slot_of.insert(self.ids[slot], slot as u32);
             }
         }
+        self.refocus();
+    }
+
+    /// Remember `stable_id`'s slot, so lookups of it skip the id index until
+    /// another id is focused. For the object whose turn it is; an id the
+    /// store does not hold is remembered as absent. No lookup's answer
+    /// changes.
+    pub(crate) fn focus(&mut self, stable_id: u64) {
+        self.focus.0 = stable_id;
+        self.refocus();
+    }
+
+    /// Re-read the focused id's slot after a write to `slot_of`.
+    fn refocus(&mut self) {
+        self.focus.1 = self.slot_of.get(&self.focus.0).copied();
+    }
+
+    /// `stable_id`'s slot, if it is stored: the focused id's without the id
+    /// index. Debug builds check the focused slot against the index (the
+    /// live-read check).
+    #[inline]
+    fn slot(&self, stable_id: u64) -> Option<u32> {
+        #[cfg(any(test, feature = "test-support"))]
+        self.lookups[0].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if self.focus.0 != stable_id {
+            #[cfg(any(test, feature = "test-support"))]
+            self.lookups[1].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            return self.slot_of.get(&stable_id).copied();
+        }
+        debug_assert!(
+            !crate::sim::touch_log::live_read_check_enabled()
+                || self.focus.1 == self.slot_of.get(&stable_id).copied(),
+            "the focused slot disagrees with the id index for entity {stable_id}"
+        );
+        self.focus.1
     }
 
     /// The stored entities in ascending stable_id order, with their ids.
@@ -379,14 +446,14 @@ impl EntityStore {
 
     /// Look up an entity by stable_id (immutable).
     pub fn get(&self, stable_id: u64) -> Option<&GameEntity> {
-        let slot = *self.slot_of.get(&stable_id)?;
+        let slot = self.slot(stable_id)?;
         self.entities[slot as usize].as_deref()
     }
 
     /// `stable_id`'s owner, read from the owner column without touching the
     /// entity. Debug builds check it against the entity (the live-read check).
     pub(crate) fn owner_of(&self, stable_id: u64) -> Option<InternedId> {
-        let slot = *self.slot_of.get(&stable_id)? as usize;
+        let slot = self.slot(stable_id)? as usize;
         let owner = self.owners[slot];
         debug_assert!(
             !crate::sim::touch_log::live_read_check_enabled()
@@ -400,7 +467,7 @@ impl EntityStore {
     /// the entity. Debug builds check it against the entity (the live-read
     /// check).
     pub(crate) fn category_of(&self, stable_id: u64) -> Option<EntityCategory> {
-        let slot = *self.slot_of.get(&stable_id)? as usize;
+        let slot = self.slot(stable_id)? as usize;
         let category = self.categories[slot];
         debug_assert!(
             !crate::sim::touch_log::live_read_check_enabled()
@@ -414,7 +481,7 @@ impl EntityStore {
     /// while the store is borrowed, so tables built under one borrow may
     /// index by them; every slot is below [`Self::slot_count`].
     pub(crate) fn get_in_slot(&self, stable_id: u64) -> Option<(usize, &GameEntity)> {
-        let slot = *self.slot_of.get(&stable_id)? as usize;
+        let slot = self.slot(stable_id)? as usize;
         Some((slot, self.entities[slot].as_deref()?))
     }
 
@@ -428,7 +495,7 @@ impl EntityStore {
     /// Replacing a stored entity wholesale is unsupported: remove/insert through
     /// the owning lifecycle instead so its indexes and registrations are updated.
     pub fn get_mut(&mut self, stable_id: u64) -> Option<&mut GameEntity> {
-        let slot = *self.slot_of.get(&stable_id)?;
+        let slot = self.slot(stable_id)?;
         self.touched.note(stable_id, self.slot_of.len());
         self.entities[slot as usize].as_deref_mut()
     }
@@ -441,7 +508,7 @@ impl EntityStore {
         stable_id: u64,
         admit: impl FnOnce(&GameEntity) -> bool,
     ) -> Option<&mut GameEntity> {
-        let slot = *self.slot_of.get(&stable_id)?;
+        let slot = self.slot(stable_id)?;
         let entity = self.entities[slot as usize].as_deref_mut()?;
         if !admit(entity) {
             return None;
@@ -452,7 +519,7 @@ impl EntityStore {
 
     /// Check if an entity exists.
     pub fn contains(&self, stable_id: u64) -> bool {
-        self.slot_of.contains_key(&stable_id)
+        self.slot(stable_id).is_some()
     }
 
     /// Number of entities in the store.
@@ -476,6 +543,19 @@ impl EntityStore {
     /// ```
     pub fn keys_sorted(&self) -> Vec<u64> {
         self.stored().map(|(id, _)| id).collect()
+    }
+
+    /// The stored ids of the entities whose category `keep` selects, in
+    /// ascending stable_id order, chosen by the category column without
+    /// loading an entity.
+    pub(crate) fn ids_of_categories(&self, keep: impl Fn(EntityCategory) -> bool) -> Vec<u64> {
+        self.ids
+            .iter()
+            .zip(&self.categories)
+            .zip(&self.entities)
+            .filter(|&((_, &category), entity)| entity.is_some() && keep(category))
+            .map(|((&id, _), _)| id)
+            .collect()
     }
 
     /// The ids of the stored entities `keep` selects, in ascending stable_id
@@ -605,7 +685,7 @@ impl EntityStore {
         holder: u64,
         write: impl FnOnce(&mut GameEntity, AnimHolderAuthority) -> R,
     ) -> Option<R> {
-        let slot = *self.slot_of.get(&holder)?;
+        let slot = self.slot(holder)?;
         self.touched.note(holder, self.slot_of.len());
         let entity = self.entities[slot as usize].as_deref_mut()?;
         let written = write(entity, AnimHolderAuthority(()));
@@ -656,7 +736,7 @@ impl EntityStore {
     /// No-op if the entity is absent or already owned by `new_owner`.
     pub fn change_owner(&mut self, stable_id: u64, new_owner: crate::sim::intern::InternedId) {
         self.touched.note(stable_id, self.len());
-        if let Some(&slot) = self.slot_of.get(&stable_id)
+        if let Some(slot) = self.slot(stable_id)
             && let Some(e) = self.entities[slot as usize].as_deref_mut()
             && e.owner() != new_owner
         {
@@ -716,7 +796,7 @@ impl EntityStore {
         bucket: Option<u16>,
         enter_order: u64,
     ) {
-        let Some(&slot) = self.slot_of.get(&stable_id) else {
+        let Some(slot) = self.slot(stable_id) else {
             return;
         };
         self.touched.note(stable_id, self.slot_of.len());
@@ -730,6 +810,11 @@ impl EntityStore {
         if let Some(bucket) = bucket {
             self.airborne.insert((bucket, enter_order, stable_id));
         }
+    }
+
+    /// The ids the AircraftTracker holds, in no order a caller may rely on.
+    pub(crate) fn airborne_ids(&self) -> impl Iterator<Item = u64> + '_ {
+        self.airborne.iter().map(|&(_, _, id)| id)
     }
 
     /// The stored entities the AircraftTracker holds, by enter order and,
@@ -835,7 +920,7 @@ impl EntityStore {
 /// empty slots. Its length is exact, so a collect allocates once.
 struct Stored<'a> {
     ids: std::slice::Iter<'a, u64>,
-    entities: std::slice::Iter<'a, Option<Box<GameEntity>>>,
+    entities: std::slice::Iter<'a, Option<crate::util::shared::Shared<GameEntity>>>,
     /// Stored entities not yet yielded from either end.
     remaining: usize,
 }
@@ -898,8 +983,11 @@ impl<'de> serde::Deserialize<'de> for EntityStore {
             store.ids.push(id);
             store.owners.push(entity.owner());
             store.categories.push(entity.category());
-            store.entities.push(Some(entity));
+            store
+                .entities
+                .push(Some(crate::util::shared::Shared::new(*entity)));
         }
+        store.refocus();
         store.rebuild_class_registries();
         store.airborne = store.walk_airborne();
         store.anim_holders = store.walk_anim_holders();
@@ -1407,6 +1495,58 @@ mod tests {
         .unwrap();
         for mut copy in [store.clone(), loaded] {
             assert_eq!(copy.take_anim_holders(50), [1, 3]);
+        }
+    }
+
+    /// A focused id answers as the id index does while its slot moves under
+    /// it (an id stored below it, a compaction), when it is removed and
+    /// stored again, and when the store never held it; a load answers for
+    /// its own ids.
+    #[test]
+    fn a_focused_id_answers_as_the_id_index_does_while_its_slot_moves() {
+        let mut store = EntityStore::new();
+        for id in (10..=400).step_by(2) {
+            store.insert(make_entity(id));
+        }
+        let held = |store: &mut EntityStore, id: u64| {
+            let found = [
+                store.get(id).map(GameEntity::stable_id),
+                store.get_mut(id).map(|entity| entity.stable_id()),
+                store.get_in_slot(id).map(|(_, entity)| entity.stable_id()),
+            ];
+            assert_eq!(found, [store.contains(id).then_some(id); 3]);
+            assert_eq!(store.owner_of(id).is_some(), store.contains(id));
+            assert_eq!(store.category_of(id).is_some(), store.contains(id));
+            store.contains(id)
+        };
+        store.focus(300);
+        assert!(held(&mut store, 300));
+        // An id stored below it shifts its slot by one.
+        store.insert(make_entity(11));
+        assert!(held(&mut store, 300));
+        // The removal that compacts the store moves it again.
+        let slots = store.ids.len();
+        let mut below = (10..200).step_by(2);
+        while store.ids.len() == slots {
+            store.remove(below.next().expect("a removal compacts the store"));
+        }
+        assert!(held(&mut store, 300));
+        store.remove(300);
+        assert!(!held(&mut store, 300));
+        store.insert(make_entity(300));
+        assert!(held(&mut store, 300));
+        // An id the store never held is absent until it is stored.
+        store.focus(7);
+        assert!(!held(&mut store, 7));
+        store.insert(make_entity(7));
+        assert!(held(&mut store, 7) && held(&mut store, 300) && !held(&mut store, 10));
+        let mut loaded: EntityStore = crate::util::save_codec::deserialize(
+            &crate::util::save_codec::serialize(&store).unwrap(),
+        )
+        .unwrap();
+        let mut copy = store.clone();
+        for other in [&mut loaded, &mut copy] {
+            assert!(held(other, 7) && held(other, 300) && !held(other, 0));
         }
     }
 

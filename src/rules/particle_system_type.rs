@@ -34,27 +34,32 @@ pub struct ParticleSystemTypeId(pub u32);
 /// Variant ordering matches the binary's string table:
 /// `Smoke=0, Gas=1, Fire=2, Spark=3, Railgun=4`. This is **different** from
 /// `ParticleBehavesLike` — Smoke and Gas are swapped at the particle level.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[repr(i32)]
 pub enum ParticleSystemBehavesLike {
     Smoke = 0,
     Gas = 1,
     Fire = 2,
     Spark = 3,
     Railgun = 4,
+    /// Constructor and unrecognized/empty ReadINI result.
+    #[default]
+    Unknown = -1,
 }
 
 impl ParticleSystemBehavesLike {
     /// Parse a `BehavesLike=` value from INI. Returns `None` for unknown strings.
     pub fn parse(s: &str) -> Option<Self> {
-        match s.trim() {
-            "Smoke" => Some(Self::Smoke),
-            "Gas" => Some(Self::Gas),
-            "Fire" => Some(Self::Fire),
-            "Spark" => Some(Self::Spark),
-            "Railgun" => Some(Self::Railgun),
-            _ => None,
-        }
+        [
+            Self::Smoke,
+            Self::Gas,
+            Self::Fire,
+            Self::Spark,
+            Self::Railgun,
+        ]
+        .into_iter()
+        .zip(["Smoke", "Gas", "Fire", "Spark", "Railgun"])
+        .find_map(|(behavior, name)| s.eq_ignore_ascii_case(name).then_some(behavior))
     }
 }
 
@@ -145,20 +150,32 @@ impl ParticleSystemType {
     ///
     /// `holds_what` keeps the constructor's unbound value (-1, `0x006440B3`):
     /// `RuleSet` resolves the ordered Rules processor's binding.
+    #[cfg(test)]
     pub fn from_ini_section(name: &str, section: &IniSection) -> Self {
-        let behaves_like = section
+        Self::from_read_state(name, section, Self::read_behavior(section), None)
+    }
+
+    pub(super) fn read_behavior(section: &IniSection) -> ParticleSystemBehavesLike {
+        // ParticleSystemTypeClass::ReadINI @ 0x006442D0,64441E..644461:
+        // ReadString64 then strcmpi; absent and unknown store -1.
+        section
             .read_name("BehavesLike", 0x40)
             .and_then(ParticleSystemBehavesLike::parse)
-            // Binary's string-table loop falls through to index 0 (Smoke) when
-            // the INI string doesn't match any entry.
-            .unwrap_or(ParticleSystemBehavesLike::Smoke);
+            .unwrap_or(ParticleSystemBehavesLike::Unknown)
+    }
 
+    pub(super) fn from_read_state(
+        name: &str,
+        section: &IniSection,
+        behaves_like: ParticleSystemBehavesLike,
+        holds_what: Option<ParticleTypeId>,
+    ) -> Self {
         Self {
             name: name.to_string(),
             image: section.read_name("Image", 0x19).unwrap_or(name).to_owned(),
             alpha_image: section.read_object_alpha_image(""),
             behaves_like,
-            holds_what: None,
+            holds_what,
             spawns: section.read_bool("Spawns", false),
             spawn_frames: section.read_int("SpawnFrames", 1),
             // Float fields (`FSTP dword` at `0x0064439F..0x006443DD`).
@@ -242,8 +259,8 @@ mod tests {
         assert!(!pst.laser);
         assert!(!pst.one_frame_light);
         assert_eq!(pst.laser_color, [0, 0, 0]);
-        // Unknown / absent BehavesLike falls through to the index-0 entry (Smoke).
-        assert_eq!(pst.behaves_like, ParticleSystemBehavesLike::Smoke);
+        // The native constructor and unknown reader result are -1.
+        assert_eq!(pst.behaves_like, ParticleSystemBehavesLike::Unknown);
     }
 
     #[test]
@@ -275,10 +292,10 @@ mod tests {
     }
 
     #[test]
-    fn from_ini_unknown_behaves_like_falls_through_to_smoke() {
+    fn from_ini_unknown_behaves_like_is_minus_one() {
         let ini = IniFile::from_str("[Foo]\nBehavesLike=Bogus\n");
         let section = ini.section("Foo").unwrap();
         let pst = ParticleSystemType::from_ini_section("Foo", section);
-        assert_eq!(pst.behaves_like, ParticleSystemBehavesLike::Smoke);
+        assert_eq!(pst.behaves_like, ParticleSystemBehavesLike::Unknown);
     }
 }

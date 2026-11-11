@@ -15,6 +15,7 @@
 
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::{LocomotorKind, MovementZone};
+use crate::rules::overlay_types::TiberiumImageError;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::miner::{CargoBale, Miner, MinerState};
 use crate::sim::mission::authority::LiveReadyInputProvider;
@@ -306,7 +307,7 @@ pub(super) fn process_miner(
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     snap: &mut MinerSnapshot,
     frame_effects: FrameEffects<'_>,
-) {
+) -> Result<(), TiberiumImageError> {
     // Mission_Harvest73E5E0 reaches its dock/type gates and state switch even
     // while Drive retains a track. The state's non-null NavCom branch owns
     // the still-driving Rate/RNG epilogue73EF77; a generic track guard here
@@ -322,16 +323,33 @@ pub(super) fn process_miner(
     // `+0x3F8 == 0` case takes the same Guard queue early or reaches it
     // through the empty loop; both houses end on Guard, so the human test is
     // inert and not modelled.
-    if !house_owns_dock_instance(sim, rules, snap) {
+    // Ares 3.0 1004D6C0 (hook 0x73E66D) jumps over the Dock= loop to
+    // 0x73E6CF: only a computer house's harvester with no Dock= at all
+    // (0x73E638..0x73E660) still queues Guard.
+    #[cfg(feature = "ares")]
+    let sleeps = sim
+        .interner
+        .object_type(snap.type_id, rules)
+        .is_some_and(|object| {
+            object.dock.is_empty()
+                && !sim.houses.get(&snap.owner).is_some_and(|house| {
+                    house.is_controlled_by_human(sim.session.game_mode_nonzero())
+                })
+        });
+    #[cfg(not(feature = "ares"))]
+    let sleeps = !house_owns_dock_instance(sim, rules, snap);
+    if sleeps {
         queue_guard_from_harvest(sim, snap, rules);
         snap.dispatch_delay = DISPATCH_NEXT_FRAME;
-        return;
+        return Ok(());
     }
 
     let state_before = format!("{:?}", snap.state);
     match snap.state {
-        MinerState::SearchOre => harvest_looking(sim, rules, overlay_registry, snap, frame_effects),
-        MinerState::Harvest => harvest_cutting(sim, rules, overlay_registry, snap, frame_effects),
+        MinerState::SearchOre => {
+            harvest_looking(sim, rules, overlay_registry, snap, frame_effects)?
+        }
+        MinerState::Harvest => harvest_cutting(sim, rules, overlay_registry, snap, frame_effects)?,
         // Native return/finding-home state has no per-frame exit: every
         // dispatch leaves through the default Rate epilogue.
         MinerState::ReturnToRefinery => {
@@ -362,6 +380,7 @@ pub(super) fn process_miner(
                 .map_or(0, |entity| entity.native_stage().value()),
         );
     }
+    Ok(())
 }
 
 // -- State handlers --
@@ -396,11 +415,11 @@ fn harvest_looking(
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     snap: &mut MinerSnapshot,
     frame_effects: FrameEffects<'_>,
-) {
+) -> Result<(), TiberiumImageError> {
     let id = snap.entity_id;
     if snap.miner.is_full() {
         snap.state = MinerState::ReturnToRefinery;
-        return;
+        return Ok(());
     }
     let archive = sim
         .substrate
@@ -424,7 +443,12 @@ fn harvest_looking(
     if teleport_with_nav {
         sim.set_unit_null_destination(id, rules, None, frame_effects);
     }
-    let range = super::ore_scan::scan_cells(rules.general.tiberium_long_scan);
+    // Ares 3.0 1004D640 (hooks 0x73E772/0x73E851): Harvester.LongScan.
+    let range = super::ore_scan::scan_cells(super::ore_scan::harvester_value(
+        sim.interner.object_type(snap.type_id, rules),
+        super::ore_scan::HarvesterKey::LongScan,
+        rules.general.tiberium_long_scan,
+    ));
     if super::ore_scan::search_for_tiberium_and_move(
         sim,
         rules,
@@ -432,7 +456,7 @@ fn harvest_looking(
         id,
         range,
         frame_effects,
-    ) {
+    )? {
         snap.miner.harvesting = true;
         arm_stage(
             &mut sim.substrate,
@@ -441,7 +465,7 @@ fn harvest_looking(
             2,
         );
         snap.state = MinerState::Harvest;
-        return;
+        return Ok(());
     }
     // `Mission_Harvest 0x0073E5E0` checks Techno+0x5A4 at `0x0073E8C3`
     // only after its ore-search miss. An ArchiveTarget destination may have
@@ -476,11 +500,12 @@ fn harvest_looking(
                 house.note_harvester_no_ore();
             }
             snap.dispatch_delay = NO_ORE_DELAY;
-            return;
+            return Ok(());
         };
         assign_archive_destination(sim, rules, id, archive, overlay_registry, frame_effects);
     }
     arm_rate_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, snap);
+    Ok(())
 }
 
 /// The state-0 no-ore return (`return 0x69` at `0x0073E91C`): frames until
@@ -544,7 +569,7 @@ fn harvest_cutting(
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     snap: &mut MinerSnapshot,
     frame_effects: FrameEffects<'_>,
-) {
+) -> Result<(), TiberiumImageError> {
     let now = sim.session.binary_frame();
     if sim
         .substrate
@@ -560,22 +585,28 @@ fn harvest_cutting(
         .get(snap.entity_id)
         .is_none_or(|entity| entity.native_stage().value() < 9)
     {
-        return;
+        return Ok(());
     }
-    if harvest_ore_tick(sim, rules, overlay_registry, snap) {
-        return;
+    if harvest_ore_tick(sim, rules, overlay_registry, snap)? {
+        return Ok(());
     }
     snap.miner.harvesting = false;
     let id = snap.entity_id;
-    let range = super::ore_scan::scan_cells(rules.general.tiberium_short_scan);
+    // Ares 3.0 1004D680 (hooks 0x73E9F1/0x73EA17/0x73EAA6/0x73EAC6):
+    // Harvester.ShortScan.
+    let range = super::ore_scan::scan_cells(super::ore_scan::harvester_value(
+        sim.interner.object_type(snap.type_id, rules),
+        super::ore_scan::HarvesterKey::ShortScan,
+        rules.general.tiberium_short_scan,
+    ));
     if snap.miner.cargo.len() == usize::from(snap.miner.capacity_bales) {
         snap.state = MinerState::ReturnToRefinery;
-        let archive = super::ore_scan::scan_for_tiberium(sim, rules, overlay_registry, id, range)
+        let archive = super::ore_scan::scan_for_tiberium(sim, rules, overlay_registry, id, range)?
             .map(|(x, y)| crate::sim::combat::TargetKind::Cell(x, y));
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
             entity.set_archive_target(archive);
         }
-        return;
+        return Ok(());
     }
     let found = super::ore_scan::search_for_tiberium_and_move(
         sim,
@@ -584,7 +615,7 @@ fn harvest_cutting(
         id,
         range,
         frame_effects,
-    );
+    )?;
     let driving = sim
         .substrate
         .entities
@@ -595,10 +626,11 @@ fn harvest_cutting(
             entity.set_archive_target(None);
         }
         snap.state = MinerState::ReturnToRefinery;
-        return;
+        return Ok(());
     }
     snap.state = MinerState::Harvest;
     snap.miner.harvesting = true;
+    Ok(())
 }
 
 /// [`harvest_ore_tick`] on `id` alone, as the oracle calls it.
@@ -610,11 +642,11 @@ pub(crate) fn harvest_ore_tick_for_test(
     id: u64,
 ) -> bool {
     let mut snap = build_miner_snapshot(sim, id).expect("a dispatchable miner");
-    let ok = harvest_ore_tick(sim, rules, overlay_registry, &mut snap);
+    let result = harvest_ore_tick(sim, rules, overlay_registry, &mut snap);
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.miner = Some(snap.miner);
     }
-    ok
+    result.expect("valid Tiberium image in harvest fixture")
 }
 
 /// `UnitClass::Harvest_Ore_Tick @ 0x0073D450`. Native evidence:
@@ -638,7 +670,7 @@ fn harvest_ore_tick(
     rules: &RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     snap: &mut MinerSnapshot,
-) -> bool {
+) -> Result<bool, TiberiumImageError> {
     let id = snap.entity_id;
     let now = sim.session.binary_frame();
     if sim
@@ -647,7 +679,7 @@ fn harvest_ore_tick(
         .get(id)
         .is_some_and(|entity| entity.navigation.nav_com().is_some())
     {
-        return true;
+        return Ok(true);
     }
     let cell = (snap.rx, snap.ry);
     let harvester = sim
@@ -658,7 +690,7 @@ fn harvest_ore_tick(
         || !super::ore_scan::cell_is_tiberium_land(sim, overlay_registry, cell)
     {
         arm_stage(&mut sim.substrate, id, now, 0);
-        return false;
+        return Ok(false);
     }
     let request = snap
         .miner
@@ -679,13 +711,13 @@ fn harvest_ore_tick(
         request,
         rules,
         overlay_registry,
-    );
+    )?;
     let Some(bale) = CargoBale::from_reduction(reduction, rules) else {
-        return false;
+        return Ok(false);
     };
     snap.miner.add_bales(bale, reduction.removed_amount);
     arm_stage(&mut sim.substrate, id, now, load_rate(rules));
-    true
+    Ok(true)
 }
 
 /// `UnitClass::Mission_Harvest @ 0x0073E5E0` state 2 (FINDING_HOME),
@@ -750,11 +782,17 @@ fn handle_return(
             entity.navigation.stop_moving();
         }
     }
-    let too_far = if teleporter {
-        rules.general.chrono_harv_too_far_distance
-    } else {
-        rules.general.harvester_too_far_distance
-    };
+    // Ares 3.0 1004D710/1004D6D0 (hooks 0x73EE40/0x73EC0E):
+    // Harvester.TooFarDistance over either Rules distance.
+    let too_far = super::ore_scan::harvester_value(
+        Some(requester_type),
+        super::ore_scan::HarvesterKey::TooFarDistance,
+        if teleporter {
+            rules.general.chrono_harv_too_far_distance
+        } else {
+            rules.general.harvester_too_far_distance
+        },
+    );
     if let Some(bay) = narrow
         && return_exceeds_too_far_threshold(sim, id, bay, too_far) == Some(false)
         && radio::transmit(
@@ -975,6 +1013,7 @@ fn queue_guard_from_harvest(sim: &mut Simulation, snap: &MinerSnapshot, rules: &
 /// rules entry).
 ///
 /// [`HouseTracking::owns_any_building`]: crate::sim::house_tracking::HouseTracking::owns_any_building
+#[cfg(not(feature = "ares"))]
 fn house_owns_dock_instance(sim: &Simulation, rules: &RuleSet, snap: &MinerSnapshot) -> bool {
     let Some(harvester) = sim.interner.object_type(snap.type_id, rules) else {
         return true;
@@ -1005,7 +1044,7 @@ pub(crate) fn extract_bale(
     rules: &RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     cell: (u16, u16),
-) -> Option<CargoBale> {
+) -> Result<Option<CargoBale>, TiberiumImageError> {
     let outcome = Simulation::reduce_tiberium_at_with_native_context(
         terrain_objects,
         ore_growth_config,
@@ -1020,8 +1059,8 @@ pub(crate) fn extract_bale(
         1,
         rules,
         overlay_registry,
-    );
-    CargoBale::from_reduction(outcome, rules)
+    )?;
+    Ok(CargoBale::from_reduction(outcome, rules))
 }
 
 /// One `FootClass::Find_Docking_Bay @ 0x004DF040` pass for a miner or an
@@ -1115,7 +1154,7 @@ pub(crate) fn find_docking_bay_of_type(
 ///   0x004DEF20) — see [`dock_zone_reachable`];
 /// - `Receive_Radio(0xF)` must return 1 — the shared building radio receiver;
 /// - distance `FUN_005F6500`: `dx² + dy²` in leptons between both objects'
-///   `GetCoords` (Z ignored), 32-bit wrapping `IMUL`/`ADD`; the candidate
+///   `GetCoords` (Z ignored, `native_coord::squared_xy_distance`); the candidate
 ///   replaces the best when the best is still -1, when it is strictly
 ///   nearer (signed `JL`, so ties keep the earlier building) or when it is a
 ///   primary factory (`TechnoClass+0x3D3`, 0x004DF004).
@@ -1195,9 +1234,8 @@ fn scan_docking_type(
         {
             continue;
         }
-        let dx = own_x.wrapping_sub(centre.x);
-        let dy = own_y.wrapping_sub(centre.y);
-        let distance = dy.wrapping_mul(dy).wrapping_add(dx.wrapping_mul(dx));
+        let distance =
+            crate::util::native_coord::squared_xy_distance([own_x, own_y], [centre.x, centre.y]);
         if nearest == -1 || distance < nearest || sim.production.is_primary_factory(sid) {
             found = Some(sid);
             nearest = distance;

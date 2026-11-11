@@ -258,14 +258,32 @@ impl NativeRadarSurfaceGeometry {
         self.zoom
     }
 
-    /// `RadarClass::GetObjectAtRadarPixel @ 0x00656750` fallback inverse.
-    ///
-    /// The binary uses the same x87 divide/half/+0.5/ftol sequence as
-    /// `RenderCellPixel`; returning the packed words preserves native wrapping
-    /// for an edge pixel instead of imposing a rectangular Rust admission.
-    pub fn surface_pixel_to_cell(self, pixel: (i32, i32)) -> Option<(u16, u16)> {
-        let signed = self.surface_pixel_to_signed_cell(pixel);
-        Some((signed.0 as u16, signed.1 as u16))
+    /// VERA's HD radar: the same raw frame generated at `scale` times the
+    /// size, so HD pixel (x, y) is drawn inside native pixel
+    /// (x / scale, y / scale). Its pixel and cell mappings work in HD pixels;
+    /// its aperture placement is the native one times `scale`, never
+    /// [`Self::aperture_offset`], which assumes the native size.
+    pub fn subdivided(self, scale: u32) -> Self {
+        let scale = scale.max(1) as i32;
+        Self {
+            zoom: self.zoom * scale as f32,
+            generated_width: self.generated_width.wrapping_mul(scale),
+            generated_height: self.generated_height.wrapping_mul(scale),
+            ..self
+        }
+    }
+
+    /// [`Self::surface_pixel_to_visibility_cell`] for every generated pixel,
+    /// row-major, each cell packed as `rx | ry << 16`.
+    pub fn visibility_cells(self) -> Vec<u32> {
+        let (width, height) = self.generated_size();
+        (0..height)
+            .flat_map(|y| (0..width).map(move |x| (x, y)))
+            .map(|pixel| {
+                let (rx, ry) = self.surface_pixel_to_visibility_cell(pixel);
+                u32::from(rx) | u32::from(ry) << 16
+            })
+            .collect()
     }
 
     pub const fn generated_size(self) -> (i32, i32) {

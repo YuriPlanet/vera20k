@@ -15,6 +15,7 @@ use std::collections::VecDeque;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
 use crate::render::shell_paint::TEXT_DEPTH;
+use crate::render::shell_text::ScissorRect;
 use crate::ui::movies_credits_shell::{CreditLine, CreditsLayoutFlags};
 
 /// Width of the per-line text box (`0x208`), centered on the screen.
@@ -29,6 +30,36 @@ const FRAME_BUCKETS: u64 = 2;
 const SCROLL_STEP: i32 = 2;
 /// A line is deleted once its y is `<= -0x15` (`while (-0x15 < y)`).
 const DELETE_BELOW: i32 = -0x15;
+
+/// Show_Credits (0x004C3D00) dimensions are logical pixels, like the other
+/// shell pages. Keep its full-window scroll surface while scaling the text,
+/// 520-pixel clip box and 32-row fade together with the shell.
+#[derive(Clone, Copy)]
+pub(crate) struct CreditsViewport {
+    scale: f32,
+    pub(crate) surface_height: i32,
+    pub(crate) scissor: ScissorRect,
+    pub(crate) fade_rows: u32,
+}
+
+impl CreditsViewport {
+    pub(crate) fn new(width: u32, height: u32) -> Self {
+        let scale = super::shell_layout::shell_scale_for_screen((width, height)).factor();
+        let box_width = (CREDITS_BOX_WIDTH as f32 * scale).round() as u32;
+        let x = width.saturating_sub(box_width) / 2;
+        Self {
+            scale,
+            surface_height: (height as f32 / scale).round() as i32,
+            scissor: ScissorRect {
+                x,
+                y: 0,
+                w: box_width.min(width.saturating_sub(x)),
+                h: height,
+            },
+            fade_rows: (CREDITS_FADE_ROWS as f32 * scale).round() as u32,
+        }
+    }
+}
 
 /// One queued `Keyboard` entry as the credits loop sees it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -225,16 +256,20 @@ impl CreditsRoll {
     }
 
     /// Text sprites for the current frame (`0x004C3D00` placement).
-    pub(crate) fn instances(&self, font: &BitFont, screen_w: i32) -> Vec<SpriteInstance> {
-        let box_x = credits_box_x(screen_w);
+    pub(crate) fn instances(
+        &self,
+        font: &BitFont,
+        viewport: CreditsViewport,
+    ) -> Vec<SpriteInstance> {
         let mut out = Vec::new();
         for line in &self.lines {
-            let x = line_x(box_x, line.width, line.flags);
+            let x = viewport.scissor.x as f32
+                + line_x(0, line.width, line.flags) as f32 * viewport.scale;
             out.extend(font.build_text(
                 &line.text,
-                x as f32,
-                line.y as f32,
-                1.0,
+                x,
+                line.y as f32 * viewport.scale,
+                viewport.scale,
                 TEXT_DEPTH,
                 CREDITS_TEXT_RGB,
                 [0.0, 0.0],
@@ -242,12 +277,6 @@ impl CreditsRoll {
         }
         out
     }
-}
-
-/// Left edge of the 520 px text box every line is drawn and clipped in
-/// (`0x004C3D46..0x004C3D6B`: rect `((W - 0x208) / 2, y, 0x208, ...)`).
-pub(crate) fn credits_box_x(screen_w: i32) -> i32 {
-    (screen_w - CREDITS_BOX_WIDTH) / 2
 }
 
 /// A running Show_Credits: the roll plus the ScoreVolume it saved at
@@ -378,13 +407,69 @@ mod tests {
 
     #[test]
     fn alignment_matches_the_native_line_painter() {
-        let box_x = (800 - CREDITS_BOX_WIDTH) / 2;
+        let box_x = CreditsViewport::new(800, 600).scissor.x as i32;
         assert_eq!(box_x, 140);
         assert_eq!(line_x(box_x, 100, CreditsLayoutFlags(0x168)), 140 + 210);
         assert_eq!(line_x(box_x, 101, CreditsLayoutFlags(0x168)), 140 + 210);
         assert_eq!(line_x(box_x, 100, CreditsLayoutFlags(0x268)), 140 + 419);
         assert_eq!(line_x(box_x, 100, CreditsLayoutFlags(0x68)), 140);
         // 640 wide: the box starts left of the screen.
-        assert_eq!((640 - CREDITS_BOX_WIDTH) / 2, 60);
+        assert_eq!(CreditsViewport::new(640, 480).scissor.x, 60);
+    }
+
+    #[test]
+    fn credits_scale_glyphs_line_spacing_clip_and_scroll_together() {
+        let font = crate::render::bit_font::tests::make_test_font(
+            &[('字' as u16, 12), (u16::from(b'A'), 6)],
+            4,
+        );
+        let draw = |width, height| {
+            let viewport = CreditsViewport::new(width, height);
+            let lines = crate::ui::movies_credits_shell::parse_credits(
+                b"    {TITLE}\r    A\r\n",
+                viewport.surface_height,
+                &|_| "字".into(),
+            );
+            let mut roll = CreditsRoll::new(lines, &font, 0);
+            roll.advance(20);
+            let before = roll.instances(&font, viewport);
+            roll.advance(22);
+            (viewport, before, roll.instances(&font, viewport))
+        };
+        let (base_view, base, base_next) = draw(800, 600);
+        assert_eq!(base.len(), 2);
+        for (width, height, factor) in [(1200, 900, 1.5), (1600, 1200, 2.0)] {
+            let (view, grown, next) = draw(width, height);
+            assert_eq!(view.surface_height, base_view.surface_height);
+            assert_eq!(view.scissor.x, (base_view.scissor.x as f32 * factor) as u32);
+            assert_eq!(view.scissor.w, (base_view.scissor.w as f32 * factor) as u32);
+            assert_eq!(view.fade_rows, (base_view.fade_rows as f32 * factor) as u32);
+            for ((original, scaled), (original_next, scaled_next)) in
+                base.iter().zip(&grown).zip(base_next.iter().zip(&next))
+            {
+                assert_eq!(scaled.size, original.size.map(|v| v * factor));
+                assert_eq!(scaled.position, original.position.map(|v| v * factor));
+                assert_eq!(
+                    scaled.position[1] - scaled_next.position[1],
+                    (original.position[1] - original_next.position[1]) * factor,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn credits_keep_retail_640_size_and_full_window_entry_height() {
+        let retail = CreditsViewport::new(640, 480);
+        assert_eq!(retail.scale, 1.0);
+        assert_eq!(retail.surface_height, 480);
+        assert_eq!(
+            (retail.scissor.x, retail.scissor.w, retail.fade_rows),
+            (60, 520, 32)
+        );
+        // A tall window still starts and clips at its actual bottom edge;
+        // the shell's centred 800x600 art must not add a vertical offset here.
+        let tall = CreditsViewport::new(800, 900);
+        assert_eq!(tall.surface_height, 900);
+        assert_eq!((tall.scissor.y, tall.scissor.h), (0, 900));
     }
 }

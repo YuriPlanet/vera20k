@@ -8,6 +8,7 @@
 //! AddPassenger @ 0x004733A0. Route-specific compatibility policies below preserve
 //! the existing Rust branches; they do not claim uniform native retry semantics.
 
+use super::CarrierLink;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::world::{
     FrameEffects, PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest, Simulation,
@@ -26,6 +27,10 @@ pub enum DepartureRoute {
     /// Hospital44B9A8/44B9E0 removes Cargo's head and ignores ExitObject's
     /// return. It neither retries nor reattaches a refused exit.
     Hospital,
+    /// A Carryall's drop (`AircraftClass::Carryall_Unload @ 0x00416AF0`):
+    /// CargoClass's own removal, so no gunner reset, and a refused Unlimbo
+    /// puts the cargo back at the head (`0x00416C4E`).
+    Carryall,
     /// A dying Unit's passenger (`UnitClass::ReceiveDamage` `0x00737FD4`,
     /// `FootClass::RemoveFirstPassenger @ 0x004DE710`). Its attempt never
     /// fails: a refused passenger dies instead of re-boarding.
@@ -74,17 +79,7 @@ pub fn depart_cargo_head(
     if emptied {
         // Foot4DE710 also calls the empty-hold reset when RemoveFirst returns
         // null. Keep that lifecycle effect before reporting NoCargo.
-        super::remove_gunner(
-            &sim.interner,
-            &sim.session,
-            &mut sim.scenario_rng,
-            &mut sim.substrate,
-            &mut sim.houses,
-            &mut sim.power_states,
-            rules,
-            transport_id,
-            removed.map(|(id, _)| id),
-        );
+        sim.remove_gunner(rules, transport_id, removed.map(|(id, _)| id));
     }
     let (passenger_id, passenger_size) = removed.ok_or(DepartureFailure::NoCargo)?;
     if route == DepartureRoute::Hospital
@@ -92,13 +87,19 @@ pub fn depart_cargo_head(
     {
         passenger.passenger_role.clear_carrier_relation();
     }
-    // A failed Unlimbo re-attaches the passenger with `+0x82` untouched; only
-    // a successful unload clears it (`0x0073DB98`).
-    let open_topped = sim
+    // A failed Unlimbo re-attaches the passenger with `+0x82` untouched
+    // (CargoClass::AddPassenger 0x004733A0 does not write it); only a
+    // successful unload clears it (`0x0073DB98`). Departure never touches
+    // Transporter (`+0x11C`, `PassengerRole::transporter`).
+    let prior = sim
         .substrate
         .entities
         .get(passenger_id)
-        .is_some_and(|passenger| passenger.passenger_role.in_open_transport());
+        .and_then(|passenger| passenger.passenger_role.carrier_link());
+    let link = CarrierLink {
+        transport_id,
+        open_topped: prior.is_some_and(|link| link.open_topped),
+    };
     let result = attempt(sim, passenger_id);
     if let Err(failure) = result.as_ref()
         && route != DepartureRoute::Hospital
@@ -107,8 +108,7 @@ pub fn depart_cargo_head(
             sim,
             rules,
             registry,
-            transport_id,
-            open_topped,
+            link,
             passenger_id,
             passenger_size,
             route,
@@ -123,8 +123,7 @@ fn restore_departure(
     sim: &mut Simulation,
     rules: &RuleSet,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    transport_id: u64,
-    open_topped: bool,
+    link: CarrierLink,
     passenger_id: u64,
     passenger_size: f64,
     route: DepartureRoute,
@@ -156,9 +155,7 @@ fn restore_departure(
                     if matches!(failure, DepartureFailure::ParachuteReveal(_)) {
                         passenger.finish_fall();
                     }
-                    passenger
-                        .passenger_role
-                        .set_inside_transport(transport_id, open_topped);
+                    passenger.passenger_role.set_carrier_link(link);
                 }
             }
             DepartureFailure::NoCargo | DepartureFailure::GroundReveal(_) => {
@@ -168,7 +165,10 @@ fn restore_departure(
         DepartureRoute::DeathEscape | DepartureRoute::Hospital => {
             unreachable!("this departure route never reattaches its passenger")
         }
-        DepartureRoute::Vehicle | DepartureRoute::LandedAircraft | DepartureRoute::Absorber => {
+        DepartureRoute::Vehicle
+        | DepartureRoute::LandedAircraft
+        | DepartureRoute::Absorber
+        | DepartureRoute::Carryall => {
             assert!(
                 matches!(
                     failure,
@@ -179,12 +179,11 @@ fn restore_departure(
                 "invalid ground departure phase"
             );
             if let Some(passenger) = sim.substrate.entities.get_mut(passenger_id) {
-                passenger
-                    .passenger_role
-                    .set_inside_transport(transport_id, open_topped);
+                passenger.passenger_role.set_carrier_link(link);
             }
         }
     }
+    let transport_id = link.transport_id;
     let _ = sim.add_cargo_passenger_chain(
         transport_id,
         &[(passenger_id, passenger_size)],

@@ -13,6 +13,10 @@ the existing House admission function, rather than maintaining separate copies.
 WarheadExt constructor `10051890` supplies the defaults. Reader `10058A50` reads
 the 15 AttachEffect keys in native order through the existing Ares scalar readers
 and registered AnimType lookup. Missing and invalid keys retain the live value.
+`AttachEffect.Damage`, `AttachEffect.DamageDelay` and `AttachEffect.Warhead`
+(the residual-damage idea of `Misc/AttachEffect.cpp`) are commented out in
+the source and absent from `10058A50`; installed Ares reads them nowhere, so
+an attached effect deals no damage over time and VERA reads neither key.
 `RuleSet` projects that configuration; its animation enters the existing asset
 closure and physical frame-bound binding before simulation construction.
 
@@ -24,8 +28,8 @@ There is no additional timer, effect list or pointer registry elsewhere.
 
 Installed Bullet hook `46920B -> 100536E0` captures the live firer's House before
 EMP callbacks, then calls AttachEffect `10052700` after EMP and before ordinary
-damage, including zero-damage hits. Both effects call the one ground collector
-`10076660` port. House, health, live/limbo, absolute verse and the native Iron
+damage, including zero-damage hits. Both effects call the one collector
+`10076660` port (cell lists plus the in-air FootClass pass). House, health, live/limbo, absolute verse and the native Iron
 Curtain timer decide admission; EMP immunity does not reject AttachEffect.
 
 Attach `10058520` resets noncumulative durations without replacing their first

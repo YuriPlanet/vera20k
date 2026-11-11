@@ -8,7 +8,9 @@
 use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::locomotor_type::SpeedType;
 use crate::util::fixed_math::{SIM_ONE, SimFixed};
-use crate::util::native_x87::{MaskedX87Chop53 as X, NativeF64Bits};
+use crate::util::native_x87::{
+    MaskedX87Chop53 as X, MaskedX87Ordering, NativeF32Bits, NativeF64Bits,
+};
 
 /// Canonical YR land types in their native numeric order.
 #[derive(
@@ -131,32 +133,32 @@ pub fn tmp_terrain_to_land_type(tmp_terrain_type: u8) -> LandType {
     Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
 )]
 pub struct SpeedCostProfile {
-    pub foot: Option<u8>,
-    pub track: Option<u8>,
-    pub wheel: Option<u8>,
-    pub float: Option<u8>,
-    pub amphibious: Option<u8>,
-    pub float_beach: Option<u8>,
-    pub hover: Option<u8>,
+    pub foot: Option<NativeF32Bits>,
+    pub track: Option<NativeF32Bits>,
+    pub wheel: Option<NativeF32Bits>,
+    pub float: Option<NativeF32Bits>,
+    pub amphibious: Option<NativeF32Bits>,
+    pub float_beach: Option<NativeF32Bits>,
+    pub hover: Option<NativeF32Bits>,
+    pub winged: Option<NativeF32Bits>,
 }
 
 impl SpeedCostProfile {
-    /// Every authored SpeedType row at 0.0, as the native table holds an
-    /// unauthored land type.
+    /// The image's untouched global row, including Winged. Unbound derived
+    /// cell metadata remains distinguishable through Default's None fields.
     pub const ZERO: Self = Self {
-        foot: Some(0),
-        track: Some(0),
-        wheel: Some(0),
-        float: Some(0),
-        amphibious: Some(0),
-        float_beach: Some(0),
-        hover: Some(0),
+        foot: Some(NativeF32Bits::POSITIVE_ZERO),
+        track: Some(NativeF32Bits::POSITIVE_ZERO),
+        wheel: Some(NativeF32Bits::POSITIVE_ZERO),
+        float: Some(NativeF32Bits::POSITIVE_ZERO),
+        amphibious: Some(NativeF32Bits::POSITIVE_ZERO),
+        float_beach: Some(NativeF32Bits::POSITIVE_ZERO),
+        hover: Some(NativeF32Bits::POSITIVE_ZERO),
+        winged: Some(NativeF32Bits::POSITIVE_ZERO),
     };
 
-    pub fn cost_for_speed_type(&self, speed_type: SpeedType) -> Option<u8> {
+    pub fn cost_for_speed_type(&self, speed_type: SpeedType) -> Option<NativeF32Bits> {
         match speed_type {
-            // Keep the native parser's invalid index unavailable to live entry
-            // queries. Reading memory before the native table is not modeled.
             SpeedType::Invalid => None,
             SpeedType::Foot => self.foot,
             SpeedType::Track => self.track,
@@ -165,44 +167,47 @@ impl SpeedCostProfile {
             SpeedType::Amphibious => self.amphibious,
             SpeedType::FloatBeach => self.float_beach,
             SpeedType::Hover => self.hover,
-            SpeedType::Winged => Some(100),
+            SpeedType::Winged => self.winged,
         }
     }
 
-    /// The native float land row promoted to double for Drive/Ship movement.
-    /// Rules674000 reads whole-percent stock tokens through ReadDouble5283D0
-    /// and chops them to float (for example6740B4/6740F8). Reconstruct that
-    /// store from the lossless stock percent, rather than from SimFixed or a
-    /// nearest-rounded float division. Fractional/custom percentages retain
-    /// the existing whole-percent profile's documented quantisation.
+    /// Drive4B3CA3 / Ship6A32F2 widen the stored binary32 row. Keep its
+    /// fraction and sign; FootSetSpeedFraction4D3710 owns the later zero floor.
     pub fn native_speed_multiplier_for(&self, speed_type: SpeedType) -> NativeF64Bits {
-        let percent = self.cost_for_speed_type(speed_type).unwrap_or(100).min(100);
-        let scaled = X::mul(
-            X::load_i32(i32::from(percent)),
-            X::load_f64(crate::rules::ini_value::PERCENT_SCALE),
+        let value = X::load_f32(
+            self.cost_for_speed_type(speed_type)
+                .unwrap_or(NativeF32Bits::ONE),
         );
-        let stored = X::store_f32_masked_chop(scaled);
-        X::store_f64_masked_chop(X::load_f32(stored))
-    }
-
-    /// Runtime speed multiplier for a given SpeedType.
-    ///
-    /// Converts the capped INI percentage to a SimFixed fraction (0.0–1.0).
-    /// Zero remains zero and a missing row defaults to full speed.
-    pub fn speed_multiplier_for(&self, speed_type: SpeedType) -> SimFixed {
-        match self.cost_for_speed_type(speed_type) {
-            Some(pct) => {
-                let clamped = pct.min(100);
-                SimFixed::from_num(clamped) / SimFixed::from_num(100u8)
-            }
-            None => SIM_ONE,
+        if X::compare(value, X::load_i32(1)) == MaskedX87Ordering::Greater {
+            NativeF64Bits::ONE
+        } else {
+            X::store_f64_masked_chop(value)
         }
     }
+
+    /// Fixed-point projection for callers that need it. Entry/zone predicates
+    /// and Drive/Ship use the native bits, so fixed precision or saturation
+    /// cannot turn a nonzero row into an impassable cell.
+    pub fn speed_multiplier_for(&self, speed_type: SpeedType) -> SimFixed {
+        SimFixed::saturating_from_num(f64::from_bits(
+            self.native_speed_multiplier_for(speed_type).bits(),
+        ))
+    }
+}
+
+/// Shared native 1% comparison in RecalcZoneType483D57, RMG classification
+/// and UnitWhatAction7400A1. The double at7E3808 differs from a stored 1% f32.
+/// Callers retain their own strict or inclusive branch, including unordered.
+pub(crate) fn compare_speed_to_one_percent(speed: NativeF32Bits) -> MaskedX87Ordering {
+    X::compare(
+        X::load_f32(speed),
+        X::load_f64(NativeF64Bits::from_bits(0x3f84_7ae1_47ae_147b)),
+    )
 }
 
 /// One land type's rules row: its `Buildable=` and SpeedType rows as the
 /// native reader stores them, plus VERA's ground-walk block for that land.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct LandTypeSemantics {
     pub buildable: bool,
     /// VERA's ground-walk block (`ResolvedTerrainCell::ground_walk_blocked`):
@@ -213,16 +218,14 @@ pub struct LandTypeSemantics {
 }
 
 impl LandTypeSemantics {
-    pub fn cost_for_speed_type(&self, speed_type: SpeedType) -> Option<u8> {
+    pub fn cost_for_speed_type(&self, speed_type: SpeedType) -> Option<NativeF32Bits> {
         self.speed_costs.cost_for_speed_type(speed_type)
     }
 
     /// The row of a land type no rules layer authors: the native reader skips
     /// it (see [`parse_speed_costs`]), so it keeps the image's zeros, every
     /// SpeedType row 0.0 and not `Buildable`. `ground_blocked` keeps its land
-    /// value. The native Winged slot is 0.0 here too, where
-    /// [`SpeedCostProfile::cost_for_speed_type`] still answers Winged with the
-    /// authored rows' constant.
+    /// value, while the untouched native Winged slot also stays zero.
     fn zero(land_type: LandType) -> Self {
         Self {
             buildable: false,
@@ -239,7 +242,7 @@ const fn ground_blocked(land_type: LandType) -> bool {
 
 /// The scenario's land-type table (`0x0089EA40`): one row per `LandType`,
 /// read from its section or, for an unauthored section, the zero row.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub struct TerrainRules {
     rows: [LandTypeSemantics; LandType::ALL.len()],
 }
@@ -255,14 +258,40 @@ impl Default for TerrainRules {
 
 impl TerrainRules {
     pub fn from_ini(ini: &IniFile) -> Self {
-        Self {
-            rows: LandType::ALL.map(|land_type| {
-                ini.section(land_type.section_name()).map_or_else(
-                    || LandTypeSemantics::zero(land_type),
-                    |section| build_semantics(land_type, section),
-                )
-            }),
+        let mut rules = Self::default();
+        rules.apply_pass(ini);
+        rules
+    }
+
+    /// Process668ED8 -> ReadSpeedTypeLandTypeTable674000. A reached section
+    /// replaces the whole row using literal defaults; absent sections retain.
+    /// TypeReset6686C0 leaves the process table alive. SaveMisc67F87D and
+    /// LoadMisc67FAF1 serialize it independently of RulesClass and type arrays.
+    pub(crate) fn apply_pass(&mut self, ini: &IniFile) {
+        for land in LandType::ALL {
+            if let Some(section) = ini.section(land.section_name()) {
+                self.rows[usize::from(land.as_index())] = build_semantics(land, section);
+            }
         }
+    }
+
+    pub(crate) fn valid_saved_state(&self) -> bool {
+        LandType::ALL.into_iter().all(|land| {
+            let row = self.row(land);
+            row.ground_blocked == ground_blocked(land)
+                && [
+                    SpeedType::Foot,
+                    SpeedType::Track,
+                    SpeedType::Wheel,
+                    SpeedType::Hover,
+                    SpeedType::Winged,
+                    SpeedType::Float,
+                    SpeedType::Amphibious,
+                    SpeedType::FloatBeach,
+                ]
+                .into_iter()
+                .all(|speed| row.cost_for_speed_type(speed).is_some())
+        })
     }
 
     /// The row of `land_type`: its section's, or the zero row.
@@ -278,10 +307,11 @@ impl TerrainRules {
 }
 
 fn build_semantics(land_type: LandType, section: &IniSection) -> LandTypeSemantics {
+    let speed_costs = parse_speed_costs(section);
     LandTypeSemantics {
         buildable: section.read_bool("Buildable", false),
         ground_blocked: ground_blocked(land_type),
-        speed_costs: parse_speed_costs(section),
+        speed_costs,
     }
 }
 
@@ -291,8 +321,7 @@ fn build_semantics(land_type: LandType, section: &IniSection) -> LandTypeSemanti
 /// `RulesClass::ReadSpeedTypeLandTypeTable` @ `0x00674000`, filling the twelve
 /// 36-byte rows at `0x0089EA40`. The native row is nine dwords: `Foot`, `Track`,
 /// `Wheel`, `Hover`, a **`Winged` slot hard-stored as `1.0`** (`MOV dword ptr
-/// [EBX + 0xC], 0x3F800000` @ `0x00674148`, never read from INI — which is why [`SpeedCostProfile::cost_for_speed_type`]
-/// answers `Winged` with a constant), `Float`, `Amphibious`, `FloatBeach`, and
+/// [EBX + 0xC], 0x3F800000` @ `0x00674148`, never read from INI), `Float`, `Amphibious`, `FloatBeach`, and
 /// the `Buildable` byte. Every value goes through `CCINIClass::ReadDouble`
 /// @ `0x005283D0` — `sscanf("%f")`, then `× 0.01` when `strchr` finds a `%`
 /// (0x00528576) — with a default of `1.0`, and is then capped by
@@ -306,42 +335,125 @@ fn build_semantics(land_type: LandType, section: &IniSection) -> LandTypeSemanti
 /// [`TerrainRules`] answers that zero row for it.
 fn parse_speed_costs(section: &IniSection) -> SpeedCostProfile {
     SpeedCostProfile {
+        hover: parse_cost(section, "Hover"),
         foot: parse_cost(section, "Foot"),
         track: parse_cost(section, "Track"),
         wheel: parse_cost(section, "Wheel"),
+        winged: Some(NativeF32Bits::ONE),
         float: parse_cost(section, "Float"),
         amphibious: parse_cost(section, "Amphibious"),
         float_beach: parse_cost(section, "FloatBeach"),
-        hover: parse_cost(section, "Hover"),
     }
 }
 
-/// One authored row, as a whole-percent 0..=100.
-///
-/// The `1.0` default and the upper cap are the native reader's own (see
-/// [`parse_speed_costs`]). Two VERA-internal differences, both inert on every
-/// stock value — retail authors these only as whole percents in `[Clear]`
-/// through `[Weeds]`:
-///
-/// - **the lower clamp.** gamemd caps the high side only, so a negative row
-///   would reach the movement chain as a negative multiplier; the `u8` storage
-///   here cannot carry one and floors it at zero instead. Trigger: a mod INI
-///   authoring a negative percentage. Player effect: none in stock play. In a
-///   mod, `CheckCellPassability @ 0x004834A0` then refuses the cell, where
-///   gamemd's compare against 0.0 admits it.
-/// - **whole-percent quantisation.** gamemd keeps each row as an `f32`; this
-///   truncates to a whole percent, so a modded `Track=72.5%` becomes 72.
-///   Trigger: a fractional percentage. Player effect: none in stock play, where
-///   every authored value is a multiple of five percent. In a mod, a positive
-///   row below 1% becomes 0, which `0x004834A0` refuses where gamemd admits.
-fn parse_cost(section: &IniSection, key: &str) -> Option<u8> {
-    let multiplier = (section.read_double(key, 1.0) as f32).clamp(0.0, 1.0);
-    Some((multiplier * 100.0) as u8)
+/// ReadDouble5283D0 uses its native percent parser, then674000 caps above
+/// one and stores binary32. Negative finite rows remain negative. Preserve the
+/// previous safe zero policy for nonfinite negative/NaN input; no native trap
+/// or uninitialized parser result is invented for malformed rules.
+fn parse_cost(section: &IniSection, key: &str) -> Option<NativeF32Bits> {
+    let value = section.read_double(key, 1.0);
+    let value = if value >= 1.0 {
+        1.0
+    } else if value.is_finite() {
+        value
+    } else {
+        0.0
+    };
+    Some(X::store_f32_masked_chop(X::load_f64(
+        NativeF64Bits::from_bits(value.to_bits()),
+    )))
+}
+
+/// Synthetic cell fixtures go through the same native numeric reader; they
+/// do not maintain a second percent-to-binary32 conversion.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn test_speed_percent(percent: impl std::fmt::Display) -> NativeF32Bits {
+    let mut section = IniSection::new("fixture".into());
+    section.set("speed", &format!("{percent}%"));
+    parse_cost(&section, "speed").unwrap()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fractional_land_speed_survives_rules_layers_and_absent_keys_reset() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+        let mut layers = RulesLayerStack::new(IniFile::from_str(
+            "[Clear]\nTrack=25%\nWheel=40%\nBuildable=yes\n\
+             [OverlayTypes]\n0=LANDOVERLAY\n[LANDOVERLAY]\nLand=Clear\n",
+        ));
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[Clear]\nTrack=0.5%\n[Ice]\nTrack=-0.5%\n"),
+        );
+        let processed = layers.process().unwrap();
+        let rules = RuleSet::from_processed_rules(&processed).unwrap();
+        let clear = rules.terrain_rules.row(LandType::Clear);
+        let track = clear.speed_costs.speed_multiplier_for(SpeedType::Track);
+        assert!(
+            track > SimFixed::ZERO,
+            "a positive fractional row must remain passable"
+        );
+        assert!(track < SimFixed::from_num(0.01));
+        assert_eq!(
+            clear.speed_costs.speed_multiplier_for(SpeedType::Wheel),
+            SIM_ONE
+        );
+        assert!(
+            !clear.buildable,
+            "a reached row uses the literal false Buildable default"
+        );
+        assert_eq!(
+            rules.overlay_registry().flags(0).unwrap().land_speed_costs,
+            Some(clear.speed_costs),
+            "overlay projections must use the same retained land table"
+        );
+        assert!(
+            rules
+                .terrain_rules
+                .row(LandType::Tunnel)
+                .speed_costs
+                .winged
+                .unwrap()
+                .is_zero()
+        );
+        assert!(
+            f64::from_bits(
+                rules
+                    .terrain_rules
+                    .row(LandType::Ice)
+                    .speed_costs
+                    .native_speed_multiplier_for(SpeedType::Track)
+                    .bits()
+            ) < 0.0
+        );
+        let bytes = crate::util::save_codec::serialize(&processed).unwrap();
+        let restored = crate::util::save_codec::deserialize(&bytes).unwrap();
+        let restored_rules = RuleSet::from_processed_rules(&restored).unwrap();
+        assert_eq!(
+            rules.simulation_config_hash(),
+            restored_rules.simulation_config_hash()
+        );
+        let (_, trace) = restored.into_ini_and_native_type_construction_trace();
+        let state = trace
+            .into_registry_state_discarding_events()
+            .destructive_reset();
+        let empty = RulesLayerStack::new(IniFile::empty());
+        let retained = empty
+            .process_with_fixed_art_and_registry_state(&IniFile::empty(), state)
+            .unwrap();
+        let retained = RuleSet::from_processed_rules(&retained).unwrap();
+        assert_eq!(retained.terrain_rules.row(LandType::Clear), clear);
+        let fresh = RuleSet::from_rules_layers(&empty).unwrap();
+        assert_eq!(retained.source_ini_hash(), fresh.source_ini_hash());
+        assert_ne!(
+            retained.simulation_config_hash(),
+            fresh.simulation_config_hash()
+        );
+    }
 
     /// The sixteen dwords read out of `g_nTmpTerrainToLandTypeTable` at
     /// `0x008288E4`, in order, as raw `LandType` indices.
@@ -368,8 +480,14 @@ mod tests {
             .semantics_for_land_type(LandType::Rock.as_index())
             .copied()
             .expect("rock semantics");
-        assert_eq!(rock.cost_for_speed_type(SpeedType::Foot), Some(0));
-        assert_eq!(rock.cost_for_speed_type(SpeedType::Winged), Some(100));
+        assert_eq!(
+            rock.cost_for_speed_type(SpeedType::Foot),
+            Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO)
+        );
+        assert_eq!(
+            rock.cost_for_speed_type(SpeedType::Winged),
+            Some(crate::util::native_x87::NativeF32Bits::ONE)
+        );
         assert_eq!(
             rock.speed_costs.speed_multiplier_for(SpeedType::Winged),
             SIM_ONE
@@ -384,9 +502,15 @@ mod tests {
             .semantics_for_land_type(LandType::Road.as_index())
             .copied()
             .expect("road semantics");
-        assert_eq!(road.cost_for_speed_type(SpeedType::Foot), Some(100));
+        assert_eq!(
+            road.cost_for_speed_type(SpeedType::Foot),
+            Some(crate::util::native_x87::NativeF32Bits::ONE)
+        );
         // And an unauthored row defaults to full speed, not to zero.
-        assert_eq!(road.cost_for_speed_type(SpeedType::Hover), Some(100));
+        assert_eq!(
+            road.cost_for_speed_type(SpeedType::Hover),
+            Some(crate::util::native_x87::NativeF32Bits::ONE)
+        );
     }
 
     #[test]
@@ -404,13 +528,19 @@ mod tests {
             .expect("clear semantics");
         assert!(clear.buildable);
         assert!(!clear.ground_blocked);
-        assert_eq!(clear.cost_for_speed_type(SpeedType::Track), Some(100));
+        assert_eq!(
+            clear.cost_for_speed_type(SpeedType::Track),
+            Some(crate::util::native_x87::NativeF32Bits::ONE)
+        );
 
         let rough = terrain_rules
             .semantics_for_land_type(LandType::Rough.as_index())
             .expect("rough semantics");
         assert!(!rough.ground_blocked);
-        assert_eq!(rough.cost_for_speed_type(SpeedType::Wheel), Some(60));
+        assert_eq!(
+            rough.cost_for_speed_type(SpeedType::Wheel),
+            Some(crate::rules::terrain_rules::test_speed_percent(60))
+        );
         assert_eq!(
             rough
                 .speed_costs
@@ -424,14 +554,23 @@ mod tests {
             .expect("water semantics");
         assert!(water.ground_blocked);
         assert!(!water.buildable);
-        assert_eq!(water.cost_for_speed_type(SpeedType::Float), Some(100));
-        assert_eq!(water.cost_for_speed_type(SpeedType::Track), Some(0));
+        assert_eq!(
+            water.cost_for_speed_type(SpeedType::Float),
+            Some(crate::util::native_x87::NativeF32Bits::ONE)
+        );
+        assert_eq!(
+            water.cost_for_speed_type(SpeedType::Track),
+            Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO)
+        );
 
         let rock = terrain_rules
             .semantics_for_land_type(LandType::Rock.as_index())
             .expect("rock semantics");
         assert!(rock.ground_blocked);
-        assert_eq!(rock.cost_for_speed_type(SpeedType::Foot), Some(0));
+        assert_eq!(
+            rock.cost_for_speed_type(SpeedType::Foot),
+            Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO)
+        );
     }
 
     #[test]
@@ -441,13 +580,14 @@ mod tests {
         // zeros at `0x0089EA40`: every SpeedType row 0.0, not Buildable.
         let terrain_rules = TerrainRules::from_ini(&IniFile::from_str("[Clear]\nBuildable=yes\n"));
         let zero = SpeedCostProfile {
-            foot: Some(0),
-            track: Some(0),
-            wheel: Some(0),
-            float: Some(0),
-            amphibious: Some(0),
-            float_beach: Some(0),
-            hover: Some(0),
+            foot: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+            track: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+            wheel: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+            float: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+            amphibious: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+            float_beach: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+            hover: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+            winged: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
         };
         for land_type in LandType::ALL {
             let name = land_type.section_name();
@@ -457,7 +597,10 @@ mod tests {
             if land_type == LandType::Clear {
                 // An authored section reads 1.0 for each absent key.
                 assert!(row.buildable);
-                assert_eq!(row.cost_for_speed_type(SpeedType::Track), Some(100));
+                assert_eq!(
+                    row.cost_for_speed_type(SpeedType::Track),
+                    Some(crate::util::native_x87::NativeF32Bits::ONE)
+                );
                 continue;
             }
             assert_eq!(row.speed_costs, zero, "{name}");
@@ -492,14 +635,38 @@ mod tests {
             let row = terrain_rules
                 .semantics_for_land_type(land_type.as_index())
                 .unwrap_or_else(|| panic!("missing {} row", land_type.section_name()));
-            assert_eq!(row.cost_for_speed_type(SpeedType::Foot), Some(0));
-            assert_eq!(row.cost_for_speed_type(SpeedType::Track), Some(100));
-            assert_eq!(row.cost_for_speed_type(SpeedType::Wheel), Some(100));
-            assert_eq!(row.cost_for_speed_type(SpeedType::Hover), Some(100));
-            assert_eq!(row.cost_for_speed_type(SpeedType::Winged), Some(100));
-            assert_eq!(row.cost_for_speed_type(SpeedType::Float), Some(100));
-            assert_eq!(row.cost_for_speed_type(SpeedType::Amphibious), Some(100));
-            assert_eq!(row.cost_for_speed_type(SpeedType::FloatBeach), Some(100));
+            assert_eq!(
+                row.cost_for_speed_type(SpeedType::Foot),
+                Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO)
+            );
+            assert_eq!(
+                row.cost_for_speed_type(SpeedType::Track),
+                Some(crate::util::native_x87::NativeF32Bits::ONE)
+            );
+            assert_eq!(
+                row.cost_for_speed_type(SpeedType::Wheel),
+                Some(crate::util::native_x87::NativeF32Bits::ONE)
+            );
+            assert_eq!(
+                row.cost_for_speed_type(SpeedType::Hover),
+                Some(crate::util::native_x87::NativeF32Bits::ONE)
+            );
+            assert_eq!(
+                row.cost_for_speed_type(SpeedType::Winged),
+                Some(crate::util::native_x87::NativeF32Bits::ONE)
+            );
+            assert_eq!(
+                row.cost_for_speed_type(SpeedType::Float),
+                Some(crate::util::native_x87::NativeF32Bits::ONE)
+            );
+            assert_eq!(
+                row.cost_for_speed_type(SpeedType::Amphibious),
+                Some(crate::util::native_x87::NativeF32Bits::ONE)
+            );
+            assert_eq!(
+                row.cost_for_speed_type(SpeedType::FloatBeach),
+                Some(crate::util::native_x87::NativeF32Bits::ONE)
+            );
             assert_eq!(row.buildable, land_type != LandType::Clear);
         }
 

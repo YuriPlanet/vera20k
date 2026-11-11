@@ -19,9 +19,26 @@
 
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
 
+/// Return the outgoing scene's live Rules writes before any native Type reset,
+/// whether the next consumer is Full_Init or an RMG preview.
+pub(crate) fn transfer_outgoing_simulation_rules(
+    owner: &mut crate::rules::process_owner::NativeRulesProcessOwner,
+    simulation: &mut crate::sim::world::Simulation,
+) -> Result<(), crate::rules::error::RulesError> {
+    owner.consume_outgoing_scenario_rules(
+        simulation.retire_object_type_tech_levels(),
+        simulation.retire_ambient_change_inputs(),
+        simulation.retire_building_upgrade_art_names(),
+        simulation.retire_voxel_type_damage(),
+    )
+}
+
 pub(crate) struct ProcessAssets {
     /// Selected at launch, retained even if initial archive loading fails.
     media_archive_mode: MediaArchiveMode,
+    /// The launch's mod folder (`app::mods`): a manager rebuilt after a lost
+    /// lease reads the same files.
+    mod_dir: Option<std::path::PathBuf>,
     /// Launch request and its first resolved names survive a lost asset lease.
     ini_config: crate::util::ini_roots::IniRootConfig,
     selected_ini_roots: Option<crate::util::ini_roots::IniRoots>,
@@ -81,6 +98,7 @@ impl ProcessAssets {
     pub(crate) fn new(media_archive_mode: MediaArchiveMode, load_audio_index: bool) -> Self {
         Self {
             media_archive_mode,
+            mod_dir: None,
             ini_config: Default::default(),
             selected_ini_roots: None,
             personal_rules: Default::default(),
@@ -115,13 +133,28 @@ impl ProcessAssets {
         self
     }
 
+    pub(crate) fn with_mod_dir(mut self, mod_dir: Option<std::path::PathBuf>) -> Self {
+        self.mod_dir = mod_dir;
+        self
+    }
+
+    /// The Options page's Terrain Deformation box: the next scenario's rules
+    /// read it, and network agreement compares it from now on.
+    pub(crate) fn set_terrain_deformation(&mut self, on: bool) {
+        self.personal_rules.set_terrain_deformation(on);
+        if let Some(rules) = self.native_rules.as_mut() {
+            rules.set_terrain_deformation(on);
+        }
+    }
+
     /// Recovery uses the process's already resolved choice, never a new Auto
     /// decision against an archive set that may have changed since startup.
     pub(crate) fn reconstruct_manager(
         &self,
         root: &std::path::Path,
     ) -> anyhow::Result<AssetManager> {
-        let assets = AssetManager::new(root, self.media_archive_mode)?;
+        let assets =
+            AssetManager::with_mod(root, self.mod_dir.as_deref(), self.media_archive_mode)?;
         Ok(if let Some(roots) = &self.selected_ini_roots {
             assets.with_selected_ini_roots(roots.clone())
         } else {
@@ -287,7 +320,19 @@ impl ProcessAssets {
     pub(crate) fn native_ini_hashes(
         &self,
     ) -> Option<crate::rules::native_ini_hash::NativeIniHashes> {
-        self.native_ini_hashes
+        let mut hashes = self.native_ini_hashes?;
+        // VERA extension: peers must agree on personal rules, whether they
+        // may replace map-authored rules and the Options switches, which can
+        // change after install. An inactive file with the switches off adds
+        // nothing.
+        if let Some(crc) = self
+            .native_rules
+            .as_ref()
+            .and_then(|rules| rules.personal_rules_compatibility_crc())
+        {
+            hashes.rules = hashes.rules.wrapping_add(crc);
+        }
+        Some(hashes)
     }
 
     /// The VERA protocol compares the exact process-selected Rules/LANGRULE/ART
@@ -332,7 +377,9 @@ impl ProcessAssets {
         let prepared = crate::app::shell_random_map::prepare_random_map_generation(
             assets,
             options,
-            self.native_rules.as_ref(),
+            crate::app::shell_random_map::RandomMapRulesPreparation::ReadOnly(
+                self.native_rules.as_ref(),
+            ),
             mode_rules.as_ref(),
         )
         .ok_or("generated map theater is unavailable")?;
@@ -380,19 +427,13 @@ impl ProcessAssets {
         )
         .ok()
         .map(|selected| selected.ini);
-        let mut hashes = crate::rules::native_ini_hash::NativeIniHashes::compute(
+        self.native_ini_hashes = Some(crate::rules::native_ini_hash::NativeIniHashes::compute(
             rules.selected_rules_root(),
             &mode_inis,
             cooperative.as_ref(),
             &ai,
             rules.fixed_art(),
-        );
-        // VERA extension: peers must agree on both personal rules and whether
-        // they may replace map-authored rules. An inactive file adds nothing.
-        if let Some(crc) = rules.personal_rules_compatibility_crc() {
-            hashes.rules = hashes.rules.wrapping_add(crc);
-        }
-        self.native_ini_hashes = Some(hashes);
+        ));
     }
 
     pub(crate) fn read_multiplayer_country(
@@ -528,12 +569,12 @@ impl ProcessAssets {
         &mut self,
     ) -> (
         Option<&mut AssetManager>,
-        Option<&crate::rules::process_owner::NativeRulesProcessOwner>,
+        Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
         &mut crate::map::tile_variant_selector::TileVariantSelectorCache,
     ) {
         (
             self.manager.as_mut(),
-            self.native_rules.as_ref(),
+            self.native_rules.as_mut(),
             &mut self.tile_variant_selector_cache,
         )
     }
@@ -688,6 +729,12 @@ mod tests {
         let priority = hashes(b"[General]\nBuildSpeed=.5\n[VERA]\nOverrideMapRules=yes\n");
         assert_ne!(personal.rules, priority.rules);
         assert_eq!((stock.ai, stock.art), (priority.ai, priority.art));
+        // The Options box counts from the moment it is ticked, after install.
+        let mut ticked = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false);
+        ticked.initialize_sources_if_needed(&assets).unwrap();
+        ticked.install_native_ini_hashes(&assets, &[]);
+        ticked.set_terrain_deformation(true);
+        assert_ne!(stock.rules, ticked.native_ini_hashes().unwrap().rules);
     }
 
     #[test]

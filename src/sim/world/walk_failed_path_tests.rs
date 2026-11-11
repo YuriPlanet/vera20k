@@ -231,8 +231,8 @@ fn receiver_records_an_impassable_current_cell() {
             .cell_mut_for_test(10, 10)
             .unwrap();
         cell.land_type = 2;
-        cell.speed_costs.foot = Some(0);
-        cell.base_speed_costs.foot = Some(0);
+        cell.speed_costs.foot = Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
+        cell.base_speed_costs.foot = Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
     }
     order_walk(&mut sim, &rules, id, (11, 10));
     let before = sim.state_hash();

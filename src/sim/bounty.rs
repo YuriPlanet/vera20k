@@ -37,8 +37,16 @@ pub(crate) struct BountyDisplayState {
 }
 
 impl BountyDisplayState {
-    fn queue(&mut self, amount: i32) {
+    /// Add `amount` to BountyDisplayAmount: a bounty payout, or Ares'
+    /// produced cash (AddProduceCashDisplay 100117C0, `sim::credit_income`).
+    pub(crate) fn queue(&mut self, amount: i32) {
         self.pending = self.pending.wrapping_add(amount);
+    }
+
+    /// The queued sum, taken as the next display would.
+    #[cfg(test)]
+    pub(crate) fn take_pending_for_test(&mut self) -> i32 {
+        std::mem::take(&mut self.pending)
     }
 
     ///10044497..100444E7 consumes the sum before checking presentation

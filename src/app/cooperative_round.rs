@@ -1,5 +1,7 @@
-//! The LAN Cooperative continuation: Cooperative `+0xA0` at a mission's
-//! end, the result dialog BC6 and the next mission over the same session.
+//! The network Cooperative continuation: Cooperative `+0xA0` at a
+//! mission's end, the result dialog BC6 and, on LAN, the next mission over
+//! the same session. A WOL match's relay ends with its mission, so there
+//! BC6's Continue returns to VERA's kept room on the next stage instead.
 //!
 //! The progress record belongs to `MultiplayerShellRuntime`'s
 //! `CooperativeProgressState`; the participants, the agreed seed and BC6's
@@ -14,9 +16,18 @@
 //! `0x0046ECD8`) and the master's `0x0046D8B0` reply are not ported.
 //! RESIDUAL: the dialog's 20 s keepalive `0x0D` (`0x0046EADD`) is not sent;
 //! a peer's unhandled records still reach the loop's tail.
+//! RESIDUAL: on WOL BC6 sends and receives no records: the partner's row
+//! stays unready and chat stays local. The next mission starts from the
+//! room as a first start does, without `+0xAC`'s carry-over record
+//! (`0x004C6210`); no retail co-op map reads one (none sets a global or
+//! `TimerInherit`).
+//! RESIDUAL: a WOL match with no kept room (an original-style room, Play
+//! Buddy, Quick Co-op) has nothing to continue in: Continue returns to the
+//! lobby as Quit does, and the pair goes on through Use Saved Campaign.
 
 use crate::app::frontend::skirmish_session::cooperative::CooperativeMissionRow;
 use crate::app::match_runtime::session::{CooperativeRoundEvent, CooperativeRoundStep};
+use crate::app::shell_network_setup::CooperativeResume;
 use crate::app::{App, AppState, GameScreen};
 use crate::ui::coop_score_shell::{CoopScoreAction, CoopScoreModel, CoopScorePage};
 use crate::ui::lan_shell::LanChatLine;
@@ -28,7 +39,7 @@ pub(crate) fn applies(state: &AppState) -> bool {
         && state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .and_then(|runtime| runtime.simulation.session().multiplayer_mode_class())
             == Some(crate::skirmish_modes::MpModeClass::Cooperative)
 }
@@ -45,7 +56,7 @@ pub(crate) fn mission_ended(state: &mut AppState, elapsed_ticks: i32) {
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|runtime| &runtime.simulation)
     else {
         return;
@@ -165,7 +176,7 @@ pub(crate) fn open_result(state: &mut AppState, victory: bool) {
             state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .map(|runtime| runtime.simulation.save_campaign_carry_over())
         })
         .flatten();
@@ -256,7 +267,7 @@ pub(crate) fn open_result(state: &mut AppState, victory: bool) {
 /// game type and `NAME:COOPDESC<campaign+1><map+1>`.
 fn build_model(state: &AppState, can_continue: bool, elapsed: i32) -> Option<CoopScoreModel> {
     use crate::app::frontend::shell_pass::resolve_csf;
-    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     let computer = resolve_csf(state, "TXT_COMPUTER");
     let sources = crate::app::presentation::house_ui::HouseUiSources::from_state(state, &computer);
     let mut rows: Vec<_> = sim
@@ -349,7 +360,7 @@ fn build_campaign_end(
 ) -> Option<crate::ui::campaign_score_shell::CampaignEndModel> {
     use crate::app::frontend::shell_pass::resolve_csf;
     use crate::assets::csf_file::{CsfArg, format_csf};
-    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     let computer = resolve_csf(state, "TXT_COMPUTER");
     let sources = crate::app::presentation::house_ui::HouseUiSources::from_state(state, &computer);
     let houses: Vec<_> = sim
@@ -506,7 +517,7 @@ pub(crate) fn view(state: &AppState) -> Option<CoopScoreView> {
         let rules = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.resources.rules);
         let flag = rules
             .and_then(|rules| {
@@ -637,6 +648,28 @@ fn run_step(state: &mut AppState, step: CooperativeRoundStep) {
         }
         CooperativeRoundStep::Exit(true) => begin_next_mission(state),
         CooperativeRoundStep::Exit(false) => finish(state),
+        CooperativeRoundStep::ContinueInRoom => {
+            // The room the host gets back takes the round's mode and the
+            // stage `+0xA0` selected, the mission BC6 would have loaded.
+            let resume =
+                state
+                    .match_state
+                    .session
+                    .network_setup()
+                    .map(|launch| CooperativeResume {
+                        mode_id: launch.mode.id,
+                        scenario: state.frontend.multiplayer_shell_runtime.scenario_index(),
+                    });
+            if let Some(visit) = state
+                .frontend
+                .wol
+                .as_mut()
+                .filter(|visit| visit.back_to_room)
+            {
+                visit.cooperative_resume = resume;
+            }
+            finish(state);
+        }
     }
 }
 

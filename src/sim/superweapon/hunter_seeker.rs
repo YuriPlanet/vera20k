@@ -8,7 +8,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::SuperWeaponType;
 use crate::sim::components::DriveCoord;
 use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
-use crate::sim::hunter_seeker::HunterSeekerOrigin;
+use crate::sim::hunter_seeker::AttachedSuper;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::world::{FrameEffects, PlacementEvidence, Simulation};
@@ -96,7 +96,7 @@ pub(super) fn launch(
             .entities
             .get_mut(id)
             .expect("constructed hunter")
-            .set_hunter_seeker_origin(HunterSeekerOrigin { owner, sw_type });
+            .set_ares_super_weapon(AttachedSuper { owner, sw_type });
         // Cell2Coord, deliberately Z=0: Put owns floor/layer admission. Do not
         // replace this with UnitDelivery's finished-unit placement policy.
         if sim

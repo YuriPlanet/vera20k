@@ -65,12 +65,21 @@ pub(crate) enum SurfaceDraw {
         rect: [i32; 4],
         word: u16,
     },
+    /// Foot4DC340's dashed stores drained between Airstrike beams: opaque
+    /// words stored only where the tactical A is nonzero. Each pixel reads
+    /// the A pixel `a_offset` away.
+    GatedOpaqueRect {
+        rect: [i32; 4],
+        word: u16,
+        a_offset: [i32; 2],
+    },
     Line(SurfaceLine),
     /// Wave0/3 DrawSonic75FA90/DrawMagBeam7602E0: displaced background with strict Z,
     /// without A or WriteZ, at this parent's retained Display slot.
     Wave(crate::render::wave_geometry::WaveDraw),
-    /// ParticleDraw62D02C: packed color after full-u16 A admission, with a
-    /// signed candidate tested strictly against the current native Z word.
+    /// ParticleDraw62D02C: interpolated color the GPU admits, modulates and
+    /// packs by the live A, with a signed candidate tested strictly against
+    /// the current native Z word.
     Point(crate::render::tactical_compat::PreparedSparkPoint),
     /// XSurface7BB350: packed opaque stores, without A/Z admission.
     Ellipse {

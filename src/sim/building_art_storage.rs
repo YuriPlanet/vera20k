@@ -32,6 +32,19 @@ impl Default for BuildingStorage {
         }
     }
 }
+#[cfg(feature = "ares")]
+impl super::BuildingArt {
+    /// The store leaves the building for its House at Added_To_Game
+    /// (`sim::ares_tiberium_storage`, Ares builds).
+    pub(crate) fn take_storage_amounts(&mut self) -> [NativeF32Bits; 4] {
+        std::mem::replace(&mut self.storage.amounts, [NativeF32Bits::POSITIVE_ZERO; 4])
+    }
+
+    /// The store comes back from its House at Removed_From_Game.
+    pub(crate) fn restore_storage_amounts(&mut self, amounts: [NativeF32Bits; 4]) {
+        self.storage.amounts = amounts;
+    }
+}
 impl BuildingStorage {
     ///6C9650 rounds after EACH float addition through signed _ftol lowEAX.
     fn total(self) -> i32 {
@@ -39,14 +52,14 @@ impl BuildingStorage {
             X87::ftol_i32_low_masked(X87::add(X87::load_i32(total), X87::load_f32(amount)))
         })
     }
-    fn tier(self, capacity: i32, frame: u32, caller: &str) -> i32 {
+    /// gamemd's IDIV (445FE4, 450DAA, 450E12) traps on `Storage=0` under a
+    /// stored total (and on MIN/-1); VERA carries on with the empty tier.
+    fn tier(self, capacity: i32) -> i32 {
         if self.total() == 0 {
             return 0;
         }
         let numerator = self.total().wrapping_shl(2);
-        numerator.checked_div(capacity).unwrap_or_else(|| panic!(
-            "native Building storage IDIV fault: caller={caller} frame={frame} numerator={numerator} capacity={capacity}"
-        ))
+        numerator.checked_div(capacity).unwrap_or(0)
     }
     fn silo_frame(self, capacity: i32) -> i32 {
         if capacity <= 0 {
@@ -70,6 +83,20 @@ fn active_slot(tier: i32) -> Option<u8> {
     }
 }
 impl Simulation {
+    /// The building's storage as the art reads it: in Ares builds a store
+    /// its House holds in game comes from that House
+    /// ([`Simulation::ares_ledger_store`]).
+    fn storage_view(&self, id: u64) -> Option<BuildingStorage> {
+        let storage = self.entities().get(id)?.building_art.storage;
+        #[cfg(feature = "ares")]
+        if let Some(store) = self.ares_ledger_store(id) {
+            return Some(BuildingStorage {
+                amounts: store.amounts(),
+                ..storage
+            });
+        }
+        Some(storage)
+    }
     /// `GetHealthRatio <= ConditionYellow` picks the slot's name and flag for `0x00451890`:
     /// OnConstructionComplete `0x00446021..0x0044605A`, UpdateAnimation `0x00450D2B..0x00450D5E`.
     fn allocate_storage_slot(&mut self, id: u64, slot: u8, rules: &RuleSet) {
@@ -95,11 +122,11 @@ impl Simulation {
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return;
         };
-        let tier =
-            entity
-                .building_art
-                .storage
-                .tier(object.storage, self.session.binary_frame(), "445FE4");
+        let capacity = object.storage;
+        let Some(storage) = self.storage_view(id) else {
+            return;
+        };
+        let tier = storage.tier(capacity);
         self.substrate
             .entities
             .get_mut(id)
@@ -127,7 +154,9 @@ impl Simulation {
         // The type's ART resolved from its own ID, which names it as the
         // entity's type reference does.
         if object.silo_damage(rules) {
-            let frame = entity.building_art.storage.silo_frame(capacity);
+            let frame = self
+                .storage_view(id)
+                .map_or(0, |storage| storage.silo_frame(capacity));
             if frame == 0 {
                 self.clear_building_anim_slot(id, 10);
             } else {
@@ -151,8 +180,8 @@ impl Simulation {
         if !refinery {
             return;
         }
-        let storage = self.entities().get(id).unwrap().building_art.storage;
-        let tier = storage.tier(capacity, self.session.binary_frame(), "450DAA");
+        let storage = self.storage_view(id).unwrap();
+        let tier = storage.tier(capacity);
         if tier == storage.refinery_tier {
             return;
         }
@@ -160,11 +189,7 @@ impl Simulation {
             self.clear_building_anim_slot(id, slot);
         }
         //450E12 re-reads storage after the synchronous old Anim destructor.
-        let tier = self.entities().get(id).unwrap().building_art.storage.tier(
-            capacity,
-            self.session.binary_frame(),
-            "450E12",
-        );
+        let tier = self.storage_view(id).unwrap().tier(capacity);
         self.substrate
             .entities
             .get_mut(id)
@@ -271,8 +296,10 @@ mod tests {
                     sim.update_building_storage_anims(id, rules);
                 }
             }));
+            // gamemd's IDIV traps on these rows; VERA carries on with the
+            // empty tier.
             if output["fault"].is_string() {
-                assert!(result.is_err(), "native IDIV row{index}: {row}");
+                assert!(result.is_ok(), "native IDIV row{index}: {row}");
                 faults += 1;
                 continue;
             }

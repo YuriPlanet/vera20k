@@ -161,7 +161,7 @@ fn action110_stops_elapsed_before_action67_cue_and_house_wait() {
     sim.classify_map_triggers(&rules);
     sim.publish_scenario_started();
     let mut runtime = SimRuntime::from_simulation(sim);
-    runtime.resources.rules = rules;
+    runtime.resources_mut().rules = rules;
     let mut pause = ScenarioPauseClock::default();
     let mut elapsed_owner = ScenarioElapsedClock::new();
     elapsed_owner.start(0);

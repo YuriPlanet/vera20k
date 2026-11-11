@@ -78,35 +78,43 @@ impl Simulation {
     pub(super) fn team_action_iron_curtain(
         &mut self,
         team_id: u64,
+        argument: i32,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        let checked = self.team_leader(team_id, rules).and_then(|leader| {
-            // The leader's house (`+0x21C`).
-            let owner = self.substrate.entities.get(leader)?.owner();
-            let curtain =
-                super_types_with_type(rules, SuperWeaponKind::IronCurtain.native_index()).next()?;
-            Some((owner, self.team_super_step(owner, curtain, rules)))
-        });
-        match checked {
-            Some((_, SuperStep::Wait)) => return,
-            Some((owner, SuperStep::Fire)) => {
-                if let Some(centre) = self.team_centre_cell(team_id) {
-                    self.team_fire_super(
-                        owner,
-                        SuperWeaponKind::IronCurtain,
-                        centre,
-                        rules,
-                        registry,
-                        frame_effects,
-                    );
+        #[cfg(feature = "ares")]
+        self.team_action_ares_iron_curtain(team_id, argument, rules, registry, frame_effects);
+        #[cfg(not(feature = "ares"))]
+        {
+            let _ = argument;
+            let checked = self.team_leader(team_id, rules).and_then(|leader| {
+                // The leader's house (`+0x21C`).
+                let owner = self.substrate.entities.get(leader)?.owner();
+                let curtain =
+                    super_types_with_type(rules, SuperWeaponKind::IronCurtain.native_index())
+                        .next()?;
+                Some((owner, self.team_super_step(owner, curtain, rules)))
+            });
+            match checked {
+                Some((_, SuperStep::Wait)) => return,
+                Some((owner, SuperStep::Fire)) => {
+                    if let Some(centre) = self.team_centre_cell(team_id) {
+                        self.team_fire_super(
+                            owner,
+                            SuperWeaponKind::IronCurtain,
+                            centre,
+                            rules,
+                            registry,
+                            frame_effects,
+                        );
+                    }
                 }
+                Some((_, SuperStep::Finish)) | None => {}
             }
-            Some((_, SuperStep::Finish)) | None => {}
-        }
-        if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
-            team.advance_pending = true;
+            if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                team.advance_pending = true;
+            }
         }
     }
 
@@ -210,6 +218,100 @@ impl Simulation {
             SuperStep::Wait
         } else {
             SuperStep::Finish
+        }
+    }
+
+    /// Ares's action 55 (hook 6EFC70, Ares.dll 1003A2F0 -> 10039EF0): the
+    /// leader's House walks every SuperWeaponType whose `SW.AITargeting` is
+    /// IronCurtain and whose `SW.Group` equals the argument. The first one
+    /// charged, with House power (drain 0 or not above output) unless the type
+    /// is not `IsPowered`, fires (Fire_SW by its own index) at the team's
+    /// centre cell and the step completes. Before that, the first granted one
+    /// whose elapsed charge reaches `AIMinorSuperReadyPercent` (x87: both
+    /// counts stored as binary32, `jb` skips an unordered compare) makes the
+    /// step wait; with neither, it completes, as it does without a leader.
+    #[cfg(feature = "ares")]
+    fn team_action_ares_iron_curtain(
+        &mut self,
+        team_id: u64,
+        argument: i32,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) {
+        use crate::rules::superweapon_targeting::AiTargetingMode;
+        use crate::util::native_x87::{MaskedX87Chop53 as F, MaskedX87Ordering as O};
+        let mut found = None;
+        let mut fire = false;
+        let owner = self
+            .team_leader(team_id, rules)
+            .and_then(|leader| self.substrate.entities.get(leader))
+            .map(|leader| leader.owner());
+        if let Some(owner) = owner {
+            let power = self.power_states.get(&owner);
+            let (output, drain) =
+                power.map_or((0, 0), |power| (power.total_output(), power.total_drain()));
+            let has_power = drain == 0 || drain <= output;
+            let frame = self.session.binary_frame() as i32;
+            for name in &rules.super_weapon_order {
+                if fire {
+                    break;
+                }
+                let (Some(sw), Some(metadata)) =
+                    (rules.super_weapon(name), rules.super_weapon_metadata(name))
+                else {
+                    continue;
+                };
+                if metadata.targeting().mode() != AiTargetingMode::IronCurtain
+                    || metadata.launch().group() != argument
+                {
+                    continue;
+                }
+                let Some(instance) = self
+                    .interner
+                    .get(name)
+                    .and_then(|id| self.super_weapons.get(&owner)?.get(&id))
+                else {
+                    continue;
+                };
+                if instance.is_ready() && (has_power || !sw.is_powered) {
+                    found = Some(name.as_str());
+                    fire = true;
+                } else if found.is_none() && instance.is_active() {
+                    let recharge = instance.recharge_time(sw);
+                    let elapsed = recharge.wrapping_sub(instance.charge_remaining(frame));
+                    let as_float =
+                        |value: i32| F::load_f32(F::store_f32_masked_chop(F::load_i32(value)));
+                    let threshold = F::mul(
+                        F::load_f32(rules.general.ai_minor_super_ready_percent),
+                        as_float(recharge),
+                    );
+                    if matches!(
+                        F::compare(as_float(elapsed), threshold),
+                        O::Greater | O::Equal
+                    ) {
+                        found = Some(name.as_str());
+                    }
+                }
+            }
+            if fire && let Some((name, centre)) = found.zip(self.team_centre_cell(team_id)) {
+                let sw_type_id = self.interner.intern(name);
+                self.fire_super_weapon_selected(
+                    rules,
+                    owner,
+                    sw_type_id,
+                    (centre.0 as u16, centre.1 as u16),
+                    registry,
+                    frame_effects,
+                    crate::sim::superweapon::SuperWeaponTargetSource::Manual,
+                    None,
+                );
+            }
+        }
+        if (fire || found.is_none())
+            && let Some(team) = self.team_script_vm.teams.get_mut(&team_id)
+        {
+            team.advance_pending = true;
         }
     }
 

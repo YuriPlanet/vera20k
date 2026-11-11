@@ -96,18 +96,6 @@ pub(crate) fn open_art(state: &mut AppState) -> bool {
     state.frontend.wol_buddy_art.is_some()
 }
 
-/// `0x0078BF7D`: the lobby's Buddy List writes mode 5 with return mode 4
-/// and its runner ends; the mode-loop pass applies, and the login category
-/// is unchanged, so the Buddy List runner follows at once.
-pub(super) fn enter_from(state: &mut AppState, from: WolMode) {
-    if let Some(visit) = state.frontend.wol.as_mut() {
-        visit.mode = Some(WolMode::PlayBuddy);
-        visit.return_mode = Some(from);
-    }
-    super::apply_wol_preferences(state);
-    open(state);
-}
-
 /// The runner's entry (steps 1-2): the chat-lobby list behind its wait.
 pub(super) fn open(state: &mut AppState) {
     super::lobby::open_buddy_runner(state);
@@ -179,13 +167,7 @@ fn returned(state: &mut AppState) {
     let mode = visit.return_mode.take();
     super::lobby::drop_runner(state);
     match mode {
-        Some(WolMode::CustomMatch) => {
-            if let Some(visit) = state.frontend.wol.as_mut() {
-                visit.mode = Some(WolMode::CustomMatch);
-            }
-            super::apply_wol_preferences(state);
-            super::lobby::open(state, false);
-        }
+        Some(WolMode::CustomMatch) => super::reopen_lobby(state),
         Some(WolMode::MyInformation) => {
             if let Some(visit) = state.frontend.wol.as_mut() {
                 visit.mode = Some(WolMode::MyInformation);
@@ -665,7 +647,27 @@ pub(super) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     if let Some(action) = action {
         apply(state, action);
     }
+    scroll_add_to_caret(state);
     state.platform.window.request_redraw();
+}
+
+/// `0x115`'s NewEdit keeps its caret in view: `0x00623880` paints from the
+/// first visible unit. Widths are the box's retail pixels.
+fn scroll_add_to_caret(state: &mut AppState) {
+    let (width, height) = (
+        state.renderer.gpu.config.width as i32,
+        state.renderer.gpu.config.height as i32,
+    );
+    let rect = crate::ui::shell::modal::wol_add_buddy_layout(width, height).name;
+    let font = &state.renderer.bit_font;
+    let Some(WolPage::Buddy(dialog)) = state.frontend.wol.as_mut().map(|visit| &mut visit.page)
+    else {
+        return;
+    };
+    if let Some(add) = dialog.ui.add.as_mut() {
+        add.edit
+            .scroll_to_caret((rect.w - 3).max(0) as u32, |text| font.text_width(text));
+    }
 }
 
 /// `0x116`'s timers (the 1000 ms status refresh and Refresh's 3000 ms

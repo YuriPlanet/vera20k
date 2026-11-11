@@ -3,11 +3,6 @@
 //! Combines cell-level A* with zone-aware hierarchical search for fast unreachability
 //! detection and hierarchy-marked pruning.
 //!
-//! TODO(RE): The current split is still only partially aligned with RA2/YR. Zone
-//! rebuilds use the recovered nodeIndex -> zoneId semantics, but bridge-layer remap,
-//! full hierarchical subzone support, and the exact regular-vs-hierarchical path entry
-//! behavior are still pending.
-//!
 //! ## Dependency rules
 //! - Part of sim/ — depends on map/ (terrain, resolved_terrain).
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.

@@ -68,6 +68,23 @@ impl NativeRadarScreenGeometry {
         ))
     }
 
+    /// VERA's HD radar: the pixel of the surface generated at `scale` times
+    /// the size under an exact layout `point`, clamped onto that surface. The
+    /// native pick above decides whether the point is on the radar at all.
+    pub fn fine_surface_pixel(self, point: (f32, f32), scale: u32) -> (i32, i32) {
+        let rect = self.content_rect();
+        let size = self.surface.subdivided(scale).generated_size();
+        let pick = |point: f32, start: f32, extent: f32, count: i32| {
+            let count = count.max(1);
+            let offset = (point - start.round()) * count as f32 / extent.round().max(1.0);
+            (offset.floor() as i32).clamp(0, count - 1)
+        };
+        (
+            pick(point.0, rect[0], rect[2], size.0),
+            pick(point.1, rect[1], rect[3], size.1),
+        )
+    }
+
     /// Resolve an actual destination pixel which the existing inverse maps
     /// back to this generated pixel. A downscaled, unrepresented pixel has no
     /// clickable point; do not silently select its neighbor.
@@ -101,7 +118,12 @@ pub(super) fn native_viewport_rect(
     center_cell: (u16, u16),
     tactical_width: i32,
     tactical_height: i32,
+    world_zoom: f32,
 ) -> NativeRadarRect {
+    // VERA's wheel zoom changes the visible world extent, independently of
+    // the radar/UI scale. Feed world pixels to the unchanged native worker.
+    let tactical_width = (tactical_width as f32 / world_zoom).round() as i32;
+    let tactical_height = (tactical_height as f32 / world_zoom).round() as i32;
     let center = surface.cell_to_surface_pixel(center_cell);
     native_viewport_rect_from_center(surface, center, tactical_width, tactical_height)
 }

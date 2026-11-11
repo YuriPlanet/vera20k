@@ -1,7 +1,9 @@
 use super::*;
+use crate::app::match_runtime::sim_host::SimWrite;
 
 /// The random-map seed file the `.SED` launch branch recognises. Written into
-/// the RA2 directory so `map_load` finds it where the original puts it.
+/// VERA's folder for it (`map::source::random_map_dir`), where `map_load`
+/// reads it; gamemd keeps it in the game folder.
 pub(crate) const RANDMAP_SED_FILE: &str = "RandMap.Sed";
 /// Description the setup dialog stamps onto a randomized configuration; it also
 /// becomes the sentinel row's displayed name.
@@ -9,9 +11,8 @@ pub(super) const RANDOM_MAP_DESCRIPTION_KEY: &str = "TXT_RANDOM_MAP_DESCRIPTION"
 pub(super) const RANDOM_MAP_DESCRIPTION_FALLBACK: &str = "Random Map";
 /// The players slider is the last of the setup dialog's six option rows.
 const SETUP_PLAYERS_ROW: usize = 5;
-/// Matches the rules default the map-load path falls back to; the preview only
-/// needs it because terrain resolution takes it, not because cliffs affect the
-/// image.
+/// Retail's `[General] CliffBackImpassability=`; the preview only needs it
+/// because terrain resolution takes it, not because cliffs affect the image.
 const RANDOM_MAP_PREVIEW_CLIFF_BACK_IMPASSABILITY: u8 = 2;
 /// Where the generated preview is written. The chooser's sentinel row reads this
 /// back, so writing it is what makes the random-map thumbnail appear there.
@@ -51,6 +52,11 @@ pub(super) struct RandomMapStorageDecision {
 }
 
 impl RandomMapStorageDecision {
+    #[cfg(test)]
+    pub(super) fn reinitializes(self) -> bool {
+        self.reinitialize
+    }
+
     /// Apply only the guarded native Resize side effect. Preview redraws never
     /// receive this decision and cannot reconstruct the process dummy.
     fn apply_resize_to(&self, shared_cell_dummy: &crate::map::resolved_terrain::SharedCellDummy) {
@@ -94,22 +100,20 @@ fn build_random_map_preview_grid(
     )
 }
 
-/// Immutable projection of reset-selected Rules/ART for one generation. Its
-/// source remains NativeRulesProcessOwner; dropping the job retires this cache.
+/// Immutable projection of the process owner's Rules/ART for one generation.
+/// Dropping the job retires only this view, not the live Rules registry.
 struct RandomMapPreviewRules {
     rules: crate::rules::ruleset::RuleSet,
 }
 
 impl RandomMapPreviewRules {
-    fn from_process(
+    fn from_processed(
         owner: &crate::rules::process_owner::NativeRulesProcessOwner,
-        mode: Option<&crate::rules::ini_parser::IniFile>,
-        theater: &str,
+        processed: &crate::rules::native_processing::ProcessedRulesLayers,
         assets: &crate::assets::asset_manager::AssetManager,
         theater_ext: &str,
     ) -> Option<Self> {
-        let processed = owner.random_map_preview_projection(mode, theater).ok()?;
-        let mut rules = crate::rules::ruleset::RuleSet::from_processed_rules(&processed).ok()?;
+        let mut rules = crate::rules::ruleset::RuleSet::from_processed_rules(processed).ok()?;
         rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(
             owner.fixed_art(),
         ));
@@ -302,8 +306,25 @@ impl AcceptedRmgStartStaging {
         }
     }
 
+    /// Staging from the shell's retained Scenario `+0x11C0` cells
+    /// (`0x0058B830`), which Full_Init copies again (`0x006873E6`): a network
+    /// guest's launch and a Skirmish rematch after the accepted setup was
+    /// consumed. `None` unless `RandMap.Sed` is selected and the
+    /// shell holds a start.
+    pub(crate) fn from_retained_staging(
+        staging: &crate::map::preview::ScenarioStartStaging,
+        selected_map_file: Option<&str>,
+    ) -> Option<Self> {
+        let random_map = selected_map_file.is_some_and(|file| {
+            file.eq_ignore_ascii_case(crate::map::skirmish_scenarios::RANDMAP_SED)
+        });
+        (random_map && staging.defined_cells().next().is_some())
+            .then(|| Self::from_scenario_staging(staging))
+    }
+
     fn from_generated(generated: &crate::map::rmg::GeneratedMap) -> Self {
-        let mut slots = [None; crate::skirmish_launch::SKIRMISH_PLAYER_SLOT_COUNT];
+        // VERA: every start of a random map for up to thirty players.
+        let mut slots = [None; crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT];
         for &(slot, rx, ry) in &generated.start_waypoints {
             if let Some(entry) = slots.get_mut(usize::from(slot)) {
                 *entry = Some(crate::map::waypoints::Waypoint {
@@ -375,6 +396,13 @@ pub(crate) struct RandomMapGenerationRetention {
     /// Simulation exists. Inactive load attempts receive draw-free snapshots;
     /// only successful Simulation installation retires this transport.
     pending_process_mapgen: Option<crate::rng_continuation::MapGenRngContinuation>,
+    /// The globals `ComputeScenarioHeaderFromMap @ 0x0058B820` fills at every
+    /// Generate (count `0x00ABED0C`, cells `0x00ABE304`, pairs `0x00ABE328`,
+    /// bounds `0x00ABDFD0..0x00ABECD0`). OK and Cancel leave them; they live
+    /// for the process, empty before the first Generate. `0x0058BB30` copies
+    /// them back into Scenario when the random map is selected, and
+    /// `DrawStartPositions 0x00640710` numbers the starts from them.
+    generated_header: crate::map::preview::ScenarioStartStaging,
 }
 
 impl RandomMapGenerationRetention {
@@ -440,6 +468,19 @@ impl RandomMapGenerationRetention {
         }
     }
 
+    pub(super) fn begin_map_storage_decision(
+        &mut self,
+        options: &crate::map::rmg::RmgOptions,
+    ) -> RandomMapStorageDecision {
+        let decision = self.map_storage_decision(options);
+        if decision.reinitialize {
+            // A later Rules/asset failure must not admit the old A cache key
+            // against the partially rebuilt B registry on the next attempt.
+            self.map_storage_key = None;
+        }
+        decision
+    }
+
     pub(super) fn commit_map_storage_decision(&mut self, decision: RandomMapStorageDecision) {
         self.map_storage_key = Some(decision.key);
     }
@@ -456,7 +497,19 @@ impl RandomMapGenerationRetention {
     }
 
     pub(super) fn finish_generation(&mut self, generated: crate::map::rmg::GeneratedMap) {
+        // RandomMapGenerator__CreateStartingPoints calls 0x0058B820 at
+        // 0x00594EE3, inside the generate block.
+        self.generated_header = crate::app::loading::composition::scenario_start_staging(
+            &generated.map_file,
+            &generated.start_waypoints,
+        );
         self.candidate = Some(generated);
+    }
+
+    /// The last Generate's start header (`0x0058B820`'s globals), which a
+    /// random map's preview numbers its starts from.
+    pub(crate) fn generated_header(&self) -> crate::map::preview::ScenarioStartStaging {
+        self.generated_header
     }
 
     fn cancel_setup(&mut self) {
@@ -535,14 +588,72 @@ pub(super) struct PreparedRandomMapGeneration {
     pub(super) resolved_inputs: crate::map::rmg::build::ResolvedTheaterInputs,
     pub(super) blocks: crate::map::rmg::theater_blocks::TheaterTileBlocks,
     pub(super) tech_types: Vec<crate::map::rmg::phases::tech_buildings::TechType>,
+    /// The resolved Ares `[Urban]` lists.
+    #[cfg(feature = "ares")]
+    pub(super) urban_catalog: crate::map::rmg::phases::urban_areas::UrbanCatalog,
+}
+
+/// What a generation worker may construct, owned so it can cross threads.
+pub(super) struct RandomMapObjects {
+    tech_types: Vec<crate::map::rmg::phases::tech_buildings::TechType>,
+    /// The Ares `[Urban]` catalog and the process Main stream its foot picks
+    /// draw (`Randomizer::Global()`), when the urban switch is set.
+    #[cfg(feature = "ares")]
+    urban: Option<(
+        crate::map::rmg::phases::urban_areas::UrbanCatalog,
+        crate::sim::rng::MainRngDraws,
+    )>,
+}
+
+impl RandomMapObjects {
+    /// Tech buildings only.
+    pub(super) fn tech(tech_types: Vec<crate::map::rmg::phases::tech_buildings::TechType>) -> Self {
+        Self {
+            tech_types,
+            #[cfg(feature = "ares")]
+            urban: None,
+        }
+    }
+
+    /// Run `generate` over the borrowed generation objects.
+    fn generate<R>(
+        &self,
+        generate: impl FnOnce(&crate::map::rmg::build::GenerationObjects<'_>) -> R,
+    ) -> R {
+        #[cfg(feature = "ares")]
+        if let Some((catalog, main)) = &self.urban {
+            let main_draw = || main.next_u32();
+            return generate(&crate::map::rmg::build::GenerationObjects {
+                tech_types: &self.tech_types,
+                urban_areas: Some(crate::map::rmg::phases::urban_areas::UrbanInputs {
+                    catalog,
+                    main_draw: &main_draw,
+                }),
+            });
+        }
+        generate(&crate::map::rmg::build::GenerationObjects::tech(
+            &self.tech_types,
+        ))
+    }
 }
 
 impl PreparedRandomMapGeneration {
-    /// These are the same resolved settings, theater, TMP geometry and neutral
-    /// structures passed to `generate_map`; preparation does not consume RNG.
+    /// These are the same resolved generation inputs, including the process
+    /// Powerups table that the generated scenario inherits. Projection consumes
+    /// no RNG and never mutates the live Rules owner.
     pub(super) fn multiplayer_digest(&self) -> String {
-        let mut bytes = b"VERA20k RMG dependencies v1\0".to_vec();
+        let mut bytes = b"VERA20k RMG dependencies v2\0".to_vec();
         bytes.extend_from_slice(self.settings.multiplayer_digest().as_bytes());
+        // Retained rows may differ despite identical current source text.
+        // These are the land-derived inputs that generation actually consumes.
+        bytes.extend(self.resolved_inputs.wheel_impassable.map(u8::from));
+        for facts in &self.resolved_inputs.overlay_zones {
+            bytes.extend([
+                facts.land,
+                u8::from(facts.early_land),
+                facts.zone_type.unwrap_or(0xFF),
+            ]);
+        }
         bytes.extend_from_slice(crate::util::sha256::sha256_hex(&self.theater.ini_data).as_bytes());
         bytes.extend_from_slice(self.blocks.multiplayer_digest().as_bytes());
         for technology in &self.tech_types {
@@ -554,43 +665,136 @@ impl PreparedRandomMapGeneration {
                 bytes.extend_from_slice(&y.to_le_bytes());
             }
         }
+        bytes.push(u8::from(self.preview_rules.is_some()));
+        if let Some(preview) = &self.preview_rules {
+            let powerups = &preview.rules.powerups;
+            for slot in 0..crate::rules::powerups::POWERUP_COUNT {
+                bytes.extend_from_slice(&powerups.weights[slot].to_le_bytes());
+                bytes.extend_from_slice(&powerups.animation_index(slot).to_le_bytes());
+                bytes.push(u8::from(powerups.over_water[slot]));
+                bytes.extend_from_slice(&powerups.magnitudes[slot].bits().to_le_bytes());
+            }
+        }
         crate::util::sha256::sha256_hex(&bytes)
     }
+}
+
+/// Actual dialog generation mutates the one Rules owner at the native cache
+/// boundary. Network agreement only inspects prospective generation inputs.
+pub(super) enum RandomMapRulesPreparation<'a> {
+    ReadOnly(Option<&'a crate::rules::process_owner::NativeRulesProcessOwner>),
+    Generation {
+        owner: Option<&'a mut crate::rules::process_owner::NativeRulesProcessOwner>,
+        reinitialize: bool,
+    },
 }
 
 pub(super) fn prepare_random_map_generation(
     asset_manager: &mut crate::assets::asset_manager::AssetManager,
     options: &crate::map::rmg::RmgOptions,
-    native_rules: Option<&crate::rules::process_owner::NativeRulesProcessOwner>,
+    preparation: RandomMapRulesPreparation<'_>,
     mode_rules_override: Option<&crate::rules::ini_parser::IniFile>,
 ) -> Option<PreparedRandomMapGeneration> {
-    let settings = crate::map::rmg::RmgSettings::load(asset_manager);
+    let mut settings = crate::map::rmg::RmgSettings::load(asset_manager);
     let theater_name = crate::map::rmg::emit::theater_name(options.theater);
     let Some(theater) = crate::map::theater::load_theater(asset_manager, theater_name) else {
         log::warn!("random map: theater {theater_name} unavailable");
         return None;
     };
-    let terrain_rules = native_rules
-        .map(|owner| {
-            crate::rules::terrain_rules::TerrainRules::from_ini(owner.selected_rules_root())
-        })
+    let prospective_rules = match &preparation {
+        RandomMapRulesPreparation::ReadOnly(Some(owner)) => Some(
+            owner
+                .random_map_preview_projection(mode_rules_override, theater_name)
+                .ok()?,
+        ),
+        _ => None,
+    };
+    let native_rules = match preparation {
+        RandomMapRulesPreparation::ReadOnly(owner) => owner,
+        RandomMapRulesPreparation::Generation {
+            owner,
+            reinitialize,
+        } => {
+            if let Some(owner) = owner {
+                if let Err(error) = owner.prepare_random_map_preview(
+                    mode_rules_override,
+                    theater_name,
+                    reinitialize,
+                ) {
+                    log::warn!("Random-map Rules preparation failed: {error}");
+                    return None;
+                }
+                Some(&*owner)
+            } else {
+                None
+            }
+        }
+    };
+    let processed = prospective_rules
+        .as_ref()
+        .or_else(|| native_rules.and_then(|owner| owner.prepared_random_map_rules()));
+    let tech_types = match (native_rules, processed) {
+        (Some(owner), Some(processed)) => crate::map::rmg::tech_catalog::resolve(
+            processed.neutral_tech_buildings(),
+            owner.fixed_art(),
+        ),
+        _ => Vec::new(),
+    };
+    #[cfg(feature = "ares")]
+    let urban_catalog = match (native_rules, processed) {
+        (Some(owner), Some(processed)) => crate::map::rmg::tech_catalog::resolve_ares_urban(
+            &settings,
+            processed,
+            owner.fixed_art(),
+        ),
+        _ => Default::default(),
+    };
+    let preview_rules = if let Some((owner, processed)) = native_rules.zip(processed) {
+        Some(RandomMapPreviewRules::from_processed(
+            owner,
+            processed,
+            asset_manager,
+            theater.extension,
+        )?)
+    } else {
+        None
+    };
+    // VERA: the theater's civilian buildings, for an opted-in Urban Presence;
+    // the load resolves the same list from the same Rules and art.
+    if options.urban_enabled
+        && let Some((owner, preview)) = native_rules.zip(preview_rules.as_ref())
+    {
+        settings.vera_urban = crate::map::rmg::tech_catalog::resolve_vera_urban(
+            &preview.rules,
+            owner.fixed_art(),
+            &tech_types,
+            theater.extension,
+            theater_name,
+            options.seed_u16(),
+            |file| asset_manager.contains(file),
+        );
+    }
+    let terrain_rules = preview_rules
+        .as_ref()
+        .map(|preview| preview.rules.terrain_rules.clone())
         .unwrap_or_default();
-    let resolved_inputs =
-        crate::map::rmg::build::ResolvedTheaterInputs::from_theater(&theater, &terrain_rules);
+    let cliff_back_impassability = preview_rules.as_ref().map_or_else(
+        || crate::rules::ruleset::GeneralRules::default().cliff_back_impassability,
+        |preview| preview.rules.general.cliff_back_impassability,
+    );
+    let empty_overlays = crate::rules::overlay_types::OverlayTypeRegistry::empty();
+    let resolved_inputs = crate::map::rmg::build::ResolvedTheaterInputs::from_theater(
+        &theater,
+        &terrain_rules,
+        preview_rules
+            .as_ref()
+            .map_or(&empty_overlays, |preview| preview.rules.overlay_registry()),
+        cliff_back_impassability,
+    );
     let blocks =
         crate::map::rmg::theater_blocks::TheaterTileBlocks::build(&theater.lookup, |name| {
             asset_manager.get(name)
         });
-    let tech_types = crate::app::loading::init_helpers::load_neutral_tech_types(native_rules);
-    let preview_rules = native_rules.and_then(|owner| {
-        RandomMapPreviewRules::from_process(
-            owner,
-            mode_rules_override,
-            theater_name,
-            asset_manager,
-            theater.extension,
-        )
-    });
     Some(PreparedRandomMapGeneration {
         theater,
         terrain_rules,
@@ -599,6 +803,8 @@ pub(super) fn prepare_random_map_generation(
         resolved_inputs,
         blocks,
         tech_types,
+        #[cfg(feature = "ares")]
+        urban_catalog,
     })
 }
 
@@ -608,7 +814,7 @@ pub(super) fn spawn_random_map_generation_worker(
     _settings: crate::map::rmg::RmgSettings,
     _resolved_inputs: crate::map::rmg::build::ResolvedTheaterInputs,
     _blocks: crate::map::rmg::theater_blocks::TheaterTileBlocks,
-    _tech_types: Vec<crate::map::rmg::phases::tech_buildings::TechType>,
+    _objects: RandomMapObjects,
     _shared_cell_dummy: crate::map::resolved_terrain::SharedCellDummy,
     _map_storage_decision: RandomMapStorageDecision,
 ) -> std::io::Result<std::sync::mpsc::Receiver<RandomMapUpdate>> {
@@ -624,7 +830,7 @@ pub(super) fn spawn_random_map_generation_worker(
     settings: crate::map::rmg::RmgSettings,
     resolved_inputs: crate::map::rmg::build::ResolvedTheaterInputs,
     blocks: crate::map::rmg::theater_blocks::TheaterTileBlocks,
-    tech_types: Vec<crate::map::rmg::phases::tech_buildings::TechType>,
+    objects: RandomMapObjects,
     shared_cell_dummy: crate::map::resolved_terrain::SharedCellDummy,
     map_storage_decision: RandomMapStorageDecision,
 ) -> std::io::Result<std::sync::mpsc::Receiver<RandomMapUpdate>> {
@@ -637,21 +843,23 @@ pub(super) fn spawn_random_map_generation_worker(
             // worker. It therefore proves a production generation entry even
             // when the caller and worker use different test threads.
             let _ = sender.send(RandomMapUpdate::Started);
-            let generated = crate::map::rmg::build::generate_map_observed(
-                &options,
-                &settings,
-                &resolved_inputs,
-                &blocks,
-                &tech_types,
-                // A closed receiver means the dialog went away; dropping
-                // what we produce is the correct outcome, not an error.
-                &mut |view| {
-                    if !draws_preview(view.point()) {
-                        return;
-                    }
-                    let _ = sender.send(RandomMapUpdate::Progress(Box::new(view.snapshot())));
-                },
-            );
+            let generated = objects.generate(|objects| {
+                crate::map::rmg::build::generate_map_observed(
+                    &options,
+                    &settings,
+                    &resolved_inputs,
+                    &blocks,
+                    objects,
+                    // A closed receiver means the dialog went away; dropping
+                    // what we produce is the correct outcome, not an error.
+                    &mut |view| {
+                        if !draws_preview(view.point()) {
+                            return;
+                        }
+                        let _ = sender.send(RandomMapUpdate::Progress(Box::new(view.snapshot())));
+                    },
+                )
+            });
             if generated.unfilled_start_slots > 0 {
                 log::warn!(
                     "Random map is short of spawns: {} start slot(s) could \
@@ -709,13 +917,13 @@ pub(super) fn begin_random_map_generation_owners(
 }
 
 /// Serialize the completed dialog preview at the native common-teardown
-/// boundary. Passing no directory models startup without a configured retail
-/// install; teardown itself still proceeds.
+/// boundary into `dir` (`App::random_map_dir`). Passing no directory models
+/// startup without a configured retail install; teardown itself still proceeds.
 fn write_random_map_preview_to_dir(
-    ra2_dir: Option<&std::path::Path>,
+    dir: Option<&std::path::Path>,
     preview: &crate::map::rmg::preview::PreviewImage,
 ) {
-    let Some(ra2_dir) = ra2_dir else {
+    let Some(dir) = dir else {
         return;
     };
     let (Ok(width), Ok(height)) = (u16::try_from(preview.width), u16::try_from(preview.height))
@@ -739,8 +947,10 @@ fn write_random_map_preview_to_dir(
         .collect();
     match crate::assets::pcx_file::encode_direct_rgb(width, height, &rgb) {
         Ok(encoded) => {
-            let path = ra2_dir.join(RANDMAP_PREVIEW_FILE);
-            if let Err(err) = crate::util::file_system::write(&path, encoded) {
+            let path = dir.join(RANDMAP_PREVIEW_FILE);
+            if let Err(err) = crate::util::file_system::create_dir_all(dir)
+                .and_then(|()| crate::util::file_system::write(&path, encoded))
+            {
                 log::warn!("random map: could not write {}: {err}", path.display());
             }
         }
@@ -759,13 +969,13 @@ fn write_random_map_preview_to_dir(
 fn dismiss_random_map_setup_owners(
     modal: &mut Option<crate::ui::skirmish_shell::RandomMapSetupModalState>,
     retention: &mut RandomMapGenerationRetention,
-    ra2_dir: Option<&std::path::Path>,
+    dir: Option<&std::path::Path>,
 ) {
     if let Some(preview) = modal
         .as_ref()
         .and_then(|modal| modal.generated_preview.as_ref())
     {
-        write_random_map_preview_to_dir(ra2_dir, preview);
+        write_random_map_preview_to_dir(dir, preview);
     }
     *modal = None;
     retention.destroy_map_storage();
@@ -775,12 +985,12 @@ pub(super) fn cancel_random_map_setup_owners(
     runtime: &mut crate::app::frontend::skirmish_session::MultiplayerShellRuntime,
     modal: &mut Option<crate::ui::skirmish_shell::RandomMapSetupModalState>,
     retention: &mut RandomMapGenerationRetention,
-    ra2_dir: Option<&std::path::Path>,
+    dir: Option<&std::path::Path>,
 ) -> Option<crate::ui::skirmish_shell::ChooseMapSelection> {
     let modal_ref = modal.as_ref()?;
     runtime.remember_random_map_options(&modal_ref.options);
     let previous_selection = modal_ref.cancel();
-    dismiss_random_map_setup_owners(modal, retention, ra2_dir);
+    dismiss_random_map_setup_owners(modal, retention, dir);
     retention.cancel_setup();
     previous_selection
 }
@@ -791,25 +1001,22 @@ pub(super) fn accept_random_map_setup_owners(
     runtime: &mut crate::app::frontend::skirmish_session::MultiplayerShellRuntime,
     modal: &mut Option<crate::ui::skirmish_shell::RandomMapSetupModalState>,
     retention: &mut RandomMapGenerationRetention,
-    ra2_dir: Option<&std::path::Path>,
+    dir: Option<&std::path::Path>,
 ) -> Option<crate::map::rmg::RmgOptions> {
     let crate::ui::skirmish_shell::AcceptOutcome::Commit(options) = modal.as_ref()?.accept() else {
         return None;
     };
     runtime.remember_random_map_options(&options);
-    // 0x0058B830 writes the 'W' staging at each Generate. VERA stages it
+    // 0x0058B820 writes the 'W' staging at each Generate. VERA stages it
     // from the accepted candidate, the host's own load authority, so the 'W'
     // and the host's start cells always agree.
     // RESIDUAL: natively a later Generate that is cancelled still overwrites
     // Scenario +0x11C0, which both the host's load and the 'W' then read.
-    if let Some(generated) = retention.candidate.as_ref() {
-        runtime.stage_generated_starts(crate::app::loading::composition::scenario_start_staging(
-            &generated.map_file,
-            &generated.start_waypoints,
-        ));
+    if retention.candidate.is_some() {
+        runtime.stage_generated_starts(retention.generated_header());
     }
     retention.accept_setup(RANDMAP_SED_FILE);
-    dismiss_random_map_setup_owners(modal, retention, ra2_dir);
+    dismiss_random_map_setup_owners(modal, retention, dir);
     Some(*options)
 }
 
@@ -845,6 +1052,16 @@ fn draws_preview(point: crate::map::rmg::build::GenerationPoint) -> bool {
 }
 
 impl App {
+    /// The folder of `RandMap.Sed`, `RandMap.img` and the saved seeds
+    /// (`map::source::random_map_dir`), never the game folder.
+    pub(super) fn random_map_dir(state: &AppState) -> Option<std::path::PathBuf> {
+        state
+            .platform
+            .game_config
+            .as_ref()
+            .map(|config| crate::map::source::random_map_dir(&config.paths.ra2_dir).to_path_buf())
+    }
+
     /// Kick off generation on a worker and return immediately.
     ///
     /// Everything that needs the asset manager is done here, up front; only
@@ -894,7 +1111,12 @@ impl App {
             )
             .map(|mode| mode.override_file.clone())
         };
-        let (manager, native_rules, _) = state.process_assets.manager_and_rules_with_tile_cache();
+        let map_storage_decision = state
+            .frontend
+            .random_map_retention
+            .begin_map_storage_decision(options);
+        let (manager, mut native_rules, _) =
+            state.process_assets.manager_and_rules_with_tile_cache();
         let Some(asset_manager) = manager else {
             return false;
         };
@@ -908,6 +1130,22 @@ impl App {
                 return false;
             }
         };
+        if map_storage_decision.reinitialize
+            && let Some(owner) = native_rules.as_deref_mut()
+            && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle)
+        {
+            // The outgoing Simulation can remain resident for shell drawing.
+            // Drain its live Rules writes before59A0F0 destroys those Types;
+            // a later Full_Init must not replay them onto the preview registry.
+            runtime.simulation.retire_scenario_started();
+            if let Err(error) = crate::app::process_assets::transfer_outgoing_simulation_rules(
+                owner,
+                &mut runtime.simulation,
+            ) {
+                log::warn!("Random-map outgoing Rules transfer failed: {error}");
+                return false;
+            }
+        }
         let Some(PreparedRandomMapGeneration {
             theater,
             terrain_rules,
@@ -916,10 +1154,15 @@ impl App {
             resolved_inputs,
             blocks,
             tech_types,
+            #[cfg(feature = "ares")]
+            urban_catalog,
         }) = prepare_random_map_generation(
             asset_manager,
             options,
-            native_rules,
+            RandomMapRulesPreparation::Generation {
+                owner: native_rules,
+                reinitialize: map_storage_decision.reinitialize,
+            },
             mode_rules.as_ref(),
         )
         else {
@@ -927,10 +1170,22 @@ impl App {
         };
         let options = options.clone();
         let shared_cell_dummy = state.process_assets.shared_cell_dummy.clone();
-        let map_storage_decision = state
-            .frontend
-            .random_map_retention
-            .map_storage_decision(&options);
+        #[cfg(not(feature = "ares"))]
+        let objects = RandomMapObjects::tech(tech_types);
+        // The dialog's Generate draws Ares' foot picks from process Main.
+        #[cfg(feature = "ares")]
+        let objects = RandomMapObjects {
+            tech_types,
+            urban: options.urban_areas.then(|| {
+                (
+                    urban_catalog,
+                    crate::app::state::process_main_draws(
+                        state.match_state.sim_runtime.runtime(),
+                        &state.frontend.frontend_main_rng,
+                    ),
+                )
+            }),
+        };
         // Generation stays single-threaded and seed-driven; the thread changes
         // only where it runs, never the order it consumes its RNG in.
         match spawn_random_map_generation_worker(
@@ -938,7 +1193,7 @@ impl App {
             settings,
             resolved_inputs,
             blocks,
-            tech_types,
+            objects,
             shared_cell_dummy,
             map_storage_decision,
         ) {
@@ -1020,7 +1275,7 @@ impl App {
                 let resident_simulation = state
                     .match_state
                     .sim_runtime
-                    .as_mut()
+                    .write_sim(SimWrite::Lifecycle)
                     .map(|runtime| &mut runtime.simulation);
                 let frontend = &mut state.frontend;
                 match frontend
@@ -1101,18 +1356,14 @@ impl App {
     /// `RandMap.img`, changing the chooser's thumbnail to a map the player
     /// walked away from.
     pub(super) fn cancel_random_map_setup(state: &mut AppState) {
-        let ra2_dir = state
-            .platform
-            .game_config
-            .as_ref()
-            .map(|config| config.paths.ra2_dir.clone());
+        let dir = Self::random_map_dir(state);
         state.frontend.random_map_generation = None;
         let frontend = &mut state.frontend;
         let _ = cancel_random_map_setup_owners(
             &mut frontend.multiplayer_shell_runtime,
             &mut frontend.skirmish_shell_state.random_map_setup_modal,
             &mut frontend.random_map_retention,
-            ra2_dir.as_deref(),
+            dir.as_deref(),
         );
         Self::show_choose_map_after_random_map(state);
     }
@@ -1135,18 +1386,14 @@ impl App {
     /// Commit the dialog's options and close it. Shared by the immediate accept
     /// and the one deferred behind a generation.
     pub(super) fn accept_random_map_setup(state: &mut AppState) {
-        let ra2_dir = state
-            .platform
-            .game_config
-            .as_ref()
-            .map(|config| config.paths.ra2_dir.clone());
+        let dir = Self::random_map_dir(state);
         let options = {
             let frontend = &mut state.frontend;
             accept_random_map_setup_owners(
                 &mut frontend.multiplayer_shell_runtime,
                 &mut frontend.skirmish_shell_state.random_map_setup_modal,
                 &mut frontend.random_map_retention,
-                ra2_dir.as_deref(),
+                dir.as_deref(),
             )
         };
         let Some(options) = options else {
@@ -1165,6 +1412,14 @@ impl App {
                 // commit failed and no random-map selection was installed.
                 state.frontend.random_map_retention.cancel_setup();
                 log::error!("random map: could not write {RANDMAP_SED_FILE}: {err}");
+                if let Some(chooser) = state
+                    .frontend
+                    .skirmish_shell_state
+                    .choose_map_modal
+                    .as_mut()
+                {
+                    chooser.show_random_map_failure();
+                }
             }
         }
         Self::show_choose_map_after_random_map(state);
@@ -1196,8 +1451,8 @@ impl App {
         // never sees.
         let resolved_terrain = {
             let mut main = crate::app::state::process_main_draws(
-                state.match_state.sim_runtime.as_mut(),
-                &mut state.frontend.frontend_main_rng,
+                state.match_state.sim_runtime.runtime(),
+                &state.frontend.frontend_main_rng,
             );
             let (manager, _, selector_cache) =
                 state.process_assets.manager_and_rules_with_tile_cache();
@@ -1232,13 +1487,10 @@ impl App {
         state: &mut AppState,
         options: &crate::map::rmg::RmgOptions,
     ) -> anyhow::Result<()> {
-        let ra2_dir = state
-            .platform
-            .game_config
-            .as_ref()
-            .map(|config| config.paths.ra2_dir.clone())
-            .ok_or_else(|| anyhow::anyhow!("no game config; cannot locate the RA2 directory"))?;
-        crate::util::file_system::write(ra2_dir.join(RANDMAP_SED_FILE), options.to_sed_bytes())?;
+        let dir = Self::random_map_dir(state)
+            .ok_or_else(|| anyhow::anyhow!("no game config; cannot locate VERA's Maps folder"))?;
+        crate::util::file_system::create_dir_all(&dir)?;
+        crate::util::file_system::write(dir.join(RANDMAP_SED_FILE), options.to_sed_bytes())?;
 
         let description_text = options.description.display_text();
         let display = if options.description.is_empty() {
@@ -1310,8 +1562,23 @@ impl App {
             Self::play_skirmish_shell_ui_sound(state, cue);
             return true;
         }
-        if let Some(control) = crate::ui::skirmish_shell::random_map_setup_control_at(&layout, x, y)
-        {
+        if let Some(control) = crate::ui::skirmish_shell::random_map_setup_control_at_view(
+            &layout,
+            x,
+            y,
+            modal.extended,
+            modal.advanced,
+        ) {
+            // VERA: an Advanced slider acts on press, like the Players one.
+            if let crate::ui::skirmish_shell::RandomMapSetupControl::Advanced(field) = control {
+                let rect = layout.advanced_control_rects[field.row()];
+                if modal.is_enabled(control)
+                    && modal.press_advanced(field, x, y, rect, layout.scale)
+                {
+                    Self::play_skirmish_shell_generic_click_sound(state);
+                }
+                return true;
+            }
             // The players slider is not a button: it acts on press, not on
             // release, so it never arms a pressed control.
             if control == crate::ui::skirmish_shell::RandomMapSetupControl::Players0x3eb {
@@ -1347,16 +1614,28 @@ impl App {
             .skirmish_shell_state
             .random_map_setup_modal
             .as_ref()
-            .is_some_and(|modal| modal.open_combo.is_some() || modal.players_hold.is_some());
+            .is_some_and(|modal| {
+                modal.open_combo.is_some()
+                    || modal.players_hold.is_some()
+                    || modal.advanced_hold.is_some()
+            });
+        let (extended, advanced) = state
+            .frontend
+            .skirmish_shell_state
+            .random_map_setup_modal
+            .as_ref()
+            .map_or((false, false), |modal| (modal.extended, modal.advanced));
         if !mouse_held {
-            let help = crate::ui::skirmish_shell::random_map_setup_control_at(&layout, x, y)
-                .map(|control| {
-                    Self::localized_status_help_text(
-                        state,
-                        crate::ui::skirmish_shell::status_help_key_for_random_map_setup(control),
-                    )
-                })
-                .unwrap_or_default();
+            let help = crate::ui::skirmish_shell::random_map_setup_control_at_view(
+                &layout, x, y, extended, advanced,
+            )
+            .map(|control| {
+                Self::localized_status_help_text(
+                    state,
+                    crate::ui::skirmish_shell::status_help_key_for_random_map_setup(control),
+                )
+            })
+            .unwrap_or_default();
             if let Some(setup) = state
                 .frontend
                 .skirmish_shell_state
@@ -1377,6 +1656,14 @@ impl App {
         else {
             return;
         };
+        if let Some(hold) = modal.advanced_hold {
+            let rect = layout.advanced_control_rects[hold.id.row()];
+            if modal.drag_advanced(x, rect, layout.scale) {
+                Self::play_skirmish_shell_generic_click_sound(state);
+            }
+            state.platform.window.request_redraw();
+            return;
+        }
         if modal.players_hold.is_none() {
             return;
         }
@@ -1400,7 +1687,7 @@ impl App {
         };
         // The release goes to a slider holding the mouse; freeing it lets the
         // dialog's hit test run again.
-        if modal.players_hold.take().is_some() {
+        if modal.players_hold.take().is_some() | modal.advanced_hold.take().is_some() {
             Self::handle_random_map_setup_mouse_move(state);
             return true;
         }
@@ -1428,7 +1715,13 @@ impl App {
             return false;
         };
         let pressed = modal.pressed_control.take();
-        let released = crate::ui::skirmish_shell::random_map_setup_control_at(&layout, x, y);
+        let released = crate::ui::skirmish_shell::random_map_setup_control_at_view(
+            &layout,
+            x,
+            y,
+            modal.extended,
+            modal.advanced,
+        );
         if pressed.is_none() || pressed != released {
             return layout.dialog.contains(x, y) || pressed.is_some();
         }
@@ -1441,13 +1734,18 @@ impl App {
         let mut open_browser: Option<SavedSeedMode> = None;
         let mut main =
             crate::ui::skirmish_shell::MainRngRanged(crate::app::state::process_main_draws(
-                state.match_state.sim_runtime.as_mut(),
-                &mut state.frontend.frontend_main_rng,
+                state.match_state.sim_runtime.runtime(),
+                &state.frontend.frontend_main_rng,
             ));
         match released.expect("checked equal to pressed control") {
             Control::Randomize0x621 => {
                 modal.randomize_options(&settings, &mut main, &description);
             }
+            Control::AdvancedToggle => {
+                modal.toggle_advanced();
+            }
+            // The sliders act on press and never arm a release.
+            Control::Advanced(_) => {}
             Control::Generate0x620 => {
                 modal.reroll_derived_for_generate(&settings, &mut main);
                 modal.begin_generate();
@@ -1474,6 +1772,8 @@ impl App {
             Control::Load0x6c2 => open_browser = Some(SavedSeedMode::Load),
             Control::Save0x6c3 => open_browser = Some(SavedSeedMode::Save),
             Control::Delete0x6c4 => open_browser = Some(SavedSeedMode::Delete),
+            #[cfg(feature = "ares")]
+            Control::UrbanAreas5000 => modal.toggle_urban_areas(),
             // The combos act on press (`press_combos`) and never arm a press;
             // dragging the players slider is a separate input mode.
             Control::MapType0x405
@@ -1539,6 +1839,84 @@ mod terrain_preview_tests;
 mod tests {
     use super::*;
 
+    /// Restarting the same random map after a Skirmish match: the shell's
+    /// retained staging supplies every start.
+    #[test]
+    fn a_skirmish_rematch_reuses_the_retained_random_map_starts() {
+        let mut staging = crate::map::preview::ScenarioStartStaging {
+            width: 400,
+            height: 200,
+            count: 4,
+            ..Default::default()
+        };
+        for slot in 0..4 {
+            staging.cells[slot] = (slot as i16 + 10, 20);
+        }
+        let rematch = AcceptedRmgStartStaging::from_retained_staging(&staging, Some("randmap.sed"))
+            .expect("random map rematch staging");
+        let table = rematch.waypoint_table_for_admission();
+        assert_eq!(table.len(), 4);
+        assert_eq!((table[&3].rx, table[&3].ry), (13, 20));
+
+        assert!(
+            AcceptedRmgStartStaging::from_retained_staging(&staging, Some("large500.yrm"))
+                .is_none()
+        );
+        let empty = crate::map::preview::ScenarioStartStaging::default();
+        assert!(
+            AcceptedRmgStartStaging::from_retained_staging(&empty, Some(RANDMAP_SED_FILE))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn generated_digest_covers_retained_powerups_without_mutating_rules() {
+        let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let mut owner =
+            crate::rules::process_owner::NativeRulesProcessOwner::from_cold_start_sources(
+                crate::rules::ini_parser::IniFile::from_str("[Animations]\n0=BASE\n"),
+                None,
+                crate::rules::ini_parser::IniFile::empty(),
+                std::sync::Arc::default(),
+                std::sync::Arc::default(),
+            )
+            .unwrap();
+        let options = crate::map::rmg::RmgOptions::default();
+        let original = prepare_random_map_generation(
+            &mut assets,
+            &options,
+            RandomMapRulesPreparation::ReadOnly(Some(&owner)),
+            None,
+        )
+        .unwrap()
+        .multiplayer_digest();
+        owner
+            .load_scenario(
+                crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None),
+                &crate::rules::ini_parser::IniFile::from_str(
+                    "[Animations]\n0=HISTORY\n[Powerups]\nMoney=7,HISTORY,yes,125\n",
+                ),
+            )
+            .unwrap();
+        let live = owner.saved_scenario_rules().unwrap().powerups().clone();
+        let after_history = prepare_random_map_generation(
+            &mut assets,
+            &options,
+            RandomMapRulesPreparation::ReadOnly(Some(&owner)),
+            None,
+        )
+        .unwrap()
+        .multiplayer_digest();
+        assert_ne!(
+            original, after_history,
+            "same sources do not erase Powerups history"
+        );
+        assert_eq!(owner.saved_scenario_rules().unwrap().powerups(), &live);
+        assert!(owner.prepared_random_map_rules().is_none());
+    }
+
     #[test]
     fn network_generated_seed_keeps_a_complete_admissible_start_table() {
         let Some((retail_dir, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
@@ -1568,16 +1946,22 @@ mod tests {
             tiberium_layout: 90,
             vegetation: 62,
             urban_presence: 2,
+            urban_enabled: false,
             ..Default::default()
         };
-        let prepared =
-            prepare_random_map_generation(&mut assets, &options, Some(&rules), None).unwrap();
+        let prepared = prepare_random_map_generation(
+            &mut assets,
+            &options,
+            RandomMapRulesPreparation::ReadOnly(Some(&rules)),
+            None,
+        )
+        .unwrap();
         let generated = crate::map::rmg::build::generate_map(
             &options,
             &prepared.settings,
             &prepared.resolved_inputs,
             &prepared.blocks,
-            &prepared.tech_types,
+            &crate::map::rmg::build::GenerationObjects::tech(&prepared.tech_types),
         );
         let staging = crate::app::loading::composition::scenario_start_staging(
             &generated.map_file,
@@ -1627,14 +2011,19 @@ mod tests {
             tiberium: 35,
             vegetation: 30,
             urban_presence: 40,
+            urban_enabled: false,
             seed: 4242,
             ..Default::default()
         };
         let mode_rules =
             crate::rules::retail_sources::select_mode_ini(&assets, Some("MPBattleMD.ini")).unwrap();
-        let prepared =
-            prepare_random_map_generation(&mut assets, &options, Some(&rules), mode_rules.as_ref())
-                .expect("registered production theater");
+        let prepared = prepare_random_map_generation(
+            &mut assets,
+            &options,
+            RandomMapRulesPreparation::ReadOnly(Some(&rules)),
+            mode_rules.as_ref(),
+        )
+        .expect("registered production theater");
         let tech_footprints: std::collections::HashMap<_, _> = prepared
             .tech_types
             .iter()
@@ -1647,7 +2036,7 @@ mod tests {
             prepared.settings,
             prepared.resolved_inputs,
             prepared.blocks,
-            prepared.tech_types,
+            RandomMapObjects::tech(prepared.tech_types),
             crate::map::resolved_terrain::SharedCellDummy::fresh(),
             decision,
         )
@@ -1664,8 +2053,8 @@ mod tests {
             }
         };
         assert_eq!(entries, 1);
-        let mut main_rng = crate::sim::rng::MainRng::new(0x0401_599d);
-        let mut main = crate::app::state::process_main_draws(None, &mut main_rng);
+        let main_rng = crate::sim::rng::MainRng::new(0x0401_599d);
+        let mut main = crate::app::state::process_main_draws(None, &main_rng);
         let mut selector = crate::map::tile_variant_selector::TileVariantSelectorCache::default();
         let resolved = build_random_map_preview_grid(
             &generated.map_file,
@@ -1686,9 +2075,14 @@ mod tests {
             .entities
             .iter()
             .flat_map(|entity| {
-                tech_footprints[&entity.type_id]
-                    .iter()
-                    .map(move |&(dx, dy)| {
+                // An Ares build's unvalidated decks (hook 0x58FA51) can add
+                // a one-cell CABHUT, which is no tech building.
+                tech_footprints
+                    .get(&entity.type_id)
+                    .cloned()
+                    .unwrap_or_else(|| vec![(0, 0)])
+                    .into_iter()
+                    .map(move |(dx, dy)| {
                         (
                             entity.cell_x.wrapping_add_signed(dx),
                             entity.cell_y.wrapping_add_signed(dy),
@@ -1899,10 +2293,12 @@ mod tests {
             )
             .unwrap();
         let mode = crate::rules::ini_parser::IniFile::from_str("[TIB01]\nRadarColor=140,0,140\n");
-        let mode_projection = RandomMapPreviewRules::from_process(
+        rules
+            .prepare_random_map_preview(Some(&mode), "TEMPERATE", true)
+            .unwrap();
+        let mode_projection = RandomMapPreviewRules::from_processed(
             &rules,
-            Some(&mode),
-            "TEMPERATE",
+            rules.prepared_random_map_rules().unwrap(),
             &assets,
             prepared.theater.extension,
         )
@@ -1936,6 +2332,7 @@ mod tests {
             },
             None,
             false,
+            true,
         ));
         modal
             .as_mut()
@@ -1963,11 +2360,12 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .expect("clock after epoch")
             .as_nanos();
-        let base = std::env::temp_dir().join(format!(
+        let profile = std::env::temp_dir().join(format!(
             "vera20k-rmg-teardown-{}-{unique}",
             std::process::id()
         ));
-        std::fs::create_dir_all(&base).expect("create teardown fixture directory");
+        // VERA's Maps folder, which a new profile does not have yet.
+        let base = profile.join("Maps");
         let img_path = base.join(RANDMAP_PREVIEW_FILE);
         let sed_path = base.join(RANDMAP_SED_FILE);
         let options = crate::map::rmg::RmgOptions {
@@ -1996,7 +2394,7 @@ mod tests {
         let mut retention = RandomMapGenerationRetention::default();
         retention.finish_generation(generated_preview(0x412, 10));
         let mut modal = Some(crate::ui::skirmish_shell::RandomMapSetupModalState::open(
-            options, None, false,
+            options, None, false, true,
         ));
         modal
             .as_mut()
@@ -2011,7 +2409,7 @@ mod tests {
             accept_random_map_setup_owners(&mut runtime, &mut modal, &mut retention, Some(&base))
                 .expect("generated modal accepts");
         assert!(img_path.exists(), "common teardown must publish .img first");
-        // OK stages the accepted map's starts for the LAN 'W' (0x0058B830).
+        // OK stages the accepted map's starts for the LAN 'W' (0x0058B820).
         let accepted_staging = runtime.start_staging();
         assert_eq!(
             accepted_staging.defined_cells().collect::<Vec<_>>(),
@@ -2033,6 +2431,7 @@ mod tests {
             },
             None,
             false,
+            true,
         ));
         cancel_modal
             .as_mut()
@@ -2054,6 +2453,7 @@ mod tests {
 
         std::fs::remove_file(&img_path).expect("remove preview fixture");
         std::fs::remove_dir(&base).expect("remove teardown fixture directory");
+        std::fs::remove_dir(&profile).expect("remove teardown profile directory");
     }
 
     #[test]
@@ -2086,7 +2486,7 @@ mod tests {
         options: &crate::map::rmg::RmgOptions,
         process_dummy: &crate::map::resolved_terrain::SharedCellDummy,
     ) -> bool {
-        let decision = retention.map_storage_decision(options);
+        let decision = retention.begin_map_storage_decision(options);
         decision.apply_resize_to(process_dummy);
         retention.commit_map_storage_decision(decision);
         decision.reinitialize
@@ -2174,6 +2574,18 @@ mod tests {
                 }
             );
         }
+
+        let mut failed_attempt = options.clone();
+        failed_attempt.width = 1;
+        assert!(
+            retention
+                .begin_map_storage_decision(&failed_attempt)
+                .reinitialize
+        );
+        assert!(
+            retention.map_storage_decision(&options).reinitialize,
+            "a failed miss cannot reuse the previous key against a partially rebuilt registry"
+        );
     }
 
     #[test]
@@ -2228,11 +2640,11 @@ mod tests {
         process_dummy.stamp_coord(12, -4);
         let expected = process_dummy.snapshot();
         let map = generated_preview(11, 10).map_file;
-        let mut frontend_main_rng = crate::sim::rng::MainRng::new(0x0401_599D);
+        let frontend_main_rng = crate::sim::rng::MainRng::new(0x0401_599D);
         let mut selector_cache =
             crate::map::tile_variant_selector::TileVariantSelectorCache::default();
         for _ in 0..6 {
-            let mut main = crate::app::state::process_main_draws(None, &mut frontend_main_rng);
+            let mut main = crate::app::state::process_main_draws(None, &frontend_main_rng);
             let preview_grid = build_random_map_preview_grid(
                 &map,
                 None,
@@ -2252,6 +2664,22 @@ mod tests {
                 "preview rasterization must not run another MapClass Resize"
             );
         }
+    }
+
+    #[test]
+    fn every_generate_records_the_start_header_and_cancel_keeps_it() {
+        let mut retention = RandomMapGenerationRetention::default();
+        assert_eq!(retention.generated_header().count, 0, "before any Generate");
+        retention.finish_generation(generated_preview(0x501, 10));
+        let header = retention.generated_header();
+        assert_eq!(header.count, 1);
+        assert_eq!(header.cells[0], (10, 20));
+        retention.cancel_setup();
+        assert_eq!(
+            retention.generated_header(),
+            header,
+            "0x0058B820's globals outlive Cancel"
+        );
     }
 
     fn generated_preview(seed: i32, start_x: u16) -> crate::map::rmg::GeneratedMap {
@@ -2290,7 +2718,7 @@ mod tests {
             ..Default::default()
         };
         let mut modal =
-            crate::ui::skirmish_shell::RandomMapSetupModalState::open(options, None, false);
+            crate::ui::skirmish_shell::RandomMapSetupModalState::open(options, None, false, true);
         modal.begin_generate();
         let mut runtime =
             crate::app::frontend::skirmish_session::MultiplayerShellRuntime::initialize(

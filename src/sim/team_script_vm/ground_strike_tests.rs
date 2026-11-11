@@ -66,11 +66,28 @@ fn retail_soviet_tank_team_completes_its_stock_attack_script() {
     for weight in &mut tokens[7..10] {
         *weight = "5000".into();
     }
+    // Also switch off stock "Soviet Terror Drone Easy" for Easy. Since the MCV
+    // starts facing north (`0x005D708B`) the opening runs later, this seed
+    // picks that trigger too, and its drone reaches a miner before the Team.
+    let drone = ai
+        .ai_triggers
+        .iter()
+        .find(|trigger| trigger.id == "0ECCB40C-G")
+        .unwrap();
+    let mut drone_tokens = drone.tokens.clone();
+    assert_eq!(drone_tokens[15], "1");
+    drone_tokens[15] = "0".into();
     let mut source = stock.to_owned();
     super::firesale_retail_tests::insert_section_records(
         &mut source,
         "AITriggerTypes",
-        &format!("{}={}\n", trigger.id, tokens.join(",")),
+        &format!(
+            "{}={}\n{}={}\n",
+            trigger.id,
+            tokens.join(","),
+            drone.id,
+            drone_tokens.join(",")
+        ),
     );
     let directory =
         crate::map::source::test_support::TestDirectory::new("soviet-ground-production");

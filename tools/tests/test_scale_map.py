@@ -16,6 +16,7 @@ class ScaleMapTests(unittest.TestCase):
         size = 16
         ini = parse_ini(build_map(size))
         self.assertEqual(ini['Map']['Size'], f'0,0,{size},{size}')
+        self.assertNotIn('MaxPlayers', ini['Basic'])
         x, y, width, height = map(int, ini['Map']['LocalSize'].split(','))
         self.assertTrue(width > 0 and height > 0)
         cells = decode_iso_cells(ini['IsoMapPack5'])
@@ -44,6 +45,7 @@ class ScaleMapTests(unittest.TestCase):
         self.assertIn((749, 750), cells)
         homes = start_cells(ini)
         self.assertEqual(len(set(homes)), 30)
+        self.assertEqual(ini['Basic']['MaxPlayers'], '30')
         self.assertTrue(all(home in cells for home in homes))
         overlay = decode_overlay_section(ini['OverlayPack'])
         self.assertEqual(len(overlay), 1024 * 1024)

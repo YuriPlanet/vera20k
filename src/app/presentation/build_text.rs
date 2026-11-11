@@ -48,20 +48,20 @@ pub(crate) fn place(view_width: i32, text_width: i32, text_height: i32) -> ([i32
 }
 
 /// The description's fill box and text instances, or empty pairs outside a
-/// Phobos build's in-game screen.
+/// Phobos build's in-game screen and in a map picture.
 pub(crate) fn build_instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
     if !crate::rules::PHOBOS_ENABLED
         || !phobos_version::SHOWS_DESCRIPTION
         || state.frontend.screen != GameScreen::InGame
+        || (state.platform.capture_client_size.is_some()
+            && state.platform.capture_presentation.map_picture)
     {
         return (Vec::new(), Vec::new());
     }
     let (view_width, _) = crate::app::input::camera::tactical_viewport_size(state);
-    // Screen-space lanes add back the world camera the UI shader subtracts.
-    let camera = [
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-    ];
+    // Screen-space lanes add back the world camera the UI shader subtracts,
+    // and the battlefield's corner: `place` works in the view's own pixels.
+    let camera = crate::app::input::camera::battlefield_lane_camera(state);
     let font = &state.renderer.bit_font;
     let text = description();
     let text_width = font.text_width(&text) as i32;

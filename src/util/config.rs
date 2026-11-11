@@ -68,6 +68,10 @@ pub struct PathsConfig {
     settings_dir: PathBuf,
     /// Previous profile location, read only during the first VERA.INI import.
     legacy_settings_dir: PathBuf,
+    /// VERA: the folder in [`PathsConfig::mods_dir`] of the mod to play with,
+    /// from `[paths] mod`. The text as written: `app::mods` decides whether
+    /// it names a usable folder, so a wrong name never stops the config load.
+    mod_name: Option<String>,
 }
 
 impl PathsConfig {
@@ -80,10 +84,27 @@ impl PathsConfig {
         &self.legacy_settings_dir
     }
 
-    /// VERA's own folder for maps it downloads or receives, so nothing is
-    /// written into the retail installation (`map::source::keep_received_map`).
+    /// VERA's own folder for maps it downloads or receives and for the
+    /// random-map dialog's files, so nothing is written into the retail
+    /// installation (`map::source::keep_received_map`, `random_map_dir`).
     pub fn downloaded_maps_dir(&self) -> PathBuf {
         self.settings_dir.join("Maps")
+    }
+
+    /// VERA's folder of mods, one subfolder each (docs/modding.md).
+    pub fn mods_dir(&self) -> PathBuf {
+        self.settings_dir.join("Mods")
+    }
+
+    /// The mod folder's name this launch asks for; `None` is the original game.
+    pub fn mod_name(&self) -> Option<&str> {
+        self.mod_name.as_deref().filter(|name| !name.is_empty())
+    }
+
+    /// VERA's own pictures of maps for the setup screens' previews, by each
+    /// map's SHA-256 (`app::map_picture`).
+    pub fn map_pictures_dir(&self) -> PathBuf {
+        self.settings_dir.join("MapPreviews")
     }
 
     fn separate_settings_from_assets(&mut self) -> Result<()> {
@@ -107,7 +128,21 @@ pub fn default_settings_dir() -> Result<PathBuf> {
     Ok(PathBuf::from("/saves/profile"))
 }
 
-#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+#[cfg(target_os = "android")]
+pub fn default_settings_dir() -> Result<PathBuf> {
+    // Android has neither HOME nor a writable working directory at start-up;
+    // the cdylib hands its `internal_data_path` over before anything reads a
+    // setting, and that folder is also where config.toml, VERA.INI, saves and
+    // logs live once app_bundle has entered it.
+    crate::util::platform_dir::get()
+        .map(Path::to_path_buf)
+        .context("no Android data directory: android_main must call entry::adopt_android_data_dir")
+}
+
+#[cfg(not(any(
+    all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"),
+    target_os = "android"
+)))]
 pub fn default_settings_dir() -> Result<PathBuf> {
     if cfg!(target_os = "windows") {
         if let Some(path) = std::env::var_os("LOCALAPPDATA")
@@ -332,6 +367,7 @@ impl GameConfig {
     fn parse(contents: &str) -> Result<Self> {
         let mut ra2_dir = None;
         let mut settings_dir = None;
+        let mut mod_name = None;
         let mut graphics = GraphicsConfig::default();
         let mut gameplay = GameplayConfig::default();
         let mut profile = ProfileConfig::default();
@@ -366,6 +402,7 @@ impl GameConfig {
                 ("paths", "settings_dir") => {
                     parse_string(value).map(|path| settings_dir = Some(PathBuf::from(path)))
                 }
+                ("paths", "mod") => parse_string(value).map(|name| mod_name = Some(name)),
                 ("graphics", "extra_animations") => {
                     parse_bool(value).map(|on| graphics.extra_animations = on)
                 }
@@ -400,6 +437,7 @@ impl GameConfig {
                 legacy_settings_dir: settings_dir.clone().unwrap_or_else(|| ra2_dir.clone()),
                 ra2_dir,
                 settings_dir: settings_dir.map_or_else(default_settings_dir, Ok)?,
+                mod_name,
             },
             graphics,
             gameplay,
@@ -414,6 +452,7 @@ impl GameConfig {
                 legacy_settings_dir: ra2_dir.clone(),
                 ra2_dir,
                 settings_dir: default_settings_dir()?,
+                mod_name: None,
             },
             graphics: GraphicsConfig::default(),
             gameplay: GameplayConfig::default(),
@@ -903,6 +942,19 @@ extra_animations = false
             GameConfig::parse("[paths]\nra2_dir = 'retail'\n[graphics]\ntranslucent_fog = true\n")
                 .unwrap();
         assert!(config.graphics.translucent_fog);
+    }
+
+    #[test]
+    fn the_mod_is_the_paths_key_and_blank_or_absent_is_the_original_game() {
+        let named = |line: &str| {
+            let text = format!("[paths]\nra2_dir = 'retail'\nsettings_dir = 'vera'\n{line}");
+            GameConfig::parse(&text).unwrap().paths
+        };
+        let paths = named("mod = \"Winter War\"\n");
+        assert_eq!(paths.mod_name(), Some("Winter War"));
+        assert_eq!(paths.mods_dir(), Path::new("vera").join("Mods"));
+        assert_eq!(named("mod = ''\n").mod_name(), None);
+        assert_eq!(named("").mod_name(), None);
     }
 
     #[test]

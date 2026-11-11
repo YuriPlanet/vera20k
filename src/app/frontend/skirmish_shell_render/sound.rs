@@ -131,7 +131,7 @@ pub(crate) fn render_sound_shell(
     text(
         &localized_label(state, "GUI:SoundOptions", "Sound Options"),
         layout.title,
-        ShellAlign::H_CENTER,
+        ShellAlign::PANEL_TITLE,
     );
     for (id, key, fallback) in [
         (SoundButton::Back, "GUI:Back", "Back"),

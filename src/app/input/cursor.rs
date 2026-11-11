@@ -13,6 +13,7 @@ use crate::app::types::{
     CursorFeedbackKind, CursorId, HoverTargetKind, ScrollDir, SoftwareCursorFrame,
     SoftwareCursorSequence,
 };
+use crate::render::cursor_atlas::CURSOR_TIMER_UNIT_MS;
 use crate::sim::combat;
 
 /// WWMouse's display depth, separate from Scenario's authoritative input
@@ -79,33 +80,49 @@ impl CursorVisibility {
     }
 }
 
-pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFeedbackKind> {
+/// What the cursor's action reads, once per draw: the selection in order
+/// ([`crate::app::input::dispatch::selected_in_order`]) and the object under
+/// the cursor ([`crate::app::input::entity_pick::cursor_hover_object`]). Both
+/// walk every object, so a draw reads them once and also hands them to the
+/// hover health bar, the target lines and the placement rings.
+pub(crate) struct CursorTargets {
+    pub(crate) selected: Vec<u64>,
+    pub(crate) hover: Option<HoverObject>,
+}
+
+impl CursorTargets {
+    pub(crate) fn read(state: &AppState) -> Self {
+        Self {
+            selected: crate::app::input::dispatch::selected_in_order(state),
+            hover: crate::app::input::entity_pick::cursor_hover_object(state),
+        }
+    }
+}
+
+/// The cursor feedback for this frame's `targets`.
+pub(crate) fn current_cursor_feedback_kind(
+    state: &AppState,
+    targets: &CursorTargets,
+) -> Option<CursorFeedbackKind> {
+    let selected = targets.selected.as_slice();
     // State_Machine entry (`StateMachine__EnterPause` 0x00683EB0) sets the
     // normal arrow (`SetCursor(0)`) for the whole modal; the in-match 0xCF
     // shows it over the battlefield.
     if state.match_state.match_presentation.in_game_menu.is_open() {
         return None;
     }
-    // A right-drag pan owns the cursor for as long as it owns the camera, and it
-    // is tested first because native gates the cursor write and the edge-scroll
-    // block inside the same `capture == 0` else-arm of
-    // `ScrollClass__UpdateMouseScrolling` 0x00692F30 — with the capture held,
-    // neither the action cursor nor the edge arrow is reached.
-    //
-    // DRIFT, pre-existing and recorded not fixed: `edge_scroll_cursor_state`
-    // never consults `captured`, so the edge arrow can still appear during a
-    // captured gesture the pan branch declines — a band-box drag pushed into the
-    // outer window pixel, or the part of a right drag before the threshold is
-    // crossed. Trigger: dragging into a screen border with a button held.
-    // Player effect: a scroll arrow gamemd never shows; the camera does not
-    // actually move, because the motion path IS capture-gated. Frequency:
-    // occasional, and transient — it clears on release. Downstream risk: none;
-    // the fix is a `captured` check in that one helper.
+    // `ScrollClass__UpdateMouseScrolling` 0x00692F30 writes the action cursor
+    // and the edge arrow only inside its `capture == 0` else-arm. With the
+    // capture held, a right-drag pan owns the cursor for as long as it owns the
+    // camera, and any other gesture keeps the band's arrow or the last cursor.
     if let Some(blocked) = crate::app::input::camera::right_drag_pan_cursor_state(state) {
         return Some(match blocked {
             Some(dir) => CursorFeedbackKind::PanBlocked(dir),
             None => CursorFeedbackKind::Pan,
         });
+    }
+    if let Some(kind) = state.match_state.input.captured_cursor() {
+        return kind;
     }
     // The active band is the outermost pixel of the whole window, including
     // the sidebar. It wins even when that pixel overlaps a sidebar/minimap hit.
@@ -128,7 +145,7 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
     if current_sidebar_view_hit(state) {
         return state.match_state.input.sidebar_cursor();
     }
-    let (x, y) = state.match_state.input.cursor_px();
+    let (x, y) = crate::app::presentation::super_timers::cursor_in_view(state);
     if state
         .match_state
         .match_presentation
@@ -137,16 +154,6 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
     {
         return Some(CursorFeedbackKind::Default);
     }
-    let selected = crate::app::input::dispatch::selected_stable_ids_in_order(
-        state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|rt| &rt.simulation),
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
-    );
     // Superweapon targeting cursor takes precedence over building placement.
     // Sidebar/minimap hits are already short-circuited above, so the SW reticle
     // only renders on the tactical map. DetermineAction answers the armed
@@ -157,7 +164,7 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
         selected.is_empty(),
     );
     if let super::state::TacticalPointerMode::SuperWeapon(section) = pointer_mode {
-        if let Some(runtime) = state.match_state.sim_runtime.as_ref()
+        if let Some(runtime) = state.match_state.sim_runtime.runtime()
             && let Some(owner) = preferred_local_owner_name(state)
                 .and_then(|name| runtime.simulation.interner().get(&name))
             && let Some(sw_type) = runtime.simulation.interner().get(section)
@@ -167,11 +174,21 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
                 state.match_state.input.cursor_x,
                 state.match_state.input.cursor_y,
             );
-            if runtime
+            let allowed = runtime
                 .simulation
                 .super_weapon_target_check(&runtime.resources.rules, owner, sw_type, cell, false)
-                .is_err()
+                .is_ok();
+            // Ares SWTypeExt::ExtData::WhatAction 10033EB0 (hook 0x6CEF84):
+            // a handled type shows its Cursor or NoCursor.
+            #[cfg(feature = "ares")]
+            if let Some(cursor) =
+                super::ares_cursor::super_weapon_cursor(&runtime.resources.rules, section, allowed)
             {
+                return Some(CursorFeedbackKind::SuperWeaponTarget(
+                    super::ares_cursor::cursor_id(cursor, false),
+                ));
+            }
+            if !allowed {
                 return Some(CursorFeedbackKind::SuperWeaponTarget(CursorId::Default));
             }
         }
@@ -203,7 +220,7 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
     let sim = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation)?;
     // DetermineAction's no-selection path keeps Repair/Sell only when no
     // armed Super overrides it. Use the same priority as the release owner;
@@ -219,6 +236,14 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
             state.match_state.input.cursor_x,
             state.match_state.input.cursor_y,
         );
+        // Ares 3.0 10057E70 (hook 0x6929FC): an own sellable Unit or
+        // Aircraft answers SellUnit.
+        #[cfg(feature = "ares")]
+        if !repair
+            && crate::app::input::commands::own_sellable_unit_under_point(state, wx, wy).is_some()
+        {
+            return Some(CursorFeedbackKind::SellUnit);
+        }
         let valid = if repair {
             crate::app::input::commands::own_repairable_building_under_point(state, wx, wy)
                 .is_some()
@@ -239,6 +264,20 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
     // under the cursor for an empty selection too — DetermineAction's
     // `0x00692673` arm answers action 7, row 17 (Select) — so the arm below
     // answers instead. See `no_selection_cursor`.
+    // VERA ferry: the armed drop click shows the unload cursor, or its
+    // refusal where the click would give no transport a route. With the
+    // waypoint key held the click is a waypoint: the Move cursor, or its
+    // refusal on a cell no selected transport can move to.
+    if state.match_state.input.ferry.armed() {
+        let refused = crate::app::input::ferry::armed_click_accepted(state) == Some(false);
+        let waypoint = state.match_state.input.ferry.waypoint_click();
+        return Some(match (waypoint, refused) {
+            (true, false) => CursorFeedbackKind::Move,
+            (true, true) => CursorFeedbackKind::Invalid,
+            (false, false) => CursorFeedbackKind::Deploy,
+            (false, true) => CursorFeedbackKind::NoDeploy,
+        });
+    }
     // PlanMgr63AC41 selects native action0 over a planning node.
     if crate::app::input::planning_mode::node_at_cursor(state).is_some() {
         return Some(CursorFeedbackKind::Default);
@@ -262,11 +301,6 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
             return Some(CursorFeedbackKind::Select);
         }
     }
-    let (world_x, world_y) = crate::app::match_runtime::sim_tick::screen_point_to_world(
-        state,
-        state.match_state.input.cursor_x,
-        state.match_state.input.cursor_y,
-    );
     let cell = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
         state,
         state.match_state.input.cursor_x,
@@ -274,18 +308,19 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
     );
     // The cursor update asks the Cell's What_Action with mouse-over set
     // (`0x0069300B`).
-    let query = ActionQuery::new(state, sim, &selected, true);
+    let query = ActionQuery::new(state, sim, selected, true);
+    // Ares DisplayClass_SetAction_CustomCursor 10057F10 (hook 0x4AB35A)
+    // draws the What_Action answer with the cursor its hooks chose.
+    #[cfg(feature = "ares")]
+    let ares =
+        |kind: CursorFeedbackKind| super::ares_cursor::tactical(kind, selected.len(), query.rules);
+    #[cfg(not(feature = "ares"))]
+    let ares = |kind: CursorFeedbackKind| kind;
     if !query.cell_visible(cell) {
-        return Some(query.hidden_cell(cell));
+        return Some(ares(query.hidden_cell(cell)));
     }
     let owner = preferred_local_owner_name(state)?;
-    let hover_object = crate::app::input::entity_pick::hover_object_at_point(
-        crate::app::input::entity_pick::presented(state, sim),
-        world_x,
-        world_y,
-        &owner,
-        state.match_state.sandbox_full_visibility,
-    );
+    let hover_object = targets.hover;
     if selected.is_empty() {
         let fog = (!state.match_state.sandbox_full_visibility).then(|| sim.fog());
         let player = sim.interner().get(&owner);
@@ -296,7 +331,7 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
         });
         return no_selection_cursor(hover.as_ref());
     }
-    query.selection_action(cell, hover_object)
+    query.selection_action(cell, hover_object).map(ares)
 }
 
 /// What the selection's best object is asked with besides the Cell and the
@@ -382,6 +417,9 @@ impl<'a> ActionQuery<'a> {
             ActionDistanceTarget::CellCentre(cell.0, cell.1),
             self.rules,
         );
+        // Ares 1004C920 (hook 0x700600): the Cell What_Action's entry.
+        #[cfg(feature = "ares")]
+        super::ares_cursor::what_action_entry(self, best_id, None);
         self.empty_cell(best_id, cell)
     }
 
@@ -392,6 +430,40 @@ impl<'a> ActionQuery<'a> {
     /// the tactical map and the radar alike). `None` is Action0, the arrow.
     /// The selection is not empty.
     pub(crate) fn selection_action(
+        &self,
+        cell: (u16, u16),
+        hover_object: Option<HoverObject>,
+    ) -> Option<CursorFeedbackKind> {
+        // Ares writes its cursor overrides while the best object answers
+        // ([`super::ares_cursor`]): the Techno entry's (hooks 0x6FFEC0,
+        // 0x700600, 0x7000CD, 0x7400F0) before, the Attack ones (0x70055D,
+        // 0x700AA8, 10057F10's range test) after.
+        #[cfg(feature = "ares")]
+        {
+            let best_id = select_best_for_action(
+                self.sim,
+                self.selected,
+                hover_object.map_or(ActionDistanceTarget::CellCentre(cell.0, cell.1), |object| {
+                    ActionDistanceTarget::Object(object.id())
+                }),
+                self.rules,
+            );
+            super::ares_cursor::what_action_entry(self, best_id, hover_object);
+            let kind = self.best_object_action(cell, hover_object);
+            if let Some(kind) = kind {
+                let target = hover_object
+                    .map_or(combat::TargetKind::Cell(cell.0, cell.1), |object| {
+                        combat::TargetKind::Entity(object.id())
+                    });
+                super::ares_cursor::what_action_attack(self, best_id, target, kind);
+            }
+            kind
+        }
+        #[cfg(not(feature = "ares"))]
+        self.best_object_action(cell, hover_object)
+    }
+
+    fn best_object_action(
         &self,
         (cell_rx, cell_ry): (u16, u16),
         hover_object: Option<HoverObject>,
@@ -776,6 +848,15 @@ pub(super) fn capability_cursor_for_hover(
 ) -> CursorFeedbackKind {
     use super::context_order::OrderModifier;
     use crate::map::entities::EntityCategory;
+    // Ares 3.0 100171B0 (hook 0x44725F): Building What_Action answers Enter
+    // before Techno What_Action when the building's occupants may traverse
+    // into the hovered one (canTraverseTo 10011690).
+    #[cfg(feature = "ares")]
+    if let (Some(best_id), Some(rules)) = (best_id, rules)
+        && sim.ares_can_traverse_to(best_id, hover.stable_id, rules)
+    {
+        return CursorFeedbackKind::Enter;
+    }
     // Techno's key rungs ([`super::context_order::object_key_action`]):
     // Shift answers ToggleSelect before every class row.
     let key_action = rules.and_then(|rules| {
@@ -816,9 +897,17 @@ pub(super) fn capability_cursor_for_hover(
             .and_then(|rules| sim.interner().object_type(actor.type_ref(), rules))
             .is_some_and(|object| object.engineer)
         && hovered_entity.is_some_and(|target| target.bomb.is_some())
+        // Ares hook 0x51E488 (10056C00): an undetachable bomb is skipped.
+        && rules.is_some_and(|rules| sim.bomb_detachable(hover.stable_id, rules))
         && sim.bomb_seen_by(hover.stable_id, actor.owner())
     {
         return CursorFeedbackKind::DisarmBomb;
+    }
+
+    if let Some(rules) = rules
+        && super::context_order::self_detonates(sim, rules, selected, hover.stable_id)
+    {
+        return CursorFeedbackKind::Detonate;
     }
 
     // Techno7000B9's self action precedes Ctrl/Alt. All self consumers share
@@ -896,18 +985,46 @@ pub(super) fn capability_cursor_for_hover(
         }) {
             return match action {
                 crate::sim::world::EngineerBuildingAction::Repair(valid) => {
+                    // Ares 10025420 (hook 0x51E635): a rubble's GRepair
+                    // shows RepairTrench (0x5E).
+                    #[cfg(feature = "ares")]
+                    if valid
+                        && rules.is_some_and(|rules| {
+                            sim.ares_engineer_repairs_rubble(
+                                sel_entity.stable_id(),
+                                hover.stable_id,
+                                rules,
+                            )
+                        })
+                    {
+                        super::ares_cursor::set_cursor(
+                            crate::rules::ares_mouse_cursor::index::REPAIR_TRENCH,
+                            super::ares_cursor::action::GREPAIR,
+                        );
+                    }
                     CursorFeedbackKind::RepairAction(valid)
                 }
                 crate::sim::world::EngineerBuildingAction::Damage => {
+                    // Ares 10025550 (hook 0x51E5E1): EngineerDamage (0x57).
+                    #[cfg(feature = "ares")]
+                    super::ares_cursor::set_cursor(
+                        crate::rules::ares_mouse_cursor::index::ENGINEER_DAMAGE,
+                        super::ares_cursor::action::DAMAGE,
+                    );
                     CursorFeedbackKind::EngineerDamage
                 }
-                crate::sim::world::EngineerBuildingAction::Capture
-                | crate::sim::world::EngineerBuildingAction::EnterHospital => {
+                crate::sim::world::EngineerBuildingAction::Capture => {
+                    #[cfg(feature = "ares")]
+                    super::ares_cursor::note_capture();
+                    CursorFeedbackKind::Enter
+                }
+                crate::sim::world::EngineerBuildingAction::EnterHospital => {
                     CursorFeedbackKind::Enter
                 }
                 crate::sim::world::EngineerBuildingAction::EnterGrinder => {
                     CursorFeedbackKind::Grind
                 }
+                crate::sim::world::EngineerBuildingAction::NoEnter => CursorFeedbackKind::NoEnter,
             };
         }
 
@@ -922,17 +1039,22 @@ pub(super) fn capability_cursor_for_hover(
                 force_move_key,
             )
         }) {
-            // Ares100496EF selects TakeVehicle92. Its default constructor
-            //1000735C..10007370 copies native Enter25's complete descriptor.
-            // RESIDUAL: custom [MouseCursors] overrides are not bound yet.
+            // Ares 10049690 (hook 0x51E7BF): Capture with TakeVehicle
+            // (0x5C), whose default copies Enter's descriptor.
+            super::ares_cursor::set_cursor(
+                crate::rules::ares_mouse_cursor::index::TAKE_VEHICLE,
+                super::ares_cursor::action::CAPTURE,
+            );
+            super::ares_cursor::note_capture();
             return CursorFeedbackKind::Enter;
         }
 
         // 5. Entry: a Unit's Select over a friendly building it may enter
         //    (refinery, Service Depot, Tank Bunker, Grinder), an Infantryman's
         //    over a Grinding= building, either's over a friendly passenger
-        //    carrier, Alt's Move included, and an Aircraft's NoEnter over a
-        //    UnitRepair= building (`context_order::entry_action`).
+        //    carrier, Alt's Move included, an Aircraft's NoEnter over a
+        //    UnitRepair= building and a Carryall's Tote over a Unit
+        //    (`context_order::entry_action`).
         if let Some(action) = rules
             .filter(|_| {
                 matches!(
@@ -956,6 +1078,8 @@ pub(super) fn capability_cursor_for_hover(
                 crate::sim::world::EntryClickAction::NoEnter => CursorFeedbackKind::NoEnter,
                 crate::sim::world::EntryClickAction::Grind => CursorFeedbackKind::Grind,
                 crate::sim::world::EntryClickAction::Enter => CursorFeedbackKind::Enter,
+                crate::sim::world::EntryClickAction::Tote => CursorFeedbackKind::Tote,
+                crate::sim::world::EntryClickAction::Nothing => CursorFeedbackKind::Default,
             };
         }
 
@@ -974,6 +1098,9 @@ pub(super) fn capability_cursor_for_hover(
                 )
             })
         {
+            // Infantry51E3B0's occupy arm answers Capture (9).
+            #[cfg(feature = "ares")]
+            super::ares_cursor::note_capture();
             return CursorFeedbackKind::Enter;
         }
 
@@ -1043,6 +1170,11 @@ pub(super) fn capability_cursor_for_hover(
                 sim.infiltrator_building_action(best_id, hover.stable_id, rules)
             })
         {
+            // Ares 10025FC0 (hook 0x51EE6B): Cursor.Spy or Sabotage.
+            #[cfg(feature = "ares")]
+            if let Some(rules) = rules {
+                super::ares_cursor::infiltration(sim, rules, best_id, hover.stable_id);
+            }
             return CursorFeedbackKind::Enter;
         }
 
@@ -1574,6 +1706,8 @@ pub(crate) fn cursor_id_for_feedback(kind: CursorFeedbackKind) -> Option<CursorI
         CursorFeedbackKind::Minimap(id) => Some(id),
         CursorFeedbackKind::Enter | CursorFeedbackKind::Grind => Some(CursorId::Enter),
         CursorFeedbackKind::NoEnter => Some(CursorId::NoEnter),
+        // `SetCursorFromAction @ 0x004AAE90`: action 0x11, row 0x36.
+        CursorFeedbackKind::Tote => Some(CursorId::Tote),
         CursorFeedbackKind::EngineerDamage => Some(CursorId::EngineerRepair),
         CursorFeedbackKind::RepairAction(valid) => Some(if valid {
             CursorId::Repair
@@ -1589,6 +1723,7 @@ pub(crate) fn cursor_id_for_feedback(kind: CursorFeedbackKind) -> Option<CursorI
         // NoMove's row 0x13 but retains its distinct input action.
         CursorFeedbackKind::IvanBomb => Some(CursorId::IvanBomb),
         CursorFeedbackKind::DisarmBomb => Some(CursorId::Disarm),
+        CursorFeedbackKind::Detonate => Some(CursorId::Demolish),
         CursorFeedbackKind::Deploy => Some(CursorId::Deploy),
         CursorFeedbackKind::NoDeploy => Some(CursorId::NoDeploy),
         // Sidebar repair mode: gamemd's repair-mode arm (DetermineAction
@@ -1607,9 +1742,14 @@ pub(crate) fn cursor_id_for_feedback(kind: CursorFeedbackKind) -> Option<CursorI
         } else {
             CursorId::NoSell
         }),
+        // Action 0xD, the SellUnit row.
+        #[cfg(feature = "ares")]
+        CursorFeedbackKind::SellUnit => Some(CursorId::SellUnit),
         CursorFeedbackKind::SuperWeaponTarget(id) => Some(id),
         // Row 0x4E: mouse.sha frames 435..449 at rate 4.
         CursorFeedbackKind::PlaceBeacon => Some(CursorId::Beacon),
+        #[cfg(feature = "ares")]
+        CursorFeedbackKind::AresAction(index) => Some(CursorId::Ares { index, mini: false }),
     }
 }
 
@@ -1653,20 +1793,29 @@ fn blocked_scroll_dir_to_cursor_id(dir: ScrollDir) -> CursorId {
     }
 }
 
-/// Phase of the animated software cursor.
+/// Phase of the animated software cursor: MouseClass's `CurrentCursor` /
+/// `CursorFrame` (+0x5560/+0x5568) and the cursor timer at `0x00ABF2A0`.
 ///
-/// The original keeps this in engine globals and the contract has two halves.
-/// Setting a new mouse shape zeroes the current frame and re-anchors the timer,
-/// so every cursor change restarts its sequence at frame 0 rather than dropping
-/// into the middle of a shared free-running phase. The per-frame update then
-/// advances by exactly **one** frame once the interval has elapsed and
-/// re-anchors again — never several — so a frame-rate stall makes the animation
-/// lag instead of skipping frames.
+/// `MouseClass::SetCursor` (`0x005BDC80`) does nothing when the shape and its
+/// small flag are unchanged; otherwise it zeroes `CursorFrame` and restarts the
+/// timer with the row's rate, so a cursor change restarts its sequence at
+/// frame 0. `MouseClass::Action` (`0x005BDDC0`), on every input pass, skips a
+/// rate-0 row; once the timer has run out it advances exactly **one** frame
+/// (`(CursorFrame + 1) % count`) and restarts the timer from now, so a stall
+/// makes the animation lag instead of skipping frames. The timer counts
+/// `WallClock__Get16msBucket` (`0x006C8C40`, `timeGetTime() >> 4`) buckets:
+/// it starts at the current bucket and runs out when `bucket - start >= rate`,
+/// so the first step after a change comes 1..16 ms early against plain
+/// milliseconds. In skirmish and campaign gamemd runs that input pass once per
+/// `Main_Tick` (`Main__ThrottleFrame` `0x0055E160` polls `GScreenClass::Input`
+/// only in network modes), so at slow game speeds a step waits for the next
+/// tick; VERA steps on the next drawn frame instead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct CursorAnimation {
     shape: Option<CursorId>,
     frame: usize,
-    anchor_ms: u64,
+    /// The 16 ms bucket the cursor timer last started in.
+    anchor_bucket: u64,
     /// When the next draw steps the frame; `None` for a still shape.
     next_step_ms: Option<u64>,
 }
@@ -1676,7 +1825,7 @@ impl CursorAnimation {
         Self {
             shape: None,
             frame: 0,
-            anchor_ms: 0,
+            anchor_bucket: 0,
             next_step_ms: None,
         }
     }
@@ -1689,23 +1838,25 @@ impl CursorAnimation {
         interval_ms: u64,
         now_ms: u64,
     ) -> usize {
-        let animated = frame_count > 1 && interval_ms > 0;
+        let now = now_ms / CURSOR_TIMER_UNIT_MS;
+        let rate = interval_ms / CURSOR_TIMER_UNIT_MS;
+        let animated = frame_count > 1 && rate > 0;
         if self.shape != Some(id) {
             self.shape = Some(id);
             self.frame = 0;
-            self.anchor_ms = now_ms;
-            self.next_step_ms = animated.then(|| now_ms.saturating_add(interval_ms));
+            self.anchor_bucket = now;
+            self.next_step_ms = animated.then(|| (now + rate) * CURSOR_TIMER_UNIT_MS);
             return 0;
         }
         if !animated {
             self.next_step_ms = None;
             return 0;
         }
-        if now_ms.saturating_sub(self.anchor_ms) >= interval_ms {
+        if now.saturating_sub(self.anchor_bucket) >= rate {
             self.frame = (self.frame + 1) % frame_count;
-            self.anchor_ms = now_ms;
+            self.anchor_bucket = now;
         }
-        self.next_step_ms = Some(self.anchor_ms.saturating_add(interval_ms));
+        self.next_step_ms = Some((self.anchor_bucket + rate) * CURSOR_TIMER_UNIT_MS);
         self.frame
     }
 }
@@ -1723,30 +1874,30 @@ thread_local! {
 }
 
 /// DisplayCancel4AEAD0 resets cursor shape through the existing animation
-/// owner. The next ordinary draw starts the default shape at frame0.
+/// owner (its `SetDefaultCursor(0, 0)`, `0x005BDA80`). The next ordinary draw
+/// starts the default shape at frame0.
 pub(crate) fn reset_cursor_shape() {
     CURSOR_ANIMATION.with(|animation| animation.set(CursorAnimation::new()));
 }
 
-/// The frame of `sequence` to draw for cursor `id` right now.
+/// The index of the frame of `sequence` to draw for cursor `id` right now.
 ///
 /// The id is part of the query because the phase is keyed on it: asking for a
 /// different cursor than last frame restarts that cursor's animation.
-pub(crate) fn software_cursor_frame_for(
+pub(crate) fn software_cursor_frame_index(
     id: CursorId,
     sequence: &SoftwareCursorSequence,
-) -> Option<&SoftwareCursorFrame> {
+) -> Option<usize> {
     if sequence.frames.is_empty() {
         return None;
     }
     let now_ms = cursor_animation_now_ms();
-    let frame_idx = CURSOR_ANIMATION.with(|cell| {
+    Some(CURSOR_ANIMATION.with(|cell| {
         let mut animation = cell.get();
         let idx = animation.advance(id, sequence.frames.len(), sequence.interval_ms, now_ms);
         cell.set(animation);
         idx
-    });
-    sequence.frames.get(frame_idx)
+    }))
 }
 
 /// Shell screens (menu, skirmish setup, score) only ever show the default
@@ -1754,7 +1905,9 @@ pub(crate) fn software_cursor_frame_for(
 pub(crate) fn current_software_cursor_frame(
     sequence: &SoftwareCursorSequence,
 ) -> Option<&SoftwareCursorFrame> {
-    software_cursor_frame_for(CursorId::Default, sequence)
+    sequence
+        .frames
+        .get(software_cursor_frame_index(CursorId::Default, sequence)?)
 }
 
 fn cursor_animation_now_ms() -> u64 {
@@ -1786,13 +1939,19 @@ fn sidebar_view_hit(frame: crate::ui::sidebar::SidebarFrame, cursor_x: f32, curs
         w: w as f32,
         h: h as f32,
     };
-    let (x, _, w, h) = frame.column();
-    let panel_rect = crate::ui::sidebar::Rect {
-        x: x as f32 - 10.0,
-        y: 10.0,
-        w: w as f32,
-        h: h as f32 - 20.0,
+    // The sidebar's zone is shifted 10 pixels toward the battlefield (left
+    // for the original's column on the right) and stops 10 pixels short of
+    // both its ends.
+    use crate::ui::sidebar::{Edge, Rect};
+    let (x, y, w, h) = frame.column();
+    let (x, y, w, h) = (x as f32, y as f32, w as f32, h as f32);
+    let (x, y, w, h) = match frame.places().side {
+        Edge::Left => (x + 10.0, y + 10.0, w, h - 20.0),
+        Edge::Right => (x - 10.0, y + 10.0, w, h - 20.0),
+        Edge::Top => (x + 10.0, y + 10.0, w - 20.0, h),
+        Edge::Bottom => (x + 10.0, y - 10.0, w - 20.0, h),
     };
+    let panel_rect = Rect { x, y, w, h };
     strip_rect.contains(cursor_x, cursor_y) || panel_rect.contains(cursor_x, cursor_y)
 }
 
@@ -2077,18 +2236,26 @@ pub(crate) fn set_os_cursor_visible(state: &mut AppState, visible: bool) {
 
 /// The macOS half of the cursor lock, for a pointer that just left the client
 /// area: put it back on the nearest point inside and move the game's cursor
-/// there, so edge scrolling keeps reading the edge. True when it did; false
-/// when the lock is not holding the pointer (it is off, the window is not
-/// active, or the platform clips the pointer itself). Presentation-only.
+/// there, so edge scrolling keeps reading the edge. An active full-screen
+/// window below a camera housing does the same for the strip beside the
+/// housing, lock or no lock: the pointer would otherwise pass the one row that
+/// scrolls north and stand on black, out of the game's sight. True when it
+/// did; false when nothing holds the pointer (the lock is off and it left
+/// another way, the window is not active, or the platform clips the pointer
+/// itself). Presentation-only.
 pub(crate) fn hold_pointer_in_window(state: &mut AppState) -> bool {
     #[cfg(target_os = "macos")]
     {
-        if !state.platform.pointer_held.get() {
-            return false;
-        }
         let Some(pointer) = super::mac_pointer::pointer_in_view(&state.platform.window) else {
             return false;
         };
+        let beside_housing = state.platform.window_active
+            && pointer.in_strip_above(super::mac_pointer::strip_above_full_screen(
+                &state.platform.window,
+            ));
+        if !state.platform.pointer_held.get() && !beside_housing {
+            return false;
+        }
         let (x, y) = pointer.nearest_inside();
         let position = winit::dpi::LogicalPosition::new(x, y);
         if state.platform.window.set_cursor_position(position).is_err() {
@@ -2209,6 +2376,26 @@ mod tests {
             .tactical_mouse
             .record_physical_button(winit::event::MouseButton::Left, false);
         assert_eq!(input.sidebar_cursor(), None);
+    }
+
+    /// With the capture held, 0x00692F30 skips the action cursor and the edge
+    /// arrow: a pending band keeps the press-time cursor, and BandBox_MouseMove
+    /// sets the normal arrow as the band activates (0x004AC4DA).
+    #[test]
+    fn a_captured_press_keeps_its_cursor_until_the_band_shows_the_arrow() {
+        let mut input = crate::app::input::state::MatchInputState::new(Default::default());
+        input.note_shown_cursor(Some(CursorFeedbackKind::Move));
+        assert_eq!(input.captured_cursor(), None);
+        assert!(input.tactical_mouse.begin_left_press());
+        input.selection_state.begin_drag(100.0, 100.0);
+        input.selection_state.update_drag(104.0, 100.0);
+        assert_eq!(
+            input.captured_cursor(),
+            Some(Some(CursorFeedbackKind::Move))
+        );
+        input.selection_state.update_drag(105.0, 100.0);
+        assert!(input.selection_state.is_band_box_active());
+        assert_eq!(input.captured_cursor(), Some(None));
     }
 
     #[test]
@@ -2974,9 +3161,8 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                     sim.resolved_terrain().unwrap(),
                     Some(sim.house_alliances()),
                     &LineOfFireInputs {
-                        overlay_grid: None,
-                        overlay_registry: None,
-                        alliances: Some(sim.house_alliances())
+                        alliances: Some(sim.house_alliances()),
+                        ..Default::default()
                     }
                 ),
                 expected
@@ -3652,7 +3838,12 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
 
     /// Stock Crazy Ivan, Engineer and a heavy tank, with their weapons.
     fn bomb_cursor_rules() -> RuleSet {
-        RuleSet::from_ini(&IniFile::from_str(
+        bomb_cursor_rules_with("")
+    }
+
+    /// [`bomb_cursor_rules`] with `combat_damage` lines in `[CombatDamage]`.
+    fn bomb_cursor_rules_with(combat_damage: &str) -> RuleSet {
+        let rules = format!(
             "[InfantryTypes]\n\
              0=IVAN\n\
              1=ENGINEER\n\
@@ -3664,6 +3855,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
              2=AP\n\
              [CombatDamage]\n\
              IvanTimedDelay=450\n\
+             {combat_damage}\
              [IVAN]\n\
              Strength=125\n\
              Primary=IvanBomber\n\
@@ -3698,9 +3890,9 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
              [BombDisarm]\n\
              BombDisarm=yes\n\
              [AP]\n\
-             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
-        ))
-        .expect("bomb cursor rules")
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
+        );
+        RuleSet::from_ini(&IniFile::from_str(&rules)).expect("bomb cursor rules")
     }
 
     fn bomb_hover(
@@ -3816,6 +4008,48 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             "a bomb the player does not see"
         );
     }
+
+    /// Techno What_Action's Detonate rung (`0x006FFF8D..0x00700003`): with
+    /// `CanDetonateTimeBomb=yes` the lone selected carrier of the player's
+    /// bomb shows Detonate over itself, an enemy as well as its own; retail's
+    /// `no` keeps the self cursor.
+    #[test]
+    fn a_lone_bombed_carrier_offers_detonate_over_itself() {
+        use HoverTargetKind::{EnemyUnit, FriendlyUnit};
+        for (keys, detonates) in [("CanDetonateTimeBomb=yes\n", true), ("", false)] {
+            let rules = bomb_cursor_rules_with(keys);
+            let mut sim = Simulation::new();
+            sim.resolve_type_handles(&rules);
+            for house in ["Americans", "Soviets"] {
+                let id = sim.intern(house);
+                sim.houses_mut_for_test()
+                    .register(crate::sim::house_state::HouseState::new(
+                        id, 0, None, false, 0, 10,
+                    ));
+            }
+            sim.session_mut_for_test().set_game_mode(
+                crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+            );
+            let house = sim.interner().get("Americans");
+            sim.session_mut_for_test().set_current_house_for_test(house);
+            let mut spawn = |kind: &str, owner: &str, rx: u16| {
+                sim.spawn_object(kind, owner, rx, 5, 0, &rules)
+                    .expect("spawned")
+            };
+            let ivan = spawn("IVAN", "Americans", 5);
+            let own_tank = spawn("HTNK", "Americans", 9);
+            let enemy_tank = spawn("HTNK", "Soviets", 11);
+            sim.bomb_attach_for_test(ivan, Some(own_tank), &rules);
+            sim.bomb_attach_for_test(ivan, Some(enemy_tank), &rules);
+            for (tank, kind) in [(own_tank, FriendlyUnit), (enemy_tank, EnemyUnit)] {
+                assert_eq!(
+                    bomb_hover(&sim, &rules, tank, kind, tank) == CursorFeedbackKind::Detonate,
+                    detonates,
+                    "{keys:?} over {kind:?}"
+                );
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -3867,9 +4101,22 @@ mod cursor_animation_tests {
         assert_eq!(anim.next_step_ms, Some(64));
         assert_eq!(anim.advance(CursorId::Move, 10, INTERVAL_MS, 64), 1);
         assert_eq!(anim.next_step_ms, Some(128));
-        // A 1-second stall still yields a single step.
+        // A 1-second stall still yields a single step; the timer restarts in
+        // the bucket of the stalled draw (1_064 ms is bucket 66).
         assert_eq!(anim.advance(CursorId::Move, 10, INTERVAL_MS, 1_064), 2);
-        assert_eq!(anim.next_step_ms, Some(1_128));
+        assert_eq!(anim.next_step_ms, Some(1_120));
+    }
+
+    /// The cursor timer counts `timeGetTime() >> 4` buckets
+    /// (`WallClock__Get16msBucket` `0x006C8C40`): a shape set 15 ms into
+    /// bucket 0 runs out at bucket 4, 49 ms later, not 64.
+    #[test]
+    fn animation_timer_counts_sixteen_millisecond_buckets() {
+        let mut anim = CursorAnimation::new();
+        anim.advance(CursorId::Move, 10, INTERVAL_MS, 15);
+        assert_eq!(anim.next_step_ms, Some(64));
+        assert_eq!(anim.advance(CursorId::Move, 10, INTERVAL_MS, 63), 0);
+        assert_eq!(anim.advance(CursorId::Move, 10, INTERVAL_MS, 64), 1);
     }
 
     #[test]

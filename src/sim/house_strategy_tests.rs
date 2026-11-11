@@ -135,6 +135,58 @@ fn selling(sim: &Simulation, id: u64) -> bool {
 }
 
 #[test]
+fn post_map_ai_hate_delays_defer_enemy_selection_across_save_load() {
+    let ini = IniFile::from_str("[General]\nAIHateDelays=30,50,70\n");
+    let rules = RuleSet::from_ini(&ini).unwrap();
+    let overlays = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
+    let (mut sim, names) = houses(true, 2);
+    let owner = names[0];
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .set_base_center_for_test(Some((10, 10)));
+    sim.session.set_binary_frame_for_test(100);
+    sim.finalize_scenario_post_map(crate::sim::scenario_post_map::ScenarioPostMapInput {
+        map_width: 32,
+        map_height: 32,
+        fill_silos: false,
+        rules: &rules,
+        overlay_registry: &overlays,
+        house_roster: &crate::map::houses::HouseRoster::default(),
+        skirmish_session: None,
+        campaign_map: None,
+    })
+    .unwrap();
+    sim.session.set_binary_frame_for_test(149);
+    pick_enemy(
+        &sim.interner,
+        &sim.session,
+        &sim.house_alliances,
+        &mut sim.houses,
+        owner,
+    );
+    assert_eq!(sim.houses[&owner].enemy_house(), None);
+
+    // Native scenario restore reseeds this stream; keep the hash comparison
+    // focused on retained state rather than that independent load effect.
+    sim.scenario_rng = SimRng::new(0);
+    let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "hate-delay", 0);
+    let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+        .unwrap()
+        .sim;
+    assert_eq!(restored.state_hash(), sim.state_hash());
+    restored.session.set_binary_frame_for_test(150);
+    pick_enemy(
+        &restored.interner,
+        &restored.session,
+        &restored.house_alliances,
+        &mut restored.houses,
+        owner,
+    );
+    assert_eq!(restored.houses[&owner].enemy_house(), Some(names[1]));
+}
+
+#[test]
 fn the_strategy_timer_and_its_gates_match_native() {
     let rules = rules();
     let rows = oracle()["schedule"].as_array().unwrap().clone();
@@ -596,7 +648,7 @@ fn gsi_04_05_update_anger_nodes_wraps_and_selects_first_positive_eligible_peer()
         anger.insert(second, 7);
     }
 
-    update_anger_nodes(&mut houses, &alliances, &interner, owner, first, 0);
+    update_anger_nodes(&mut houses, &alliances, &interner, owner, first, 0, true);
     assert_eq!(houses[&owner].enemy_house(), Some(first));
 
     houses
@@ -604,7 +656,7 @@ fn gsi_04_05_update_anger_nodes_wraps_and_selects_first_positive_eligible_peer()
         .unwrap()
         .set_enemy_house_for_test(None);
     let missing_score = houses[&owner].grudge_scores()[&missing];
-    update_anger_nodes(&mut houses, &alliances, &interner, owner, missing, 5);
+    update_anger_nodes(&mut houses, &alliances, &interner, owner, missing, 5, true);
     assert_eq!(houses[&owner].grudge_scores()[&missing], missing_score);
     assert_eq!(
         houses[&owner].enemy_house(),
@@ -622,11 +674,19 @@ fn gsi_04_05_update_anger_nodes_wraps_and_selects_first_positive_eligible_peer()
         .unwrap()
         .grudge_scores_mut_for_test()
         .insert(second, 1);
-    update_anger_nodes(&mut houses, &alliances, &interner, owner, first, 1);
+    update_anger_nodes(&mut houses, &alliances, &interner, owner, first, 1, true);
     assert_eq!(houses[&owner].grudge_scores()[&first], i32::MIN);
     assert_eq!(houses[&owner].enemy_house(), Some(second));
 
-    update_anger_nodes(&mut houses, &alliances, &interner, owner, unregistered, 5);
+    update_anger_nodes(
+        &mut houses,
+        &alliances,
+        &interner,
+        owner,
+        unregistered,
+        5,
+        true,
+    );
     assert!(!houses[&owner].grudge_scores().contains_key(&unregistered));
     assert_eq!(houses[&owner].enemy_house(), Some(second));
     houses
@@ -634,9 +694,37 @@ fn gsi_04_05_update_anger_nodes_wraps_and_selects_first_positive_eligible_peer()
         .unwrap()
         .grudge_scores_mut_for_test()
         .insert(second, 0);
-    update_anger_nodes(&mut houses, &alliances, &interner, owner, owner, 5);
+    update_anger_nodes(&mut houses, &alliances, &interner, owner, owner, 5, true);
     assert!(!houses[&owner].grudge_scores().contains_key(&owner));
     assert_eq!(houses[&owner].enemy_house(), None);
+}
+
+/// Ares 10023FB0 (hook 0x504796): outside a campaign a `MultiplayPassive`
+/// peer takes no anger, but the rescan still runs; a campaign keeps it.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_passive_peer_takes_no_anger_outside_a_campaign() {
+    let mut interner = StringInterner::new();
+    let owner = interner.intern("OWNER");
+    let passive = interner.intern("PASSIVE");
+    let enemy = interner.intern("ENEMY");
+    let mut passive_house = house(passive, 1);
+    passive_house.set_multiplay_passive_for_test(true);
+    let mut houses = [house(owner, 0), passive_house, house(enemy, 2)]
+        .into_iter()
+        .collect::<crate::sim::houses::Houses>();
+    houses
+        .get_mut(&owner)
+        .unwrap()
+        .grudge_scores_mut_for_test()
+        .insert(enemy, 3);
+    let alliances = HouseAlliances::default();
+    update_anger_nodes(&mut houses, &alliances, &interner, owner, passive, 9, true);
+    assert!(!houses[&owner].grudge_scores().contains_key(&passive));
+    assert_eq!(houses[&owner].enemy_house(), Some(enemy));
+    update_anger_nodes(&mut houses, &alliances, &interner, owner, passive, 9, false);
+    assert_eq!(houses[&owner].grudge_scores().get(&passive), Some(&9));
+    assert_eq!(houses[&owner].enemy_house(), Some(passive));
 }
 
 #[test]
@@ -665,6 +753,7 @@ fn gsi_04_05_sparse_zero_updates_preserve_representation_and_rescan() {
         owner,
         first,
         0,
+        true,
     );
     assert!(!houses[&owner].grudge_scores().contains_key(&first));
     assert_eq!(houses[&owner].enemy_house(), Some(second));
@@ -685,6 +774,7 @@ fn gsi_04_05_sparse_zero_updates_preserve_representation_and_rescan() {
         owner,
         first,
         -5,
+        true,
     );
     assert_eq!(houses[&owner].grudge_scores().get(&first), Some(&0));
     assert_eq!(houses[&owner].enemy_house(), Some(second));

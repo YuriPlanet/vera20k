@@ -77,6 +77,7 @@ fn scene(resource_name: &str, map_patch: &str) -> Option<(Simulation, RuleSet)> 
     );
     let view =
         crate::sim::tiberium::tiberium_cell_view(&grid, &overlays, &rules.tiberium_types, (16, 16))
+            .unwrap()
             .unwrap();
     assert_eq!(view.overlay_data, 11);
     crate::sim::runtime::initialize_native_tiberium_queues(
@@ -87,7 +88,8 @@ fn scene(resource_name: &str, map_patch: &str) -> Option<(Simulation, RuleSet)> 
         &overlays,
         Some(&grid),
         (32, 32),
-    );
+    )
+    .unwrap();
     sim.install_overlay_grid_for_load(grid);
     assert!(sim.rebuild_dynamic_navigation(&rules));
     sim.install_waypoints(&map.waypoints);
@@ -136,10 +138,12 @@ fn elapsed_trigger_anim_removes_ore_before_action41_sets_no_effects() {
 
 #[test]
 fn gem_child_retains_mineral_conversion_and_nonzero_area_preserves_nearby_ore() {
-    let Some((mut sim, rules)) = scene(
-        "GEM01",
-        "[CombatDamage]\nTiberiumExplosionDamage=40\nC4Warhead=HE\n[HE]\nCellSpread=2.5\n",
-    ) else {
+    // An Ares build draws RandomRanged(0, 99) < Debris.Chance instead; the
+    // map's Cruentus ReadINI makes that certain.
+    let patch = "[CombatDamage]\nTiberiumExplosionDamage=40\nC4Warhead=HE\n[HE]\nCellSpread=2.5\n";
+    #[cfg(feature = "ares")]
+    let patch = format!("{patch}[Tiberiums]\n1=Cruentus\n[Cruentus]\nDebris.Chance=100\n");
+    let Some((mut sim, rules)) = scene("GEM01", &patch) else {
         return;
     };
     let overlays = rules.overlay_registry();
@@ -270,5 +274,49 @@ fn gem_child_retains_mineral_conversion_and_nonzero_area_preserves_nearby_ore() 
     assert!(
         sim.anim(child).is_none(),
         "landed child retires through the shared Anim lifecycle"
+    );
+}
+
+/// Ares 3.0 10050D50 (hook 0x424DD3) and 10050DA0 (hook 0x424EC5): a zero
+/// `Debris.Chance` never throws Debris, and the area damage takes the
+/// mineral's `ExplosionDamage`/`ExplosionWarhead` over the Rules pair.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_mineral_start_uses_debris_chance_and_explosion_keys() {
+    let Some((mut sim, rules)) = scene(
+        "GEM01",
+        "[CombatDamage]\nTiberiumExplosionDamage=40\nC4Warhead=Super\n[HE]\nCellSpread=2.5\n\
+         [Tiberiums]\n1=Cruentus\n[Cruentus]\nDebris.Chance=0\nExplosionDamage=25\n\
+         ExplosionWarhead=HE\n",
+    ) else {
+        return;
+    };
+    let overlays = rules.overlay_registry();
+    let (_, visits) = crate::sim::combat::receiver_fixture::trace_area_visits(|| {
+        sim.advance_app_frame(
+            &[],
+            &rules,
+            Some(overlays),
+            67,
+            TickLane::Ordinary,
+            FrameEffects::default(),
+        )
+        .unwrap()
+    });
+    assert_eq!(visits.len(), 1);
+    assert_eq!(visits[0]["damage"], 25);
+    assert_eq!(visits[0]["warhead"], "HE");
+    let mineral = rules
+        .tiberium_types
+        .types()
+        .iter()
+        .find(|ty| ty.section == "Cruentus")
+        .unwrap();
+    assert!(
+        !sim.anims().any(|(_, anim)| mineral
+            .debris()
+            .iter()
+            .any(|name| name == sim.interner.resolve(anim.type_id()))),
+        "Debris.Chance=0 throws no Debris"
     );
 }

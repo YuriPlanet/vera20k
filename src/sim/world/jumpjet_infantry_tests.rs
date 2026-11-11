@@ -85,7 +85,8 @@ pub(super) fn retail_dustbowl_rocketeer()
                         sim.playfield_bounds,
                         Some(terrain),
                     ) && terrain.cell(cx, cy).is_some_and(|cell| {
-                        cell.level == level && cell.speed_costs.foot.is_some_and(|cost| cost > 0)
+                        cell.level == level
+                            && cell.speed_costs.foot.is_some_and(|cost| !cost.is_zero())
                     }) && grid.cell(cx, cy).is_some_and(|cell| cell.ground_walkable)
                         && sim.substrate.raw_cell_occupation.ground_bits(cx, cy) == 0
                 })
@@ -594,6 +595,8 @@ fn a_parked_rocketeer_scans_and_fires_on_move() {
     let row = serde_json::json!({"doing": DO_HOVER, "fraction": 0.0, "armed": true,
         "owner": {"phase": 2, "moving": false}});
     let (mut sim, rules, shooter) = rocketeer_crash_fixture(&row);
+    // The player has seen the enemy: the campaign scan gate needs +0x41B.
+    crate::sim::arena_fixture::discover(&mut sim, shooter);
     let grid = crate::sim::pathfinding::PathGrid::test_all_passable(70, 70);
     let americans = sim.interner.intern("Americans");
     let order = CommandEnvelope::new(
@@ -924,9 +927,24 @@ fn retail_dustbowl_shot_down_rocketeer_falls_and_leaves_no_body() {
 /// and `[RocketeerSequence]`) and an area warhead to shoot it down with;
 /// `armed` gives the Rocketeer the shooter's gun.
 fn rocketeer_rules_armed(armed: bool) -> crate::rules::ruleset::RuleSet {
+    rocketeer_rules(if armed { "Primary=CrashGun\n" } else { "" })
+}
+
+/// [`rocketeer_rules_armed`] with `extra` as more `[JUMPJET]` keys.
+fn rocketeer_rules(extra: &str) -> crate::rules::ruleset::RuleSet {
     use crate::rules::ini_parser::IniFile;
-    let mut rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(&format!(
-        "[General]\nConditionRed=0.25\n\
+    let art = IniFile::from_str(
+        "[ROCK]\nSequence=RocketeerSequence\nFireUp=2\n\
+         [RocketeerSequence]\nReady=0,1,1\nGuard=0,1,1\nProne=86,1,6\nWalk=8,6,6\n\
+         FireUp=164,6,6\nDown=260,2,2\nCrawl=86,6,6\nUp=276,2,2\nFireProne=212,6,6\n\
+         Idle1=56,15,0,S\nIdle2=71,15,0,E\nDie1=134,15,0\nDie2=149,15,0\nDie3=0,0,0\n\
+         Die4=0,0,0\nDie5=0,0,0\nFly=292,6,6\nHover=292,6,6\nFireFly=370,6,6\n\
+         Tumble=340,15,0\nAirDeathStart=340,8,0\nAirDeathFalling=348,1,0\n\
+         AirDeathFinish=349,6,0\nParadrop=418,1,0\nCheer=419,8,0,E\nPanic=8,6,6\n",
+    );
+    let mut rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(&format!(
+            "[General]\nConditionRed=0.25\n\
          [InfantryTypes]\n0=JUMPJET\n\
          [VehicleTypes]\n0=SHOOTER\n\
          [JUMPJET]\nStrength=125\nArmor=flak\nImage=ROCK\nJumpJet=yes\nCrashable=yes\n\
@@ -937,23 +955,12 @@ fn rocketeer_rules_armed(armed: bool) -> crate::rules::ruleset::RuleSet {
          [SHOOTER]\nStrength=100\nPrimary=CrashGun\n\
          [CrashGun]\nDamage=150\nRange=6\nWarhead=CrashWH\n\
          [CrashWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
-        if armed { "Primary=CrashGun\n" } else { "" }
-    )))
+            extra
+        )),
+        &art,
+    )
     .unwrap();
-    let art = IniFile::from_str(
-        "[ROCK]\nSequence=RocketeerSequence\nFireUp=2\n\
-         [RocketeerSequence]\nReady=0,1,1\nGuard=0,1,1\nProne=86,1,6\nWalk=8,6,6\n\
-         FireUp=164,6,6\nDown=260,2,2\nCrawl=86,6,6\nUp=276,2,2\nFireProne=212,6,6\n\
-         Idle1=56,15,0,S\nIdle2=71,15,0,E\nDie1=134,15,0\nDie2=149,15,0\nDie3=0,0,0\n\
-         Die4=0,0,0\nDie5=0,0,0\nFly=292,6,6\nHover=292,6,6\nFireFly=370,6,6\n\
-         Tumble=340,15,0\nAirDeathStart=340,8,0\nAirDeathFalling=348,1,0\n\
-         AirDeathFinish=349,6,0\nParadrop=418,1,0\nCheer=419,8,0,E\nPanic=8,6,6\n",
-    );
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-    let registry = crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art);
-    rules.replace_animation_sequences_for_test(
-        crate::rules::animation_sequence::build_animation_sequence_catalog(&rules, Some(&registry)),
-    );
     rules
 }
 
@@ -969,7 +976,19 @@ fn rocketeer_crash_fixture(
     use crate::map::entities::EntityCategory;
     use crate::sim::house_state::HouseState;
     use crate::util::fixed_math::SimFixed;
-    let rules = rocketeer_rules_armed(input["armed"].as_bool().unwrap_or(false));
+    let rules = rocketeer_rules(&format!(
+        "{}{}",
+        if input["armed"].as_bool().unwrap_or(false) {
+            "Primary=CrashGun\n"
+        } else {
+            ""
+        },
+        if input["jumpjet_turn"].as_bool().unwrap_or(false) {
+            "JumpJetTurn=yes\n"
+        } else {
+            ""
+        },
+    ));
     let mut sim = super::Simulation::with_seed(0);
     sim.scenario_rng = crate::sim::rng::SimRng::new(31);
     install_common_raw_terrain(&mut sim, 70, 70, 0, None);
@@ -1110,6 +1129,59 @@ fn rocketeer_crash_fixture(
     reveal(&mut sim, shooter, 40, 40);
     sim.resolve_type_handles(&rules);
     (sim, rules, shooter)
+}
+
+/// Update's facing tail (`0x0054D60D..0x0054D692`): hovering in state 2 with a
+/// TarCom, a `JumpJetTurn=` infantryman's locomotor Facing takes the direction
+/// to it (`0x005F3DB0`) and PrimaryFacing keeps its own. Without the key the
+/// locomotor Facing keeps its heading, which PrimaryFacing copies.
+#[test]
+fn a_hovering_jumpjet_turn_infantryman_aims_his_locomotor_at_his_target() {
+    for jumpjet_turn in [true, false] {
+        let input = serde_json::json!({
+            "doing": 0,
+            "jumpjet_turn": jumpjet_turn,
+            "owner": {"phase": 2, "moving": true},
+        });
+        let (mut sim, rules, shooter) = rocketeer_crash_fixture(&input);
+        let entity = sim.substrate.entities.get_mut(1).unwrap();
+        entity
+            .attack_target
+            .set_for_test(Some(crate::sim::combat::TargetKind::Entity(shooter)));
+        // Holding over its own coordinate: a destination elsewhere re-opens
+        // the cruise (`0x0054BEE7`) and starts a turn.
+        let here = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+        let runtime = entity
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .jumpjet_runtime_mut()
+            .unwrap();
+        *runtime = runtime.clone().with_destination_for_test(here);
+        sim.tick_jumpjet_cruise_one(1, &rules, None, crate::sim::world::FrameEffects::default())
+            .unwrap();
+        let frame = sim.session.binary_frame();
+        let entity = sim.substrate.entities.get(1).unwrap();
+        let toward = crate::sim::movement::turret::facing_toward_target(
+            entity,
+            &crate::sim::combat::TargetKind::Entity(shooter),
+            &sim,
+        )
+        .unwrap();
+        assert_ne!(toward, 0x4000);
+        let flight = entity
+            .locomotor
+            .as_ref()
+            .unwrap()
+            .jumpjet_runtime()
+            .unwrap()
+            .flight();
+        assert_eq!(
+            flight.facing().current(frame),
+            if jumpjet_turn { toward } else { 0x4000 }
+        );
+        assert_eq!(entity.body_facing_current(frame), 0x4000);
+    }
 }
 
 /// Kill Rocketeer 1 through the production receiver: one lethal direct hit.
@@ -1629,7 +1701,8 @@ fn give_cells_hover_costs(sim: &mut super::Simulation) {
     let terrain = sim.resolved_terrain.as_mut().unwrap();
     for y in 0..70 {
         for x in 0..70 {
-            terrain.cell_mut_for_test(x, y).unwrap().speed_costs.hover = Some(100);
+            terrain.cell_mut_for_test(x, y).unwrap().speed_costs.hover =
+                Some(crate::util::native_x87::NativeF32Bits::ONE);
         }
     }
 }

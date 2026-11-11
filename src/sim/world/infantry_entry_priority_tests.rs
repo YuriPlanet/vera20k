@@ -208,3 +208,97 @@ fn escape_counter_matches_native_cell_list_and_raw_owner_gates() {
         }
     }
 }
+
+/// One Americans infantryman on `mission` at (10,10) asking about (11,10).
+fn target_shortcut_scene(
+    extra: &str,
+    mission: i32,
+    nav_com: crate::sim::components::NavTargetRef,
+) -> (Simulation, RuleSet, Cell) {
+    let extra = format!("[InfantryTypes]\n2=MOVER\n[MOVER]\nSpeedType=Foot\nEngineer=yes\n{extra}");
+    let (mut sim, rules, _) = entry_test_fixture::fixture_with_rules(&extra);
+    let ours = sim.intern("Americans");
+    sim.houses
+        .register(HouseState::new(ours, 0, None, false, 0, 10));
+    let mut mover = GameEntity::test_default(90, "MOVER", "Americans", 10, 10);
+    mover.set_owner_for_test(ours);
+    mover.set_type_ref_for_test(sim.intern("MOVER"));
+    mover.set_category_for_test(EntityCategory::Infantry);
+    mover.set_in_playfield(true);
+    mover.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
+    mover.navigation.set_nav_com_for_test(Some(nav_com));
+    sim.substrate.entities.insert(mover);
+    sim.substrate
+        .mission_assign_exact(90, crate::sim::mission::MissionId::from_raw(mission), 0)
+        .unwrap();
+    let cell = sim
+        .resolved_terrain
+        .as_ref()
+        .unwrap()
+        .native_cell_identity((11, 10));
+    (sim, rules, cell)
+}
+
+/// 51C553..51C573: Enter (7), NavCom the occupant and the tether set enters
+/// a warped-out allied Building; untethered, the allied arm refuses it.
+#[test]
+fn a_tethered_enter_mover_may_take_its_warped_out_navcom() {
+    use crate::sim::components::NavTargetRef;
+    let (mut sim, rules, cell) = target_shortcut_scene(
+        "[BuildingTypes]\n1=DEPOT\n[DEPOT]\nStrength=100\n",
+        7,
+        NavTargetRef::object(91),
+    );
+    let ours = sim.intern("Americans");
+    let mut depot = GameEntity::test_default(91, "DEPOT", "Americans", 11, 10);
+    depot.set_owner_for_test(ours);
+    depot.set_type_ref_for_test(sim.intern("DEPOT"));
+    depot.set_category_for_test(EntityCategory::Structure);
+    depot.set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(92));
+    sim.substrate.entities.insert(depot);
+    sim.substrate.occupancy.add(
+        11,
+        10,
+        91,
+        MovementLayer::Ground,
+        None,
+        CellListInsertion::from_category(EntityCategory::Structure),
+    );
+    let entry = |sim: &mut Simulation| {
+        sim.foot_entry_receiver(90, &rules, None, None)
+            .unwrap()
+            .can_enter(cell, InfantryEntryArgs::REPAIR)
+            .unwrap()
+    };
+    assert_eq!(entry(&mut sim), 7);
+    let mover = sim.substrate.entities.get_mut(90).unwrap();
+    mover.tether.set_for_test(Some(91));
+    assert_eq!(entry(&mut sim), 0);
+}
+
+/// 51C37D..51C3B6 tests Terrain too: an Engineer on Patrol (11) whose NavCom
+/// is the tree's cell may enter it, on ground its speed row can cross.
+#[test]
+fn an_engineer_patrolling_to_a_tree_cell_is_not_refused_by_the_tree() {
+    use crate::sim::components::NavTargetRef;
+    let trees = "[TerrainTypes]\n0=TREE01\n[TREE01]\nStrength=100\n";
+    let probe = |nav_com: NavTargetRef| {
+        let (mut sim, rules, cell) = target_shortcut_scene(trees, 11, nav_com);
+        crate::sim::terrain_spawn::construct_terrain_objects(
+            &mut sim,
+            &[crate::map::overlay::TerrainObject {
+                rx: 11,
+                ry: 10,
+                name: "TREE01".into(),
+            }],
+            &rules,
+            false,
+        );
+        sim.foot_entry_receiver(90, &rules, None, None)
+            .unwrap()
+            .can_enter(cell, InfantryEntryArgs::REPAIR)
+            .unwrap()
+    };
+    assert_eq!(probe(NavTargetRef::cell(11, 10)), 0);
+    assert_eq!(probe(NavTargetRef::cell(12, 10)), 7);
+}

@@ -13,15 +13,27 @@ pub struct RadiationBeamBirth {
     pub to: ProjectileCoord,
     pub z_adjust: i32,
     pub color: [u8; 3],
-    /// Phobos `Beam.IsHouseColor`: presentation replaces `color` with this
-    /// House's laser color before the beam is stored.
+    /// The House whose colour presentation substitutes for `color`, and
+    /// which of its colours, before the beam is stored.
     pub house: Option<crate::sim::intern::InternedId>,
-    pub house_color: bool,
+    pub house_color: BeamHouseColor,
     pub duration: i32,
     pub amplitude: NativeF64Bits,
     /// Registry kind2 (SpawnRadEruption), drawn by RadBeam659CA0; otherwise
     /// the straight kind1 copied modes.
     pub eruption: bool,
+}
+
+/// Which colour of [`RadiationBeamBirth::house`] replaces the copied one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BeamHouseColor {
+    /// The copied colour stands.
+    None,
+    /// Phobos `Beam.IsHouseColor`: the House's laser colour (+0x56FC).
+    Laser,
+    /// Ares `Beam.IsHouseColor`: the House colour (+0x56F9) that
+    /// TechnoClass_FireRadBeam1 (Ares.dll 10056010, hook 0x6FD64A) stores.
+    House,
 }
 
 /// SpawnRadBeam's copied-endpoint modes0/1. Attached Magna mode2 has a
@@ -35,21 +47,20 @@ pub(crate) enum CopiedBeamMode {
 /// FireAt6FF594..6FF5C6, after the laser/bolt alternatives. WH.Temporal
 /// selects copied mode1 at6FF5B7; other IsRadBeam weapons use mode0.
 /// Magna mode2 has a separate native caller/lifecycle; eruption kind2 is
-/// [`erupted`].
+/// [`erupted`]. `weapon_index` is FireAt's own argument.
 pub(crate) fn fired(
     world: &mut crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     source_id: u64,
     target: super::TargetKind,
     weapon: &crate::rules::weapon_type::WeaponType,
+    weapon_index: i32,
 ) {
     if super::world_fire::fire_at_effect(weapon) != super::world_fire::FireAtEffect::RadiationBeam {
         return;
     }
-    let mode = if weapon
-        .warhead
-        .as_deref()
-        .and_then(|name| rules.warhead(name))
+    let mode = if rules
+        .weapon_warhead(weapon)
         .is_some_and(|warhead| warhead.temporal)
     {
         CopiedBeamMode::Chrono
@@ -62,6 +73,7 @@ pub(crate) fn fired(
         source_id,
         target.projectile_target(world),
         mode,
+        Some((weapon_index, weapon)),
     );
 }
 
@@ -69,13 +81,25 @@ pub(crate) fn fired(
 /// after burst advancement and copy both endpoints.6FD752 selects retained
 /// Rules.ChronoBeamColor for mode1, otherwise RadColor for mode0. Duration15
 /// and amplitude40 are shared. Neither endpoint attaches; no RNG, ID or timer.
+///
+/// `fired_weapon` is FireAt's weapon index and weapon, which Ares's hooks
+/// read from FireAt's frame; default builds ignore it.
 pub(crate) fn create(
     world: &mut crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     source_id: u64,
     target: crate::sim::projectile::ProjectileTarget,
     mode: CopiedBeamMode,
+    fired_weapon: Option<(i32, &crate::rules::weapon_type::WeaponType)>,
 ) {
+    #[cfg(not(feature = "ares"))]
+    let _ = fired_weapon;
+    #[cfg(not(feature = "ares"))]
+    let flh_index = 0;
+    // Ares TechnoClass_FireRadBeam1 (Ares.dll 10056010, hook 0x6FD64A)
+    // replaces the pushed GetFLH index0 with FireAt's weapon index.
+    #[cfg(feature = "ares")]
+    let flh_index = fired_weapon.map_or(0, |(index, _)| index);
     let Some(source) = world.substrate.entities.get(source_id) else {
         return;
     };
@@ -87,11 +111,13 @@ pub(crate) fn create(
         rules,
         &super::fire_coord::FireSource::of_entity(source),
         object,
-        0,
+        flh_index,
         (source.weapon_burst.index() & 1) as u8,
         Default::default(),
     )
     .coord;
+    #[cfg(feature = "ares")]
+    let owner = source.owner();
     let z_adjust = super::fire_coord::effect_z_adjust(
         world,
         source,
@@ -101,7 +127,64 @@ pub(crate) fn create(
     let Some(to) = super::fire_coord::effect_target_coordinate(world, rules, target) else {
         return;
     };
+    // Ares TechnoClass_FireRadBeam2 (Ares.dll 10056080, hook 0x6FD79C)
+    // skips SetColor: the House colour FireRadBeam1 stored stays only for
+    // Beam.IsHouseColor, otherwise GetBeamColor (10055210) supplies it; the
+    // period and amplitude come from Beam.Duration and Beam.Amplitude.
+    #[cfg(feature = "ares")]
+    if let Some((_, weapon)) = fired_weapon {
+        let visuals = &weapon.ares_visuals;
+        let [rad_color, chrono_color] = [
+            mode_color(rules, CopiedBeamMode::Radiation),
+            mode_color(rules, CopiedBeamMode::Chrono),
+        ];
+        let color = visuals.beam_color(
+            matches!(mode, CopiedBeamMode::Chrono),
+            chrono_color,
+            rad_color,
+        );
+        emit(
+            world,
+            RadiationBeamBirth {
+                frame: world.session.binary_frame() as i32,
+                from,
+                to,
+                z_adjust,
+                color,
+                house: Some(owner),
+                house_color: if visuals.beam_is_house_color {
+                    BeamHouseColor::House
+                } else {
+                    BeamHouseColor::None
+                },
+                duration: visuals.beam_duration,
+                amplitude: visuals.beam_amplitude,
+                eruption: false,
+            },
+        );
+        return;
+    }
     create_endpoints(world, rules, from, to, z_adjust, mode, None);
+}
+
+/// 6FD752's mode colour: retained Rules.ChronoBeamColor for mode1, RadColor
+/// for mode0.
+fn mode_color(rules: &crate::rules::ruleset::RuleSet, mode: CopiedBeamMode) -> [u8; 3] {
+    match mode {
+        CopiedBeamMode::Radiation => {
+            let (r, g, b) = rules.radiation.color;
+            [r, g, b]
+        }
+        CopiedBeamMode::Chrono => rules.general.chrono_beam_color,
+    }
+}
+
+fn emit(world: &mut crate::sim::world::Simulation, birth: RadiationBeamBirth) {
+    world
+        .lifecycle_outputs
+        .emit(crate::sim::world::LifecycleOutput::RadiationBeamCreated(
+            birth,
+        ));
 }
 
 /// Phobos `BulletExt::SimulatedFiringRadBeam`: the same copied modes0/1 with
@@ -116,29 +199,26 @@ pub(crate) fn create_endpoints(
     mode: CopiedBeamMode,
     house: Option<crate::sim::intern::InternedId>,
 ) {
-    let color = match mode {
-        CopiedBeamMode::Radiation => {
-            let (r, g, b) = rules.radiation.color;
-            [r, g, b]
-        }
-        CopiedBeamMode::Chrono => rules.general.chrono_beam_color,
-    };
-    world
-        .lifecycle_outputs
-        .emit(crate::sim::world::LifecycleOutput::RadiationBeamCreated(
-            RadiationBeamBirth {
-                frame: world.session.binary_frame() as i32,
-                from,
-                to,
-                z_adjust,
-                color,
-                house,
-                house_color: house.is_some(),
-                duration: 15,
-                amplitude: NativeF64Bits::from_bits(40.0_f64.to_bits()),
-                eruption: false,
+    let color = mode_color(rules, mode);
+    emit(
+        world,
+        RadiationBeamBirth {
+            frame: world.session.binary_frame() as i32,
+            from,
+            to,
+            z_adjust,
+            color,
+            house,
+            house_color: if house.is_some() {
+                BeamHouseColor::Laser
+            } else {
+                BeamHouseColor::None
             },
-        ));
+            duration: 15,
+            amplitude: NativeF64Bits::from_bits(40.0_f64.to_bits()),
+            eruption: false,
+        },
+    );
 }
 
 /// `TechnoClass::SpawnRadEruption @ 0x006FD800`, FireAt's IsRadEruption arm
@@ -165,11 +245,7 @@ pub(crate) fn erupted(
     }
     // Native dereferences the warhead unguarded; a weapon without one
     // would crash there.
-    let Some(warhead) = weapon
-        .warhead
-        .as_deref()
-        .and_then(|name| rules.warhead(name))
-    else {
+    let Some(warhead) = rules.weapon_warhead(weapon) else {
         return;
     };
     let spread = M::ftol_i32_low_masked(M::load_f64(NativeF64Bits::from_bits(
@@ -217,7 +293,7 @@ pub(crate) fn erupted(
                         z_adjust: 0,
                         color: [r, g, b],
                         house: None,
-                        house_color: false,
+                        house_color: BeamHouseColor::None,
                         duration,
                         amplitude: NativeF64Bits::from_bits(f64::from(amplitude).to_bits()),
                         eruption: true,

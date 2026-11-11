@@ -26,7 +26,10 @@
 //! - The per-target list reuses the area receiver collection instead of
 //!   Phobos' own `getCellSpreadItemsExt` walk, which also reads the
 //!   `AircraftTracker` for airborne items; membership and order can differ
-//!   (no airborne phase, different cell-list filters). Because that collection
+//!   (no airborne phase, different cell-list filters). During a Harvester
+//!   Truce the receiver collection leaves out `HarvesterUnit=` units
+//!   (`0x00489710`), which Phobos' walk keeps, so they miss crits and
+//!   AttachEffects. Because that collection
 //!   happens after SpawnShrapnel, the pass also runs after the shrapnel
 //!   draws, where native runs it first.
 //! - `CanAffectTarget`'s `AffectsAbovePercent`/`AffectsBelowPercent`,

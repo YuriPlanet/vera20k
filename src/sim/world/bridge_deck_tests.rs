@@ -28,8 +28,8 @@ fn structural_fallout_retires_effect_only_ground_victim() {
     // structural bridge state. Its ordinary Unlimbo needs Clear/Foot, and
     // this effect-only corridor supplies no OverlayType reader context.
     let clear = terrain.cell_mut_for_test(4, 4).unwrap();
-    clear.speed_costs.foot = Some(100);
-    clear.base_speed_costs.foot = Some(100);
+    clear.speed_costs.foot = Some(crate::util::native_x87::NativeF32Bits::ONE);
+    clear.base_speed_costs.foot = Some(crate::util::native_x87::NativeF32Bits::ONE);
     sim.resolved_terrain = Some(terrain);
     sim.bridge_state = Some(BridgeRuntimeState::default());
     let owner = sim.interner.intern("Americans");
@@ -347,17 +347,7 @@ fn a_bombed_bridge_hut_drops_its_bridge() {
             .unwrap();
         sim.session.set_binary_frame_for_test(100);
         if bombed {
-            Simulation::bomb_attach(
-                &sim.interner,
-                &sim.session,
-                &mut sim.substrate,
-                &mut sim.sound_events,
-                &sim.resolved_terrain,
-                &mut sim.bombs,
-                ivan,
-                Some(hut),
-                &rules,
-            );
+            sim.bomb_attach(ivan, Some(hut), None, &rules);
         }
         if killed {
             let super_wh = sim.interner.intern("Super");

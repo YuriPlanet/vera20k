@@ -176,6 +176,8 @@ impl JumpjetRuntime {
     /// returns at54BB32 before Mark and the phase3 write; State3's tail at
     ///54C4FD reads the destination that setter changed. The working value is
     /// never an independent destination authority across either callback.
+    /// A synchronous receiver can remove the owner or replace its locomotor.
+    /// In that case there is no installed Jumpjet to read back.
     pub(crate) fn with_owner_call<R>(
         &mut self,
         sim: &mut Simulation,
@@ -189,14 +191,15 @@ impl JumpjetRuntime {
             .and_then(|locomotor| locomotor.jumpjet_runtime_mut())
             .expect("Jumpjet callback retains its installed instance") = self.clone();
         let result = call(sim);
-        *self = sim
+        if let Some(installed) = sim
             .substrate
             .entities
             .get(id)
             .and_then(|entity| entity.locomotor.as_ref())
             .and_then(|locomotor| locomotor.jumpjet_runtime())
-            .expect("Jumpjet callback retains its installed instance")
-            .clone();
+        {
+            self.clone_from(installed);
+        }
         result
     }
 
@@ -596,13 +599,15 @@ impl Simulation {
             .jumpjet_runtime()?
             .clone();
         let result = process(&mut runtime, self);
-        *self
+        if let Some(installed) = self
             .substrate
             .entities
-            .get_mut(id)?
-            .locomotor
-            .as_mut()?
-            .jumpjet_runtime_mut()? = runtime;
+            .get_mut(id)
+            .and_then(|entity| entity.locomotor.as_mut())
+            .and_then(|locomotor| locomotor.jumpjet_runtime_mut())
+        {
+            *installed = runtime;
+        }
         Some(result)
     }
 

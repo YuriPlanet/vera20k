@@ -43,7 +43,7 @@ fn native_automatic_guard_admission_stop_order_and_signed_caller_returns() {
                 expected
             );
         } else {
-            dispatch_foot_mission(&mut sim, id, &rules, Default::default());
+            dispatch_foot_mission(&mut sim, id, &rules, Default::default()).unwrap();
             assert_eq!(
                 sim.substrate
                     .entities
@@ -73,7 +73,7 @@ fn pending_deploy_survives_snapshot_and_paid_head_completion() {
         .find(|row| row["input"]["name"] == "Guard_moving_paid_head")
         .unwrap();
     let (mut sim, rules, id) = native_deploy_fixture(row);
-    dispatch_foot_mission(&mut sim, id, &rules, Default::default());
+    dispatch_foot_mission(&mut sim, id, &rules, Default::default()).unwrap();
     assert_native_deploy_state(&sim, id, row);
     let pending_hash = sim.state_hash();
     sim.substrate
@@ -199,9 +199,6 @@ fn retail_gi_and_guardian_gi_deploy_then_team_move_in_bound_runtime() {
     let art = IniFile::from_bytes(&art_bytes).unwrap();
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     rules.install_art_data(ArtRegistry::from_ini(&art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     assert_eq!(rules.general.ai_auto_deploy_frame_delay, [15, 25, 100]);
     for name in ["E1", "GGI"] {
         let object = rules.object(name).unwrap();
@@ -268,7 +265,7 @@ fn retail_gi_and_guardian_gi_deploy_then_team_move_in_bound_runtime() {
     resources.terrain_template = Some(terrain);
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources,
+        resources: std::sync::Arc::new(resources),
     };
     let cues = RefCell::new(Vec::new());
     let advance = |runtime: &mut SimRuntime| {

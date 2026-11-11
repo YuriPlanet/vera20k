@@ -50,7 +50,7 @@ fn bytes(text: &str) -> Vec<u8> {
 fn word(raw: &[u8], offset: usize) -> u32 {
     u32::from_le_bytes(raw[offset..offset + 4].try_into().unwrap())
 }
-fn native_state(doc: &Value, index: &Value) -> MapGenRngContinuation {
+pub(super) fn native_state(doc: &Value, index: &Value) -> MapGenRngContinuation {
     let raw = bytes(
         doc["rng_states_hex"][index.as_u64().unwrap() as usize]
             .as_str()
@@ -153,7 +153,7 @@ fn scaled_range_matches_original_values_and_full_draw_states() {
     }
 }
 
-fn ranges(doc: &Value, input: &Value) -> TheaterCliffRanges {
+pub(super) fn ranges(doc: &Value, input: &Value) -> TheaterCliffRanges {
     let mut globals = doc["inputs"]["family_globals"].as_object().unwrap().clone();
     if input["all_unset"] == true {
         for value in globals.values_mut() {
@@ -206,13 +206,13 @@ fn shared_family_predicates_match_original_signed_and_terminal_cases() {
     }
 }
 
-struct Blocks(BTreeMap<i32, TileBlock>);
+pub(super) struct Blocks(BTreeMap<i32, TileBlock>);
 impl TileBlocks for Blocks {
     fn block(&self, tile: i32) -> Option<&TileBlock> {
         self.0.get(&tile)
     }
 }
-fn blocks(doc: &Value) -> Blocks {
+pub(super) fn blocks(doc: &Value) -> Blocks {
     Blocks(
         doc["inputs"]["registered_tiles"]
             .as_array()
@@ -354,7 +354,7 @@ fn cliff_passes_match_original_cells_regions_border_and_rng() {
         if let Some(disabled) = prior["disabled"].as_array() {
             for coords in disabled {
                 let (x, y) = xy(coords);
-                scratch.get_mut(x, y).shore_enable = false;
+                scratch.set_shore_enable(x, y, false);
             }
         }
         if kind == "stamp" {
@@ -376,7 +376,7 @@ fn cliff_passes_match_original_cells_regions_border_and_rng() {
             .collect();
         // The producer refuses any native scratch change outside region+38,
         // so every other modeled scratch field must stay as supplied.
-        let mut expected_scratch = scratch.cells().to_vec();
+        let mut expected_scratch = scratch.clone();
         for change in row["changed_regions"].as_array().unwrap() {
             let (cx, cy) = xy(&change["coords"]);
             assert_eq!(
@@ -385,7 +385,7 @@ fn cliff_passes_match_original_cells_regions_border_and_rng() {
                 "{}: supplied region prior",
                 row["id"]
             );
-            expected_scratch[scratch.index(cx, cy)].region = number(&change["after"]);
+            expected_scratch.get_mut(cx, cy).region = number(&change["after"]);
         }
         for changed in row["changed_cells"].as_array().unwrap() {
             let cell = expected_cells.get_mut(&xy(&changed["coords"])).unwrap();
@@ -547,8 +547,7 @@ fn cliff_passes_match_original_cells_regions_border_and_rng() {
             );
         }
         assert_eq!(
-            scratch.cells(),
-            expected_scratch,
+            scratch, expected_scratch,
             "{} scratch fields and untouched state",
             row["id"]
         );
@@ -562,4 +561,90 @@ fn cliff_passes_match_original_cells_regions_border_and_rng() {
         compared += 1;
     }
     assert!(compared > 40);
+}
+
+/// The tile identity and physical TMP blocks this corpus's fixture registers
+/// (clear, CliffSet and the 42 shore pieces), which the water oracles built on
+/// the same fixture share. The water base is the caller's: it has no TMP here.
+pub(super) fn physical_tiles() -> (TileIds, Blocks) {
+    let cliff = corpus();
+    let ids = TileIds {
+        cliffs: ranges(cliff, &Value::Null),
+        shore: number(&cliff["inputs"]["bases"]["shore"]),
+        ..TileIds::from_keys(&RmgTileKeys::default())
+    };
+    (ids, blocks(cliff))
+}
+
+/// Whole original `MapClass::RmgFinalizeWaterShore @ 0x0057A0C0` calls from
+/// `tools/rmg_oracle/water_shore.py`, run on the physical shore TMPs and
+/// family ranges this module's corpus registers.
+#[test]
+fn native_water_shore_controls() {
+    let doc = crate::test_fixture::json("tools/rmg_oracle/water_shore.json");
+    let scene = &doc["scene"];
+    let (mut ids, blocks) = physical_tiles();
+    ids.water_base = number(&scene["water_base"]);
+    assert_eq!(ids.shore, number(&scene["shore_base"]));
+    let rows = doc["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 6);
+    for row in rows {
+        let input = &row["input"];
+        let context = input["id"].as_str().unwrap();
+        let region = number(&input["region"]);
+        let mut grid = RmgGrid::new(33, 16, 48);
+        let mut scratch = RmgScratch::new(33, 16, 48);
+        for (x, y) in grid.native_cells().collect::<Vec<_>>() {
+            let cell = grid.cell_native_mut(x, y);
+            (cell.tile, cell.sub_tile, cell.level) = (0, 0, 0);
+        }
+        for cell in input["water"].as_array().unwrap() {
+            let (x, y) = xy(cell);
+            grid.cell_native_mut(x, y).tile = ids.water_base;
+            scratch.get_mut(x, y).region = region;
+        }
+        for cell in input["owned"].as_array().unwrap() {
+            let (x, y) = xy(cell);
+            scratch.get_mut(x, y).region = number(&cell[2]);
+        }
+        let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
+        let verdict = shore::run(
+            &mut shore::ShoreCtx {
+                grid: &mut grid,
+                scratch: &mut scratch,
+                ids: &ids,
+                blocks: &blocks,
+                rng: &mut rng,
+            },
+            region,
+            number(&input["keep"]) != 0,
+        );
+        assert_eq!(verdict, number(&row["result"]) != 0, "{context}: verdict");
+        let mut cells = Vec::new();
+        for y in 0..33 {
+            for x in 0..33 {
+                if !scratch.in_diamond(x, y) {
+                    continue;
+                }
+                let cell = grid.cell_native(x, y);
+                let owner = scratch.get(x, y).region;
+                if cell.tile != 0 || owner != 0 || cell.level != 0 {
+                    let (sub, level) = (i32::from(cell.sub_tile), i32::from(cell.level));
+                    cells.push([x, y, cell.tile, sub, level, owner]);
+                }
+            }
+        }
+        let native: Vec<[i32; 6]> = row["cells"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| std::array::from_fn(|i| number(&c[i])))
+            .collect();
+        assert_eq!(cells, native, "{context}: cells");
+        assert_eq!(
+            rng.into_continuation().into_native_parts(),
+            native_state(doc, &row["rng_after"]).into_native_parts(),
+            "{context}: exit RNG"
+        );
+    }
 }

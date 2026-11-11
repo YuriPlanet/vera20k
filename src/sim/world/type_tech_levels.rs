@@ -24,7 +24,7 @@ const CATEGORIES: [ObjectCategory; 4] = [
 /// Keys retain category and exact constructor spelling, rather than the broad
 /// case-insensitive name lookup. Maps give canonical save/hash order and allow
 /// allocation-free reads; only the trigger and retirement owners mutate them.
-#[derive(Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
 pub(crate) struct TypeTechLevels {
     changed: [BTreeMap<String, i32>; 4],
 }

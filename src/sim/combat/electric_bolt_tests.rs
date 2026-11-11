@@ -1029,3 +1029,60 @@ fn a_tesla_tank_bolt_names_its_firer_and_follows_its_flh() {
     sim.substrate.entities.remove(tank);
     assert_eq!(electric_bolt::owner_source(&sim, &rules, owner), None);
 }
+
+/// Ares TechnoClass_FireEBolt (Ares.dll 10056350) and EBolt_Fire_Particles
+/// (100562C0): a 6FD460 bolt carries its weapon's Bolt.Color1..3 and spawns
+/// Bolt.ParticleSystem instead of DefaultSparkSystem; `none` spawns nothing.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_bolt_keys_choose_colors_and_spark_system() {
+    let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+        "[InfantryTypes]\n0=ZAPPER\n1=MARK\n[ZAPPER]\nPrimary=ZAP\nSecondary=OFF\n[MARK]\n\
+         [CombatDamage]\nDefaultSparkSystem=SPARKSYS\n\
+         [ParticleSystems]\n0=SPARKSYS\n1=BOLTSYS\n[SPARKSYS]\n[BOLTSYS]\n\
+         [ZAP]\nIsElectricBolt=yes\nBolt.Color2=1,2,3\nBolt.ParticleSystem=BOLTSYS\n\
+         [OFF]\nIsElectricBolt=yes\nBolt.ParticleSystem=none\n",
+    ))
+    .unwrap();
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 11);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let source = sim
+        .spawn_object("ZAPPER", "Americans", 16, 16, 64, &rules)
+        .unwrap();
+    let target = sim
+        .spawn_object("MARK", "Russians", 18, 16, 0, &rules)
+        .unwrap();
+    let mut fire = |weapon: &str| {
+        sim.lifecycle_outputs.clear_for_test();
+        let before = sim.particle_systems().len();
+        electric_bolt::create(
+            &mut sim,
+            &rules,
+            source,
+            crate::sim::projectile::ProjectileTarget::Entity(target),
+            rules.weapon(weapon).unwrap(),
+            ProjectileCoord::new(4096, 4096, 0),
+            None,
+        );
+        let [LifecycleOutput::ElectricBoltCreated(birth)] = sim.lifecycle_outputs.as_slice() else {
+            panic!("one bolt");
+        };
+        let colors = birth.colors;
+        let spawned: Vec<_> = sim
+            .particle_systems()
+            .iter()
+            .skip(before)
+            .map(|(_, system)| system.type_id())
+            .collect();
+        (colors, spawned)
+    };
+    assert_eq!(
+        fire("ZAP"),
+        (
+            [None, Some([1, 2, 3]), None],
+            vec![rules.ps_type_id_by_name("BOLTSYS").unwrap()]
+        )
+    );
+    assert_eq!(fire("OFF"), ([None; 3], Vec::new()));
+}

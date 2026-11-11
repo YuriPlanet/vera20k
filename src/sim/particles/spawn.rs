@@ -113,7 +113,16 @@ impl Simulation {
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return;
         };
-        if !object.emits_damage_spark() {
+        // Ares TechnoClass_Update_DamageSparks (Ares.dll 1004B760, hook
+        // 0x6FACD9): the type's `DamageSparks`, else its own flag.
+        #[cfg(feature = "ares")]
+        let sparks = object
+            .techno_combat()
+            .damage()
+            .damage_sparks(object.emits_damage_spark());
+        #[cfg(not(feature = "ares"))]
+        let sparks = object.emits_damage_spark();
+        if !sparks {
             return;
         }
         let ratio = entity.health.ratio(object.strength);
@@ -708,6 +717,37 @@ pub(super) fn spawn_state_ai_advance(
 mod tests {
     use crate::sim::rng::SimRng;
 
+    /// Ares TechnoClass_Update_DamageSparks (Ares.dll 1004B760, hook
+    /// 0x6FACD9): `DamageSparks=yes` admits a damaged vehicle to the Spark
+    /// producer stock keeps to Cyborg infantry (its two Scenario draws).
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_damage_sparks_admits_a_vehicle_to_the_spark_producer() {
+        use crate::sim::game_entity::GameEntity;
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=SPARKY\n1=PLAIN\n\
+             [SPARKY]\nStrength=100\nDamageSparks=yes\nDamageParticleSystems=Sys\n\
+             [PLAIN]\nStrength=100\nDamageParticleSystems=Sys\n\
+             [Particles]\n0=Spk\n[ParticleSystems]\n0=Sys\n\
+             [Spk]\nBehavesLike=Spark\nMaxEC=10\n[Sys]\nBehavesLike=Spark\nHoldsWhat=Spk\n",
+        ))
+        .unwrap();
+        let draws = |name: &str| {
+            let mut sim = Simulation::new();
+            let id = sim.substrate.allocate_stable_id();
+            let mut entity = GameEntity::test_default(id, name, "A", 3, 3);
+            entity.set_type_ref_for_test(sim.interner.intern(name));
+            entity.set_owner_for_test(sim.interner.intern("A"));
+            entity.health.set_for_test(20);
+            sim.substrate.entities.insert(entity);
+            let before = sim.scenario_rng.logical_state();
+            sim.update_damage_spark_after_ai(id, &rules);
+            sim.scenario_rng.logical_state() != before
+        };
+        assert!(draws("SPARKY"));
+        assert!(!draws("PLAIN"));
+    }
+
     /// The constructor's colour seed (`0x0062BA51`) draws for any type with a
     /// `ColorList` and a start colour, a Fire type as much as a Spark one.
     #[test]
@@ -1073,8 +1113,8 @@ mod tests {
     }
 
     #[test]
-    fn spawn_particle_returns_false_when_holds_what_unset() {
-        // [Sys] without HoldsWhat — minimal INI to leave holds_what = None.
+    fn spawn_particle_constructs_empty_named_type_when_holds_what_unset() {
+        // ParticleSystemTypeReadINI64430F binds the empty-named ParticleType.
         let ini_text = "[ParticleSystems]\n\
                         1=NoHold\n\
                         [NoHold]\n\
@@ -1100,13 +1140,16 @@ mod tests {
             .particle_systems
             .take_for_tick(sys_id)
             .unwrap();
-        assert!(!spawn_particle(
+        assert!(spawn_particle(
             &mut sys,
             IVec3::ZERO,
             IVec3::ZERO,
             &rules,
             &mut sim
         ));
-        assert!(sys.particles.is_empty());
+        assert_eq!(sys.particles.len(), 1);
+        let particle = &sys.particles[0];
+        assert_eq!(rules.particle_type(particle.type_id()).name, "");
+        assert_eq!(particle.lifetime_remaining(), 1);
     }
 }

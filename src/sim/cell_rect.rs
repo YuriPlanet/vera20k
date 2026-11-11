@@ -227,7 +227,7 @@ impl crate::sim::world::Simulation {
         CellPassabilityMap {
             terrain: self.resolved_terrain.as_ref(),
             overlays: self.overlay_grid.as_ref(),
-            zones: self.zone_grid.as_ref(),
+            zones: self.zone_grid.as_deref(),
             native_cells: None,
             raw_occupation: Some(&self.substrate.raw_cell_occupation),
             listed_occupancy: None,
@@ -488,7 +488,9 @@ fn evaluate_is_clear_to_move(input: IsClearToMoveRequest) -> IsClearToMoveResult
     // `0x004835DE..0x004835F4`: a cost equal to 0.0 refuses unless the deck
     // was selected. A row the scenario rules lack reads as 0.0.
     if selected_layer != MovementLayer::Bridge
-        && row.cost_for_speed_type(input.speed_type).unwrap_or(0) == 0
+        && row
+            .cost_for_speed_type(input.speed_type)
+            .is_none_or(|cost| cost.is_zero())
     {
         return IsClearToMoveResult::LandBlocked;
     }
@@ -992,6 +994,50 @@ pub fn retained_cell_is_in_playfield(
     bounds.contains_height_aware_packed(i32::from(coord.0), i32::from(coord.1), level as i8, slope)
 }
 
+/// The native ground lists while GameActive(A8E9A0) is set. An absent
+/// projection means the caller is in the inactive loading/teardown phase;
+/// ScenarioSession.started is a different native byte.
+#[derive(Clone, Copy)]
+pub(crate) struct BurrowingContents<'a> {
+    pub occupancy: &'a OccupancyGrid,
+    pub terrain_objects: &'a BTreeMap<(u16, u16), u64>,
+}
+
+/// CellClass::PassesTileAndOccupancyChecks486FF0. The incoming Cell pointer
+/// survives nested queries: this leaf never resolves its coordinate again.
+/// Outside the playfield succeeds immediately; invalid signed tile indices
+/// skip only the tile permission, not slope, bridge or active ground lists.
+pub(crate) fn cell_allows_burrowing(
+    cells: &crate::map::resolved_terrain::NativeCellQuery<'_>,
+    cell: crate::map::cell_index::NativeCellIdentity,
+    bounds: Option<PlayfieldBounds>,
+    contents: Option<BurrowingContents<'_>>,
+) -> bool {
+    if !retained_cell_is_in_playfield(cell, bounds, cells) {
+        return true;
+    }
+    let terrain = cells.terrain();
+    if !terrain.tile_allows_burrowing(terrain.native_cell_tile_index(cell))
+        || cells.ground_fields(cell).1 != 0
+        || cells.flags(cell) & 0x500 != 0
+    {
+        return false;
+    }
+    if let Some(contents) = contents {
+        let coord = cells.coord(cell);
+        let coord = (coord.0 as u16, coord.1 as u16);
+        if contents
+            .occupancy
+            .first_building_on_layer(coord.0, coord.1, MovementLayer::Ground)
+            .is_some()
+            || contents.terrain_objects.contains_key(&coord)
+        {
+            return false;
+        }
+    }
+    true
+}
+
 pub(crate) fn cell_is_in_playfield_height_aware_in_query(
     cell: (i32, i32),
     bounds: Option<PlayfieldBounds>,
@@ -1186,7 +1232,7 @@ mod tests {
     use super::*;
     use crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
     use crate::map::map_file::MapHeader;
-    use crate::map::resolved_terrain::TEST_RETAIL_CLEAR_SPEED_COSTS;
+    use crate::map::resolved_terrain::test_retail_clear_speed_costs;
     use crate::rules::overlay_types::OverlayTypeRegistry;
     use crate::rules::terrain_rules::{SpeedCostProfile, TerrainRules};
     use crate::sim::occupancy::CellListInsertion;
@@ -1211,8 +1257,8 @@ mod tests {
 
     fn clear_land() -> CellLand {
         CellLand {
-            row: TEST_RETAIL_CLEAR_SPEED_COSTS,
-            clear_row: TEST_RETAIL_CLEAR_SPEED_COSTS,
+            row: test_retail_clear_speed_costs(),
+            clear_row: test_retail_clear_speed_costs(),
             overlay: None,
         }
     }
@@ -1239,13 +1285,14 @@ mod tests {
     fn zero_row_land(overlay: Option<OverlayPassability>) -> Option<CellLand> {
         Some(CellLand {
             row: SpeedCostProfile {
-                foot: Some(0),
-                track: Some(0),
-                wheel: Some(0),
-                float: Some(0),
-                amphibious: Some(0),
-                float_beach: Some(0),
-                hover: Some(0),
+                foot: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+                track: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+                wheel: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+                float: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+                amphibious: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+                float_beach: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+                hover: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+                winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
             },
             overlay,
             ..clear_land()

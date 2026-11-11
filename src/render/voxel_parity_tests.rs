@@ -60,8 +60,9 @@ mod tests {
                 facing: step * 8,
                 ..Default::default()
             };
-            let prepared = vxl_raster::prepare_native_draw(&vxl, Some(&hva), &params, Some(&vpl))
-                .expect("stock GTNK must use the encoded native path");
+            let prepared =
+                vxl_raster::prepare_native_draw(&vxl, Some(&hva), &params, Some(&vpl), None)
+                    .expect("stock GTNK must use the encoded native path");
             assert_eq!(prepared.rect, rect, "all six native GTNK crop outputs");
             let sprite = vxl_raster::render_vxl(&vxl, Some(&hva), &params, Some(&vpl));
             assert_eq!(

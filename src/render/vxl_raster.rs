@@ -33,9 +33,10 @@ mod native;
 #[path = "vxl_shadow.rs"]
 pub(crate) mod shadow;
 
-pub(crate) use native::PreparedDraw;
+pub(crate) use native::{NativeRaster, PreparedDraw, RasterParams, section_voxels};
 
-/// Shared ordinary VXL preparation for CPU and GPU visibility writes. Preview
+/// Shared ordinary VXL preparation for CPU and GPU visibility writes, on the
+/// shared `depth` map when depth-tested (None draws on a clear one). Preview
 /// magnification and constructed models without encoded spans keep their
 /// explicitly separate legacy renderer.
 pub(crate) fn prepare_native_draw(
@@ -43,9 +44,13 @@ pub(crate) fn prepare_native_draw(
     hva: Option<&HvaFile>,
     params: &VxlRenderParams,
     vpl: Option<&VplFile>,
+    depth: Option<&mut DepthMap>,
 ) -> Option<PreparedDraw> {
-    native::prepare_draw(vxl, hva, params, vpl)
+    native::prepare_draw(vxl, hva, params, vpl, depth)
 }
+
+/// The renderer's 256-square depth map (`0xB1D5E0`), one byte a pixel.
+pub type DepthMap = [u8; 65536];
 
 /// Number of distinct orientations a voxel body/turret/barrel can render at.
 ///
@@ -252,16 +257,16 @@ pub(crate) fn ground_unit_pose_matrices(
         pose.angles,
         half_sizes,
     );
-    let translated = affine::translate(body, &[turret_offset_units(pose.turret_offset)]);
+    let translated = affine::translate_axis(body, 0, turret_offset_units(pose.turret_offset));
     let relative = i32::from(voxel_facing_step(turret_facing))
         - i32::from(voxel_facing_step(pose.body_facing));
     let (sin, cos) = crate::util::native_trig::native_sin_cos_by_step(relative)
         .expect("relative five-bit facing fits table");
     let turret = affine::rotate_z(translated, sin, cos);
     let pivot = turret.w_axis.truncate();
-    let barrel = affine::translate(turret, &(-pivot).to_array());
+    let barrel = affine::translate(turret, (-pivot).to_array());
     let barrel = voxel_barrel_pitch(barrel, barrel_pitch);
-    let barrel = affine::translate(barrel, &pivot.to_array());
+    let barrel = affine::translate(barrel, pivot.to_array());
     [body, turret, barrel].map(|matrix| {
         affine::matrix_product(voxel_camera_view(), matrix).expect("finite ground draw matrix")
     })
@@ -1197,7 +1202,85 @@ pub fn render_vxl(
     params: &VxlRenderParams,
     vpl: Option<&VplFile>,
 ) -> VxlSprite {
-    if let Some(draw) = prepare_native_draw(vxl, hva, params, vpl)
+    render_vxl_on(vxl, hva, params, vpl, None)
+}
+
+/// A voxel image rasterized on the CPU, or one for the GPU raster
+/// ([`crate::render::voxel_gpu`]) to draw where it lands.
+pub(crate) enum VoxelImage<'a> {
+    Cpu(VxlSprite),
+    /// An ordinary draw: the VXL, what a CPU raster of it needs, and the
+    /// native raster the GPU executes.
+    Paint {
+        vxl: &'a VxlFile,
+        hva: Option<&'a HvaFile>,
+        params: VxlRenderParams,
+        raster: NativeRaster,
+    },
+    /// A ground shadow stencil (756860).
+    Stencil {
+        vxl: &'a VxlFile,
+        raster: shadow::StencilRaster,
+    },
+}
+
+impl VoxelImage<'_> {
+    /// The image rasterized on the CPU; None where that raster fails.
+    pub fn render_cpu(self, vpl: Option<&VplFile>) -> Option<VxlSprite> {
+        match self {
+            Self::Cpu(sprite) => Some(sprite),
+            Self::Paint {
+                vxl, hva, params, ..
+            } => Some(render_vxl(vxl, hva, &params, vpl)),
+            Self::Stencil { vxl, raster } => shadow::render_raster(vxl, &raster),
+        }
+    }
+
+    /// The image's size, and its offset from the draw point.
+    pub fn frame(&self) -> ([u32; 2], [f32; 2]) {
+        let rect_frame = |[x, y, _, _, width, height]: [i32; 6]| {
+            ([width as u32, height as u32], [x as f32, y as f32])
+        };
+        match self {
+            Self::Cpu(sprite) => (
+                [sprite.width, sprite.height],
+                [sprite.offset_x, sprite.offset_y],
+            ),
+            Self::Paint { raster, .. } => rect_frame(raster.rect),
+            Self::Stencil { raster, .. } => rect_frame(raster.rect),
+        }
+    }
+}
+
+/// [`render_vxl`] as an image for the GPU raster wherever the native raster
+/// draws it.
+pub(crate) fn voxel_image<'a>(
+    vxl: &'a VxlFile,
+    hva: Option<&'a HvaFile>,
+    params: &VxlRenderParams,
+    vpl: Option<&VplFile>,
+) -> VoxelImage<'a> {
+    match native::prepare_raster(vxl, hva, params) {
+        Some(raster) => VoxelImage::Paint {
+            vxl,
+            hva,
+            params: params.clone(),
+            raster,
+        },
+        None => VoxelImage::Cpu(render_vxl(vxl, hva, params, vpl)),
+    }
+}
+
+/// [`render_vxl`] on the shared `depth` map when depth-tested; None draws on
+/// a clear one. The legacy fallback ignores it.
+pub(crate) fn render_vxl_on(
+    vxl: &VxlFile,
+    hva: Option<&HvaFile>,
+    params: &VxlRenderParams,
+    vpl: Option<&VplFile>,
+    depth: Option<&mut DepthMap>,
+) -> VxlSprite {
+    if let Some(draw) = prepare_native_draw(vxl, hva, params, vpl, depth)
         && let Some(sprite) = draw.render_cpu()
     {
         return sprite;

@@ -292,6 +292,7 @@ fn engine_platform_and_process_reads_have_pinned_files() {
                 "map/source/cache.rs",
                 "net/live_commands/sequenced.rs",
                 "net/udp.rs",
+                "net/web_socket.rs",
                 "util/logging.rs",
                 "util/logging_telemetry.rs",
                 // The browser file system's modification times.
@@ -317,6 +318,13 @@ fn engine_platform_and_process_reads_have_pinned_files() {
                 // by `#[path]`, which the test-gate scan cannot see.
                 "sim/movement/bridge_restamp_retail_probe.rs",
                 "sim/movement/bridge_tile_retail_probe.rs",
+                // The auto play policy's diagnostics: `AUTOPLAY_TRACE` names
+                // where to append its decision log and `AUTOPLAY_HONEST`
+                // decides whether that log may rewrite a plan it just made.
+                // Both are read once when the brain is built and reach no
+                // simulation state, hash or multiplayer checksum, so they
+                // cannot make two peers disagree.
+                "sim/strategy/retail/mod.rs",
             ],
         ),
         (
@@ -417,7 +425,7 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/world/gap_generator.rs", 1),
                 ("sim/world/house_defeat.rs", 9),
                 ("sim/world/jumpjet_cruise.rs", 1),
-                ("sim/world/lifecycle.rs", 5),
+                ("sim/world/lifecycle.rs", 6),
                 ("sim/world/mod.rs", 7),
                 ("sim/world/object_turn.rs", 1),
                 ("sim/world/planning.rs", 2),
@@ -425,7 +433,9 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/world/techno_ai.rs", 1),
                 ("sim/world/techno_ai/mission_handlers.rs", 1),
                 ("sim/world/techno_ai_cloak.rs", 3),
-                ("sim/world/world_commands.rs", 6),
+                // Includes the Ares Guard key's own-actor check (1005CAF0)
+                // in the input producer `area_guard_key_command`.
+                ("sim/world/world_commands.rs", 7),
                 ("sim/world/world_orders.rs", 2),
                 ("sim/world/world_spawn.rs", 1),
                 ("sim/world/world_spawn/construction.rs", 1),
@@ -441,6 +451,7 @@ fn engine_per_client_reads_have_pinned_callers() {
             &[
                 ("sim/scenario_session.rs", 1),
                 ("sim/score.rs", 1),
+                ("sim/superweapon/mod.rs", 1),
                 ("sim/world/house_defeat.rs", 2),
             ],
         ),
@@ -455,21 +466,29 @@ fn engine_per_client_reads_have_pinned_callers() {
         (
             "house_is_human_player",
             &[
+                // What_Action's Tote rung (0x00417CC0): the clicked action.
+                ("sim/aircraft/carryall.rs", 1),
+                // What_Action's Detonate rung (0x006FFF8D): the clicked action.
+                ("sim/bomb.rs", 1),
                 ("sim/building_art.rs", 2),
                 ("sim/building_entry.rs", 1),
                 ("sim/building_power.rs", 2),
                 ("sim/capture_manager.rs", 1),
                 ("sim/combat/destruction_effects.rs", 1),
                 ("sim/combat/parasite.rs", 2),
+                ("sim/combat/techno_death.rs", 1),
                 ("sim/combat/world_receiver.rs", 2),
                 ("sim/docking/hospital.rs", 1),
                 ("sim/flashing.rs", 1),
                 ("sim/infantry.rs", 1),
                 ("sim/movement/per_cell.rs", 1),
+                // Process's deselect over the player's shroud (0x007290F6).
+                ("sim/movement/tunnel_process.rs", 1),
                 ("sim/passenger.rs", 1),
                 ("sim/production/can_build.rs", 1),
                 ("sim/production/production_repair.rs", 1),
-                ("sim/temporal.rs", 1),
+                ("sim/production/production_sell.rs", 1),
+                ("sim/reverse_engineering.rs", 1),
                 ("sim/vehicle_theft.rs", 1),
                 ("sim/world/camera_home.rs", 1),
                 ("sim/world/fly_process.rs", 1),
@@ -487,6 +506,7 @@ fn engine_per_client_reads_have_pinned_callers() {
             "owned_by_current_house",
             &[
                 ("sim/cloak_disguise.rs", 13),
+                ("sim/combat/greatest_threat.rs", 1),
                 ("sim/game_entity.rs", 3),
                 ("sim/miner/ore_scan.rs", 1),
                 ("sim/world/camera_home.rs", 1),
@@ -497,12 +517,13 @@ fn engine_per_client_reads_have_pinned_callers() {
         (
             "discovered_by_current_house",
             &[
+                ("sim/combat/greatest_threat.rs", 1),
                 ("sim/combat/world_fire.rs", 1),
                 ("sim/house_state.rs", 5),
                 ("sim/power_system.rs", 2),
                 ("sim/production/production_tech.rs", 1),
                 ("sim/trigger_runtime.rs", 1),
-                ("sim/world/lifecycle.rs", 10),
+                ("sim/world/lifecycle.rs", 11),
                 ("sim/world/mod.rs", 1),
                 ("sim/world/shroud_refresh.rs", 1),
                 ("sim/world/world_commands.rs", 1),
@@ -806,8 +827,67 @@ fn is_raw_string_start(bytes: &[u8], i: usize) -> bool {
     bytes.get(j) == Some(&b'"')
 }
 
+#[test]
+fn test_item_scan_keeps_production_after_gated_variants_and_match_arms() {
+    // SoundReferenceSource's test-support variant and arm are both comma
+    // terminated. Neither may hide the next production RuleSet impl.
+    let source = r#"
+enum Source<'a> {
+    Live(&'a Ini),
+    #[cfg(any(test, feature = "test-support"))]
+    Fixture(&'a Ini),
+}
+fn after_variant() { registry_ids(); }
+fn select(source: Source<'_>) {
+    match source {
+        Source::Live(ini) => production(ini),
+        #[cfg(any(test, feature = "test-support"))]
+        Source::Fixture(ini) => fixture_only(ini),
+    }
+}
+fn after_arm() { registry_ids(); }
+"#;
+    let production = strip_test_items(source, &blank_comments_and_literals(source));
+    assert_eq!(count_identifier(&production, "registry_ids"), 2);
+    assert_eq!(count_identifier(&production, "fixture_only"), 0);
+    assert!(production.contains("Source::Live"));
+}
+
+#[test]
+fn test_item_scan_consumes_nested_comma_items_and_whole_function_headers() {
+    let source = r#"
+enum Source {
+    #[cfg(test)]
+    Fixture(
+        (One, Two),
+        Result<Three, Four>,
+    ),
+    Live,
+}
+#[cfg(test)]
+fn fixture_only<T>(
+    pair: (One, Two),
+    callback: impl Fn([u8; 2], T),
+)
+where
+    T: From<(Three, Four)>,
+{
+    fixture_body();
+}
+#[cfg(any(test, debug_assertions))]
+fn debug_production() { registry_ids(); }
+fn after_function() { registry_ids(); }
+"#;
+    let production = strip_test_items(source, &blank_comments_and_literals(source));
+    assert_eq!(count_identifier(&production, "registry_ids"), 2);
+    assert_eq!(count_identifier(&production, "Fixture"), 0);
+    assert_eq!(count_identifier(&production, "fixture_body"), 0);
+    assert!(production.contains("Live"));
+}
+
 /// `source` without its `#[cfg(test)]` items (attribute plus the following
-/// item, braced or single-statement), as blanked text: `text` is `source` with
+/// item, braced or terminated by `;`/`,`, or a one-line item on the
+/// attribute's own line), as blanked text: `text` is `source` with
 /// comments and literals blanked. `cfg(all(test, …))` and
 /// `cfg(any(test, feature = "test-support"))` count as test-only;
 /// `cfg(any(test, debug_assertions))` does not. The feature gate is read from
@@ -817,6 +897,9 @@ fn strip_test_items(source: &str, text: &str) -> String {
     let mut depth: i64 = 0;
     let mut skip_above: Option<i64> = None;
     let mut awaiting_item = false;
+    let mut item_delimiters = Vec::new();
+    let mut awaiting_function = false;
+    let ends_item = |line: &str| line.trim_end().ends_with([';', ',']);
     for (line, source_line) in text.lines().zip(source.lines()) {
         let opens = line.bytes().filter(|&b| b == b'{').count() as i64;
         let closes = line.bytes().filter(|&b| b == b'}').count() as i64;
@@ -833,8 +916,12 @@ fn strip_test_items(source: &str, text: &str) -> String {
             if opens > 0 {
                 // Attribute and item share the line.
                 skip_above = Some(depth);
+            } else if !line.trim_end().ends_with(']') && ends_item(line) {
+                // Attribute and a one-line item share the line.
             } else {
                 awaiting_item = true;
+                item_delimiters.clear();
+                awaiting_function = false;
             }
         } else if awaiting_item {
             emit = false;
@@ -844,9 +931,49 @@ fn strip_test_items(source: &str, text: &str) -> String {
             } else if opens > 0 {
                 skip_above = Some(depth);
                 awaiting_item = false;
-            } else if trimmed.trim_end().ends_with(';') {
-                // Single-statement item (e.g. `use`), fully consumed.
+            } else if closes > 0 {
+                // The enclosing block closes after a last field without its
+                // comma; the brace is production.
                 awaiting_item = false;
+                emit = true;
+            } else {
+                // A declaration's `where` clause may contain top-level
+                // commas after its parameter list. It still ends at its
+                // body or semicolon. Ignore a visibility group's parens
+                // when identifying the declaration, but not tuple variants
+                // or function-pointer fields.
+                let declaration = trimmed
+                    .strip_prefix("pub(")
+                    .and_then(|visibility| visibility.split_once(')').map(|(_, rest)| rest))
+                    .unwrap_or(trimmed);
+                let head = declaration.split(['(', ':', '=']).next().unwrap_or("");
+                awaiting_function |= count_identifier(head, "fn") > 0;
+
+                let mut previous = 0;
+                for b in line.bytes() {
+                    match b {
+                        b'(' => item_delimiters.push(b')'),
+                        b'[' => item_delimiters.push(b']'),
+                        b'<' => item_delimiters.push(b'>'),
+                        b')' | b']' | b'>'
+                            if item_delimiters.last() == Some(&b)
+                                && !(b == b'>' && matches!(previous, b'-' | b'=')) =>
+                        {
+                            item_delimiters.pop();
+                        }
+                        b';' if item_delimiters.is_empty() => {
+                            awaiting_item = false;
+                            break;
+                        }
+                        b',' if item_delimiters.is_empty() && !awaiting_function => {
+                            // Enum variants, fields and expression match arms.
+                            awaiting_item = false;
+                            break;
+                        }
+                        _ => {}
+                    }
+                    previous = b;
+                }
             }
         }
 
@@ -958,6 +1085,20 @@ fn segment_is_root(segment: &str, root: &str) -> bool {
                 || rest.starts_with(' ')
         }
         _ => rest.is_empty() || rest.starts_with(':') || rest.starts_with(' '),
+    }
+}
+
+/// A test-only field or struct-literal field ends at its comma, so the
+/// production code after it stays scanned.
+#[test]
+fn test_gated_fields_strip_only_themselves() {
+    let source = "struct Rules {\n    #[cfg(test)]\n    pub max: u8,\n    pub kept: u8,\n}\n\
+                  fn read() -> Rules {\n    Rules {\n        #[cfg(test)]\n        max: f(\n            1,\n        ),\n        kept: registry_ids(),\n    }\n}\n\
+                  #[cfg(test)] use crate::x;\nfn after() {}\n";
+    let production = strip_test_items(source, &blank_comments_and_literals(source));
+    assert!(!production.contains("max"), "{production}");
+    for kept in ["pub kept", "fn read", "registry_ids", "fn after"] {
+        assert!(production.contains(kept), "{kept} stripped:\n{production}");
     }
 }
 
@@ -1597,9 +1738,17 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         "a command's payload bytes under construction, which the simulation decodes";
     const CELL_MAP: &str =
         "a generic cell-keyed container; every CellMap is a private field of its owner";
+    const COW_CELLS: &str = "the resolved terrain grid's private cell storage (pub(super)); \
+                             ResolvedTerrainGrid owns every write to its cells";
+    const SHARED: &str = "generic copy-on-write containers for the presentation frame \
+                          (docs/sim-thread.md); every Shared, DerivedCache and ChunkedVec is a \
+                          field of its owner";
     const LASER: &str = "LaserDraw 0x0054FE60 returns the new laser for its caller's postprocessing \
                          (FireAt 0x006FF50A..0x006FF571); the caller finishes its own frame fact";
     const PINNED_HANDOUTS: &[(&str, &str, &str)] = &[
+        ("map/resolved_terrain/cow_cells.rs", "get_mut", COW_CELLS),
+        ("map/resolved_terrain/cow_cells.rs", "iter_mut", COW_CELLS),
+        ("map/resolved_terrain/cow_cells.rs", "index_mut", COW_CELLS),
         ("map/rmg/grid.rs", "get_mut", RMG),
         ("map/rmg/grid.rs", "ref_cell_mut", RMG),
         ("map/rmg/grid.rs", "cell_native_mut", RMG),
@@ -1646,15 +1795,31 @@ fn mutable_handouts_and_setters_are_owner_operations() {
              invalidates navigation history",
         ),
         (
+            "sim/runtime.rs",
+            "resources_mut",
+            "SimRuntime's bound resources for a write; SimResources is the slot's own type, \
+             shared only with a presentation frame the host drops first (docs/sim-thread.md)",
+        ),
+        (
             "sim/world/frame_channel.rs",
             "emit_and_finish",
             "a producer finishes the fact it just emitted, before the frame tail reads the channel",
         ),
+        ("util/shared.rs", "deref_mut", SHARED),
+        ("util/shared.rs", "get_mut", SHARED),
+        ("util/shared.rs", "iter_mut", SHARED),
+        ("util/shared.rs", "index_mut", SHARED),
     ];
     // (file, method, reason): `set`/`set_*` methods whose body stores one
     // parameter. Each stores one native member; the decision to store it
     // lives in the cited native caller, which the Rust caller ports.
     const PINNED_SETTERS: &[(&str, &str, &str)] = &[
+        (
+            "map/resolved_terrain/deformation.rs",
+            "set_terrain_deformation",
+            "VERA's own switch with no native member: whether a grid may deform, set by the \
+             simulation from the scenario's [CombatDamage] TerrainDeformation=",
+        ),
         (
             "net/global.rs",
             "set_timing",
@@ -1682,6 +1847,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "rules/object_type.rs",
             "set_secret_lab",
             "runs only inside RuleSet's load",
+        ),
+        (
+            "rules/personal_rules.rs",
+            "set_terrain_deformation",
+            "VERA's own switch with no native member: the Options page's Terrain Deformation \
+             box, which the app passes in for the rules the next scenario reads",
         ),
         (
             "rules/superweapon_type.rs",
@@ -1721,6 +1892,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "TAction 76 stores the signed +0x90 dword unchanged (0x006DF364)",
         ),
         (
+            "sim/aircraft/carryall.rs",
+            "set",
+            "Foot+0x424, written by the pickup (0x00417297), the drop (0x00416C66) and an \
+             ordinary aircraft unload (0x00415548)",
+        ),
+        (
             "sim/ammo.rs",
             "set_dock",
             "the +0x6CC writers and PointerExpired's clear",
@@ -1755,8 +1932,8 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         (
             "sim/combat/object_health.rs",
             "set",
-            "the Strength store of the native death paths (Crush 0x007416A0, \
-             KillPassengers 0x00707CB0, KillOccupants 0x004585C0)",
+            "the native +0x6C stores outside ReceiveDamage listed on Health::set, \
+             such as a crash's kill (0x004DEC72) and a parasite's death (0x0062A46A)",
         ),
         (
             "sim/game_entity.rs",
@@ -1851,6 +2028,16 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "sim/movement/teleport_movement.rs",
             "set_warping_in",
             "Techno+0x271, cleared by TimerCheck's expiry and state 7",
+        ),
+        (
+            "sim/movement/tunnel_movement.rs",
+            "set_state",
+            "TunnelLocomotionClass+0x18, written directly by its members in tunnel_process.rs",
+        ),
+        (
+            "sim/movement/tunnel_movement.rs",
+            "set_destination",
+            "TunnelLocomotionClass+0x1C, written directly by its members in tunnel_process.rs",
         ),
         (
             "sim/object_fall.rs",

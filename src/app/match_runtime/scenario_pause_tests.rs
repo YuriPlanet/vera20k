@@ -66,7 +66,7 @@ fn original_pause_histories_pin_overflow_rearm_nesting_and_world_branch() {
                     && sim.session().scenario_paused()
                 {
                     assert!(
-                        !decision.scroll_input,
+                        !decision.scroll_input && !decision.camera_scroll,
                         "native pause bypasses55D8AB input poll"
                     );
                 }

@@ -186,16 +186,19 @@ pub(crate) fn aircraft_extra_light(
 /// type's ExtraLight (`+0x1548`, `0x0043D824..0x0043D82D`). The gate branch
 /// (`gate_branch`, [`crate::sim::building_art::gate_open_body_frame`]) passes
 /// the cell's light alone (`0x0043D644..0x0043D654`). TerrainPalette
-/// overrides both scalar and Convert in 00705EC7..00705F52.
+/// overrides both scalar and Convert in 00705EC7..00705F52 with those of
+/// `coords_cell`, the cell of the building's GetCoords (vt+0x48,
+/// `0x00447AC0`: its foundation centre, `0x00705ED5..0x00705F1C`).
 pub(crate) fn building_palette_light(
     grid: &CellLightGrid,
     cell: (u16, u16),
+    coords_cell: (u16, u16),
     art: Option<&crate::rules::art_data::ArtEntry>,
     gate_branch: bool,
 ) -> crate::render::palette_light::PaletteLight {
     use crate::render::palette_light::PaletteLight;
     if art.is_some_and(|a| a.terrain_palette) {
-        return PaletteLight::cell(grid, cell, false);
+        return PaletteLight::cell(grid, coords_cell, false);
     }
     let top = grid.cell_light_at(cell).map_or(1000, |l| l.top_scalar);
     let extra = match art {
@@ -210,6 +213,8 @@ pub(crate) fn building_palette_light(
 /// draw to one row; an explicit cell drawer selects cell common; otherwise the
 /// global ANIM Convert selects top. AltPalette selects the first ColorScheme
 /// (one row), not the player's 53-row scheme.
+/// RESIDUAL (dormant): the IsVeins arm that precedes these (00423122..0042317E:
+/// the player's scheme at cell common) is not ported; no retail anim sets it.
 pub(crate) fn anim_palette_light(
     grid: &CellLightGrid,
     cell: (u16, u16),
@@ -675,6 +680,10 @@ fn effect_light(
 /// BerserkColor while Techno+298 is active, into the caller's colour word.
 /// Composite73C1A5 passes that word to the existing packed blitter owner.
 /// A deactivated Unit (+1C8) then halves intensity, signed toward zero.
+/// Ares replaces that halving (hook73C143 -> UnitClass_DrawVXL_Deactivated
+/// 1004CEA0) for Units: under EMP `[AudioVisual]DeactivateDimEMP`, else when
+/// deactivated DeactivateDimOperator without its operator, otherwise
+/// DeactivateDimPowered; the CRT ftol100772B0 truncates the product.
 ///
 /// The voxel builder also draws Aircraft through Techno::Draw70678D, which
 /// has no Unit colour arms. The Unit gate preserves that class boundary.
@@ -720,6 +729,33 @@ pub(crate) fn unit_voxel_effect_light(
             class | custom_tint(entity, sim, rules).0
         });
         light = light.with_colour_word(light.colour_word() | word);
+    }
+    #[cfg(feature = "ares")]
+    if category == crate::map::entities::EntityCategory::Unit {
+        use crate::rules::ares_cloak_power::DeactivateDim;
+        let kind = if entity.emp_remaining() > 0 {
+            DeactivateDim::Emp
+        } else if !entity.deactivated.is_offline() {
+            return (tint, light);
+        } else if rules.is_some_and(|rules| !sim.ares_is_operated(entity.stable_id(), rules)) {
+            DeactivateDim::Operator
+        } else {
+            DeactivateDim::Powered
+        };
+        let factor = rules.map_or_else(
+            || {
+                crate::rules::ares_cloak_power::CloakPowerGlobalRules::default()
+                    .deactivate_dim(kind)
+            },
+            |rules| rules.ares_cloak_power().deactivate_dim(kind),
+        );
+        let product = f64::from(light.brightness()) * factor;
+        let intensity = if product.is_finite() && product.abs() < 2_147_483_648.0 {
+            product.trunc() as i32
+        } else {
+            i32::MIN
+        };
+        return with_intensity(tint, light, intensity);
     }
     if entity.deactivated.is_offline() {
         with_intensity(tint, light, light.brightness() / 2)

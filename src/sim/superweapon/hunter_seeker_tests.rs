@@ -138,8 +138,8 @@ fn hunter_seeker_launch_uses_side_and_global_fallbacks_and_normal_lifecycle() {
         "Drive Acquire is a no-op"
     );
     assert_eq!(
-        hunter.hunter_seeker_origin(),
-        Some(crate::sim::hunter_seeker::HunterSeekerOrigin { owner, sw_type })
+        hunter.ares_super_weapon(),
+        Some(crate::sim::hunter_seeker::AttachedSuper { owner, sw_type })
     );
     let id = hunter.stable_id();
     let bytes = crate::sim::snapshot::GameSnapshot::save(
@@ -153,8 +153,8 @@ fn hunter_seeker_launch_uses_side_and_global_fallbacks_and_normal_lifecycle() {
         .unwrap()
         .sim;
     assert_eq!(
-        restored.entities().get(id).unwrap().hunter_seeker_origin(),
-        Some(crate::sim::hunter_seeker::HunterSeekerOrigin { owner, sw_type })
+        restored.entities().get(id).unwrap().ares_super_weapon(),
+        Some(crate::sim::hunter_seeker::AttachedSuper { owner, sw_type })
     );
 }
 
@@ -219,7 +219,7 @@ fn hunter_seeker_acquisition_filters_ignored_types_and_does_not_redraw_held_targ
         .entities
         .get_mut(hunter)
         .unwrap()
-        .set_hunter_seeker_origin(crate::sim::hunter_seeker::HunterSeekerOrigin { owner, sw_type });
+        .set_ares_super_weapon(crate::sim::hunter_seeker::AttachedSuper { owner, sw_type });
     sim.spawn_object("IGNORED", "Russians", 12, 12, 0, &rules)
         .unwrap();
     let target = sim

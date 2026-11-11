@@ -1762,6 +1762,9 @@ fn retail_dustbowl_tesla_coil_charges_before_each_shot() {
 ///   `PrismSupportDelay=45` on its rearm timer.
 #[test]
 #[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
+// The stock PrismType support; Ares builds replace it
+// (`techno_ai::ares_prism_forwarding`).
+#[cfg(not(feature = "ares"))]
 fn retail_dustbowl_prism_towers_forward_their_charge() {
     use crate::sim::world::DelayedFire;
     let (mut scenario, master, mcv, (x, y)) =
@@ -2025,4 +2028,31 @@ fn retail_dustbowl_ore_cell_spawn_admission_matches_native_gates() {
         .is_some(),
         "overlay-free Rough ground admits a building"
     );
+}
+
+/// Grand_Opening `0x00446662..0x004466CB` builds the rules `TurretAnim` in
+/// slot 9 and aims it; UpdateAnimation's tail (`0x00451234..0x0045128C`) aims
+/// it again every frame. The aim writes the `0x007F4890` frame of the heading
+/// and a zero frame step.
+#[test]
+fn turret_building_opens_slot_9_and_holds_the_frame_of_its_heading() {
+    let (mut sim, rules, id) =
+        crate::sim::building_art::slot_test_fixture_with("Turret=yes\nTurretAnim=N\n");
+    sim.grand_opening(id, false, true, &rules, None, Default::default());
+    let turret = sim.entities().get(id).unwrap().building_art.anim_slots()[9].unwrap();
+    let held = |sim: &Simulation| {
+        let runtime = sim.anim(turret).unwrap().runtime();
+        (runtime.current_frame, runtime.frame_step)
+    };
+    // North is bucket 0, east bucket 8: table entries 28 and 20.
+    assert_eq!(held(&sim), (28, 0));
+    let frame = sim.session.binary_frame();
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .body_facing
+        .snap(0x4000, frame);
+    update_animation(&mut sim, id, &rules);
+    assert_eq!(held(&sim), (20, 0));
 }

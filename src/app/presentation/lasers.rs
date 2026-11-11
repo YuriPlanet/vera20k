@@ -168,6 +168,10 @@ impl Lasers {
     pub(crate) fn clear_on_load(&mut self) {
         self.live.clear();
     }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.live.is_empty()
+    }
 }
 
 #[cfg(test)]

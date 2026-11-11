@@ -2,6 +2,10 @@
 //! `tools/spatial_oracle/building_gattling.json` replayed through
 //! Mission_Attack's arms, Mission_Guard and the Update's Gattling block one
 //! call at a time, and its engagements through the production frame.
+//!
+//! Ares builds skip the two charging replays: their stage test reads the
+//! charged value (TechnoClass_UpdateGattling_Cycle, hook 0x70DEBA).
+#![cfg_attr(feature = "ares", allow(dead_code, unused_imports))]
 
 use std::collections::BTreeMap;
 
@@ -86,6 +90,9 @@ fn retail_gattling_updates_its_loop_position_before_guard_releases_it() {
     let target = sim
         .spawn_object("MTNK", "Russians", 16, 12, 0, &rules)
         .unwrap();
+    // Seen, so Guard's release follows from the cleared target, not from the
+    // campaign discovery gate (`0x006F81BE`) hiding the tank from its scan.
+    crate::sim::arena_fixture::discover(&mut sim, target);
     assert!(sim.apply_command(
         "Americans",
         &Command::Attack {
@@ -406,6 +413,7 @@ fn assert_gattling(sim: &Simulation, id: u64, row: &Value, stage_before: i32) {
 /// count and advances `+0x148` on OK and REARM. The combat phase then fires
 /// each requested shot with the FireAt's weapon, the stage's own even when
 /// the charge after it stepped the stage (`ok_stage_up`).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn gattling_attack_matches_the_original() {
     let golden = golden();
@@ -707,6 +715,7 @@ enum Event {
 /// before each frame, since the oracle's FireAt draws nothing. The
 /// turretless fixture never answers FACING, so `facing_stretch` (whose arm
 /// the `attack` rows pin) is not replayed.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn gattling_cadence_matches_the_original() {
     let golden = golden();

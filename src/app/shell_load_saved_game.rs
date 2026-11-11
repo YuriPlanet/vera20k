@@ -92,6 +92,15 @@ impl App {
         state.platform.window.request_redraw();
     }
 
+    /// VERA's Esc menu (`app::shell_menu`): the error box keeps Esc.
+    pub(super) fn load_saved_game_leaves_escape(state: &AppState) -> bool {
+        state
+            .frontend
+            .load_saved_game
+            .as_ref()
+            .is_some_and(|browser| browser.prompt.is_none())
+    }
+
     /// Enter and Escape reach the proc as IDOK/IDCANCEL, which it ignores;
     /// they answer the error message box while it is up.
     pub(super) fn handle_load_saved_game_key(state: &mut AppState, code: KeyCode) {
@@ -139,7 +148,25 @@ impl App {
                 crate::app::frontend::shell_transition::ShellExitThen::LoadSavedGameBack,
             ),
             BrowserInputResult::Outcome(SavedSeedOutcome::Load(path)) => {
-                crate::app::persistence::commands::request_saved_game_load(state, path)
+                let loadable = state
+                    .frontend
+                    .load_saved_game
+                    .as_ref()
+                    .and_then(|browser| browser.selected_entry())
+                    .is_none_or(|row| row.loadable);
+                if loadable {
+                    crate::app::persistence::commands::request_saved_game_load(state, path)
+                } else {
+                    let affirmative = Self::csf_label(state, "TXT_OK", "OK");
+                    if let Some(browser) = state.frontend.load_saved_game.as_mut() {
+                        browser.show_prompt(SavedSeedPrompt {
+                            purpose: SavedSeedPromptPurpose::Error,
+                            body: crate::i18n::tr("VERA:SaveFromOtherVersionText"),
+                            affirmative,
+                            negative: None,
+                        });
+                    }
+                }
             }
             BrowserInputResult::Outcome(_) => {}
         }
@@ -199,19 +226,15 @@ impl App {
         mode: SavedSeedMode,
         visible_rows: usize,
     ) -> SavedSeedBrowserState<PathBuf> {
+        let other_version = crate::i18n::tr("VERA:SaveFromOtherVersion");
         let entries = state
             .persistence
             .repository
             .browser_entries()
             .into_iter()
-            .map(
-                |(entry, last_write_time)| crate::ui::skirmish_shell::SavedSeedBrowserRow {
-                    visible: entry.header.is_compatible(),
-                    file_name: Some(entry.path),
-                    description: entry.header.description.into(),
-                    last_write_time,
-                },
-            )
+            .map(|(entry, last_write_time)| {
+                saved_game_row(entry, last_write_time, mode, &other_version)
+            })
             .collect();
         // Pause Save4F1416 selects retained Scenario+13DA in GameMode0.
         // Existing rows still keep their own saved descriptions.
@@ -231,5 +254,84 @@ impl App {
             crate::map::rmg::saved_seeds::new_slot_file_time(crate::util::time::SystemTime::now()),
             visible_rows,
         )
+    }
+}
+
+/// One saved game's browser row. gamemd hides a save whose internal version
+/// differs (`0x005599DF`), and its version never changes; every VERA build
+/// that changes a saved type has a new layout id, so hiding would empty the
+/// list after an update. VERA-only: Load and Delete keep such a row, marked
+/// with `other_version` and not loadable. Save still hides it, so its marked
+/// text never becomes a new save's description.
+fn saved_game_row(
+    entry: crate::app::persistence::SaveEntry,
+    last_write_time: u64,
+    mode: SavedSeedMode,
+    other_version: &str,
+) -> crate::ui::skirmish_shell::SavedSeedBrowserRow<PathBuf> {
+    let loadable = entry.header.is_compatible();
+    let description = if loadable {
+        entry.header.description
+    } else {
+        format!("{} {other_version}", entry.header.description)
+    };
+    crate::ui::skirmish_shell::SavedSeedBrowserRow {
+        visible: loadable || mode != SavedSeedMode::Save,
+        loadable,
+        file_name: Some(entry.path),
+        description: description.into(),
+        last_write_time,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sim::snapshot::GameSnapshot;
+    use crate::ui::skirmish_shell::SavedSeedBrowserState;
+
+    #[test]
+    fn a_save_from_another_build_stays_listed_for_load_and_delete_but_not_loadable() {
+        let bytes = GameSnapshot::save_validated(
+            &crate::sim::world::Simulation::new(),
+            0,
+            0,
+            "Old campaign",
+            0,
+        );
+        let mut header = GameSnapshot::read_header(&bytes).unwrap();
+        header.layout = 0;
+        let path = PathBuf::from("old.bin");
+        let open = |mode| {
+            let entry = crate::app::persistence::SaveEntry {
+                path: path.clone(),
+                header: header.clone(),
+            };
+            SavedSeedBrowserState::open_rows(
+                mode,
+                vec![saved_game_row(entry, 5, mode, "(other version)")],
+                "Current".into(),
+                "[EMPTY SLOT]".into(),
+                9,
+                4,
+            )
+        };
+        for mode in [SavedSeedMode::Load, SavedSeedMode::Delete] {
+            let browser = open(mode);
+            let row = browser.selected_entry().expect("the old save is listed");
+            assert_eq!(row.file_name.as_ref(), Some(&path));
+            assert!(!row.loadable);
+            assert_eq!(
+                row.description.display_text(),
+                "Old campaign (other version)"
+            );
+        }
+        assert!(
+            open(SavedSeedMode::Save)
+                .entries
+                .iter()
+                .all(|row| row.file_name.is_none()),
+            "Save offers only the new slot"
+        );
     }
 }

@@ -25,7 +25,6 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
-use crate::app::presentation::interpolation::{PointKind, PointPose, PointSample};
 use glam::IVec3;
 
 use super::helpers::projection_admitted;
@@ -137,27 +136,28 @@ struct DebrisView<'a> {
     axis: DepthAxis,
 }
 
-pub(crate) fn build_voxel_anim_instances(
-    state: &AppState,
-    objects: &mut Vec<PlannedObjectInstance>,
-    order: &NativeDisplayOrder,
-) {
+/// One Display member's piece, if `id` names one that draws. The caller
+/// visits the members in Display order.
+pub(crate) fn voxel_anim_visitor<'a>(
+    state: &'a AppState,
+    order: &'a NativeDisplayOrder,
+) -> Option<impl FnMut(&mut Vec<PlannedObjectInstance>, u64) + 'a> {
     let (Some(rt), Some(assets)) = (
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.presentation(),
         state.process_assets.manager(),
     ) else {
-        return;
+        return None;
     };
     let sim = &rt.simulation;
-    let Some(terrain) = sim.resolved_terrain() else {
-        return;
-    };
+    let terrain = sim.resolved_terrain()?;
     if sim.voxel_anims().is_empty() {
-        return;
+        return None;
     }
     let rules = &rt.resources.rules;
     let input = &state.match_state.input;
-    let (_, _, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+    // Draw admission measures from the camera, the frame's corner, so it
+    // takes the centring size: the battlefield and its offset on both sides.
+    let (width, height) = crate::app::input::camera::tactical_centring_size(state);
     let view = DebrisView {
         terrain,
         camera: [input.camera_x, input.camera_y],
@@ -168,8 +168,10 @@ pub(crate) fn build_voxel_anim_instances(
         axis: super::helpers::depth_axis(state),
     };
     let presentation = &state.match_state.match_presentation;
-    let mut cache = state.renderer.vxl_pose_frame_cache.borrow_mut();
-    for (&id, piece) in sim.voxel_anims().iter() {
+    Some(move |objects: &mut Vec<PlannedObjectInstance>, id: u64| {
+        let Some(piece) = sim.voxel_anims().get(id) else {
+            return;
+        };
         let kind = rules.voxel_anim_type(piece.type_id());
         let palette = piece_palette(
             piece,
@@ -178,56 +180,49 @@ pub(crate) fn build_voxel_anim_instances(
             &presentation.house_color_map,
             presentation.lighting.grid(),
         );
-        let painted = presentation.interpolation.sample_point(
-            PointKind::Debris,
-            id,
-            PointPose::debris(piece),
-            sim.session().binary_frame(),
-        );
-        if let Some(object) = voxel_anim_draw_instance_sampled(
+        if let Some(object) = voxel_anim_draw_instance(
             id,
             piece,
-            painted,
             kind,
             palette,
             &view,
             order,
-            |image, section, matrix| cache.render_tumble(assets, image, section, matrix),
+            // VoxelAnimClass draws uncached in the style 0xB43180 holds: its
+            // shadow renders, then its body (`0x00749CBE`, `0x00749DA8`).
+            |image, section, matrix| {
+                let mut images = presentation.voxel_images.borrow_mut();
+                let mut cache = state.renderer.vxl_pose_frame_cache.borrow_mut();
+                let depth_tested = images.part_style(false);
+                let (body, shadow) =
+                    cache.render_tumble(assets, image, section, matrix, depth_tested, None)?;
+                if let Some(shadow) = shadow {
+                    images.render_shadow(None, false, 0, shadow.native_size());
+                }
+                if !images.render_part(false, body.native_size()).stale {
+                    return Some((body, shadow));
+                }
+                let (body, _) = cache.render_tumble(
+                    assets,
+                    image,
+                    section,
+                    matrix,
+                    true,
+                    Some(images.depth_map()),
+                )?;
+                Some((body, shadow))
+            },
         ) {
             objects.push(object);
         }
-    }
+    })
 }
 
 /// One piece's draw. Display membership is admission: storage alone never
 /// draws a piece. `render` rasterizes the model `image` names at the drawing
 /// matrix and places its body and shadow on the pose page.
-#[cfg(test)]
 fn voxel_anim_draw_instance(
     id: u64,
     piece: &VoxelAnimObject,
-    kind: &VoxelAnimType,
-    (remap_row, source_palette, palette_light): (u32, u32, PaletteLight),
-    view: &DebrisView<'_>,
-    order: &NativeDisplayOrder,
-    render: impl FnOnce(&str, i32, glam::Mat4) -> Option<(UnitSpriteEntry, Option<UnitSpriteEntry>)>,
-) -> Option<PlannedObjectInstance> {
-    voxel_anim_draw_instance_sampled(
-        id,
-        piece,
-        PointPose::debris(piece).current(),
-        kind,
-        (remap_row, source_palette, palette_light),
-        view,
-        order,
-        render,
-    )
-}
-
-fn voxel_anim_draw_instance_sampled(
-    id: u64,
-    _piece: &VoxelAnimObject,
-    painted: PointSample,
     kind: &VoxelAnimType,
     (remap_row, source_palette, palette_light): (u32, u32, PaletteLight),
     view: &DebrisView<'_>,
@@ -239,22 +234,19 @@ fn voxel_anim_draw_instance_sampled(
         // Module residual: the model is another type's, not `image`'s.
         return None;
     }
-    let location = painted.ivec3();
+    let location = piece.world_coord();
     let (ground_z, bridge) = super::foot_depth::floor_probe(view.terrain, location.x, location.y);
-    let mut geometry = geometry(location, ground_z, bridge);
-    let raw = geometry.body.point;
-    geometry.body.point = painted.screen;
-    geometry.body.z_adjust = (-2. - painted.lift).round() as i32;
-    geometry.shadow.point[0] += painted.screen[0] - raw[0];
-    geometry.shadow.point[1] +=
-        painted.screen[1] - raw[1] + painted.lift - adjust_for_z_standard(location.z) as f32;
+    let geometry = geometry(location, ground_z, bridge);
     // Object6D2140's padded projection admission precedes DrawIt.
     if !projection_admitted(geometry.body.point, view.camera, view.viewport) {
         return None;
     }
-    let (body, shadow) = render(&kind.image, kind.voxel_index, painted.rotation?)?;
+    let matrix = piece.bounce().drawing_matrix().ok().map(|matrix| {
+        crate::render::vxl_raster::hva_to_mat4(&matrix.map(|v| f32::from_bits(v.bits())), 1.)
+    })?;
+    let (body, shadow) = render(&kind.image, kind.voxel_index, matrix)?;
     let depth = crate::render::native_z::depth_for_row(
-        geometry.body.point[1] + painted.lift,
+        geometry.body.point[1] + adjust_for_z_standard(location.z) as f32,
         view.axis.origin_y,
         view.axis.world_height,
     );

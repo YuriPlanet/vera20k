@@ -324,7 +324,7 @@ fn a_dying_vehicle_plays_its_explosion_then_its_destroy_anim() {
         };
         let mut replay = sim.scenario_rng.clone();
         let mut recorded = Vec::new();
-        sim.unit_death_explosion(&rules, unit, &mut recorded);
+        sim.unit_death_explosion(&rules, unit, &mut recorded, None, FrameEffects::empty());
         let explosion = pick(&mut replay, &["EXPA", "EXPB", "EXPC"]);
         let destroy = pick(&mut replay, &["DESTA"]);
         assert_eq!(
@@ -365,7 +365,7 @@ fn an_exploding_vehicle_with_ammo_dies_with_its_last_explosion() {
             }
             let mut replay = sim.scenario_rng.clone();
             let mut recorded = Vec::new();
-            sim.unit_death_explosion(&rules, unit, &mut recorded);
+            sim.unit_death_explosion(&rules, unit, &mut recorded, None, FrameEffects::empty());
             let picked = pick(&mut replay, &["EXPA", "EXPB", "EXPC"]);
             let expected = if last { "EXPC".to_string() } else { picked };
             let played: Vec<_> = anims(&sim).into_iter().map(|anim| anim.0).collect();
@@ -434,13 +434,14 @@ fn water_cell_sim(rules: &RuleSet, water: bool) -> Simulation {
     use crate::rules::terrain_rules::SpeedCostProfile;
 
     let open = SpeedCostProfile {
-        foot: Some(100),
-        track: Some(100),
-        wheel: Some(100),
-        float: Some(100),
-        amphibious: Some(100),
-        float_beach: Some(100),
-        hover: Some(100),
+        foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        float: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        amphibious: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        float_beach: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        hover: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
     };
     let mut sim = sim(9);
     let cells = (0..20_u16)
@@ -947,13 +948,14 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
     let repeat = &controls["repeat_fatal"];
     let rules = rules();
     let open = SpeedCostProfile {
-        foot: Some(100),
-        track: Some(100),
-        wheel: Some(100),
-        float: Some(100),
-        amphibious: Some(100),
-        float_beach: Some(100),
-        hover: Some(100),
+        foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        float: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        amphibious: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        float_beach: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        hover: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
     };
     for (kind, water, sinks) in [
         ("SHIP", true, true),

@@ -205,6 +205,22 @@ impl Simulation {
         Some(record)
     }
 
+    /// `FootClass::ClickedAction_Object`'s Detonate (0x37) arm
+    /// (`0x004D75F4..0x004D766F`): the DETONATE event on `carrier`, whose
+    /// house byte is its bomb's house (`bomb+0x28`, its ArrayIndex). `None`
+    /// without a bomb.
+    pub fn encode_detonate_record(&self, carrier: u64) -> Option<CommandRecord> {
+        let house = self.substrate.entities.get(carrier)?.bomb.as_ref()?.house();
+        let typed = crate::sim::command::DetonateRecord {
+            house_id: self.command_sender(house)?,
+            frame: self.session.binary_frame() as i32,
+            entity_id: i32::try_from(carrier).ok()?,
+        };
+        let mut record = CommandRecord::decode_exact(&[0; COMMAND_RECORD_LEN]).ok()?;
+        typed.write_into(&mut record);
+        Some(record)
+    }
+
     /// StopCommand730EE7 -> ClickedEvent6FFE34 -> EventCtor4C65E0 emits
     /// IDLE6 with the current issuer and the actor's five-byte object token.
     /// Keep the token even if its actor disappears before dispatch: native
@@ -589,6 +605,14 @@ impl Simulation {
     /// that owner. This is an input producer, never an event-execution gate.
     pub fn area_guard_key_command(&self, id: u64, rules: &RuleSet) -> Option<Command> {
         let actor = self.substrate.entities.get(id)?;
+        // Ares 3.0 GuardCommandClass_Execute (1005CAF0, hook 0x730DB0): only
+        // the player's own controllable actor, the miner arm included.
+        #[cfg(feature = "ares")]
+        if Some(actor.owner()) != self.session.current_house()
+            || !self.techno_player_controllable(id, rules)
+        {
+            return None;
+        }
         if actor.category() == EntityCategory::Structure {
             return None;
         }
@@ -599,9 +623,12 @@ impl Simulation {
         if !ordinary && !miner {
             return None;
         }
+        // An actor with no navigation cell (a mod type built without a
+        // locomotor) takes no Guard order, as its Move order is refused.
         let (x, y) = self
             .object_navigation_cell(id, rules)
-            .unwrap_or_else(|cause| panic!("Area Guard input cell: {cause}"));
+            .map_err(|cause| log::warn!("Area Guard input refused for {id}: {cause}"))
+            .ok()?;
         Some(Command::Guard {
             entity_id: id,
             target: Some(combat::TargetKind::Cell(x as u16, y as u16)),
@@ -786,6 +813,27 @@ impl Simulation {
             y,
         }
         .encode()
+        .ok()
+    }
+
+    /// Ares 3.0 RaiseTrenchRedirectClick (`1006A170`, from the Enter click
+    /// of `10016F60`, hook `0x443414`): the TrenchRedirectClick event (0x60)
+    /// naming the clicked building's `cell` and the selected trench
+    /// `source_id`, stamped with the source building's House.
+    #[cfg(feature = "ares")]
+    pub fn encode_ares_trench_redirect_record(
+        &self,
+        source_id: u64,
+        (x, y): (u16, u16),
+    ) -> Option<CommandRecord> {
+        let owner = self.substrate.entities.get(source_id)?.owner();
+        let house_id = self.command_sender(owner)?;
+        crate::sim::command::AresTrenchRedirectRecord::encode_cell(
+            house_id,
+            self.session.binary_frame() as i32,
+            (i16::try_from(x).ok()?, i16::try_from(y).ok()?),
+            i32::try_from(source_id).ok()?,
+        )
         .ok()
     }
 
@@ -1002,6 +1050,34 @@ impl Simulation {
                     execute_tick,
                     Command::CycleProducerFocus {
                         category: event.category,
+                    },
+                )
+            });
+        }
+        // Ares 3.0 TrenchRedirectClick (0x60) stays raw until its handler.
+        #[cfg(feature = "ares")]
+        if crate::sim::command::AresTrenchRedirectRecord::decode(record).is_some() {
+            let owner = self.command_sender_owner(record.house_id())?;
+            return self.houses.contains_key(&owner).then(|| {
+                CommandEnvelope::new(
+                    owner,
+                    execute_tick,
+                    Command::SynchronizedRecord {
+                        record: record.clone(),
+                    },
+                )
+            });
+        }
+        // DETONATE stays raw until its handler, which resolves the carrier
+        // late, as Execute does.
+        if crate::sim::command::DetonateRecord::decode(record).is_some() {
+            let owner = self.command_sender_owner(record.house_id())?;
+            return self.houses.contains_key(&owner).then(|| {
+                CommandEnvelope::new(
+                    owner,
+                    execute_tick,
+                    Command::SynchronizedRecord {
+                        record: record.clone(),
                     },
                 )
             });
@@ -1272,7 +1348,7 @@ impl Simulation {
     /// path view and the retained base movement-class topology. Zone ID
     /// assignment remains owned by the ordered native repair callback.
     fn refresh_wall_sale_recalc_prefix(
-        world_zone_grid: &mut Option<ZoneGrid>,
+        world_zone_grid: &mut Option<crate::util::shared::Shared<ZoneGrid>>,
         resolved_terrain: &Option<ResolvedTerrainGrid>,
         overlay_grid: &Option<OverlayGrid>,
         tail_grid: &mut Option<PathGrid>,
@@ -1295,7 +1371,7 @@ impl Simulation {
             }
         }
 
-        if let Some(zone_grid) = world_zone_grid.as_mut() {
+        if let Some(zone_grid) = world_zone_grid.as_deref_mut() {
             let _ = zone_grid.refresh_base_cell_attributes_at(terrain, rx, ry);
         }
     }
@@ -1315,7 +1391,7 @@ impl Simulation {
         };
         #[cfg(not(any(test, feature = "test-support")))]
         let _ = sold_cell;
-        let Some(_zone_grid) = self.zone_grid.as_mut() else {
+        let Some(_zone_grid) = self.zone_grid.as_deref_mut() else {
             return;
         };
         #[cfg(any(test, feature = "test-support"))]
@@ -1687,6 +1763,13 @@ impl Simulation {
             // EventClass::Execute @ 0x004C6CB0, SELL arm 0x004C6F20:
             // PlanningDetach precedes the target's alive/owner refusal.
             | Command::SellBuilding { entity_id } => Some(*entity_id),
+            // The VERA-only bunker-eject record is Event9 DEPLOY on the
+            // bunker's occupant: 0x004C76CA detaches that Unit's planning.
+            Command::EjectBunker { bunker_id } => self
+                .substrate
+                .entities
+                .get(*bunker_id)
+                .and_then(|bunker| bunker.bunker.occupant()),
             _ => cmd.megamission_actor(),
         };
         if !planned && let Some(actor) = ordinary_actor {
@@ -1767,6 +1850,26 @@ impl Simulation {
                     };
                     return self.execute_archive_event(entity_id, target);
                 }
+                if let Some(event) = crate::sim::command::DetonateRecord::decode(record) {
+                    let Ok(carrier) = u64::try_from(event.entity_id) else {
+                        return false;
+                    };
+                    return self.execute_detonate_event(
+                        carrier,
+                        rules,
+                        overlay_registry,
+                        frame_effects,
+                    );
+                }
+                #[cfg(feature = "ares")]
+                if let Some(event) = crate::sim::command::AresTrenchRedirectRecord::decode(record) {
+                    return self.ares_respond_to_trench_redirect(
+                        &event,
+                        rules,
+                        overlay_registry,
+                        frame_effects,
+                    );
+                }
                 self.apply_production_record(record, rules, overlay_registry, frame_effects)
             }
             Command::AssignControlGroup { group, entity_ids } => {
@@ -1845,7 +1948,17 @@ impl Simulation {
                 // compares the sender's House with the actor's owner; sender
                 // eligibility belongs to Execute_DoList's House scan.
                 // Source: original gamemd.exe instructions.
-                if !self.order_actor_admits(*entity_id) {
+                // `0x004C74DE..0x004C74FE`: IDLE admits an actor that exists,
+                // is alive (`+0x90`) and is out of limbo (`+0x81`). Unlike the
+                // MEGAMISSION gate (`order_actor_admits`) it reads no
+                // strength, so an object at 0 strength still stops. VERA's
+                // dying mark stands for the UnInit that clears `+0x90`.
+                if !self
+                    .substrate
+                    .entities
+                    .get(*entity_id)
+                    .is_some_and(|e| e.is_active() && !e.lifecycle.in_limbo())
+                {
                     return false;
                 }
                 // The IDLE arm returns at `0x004C7504..0x004C750C` when the
@@ -1865,14 +1978,25 @@ impl Simulation {
                 {
                     return true;
                 }
+                // `0x004C752A..0x004C7577`: off a bridge, an actor on a flat
+                // cell whose screen projection lands in another cell (low
+                // ground drawn behind a cliff) ends the event here, before any
+                // write, as DEPLOY's arm does. A harvesting miner there keeps
+                // its mission and NavCom.
+                if crate::sim::movement::ground_pose::event_hidden_flat_cell(self, *entity_id) {
+                    return true;
+                }
                 // Event6 IDLE4C74CB..4C76BB retains the committed/queued
                 // mission and its dispatch timer. Only the ore-miner exception
                 // below writes Guard. Ordinary Move/Attack handlers see the
                 // cleared NavCom/TarCom on their next dispatch and own the idle
                 // transition, including Temporal LetGo at that later boundary.
                 // `0x004C757D..0x004C759C`: a Foot's navigation list is
-                // emptied (twice: inline, then `0x004DA1C0`); the planning-path
-                // writes that follow have no VERA state.
+                // emptied (twice: inline, then `0x004DA1C0`). The writes that
+                // follow (`0x004C75BD..0x004C75D4`: `+0x520` = -1, `+0x524`,
+                // `+0x528`, `+0x686`) reset the legacy waypoint path, whose
+                // index YR never sets (`aircraft::move_mission`); VERA keeps no
+                // state for it.
                 if let Some(entity) = self.substrate.entities.get_mut(*entity_id)
                     && entity.category() != crate::map::entities::EntityCategory::Structure
                 {
@@ -1937,27 +2061,11 @@ impl Simulation {
                     overlay_registry,
                     frame_effects,
                 );
-                // **VERA-internal: retail Stop leaves the installed locomotor
-                // alone.** This existing unwind policy uses the same END gate
-                // as FootAI4DAEC3 / SetDestination742587 (an active Drive's
-                // IsOKToEnd4AF970), after navigation is cleared. A live Drive
-                // head still refuses it.
-                // Keep that timing while centralizing the actual instance
-                // transfer/retirement in locomotor_owner.
-                // Trigger: Stop on a piggybacked Chrono Miner, a few times per
-                // ordinary Allied match; a premature unwind can change the next
-                // command's locomotor. Native Stop parity remains open. The
-                // production command's admitted/refused lifetime is covered by
-                // locomotor_owner_tests::stop_command_retires_only_the_drive_admitted_by_its_existing_gate.
-                let may_end = self.substrate.entities.get(*entity_id).is_some_and(|e| {
-                    e.locomotor
-                        .as_ref()
-                        .is_some_and(|loco| loco.is_overridden())
-                        && crate::sim::movement::locomotor_owner::piggyback_end_admitted(e)
-                });
-                if may_end {
-                    self.end_admitted_piggyback(*entity_id, rules);
-                }
+                // The IDLE arm leaves the installed locomotor alone: a stopped
+                // Chrono Miner's harvest Drive ends at the next frame's
+                // FootClass::AI tail (`0x004DAE5F..0x004DAEC3`, `object_turn`),
+                // when Is_Ok_To_End (`0x004AF970`) allows, so an order after
+                // the Stop in the same frame still finds the Drive.
                 // Ore-miner arm, last — retail runs it after the radio break,
                 // the navigation clear, the target clear and the path-cursor
                 // reset. A vehicle carrying the miner type flag whose committed
@@ -1976,10 +2084,19 @@ impl Simulation {
                     overlay_registry,
                     frame_effects,
                 );
-                self.commit_stop_miner_guard(*entity_id, rules);
-                // `0x004C769C..0x004C76AC`: Stop takes a Slave Miner off its
-                // hunt (`sim::slave_manager`).
-                self.reset_slave_manager(*entity_id, rules, frame_effects);
+                // `0x004C7655..0x004C765F`: only a Unit (vt+0x2C is 1) goes on
+                // to the miner arm and `0x004C769C..0x004C76AC`, which takes a
+                // Slave Miner off its hunt (`sim::slave_manager`). A selected
+                // Slave refinery's slaves keep working.
+                if self
+                    .substrate
+                    .entities
+                    .get(*entity_id)
+                    .is_some_and(|e| e.category() == crate::map::entities::EntityCategory::Unit)
+                {
+                    self.commit_stop_miner_guard(*entity_id, rules);
+                    self.reset_slave_manager(*entity_id, rules, frame_effects);
+                }
                 true
             }
             // A Cell target is the Ctrl click on the ground.
@@ -2196,8 +2313,8 @@ impl Simulation {
             // and current Owner+30 must match the signed event House
             // (4C6F2D..4C6F48). A building takes SellBack(-1) at4C6FA2;
             // CanSell belongs to input admission, not this receiver.
-            // Depot Unit/Aircraft sales at4C6F5A..4C6F96 remain a separate
-            // unimplemented service lifecycle; this order handles buildings.
+            // Depot Unit/Aircraft sales at4C6F5A..4C6F96 run only with Ares
+            // (below); default builds handle buildings alone.
             Command::SellBuilding { entity_id } => {
                 let Some(entity) = self.substrate.entities.get(*entity_id) else {
                     return false;
@@ -2206,6 +2323,40 @@ impl Simulation {
                     || !self.entity_owned_by_id(command_owner, *entity_id)
                 {
                     return false;
+                }
+                // 4C6F5A..4C6F96: a Unit or Aircraft with a Building in the
+                // cell of its coordinate takes On_Sold(-1). Ares makes the
+                // player's SellUnit click send it (hook 0x6929FC); default
+                // builds keep the building-only receiver.
+                #[cfg(feature = "ares")]
+                if matches!(
+                    entity.category(),
+                    crate::map::entities::EntityCategory::Unit
+                        | crate::map::entities::EntityCategory::Aircraft
+                ) {
+                    let at = crate::sim::movement::ground_pose::object_get_coords(
+                        entity,
+                        self.resolved_terrain.as_ref(),
+                    );
+                    let on_building = u16::try_from(at.x.div_euclid(256))
+                        .ok()
+                        .zip(u16::try_from(at.y.div_euclid(256)).ok())
+                        .and_then(|(rx, ry)| {
+                            self.substrate.occupancy.first_building_on_layer(
+                                rx,
+                                ry,
+                                crate::sim::movement::locomotor::MovementLayer::Ground,
+                            )
+                        })
+                        .is_some();
+                    return on_building
+                        && production::foot_on_sold(
+                            self,
+                            rules,
+                            *entity_id,
+                            crate::sim::world::UninitContext::new(rules, overlay_registry)
+                                .with_effects(frame_effects),
+                        );
                 }
                 production::sell_back(
                     self,
@@ -2461,6 +2612,11 @@ impl Simulation {
                     .filter(|t| t.category() == crate::map::entities::EntityCategory::Structure)
                     .and_then(|t| self.interner.object_type(t.type_ref(), rules))
                     .is_some_and(|object| object.gap_generator);
+                // Ares 3.0 100173A0 (hook 0x44731C): a tunnel entrance
+                // unloads its owner's network (`sim::ares_tunnel`).
+                #[cfg(feature = "ares")]
+                let has_passengers =
+                    has_passengers || self.ares_tunnel_offers_unload(*transport_id, rules);
                 if !has_passengers && !gap_generator {
                     return false;
                 }
@@ -2475,19 +2631,11 @@ impl Simulation {
                         // (`BuildingClass::Mission_Unload @ 0x0044D880`),
                         // commenced at the building's ready checks.
                         //
-                        // RESIDUAL: this payload stands for two native events.
-                        // The self-click sends a MEGAMISSION Unload whose
-                        // target token is the building itself
-                        // (`BuildingClass::ClickedAction_Object @ 0x00443410`
-                        // -> ClickedMission `0x006FFBE0`); the deploy key
-                        // sends DEPLOY (`0x00730AF0`, vt+0x374(9)). Here the
-                        // order queues Unload through the MEGAMISSION prefix
-                        // alone, without the event's target and destination
-                        // setters. Trigger: every garrison unload. Effect:
-                        // the building's target is not run through
-                        // BuildingClass::SetTarget with the event's token.
-                        // Risk: low; Mission_Unload empties it either way.
-                        // The self-click's flash of its own token is kept.
+                        // Ordinary self-click is encoded as MEGAMISSION with
+                        // its own target and NULL destination before dispatch.
+                        // This direct DTO adapter remains for internal/test
+                        // callers. D uses the separate Event9 receiver, whose
+                        // class setters clear both target and destination.
                         if !self.order_actor_admits(*transport_id) {
                             return false;
                         }
@@ -2515,13 +2663,18 @@ impl Simulation {
                     | Some(crate::map::entities::EntityCategory::Aircraft) => {
                         // Vehicle/aircraft transports unload through the Unload
                         // mission (`UnitClass::Mission_Unload @ 0x0073D630`
-                        // transport branch; Aircraft slot `0x004151E0`).
-                        let is_transport = self
-                            .substrate
-                            .entities
-                            .get(*transport_id)
-                            .and_then(|t| self.object_type(t.type_ref(), rules))
-                            .is_some_and(|obj| obj.passengers > 0);
+                        // transport branch; Aircraft slot `0x004151E0`). An
+                        // aircraft needs only a loaded hold (+0x114, its
+                        // What_Action `0x00417DCD..0x00417DDA`), a Carryall's
+                        // cargo included.
+                        let is_transport = category
+                            == Some(crate::map::entities::EntityCategory::Aircraft)
+                            || self
+                                .substrate
+                                .entities
+                                .get(*transport_id)
+                                .and_then(|t| self.object_type(t.type_ref(), rules))
+                                .is_some_and(|obj| obj.passengers > 0);
                         if !is_transport {
                             return false;
                         }
@@ -2762,25 +2915,27 @@ impl Simulation {
                     Some(*selection),
                 )
             }
+            // VERA-only opcode 0x31: keep the record decodable for old
+            // recordings, but never release the tank here. Native
+            // `BuildingClass::EmptyBunker @ 0x004595C0` has one caller, the
+            // linked Unit's `Mission_Unload @ 0x0073D66D`, whose DEPLOY
+            // receiver (`Event9` `0x004C76BC..0x004C7812`) owns the radio
+            // Break, null destination/target, Unload queue and the actor's
+            // alive/limbo admission. The release then happens in that Unit's
+            // Logic update, not during command execution (#3675).
             Command::EjectBunker { bunker_id } => {
                 if !self.entity_owned_by_id(command_owner, *bunker_id) {
                     return false;
                 }
-                let has_occupant = self
+                let Some(unit_id) = self
                     .substrate
                     .entities
                     .get(*bunker_id)
-                    .is_some_and(|b| b.bunker.occupant().is_some());
-                if !has_occupant {
+                    .and_then(|b| b.bunker.occupant())
+                else {
                     return false;
-                }
-                crate::sim::docking::bunker_link::release_normal(
-                    self,
-                    *bunker_id,
-                    rules,
-                    frame_effects,
-                );
-                true
+                };
+                crate::sim::deploy::issue_order(self, unit_id, rules, frame_effects)
             }
         }
     }
@@ -2834,6 +2989,15 @@ impl Simulation {
         }
         let target = self.resolve_event_token(target);
         if let Some(object) = self.substrate.entities.get_mut(entity_id) {
+            // Ares 3.0 Networking_RespondToEvent_Selling (1005CE40, hook
+            // 0x4C6DDB): an object on Selling (0x13) that has no archive
+            // yet keeps none.
+            #[cfg(feature = "ares")]
+            if object.mission.current().known() == Some(crate::sim::mission::MissionType::Selling)
+                && object.archive_target().is_none()
+            {
+                return true;
+            }
             object.set_archive_target(target);
         }
         true
@@ -3179,9 +3343,21 @@ impl Simulation {
             | Command::SetBuildingOnLine { entity_id, .. }
             | Command::ArchiveObject { entity_id, .. } => foreign(*entity_id),
             Command::SetRally { producer_ids, .. } => producer_ids.iter().any(|&id| foreign(id)),
-            Command::SynchronizedRecord { record } => ArchiveRecord::decode(record)
-                .and_then(|event| u64::try_from(event.entity_id).ok())
-                .is_some_and(foreign),
+            Command::SynchronizedRecord { record } => {
+                let actor = ArchiveRecord::decode(record)
+                    .and_then(|event| u64::try_from(event.entity_id).ok());
+                // The Ares trench event's source building
+                // (`1006A540` trusts it as the other receivers do).
+                #[cfg(feature = "ares")]
+                let actor = actor.or_else(|| {
+                    let event = crate::sim::command::AresTrenchRedirectRecord::decode(record)?;
+                    match event.source {
+                        MegaMissionTarget::Object { id } => u64::try_from(id).ok(),
+                        _ => None,
+                    }
+                });
+                actor.is_some_and(foreign)
+            }
             Command::PlanningRecord { record } => {
                 super::planning::planning_record_actor(record).is_some_and(foreign)
             }
@@ -3213,23 +3389,23 @@ impl Simulation {
     ///
     /// Residuals on this gate, recorded not fixed:
     ///
-    /// * **EjectBunker is ungated.** `Simulation::command_uses_megamission`
-    ///   enumerates which VERA commands are MEGAMISSION-shaped — it is what
-    ///   splits due commands into the non-MEGAMISSION pass and the staged
-    ///   batch, mirroring opcode 0x04 in `net::lockstep`. Checked against it,
-    ///   `EjectBunker` carries only the ownership test. Trigger: issuing it to
-    ///   a dying or limboed bunker. Player effect: the order runs where retail
-    ///   abandons it. Frequency: low per order.
+    /// * Event9 DEPLOY orders (`deploy::issue_order`,
+    ///   `0x004C76BC..0x004C7812`) carry their own alive/limbo/tether gate
+    ///   rather than this one. `Command::EjectBunker` shares that route
+    ///   (#3675): the bunker-eject residual about an ungated command-time
+    ///   release is gone with it.
     /// * Aircraft reservation teardown remains a legacy command policy.
     /// * **The manager abandon** at 0x004C73E1-0x004C73EA calls 0x006B0C80 on
     ///   `[actor+0x2D8]`, the SlaveManagerClass (not a spawn manager), whenever
     ///   the queued mission is not Attack; it is not Foot-gated. The funnel
-    ///   below and Stop's own copy
-    ///   (0x004C769C-0x004C76AC) run it (`Simulation::reset_slave_manager`);
-    ///   the other orders outside the funnel do not yet.
+    ///   below runs it for any actor and Stop's own copy
+    ///   (0x004C769C-0x004C76AC) for a Unit only (0x004C7655-0x004C765F), both
+    ///   through `Simulation::reset_slave_manager`; the other orders outside
+    ///   the funnel do not yet.
     /// * **`TeamClass__Remove_Member`** runs in the MEGAMISSION funnel
-    ///   and in its shared prefix; EjectBunker and the dormant aircraft Unload
-    ///   arm bypass that prefix and keep a team member in its team.
+    ///   and in its shared prefix; the Event9 DEPLOY route and the dormant
+    ///   aircraft Unload arm bypass that prefix and keep a team member in
+    ///   its team.
     pub(crate) fn order_actor_admits(&self, stable_id: u64) -> bool {
         self.substrate.entities.get(stable_id).is_some_and(|e| {
             e.lifecycle.object_alive() && e.health.current() > 0 && !e.lifecycle.in_limbo()
@@ -3388,9 +3564,9 @@ impl Simulation {
     /// transport's Unload and Enter, Capture and Sabotage onto their object
     /// and Harvest run here. A tank bunker's Enter uses the same destination
     /// and radio owners.
-    /// A garrison's ordinary Unload (one command
-    /// for the self-click and the deploy key's DEPLOY event) and the dormant
-    /// aircraft Unload retain their adapters. In native order:
+    /// A garrison's self-click Unload uses this event's self-target codec;
+    /// its D key uses the separate DEPLOY event. Direct semantic Unload and
+    /// dormant aircraft Unload retain their adapters. In native order:
     ///
     /// 1. The actor gate (`0x004C71F6..0x004C721F`,
     ///    [`Self::order_actor_admits`]), then each object token's (target
@@ -3488,19 +3664,29 @@ impl Simulation {
             .get(entity_id)
             .is_some_and(|actor| actor.category() != EntityCategory::Structure);
         if mission == MissionType::AreaGuard && foot {
-            self.assign_target_represented(entity_id, None, rules, overlay_registry, frame_effects)
-                .unwrap_or_else(|cause| panic!("Area Guard order target: {cause}"));
+            // A refused setter is logged, as the ordinary arm below does
+            // (a mod type built without a locomotor has no coordinate).
+            if let Err(cause) = self.assign_target_represented(
+                entity_id,
+                None,
+                rules,
+                overlay_registry,
+                frame_effects,
+            ) {
+                log::warn!("Area Guard order target for {entity_id} refused: {cause}");
+            }
             // The target token, converted at `0x004C7418` for the
             // destination and again at `0x004C7428` for the archive.
             let post = self.resolve_event_token(target);
-            self.assign_destination_represented(
+            if let Err(cause) = self.assign_destination_represented(
                 entity_id,
                 post.map(Into::into),
                 rules,
                 overlay_registry,
                 frame_effects,
-            )
-            .unwrap_or_else(|cause| panic!("Area Guard order destination: {cause}"));
+            ) {
+                log::warn!("Area Guard order destination for {entity_id} refused: {cause}");
+            }
             // The archive write follows the virtual destination call even
             // when that class setter refuses its request.
             let archive = self.resolve_event_token(target);
@@ -3642,6 +3828,98 @@ mod tests {
         // reads that byte, so the fixture must model a revealed object.
         entity.lifecycle.set_in_limbo_for_test(false);
         sim.substrate.entities.insert(entity);
+    }
+
+    /// Event IDLE's terrain exit (`0x004C752A..0x004C7577`): a harvesting
+    /// miner on a flat cell drawn under a higher one ignores Stop and keeps
+    /// Harvest. With that cell flat too, Stop puts it on Guard.
+    #[test]
+    fn stop_leaves_a_miner_on_a_hidden_flat_cell_harvesting() {
+        use crate::sim::mission::MissionType;
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=HARV\n[HARV]\nStrength=600\nSpeed=4\nHarvester=yes\n\
+             MovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+        ))
+        .expect("HARV rules");
+        let harvest = MissionId::from_known(MissionType::Harvest);
+        for hidden in [true, false] {
+            let mut sim = Simulation::new();
+            // The projection probe from (20, 20) meets (21, 21) four levels
+            // up, which covers (20, 20) on screen.
+            sim.resolved_terrain =
+                Some(crate::map::resolved_terrain::test_grid(32, 32, |rx, ry| {
+                    let mut cell = crate::map::resolved_terrain::test_flat_cell(rx, ry);
+                    if hidden && (rx, ry) == (21, 21) {
+                        cell.level = 4;
+                    }
+                    cell
+                }));
+            spawn_rule_backed_unit(&mut sim, 42, "HARV", &rules);
+            sim.substrate.entities.get_mut(42).unwrap().miner =
+                Some(crate::sim::miner::Miner::new(
+                    crate::sim::miner::MinerKind::War,
+                    &crate::sim::miner::MinerConfig::default(),
+                    40,
+                ));
+            sim.substrate
+                .mission_assign_exact(42, harvest, 0)
+                .expect("miner");
+            assert!(sim.apply_command("Americans", &Command::Stop { entity_id: 42 }, Some(&rules)));
+            let mission = sim.substrate.entities.get(42).unwrap().mission.current();
+            let expected = if hidden {
+                harvest
+            } else {
+                MissionId::from_known(MissionType::Guard)
+            };
+            assert_eq!(mission, expected, "hidden={hidden}");
+        }
+    }
+
+    /// Event IDLE admits its actor on `+0x90` and `+0x81` alone
+    /// (`0x004C74E8..0x004C74FE`), with no strength test: a live miner at 0
+    /// strength still stops and goes on Guard. VERA's dying mark, native's
+    /// UnInit, refuses it.
+    #[test]
+    fn stop_admits_a_live_actor_at_zero_strength() {
+        use crate::sim::mission::MissionType;
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=HARV\n[HARV]\nStrength=600\nSpeed=4\nHarvester=yes\n\
+             MovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+        ))
+        .expect("HARV rules");
+        let mut sim = Simulation::new();
+        sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
+            32,
+            32,
+            crate::map::resolved_terrain::test_flat_cell,
+        ));
+        spawn_rule_backed_unit(&mut sim, 42, "HARV", &rules);
+        let miner = sim.substrate.entities.get_mut(42).unwrap();
+        miner.miner = Some(crate::sim::miner::Miner::new(
+            crate::sim::miner::MinerKind::War,
+            &crate::sim::miner::MinerConfig::default(),
+            40,
+        ));
+        miner.health = crate::sim::combat::Health::new(0);
+        sim.substrate
+            .mission_assign_exact(42, MissionId::from_known(MissionType::Harvest), 0)
+            .expect("miner");
+        assert!(sim.apply_command("Americans", &Command::Stop { entity_id: 42 }, Some(&rules)));
+        let mission = sim.substrate.entities.get(42).unwrap().mission.current();
+        assert_eq!(mission, MissionId::from_known(MissionType::Guard));
+
+        sim.substrate
+            .entities
+            .get_mut(42)
+            .unwrap()
+            .death
+            .set_dying_for_test(true);
+        sim.substrate
+            .mission_assign_exact(42, MissionId::from_known(MissionType::Harvest), 0)
+            .expect("miner");
+        assert!(!sim.apply_command("Americans", &Command::Stop { entity_id: 42 }, Some(&rules)));
+        let mission = sim.substrate.entities.get(42).unwrap().mission.current();
+        assert_eq!(mission, MissionId::from_known(MissionType::Harvest));
     }
 
     #[test]
@@ -4194,8 +4472,10 @@ mod tests {
             .as_mut()
             .unwrap()
             .ensure_installed_track_state();
-        // Revealed object: order admission reads the limbo byte.
+        // Revealed object: order admission reads the limbo byte. Its Unlimbo
+        // would have published its threat (`0x006F6ED2`); TANK poses none.
         ge.lifecycle.set_in_limbo_for_test(false);
+        ge.cached_spatial_threat.publish(0);
         sim.substrate.entities.insert(ge);
     }
 
@@ -4349,6 +4629,156 @@ mod tests {
                 "{mission:?}"
             );
         }
+    }
+
+    /// A compact installed bunker: the VERA-only eject record names the
+    /// building, so both the occupant's link and its radio contact must be
+    /// real production state.
+    fn installed_bunker_fixture() -> (Simulation, RuleSet) {
+        let rules = bunker_rules();
+        let mut sim = Simulation::new();
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        spawn_bunker_struct(&mut sim, 2, "Americans", 10, 10);
+        spawn_bunkerable(&mut sim, 1, "Americans", "TANK", 10, 10);
+        crate::sim::docking::bunker_link::install_bunker_link(&mut sim, 2, 1, &rules);
+        let unit = sim.substrate.entities.get_mut(1).unwrap();
+        unit.radio_contacts.set_slot(0, 2);
+        unit.navigation
+            .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::object(2)));
+        (sim, rules)
+    }
+
+    /// `UnitClass::Mission_Unload @ 0x0073D630` is the only caller of
+    /// `BuildingClass::EmptyBunker @ 0x004595C0` (`0x0073D66D`). Opcode 0x31
+    /// must therefore publish Event9's DEPLOY order, not release the tank
+    /// while the command executes (#3675).
+    #[test]
+    fn eject_bunker_record_queues_unload_instead_of_releasing_at_command_time() {
+        let (mut sim, rules) = installed_bunker_fixture();
+        assert!(sim.apply_command(
+            "Americans",
+            &Command::EjectBunker { bunker_id: 2 },
+            Some(&rules),
+        ));
+        assert_eq!(
+            sim.substrate.entities.get(2).unwrap().bunker.occupant(),
+            Some(1),
+            "EmptyBunker belongs to the Unload mission's Logic update"
+        );
+        assert_eq!(
+            sim.substrate.entities.get(1).unwrap().bunker.link(),
+            crate::sim::docking::bunker_link::BunkerLink::Installed(2)
+        );
+        let unit = sim.substrate.entities.get(1).unwrap();
+        assert_eq!(unit.mission.queued().known(), Some(MissionType::Unload));
+        // Event9 `0x004C77E4` breaks contact 0 before the null destination
+        // (`0x004C77F8`) and null target (`0x004C7804`) setters.
+        assert_eq!(unit.radio_contacts.slot(0), None);
+        assert!(unit.navigation.nav_com().is_none());
+        assert!(unit.attack_target.target().is_none());
+    }
+
+    /// Event9 detaches the deployed object's planning (`0x004C76CA`), so the
+    /// eject record detaches the occupant's path, not the bunker's.
+    #[test]
+    fn eject_bunker_record_detaches_the_occupants_planning() {
+        let (mut sim, rules) = installed_bunker_fixture();
+        sim.start_empty_planning_path_for_test(1);
+        assert!(sim.apply_command(
+            "Americans",
+            &Command::EjectBunker { bunker_id: 2 },
+            Some(&rules),
+        ));
+        assert!(!sim.has_planning_path_for_test(1));
+    }
+
+    /// The command-time release only checked ownership and an occupant.
+    /// Event9's admission (`0x004C76BC`) refuses a limboed actor, so a dead
+    /// or limboed tank keeps its bunker and gets no Unload mission.
+    #[test]
+    fn eject_bunker_record_refuses_a_limboed_occupant() {
+        let (mut sim, rules) = installed_bunker_fixture();
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .lifecycle
+            .set_in_limbo_for_test(true);
+        assert!(!sim.apply_command(
+            "Americans",
+            &Command::EjectBunker { bunker_id: 2 },
+            Some(&rules),
+        ));
+        assert_eq!(
+            sim.substrate.entities.get(2).unwrap().bunker.occupant(),
+            Some(1)
+        );
+        assert_ne!(
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .mission
+                .queued()
+                .known(),
+            Some(MissionType::Unload)
+        );
+    }
+
+    /// Drive the record through real frames: `Mission_Unload @ 0x0073D630`
+    /// promotes, its head calls `EmptyBunker @ 0x004595C0`, and only then do
+    /// the links clear. Without the fix the very first command execution
+    /// would already have released the tank.
+    #[test]
+    fn eject_bunker_record_releases_on_the_unload_logic_visit() {
+        let (mut sim, rules) = installed_bunker_fixture();
+        // `unit_unload_empties_bunker` looks the building up in the Unit's
+        // cell (`Look_up_building_in_cell @ 0x0047C520`).
+        for (rx, ry) in
+            crate::sim::occupancy::entity_occupancy_cells(sim.substrate.entities.get(2).unwrap())
+        {
+            sim.substrate.occupancy.add(
+                rx,
+                ry,
+                2,
+                crate::sim::movement::locomotor::MovementLayer::Ground,
+                None,
+                crate::sim::occupancy::CellListInsertion::AppendBuilding,
+            );
+        }
+        assert!(sim.register_live_object(1));
+        assert!(sim.apply_command(
+            "Americans",
+            &Command::EjectBunker { bunker_id: 2 },
+            Some(&rules),
+        ));
+        assert_eq!(
+            sim.substrate.entities.get(2).unwrap().bunker.occupant(),
+            Some(1)
+        );
+        for _ in 0..16 {
+            sim.advance_tick(&[], Some(&rules), None, None, 33);
+            if sim
+                .substrate
+                .entities
+                .get(2)
+                .unwrap()
+                .bunker
+                .occupant()
+                .is_none()
+            {
+                break;
+            }
+        }
+        assert_eq!(
+            sim.substrate.entities.get(2).unwrap().bunker.occupant(),
+            None,
+            "the Unload Logic visit must empty the bunker"
+        );
+        assert_eq!(
+            sim.substrate.entities.get(1).unwrap().bunker.link(),
+            crate::sim::docking::bunker_link::BunkerLink::None
+        );
     }
 
     #[test]
@@ -4534,13 +4964,38 @@ mod tests {
             "one walls-up event on install"
         );
 
-        // 3) Eject: Force starts without teleporting, links clear, walls lower.
+        // 3) Eject: opcode 0x31 publishes the Unload mission. Its Logic
+        // visit owns `EmptyBunker @ 0x004595C0` (`0x0073D66D`), so the
+        // release, Force, links and walls happen there, not at command time.
         sim.bunker_wall_events.clear();
         assert!(sim.apply_command(
             "Americans",
             &Command::EjectBunker { bunker_id: 2 },
             Some(&rules),
         ));
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .mission
+                .queued()
+                .known(),
+            Some(MissionType::Unload)
+        );
+        assert_eq!(
+            sim.substrate.entities.get(2).unwrap().bunker.occupant(),
+            Some(1),
+            "no command-time release"
+        );
+        assert!(
+            crate::sim::docking::bunker_link::unit_unload_empties_bunker(
+                &mut sim,
+                1,
+                &rules,
+                FrameEffects::default(),
+            )
+        );
         assert_eq!(
             sim.substrate.entities.get(2).unwrap().bunker.occupant(),
             None

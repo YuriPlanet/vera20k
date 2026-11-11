@@ -155,9 +155,6 @@ pub(super) fn campaign_scene(
     // The production loader installs fixed ART and binds its action bank
     // before actors; the sequence binder resolves each type through that ART.
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     let teams = TeamAiIniRegistry::load_retail(&assets, &map.ini, false).unwrap();
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
@@ -170,7 +167,7 @@ pub(super) fn campaign_scene(
         .unwrap();
     bootstrap::initialize_map_roster_houses(&mut sim, &roster, &rules, Some(&map.ini));
     bootstrap::initialize_campaign_current_house(&mut sim.session, &mut sim.houses, &map.ini);
-    sim.install_team_ai_registry(&teams, &rules).unwrap();
+    sim.install_team_ai_registry(&teams, &rules);
     sim.initialize_trigger_definitions(&map, &teams, None, None, None);
     sim.session.install_waypoints(&map.waypoints);
     assert_eq!(sim.spawn_from_map(&map.entities, Some(&rules)), 1);
@@ -184,7 +181,7 @@ pub(super) fn campaign_scene(
     sim.session.publish_started();
     let runtime = SimRuntime {
         simulation: sim,
-        resources: SimResources::new(rules),
+        resources: std::sync::Arc::new(SimResources::new(rules)),
     };
     Some((runtime, member, ty))
 }

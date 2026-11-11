@@ -167,7 +167,7 @@ fn loss_threshold_events_poll_recorded_losses_and_create_real_reinforcements() {
             ),
         );
         let teams = TeamAiIniRegistry::from_sources(&IniFile::from_str(""), &map.ini, false);
-        sim.install_team_ai_registry(&teams, &rules).unwrap();
+        sim.install_team_ai_registry(&teams, &rules);
         // The shared simple-map fixture initially has no Team registry.
         // Re-enter the real definition reader with the authored Team inputs.
         sim.initialize_trigger_definitions(&map, &teams, None, None, None);
@@ -1285,6 +1285,129 @@ fn action128_retail_foots_use_reverse_shared_sweep_and_finish_the_warp() {
     );
 }
 
+/// House50D6D0 skips a Foot only for its Transporter (`+0x11C`, 0x50D783 and
+/// 0x50D895). A garrison occupant (AddGarrisonOccupant 0x522910) and a Full
+/// reinforcement's cargo (CargoClass::AddPassenger 0x4733A0) have none, so
+/// they are warped in Limbo; a rider who boarded a vehicle (0x51A463) is not.
+#[test]
+fn action128_skips_only_passengers_with_a_transporter() {
+    use crate::sim::passenger::{BoardingArm, add_garrison_occupant, board_passenger};
+    use crate::sim::superweapon::chronosphere_tests::{retail_world, step, world_with};
+    let Some((rules, _, _)) = retail_world() else {
+        return;
+    };
+    let (rules, mut sim, owner) = world_with(rules, 128, &[]);
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/trigger_chrono_house.json",
+    ))
+    .unwrap();
+    // The native coordinate of offset 2 (a unit's cell centre).
+    let third_offset = native["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["input"]["name"] == "reverse_mixed_classes")
+        .unwrap()["warp"][2]
+        .clone();
+    assert_eq!(third_offset["offset"], 2);
+    let mut spawn = |name, x| {
+        sim.spawn_object_at_height(name, "Americans", x, 20, 0, 0, &rules)
+            .unwrap()
+    };
+    // First in the Foot array, so the offsets below stay the fixture's.
+    let reinforcement = spawn("E1", 22);
+    let tank = spawn("MTNK", 20);
+    let transport = spawn("HTK", 24);
+    let rider = spawn("E1", 26);
+    let bunker = spawn("NABNKR", 30);
+    let occupant = spawn("E1", 28);
+    assert!(board_passenger(
+        &mut sim,
+        &rules,
+        rider,
+        transport,
+        BoardingArm::InfantryTransport,
+        None,
+        FrameEffects::default()
+    ));
+    assert!(
+        add_garrison_occupant(
+            &mut sim,
+            &rules,
+            occupant,
+            bunker,
+            None,
+            FrameEffects::default()
+        )
+        .unwrap()
+    );
+    // Full reinforcements load through CargoClass::AddPassenger 0x4733A0,
+    // which leaves +0x11C NULL.
+    assert!(sim.add_cargo_passenger_chain(
+        transport,
+        &[(reinforcement, 1.0)],
+        crate::sim::world::UninitContext::with_rules(&rules),
+    ));
+    sim.substrate
+        .entities
+        .get_mut(reinforcement)
+        .unwrap()
+        .passenger_role
+        .set_inside_transport(transport, false);
+    let map = install_event_ingress_map(
+        &mut sim,
+        &rules,
+        "[Waypoints]\n15=50075\n[Triggers]\nSHIFT=Americans,<none>,Shift,0,1,1,1,0\n\
+         [Events]\nSHIFT=1,8,0,0\n[Actions]\nSHIFT=1,128,0,478,0,0,0,0,P\n",
+    );
+    sim.session.install_waypoints(&map.waypoints);
+    let source = trigger_type_index(&sim, "SHIFT");
+    let action = sim.trigger_runtime.definitions.trigger_types[source].actions[0].clone();
+    assert!(sim.apply_live_trigger_action(
+        &action,
+        TriggerActionContext {
+            live_index: None,
+            input: TagEventInput::default(),
+            incoming_house: Some(owner)
+        },
+        &mut Vec::new(),
+        &rules,
+        None,
+        FrameEffects::default(),
+    ));
+    let entity = |sim: &Simulation, id| sim.substrate.entities.get(id).unwrap().clone();
+    assert!(entity(&sim, occupant).chrono_warp_latch());
+    assert!(entity(&sim, occupant).lifecycle.in_limbo());
+    assert!(entity(&sim, reinforcement).chrono_warp_latch());
+    assert!(!entity(&sim, rider).chrono_warp_latch());
+    // Reverse order: the occupant takes offset 0, the transport 1, the tank 2.
+    let coord = entity(&sim, tank).chrono_warp().unwrap().destination();
+    assert_eq!(
+        serde_json::json!([coord.x, coord.y, coord.z]),
+        third_offset["coord"]
+    );
+    // The warp outlasts his stay: Foot Unlimbo 0x4D7170 calls only the
+    // locomotor's Unlimbo slot (LocomotionClass's empty 0x55AC20), and his
+    // Teleport runs it once Foot AI reaches him again.
+    assert_eq!(
+        crate::sim::passenger::garrison_eject::sell_building_occupants(
+            &mut sim,
+            &rules,
+            None,
+            bunker,
+            crate::sim::passenger::garrison_eject::GarrisonEjectMode::Release,
+            FrameEffects::default(),
+        ),
+        1
+    );
+    for _ in 0..180 {
+        step(&mut sim, &rules);
+    }
+    let soldier = entity(&sim, occupant);
+    assert!(!soldier.chrono_warp_latch() && !soldier.is_warped_out() && !soldier.is_warping_in());
+    assert!(soldier.position.rx().abs_diff(75) <= 2 && soldier.position.ry().abs_diff(50) <= 2);
+}
+
 #[test]
 fn variable_scripts_use_shared_owner_and_advance_on_rejected_indices() {
     use crate::sim::team_script_vm::{TeamScriptAction, TeamScriptDefinition};
@@ -1451,7 +1574,7 @@ fn retail_sov01_script_context() -> Option<(
             10,
         ));
     sim.session.set_current_house_for_test(Some(owner));
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     sim.initialize_trigger_definitions(&map, &registry, None, None, None);
     Some((sim, rules, overlay, map))
 }
@@ -1751,6 +1874,9 @@ pub(super) fn spawn_event_ingress_unit(
 /// compared marker and scan slices visit only the declared 4x4 cells.
 /// A bare test constructor
 /// remains in limbo, so Unit PerCell correctly refuses it before the Foot tail.
+/// Cell 3,4 lies off the playfield, so the actor retreats: IsAllowedToLeaveMap
+/// (`0x004DA1D0`) then admits its own Cell (`0x0073F364..0x0073F388`) and the
+/// Unit's own-cell arm (`0x0073AE1B`) lets the call reach the Foot line slice.
 pub(super) fn sparse_line_ingress_fixture() -> (
     Simulation,
     crate::rules::ruleset::RuleSet,
@@ -1772,6 +1898,15 @@ pub(super) fn sparse_line_ingress_fixture() -> (
     );
     sim.session.set_map_width_for_test(5);
     sim.session.set_map_height_for_test(5);
+    sim.substrate
+        .entities
+        .get_mut(actor)
+        .unwrap()
+        .mission
+        .set_current_for_test(
+            crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Retreat),
+            0,
+        );
     (sim, rules, houses, actor)
 }
 
@@ -1808,11 +1943,22 @@ pub(super) fn event_ingress_damage(
 fn unit_record_kill_dispatches_its_virtual_prefix_before_the_base_events() {
     use crate::sim::combat::{KillCallback, KillSource};
     // Original Unit744720 -> Techno702D40; E4 stays703230 (vtable
-    //7F5C70+E0/E4). Repeating Tag keeps each callback observable.
+    //7F5C70+E0/E4). Repeating Tag keeps each callback observable. Ares
+    // adds 85 with a destroyer: before Unit's 7 (hook 0x744745) and after
+    // E4's 4 (hook 0x7032B0).
+    let ares = cfg!(feature = "ares");
     for (techno, present, expected) in [
-        (true, true, vec![7, 48, 29, 6, 4]),
+        (
+            true,
+            true,
+            if ares {
+                vec![85, 7, 48, 29, 6, 4]
+            } else {
+                vec![7, 48, 29, 6, 4]
+            },
+        ),
         (true, false, vec![48, 29]),
-        (false, true, vec![6, 4]),
+        (false, true, if ares { vec![6, 4, 85] } else { vec![6, 4] }),
         (false, false, vec![]),
     ] {
         let (mut sim, rules, overlays, houses) = event_ingress_fixture();
@@ -2208,18 +2354,20 @@ fn object_damage_tags_spring_before_techno_and_reread_the_source_house_index() {
         houses[1]
     );
     // Event6's Action14 changes both owners. Each Unit E0(null-killer)
-    // reaches original744720's48/29 prefix before the later damage44.
-    assert_eq!(
-        sim.trigger_runtime.dispatch_trace,
-        [
-            (tag, 6),
-            (tag, 48),
-            (tag, 29),
-            (tag, 48),
-            (tag, 29),
-            (tag, 44)
-        ]
-    );
+    // reaches original744720's48/29 prefix before the later damage44. Ares
+    // (hook 0x5F57B5) then raises 84 and 83 on the surviving object.
+    let mut expected = vec![
+        (tag, 6),
+        (tag, 48),
+        (tag, 29),
+        (tag, 48),
+        (tag, 29),
+        (tag, 44),
+    ];
+    if cfg!(feature = "ares") {
+        expected.extend([(tag, 84), (tag, 83)]);
+    }
+    assert_eq!(sim.trigger_runtime.dispatch_trace, expected);
     assert_eq!(sim.trigger_runtime.globals_set, BTreeSet::from([6, 44]));
     assert!(
         !sim.substrate
@@ -2709,10 +2857,7 @@ fn destroyed_house_predicates_match_original_independent_signed_counters() {
                 0,
                 TagEventInput {
                     kind: case["inputs"]["raised"].as_i64().unwrap() as i32,
-                    actor: None,
-                    source: None,
-                    cell: (0, 0),
-                    force: false,
+                    ..Default::default()
                 },
                 case["inputs"]["incoming_house"]
                     .as_u64()
@@ -3087,7 +3232,7 @@ fn trigger_action_40_normalizes_and_refreshes_authority_same_frame() {
 
     let before_zone = sim
         .zone_grid
-        .as_ref()
+        .as_deref()
         .and_then(|zones| zones.map_for(MovementZone::Normal))
         .expect("normal zone")
         .zone_at(50, 50, MovementLayer::Ground);
@@ -3119,7 +3264,7 @@ fn trigger_action_40_normalizes_and_refreshes_authority_same_frame() {
     assert_eq!(terrain.cell(50, 50).unwrap().zone_type, zone_class::OUTSIDE);
     assert!(!terrain.cell(85, 85).unwrap().outside_playfield);
     assert_eq!(terrain.cell(85, 85).unwrap().zone_type, zone_class::GROUND);
-    let zones = sim.zone_grid.as_ref().expect("zones rebuilt");
+    let zones = sim.zone_grid.as_deref().expect("zones rebuilt");
     let normal = zones.map_for(MovementZone::Normal).expect("normal zone");
     assert_eq!(normal.zone_at(50, 50, MovementLayer::Ground), ZONE_INVALID);
     assert_ne!(normal.zone_at(85, 85, MovementLayer::Ground), ZONE_INVALID);
@@ -3132,12 +3277,16 @@ fn trigger_action_40_normalizes_and_refreshes_authority_same_frame() {
     // must not disappear behind the persistent per-cell dirty-list dedup gate.
     assert!(sim.change_visible_map_area(
         [4, 40, 54, 12],
-        crate::rules::ruleset::RuleSet::empty_for_test()
+        crate::sim::world::UninitContext::with_rules(
+            crate::rules::ruleset::RuleSet::empty_for_test()
+        )
     ));
     assert_eq!(sim.playfield_revision(), 2);
     assert!(sim.change_visible_map_area(
         [4, 40, 54, 12],
-        crate::rules::ruleset::RuleSet::empty_for_test()
+        crate::sim::world::UninitContext::with_rules(
+            crate::rules::ruleset::RuleSet::empty_for_test()
+        )
     ));
     assert_eq!(sim.playfield_revision(), 3);
     assert!(sim.dirty_cells.radar().is_empty());
@@ -3154,14 +3303,11 @@ fn trigger_action_40_normalizes_and_refreshes_authority_same_frame() {
     assert_eq!(restored.playfield_revision(), sim.playfield_revision());
 }
 
-#[test]
-fn techno_playfield_action_40_exact_recompute_and_mobile_reveal_callback() {
+/// A flat 100x100 map whose playfield action 40 grows from `[30, 20, 8, 6]`
+/// to [`ACTION40_GROWN`], with the cells that growth adds.
+fn action40_growth_fixture() -> (Simulation, Vec<(u16, u16)>) {
     use crate::map::map_file::MapHeader;
     use crate::map::playfield::PlayfieldBounds;
-    use crate::rules::ini_parser::IniFile;
-    use crate::rules::ruleset::RuleSet;
-    use crate::sim::combat::Health;
-    use crate::sim::house_state::HouseState;
 
     let header = MapHeader {
         theater: "TEMPERATE".to_string(),
@@ -3177,14 +3323,32 @@ fn techno_playfield_action_40_exact_recompute_and_mobile_reveal_callback() {
     let mut sim = Simulation::new();
     sim.install_playfield_from_map_header(&header);
     let initial = sim.playfield_bounds().unwrap();
-    let expanded = PlayfieldBounds::from_raw_local_size(80, 58, [2, 2, 76, 48]);
-    let candidates: Vec<(u16, u16)> = (0u16..100)
+    let expanded = PlayfieldBounds::from_raw_local_size(80, 58, ACTION40_GROWN);
+    let added = (0u16..100)
         .flat_map(|ry| (0u16..100).map(move |rx| (rx, ry)))
         .filter(|&(rx, ry)| {
             expanded.contains_height_aware_packed(rx.into(), ry.into(), 0, 0)
                 && !initial.contains_height_aware_packed(rx.into(), ry.into(), 0, 0)
         })
         .collect();
+    sim.fog.set_width_for_test(100);
+    sim.fog.set_height_for_test(100);
+    sim.resolved_terrain = Some(flat_trigger_playfield_terrain(100, 100));
+    (sim, added)
+}
+
+const ACTION40_GROWN: [i32; 4] = [2, 2, 76, 48];
+
+#[test]
+fn techno_playfield_action_40_exact_recompute_and_mobile_reveal_callback() {
+    use crate::map::playfield::PlayfieldBounds;
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::ruleset::RuleSet;
+    use crate::sim::combat::Health;
+    use crate::sim::house_state::HouseState;
+
+    let (mut sim, candidates) = action40_growth_fixture();
+    let expanded = PlayfieldBounds::from_raw_local_size(80, 58, ACTION40_GROWN);
     let mobile_cell = candidates
         .get(candidates.len() / 2)
         .copied()
@@ -3223,8 +3387,6 @@ fn techno_playfield_action_40_exact_recompute_and_mobile_reveal_callback() {
     let owner = sim.interner.intern("Americans");
     sim.houses
         .register(HouseState::new(owner, 0, Some(owner), true, 0, 10));
-    sim.fog.set_width_for_test(100);
-    sim.fog.set_height_for_test(100);
     let mobile_type = sim.interner.intern("MTNK");
     let building_type = sim.interner.intern("GAPOWR");
     let mut mobile = GameEntity::new_at_frame_zero_for_test(
@@ -3261,9 +3423,11 @@ fn techno_playfield_action_40_exact_recompute_and_mobile_reveal_callback() {
     building.lifecycle.set_in_limbo_for_test(false);
     sim.substrate.entities.insert(mobile);
     sim.substrate.entities.insert(building);
-    sim.resolved_terrain = Some(flat_trigger_playfield_terrain(100, 100));
 
-    assert!(sim.change_visible_map_area([2, 2, 76, 48], &rules));
+    assert!(sim.change_visible_map_area(
+        ACTION40_GROWN,
+        crate::sim::world::UninitContext::with_rules(&rules)
+    ));
     assert!(sim.substrate.entities.get(1).unwrap().in_playfield());
     assert!(sim.substrate.entities.get(2).unwrap().in_playfield());
     assert!(
@@ -3281,12 +3445,146 @@ fn techno_playfield_action_40_exact_recompute_and_mobile_reveal_callback() {
         "FUN_006E21E0 excludes BuildingClass from the false-to-true callback"
     );
 
-    assert!(sim.change_visible_map_area([30, 20, 8, 6], &rules));
+    assert!(sim.change_visible_map_area(
+        [30, 20, 8, 6],
+        crate::sim::world::UninitContext::with_rules(&rules)
+    ));
     assert!(!sim.substrate.entities.get(1).unwrap().in_playfield());
     assert!(!sim.substrate.entities.get(2).unwrap().in_playfield());
-    assert!(sim.change_visible_map_area([2, 2, 76, 48], &rules));
+    assert!(sim.change_visible_map_area(
+        ACTION40_GROWN,
+        crate::sim::world::UninitContext::with_rules(&rules)
+    ));
     assert!(sim.substrate.entities.get(1).unwrap().in_playfield());
     assert!(sim.substrate.entities.get(2).unwrap().in_playfield());
+}
+
+/// Places one live, out-of-Limbo object per `(owner, type, category, health)`
+/// on `added` cells far apart, with sight 1 and ids from 1; returns the cells.
+fn action40_objects(
+    sim: &mut Simulation,
+    added: &[(u16, u16)],
+    objects: &[(crate::sim::intern::InternedId, &str, EntityCategory, i32)],
+) -> Vec<(u16, u16)> {
+    let step = (added.len() - 1) / objects.len().saturating_sub(1).max(1);
+    let cells: Vec<_> = (0..objects.len()).map(|i| added[i * step]).collect();
+    for (i, a) in cells.iter().enumerate() {
+        for b in &cells[i + 1..] {
+            assert!(a.0.abs_diff(b.0) + a.1.abs_diff(b.1) > 6, "{a:?} {b:?}");
+        }
+    }
+    for (index, (&(rx, ry), &(owner, type_name, category, health))) in
+        cells.iter().zip(objects).enumerate()
+    {
+        let type_ref = sim.interner.intern(type_name);
+        let mut entity = GameEntity::new_at_frame_zero_for_test(
+            index as u64 + 1,
+            rx,
+            ry,
+            0,
+            0,
+            owner,
+            crate::sim::combat::Health::new(health),
+            type_ref,
+            category,
+            0,
+            1,
+            category == EntityCategory::Unit,
+        );
+        entity.lifecycle.set_object_alive_for_test(true);
+        entity.lifecycle.set_in_limbo_for_test(false);
+        sim.substrate.entities.insert(entity);
+    }
+    cells
+}
+
+fn action40_rules() -> crate::rules::ruleset::RuleSet {
+    crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+        "[General]\nRevealByHeight=no\n[InfantryTypes]\n0=E1\n[VehicleTypes]\n0=MTNK\n1=DRON\n",
+    ))
+    .expect("action 40 sight fixture")
+}
+
+/// `MapClass::Set_Clipped_LocalSize @ 0x00567230` Sees for a 0 -> 1 flip
+/// whose owner passes IsHumanPlayer `0x0050B6F0` (in a campaign, IsHuman or
+/// PlayerControl) and that is alive and out of Limbo. It tests no Health, so
+/// an infantry corpse (Health 0) reveals; a dying SHP wreck does not, since
+/// its native UnInit cleared IsAlive.
+#[test]
+fn action40_sees_for_corpses_and_player_controlled_houses_not_wrecks() {
+    use crate::sim::house_state::HouseState;
+
+    let (mut sim, added) = action40_growth_fixture();
+    let player = sim.interner.intern("Americans");
+    let controlled = sim.interner.intern("British");
+    let computer = sim.interner.intern("Russians");
+    sim.houses
+        .register(HouseState::new(player, 0, Some(player), true, 0, 10));
+    let mut british = HouseState::new(controlled, 0, Some(controlled), false, 0, 10);
+    british.set_player_control_for_test(true);
+    sim.houses.register(british);
+    sim.houses
+        .register(HouseState::new(computer, 1, Some(computer), false, 0, 10));
+    let objects = [
+        (player, "E1", EntityCategory::Infantry, 0),
+        (controlled, "MTNK", EntityCategory::Unit, 100),
+        (computer, "MTNK", EntityCategory::Unit, 100),
+        (player, "DRON", EntityCategory::Unit, 0),
+    ];
+    let cells = action40_objects(&mut sim, &added, &objects);
+    sim.substrate
+        .entities
+        .get_mut(4)
+        .unwrap()
+        .death
+        .set_dying_for_test(true);
+
+    let rules = action40_rules();
+    assert!(sim.change_visible_map_area(
+        ACTION40_GROWN,
+        crate::sim::world::UninitContext::with_rules(&rules)
+    ));
+    let revealed = objects
+        .iter()
+        .zip(cells)
+        .map(|(&(house, ..), (rx, ry))| sim.fog.is_cell_revealed(house, rx, ry))
+        .collect::<Vec<_>>();
+    assert_eq!(revealed, [true, true, false, false]);
+}
+
+/// In a network game 0x0050B6F0 passes only on the owner's own client
+/// (0x0050B716), so See writes only the owner's map: not an ally's, which
+/// `AllyReveal=` would otherwise admit.
+#[test]
+fn action40_network_see_writes_only_the_owners_map() {
+    use crate::sim::house_state::HouseState;
+
+    let (mut sim, added) = action40_growth_fixture();
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Lan);
+    let owner = sim.interner.intern("Americans");
+    let ally = sim.interner.intern("British");
+    for (side, house) in [(0, owner), (1, ally)] {
+        sim.houses
+            .register(HouseState::new(house, side, Some(house), true, 0, 10));
+    }
+    sim.house_alliances_mut_for_test()
+        .insert("AMERICANS".into(), ["BRITISH".to_string()].into());
+    let cells = action40_objects(
+        &mut sim,
+        &added,
+        &[(owner, "MTNK", EntityCategory::Unit, 100)],
+    );
+
+    let rules = action40_rules();
+    assert!(rules.general.ally_reveal);
+    assert!(sim.change_visible_map_area(
+        ACTION40_GROWN,
+        crate::sim::world::UninitContext::with_rules(&rules)
+    ));
+    let (rx, ry) = cells[0];
+    assert!(sim.fog.is_cell_revealed(owner, rx, ry));
+    assert!(!sim.fog.is_cell_revealed(ally, rx, ry));
 }
 
 #[test]
@@ -3835,6 +4133,9 @@ fn techtype_exists_and_not_exists_query_simulation_world() {
     assert!(advance_trigger_frame(&mut sim, 2, Some(&rules), &HashMap::new()).is_empty());
 }
 
+// Ares replaces 60/61 (TEventExt::TechTypeExists 1004FE60): the ares tests
+// cover its case-insensitive first match and owned counts.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn techtype_events_resolve_exact_registered_names_before_counting_entities() {
     let rules =
@@ -3883,6 +4184,7 @@ fn techtype_events_resolve_exact_registered_names_before_counting_entities() {
     assert_eq!(&sim.global_variables()[9..13], &[false; 4]);
 }
 
+#[cfg(not(feature = "ares"))]
 #[test]
 fn techtype_events_count_the_last_registered_category_identity() {
     use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};

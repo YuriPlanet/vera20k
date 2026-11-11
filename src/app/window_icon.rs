@@ -35,6 +35,15 @@ impl WindowIcon {
     /// The icon the VERA Icon box picks: VERA's artwork when it is ticked,
     /// otherwise the red star from the retail install at `ra2_dir`.
     pub(super) fn chosen(vera_icon: bool, ra2_dir: Option<&Path>) -> Option<Self> {
+        // A browser page has no window icon (winit sets none there), so the
+        // browser build reads neither source and leaves the artwork out.
+        if cfg!(all(
+            feature = "wasm",
+            target_arch = "wasm32",
+            target_os = "unknown"
+        )) {
+            return None;
+        }
         if !vera_icon {
             return ra2_dir.and_then(Self::retail);
         }

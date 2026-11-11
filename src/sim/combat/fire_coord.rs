@@ -212,8 +212,17 @@ impl From<&AttackerSnapshot> for FireSource {
 /// locomotor's vt+0x24 at `0x006F3DB7`), including the translation of a
 /// rocking hull.
 ///
-/// BuildingClass's override (`0x00453A70`) has no port: neither caller
-/// reaches a building.
+/// BuildingClass's override (`0x00453A70`), which an EMP cannon's Missile
+/// mission launches from (`0x0043EC12`, `0x0044D1F9`), returns before that
+/// body for an occupied building or a `PrimaryFirePixelOffset=` type (the
+/// object coordinate, vt+0xAC, plus the port's or offset's
+/// IsometricPixelToWorld at its Z, `0x00453A9D..0x00453AE7`) and for a
+/// `BarrelAnimIsVoxel=` type (GetTurretDrawPosition, [`barrel_voxel_coordinate`]);
+/// otherwise a `TurretAnimIsVoxel=` type adds the pixel offset of its
+/// `TurretAnimX=`/`TurretAnimY=` to the body's result (`0x00453A12..
+/// 0x00453A4C` in shape). [`FireSource::of_entity`] has no firing port, so an
+/// occupied building takes the unoccupied arms here (no EMP cannon is
+/// occupiable in any retail type).
 pub fn turret_pivot_coordinate(
     world: &Simulation,
     rules: &RuleSet,
@@ -237,6 +246,25 @@ pub fn turret_pivot_coordinate(
         );
     }
     let base = fire_coordinate_base(world, rules, &source, obj);
+    let building = entity.category() == EntityCategory::Structure;
+    if building {
+        if let Some((px, py)) = building_pixel_offset(base.art, &source) {
+            let (dx, dy) = PixelConversionBounds::isometric_pixel_to_leptons(px, py);
+            return Some(ProjectileCoord::new(
+                base.x.wrapping_add(dx),
+                base.y.wrapping_add(dy),
+                base.z,
+            ));
+        }
+        if obj.barrel_anim_is_voxel {
+            return barrel_voxel_coordinate(world, &source, obj, &base).map(|fire| fire.coord);
+        }
+    }
+    let (voxel_x, voxel_y) = if building && obj.turret_anim_is_voxel {
+        PixelConversionBounds::isometric_pixel_to_leptons(obj.turret_anim_x, obj.turret_anim_y)
+    } else {
+        (0, 0)
+    };
     let offset = base.art.map_or(0, |art| art.turret_offset);
     let delta = if entity.locomotor.is_some() {
         // Authored TurretOffset is not clamped by the ART reader; ftol keeps
@@ -254,8 +282,8 @@ pub fn turret_pivot_coordinate(
         (offset, 0, 0)
     };
     Some(ProjectileCoord::new(
-        base.x.wrapping_add(delta.0),
-        base.y.wrapping_add(delta.1),
+        base.x.wrapping_add(delta.0).wrapping_add(voxel_x),
+        base.y.wrapping_add(delta.1).wrapping_add(voxel_y),
         base.z.wrapping_add(delta.2),
     ))
 }
@@ -281,32 +309,50 @@ pub fn turret_pivot_coordinate(
 /// - A `PrimaryFirePixelOffset` (`+0xE44`): the same pixel conversion added to
 ///   the building coordinate, or added to base GetFLH when
 ///   `PrimaryFireDualOffset=` is set.
+/// - A `BarrelAnimIsVoxel=` (`+0x16C6`) type: the whole coordinate is
+///   `GetTurretDrawPosition @ 0x00453BF0`'s voxel-barrel projection
+///   ([`barrel_voxel_coordinate`], the chain in
+///   [`crate::util::flh_transform::native_building_barrel_world_delta`]);
+///   base `GetFLH` never runs, so no weapon FLH joins the result and the
+///   tail's own `TurretAnimX`/`TurretAnimY` add (`0x00453D08..0x00453D44`)
+///   is the only pixel term.
 /// - Otherwise the base `GetFLH`, plus, for a `TurretAnimIsVoxel=` (`+0x16C5`)
 ///   type, `IsometricPixelToWorld` of its signed `TurretAnimX=`/`TurretAnimY=`
 ///   (`+0x11E0`/`+0x11E4`) on X and Y (`0x00453A12..0x00453A4C`). Stock GTGCAN
 ///   (3,28) and YAGGUN (0,15) take it; their projectile, muzzle animation and
 ///   positioned report sound use the resulting fire coordinate.
 ///
-/// RESIDUAL: the earlier `+0x16C6` arm (`BarrelAnimIsVoxel=`,
-/// `0x004539A1..0x004539DE`, through `GetTurretDrawPosition 0x00453BF0`) is
-/// unported; VERA parses no `+0x16C6` byte at all, so a type or map setting it
-/// diverges silently. Native reaches it only for an unoccupied building with
-/// `PrimaryFirePixelOffset=` unset. The checked stock Battle layers leave
-/// the flag unset. `+0x1764` is
-/// native-established PrimaryFireDualOffset; all callers share the corrected
-/// primary-pixel/selected-FLH path. The beam arms (`0x006FF4CC`/`0x006FD210`,
-/// [`super::laser`], and `electric_bolt`) call this same coordinate owner.
-/// - Trigger: an unoccupied building with `BarrelAnimIsVoxel=` and no
-///   primary pixel offset firing a weapon.
-/// - Effect: VERA uses base FLH instead of GetTurretDrawPosition and may
-///   also add TurretAnimX/Y when TurretAnimIsVoxel is set. Projectile,
-///   muzzle animation, report sound and beam origins can all differ.
-/// - Frequency: authored mods/maps; dormant in the checked stock Battle data.
-/// - Downstream risk: the projectile origin is hashed.
+/// RESIDUALS on the `BarrelAnimIsVoxel` arm, which no retail type arms, so
+/// each reaches modded types only:
+/// - Nothing initializes the type's `+0x1728` chain scale or its
+///   `VoxelBarrelOffsetTo*` triples: the constructor `0x0045DD90` skips
+///   `+0x1718..+0x175F`, `FindOrAllocate @ 0x004653C0` does not zero the
+///   heap block, and no instruction stores the scale. Native fires with
+///   that block's stale content as the scale and as any pivot no rules
+///   layer sets (`Read3Int`'s self-default); VERA uses 0.0 and `(0,0,0)`,
+///   a never-used page's content. The difference moves the projectile's
+///   start coordinate (simulation state), its muzzle animation and report
+///   sound.
+/// - `VoxelBarrelOffsetToBarrelEnd=` (`+0x1754`, read at `0x00464712`) and
+///   the weapon `Burst` that signs it (`0x00453C02..0x00453C67`) feed only
+///   the point VERA's zero scale multiplies away (see the projection fn),
+///   so VERA reads neither; a nonzero stale scale lets them move the native
+///   shot.
+/// - `VoxelBarrelFile=` (`+0x1714`, read at `0x0046467E`) names the barrel
+///   model; nothing on this fire path consumes it — only the unported voxel
+///   loader (`0x0045FCAF`) would — so VERA does not read the key at all.
+/// - `BuildingClass`'s two-argument `GetFLH` variant `0x00453A70` (vtable
+///   `+0x300`, whose barrel arm calls `0x00453BF0` with the raw
+///   `CurrentBurstIndex`) has no port; neither caller reaches a building.
+///
+/// `+0x1764` is native-established PrimaryFireDualOffset; all callers share
+/// the corrected primary-pixel/selected-FLH path. The beam arms
+/// (`0x006FF4CC`/`0x006FD210`, [`super::laser`], and `electric_bolt`) call
+/// this same coordinate owner.
 ///
 /// Executed stock and asymmetric slot/burst controls:
 /// building_prism.json::laser_flh; the voxel-turret arm and its precedence
-/// controls: building_voxel_flh.json.
+/// controls, plus the `BarrelAnimIsVoxel` rows: building_voxel_flh.json.
 ///
 /// A building's base GetFLH is TechnoClass::GetFLH's arm without a locomotor
 /// (`0x006F3C1A`): identity, world-X TurretOffset, then one turn by vt+0x2A8
@@ -398,14 +444,28 @@ pub(crate) fn fire_coordinate(
         };
     }
 
+    // Building4539A1..4539DE: `BarrelAnimIsVoxel=` (`+0x16C6`) replaces the
+    // whole coordinate with GetTurretDrawPosition 0x453BF0 and returns before
+    // the voxel-turret term; base GetFLH never runs on this path. Native
+    // reaches it only for an unoccupied building with `PrimaryFirePixelOffset=`
+    // unset, which is exactly `building_pixel_offset` answering None (an
+    // occupied building keeps its muzzle-port arm above). The checked stock
+    // Battle layers leave the flag unset.
+    if snap.category == EntityCategory::Structure
+        && building_pixel_offset(art, snap).is_none()
+        && obj.barrel_anim_is_voxel
+        && let Some(fire) = barrel_voxel_coordinate(world, snap, obj, &base)
+    {
+        return fire;
+    }
+
     // Building453A12..453A4C: `TurretAnimIsVoxel=` (`+0x16C5`) adds
     // `IsometricPixelToWorld` of the type's signed `+0x11E0`/`+0x11E4` to the
     // base `GetFLH` coordinate. The conversion is world-axis, after GetFLH's
     // own rotation. Occupied buildings with ART and primary-pixel types
-    // return above. Without ART, an occupied building retains its zero-port
-    // fallback and must not enter this arm either. The unported `+0x16C6`
-    // (BarrelAnimIsVoxel) arm would return first; the checked stock Battle
-    // layers leave that flag unset.
+    // return above, and an armed `BarrelAnimIsVoxel` type returned before
+    // this block. Without ART, an occupied building retains its zero-port
+    // fallback and must not enter this arm either.
     let (voxel_x, voxel_y) = if snap.category == EntityCategory::Structure
         && snap.garrison_fire_index.is_none()
         && obj.turret_anim_is_voxel
@@ -639,7 +699,7 @@ fn fire_coordinate_base<'r>(
             ))
         });
     let (flh_facing16, fire_facing) = if snap.category == EntityCategory::Structure {
-        building_fire_facings(world, snap, obj, art, aim_facing16)
+        building_fire_facings(world, rules, snap, obj, art, aim_facing16)
     } else {
         (aim_facing16, aim_facing16)
     };
@@ -676,8 +736,8 @@ pub fn firer_art<'r>(rules: &'r RuleSet, obj: &ObjectType) -> Option<&'r ArtEntr
 /// (vt+0x308, `0x0044D7D0`), which picks the 8-way muzzle anim
 /// (`0x006FF2E5`) and heads a `ROT=` or dropping bullet (`0x006FE950`).
 /// - vt+0x2A8: `current` for a building with a turret (HasTurret, vt+0x3FC
-///   `0x004527D0`: `Turret=`, or an upgrade's, dormant with no retail
-///   `PowersUpBuilding=`) or without a TarCom; otherwise the direction
+///   `0x004527D0`: host or installed upgrade) or without a TarCom; otherwise
+///   the direction
 ///   between the two GetCoords.
 /// - vt+0x308: without a TarCom, `current` rounded to 1/256 turn; with a
 ///   turret that is not `TurretAnimIsVoxel=` (`+0x16C5`), rounded to 1/32;
@@ -686,15 +746,15 @@ pub fn firer_art<'r>(rules: &'r RuleSet, obj: &ObjectType) -> Option<&'r ArtEntr
 /// A TarCom no longer stored reads as none: native detaches it.
 fn building_fire_facings(
     world: &Simulation,
+    rules: &RuleSet,
     snap: &FireSource,
     obj: &ObjectType,
     art: Option<&ArtEntry>,
     current: u16,
 ) -> (u16, u16) {
     let entities = &world.substrate.entities;
-    let origin = entities
-        .get(snap.stable_id)
-        .map(|building| coords_xy(super::target_coords(building)));
+    let building = entities.get(snap.stable_id);
+    let origin = building.map(|entity| coords_xy(super::target_coords(entity)));
     let target = snap
         .tar_com
         .and_then(|target| super::resolve_target_coords(&target, world));
@@ -702,7 +762,11 @@ fn building_fire_facings(
         // `0x0044D7F4..0x0044D7FF`: `((current >> 7) + 1) >> 1` as the high byte.
         return (current, u16::from(round_facing16_to_8(current)) << 8);
     };
-    if obj.has_turret {
+    if building.is_some_and(|entity| {
+        entity
+            .building_upgrades()
+            .has_turret(obj, rules, &world.interner)
+    }) {
         // `0x0044D83A..0x0044D844`.
         let fire = if obj.turret_anim_is_voxel {
             facing16_between(aim_origin(origin, obj, art), target)
@@ -866,6 +930,57 @@ fn building_pixel_offset(art: Option<&ArtEntry>, snap: &FireSource) -> Option<(i
     primary_fire_pixel_offset(art)
 }
 
+/// `BuildingClass::GetFLH @ 0x00453840`'s `BarrelAnimIsVoxel=` arm
+/// (`0x004539A1..0x004539DE`): the whole coordinate is
+/// `GetTurretDrawPosition @ 0x00453BF0`, reached only for an unoccupied
+/// building with both `PrimaryFirePixelOffset=` words unset (the caller
+/// gates on [`building_pixel_offset`] answering `None`).
+///
+/// The projection adds, to the object coordinate (`vtable+0xAC`), the type's
+/// `VoxelBarrelOffsetTo*` pivot translation
+/// ([`crate::util::flh_transform::native_building_barrel_world_delta`]) plus
+/// `IsometricPixelToWorld` of the type's `TurretAnimX=`/`TurretAnimY=`
+/// (`0x00453D08..0x00453D44`) — the tail's own add, unconditional on this
+/// path. Native also fetches the weapon (`0x00453C02`) and signs a
+/// burst-selected barrel end (`0x00453C1A..0x00453C67`), but VERA's zero
+/// chain scale (a [`fire_coordinate`] residual) multiplies that point away,
+/// so neither moves the shot. No weapon FLH joins the result; the
+/// coordinate and its `ZAdjust` input `offset_y` follow the other arms'
+/// shape.
+fn barrel_voxel_coordinate(
+    world: &Simulation,
+    snap: &FireSource,
+    obj: &ObjectType,
+    base: &FireBase,
+) -> Option<FireCoordinate> {
+    // Native reads a live building's `+0x370` barrel elevation; the
+    // synthetic unstored sources of the shared fixtures keep the base arms.
+    let entity = world.substrate.entities.get(snap.stable_id)?;
+    let frame = world.session.binary_frame();
+    // 0x00453C98..0x00453CDD: the chain and its truncations. The steps stay
+    // inside the trig table for every facing, so `None` is unreachable.
+    let (delta_x, delta_y, delta_z) =
+        crate::util::flh_transform::native_building_barrel_world_delta(
+            obj.barrel_voxel.building_pivot,
+            obj.barrel_voxel.rotate_pivot,
+            obj.barrel_voxel.pitch_pivot,
+            snap.hull_facing.current(frame),
+            entity.barrel_elevation().current(frame),
+        )?;
+    let (voxel_x, voxel_y) =
+        PixelConversionBounds::isometric_pixel_to_leptons(obj.turret_anim_x, obj.turret_anim_y);
+    Some(FireCoordinate {
+        coord: ProjectileCoord::new(
+            base.x.wrapping_add(delta_x).wrapping_add(voxel_x),
+            base.y.wrapping_add(delta_y).wrapping_add(voxel_y),
+            base.z.wrapping_add(delta_z),
+        ),
+        source_z: base.z,
+        aim_facing16: base.fire_facing,
+        offset_y: delta_y.wrapping_add(voxel_y),
+    })
+}
+
 /// The muzzle animation type a shot constructs.
 ///
 /// gamemd-derived, `TechnoClass::Fire_At` `0x006FF2D1..0x006FF349`: a weapon
@@ -933,6 +1048,7 @@ mod tests {
             &IniFile::from_str(
                 "[InfantryTypes]\n0=E1\n1=INIT\n[VehicleTypes]\n[AircraftTypes]\n\
              [BuildingTypes]\n0=BUNK\n1=TOWER\n\
+             [Animations]\n0=F0\n1=F1\n2=F2\n3=F3\n4=F4\n5=F5\n6=F6\n7=F7\n8=GUNFIRE\n9=SPARE\n\
              [E1]\nStrength=125\nImage=GI\nPrimary=M60\nSecondary=ONE\n\
              [INIT]\nStrength=125\nPrimary=JAB\n\
              [BUNK]\nStrength=500\nCanBeOccupied=yes\n\

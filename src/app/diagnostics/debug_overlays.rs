@@ -55,7 +55,7 @@ pub(crate) fn resolve_debug_speed_type(state: &AppState) -> SpeedType {
     state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation)
         .and_then(|sim| {
             sim.entities()
@@ -73,7 +73,8 @@ pub(crate) fn resolve_debug_speed_type(state: &AppState) -> SpeedType {
 pub(crate) fn land_row(cell: &ResolvedTerrainCell, speed_type: SpeedType) -> u8 {
     cell.speed_costs
         .cost_for_speed_type(speed_type)
-        .unwrap_or(0)
+        // Debug palette alone quantizes its label; gameplay keeps the bits.
+        .map_or(0, |speed| (f32::from_bits(speed.bits()) * 100.0) as u8)
 }
 
 /// Build terrain cost overlay instances for all visible cells.
@@ -90,7 +91,7 @@ pub(crate) fn build_terrain_cost_overlay_instances(
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation)
     else {
         log::warn!("Terrain cost overlay: no simulation");
@@ -320,7 +321,7 @@ pub(crate) fn build_path_overlay_instances(
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation)
     else {
         return Vec::new();
@@ -656,7 +657,7 @@ pub(crate) fn build_foot_path_overlay_instances(
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation)
     else {
         return FootPathInstances {

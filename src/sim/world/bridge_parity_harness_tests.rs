@@ -424,7 +424,30 @@ const MIN_DISTINCT_DECK_CELLS: usize = 6;
 // #3710 folds the game options' room bans (all off here): hash composition
 // only. A temporary control omitting that fold gave the previous value, with
 // every tripwire above green. Control removed. Previous: 0x0722_C90C_F923_6AA2.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x8962_19D2_2722_4F7D;
+// The fixture's owner seats no client map, so its arrivals no longer
+// materialize that default fog-owner plane: RevealArea writes only a
+// client's PlayerPtr map (`0x00567AB0..0x00567B12`). Only the fog digest
+// moves; route, replay and absolute RNG tripwires above stay green.
+// Previous: 0x8962_19D2_2722_4F7D.
+// Ares builds also fold two retained Ares states for every actor here:
+// AttachEffectClass::Update10058E00 (TechnoClass_Update hook 0x6F9E50 ->
+// 1004B320) settles the type-effect state at Disabled on each actor's first
+// update, since no type sets AttachEffect.Duration, and RecalculateStats
+// 100460A0's attached-cloak byte folds even while false. Hash composition
+// only: a temporary control skipping just those two folds in an Ares build
+// gave the default value, every per-frame replay diagnostic field matched
+// the default build's, and every tripwire above stayed green. Control removed.
+// The entity hash now folds `idle_wander` (UnitClass::UpdateVisceroid
+// 0x00737180's direction) for every actor, and an Ares build also folds each
+// Unit's AltOccupation plane (TechnoExt +0x99). Hash composition only: a
+// temporary control skipping just those two folds gave the previous values
+// in both builds, with every tripwire above green. Control removed.
+// Previous: 0x534D_F91E_A02A_F8B2, Ares 0xF5A9_CCCB_69E6_AD58.
+const BRIDGE_HARNESS_FINAL_HASH: u64 = if cfg!(feature = "ares") {
+    0x83AC_A9D6_3E40_9C5D
+} else {
+    0x0D31_C373_DA29_2EB6
+};
 
 fn bridge_ini() -> IniFile {
     // One armed ground vehicle and one distant infantryman on a second house, so
@@ -455,9 +478,6 @@ fn bridge_rules() -> RuleSet {
     let art = IniFile::from_str(crate::rules::retail_ini_fixture::GI_ART_EXCERPT);
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     rules
 }
 

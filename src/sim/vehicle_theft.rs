@@ -425,7 +425,7 @@ impl Simulation {
     /// IsOperated10045440, inlined in admission10045097 (installed Ares).
     /// Ext+9D caches only the unrestricted case. Recompute this derived query
     /// from the authoritative type and Cargo instead of adding another latch.
-    pub(crate) fn ares_is_operated(&self, id: u64, rules: &RuleSet) -> bool {
+    pub fn ares_is_operated(&self, id: u64, rules: &RuleSet) -> bool {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
@@ -531,11 +531,10 @@ impl Simulation {
             return None;
         }
         if target.category() == EntityCategory::Unit
-            && self.session.harvester_immune()
-            && rules
-                .harvester_unit_types
-                .iter()
-                .any(|id| id.eq_ignore_ascii_case(&target_type.id))
+            && self
+                .session
+                .truce_harvester_types(rules, &self.interner)
+                .contains(&target.type_ref())
         {
             return None;
         }

@@ -744,6 +744,18 @@ impl SoundArbiter {
         self.handles.remove(&owner);
     }
 
+    /// A deploy conversion's handle copy: `UnitClass::Deploy @
+    /// 0x00739971..0x007399A4` and `BuildingClass::Mission_Selling @
+    /// 0x0044A0D4..0x0044A107` copy the five handle dwords over the new
+    /// object's, then `SetEvent(old, 0, 0)` leaves the old handle naming
+    /// nothing. The event's own back-pointer (`+0x278`) is not rewritten.
+    pub fn move_loop_handle(&mut self, from: HandleOwner, to: HandleOwner) {
+        match self.handles.remove(&from) {
+            Some(handle) => self.handles.insert(to, handle),
+            None => self.handles.remove(&to),
+        };
+    }
+
     /// Owners to re-drive: those whose handle names a live event, and those
     /// whose handle keeps a loopable sound after its event ended (inaudible,
     /// or killed by `Limit=`), which native's owner update allocates again.

@@ -102,3 +102,49 @@ fn a_moving_carrier_turns_passengers_away() {
         Some(EntryClickAction::Enter)
     );
 }
+
+/// Ares 3.0 Infantry 100176E0 (hook 0x51ED8E) and Unit 1004BEA0 (hook
+/// 0x74031A): a `NoManualEnter` carrier offers no passenger row, so the
+/// base action stands.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_no_manual_enter_carrier_offers_no_entry() {
+    let patch = crate::rules::ini_parser::IniFile::from_str("[FV]\nNoManualEnter=yes\n");
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&patch)
+    else {
+        return;
+    };
+    let rules = retail.rules;
+    let (sim, ifv, gi, tank) = scene(&rules);
+    for actor in [gi, tank] {
+        assert_eq!(
+            sim.entry_click_action(actor, ifv, EntryBaseAction::Select, &rules),
+            None
+        );
+    }
+}
+
+/// Ares AircraftClass_GetActionOnObject_Dock (1004C8B0, hook 0x417E16): the
+/// player's Harrier over the player's Airforce Command, which its `Dock=`
+/// lists and whose Helipad CAN_LOAD takes an aircraft, answers Enter; over a
+/// Service Depot its `Dock=` does not list it keeps Select (stock NoEnter).
+#[cfg(feature = "ares")]
+#[test]
+fn ares_a_harrier_enters_its_listed_dock_and_keeps_select_elsewhere() {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else {
+        return;
+    };
+    let (mut sim, ..) = scene(&rules);
+    let pad = sim
+        .spawn_object("GAAIRC", "Americans", 6, 12, 0, &rules)
+        .expect("airforce command");
+    let depot = sim
+        .spawn_object("GADEPT", "Americans", 17, 5, 0, &rules)
+        .expect("service depot");
+    let jet = sim
+        .spawn_object("ORCA", "Americans", 10, 8, 0, &rules)
+        .expect("harrier");
+    let action = |target| sim.entry_click_action(jet, target, EntryBaseAction::Select, &rules);
+    assert_eq!(action(pad), Some(EntryClickAction::Enter));
+    assert_eq!(action(depot), None);
+}

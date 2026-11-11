@@ -16,6 +16,7 @@ use crate::app::shell_wol::{
     WolApiStatus, WolLoginAccepted, WolProvider, WolServer, WolServerList, WolServiceEvent,
     WolServiceRequest, service_event,
 };
+use crate::ui::chat_translation::ChatLanguage;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::wol_chat::WolChatLine;
 use crate::ui::wol_lobby::{
@@ -31,8 +32,24 @@ mod quick_match;
 pub enum WolTarget {
     /// `0x10F` settled after a controlled server list, empty fields.
     LoginSteady,
-    /// Normal online username-only page, with no authentication submitted.
+    /// The online login page, its counts set in place; nothing is read or
+    /// sent.
+    ModernLoginPage,
+    /// Its sign-in form with a username and password typed and Remember
+    /// password ticked; nothing is sent.
+    ModernLogin,
+    /// Its sign-in form with a username alone, a guest's; nothing is sent.
     ModernUsername,
+    /// Create Account's popup, filled in; nothing is sent.
+    ModernCreateAccount,
+    /// Create Account's mailed-code popup, its request answered in place.
+    ModernAccountCode,
+    /// Forgot Password's code and new password popup, its username's code
+    /// request answered in place.
+    ModernForgotPassword,
+    /// Delete Account's username and password popup, filled in; nothing is
+    /// sent.
+    ModernDeleteAccount,
     /// A typed nickname and an eight-character password: Login enabled.
     LoginTyped,
     /// Back on `0x10F`: a fresh `0x10E` settled.
@@ -123,10 +140,19 @@ pub enum WolTarget {
     LobbyBack,
     /// The Options page's offline test service: login to a settled 0x113.
     TestServiceLobby,
-    /// Modern lobby presentation with sealed local fixture data, no credentials.
+    /// Modern lobby presentation with sealed local fixture data, no
+    /// credentials, Tanya's row hovered.
     ModernLobby,
-    /// The same, then Create Game: `0xC3` on Red Alert 2's box art.
+    /// The same, then Create Game: `0xC3` on Red Alert 2's box art, its
+    /// Ranked game box's help hovered.
     ModernCreate,
+    /// The same, then a click on Tanya: VERA's player card with her badge,
+    /// country and season record, her season row's help hovered.
+    ModernPlayerCard,
+    /// The same, then a click on your own name: Change Country picks
+    /// Australia, which VERA.INI keeps and the lobby is sent; the list is
+    /// open again over the card, Australia lit.
+    ModernChangeCountry,
     /// The same, then OK: VERA's C2, whose Game Options toggles Crates.
     ModernRoomOptions,
     /// VERA's C2 opens two spectator rows past its players and the stand-in
@@ -159,6 +185,12 @@ pub enum WolTarget {
     /// The modern lobby's Options over the test service: `0x2BC` settled
     /// with Play Music alone, help under it.
     ModernOptions,
+    /// The modern lobby's Chat Translation: the list picks Simplified Chinese,
+    /// Same-Alphabet Languages is checked and OK saves them; the reopened page
+    /// shows them, the help under that box.
+    ModernChatTranslation,
+    /// The same, then the language list open over the page.
+    ModernChatTranslationList,
     /// `0x2BC` Play Music unchecked: the preview queues -3, nothing saved.
     OptionsMusicOff,
     /// Pages and Buddies toggled, then Cancel: the lobby again, applied
@@ -332,7 +364,7 @@ pub enum WolTarget {
 impl WolTarget {
     /// Choose the diagnostic backend before the native welcome prefill runs.
     pub(in crate::app::diagnostics::shell_capture) fn welcome_provider(self) -> WolProvider {
-        if self == Self::ModernUsername {
+        if self.online_login() {
             WolProvider::Online
         } else if self.test_service() {
             WolProvider::TestService
@@ -341,12 +373,33 @@ impl WolTarget {
         }
     }
 
+    /// The online login page and its account popups, on the online provider
+    /// with nothing sent.
+    pub(in crate::app::diagnostics::shell_capture) fn online_login(self) -> bool {
+        matches!(
+            self,
+            Self::ModernLoginPage
+                | Self::ModernLogin
+                | Self::ModernUsername
+                | Self::ModernCreateAccount
+                | Self::ModernAccountCode
+                | Self::ModernForgotPassword
+                | Self::ModernDeleteAccount
+        )
+    }
+
     /// The login is accepted and the custom lobby runs.
     fn lobby(self) -> bool {
         !matches!(
             self,
             Self::LoginSteady
+                | Self::ModernLoginPage
+                | Self::ModernLogin
                 | Self::ModernUsername
+                | Self::ModernCreateAccount
+                | Self::ModernAccountCode
+                | Self::ModernForgotPassword
+                | Self::ModernDeleteAccount
                 | Self::LoginTyped
                 | Self::LoginBack
                 | Self::ServerListWait
@@ -488,9 +541,13 @@ impl WolTarget {
                 Self::TestServiceLobby
                     | Self::ModernLobby
                     | Self::ModernCreate
+                    | Self::ModernPlayerCard
+                    | Self::ModernChangeCountry
                     | Self::ModernRoomOptions
                     | Self::ModernSpectators
                     | Self::ModernOptions
+                    | Self::ModernChatTranslation
+                    | Self::ModernChatTranslationList
                     | Self::TestServiceCreate
                     | Self::TestServiceJoin
                     | Self::GuestChoices
@@ -617,7 +674,16 @@ impl WolTarget {
 
 pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-0x10f-steady", WolTarget::LoginSteady),
+    ("wol-modern-login-page", WolTarget::ModernLoginPage),
+    ("wol-modern-login", WolTarget::ModernLogin),
     ("wol-modern-username", WolTarget::ModernUsername),
+    ("wol-modern-create-account", WolTarget::ModernCreateAccount),
+    ("wol-modern-account-code", WolTarget::ModernAccountCode),
+    (
+        "wol-modern-forgot-password",
+        WolTarget::ModernForgotPassword,
+    ),
+    ("wol-modern-delete-account", WolTarget::ModernDeleteAccount),
     ("wol-0x10f-typed", WolTarget::LoginTyped),
     ("wol-0x10f-back", WolTarget::LoginBack),
     ("wol-0xc4-server-list-wait", WolTarget::ServerListWait),
@@ -664,6 +730,8 @@ pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-test-service-lobby", WolTarget::TestServiceLobby),
     ("wol-modern-lobby", WolTarget::ModernLobby),
     ("wol-modern-create", WolTarget::ModernCreate),
+    ("wol-modern-player-card", WolTarget::ModernPlayerCard),
+    ("wol-modern-change-country", WolTarget::ModernChangeCountry),
     ("wol-modern-room-options", WolTarget::ModernRoomOptions),
     ("wol-modern-spectators", WolTarget::ModernSpectators),
     ("wol-test-service-create", WolTarget::TestServiceCreate),
@@ -676,6 +744,14 @@ pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-0x130-mismatch-ok", WolTarget::MismatchOk),
     ("wol-0x2bc-steady", WolTarget::OptionsSteady),
     ("wol-modern-options", WolTarget::ModernOptions),
+    (
+        "wol-modern-chat-translation",
+        WolTarget::ModernChatTranslation,
+    ),
+    (
+        "wol-modern-chat-translation-list",
+        WolTarget::ModernChatTranslationList,
+    ),
     ("wol-0x2bc-music-off", WolTarget::OptionsMusicOff),
     ("wol-0x2bc-cancel", WolTarget::OptionsCancel),
     ("wol-0x2bc-ok", WolTarget::OptionsOk),
@@ -810,6 +886,9 @@ enum WolPhase {
     ServiceSetup,
     /// `0x113` Options pressed: waiting for `0x2BC`.
     OptionsOpening,
+    ChatTranslationOpening,
+    ChatTranslationReturn,
+    ChatTranslationReopened,
     /// `0x2BC` closed: waiting for the lobby.
     OptionsReturn,
     /// OK's result checked: `0x2BC` opened again.
@@ -905,6 +984,86 @@ impl WolCapture {
         self.phase = WolPhase::Settle(SETTLE_FRAMES);
     }
 
+    /// Your own card's Change Country: the list opens at the login's United
+    /// States (2), a pick of another shown country is kept and sent, and the
+    /// list then opens again at that row.
+    fn change_country(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        use crate::app::shell_wol::player_card;
+        use crate::ui::wol_lobby::CARD_COUNTRY_ROWS;
+        player_row_click(state, NICKNAME)?;
+        ensure!(
+            Self::lobby(state)?
+                .ui
+                .card
+                .as_ref()
+                .is_some_and(|card| card.name == NICKNAME),
+            "a click on your own name did not open your card"
+        );
+        let message = player_card::layout(state).message;
+        let countries = |state: &AppState| {
+            player_card::view(state).and_then(|view| view.countries.map(|list| (view.rows, list)))
+        };
+        // The open list's row for `locale` and the top row it should open at.
+        let opens_at = |state: &AppState, locale: i32| -> Result<(usize, usize)> {
+            let rows = &Self::lobby(state)?
+                .ui
+                .card
+                .as_ref()
+                .context("your card")?
+                .countries;
+            let row = rows
+                .iter()
+                .position(|row| row.locale == locale)
+                .context("the country's row")?;
+            Ok((row, row.min(rows.len().saturating_sub(CARD_COUNTRY_ROWS))))
+        };
+        welcome_click(state, message);
+        let (_, list) = countries(state).context("Change Country did not drop the country list")?;
+        let (lit, top) = opens_at(state, 2)?;
+        ensure!(
+            list.hot_row == Some(lit) && list.popup.first == top,
+            "the list opened at row {:?}, top {}, not at the United States",
+            list.hot_row,
+            list.popup.first
+        );
+        // The first shown row of another country: where the United States
+        // sits depends on the language's names.
+        let (row, locale) = {
+            let card = Self::lobby(state)?.ui.card.as_ref().context("your card")?;
+            (list.popup.first..list.popup.first + CARD_COUNTRY_ROWS)
+                .filter_map(|row| card.countries.get(row).map(|country| (row, country.locale)))
+                .find(|&(_, locale)| locale != 2)
+                .context("every shown row is the United States")?
+        };
+        welcome_click(state, list.popup.row_rect(row).context("the picked row")?);
+        ensure!(countries(state).is_none(), "the pick left the list open");
+        ensure!(
+            state.persistence.options_profile.online_locale == locale,
+            "VERA.INI did not keep {locale}"
+        );
+        let requests = self.requests(state, frame)?;
+        ensure!(
+            requests.contains(&WolServiceRequest::SetLocale(locale)),
+            "the pick sent {requests:?}"
+        );
+        self.event(frame, json!({"country kept and sent": locale}));
+        welcome_click(state, message);
+        let (rows, list) = countries(state).context("Change Country did not open again")?;
+        let (lit, top) = opens_at(state, locale)?;
+        ensure!(
+            lit == row && list.hot_row == Some(row) && list.popup.first == top,
+            "the list opened again at row {:?}, top {}",
+            list.hot_row,
+            list.popup.first
+        );
+        let picked = &list.rows[row];
+        ensure!(
+            rows.iter().any(|(_, value)| value == picked),
+            "the card shows {rows:?}"
+        );
+        Ok(())
+    }
+
     fn requests(&mut self, state: &mut AppState, frame: u32) -> Result<Vec<WolServiceRequest>> {
         let requests = state
             .frontend
@@ -956,7 +1115,7 @@ impl WolCapture {
                         password: PASSWORD.into(),
                     }];
                 }
-                if self.target != WolTarget::ModernUsername {
+                if !self.target.online_login() {
                     write_wolinfo(state, self.target)?;
                 }
                 App::leave_shell_dialog(
@@ -968,12 +1127,16 @@ impl WolCapture {
                 self.event(frame, "0xE2 Internet");
                 // The normal online visit has no welcome: Internet signs in.
                 self.phase = match self.target {
-                    WolTarget::ModernUsername => WolPhase::Login,
+                    target if target.online_login() => WolPhase::Login,
                     WolTarget::ModernLobby
                     | WolTarget::ModernCreate
+                    | WolTarget::ModernPlayerCard
+                    | WolTarget::ModernChangeCountry
                     | WolTarget::ModernRoomOptions
                     | WolTarget::ModernSpectators
-                    | WolTarget::ModernOptions => WolPhase::ServiceLogin,
+                    | WolTarget::ModernOptions
+                    | WolTarget::ModernChatTranslation
+                    | WolTarget::ModernChatTranslationList => WolPhase::ServiceLogin,
                     _ => WolPhase::Welcome,
                 };
             }
@@ -1153,6 +1316,7 @@ impl WolCapture {
                                         nickname: NICKNAME.into(),
                                         password: PASSWORD.into(),
                                         changed: false,
+                                        remember: false,
                                     }],
                             "AutoLogin did not connect the stored account to the persona's server: {requests:?}"
                         );
@@ -1223,37 +1387,50 @@ impl WolCapture {
             {
                 let layout = crate::app::shell_wol::login_layout(state);
                 match self.target {
-                    WolTarget::ModernUsername => {
-                        login_click(state, layout.nickname_face);
-                        App::handle_wol_key(
-                            state,
-                            Some(winit::keyboard::KeyCode::Home),
-                            true,
-                            None,
-                        );
-                        for _ in 0..32 {
-                            App::handle_wol_key(
-                                state,
-                                Some(winit::keyboard::KeyCode::Delete),
-                                true,
-                                None,
-                            );
-                        }
-                        App::handle_wol_key(state, None, true, Some("Player"));
-                        let login = state
-                            .frontend
-                            .wol
-                            .as_ref()
-                            .and_then(|visit| visit.login())
-                            .context("username form")?;
+                    target if target.online_login() => {
+                        // Captures read nothing: the page shows fixed counts.
+                        state.frontend.login_info.set(Some(
+                            crate::app::shell_wol::login_info::LobbyStats {
+                                online: 12,
+                                games_24h: 30,
+                            },
+                        ));
+                        let login = login_mut(state)?;
                         ensure!(
                             login.policy == crate::ui::wol_login::LoginPolicy::Online
-                                && login.password.units.is_empty()
-                                && login.login_enabled
-                                && !login.remember_enabled,
-                            "modern username form retained password controls"
+                                && login.account.is_none(),
+                            "the online login page did not open on its own"
                         );
-                        self.event(frame, "Username typed; Login enabled without a password");
+                        self.event(frame, "the online login page");
+                        if matches!(target, WolTarget::ModernUsername | WolTarget::ModernLogin) {
+                            let online = layout.online.context("the online sign-in form")?;
+                            let typed: &[&str] = if target == WolTarget::ModernLogin {
+                                &["Player", "s3cret-pw"]
+                            } else {
+                                &["Player"]
+                            };
+                            account_type(state, typed);
+                            if target == WolTarget::ModernLogin {
+                                welcome_click(
+                                    state,
+                                    crate::ui::skirmish_shell::checkbox_icon_rect(
+                                        online.remember,
+                                        layout.page.scale,
+                                    ),
+                                );
+                            }
+                            let login = login_mut(state)?;
+                            ensure!(
+                                login.online_name() == "Player"
+                                    && login.button_enabled(crate::ui::wol_login::PLAY)
+                                    && login.form.as_ref().and_then(|form| form.remember)
+                                        == Some(target == WolTarget::ModernLogin),
+                                "the typed sign-in did not enable Play"
+                            );
+                            self.event(frame, "the sign-in form filled in");
+                        } else if target != WolTarget::ModernLoginPage {
+                            self.account_popup(state, frame, target, &layout)?;
+                        }
                         MoviesCapture::restore_neutral_pointer(state);
                         self.settle();
                         return Ok(());
@@ -1335,6 +1512,7 @@ impl WolCapture {
                             nickname: NICKNAME.into(),
                             password: PASSWORD.into(),
                             changed: true,
+                            remember: false,
                         }],
                     "Login did not connect to the selected record"
                 );
@@ -1510,7 +1688,7 @@ impl WolCapture {
                     .iter()
                     .map(|line| String::from_utf16_lossy(&line.text))
                     .collect();
-                if texts.iter().any(|text| text == "(Tanya) Got your page.") {
+                if texts.contains(&test_page_back("Tanya")) {
                     ensure!(
                         texts.contains(&format!("[{NICKNAME}] On my way"))
                             && received.lines.iter().any(|line| line.color == 0xF0F0),
@@ -1551,7 +1729,8 @@ impl WolCapture {
                     );
                     self.phase = WolPhase::Joining;
                 } else {
-                    let [WolServiceRequest::CreateChannel { channel, key }] = requests.as_slice()
+                    let [WolServiceRequest::CreateChannel { channel, key, .. }] =
+                        requests.as_slice()
                     else {
                         bail!("the game channel was not created: {requests:?}");
                     };
@@ -1711,7 +1890,7 @@ impl WolCapture {
                 let sim = &state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .context("installed WOL runtime")?
                     .simulation;
                 ensure!(
@@ -1817,7 +1996,7 @@ impl WolCapture {
                 let sim = &state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .context("the clan peer's EXIT lost the runtime")?
                     .simulation;
                 let peer = clan_peer_house(state)?;
@@ -1907,7 +2086,7 @@ impl WolCapture {
                     let sim = &state
                         .match_state
                         .sim_runtime
-                        .as_ref()
+                        .runtime()
                         .context("EXIT runtime")?
                         .simulation;
                     ensure!(sim.quit_requested(), "the return began before EXIT ran");
@@ -1996,9 +2175,13 @@ impl WolCapture {
                                 self.target,
                                 WolTarget::ModernLobby
                                     | WolTarget::ModernCreate
+                                    | WolTarget::ModernPlayerCard
+                                    | WolTarget::ModernChangeCountry
                                     | WolTarget::ModernRoomOptions
                                     | WolTarget::ModernSpectators
                                     | WolTarget::ModernOptions
+                                    | WolTarget::ModernChatTranslation
+                                    | WolTarget::ModernChatTranslationList
                             ) {
                                 1
                             } else {
@@ -2068,6 +2251,88 @@ impl WolCapture {
                             == Some(lobby_ui::CREATE_LIMIT),
                         "Limit Screen Resolution has no help"
                     );
+                    // Ranked game says when the lobby ranks the room's games.
+                    set_window_pointer_to_rect_center(state, create.ranked.context("Ranked game")?);
+                    App::handle_wol_mouse_move(state);
+                    let help = crate::app::shell_wol::lobby::status_help(state);
+                    ensure!(
+                        help == App::csf_label(state, "VERA:RankedGameHelp", "VERA:RankedGameHelp"),
+                        "Ranked game's help read {help:?}"
+                    );
+                    self.event(frame, json!({"Ranked game help": help}));
+                    self.settle();
+                    return Ok(());
+                }
+                if self.target == WolTarget::ModernLobby {
+                    // Tanya's row names her badge, rank and OS.
+                    let row = player_row_rect(state, "Tanya")?;
+                    set_window_pointer_to_rect_center(state, row);
+                    App::handle_wol_mouse_move(state);
+                    let help = crate::app::shell_wol::lobby::status_help(state);
+                    let label = |key: &str| App::csf_label(state, key, key);
+                    let expected = crate::i18n::fill(
+                        &label("VERA:PlayerHelp"),
+                        &[
+                            ("name", &"Tanya"),
+                            ("badge", &label("VERA:LobbyBadgeCommanderInChief")),
+                            ("rank", &1),
+                            ("os", &"48.51"),
+                        ],
+                    );
+                    ensure!(help == expected, "Tanya's row help read {help:?}");
+                    self.event(frame, json!({"hovered player help": help}));
+                    self.settle();
+                    return Ok(());
+                }
+                if self.target == WolTarget::ModernPlayerCard {
+                    // The test service has sent Tanya's badge, country and
+                    // season record.
+                    player_row_click(state, "Tanya")?;
+                    ensure!(
+                        Self::lobby(state)?
+                            .ui
+                            .card
+                            .as_ref()
+                            .is_some_and(|card| card.name == "Tanya"),
+                        "a click on Tanya did not open her card"
+                    );
+                    self.event(frame, "player card opened");
+                    // Message's help in the box's status line.
+                    let card = crate::app::shell_wol::player_card::layout(state);
+                    set_window_pointer_to_rect_center(state, card.message);
+                    App::handle_wol_mouse_move(state);
+                    let help = crate::app::shell_wol::lobby::status_help(state);
+                    let expected = crate::i18n::fill(
+                        &App::csf_label(state, "VERA:MessageHelp", "VERA:MessageHelp"),
+                        &[("name", &"Tanya")],
+                    );
+                    ensure!(help == expected, "Message's help read {help:?}");
+                    // The season row: her OS to the hundredth, and what OS
+                    // is under the pointer.
+                    let label = |key: &str| App::csf_label(state, key, key);
+                    let rows = crate::app::shell_wol::player_card::view(state)
+                        .context("Tanya's card")?
+                        .rows;
+                    let season = rows
+                        .iter()
+                        .position(|(caption, _)| *caption == label("VERA:Season"))
+                        .context("the season row")?;
+                    let shown = crate::i18n::fill(
+                        &label("VERA:SeasonRank"),
+                        &[("rank", &1), ("os", &"48.51")],
+                    );
+                    ensure!(rows[season].1 == shown, "the card shows {rows:?}");
+                    let explained = label("VERA:SeasonHelp");
+                    set_window_pointer_to_rect_center(state, card.rows[season].1);
+                    App::handle_wol_mouse_move(state);
+                    let help = crate::app::shell_wol::lobby::status_help(state);
+                    ensure!(help == explained, "the season row's help read {help:?}");
+                    self.event(frame, json!({"season row help": help}));
+                    self.settle();
+                    return Ok(());
+                }
+                if self.target == WolTarget::ModernChangeCountry {
+                    self.change_country(state, frame)?;
                     self.settle();
                     return Ok(());
                 }
@@ -2080,6 +2345,20 @@ impl WolCapture {
                     );
                     self.event(frame, "0x113 Options");
                     self.phase = WolPhase::OptionsOpening;
+                    return Ok(());
+                }
+                if matches!(
+                    self.target,
+                    WolTarget::ModernChatTranslation | WolTarget::ModernChatTranslationList
+                ) {
+                    let layout = crate::app::shell_wol::lobby::layout(state);
+                    lobby_button(state, &layout, lobby_ui::CHAT_TRANSLATION)?;
+                    ensure!(
+                        state.frontend.shell_exit.is_some(),
+                        "Chat Translation did not slide the lobby out"
+                    );
+                    self.event(frame, "lobby Chat Translation");
+                    self.phase = WolPhase::ChatTranslationOpening;
                     return Ok(());
                 }
                 if self.target == WolTarget::BuddyFromLobby && !self.rejoined {
@@ -2289,6 +2568,24 @@ impl WolCapture {
                     && Self::page_settled(state, ShellSlideKind::WolOptions) =>
             {
                 self.options_settled(state, frame)?;
+            }
+            WolPhase::ChatTranslationOpening
+                if rendered == PresentedShell::WolChatTranslation
+                    && Self::page_settled(state, ShellSlideKind::WolChatTranslation) =>
+            {
+                self.chat_translation_opened(state, frame)?;
+            }
+            WolPhase::ChatTranslationReturn
+                if rendered == PresentedShell::WolLobby
+                    && Self::page_settled(state, ShellSlideKind::WolLobby) =>
+            {
+                self.chat_translation_saved(state, frame)?;
+            }
+            WolPhase::ChatTranslationReopened
+                if rendered == PresentedShell::WolChatTranslation
+                    && Self::page_settled(state, ShellSlideKind::WolChatTranslation) =>
+            {
+                self.chat_translation_reopened(state, frame)?;
             }
             WolPhase::OptionsReturn
                 if rendered == PresentedShell::WolLobby
@@ -2656,7 +2953,7 @@ impl WolCapture {
             let sim = &state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .context("the clan match runtime")?
                 .simulation;
             let session = sim.session();
@@ -2681,7 +2978,7 @@ impl WolCapture {
         let after = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("the clan match runtime")?
             .simulation
             .pending_command_snapshot()
@@ -2715,7 +3012,7 @@ impl WolCapture {
                 let tick = state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .context("the clan match runtime")?
                     .simulation
                     .session()
@@ -3954,6 +4251,102 @@ impl WolCapture {
         Ok(())
     }
 
+    /// The Chat Translation page settled: real clicks choose Simplified
+    /// Chinese, which turns Same-Alphabet Languages on, then OK.
+    fn chat_translation_opened(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        use crate::app::shell_wol::chat_translation as app_page;
+        use crate::ui::wol_chat_translation::{OK, SAME_ALPHABET};
+        self.options_before = Some((read_settings(state)?, state.frontend.wol_preferences));
+        ensure!(
+            !Self::lobby(state)?.shown,
+            "the lobby must hide under the page"
+        );
+        let layout = app_page::layout(state);
+        let page = app_page::page(state).context("the page")?;
+        ensure!(page.settings.language.is_none(), "translation starts off");
+        ensure!(!page.enabled(SAME_ALPHABET), "off locks the checkboxes");
+        welcome_click(state, language_list_arrow(&layout));
+        let page = app_page::page(state).context("the page")?;
+        let popup = page
+            .popup_geometry(&layout)
+            .context("the language list did not open")?;
+        welcome_click(state, popup.row_rect(2).context("Simplified Chinese")?);
+        let page = app_page::page(state).context("the page")?;
+        ensure!(
+            page.settings.language == Some(ChatLanguage::SimplifiedChinese)
+                && page.settings.same_alphabet
+                && page.popup.control.is_none(),
+            "the clicks did not set the page: {:?}",
+            page.settings
+        );
+        welcome_click(state, layout.page.button_rect(OK).context("OK")?);
+        ensure!(
+            state.frontend.shell_exit.is_some(),
+            "the page did not slide out"
+        );
+        self.event(frame, "Simplified Chinese, OK");
+        self.phase = WolPhase::ChatTranslationReturn;
+        Ok(())
+    }
+
+    /// OK kept and wrote the choices; the page opens again to show them.
+    fn chat_translation_saved(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        let chat = state.persistence.options_profile.chat_translation;
+        ensure!(
+            chat.language == Some(ChatLanguage::SimplifiedChinese) && chat.same_alphabet,
+            "OK did not keep the choices: {chat:?}"
+        );
+        let saved = read_settings(state)?.context("VERA.INI")?;
+        let saved = String::from_utf8_lossy(&saved);
+        ensure!(
+            saved.contains("TranslateChat=zh-Hans") && saved.contains("TranslateSameAlphabet=yes"),
+            "OK did not write VERA.INI"
+        );
+        self.event(frame, "the lobby again: the choices are saved");
+        let layout = crate::app::shell_wol::lobby::layout(state);
+        lobby_button(state, &layout, lobby_ui::CHAT_TRANSLATION)?;
+        self.phase = WolPhase::ChatTranslationReopened;
+        Ok(())
+    }
+
+    fn chat_translation_reopened(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        use crate::app::shell_wol::chat_translation as app_page;
+        use crate::ui::wol_chat_translation::SAME_ALPHABET;
+        let layout = app_page::layout(state);
+        let page = app_page::page(state).context("the page")?;
+        ensure!(
+            page.settings.language == Some(ChatLanguage::SimplifiedChinese)
+                && page.is_checked(SAME_ALPHABET),
+            "the reopened page does not show the saved choices"
+        );
+        self.event(frame, "reopened with the saved choices");
+        // The capture's isolated profile goes back as it was.
+        let (bytes, _) = self.options_before.clone().context("saved VERA.INI")?;
+        restore_settings(state, bytes)?;
+        if self.target == WolTarget::ModernChatTranslationList {
+            welcome_click(state, language_list_arrow(&layout));
+            let page = app_page::page(state).context("the page")?;
+            let row = page
+                .popup_geometry(&layout)
+                .and_then(|popup| popup.row_rect(4))
+                .context("the language list did not open")?;
+            set_window_pointer_to_rect_center(state, row);
+        } else {
+            let same = layout
+                .checkbox_rect(SAME_ALPHABET)
+                .context("the checkbox")?;
+            set_window_pointer_to_rect_center(state, same);
+        }
+        App::handle_wol_mouse_move(state);
+        ensure!(
+            app_page::status_key(state).is_some()
+                || self.target == WolTarget::ModernChatTranslationList,
+            "the box has no help"
+        );
+        self.settle();
+        Ok(())
+    }
+
     /// The lobby shown again after `0x2BC` closed.
     fn options_returned(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         let lobby = Self::lobby(state)?;
@@ -4235,7 +4628,7 @@ impl WolCapture {
         self.page_tick = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|runtime| runtime.simulation.session().tick());
         // The controlled service answers the request it was sent.
         let requests = self.requests(state, frame)?;
@@ -4385,7 +4778,8 @@ impl WolCapture {
         let done = match self.target {
             WolTarget::PageFindStatus => page.status == csf("TXT_FINDPAGE_NOT_ONLINE"),
             WolTarget::PageUserGone => texts.contains(&csf("TXT_PAGEUSERGONE")),
-            _ => texts.iter().any(|text| text.ends_with(") Got your page.")),
+            WolTarget::SetupPage => texts.contains(&test_page_back("Boris")),
+            _ => texts.contains(&test_page_back("Tanya")),
         };
         if !done {
             return Ok(());
@@ -4404,7 +4798,7 @@ impl WolCapture {
                 "0xCF lacks the echo, the result or the status: {texts:?} {:?}",
                 page.status
             );
-            let line = format!("({name}) Got your page.");
+            let line = test_page_back(name);
             let transcript = if self.target == WolTarget::SetupPage {
                 setup_chat_has(state, &line)?
             } else {
@@ -4527,7 +4921,7 @@ impl WolCapture {
                 state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .is_some_and(|runtime| runtime.simulation.session().tick() > sent)
             });
             return Ok(self.phase == WolPhase::Settle(0)
@@ -4547,13 +4941,84 @@ impl WolCapture {
             && state.frontend.shell_first_paint_slide.is_none())
     }
 
+    /// Create Account, Forgot Password or Delete Account over the online
+    /// login page. The lobby's answers come in place, so nothing reaches the
+    /// live lobby.
+    fn account_popup(
+        &mut self,
+        state: &mut AppState,
+        frame: u32,
+        target: WolTarget,
+        layout: &crate::ui::wol_login::WolLoginLayout,
+    ) -> Result<()> {
+        use crate::ui::wol_account::{AccountFormAction, AccountRequest, FORM_OK, FormKind};
+        use crate::ui::wol_login::{CREATE_ACCOUNT, DELETE_ACCOUNT, FORGOT_PASSWORD};
+        const PASSWORD: &str = "s3cret-pw";
+        let control = match target {
+            WolTarget::ModernForgotPassword => FORGOT_PASSWORD,
+            WolTarget::ModernDeleteAccount => DELETE_ACCOUNT,
+            _ => CREATE_ACCOUNT,
+        };
+        welcome_click(state, button(layout, control)?);
+        match target {
+            WolTarget::ModernForgotPassword => {
+                account_type(state, &["Player"]);
+                let form = login_mut(state)?
+                    .account
+                    .as_mut()
+                    .context("Forgot Password")?;
+                ensure!(
+                    matches!(
+                        form.activate(FORM_OK),
+                        Some(AccountFormAction::Send(AccountRequest::Forgot { .. }))
+                    ) && form.answered(Ok(())).is_none()
+                        && form.kind == FormKind::Reset,
+                    "Forgot Password did not move on to its code"
+                );
+                account_type(state, &["123456", PASSWORD, PASSWORD]);
+                self.event(frame, "Forgot Password: code and new password typed");
+            }
+            WolTarget::ModernDeleteAccount => {
+                account_type(state, &["Player", PASSWORD]);
+                self.event(frame, "Delete Account: username and password typed");
+            }
+            _ => {
+                account_type(state, &["Player", "player@example.com", PASSWORD, PASSWORD]);
+                self.event(frame, "Create Account filled in");
+                if target == WolTarget::ModernAccountCode {
+                    let form = login_mut(state)?
+                        .account
+                        .as_mut()
+                        .context("Create Account")?;
+                    ensure!(
+                        matches!(form.activate(FORM_OK), Some(AccountFormAction::Send(_)))
+                            && form.answered(Ok(())).is_none()
+                            && form.kind == FormKind::Verify,
+                        "Create Account did not move on to its code"
+                    );
+                    account_type(state, &["123456"]);
+                    self.event(frame, "the mailed code typed");
+                }
+            }
+        }
+        let form = login_mut(state)?
+            .account
+            .as_ref()
+            .context("account popup")?;
+        ensure!(
+            form.ok_enabled(),
+            "the filled account popup kept OK disabled"
+        );
+        Ok(())
+    }
+
     pub(super) fn receipt(&self, state: &AppState) -> Value {
         let visit = state.frontend.wol.as_ref();
         json!({
             "target": format!("{:?}", self.target),
             "route": self.route,
-            "service_boundary": if self.target == WolTarget::ModernUsername {
-                "ordinary online username page; visual capture only, no authenticated backend claim"
+            "service_boundary": if self.target.online_login() {
+                "ordinary online login page; visual capture only, no authenticated backend claim"
             } else { "controlled decoded WOL results; no WOLAPI, transport or backend claim" },
             "shell_route": format!("{:?}", state.frontend.shell_route),
             "mode": visit.and_then(|visit| visit.mode()).map(|mode| mode.native()),
@@ -4569,6 +5034,7 @@ impl WolCapture {
                 "remember_enabled": login.remember_enabled,
                 "remember_checked": login.remember_checked,
                 "focused": login.focused_control,
+                "popup": login.account.as_ref().map(|form| format!("{:?}", form.kind)),
             })),
         })
     }
@@ -4579,7 +5045,7 @@ fn clan_peer_house(state: &AppState) -> Result<crate::sim::intern::InternedId> {
     let sim = &state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("the clan match runtime")?
         .simulation;
     state
@@ -4762,6 +5228,14 @@ fn restore_settings(state: &AppState, bytes: Option<Vec<u8>>) -> Result<()> {
     .with_context(|| format!("restore {}", path.display()))
 }
 
+/// The language list's face where a press opens it: the arrow at its right.
+fn language_list_arrow(
+    layout: &crate::ui::wol_chat_translation::WolChatTranslationLayout,
+) -> RectPx {
+    let face = layout.language;
+    RectPx::new(face.x + face.w - 12, face.y, 4, face.h)
+}
+
 fn lobby_button(state: &mut AppState, layout: &lobby_ui::WolLobbyLayout, id: u16) -> Result<()> {
     welcome_click(state, layout.page.button_rect(id).context("0x113 button")?);
     Ok(())
@@ -4784,6 +5258,36 @@ fn game_row_click(state: &mut AppState, row: usize) -> Result<()> {
     let rect = geometry.row(row - lobby.ui.game_list.top_index);
     welcome_click(state, rect);
     Ok(())
+}
+
+/// A click on the player list's row of `name`.
+fn player_row_click(state: &mut AppState, name: &str) -> Result<()> {
+    let rect = player_row_rect(state, name)?;
+    welcome_click(state, rect);
+    Ok(())
+}
+
+/// The modern player list's row of `name`.
+fn player_row_rect(state: &AppState, name: &str) -> Result<RectPx> {
+    let layout = crate::app::shell_wol::lobby::layout(state);
+    let lobby = state
+        .frontend
+        .wol
+        .as_ref()
+        .and_then(|visit| visit.lobby())
+        .context("the lobby runner")?;
+    let row = lobby
+        .ui
+        .player_rows
+        .iter()
+        .position(|row| row.name == name)
+        .context("the player's row")?;
+    let geometry = lobby.ui.player_list.geometry(
+        layout.players,
+        lobby.ui.player_rows.len(),
+        layout.page.scale,
+    );
+    Ok(geometry.row(row - lobby.ui.player_list.top_index))
 }
 
 /// Three IRC records; the preferred-server draw left record 1 selected.
@@ -4819,6 +5323,12 @@ fn button(layout: &crate::ui::wol_login::WolLoginLayout, id: u16) -> Result<Rect
     layout.page.button_rect(id).context("0x10F button")
 }
 
+/// The test service's page back from `name`, as the page dialog shows it
+/// (`(name) ` before the stand-in's line, in the player's language).
+fn test_page_back(name: &str) -> String {
+    format!("({name}) {}", crate::i18n::tr("VERA:TestPageReply"))
+}
+
 /// A press and release through the window handlers' WOL routing; like the
 /// native helper, the pointer then returns to the neutral point.
 fn welcome_click(state: &mut AppState, rect: RectPx) {
@@ -4827,6 +5337,23 @@ fn welcome_click(state: &mut AppState, rect: RectPx) {
     App::handle_wol_mouse_down(state);
     App::handle_wol_mouse_up(state);
     MoviesCapture::restore_neutral_pointer(state);
+}
+
+fn login_mut(state: &mut AppState) -> Result<&mut crate::ui::wol_login::WolLoginState> {
+    match state.frontend.wol.as_mut().map(|visit| &mut visit.page) {
+        Some(crate::app::shell_wol::WolPage::Login(login)) => Ok(login),
+        _ => bail!("0x10F is not open"),
+    }
+}
+
+/// Type into the account popup's fields from the focused one, Tab between.
+fn account_type(state: &mut AppState, values: &[&str]) {
+    for (index, value) in values.iter().enumerate() {
+        if index > 0 {
+            App::handle_wol_key(state, Some(winit::keyboard::KeyCode::Tab), true, None);
+        }
+        App::handle_wol_key(state, None, true, Some(value));
+    }
 }
 
 fn login_click(state: &mut AppState, rect: RectPx) {
