@@ -27,7 +27,8 @@ pub fn bridge_constructor_terrain() -> ResolvedTerrainGrid {
     grid.native_allocated = Some(
         (0..33)
             .flat_map(|y| (0..33).map(move |x| (12..=20).contains(&x) && (12..=20).contains(&y)))
-            .collect(),
+            .collect::<Vec<_>>()
+            .into(),
     );
     grid.bridge_recalc_catalog = Some(Arc::new(BridgeRecalcCatalog::for_tiles(
         &theater,

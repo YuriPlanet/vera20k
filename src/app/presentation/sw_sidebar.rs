@@ -155,7 +155,7 @@ pub(crate) fn plan(
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|runtime| &runtime.simulation)
     else {
         return (SwSidebarLayout::default(), Vec::new());
@@ -227,7 +227,7 @@ pub(crate) fn plan(
 /// Per-frame `can_fire`/progress/readiness refresh, matching `SWButtonClass::Draw`
 /// reading the live `SuperClass`.
 pub(crate) fn refresh_draw_state(state: &mut AppState) {
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.presentation() else {
         return;
     };
     let Some(owner_name) = crate::app::input::commands::preferred_local_owner_name(state) else {

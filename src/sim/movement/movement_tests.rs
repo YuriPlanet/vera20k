@@ -82,7 +82,7 @@ fn ordinary_drive_retires_selector_before_entering_an_explicit_tube() {
     );
     assert!(committed_track_head(accepted).is_none());
     sim.resolved_terrain = Some(terrain.clone());
-    sim.zone_grid = Some(zones.clone());
+    sim.zone_grid = Some(zones.clone().into());
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     let rules = drive_type_rules();
     sim.process_ground_locomotor_for_test(1, Some(&rules), Some(&grid), None)
@@ -873,14 +873,26 @@ fn walk_arrival_keeps_list_order_and_snapshot_continuation() {
                 );
                 loaded.restore_after_snapshot_load().unwrap();
                 loaded.resolve_type_handles(&rules);
-                assert!(loaded.zone_grid.as_ref().unwrap().is_native_load_pending());
+                assert!(
+                    loaded
+                        .zone_grid
+                        .as_deref()
+                        .unwrap()
+                        .is_native_load_pending()
+                );
                 loaded.rebuild_caches_after_load(
                     terrain.clone(),
                     sim.terrain_speed_config().clone(),
                     &rules,
                 );
                 assert!(loaded.rebuild_dynamic_navigation(&rules));
-                assert!(!loaded.zone_grid.as_ref().unwrap().is_native_load_pending());
+                assert!(
+                    !loaded
+                        .zone_grid
+                        .as_deref()
+                        .unwrap()
+                        .is_native_load_pending()
+                );
                 let loaded_entries: Vec<_> = loaded
                     .substrate
                     .occupancy

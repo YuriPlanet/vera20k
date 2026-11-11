@@ -33,7 +33,9 @@ const _: () = assert!(RETAIL_SIDE.is_power_of_two() && SIDE.is_power_of_two());
 pub(crate) struct CellMap<V> {
     /// Dense cells per side: [`RETAIL_SIDE`], or [`SIDE`] once grown.
     side: usize,
-    strips: Vec<Option<Box<[Option<V>]>>>,
+    /// Shared copy-on-write with the presentation frame (docs/sim-thread.md):
+    /// a write copies only its own row.
+    strips: Vec<Option<std::sync::Arc<[Option<V>]>>>,
     /// One bit per slot, set while the slot holds a value.
     filled: Vec<u64>,
     filled_count: usize,
@@ -71,7 +73,7 @@ fn merge_by_key<T>(
     })
 }
 
-impl<V> CellMap<V> {
+impl<V: Clone> CellMap<V> {
     pub(crate) fn new() -> Self {
         Self::default()
     }
@@ -80,9 +82,10 @@ impl<V> CellMap<V> {
         self.filled_count + self.outside.len()
     }
 
-    /// Slots per strip: eight columns of the dense array.
+    /// Slots per strip: one column of the dense array, so a write shared
+    /// with a presentation frame copies only that column.
     fn strip_slots(&self) -> usize {
-        8 * self.side
+        self.side
     }
 
     /// The dense slot of `key`; `None` when it lies outside the current side.
@@ -106,7 +109,7 @@ impl<V> CellMap<V> {
     /// `slot`'s strip and its offset there: the slot over, and modulo,
     /// [`Self::strip_slots`].
     fn strip_and_offset(&self, slot: usize) -> (usize, usize) {
-        let shift = self.side_shift() + 3;
+        let shift = self.side_shift();
         (slot >> shift, slot & ((1 << shift) - 1))
     }
 
@@ -118,7 +121,7 @@ impl<V> CellMap<V> {
 
     fn slot_mut(&mut self, slot: usize) -> Option<&mut Option<V>> {
         let (strip, offset) = self.strip_and_offset(slot);
-        let strip = self.strips.get_mut(strip)?.as_deref_mut()?;
+        let strip = std::sync::Arc::make_mut(self.strips.get_mut(strip)?.as_mut()?);
         Some(&mut strip[offset])
     }
 
@@ -132,11 +135,12 @@ impl<V> CellMap<V> {
         for (strip, slots) in old_strips.into_iter().enumerate() {
             for (offset, value) in slots
                 .into_iter()
-                .flat_map(|slots| slots.into_vec())
+                .flat_map(|slots| slots.to_vec())
                 .enumerate()
             {
                 if let Some(value) = value {
-                    let slot = strip * 8 * old_side + offset;
+                    // One column per strip at the old side.
+                    let slot = strip * old_side + offset;
                     let key = ((slot / old_side) as u16, (slot % old_side) as u16);
                     self.get_or_insert_with(key, || value);
                 }
@@ -176,11 +180,12 @@ impl<V> CellMap<V> {
         let strip_slots = self.strip_slots();
         let (strip, offset) = self.strip_and_offset(slot);
         if self.strips.is_empty() {
-            self.strips.resize_with(self.side / 8, || None);
+            self.strips.resize_with(self.side, || None);
             self.filled = vec![0; self.side * self.side / 64];
         }
-        let strip =
-            self.strips[strip].get_or_insert_with(|| (0..strip_slots).map(|_| None).collect());
+        let strip = std::sync::Arc::make_mut(
+            self.strips[strip].get_or_insert_with(|| (0..strip_slots).map(|_| None).collect()),
+        );
         let value = &mut strip[offset];
         let was_filled = value.is_some();
         let value = value.get_or_insert_with(make);
@@ -235,7 +240,7 @@ impl<V> CellMap<V> {
             .strips
             .iter_mut()
             .enumerate()
-            .filter_map(|(strip, slots)| Some((strip, slots.as_deref_mut()?)))
+            .filter_map(|(strip, slots)| Some((strip, std::sync::Arc::make_mut(slots.as_mut()?))))
             .flat_map(move |(strip, slots)| {
                 slots
                     .iter_mut()
@@ -276,21 +281,21 @@ impl Iterator for SetBits {
     }
 }
 
-impl<V: PartialEq> PartialEq for CellMap<V> {
+impl<V: Clone + PartialEq> PartialEq for CellMap<V> {
     fn eq(&self, other: &Self) -> bool {
         self.len() == other.len() && self.iter().eq(other.iter())
     }
 }
 
-impl<V: Eq> Eq for CellMap<V> {}
+impl<V: Clone + Eq> Eq for CellMap<V> {}
 
-impl<V: fmt::Debug> fmt::Debug for CellMap<V> {
+impl<V: Clone + fmt::Debug> fmt::Debug for CellMap<V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_map().entries(self.iter()).finish()
     }
 }
 
-impl<V: Serialize> Serialize for CellMap<V> {
+impl<V: Clone + Serialize> Serialize for CellMap<V> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut map = serializer.serialize_map(Some(self.len()))?;
         for (key, value) in self.iter() {
@@ -300,11 +305,11 @@ impl<V: Serialize> Serialize for CellMap<V> {
     }
 }
 
-impl<'de, V: Deserialize<'de>> Deserialize<'de> for CellMap<V> {
+impl<'de, V: Clone + Deserialize<'de>> Deserialize<'de> for CellMap<V> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct CellMapVisitor<V>(PhantomData<V>);
 
-        impl<'de, V: Deserialize<'de>> Visitor<'de> for CellMapVisitor<V> {
+        impl<'de, V: Clone + Deserialize<'de>> Visitor<'de> for CellMapVisitor<V> {
             type Value = CellMap<V>;
 
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

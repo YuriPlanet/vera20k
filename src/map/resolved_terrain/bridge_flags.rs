@@ -67,8 +67,28 @@ impl RealCellBridgeFlags0x1180 {
 /// Route one exact `SetBridgeDirection_*` transaction through native fixed
 /// indexing. A real slot mutates its retained facts; every miss stamps and
 /// mutates the same process-global dummy identity.
+/// Cell storage a bridge stamp writes: the loader's vector or the live
+/// grid's shared chunks.
+pub(super) trait StampCells:
+    std::ops::IndexMut<usize, Output = ResolvedTerrainCell>
+{
+    fn cell_count(&self) -> usize;
+}
+
+impl StampCells for Vec<ResolvedTerrainCell> {
+    fn cell_count(&self) -> usize {
+        self.len()
+    }
+}
+
+impl StampCells for crate::util::shared::ChunkedVec<ResolvedTerrainCell> {
+    fn cell_count(&self) -> usize {
+        self.len()
+    }
+}
+
 pub(super) fn apply_native_bridge_flag_stamp_to_parts(
-    cells: &mut [ResolvedTerrainCell],
+    cells: &mut impl StampCells,
     width: u16,
     height: u16,
     native_allocated: Option<&[bool]>,
@@ -83,7 +103,7 @@ pub(super) fn apply_native_bridge_flag_stamp_to_parts(
         width,
         height,
         native_allocated,
-        cells.len(),
+        cells.cell_count(),
         i32::from(stamp.anchor.0),
         i32::from(stamp.anchor.1),
     )
@@ -94,7 +114,7 @@ pub(super) fn apply_native_bridge_flag_stamp_to_parts(
             continue;
         };
         if let Some(index) =
-            native_resolved_cell_index(width, height, native_allocated, cells.len(), x, y)
+            native_resolved_cell_index(width, height, native_allocated, cells.cell_count(), x, y)
         {
             let facts = &mut cells[index].bridge_facts;
             if let Some(family) = map_family {
@@ -162,7 +182,7 @@ impl ResolvedTerrainGrid {
     /// Give every fixture deck the CellClass bit0x100 a loaded deck carries.
     #[cfg(any(test, feature = "test-support"))]
     pub fn test_mark_decks_structural(mut self) -> Self {
-        for cell in &mut self.cells {
+        for cell in self.cells.iter_mut() {
             if cell.has_bridge_deck {
                 cell.bridge_facts.raw_flags |= BRIDGE_FLAG_STRUCTURAL;
             }
@@ -178,10 +198,10 @@ impl ResolvedTerrainGrid {
         stamp: BridgeFlagStamp,
     ) -> Vec<(usize, u32)> {
         apply_native_bridge_flag_stamp_to_parts(
-            &mut self.cells,
+            self.cells.all_mut(),
             self.width,
             self.height,
-            self.native_allocated.as_deref(),
+            self.native_allocated.as_deref().map(Vec::as_slice),
             &self.shared_cell_dummy,
             stamp,
             None,
@@ -204,7 +224,7 @@ impl ResolvedTerrainGrid {
         if let Some(index) = native_resolved_cell_index(
             self.width,
             self.height,
-            self.native_allocated.as_deref(),
+            self.native_allocated.as_deref().map(Vec::as_slice),
             self.cells.len(),
             x,
             y,
@@ -242,10 +262,10 @@ impl ResolvedTerrainGrid {
         family: BridgeStampFamily,
     ) -> Vec<(usize, u32)> {
         let updates = apply_native_bridge_flag_stamp_to_parts(
-            &mut self.cells,
+            self.cells.all_mut(),
             self.width,
             self.height,
-            self.native_allocated.as_deref(),
+            self.native_allocated.as_deref().map(Vec::as_slice),
             &self.shared_cell_dummy,
             stamp,
             Some(family),

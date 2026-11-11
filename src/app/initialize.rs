@@ -1000,7 +1000,7 @@ impl App {
                 live_network: None,
                 lan_service: None,
                 startup: Default::default(),
-                sim_runtime: None,
+                sim_runtime: Default::default(),
                 input: crate::app::input::state::MatchInputState::new(hotkey_bindings),
                 match_presentation: crate::app::presentation::state::MatchPresentationState {
                     sinking_waterlines: Default::default(),

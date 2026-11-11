@@ -51,7 +51,8 @@ fn retail_occupant_runtime(seed: u64) -> Option<SimRuntime> {
             rules,
             overlay_registry: registry,
             terrain_template,
-        },
+        }
+        .into(),
     })
 }
 

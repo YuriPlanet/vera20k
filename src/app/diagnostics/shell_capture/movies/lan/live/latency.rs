@@ -377,7 +377,7 @@ impl LatencyCapture {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("latency simulation")?
             .simulation;
         let frame = sim.session().binary_frame();
@@ -469,7 +469,7 @@ impl LatencyCapture {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("latency simulation")?
             .simulation;
         if let Some(entity) = self.actor.and_then(|actor| sim.entities().get(actor)) {
@@ -738,7 +738,7 @@ impl LatencyCapture {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("latency simulation")?
             .simulation;
         let entity = sim.entities().get(actor).context("latency actor")?;

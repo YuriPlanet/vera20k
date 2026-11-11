@@ -399,7 +399,7 @@ impl PreparedSavedGame {
         self,
         process: &mut ProcessAssets,
         process_main: &MainRng,
-        runtime: &mut Option<SimRuntime>,
+        runtime: &mut crate::app::match_runtime::sim_host::SimHost,
     ) -> CommittedSavedGame {
         let PreparedSavedResources {
             world,
@@ -431,10 +431,10 @@ impl PreparedSavedGame {
             .expect("prepared saved terrain");
         template.bind_shared_cell_dummy(dummy);
         template.bind_tile_variant_selector(selector);
-        *runtime = Some(SimRuntime {
+        runtime.install(Some(SimRuntime {
             simulation,
-            resources,
-        });
+            resources: resources.into(),
+        }));
         CommittedSavedGame {
             map,
             presentation: self.presentation,

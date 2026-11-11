@@ -126,6 +126,16 @@ pub struct MainRng {
     state: Arc<Mutex<SimRng>>,
 }
 
+/// A copy shares the one process cell, as every Main owner does: the
+/// presentation frame of a world draws the same cursor as the world.
+impl Clone for MainRng {
+    fn clone(&self) -> Self {
+        Self {
+            state: Arc::clone(&self.state),
+        }
+    }
+}
+
 impl MainRng {
     pub fn new(seed: u64) -> Self {
         SimRng::new(seed).into()

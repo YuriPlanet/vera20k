@@ -32,6 +32,7 @@
 //! Saved campaigns retain their Scenario index and incoming carry-over;
 //! their wins enter this same continuation after saved-world admission.
 
+use crate::app::match_runtime::sim_host::SimWrite;
 use std::collections::VecDeque;
 
 use super::{App, AppState};
@@ -248,7 +249,10 @@ impl App {
     /// still resident. Only a won mission of an installed campaign qualifies.
     pub(super) fn take_campaign_victory(state: &mut AppState) -> Option<CampaignVictory> {
         let campaign = state.match_state.startup.installed_campaign()?;
-        let runtime = state.match_state.sim_runtime.as_mut()?;
+        let runtime = state
+            .match_state
+            .sim_runtime
+            .write_sim(SimWrite::Lifecycle)?;
         let sim = &mut runtime.simulation;
         let owner = sim.session().current_house()?;
         let won = sim.ready_outcome_for_owner(owner).is_some_and(|outcome| {

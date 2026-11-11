@@ -282,7 +282,7 @@ fn send(state: &mut AppState, target: ChatTarget, text: &str) {
 /// participant-to-House map stands in for that match. AI Houses and the
 /// local House have no connection.
 fn route(state: &AppState, local: InternedId, target: ChatTarget) -> Option<(Vec<usize>, bool)> {
-    let runtime = state.match_state.sim_runtime.as_ref()?;
+    let runtime = state.match_state.sim_runtime.runtime()?;
     let sim = &runtime.simulation;
     let rules = &runtime.resources.rules;
     let session = &state.match_state.session;
@@ -384,7 +384,7 @@ pub(crate) fn receive(state: &mut AppState, source_index: usize, text: &str) {
             state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .and_then(|runtime| runtime.simulation.interner().get(&owner))
         });
     // Native shows the line whoever sent it; without a House, system white.
@@ -423,7 +423,7 @@ fn local_house(state: &AppState) -> Option<InternedId> {
     state
         .match_state
         .sim_runtime
-        .as_ref()?
+        .runtime()?
         .simulation
         .session()
         .current_house()

@@ -2252,7 +2252,7 @@ impl Simulation {
             // MouseLoad restores Map+68/raw rows before LoadContent67E8CD's
             // hierarchy pass. A user file cannot invent that saved topology
             // from the Cell+4C values which CellLoad has just reset to zero.
-            let zones = self.zone_grid.as_ref().ok_or(
+            let zones = self.zone_grid.as_deref().ok_or(
                 SnapshotRestoreError::MissingMapAuthorityComponent {
                     component: "ZoneGrid",
                 },
@@ -3171,7 +3171,7 @@ mod tests {
         assert!(
             restored
                 .zone_grid
-                .as_ref()
+                .as_deref()
                 .unwrap()
                 .is_native_load_pending()
         );
@@ -3200,7 +3200,7 @@ mod tests {
         assert!(!path.is_walkable(2, 0));
         let normal_zones = restored
             .zone_grid
-            .as_ref()
+            .as_deref()
             .and_then(|zones| zones.map_for(MovementZone::Normal))
             .expect("canonical restored ground zones");
         assert_ne!(
@@ -3235,8 +3235,8 @@ mod tests {
             loaded_authority.len()
         );
         assert_zone_grids_equivalent(
-            sim.zone_grid.as_ref().unwrap(),
-            restored.zone_grid.as_ref().unwrap(),
+            sim.zone_grid.as_deref().unwrap(),
+            restored.zone_grid.as_deref().unwrap(),
         );
         assert_eq!(restored.state_hash(), authoritative_hash);
     }
@@ -4012,7 +4012,7 @@ mod tests {
                 .as_ref()
                 .expect("overlay authority")
                 .retained_neighbor_counts(),
-            &[0, 7, 255, 4][..]
+            &[0u8, 7, 255, 4][..]
         );
     }
 
@@ -8084,8 +8084,8 @@ mod tests {
             loaded_authority.len()
         );
         assert_zone_grids_equivalent(
-            live.zone_grid.as_ref().unwrap(),
-            restored.zone_grid.as_ref().unwrap(),
+            live.zone_grid.as_deref().unwrap(),
+            restored.zone_grid.as_deref().unwrap(),
         );
         assert_eq!(
             restored.state_hash(),
@@ -8882,7 +8882,7 @@ mod tests {
         assert_ne!(
             restored
                 .zone_grid
-                .as_ref()
+                .as_deref()
                 .and_then(|zones| zones.map_for(MovementZone::Normal))
                 .expect("normal zone map")
                 .zone_at(destroyed_cell.0, destroyed_cell.1, MovementLayer::Ground),
@@ -8965,8 +8965,8 @@ mod tests {
         a.rebuild_zone_grid(&path_a);
         b.rebuild_zone_grid(&path_b);
         assert_zone_grids_equivalent(
-            a.zone_grid.as_ref().expect("zone grid rebuilt"),
-            b.zone_grid.as_ref().expect("zone grid rebuilt"),
+            a.zone_grid.as_deref().expect("zone grid rebuilt"),
+            b.zone_grid.as_deref().expect("zone grid rebuilt"),
         );
         assert_eq!(a.state_hash(), b.state_hash());
     }

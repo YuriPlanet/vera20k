@@ -21,7 +21,7 @@ fn queued_destructs(state: &AppState) -> Result<usize> {
     let sim = &state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("abort lost its installed runtime")?
         .simulation;
     Ok(sim
@@ -421,7 +421,7 @@ impl AbortReturnInput {
                 let sim = &state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .context("Surrender lost its installed runtime")?
                     .simulation;
                 let exits = sim
@@ -477,7 +477,7 @@ impl AbortReturnInput {
                     let sim = &state
                         .match_state
                         .sim_runtime
-                        .as_ref()
+                        .runtime()
                         .context("Observe lost its installed runtime")?
                         .simulation;
                     ensure!(
@@ -522,7 +522,7 @@ impl AbortReturnInput {
                 let runtime = state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .context("B6 lost its installed runtime")?;
                 ensure!(
                     !runtime
@@ -552,7 +552,7 @@ impl AbortReturnInput {
                 let sim = &state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .context("Leave lost its installed runtime")?
                     .simulation;
                 let exits = sim

@@ -4493,11 +4493,11 @@ mod tests {
         (
             SimRuntime {
                 simulation: sim,
-                resources: SimResources {
+                resources: std::sync::Arc::new(SimResources {
                     rules,
                     overlay_registry: overlays,
                     terrain_template: None,
-                },
+                }),
             },
             actors,
         )

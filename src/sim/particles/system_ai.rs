@@ -308,14 +308,25 @@ where
     ) -> Result<SparkCollisionFacts, SparkWorldError>,
 {
     for particle in &mut sys.particles {
-        tick_particle_with_query(
+        // Native `AI_Spark` has no failure exit: every particle ages and the
+        // destroy walk below always runs. A VERA-only refusal (a collision
+        // input it does not model, e.g. a `LaserFence=` building in the cell)
+        // used to leave the loop here, so nothing in the system aged and it
+        // never emptied. The refused particle is retired instead.
+        if let Err(error) = tick_particle_with_query(
             particle,
             sim,
             rules,
             sys.owner_house,
             sys.owner_entity,
             &mut query,
-        )?;
+        ) {
+            log::warn!(
+                "particles: Spark particle {} retired, its tick was refused: {error}",
+                particle.stable_id()
+            );
+            particle.marked_for_deletion = true;
+        }
     }
 
     // Native container cleanup walks backward so removals cannot perturb the
@@ -750,26 +761,24 @@ SpawnSparkPercentage=1
         assert_eq!(sim.rng_views().scenario, expected_rng.logical_view());
     }
 
+    /// A refused collision query (a `LaserFence=` building under the spark,
+    /// which only a mod sets) must not hold the system open: native
+    /// `AI_Spark` has no failure exit and always reaches its destroy walk
+    /// (`0x0062ECE9`). The particle is retired with no draw.
     #[test]
-    fn unavailable_query_keeps_persistent_z_but_consumes_no_rng_or_lifetime() {
+    fn refused_spark_query_retires_the_particle_without_a_draw() {
         let rules = spark_rules(6);
         let mut sim = Simulation::with_seed(456);
         let rng_before = sim.rng_state().scenario;
         let mut sys = fake_system(ParticleSystemTypeId(0), 100);
         sys.particles.push(spark_particle(11, 9));
 
-        let error = tick_spark_system_with_query(&mut sys, &mut sim, &rules, |_, _, _| {
+        tick_spark_system_with_query(&mut sys, &mut sim, &rules, |_, _, _| {
             Err(SparkWorldError::MissingTerrain)
         })
-        .unwrap_err();
+        .unwrap();
 
-        assert!(matches!(
-            error,
-            SparkSystemTickError::World(SparkWorldError::MissingTerrain)
-        ));
-        assert_eq!(sys.particles[0].coords, IVec3::new(11, 0, 100));
-        assert_eq!(sys.particles[0].lifetime_remaining, 9);
-        assert_eq!(sys.particles[0].direction[2].bits(), 0xc0c0_0000);
+        assert!(sys.particles.is_empty());
         assert_eq!(sim.rng_state().scenario, rng_before);
     }
 

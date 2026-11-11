@@ -116,7 +116,7 @@ pub(crate) fn enter_placement_mode(state: &mut AppState) {
     let defeated = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_none_or(|runtime| runtime.simulation.local_player_defeated());
     if !defeated {
         set_place_beacon_mode(state, BeaconModeRequest::Toggle);
@@ -138,7 +138,7 @@ fn cell_coord(state: &AppState, cell: (u16, u16)) -> [i32; 3] {
     let level = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .and_then(|runtime| runtime.simulation.resolved_terrain())
         .and_then(|terrain| terrain.cell(cell.0, cell.1))
         .map_or(0, |cell| i32::from(cell.level as i8));
@@ -165,7 +165,7 @@ pub(crate) fn place_at_cell(state: &mut AppState, cell: (u16, u16)) {
     let defeated = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_none_or(|runtime| runtime.simulation.local_player_defeated());
     if !defeated && let Some(house) = beacons::local_house_index(state) {
         let coord = cell_coord(state, cell);

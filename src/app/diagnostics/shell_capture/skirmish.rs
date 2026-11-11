@@ -500,7 +500,7 @@ impl SkirmishCapture {
         wanted: impl Fn(&crate::rules::object_type::ObjectType) -> bool,
     ) -> Option<u64> {
         let owner = crate::app::input::commands::preferred_local_owner_name(state)?;
-        let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+        let sim = &state.match_state.sim_runtime.runtime()?.simulation;
         let rules = state.rules()?;
         sim.entities()
             .values_sorted()

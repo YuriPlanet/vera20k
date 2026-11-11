@@ -291,7 +291,7 @@ fn snapshot_restored_collapsed_high_runtime(
         .expect("restored current map authority");
     SimRuntime {
         simulation: restored,
-        resources,
+        resources: resources.into(),
     }
 }
 
@@ -568,7 +568,7 @@ fn retail_bridge_end_headers_reach_full_and_dirty_radar_sources() {
     let cell = central_cell(&grid, expanded_bounds());
     assert_eq!(colors.get(&(100, 1)), Some(&BRIDGE_END_COLOR));
     let mut runtime = runtime_with_overlay(resolved.clone(), cell, Some((100, 1)));
-    runtime.resources.overlay_registry = registry;
+    runtime.resources_mut().overlay_registry = registry;
     let full = projection(&grid, &runtime, &[], expanded_bounds(), &colors);
     assert_eq!(raw_pair(&full, cell), [BRIDGE_END_COLOR; 2]);
 

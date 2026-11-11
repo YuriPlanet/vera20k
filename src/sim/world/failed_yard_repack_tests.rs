@@ -130,11 +130,11 @@ fn scene() -> Option<(SimRuntime, u64)> {
     Some((
         SimRuntime {
             simulation: sim,
-            resources: SimResources {
+            resources: std::sync::Arc::new(SimResources {
                 rules,
                 overlay_registry: registry,
                 terrain_template: Some(terrain),
-            },
+            }),
         },
         yard,
     ))

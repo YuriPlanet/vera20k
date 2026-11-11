@@ -157,7 +157,7 @@ fn main() -> Result<(), String> {
             // had; synthetic digests are self-comparable, not parity evidence.
             let mut runtime = vera20k_core::sim::runtime::SimRuntime {
                 simulation: build_synthetic_simulation(args.seed),
-                resources: vera20k_core::sim::runtime::SimResources::empty(),
+                resources: std::sync::Arc::new(vera20k_core::sim::runtime::SimResources::empty()),
             };
             for _ in 0..args.ticks {
                 runtime

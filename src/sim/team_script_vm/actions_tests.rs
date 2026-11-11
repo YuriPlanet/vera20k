@@ -78,7 +78,7 @@ fn terrain_attack_scene() -> Option<(SimRuntime, u64, u64, u64)> {
     sim.session.publish_started();
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: SimResources::new(rules),
+        resources: std::sync::Arc::new(SimResources::new(rules)),
     };
     // Formation, recruitment and dispatch use the ordinary Team AI caller.
     for _ in 0..30 {

@@ -1220,9 +1220,9 @@ mod tests {
 
         let startup_before = state.startup.clone();
         let baseline = state.baseline();
-        state.runtime.resources.rules = rules;
-        state.runtime.resources.overlay_registry = registry;
-        state.runtime.resources.terrain_template = Some(terrain);
+        state.runtime.resources_mut().rules = rules;
+        state.runtime.resources_mut().overlay_registry = registry;
+        state.runtime.resources_mut().terrain_template = Some(terrain);
         let rules_before = state.runtime.resources.rules.simulation_config_hash();
         let prepared = PreparedLoad::from_repository(
             LoadPreparationView::from_runtime(
@@ -1344,9 +1344,9 @@ mod tests {
         assert_eq!(current.session().current_house(), Some(outgoing_owner));
         assert!(!current.houses()[&saved_owner].is_human());
         let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(current);
-        runtime.resources.rules = rules;
-        runtime.resources.overlay_registry = registry;
-        runtime.resources.terrain_template = Some(terrain);
+        runtime.resources_mut().rules = rules;
+        runtime.resources_mut().overlay_registry = registry;
+        runtime.resources_mut().terrain_template = Some(terrain);
         let outgoing_hash = runtime.simulation.state_hash();
         let outgoing_rng = runtime.simulation.rng_state();
         let prepared = PreparedLoad::from_repository(
@@ -1427,9 +1427,9 @@ mod tests {
                 .session_mut_for_test()
                 .set_current_house_for_test(Some(ai));
             let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(outgoing);
-            runtime.resources.rules = load_fixture_rules();
-            runtime.resources.overlay_registry = OverlayTypeRegistry::empty();
-            runtime.resources.terrain_template = Some(load_fixture_terrain());
+            runtime.resources_mut().rules = load_fixture_rules();
+            runtime.resources_mut().overlay_registry = OverlayTypeRegistry::empty();
+            runtime.resources_mut().terrain_template = Some(load_fixture_terrain());
             let prepared = PreparedLoad::from_repository(
                 LoadPreparationView::from_runtime(
                     &repository,

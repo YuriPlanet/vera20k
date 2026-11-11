@@ -3,6 +3,7 @@
 //! Split from the presentation render path. Part of the app layer — may depend on everything.
 
 use crate::app::AppState;
+use crate::app::match_runtime::sim_host::SimWrite;
 use crate::map::entities::EntityCategory;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::intern::InternedId;
@@ -18,7 +19,7 @@ fn intern_in_sim(state: &mut AppState, s: &str) -> InternedId {
     state
         .match_state
         .sim_runtime
-        .as_mut()
+        .write_sim(SimWrite::Command)
         .map(|rt| &mut rt.simulation)
         .map(|sim| sim.intern(s))
         .unwrap_or_default()
@@ -59,7 +60,7 @@ pub(crate) fn suspend_build(state: &mut AppState, type_id: &str) {
     let Some(owner) = preferred_local_owner(state) else {
         return;
     };
-    let record = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+    let record = state.match_state.sim_runtime.runtime().and_then(|runtime| {
         let sim = &runtime.simulation;
         sim.encode_production_record(
             sim.interner().get(&owner)?,
@@ -104,7 +105,7 @@ fn visible_object_under_point(state: &AppState, world_x: f32, world_y: f32) -> O
     let sim = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation)?;
     let owner = preferred_local_owner(state)?;
     crate::app::input::entity_pick::hover_target_at_point(
@@ -148,7 +149,7 @@ pub(crate) fn super_weapon_pointer_target_at_cursor_is_valid(
     state: &AppState,
     section: &str,
 ) -> bool {
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         return true;
     };
     let Some(sw) = runtime.resources.rules.super_weapon(section) else {
@@ -179,7 +180,7 @@ fn own_building_id(state: &AppState, stable_id: u64) -> Option<u64> {
     let sim = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation)?;
     let owner = preferred_local_owner(state)?;
     let entity = sim.entities().get(stable_id)?;
@@ -207,7 +208,7 @@ pub(crate) fn own_repairable_building_under_point(
 
 fn own_repairable_building_id(state: &AppState, stable_id: u64) -> Option<u64> {
     let id = own_building_id(state, stable_id)?;
-    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     crate::sim::production::can_repair_building(sim, state.rules()?, id).then_some(id)
 }
 
@@ -224,7 +225,7 @@ pub(crate) fn own_sellable_building_under_point(
 
 fn own_sellable_building_id(state: &AppState, stable_id: u64) -> Option<u64> {
     let id = own_building_id(state, stable_id)?;
-    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     crate::sim::production::can_sell_building(sim, state.rules()?, id).then_some(id)
 }
 
@@ -244,7 +245,7 @@ pub(crate) fn own_sellable_unit_under_point(
 
 #[cfg(feature = "ares")]
 fn own_sellable_unit_id(state: &AppState, stable_id: u64) -> Option<u64> {
-    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     let owner = preferred_local_owner(state)?;
     let entity = sim.entities().get(stable_id)?;
     (sim.interner()
@@ -275,7 +276,7 @@ pub(crate) fn sell_wall_under_cursor_is_eligible(state: &AppState) -> bool {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation),
         state.overlay_registry(),
     ) {
@@ -404,7 +405,7 @@ pub(crate) fn try_repair_sell_mode_click(state: &mut AppState) -> bool {
             state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .map(|rt| &rt.simulation),
             state.overlay_registry(),
         ) {
@@ -442,7 +443,7 @@ pub(crate) fn place_ready_building_at_cell(
     let Some(owner) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|runtime| runtime.simulation.interner().resolve(issuer).to_string())
     else {
         return;
@@ -452,7 +453,7 @@ pub(crate) fn place_ready_building_at_cell(
     let (origin, in_build_area) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .and_then(|runtime| {
             let sim = &runtime.simulation;
             let rules = &runtime.resources.rules;
@@ -606,7 +607,7 @@ pub(crate) fn queue_super_weapon_click(
     sw_type_id: InternedId,
     cell: (u16, u16),
 ) {
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         return;
     };
     let sim = &runtime.simulation;
@@ -666,7 +667,7 @@ pub(crate) fn reconcile_paid_super_weapon_cursor(state: &mut AppState) {
     let Some(owner) = preferred_local_owner(state) else {
         return;
     };
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         return;
     };
     let sim = &runtime.simulation;
@@ -981,7 +982,7 @@ pub(crate) fn try_schedule_command(
     {
         return None;
     }
-    let runtime = state.match_state.sim_runtime.as_mut()?;
+    let runtime = state.match_state.sim_runtime.write_sim(SimWrite::Command)?;
     schedule_rules_command_in_sim(
         &mut runtime.simulation,
         &runtime.resources.rules,
@@ -1042,7 +1043,7 @@ pub(crate) fn schedule_command(state: &mut AppState, owner: &str, payload: Comma
         && state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .is_some_and(|runtime| runtime.simulation.available_local_command_slots() == 0)
     {
         super::messages::post_command_backpressure(state);
@@ -1053,7 +1054,7 @@ pub(super) fn selection_input_has_capacity(state: &mut AppState, count: usize) -
     let blocked = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_some_and(|runtime| count > runtime.simulation.available_local_command_slots());
     if blocked {
         super::messages::post_command_backpressure(state);
@@ -1067,7 +1068,7 @@ pub(crate) fn queue_house_cheer(state: &mut AppState) {
     let Some(owner) = preferred_local_owner_name(state) else {
         return;
     };
-    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
     let _ = queue_house_cheer_in_sim(

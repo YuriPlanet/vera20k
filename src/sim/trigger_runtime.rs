@@ -3033,7 +3033,7 @@ impl Simulation {
                     //are asymmetric; do not reverse these endpoints.
                     let source_bridge = cells.flags(cells.lookup(attached)) & 0x100 != 0;
                     let movement_zone = self.object_type(entity.type_ref(), rules)?.movement_zone;
-                    self.zone_grid.as_ref()?.can_reach_native(
+                    self.zone_grid.as_deref()?.can_reach_native(
                         &cells,
                         crate::sim::pathfinding::zone_map::ZoneQueryCell::Copied(attached),
                         crate::sim::pathfinding::zone_map::ZoneQueryCell::Copied(destination),

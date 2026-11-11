@@ -58,7 +58,7 @@ struct DiskLaser {
 
 /// Shared stable IDs are strictly increasing. Thus key order is the original
 /// vector's birth order; removal is stable without a second ordered registry.
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub(super) struct DiskLasers {
     shots: BTreeMap<u64, DiskLaser>,
 }

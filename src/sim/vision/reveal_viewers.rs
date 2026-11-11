@@ -22,7 +22,7 @@ use crate::sim::intern::{InternedId, StringInterner};
 /// passes needs no forgetting. Callers pass the Simulation's own client maps,
 /// alliances and interner. Debug builds check each remembered answer against
 /// a fresh one. Never saved or hashed.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct RevealViewers {
     /// The pass's client maps, from `begin` to `end`; answers are remembered
     /// while it is set.

@@ -64,7 +64,7 @@ fn value_text(state: &AppState, value: TextValue) -> String {
     let sim = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|runtime| &runtime.simulation);
     let house = || {
         let sim = sim?;

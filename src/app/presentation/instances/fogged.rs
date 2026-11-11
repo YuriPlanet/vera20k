@@ -24,7 +24,7 @@ use smol_str::StrExt;
 
 pub(crate) fn build_fogged_instances(state: &AppState) -> ObjectLayerPass {
     let (Some(runtime), Some(atlas)) = (
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.presentation(),
         state.match_state.match_presentation.sprite_atlas.as_ref(),
     ) else {
         return ObjectLayerPass::default();

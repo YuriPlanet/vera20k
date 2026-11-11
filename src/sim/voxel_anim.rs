@@ -181,7 +181,7 @@ pub(crate) enum VoxelAnimAiStep {
 /// Contact74A91B passes this field by address to each concrete receiver.
 /// The sparse values follow that type across pieces, save/load and scene
 /// retirement; the processed Rules owner resumes authority after transfer.
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub(crate) struct VoxelTypeDamage {
     // Identity metadata follows the sole mutable value through retirement,
     // where the outgoing RuleSet is no longer available.
