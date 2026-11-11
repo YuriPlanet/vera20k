@@ -1617,7 +1617,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     );
                     let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
                     cloak.set_state_for_test(state as i32);
-                    entity.cloak = Some(cloak);
+                    entity.cloak = Some(Box::new(cloak));
                 }
                 if actor["disguised"].as_bool().unwrap_or(false) {
                     let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);

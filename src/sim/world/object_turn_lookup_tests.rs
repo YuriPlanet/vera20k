@@ -72,6 +72,20 @@ fn a_tanks_turn_and_a_load_store_no_building_state() {
     assert_eq!(*loaded_plant.building_art, *plant.building_art);
 }
 
+/// The record every object carries stays small: state most objects lack
+/// (building art, damage fires, the managers, a bomb, a cloak, a miner's
+/// hold, a cargo hold, a temporal link) sits behind a pointer. A new field
+/// that pushes the record past this ceiling belongs behind one too.
+#[cfg(all(
+    target_pointer_width = "64",
+    not(any(feature = "ares", feature = "phobos", feature = "debug-tools"))
+))]
+#[test]
+fn the_object_record_stays_under_its_ceiling() {
+    let size = std::mem::size_of::<crate::sim::game_entity::GameEntity>();
+    assert!(size <= 2240, "GameEntity is {size} bytes");
+}
+
 /// The sound owner's view of a turn: what was delivered, and whose looping
 /// sound was updated.
 #[derive(Default)]

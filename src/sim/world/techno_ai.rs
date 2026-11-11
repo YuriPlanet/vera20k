@@ -4940,7 +4940,7 @@ mod tests {
             }
             let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
             cloak.set_state_for_test(2);
-            sim.substrate.entities.get_mut(2).unwrap().cloak = Some(cloak);
+            sim.substrate.entities.get_mut(2).unwrap().cloak = Some(Box::new(cloak));
             sim.substrate
                 .entities
                 .get_mut(1)
@@ -4998,7 +4998,7 @@ mod tests {
             if cloaked {
                 let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
                 cloak.set_state_for_test(2);
-                sim.substrate.entities.get_mut(2).unwrap().cloak = Some(cloak);
+                sim.substrate.entities.get_mut(2).unwrap().cloak = Some(Box::new(cloak));
             }
             let dog = sim.substrate.entities.get_mut(1).unwrap();
             dog.attack_target.set_for_test(Some(TargetKind::Entity(2)));

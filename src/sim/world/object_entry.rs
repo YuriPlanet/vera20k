@@ -2246,13 +2246,13 @@ mod tests {
             crate::sim::slave_manager::SlaveLink::for_test(Some(hut), Vec::new());
         let slav = sim.intern("SLAV");
         let manager = |slaves: &[u64]| {
-            Some(crate::sim::slave_manager::SlaveManager::new(
+            Some(Box::new(crate::sim::slave_manager::SlaveManager::new(
                 slav,
                 slaves.iter().copied().map(Some),
                 0,
                 0,
                 0,
-            ))
+            )))
         };
         sim.substrate.entities.get_mut(hut).unwrap().slave_manager = manager(&[slave]);
         sim.substrate.raw_cell_occupation.mark_ground(16, 15, 0x20);

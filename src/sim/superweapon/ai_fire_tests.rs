@@ -949,7 +949,7 @@ fn retail_walk_reads_each_object() {
     let own = spawn(&mut sim, "NAPOWR", "Americans", (20, 10), 0);
     let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
     cloak.set_state_for_test(2);
-    sim.substrate.entities.get_mut(own).unwrap().cloak = Some(cloak);
+    sim.substrate.entities.get_mut(own).unwrap().cloak = Some(Box::new(cloak));
     let built = spawn(&mut sim, "HTNK", "Russians", (33, 50), 0);
     sim.techno_limbo(built);
 

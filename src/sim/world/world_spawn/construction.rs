@@ -347,7 +347,7 @@ impl Simulation {
         if let Some(kind) = miner_kind_for_object(obj) {
             let mcfg = MinerConfig::default();
             let storage = obj.storage.max(0) as u16;
-            ge.miner = Some(Miner::new(kind, &mcfg, storage));
+            ge.miner = Some(Box::new(Miner::new(kind, &mcfg, storage)));
         }
         // Cargo+114 is independent of Building occupants+684 (Ctor43B8DC).
         if obj.passengers > 0 {
@@ -358,7 +358,8 @@ impl Simulation {
 
         // TechnoClass::Init_Managers — manager-owned children are committed
         // after this parent enters the limbo store and before its Unlimbo.
-        ge.capture_manager = crate::sim::capture_manager::init_capture_manager(obj, rules);
+        ge.capture_manager =
+            crate::sim::capture_manager::init_capture_manager(obj, rules).map(Box::new);
         ge.temporal = crate::sim::temporal::init_temporal(obj, rules);
         ge.spawn_manager = crate::sim::spawn_manager::init_spawn_manager(
             obj,

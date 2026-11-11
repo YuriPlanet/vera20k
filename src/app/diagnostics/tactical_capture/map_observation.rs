@@ -5277,7 +5277,7 @@ mod tests {
         let hash = sim.state_hash();
         let rng = sim.rng_state();
         let actor = sim.entities().get(sub).unwrap();
-        let cloak = actor.cloak.as_ref().unwrap();
+        let cloak = actor.cloak.as_deref().unwrap();
         let retained = *cloak;
         assert!(actor.in_playfield());
         assert_eq!(

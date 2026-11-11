@@ -37,7 +37,7 @@ fn scene(rules: &RuleSet, kind: &str) -> (Simulation, u64) {
         .unwrap();
     // Unlimbo leaves a cloakable unit fully cloaked; start uncloaked.
     sim.substrate.entities.get_mut(id).unwrap().cloak =
-        Some(crate::sim::cloak_disguise::CloakRuntime::new(0));
+        Some(Box::new(crate::sim::cloak_disguise::CloakRuntime::new(0)));
     (sim, id)
 }
 

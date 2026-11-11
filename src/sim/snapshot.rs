@@ -4309,7 +4309,7 @@ mod tests {
             } else {
                 let mut miner = Miner::new(MinerKind::War, &MinerConfig::default(), 40);
                 miner.set_cargo_for_test(cargo);
-                entity.miner = Some(miner);
+                entity.miner = Some(Box::new(miner));
             }
             sim.substrate.entities.insert(entity);
             // Native loading resets Scenario RNG to Seed(0). Keep that
@@ -4345,7 +4345,13 @@ mod tests {
             crate::sim::game_entity::GameEntity::test_default(1, "SMIN", "Americans", 4, 5);
         parent.set_techno_ctor_random_word_for_test(0x1111);
         let slav = sim.intern("SLAV");
-        parent.slave_manager = Some(SlaveManager::new(slav, [Some(2), Some(3)], 500, 25, 7));
+        parent.slave_manager = Some(Box::new(SlaveManager::new(
+            slav,
+            [Some(2), Some(3)],
+            500,
+            25,
+            7,
+        )));
         sim.substrate.entities.insert(parent);
         for (stable_id, word) in [(2, 0x2222), (3, 0x3333)] {
             let mut slave = crate::sim::game_entity::GameEntity::test_default(
@@ -6019,13 +6025,13 @@ mod tests {
             .ai_sell_repair
             .set_was_attacked_by_enemy_for_test(true);
         aircraft.damage_smoke_system_id.set_for_test(Some(2));
-        aircraft.capture_manager = Some(
+        aircraft.capture_manager = Some(Box::new(
             crate::sim::capture_manager::CaptureManagerState::with_victims_for_test(
                 3,
                 false,
                 &[3, 4],
             ),
-        );
+        ));
         aircraft.pending_c4_detonation.set_for_test(Some(
             crate::sim::c4_plant::PendingC4Detonation::new(
                 crate::sim::timer::CdTimer::started(11, 35),
@@ -6600,7 +6606,7 @@ mod tests {
         );
         let mut cloak = CloakRuntime::new(0);
         cloak.establish_unlimbo_fully_cloaked();
-        entity.cloak = Some(cloak);
+        entity.cloak = Some(Box::new(cloak));
         sim.substrate.entities.insert(entity);
         // Native in-scenario load restarts Scenario RNG from Seed0; isolate
         // fog/sensor/cloak persistence on that same post-load cursor.

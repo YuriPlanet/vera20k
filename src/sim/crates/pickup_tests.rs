@@ -471,12 +471,24 @@ fn cloak_crate_grants_foot_stealth_inside_the_strict_radius_and_then_falls_back(
     let grid = sim.path_grid_snapshot();
     sim.advance_tick(&[], Some(&rules), grid.as_deref(), Some(&registry), 22);
     assert_eq!(
-        sim.entities().get(actor).unwrap().cloak.unwrap().state(),
+        sim.entities()
+            .get(actor)
+            .unwrap()
+            .cloak
+            .as_ref()
+            .unwrap()
+            .state(),
         1,
         "infantry also runs Foot cloak AI"
     );
     assert_eq!(
-        sim.entities().get(nearby).unwrap().cloak.unwrap().state(),
+        sim.entities()
+            .get(nearby)
+            .unwrap()
+            .cloak
+            .as_ref()
+            .unwrap()
+            .state(),
         1,
         "the gift ignores allegiance"
     );
@@ -1087,7 +1099,7 @@ fn heal_base_reaches_mobile_logic_members_and_the_zero_damage_receiver() {
     }
     let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
     cloak.set_state_for_test(2);
-    sim.substrate.entities.get_mut(tank).unwrap().cloak = Some(cloak);
+    sim.substrate.entities.get_mut(tank).unwrap().cloak = Some(Box::new(cloak));
     let logic = vec![aircraft, 0, enemy, infantry, tank];
     sim.set_logic_order_for_test(logic.clone());
     place_registered_crate(&mut sim, &registry, (21, 22), POWERUP_HEAL_BASE as u8);
@@ -1118,6 +1130,7 @@ fn heal_base_reaches_mobile_logic_members_and_the_zero_damage_receiver() {
             .get(tank)
             .unwrap()
             .cloak
+            .as_ref()
             .unwrap()
             .state(),
         // Installed Ares702819 ->1004AB50 resumes at 702823 for a zero result,
