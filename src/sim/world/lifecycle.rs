@@ -1543,6 +1543,21 @@ impl Simulation {
                 .navigation
                 .retain_threat_avoidance_after_unlimbo(object.threat_avoidance_coefficient);
         }
+        // FootUnlimbo4D72FA..4D7318 ends on the sensor circle: a type with
+        // a sensor radius (Type+5F0, the one gate) dispatches vt+0x4E8
+        // AddSensorsAt4DE7B0 with the null cell, so the circle centres on
+        // current GetCoords. Every successful Foot Unlimbo reaches it, the
+        // dead-Techno arm included; no caller adds it again.
+        // RESIDUAL: a first Unlimbo runs this before its caller installs the
+        // cloak runtime, so the unit's own vt+0x420 callback cannot start a
+        // cloak here as native's can. Trigger: a new Cloakable sensor unit
+        // put inside its house's CloakGenerator field (no stock building has
+        // one). Effect: it cloaks on its first cloak tick instead.
+        // RESIDUAL (pre-existing in every AddSensorsAt caller): its building
+        // arm (`0x004DE8DE..0x004DE909`), which sets byte +0x80 on a
+        // building not owned by the local player in each stamped cell, has
+        // no port; the field is not identified.
+        self.add_unit_sensors_at_current(stable_id, context.rules(), context.registry());
         // Unit737BBE..737BD2 / Aircraft414403..414417 snap Secondary after
         // Foot success, including dead-Techno success. The Techno body snap
         // above has its own alive gate and precedes idle. Diagnostic callers
@@ -5123,9 +5138,14 @@ impl Simulation {
                 continue;
             }
 
+            // Native Restore cannot fail. VERA's preflight can refuse it
+            // (see the expiry receiver's Restore below); the sweep carries on.
             let restored = self
                 .mission_restore_represented(listener_id, rules, registry, effects)
-                .expect("detach sweep listener was resolved immediately before the Restore");
+                .unwrap_or_else(|error| {
+                    log::error!("detach sweep: listener {listener_id} kept its override: {error}");
+                    false
+                });
             // `0x0070D513..0x0070D532`, whatever the Restore did.
             if let Some(listener) = self.substrate.entities.get_mut(listener_id) {
                 crate::sim::aircraft::restart_patrol_after_restore(listener);
@@ -5406,8 +5426,18 @@ impl Simulation {
             self.assign_target_represented(listener_id, None, rules, registry, effects)
                 .expect("expiry listener remains present");
             if mission_is_suspended {
-                self.mission_restore_represented(listener_id, rules, registry, effects)
-                    .expect("represented expiry restore remains available");
+                // Native Restore (`0x00707A51`) cannot fail. VERA's is one
+                // transaction whose preflight refuses when a class setter's
+                // inputs are missing: an archived NavCom naming no object, no
+                // overlay table for a Teleport destination. Residual: the
+                // listener then keeps its override mission with the target
+                // cleared, until its next mission change. Rare; the broadcast
+                // carries on instead of stopping the game.
+                if let Err(error) =
+                    self.mission_restore_represented(listener_id, rules, registry, effects)
+                {
+                    log::error!("expiry: listener {listener_id} kept its override: {error}");
+                }
                 // `0x00707A51..0x00707A6C`.
                 if let Some(listener) = self.substrate.entities.get_mut(listener_id) {
                     crate::sim::aircraft::restart_patrol_after_restore(listener);
