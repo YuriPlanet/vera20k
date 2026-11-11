@@ -27,10 +27,10 @@ use super::zones::diamond_frame_contains;
 use crate::util::native_heap::NativeHeap;
 
 /// Ore/gem overlay base indices (`0x66` / `0x1B`).
-const ORE_BASE: i32 = 102;
-const GEM_BASE: i32 = 27;
+pub(crate) const ORE_BASE: i32 = 102;
+pub(crate) const GEM_BASE: i32 = 27;
 /// Density levels an overlay spans, from `base` to `base + 11`.
-const DENSITY_LEVELS: i32 = 12;
+pub(crate) const DENSITY_LEVELS: i32 = 12;
 /// Percent scaling of the Tiberium option.
 const PERCENT: f64 = 0.01;
 /// Gaussian field-size jitter scale and its rejection window.

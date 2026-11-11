@@ -614,8 +614,6 @@ impl RandomMapSetupModalState {
         }
     }
 
-    /// Switch the option rows between the original controls and the
-    /// Advanced sliders. Any open list or held slider lets go.
     /// VERA extension: switch Fair Starts. Like any option edit it makes the
     /// generated result stale.
     pub fn toggle_fair_starts(&mut self) {
@@ -626,6 +624,8 @@ impl RandomMapSetupModalState {
         self.generated = false;
     }
 
+    /// Switch the option rows between the original controls and the
+    /// Advanced sliders. Any open list or held slider lets go.
     pub fn toggle_advanced(&mut self) {
         self.advanced = !self.advanced;
         self.open_combo = None;

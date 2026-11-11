@@ -17,15 +17,12 @@
 use std::collections::VecDeque;
 
 use super::grid::RmgGrid;
+use super::phases::tiberium::{DENSITY_LEVELS, GEM_BASE, ORE_BASE};
 use super::phases::zones::diamond_frame_contains;
 use super::rng::RmgRng;
 use super::scratch::RmgScratch;
 use super::tiles::TileIds;
 
-/// Ore and gem overlay bases and their twelve looks (`CreateTiberium`).
-const ORE_BASE: i32 = 102;
-const GEM_BASE: i32 = 27;
-const LOOKS: i32 = 12;
 /// Topped-up ore keeps this far from a start, leaving room for the base.
 const BASE_CLEARANCE: i32 = 7;
 /// A band of cells around each start whose ore is evened: a cell counts
@@ -153,9 +150,9 @@ impl FairCtx<'_> {
 
 fn ore_value(overlay: i32, density: u8) -> i64 {
     let amount = i64::from(density) + 1;
-    if (GEM_BASE..GEM_BASE + LOOKS).contains(&overlay) {
+    if (GEM_BASE..GEM_BASE + DENSITY_LEVELS).contains(&overlay) {
         amount * 2
-    } else if (ORE_BASE..ORE_BASE + LOOKS).contains(&overlay) {
+    } else if (ORE_BASE..ORE_BASE + DENSITY_LEVELS).contains(&overlay) {
         amount
     } else {
         0
@@ -215,7 +212,7 @@ pub fn equalize_ore(ctx: &mut FairCtx<'_>, starts: &[(i32, i32)], seed: u16) {
     let (mut value, mut cells) = (0i64, 0i64);
     for (x, y) in ctx.grid.native_cells() {
         if let Some(ground) = ctx.grid.get(x, y)
-            && (ORE_BASE..ORE_BASE + LOOKS).contains(&ground.overlay)
+            && (ORE_BASE..ORE_BASE + DENSITY_LEVELS).contains(&ground.overlay)
         {
             value += ore_value(ground.overlay, ground.density);
             cells += 1;
@@ -356,7 +353,7 @@ fn equalize_ring(
 /// A new ore cell of a drawn look, as `PlaceTiberiumField` paints one, worth
 /// `amount` (1..=12); returns the value planted.
 fn plant(ctx: &mut FairCtx<'_>, cell: (i32, i32), amount: i64, rng: &mut RmgRng) -> i64 {
-    let look = rng.uniform(0, LOOKS - 1);
+    let look = rng.uniform(0, DENSITY_LEVELS - 1);
     let amount = amount.clamp(1, 12);
     if let Some(ground) = ctx.grid.get_mut(cell.0, cell.1) {
         ground.overlay = ORE_BASE + look;
