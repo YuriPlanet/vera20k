@@ -65,6 +65,10 @@
 //! --client-timing --frame-profile`. The map's `MaxPlayers=30` lets the
 //! lobby seat them all.
 //!
+//! `--presentation-frame` keeps a copy of the world after every frame, as the
+//! client's simulation thread does for drawing (docs/sim-thread.md), and
+//! counts the copy and the drop of the previous one in the frame's time.
+//!
 //! The simulation batches its path searches and target scans as a real
 //! match does; `--serial-paths` searches and `--serial-scans` scans in native
 //! order instead.
@@ -145,6 +149,7 @@ struct Args {
     lan: bool,
     frame_hashes: Option<PathBuf>,
     client_timing: bool,
+    presentation_frame: bool,
 }
 
 impl Args {
@@ -185,6 +190,7 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
         lan: false,
         frame_hashes: None,
         client_timing: false,
+        presentation_frame: false,
     };
     let mut march_flag = None;
     while let Some(flag) = argv.next() {
@@ -239,6 +245,7 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
             "--frame-hashes" => args.frame_hashes = Some(PathBuf::from(value()?)),
             "--client-timing" => args.client_timing = true,
             "--serial-scans" => args.serial_scans = true,
+            "--presentation-frame" => args.presentation_frame = true,
             other => return Err(format!("unrecognised argument {other}")),
         }
     }
@@ -487,6 +494,9 @@ struct Bench<'a> {
     runtime: &'a mut SimRuntime,
     plan: &'a mut Plan,
     tick_ms: u32,
+    /// `--presentation-frame`: whether each frame keeps a copy of the world.
+    keep_frame: bool,
+    frame: Option<SimRuntime>,
 }
 
 impl Frames for Bench<'_> {
@@ -499,9 +509,16 @@ impl Frames for Bench<'_> {
     }
 
     fn advance(&mut self, commands: &[CommandEnvelope]) -> Result<Option<u32>, String> {
-        self.runtime
+        let checksum = self
+            .runtime
             .advance_frame_for_tooling(commands, self.tick_ms)
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        if self.keep_frame {
+            // As the client's simulation host does: the new copy replaces
+            // the previous tick's, inside the frame's time.
+            self.frame = Some(self.runtime.clone());
+        }
+        Ok(checksum)
     }
 
     fn state_hash(&self) -> u64 {
@@ -771,6 +788,8 @@ fn main() -> Result<(), String> {
             runtime: &mut *runtime,
             plan: &mut plan,
             tick_ms,
+            keep_frame: args.presentation_frame,
+            frame: None,
         },
         ticks,
         args.hash_every,

@@ -18,10 +18,10 @@
 //!   result or hash.
 //!
 //! A network frame stops at Queue_AI instead
-//! ([`DeferredClientEffects::hands_off_queue`]):
-//! the live session stays on the main thread, which resumes the frame there
-//! as it resumes a network wait. Its checksum is recorded for the main
-//! thread's history before that exchange compares FRAMEINFO against it.
+//! ([`DeferredClientEffects::hands_off_queue`]): the live session stays on
+//! the main thread, which resumes the frame there as it resumes a network
+//! wait. Its checksum is recorded for the main thread's history before that
+//! exchange compares FRAMEINFO against it.
 //!
 //! Replay, a campaign's initial save and command observation still need the
 //! lent owners, so those frames stay on the borrowing path.
@@ -70,7 +70,8 @@ pub(crate) struct DeferredClientEffects {
 
 impl DeferredClientEffects {
     /// Whether the next ordinary offline frame can run without the lent
-    /// owners. The simulation thread (`VERA20K_SIM_THREAD=1`) ticks this way;
+    /// owners. The simulation thread ticks this way, and so does every such
+    /// frame while the thread is on; with it off (`VERA20K_SIM_THREAD=0`),
     /// `VERA20K_DEFERRED_TICK_EFFECTS=1` opts an inline tick in. A network
     /// frame needs its exchange, which only [`Self::hands_off_queue`] leaves
     /// to the main thread.

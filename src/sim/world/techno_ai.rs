@@ -1447,13 +1447,10 @@ fn house_heal_arm(
         rules.general.self_heal_unit_frames
     };
     // Original6FA7EE/6FA8E2 divides before testing the House count. Missing
-    // keys retain constructor1000; an explicitly invalid IDIV is a fault,
-    // including period0 with no grant and signed MIN/-1 overflow.
+    // keys retain constructor1000. gamemd traps there on an authored period0
+    // (and signed MIN/-1); VERA carries on: such a period is never due.
     let frame = session.binary_frame() as i32;
-    let remainder = frame.checked_rem(interval).unwrap_or_else(|| {
-        panic!("native House self-heal IDIV fault at 006FA7EE/006FA8E2: frame={frame} period={interval}")
-    });
-    if remainder != 0 {
+    if frame.checked_rem(interval) != Some(0) {
         return;
     }
     let owner = entity.owner();

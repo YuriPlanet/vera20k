@@ -40,7 +40,10 @@
 //!   answer false. No retail type sets either key, so every retail member
 //!   answers false. That includes the "Soviet SChop" teams' Siege Choppers,
 //!   which action 9 sets unloading just before the team's attack actions:
-//!   natively, as in VERA, those actions take them off Unload in the air.
+//!   natively, as in VERA, those actions queue Attack over the Unload, and
+//!   each takes it once it is down, undeployed (a descending jumpjet is
+//!   moving, and `UnitClass::Is_Ready_To_Commence @ 0x00744270` holds the
+//!   queued mission meanwhile).
 //!   Trigger: a member of a modded type deploying when its team attacks.
 //!   Effect: it stops deploying and attacks.
 

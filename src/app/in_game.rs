@@ -67,7 +67,12 @@ impl App {
     /// tail before the result-8 return.
     pub(super) fn leave_network_wait_to_main_menu(state: &mut AppState) {
         crate::app::match_runtime::network_failure::hold_quit_line(state);
-        if state.match_state.sim_runtime.network_wait_pending() {
+        if state
+            .match_state
+            .sim_runtime
+            .runtime()
+            .is_some_and(|rt| rt.simulation.pending_network_wait())
+        {
             crate::app::match_runtime::sim_tick::leave_network_wait(state);
         }
         Self::return_disconnected_to_main_menu(state);
@@ -644,6 +649,17 @@ impl App {
                 .and_then(|sim| sim.interner().get(owner))
         });
         let local_outcome_exit_ready = Self::local_outcome_exit_ready(state);
+        // Almost every pass has no EXIT to take. Only one that does takes
+        // the world for writing, which waits for a tick on the simulation
+        // thread and drops the published frame.
+        if !state
+            .match_state
+            .sim_runtime
+            .runtime()
+            .is_some_and(|rt| rt.simulation.executed_exit_owner_pending())
+        {
+            return;
+        }
         let executed_owner = state
             .match_state
             .sim_runtime

@@ -18,6 +18,25 @@ and the cursor is the refusal cursor.
 While a ferrying transport is selected, the same blue and yellow circles mark
 its route.
 
+## Waypoints
+
+After the Ferry key, hold the **Planning Mode** key (Z by default) and left
+click to add a waypoint; up to 8. Let go of it and click to set the drop spot.
+The transport passes the waypoints in order on the way out and in reverse on
+the way back, so one detour round an enemy covers both directions. Each
+waypoint shows as a small white circle; a cell none of the selected transports
+can move to is refused and shows red.
+
+- **No stopping.** A ground transport is sent on to the next point within 2
+  cells of a waypoint, an aircraft within 4, before it slows to land.
+- **Several transports.** Sent to one waypoint together, they are each given a
+  cell near it, as any group move is. Each is sent on from its own cell.
+- **Blocked.** A transport that stops near a waypoint (within 8 cells) carries
+  on to the next point. One that stops farther away was sent elsewhere, and
+  its ferry ends. A waypoint a transport cannot be sent to at all is left out.
+
+## The four legs
+
 - **Loading.** The transport waits at the pick-up spot. Any of your infantry
   and vehicles that comes to a stop inside the circle (4 cells around the
   spot) is told to board, nearest first, while there is room and the transport

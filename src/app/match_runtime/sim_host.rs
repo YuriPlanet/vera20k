@@ -5,13 +5,12 @@
 //! any, and the process-lifetime state a tick reaches outside the world.
 //!
 //! Phase 3 lends the runtime to the simulation thread for one job
-//! ([`SimHost::lend`]). While it is away, reads see the published
-//! presentation frame, and any write first takes it back, waiting for the
+//! ([`SimHost::lend`]), publishing a presentation frame as it goes: a copy
+//! of the world as the job found it. While the runtime is away, reads see
+//! that frame, and any write first takes the runtime back, waiting for the
 //! job to end; the job's result then waits in the host for
-//! [`SimHost::take_job_result`]. A frame's tick is staged
-//! ([`SimHost::stage`]) and lent only when the frame loop starts drawing,
-//! so it runs while the frame draws. Writes before that reach the world
-//! before the tick starts, as writes between two frames do.
+//! [`SimHost::take_job_result`]. Back home, the frame is dropped and reads
+//! see the live world again, so a tick that is not lent copies nothing.
 //!
 //! Reads take [`SimHost::runtime`]. A write names its route with
 //! [`SimWrite`], so every place that changes the simulation outside
@@ -25,6 +24,7 @@ use std::sync::{Arc, mpsc};
 
 use crate::sim::command_queue::{FrameChecksumState, MultiplayerChecksumHistory};
 use crate::sim::runtime::SimRuntime;
+use crate::util::time::{Duration, Instant};
 
 /// What a lent job returns, for its owner to downcast.
 pub(crate) type SimJobResult = Box<dyn Any + Send>;
@@ -62,15 +62,24 @@ pub(crate) struct SimHost {
     lent: bool,
     /// The last job's result, once the runtime is back.
     job_result: Option<SimJobResult>,
-    /// A job [`Self::stage`] keeps until [`Self::dispatch_staged`] lends it.
-    staged: Option<SimJob>,
+    /// Jobs lent, and those a write took back before
+    /// [`Self::take_job_result`] asked for them, since the last report.
+    lent_jobs: u32,
+    early_returns: u32,
     /// The simulation thread, started by the first [`Self::lend`].
     worker: Option<SimWorker>,
-    /// The presentation frame (phase 2): the world as the last published
-    /// tick left it. Drawing reads it while the live world is ticking
-    /// elsewhere. Copy-on-write state (the terrain cells, the resources)
-    /// stays shared with the live world until that changes.
+    /// The presentation frame (phase 2): the world as a lent job found it.
+    /// Drawing reads it while the live world is ticking elsewhere.
+    /// Copy-on-write state (the terrain cells, the resources) stays shared
+    /// with the live world until that changes. It lives only while the
+    /// runtime is lent, apart from the `VERA20K_PRESENTATION_FRAME` opt-in.
     presentation: Option<Arc<SimRuntime>>,
+    /// What the last lent job cost this thread: copying the frame when the
+    /// job left ([`Self::lend`]), kept in `copy_cost` meanwhile, then the
+    /// wait for the job and the frame's drop when it came back. `None`
+    /// until one has come back in this scenario.
+    lend_cost: Option<Duration>,
+    copy_cost: Duration,
     /// Global B04474 and its comparison timer (`FrameChecksumState`):
     /// process state that launch and load retain, written and compared only
     /// inside a multiplayer tick.
@@ -96,17 +105,22 @@ impl SimHost {
         self.lent
     }
 
-    /// Run `job` on the simulation thread with the runtime. Reads serve the
-    /// published frame until a write takes the runtime back. Returns false,
-    /// running nothing, when no runtime is installed.
+    /// Run `job` on the simulation thread with the runtime, publishing the
+    /// world as it is now. Reads serve that frame until a write takes the
+    /// runtime back. Returns false, running nothing, when no runtime is
+    /// installed.
     pub(crate) fn lend(&mut self, job: SimJob) -> bool {
-        self.reclaim();
+        self.reclaim(true);
         if self.runtime.is_none() {
             return false;
         }
-        if self.presentation.is_none() {
-            self.publish_presentation();
+        self.lent_jobs += 1;
+        if self.lent_jobs == EARLY_RETURN_REPORT_JOBS {
+            self.report_early_returns();
         }
+        let copy_started = Instant::now();
+        self.publish_presentation();
+        self.copy_cost = copy_started.elapsed();
         let runtime = self.runtime.take().expect("installed runtime");
         self.worker
             .get_or_insert_with(SimWorker::spawn)
@@ -117,36 +131,30 @@ impl SimHost {
         true
     }
 
-    /// Keep `job`, the next frame's tick, for the simulation thread until
-    /// the frame loop starts drawing ([`Self::dispatch_staged`]). The pass's
-    /// own writes after a frame (EXIT and departure routing, radar marks)
-    /// belong to that frame and reach the world before the tick starts; a
-    /// job lent at once would make each of them wait for it. A job never
-    /// lent runs here when its result is taken. Returns false, keeping
-    /// nothing, when no runtime is installed.
-    pub(crate) fn stage(&mut self, job: SimJob) -> bool {
-        self.reclaim();
-        debug_assert!(self.job_result.is_none(), "the last job's result was taken");
-        if self.runtime.is_none() {
-            return false;
+    /// Log how many lent jobs a write took back early, then start counting
+    /// again. Such a job ran while the main thread waited for it, so the two
+    /// did not overlap; common ones are worth finding.
+    fn report_early_returns(&mut self) {
+        if self.lent_jobs > 0 {
+            log::info!(
+                "Simulation thread: {} of the last {} ticks were taken back early",
+                self.early_returns,
+                self.lent_jobs
+            );
         }
-        self.staged = Some(job);
-        true
-    }
-
-    /// Lend the staged job, if any, to the simulation thread.
-    pub(crate) fn dispatch_staged(&mut self) {
-        if let Some(job) = self.staged.take() {
-            self.lend(job);
-        }
+        self.lent_jobs = 0;
+        self.early_returns = 0;
     }
 
     /// Wait for a lent runtime to come back. A panic in the job resumes here.
-    fn reclaim(&mut self) {
+    /// `early` when the caller is not the one collecting the job's result.
+    fn reclaim(&mut self, early: bool) {
         if !self.lent {
             return;
         }
         self.lent = false;
+        self.early_returns += u32::from(early);
+        let wait_started = Instant::now();
         let (runtime, result) = self
             .worker
             .as_ref()
@@ -154,53 +162,40 @@ impl SimHost {
             .returned
             .recv()
             .expect("simulation thread stopped");
+        let waited = wait_started.elapsed();
         self.runtime = Some(runtime);
+        // The job's frame has done its work: reads see the live world again,
+        // and nothing shares its storage or its resources.
+        let drop_started = Instant::now();
+        self.presentation = None;
+        self.lend_cost = Some(self.copy_cost + waited + drop_started.elapsed());
         match result {
             Ok(result) => self.job_result = Some(result),
             Err(panic) => std::panic::resume_unwind(panic),
         }
     }
 
-    /// Whether a lent job's result is still to be taken: the job runs, or a
-    /// write took the runtime back and its result waits here.
-    pub(crate) fn job_outstanding(&self) -> bool {
-        self.lent || self.staged.is_some() || self.job_result.is_some()
-    }
-
-    /// Whether the installed frame is suspended in Wait_For_Players. A
-    /// network frame the simulation thread stopped at Queue_AI is not, until
-    /// a pass finishes it and runs its exchange (docs/sim-thread.md).
-    pub(crate) fn network_wait_pending(&self) -> bool {
-        !self.job_outstanding()
-            && self
-                .runtime()
-                .is_some_and(|runtime| runtime.simulation.pending_network_wait())
-    }
-
-    /// The last job's result, waiting for the job if it still runs, or
-    /// running a staged job that was never lent (a hidden window draws
-    /// nothing) here.
+    /// The last lent job's result, waiting for the job if it still runs.
     pub(crate) fn take_job_result(&mut self) -> Option<SimJobResult> {
-        if let Some(job) = self.staged.take() {
-            let runtime = self.runtime.as_mut().expect("a staged job has a runtime");
-            return Some(job(runtime));
-        }
-        self.reclaim();
+        self.reclaim(false);
         self.job_result.take()
     }
 
     /// Mutable access to the installed runtime for one write route; a lent
     /// runtime comes back first.
     pub(crate) fn write_sim(&mut self, route: SimWrite) -> Option<&mut SimRuntime> {
-        self.reclaim();
+        self.reclaim(true);
         if matches!(route, SimWrite::Rules | SimWrite::Lifecycle) {
-            // These may rebind the shared resources (`resources_mut`).
+            // These may rebind the shared resources (`resources_mut`), which
+            // an opted-in frame would still share.
             self.presentation = None;
         }
         self.runtime.as_mut()
     }
 
-    /// Publish the live world as the presentation frame.
+    /// Publish the live world as the presentation frame: [`Self::lend`]
+    /// does, and so does every tick under the `VERA20K_PRESENTATION_FRAME`
+    /// opt-in.
     pub(crate) fn publish_presentation(&mut self) {
         if self.lent {
             return;
@@ -211,6 +206,16 @@ impl SimHost {
             .map(|runtime| Arc::new(runtime.clone()));
     }
 
+    /// What the last lent job cost this thread, to weigh against the tick
+    /// it freed this thread from: the frame's copy and drop, and any wait
+    /// for a job that was not back when this thread needed the world. A
+    /// simulation thread that runs slower than this one, on a busy machine
+    /// or a slower core, shows up in that wait. `None` before the first job
+    /// of a scenario is back.
+    pub(crate) fn lend_cost(&self) -> Option<Duration> {
+        self.lend_cost
+    }
+
     /// What drawing reads: the published frame, else the live world.
     pub(crate) fn presentation(&self) -> Option<&SimRuntime> {
         self.presentation.as_deref().or(self.runtime.as_ref())
@@ -219,7 +224,7 @@ impl SimHost {
     /// The [`SimWrite::Tick`] route: the installed runtime and the checksum
     /// owner its tick borrows at the native queue boundary, together.
     pub(crate) fn tick_parts(&mut self) -> Option<(&mut SimRuntime, &mut FrameChecksumState)> {
-        self.reclaim();
+        self.reclaim(true);
         let runtime = self.runtime.as_mut()?;
         Some((runtime, &mut self.frame_checksums))
     }
@@ -231,24 +236,28 @@ impl SimHost {
 
     /// Install `runtime` in place of any current one.
     pub(crate) fn install(&mut self, runtime: Option<SimRuntime>) {
-        // A job's result belongs to the world it ran on; a staged one never
-        // runs on a world that is going away.
-        self.staged = None;
-        self.reclaim();
+        // A job's result belongs to the world it ran on.
+        self.reclaim(true);
+        self.report_early_returns();
         self.job_result = None;
         self.presentation = None;
+        self.lend_cost = None;
         self.runtime = runtime;
     }
 
     /// Remove and return the installed runtime.
     pub(crate) fn take_runtime(&mut self) -> Option<SimRuntime> {
-        self.staged = None;
-        self.reclaim();
+        self.reclaim(true);
+        self.report_early_returns();
         self.job_result = None;
         self.presentation = None;
+        self.lend_cost = None;
         self.runtime.take()
     }
 }
+
+/// How many lent jobs pass between two log lines on early returns.
+const EARLY_RETURN_REPORT_JOBS: u32 = 1024;
 
 /// The simulation thread: runs each lent job and sends the runtime back.
 /// It ends when the host drops its sender.
@@ -280,21 +289,48 @@ impl SimWorker {
     }
 }
 
-/// Whether ticks publish a presentation frame: on the simulation thread
-/// (phase 4), or opted into with `VERA20K_PRESENTATION_FRAME=1`.
+/// Whether every tick publishes a presentation frame for drawing to read,
+/// with or without the simulation thread: the phase 2 aid, opted into with
+/// `VERA20K_PRESENTATION_FRAME=1`. The thread needs no such frame: it
+/// publishes its own when it takes a tick ([`SimHost::lend`]).
 pub(crate) fn presentation_frames_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| sim_thread_enabled() || env_flag("VERA20K_PRESENTATION_FRAME"))
+    *ENABLED.get_or_init(|| env_flag("VERA20K_PRESENTATION_FRAME"))
 }
 
-/// Whether ordinary offline frames tick on the simulation thread, opted
-/// into with `VERA20K_SIM_THREAD=1`. The browser build has no thread to
-/// lend to and always ticks inline.
+/// Whether ordinary offline frames tick on the simulation thread: yes,
+/// unless `VERA20K_SIM_THREAD=0` turns it off. The browser build has no
+/// thread to lend to and always ticks inline. Unit tests tick inline too:
+/// they read the world straight after a frame, and the host's own tests
+/// cover lending.
 pub(crate) fn sim_thread_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED.get_or_init(|| {
-        !cfg!(all(feature = "wasm", target_arch = "wasm32")) && env_flag("VERA20K_SIM_THREAD")
+        !cfg!(all(feature = "wasm", target_arch = "wasm32"))
+            && !cfg!(test)
+            && sim_thread_wanted(std::env::var_os("VERA20K_SIM_THREAD").as_deref())
     })
+}
+
+/// What `VERA20K_SIM_THREAD` asks for: only `0` turns the thread off.
+fn sim_thread_wanted(value: Option<&std::ffi::OsStr>) -> bool {
+    value.is_none_or(|value| value != "0")
+}
+
+/// Whether a frame the thread can take goes to it whatever its published
+/// frame costs the main thread: `VERA20K_SIM_THREAD=always`, for diagnosis
+/// and for exercising the thread. By default it goes only when that saves
+/// the main thread time (`sim_tick::advance_in_game_runtime_mode`).
+pub(crate) fn sim_thread_always() -> bool {
+    static ALWAYS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ALWAYS.get_or_init(|| {
+        sim_thread_enabled()
+            && sim_thread_always_wanted(std::env::var_os("VERA20K_SIM_THREAD").as_deref())
+    })
+}
+
+fn sim_thread_always_wanted(value: Option<&std::ffi::OsStr>) -> bool {
+    value.is_some_and(|value| value == "always")
 }
 
 fn env_flag(name: &str) -> bool {
@@ -312,6 +348,19 @@ mod tests {
     use super::*;
     use crate::net::lockstep::{ChecksumMismatch, FrameInfo, FrameInfoCompareGate};
     use crate::sim::world::Simulation;
+
+    #[test]
+    fn the_simulation_thread_is_on_unless_the_variable_is_zero() {
+        use std::ffi::OsStr;
+        assert!(sim_thread_wanted(None));
+        assert!(sim_thread_wanted(Some(OsStr::new("1"))));
+        assert!(!sim_thread_wanted(Some(OsStr::new("0"))));
+        // `always` is on too, and alone skips the cost comparison.
+        assert!(sim_thread_wanted(Some(OsStr::new("always"))));
+        assert!(sim_thread_always_wanted(Some(OsStr::new("always"))));
+        assert!(!sim_thread_always_wanted(Some(OsStr::new("1"))));
+        assert!(!sim_thread_always_wanted(None));
+    }
 
     #[test]
     fn a_published_frame_keeps_the_tick_it_saw_while_the_world_moves_on() {
@@ -343,7 +392,7 @@ mod tests {
             .simulation
             .session_mut_for_test()
             .set_tick_for_test(7);
-        host.publish_presentation();
+        // Lending publishes the world as the job finds it.
         assert!(host.lend(Box::new(|runtime| {
             runtime
                 .simulation
@@ -357,95 +406,18 @@ mod tests {
         let live = host.write_sim(SimWrite::Command).unwrap();
         assert_eq!(live.simulation.session().tick(), 8);
         assert!(!host.is_lent());
+        assert_eq!((host.lent_jobs, host.early_returns), (1, 1));
+        // Back home, the job's frame is gone and drawing reads the live world.
+        assert_eq!(host.presentation().unwrap().simulation.session().tick(), 8);
+        // What it cost is known from then on, until another scenario.
+        assert!(host.lend_cost().is_some());
         let result = host.take_job_result().unwrap();
         assert_eq!(*result.downcast::<u32>().unwrap(), 41);
         assert!(host.take_job_result().is_none());
-    }
-
-    /// The frame loop lends a staged tick when it starts drawing. The pass's
-    /// writes before that reach the world before the tick, a tick never lent
-    /// runs when its result is taken, and a new scenario drops it.
-    #[test]
-    fn a_staged_tick_runs_after_the_pass_writes_or_when_its_result_is_taken() {
-        // Each job reports the tick it found, then advances the world.
-        let tick = |tick: u64| -> SimJob {
-            Box::new(move |runtime: &mut SimRuntime| {
-                let found = runtime.simulation.session().tick();
-                runtime
-                    .simulation
-                    .session_mut_for_test()
-                    .set_tick_for_test(tick);
-                Box::new(found)
-            })
-        };
-        let found =
-            |host: &mut SimHost| *host.take_job_result().unwrap().downcast::<u64>().unwrap();
-        let mut host = SimHost::default();
-        host.install(Some(SimRuntime::from_simulation(Simulation::new())));
-        assert!(host.stage(tick(2)));
-        assert!(host.job_outstanding());
-        host.write_sim(SimWrite::Lifecycle)
-            .unwrap()
-            .simulation
-            .session_mut_for_test()
-            .set_tick_for_test(1);
-        assert_eq!(host.runtime().unwrap().simulation.session().tick(), 1);
-        assert_eq!(found(&mut host), 1);
-        assert_eq!(host.runtime().unwrap().simulation.session().tick(), 2);
-
-        assert!(host.stage(tick(3)));
-        host.dispatch_staged();
-        assert!(host.is_lent());
-        assert_eq!(found(&mut host), 2);
-
-        assert!(host.stage(tick(4)));
-        host.install(Some(SimRuntime::from_simulation(Simulation::new())));
-        assert!(!host.job_outstanding());
-        assert_eq!(host.runtime().unwrap().simulation.session().tick(), 0);
-    }
-
-    /// Network service takes the runtime back early in every pass. A network
-    /// frame the simulation thread stopped at Queue_AI is then suspended in
-    /// the world, but it is no Wait_For_Players until a pass finishes its
-    /// tick.
-    #[test]
-    fn a_frame_stopped_at_queue_ai_is_no_network_wait_until_its_tick_is_finished() {
-        use crate::sim::world::{
-            FrameEffects, NetworkCommandBoundary, NetworkCommandError, NetworkCommandQueues,
-            NetworkQueueContext, NetworkQueuePass, TickLane,
-        };
-        struct StopAtQueue;
-        impl NetworkCommandBoundary for StopAtQueue {
-            fn exchange_commands(
-                &self,
-                _: NetworkQueueContext,
-                _: &mut NetworkCommandQueues<'_>,
-            ) -> Result<Option<NetworkQueuePass>, NetworkCommandError> {
-                Ok(Some(NetworkQueuePass::Waiting))
-            }
-            fn record_frame_checksum(&self, _: u32, _: u32) {}
-            fn compare_frame_info(
-                &self,
-                _: &crate::sim::command::CommandRecord,
-                _: i32,
-            ) -> Result<bool, NetworkCommandError> {
-                Ok(false)
-            }
-        }
-        let mut host = SimHost::default();
-        host.install(Some(
-            super::super::frame_effects::network_command_tests::frame_256_runtime(),
-        ));
-        assert!(host.lend(Box::new(|runtime| {
-            let effects = FrameEffects::empty().with_network_commands(&StopAtQueue);
-            let output = runtime.advance_frame(&[], 33, TickLane::Ordinary, effects);
-            Box::new(output.is_ok_and(|output| output.network_waiting))
-        })));
-        let world = host.write_sim(SimWrite::Network).unwrap();
-        assert!(world.simulation.pending_network_wait());
-        assert!(!host.network_wait_pending());
-        assert!(*host.take_job_result().unwrap().downcast::<bool>().unwrap());
-        assert!(host.network_wait_pending());
+        // A job its owner collects is not an early return.
+        assert!(host.lend(Box::new(|_| Box::new(()))));
+        assert!(host.take_job_result().is_some());
+        assert_eq!((host.lent_jobs, host.early_returns), (2, 1));
     }
 
     #[test]

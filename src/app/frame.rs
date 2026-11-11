@@ -10,7 +10,6 @@ use super::{
     ActiveEventLoop, App, AppState, GameScreen, Instant, Result, frontend::startup_splash, render,
     sim_tick,
 };
-use crate::app::match_runtime::sim_host::SimWrite;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ShellFramePreludeStep {
@@ -121,14 +120,13 @@ fn apply_screen_shake(
 
 impl App {
     /// Move the simulation's pending radar-terrain marks into the minimap's
-    /// backlog. Without a minimap they stay with the simulation, as before.
+    /// backlog before a draw. While a tick runs on the simulation thread the
+    /// marks stay with it: that tick's tail hands them over
+    /// ([`sim_tick::drain_radar_terrain_marks`]) with the frame they belong
+    /// to, and taking them here would wait for the tick.
     fn drain_radar_terrain_marks(state: &mut AppState) {
-        let match_state = &mut state.match_state;
-        if let (Some(minimap), Some(runtime)) = (
-            match_state.match_presentation.minimap.as_mut(),
-            match_state.sim_runtime.write_sim(SimWrite::Presentation),
-        ) {
-            minimap.queue_radar_terrain_cells(runtime.take_radar_terrain_dirty());
+        if !state.match_state.sim_runtime.is_lent() {
+            sim_tick::drain_radar_terrain_marks(&mut state.match_state);
         }
     }
 
@@ -163,6 +161,14 @@ impl App {
         state.audio.mute_for_restore(restoring, sound, voice);
         let mut attempts = 0;
         loop {
+            if catch_up_allowed {
+                // The pass decides from this whether its frame is the
+                // service's last (`LocalFramePacer::another_pass_follows`).
+                state
+                    .platform
+                    .frame_pacer
+                    .begin_service_pass(started, attempts);
+            }
             let before = state.match_state.sim_runtime.runtime().map(|runtime| {
                 (
                     runtime.simulation.session().tick(),
@@ -197,6 +203,9 @@ impl App {
                     attempts,
                     started.elapsed(),
                 )
+                // A tick is running beside this thread: draw. Another pass
+                // would only wait for it.
+                || state.match_state.sim_runtime.is_lent()
             {
                 break;
             }
@@ -251,7 +260,7 @@ impl App {
                             frame,
                             frontier,
                             timing,
-                            state.match_state.sim_runtime.network_wait_pending(),
+                            runtime.simulation.pending_network_wait(),
                             recovering,
                         )
                         .admits()
@@ -265,6 +274,7 @@ impl App {
                 }
             }
         }
+        state.platform.frame_pacer.end_service();
         crate::app::match_runtime::network_quality::observe_pass(state);
         result
     }
@@ -277,11 +287,18 @@ impl App {
         event_loop: &ActiveEventLoop,
         simulation_allowed: bool,
     ) -> RuntimeServiceResult {
+        // A tick the simulation thread ran since the last pass ends here,
+        // before anything in this pass reads or routes its result.
+        sim_tick::finish_threaded_frame(state);
         let mut main_tick_admitted = false;
         // GScreen Input reads the current native frame parity but does not
         // advance it. Hidden background service still owns Input while the
         // match runs; the focus-freeze sleep path and shell do not.
-        let network_wait_pending = state.match_state.sim_runtime.network_wait_pending();
+        let network_wait_pending = state
+            .match_state
+            .sim_runtime
+            .runtime()
+            .is_some_and(|rt| rt.simulation.pending_network_wait());
         let in_game = state.frontend.screen == GameScreen::InGame;
         // Wait_For_Players still enters GScreen Input at 0x006485B7 and
         // 0x00649827; repeated services read the same binary-frame parity.
@@ -508,7 +525,11 @@ impl App {
         // match running behind other windows instead. The gate sits at the
         // call site, not inside the runtime, so a focus edge never re-anchors
         // the frame pacer on its own.
-        let network_frame_pending = state.match_state.sim_runtime.network_wait_pending();
+        let network_frame_pending = state
+            .match_state
+            .sim_runtime
+            .runtime()
+            .is_some_and(|rt| rt.simulation.pending_network_wait());
         // Main_Game48CE8A..48CEA8 runs the router 55CFD0 after every
         // Main_Tick and leaves the loop once it routes, so no frame follows a
         // published result. One the router leaves waiting for a commander
@@ -593,7 +614,7 @@ impl App {
             })?;
         let sim = &state.match_state.sim_runtime.runtime()?.simulation;
         if sim.session().scenario_paused()
-            || state.match_state.sim_runtime.network_wait_pending()
+            || sim.pending_network_wait()
             || sim.pending_network_interruption().is_some()
             || sim.pending_network_failure().is_some()
         {
@@ -1337,9 +1358,6 @@ impl App {
                 // minimap keeps its own radar-terrain backlog, so the frame
                 // moves the simulation's newly marked cells there first.
                 Self::drain_radar_terrain_marks(state);
-                // docs/sim-thread.md: the tick this pass staged runs on the
-                // simulation thread while the frame draws.
-                state.match_state.sim_runtime.dispatch_staged();
                 let game_output = if state.renderer.upscale_pass.is_some() {
                     // Render game to intermediate texture, then upscale to swapchain.
                     let up = state.renderer.upscale_pass.as_ref().unwrap();

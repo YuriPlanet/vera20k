@@ -318,16 +318,15 @@ pub fn can_repair_building(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
 /// just below .15, so per-step shares of 20, 40 and 100 cost 2, 5 and 14.
 pub fn repair_step_cost(rules: &RuleSet, object: &ObjectType) -> i32 {
     let step = rules.general.repair_step;
-    let steps = object.strength.checked_div(step).unwrap_or_else(|| {
-        panic!(
-            "native repair step cost IDIV fault at 007120EC: strength={} step={step}",
-            object.strength
-        )
-    });
+    // gamemd traps at 0x007120EC on `RepairStep=0`; VERA carries on with the
+    // floor of 1 below: no step count exists to share the cost over.
+    let Some(steps) = object.strength.checked_div(step) else {
+        return 1;
+    };
     let cost = rules.type_cost(object);
-    let share = cost.checked_div(steps).unwrap_or_else(|| {
-        panic!("native repair step cost IDIV fault at 007120F7: cost={cost} steps={steps}")
-    });
+    // gamemd traps at 0x007120F7 when Strength is below RepairStep (no whole
+    // step); VERA carries on: the one step that repairs it bears the cost.
+    let share = cost.checked_div(steps).unwrap_or(cost);
     X87::ftol_i32_low_masked(X87::mul(
         X87::load_i32(share),
         X87::load_f64(NativeF64Bits::from_bits(
@@ -489,10 +488,9 @@ fn repair_step(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     let period =
         crate::sim::combat::veterancy::self_heal_interval_frames(rules.general.repair_rate_minutes);
     let frame = sim.session.binary_frame() as i32;
-    let remainder = frame.checked_rem(period).unwrap_or_else(|| {
-        panic!("native repair step IDIV fault at 0045083F: frame={frame} period={period}")
-    });
-    if remainder != 0 {
+    // gamemd traps at 0x0045083F on a zero period (`RepairRate` below 1/900
+    // minute); VERA carries on: such a repair is never due.
+    if frame.checked_rem(period) != Some(0) {
         return;
     }
     let Some(object) = sim.object_type(entity.type_ref(), rules) else {
@@ -531,4 +529,41 @@ fn repair_step(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     }
     sim.refresh_building_damage_state(id, rules);
     Simulation::retire_damage_smoke_after_heal(&sim.interner, &mut sim.substrate, id, rules);
+}
+
+#[cfg(test)]
+mod invalid_rule_tests {
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+
+    fn cost(general: &str) -> i32 {
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[General]\nRepairPercent=15%\n{general}[BuildingTypes]\n0=B\n[B]\nStrength=5\nCost=100\n"
+        )))
+        .unwrap();
+        repair_step_cost(&rules, rules.object("B").unwrap())
+    }
+
+    /// gamemd traps at 0x007120EC (`RepairStep=0`) and 0x007120F7
+    /// (`Strength < RepairStep`); VERA charges the floor and the whole share.
+    #[test]
+    fn repair_step_cost_survives_zero_divisors() {
+        assert_eq!(cost("RepairStep=0\n"), 1);
+        assert_eq!(cost("RepairStep=8\n"), 14);
+    }
+
+    /// `RepairRate` below 1/900 minute is a zero period: gamemd traps at
+    /// 0x0045083F, VERA's repair is never due.
+    #[test]
+    fn a_zero_repair_period_is_never_due() {
+        let (mut sim, mut rules, id) = crate::sim::building_art::slot_test_fixture_with("");
+        rules.general.repair_rate_minutes = 0.001;
+        let entity = sim.substrate.entities.get_mut(id).unwrap();
+        entity.health.set_for_test(50);
+        entity.repairing.set_for_test(true);
+        repair_step(&mut sim, &rules, id);
+        let entity = sim.substrate.entities.get(id).unwrap();
+        assert_eq!(entity.health.current(), 50);
+        assert!(entity.repairing.is_on());
+    }
 }

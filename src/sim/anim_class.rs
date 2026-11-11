@@ -3445,7 +3445,9 @@ impl Simulation {
         }
     }
 
-    /// Recovery43FCA4 and destructor43BDE0 call Anim Destroy, not scalar delete.
+    /// Recovery43FCA4, destructor43BDE0 and Building Limbo 4458E4..445903
+    /// call Anim UnInit4255B0 (deferred), not scalar delete, on each of the
+    /// eight slots and null it; none of them writes5E8 here.
     /// The destructor follows owner expiry, so its Anims no longer need Rules
     /// for SetOwner's intermediate display resubmission.
     pub(crate) fn clear_building_damage_fire_slots(&mut self, building_id: u64, rules: &RuleSet) {
@@ -4955,7 +4957,7 @@ mod tests {
     }
 
     #[test]
-    fn building_uninit_expires_attached_fires_before_destructor_destroy_and_survives_save() {
+    fn building_uninit_expires_attached_fires_then_limbo_uninits_them_and_survives_save() {
         let (mut sim, rules, building_id) = damage_fire_fixture(false);
         sim.substrate
             .entities
@@ -4982,31 +4984,34 @@ mod tests {
             .collect();
         sim.sound_events.clear_for_test();
         sim.uninit_with_rules(building_id, &rules);
-        // TechnoLimbo6F6C6B reaches Release even on its empty4A4 handle.
-        // Attached-owner expiry still must not destroy any Anim sound.
+        // ObjectUnInit5F6616 expires the owner first (Anim425150: owner
+        // cleared, +19B set), then its Limbo call reaches Building Limbo
+        // 4458E4, which UnInits each fire (Release4255D5) and nulls its slot
+        // before TechnoLimbo6F6C6B releases the empty4A4 handle.
+        assert!(matches!(
+            sim.sound_events.as_slice().last(),
+            Some(SimSoundEvent::GattlingLoopRelease { owner })
+                if *owner == crate::sim::combat::gattling::gattling_sound_owner(building_id)
+        ));
         assert!(
-            matches!(
-                sim.sound_events.as_slice(),
-                [SimSoundEvent::GattlingLoopRelease { owner }]
-                    if *owner == crate::sim::combat::gattling::gattling_sound_owner(building_id)
-            ),
-            "owner expiry does not call Anim Destroy"
-        );
-        assert_eq!(
             sim.entities()
                 .get(building_id)
                 .unwrap()
                 .damage_fires
-                .anim_ids,
-            ids
+                .anim_ids
+                .iter()
+                .all(Option::is_none)
         );
         for (id, coord) in &coords {
             let anim = sim.anim(*id).unwrap();
             assert_eq!(anim.world_coord, *coord);
             assert_eq!(anim.owner_entity, None);
             assert!(anim.runtime.inactive);
-            assert!(!sim.substrate.pending_delete.contains_object(id));
+            assert_eq!(anim.damage_fire_slot, None);
+            assert!(sim.substrate.pending_delete.contains_object(id));
             assert_eq!(sim.substrate.display.layer_of(*id), None);
+            assert!(sim.sound_events.iter().any(|event| matches!(event,
+                SimSoundEvent::ObjectSoundReleased { owner } if *owner == *id)));
         }
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let hash = sim.state_hash();
@@ -5016,20 +5021,10 @@ mod tests {
             .sim;
         sim.restore_after_snapshot_load().unwrap();
         assert_eq!(sim.state_hash(), hash);
-        for (slot, id) in ids.iter().enumerate() {
-            if let Some(id) = id {
-                assert_eq!(
-                    sim.anim(*id).unwrap().damage_fire_slot,
-                    Some((building_id, slot as u8))
-                );
-            }
-        }
         sim.process_pending_delete();
         assert!(sim.entities().get(building_id).is_none());
         for (id, _) in coords {
             assert!(sim.anim(id).is_none());
-            assert!(sim.sound_events.iter().any(|event| matches!(event,
-                SimSoundEvent::ObjectSoundReleased { owner } if *owner == id)));
         }
     }
 
@@ -7366,6 +7361,39 @@ mod tests {
         );
         assert!(!sim.live_object_order_snapshot().contains(&anim_id));
         assert_eq!(sim.substrate.pending_delete.object_ids(), vec![anim_id]);
+    }
+
+    #[test]
+    fn building_limbo_uninits_its_damage_fire_anims() {
+        let (mut sim, rules, building_id) = damage_fire_fixture(false);
+        sim.substrate
+            .entities
+            .get_mut(building_id)
+            .unwrap()
+            .health
+            .set_for_test(50);
+        sim.update_building_damage_fire(building_id, &rules);
+        let fires = sim
+            .substrate
+            .entities
+            .get(building_id)
+            .unwrap()
+            .damage_fires
+            .anim_ids;
+        let anim_id = fires[0].expect("slot zero");
+
+        // The building is alive: only Building Limbo 4458E4 retires the fires.
+        sim.techno_limbo_with_rules(building_id, &rules, None);
+
+        let building = sim.substrate.entities.get(building_id).unwrap();
+        assert!(building.is_object_alive());
+        assert!(building.damage_fires.anim_ids.iter().all(Option::is_none));
+        assert!(
+            building.damage_fires.active,
+            "Limbo leaves Building+5E8 as it was"
+        );
+        assert!(!sim.live_object_order_snapshot().contains(&anim_id));
+        assert!(sim.substrate.pending_delete.contains_object(&anim_id));
     }
 
     #[test]

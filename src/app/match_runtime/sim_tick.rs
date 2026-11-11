@@ -1019,6 +1019,9 @@ pub(crate) fn advance_in_game_runtime_exact_step(
     if state.frontend.screen != GameScreen::InGame {
         return Err(ExactStepError::ScreenNotInGame);
     }
+    // A tick an earlier pass sent to the simulation thread finishes first,
+    // so the step is counted on the live world, not the published frame.
+    finish_threaded_frame(state);
     let (tick_before, binary_frame_before) = state
         .match_state
         .sim_runtime
@@ -1083,8 +1086,13 @@ fn advance_in_game_runtime_mode(
     if crate::app::App::house_outcome_wait_pending(state) {
         // House4F8649/4F8772 services48D080 inside this Main_Tick;
         // it never re-enters55D7C2's timed-pause/Chrono/input prelude.
-        let completed =
-            advance_one_simulation_frame(state, TickLane::Ordinary, None, FrameResume::OutcomeWait);
+        let completed = advance_one_simulation_frame(
+            state,
+            TickLane::Ordinary,
+            None,
+            FrameResume::OutcomeWait,
+            false,
+        );
         state
             .match_state
             .sync_multiplayer_pause_clock(crate::app::match_runtime::frame_pacer::wall_clock_ms());
@@ -1103,7 +1111,11 @@ fn advance_in_game_runtime_mode(
     }
     let frame_stepping = matches!(mode, RuntimeAdvanceMode::WallClock { .. })
         && state.diag.debug_frame_step_requested;
-    let resume_wait = state.match_state.sim_runtime.network_wait_pending();
+    let resume_wait = state
+        .match_state
+        .sim_runtime
+        .runtime()
+        .is_some_and(|rt| rt.simulation.pending_network_wait());
     // Locally paced frames keep their due time; see `admitted_frame_start_ms`.
     let mut paced_frame_start_ms = None;
     let pacer_timing_admits = match mode {
@@ -1259,13 +1271,6 @@ fn advance_in_game_runtime_mode(
     let mouse_scroll =
         crate::app::input::camera::sample_mouse_scroll(state, decision.scroll_input, scroll_steps);
     if decision.run_sim {
-        // One Main_Tick, one tactical composite (RenderFrame 0x0055D8F2),
-        // however many frames debug speed runs in this pass.
-        state
-            .match_state
-            .match_presentation
-            .tactical_composite
-            .note_main_tick();
         let tick_lane = decision.tick_lane;
         let resume = if resume_wait {
             FrameResume::NetworkWait
@@ -1280,23 +1285,105 @@ fn advance_in_game_runtime_mode(
                 .frame_pacer
                 .record_admitted_frame(frame_start_ms);
         }
-        let mut frame_committed =
-            advance_one_simulation_frame(state, tick_lane, mouse_scroll, resume);
+        // Only the last frame before the draw goes to the simulation thread
+        // (docs/sim-thread.md): one the service or debug speed follows with
+        // another ticks inline, as before the thread, and publishes nothing.
+        // It goes only when that saves this thread time: a tick expected to
+        // cost less here than the last lent one did, in its frame's copy and
+        // drop and the wait for it, ticks inline too.
+        let (game_speed, network_fps) = local_pacing_inputs(state);
+        let pacer = &state.platform.frame_pacer;
+        let worth_lending = super::sim_host::sim_thread_always()
+            || state
+                .match_state
+                .sim_runtime
+                .lend_cost()
+                .is_none_or(|lent| pacer.expected_frame_cost() > lent);
+        let now = crate::util::time::Instant::now();
+        // Online, the relay's frontier and the online pacer admit the next
+        // frame (the catch-up loop in `App::service_match_runtime`).
+        let another_pass_follows = match state
+            .match_state
+            .live_network
+            .as_ref()
+            .filter(|live| live.uses_sequenced_lockstep() && !live.has_terminal_network_error())
+        {
+            Some(live) => state.match_state.sim_runtime.runtime().is_some_and(|rt| {
+                let session = rt.simulation.session();
+                let next_frame = session.binary_frame().wrapping_add(1);
+                let receipt = live
+                    .sequenced_timing()
+                    .filter(|_| {
+                        !replaying
+                            && !frame_stepping
+                            && !state.match_state.paused()
+                            && !state.focus_freeze_active()
+                            && !session.scenario_paused()
+                    })
+                    .map(|timing| {
+                        let recovering = live.recovery_status(wall_ms as u32, next_frame).is_some();
+                        (timing, recovering)
+                    });
+                pacer.another_online_pass_follows(
+                    now,
+                    next_frame,
+                    live.committed_frontier(),
+                    receipt,
+                )
+            }),
+            None => pacer.another_pass_follows(
+                now,
+                crate::app::match_runtime::frame_pacer::wall_clock_ms(),
+                game_speed,
+                network_fps,
+            ),
+        };
+        let inline = frame_stepping
+            || matches!(mode, RuntimeAdvanceMode::ExactOneStep)
+            || !worth_lending
+            || another_pass_follows;
+        let debug_frames = if !frame_stepping && !replaying && debug_speed_allowed(state) {
+            state.platform.frame_pacer.debug_speed().saturating_sub(1)
+        } else {
+            0
+        };
+        let mut frame_committed = advance_one_simulation_frame(
+            state,
+            tick_lane,
+            mouse_scroll,
+            resume,
+            inline || debug_frames > 0,
+        );
         // Debug speed runs further frames in this paced pass, each through
         // the same frame transaction; the pacer interval is unchanged.
-        if !frame_stepping && !replaying && debug_speed_allowed(state) {
-            for _ in 1..state.platform.frame_pacer.debug_speed() {
-                // A stopped frame's world must not run again.
-                if state.match_state.frame_stopped
-                    || state.match_state.scenario_outcome.is_some()
-                    || state.match_state.scenario_exit.is_some()
-                    || crate::app::App::house_outcome_wait_pending(state)
-                {
-                    break;
-                }
-                frame_committed |=
-                    advance_one_simulation_frame(state, tick_lane, None, FrameResume::None);
+        for frame in 1..=debug_frames {
+            // A stopped frame's world must not run again.
+            if state.match_state.frame_stopped
+                || state.match_state.scenario_outcome.is_some()
+                || state.match_state.scenario_exit.is_some()
+                || crate::app::App::house_outcome_wait_pending(state)
+            {
+                break;
             }
+            frame_committed |= advance_one_simulation_frame(
+                state,
+                tick_lane,
+                None,
+                FrameResume::None,
+                inline || frame < debug_frames,
+            );
+        }
+        // One Main_Tick, one tactical composite (RenderFrame 0x0055D8F2),
+        // however many frames debug speed runs in this pass. A frame on the
+        // simulation thread has nothing to show yet: its composite is noted
+        // when it finishes ([`finish_threaded_frame`]), so its picture is
+        // drawn once, not once now and again then.
+        if !state.match_state.sim_runtime.is_lent() {
+            state
+                .match_state
+                .match_presentation
+                .tactical_composite
+                .note_main_tick();
         }
         state
             .match_state
@@ -1308,54 +1395,122 @@ fn advance_in_game_runtime_mode(
             super::network_failure::show(state);
             return false;
         }
-        #[cfg(feature = "telemetry-dashboard")]
-        if frame_committed && state.diag.telemetry_active() {
-            state.match_state.telemetry_tick_rate.record(Instant::now());
-        }
-        crate::app::presentation::sidebar_render::advance_sidebar_credits_after_frame(
-            state,
-            frame_committed,
-            tick_lane,
-        );
-        if frame_committed {
-            // House4F92E2's strip pass reaches this frame as a pending
-            // recheck; membership must not wait for the next player input.
-            let recheck = state
-                .match_state
-                .match_presentation
-                .sidebar_projection
-                .cameo_recheck_pending();
-            // Native Strip AI6A8CF3 requests redraw throughout the authored
-            // flash window, even with no input. Reuse the one projection owner
-            // only in these windows; ordinary idle ticks do not enumerate cameos.
-            let flashing = state
-                .match_state
-                .sim_runtime
-                .runtime()
-                .is_some_and(|runtime| {
-                    state
-                        .match_state
-                        .match_presentation
-                        .sidebar_projection
-                        .cameo_redraw_requested(runtime.simulation.session().binary_frame() as i32)
-                });
-            // StripDraw6A9540 asks each entry's availability and reads its
-            // Factory while drawing, so the drawn state follows the simulation
-            // even when no pass, input or flash window rebuilt the projection
-            // this frame.
-            if recheck || flashing {
-                // The rebuilt view takes the same drawn state.
-                crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
-            } else {
-                crate::app::presentation::sidebar_render::refresh_sidebar_cameo_draw_state(state);
-            }
-            #[cfg(feature = "phobos")]
-            crate::app::presentation::sw_sidebar::refresh_draw_state(state);
+        // A frame sent to the simulation thread has no result yet: the pass
+        // that finishes it does this ([`finish_threaded_frame`]).
+        if frame_committed || !state.match_state.sim_runtime.is_lent() {
+            after_frame(state, frame_committed, tick_lane);
         }
     } else if let Some(request) = mouse_scroll {
         crate::app::input::camera::commit_camera_scroll(state, request);
     }
+    after_simulation_pass(
+        state,
+        decision,
+        main_tick_pumps_audio,
+        scroll_steps,
+        replaying,
+    )
+}
 
+/// The client work that follows one frame's result, committed or not.
+fn after_frame(state: &mut AppState, frame_committed: bool, tick_lane: TickLane) {
+    #[cfg(feature = "telemetry-dashboard")]
+    if frame_committed && state.diag.telemetry_active() {
+        state.match_state.telemetry_tick_rate.record(Instant::now());
+    }
+    crate::app::presentation::sidebar_render::advance_sidebar_credits_after_frame(
+        state,
+        frame_committed,
+        tick_lane,
+    );
+    if frame_committed {
+        // House4F92E2's strip pass reaches this frame as a pending
+        // recheck; membership must not wait for the next player input.
+        let recheck = state
+            .match_state
+            .match_presentation
+            .sidebar_projection
+            .cameo_recheck_pending();
+        // Native Strip AI6A8CF3 requests redraw throughout the authored
+        // flash window, even with no input. Reuse the one projection owner
+        // only in these windows; ordinary idle ticks do not enumerate cameos.
+        let flashing = state
+            .match_state
+            .sim_runtime
+            .runtime()
+            .is_some_and(|runtime| {
+                state
+                    .match_state
+                    .match_presentation
+                    .sidebar_projection
+                    .cameo_redraw_requested(runtime.simulation.session().binary_frame() as i32)
+            });
+        // StripDraw6A9540 asks each entry's availability and reads its
+        // Factory while drawing, so the drawn state follows the simulation
+        // even when no pass, input or flash window rebuilt the projection
+        // this frame.
+        if recheck || flashing {
+            // The rebuilt view takes the same drawn state.
+            crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
+        } else {
+            crate::app::presentation::sidebar_render::refresh_sidebar_cameo_draw_state(state);
+        }
+        #[cfg(feature = "phobos")]
+        crate::app::presentation::sw_sidebar::refresh_draw_state(state);
+    }
+}
+
+/// Finish the frame the simulation thread ran since the last pass: its tail,
+/// then the client work that follows a frame. Every pass starts with it, so
+/// pause service, exit routing, menus and saves read a world whose last tick
+/// the client has fully taken. Nothing happens when no tick is out.
+pub(crate) fn finish_threaded_frame(state: &mut AppState) {
+    let Some(frame_committed) = finish_threaded_tick(state, None) else {
+        return;
+    };
+    // As after an inline frame: an outcome wait or a failure holds the rest.
+    if crate::app::App::house_outcome_wait_pending(state) || super::network_failure::pending(state)
+    {
+        return;
+    }
+    after_frame(state, frame_committed, TickLane::Ordinary);
+    // What the pass that admitted the frame left to its result: the
+    // Main_Tick's tactical composite, and its audio pump after Logic
+    // (`0x0055DE4A`), so the tick's sounds start now and not when the next
+    // frame is admitted.
+    state
+        .match_state
+        .match_presentation
+        .tactical_composite
+        .note_main_tick();
+    crate::app::presentation::building_anim::drain_sound_events(state);
+    if main_tick_owns_audio_pump(state, true) {
+        pump_audio_service(state, super::frame_pacer::wall_clock_ms());
+    }
+}
+
+/// Move the simulation's pending radar-terrain marks into the minimap's
+/// backlog. Without a minimap they stay with the simulation.
+pub(crate) fn drain_radar_terrain_marks(match_state: &mut super::state::MatchState) {
+    if let (Some(minimap), Some(runtime)) = (
+        match_state.match_presentation.minimap.as_mut(),
+        match_state
+            .sim_runtime
+            .write_sim(super::sim_host::SimWrite::Presentation),
+    ) {
+        minimap.queue_radar_terrain_cells(runtime.take_radar_terrain_dirty());
+    }
+}
+
+/// What every pass does after its simulation step, whether or not a frame
+/// ran.
+fn after_simulation_pass(
+    state: &mut AppState,
+    decision: RuntimePassDecision,
+    main_tick_pumps_audio: bool,
+    scroll_steps: u32,
+    replaying: bool,
+) -> bool {
     // MainThrottle55E33B publishes Logic visits per60 wall-clock buckets,
     // including the path where the pacer admitted no simulation frame.
     let wall_ms = state.radar_presentation_ms();
@@ -1395,8 +1550,10 @@ fn advance_in_game_runtime_mode(
     state.audio.main_tick_theme(in_game_music, music_now_ms);
     // Main_Tick's Network_ServiceLoop after Logic (`0x0055DE4A`). Logic's
     // sounds reach the arbiter in the drain above, so they start in this
-    // same Main_Tick, as native's direct submissions do.
-    if decision.run_sim && main_tick_pumps_audio {
+    // same Main_Tick, as native's direct submissions do. A frame on the
+    // simulation thread has delivered none yet: its pump runs when it
+    // finishes ([`finish_threaded_frame`]).
+    if decision.run_sim && main_tick_pumps_audio && !state.match_state.sim_runtime.is_lent() {
         pump_audio_service(state, music_now_ms);
     }
     for _ in 0..scroll_steps {
@@ -1458,11 +1615,23 @@ fn should_record_replay_tick(
 /// Complete the exact frame suspended by ExecuteDoList's message box. Reuse
 /// every output consumer below; neither input admission nor Logic runs again.
 pub(crate) fn resume_after_network_failure(state: &mut AppState) -> bool {
-    advance_one_simulation_frame(state, TickLane::Ordinary, None, FrameResume::ChecksumModal)
+    advance_one_simulation_frame(
+        state,
+        TickLane::Ordinary,
+        None,
+        FrameResume::ChecksumModal,
+        false,
+    )
 }
 
 pub(crate) fn leave_network_wait(state: &mut AppState) -> bool {
-    advance_one_simulation_frame(state, TickLane::Ordinary, None, FrameResume::NetworkLeave)
+    advance_one_simulation_frame(
+        state,
+        TickLane::Ordinary,
+        None,
+        FrameResume::NetworkLeave,
+        false,
+    )
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1474,7 +1643,7 @@ enum FrameResume {
     OutcomeWait,
     /// Queue_AI of a network frame whose Logic ran on the simulation thread
     /// (`DeferredClientEffects::hands_off_queue`). It resumes as a network
-    /// wait does; the thread's tail already counted the frame's tick cost.
+    /// wait does; the thread's part already counted the frame's cost.
     QueueHandoff,
 }
 
@@ -1535,34 +1704,27 @@ fn advance_one_simulation_frame(
     tick_lane: TickLane,
     mouse_scroll: Option<(f32, f32)>,
     resume: FrameResume,
+    // Whether the frame must end inside the call: an exact step or a debug
+    // frame step never goes to the simulation thread.
+    inline: bool,
 ) -> bool {
     // docs/sim-thread.md phase 4: the tick the simulation thread ran since
     // the last pass finishes first, so this frame starts from its results.
     // That tail takes this pass's camera scroll.
-    let threaded_finished = finish_threaded_frame(state, mouse_scroll);
+    let threaded_finished = finish_threaded_tick(state, mouse_scroll);
     let mouse_scroll = if threaded_finished.is_some() {
         None
     } else {
         mouse_scroll
     };
-    // This pass checked its gates before that frame finished. A frame that
-    // did not commit is suspended (outcome, network wait or failure) or
-    // ended the match (Main_Tick's terminal flags55DE4F..55DE71), and one
-    // that reached a shared or scenario pause holds the world: no Logic
-    // follows it here. The next pass resumes or routes it. A wait this call
-    // was to resume was that tick's own.
-    if let Some(committed) = threaded_finished
-        && (!committed
-            || resume != FrameResume::None
-            || state.match_state.multiplayer_paused()
-            || state.match_state.sim_runtime.runtime().is_some_and(|rt| {
-                super::scenario_pause::blocks_main_tick(
-                    state.match_state.session_mode(),
-                    rt.simulation.session().scenario_paused(),
-                )
-            }))
+    if threaded_finished.is_some()
+        && (crate::app::App::house_outcome_wait_pending(state)
+            || super::network_failure::pending(state)
+            || state.match_state.frame_stopped
+            || pending_network_wait(state))
     {
-        return committed;
+        // The next pass resumes that frame inline.
+        return threaded_finished.unwrap_or(false);
     }
     let replaying = state.match_state.match_diagnostics.is_replay_playback();
     let resuming = resume != FrameResume::None;
@@ -1638,10 +1800,11 @@ fn advance_one_simulation_frame(
         std::cell::RefCell::new(Vec::new());
     let fps_panel_shown = state.renderer.performance_overlay.is_visible();
     let observing_commands = state.match_state.match_diagnostics.observes_commands();
-    // docs/sim-thread.md: a network frame's Logic runs on the simulation
-    // thread too, up to Queue_AI. A restore replays many frames per pass,
-    // each waiting for the last, so it stays inline.
+    // docs/sim-thread.md: a network frame lent to the simulation thread runs
+    // there up to Queue_AI. A restore replays many frames per pass, each
+    // waiting for the last, so it stays inline.
     let queue_handoff = super::sim_host::sim_thread_enabled()
+        && !inline
         && resume == FrameResume::None
         && tick_lane == TickLane::Ordinary
         && !replaying
@@ -1671,12 +1834,19 @@ fn advance_one_simulation_frame(
             queue_handoff,
         )
     });
-    // An ordinary frame runs on the simulation thread
-    // (`VERA20K_SIM_THREAD=1`); drawing reads its last published frame.
+    // An ordinary frame runs on the simulation thread (off with
+    // `VERA20K_SIM_THREAD=0`); drawing reads its last published frame.
     let threaded = deferred.is_some()
+        && !inline
         && resume == FrameResume::None
         && tick_lane == TickLane::Ordinary
         && super::sim_host::sim_thread_enabled();
+    if threaded {
+        // The frame published for this tick shows every cell ticked so far;
+        // their radar-terrain marks go to the minimap with it, since no draw
+        // takes them while the tick is out (`App::drain_radar_terrain_marks`).
+        drain_radar_terrain_marks(&mut state.match_state);
+    }
     let Some((rt, frame_checksums)) = state.match_state.sim_runtime.tick_parts() else {
         return threaded_finished.unwrap_or(false);
     };
@@ -1699,7 +1869,10 @@ fn advance_one_simulation_frame(
     // Delay-zero AnimClass construction can emit StartSound during the
     // final map-load sweep. Keep it until this first tactical drain;
     // `drain(..)` below still consumes every event exactly once.
-    let due_commands = if !replaying && !resuming && tick_lane == TickLane::Ordinary {
+    // A lent frame takes its due commands on the simulation thread, after
+    // its frame is published: taken here, the published world would have a
+    // selection or control group neither queued nor applied.
+    let due_commands = if !threaded && !replaying && !resuming && tick_lane == TickLane::Ordinary {
         sim.take_due_commands()
     } else {
         Vec::new()
@@ -1729,6 +1902,7 @@ fn advance_one_simulation_frame(
                 .deferred
                 .as_ref()
                 .expect("a threaded tick defers its client effects");
+            let due_commands = rt.simulation.take_due_commands();
             let output = run_deferred_tick(
                 rt,
                 deferred,
@@ -1744,7 +1918,7 @@ fn advance_one_simulation_frame(
                 logic_ms: (logic_started_ms, super::frame_pacer::wall_clock_ms()),
             })
         };
-        state.match_state.sim_runtime.stage(Box::new(job));
+        state.match_state.sim_runtime.lend(Box::new(job));
         if let Some(request) = mouse_scroll {
             crate::app::input::camera::commit_camera_scroll(state, request);
         }
@@ -1930,7 +2104,15 @@ fn advance_one_simulation_frame(
             }
         }
     };
+    // The thread's part of a handed-off frame counted its cost; the exchange
+    // adds no second sample.
     let tick_cost = (resume != FrameResume::QueueHandoff).then(|| advance_started.elapsed());
+    if let Some(tick_cost) = tick_cost {
+        state
+            .platform
+            .frame_pacer
+            .record_frame_cost(tick_cost, false);
+    }
     let committed = finish_simulation_frame(state, finish, output, tick_cost, mouse_scroll);
     threaded_finished.unwrap_or(false) | committed
 }
@@ -1973,19 +2155,6 @@ fn stop_failed_frame(state: &mut AppState, network: bool, error: &dyn std::fmt::
     state.match_state.frame_stopped = true;
 }
 
-/// [`finish_threaded_tick`], then the exchange, dispatch and commit of a
-/// network frame the thread stopped at Queue_AI, here with the live session.
-fn finish_threaded_frame(state: &mut AppState, mouse_scroll: Option<(f32, f32)>) -> Option<bool> {
-    let committed = finish_threaded_tick(state, mouse_scroll)?;
-    if !state.match_state.sim_runtime.network_wait_pending() {
-        return Some(committed);
-    }
-    Some(
-        advance_one_simulation_frame(state, TickLane::Ordinary, None, FrameResume::QueueHandoff)
-            | committed,
-    )
-}
-
 /// Finish the tick the simulation thread ran, waiting for it if it still
 /// runs. `None` when no tick was out; else whether it committed.
 fn finish_threaded_tick(state: &mut AppState, mouse_scroll: Option<(f32, f32)>) -> Option<bool> {
@@ -2010,22 +2179,44 @@ fn finish_threaded_tick(state: &mut AppState, mouse_scroll: Option<(f32, f32)>) 
         }
     };
     // MainTick55D3DA/55DE0D times the Logic visit up to Queue_AI. It ran on
-    // the simulation thread, from when the thread started it (late for a
-    // frame no draw lent) to its stop, not until this thread resumes the
-    // exchange, whose own finish then finds the sample taken.
+    // the simulation thread, not until this thread resumes the exchange,
+    // whose own finish then finds the sample taken.
     if output.network_waiting
         && let Some(live) = state.match_state.live_network.as_mut()
     {
         live.begin_processing(logic_started_ms as u32);
         live.finish_processing(logic_finished_ms as u32);
     }
-    Some(finish_simulation_frame(
-        state,
-        finish,
-        output,
-        Some(tick_cost),
-        mouse_scroll,
-    ))
+    state
+        .platform
+        .frame_pacer
+        .record_frame_cost(tick_cost, true);
+    let committed = finish_simulation_frame(state, finish, output, Some(tick_cost), mouse_scroll);
+    // The draw left this tick's radar-terrain marks with it
+    // (`App::drain_radar_terrain_marks`); they go to the minimap now.
+    drain_radar_terrain_marks(&mut state.match_state);
+    // A network frame stopped at Queue_AI on the simulation thread; its
+    // exchange, dispatch and commit continue here, with the live session.
+    if !pending_network_wait(state) {
+        return Some(committed);
+    }
+    Some(
+        advance_one_simulation_frame(
+            state,
+            TickLane::Ordinary,
+            None,
+            FrameResume::QueueHandoff,
+            true,
+        ) | committed,
+    )
+}
+
+fn pending_network_wait(state: &AppState) -> bool {
+    state
+        .match_state
+        .sim_runtime
+        .runtime()
+        .is_some_and(|rt| rt.simulation.pending_network_wait())
 }
 
 /// A frame whose client writes are recorded ([`super::deferred_effects`]):
@@ -2108,16 +2299,47 @@ fn finish_simulation_frame(
             if output.outcome_waiting {
                 // The simulation retains this frame's non-sound facts until
                 // the same House suffix finishes. Its sound prefix has already
-                // reached the synchronous boundary above exactly once. A
-                // deferred frame's writes before the wait, and the wait it
-                // started, reach the client as a borrowing frame's did.
+                // reached the synchronous boundary above exactly once.
                 if let Some(deferred) = deferred {
+                    // A deferred frame has no synchronous boundary: the
+                    // sound facts of this visit, which the simulation has
+                    // already handed over, are delivered here instead.
+                    let sim = &rt.simulation;
+                    let rules = &rt.resources.rules;
+                    let radar_frame = sim.session().tick();
+                    let minimap = &mut state.match_state.match_presentation.minimap;
+                    let mut admit_radar = |request: crate::sim::radar::RadarEventRequest| {
+                        minimap.as_mut().is_some_and(|minimap| {
+                            minimap.admit_radar_event(request, radar_frame, Some(rules))
+                        })
+                    };
+                    let delivered = output.sound_events_delivered;
+                    super::sound_dispatch::dispatch_sim_sound_events(
+                        std::mem::take(&mut output.sound_events)
+                            .into_iter()
+                            .skip(delivered)
+                            .filter(|event| {
+                                !(defer_verdict_to_clip
+                                    && matches!(
+                                        event,
+                                        crate::sim::world::SimSoundEvent::MatchOutcome { .. }
+                                    ))
+                            }),
+                        sim,
+                        rules,
+                        local_owner_name.as_deref(),
+                        &mut admit_radar,
+                        &mut state.match_state.match_audio.sound_events,
+                        None,
+                    );
+                    // Its client writes, the outcome wait it polled among
+                    // them, still reach their owners.
                     deferred.apply(state);
                 }
                 return false;
             }
             // A network frame resumed after the simulation thread's Logic has
-            // its cost from that thread's tail; the exchange adds no sample.
+            // its cost from that thread's part; the exchange adds no sample.
             if let Some(tick_cost) = tick_cost {
                 let tick_ms = tick_cost.as_secs_f32() * 1000.0;
                 state.match_state.network_quality.record_tick(tick_ms);
@@ -2366,8 +2588,9 @@ fn finish_simulation_frame(
         if let Some(deferred) = deferred {
             deferred.apply(state);
         }
-        // docs/sim-thread.md phase 2: drawing reads the world as this tick
-        // left it while the next tick runs.
+        // The simulation thread publishes a frame when it takes a tick
+        // (`SimHost::lend`); this is the phase 2 opt-in, a frame after every
+        // tick without the thread.
         if frame_committed && super::sim_host::presentation_frames_enabled() {
             state.match_state.sim_runtime.publish_presentation();
         }

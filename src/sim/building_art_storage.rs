@@ -52,14 +52,14 @@ impl BuildingStorage {
             X87::ftol_i32_low_masked(X87::add(X87::load_i32(total), X87::load_f32(amount)))
         })
     }
-    fn tier(self, capacity: i32, frame: u32, caller: &str) -> i32 {
+    /// gamemd's IDIV (445FE4, 450DAA, 450E12) traps on `Storage=0` under a
+    /// stored total (and on MIN/-1); VERA carries on with the empty tier.
+    fn tier(self, capacity: i32) -> i32 {
         if self.total() == 0 {
             return 0;
         }
         let numerator = self.total().wrapping_shl(2);
-        numerator.checked_div(capacity).unwrap_or_else(|| panic!(
-            "native Building storage IDIV fault: caller={caller} frame={frame} numerator={numerator} capacity={capacity}"
-        ))
+        numerator.checked_div(capacity).unwrap_or(0)
     }
     fn silo_frame(self, capacity: i32) -> i32 {
         if capacity <= 0 {
@@ -126,7 +126,7 @@ impl Simulation {
         let Some(storage) = self.storage_view(id) else {
             return;
         };
-        let tier = storage.tier(capacity, self.session.binary_frame(), "445FE4");
+        let tier = storage.tier(capacity);
         self.substrate
             .entities
             .get_mut(id)
@@ -181,7 +181,7 @@ impl Simulation {
             return;
         }
         let storage = self.storage_view(id).unwrap();
-        let tier = storage.tier(capacity, self.session.binary_frame(), "450DAA");
+        let tier = storage.tier(capacity);
         if tier == storage.refinery_tier {
             return;
         }
@@ -189,10 +189,7 @@ impl Simulation {
             self.clear_building_anim_slot(id, slot);
         }
         //450E12 re-reads storage after the synchronous old Anim destructor.
-        let tier =
-            self.storage_view(id)
-                .unwrap()
-                .tier(capacity, self.session.binary_frame(), "450E12");
+        let tier = self.storage_view(id).unwrap().tier(capacity);
         self.substrate
             .entities
             .get_mut(id)
@@ -299,8 +296,10 @@ mod tests {
                     sim.update_building_storage_anims(id, rules);
                 }
             }));
+            // gamemd's IDIV traps on these rows; VERA carries on with the
+            // empty tier.
             if output["fault"].is_string() {
-                assert!(result.is_err(), "native IDIV row{index}: {row}");
+                assert!(result.is_ok(), "native IDIV row{index}: {row}");
                 faults += 1;
                 continue;
             }

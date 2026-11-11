@@ -158,6 +158,15 @@ pub(crate) struct LocalFramePacer {
     /// chord. Every frame keeps its own transaction, so the simulation and its
     /// replay log are unchanged.
     debug_speed: u8,
+    /// The pass `App::service_match_runtime`'s catch-up loop is running: when
+    /// the service started and how many passes it has finished. `None`
+    /// outside the loop and when the service may not catch up.
+    service_pass: Option<(Instant, usize)>,
+    /// The last frame's tick time: one ticked inline, and one ticked on the
+    /// simulation thread, whose time includes the copies its published frame
+    /// forces.
+    inline_frame_cost: Option<Duration>,
+    lent_frame_cost: Option<Duration>,
 }
 
 #[cfg(feature = "dev-overlays")]
@@ -593,6 +602,91 @@ impl LocalFramePacer {
             total_render_deferrals: 0,
             online: None,
             debug_speed: 1,
+            service_pass: None,
+            inline_frame_cost: None,
+            lent_frame_cost: None,
+        }
+    }
+
+    /// Note the pass the catch-up service is about to run, its
+    /// `finished`-th, in a service that began at `started`.
+    pub(crate) fn begin_service_pass(&mut self, started: Instant, finished: usize) {
+        self.service_pass = Some((started, finished));
+    }
+
+    pub(crate) fn end_service(&mut self) {
+        self.service_pass = None;
+    }
+
+    /// Record a frame's tick time, for [`Self::another_pass_follows`].
+    pub(crate) fn record_frame_cost(&mut self, cost: Duration, lent: bool) {
+        if lent {
+            self.lent_frame_cost = Some(cost);
+        } else {
+            self.inline_frame_cost = Some(cost);
+        }
+    }
+
+    /// Whether the catch-up service will run another pass after a frame
+    /// admitted now: another frame is already due, and the budget
+    /// ([`Self::permits_catch_up`]) is still open once this one has ticked.
+    /// Ask after recording the frame's admission.
+    ///
+    /// Only one tick can run beside a draw, so only a service's last frame
+    /// goes to the simulation thread (docs/sim-thread.md). The frame's time
+    /// is [`Self::expected_frame_cost`]: a frame that only fills the budget
+    /// because it was lent would otherwise keep every later one lent, one
+    /// frame per service.
+    pub(crate) fn another_pass_follows(
+        &self,
+        now: Instant,
+        now_ms: u64,
+        game_speed: u8,
+        network_fps: Option<(u16, u32)>,
+    ) -> bool {
+        self.catch_up_continues(now) && self.should_admit(now_ms, game_speed, network_fps, false)
+    }
+
+    /// [`Self::another_pass_follows`] for sequenced online play, whose frames
+    /// the relay's frontier and the online pacer admit, not the local timer:
+    /// the service continues while the next frame is admitted
+    /// ([`Self::online_frame_decision`]), asked here of a copy.
+    pub(crate) fn another_online_pass_follows(
+        &self,
+        now: Instant,
+        next_frame: u32,
+        frontier: u32,
+        receipt: Option<(SequencedTiming, bool)>,
+    ) -> bool {
+        self.catch_up_continues(now)
+            && match receipt {
+                Some((receipt, recovering)) if next_frame != 0 => {
+                    receipt.frames_per_second != 0
+                        && self
+                            .online_copy(now, receipt)
+                            .decide(now, next_frame, frontier, receipt, recovering)
+                            .admits()
+                }
+                _ => Self::admits_canonical_frame(next_frame, frontier),
+            }
+    }
+
+    /// Whether the catch-up budget stays open after a frame admitted now.
+    fn catch_up_continues(&self, now: Instant) -> bool {
+        self.service_pass.is_some_and(|(started, finished)| {
+            Self::permits_catch_up(
+                finished + 1,
+                now.saturating_duration_since(started) + self.expected_frame_cost(),
+            )
+        })
+    }
+
+    /// What the next frame's tick is expected to take on this thread: the
+    /// smaller of the last inline and the last lent time, zero before either.
+    pub(crate) fn expected_frame_cost(&self) -> Duration {
+        match (self.inline_frame_cost, self.lent_frame_cost) {
+            (Some(inline), Some(lent)) => inline.min(lent),
+            (inline, lent) => inline.or(lent).unwrap_or_default(),
         }
     }
 
@@ -661,6 +755,16 @@ impl LocalFramePacer {
         if next_frame == 0 || receipt.frames_per_second == 0 {
             return false;
         }
+        let mut online = self.online_copy(now, receipt);
+        online
+            .decide(now, next_frame, frontier, receipt, recovering)
+            .admits()
+            && now >= online.deadline(next_frame)
+    }
+
+    /// The online pacer as [`Self::online_frame_decision`] would find it,
+    /// for read-only questions.
+    fn online_copy(&self, now: Instant, receipt: SequencedTiming) -> OnlinePacer {
         let mut online = self
             .online
             .as_ref()
@@ -670,9 +774,6 @@ impl LocalFramePacer {
             online.reset_clock(receipt, now);
         }
         online
-            .decide(now, next_frame, frontier, receipt, recovering)
-            .admits()
-            && now >= online.deadline(next_frame)
     }
 
     pub(crate) fn online_pacing_status(&self) -> Option<OnlinePacingStatus> {
@@ -690,6 +791,8 @@ impl LocalFramePacer {
         self.online = None;
         self.draw_cost = None;
         self.debug_speed = 1;
+        self.inline_frame_cost = None;
+        self.lent_frame_cost = None;
     }
 
     /// Clear a queued continuation on entry or loss of render eligibility.
@@ -1489,6 +1592,55 @@ mod tests {
             child.wrapping_sub(before) <= after.wrapping_sub(before),
             "new process clock {child} outside parent samples {before}..{after}"
         );
+    }
+
+    #[test]
+    fn only_a_services_last_frame_has_no_pass_behind_it() {
+        let started = Instant::now();
+        let at = |millis| started + Duration::from_millis(millis);
+        // GameSpeed 0 never waits, so a frame is always due: the budget
+        // alone ends the service, after eight passes or eight milliseconds.
+        let mut pacer = LocalFramePacer::new();
+        assert!(!pacer.another_pass_follows(started, 0, 0, None));
+        pacer.begin_service_pass(started, 0);
+        assert!(pacer.another_pass_follows(started, 0, 0, None));
+        pacer.begin_service_pass(started, 7);
+        assert!(!pacer.another_pass_follows(started, 0, 0, None));
+        // A frame takes the smaller of its last inline and lent times.
+        pacer.begin_service_pass(started, 0);
+        pacer.record_frame_cost(Duration::from_millis(9), true);
+        assert!(!pacer.another_pass_follows(started, 0, 0, None));
+        pacer.record_frame_cost(Duration::from_millis(5), false);
+        assert_eq!(pacer.expected_frame_cost(), Duration::from_millis(5));
+        assert!(pacer.another_pass_follows(at(2), 0, 0, None));
+        assert!(!pacer.another_pass_follows(at(3), 0, 0, None));
+        pacer.end_service();
+        assert!(!pacer.another_pass_follows(started, 0, 0, None));
+
+        // A timed speed's frame admitted on time has nothing due behind it.
+        let mut paced = LocalFramePacer::new();
+        paced.begin_service_pass(started, 0);
+        paced.record_admitted_frame(32);
+        assert!(!paced.another_pass_follows(started, 32, 1, None));
+        assert!(paced.another_pass_follows(started, 32 + FRAME_BUCKET_MS, 1, None));
+    }
+
+    /// Online, the relay's frontier admits the next frame, not the local
+    /// timer: a frame the relay has sealed is caught up in another pass, and
+    /// one beyond its frontier is not.
+    #[test]
+    fn an_online_frame_the_relay_sealed_has_another_pass_behind_it() {
+        let started = Instant::now();
+        let mut pacer = LocalFramePacer::new();
+        pacer.begin_service_pass(started, 0);
+        let receipt = push_receipt(started, 40);
+        assert!(pacer.another_online_pass_follows(started, 11, 40, Some((receipt, false))));
+        assert!(!pacer.another_online_pass_follows(started, 41, 40, Some((receipt, false))));
+        // Without the online clock (a pause), the frontier alone decides.
+        assert!(pacer.another_online_pass_follows(started, 11, 40, None));
+        assert!(!pacer.another_online_pass_follows(started, 41, 40, None));
+        pacer.begin_service_pass(started, 7);
+        assert!(!pacer.another_online_pass_follows(started, 11, 40, Some((receipt, false))));
     }
 
     #[test]

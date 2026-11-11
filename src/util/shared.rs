@@ -1,9 +1,9 @@
 //! Copy-on-write sharing for the presentation frame (docs/sim-thread.md,
 //! phase 2).
 //!
-//! Each tick publishes a copy of the live world for drawing. [`Shared`] and
-//! [`ChunkedVec`] make that copy share large state with the live world
-//! until the live world writes it:
+//! A tick that goes to the simulation thread publishes a copy of the live
+//! world for drawing. [`Shared`] and [`ChunkedVec`] make that copy share
+//! large state with the live world until the live world writes it:
 //!
 //! - [`Shared<T>`] shares a whole value. A write copies it only while a
 //!   frame still shares it. It suits large state that rarely changes, such
