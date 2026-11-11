@@ -264,6 +264,21 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
         {
             insert(name);
         }
+        // Ares `InfDeathAnim=` replaces the death-table arm with a literal
+        // AnimClass built at the victim's cell, so it is an ordinary
+        // construction root and needs the same physical bounds. Nothing else
+        // names these animations: Mental Omega's GBION warheads set only
+        // `InfDeathAnim` (`FREEZE`, `MELTDIEE`, `PLASMDIE`) with no `InfDeath=`,
+        // and without this root the constructor refuses with
+        // `animation type [X] has no bound SHP frame count` and the kill plays
+        // no death animation at all.
+        #[cfg(feature = "ares")]
+        if let Some(name) = warhead
+            .ares_combat()
+            .and_then(|combat| combat.inf_death_anim())
+        {
+            insert(name);
+        }
     }
     // First activation10062625 may fall back through Type/General, while
     // refresh uses only the explicit Warhead pointer. Bind every configured
