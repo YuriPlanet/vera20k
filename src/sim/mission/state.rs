@@ -244,6 +244,14 @@ impl MissionCom {
         self.ai_counter.set(self.ai_counter.get().wrapping_add(1));
     }
 
+    /// The `visits` increments a sleeping object was owed
+    /// (`GameEntity::settle_sleep`).
+    /// Through a shared reference, as [`Self::count_ai_visit`] steps it.
+    pub(crate) fn add_owed_ai_visits(&self, visits: u32) {
+        self.ai_counter
+            .set(self.ai_counter.get().wrapping_add(visits));
+    }
+
     /// `+0xC4 = 0` outside an assignment: Unit and Infantry PerCellProcess
     /// zero it as the object enters a transport or building (`0x0073A6FC`,
     /// `0x0073A29E`, `0x0051A40E`, `0x0051A2B0`); a building's Mission_Attack

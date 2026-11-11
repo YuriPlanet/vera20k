@@ -1029,6 +1029,11 @@ impl OverlayGrid {
         }
     }
 
+    /// Whether [`Self::take_synchronous_navigation_cells`] would return any cell.
+    pub(crate) fn has_synchronous_navigation_cells(&self) -> bool {
+        !self.synchronous_navigation_cells.is_empty()
+    }
+
     /// Drain movement-authority changes after all inline overlay callbacks that
     /// precede the next path/zone reader have completed.
     pub(crate) fn take_synchronous_navigation_cells(&mut self) -> Vec<(u16, u16)> {

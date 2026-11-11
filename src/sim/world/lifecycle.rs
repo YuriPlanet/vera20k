@@ -2468,6 +2468,9 @@ impl Simulation {
                     )
                 })
             {
+                // A sleeping object reads its cell's hidden state only in a
+                // turn (`world::idle_sleep`).
+                self.substrate.entities.wake_all();
                 #[cfg(any(test, feature = "test-support"))]
                 self.trace_lifecycle_for_test(LifecycleTestEvent::HiddenOccupationEntered);
             }
@@ -2813,6 +2816,7 @@ impl Simulation {
                     )
                 })
             {
+                self.substrate.entities.wake_all();
                 #[cfg(any(test, feature = "test-support"))]
                 self.trace_lifecycle_for_test(LifecycleTestEvent::HiddenOccupationExited);
             }

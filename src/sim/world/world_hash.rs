@@ -449,14 +449,21 @@ mod shared_dummy_bridge_hash_tests {
 /// raw latch/state dword, and signed timer dword is folded explicitly in the
 /// snapshot schema order. Current compatibility projections remain ordinary
 /// named writers until the production authority crosswalk is complete.
-fn hash_mission_com(mission: &crate::sim::mission::MissionCom, hasher: &mut impl Hasher) {
+///
+/// `owed_visits` are the `+0xC4` increments a sleeping object has not taken
+/// yet (`world::idle_sleep`); the hash reads the counter as settled.
+fn hash_mission_com(
+    mission: &crate::sim::mission::MissionCom,
+    owed_visits: u32,
+    hasher: &mut impl Hasher,
+) {
     mission.current().raw().hash(hasher);
     mission.suspended().raw().hash(hasher);
     mission.queued().raw().hash(hasher);
     mission.movement_bypass_latch().hash(hasher);
     mission.handler_state().hash(hasher);
     mission.mission_start_frame().hash(hasher);
-    mission.ai_counter().hash(hasher);
+    mission.ai_counter().wrapping_add(owed_visits).hash(hasher);
     mission.dispatch_timer().start_frame().hash(hasher);
     mission.dispatch_timer().delay().hash(hasher);
 }
@@ -1652,12 +1659,28 @@ impl Simulation {
     fn entity_digests(&self, entities: &[&GameEntity]) -> Vec<u64> {
         let frame = self.session.binary_frame();
         let network = self.session.game_mode().is_network();
-        digests(entities, entities.len() >= 4096, |entity, hasher| {
-            hash_entity(entity, frame, hasher);
-            if network {
-                entity.discovery.hash_network(hasher);
-            }
-        })
+        // The visits each sleeper is owed, beside the entities: the callers
+        // pass the whole store in its own order. A partial list looks each
+        // one up instead.
+        let store = &self.substrate.entities;
+        let mut owed = store.owed_in_value_order();
+        if owed.len() != entities.len() {
+            owed = entities
+                .iter()
+                .map(|entity| store.owed_visits(entity.stable_id()))
+                .collect();
+        }
+        let entities: Vec<(&GameEntity, u32)> = entities.iter().copied().zip(owed).collect();
+        digests(
+            &entities,
+            entities.len() >= 4096,
+            |&(entity, owed), hasher| {
+                hash_entity_owed(entity, frame, owed, hasher);
+                if network {
+                    entity.discovery.hash_network(hasher);
+                }
+            },
+        )
     }
 
     /// Hash all entity components in stable-entity-ID order, as the digests
@@ -1747,7 +1770,8 @@ fn hash_particle(p: &crate::sim::particles::Particle, hasher: &mut impl Hasher) 
 
 /// One entity's components, in the order the state hash folds them.
 /// `frame` is the binary frame the pending timers measure against.
-fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
+/// `owed_visits` are the visits its sleep still owes it (`world::idle_sleep`).
+fn hash_entity_owed(entity: &GameEntity, frame: u32, owed_visits: u32, hasher: &mut StateHasher) {
     entity.stable_id().hash(hasher);
     if entity.production_start_price() != 0 {
         // Techno+300 survives factory release and can suppress FreeUnit at
@@ -2675,7 +2699,7 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         0u8.hash(hasher);
     }
 
-    hash_mission_com(&entity.mission, hasher);
+    hash_mission_com(&entity.mission, owed_visits, hasher);
     hash_mission_leaf(&entity.mission_leaf, hasher);
     if let Some(post) = entity.patrol_post.cell() {
         b"foot-patrol-post-v1".hash(hasher);
