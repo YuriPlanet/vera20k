@@ -20,6 +20,8 @@
 #   SERVICE_PORT=P   relay: the mock match API's port (default 8787)
 #   GATEWAY_PORT=P   browser: the WebSocket gateway's port (default 8788)
 #   PAGE_PORT=P      browser: the test pages' port (default 8000)
+#   SIM_THREAD=V     browser, --threads package: the pages' simulation worker
+#                    (1, always; default 0), or one value per source: always,0
 # Scripted actions use the spawn-only VERA20K_SPAWN_LEAVE_AFTER_SECONDS and
 # VERA20K_SPAWN_RESIGN_AFTER_SECONDS switches. Logs land in OUT_DIR.
 set -eu

@@ -1293,11 +1293,12 @@ fn advance_in_game_runtime_mode(
         // drop and the wait for it, ticks inline too.
         let (game_speed, network_fps) = local_pacing_inputs(state);
         let pacer = &state.platform.frame_pacer;
-        let worth_lending = state
-            .match_state
-            .sim_runtime
-            .lend_cost()
-            .is_none_or(|lent| pacer.expected_frame_cost() > lent);
+        let worth_lending = super::sim_host::sim_thread_always()
+            || state
+                .match_state
+                .sim_runtime
+                .lend_cost()
+                .is_none_or(|lent| pacer.expected_frame_cost() > lent);
         let now = crate::util::time::Instant::now();
         // Online, the relay's frontier and the online pacer admit the next
         // frame (the catch-up loop in `App::service_match_runtime`).
@@ -1808,7 +1809,7 @@ fn advance_one_simulation_frame(
     // docs/sim-thread.md: a network frame lent to the simulation thread runs
     // there up to Queue_AI. A restore replays many frames per pass, each
     // waiting for the last, so it stays inline.
-    let queue_handoff = super::sim_host::sim_thread_available()
+    let queue_handoff = state.match_state.sim_runtime.thread_enabled()
         && !inline
         && resume == FrameResume::None
         && tick_lane == TickLane::Ordinary
@@ -1845,7 +1846,7 @@ fn advance_one_simulation_frame(
         && !inline
         && resume == FrameResume::None
         && tick_lane == TickLane::Ordinary
-        && super::sim_host::sim_thread_available();
+        && state.match_state.sim_runtime.thread_enabled();
     if threaded {
         // The frame published for this tick shows every cell ticked so far;
         // their radar-terrain marks go to the minimap with it, since no draw

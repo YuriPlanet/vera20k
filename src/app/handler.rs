@@ -644,6 +644,24 @@ impl ApplicationHandler for App {
                 _ => state.platform.redraw_gate.note_input(),
             }
         }
+        // docs/sim-thread.md, "The browser": an event may write the world,
+        // which the browser's main thread cannot take back from a tick still
+        // on the simulation worker. Every event but a redraw waits, in order,
+        // for the pass that finds the tick back ([`Self::release_held_events`]).
+        #[cfg(all(
+            feature = "wasm-threads",
+            target_arch = "wasm32",
+            target_os = "unknown"
+        ))]
+        if !matches!(event, WindowEvent::RedrawRequested)
+            && self
+                .state
+                .as_ref()
+                .is_some_and(|state| state.match_state.sim_runtime.is_lent())
+        {
+            self.held_window_events.push((_id, event));
+            return;
+        }
         let shell_capture_active = self.shell_capture.is_some();
         let hidden_run_active = self.hidden_run.is_some();
         // Set while this call re-dispatches a touch's mouse events: those carry
@@ -1882,6 +1900,18 @@ impl ApplicationHandler for App {
             }
             WindowEvent::Ime(ime) => crate::app::input::ime::event(state, ime),
             WindowEvent::RedrawRequested => {
+                #[cfg(all(
+                    feature = "wasm-threads",
+                    target_arch = "wasm32",
+                    target_os = "unknown"
+                ))]
+                let state = {
+                    self.release_held_events(event_loop);
+                    let Some(state) = self.state.as_mut() else {
+                        return;
+                    };
+                    state
+                };
                 // Inside the draw limits the draw waits for `about_to_wait`.
                 if state
                     .platform
@@ -1932,6 +1962,12 @@ impl ApplicationHandler for App {
             // final admission. Ordinary input starts only with the full state.
             return;
         }
+        #[cfg(all(
+            feature = "wasm-threads",
+            target_arch = "wasm32",
+            target_os = "unknown"
+        ))]
+        self.release_held_events(event_loop);
         let shell_scroll_wake = if let Some(state) = self.state.as_mut() {
             #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
             if Self::poll_browser_exit(state, event_loop) {
@@ -1947,7 +1983,17 @@ impl ApplicationHandler for App {
             // the window is focused. Presentation-only, never part of the sim.
             crate::app::input::cursor::reassert_cursor_confinement(state);
             // Captures keep their sealed input; they never ask for an IME.
-            if self.shell_capture.is_none() && self.hidden_run.is_none() {
+            // The browser's composed text waits with the window events a
+            // tick on the simulation worker holds, so it cannot overtake a
+            // key pressed before it ([`Self::release_held_events`]).
+            if self.shell_capture.is_none()
+                && self.hidden_run.is_none()
+                && !(cfg!(all(
+                    feature = "wasm-threads",
+                    target_arch = "wasm32",
+                    target_os = "unknown"
+                )) && state.match_state.sim_runtime.is_lent())
+            {
                 crate::app::input::ime::sync(state);
             }
             Self::update_saved_seed_browser_scroll(state, false);

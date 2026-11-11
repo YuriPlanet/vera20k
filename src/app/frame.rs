@@ -130,6 +130,31 @@ impl App {
         }
     }
 
+    /// docs/sim-thread.md, "The browser": once a pass finds back the tick
+    /// that held the window events, finish that tick and replay them in
+    /// order, so they act on its world before the pass services the next
+    /// frame.
+    #[cfg(all(
+        feature = "wasm-threads",
+        target_arch = "wasm32",
+        target_os = "unknown"
+    ))]
+    pub(super) fn release_held_events(&mut self, event_loop: &ActiveEventLoop) {
+        if self.held_window_events.is_empty() {
+            return;
+        }
+        let Some(state) = self.state.as_mut() else {
+            return;
+        };
+        if !state.match_state.sim_runtime.pass_may_run() {
+            return;
+        }
+        sim_tick::finish_threaded_frame(state);
+        for (window, event) in std::mem::take(&mut self.held_window_events) {
+            winit::application::ApplicationHandler::window_event(self, event_loop, window, event);
+        }
+    }
+
     /// Service the match runtime for one pass: the outcome voice wait, the
     /// scenario exit cascade, the quit cascade, the audio pump and, when
     /// admitted, each simulation advance due by now (only the first without
@@ -145,6 +170,22 @@ impl App {
     ) -> RuntimeServiceResult {
         if state.persistence.pending_load.is_some() {
             return RuntimeServiceResult::default();
+        }
+        // The browser does not wait for a tick still on its simulation
+        // worker (docs/sim-thread.md, "The browser"). This pass services
+        // nothing and draws the frame published for that tick: no Input, so
+        // the screen shake stands as last presented.
+        if !state.match_state.sim_runtime.pass_may_run() {
+            return RuntimeServiceResult {
+                screen_shake_offset: (state.frontend.screen == GameScreen::InGame).then(|| {
+                    state
+                        .match_state
+                        .match_presentation
+                        .screen_shake
+                        .service_offset_snapshot(None, false)
+                }),
+                ..RuntimeServiceResult::default()
+            };
         }
         let started = Instant::now();
         let mut result = RuntimeServiceResult::default();

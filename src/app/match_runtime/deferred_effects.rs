@@ -80,7 +80,7 @@ impl DeferredClientEffects {
         observing_commands: bool,
         initial_save: bool,
     ) -> bool {
-        super::sim_host::sim_thread_available()
+        state.match_state.sim_runtime.thread_enabled()
             && !replaying
             && !observing_commands
             && !initial_save

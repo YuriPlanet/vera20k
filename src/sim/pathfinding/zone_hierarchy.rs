@@ -8,7 +8,9 @@
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, PoisonError};
+
+use crate::util::sync::Mutex;
 
 use super::passability;
 use super::search_table::SearchTable;
