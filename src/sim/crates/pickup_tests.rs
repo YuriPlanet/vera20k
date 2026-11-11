@@ -343,11 +343,104 @@ fn original_pickup_rows_match_through_the_dispatcher() {
     assert_eq!(compared, 16);
 }
 
+/// PickupCrate4824A7..4824D4 selects the campaign's saved PlayerPtr, while
+/// 4824D9 keeps sound admission attached to the collecting House.
+#[test]
+fn solo_money_pays_saved_current_house_for_foreign_controlled_collector() {
+    let Some(retail) =
+        crate::rules::retail_ini_fixture::retail_battle_rules_for_map("sov02smd.map")
+    else {
+        return;
+    };
+    let mut rules = retail.rules;
+    assert_eq!(rules.crate_rules.solo_crate_money, 1500);
+    assert_eq!(rules.crate_rules.wood_crate, POWERUP_MONEY);
+    let bytes = crate::rules::retail_ini_fixture::retail_archive_bytes("MONEY.SHP").unwrap();
+    let frames = crate::assets::shp_file::ShpFile::frame_count_from_bytes(&bytes).unwrap();
+    rules.bind_anim_frame_count_for_test("MONEY", i32::from(frames));
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 31);
+    let terrain = sim.resolved_terrain.as_ref().unwrap().clone();
+    let terrain_speed = sim.terrain_speed_config().clone();
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Campaign);
+    sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+    let current = sim.intern("Americans");
+    let collector = sim.intern("Russians");
+    for (id, name) in [(current, "Americans"), (collector, "Russians")] {
+        sim.houses
+            .get_mut(&id)
+            .unwrap()
+            .initialize_scenario_name(name);
+    }
+    sim.houses
+        .get_mut(&collector)
+        .unwrap()
+        .set_player_control_for_test(true);
+    crate::sim::scenario_bootstrap::initialize_campaign_current_house(
+        &mut sim.session,
+        &mut sim.houses,
+        &IniFile::from_str("[Basic]\nPlayer=Americans\n"),
+    );
+    assert!(
+        super::super::place_crate(
+            &mut sim,
+            &rules,
+            rules.overlay_registry(),
+            CELL,
+            Some(0),
+            FrameEffects::default(),
+        )
+        .unwrap()
+    );
+    let actor = sim
+        .spawn_object("MTNK", "Russians", 9, 10, 0, &rules)
+        .unwrap();
+    let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "solo-crate", 0);
+    let mut sim = crate::sim::snapshot::GameSnapshot::load(&bytes)
+        .unwrap()
+        .sim;
+    sim.restore_after_snapshot_load().unwrap();
+    sim.rebuild_caches_after_load(terrain, terrain_speed, &rules);
+    sim.restore_map_authority_after_snapshot_load(&rules, rules.overlay_registry(), None)
+        .unwrap();
+    assert_eq!(sim.session.current_house(), Some(current));
+    assert!(sim.house_is_human_player(collector));
+    assert!(overlay_at(&sim, CELL).is_some());
+    assert_eq!(
+        super::super::read_crate_mark_fields(&sim, CELL),
+        (overlay_at(&sim, CELL), 0)
+    );
+    let balances = [current, collector].map(|id| sim.houses[&id].economy().credits());
+    let rng = sim.scenario_rng.native_state_hex();
+    assert!(pickup_crate(
+        &mut sim,
+        &rules,
+        rules.overlay_registry(),
+        CELL,
+        actor,
+        FrameEffects::default(),
+    ));
+    assert_eq!(sim.houses[&current].economy().credits(), balances[0] + 1500);
+    assert_eq!(sim.houses[&collector].economy().credits(), balances[1]);
+    assert_eq!(overlay_at(&sim, CELL), None);
+    assert_eq!(sim.scenario_rng.native_state_hex(), rng);
+    assert_eq!(
+        sounds(&sim),
+        vec![("CrateMoney".into(), Some([collector, collector]))]
+    );
+    let animations: Vec<_> = sim.anims().map(|(_, anim)| anim).collect();
+    assert_eq!(animations.len(), 1);
+    assert_eq!(sim.resolve(animations[0].type_id()), "MONEY");
+    assert_eq!(animations[0].owner_house(), None);
+}
+
 /// `0x00482463..0x00482560`: `RandomRanged(ftol(magnitude), +900)` on the
 /// Scenario RNG, `Add_Credits` on the actor's house, the money sound for it.
 #[test]
 fn money_crate_draws_once_pays_the_owner_and_sounds() {
     let (mut sim, mut rules, registry, owner, actor) = multiplayer_fixture(0);
+    let other = house(&mut sim, "CURRENT", true);
+    sim.session.set_current_house_for_test(Some(other));
     rules.powerups.magnitudes[POWERUP_MONEY] = NativeF64Bits::from_bits(2000.0_f64.to_bits());
     rules.general.crate_money_sound = Some("CrateMoney".into());
     let mut probe = sim.scenario_rng.clone();
@@ -364,6 +457,7 @@ fn money_crate_draws_once_pays_the_owner_and_sounds() {
     ));
 
     assert_eq!(sim.houses[&owner].economy().credits(), expected);
+    assert_eq!(sim.houses[&other].economy().credits(), 0);
     assert_eq!(
         sim.scenario_rng.native_state_hex(),
         probe.native_state_hex()
