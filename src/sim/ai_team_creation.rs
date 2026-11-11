@@ -646,7 +646,7 @@ fn zones_admit(
     let (own, theirs) = (base_cell(owner), base_cell(enemy));
     let zone = |cell: (i32, i32), movement_zone: MovementZone| {
         sim.zone_grid
-            .as_ref()
+            .as_deref()
             .zip(sim.resolved_terrain.as_ref())
             .and_then(|(zones, terrain)| {
                 zones.get_zone_id_native(

@@ -105,7 +105,7 @@ use crate::util::fixed_math::SimFixed;
 /// This live object pass's answered scans. Every field is serde-skipped:
 /// saves encode `Option<ScanBatch>` as the setting alone, the same bytes the
 /// retired empty struct wrote.
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ScanBatch {
     /// The pass's answers in ascending object id, each until a scan takes
     /// it. Empty between passes, so a save carries only the setting.
@@ -124,7 +124,7 @@ pub(crate) struct ScanBatch {
     used: usize,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct BatchedScan {
     /// The scan the answer is for.
     mask: ScanMission,

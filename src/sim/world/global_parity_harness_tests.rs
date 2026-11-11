@@ -893,7 +893,8 @@ fn seed_scenario(sim: &mut Simulation, rules: &RuleSet, overlays: &OverlayTypeRe
             &[],
             sim.map_size_diamond(),
             sim.playfield_bounds,
-        ),
+        )
+        .into(),
     );
     // Native MegaMission and IDLE select the actor from their payload, without
     // comparing its House to the Event header. Keep the fixture's two AI actor
@@ -1538,7 +1539,7 @@ fn fresh_drive_turn_publishes_on_request_frame_and_restores_before_admission() {
         assert!(
             restored
                 .zone_grid
-                .as_ref()
+                .as_deref()
                 .unwrap()
                 .is_native_load_pending()
         );
@@ -1553,7 +1554,7 @@ fn fresh_drive_turn_publishes_on_request_frame_and_restores_before_admission() {
         assert!(
             !restored
                 .zone_grid
-                .as_ref()
+                .as_deref()
                 .unwrap()
                 .is_native_load_pending()
         );

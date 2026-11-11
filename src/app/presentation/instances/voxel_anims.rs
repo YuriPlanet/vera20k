@@ -143,7 +143,7 @@ pub(crate) fn voxel_anim_visitor<'a>(
     order: &'a NativeDisplayOrder,
 ) -> Option<impl FnMut(&mut Vec<PlannedObjectInstance>, u64) + 'a> {
     let (Some(rt), Some(assets)) = (
-        state.match_state.sim_runtime.runtime(),
+        state.match_state.sim_runtime.presentation(),
         state.process_assets.manager(),
     ) else {
         return None;

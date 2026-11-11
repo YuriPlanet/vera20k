@@ -75,8 +75,8 @@ fn saved_burrowing_permissions_follow_current_tile_and_survive_asset_rebinding()
 #[test]
 fn saved_terrain_roundtrip_retains_materialized_values_without_constructor_effects() {
     let mut grid = test_grid(2, 2, test_clear_cell);
-    grid.native_allocated = Some(vec![true, false, true, true]);
-    grid.radar_color_valid = vec![true, false, true, false];
+    grid.native_allocated = Some(vec![true, false, true, true].into());
+    grid.radar_color_valid = vec![true, false, true, false].into();
     grid.cells[0].radar_left = [0; 3];
     grid.cells[0].radar_right = [0; 3];
     grid.cells[1].radar_left = [123, 45, 67];
@@ -208,7 +208,7 @@ fn saved_terrain_load_selector_matches_executed_native_cells_and_main_continuati
         assert_eq!(theater.lookup.total_file_count(0) as usize, files, "{name}");
         let rules = TerrainRules::from_ini(&IniFile::from_str("[Clear]\nWheel=100%\n"));
         let mut grid = test_flat_ground_grid(3);
-        grid.native_allocated = Some(vec![false; 9]);
+        grid.native_allocated = Some(vec![false; 9].into());
         for coord in row["visited_cells"].as_array().unwrap() {
             let (x, y) = (
                 coord[0].as_u64().unwrap() as usize,
@@ -332,7 +332,7 @@ fn saved_terrain_cold_load_then_runtime_selection_shares_process_authority() {
     crate::map::theater::resolve_contiguous_variant_chains_for_test(&mut theater.lookup, &assets);
     let rules = TerrainRules::from_ini(&IniFile::from_str("[Clear]\nWheel=100%\n"));
     let mut grid = test_flat_ground_grid(3);
-    grid.native_allocated = Some(vec![false; 9]);
+    grid.native_allocated = Some(vec![false; 9].into());
     grid.native_allocated.as_mut().unwrap()[7] = true;
     grid.cells[7].final_tile_index = 0;
     let snapshot = grid.capture_saved_template().unwrap();

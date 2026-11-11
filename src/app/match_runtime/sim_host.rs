@@ -39,6 +39,11 @@ pub(crate) enum SimWrite {
 #[derive(Default)]
 pub(crate) struct SimHost {
     runtime: Option<SimRuntime>,
+    /// The presentation frame (phase 2): the world as the last published
+    /// tick left it. Drawing reads it while the live world is ticking
+    /// elsewhere. Copy-on-write state (the terrain cells, the resources)
+    /// stays shared with the live world until that changes.
+    presentation: Option<std::sync::Arc<SimRuntime>>,
     /// Global B04474 and its comparison timer (`FrameChecksumState`):
     /// process state that launch and load retain, written and compared only
     /// inside a multiplayer tick.
@@ -57,8 +62,24 @@ impl SimHost {
 
     /// Mutable access to the installed runtime for one write route.
     pub(crate) fn write_sim(&mut self, route: SimWrite) -> Option<&mut SimRuntime> {
-        let _ = route;
+        if matches!(route, SimWrite::Rules | SimWrite::Lifecycle) {
+            // These may rebind the shared resources (`resources_mut`).
+            self.presentation = None;
+        }
         self.runtime.as_mut()
+    }
+
+    /// Publish the live world as the presentation frame.
+    pub(crate) fn publish_presentation(&mut self) {
+        self.presentation = self
+            .runtime
+            .as_ref()
+            .map(|runtime| std::sync::Arc::new(runtime.clone()));
+    }
+
+    /// What drawing reads: the published frame, else the live world.
+    pub(crate) fn presentation(&self) -> Option<&SimRuntime> {
+        self.presentation.as_deref().or(self.runtime.as_ref())
     }
 
     /// The [`SimWrite::Tick`] route: the installed runtime and the checksum
@@ -75,13 +96,24 @@ impl SimHost {
 
     /// Install `runtime` in place of any current one.
     pub(crate) fn install(&mut self, runtime: Option<SimRuntime>) {
+        self.presentation = None;
         self.runtime = runtime;
     }
 
     /// Remove and return the installed runtime.
     pub(crate) fn take_runtime(&mut self) -> Option<SimRuntime> {
+        self.presentation = None;
         self.runtime.take()
     }
+}
+
+/// Whether ticks publish a presentation frame: on the simulation thread
+/// (phase 4), or opted into with `VERA20K_PRESENTATION_FRAME=1`.
+pub(crate) fn presentation_frames_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var_os("VERA20K_PRESENTATION_FRAME").is_some_and(|value| value == "1")
+    })
 }
 
 // docs/sim-thread.md moves the host onto its own thread; it must stay Send.
@@ -95,6 +127,27 @@ mod tests {
     use super::*;
     use crate::net::lockstep::{ChecksumMismatch, FrameInfo, FrameInfoCompareGate};
     use crate::sim::world::Simulation;
+
+    #[test]
+    fn a_published_frame_keeps_the_tick_it_saw_while_the_world_moves_on() {
+        let mut host = SimHost::default();
+        host.install(Some(SimRuntime::from_simulation(Simulation::new())));
+        host.write_sim(SimWrite::Tick)
+            .unwrap()
+            .simulation
+            .session_mut_for_test()
+            .set_tick_for_test(7);
+        host.publish_presentation();
+        host.write_sim(SimWrite::Tick)
+            .unwrap()
+            .simulation
+            .session_mut_for_test()
+            .set_tick_for_test(8);
+        assert_eq!(host.presentation().unwrap().simulation.session().tick(), 7);
+        assert_eq!(host.runtime().unwrap().simulation.session().tick(), 8);
+        host.install(None);
+        assert!(host.presentation().is_none());
+    }
 
     #[test]
     fn frame_zero_resets_the_checksum_ring_and_installs_do_not() {

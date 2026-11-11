@@ -131,10 +131,10 @@ fn paid_destroyer_runs_shipyard_production_animation_through_idle_recovery() {
     let cost = sim.cost_of(owner, rules.object("DEST").unwrap(), &rules);
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: SimResources {
+        resources: std::sync::Arc::new(SimResources {
             rules,
             ..SimResources::empty()
-        },
+        }),
     };
     for _ in 0..8 {
         runtime
@@ -687,10 +687,10 @@ pub(super) fn retail_barracks_sale_runtime(
     Some((
         SimRuntime {
             simulation: sim,
-            resources: SimResources {
+            resources: std::sync::Arc::new(SimResources {
                 rules,
                 ..SimResources::empty()
-            },
+            }),
         },
         owner,
         2,
@@ -1059,10 +1059,10 @@ fn selling_last_retail_barracks_keeps_paid_head_before_map_exit() {
         );
         let mut restored = crate::sim::runtime::SimRuntime {
             simulation: restored,
-            resources: crate::sim::runtime::SimResources {
+            resources: std::sync::Arc::new(crate::sim::runtime::SimResources {
                 rules: rules.clone(),
                 ..crate::sim::runtime::SimResources::empty()
-            },
+            }),
         };
         let spent_at_sale = runtime.simulation.houses[&owner].economy().spent_credits();
         let mut sale_visits = 0;
@@ -1390,10 +1390,10 @@ fn paid_boris_delivery_requests_its_creation_cue_once_at_the_delivered_location(
     assert!(cost > 0);
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: SimResources {
+        resources: std::sync::Arc::new(SimResources {
             rules,
             ..SimResources::empty()
-        },
+        }),
     };
     let mut product = None;
     let mut cues = Vec::new();
@@ -1656,7 +1656,7 @@ fn retail_prerequisite_loss_refunds_after_the_factory_charge_sweep() {
         resources.rules = retail.rules;
         let mut runtime = crate::sim::runtime::SimRuntime {
             simulation: sim,
-            resources,
+            resources: std::sync::Arc::new(resources),
         };
         let mut output = runtime
             .advance_frame(
@@ -1806,13 +1806,13 @@ fn prerequisite_loss_events_preserve_player_copies_cleanup_and_snapshot_replay()
     resources.rules = rules;
     let mut live = SimRuntime {
         simulation: sim,
-        resources,
+        resources: std::sync::Arc::new(resources),
     };
     let mut replay_resources = SimResources::empty();
     replay_resources.rules = manager_rules();
     let mut replay = SimRuntime {
         simulation: restored,
-        resources: replay_resources,
+        resources: std::sync::Arc::new(replay_resources),
     };
     let type_id = live.simulation.interner.get("SMIN").unwrap();
     let cancellation = |event| {

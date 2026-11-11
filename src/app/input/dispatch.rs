@@ -5312,7 +5312,7 @@ mod control_group_tests {
         ));
         let mut runtime = crate::sim::runtime::SimRuntime {
             simulation: sim,
-            resources: crate::sim::runtime::SimResources::new(rules),
+            resources: crate::sim::runtime::SimResources::new(rules).into(),
         };
         for _ in 0..600 {
             let commands = runtime.simulation.take_due_commands();

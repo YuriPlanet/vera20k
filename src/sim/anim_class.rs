@@ -5784,7 +5784,7 @@ mod tests {
             resources.rules = rules;
             let mut runtime = SimRuntime {
                 simulation: sim,
-                resources,
+                resources: std::sync::Arc::new(resources),
             };
             let mut hashes = Vec::new();
             for frame in 0..=17 {

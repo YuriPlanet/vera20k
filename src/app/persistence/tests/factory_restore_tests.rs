@@ -81,9 +81,9 @@ fn prepare_saved(
     let path = repository
         .write_named("factory.bin", &snapshot_bytes(saved, &rules))
         .expect("write matching-header snapshot");
-    state.runtime.resources.rules = rules;
-    state.runtime.resources.overlay_registry = OverlayTypeRegistry::empty();
-    state.runtime.resources.terrain_template = Some(load_fixture_terrain());
+    state.runtime.resources_mut().rules = rules;
+    state.runtime.resources_mut().overlay_registry = OverlayTypeRegistry::empty();
+    state.runtime.resources_mut().terrain_template = Some(load_fixture_terrain());
     let before = state.baseline();
     let result = PreparedLoad::from_repository(
         LoadPreparationView::from_runtime(
@@ -184,7 +184,7 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
     resources.rules = factory_rules();
     let mut runtime = crate::sim::runtime::SimRuntime {
         simulation: Simulation::new(),
-        resources,
+        resources: resources.into(),
     };
     prepared.commit_into(&mut runtime);
     assert_eq!(*runtime.simulation.houses()[&owner].economy(), expected);
@@ -192,7 +192,7 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
     reference_resources.rules = factory_rules();
     let mut reference = crate::sim::runtime::SimRuntime {
         simulation: saved,
-        resources: reference_resources,
+        resources: reference_resources.into(),
     };
     for frame in 0..30 {
         runtime

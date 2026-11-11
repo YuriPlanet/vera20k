@@ -142,7 +142,8 @@ impl Fixture {
                 &[],
                 MAP,
                 MAP,
-            ),
+            )
+            .into(),
         );
         Self { sim, rules, grid }
     }

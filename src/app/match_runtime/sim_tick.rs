@@ -2138,6 +2138,11 @@ fn advance_one_simulation_frame(
         if let Some(deferred) = deferred {
             deferred.apply(state);
         }
+        // docs/sim-thread.md phase 2: drawing reads the world as this tick
+        // left it while the next tick runs.
+        if frame_committed && super::sim_host::presentation_frames_enabled() {
+            state.match_state.sim_runtime.publish_presentation();
+        }
         if frame_committed {
             state
                 .match_state

@@ -47,7 +47,7 @@ impl Patriot {
             Some(&rules),
         ));
         let mut runtime = SimRuntime::from_simulation(sim);
-        runtime.resources.rules = rules;
+        runtime.resources_mut().rules = rules;
         let mut shp = SpriteAtlas::from_test_entries(Default::default());
         shp.make_frame_counts.insert("NASAM_MAKE".into(), 8);
         let entries = (0..32)

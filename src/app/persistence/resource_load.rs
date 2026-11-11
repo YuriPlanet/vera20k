@@ -433,7 +433,7 @@ impl PreparedSavedGame {
         template.bind_tile_variant_selector(selector);
         runtime.install(Some(SimRuntime {
             simulation,
-            resources,
+            resources: resources.into(),
         }));
         CommittedSavedGame {
             map,

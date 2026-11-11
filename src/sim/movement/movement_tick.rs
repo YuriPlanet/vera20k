@@ -595,18 +595,20 @@ fn advance_ordinary_mover(
 /// way). The entity touch log maintains building contributions (and, in
 /// fixtures without an overlay grid, mobiles).
 /// Debug checks compare against a fresh sum. No cache data is saved or hashed.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct MovementPassCache {
     blocker: BlockerPlaneCache,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct BlockerPlaneCache {
     entry: Option<BlockerPlaneEntry>,
     /// How often the plane was rebuilt from the whole map and every entity.
     #[cfg(any(test, feature = "test-support"))]
     world_rebuilds: usize,
 }
+
+#[derive(Clone)]
 
 struct BlockerPlaneEntry {
     key: BlockerPlaneKey,
@@ -864,7 +866,7 @@ pub(crate) fn tick_movement_with_grids(
     sim.session.set_binary_frame_for_test(native_frame);
     *sim.house_alliances_mut_for_test() = alliances.clone();
     sim.path_grid = path_grid.cloned().map(std::sync::Arc::new);
-    sim.zone_grid = zone_grid.cloned();
+    sim.zone_grid = zone_grid.cloned().map(Into::into);
     sim.resolved_terrain = resolved_terrain.cloned();
     sim.set_playfield_bounds_for_test(playfield_bounds);
     sim.set_terrain_speed_config_for_test(terrain_speed_config.clone());

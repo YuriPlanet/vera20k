@@ -586,7 +586,7 @@ impl App {
         if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Rules) {
             state
                 .process_assets
-                .project_multiplayer_countries(&mut runtime.resources.rules);
+                .project_multiplayer_countries(&mut runtime.resources_mut().rules);
         }
         if let Some(rules) = state.frontend.frontend_rules.as_ref() {
             state

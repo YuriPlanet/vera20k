@@ -244,7 +244,7 @@ fn infantry_shp_top_light_follows_public_move_head_production() {
         .unwrap();
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: SimResources::new(rules),
+        resources: SimResources::new(rules).into(),
     };
     // Observed whole GI draws: null-head/destination-only700; a produced
     // head over top1000 gives1200, or700 when only the two tops are swapped.

@@ -1106,7 +1106,7 @@ mod tests {
         resources.overlay_registry = overlays;
         let mut runtime = SimRuntime {
             simulation: sim,
-            resources,
+            resources: resources.into(),
         };
         // The raw native stamp controls execution; the preserved diagnostic
         // issue ordinal 2 above cannot postpone an event issued at frame0.

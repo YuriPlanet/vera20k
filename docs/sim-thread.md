@@ -127,12 +127,46 @@ Done:
 
 ### Phase 2: a presentation frame for the hot draw path
 
-At the end of each tick, `SimHost` publishes an immutable
-`Arc<PresentationFrame>`. It holds per-object draw records (pose, type,
-owner, health, flags), the display order, anim, particle and projectile
-points, and cell deltas for fog, terrain and overlays. Object, anim and
-particle drawing reads only the last two frames. That is the work that scales
-with unit count.
+At the end of each committed tick, `SimHost::publish_presentation` keeps a
+copy of the runtime (`Arc<SimRuntime>`), and drawing reads it through
+`SimHost::presentation`. A rules or lifecycle write drops it first. It is
+opted into with `VERA20K_PRESENTATION_FRAME=1` until phase 4 turns it on.
+
+A plain copy of the world is too slow: 40–60 ms in a 1v7 skirmish on the
+30-start map, about half of it the terrain cells. The copy therefore shares
+storage with the live world copy-on-write (`util::shared`):
+
+- `ChunkedVec` (256-element chunks) for per-cell state written in small
+  parts every tick: fog planes and their caches, overlays, smudges and the
+  terrain cells. A write copies only its chunk.
+- `CellMap` strips are one column each, shared the same way.
+- `Shared<T>` for state that rarely changes as a whole: entities (each one
+  separately), the zone grid, the interner, AI script definitions, terrain
+  objects and the terrain's TMP headers and per-cell side arrays.
+- `DerivedCache` for caches a copy can rebuild; a copy starts empty.
+
+Writers that usually leave a value unchanged compare before they borrow it
+mutably, so an unchanged write copies nothing: the terrain cell recalc
+(`CellClass::RecalcAttributes @ 0x0047D2B0`) and the overlay projection
+work on a one-cell shadow (`cow_cells`), and the zone grid checks a cell's
+class and level before refreshing it.
+
+Measured with `sim-bench`, 1v29 skirmish on the 30-start map, 3,000 ticks,
+447–583 objects, keeping each tick's copy until the next one:
+
+| | mean tick |
+|---|---|
+| before phase 2 | 3.5 ms |
+| phase 2, no frame | 3.7 ms |
+| phase 2, a frame each tick | 7.2 ms (copy 1.5 ms, drop of the previous 1.2 ms) |
+
+`final_hash` is the same in all three. The copy still deep-copies the 30
+houses (~0.3 ms) and the entity store's index (~0.2 ms); the remaining
+tick cost is the chunks and entities a tick really writes.
+
+Follow-ups: fog planes keep one byte per cell per house where gameplay
+needs a few bits; packing them would shrink both the copy and the cache
+footprint.
 
 ### Phase 3: cold paths and input
 
