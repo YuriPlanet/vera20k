@@ -98,6 +98,8 @@ pub(crate) struct RasterParams {
 
 #[derive(Debug)]
 pub(super) struct Section {
+    /// Physical source index, independent of this draw's compact geometry order.
+    pub limb_index: usize,
     #[cfg(test)]
     pub matrix: Mat4,
     #[cfg(test)]
@@ -127,12 +129,15 @@ pub(super) fn prepare_geometry(
     frame: u32,
     draw_matrix: Mat4,
     use_buffer: bool,
+    section: Option<usize>,
 ) -> Option<Geometry> {
     let scale = vxl.limbs.first()?.scale;
-    let mut sections = Vec::with_capacity(vxl.limbs.len());
+    let indices = super::section_indices(vxl, section)?;
+    let mut sections = Vec::with_capacity(indices.len());
     let mut minimum = Vec3::splat(10000.0);
     let mut maximum = Vec3::splat(-10000.0);
-    for (index, limb) in vxl.limbs.iter().enumerate() {
+    for index in indices {
+        let limb = &vxl.limbs[index];
         let sizes = [limb.size_x, limb.size_y, limb.size_z];
         if sizes.contains(&0) {
             return None;
@@ -194,6 +199,7 @@ pub(super) fn prepare_geometry(
             }
         }
         sections.push(Section {
+            limb_index: index,
             #[cfg(test)]
             matrix,
             #[cfg(test)]
@@ -529,12 +535,22 @@ fn prepare_lit(
     hva: Option<&HvaFile>,
     params: &super::VxlRenderParams,
 ) -> Option<(Geometry, [u8; 256])> {
-    if params.scale != 1.0 || vxl.limbs.iter().any(|limb| limb.native_spans.is_none()) {
+    if params.scale != 1.0
+        || super::section_indices(vxl, params.section)?
+            .any(|index| vxl.limbs[index].native_spans.is_none())
+    {
         return None;
     }
     let draw_matrix =
         super::voxel_params_draw_rotation(params, super::voxel_facing_step(params.facing));
-    let geometry = prepare_geometry(vxl, hva, params.frame, draw_matrix, params.use_buffer)?;
+    let geometry = prepare_geometry(
+        vxl,
+        hva,
+        params.frame,
+        draw_matrix,
+        params.use_buffer,
+        params.section,
+    )?;
     // 706ED0 calls 753D00 once for the VXL, before submitting its sections;
     // VoxelAnimClass::DrawIt calls 753C80 instead (749DA3). Either reads the
     // normal mode from limb zero, not switched for every limb.
@@ -581,7 +597,10 @@ pub(super) fn prepare_raster(
     Some(NativeRaster {
         sections: geometry
             .raster_order()
-            .map(|index| (index, geometry.sections[index].params.clone()))
+            .map(|index| {
+                let section = &geometry.sections[index];
+                (section.limb_index, section.params.clone())
+            })
             .collect(),
         pages,
         rect: geometry.rect,
@@ -735,9 +754,10 @@ pub(super) fn prepare_draw(
         }
     });
     for index in geometry.raster_order() {
+        let section = &geometry.sections[index];
         paint_section(
-            &vxl.limbs[index],
-            &geometry.sections[index],
+            &vxl.limbs[section.limb_index],
+            section,
             &pages,
             vpl,
             &mut writes,
@@ -846,7 +866,8 @@ mod tests {
             words(&case["input_matrix_bits"]),
             "{label} production draw matrix"
         );
-        let geometry = prepare_geometry(vxl, hva, 0, matrix, params.use_buffer).unwrap();
+        let geometry =
+            prepare_geometry(vxl, hva, 0, matrix, params.use_buffer, params.section).unwrap();
         let expected_rect: Vec<i32> = case["rect"]
             .as_array()
             .unwrap()
