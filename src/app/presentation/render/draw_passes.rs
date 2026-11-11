@@ -532,10 +532,11 @@ pub(super) fn dispatch_draw_passes(
         .selection_overlay
         .as_ref()
         .map(|o| o.white_texture());
-    // VERA ferry: its pick-up and drop circles lie on the ground. They follow
-    // the kept terrain picture, so are never stored in it, and precede the
-    // fogged snapshots, the building bases and every object, which cover
-    // them. Surface stores: no Z read or write.
+    // VERA ground marks (the formation line's dots, the ferry's pick-up and
+    // drop circles) lie on the ground. They follow the kept terrain picture,
+    // so are never stored in it, and precede the fogged snapshots, the
+    // building bases and every object, which cover them. Surface stores: no
+    // Z read or write.
     draw_pooled_surface_lines(
         &mut pass,
         &state.renderer.batch_renderer,
@@ -1731,6 +1732,17 @@ mod tests {
             .expect("production source before tests")
             .find(needle)
             .unwrap_or_else(|| panic!("missing production draw anchor {needle:?}"))
+    }
+
+    #[test]
+    fn ground_marks_follow_the_kept_ground_and_precede_buildings_and_objects() {
+        let kept = source_offset(".keep(&state.renderer.gpu.device, encoder)");
+        let marks = source_offset("\"ground_marks\"");
+        let fogged = source_offset("pool.get(\"fogged_objects\")");
+        let building_bases = source_offset("ObjectDrawPhase::BuildingBase");
+        let objects = source_offset("for layer in 0..=3 {");
+        assert!(kept < marks, "the kept ground must not store the marks");
+        assert!(marks < fogged && marks < building_bases && marks < objects);
     }
 
     #[test]
