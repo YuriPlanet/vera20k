@@ -434,7 +434,13 @@ impl Simulation {
     /// 0x005F65F0. The expiry broadcast clears Building+0x600
     /// (BuildingClass::PointerExpired @ 0x0044E93A); the light leaves Display
     /// and Logic, dies and keeps its 8B4190 slot until the drain deletes it.
-    /// A Foot's light is Ares' own and keeps its direct delete.
+    /// A Foot's light is Ares' own and keeps its direct delete. So does a
+    /// building's in an Ares build: its hook 0x441163 skips the stock
+    /// construction that stores Building+0x600 and Ares owns the light, so
+    /// whether this stock arm still runs there is not established (Ares'
+    /// 1004EDE0 was not read). RESIDUAL for Ares builds only: the light is
+    /// deleted at once, which decides the sweep direction of a light
+    /// constructed before that frame's drain.
     pub(super) fn uninit_spotlight_for_parent_limbo(
         &mut self,
         parent: u64,
@@ -444,7 +450,10 @@ impl Simulation {
             return;
         };
         match entity.building_light.light() {
-            Some(id) if entity.category() == EntityCategory::Structure => {
+            Some(id)
+                if entity.category() == EntityCategory::Structure
+                    && !crate::rules::ARES_ENABLED =>
+            {
                 self.uninit_with_context(id, context)
             }
             Some(_) => self.destroy_spotlight_for_parent(parent, context),
