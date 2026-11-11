@@ -160,6 +160,24 @@ exactly like a discovery bug:
 - a desktop peer's firewall allowing UDP 1234 inbound, and both tablets on the
   same AP.
 
+Two more conditions come from the game rather than the network, and both look
+like "the other player does not exist":
+
+- **One build, one feature set.** The join proof carries
+  `CARGO_PKG_VERSION:VERA20K_NETWORK_BUILD:<extension flags>`, and
+  `VERA20K_NETWORK_BUILD` hashes the multiplayer sources plus every enabled
+  `CARGO_FEATURE_*`. The APK is built with `--no-default-features`, so a desktop
+  peer must be too; a desktop `dev-overlays` build is refused with "版本或已載入的
+  遊戲將不一致" (join reason 8, a version mismatch, before the rules/ai/art digests
+  are compared at all).
+- **Player names are the LAN identity.** A player discards advertisements whose
+  name matches its own, so two peers left at the default `[New Player]` never
+  see each other's games. Rename one before hosting; no code change is involved.
+
+Stock maps synchronise with the room (preview and name). A map the guest's
+library does not hold is reported on the host as "並未擁有" and needs the map
+library compared on both sides before the match can start.
+
 ## Deliberate choices
 
 - **`NativeActivity`, not `GameActivity`.** Smallest M0. It has no IME, so text
