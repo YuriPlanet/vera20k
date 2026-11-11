@@ -1557,6 +1557,7 @@ impl Simulation {
             rules,
             overlay_registry,
             frame_effects,
+            true,
         ) {
             return (outcome == RevealOutcome::Consumed).then_some(stable_id);
         }
@@ -2186,6 +2187,7 @@ impl Simulation {
             rules,
             overlay_registry,
             frame_effects,
+            !scenario_initialization,
         ) {
             return (stable_id, outcome);
         }
