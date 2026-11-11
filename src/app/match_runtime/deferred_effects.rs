@@ -60,15 +60,16 @@ pub(crate) struct DeferredClientEffects {
 
 impl DeferredClientEffects {
     /// Whether the next ordinary frame can run without the lent owners.
-    /// `VERA20K_DEFERRED_TICK_EFFECTS=1` opts in until phase 4 makes it the
-    /// simulation thread's path.
+    /// The simulation thread (`VERA20K_SIM_THREAD=1`) ticks this way;
+    /// `VERA20K_DEFERRED_TICK_EFFECTS=1` opts an inline tick in.
     pub(crate) fn applies(
         state: &AppState,
         replaying: bool,
         observing_commands: bool,
         initial_save: bool,
     ) -> bool {
-        std::env::var_os("VERA20K_DEFERRED_TICK_EFFECTS").is_some_and(|value| value == "1")
+        (super::sim_host::sim_thread_enabled()
+            || std::env::var_os("VERA20K_DEFERRED_TICK_EFFECTS").is_some_and(|value| value == "1"))
             && !replaying
             && !observing_commands
             && !initial_save
