@@ -18,6 +18,18 @@ and the cursor is the refusal cursor.
 While a ferrying transport is selected, the same blue and yellow circles mark
 its route.
 
+## Waypoints
+
+After the Ferry key, hold the **Planning Mode** key (Z by default) and left
+click to add a waypoint; up to 8. Let go of it and click to set the drop spot.
+The transport passes the waypoints in order on the way out and in reverse on
+the way back, so one detour round an enemy covers both directions. It does not
+stop at a waypoint: within 2 cells of one it is sent on to the next. Each
+waypoint shows as a small white circle. A transport that stops short of a
+waypoint ends its ferry, like one that cannot reach its drop spot.
+
+## The four legs
+
 - **Loading.** The transport waits at the pick-up spot. Any of your infantry
   and vehicles that comes to a stop inside the circle (4 cells around the
   spot) is told to board, nearest first, while there is room and the transport

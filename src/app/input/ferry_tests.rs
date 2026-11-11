@@ -89,6 +89,25 @@ fn a_round_trip_unloads_and_returns_and_a_detour_ends_it() {
         FerryAction::MoveTo(DROP)
     );
 
+    // Through a waypoint: sent on as it comes near, never told to stop
+    // there, and back through it on the return.
+    let mut detour = FerryRoute::new(7, PICKUP, DROP, 4, 0).with_via(vec![(8, 12)]);
+    assert_eq!(detour.step(&full, 8), FerryAction::MoveVia((8, 12)));
+    assert_eq!(detour.step(&facts((6, 9), false, 4), 16), FerryAction::None);
+    assert_eq!(
+        detour.step(&facts((8, 11), false, 4), 24),
+        FerryAction::MoveTo(DROP)
+    );
+    assert_eq!(detour.step(&facts(DROP, true, 4), 200), FerryAction::Unload);
+    assert_eq!(
+        detour.step(&facts(DROP, true, 0), 200 + RESEND_TICKS),
+        FerryAction::MoveVia((8, 12))
+    );
+    assert_eq!(
+        detour.step(&facts((8, 12), false, 0), 400),
+        FerryAction::MoveTo(PICKUP)
+    );
+
     // Moving, then stopped away from the drop spot: the ferry is over.
     assert_eq!(route.step(&facts((6, 9), false, 4), 124), FerryAction::None);
     assert_eq!(route.step(&facts((6, 12), true, 4), 132), FerryAction::End);

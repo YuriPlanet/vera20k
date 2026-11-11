@@ -957,6 +957,8 @@ pub(super) fn build_ui_instances(
                 .collect();
             let kind = if ring.refused {
                 crate::render::selection_overlay::FerryRingKind::Refused
+            } else if ring.via {
+                crate::render::selection_overlay::FerryRingKind::Via
             } else if ring.drop {
                 crate::render::selection_overlay::FerryRingKind::Unload
             } else {
