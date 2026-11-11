@@ -366,7 +366,8 @@ fn install_refinery_test_terrain_on(
             &[],
             64,
             64,
-        ),
+        )
+        .into(),
     );
     sim.resolved_terrain = Some(terrain);
 }

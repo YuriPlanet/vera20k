@@ -3232,7 +3232,7 @@ fn trigger_action_40_normalizes_and_refreshes_authority_same_frame() {
 
     let before_zone = sim
         .zone_grid
-        .as_ref()
+        .as_deref()
         .and_then(|zones| zones.map_for(MovementZone::Normal))
         .expect("normal zone")
         .zone_at(50, 50, MovementLayer::Ground);
@@ -3264,7 +3264,7 @@ fn trigger_action_40_normalizes_and_refreshes_authority_same_frame() {
     assert_eq!(terrain.cell(50, 50).unwrap().zone_type, zone_class::OUTSIDE);
     assert!(!terrain.cell(85, 85).unwrap().outside_playfield);
     assert_eq!(terrain.cell(85, 85).unwrap().zone_type, zone_class::GROUND);
-    let zones = sim.zone_grid.as_ref().expect("zones rebuilt");
+    let zones = sim.zone_grid.as_deref().expect("zones rebuilt");
     let normal = zones.map_for(MovementZone::Normal).expect("normal zone");
     assert_eq!(normal.zone_at(50, 50, MovementLayer::Ground), ZONE_INVALID);
     assert_ne!(normal.zone_at(85, 85, MovementLayer::Ground), ZONE_INVALID);

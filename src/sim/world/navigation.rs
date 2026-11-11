@@ -97,7 +97,7 @@ pub(super) fn structure_blocked_among(
 }
 
 pub(super) struct NavigationCaches<'a> {
-    pub(super) zones: &'a mut Option<ZoneGrid>,
+    pub(super) zones: &'a mut Option<crate::util::shared::Shared<ZoneGrid>>,
     pub(super) path: &'a mut Option<Arc<PathGrid>>,
     /// The live overlay surface the path projection reads for bridge sprites.
     pub(super) overlays: Option<&'a OverlayGrid>,
@@ -277,15 +277,18 @@ impl NavigationCaches<'_> {
         terrain: &ResolvedTerrainGrid,
         bridges: Option<&BridgeRuntimeState>,
     ) {
-        *self.zones = Some(ZoneGrid::build_with_native_map_context(
-            path_grid,
-            terrain,
-            bridges
-                .map(BridgeRuntimeState::endpoint_records)
-                .unwrap_or(&[]),
-            bridges.and_then(BridgeRuntimeState::native_zone_source_size),
-            self.playfield_bounds,
-        ));
+        *self.zones = Some(
+            ZoneGrid::build_with_native_map_context(
+                path_grid,
+                terrain,
+                bridges
+                    .map(BridgeRuntimeState::endpoint_records)
+                    .unwrap_or(&[]),
+                bridges.and_then(BridgeRuntimeState::native_zone_source_size),
+                self.playfield_bounds,
+            )
+            .into(),
+        );
         *self.path = Some(Arc::new(path_grid.clone()));
     }
 }

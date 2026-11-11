@@ -224,7 +224,7 @@ pub struct PathBatchStats {
 }
 
 /// The batch's own observation of its passes; see [`PathBatchStats`].
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct PassWindow {
     waiting: u32,
     searched: u32,
@@ -301,7 +301,7 @@ impl PassWindow {
 }
 
 /// The path searches waiting for the next frame, and this frame's answers.
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub(crate) struct PathBatch {
     /// Foots whose request waited this frame, and which request each repeats.
     pending: Vec<(u64, WaitingRequest)>,
@@ -484,7 +484,7 @@ enum Turn {
 }
 
 /// A Foot's entry in this pass's answers.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 struct ReadySlot {
     /// Whether one of the Foot's requests this frame went on to Find_Path;
     /// any later one waits for the next batch.
@@ -496,7 +496,7 @@ struct ReadySlot {
     answer: Option<BatchedSearch>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 struct BatchedSearch {
     key: FootSearchKey,
     found: Result<Vec<(u16, u16)>, MovePathFailure>,

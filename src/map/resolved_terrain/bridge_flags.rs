@@ -178,10 +178,10 @@ impl ResolvedTerrainGrid {
         stamp: BridgeFlagStamp,
     ) -> Vec<(usize, u32)> {
         apply_native_bridge_flag_stamp_to_parts(
-            &mut self.cells,
+            self.cells.as_mut_slice(),
             self.width,
             self.height,
-            self.native_allocated.as_deref(),
+            self.native_allocated.as_deref().map(Vec::as_slice),
             &self.shared_cell_dummy,
             stamp,
             None,
@@ -204,7 +204,7 @@ impl ResolvedTerrainGrid {
         if let Some(index) = native_resolved_cell_index(
             self.width,
             self.height,
-            self.native_allocated.as_deref(),
+            self.native_allocated.as_deref().map(Vec::as_slice),
             self.cells.len(),
             x,
             y,
@@ -242,10 +242,10 @@ impl ResolvedTerrainGrid {
         family: BridgeStampFamily,
     ) -> Vec<(usize, u32)> {
         let updates = apply_native_bridge_flag_stamp_to_parts(
-            &mut self.cells,
+            self.cells.as_mut_slice(),
             self.width,
             self.height,
-            self.native_allocated.as_deref(),
+            self.native_allocated.as_deref().map(Vec::as_slice),
             &self.shared_cell_dummy,
             stamp,
             Some(family),

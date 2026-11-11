@@ -1523,7 +1523,12 @@ impl Simulation {
         overlay_grid.width().hash(hasher);
         overlay_grid.height().hash(hasher);
         // Row-major order carries the coordinates.
-        state_hasher::hash_records(overlay_grid.cells(), hasher, OverlayCell::hash_record);
+        state_hasher::hash_record_iter(
+            overlay_grid.cells().len(),
+            overlay_grid.cells().iter(),
+            hasher,
+            OverlayCell::hash_record,
+        );
         b"retained-wall-neighbor-counts-v1".hash(hasher);
         // The presence tag the retired plane-less fixture mode folded as 0
         // keeps its place.

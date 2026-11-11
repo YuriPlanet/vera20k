@@ -19,7 +19,7 @@ fn eligible_air_target(sim: &Simulation, rules: &RuleSet, aegis: u64) -> Option<
         sim.resolved_terrain.as_ref(),
         true,
         ScanMission::Guard,
-        sim.zone_grid.as_ref(),
+        sim.zone_grid.as_deref(),
         LineOfFireInputs {
             overlay_grid: sim.overlay_grid.as_ref(),
             alliances: Some(&sim.house_alliances),
@@ -807,7 +807,7 @@ fn distributed_collection_flat_entry_clears_but_class_early_return_preserves() {
         sim.resolved_terrain.as_ref(),
         true,
         ScanMission::Guard,
-        sim.zone_grid.as_ref(),
+        sim.zone_grid.as_deref(),
         LineOfFireInputs::default(),
         Some(&sim),
         None,

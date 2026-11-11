@@ -671,7 +671,8 @@ fn retail_damage_scene(route: &Value) -> Option<RetailDamageScene> {
             &[],
             Some((32, 32)),
             Some(bounds),
-        ),
+        )
+        .into(),
     );
     sim.install_fixture_path_grid(Some(&path));
     sim.install_resolved_terrain_for_new_map(terrain);

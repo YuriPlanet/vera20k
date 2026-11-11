@@ -849,7 +849,7 @@ impl ResolvedTerrainGrid {
         native_resolved_cell_index(
             self.width,
             self.height,
-            self.native_allocated.as_deref(),
+            self.native_allocated.as_deref().map(Vec::as_slice),
             self.cells.len(),
             i32::from(x),
             i32::from(y),
@@ -1048,7 +1048,7 @@ impl ResolvedTerrainGrid {
     /// map lookups. Load-local owners may snapshot this once so later overlay
     /// writes do not need to keep an immutable borrow of the live terrain grid.
     pub(crate) fn native_allocation_mask(&self) -> Option<&[bool]> {
-        self.native_allocated.as_deref()
+        self.native_allocated.as_deref().map(Vec::as_slice)
     }
 
     pub fn bind_shared_cell_dummy(&mut self, shared_cell_dummy: SharedCellDummy) {
@@ -1066,7 +1066,7 @@ impl ResolvedTerrainGrid {
         if let Some(index) = native_resolved_cell_index(
             self.width,
             self.height,
-            self.native_allocated.as_deref(),
+            self.native_allocated.as_deref().map(Vec::as_slice),
             self.cells.len(),
             x,
             y,
@@ -1143,7 +1143,7 @@ impl ResolvedTerrainGrid {
                 mask[usize::from(ry) * usize::from(self.width) + usize::from(rx)] = true;
             }
         }
-        self.native_allocated = Some(mask);
+        self.native_allocated = Some(mask.into());
         self.allocation_caches = Default::default();
     }
 

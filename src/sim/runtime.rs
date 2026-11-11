@@ -54,9 +54,12 @@ impl SimResources {
 }
 
 /// The runtime owner: one deterministic simulation plus its bound resources.
+#[derive(Clone)]
 pub struct SimRuntime {
     pub simulation: Simulation,
-    pub resources: SimResources,
+    /// Shared with the presentation frame copies of this runtime
+    /// (docs/sim-thread.md); writes go through [`Self::resources_mut`].
+    pub resources: std::sync::Arc<SimResources>,
 }
 
 // docs/sim-thread.md moves the runtime onto its own thread; it must stay Send.
@@ -66,12 +69,19 @@ const _: () = {
 };
 
 impl SimRuntime {
+    /// The bound resources for a write. Only a published presentation frame
+    /// shares them, and the host drops its frame before any such write.
+    pub fn resources_mut(&mut self) -> &mut SimResources {
+        std::sync::Arc::get_mut(&mut self.resources)
+            .expect("resources are shared only with a presentation frame the host drops first")
+    }
+
     /// Test adapter for an existing simulation with empty resource inputs.
     #[cfg(any(test, feature = "test-support"))]
     pub fn from_simulation(simulation: Simulation) -> Self {
         Self {
             simulation,
-            resources: SimResources::empty(),
+            resources: std::sync::Arc::new(SimResources::empty()),
         }
     }
 
@@ -415,7 +425,7 @@ mod tests {
         saved.session.install_waypoints(&waypoints);
         let mut original = SimRuntime {
             simulation: Simulation::new(),
-            resources: SimResources::empty(),
+            resources: std::sync::Arc::new(SimResources::empty()),
         };
 
         original.replace_simulation(saved);
@@ -460,7 +470,7 @@ mod tests {
         resources.overlay_registry = crate_registry();
         let mut runtime = SimRuntime {
             simulation,
-            resources,
+            resources: std::sync::Arc::new(resources),
         };
 
         let _ = runtime
