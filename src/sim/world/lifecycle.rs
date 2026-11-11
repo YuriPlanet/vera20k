@@ -4089,6 +4089,20 @@ impl Simulation {
             .get(stable_id)
             .is_some_and(|entity| !entity.lifecycle.in_limbo)
         {
+            // BuildingClass::Limbo @ 0x00445880, 0x004458E4..0x00445903: the
+            // first step behind the same gates (not in limbo 0x004458C6, has
+            // a type 0x004458D4; every entity here has one). Each of the
+            // eight damage-fire Anims (+0x5C8) gets the ordinary deferred
+            // AnimClass::UnInit @ 0x004255B0 (vt+0xF8) and its slot is
+            // nulled; +0x5E8 is not written.
+            if self
+                .substrate
+                .entities
+                .get(stable_id)
+                .is_some_and(|entity| entity.category() == EntityCategory::Structure)
+            {
+                self.clear_building_damage_fire_slots(stable_id, context.rules());
+            }
             Self::update_house_tracking(
                 &mut self.substrate,
                 &mut self.houses,

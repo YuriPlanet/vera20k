@@ -6,8 +6,16 @@
 //! or data reference in the exe, so the game never runs them.
 //! Independent ObjectClass child of Building+600. The global8B4190 vector
 //! retains construction order; D8 is assigned from its constructor index and
-//! never recomputed after removal. No RNG or timer writes. Parent Limbo deletes
-//! immediately; an orphan's AI uses ObjectUnInit5F65F0/deferred destruction.
+//! never recomputed after removal. No RNG or timer writes. Native parent
+//! Limbo (Building445D75..445D81) calls the light's vt+0xF8, ObjectUnInit5F65F0
+//! (VT slot 7E3BC8): expiry broadcast, Limbo437030, Object+90 cleared and a
+//! deferred delete, so the light stays in 8B4190 until that frame's drain; an
+//! orphan's AI retires the same way.
+//! Residual: `destroy_spotlight_for_parent` deletes at the parent's Conceal
+//! instead. Trigger: a lit building limboed or destroyed. Effect: the vector
+//! is one shorter until the drain, so a light constructed in that window gets
+//! the other constructor index (D8) parity and sweeps the other way. Frequency:
+//! rare (a lamp built in the frame another is removed). Nothing dangles.
 use super::display_layers::DisplayLayer;
 use super::{Simulation, UninitContext};
 use crate::map::entities::EntityCategory;
