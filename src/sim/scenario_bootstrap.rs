@@ -475,6 +475,8 @@ pub enum PreFillScenarioPrefixPlanError {
         "pre-Fill Scenario prefix expected RNG fingerprint {expected:#018x}, got {actual:#018x}"
     )]
     ScenarioRngPrestateMismatch { expected: u64, actual: u64 },
+    #[error("game mode {id} is a Siege mode, which VERA20k cannot start yet")]
+    UnsupportedSiegeMode { id: i32 },
     #[error(
         "pre-Fill roster requires {roster_start_count} starts but the compact launch session has {launch_participant_count} participants"
     )]
@@ -619,7 +621,7 @@ pub fn prepare_stock_offline_scenario_prefix_plan(
     launch_seed: u32,
 ) -> Result<PreFillScenarioPrefixPlan, PreFillScenarioPrefixPlanError> {
     let session = descriptor.session();
-    let family = stock_offline_start_callback_family(session);
+    let family = stock_offline_start_callback_family(session)?;
     let mut start_header = crate::map::preview::ScenarioStartHeader::default();
     start_header.read_ini(&map_data.ini);
     // A shared House is one participant.
@@ -764,14 +766,21 @@ fn draw_house_constructor_timer(rng: &mut SimRng) -> u32 {
 /// The start callbacks belong to the mode's class, not to its row:
 /// `MPGameOptions__LoadAllGameModes @ 0x005D7CE0` builds every row of a
 /// section with that section's class, so a mod's added or changed row of
-/// `[Battle]` starts as Battle does.
+/// `[Battle]` starts as Battle does. Vtable slot +0x84 is `0x005D6C70` for
+/// Battle, ManBattle, Unholy and FreeForAll and `0x005C2EF0` for Cooperative.
+///
+/// RESIDUAL: Siege's `0x005CA800` (the defender takes the first gathered
+/// start) is not ported. Retail has no `[Siege]` row; a mod's is refused.
 pub fn stock_offline_start_callback_family(
     session: &SkirmishLaunchSession,
-) -> StockOfflineStartCallbackFamily {
-    if session.mode.class == crate::skirmish_modes::MpModeClass::Cooperative {
-        StockOfflineStartCallbackFamily::Cooperative
-    } else {
-        StockOfflineStartCallbackFamily::Battle
+) -> Result<StockOfflineStartCallbackFamily, PreFillScenarioPrefixPlanError> {
+    use crate::skirmish_modes::MpModeClass;
+    match session.mode.class {
+        MpModeClass::Cooperative => Ok(StockOfflineStartCallbackFamily::Cooperative),
+        MpModeClass::Siege => Err(PreFillScenarioPrefixPlanError::UnsupportedSiegeMode {
+            id: session.mode.id,
+        }),
+        _ => Ok(StockOfflineStartCallbackFamily::Battle),
     }
 }
 
@@ -6533,7 +6542,7 @@ mod tests {
                 StockOfflineStartCallbackFamily::Battle
             };
             assert_eq!(
-                stock_offline_start_callback_family(launch.session()),
+                stock_offline_start_callback_family(launch.session()).unwrap(),
                 expected_family
             );
             let plan = prepare_stock_offline_scenario_prefix_plan(
@@ -6562,12 +6571,17 @@ mod tests {
         session.mode.must_ally = true;
         assert_eq!(
             stock_offline_start_callback_family(&session),
-            StockOfflineStartCallbackFamily::Battle
+            Ok(StockOfflineStartCallbackFamily::Battle)
         );
         session.mode.class = crate::skirmish_modes::MpModeClass::Cooperative;
         assert_eq!(
             stock_offline_start_callback_family(&session),
-            StockOfflineStartCallbackFamily::Cooperative
+            Ok(StockOfflineStartCallbackFamily::Cooperative)
+        );
+        session.mode.class = crate::skirmish_modes::MpModeClass::Siege;
+        assert_eq!(
+            stock_offline_start_callback_family(&session),
+            Err(PreFillScenarioPrefixPlanError::UnsupportedSiegeMode { id: 10 })
         );
     }
 
