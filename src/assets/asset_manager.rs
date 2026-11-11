@@ -555,26 +555,17 @@ impl AssetManager {
     ) -> Result<Self, AssetError> {
         let mut manager = Self::from_roots(ra2_dir, mod_dir)?;
 
-        // WinMain registers the YR language archive before the RA2 fallback.
-        manager.mount_startup_archive("langmd.mix", false, &mut policy)?;
-        manager.mount_startup_archive("language.mix", false, &mut policy)?;
-
-        // Init_Base_Mix_Files probes all expansion slots in descending order.
-        for index in (0..=99).rev() {
-            manager.mount_startup_archive(
-                &format!("expandmd{index:02}.mix"),
-                false,
-                &mut policy,
-            )?;
-        }
-
-        for name in MASTER_ARCHIVES {
-            manager.mount_startup_archive(name, true, &mut policy)?;
-        }
-
-        for name in ["cachemd.mix", "cache.mix", "localmd.mix", "local.mix"] {
-            manager.mount_startup_archive(name, true, &mut policy)?;
-        }
+        // WinMain registers the YR language archive before the RA2 fallback,
+        // and Init_Game later runs Init_Base_Mix_Files (0x0052BB64). Ares's
+        // Expand_MIX_Reorg (hook 0x006BD7E3, before the LANGMD.MIX constructor
+        // call at 0x006BD7EF) runs Init_Base_Mix_Files there instead, and
+        // Expand_MIX_Deorg (0x0052BB64) skips Init_Game's call, so expansions
+        // and the masters resolve ahead of LANGMD.MIX and LANGUAGE.MIX.
+        #[cfg(not(feature = "ares"))]
+        manager.mount_language_archives(&mut policy)?;
+        manager.mount_base_mix_files(&mut policy)?;
+        #[cfg(feature = "ares")]
+        manager.mount_language_archives(&mut policy)?;
 
         // AudioSystem__Init uses exactly one archive: the MD archive when
         // present, otherwise the base archive.
@@ -1489,6 +1480,40 @@ impl AssetManager {
             }
             _ => Err(error),
         }
+    }
+
+    /// WinMain's LANGMD.MIX, then the RA2 LANGUAGE.MIX fallback.
+    fn mount_language_archives(
+        &mut self,
+        policy: &mut StartupArchivePolicy<'_>,
+    ) -> Result<(), AssetError> {
+        self.mount_startup_archive("langmd.mix", false, policy)?;
+        self.mount_startup_archive("language.mix", false, policy)?;
+        Ok(())
+    }
+
+    /// Init_Base_Mix_Files 0x005301A0: every expansion slot in descending
+    /// order, then the masters and their cache and local archives.
+    fn mount_base_mix_files(
+        &mut self,
+        policy: &mut StartupArchivePolicy<'_>,
+    ) -> Result<(), AssetError> {
+        for index in (0..=99).rev() {
+            self.mount_startup_archive(&format!("expandmd{index:02}.mix"), false, policy)?;
+        }
+        // Ares Load_Bootstrap_AresMIX (hook 0x0053029E, Ares::InitOwnResources)
+        // constructs ares.mix once the expansion probe ends, before the
+        // RA2MD.MIX constructor call at 0x005302AA, so it resolves after every
+        // expansion and ahead of the masters. A missing file is skipped.
+        #[cfg(feature = "ares")]
+        self.mount_startup_archive("ares.mix", false, policy)?;
+        for name in MASTER_ARCHIVES {
+            self.mount_startup_archive(name, true, policy)?;
+        }
+        for name in ["cachemd.mix", "cache.mix", "localmd.mix", "local.mix"] {
+            self.mount_startup_archive(name, true, policy)?;
+        }
+        Ok(())
     }
 
     fn mount_startup_archive(

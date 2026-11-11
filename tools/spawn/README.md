@@ -77,9 +77,12 @@ BIN=$(ls -t target/owned-worktrees/*/fast/vera20k | head -n 1)
 
 A launcher can copy `version`, `rules_digest` and `map.source_sha256` into
 `[Settings] ExpectedVersion`, `ExpectedRulesDigest`, `ExpectedMapDigest`.
-`rules_digest` is Battle's. `[Settings] GameMode` selects a stock `MPModesMD.ini`
-row (default 1), and the digest covers that row's INI, so another mode takes its
-digest from the report's `game_modes`. A mod chosen in `config.toml`
+`rules_digest` is Battle's. `[Settings] GameMode` selects an `MPModesMD.ini` row
+by id (default 1): a network launch takes a stock row, and a one-human launch any
+row of the `MPModesMD.ini` the game loaded, or row 1 when the id has none, as the
+CnCNet Spawner does, so a mod's own modes start too. The digest covers that row's
+INI, so another mode takes its digest from the report's `game_modes`, which lists
+the stock rows. A mod chosen in `config.toml`
 (`[paths] mod`, [modding guide](../../docs/modding.md)) is read by the probe as by
 the launch, so its rules are in the digest; `--mod <folder>` and `--no-mod` choose
 for both. A launch whose mod cannot be used fails, with the reason in its result.
