@@ -23,15 +23,19 @@ pub(crate) struct OutputHealth {
 }
 
 impl OutputHealth {
-    /// The error callback for this output's stream. Underruns are glitches,
-    /// not a lost device; every other error leaves the stream silent.
+    /// The error callback for this output's stream. Only a device that is
+    /// gone or a stream that must be rebuilt counts: cpal also reports
+    /// underruns and backend errors (ALSA poll and short writes) and plays on.
     pub(crate) fn callback(
         &self,
         output: &'static str,
     ) -> impl FnMut(StreamError) + Send + Clone + 'static {
         let lost = Arc::clone(&self.lost);
         move |error| {
-            if matches!(error, StreamError::BufferUnderrun) {
+            if !matches!(
+                error,
+                StreamError::DeviceNotAvailable | StreamError::StreamInvalidated
+            ) {
                 return;
             }
             if !lost.swap(true, Ordering::Relaxed) {

@@ -149,9 +149,14 @@ pub struct MusicPlayer {
 fn open_music_sink(
     health: &crate::audio::output_health::OutputHealth,
 ) -> Result<MixerDeviceSink, rodio::DeviceSinkError> {
-    DeviceSinkBuilder::from_default_device()?
-        .with_error_callback(health.callback("Music"))
-        .open_sink_or_fallback()
+    // With no usable default device, rodio's own opener tries every other.
+    DeviceSinkBuilder::from_default_device()
+        .and_then(|builder| {
+            builder
+                .with_error_callback(health.callback("Music"))
+                .open_sink_or_fallback()
+        })
+        .or_else(|_| DeviceSinkBuilder::open_default_sink())
 }
 
 impl MusicPlayer {
