@@ -475,8 +475,6 @@ pub enum PreFillScenarioPrefixPlanError {
         "pre-Fill Scenario prefix expected RNG fingerprint {expected:#018x}, got {actual:#018x}"
     )]
     ScenarioRngPrestateMismatch { expected: u64, actual: u64 },
-    #[error("launch mode id {id} is not the validated active-retail stock row")]
-    UnsupportedStockMode { id: i32 },
     #[error(
         "pre-Fill roster requires {roster_start_count} starts but the compact launch session has {launch_participant_count} participants"
     )]
@@ -621,7 +619,7 @@ pub fn prepare_stock_offline_scenario_prefix_plan(
     launch_seed: u32,
 ) -> Result<PreFillScenarioPrefixPlan, PreFillScenarioPrefixPlanError> {
     let session = descriptor.session();
-    let family = stock_offline_start_callback_family(session)?;
+    let family = stock_offline_start_callback_family(session);
     let mut start_header = crate::map::preview::ScenarioStartHeader::default();
     start_header.read_ini(&map_data.ini);
     // A shared House is one participant.
@@ -763,20 +761,18 @@ fn draw_house_constructor_timer(rng: &mut SimRng) -> u32 {
     rng.next_range_u32_inclusive(HOUSE_CONSTRUCTOR_TIMER_MIN, HOUSE_CONSTRUCTOR_TIMER_MAX)
 }
 
+/// The start callbacks belong to the mode's class, not to its row:
+/// `MPGameOptions__LoadAllGameModes @ 0x005D7CE0` builds every row of a
+/// section with that section's class, so a mod's added or changed row of
+/// `[Battle]` starts as Battle does.
 pub fn stock_offline_start_callback_family(
     session: &SkirmishLaunchSession,
-) -> Result<StockOfflineStartCallbackFamily, PreFillScenarioPrefixPlanError> {
-    let mode = &session.mode;
-    let stock = mode
-        .matching_stock()
-        .ok_or(PreFillScenarioPrefixPlanError::UnsupportedStockMode { id: mode.id })?;
-    Ok(
-        if stock.class == crate::skirmish_modes::MpModeClass::Cooperative {
-            StockOfflineStartCallbackFamily::Cooperative
-        } else {
-            StockOfflineStartCallbackFamily::Battle
-        },
-    )
+) -> StockOfflineStartCallbackFamily {
+    if session.mode.class == crate::skirmish_modes::MpModeClass::Cooperative {
+        StockOfflineStartCallbackFamily::Cooperative
+    } else {
+        StockOfflineStartCallbackFamily::Battle
+    }
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -6537,7 +6533,7 @@ mod tests {
                 StockOfflineStartCallbackFamily::Battle
             };
             assert_eq!(
-                stock_offline_start_callback_family(launch.session()).unwrap(),
+                stock_offline_start_callback_family(launch.session()),
                 expected_family
             );
             let plan = prepare_stock_offline_scenario_prefix_plan(
@@ -6559,36 +6555,20 @@ mod tests {
     }
 
     #[test]
-    fn scenario_prefix_rejects_mutated_stock_mode_metadata() {
-        let session = one_player_battle_launch("mutated-mode.mmx")
-            .session()
-            .clone();
-        let mutations: [fn(&mut crate::skirmish_launch::SkirmishLaunchMode); 7] = [
-            |mode| mode.ui_name_key = "GUI:Cooperative".to_string(),
-            |mode| mode.tooltip_key = "STT:ModeCooperative".to_string(),
-            |mode| mode.override_file = "MPCoopMD.ini".to_string(),
-            |mode| mode.map_filter = "cooperative".to_string(),
-            |mode| mode.random_maps_allowed = false,
-            |mode| mode.allies_allowed = false,
-            |mode| mode.must_ally = true,
-        ];
-        let mut cases = Vec::new();
-        for mutate in mutations {
-            let mut mutated = session.clone();
-            mutate(&mut mutated.mode);
-            cases.push(mutated);
-        }
-        let mut unknown_id = session;
-        unknown_id.mode.id = 10;
-        cases.push(unknown_id);
-
-        for mutated in cases {
-            let id = mutated.mode.id;
-            assert_eq!(
-                stock_offline_start_callback_family(&mutated).unwrap_err(),
-                PreFillScenarioPrefixPlanError::UnsupportedStockMode { id }
-            );
-        }
+    fn a_changed_or_added_mode_row_starts_as_its_class_does() {
+        let mut session = one_player_battle_launch("mod-mode.mmx").session().clone();
+        session.mode.id = 10;
+        session.mode.override_file = "MPModBattleMD.ini".to_string();
+        session.mode.must_ally = true;
+        assert_eq!(
+            stock_offline_start_callback_family(&session),
+            StockOfflineStartCallbackFamily::Battle
+        );
+        session.mode.class = crate::skirmish_modes::MpModeClass::Cooperative;
+        assert_eq!(
+            stock_offline_start_callback_family(&session),
+            StockOfflineStartCallbackFamily::Cooperative
+        );
     }
 
     #[test]
