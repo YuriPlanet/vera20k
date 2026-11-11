@@ -607,6 +607,14 @@ impl App {
             .frontend
             .multiplayer_shell_runtime
             .refresh_multiplayer_country_catalog(&state.process_assets);
+        // The lobby's colour list comes from the same rules as the shell's
+        // catalog above; its random draws and the room's claims follow it.
+        let lobby_colors = state.frontend.skirmish_shell_state.lobby_colors();
+        state
+            .frontend
+            .multiplayer_shell_runtime
+            .set_lobby_colors(lobby_colors);
+        state.match_state.session.set_lobby_colors(lobby_colors);
     }
 
     /// The score page `0x108` owns the result screen once its model is set

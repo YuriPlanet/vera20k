@@ -52,7 +52,7 @@ const retail = files(resolve(opts.ra2));
 // isolated (as tools/wasm/serve.py serves them) and start the worker pool.
 const threads = readFileSync(join(resolve(opts.dist), 'pkg', 'vera20k.js'), 'utf8').includes('initThreadPool');
 // SIM_THREAD=1|always, or one value per source (`always,0`): a --threads
-// page's VERA20K_SIM_THREAD (set_simulation_thread); off by default.
+// page's simulation worker setting (set_simulation_thread); off by default.
 const simThreads = threads && process.env.SIM_THREAD ? process.env.SIM_THREAD.split(',') : [];
 const isolation = threads
   ? { 'cross-origin-opener-policy': 'same-origin', 'cross-origin-embedder-policy': 'require-corp' }

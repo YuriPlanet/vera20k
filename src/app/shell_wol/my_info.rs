@@ -54,9 +54,10 @@ fn country_rows(state: &AppState) -> Vec<MyInfoRow> {
 }
 
 /// `0x4E43C0` releases every colour, so `0x4E45A0` lists
-/// `GUI:RandomAsSymbols` (-2) and all eight swatches.
+/// `GUI:RandomAsSymbols` (-2) and every swatch: gamemd's eight, then VERA's
+/// extra lobby colours.
 fn color_rows(state: &AppState) -> Vec<MyInfoRow> {
-    crate::ui::skirmish_shell::available_color_choices(None, [])
+    crate::ui::skirmish_shell::available_color_choices(state.lobby_colors(), None, [])
         .into_iter()
         .map(|item| match item {
             SkirmishComboItem::Color(index) => MyInfoRow {

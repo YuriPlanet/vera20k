@@ -71,18 +71,16 @@ pub(crate) struct DeferredClientEffects {
 impl DeferredClientEffects {
     /// Whether the next ordinary offline frame can run without the lent
     /// owners. The simulation thread ticks this way, and so does every such
-    /// frame while the thread is on; with it off (`VERA20K_SIM_THREAD=0`),
-    /// `VERA20K_DEFERRED_TICK_EFFECTS=1` opts an inline tick in. A network
-    /// frame needs its exchange, which only [`Self::hands_off_queue`] leaves
-    /// to the main thread.
+    /// frame it does not take, wherever the thread exists. A network frame
+    /// needs its exchange, which only [`Self::hands_off_queue`] leaves to the
+    /// main thread.
     pub(crate) fn applies(
         state: &AppState,
         replaying: bool,
         observing_commands: bool,
         initial_save: bool,
     ) -> bool {
-        (state.match_state.sim_runtime.thread_enabled()
-            || std::env::var_os("VERA20K_DEFERRED_TICK_EFFECTS").is_some_and(|value| value == "1"))
+        state.match_state.sim_runtime.thread_enabled()
             && !replaying
             && !observing_commands
             && !initial_save

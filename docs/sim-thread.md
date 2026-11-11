@@ -117,8 +117,7 @@ Done:
   - The tick takes its parts through `tick_parts()`.
 - [x] The checksum history moved from `MatchSession` into the host.
 - [x] Deferred client effects: every frame the simulation thread could take
-  uses them (with the thread off, `VERA20K_DEFERRED_TICK_EFFECTS=1` opts
-  in). In a hidden 1v29 client run, the state
+  uses them. In a hidden 1v29 client run, the state
   hashes at every common tick from 1 to 9000 are identical with and without
   it.
 - [x] The radar terrain updates per changed cell instead of redrawing its
@@ -129,12 +128,9 @@ Done:
 
 ### Phase 2: a presentation frame for the hot draw path
 
-`SimHost::publish_presentation` keeps a copy of the runtime
-(`Arc<SimRuntime>`), and drawing reads it through `SimHost::presentation`.
-The simulation thread publishes one when it takes a tick (phase 4) and
-drops it when the tick is back; `VERA20K_PRESENTATION_FRAME=1` publishes one
-after every tick without the thread, and a rules or lifecycle write drops
-that one first.
+`SimHost::lend` keeps a copy of the runtime (`Arc<SimRuntime>`) when the
+simulation thread takes a tick (phase 4), and drawing reads it through
+`SimHost::presentation` until the tick is back and the copy is dropped.
 
 A plain copy of the world is too slow: 40–60 ms in a 1v7 skirmish on the
 30-start map, about half of it the terrain cells. The copy therefore shares
@@ -199,8 +195,8 @@ that wait shows in play.
 - `finish_simulation_frame`, the frame tail on the main thread.
 
 An ordinary offline frame on the deferred path can be lent to the simulation
-thread instead of run inline. This is the default; `VERA20K_SIM_THREAD=0`
-turns the thread and the deferred effects off. A pass then goes:
+thread instead of run inline. The thread has no switch: every desktop build
+uses it (`sim_host::sim_thread_available`). A pass goes:
 
 1. `finish_threaded_frame`, first thing in the pass: wait for the tick in
    flight, run its tail and hand its radar-terrain marks to the minimap.
@@ -231,7 +227,6 @@ ticks inline as well. In a 1v29 skirmish on the 30-start map the frame costs
 more than a tick until the battle is large, so lending every last frame made
 GameSpeed 0 run 8 to 22% slower there, and far slower when other programs
 kept the simulation thread waiting for a core.
-`VERA20K_SIM_THREAD=always` skips this comparison, to exercise the thread.
 
 Between the dispatch and the next pass nothing on the main thread may take
 the live world: a write waits for the tick, and the tick then did not run
@@ -312,8 +307,8 @@ another thread, so three things differ:
   pool, rayon runs its work on the main thread, which the worker's parallel
   work would wait for in vain. Until the worker runs, frames tick inline.
   It is experimental and off unless the page turns it on:
-  `set_simulation_thread` takes the values of `VERA20K_SIM_THREAD`, `1` to
-  turn it on. Lending then follows desktop's rules.
+  `set_simulation_thread` takes `1` to turn it on, `always` to lend every
+  frame it can take, or `0`. Lending then follows desktop's rules.
 - **No pass waits for the tick.** `SimHost::pass_may_run` asks whether the
   lent tick has ended. A pass that finds it running services nothing and
   draws the frame published for it: no Input, so the screen shake stands as

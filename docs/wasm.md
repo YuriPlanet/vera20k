@@ -130,7 +130,7 @@ does ([The browser](sim-thread.md#the-browser)). It is off by default: call
 `set_simulation_thread("1")` before `start_game` or `start_spawn` (the supplied
 host takes `?simulation-thread=1`). A frame then goes to the worker when its tick
 costs more than publishing the frame; `"always"` lends every frame the worker can
-take and `"0"` keeps it off, as `VERA20K_SIM_THREAD` does on desktop. While a tick
+take and `"0"` keeps it off. While a tick
 runs, the page draws the last published frame and holds window events until the
 tick is back. Frames that tick on the main thread (all of them with the worker
 off; otherwise catch-up frames another follows, replays and network restores)

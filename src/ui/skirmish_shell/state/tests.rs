@@ -17,7 +17,7 @@ use crate::ui::shell::trackbar::{THUMB_W, TrackbarHold};
 use crate::ui::skirmish_shell::layout::compute_choose_map_modal_layout;
 use crate::ui::skirmish_shell::{
     COMBO_DROPDOWN_ROW_H, COMBO_DROPDOWN_SCROLLBAR_BUTTON_H, COMBO_DROPDOWN_SCROLLBAR_W,
-    COMBO_FACE_H, RectPx, checkbox_text_rect, compute_layout,
+    COMBO_FACE_H, RectPx, checkbox_text_rect, combo_face_rect, compute_layout,
 };
 
 fn test_map_entry(name: &str) -> MapMenuEntry {
@@ -1037,6 +1037,56 @@ fn launch_session_does_not_synthesize_unknown_mode() {
     assert_eq!(
         launch_session(&shell, &maps, &stock_skirmish_modes(), false).unwrap_err(),
         LaunchValidationError::NoSelectedMode { mode_id: 99 }
+    );
+}
+
+#[test]
+fn colour_combo_lists_the_rules_extra_colours_after_the_eight() {
+    use crate::rules::skirmish_colors::SkirmishColorMode;
+    use SkirmishComboItem::{Color, ColorSentinel};
+
+    let mut shell = controlled_country_shell();
+    shell.lobby_colors = SkirmishColorMode::with_extra_entries(&[21, 22]);
+    let maps = [test_map_entry("map.mmx")];
+    // The first computer row holds red (1); 8 is the observer's, never listed.
+    assert_eq!(
+        combo_items(&shell, &maps, SkirmishComboId::Color(0)),
+        [
+            ColorSentinel(-2),
+            Color(0),
+            Color(2),
+            Color(3),
+            Color(4),
+            Color(5),
+            Color(6),
+            Color(7),
+            Color(9),
+            Color(10),
+        ]
+    );
+
+    // An extra colour is claimed like any other and reaches the launch.
+    apply_combo_selection_for_test(&mut shell, SkirmishComboId::Color(1), Color(10));
+    assert!(!combo_items(&shell, &maps, SkirmishComboId::Color(0)).contains(&Color(10)));
+    shell.player_color_index = 7;
+    apply_action(
+        &mut shell,
+        SkirmishShellAction::SelectColor(ColorComboId::Player),
+        &maps,
+    );
+    assert_eq!(shell.player_color_index, 9);
+    let session = launch_session(&shell, &maps, &stock_skirmish_modes(), false).expect("session");
+    assert_eq!(session.local_slot().color_index, 9);
+    assert_eq!(session.opponents[0].color_index, 10);
+
+    // Rules that list one extra fewer refuse the colour they dropped.
+    shell.lobby_colors = SkirmishColorMode::with_extra_entries(&[21]);
+    assert_eq!(
+        launch_session(&shell, &maps, &stock_skirmish_modes(), false).unwrap_err(),
+        LaunchValidationError::InvalidColorIndex {
+            slot: 1,
+            color_index: 10,
+        }
     );
 }
 
@@ -2551,4 +2601,21 @@ fn saved_setup_keeps_computer_rows_scrolled_out_of_view() {
     saved.apply(&mut loaded, &maps);
     assert_eq!(loaded.opponents[28].row_type, SkirmishAiRowType::Hard);
     assert_eq!(SkirmishSavedSetup::capture(&loaded, &maps), saved);
+}
+
+#[test]
+fn a_scrolling_start_list_keeps_the_face_width_for_its_captions() {
+    // Ten starts give the Start list eleven rows, two past its nine, so it
+    // scrolls; its 38 px face less the scrollbar left the captions no width.
+    let maps = [test_map_entry_with_starts("ten.mmx", 10)];
+    let mut shell = SkirmishShellState::default();
+    initialize_rows_for_selected_map(&mut shell, &maps);
+    let layout = compute_layout(800, 600);
+    let id = SkirmishComboId::Start(0);
+    assert!(combo_dropdown_needs_scrollbar(&shell, &maps, id));
+    let face = combo_face_rect(combo_rect(&layout, &shell, id).unwrap(), layout.scale);
+    let content = combo_dropdown_content_rect(&shell, &layout, &maps, id).unwrap();
+    let bar = combo_dropdown_scrollbar_rect(&shell, &layout, &maps, id).unwrap();
+    assert_eq!((content.x, content.w), (face.x, face.w));
+    assert_eq!(bar.x, face.x + face.w);
 }

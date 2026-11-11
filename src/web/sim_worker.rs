@@ -88,7 +88,7 @@ pub(crate) fn spawn(body: Body) {
     failed.forget();
 }
 
-/// The page's value for `VERA20K_SIM_THREAD` (docs/sim-thread.md). The
+/// The page's simulation-thread setting (docs/sim-thread.md). The
 /// simulation worker is off (`"0"`) unless the page calls this with `"1"`,
 /// which lends a frame when that saves the main thread time, or `"always"`,
 /// which lends every frame the worker can take. Call it before `start_game`

@@ -63,6 +63,7 @@ simulation, session and network command owners.
 - [Ferry order](ferry.md): press J and click a drop spot to have a transport carry units there and come back for more.
 - [Formation line](formation-line.md): hold F and drag with the left button to line a group up along a drawn line.
 - [Health-strip modes](health-bars.md): the `[VERA] HealthBars=` client option.
+- [Lobby player colours](skirmish-colors.md): the thirty colours a lobby lists, and `[SkirmishColors]` for a mod's own.
 - [Interface layout](interface-layout.md): `veraui.ini`, a mod's own places for the sidebar, the command bar and the sidebar's parts.
 - [Jumpjets land beside a taken cell](jumpjet-land-nearby.md): the `[JumpjetControls] LandNearby=` rules key that sends a Nighthawk refused its landing cell to the nearest clear one.
 - [Smooth Jumpjet facing](jumpjet-smooth-facing.md): the `[JumpjetControls] SmoothFacing=` rules key that stops a Nighthawk's body snapping at take-off and unload.

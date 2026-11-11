@@ -80,7 +80,7 @@ pub(crate) struct SimHost {
     /// Drawing reads it while the live world is ticking elsewhere.
     /// Copy-on-write state (the terrain cells, the resources) stays shared
     /// with the live world until that changes. It lives only while the
-    /// runtime is lent, apart from the `VERA20K_PRESENTATION_FRAME` opt-in.
+    /// runtime is lent.
     presentation: Option<Arc<SimRuntime>>,
     /// What the last lent job cost this thread: copying the frame when the
     /// job left ([`Self::lend`]), kept in `copy_cost` meanwhile, then the
@@ -114,7 +114,7 @@ impl SimHost {
     }
 
     /// Whether ordinary frames may tick on the simulation thread
-    /// ([`sim_thread_enabled`]). The threaded browser build lends nothing
+    /// ([`sim_thread_available`]). The threaded browser build lends nothing
     /// until its worker runs; the other browser builds have none.
     pub(crate) fn thread_enabled(&self) -> bool {
         #[cfg(all(
@@ -122,13 +122,13 @@ impl SimHost {
             target_arch = "wasm32",
             target_os = "unknown"
         ))]
-        return sim_thread_enabled() && self.worker.as_ref().is_some_and(|worker| worker.running);
+        return sim_thread_available() && self.worker.as_ref().is_some_and(|worker| worker.running);
         #[cfg(not(all(
             feature = "wasm-threads",
             target_arch = "wasm32",
             target_os = "unknown"
         )))]
-        sim_thread_enabled()
+        sim_thread_available()
     }
 
     /// The start of a frame-loop pass: whether it may go on. The browser's
@@ -146,7 +146,9 @@ impl SimHost {
         ))]
         if let Some(worker) = &mut self.worker {
             worker.running |= worker.ready.load(std::sync::atomic::Ordering::Acquire);
-        } else if self.is_installed() && sim_thread_enabled() && crate::web::sim_worker::available()
+        } else if self.is_installed()
+            && sim_thread_available()
+            && crate::web::sim_worker::available()
         {
             self.worker = Some(SimWorker::spawn());
         }
@@ -189,7 +191,10 @@ impl SimHost {
             self.report_early_returns();
         }
         let copy_started = Instant::now();
-        self.publish_presentation();
+        self.presentation = self
+            .runtime
+            .as_ref()
+            .map(|runtime| Arc::new(runtime.clone()));
         self.copy_cost = copy_started.elapsed();
         let runtime = self.runtime.take().expect("installed runtime");
         self.worker
@@ -253,27 +258,9 @@ impl SimHost {
 
     /// Mutable access to the installed runtime for one write route; a lent
     /// runtime comes back first.
-    pub(crate) fn write_sim(&mut self, route: SimWrite) -> Option<&mut SimRuntime> {
+    pub(crate) fn write_sim(&mut self, _route: SimWrite) -> Option<&mut SimRuntime> {
         self.reclaim(true);
-        if matches!(route, SimWrite::Rules | SimWrite::Lifecycle) {
-            // These may rebind the shared resources (`resources_mut`), which
-            // an opted-in frame would still share.
-            self.presentation = None;
-        }
         self.runtime.as_mut()
-    }
-
-    /// Publish the live world as the presentation frame: [`Self::lend`]
-    /// does, and so does every tick under the `VERA20K_PRESENTATION_FRAME`
-    /// opt-in.
-    pub(crate) fn publish_presentation(&mut self) {
-        if self.lent {
-            return;
-        }
-        self.presentation = self
-            .runtime
-            .as_ref()
-            .map(|runtime| Arc::new(runtime.clone()));
     }
 
     /// What the last lent job cost this thread, to weigh against the tick
@@ -310,7 +297,6 @@ impl SimHost {
         self.reclaim(true);
         self.report_early_returns();
         self.job_result = None;
-        self.presentation = None;
         self.lend_cost = None;
         self.runtime = runtime;
     }
@@ -320,7 +306,6 @@ impl SimHost {
         self.reclaim(true);
         self.report_early_returns();
         self.job_result = None;
-        self.presentation = None;
         self.lend_cost = None;
         self.runtime.take()
     }
@@ -490,49 +475,37 @@ impl<T> Handoff<T> {
     }
 }
 
-/// Whether every tick publishes a presentation frame for drawing to read,
-/// with or without the simulation thread: the phase 2 aid, opted into with
-/// `VERA20K_PRESENTATION_FRAME=1`. The thread needs no such frame: it
-/// publishes its own when it takes a tick ([`SimHost::lend`]).
-pub(crate) fn presentation_frames_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| env_flag("VERA20K_PRESENTATION_FRAME"))
+/// Whether ordinary frames can tick on the simulation thread: in every
+/// desktop build, and in the browser only in its threaded build, once the
+/// worker runs ([`SimHost::thread_enabled`]) and when the page asks for it
+/// ([`set_browser_sim_thread`]). Unit tests tick inline too: they read the
+/// world straight after a frame, and the host's own tests cover lending.
+fn sim_thread_available() -> bool {
+    (!cfg!(all(feature = "wasm", target_arch = "wasm32")) || BROWSER_THREADS)
+        && !cfg!(test)
+        && browser_sim_thread() != Some("0")
 }
 
-/// Whether ordinary frames tick on the simulation thread: yes, unless
-/// `VERA20K_SIM_THREAD=0` turns it off. The browser has a thread only in its
-/// threaded build, once the worker runs ([`SimHost::thread_enabled`]), and
-/// only when the page asks for it ([`set_browser_sim_thread`]). Unit
-/// tests tick inline too: they read the world straight after a frame, and
-/// the host's own tests cover lending.
-fn sim_thread_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        (!cfg!(all(feature = "wasm", target_arch = "wasm32")) || BROWSER_THREADS)
-            && !cfg!(test)
-            && sim_thread_wanted(sim_thread_setting().as_deref())
-    })
-}
-
-/// `VERA20K_SIM_THREAD`, or in the browser the page's value for it. The
-/// browser's worker is experimental and stays off (`0`) unless the page
-/// turns it on.
-fn sim_thread_setting() -> Option<std::ffi::OsString> {
+/// The page's setting for the browser's experimental simulation worker
+/// (`web::set_simulation_thread`): `0`, the default, keeps it off; `1` lends
+/// a frame when that saves the main thread time; `always` lends every frame
+/// the worker can take. The first read fixes it. Desktop has no setting.
+fn browser_sim_thread() -> Option<&'static str> {
     #[cfg(all(
         feature = "wasm-threads",
         target_arch = "wasm32",
         target_os = "unknown"
     ))]
-    return Some(BROWSER_SIM_THREAD.get().map_or("0", String::as_str).into());
+    return Some(BROWSER_SIM_THREAD.get_or_init(|| "0".to_owned()).as_str());
     #[cfg(not(all(
         feature = "wasm-threads",
         target_arch = "wasm32",
         target_os = "unknown"
     )))]
-    std::env::var_os("VERA20K_SIM_THREAD")
+    None
 }
 
-/// The page's `VERA20K_SIM_THREAD` (`web::set_simulation_thread`).
+/// The page's simulation-thread setting (`web::set_simulation_thread`).
 #[cfg(all(
     feature = "wasm-threads",
     target_arch = "wasm32",
@@ -540,8 +513,8 @@ fn sim_thread_setting() -> Option<std::ffi::OsString> {
 ))]
 static BROWSER_SIM_THREAD: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
-/// Set the page's `VERA20K_SIM_THREAD` before the engine first asks; a later
-/// call changes nothing.
+/// Set the page's simulation-thread setting before the engine first reads
+/// it; a later call changes nothing.
 #[cfg(all(
     feature = "wasm-threads",
     target_arch = "wasm32",
@@ -551,28 +524,12 @@ pub(crate) fn set_browser_sim_thread(value: &str) {
     let _ = BROWSER_SIM_THREAD.set(value.to_owned());
 }
 
-/// What `VERA20K_SIM_THREAD` asks for: only `0` turns the thread off.
-fn sim_thread_wanted(value: Option<&std::ffi::OsStr>) -> bool {
-    value.is_none_or(|value| value != "0")
-}
-
-/// Whether a frame the thread can take goes to it whatever its published
-/// frame costs the main thread: `VERA20K_SIM_THREAD=always`, for diagnosis
-/// and for exercising the thread. By default it goes only when that saves
-/// the main thread time (`sim_tick::advance_in_game_runtime_mode`).
+/// Whether a frame the browser's worker can take goes to it whatever its
+/// published frame costs the main thread: the page's `always`, for
+/// exercising the worker. Otherwise a frame goes only when that saves the
+/// main thread time (`sim_tick::advance_in_game_runtime_mode`).
 pub(crate) fn sim_thread_always() -> bool {
-    static ALWAYS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ALWAYS.get_or_init(|| {
-        sim_thread_enabled() && sim_thread_always_wanted(sim_thread_setting().as_deref())
-    })
-}
-
-fn sim_thread_always_wanted(value: Option<&std::ffi::OsStr>) -> bool {
-    value.is_some_and(|value| value == "always")
-}
-
-fn env_flag(name: &str) -> bool {
-    std::env::var_os(name).is_some_and(|value| value == "1")
+    sim_thread_available() && browser_sim_thread() == Some("always")
 }
 
 // docs/sim-thread.md moves the host onto its own thread; it must stay Send.
@@ -586,40 +543,6 @@ mod tests {
     use super::*;
     use crate::net::lockstep::{ChecksumMismatch, FrameInfo, FrameInfoCompareGate};
     use crate::sim::world::Simulation;
-
-    #[test]
-    fn the_simulation_thread_is_on_unless_the_variable_is_zero() {
-        use std::ffi::OsStr;
-        assert!(sim_thread_wanted(None));
-        assert!(sim_thread_wanted(Some(OsStr::new("1"))));
-        assert!(!sim_thread_wanted(Some(OsStr::new("0"))));
-        // `always` is on too, and alone skips the cost comparison.
-        assert!(sim_thread_wanted(Some(OsStr::new("always"))));
-        assert!(sim_thread_always_wanted(Some(OsStr::new("always"))));
-        assert!(!sim_thread_always_wanted(Some(OsStr::new("1"))));
-        assert!(!sim_thread_always_wanted(None));
-    }
-
-    #[test]
-    fn a_published_frame_keeps_the_tick_it_saw_while_the_world_moves_on() {
-        let mut host = SimHost::default();
-        host.install(Some(SimRuntime::from_simulation(Simulation::new())));
-        host.write_sim(SimWrite::Tick)
-            .unwrap()
-            .simulation
-            .session_mut_for_test()
-            .set_tick_for_test(7);
-        host.publish_presentation();
-        host.write_sim(SimWrite::Tick)
-            .unwrap()
-            .simulation
-            .session_mut_for_test()
-            .set_tick_for_test(8);
-        assert_eq!(host.presentation().unwrap().simulation.session().tick(), 7);
-        assert_eq!(host.runtime().unwrap().simulation.session().tick(), 8);
-        host.install(None);
-        assert!(host.presentation().is_none());
-    }
 
     #[test]
     fn a_lent_runtime_serves_reads_from_the_frame_until_a_write_takes_it_back() {

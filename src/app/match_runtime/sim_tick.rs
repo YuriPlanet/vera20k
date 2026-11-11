@@ -1840,8 +1840,8 @@ fn advance_one_simulation_frame(
             queue_handoff,
         )
     });
-    // An ordinary frame runs on the simulation thread (off with
-    // `VERA20K_SIM_THREAD=0`); drawing reads its last published frame.
+    // An ordinary frame runs on the simulation thread; drawing reads its last
+    // published frame.
     let threaded = deferred.is_some()
         && !inline
         && resume == FrameResume::None
@@ -2598,12 +2598,6 @@ fn finish_simulation_frame(
         // world is no longer borrowed.
         if let Some(deferred) = deferred {
             deferred.apply(state);
-        }
-        // The simulation thread publishes a frame when it takes a tick
-        // (`SimHost::lend`); this is the phase 2 opt-in, a frame after every
-        // tick without the thread.
-        if frame_committed && super::sim_host::presentation_frames_enabled() {
-            state.match_state.sim_runtime.publish_presentation();
         }
         if frame_committed {
             state
