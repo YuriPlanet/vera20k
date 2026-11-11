@@ -57,10 +57,19 @@ pub(crate) fn request_gate_open_for_cell(
     let Some(occ) = sim.substrate.occupancy.get(cell.0, cell.1) else {
         return true;
     };
-    let candidates: Vec<u64> = occ
-        .iter_layer(MovementLayer::Ground)
-        .filter_map(|occupant| (occupant.entity_id != mover_id).then_some(occupant.entity_id))
-        .collect();
+    let others = || {
+        occ.iter_layer(MovementLayer::Ground)
+            .filter_map(|occupant| (occupant.entity_id != mover_id).then_some(occupant.entity_id))
+    };
+    // Only a Structure can be a Gate. With none among the others the walk
+    // below skips every candidate, so its list is not built (VERA-only,
+    // results unchanged).
+    if !others().any(|id| {
+        sim.substrate.entities.category_of(id) == Some(EntityCategory::Structure)
+    }) {
+        return true;
+    }
+    let candidates: Vec<u64> = others().collect();
     for candidate_id in candidates {
         let Some(candidate) = sim.substrate.entities.get(candidate_id) else {
             continue;

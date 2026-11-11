@@ -2282,9 +2282,9 @@ impl Simulation {
             let Some(owner) = self.substrate.entities.get(id).map(|entity| entity.owner()) else {
                 return;
             };
+            // Usually empty, and then no list is allocated.
             let fresh: Vec<_> = self
-                .represented_player_maps()
-                .into_iter()
+                .network_player_maps()
                 .filter(|&viewer| !self.techno_discovered_by_viewer(id, viewer))
                 .collect();
             let Some(viewer) = fresh
@@ -2306,20 +2306,22 @@ impl Simulation {
             self.discover_techno_in_views(id, viewer, context, mask);
             return;
         }
-        for viewer in self.represented_player_maps() {
-            if let Some(cell) = cell_put
-                && !self.session.game_mode_nonzero()
-            {
-                let Some(terrain) = context.terrain().or(self.resolved_terrain.as_ref()) else {
-                    return;
-                };
-                let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
-                if crate::sim::vision::cell_is_shrouded(&self.fog, &cells, viewer, cell) {
-                    continue;
-                }
+        // Outside a network game one map is represented, so no list is built.
+        let Some(viewer) = self.offline_player_map() else {
+            return;
+        };
+        if let Some(cell) = cell_put
+            && !self.session.game_mode_nonzero()
+        {
+            let Some(terrain) = context.terrain().or(self.resolved_terrain.as_ref()) else {
+                return;
+            };
+            let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+            if crate::sim::vision::cell_is_shrouded(&self.fog, &cells, viewer, cell) {
+                return;
             }
-            self.discover_techno(id, viewer, context);
         }
+        self.discover_techno(id, viewer, context);
     }
 
     /// `BuildingClass::Unlimbo @ 0x00440580` calls

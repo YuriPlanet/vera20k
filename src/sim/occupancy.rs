@@ -778,6 +778,12 @@ impl CellOccupancy {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OccupancyGrid {
     cells: CellMap<CellOccupancy>,
+    /// VERA-only: the emptied list of a cell an object last left, kept for
+    /// the next vacant cell an object enters, so a cell crossing and a
+    /// blocked mover's lift and put-back free and allocate nothing. Always
+    /// empty; only its capacity is kept. Never saved, hashed or read.
+    #[serde(skip)]
+    spare_list: Vec<CellOccupant>,
     /// Monotonic counter bumped on every cell-membership mutation, so tests can
     /// tell whether membership changed between two points. Never serialized,
     /// never part of the state hash.
@@ -964,6 +970,7 @@ impl OccupancyGrid {
     pub fn new() -> Self {
         Self {
             cells: CellMap::new(),
+            spare_list: Vec::new(),
             #[cfg(any(test, feature = "test-support"))]
             generation: 0,
         }
@@ -1004,7 +1011,10 @@ impl OccupancyGrid {
             sub_cell,
             is_building: insertion == CellListInsertion::AppendBuilding,
         };
-        let occ = self.cells.get_or_insert_with((rx, ry), Default::default);
+        let spare = &mut self.spare_list;
+        let occ = self.cells.get_or_insert_with((rx, ry), || CellOccupancy {
+            occupants: std::mem::take(spare),
+        });
         match insertion {
             CellListInsertion::PrependNonBuilding => {
                 let index = occ
@@ -1055,8 +1065,11 @@ impl OccupancyGrid {
         if let Some(occ) = self.cells.get_mut(&(rx, ry)) {
             occ.occupants
                 .retain(|o| !(o.entity_id == entity_id && o.layer == layer));
-            if occ.occupants.is_empty() {
-                self.cells.remove(&(rx, ry));
+            if occ.occupants.is_empty()
+                && let Some(emptied) = self.cells.remove(&(rx, ry))
+                && self.spare_list.capacity() == 0
+            {
+                self.spare_list = emptied.occupants;
             }
         }
     }
@@ -1306,6 +1319,42 @@ mod tests {
         assert!(g2 > g1, "move_entity (remove+add) must bump generation");
         grid.remove(2, 2, 10);
         assert!(grid.generation() > g2, "remove must bump generation");
+    }
+
+    /// The list of a cell an object left is kept, empty, and becomes the list
+    /// of the next vacant cell an object enters. The cells and what is saved
+    /// are those of a grid that never kept one.
+    #[test]
+    fn an_emptied_cells_list_serves_the_next_vacant_cell() {
+        let enter = |grid: &mut OccupancyGrid, cell: (u16, u16), id| {
+            grid.add(
+                cell.0,
+                cell.1,
+                id,
+                MovementLayer::Ground,
+                None,
+                CellListInsertion::PrependNonBuilding,
+            );
+        };
+        let mut grid = OccupancyGrid::new();
+        enter(&mut grid, (3, 4), 7);
+        grid.remove_on_layer(3, 4, 7, MovementLayer::Ground);
+        assert!(grid.get(3, 4).is_none());
+        assert!(grid.spare_list.is_empty() && grid.spare_list.capacity() > 0);
+        assert_eq!(
+            serde_json::to_string(&grid).unwrap(),
+            serde_json::to_string(&OccupancyGrid::new()).unwrap()
+        );
+
+        enter(&mut grid, (5, 6), 9);
+        assert_eq!(grid.spare_list.capacity(), 0);
+        assert_eq!(
+            grid.get(5, 6)
+                .unwrap()
+                .snapshot_layer(MovementLayer::Ground),
+            [9]
+        );
+        assert_eq!(grid.occupied_cell_count(), 1);
     }
 
     #[test]
