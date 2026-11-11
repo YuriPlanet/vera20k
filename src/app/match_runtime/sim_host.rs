@@ -323,8 +323,10 @@ fn sim_thread_wanted(value: Option<&std::ffi::OsStr>) -> bool {
 /// the main thread time (`sim_tick::advance_in_game_runtime_mode`).
 pub(crate) fn sim_thread_always() -> bool {
     static ALWAYS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ALWAYS
-        .get_or_init(|| sim_thread_always_wanted(std::env::var_os("VERA20K_SIM_THREAD").as_deref()))
+    *ALWAYS.get_or_init(|| {
+        sim_thread_enabled()
+            && sim_thread_always_wanted(std::env::var_os("VERA20K_SIM_THREAD").as_deref())
+    })
 }
 
 fn sim_thread_always_wanted(value: Option<&std::ffi::OsStr>) -> bool {
