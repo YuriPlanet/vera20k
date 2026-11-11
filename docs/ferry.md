@@ -16,16 +16,28 @@ cursor (where it unloads). Where the click would give no transport a route
 and the cursor is the refusal cursor.
 
 While a ferrying transport is selected, the same blue and yellow circles mark
-its route.
+its route, and its waypoints show between them.
 
 ## Waypoints
 
 After the Ferry key, hold the **Planning Mode** key (Z by default) and left
 click to add a waypoint; up to 8. Let go of it and click to set the drop spot.
 The transport passes the waypoints in order on the way out and in reverse on
-the way back, so one detour round an enemy covers both directions. Each
-waypoint shows as a small white circle; a cell none of the selected transports
-can move to is refused and shows red.
+the way back, so one detour round an enemy covers both directions.
+
+The waypoints look as they do in Planning Mode: a square marker on each,
+joined by the moving dashed line in your colour, from the pick-up spot through
+the waypoints to the drop spot. While you are still clicking them they are
+drawn in the brighter colour of waypoints not yet committed. Holding the key
+gives Planning Mode's start and end sounds and the Move cursor; over a cell
+none of the selected transports can move to, the cursor shows the refusal and
+the click is not taken. A route without waypoints has no line, only its two
+circles.
+
+The ferry keeps these waypoints itself; they are not Planning Mode's own
+nodes, which the game does not give to aircraft. So they cannot be clicked,
+deleted or joined into a loop as those can: to change them, give the ferry
+order again.
 
 - **No stopping.** A ground transport is sent on to the next point within 2
   cells of a waypoint, an aircraft within 4, before it slows to land.

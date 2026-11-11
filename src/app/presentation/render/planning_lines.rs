@@ -11,8 +11,10 @@ use crate::render::native_surface_format::{
     ACTIVE_RETAIL_RGB565_PRESENTATION, RGB565, interpolate_rgb8,
 };
 use crate::render::surface_line::{clip_line, patterned_line, solid_line};
+use crate::rules::ruleset::RuleSet;
 use crate::sim::components::DriveCoord;
-use crate::sim::world::{PlanningBadgeKind, PlanningDrawSegment};
+use crate::sim::intern::InternedId;
+use crate::sim::world::{PlanningBadgeKind, PlanningDrawSegment, Simulation};
 
 // Original static bytes836880;63D8B8 negates the presentation wall clock.
 const PATTERN: [u8; 16] = [1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0];
@@ -41,26 +43,8 @@ pub(super) fn build(
         crate::app::input::planning_mode::hover_node(state),
         state.match_state.input.planning.highlighted_node(),
     );
-    let phase = ((wall_ms as i32).wrapping_neg() >> 5) & 15;
-    let color = |owner, bright| {
-        let name = sim.interner().resolve(owner);
-        let index = state
-            .match_state
-            .match_presentation
-            .house_color_map
-            .get(name)
-            .copied()
-            .unwrap_or(crate::rules::house_colors::NO_REMAP);
-        let rgb = crate::render::palette_light::house_color_rgb(
-            &rt.resources.rules.house_color_ramps,
-            index,
-        );
-        if bright {
-            interpolate_rgb8(rgb, [255; 3], 100)
-        } else {
-            interpolate_rgb8(rgb, [0; 3], 80)
-        }
-    };
+    let phase = stroke_phase(wall_ms);
+    let color = |owner, bright| stroke_rgb(state, sim, &rt.resources.rules, owner, bright);
     // A derived frame-local membership index avoids scanning the whole graph
     // once per badge in large selected groups. It dies with this projection.
     let highlighted_members: std::collections::HashSet<_> =
@@ -262,6 +246,134 @@ pub(super) fn build(
     (out, highlights)
 }
 
+/// The patterned strokes' phase: 63D8B8 negates the presentation wall clock.
+fn stroke_phase(wall_ms: u32) -> i32 {
+    ((wall_ms as i32).wrapping_neg() >> 5) & 15
+}
+
+/// A house's stroke and marker colour: toward white for a stroke not yet
+/// committed, toward black otherwise.
+fn stroke_rgb(
+    state: &AppState,
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    bright: bool,
+) -> [u8; 3] {
+    let name = sim.interner().resolve(owner);
+    let index = state
+        .match_state
+        .match_presentation
+        .house_color_map
+        .get(name)
+        .copied()
+        .unwrap_or(crate::rules::house_colors::NO_REMAP);
+    let rgb = crate::render::palette_light::house_color_rgb(&rules.house_color_ramps, index);
+    if bright {
+        interpolate_rgb8(rgb, [255; 3], 100)
+    } else {
+        interpolate_rgb8(rgb, [0; 3], 80)
+    }
+}
+
+/// The strokes and markers of the VERA ferry's waypoint paths, each once:
+/// transports sent together share their waypoints. Each entry carries whether
+/// its path is still being clicked.
+#[derive(Debug, Default)]
+struct FerryStrokes {
+    lines: Vec<([i32; 2], [i32; 2], bool)>,
+    /// Where a path starts: its pick-up spot.
+    starts: Vec<([i32; 2], bool)>,
+    /// Every later point: the waypoints and the drop spot.
+    nodes: Vec<([i32; 2], bool)>,
+}
+
+impl FerryStrokes {
+    fn add(&mut self, points: &[[i32; 2]], pending: bool) {
+        fn once<T: PartialEq>(list: &mut Vec<T>, item: T) {
+            if !list.contains(&item) {
+                list.push(item);
+            }
+        }
+        let Some((&start, rest)) = points.split_first() else {
+            return;
+        };
+        once(&mut self.starts, (start, pending));
+        let mut from = start;
+        for &to in rest {
+            once(&mut self.lines, (from, to, pending));
+            once(&mut self.nodes, (to, pending));
+            from = to;
+        }
+    }
+}
+
+/// VERA ferry: a selected transport's waypoints in Planning Mode's look,
+/// through the stores above and in their order: every outer stroke and marker
+/// first (63B0A0), then the patterned strokes and filled markers (63B150). A
+/// path starts as an actor's connection does (6x6 outline, 4x4 fill, 63BE60)
+/// and every later point is a node (8x8 outline, 6x6 fill, 63CAE0). The outer
+/// colour is a selected member's white (63D0F0), since only a selected
+/// transport shows its path; waypoints still being clicked take the bright
+/// colour of nodes not yet committed. Unlike Planning Mode's own lines these
+/// show without the mode: the ferry keeps its own waypoints.
+pub(super) fn build_ferry_paths(
+    state: &AppState,
+    view: TacticalViewport,
+    wall_ms: u32,
+) -> Vec<SpriteInstance> {
+    let mut out = Vec::new();
+    let paths = crate::app::input::ferry::waypoint_paths(state);
+    if paths.is_empty() {
+        return out;
+    }
+    let Some(rt) = state.match_state.sim_runtime.presentation() else {
+        return out;
+    };
+    let sim = &rt.simulation;
+    let Some(viewer) = sim.session().current_house() else {
+        return out;
+    };
+    let cells = crate::app::match_runtime::sim_tick::tactical_cells(sim);
+    let mut strokes = FerryStrokes::default();
+    for path in &paths {
+        let points: Vec<[i32; 2]> = path
+            .cells
+            .iter()
+            .map(|&(rx, ry)| {
+                let level = cells
+                    .and_then(|cells| cells.cell_level(rx, ry))
+                    .unwrap_or(0);
+                let z = i32::from(level) * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
+                project(DriveCoord::cell(rx, ry, z), view)
+            })
+            .collect();
+        strokes.add(&points, path.pending);
+    }
+    let phase = stroke_phase(wall_ms);
+    let color = |pending| stroke_rgb(state, sim, &rt.resources.rules, viewer, pending);
+    let white = [255; 3];
+    for &(from, to, _) in &strokes.lines {
+        emit_solid_segment(&mut out, from, to, white, 4, view);
+    }
+    for &(at, _) in &strokes.nodes {
+        emit_marker_outer(&mut out, at, 8, white, view);
+    }
+    for &(at, _) in &strokes.starts {
+        emit_marker_outer(&mut out, at, 6, white, view);
+    }
+    for &(from, to, pending) in &strokes.lines {
+        emit_segment(&mut out, from, to, color(pending), phase, 2, view);
+    }
+    for &(at, pending) in &strokes.nodes {
+        emit_marker(&mut out, at, 6, color(pending), view);
+    }
+    for &(at, pending) in &strokes.starts {
+        emit_marker(&mut out, at, 4, color(pending), view);
+    }
+    out
+}
+
 /// `Planning__CoordsToSurfacePoint @ 0x006339E0`: `CoordsToClient2`, then
 /// the tactical view's surface offset.
 fn project(coord: DriveCoord, view: TacticalViewport) -> [i32; 2] {
@@ -454,6 +566,25 @@ fn emit_solid_segment(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ferry_paths_that_share_waypoints_draw_each_stroke_once() {
+        // Two transports sent together: their own pick-up spots, the same
+        // waypoint and drop spot.
+        let mut strokes = FerryStrokes::default();
+        strokes.add(&[[0, 0], [40, 10], [80, 10]], false);
+        strokes.add(&[[0, 20], [40, 10], [80, 10]], false);
+        assert_eq!(strokes.starts, [([0, 0], false), ([0, 20], false)]);
+        assert_eq!(strokes.nodes, [([40, 10], false), ([80, 10], false)]);
+        assert_eq!(
+            strokes.lines,
+            [
+                ([0, 0], [40, 10], false),
+                ([40, 10], [80, 10], false),
+                ([0, 20], [40, 10], false),
+            ]
+        );
+    }
 
     #[test]
     fn composed_planning_strokes_match_original_surface() {

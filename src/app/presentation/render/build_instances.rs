@@ -957,8 +957,6 @@ pub(super) fn build_ui_instances(
                 .collect();
             let kind = if ring.refused {
                 crate::render::selection_overlay::FerryRingKind::Refused
-            } else if ring.via {
-                crate::render::selection_overlay::FerryRingKind::Via
             } else if ring.drop {
                 crate::render::selection_overlay::FerryRingKind::Unload
             } else {
@@ -1028,6 +1026,7 @@ pub(super) fn build_ui_instances(
         }
     };
     let (mut target_line, planning_highlights) = planning_lines::build(state, view, wall_ms);
+    target_line.extend(planning_lines::build_ferry_paths(state, view, wall_ms));
     let action_lines = crate::app::presentation::target_lines::build_target_line_instances(
         &state.match_state.match_presentation.target_lines,
         state.match_state.input.planning.active(),

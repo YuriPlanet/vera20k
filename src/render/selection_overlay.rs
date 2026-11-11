@@ -45,8 +45,6 @@ const FORMATION_DOT: [(f32, f32, f32, f32, f32); 5] = [
 pub enum FerryRingKind {
     Load,
     Unload,
-    /// A waypoint between the two, white.
-    Via,
     Refused,
 }
 
@@ -55,7 +53,6 @@ impl FerryRingKind {
         match self {
             Self::Load => [0.25, 0.6, 1.0],
             Self::Unload => [1.0, 0.9, 0.15],
-            Self::Via => [1.0, 1.0, 1.0],
             Self::Refused => [1.0, 0.25, 0.2],
         }
     }
