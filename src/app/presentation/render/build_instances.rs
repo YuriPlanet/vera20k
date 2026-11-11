@@ -895,7 +895,7 @@ pub(super) fn build_ui_instances(
     cursor: &crate::app::input::cursor::CursorTargets,
 ) -> UiInstances {
     let (software_cursor, software_cursor_draw) = build_software_cursor_instances(state, cursor);
-    let drag = match &state.match_state.match_presentation.selection_overlay {
+    let mut drag = match &state.match_state.match_presentation.selection_overlay {
         Some(o) => o.build_drag_rect(
             &state.match_state.input.selection_state,
             state.match_state.input.camera_x,
@@ -903,6 +903,35 @@ pub(super) fn build_ui_instances(
         ),
         None => Vec::new(),
     };
+    // VERA formation line: its dots, from world pixels back to the screen
+    // (the inverse of `sim_tick::screen_point_to_world`), in the Move action
+    // line's colour from the palette those lines read.
+    if let (Some(overlay), Some(path), Some(palette)) = (
+        &state.match_state.match_presentation.selection_overlay,
+        state.match_state.input.formation_line.path(),
+        state
+            .match_state
+            .match_presentation
+            .surface_palette(state.process_assets.manager()),
+    ) {
+        let input = &state.match_state.input;
+        let screen: Vec<(f32, f32)> = path
+            .dots()
+            .into_iter()
+            .map(|(x, y)| {
+                (
+                    (x - input.camera_x) * input.zoom_level,
+                    (y - input.camera_y) * input.zoom_level,
+                )
+            })
+            .collect();
+        drag.extend(overlay.build_formation_dots(
+            &screen,
+            crate::app::presentation::target_lines::move_action_line_color(palette),
+            input.camera_x,
+            input.camera_y,
+        ));
+    }
 
     let placement_preview = build_placement_preview(state);
 

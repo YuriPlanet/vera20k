@@ -941,6 +941,18 @@ pub(crate) fn post_layout_edit(state: &mut AppState, on: bool) {
     post_grey_row(state, &crate::i18n::tr(key), false, false);
 }
 
+/// VERA formation lock (`context_order::toggle_formation_lock`): say that
+/// the selection's units were locked, and how many, or unlocked. gamemd has
+/// no such line, so the text is VERA's own.
+pub(crate) fn post_formation_lock(state: &mut AppState, locked: bool, units: usize) {
+    let text = if locked {
+        crate::i18n::tr_fill("VERA:FormationLocked", &[("count", &units)])
+    } else {
+        crate::i18n::tr("VERA:FormationUnlocked")
+    };
+    post_grey_row(state, &text, false, true);
+}
+
 pub(super) fn post_command_backpressure(state: &mut AppState) {
     post_grey_row(
         state,

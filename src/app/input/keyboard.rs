@@ -46,6 +46,14 @@ pub(crate) fn in_game_key_edge(
     {
         state.match_state.input.keys_held.remove(&edge.physical);
     }
+    // The Formation Line key comes up whoever owns the edge, as above.
+    if !edge.state.is_pressed() {
+        state
+            .match_state
+            .input
+            .formation_line
+            .release_key(edge.physical);
+    }
     // Native chat owns its edit keys before game-local chords or hotkeys.
     if crate::app::input::chat::key_edge(state, &edge) {
         if !edge.state.is_pressed() {
@@ -93,6 +101,20 @@ pub(crate) fn in_game_key_edge(
                 edge.state,
                 edge.repeat,
             );
+        // VERA formation line: its key is held, not run.
+        if edge.state.is_pressed()
+            && !consumed
+            && !locked
+            && !paused_at_event
+            && resolution
+                == hotkeys::HotkeyResolution::Command(hotkeys::HotkeyCommand::FormationLine)
+        {
+            state
+                .match_state
+                .input
+                .formation_line
+                .press_key(edge.physical);
+        }
         if edge.state.is_pressed() && !edge.repeat && !consumed {
             crate::app::input::dispatch::handle_hotkey_pressed(state, resolution, edge.physical);
         }
