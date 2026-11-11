@@ -682,7 +682,9 @@ pub struct ObjectType {
     /// through INIClass::ReadBool 0x5295F0 over the constructor's false. No
     /// retail type sets it; Drive/Ship Process_Movement coerces codes below 7
     /// to 0 for a train (0x4B34DE / 0x6A2B2D) and passes it as Find_Path's
-    /// append flag (0x4B3EF2).
+    /// append flag (0x4B3EF2). Process_Drive_Track kills what the train
+    /// cannot crush in each cell it enters (0x4B185C / 0x6A0EE8,
+    /// `Simulation::track_train_smash`).
     pub is_train: bool,
     /// Lepton distance from destination at which braking begins (SlowdownDistance=).
     /// Native default500 leptons.

@@ -821,7 +821,7 @@ fn bridge_placement_retains_selected_cell_but_reads_fresh_world_attributes() {
         DriveCoord::cell(10, 9, 0),
         (10, 10),
         false,
-        false,
+        None,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
         &mut |sim, id, event| {
@@ -3593,4 +3593,68 @@ fn a_unit_marked_at_deck_height_off_a_bridge_leaves_its_cell_passable() {
         "the second Grizzly reaches the Cell; its ground bits {:#x}",
         ground(&sim)
     );
+}
+
+/// Drive `0x004B185C..0x004B197E`: an `IsTrain=` Unit entering a cell kills
+/// every object there that `Is_Crushable_By` refuses, allies included, with
+/// 10000 C4Warhead damage and takes 20 for each. A crushable enemy is left
+/// to the crush loop, and a follower car (Unit+0x6D0) smashes nothing.
+#[test]
+fn a_train_smashes_what_it_cannot_crush_in_the_cell_it_enters() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &crate::rules::ini_parser::IniFile::from_str("[MTNK]\nIsTrain=yes\n"),
+    ) else {
+        return;
+    };
+    let rules = retail.rules;
+    let run = |follower: bool, entered: Option<(u16, u16)>| {
+        let (mut sim, invocation, budget) = fixture(TrackFamily::Drive, 8);
+        let train = sim.substrate.entities.get_mut(1).unwrap();
+        train.set_is_unit_follower(follower);
+        assert!(
+            train
+                .locomotor
+                .as_mut()
+                .unwrap()
+                .store_track_head(TrackFamily::Drive, Some(DriveCoord::cell(10, 7, 0)))
+        );
+        let before = train.health.current();
+        if let Some((x, y)) = entered {
+            let mut ally = GameEntity::test_default(2, "HTNK", "Americans", x, y);
+            ally.set_category_for_test(EntityCategory::Unit);
+            let mut enemy = GameEntity::test_default(3, "E1", "Russians", x, y);
+            enemy.set_category_for_test(EntityCategory::Infantry);
+            enemy.crushable_facts.set_crushable_for_test(true);
+            for mut entity in [ally, enemy] {
+                entity.lifecycle.set_object_alive_for_test(true);
+                entity.lifecycle.set_in_limbo_for_test(false);
+                entity.lifecycle.set_cell_marked_for_test(true);
+                sim.substrate.entities.insert(entity);
+            }
+            sim.substrate.occupancy =
+                crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
+        }
+        sim.interner = crate::sim::intern::test_interner();
+        sim.interner.bind_types(&rules);
+        let mut crossed = None;
+        sim.run_track_points_observed(invocation, budget, Some(&rules), None, &mut |sim, id, e| {
+            if e == TrackWorldEvent::SetCoords && crossed.is_none() {
+                let p = &sim.substrate.entities.get(id).unwrap().position;
+                crossed = Some((p.rx(), p.ry()));
+            }
+        });
+        let alive = |id| {
+            sim.substrate
+                .entities
+                .get(id)
+                .is_some_and(|e: &GameEntity| e.lifecycle.object_alive() && e.health.current() > 0)
+        };
+        let lost = before - sim.substrate.entities.get(1).unwrap().health.current();
+        (crossed.unwrap(), alive(2), alive(3), lost)
+    };
+    let (entered, ..) = run(false, None);
+    assert_ne!(entered, (10, 10));
+    assert_eq!(run(false, Some(entered)), (entered, false, true, 20));
+    assert_eq!(run(true, Some(entered)), (entered, true, true, 0));
 }
