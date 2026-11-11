@@ -338,6 +338,9 @@ impl CountryMenuCatalog {
 #[derive(Debug, Clone)]
 pub struct SkirmishShellState {
     pub(crate) country_catalog: CountryMenuCatalog,
+    /// The colours the loaded rules list for a lobby: every colour combo,
+    /// claim and random draw of the shell reads this copy.
+    pub(crate) lobby_colors: crate::rules::skirmish_colors::SkirmishColorMode,
     pub selected_map_idx: usize,
     pub selected_mode_id: i32,
     pub player_name_edit: PlayerNameEditState,
@@ -408,7 +411,13 @@ pub enum SkirmishShellDialog {
 impl SkirmishShellState {
     pub fn refresh_country_catalog(&mut self, rules: &crate::rules::ruleset::RuleSet) {
         self.country_catalog = CountryMenuCatalog::from_rules(rules);
+        self.lobby_colors = rules.skirmish_colors();
         self.open_combo_dropdown = None;
+    }
+
+    /// The colours this shell's lobbies list.
+    pub fn lobby_colors(&self) -> crate::rules::skirmish_colors::SkirmishColorMode {
+        self.lobby_colors
     }
 
     /// The dialog that shows on top of the Skirmish stack: the one decision
@@ -436,6 +445,7 @@ impl Default for SkirmishShellState {
         let options = SkirmishLaunchOptions::default();
         Self {
             country_catalog: CountryMenuCatalog::default(),
+            lobby_colors: Default::default(),
             selected_map_idx: 0,
             selected_mode_id: 1,
             player_name_edit: PlayerNameEditState::default(),

@@ -4799,7 +4799,9 @@ pub struct RuleSet {
     /// Effective side for each country after `[Sides]` membership and the
     /// per-country `Side=` override have both run.
     country_sides: Vec<Option<SideIdx>>,
-    /// `[Colors]` scheme entries in declaration order. Source of truth for every
+    /// `[Colors]` scheme entries in declaration order, then the built-in extra
+    /// lobby colours that section leaves out
+    /// ([`crate::rules::skirmish_colors`]). Source of truth for every
     /// house-color producer (loading-bar backing, lobby swatch, map `Color=`,
     /// skirmish slot priority).
     pub color_schemes: Vec<crate::rules::color_scheme::ColorSchemeEntry>,
@@ -5000,9 +5002,9 @@ pub struct RuleSet {
     #[cfg(feature = "phobos")]
     pub(crate) placement_preview_globals:
         crate::rules::phobos_placement_preview::PlacementPreviewGlobals,
-    /// Phobos `[General] SkirmishUnlimitedColors=`: the player-colour
-    /// conversion every launcher and loading-screen consumer reads.
-    #[cfg(feature = "phobos")]
+    /// The player-colour conversion every launcher and loading-screen consumer
+    /// reads, and the colours a lobby lists: `[SkirmishColors]` and Phobos
+    /// `[General] SkirmishUnlimitedColors=`.
     pub(crate) skirmish_color_mode: crate::rules::skirmish_colors::SkirmishColorMode,
     /// Radar event visual parameters (ping rectangles on minimap).
     pub radar_event_config: RadarEventConfig,
@@ -6890,8 +6892,6 @@ impl RuleSet {
         let placement_preview_globals =
             crate::rules::phobos_placement_preview::PlacementPreviewGlobals::from_ini(ini);
         #[cfg(feature = "phobos")]
-        let skirmish_color_mode = crate::rules::skirmish_colors::SkirmishColorMode::from_ini(ini);
-        #[cfg(feature = "phobos")]
         let radiation = {
             let mut radiation = radiation;
             radiation.radiation_types = processed.radiation_types().cloned().unwrap_or_default();
@@ -6947,7 +6947,12 @@ impl RuleSet {
                     .unwrap_or_default()
             })
             .collect();
-        let color_schemes = crate::rules::color_scheme::parse_color_schemes(ini);
+        let mut color_schemes = crate::rules::color_scheme::parse_color_schemes(ini);
+        // Product extension: the lobby's colours beyond YR's eight. The mode
+        // appends the built-in ones `[Colors]` leaves out, so the ramps below
+        // and every other scheme consumer hold them.
+        let skirmish_color_mode =
+            crate::rules::skirmish_colors::SkirmishColorMode::from_ini(ini, &mut color_schemes);
         let house_color_ramps =
             crate::rules::house_colors::HouseColorRamps::from_schemes(&color_schemes);
         let color_add = processed.color_add_state().0.clone();
@@ -7393,7 +7398,6 @@ impl RuleSet {
             attach_effect_globals,
             #[cfg(feature = "phobos")]
             placement_preview_globals,
-            #[cfg(feature = "phobos")]
             skirmish_color_mode,
             radar_event_config,
             super_weapons,
@@ -8181,20 +8185,13 @@ impl RuleSet {
         &self.placement_preview_globals
     }
 
-    /// The player-colour conversion this rules load selects.
+    /// The player-colour conversion this rules load selects and the colours
+    /// its lobby lists.
     ///
     /// A build without the `phobos` feature reads no
-    /// `[General] SkirmishUnlimitedColors=` and always answers the vanilla
-    /// eight-priority table, so callers need no `cfg`.
+    /// `[General] SkirmishUnlimitedColors=`, so callers need no `cfg`.
     pub fn skirmish_colors(&self) -> crate::rules::skirmish_colors::SkirmishColorMode {
-        #[cfg(feature = "phobos")]
-        {
-            self.skirmish_color_mode
-        }
-        #[cfg(not(feature = "phobos"))]
-        {
-            crate::rules::skirmish_colors::SkirmishColorMode::VANILLA
-        }
+        self.skirmish_color_mode
     }
 
     /// Look up a projectile by ID (case-insensitive, gamemd parity).
@@ -8534,6 +8531,9 @@ impl RuleSet {
                 .map(|(id, country)| (id, &country.veteran_types)),
         )
         .hash(&mut hasher);
+        // Peers must list the same lobby colours and draw a priority alike.
+        b"skirmish-colors-v1".hash(&mut hasher);
+        self.skirmish_color_mode.hash(&mut hasher);
         // Which plant a computer house splices is simulation state.
         #[cfg(feature = "ares")]
         {
@@ -8626,8 +8626,6 @@ impl RuleSet {
             self.digital_display_globals.hash(&mut hasher);
             b"phobos-placement-preview-v1".hash(&mut hasher);
             self.placement_preview_globals.hash(&mut hasher);
-            b"phobos-skirmish-colors-v1".hash(&mut hasher);
-            self.skirmish_color_mode.hash(&mut hasher);
             self.object_list
                 .iter()
                 .map(|object| {

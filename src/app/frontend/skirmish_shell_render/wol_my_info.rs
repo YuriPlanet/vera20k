@@ -69,7 +69,7 @@ pub(crate) fn paint_wol_my_info_children(
                 rect: face,
                 swatch: shown
                     .and_then(|row| row.swatch)
-                    .map(|index| house_color_tint(&[], index)),
+                    .map(|index| house_color_tint(state.rules(), index)),
                 open: page.popup.control == Some(id),
                 disabled,
             },
@@ -153,7 +153,7 @@ pub(crate) fn paint_wol_my_info_children(
                 scale.derive_rect(popup.row_rect(index)?, |row| {
                     RectPx::new(row.x + 2, row.y + 2, row.w - 4, 19)
                 }),
-                house_color_tint(&[], combo.rows.get(index)?.swatch?),
+                house_color_tint(state.rules(), combo.rows.get(index)?.swatch?),
             ))
         });
         push_popup_instances(

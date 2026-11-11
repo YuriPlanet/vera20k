@@ -369,6 +369,14 @@ impl AppState {
             .map(|rt| &rt.resources.rules)
             .or(self.frontend.frontend_rules.as_ref())
     }
+
+    /// The colours a lobby lists under the loaded rules; YR's eight before
+    /// any rules load.
+    pub(crate) fn lobby_colors(&self) -> crate::rules::skirmish_colors::SkirmishColorMode {
+        self.rules()
+            .map(crate::rules::ruleset::RuleSet::skirmish_colors)
+            .unwrap_or_default()
+    }
 }
 
 impl AppState {
