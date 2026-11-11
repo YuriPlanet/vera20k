@@ -623,9 +623,12 @@ impl Simulation {
         if !ordinary && !miner {
             return None;
         }
+        // An actor with no navigation cell (a mod type built without a
+        // locomotor) takes no Guard order, as its Move order is refused.
         let (x, y) = self
             .object_navigation_cell(id, rules)
-            .unwrap_or_else(|cause| panic!("Area Guard input cell: {cause}"));
+            .map_err(|cause| log::warn!("Area Guard input refused for {id}: {cause}"))
+            .ok()?;
         Some(Command::Guard {
             entity_id: id,
             target: Some(combat::TargetKind::Cell(x as u16, y as u16)),
@@ -3661,19 +3664,29 @@ impl Simulation {
             .get(entity_id)
             .is_some_and(|actor| actor.category() != EntityCategory::Structure);
         if mission == MissionType::AreaGuard && foot {
-            self.assign_target_represented(entity_id, None, rules, overlay_registry, frame_effects)
-                .unwrap_or_else(|cause| panic!("Area Guard order target: {cause}"));
+            // A refused setter is logged, as the ordinary arm below does
+            // (a mod type built without a locomotor has no coordinate).
+            if let Err(cause) = self.assign_target_represented(
+                entity_id,
+                None,
+                rules,
+                overlay_registry,
+                frame_effects,
+            ) {
+                log::warn!("Area Guard order target for {entity_id} refused: {cause}");
+            }
             // The target token, converted at `0x004C7418` for the
             // destination and again at `0x004C7428` for the archive.
             let post = self.resolve_event_token(target);
-            self.assign_destination_represented(
+            if let Err(cause) = self.assign_destination_represented(
                 entity_id,
                 post.map(Into::into),
                 rules,
                 overlay_registry,
                 frame_effects,
-            )
-            .unwrap_or_else(|cause| panic!("Area Guard order destination: {cause}"));
+            ) {
+                log::warn!("Area Guard order destination for {entity_id} refused: {cause}");
+            }
             // The archive write follows the virtual destination call even
             // when that class setter refuses its request.
             let archive = self.resolve_event_token(target);

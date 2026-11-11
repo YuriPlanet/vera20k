@@ -235,6 +235,10 @@ pub(crate) struct MatchInputState {
     last_cheer_frame: i32,
     /// Hybrid held/tap state for the retail TypeSelect command.
     pub(crate) type_select: crate::app::types::TypeSelectInputState,
+    /// VERA formation line: its held key and the line being drawn.
+    pub(crate) formation_line: super::formation_line::FormationLineState,
+    /// VERA formation lock: which units keep their places in a move.
+    pub(crate) formation_locks: super::formation_lock::FormationLocks,
     pub(crate) planning: crate::app::input::planning_mode::PlanningInputState,
     /// VERA ferry order: the armed drop click and the local routes.
     pub(crate) ferry: super::ferry::FerryState,
@@ -495,6 +499,8 @@ impl MatchInputState {
             hotkey_modifiers: ModifiersState::empty(),
             last_cheer_frame: -100,
             type_select: crate::app::types::TypeSelectInputState::default(),
+            formation_line: super::formation_line::FormationLineState::default(),
+            formation_locks: super::formation_lock::FormationLocks::default(),
             planning: Default::default(),
             ferry: Default::default(),
             category_navigation: Default::default(),
@@ -708,6 +714,8 @@ impl MatchInputState {
     pub(crate) fn reset_targeting_for_new_world(&mut self) {
         self.reset_cheer_clock();
         self.planning.reset();
+        self.formation_line = Default::default();
+        self.formation_locks.clear();
         self.targeting_mode = None;
         self.building_placement_preview = None;
         self.saved_building_placement = None;
@@ -771,6 +779,7 @@ impl MatchInputState {
     pub(crate) fn cancel_tactical_drag(&mut self) {
         self.cancel_minimap_press();
         self.selection_state.cancel_drag();
+        self.formation_line.cancel();
         self.tactical_mouse.cancel_mouse_drag();
         // The touch gesture is the mapper's; without this a finger still down
         // when the drag is torn down would deliver its release into the screen
@@ -813,6 +822,7 @@ impl MatchInputState {
                 if self.type_select.owns_key(released) {
                     self.type_select.clear_held();
                 }
+                self.formation_line.release_key(released);
             }
         }
         self.paused_at_last_event = paused;
@@ -831,6 +841,7 @@ impl MatchInputState {
     /// owned by ordinary press/release delivery, not this bounded receipt.
     pub(crate) fn clear_command_latches(&mut self) {
         self.type_select.clear_held();
+        self.formation_line.clear_key();
         self.ferry.disarm();
         // A command-latch clear does not end the local planning mode. Keep
         // its physical release owner so an input lock cannot strand paths.

@@ -1479,16 +1479,26 @@ pub(super) fn height_in_pixels_from_tmp(tile_height: u32, relative_extra_y: i32)
     Some((numerator / 15) as i8)
 }
 
+/// The last record of the 21-row ground slope tables.
+const MAX_TMP_RAMP_TYPE: u8 = 20;
+
 pub(super) fn merge_tmp_metadata(metadata: &mut TileMetadata, tile: &TmpTile) {
     metadata.subtile_entry_valid = Some(true);
     metadata.raw_land_type = tile.terrain_type;
     metadata.land_type =
         crate::rules::terrain_rules::tmp_terrain_to_land_type(tile.terrain_type).as_index();
-    metadata.slope_type = tile.ramp_type;
+    // The slope tables hold 21 records (0..=20). gamemd indexes them with the
+    // raw byte and reads past the table for a larger one; VERA-only: such a
+    // tile (damaged or mod art) is flat ground.
+    metadata.slope_type = if tile.ramp_type <= MAX_TMP_RAMP_TYPE {
+        tile.ramp_type
+    } else {
+        0
+    };
     metadata.template_height = tile.height;
     metadata.render_offset_x = tile.offset_x;
     metadata.render_offset_y = tile.offset_y;
-    metadata.has_ramp = tile.ramp_type != 0;
+    metadata.has_ramp = metadata.slope_type != 0;
     metadata.has_tmp_metadata = true;
     metadata.radar_left = tile.radar_left;
     metadata.radar_right = tile.radar_right;

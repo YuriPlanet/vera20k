@@ -121,6 +121,8 @@ impl App {
     pub(crate) fn release_in_game_pointer_state(state: &mut AppState) {
         state.match_state.input.tactical_mouse.reset_on_focus_loss();
         state.match_state.input.selection_state.cancel_drag();
+        // VERA formation line: a line being drawn goes with the band box.
+        state.match_state.input.formation_line.cancel();
         state.match_state.input.cancel_minimap_press();
         // A touch stream can end without an `Ended` when the window loses
         // focus with fingers down, and the live gesture owns the edge-scroll

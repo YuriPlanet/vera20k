@@ -584,6 +584,14 @@ impl AssetManager {
 
         manager.select_audio_pair();
 
+        // Init_External_Cache_Local_Mixes @ 0x00530000 (Init_Game call at
+        // 0x0052C307, after Init_Base_Mix_Files at 0x0052BB64 and before
+        // Init_Mix_Files at 0x0052C59C): every `ECACHE*.MIX`, then every
+        // `ELOCAL*.MIX`, registered as listed. A missing or unreadable one is
+        // skipped (MixFileClass__Constructor @ 0x005B3C20 leaves it unlinked).
+        manager.mount_wildcard_archives(None, "ecache")?;
+        manager.mount_wildcard_archives(None, "elocal")?;
+
         // Init_Mix_Files constructs only these named core archives. Optional
         // constructors are allowed to fail exactly where retail does not gate
         // startup on their result.
@@ -2279,6 +2287,37 @@ mod tests {
         assert_eq!(original.get_ref("rulesmd.ini"), Some(&b"game rules"[..]));
         assert_eq!(original.get_ref("unit.shp"), Some(&b"game unit"[..]));
         assert_eq!(original.get_ref("new.vxl"), None);
+    }
+
+    #[test]
+    fn startup_mounts_ecache_then_elocal_archives_between_expansions_and_core() {
+        let install = audio_test_install("ecache-elocal");
+        install.write_mix("expandmd01.mix", "shared.shp", b"expansion");
+        install.write_mix("ECACHE01.MIX", "shared.shp", b"ecache one");
+        install.write_mix("ecachemd02.mix", "cache.shp", b"ecache two");
+        install.write_mix("elocal99.mix", "cache.shp", b"elocal");
+        let mod_dir = TestDirectory::new("ecache-elocal-mod");
+        mod_dir.write_mix("ecachemod.mix", "mod.vxl", b"mod model");
+
+        let stock = MediaArchiveMode::STOCK_DIGITAL;
+        let manager = AssetManager::with_mod(install.path(), Some(mod_dir.path()), stock).unwrap();
+        // An expansion archive is registered first and keeps a shared name.
+        assert_eq!(manager.get_ref("shared.shp"), Some(&b"expansion"[..]));
+        // ECACHE before ELOCAL, each family in listing order; a mod folder's
+        // archives list with the installation's.
+        assert_eq!(manager.get_ref("cache.shp"), Some(&b"ecache two"[..]));
+        assert_eq!(manager.get_ref("mod.vxl"), Some(&b"mod model"[..]));
+        let names = manager.loaded_archive_names();
+        let at = |name: &str| {
+            names
+                .iter()
+                .position(|loaded| loaded.eq_ignore_ascii_case(name))
+                .unwrap_or_else(|| panic!("{name} is registered: {names:?}"))
+        };
+        assert!(at("expandmd01.mix") < at("ECACHE01.MIX"));
+        assert!(at("ECACHE01.MIX") < at("ecachemd02.mix"));
+        assert!(at("ecachemod.mix") < at("elocal99.mix"));
+        assert!(at("elocal99.mix") < at("conqmd.mix"));
     }
 
     #[test]

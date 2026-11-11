@@ -2524,7 +2524,14 @@ impl Simulation {
                 (house.side_index(), house.difficulty(), house.tech_level());
             match country_name {
                 Some(country_name)
-                    if preflight_recalc(rules, &country_name, side_index, difficulty).is_ok() =>
+                    if preflight_recalc(
+                        rules,
+                        &country_name,
+                        side_index,
+                        difficulty,
+                        self.session.game_options().super_weapons,
+                    )
+                    .is_ok() =>
                 {
                     recalc_base_plan(
                         self.houses
@@ -2541,7 +2548,9 @@ impl Simulation {
                         &mut self.scenario_rng,
                     );
                 }
-                _ => log::warn!("AI base Recalc skipped: unusable country or difficulty tables"),
+                _ => log::warn!(
+                    "AI base Recalc skipped: unusable country, difficulty tables or BuildPower/BuildRefinery lists"
+                ),
             }
         }
         let house = self
@@ -2759,7 +2768,16 @@ impl Simulation {
                 }
                 return false;
             };
-            if preflight_recalc(rules, country_name, *side_index, *difficulty).is_err() {
+            if preflight_recalc(
+                rules,
+                country_name,
+                *side_index,
+                *difficulty,
+                self.session.game_options().super_weapons,
+            )
+            .is_err()
+            {
+                log::warn!("MCV deploy refused: no usable AI base plan for {country_name}");
                 if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
                     entity.mcv_deploy_pending.clear();
                 }

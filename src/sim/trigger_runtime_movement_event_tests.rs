@@ -656,8 +656,7 @@ fn retail_infantry_map_event(
             true,
         ),
         &rules,
-    )
-    .unwrap();
+    );
     Some((sim, rules, registry))
 }
 

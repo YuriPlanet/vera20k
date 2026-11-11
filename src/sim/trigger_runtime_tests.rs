@@ -167,7 +167,7 @@ fn loss_threshold_events_poll_recorded_losses_and_create_real_reinforcements() {
             ),
         );
         let teams = TeamAiIniRegistry::from_sources(&IniFile::from_str(""), &map.ini, false);
-        sim.install_team_ai_registry(&teams, &rules).unwrap();
+        sim.install_team_ai_registry(&teams, &rules);
         // The shared simple-map fixture initially has no Team registry.
         // Re-enter the real definition reader with the authored Team inputs.
         sim.initialize_trigger_definitions(&map, &teams, None, None, None);
@@ -1574,7 +1574,7 @@ fn retail_sov01_script_context() -> Option<(
             10,
         ));
     sim.session.set_current_house_for_test(Some(owner));
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     sim.initialize_trigger_definitions(&map, &registry, None, None, None);
     Some((sim, rules, overlay, map))
 }

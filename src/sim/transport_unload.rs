@@ -1104,16 +1104,25 @@ pub(crate) fn unit_mission_unload(
                             obj.turret_count > 0
                         }
                     });
+                let smooth_jumpjet_turn = rules.general.jumpjet_smooth_facing
+                    && entity.locomotor.as_ref().is_some_and(|locomotor| {
+                        locomotor.active_kind()
+                            == crate::rules::locomotor_type::LocomotorKind::Jumpjet
+                    });
                 if let Some(entity) = sim.substrate.entities.get_mut(id) {
                     if turreted {
                         entity.transport_unload_keep_count.count = if cargo == 1 { 0 } else { 1 };
                     }
                     //73D86C dispatches the active ILocomotion+4C owner.
-                    crate::sim::movement::locomotor_do_turn(
-                        entity,
-                        (face_octant as u16) << 13,
-                        now,
-                    );
+                    // Jumpjet's (`0x0054B6E0`) snaps the body. VERA
+                    // `[JumpjetControls] SmoothFacing=` (off by default)
+                    // turns it at its ROT instead.
+                    let desired = (face_octant as u16) << 13;
+                    if smooth_jumpjet_turn {
+                        entity.body_facing.set(desired, now);
+                    } else {
+                        crate::sim::movement::locomotor_do_turn(entity, desired, now);
+                    }
                     entity.mission.set_handler_state(STATE_TURNING);
                 }
                 return 1;

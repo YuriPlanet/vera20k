@@ -63,9 +63,6 @@ The key is **Ferry** in the VERA category of Keyboard Options and can be
 changed or removed there. Removing it turns the feature off. The original
 keyboard file leaves J unused.
 
-## Source
+## Code
 
-The order follows the Ferry command of Supreme Commander (a transport is given
-a drop point and shuttles from where it stands), and the circle that picks up
-whoever stands in it follows the load area of Spring engine games. No code is
-shared with either. Code: `src/app/input/ferry.rs`.
+`src/app/input/ferry.rs`.

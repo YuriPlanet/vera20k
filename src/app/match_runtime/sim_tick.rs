@@ -1290,7 +1290,9 @@ fn advance_in_game_runtime_mode(
         // the same frame transaction; the pacer interval is unchanged.
         if !frame_stepping && !replaying && debug_speed_allowed(state) {
             for _ in 1..state.platform.frame_pacer.debug_speed() {
-                if state.match_state.scenario_outcome.is_some()
+                // A stopped frame's world must not run again.
+                if state.match_state.frame_stopped
+                    || state.match_state.scenario_outcome.is_some()
                     || state.match_state.scenario_exit.is_some()
                     || crate::app::App::house_outcome_wait_pending(state)
                 {
@@ -1804,20 +1806,30 @@ fn advance_one_simulation_frame(
                             rt.advance_frame(&due_commands, SIM_TICK_MS, tick_lane, effects)
                         }
                     };
-                    // VERA-only: a peer's malformed event or a failed checksum
-                    // must not crash a LAN/online match. The frame did not
-                    // commit, so this timeline never runs again; the checksum
-                    // box's Stop returns to the shell. Offline, only internal
-                    // defects reach here, so they stay a loud panic. A
-                    // checksum mismatch never arrives here (it suspends the
-                    // frame instead), so neither the log nor the box
-                    // (`network_failure::vera_body`) calls this a desync.
-                    if network && let Err(error) = &advanced {
-                        log::error!("Network match stopped by an error, not a desync: {error}");
-                        state.match_state.frame_stopped = true;
-                        return false;
+                    // VERA-only: a failed frame must not crash the game. A
+                    // peer's malformed event reaches here in a LAN/online
+                    // match, and mod or map data the simulation refuses (an
+                    // unknown `MovementZone=`, say) reaches here in any
+                    // match. The frame did not commit, so this timeline never
+                    // runs again; the box's Stop returns to the shell, which
+                    // saves the replay. A checksum mismatch never arrives
+                    // here (it suspends the frame instead), so neither the
+                    // log nor the box (`network_failure::vera_body`) calls
+                    // this a desync.
+                    match advanced {
+                        Ok(advanced) => advanced,
+                        Err(error) => {
+                            if network {
+                                log::error!(
+                                    "Network match stopped by an error, not a desync: {error}"
+                                );
+                            } else {
+                                log::error!("Match stopped by a simulation error: {error}");
+                            }
+                            state.match_state.frame_stopped = true;
+                            return false;
+                        }
                     }
-                    advanced.expect("simulation frame failed; prior world mutations remain")
                 }
             };
             state

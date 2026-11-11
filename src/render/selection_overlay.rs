@@ -24,6 +24,20 @@ const DRAG_RECT_DEPTH: f32 = 0.001;
 /// Thickness of the drag rectangle outline in pixels (1px = RA2 original style).
 const DRAG_RECT_THICKNESS: f32 = 1.0;
 
+/// VERA formation line dots: a circle [`FORMATION_DOT_SIZE`] screen pixels
+/// across, as rects (left, top, width, height, alpha) inside its box. A
+/// 4-pixel core and, around it, the circle's remaining pixels fainter. No
+/// two rects overlap, so each pixel is blended once.
+const FORMATION_DOT_SIZE: f32 = 6.0;
+const FORMATION_DOT_CORE_ALPHA: f32 = 0.75;
+const FORMATION_DOT_EDGE_ALPHA: f32 = 0.35;
+const FORMATION_DOT: [(f32, f32, f32, f32, f32); 5] = [
+    (1.0, 0.0, 4.0, 1.0, FORMATION_DOT_EDGE_ALPHA),
+    (1.0, 5.0, 4.0, 1.0, FORMATION_DOT_EDGE_ALPHA),
+    (0.0, 1.0, 1.0, 4.0, FORMATION_DOT_EDGE_ALPHA),
+    (5.0, 1.0, 1.0, 4.0, FORMATION_DOT_EDGE_ALPHA),
+    (1.0, 1.0, 4.0, 4.0, FORMATION_DOT_CORE_ALPHA),
+];
 /// VERA ferry route dots: half the square's side in screen pixels, and its
 /// colour.
 const FERRY_DOT_HALF: f32 = 1.5;
@@ -660,6 +674,39 @@ impl SelectionOverlay {
                 ]
             })
             .collect()
+    }
+
+    /// VERA formation line: one round dot per unit at the given screen
+    /// points, in the band box's batch and coordinate frame (screen pixels
+    /// plus the camera offset). `tint` is the Move action line's colour,
+    /// drawn see-through: a core with a fainter edge of the same colour.
+    pub fn build_formation_dots(
+        &self,
+        screen_points: &[(f32, f32)],
+        tint: [f32; 3],
+        camera_x: f32,
+        camera_y: f32,
+    ) -> Vec<SpriteInstance> {
+        let mut instances = Vec::with_capacity(screen_points.len() * FORMATION_DOT.len());
+        for &(x, y) in screen_points {
+            let corner = [
+                camera_x + x.round() - FORMATION_DOT_SIZE / 2.0,
+                camera_y + y.round() - FORMATION_DOT_SIZE / 2.0,
+            ];
+            for &(left, top, width, height, alpha) in &FORMATION_DOT {
+                instances.push(SpriteInstance {
+                    position: [corner[0] + left, corner[1] + top],
+                    size: [width, height],
+                    uv_origin: [0.0, 0.0],
+                    uv_size: [1.0, 1.0],
+                    depth: DRAG_RECT_DEPTH,
+                    tint,
+                    alpha,
+                    ..Default::default()
+                });
+            }
+        }
+        instances
     }
 
     /// Build sprite instances for the selection drag rectangle outline.

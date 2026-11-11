@@ -21,16 +21,23 @@ const VK_DELETE: u16 = 0x2e;
 
 /// VERA's own commands that come with a key: Performance Stats Ctrl+Alt+F, Lock
 /// Cursor to Window Ctrl+Alt+L, Full Screen Alt+Enter, String Keys Ctrl+Alt+K,
-/// Edit Layout Ctrl+Alt+E and Ferry J. Retail `KEYBOARDMD.INI` binds none of
-/// these keys.
-const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 6] = [
+/// Edit Layout Ctrl+Alt+E, Formation Line F, Formation Lock O and Ferry J.
+/// Retail `KEYBOARDMD.INI` binds none of these keys but F, which is its
+/// Follow; [`HotkeyBindings::move_follow_off_formation_key`] moves that.
+const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 8] = [
     (HotkeyCommand::PerformanceStats, CTRL_BIT | ALT_BIT | 0x46),
     (HotkeyCommand::LockCursor, CTRL_BIT | ALT_BIT | 0x4c),
     (HotkeyCommand::FullScreen, ALT_BIT | 0x0d),
     (HotkeyCommand::StringKeys, CTRL_BIT | ALT_BIT | 0x4b),
     (HotkeyCommand::LayoutEdit, CTRL_BIT | ALT_BIT | 0x45),
+    (HotkeyCommand::FormationLine, FORMATION_LINE_KEY),
+    (HotkeyCommand::FormationLock, 0x4f),
     (HotkeyCommand::Ferry, 0x4a),
 ];
+/// F: Formation Line's default key and retail Follow's.
+const FORMATION_LINE_KEY: u16 = 0x46;
+/// V: where Follow goes when Formation Line takes F. Retail binds nothing to it.
+const FOLLOW_MOVED_KEY: u16 = 0x56;
 /// VeraX AutoLoad's Ctrl+D.
 #[cfg(feature = "verax")]
 const VERAX_DEFAULT_KEYS: [(HotkeyCommand, u16); 1] = [(HotkeyCommand::AutoLoad, CTRL_BIT | 0x44)];
@@ -91,7 +98,7 @@ pub(crate) enum HotkeyCommand {
     ScreenCapture,
     SetView(usize),
     /// VERA's built-in keys in the `vera20k` keyboard category, each with a
-    /// default in [`VERA_DEFAULT_KEYS`]. All of them work on every screen
+    /// default in [`VERA_DEFAULT_KEYS`]. These four work on every screen
     /// ([`HotkeyBindings::window_command`]).
     PerformanceStats,
     LockCursor,
@@ -103,6 +110,14 @@ pub(crate) enum HotkeyCommand {
     /// drags the interface's parts (`input::layout_edit`). It comes with a
     /// default key like the four above but works in a match only.
     LayoutEdit,
+    /// Held while a left drag draws a formation line, or with Shift a
+    /// block (`input::formation_line`). In the `vera20k` keyboard category
+    /// with the F default.
+    FormationLine,
+    /// Lock the selected units' places for later moves, or unlock them
+    /// (`input::formation_lock`). In the `vera20k` keyboard category with
+    /// the O default.
+    FormationLock,
     /// In a match: arm the ferry order's drop click for the selected
     /// transports (`input::ferry`). It comes with a default key like the
     /// five above.
@@ -208,6 +223,8 @@ impl HotkeyCommand {
                 modifiers.shift_key()
             }
             Self::PlanningMode => modifier_bits(modifiers) != 0,
+            // VERA: Shift with the held key makes the drag a block.
+            Self::FormationLine => modifier_bits(modifiers) & !SHIFT_BIT == 0,
             _ => modifier_bits(modifiers) == 0,
         }
     }
@@ -220,6 +237,8 @@ impl HotkeyCommand {
                 encoded & SHIFT_BIT != 0
             }
             Self::PlanningMode => encoded & (SHIFT_BIT | CTRL_BIT | ALT_BIT) != 0,
+            // VERA: Formation Line takes Shift alone, as above.
+            Self::FormationLine => encoded & (SHIFT_BIT | CTRL_BIT | ALT_BIT) == SHIFT_BIT,
             _ => false,
         }
     }
@@ -314,6 +333,7 @@ impl HotkeyBindings {
                 bindings.by_key.insert(encoded, command);
             }
         }
+        bindings.move_follow_off_formation_key();
         // A VERA command keeps its default key whenever the profile neither
         // remaps it, explicitly clears it, nor gives the key to another
         // command, and only where Assign could put it. Installing it here,
@@ -330,6 +350,28 @@ impl HotkeyBindings {
         }
 
         bindings
+    }
+
+    /// Formation Line's default key is F, which retail `KEYBOARDMD.INI` and
+    /// every profile saved from it give to Follow. Where the profile says
+    /// nothing about Formation Line and Follow still sits on F, Follow moves
+    /// to V (kept on any other key it has, dropped if V is taken) so the
+    /// default below can take F. A player who puts Follow back on F unbinds
+    /// Formation Line ([`Self::assign`]), which is saved as `FormationLine=0`
+    /// and ends this.
+    fn move_follow_off_formation_key(&mut self) {
+        if self.vera_cleared.contains(&HotkeyCommand::FormationLine)
+            || self.first_key(HotkeyCommand::FormationLine).is_some()
+            || self.command_at(FORMATION_LINE_KEY) != Some(HotkeyCommand::Follow)
+        {
+            return;
+        }
+        self.by_key.remove(&FORMATION_LINE_KEY);
+        if self.first_key(HotkeyCommand::Follow).is_none()
+            && !self.by_key.contains_key(&FOLLOW_MOVED_KEY)
+        {
+            self.by_key.insert(FOLLOW_MOVED_KEY, HotkeyCommand::Follow);
+        }
     }
 
     pub(crate) fn command_at(&self, encoded: u16) -> Option<HotkeyCommand> {
@@ -381,8 +423,17 @@ impl HotkeyBindings {
         if let Some(key) = self.first_key(command) {
             self.by_key.remove(&key);
         }
-        if encoded != 0 {
-            self.by_key.insert(encoded, command);
+        if encoded != 0
+            && let Some(displaced) = self.by_key.insert(encoded, command)
+            && displaced != command
+            && has_vera_default(displaced)
+            && self.first_key(displaced).is_none()
+            && !self.vera_cleared.contains(&displaced)
+        {
+            // Taking a VERA command's last key unbinds it for good, as an
+            // explicit unbind does; otherwise its default would come back
+            // the moment the key is free again.
+            self.vera_cleared.push(displaced);
         }
         Ok(())
     }
@@ -923,9 +974,9 @@ mod tests {
             writeln!(ini, "{}={key}", row["ini_name"].as_str().unwrap()).unwrap();
         }
         let loaded = HotkeyBindings::reload_from_ini_bytes(Some(ini.as_bytes()));
-        // The 87 retail rows, plus VERA's default keys: Ferry's J below
-        // them and five chords above 0x256.
-        assert_eq!(loaded.by_key.len(), 93);
+        // The 87 retail rows, plus VERA's five default keys above 0x256 and
+        // the two Formation keys and Ferry's J below 0x200.
+        assert_eq!(loaded.by_key.len(), 95);
         for (index, metadata) in catalog::retail_commands().iter().enumerate() {
             assert_eq!(
                 loaded.command_at(0x200 + index as u16),
@@ -933,8 +984,12 @@ mod tests {
             );
         }
         let saved = loaded.to_ini_string();
-        ini.insert_str("[Hotkey]\n".len(), "Ferry=74\n");
         ini.push_str("FullScreen=1037\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n");
+        let ini = ini.replacen(
+            "[Hotkey]\n",
+            "[Hotkey]\nFormationLine=70\nFerry=74\nFormationLock=79\n",
+            1,
+        );
         assert_eq!(saved, ini);
         let reloaded = HotkeyBindings::reload_from_ini_bytes(Some(saved.as_bytes()));
         assert_eq!(reloaded.by_key, loaded.by_key);
@@ -1042,9 +1097,9 @@ mod tests {
         assert_eq!(startup.first_key(HotkeyCommand::Delete), Some(46));
         let serialized = startup.to_ini_string();
         #[cfg(feature = "verax")]
-        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFerry=74\nStopObject=83\nAutoLoad=580\nFullScreen=1037\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n";
+        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nFerry=74\nFormationLock=79\nStopObject=83\nAutoLoad=580\nFullScreen=1037\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n";
         #[cfg(not(feature = "verax"))]
-        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFerry=74\nStopObject=83\nFullScreen=1037\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n";
+        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nFerry=74\nFormationLock=79\nStopObject=83\nFullScreen=1037\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n";
         assert_eq!(serialized, expected);
         let mut reloaded = HotkeyBindings::reload_from_ini_bytes(Some(serialized.as_bytes()));
         assert_eq!(reloaded.command_at(46), None);
@@ -1218,6 +1273,41 @@ mod tests {
         );
     }
 
+    /// Formation Line takes F from a profile that still has retail's Follow
+    /// there, and Follow moves to V. Putting Follow back on F unbinds
+    /// Formation Line, and that survives the profile round trip.
+    #[test]
+    fn formation_line_takes_f_and_follow_moves_until_the_player_moves_it_back() {
+        let mut bindings = HotkeyBindings::from_ini_bytes(Some(b"[Hotkey]\nFollow=70\n"));
+        assert_eq!(bindings.command_at(70), Some(HotkeyCommand::FormationLine));
+        assert_eq!(bindings.first_key(HotkeyCommand::Follow), Some(86));
+        // Shift with the key is still the key, for the block; Ctrl is not.
+        for (held, command) in [
+            (
+                modifiers(true, false, false),
+                Some(HotkeyCommand::FormationLine),
+            ),
+            (modifiers(false, true, false), None),
+        ] {
+            assert_eq!(
+                bindings.resolve(&character("f"), KeyLocation::Standard, held),
+                command
+            );
+        }
+
+        bindings.assign(HotkeyCommand::Follow, 70).unwrap();
+        let saved = bindings.to_ini_string();
+        assert!(saved.contains("\nFormationLine=0\n"), "{saved}");
+        let reloaded = HotkeyBindings::reload_from_ini_bytes(Some(saved.as_bytes()));
+        assert_eq!(reloaded.command_at(70), Some(HotkeyCommand::Follow));
+        assert_eq!(reloaded.first_key(HotkeyCommand::FormationLine), None);
+
+        // V already used: Follow keeps no key and Formation Line still gets F.
+        let taken = HotkeyBindings::from_ini_bytes(Some(b"[Hotkey]\nFollow=70\nStopObject=86\n"));
+        assert_eq!(taken.command_at(70), Some(HotkeyCommand::FormationLine));
+        assert_eq!(taken.command_at(86), Some(HotkeyCommand::StopObject));
+    }
+
     /// VERA's built-in keys keep their defaults beside the retail
     /// KEYBOARDMD.INI rows, and an unbind survives the profile round trip.
     #[test]
@@ -1234,6 +1324,7 @@ mod tests {
             (HotkeyCommand::FullScreen, 0x40d),
             (HotkeyCommand::StringKeys, 0x64b),
             (HotkeyCommand::LayoutEdit, 0x645),
+            (HotkeyCommand::FormationLock, 0x4f),
             // Retail leaves J unbound.
             (HotkeyCommand::Ferry, 0x4a),
         ] {

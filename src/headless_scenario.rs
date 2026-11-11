@@ -506,8 +506,7 @@ fn load_with_assets(
     // identities for unspawned types too, and snapshots carry this interner.
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&team_ai_registry, &rules)
-        .map_err(|refused| format!("active YR aimd.ini failed RuleSet resolution: {refused:?}"))?;
+    sim.install_team_ai_registry(&team_ai_registry, &rules);
     let _launch_result = crate::sim::scenario_bootstrap::
         apply_pre_fill_scenario_prefix_launch_session_with_overlay_registry(
             &mut sim,

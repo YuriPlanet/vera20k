@@ -26,7 +26,7 @@ fn campaign(difficulty: i32) -> (Simulation, RuleSet, InternedId, InternedId) {
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     sim.session
         .initialize_campaign_startup(
             difficulty,
@@ -195,7 +195,7 @@ fn retail_all05_initiate_team_accepts_its_campaign_barracks() {
         &rules,
         Some(&map.ini),
     );
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     let owner = sim
         .house_by_country_index(rules.country_index("BadGuy1").unwrap(), &rules)
         .unwrap();
@@ -244,7 +244,7 @@ fn ares_team_factory_admission_honours_the_entry_count_build_limit() {
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
-        sim.install_team_ai_registry(&registry, &rules).unwrap();
+        sim.install_team_ai_registry(&registry, &rules);
         let owner = sim.interner.intern("Computer");
         let country = sim.interner.intern("C0");
         sim.houses

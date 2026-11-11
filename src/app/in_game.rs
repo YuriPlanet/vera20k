@@ -268,6 +268,8 @@ impl App {
             .radar_movies
             .set_active(movie_active);
         state.match_state.input.keys_held.clear();
+        // VERA formation line: its held key's release may never arrive.
+        state.match_state.input.formation_line.clear_key();
         state.match_state.input.hotkey_modifiers = ModifiersState::empty();
         state.platform.live_modifiers = ModifiersState::empty();
         state.platform.held_modifier_keys.clear();

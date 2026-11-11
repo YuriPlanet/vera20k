@@ -194,7 +194,7 @@ fn loss_threshold_events_bind_retail_all04_reinforcement_operands() {
         &rules,
         Some(&map.ini),
     );
-    sim.install_team_ai_registry(&teams, &rules).unwrap();
+    sim.install_team_ai_registry(&teams, &rules);
     sim.initialize_trigger_definitions(&map, &teams, None, None, None);
     let routes = corpus["retail_routes"].as_array().unwrap();
     assert_eq!(routes.len(), 2);
@@ -3238,7 +3238,7 @@ fn team_member_tag_admission_and_removal_match_original_controls() {
             }
         ));
         let registry = TeamAiIniRegistry::from_sources(&definitions, &IniFile::from_str(""), false);
-        sim.install_team_ai_registry(&registry, &rules).unwrap();
+        sim.install_team_ai_registry(&registry, &rules);
         let author_type = sim.trigger_runtime.definitions.tag_type("author").unwrap();
         let team_type = sim.trigger_runtime.definitions.tag_type("team").unwrap();
         sim.trigger_runtime.definitions.team_types = vec!["TT".into()];

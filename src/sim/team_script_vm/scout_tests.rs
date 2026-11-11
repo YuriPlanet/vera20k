@@ -167,7 +167,7 @@ pub(super) fn campaign_scene(
         .unwrap();
     bootstrap::initialize_map_roster_houses(&mut sim, &roster, &rules, Some(&map.ini));
     bootstrap::initialize_campaign_current_house(&mut sim.session, &mut sim.houses, &map.ini);
-    sim.install_team_ai_registry(&teams, &rules).unwrap();
+    sim.install_team_ai_registry(&teams, &rules);
     sim.initialize_trigger_definitions(&map, &teams, None, None, None);
     sim.session.install_waypoints(&map.waypoints);
     assert_eq!(sim.spawn_from_map(&map.entities, Some(&rules)), 1);
