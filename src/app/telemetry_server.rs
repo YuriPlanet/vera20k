@@ -20,6 +20,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::util::base64::base64_encode;
+
 const WS_MAGIC: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const PROTOCOL: &str = "vera-telemetry.v1";
 const AUTH_PREFIX: &str = "vera-auth.";
@@ -66,29 +68,6 @@ pub fn encode_text_frame(payload: &str) -> Vec<u8> {
     }
     frame.extend_from_slice(payload.as_bytes());
     frame
-}
-
-fn base64_encode(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let value = (u32::from(chunk[0]) << 16)
-            | (u32::from(chunk.get(1).copied().unwrap_or(0)) << 8)
-            | u32::from(chunk.get(2).copied().unwrap_or(0));
-        out.push(ALPHABET[(value >> 18) as usize & 63] as char);
-        out.push(ALPHABET[(value >> 12) as usize & 63] as char);
-        out.push(if chunk.len() > 1 {
-            ALPHABET[(value >> 6) as usize & 63] as char
-        } else {
-            '='
-        });
-        out.push(if chunk.len() > 2 {
-            ALPHABET[value as usize & 63] as char
-        } else {
-            '='
-        });
-    }
-    out
 }
 
 // Deliberately no Debug implementation: the secret never enters logs/snapshots.
