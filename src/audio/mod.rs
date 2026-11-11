@@ -12,6 +12,8 @@ pub mod arbiter;
 pub mod events;
 pub mod movie_stream;
 pub mod music;
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+pub(crate) mod output_health;
 pub mod sfx;
 pub(crate) mod theme;
 pub mod voice_queue;
