@@ -120,6 +120,46 @@ reloads its list, and a shortcut pinned before the switch keeps the old
 component's icon (the launcher owns pinned shortcuts, not the app). The app
 switcher's entry updates at once from the task description.
 
+## Test devices
+
+Android behaviour here is checked on hardware, and LAN play needs more than one
+peer on the same network, so the bench is recorded rather than remembered. Device
+serials and the local network are deliberately left out: this file is published,
+`adb devices -l` re-derives the serials on the build machine, and the private
+record lives beside this repository, not in it.
+
+| Device | Android | ABI | Screen | SoC / GPU | Role |
+|---|---|---|---|---|---|
+| OnePlus OPD2413 (`OP615EL1`) | 16 / API 36 | arm64-v8a | 2400x3392, 420 dpi | Snapdragon 8 Elite (`SM8750P`), Adreno 830 (Vulkan) | Host and client |
+| OnePlus PJZ110 (`OP5D0DL1`) | 16 / API 36 | arm64-v8a | 1080x2376, 640 dpi | Snapdragon 8 Elite (`SM8750`), Adreno 830 (Vulkan) | Host and client |
+
+Refresh a row after a device change:
+
+```powershell
+adb devices -l
+adb -s <serial> shell getprop ro.product.model
+adb -s <serial> shell getprop ro.build.version.release
+adb -s <serial> shell getprop ro.build.version.sdk
+adb -s <serial> shell getprop ro.product.cpu.abi
+adb -s <serial> shell wm size
+adb -s <serial> shell wm density
+adb -s <serial> shell dumpsys SurfaceFlinger | Select-String 'GLES:'
+```
+
+LAN play between devices needs all of the following, and a missing one looks
+exactly like a discovery bug:
+
+- both peers on one subnet (`adb -s <serial> shell ip -4 addr show wlan0`, same
+  `/24`);
+- the access point's client isolation (`AP isolation` / "网络隔离") off, or the
+  two never see each other's broadcasts;
+- both on the same band when the router splits 2.4 and 5 GHz into different
+  subnets;
+- the app bound to Wi-Fi while the LAN lobby is open
+  (`ConnectivityManager.bindProcessToNetwork`), which is what the lobby now does;
+- a desktop peer's firewall allowing UDP 1234 inbound, and both tablets on the
+  same AP.
+
 ## Deliberate choices
 
 - **`NativeActivity`, not `GameActivity`.** Smallest M0. It has no IME, so text
