@@ -545,9 +545,12 @@ fn attack_voice_matches_native_target_slots_rng_and_queue_admission() {
         });
         if output["fault"].is_object() {
             native_faults += 1;
-            assert!(
-                result.is_err(),
-                "{name}: original NULL slot faults before a draw"
+            // VoiceAttack7090C0 dereferences the NULL slot here; VERA carries
+            // on with no attack voice and, as checked below, no draw.
+            assert_eq!(
+                result.unwrap(),
+                None,
+                "{name}: no voice where the original faults on a NULL slot"
             );
         } else {
             let request = result.unwrap();
