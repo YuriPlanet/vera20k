@@ -103,6 +103,29 @@ fn release_lan_network() {
     });
 }
 
+/// Default-handle suffix for `vera20k::util::device_identity`.
+///
+/// A LAN visit drops advertisements whose name matches the local one, and the
+/// stock default is `[New Player]` on every install. Android has no text input
+/// yet, so the engine appends the activity's Android ID suffix to the default
+/// and two fresh installs no longer hide each other's games.
+fn handle_suffix() -> Option<String> {
+    let suffix = with_activity(|env, activity| {
+        let value = env
+            .call_method(activity, "defaultHandleSuffix", "()Ljava/lang/String;", &[])
+            .ok()?
+            .l()
+            .ok()?;
+        if value.is_null() {
+            return None;
+        }
+        env.get_string(&JString::from(value))
+            .ok()
+            .map(|text| text.to_string_lossy().into_owned())
+    })?;
+    suffix.filter(|text| !text.is_empty())
+}
+
 /// The activity's folder-picker answer: the chosen tree as a `content://` URI,
 /// or an empty string when the player cancelled.
 #[unsafe(no_mangle)]
@@ -311,6 +334,12 @@ fn android_main(app: AndroidApp) {
     vera20k::util::lan_network::install(vera20k::util::lan_network::Hooks {
         acquire: bind_lan_network,
         release: release_lan_network,
+    });
+    // The stock LAN default name is the same on every install and two peers left
+    // at it never see each other, so the activity supplies an Android ID suffix
+    // for the handle until text input lands on this platform.
+    vera20k::util::device_identity::install(vera20k::util::device_identity::Hooks {
+        handle_suffix,
     });
     // Android starts every process in "/" with no writable home. Hand the app's
     // private folder to the engine before anything opens a file: it becomes

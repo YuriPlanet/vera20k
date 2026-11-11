@@ -45,6 +45,22 @@ const MULTIPLAYER_HANDLE_LIMIT_BYTES: usize = 19;
 const DEFAULT_MULTIPLAYER_HANDLE: &[u8] = b"[New Player]";
 const DEFAULT_MULTIPLAYER_GAME_MODE: i32 = 1;
 
+/// The handle a new install starts with.
+///
+/// Native starts every install at `[New Player]` (`WriteMultiPlayerSettings`
+/// writes the same default back), and a LAN visit drops advertisements whose
+/// name matches the local one, so two peers left at the default never see each
+/// other. Android has no text input yet, so the platform appends the last three
+/// hex digits of the Android ID there (`util::device_identity`); every other
+/// platform keeps the stock bytes.
+fn stock_handle_bytes() -> Vec<u8> {
+    crate::util::device_identity::suffixed_handle(
+        DEFAULT_MULTIPLAYER_HANDLE,
+        crate::util::device_identity::handle_suffix().as_deref(),
+        MULTIPLAYER_HANDLE_LIMIT_BYTES,
+    )
+}
+
 /// VERA HTTPS account names also become persona INI section names. Keep their
 /// admission shared by the HTTP response, login continuation and handle owner.
 pub(crate) fn validate_online_handle(name: &str) -> anyhow::Result<()> {
@@ -121,7 +137,7 @@ impl Default for SessionToggles {
 impl Default for LocalMultiplayerPreferences {
     fn default() -> Self {
         Self {
-            handle_bytes: DEFAULT_MULTIPLAYER_HANDLE.to_vec(),
+            handle_bytes: stock_handle_bytes(),
             handle_source: HandleSource::Native,
             side: 0,
             side_ex: 0,
@@ -1905,6 +1921,11 @@ fn read_local_preference_fields(ini: &IniFile, preferences: &mut LocalMultiplaye
     if preferences.handle_source == HandleSource::Native && !handle_bytes.is_empty() {
         preferences.handle_bytes = handle_bytes;
     }
+    // An install that stored the stock default keeps it unique per device, so an
+    // upgrade reaches the same name the fresh-install path starts with.
+    if preferences.handle_bytes == DEFAULT_MULTIPLAYER_HANDLE {
+        preferences.handle_bytes = stock_handle_bytes();
+    }
     //6982E2 supplies the retained raw field as ReadInt default;6982FD stores
     //it without a display-range clamp. Projection never rewrites this cache.
     preferences.color_index = section.read_int("Color", preferences.color_index);
@@ -3514,6 +3535,21 @@ WOLTaunts=junk
             handle(&"41,".repeat(25)),
             [b'A'; MULTIPLAYER_HANDLE_LIMIT_BYTES]
         );
+    }
+
+    #[test]
+    fn a_default_handle_stays_stock_without_a_platform_suffix() {
+        // Only the Android crate installs the suffix hook; every other platform
+        // keeps the native default, whether the handle comes from the default or
+        // from the stock value a previous run stored.
+        assert_eq!(
+            LocalMultiplayerPreferences::default().handle_bytes,
+            DEFAULT_MULTIPLAYER_HANDLE
+        );
+        let stored = read_local_multiplayer_preferences(
+            b"[MultiPlayer]\nHandle=5b,4e,65,77,20,50,6c,61,79,65,72,5d,\n",
+        );
+        assert_eq!(stored.handle_bytes, DEFAULT_MULTIPLAYER_HANDLE);
     }
 
     #[test]

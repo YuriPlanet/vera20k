@@ -14,6 +14,7 @@ import android.net.NetworkRequest
 import android.net.Uri
 import android.os.Process
 import android.provider.DocumentsContract
+import android.provider.Settings
 import java.io.File
 import java.io.IOException
 
@@ -175,6 +176,23 @@ class VeraActivity : NativeActivity() {
 
     /** The Wi-Fi network the process is bound to, to spot a real change. */
     private var boundLanNetwork: Network? = null
+
+    /**
+     * Last three hex digits of the Android ID, upper-case; empty when the device
+     * gives none.
+     *
+     * The LAN default handle is the same on every install and a visit drops
+     * advertisements that carry the local name, so two fresh installs never see
+     * each other. Android has no text input to change the name with yet, so the
+     * engine appends this to the stock default (`vera20k::util::device_identity`).
+     * The ID is stable across reinstalls and changes only on a factory reset.
+     * Three digits keep the whole name inside the lobby's 134 px name box.
+     */
+    fun defaultHandleSuffix(): String {
+        val id = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: return ""
+        val hex = id.filter { it.isLetterOrDigit() }.takeLast(3).uppercase()
+        return if (hex.length == 3) hex else ""
+    }
 
     /**
      * Runs the LAN visit on the Wi-Fi network.

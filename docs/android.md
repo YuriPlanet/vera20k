@@ -172,7 +172,13 @@ like "the other player does not exist":
   are compared at all).
 - **Player names are the LAN identity.** A player discards advertisements whose
   name matches its own, so two peers left at the default `[New Player]` never
-  see each other's games. Rename one before hosting; no code change is involved.
+  see each other's games. On Android the default handle is made unique instead:
+  the activity appends the last three hex digits of the Android ID, so a fresh
+  install enters the lobby as `[New Player]-1A2` (`util::device_identity`). The
+  ID is per app signing key and user, survives reinstall and an app-data clear,
+  and changes only on a factory reset. Three digits keep the whole name inside
+  the lobby's 134 px name box; the handle's 19-byte limit still bounds it.
+  Every other platform keeps the stock name and renames by typing.
 
 Stock maps synchronise with the room (preview and name). A map the guest's
 library does not hold is reported on the host as "並未擁有" and needs the map
