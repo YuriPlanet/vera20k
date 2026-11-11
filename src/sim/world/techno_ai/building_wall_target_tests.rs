@@ -140,7 +140,8 @@ fn retail_pillbox_target_assignment_observes_wall_geometry() {
             .entities
             .get(scene.building)
             .unwrap()
-            .mission;
+            .mission
+            .clone();
         let rng = (
             scene.sim.main_rng.logical_state(),
             scene.sim.scenario_rng.logical_state(),
