@@ -1797,6 +1797,7 @@ impl App {
             Control::Advanced(_) => {}
             Control::ExportMap => export_requested = modal.is_enabled(Control::ExportMap),
             Control::FairStartsToggle => modal.toggle_fair_starts(),
+            Control::PresetCycle => modal.cycle_preset(),
             Control::Generate0x620 => {
                 modal.reroll_derived_for_generate(&settings, &mut main);
                 modal.begin_generate();

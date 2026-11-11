@@ -1095,6 +1095,18 @@ pub(super) fn push_random_map_setup_modal_text_draws(
                 RandomMapSetupControl::FairStartsToggle,
             )
         },
+        {
+            let (key, fallback) = modal.preset.map_or(
+                ("VERA:RandomMapPresets", "Presets"),
+                crate::ui::skirmish_shell::RandomMapPreset::label,
+            );
+            (
+                key,
+                fallback,
+                layout.preset,
+                RandomMapSetupControl::PresetCycle,
+            )
+        },
     ]
     .into_iter()
     .filter(|(_, _, _, control)| {
@@ -1103,6 +1115,7 @@ pub(super) fn push_random_map_setup_modal_text_draws(
             RandomMapSetupControl::AdvancedToggle
                 | RandomMapSetupControl::ExportMap
                 | RandomMapSetupControl::FairStartsToggle
+                | RandomMapSetupControl::PresetCycle
         );
         !sliding && (!vera || modal.extended)
     }) {
