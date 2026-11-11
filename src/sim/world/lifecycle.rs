@@ -1543,6 +1543,21 @@ impl Simulation {
                 .navigation
                 .retain_threat_avoidance_after_unlimbo(object.threat_avoidance_coefficient);
         }
+        // FootUnlimbo4D72FA..4D7318 ends on the sensor circle: a type with
+        // a sensor radius (Type+5F0, the one gate) dispatches vt+0x4E8
+        // AddSensorsAt4DE7B0 with the null cell, so the circle centres on
+        // current GetCoords. Every successful Foot Unlimbo reaches it, the
+        // dead-Techno arm included; no caller adds it again.
+        // RESIDUAL: a first Unlimbo runs this before its caller installs the
+        // cloak runtime, so the unit's own vt+0x420 callback cannot start a
+        // cloak here as native's can. Trigger: a new Cloakable sensor unit
+        // put inside its house's CloakGenerator field (no stock building has
+        // one). Effect: it cloaks on its first cloak tick instead.
+        // RESIDUAL (pre-existing in every AddSensorsAt caller): its building
+        // arm (`0x004DE8DE..0x004DE909`), which sets byte +0x80 on a
+        // building not owned by the local player in each stamped cell, has
+        // no port; the field is not identified.
+        self.add_unit_sensors_at_current(stable_id, context.rules(), context.registry());
         // Unit737BBE..737BD2 / Aircraft414403..414417 snap Secondary after
         // Foot success, including dead-Techno success. The Techno body snap
         // above has its own alive gate and precedes idle. Diagnostic callers
