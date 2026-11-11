@@ -5,10 +5,12 @@
 //! any, and the process-lifetime state a tick reaches outside the world.
 //!
 //! Phase 3 lends the runtime to the simulation thread for one job
-//! ([`SimHost::lend`]). While it is away, reads see the published
-//! presentation frame, and any write first takes it back, waiting for the
+//! ([`SimHost::lend`]), publishing a presentation frame as it goes: a copy
+//! of the world as the job found it. While the runtime is away, reads see
+//! that frame, and any write first takes the runtime back, waiting for the
 //! job to end; the job's result then waits in the host for
-//! [`SimHost::take_job_result`].
+//! [`SimHost::take_job_result`]. Back home, the frame is dropped and reads
+//! see the live world again, so a tick that is not lent copies nothing.
 //!
 //! Reads take [`SimHost::runtime`]. A write names its route with
 //! [`SimWrite`], so every place that changes the simulation outside
@@ -65,10 +67,11 @@ pub(crate) struct SimHost {
     early_returns: u32,
     /// The simulation thread, started by the first [`Self::lend`].
     worker: Option<SimWorker>,
-    /// The presentation frame (phase 2): the world as the last published
-    /// tick left it. Drawing reads it while the live world is ticking
-    /// elsewhere. Copy-on-write state (the terrain cells, the resources)
-    /// stays shared with the live world until that changes.
+    /// The presentation frame (phase 2): the world as a lent job found it.
+    /// Drawing reads it while the live world is ticking elsewhere.
+    /// Copy-on-write state (the terrain cells, the resources) stays shared
+    /// with the live world until that changes. It lives only while the
+    /// runtime is lent, apart from the `VERA20K_PRESENTATION_FRAME` opt-in.
     presentation: Option<Arc<SimRuntime>>,
     /// Global B04474 and its comparison timer (`FrameChecksumState`):
     /// process state that launch and load retain, written and compared only
@@ -95,9 +98,10 @@ impl SimHost {
         self.lent
     }
 
-    /// Run `job` on the simulation thread with the runtime. Reads serve the
-    /// published frame until a write takes the runtime back. Returns false,
-    /// running nothing, when no runtime is installed.
+    /// Run `job` on the simulation thread with the runtime, publishing the
+    /// world as it is now. Reads serve that frame until a write takes the
+    /// runtime back. Returns false, running nothing, when no runtime is
+    /// installed.
     pub(crate) fn lend(&mut self, job: SimJob) -> bool {
         self.reclaim(true);
         if self.runtime.is_none() {
@@ -107,9 +111,7 @@ impl SimHost {
         if self.lent_jobs == EARLY_RETURN_REPORT_JOBS {
             self.report_early_returns();
         }
-        if self.presentation.is_none() {
-            self.publish_presentation();
-        }
+        self.publish_presentation();
         let runtime = self.runtime.take().expect("installed runtime");
         self.worker
             .get_or_insert_with(SimWorker::spawn)
@@ -151,6 +153,9 @@ impl SimHost {
             .recv()
             .expect("simulation thread stopped");
         self.runtime = Some(runtime);
+        // The job's frame has done its work: reads see the live world again,
+        // and nothing shares its storage or its resources.
+        self.presentation = None;
         match result {
             Ok(result) => self.job_result = Some(result),
             Err(panic) => std::panic::resume_unwind(panic),
@@ -168,13 +173,16 @@ impl SimHost {
     pub(crate) fn write_sim(&mut self, route: SimWrite) -> Option<&mut SimRuntime> {
         self.reclaim(true);
         if matches!(route, SimWrite::Rules | SimWrite::Lifecycle) {
-            // These may rebind the shared resources (`resources_mut`).
+            // These may rebind the shared resources (`resources_mut`), which
+            // an opted-in frame would still share.
             self.presentation = None;
         }
         self.runtime.as_mut()
     }
 
-    /// Publish the live world as the presentation frame.
+    /// Publish the live world as the presentation frame: [`Self::lend`]
+    /// does, and so does every tick under the `VERA20K_PRESENTATION_FRAME`
+    /// opt-in.
     pub(crate) fn publish_presentation(&mut self) {
         if self.lent {
             return;
@@ -256,11 +264,13 @@ impl SimWorker {
     }
 }
 
-/// Whether ticks publish a presentation frame: whenever the simulation
-/// thread is on, or opted into with `VERA20K_PRESENTATION_FRAME=1`.
+/// Whether every tick publishes a presentation frame for drawing to read,
+/// with or without the simulation thread: the phase 2 aid, opted into with
+/// `VERA20K_PRESENTATION_FRAME=1`. The thread needs no such frame: it
+/// publishes its own when it takes a tick ([`SimHost::lend`]).
 pub(crate) fn presentation_frames_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| sim_thread_enabled() || env_flag("VERA20K_PRESENTATION_FRAME"))
+    *ENABLED.get_or_init(|| env_flag("VERA20K_PRESENTATION_FRAME"))
 }
 
 /// Whether ordinary offline frames tick on the simulation thread: yes,
@@ -336,7 +346,7 @@ mod tests {
             .simulation
             .session_mut_for_test()
             .set_tick_for_test(7);
-        host.publish_presentation();
+        // Lending publishes the world as the job finds it.
         assert!(host.lend(Box::new(|runtime| {
             runtime
                 .simulation
@@ -351,6 +361,8 @@ mod tests {
         assert_eq!(live.simulation.session().tick(), 8);
         assert!(!host.is_lent());
         assert_eq!((host.lent_jobs, host.early_returns), (1, 1));
+        // Back home, the job's frame is gone and drawing reads the live world.
+        assert_eq!(host.presentation().unwrap().simulation.session().tick(), 8);
         let result = host.take_job_result().unwrap();
         assert_eq!(*result.downcast::<u32>().unwrap(), 41);
         assert!(host.take_job_result().is_none());

@@ -1292,24 +1292,48 @@ fn advance_in_game_runtime_mode(
                 .frame_pacer
                 .record_admitted_frame(frame_start_ms);
         }
-        let inline = frame_stepping || matches!(mode, RuntimeAdvanceMode::ExactOneStep);
-        let mut frame_committed =
-            advance_one_simulation_frame(state, tick_lane, mouse_scroll, resume, inline);
+        // Only the last frame before the draw goes to the simulation thread
+        // (docs/sim-thread.md): one the service or debug speed follows with
+        // another ticks inline, as before the thread, and publishes nothing.
+        let (game_speed, network_fps) = local_pacing_inputs(state);
+        let inline = frame_stepping
+            || matches!(mode, RuntimeAdvanceMode::ExactOneStep)
+            || state.platform.frame_pacer.another_pass_follows(
+                crate::util::time::Instant::now(),
+                crate::app::match_runtime::frame_pacer::wall_clock_ms(),
+                game_speed,
+                network_fps,
+            );
+        let debug_frames = if !frame_stepping && !replaying && debug_speed_allowed(state) {
+            state.platform.frame_pacer.debug_speed().saturating_sub(1)
+        } else {
+            0
+        };
+        let mut frame_committed = advance_one_simulation_frame(
+            state,
+            tick_lane,
+            mouse_scroll,
+            resume,
+            inline || debug_frames > 0,
+        );
         // Debug speed runs further frames in this paced pass, each through
         // the same frame transaction; the pacer interval is unchanged.
-        if !frame_stepping && !replaying && debug_speed_allowed(state) {
-            for _ in 1..state.platform.frame_pacer.debug_speed() {
-                // A stopped frame's world must not run again.
-                if state.match_state.frame_stopped
-                    || state.match_state.scenario_outcome.is_some()
-                    || state.match_state.scenario_exit.is_some()
-                    || crate::app::App::house_outcome_wait_pending(state)
-                {
-                    break;
-                }
-                frame_committed |=
-                    advance_one_simulation_frame(state, tick_lane, None, FrameResume::None, inline);
+        for frame in 1..=debug_frames {
+            // A stopped frame's world must not run again.
+            if state.match_state.frame_stopped
+                || state.match_state.scenario_outcome.is_some()
+                || state.match_state.scenario_exit.is_some()
+                || crate::app::App::house_outcome_wait_pending(state)
+            {
+                break;
             }
+            frame_committed |= advance_one_simulation_frame(
+                state,
+                tick_lane,
+                None,
+                FrameResume::None,
+                inline || frame < debug_frames,
+            );
         }
         state
             .match_state
@@ -1981,6 +2005,10 @@ fn advance_one_simulation_frame(
         }
     };
     let tick_cost = advance_started.elapsed();
+    state
+        .platform
+        .frame_pacer
+        .record_frame_cost(tick_cost, false);
     let committed = finish_simulation_frame(state, finish, output, tick_cost, mouse_scroll);
     threaded_finished.unwrap_or(false) | committed
 }
@@ -2038,13 +2066,15 @@ fn finish_threaded_tick(state: &mut AppState, mouse_scroll: Option<(f32, f32)>) 
             return Some(false);
         }
     };
-    Some(finish_simulation_frame(
-        state,
-        finish,
-        output,
-        tick_cost,
-        mouse_scroll,
-    ))
+    state
+        .platform
+        .frame_pacer
+        .record_frame_cost(tick_cost, true);
+    let committed = finish_simulation_frame(state, finish, output, tick_cost, mouse_scroll);
+    // The draw left this tick's radar-terrain marks with it
+    // (`App::drain_radar_terrain_marks`); they go to the minimap now.
+    drain_radar_terrain_marks(state);
+    Some(committed)
 }
 
 /// A frame whose client writes are recorded ([`super::deferred_effects`]):
@@ -2404,11 +2434,10 @@ fn finish_simulation_frame(
         if let Some(deferred) = deferred {
             deferred.apply(state);
         }
-        // docs/sim-thread.md phase 2: drawing reads the world as this tick
-        // left it while the next tick runs. The tick's radar-terrain marks
-        // go to the minimap with it.
+        // The simulation thread publishes a frame when it takes a tick
+        // (`SimHost::lend`); this is the phase 2 opt-in, a frame after every
+        // tick without the thread.
         if frame_committed && super::sim_host::presentation_frames_enabled() {
-            drain_radar_terrain_marks(state);
             state.match_state.sim_runtime.publish_presentation();
         }
         if frame_committed {

@@ -128,11 +128,12 @@ Done:
 
 ### Phase 2: a presentation frame for the hot draw path
 
-At the end of each committed tick, `SimHost::publish_presentation` keeps a
-copy of the runtime (`Arc<SimRuntime>`), and drawing reads it through
-`SimHost::presentation`. A rules or lifecycle write drops it first. It is
-published whenever the simulation thread is on (with the thread off,
-`VERA20K_PRESENTATION_FRAME=1` opts in).
+`SimHost::publish_presentation` keeps a copy of the runtime
+(`Arc<SimRuntime>`), and drawing reads it through `SimHost::presentation`.
+The simulation thread publishes one when it takes a tick (phase 4) and
+drops it when the tick is back; `VERA20K_PRESENTATION_FRAME=1` publishes one
+after every tick without the thread, and a rules or lifecycle write drops
+that one first.
 
 A plain copy of the world is too slow: 40–60 ms in a 1v7 skirmish on the
 30-start map, about half of it the terrain cells. The copy therefore shares
@@ -193,18 +194,30 @@ that wait shows in play.
 - `run_deferred_tick`, which borrows nothing from the app;
 - `finish_simulation_frame`, the frame tail on the main thread.
 
-An ordinary offline frame on the deferred path is lent to the simulation
+An ordinary offline frame on the deferred path can be lent to the simulation
 thread instead of run inline. This is the default; `VERA20K_SIM_THREAD=0`
-turns the thread, the deferred effects and the presentation frames off. A
-pass then goes:
+turns the thread and the deferred effects off. A pass then goes:
 
 1. `finish_threaded_frame`, first thing in the pass: wait for the tick in
-   flight, run its tail, hand its radar-terrain marks to the minimap and
-   publish the frame;
+   flight, run its tail and hand its radar-terrain marks to the minimap.
+   The frame published for that tick is dropped, and reads see the live
+   world again;
 2. the pass's own service: pause and chrono service, exit and outcome
    routing, menus, saves. They read a world whose last tick the client has
    fully taken, and nothing is in flight;
-3. if a frame is admitted, dispatch it and draw while it runs.
+3. if a frame is admitted, tick it inline or lend it. Lending publishes the
+   world as it is now, and the draw reads that frame while the tick runs.
+
+Only one tick can run beside a draw, and each lent tick costs a published
+frame, so only the last frame of a service is lent. `service_match_runtime`
+runs every frame that is due within its catch-up budget (eight passes,
+eight milliseconds): at GameSpeed 0, which never waits, that is up to eight
+frames a picture. A frame that another pass will follow
+(`LocalFramePacer::another_pass_follows`: another frame is due, and the
+budget is still open after this one's expected tick time) ticks inline, as
+it did before the thread, and publishes nothing. The frame nothing follows
+is lent, and the service ends there: another pass would only wait for it.
+Debug speed's extra frames follow the same rule.
 
 Between the dispatch and the next pass nothing on the main thread may take
 the live world: a write waits for the tick, and the tick then did not run
@@ -215,8 +228,8 @@ early and logs them every 1,024 ticks and when a scenario leaves. Player
 commands between passes do take the world back; they wait for the tick, and
 its tail still runs at the next pass.
 
-Drawing therefore shows the world one tick behind the simulation. These
-frames stay inline:
+While a tick is lent, drawing shows the world one tick behind the
+simulation. These frames always stay inline:
 
 - network play, replay, a campaign's initial save and command observation
   (the deferred path does not apply to them);
@@ -233,9 +246,18 @@ The browser build has no thread and always ticks inline.
 
 Residuals:
 
+- The main thread still waits for a lent tick at the start of the next
+  pass, so a tick longer than a picture holds the picture rate to the tick
+  rate. Drawing again from the published frame instead needs commands to
+  reach the simulation without taking the world back.
+- At GameSpeed 0 the tick rate is bounded by the catch-up budget, eight
+  frames or eight milliseconds a picture, as before the thread. Running
+  those frames back to back on the simulation thread needs each frame's
+  client inputs and its tail to leave the main thread's pass.
 - At 20,000 units and 30 houses (`sim-bench --scenario march
   --presentation-frame`), keeping a frame each tick takes the mean tick from
-  54.0 ms to 64.6 ms; the final hash is unchanged.
+  54.0 ms to 64.6 ms; the final hash is unchanged. A lent tick therefore
+  gains only where the draw it runs beside costs more than its frame.
 - A tick whose tail has not run when a debug tool or a load takes the
   runtime back keeps its result until the next pass, or drops it when a
   scenario is installed.

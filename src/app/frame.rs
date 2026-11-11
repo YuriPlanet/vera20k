@@ -161,6 +161,14 @@ impl App {
         state.audio.mute_for_restore(restoring, sound, voice);
         let mut attempts = 0;
         loop {
+            if catch_up_allowed {
+                // The pass decides from this whether its frame is the
+                // service's last (`LocalFramePacer::another_pass_follows`).
+                state
+                    .platform
+                    .frame_pacer
+                    .begin_service_pass(started, attempts);
+            }
             let before = state.match_state.sim_runtime.runtime().map(|runtime| {
                 (
                     runtime.simulation.session().tick(),
@@ -195,6 +203,9 @@ impl App {
                     attempts,
                     started.elapsed(),
                 )
+                // A tick is running beside this thread: draw. Another pass
+                // would only wait for it.
+                || state.match_state.sim_runtime.is_lent()
             {
                 break;
             }
@@ -263,6 +274,7 @@ impl App {
                 }
             }
         }
+        state.platform.frame_pacer.end_service();
         crate::app::match_runtime::network_quality::observe_pass(state);
         result
     }
