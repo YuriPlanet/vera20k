@@ -837,7 +837,7 @@ impl Simulation {
             owner: ticking_sound_owner(from),
         });
         if let Some(entity) = self.substrate.entities.get_mut(to) {
-            entity.bomb = Some(Box::new(bomb));
+            entity.bomb = Some(bomb);
         }
         self.bombs.carriers.insert(to);
         log::info!("BOMB moved from {from} to {to}");

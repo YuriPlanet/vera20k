@@ -331,7 +331,9 @@ mod tests {
                             .get_mut(target)
                             .unwrap()
                             .cloak
-                            .get_or_insert_with(|| crate::sim::cloak_disguise::CloakRuntime::new(0))
+                            .get_or_insert_with(|| {
+                                Box::new(crate::sim::cloak_disguise::CloakRuntime::new(0))
+                            })
                             .set_state_for_test(if step["action"] == "cloak_on" { 1 } else { 0 });
                     }
                     "pointer_expiry" => {

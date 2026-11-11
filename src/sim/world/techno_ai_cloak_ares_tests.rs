@@ -49,6 +49,7 @@ fn visit(sim: &mut Simulation, id: u64, rules: &RuleSet, frame: u32) -> i32 {
         .get(id)
         .unwrap()
         .cloak
+        .as_deref()
         .unwrap()
         .state()
 }
@@ -85,6 +86,7 @@ fn cloak_then_deactivate(rules: &RuleSet, kind: &str) -> (Simulation, u32, u32) 
         .get(id)
         .unwrap()
         .cloak
+        .as_deref()
         .unwrap()
         .depth();
     (sim, completed, depth)
