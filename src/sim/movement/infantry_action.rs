@@ -1153,13 +1153,13 @@ impl crate::sim::world::ObjectSubstrate {
     /// Health 0; a death whose `Do_Action` was refused (a sequence with no
     /// frames, `0x0051D70F`) left the previous action, and is raised here.
     pub(crate) fn infantry_health_reset(&mut self, id: u64) {
-        let Some(actor) = self.entities.get_mut(id) else {
-            return;
-        };
-        let Some(doing) = actor.mission_leaf.as_infantry().map(|leaf| leaf.doing()) else {
-            return;
-        };
-        if actor.health.current() <= 0 && !in_death_sequence(doing) {
+        if let Some(actor) = self.entities.get_mut_if(id, |actor| {
+            actor.health.current() <= 0
+                && actor
+                    .mission_leaf
+                    .as_infantry()
+                    .is_some_and(|leaf| !in_death_sequence(leaf.doing()))
+        }) {
             actor.health.set(1);
         }
     }

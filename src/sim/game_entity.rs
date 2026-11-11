@@ -1408,6 +1408,31 @@ impl GameEntity {
         Ok(())
     }
 
+    /// Whether [`Self::reload_unit_ammo`] can change anything at `now`, or
+    /// answers its missing-locomotor error: a moving Unit without
+    /// `MobileFire=` re-anchors a running clock, and a round can reload.
+    pub(crate) fn reload_unit_ammo_writes(
+        &self,
+        object: &crate::rules::object_type::ObjectType,
+        now: i32,
+    ) -> bool {
+        (!object.mobile_fire
+            && crate::sim::movement::motion_query::is_moving(self)
+                .is_none_or(|moving| moving && self.ammo_reload_timer.remaining(now) > 0))
+            || self.techno_ammo_reloads(object, now)
+    }
+
+    /// Whether [`Self::reload_techno_ammo`] reloads a round at `now`.
+    fn techno_ammo_reloads(
+        &self,
+        object: &crate::rules::object_type::ObjectType,
+        now: i32,
+    ) -> bool {
+        object.ammo != -1
+            && self.ammo().is_some_and(|ammo| ammo.current() < object.ammo)
+            && self.ammo_reload_timer.remaining(now) == 0
+    }
+
     /// gamemd.exe TechnoClass::Reload0x006FB010, shared by Unit's override
     /// and Ares InfantryClass_Update_Reload10047980 (gamemd51BCB2).
     pub(crate) fn reload_techno_ammo(
@@ -1415,10 +1440,7 @@ impl GameEntity {
         object: &crate::rules::object_type::ObjectType,
         now: i32,
     ) {
-        if object.ammo != -1
-            && self.ammo().is_some_and(|ammo| ammo.current() < object.ammo)
-            && self.ammo_reload_timer.remaining(now) == 0
-        {
+        if self.techno_ammo_reloads(object, now) {
             let ammo = self.ammo_mut().unwrap();
             #[cfg(feature = "ares")]
             ammo.reload_rounds(
@@ -1552,6 +1574,11 @@ impl GameEntity {
 
     pub(crate) fn advance_door(&mut self, frame: u32) {
         self.door.advance(frame);
+    }
+
+    /// Whether [`Self::advance_door`] changes the door at `frame`.
+    pub(crate) fn door_advances(&self, frame: u32) -> bool {
+        self.door.advances(frame)
     }
 
     pub(crate) fn hash_door_state(&self, hasher: &mut impl std::hash::Hasher) {
@@ -2686,6 +2713,11 @@ impl GameEntity {
         self.fall.observe_falling_edge()
     }
 
+    /// Whether [`Self::observe_falling_edge`] changes the edge byte.
+    pub(crate) fn falling_edge_pending(&self) -> bool {
+        self.fall.falling_edge_pending()
+    }
+
     /// ObjectAI5F3FBC..3FFA updates even the grounding frame's rate. Ares
     /// steps a Techno by its type's `FallRate.*` (10049BA0, hook 0x5F3FB2).
     pub(crate) fn advance_fall_rate(
@@ -2933,6 +2965,14 @@ impl GameEntity {
         self.building_body
             .as_ref()
             .is_some_and(|body| body.state() == 0)
+    }
+
+    /// Whether [`Self::sample_building_health_for_power`] changes the sample.
+    pub(crate) fn building_health_sample_changes(&self) -> bool {
+        self.category == EntityCategory::Structure
+            && self
+                .building_power_health_sample
+                .differs(self.health.current())
     }
 
     /// Building440042..440074: compare actual health, publish the new sample

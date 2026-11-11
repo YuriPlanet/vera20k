@@ -699,7 +699,11 @@ fn unit_fire_tail(
 /// An Infantryman's fire visit without a TarCom (`0x00520AD2`): the raw
 /// firing latch clears.
 fn infantry_fire_without_target(world: &mut Simulation, id: u64) {
-    if let Some(actor) = world.substrate.entities.get_mut(id) {
+    if let Some(actor) = world
+        .substrate
+        .entities
+        .get_mut_if(id, |actor| actor.mission_leaf.foot_firing_sequence_latch() != 0)
+    {
         actor.mission_leaf.set_foot_firing_sequence(0);
     }
 }

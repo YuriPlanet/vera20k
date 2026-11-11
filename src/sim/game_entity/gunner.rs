@@ -80,14 +80,17 @@ impl GameEntity {
         self.rearm_timer.start(frame, duration);
     }
 
+    /// Whether [`Self::update_charge_turret`] runs for `object`'s type: a
+    /// charge turret with turrets, not a Gattling. Others keep their index.
+    pub(crate) fn charges_turret(object: &ObjectType) -> bool {
+        object.gunner_turrets.is_charge_turret() && object.turret_count > 0 && !object.is_gattling
+    }
+
     /// TechnoAI6FA4FB..6FA5BE, after target validity and before missions.
     /// The signed wrapping product precedes IDIV, then the result is clamped.
     /// Only drawing reads this index; no weapon, timer or RNG is changed.
     pub(crate) fn update_charge_turret(&mut self, frame: i32, object: &ObjectType) {
-        if !object.gunner_turrets.is_charge_turret()
-            || object.turret_count <= 0
-            || object.is_gattling
-        {
+        if !Self::charges_turret(object) {
             return;
         }
         let rearm_remaining = self.rearm_timer.remaining(frame);

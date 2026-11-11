@@ -1074,7 +1074,7 @@ fn per_cell_promotes_queued_mission_before_tail_without_dispatching_handler() {
             None,
             crate::sim::world::FrameEffects::default(),
         );
-        let mission = sim.substrate.entities.get(1).unwrap().mission;
+        let mission = sim.substrate.entities.get(1).unwrap().mission.clone();
         if unload_active {
             assert_eq!(mission.current().known(), Some(MissionType::Move));
             assert_eq!(mission.queued().known(), Some(MissionType::Unload));
@@ -1240,7 +1240,7 @@ fn per_cell_factory_clearance_precedes_ready_and_preserves_foot_stop_scope() {
     )
     .unwrap();
     let path_runtime = unit.navigation.path_runtime().clone();
-    let producer_mission = sim.substrate.entities.get(2).unwrap().mission;
+    let producer_mission = sim.substrate.entities.get(2).unwrap().mission.clone();
     let rng = sim.rng_state();
     assert_eq!(
         sim.substrate
@@ -1662,7 +1662,7 @@ fn per_cell_factory_clearance_without_a_post_clears_the_archive() {
     use crate::sim::components::NavTargetRef;
 
     let (mut sim, rules) = computer_product_at_factory_exit();
-    let mission = sim.substrate.entities.get(1).unwrap().mission;
+    let mission = sim.substrate.entities.get(1).unwrap().mission.clone();
     sim.per_cell_process(
         1,
         super::super::PerCellReason::Arrival,
@@ -1695,7 +1695,7 @@ fn per_cell_factory_clearance_reads_unit_archive_through_the_shared_setter() {
     let (mut sim, rules) = factory_per_cell_fixture(true, false, "");
     let unit = sim.substrate.entities.get_mut(1).unwrap();
     unit.set_archive_target(Some(TargetKind::Cell(12, 10)));
-    let mission = unit.mission;
+    let mission = unit.mission.clone();
     let position = unit.position;
     let rng = sim.rng_state();
     sim.per_cell_process(
