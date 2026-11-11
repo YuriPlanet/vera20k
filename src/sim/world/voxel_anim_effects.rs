@@ -139,7 +139,10 @@ impl Simulation {
                 return Ok(false);
             }
             VoxelAnimAiStep::Expire => {
-                let changed = self.voxel_anim_expiry(id, rules, effects)?;
+                // Native expiry always reaches UnInit (`0x0074A700`). Ore
+                // VERA cannot place is the expiry's last step: log it, keep
+                // the area damage's bridge notice and retire the piece.
+                let changed = self.voxel_anim_expiry(id, rules, effects);
                 self.uninit_with_context(id, context);
                 return Ok(changed);
             }
@@ -236,12 +239,7 @@ impl Simulation {
     /// Natural Voxel expiry749FA2..74A6FC. The land/deck query reads the
     /// retained Location; the dry Anim, area, light, children and ore read
     /// Bounce coords. A water landing below the deck ends at its splash.
-    fn voxel_anim_expiry(
-        &mut self,
-        id: u64,
-        rules: &RuleSet,
-        effects: FrameEffects<'_>,
-    ) -> Result<bool, RuntimeOverlayError> {
+    fn voxel_anim_expiry(&mut self, id: u64, rules: &RuleSet, effects: FrameEffects<'_>) -> bool {
         let debris = self.substrate.voxel_anims.get(id).unwrap();
         let type_id = debris.type_id();
         let location = debris.world_coord();
@@ -271,7 +269,7 @@ impl Simulation {
                         0,
                     );
                 }
-                return Ok(false);
+                return false;
             }
             self.spawn_named_anim(
                 rules,
@@ -294,9 +292,10 @@ impl Simulation {
                     0,
                 );
             }
-            return Ok(false);
+            return false;
         }
         let changed = self.voxel_anim_expire_damage(type_id, impact, rules, effects);
+        let mut ore = Ok(());
         if kind.is_meteor {
             //74A288..301: two RandomRanged(0, SpawnCount) draws, then that
             // many children at the Bounce coords, each admitted before the
@@ -335,16 +334,19 @@ impl Simulation {
                         (impact.y / 256).wrapping_add(dy) as u16,
                     )
                 });
-                self.voxel_anim_place_tiberium(rules, &ring, effects)?;
+                ore = self.voxel_anim_place_tiberium(rules, &ring, effects);
             }
         } else if kind.is_tiberium
             && !above
             && let Some(cell) = Self::map_coord_cell(&self.resolved_terrain, impact.x, impact.y)
         {
             //74A5B6..6F7: ore in the impact cell (565730).
-            self.voxel_anim_place_tiberium(rules, &[cell], effects)?;
+            ore = self.voxel_anim_place_tiberium(rules, &[cell], effects);
         }
-        Ok(changed)
+        if let Err(error) = ore {
+            log::warn!("voxel debris {id} expired without placing its ore: {error}");
+        }
+        changed
     }
 
     /// Expiry74A13E..225: without ExpireAnim, no anim, area or light.
