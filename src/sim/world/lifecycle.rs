@@ -37,9 +37,9 @@ use crate::sim::world::ObjectSubstrate;
 /// Construction copies the fact, and a later Unlimbo recreates the light from
 /// the copy ([`Self::stamp`]). `BuildingClass::Unlimbo @
 /// 0x00441187` constructs the light after placement succeeds and
-/// `BuildingClass::Limbo` destroys it before the remaining building-count and
-/// base-node teardown; the light exists only for a placed `HasSpotlight=yes`
-/// building.
+/// `BuildingClass::Limbo @ 0x00445D81` UnInits it before the remaining
+/// building-count and base-node teardown, and the frame's drain deletes it;
+/// the building owns one only while placed with `HasSpotlight=yes`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BuildingLight {
     spotlight_capable: bool,
@@ -4001,7 +4001,9 @@ impl Simulation {
 
         // ObjectConceal5F4E98 invokes vt+0x11C here, before +81 Limbo is set
         // at5F4E9E (the same byte tested by the5F4D45 entry guard).
-        self.destroy_spotlight_for_parent(stable_id, context);
+        // BuildingClass::Limbo @ 0x00445D81 UnInits the light; its storage
+        // goes at the drain.
+        self.uninit_spotlight_for_parent_limbo(stable_id, context);
         Self::techno_clear_discovery_on_conceal(
             &self.session,
             &mut self.substrate,
