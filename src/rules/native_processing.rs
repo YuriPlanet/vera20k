@@ -8720,7 +8720,7 @@ impl RulesPassProcessor {
                 member.voxel_shadow_index = fixed_art
                     .section_or_empty(&image)
                     .read_int("ShadowIndex", member.voxel_shadow_index);
-                // TechnoRead715B10..716005 reads the WeaponStruct coordinates
+                // TechnoRead715B10..716005 reads the WeaponStruct geometry
                 // after the retained Image selects this pass's fixed ART.
                 let slots = &mut member.weapon_slots;
                 slots.offsets.read_pass(
