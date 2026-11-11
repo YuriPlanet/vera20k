@@ -1226,7 +1226,7 @@ mod tests {
             .expect("AutoLoad is registered");
         assert_eq!(row.command, HotkeyCommand::AutoLoad);
         assert_eq!(row.category_key, catalog::VERA_CATEGORY_KEY);
-        assert_eq!(row.name_key, "AutoLoad");
+        assert_eq!(row.name_key, "VERA:AutoLoad");
         assert_eq!(command_from_name("AutoLoad"), Some(HotkeyCommand::AutoLoad));
 
         let bindings = HotkeyBindings::from_ini_bytes(None);
