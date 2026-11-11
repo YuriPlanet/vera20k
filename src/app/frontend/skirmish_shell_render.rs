@@ -30,7 +30,9 @@ pub(crate) use network_failure::render_network_failure;
 mod preview;
 mod text;
 
-pub(crate) use preview::{SkirmishPreviewTexture, start_marker_picture};
+pub(crate) use preview::{
+    SkirmishPreviewTexture, is_random_map_sentinel_entry, start_marker_picture,
+};
 
 /// The preview the setup dialog shows for `file`, decoded the way BC's own
 /// preview is: the LAN host's `[0xAC1154]` for its preview upload.
@@ -122,6 +124,7 @@ const SHELL_BUTTON_TEXT_RGB_00000C05: [f32; 3] = [5.0 / 255.0, 12.0 / 255.0, 0.0
 const SHELL_LABEL_TEXT_RGB: [f32; 3] = [1.0, 1.0, 0.0];
 const SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F: [f32; 3] = [0x9F as f32 / 255.0, 0.0, 0.0];
 const RANDMAP_SENTINEL_FILE_NAME: &str = "RandMap.Sed";
+
 const RANDMAP_PREVIEW_FILE_NAME: &str = "RandMap.img";
 const COMBODROPWIN_TEXT_INSET_X: i32 = 3;
 const COMBODROPWIN_TEXT_TRUNCATION_SCROLLBAR_RESERVE_PX: i32 = 20;
@@ -405,8 +408,16 @@ fn build_skirmish_shell_instances(
                     OwnerDrawButton::LoadSetup,
                     !load_setup_enabled,
                 ),
+                (
+                    layout.team_starts_button,
+                    OwnerDrawButton::TeamStarts,
+                    false,
+                ),
                 (layout.back_button, OwnerDrawButton::Back0x5c0, false),
-            ] {
+            ]
+            .into_iter()
+            .filter(|(rect, _, _)| rect.w > 0)
+            {
                 push_right_panel_button_shp(
                     &mut instances,
                     atlas,

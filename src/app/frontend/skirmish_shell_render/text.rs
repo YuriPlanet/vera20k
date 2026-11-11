@@ -817,6 +817,7 @@ fn push_right_panel_text_draws(
     let choose = localized_label(state, "GUI:ChooseMap", "Choose Map");
     let save = tr("VERA:SaveSetup");
     let load = tr("VERA:LoadSetup");
+    let team_starts = tr("VERA:TeamStarts");
     let back = localized_label(state, "GUI:Back", "Back");
     let load_disabled = !crate::app::App::skirmish_setup_saved(state);
 
@@ -846,12 +847,21 @@ fn push_right_panel_text_draws(
             load_disabled,
         ),
         (
+            team_starts.as_str(),
+            layout.team_starts_button,
+            OwnerDrawButton::TeamStarts,
+            false,
+        ),
+        (
             back.as_str(),
             layout.back_button,
             OwnerDrawButton::Back0x5c0,
             false,
         ),
-    ] {
+    ]
+    .into_iter()
+    .filter(|(_, rect, _, _)| rect.w > 0)
+    {
         push_button_label_draw(
             shell_draws,
             state,
