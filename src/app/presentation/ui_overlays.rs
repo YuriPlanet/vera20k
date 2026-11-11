@@ -628,7 +628,7 @@ pub(crate) fn build_control_group_status_instances(
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .presentation()
             .map(|runtime| &runtime.simulation),
         state.rules(),
     ) else {
@@ -843,7 +843,7 @@ pub(crate) fn build_building_status_instances(
     body_opportunities: &BTreeSet<u64>,
 ) -> BuildingStatusTextInstances {
     let (Some(runtime), Some(rules), Some(csf)) = (
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.presentation(),
         state.rules(),
         state.process_assets.csf.as_ref(),
     ) else {

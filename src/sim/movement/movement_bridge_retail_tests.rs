@@ -388,7 +388,7 @@ fn diagnose_rejected_order(
         );
         if let Some(zones) = sim
             .zone_grid
-            .as_ref()
+            .as_deref()
             .and_then(|grid| grid.map_for(movement_zone.unwrap_or(MovementZone::Normal)))
         {
             let show = |cell: (u16, u16)| {

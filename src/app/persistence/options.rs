@@ -111,7 +111,7 @@ fn apply_in_game_options(state: &mut AppState) {
             .in_game_options
             .game_speed,
     );
-    if state.match_state.sim_runtime.is_some() {
+    if state.match_state.sim_runtime.is_installed() {
         let owner = crate::app::input::commands::preferred_local_owner_name(state);
         let speed = u8::try_from(
             state
@@ -123,7 +123,7 @@ fn apply_in_game_options(state: &mut AppState) {
         .ok();
         let command = speed.and_then(|speed| {
             in_game_speed_command(
-                &state.match_state.sim_runtime.as_ref().unwrap().simulation,
+                &state.match_state.sim_runtime.runtime().unwrap().simulation,
                 speed,
             )
         });

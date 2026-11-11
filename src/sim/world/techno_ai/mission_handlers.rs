@@ -1828,7 +1828,7 @@ fn area_guard_post_off_building(sim: &mut Simulation, id: u64) {
     let zone = sim
         .resolved_terrain
         .as_ref()
-        .zip(sim.zone_grid.as_ref())
+        .zip(sim.zone_grid.as_deref())
         .and_then(|(terrain, zones)| {
             zones.get_zone_id_native(terrain, own_cell, MovementZone::Normal, false)
         });

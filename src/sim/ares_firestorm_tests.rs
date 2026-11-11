@@ -407,7 +407,7 @@ fn a_powered_section_cell_takes_the_impassable_zone_class() {
         let cached = terrain.cell(cell.0, cell.1).unwrap().zone_type;
         let retained = sim
             .zone_grid
-            .as_ref()
+            .as_deref()
             .unwrap()
             .base_movement_class_at(cell.0, cell.1)
             .unwrap();

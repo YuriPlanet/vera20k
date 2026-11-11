@@ -83,7 +83,7 @@ pub(crate) fn shp_inputs<'a>(
     state: &'a AppState,
     local_owner: Option<&'a str>,
 ) -> Option<ShpInputs<'a>> {
-    let runtime = state.match_state.sim_runtime.as_ref()?;
+    let runtime = state.match_state.sim_runtime.presentation()?;
     let presentation = &state.match_state.match_presentation;
     let camera = [
         state.match_state.input.camera_x,
@@ -1555,7 +1555,7 @@ pub(crate) fn build_building_anim_instances(
     order: &NativeDisplayOrder,
 ) {
     let (Some(runtime), Some(atlas), Some(rules)) = (
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.presentation(),
         state.match_state.match_presentation.sprite_atlas.as_ref(),
         state.rules(),
     ) else {
@@ -2109,7 +2109,7 @@ pub(crate) fn resolve_object_shp_frame(
 ) -> Option<u16> {
     let facing = crate::app::presentation::render_pose::body_draw_facing(entity, binary_frame);
     resolve_object_shp_frame_with_facing(
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.presentation(),
         state.rules(),
         type_id,
         entity,

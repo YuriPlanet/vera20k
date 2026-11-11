@@ -331,7 +331,7 @@ fn scene(golden: &Value, row: &Value) -> Scene {
             &[],
             Some((16, 16)),
             Some(bounds),
-        ),
+        ).into(),
     );
     sim.path_grid = Some(Arc::new(path));
     sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));

@@ -70,7 +70,7 @@ pub(super) fn ion_blast_draws(
 
 /// This frame's draws from the match's blasts, camera, zoom and options.
 pub(super) fn draws(state: &crate::app::AppState) -> Vec<IonBlastDraw> {
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.presentation() else {
         return Vec::new();
     };
     let input = &state.match_state.input;

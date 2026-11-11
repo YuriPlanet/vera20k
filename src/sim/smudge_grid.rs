@@ -13,6 +13,7 @@ use crate::rules::smudge_type::SmudgeTypeRegistry;
 use crate::sim::occupancy::OccupancyGrid;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::rng::SimRng;
+use crate::util::shared::{ChunkedVec, Shared};
 use std::collections::BTreeMap;
 use std::hash::Hash;
 
@@ -143,10 +144,11 @@ pub struct SmudgeCell {
 pub struct SmudgeGrid {
     width: u16,
     height: u16,
-    cells: Vec<SmudgeCell>,
+    /// Shared in chunks with presentation frames (docs/sim-thread.md).
+    cells: ChunkedVec<SmudgeCell>,
     /// Generic Object/SmudgeClass vector membership lasts through UnInit.
     /// Never joins Logic; scalar destruction removes only the object.
-    objects: BTreeMap<u64, SmudgeObject>,
+    objects: Shared<BTreeMap<u64, SmudgeObject>>,
     /// Cells mutated this tick — drained per tick by the render-update path.
     /// Not part of game state; never serialized.
     #[serde(skip, default)]
@@ -159,8 +161,8 @@ impl SmudgeGrid {
         Self {
             width,
             height,
-            cells: vec![SmudgeCell::default(); count],
-            objects: BTreeMap::new(),
+            cells: ChunkedVec::filled(SmudgeCell::default(), count),
+            objects: Shared::default(),
             dirty_cells: Vec::new(),
         }
     }

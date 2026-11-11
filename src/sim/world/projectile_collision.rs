@@ -1738,8 +1738,8 @@ mod tests {
             );
             admit_existing(&mut sim, shot);
             let mut runtime = SimRuntime::from_simulation(sim);
-            runtime.resources.rules = RuleSet::from_ini(&ini).unwrap();
-            runtime.resources.overlay_registry =
+            runtime.resources_mut().rules = RuleSet::from_ini(&ini).unwrap();
+            runtime.resources_mut().overlay_registry =
                 crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, Some(&art));
             let _ = runtime
                 .advance_frame(
@@ -1831,8 +1831,8 @@ mod tests {
             let id = sim.substrate.allocate_stable_id();
             sim.admit_projectile(id, shot);
             let mut runtime = SimRuntime::from_simulation(sim);
-            runtime.resources.rules = make_rules();
-            runtime.resources.overlay_registry =
+            runtime.resources_mut().rules = make_rules();
+            runtime.resources_mut().overlay_registry =
                 crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, Some(&art));
             let _ = runtime
                 .advance_frame(
@@ -1916,8 +1916,8 @@ mod tests {
                 )
                 .unwrap();
             let mut resumed = SimRuntime::from_simulation(restored);
-            resumed.resources.rules = make_rules();
-            resumed.resources.overlay_registry =
+            resumed.resources_mut().rules = make_rules();
+            resumed.resources_mut().overlay_registry =
                 crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, Some(&art));
             let _ = runtime
                 .advance_frame(
@@ -2055,7 +2055,7 @@ mod tests {
                     .set_for_test(Some(TargetKind::Entity(target)));
                 sim.session.set_binary_frame_for_test(100);
                 let mut runtime = SimRuntime::from_simulation(sim);
-                runtime.resources.rules = RuleSet::from_ini(&ini).unwrap();
+                runtime.resources_mut().rules = RuleSet::from_ini(&ini).unwrap();
                 let output = runtime
                     .advance_frame(
                         &[],
@@ -2159,7 +2159,7 @@ mod tests {
                 .attack_target
                 .set_for_test(Some(TargetKind::Entity(target)));
             let mut runtime = SimRuntime::from_simulation(sim);
-            runtime.resources.rules = make_rules();
+            runtime.resources_mut().rules = make_rules();
             let inputs = &native["inputs"];
             let rules = &runtime.resources.rules;
             assert_eq!(rules.weapon("GUN").unwrap().speed, inputs["stored_speed"]);
@@ -2280,12 +2280,12 @@ mod tests {
                 )
                 .unwrap();
             let mut resumed = SimRuntime::from_simulation(restored);
-            resumed.resources.rules = make_rules();
+            resumed.resources_mut().rules = make_rules();
             let row = motion;
             for frame in 0..3 {
                 if frame != 0 {
                     for runtime in [&mut runtime, &mut resumed] {
-                        runtime.resources.rules.general.gravity =
+                        runtime.resources_mut().rules.general.gravity =
                             row["gravity_sequence"][frame].as_i64().unwrap() as i32;
                         let _ = runtime
                             .advance_frame(

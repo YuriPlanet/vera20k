@@ -803,7 +803,7 @@ pub(crate) fn build_tooltip_instances(
     let tint = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .and_then(|runtime| {
             runtime
                 .resources
@@ -1515,7 +1515,7 @@ mod tests {
             "fixture must reach the same ordinary picker before testing the text"
         );
         let mut runtime = SimRuntime::from_simulation(sim);
-        runtime.resources.rules = rules;
+        runtime.resources_mut().rules = rules;
         Some(MappedTipFixture {
             runtime,
 

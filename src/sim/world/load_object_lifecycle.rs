@@ -48,7 +48,7 @@ enum LoadOverlayTerminalPath {
     SlopeSurvivor,
 }
 
-#[derive(Debug, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Hash, serde::Serialize, serde::Deserialize)]
 struct LoadOverlayObject {
     cell: (u16, u16),
     world: [i32; 3],
@@ -114,7 +114,7 @@ pub enum LoadOverlayLifecycleError {
 /// load-prefixed handle names do not restrict the lifetime to map reading.
 /// It owns Overlay readiness/destruction; substrate owns every deferred ticket.
 /// Gameplay and Tag/Trigger callbacks therefore retain native interleaving.
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub(crate) struct LoadObjectLifecycle {
     objects: BTreeMap<LoadOverlayHandle, LoadOverlayObject>,
     object_registry: Vec<LoadOverlayHandle>,

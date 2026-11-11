@@ -99,7 +99,7 @@ fn play_cue(state: &mut AppState, returning: bool) {
     let sound = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .and_then(|runtime| {
             let general = &runtime.resources.rules.general;
             if returning {

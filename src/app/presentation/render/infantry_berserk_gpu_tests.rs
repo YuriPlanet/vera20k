@@ -355,7 +355,7 @@ fn render_original_body_pixels(
     }
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources,
+        resources: resources.into(),
     };
     let rules = &runtime.resources.rules;
     let mut light_grid = CellLightGrid::new();

@@ -716,7 +716,7 @@ impl Simulation {
         let target_zone = {
             let (Some(terrain), Some(zones)) = (
                 context.terrain().or(self.resolved_terrain.as_ref()),
-                self.zone_grid.as_ref(),
+                self.zone_grid.as_deref(),
             ) else {
                 return false;
             };
@@ -754,7 +754,7 @@ impl Simulation {
             let half_level = {
                 let (Some(terrain), Some(zones)) = (
                     context.terrain().or(self.resolved_terrain.as_ref()),
-                    self.zone_grid.as_ref(),
+                    self.zone_grid.as_deref(),
                 ) else {
                     return false;
                 };

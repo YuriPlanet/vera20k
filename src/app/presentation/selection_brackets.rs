@@ -140,7 +140,7 @@ pub(crate) fn build_selection_bracket_lines(
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|rt| &rt.simulation)
     else {
         return BTreeMap::new();

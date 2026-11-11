@@ -917,7 +917,7 @@ impl Simulation {
             self.resolved_terrain.as_ref(),
             self.playfield_bounds.is_some(),
             mask,
-            self.zone_grid.as_ref(),
+            self.zone_grid.as_deref(),
             crate::sim::combat::line_of_fire::LineOfFireInputs {
                 overlay_grid: self.overlay_grid.as_ref(),
                 overlay_registry,

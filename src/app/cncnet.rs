@@ -551,7 +551,7 @@ impl App {
         {
             return;
         }
-        let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+        let Some(runtime) = state.match_state.sim_runtime.runtime() else {
             return;
         };
         let frame = runtime.simulation.session().binary_frame();
@@ -704,7 +704,7 @@ impl App {
         use crate::ui::shell::abort::{AbortButton, AbortSecondary};
         match &state.frontend.screen {
             GameScreen::InGame => {
-                if state.match_state.sim_runtime.is_none()
+                if !state.match_state.sim_runtime.is_installed()
                     || state.match_state.scenario_exit.is_some()
                     || state.match_state.scenario_outcome.is_some()
                     || Self::house_outcome_wait_pending(state)
@@ -834,7 +834,7 @@ impl App {
         let sim = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|runtime| &runtime.simulation);
         let local = sim.and_then(|sim| {
             sim.session()

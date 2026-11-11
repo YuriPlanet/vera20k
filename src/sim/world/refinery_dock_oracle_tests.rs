@@ -373,7 +373,7 @@ pub(super) fn world_with(
     sim.session.set_map_height_for_test(33);
     sim.overlay_grid = Some(OverlayGrid::new(33, 33));
     sim.bridge_state = Some(bridges);
-    sim.zone_grid = Some(zones);
+    sim.zone_grid = Some(zones.into());
     sim.path_grid = Some(Arc::new(path));
     sim.install_resolved_terrain_for_new_map(terrain);
     sim

@@ -1,4 +1,5 @@
 use super::*;
+use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::persistence::options::audio::AudioVolumeOperations;
 use crate::util::time::{Duration, Instant};
 
@@ -279,7 +280,7 @@ impl crate::app::persistence::options::launcher::LauncherParentOperations
         // Display4AE450 resamples synchronously, before the next Logic visit
         // can copy a Cell's light into a grapple anim. This local operation
         // never enters Simulation's replay/sync hash.
-        if let Some(runtime) = self.state.match_state.sim_runtime.as_ref()
+        if let Some(runtime) = self.state.match_state.sim_runtime.runtime()
             && let Some(terrain) = runtime.simulation.resolved_terrain()
         {
             let presentation = &mut self.state.match_state.match_presentation;
@@ -568,7 +569,7 @@ impl App {
             .multiplayer_shell_runtime
             .read_multiplayer_settings(&mut state.process_assets);
         let main = crate::app::state::process_main_draws(
-            state.match_state.sim_runtime.as_ref(),
+            state.match_state.sim_runtime.runtime(),
             &state.frontend.frontend_main_rng,
         );
         state
@@ -582,17 +583,17 @@ impl App {
         if let Some(rules) = state.frontend.frontend_rules.as_mut() {
             state.process_assets.project_multiplayer_countries(rules);
         }
-        if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Rules) {
             state
                 .process_assets
-                .project_multiplayer_countries(&mut runtime.resources.rules);
+                .project_multiplayer_countries(&mut runtime.resources_mut().rules);
         }
         if let Some(rules) = state.frontend.frontend_rules.as_ref() {
             state
                 .frontend
                 .skirmish_shell_state
                 .refresh_country_catalog(rules);
-        } else if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+        } else if let Some(runtime) = state.match_state.sim_runtime.runtime() {
             state
                 .frontend
                 .skirmish_shell_state
@@ -1016,7 +1017,7 @@ impl App {
     pub(crate) fn retire_finished_scenario(state: &mut AppState) {
         // Main_Game48CEBF also retires ScenarioStarted after score Continue;
         // source: original gamemd.exe Main_Game48CCC0 (EBX=0 at48CCD4).
-        if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {
             runtime.simulation.retire_scenario_started();
         }
         // The accepted match owns the socket until either exit path returns

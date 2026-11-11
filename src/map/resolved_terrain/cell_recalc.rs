@@ -330,6 +330,24 @@ impl ResolvedTerrainGrid {
         level_override: i32,
         effects: &mut E,
     ) -> Result<LoadCellRecalcOutcome, LoadCellRecalcError<E::Error>> {
+        // The recalc reads and writes its cell through a private copy, kept
+        // only if it changed (see `cow_cells`); partial writes before an
+        // error are kept as before.
+        self.cells.begin_shadow(index);
+        let outcome =
+            self.recalc_cell_attributes_shadowed(state, index, overlay, level_override, effects);
+        self.cells.end_shadow();
+        outcome
+    }
+
+    fn recalc_cell_attributes_shadowed<E: LoadCellRecalcEffects>(
+        &mut self,
+        state: &mut LoadCellRecalcState<'_>,
+        index: usize,
+        overlay: FinalizedOverlayCell,
+        level_override: i32,
+        effects: &mut E,
+    ) -> Result<LoadCellRecalcOutcome, LoadCellRecalcError<E::Error>> {
         let Some(snapshot) = self.cells.get(index).cloned() else {
             return Err(LoadCellRecalcError::CellIndexOutOfBounds { index });
         };

@@ -118,7 +118,7 @@ pub(crate) enum PlayerOutcomeRequest {
 
 /// The paused House's result head has already run its assessment prefix.
 /// Generated events are still unadmitted until the complete House pass.
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub(super) struct HouseOutcomeCursor {
     pub(super) index: usize,
     pub(super) kind: crate::sim::house_state::HouseOutcomeKind,
@@ -143,6 +143,14 @@ pub(crate) struct CivilianSideHouse {
     /// builds only).
     #[cfg(any(test, feature = "test-support"))]
     walks: u32,
+}
+
+/// A presentation frame's copy (docs/sim-thread.md) never runs a pass, so
+/// it starts with nothing remembered.
+impl Clone for CivilianSideHouse {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
 }
 
 impl CivilianSideHouse {
