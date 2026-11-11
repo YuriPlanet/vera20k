@@ -1576,6 +1576,12 @@ impl GameEntity {
         self.door.advance(frame);
     }
 
+    /// Whether the door stands open or closed: [`Self::door_advances`] is
+    /// false at every frame.
+    pub(crate) fn door_rests(&self) -> bool {
+        self.door.rests()
+    }
+
     /// Whether [`Self::advance_door`] changes the door at `frame`.
     pub(crate) fn door_advances(&self, frame: u32) -> bool {
         self.door.advances(frame)

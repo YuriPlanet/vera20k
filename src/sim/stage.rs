@@ -43,6 +43,12 @@ impl StageClass {
         (self.timer.expired(now) && self.rate != 0) || self.changed != 0
     }
 
+    /// Whether the stage stands still: no rate and no changed byte to clear,
+    /// so [`Self::advances`] is false at every frame.
+    pub fn rests(&self) -> bool {
+        self.rate == 0 && self.changed == 0
+    }
+
     /// Original6FABC4,4509DE and StripAI6A8FBE: advance at most once, even after a long gap.
     /// The changed byte records passing the gate, including increment zero.
     pub fn advance(&mut self, now: i32) -> bool {

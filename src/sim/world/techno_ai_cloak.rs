@@ -903,6 +903,33 @@ fn original_health_ratio_corpus_populates_cloak_tick_facts() {
     }
 }
 
+/// Whether [`tick_stock_cloak_producer`] calls the cloak virtual for
+/// `entity`: it can cloak, by its type, a granted ability, its rank or a
+/// Phobos stat, or a transition is still running. Native calls CloakingTick
+/// even after a temporary ability disappears, so the clock keeps going until
+/// its uncloak transition finishes.
+pub(crate) fn cloak_producer_ticks(
+    entity: &crate::sim::game_entity::GameEntity,
+    object: &crate::rules::object_type::ObjectType,
+) -> bool {
+    entity
+        .stealth_ability
+        .active(crate::sim::cloak_disguise::type_seeds_stealth(
+            entity.category(),
+            object,
+        ))
+        || has_weapon_ability(
+            rank_from_u16(entity.veterancy.rank()),
+            object,
+            Ability::Cloak,
+        )
+        || entity
+            .cloak
+            .as_ref()
+            .is_some_and(|cloak| cloak.state() != 0)
+        || entity.phobos_cloakable()
+}
+
 /// The cloak virtual (vt+0x410): `TechnoClass::CloakingTick @ 0x006FB740`
 /// for Foot objects, [`tick_building_cloak`] for a Building;
 /// the shared caller runs this after mission/targeting, Bomb, SlaveManager,
@@ -914,23 +941,10 @@ pub(super) fn tick_stock_cloak_producer(
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) {
-    let Some((category, type_ref, veterancy, stealth_ability, active_transition, phobos_cloakable)) =
-        sim.substrate.entities.get(id).map(|entity| {
-            (
-                entity.category(),
-                entity.type_ref(),
-                entity.veterancy.rank(),
-                entity.stealth_ability,
-                entity
-                    .cloak
-                    .as_ref()
-                    .is_some_and(|cloak| cloak.state() != 0),
-                entity.phobos_cloakable(),
-            )
-        })
-    else {
+    let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
+    let category = entity.category();
     if !matches!(
         category,
         EntityCategory::Unit
@@ -940,18 +954,10 @@ pub(super) fn tick_stock_cloak_producer(
     ) {
         return;
     }
-    let Some(object) = sim.interner.object_type(type_ref, rules) else {
+    let Some(object) = sim.interner.object_type(entity.type_ref(), rules) else {
         return;
     };
-    let rank_cloak = has_weapon_ability(rank_from_u16(veterancy), object, Ability::Cloak);
-    // Native calls CloakingTick even after a temporary ability disappears.
-    // Keep the existing clock alive until its uncloak transition finishes.
-    if !stealth_ability.active(crate::sim::cloak_disguise::type_seeds_stealth(
-        category, object,
-    )) && !rank_cloak
-        && !active_transition
-        && !phobos_cloakable
-    {
+    if !cloak_producer_ticks(entity, object) {
         return;
     }
 
