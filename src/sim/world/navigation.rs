@@ -117,7 +117,11 @@ impl NavigationCaches<'_> {
         let cell = terrain
             .cell(coord.0, coord.1)
             .ok_or("Recalc cell is outside terrain")?;
-        if let Some(zones) = self.zones.as_mut() {
+        // Only a changed cell takes the grid mutably, which copies it while
+        // a presentation frame shares it (docs/sim-thread.md).
+        if let Some(zones) = self.zones.as_mut()
+            && !zones.base_cell_attributes_current(terrain, coord.0, coord.1)
+        {
             zones.refresh_base_cell_attributes_at(terrain, coord.0, coord.1);
         }
         if let Some(path) = self.path.as_mut() {

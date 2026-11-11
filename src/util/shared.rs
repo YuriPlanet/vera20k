@@ -181,7 +181,11 @@ impl<T: Clone> ChunkedVec<T> {
     }
 
     pub fn to_vec(&self) -> Vec<T> {
-        self.iter().cloned().collect()
+        let mut out = Vec::with_capacity(self.len);
+        for chunk in &self.chunks {
+            out.extend_from_slice(chunk);
+        }
+        out
     }
 
     /// A vector of `len` copies of `value`.

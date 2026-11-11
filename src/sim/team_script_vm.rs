@@ -735,17 +735,17 @@ impl TeamScriptState {
 /// state.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TeamScriptVm {
-    scripts: BTreeMap<InternedId, TeamScriptDefinition>,
+    scripts: crate::util::shared::Shared<BTreeMap<InternedId, TeamScriptDefinition>>,
     #[serde(default)]
     script_order: Vec<InternedId>,
-    task_forces: BTreeMap<InternedId, TeamTaskForceDefinition>,
+    task_forces: crate::util::shared::Shared<BTreeMap<InternedId, TeamTaskForceDefinition>>,
     #[serde(default)]
     task_force_order: Vec<InternedId>,
     team_types: BTreeMap<InternedId, TeamTypeDefinition>,
     #[serde(default)]
     team_type_ini: BTreeMap<InternedId, TeamTypeIniMetadata>,
     #[serde(default)]
-    ai_triggers: BTreeMap<InternedId, TeamAiTriggerDefinition>,
+    ai_triggers: crate::util::shared::Shared<BTreeMap<InternedId, TeamAiTriggerDefinition>>,
     #[serde(default)]
     ai_trigger_order: Vec<InternedId>,
     /// Live teams by id, which increases with construction, so key order is

@@ -780,7 +780,7 @@ pub struct ResolvedTerrainGrid {
     /// Derived asset data, keyed by tile identity rather than mutable cell:
     /// never serialized or included in simulation hashes. Every drawn object
     /// asks it each frame and nothing walks it, so it takes the lookup hasher.
-    native_tmp_draw_heights: LookupMap<u16, PristineTmpHeader>,
+    native_tmp_draw_heights: crate::util::shared::Shared<LookupMap<u16, PristineTmpHeader>>,
     /// Copy-on-write ([`cow_cells::CowCells`]): the presentation frame
     /// shares them until a real change copies them.
     cells: cow_cells::CowCells,
@@ -1139,7 +1139,7 @@ impl ResolvedTerrainGrid {
             cells: cow_cells::CowCells::new(cells),
             land_speed_costs: land_speed_cost_profiles(None),
             overlay_passability: Default::default(),
-            native_tmp_draw_heights: LookupMap::default(),
+            native_tmp_draw_heights: Default::default(),
             shared_cell_dummy: SharedCellDummy::fresh(),
             mutation_epoch: 0,
             native_allocated: None,

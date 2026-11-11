@@ -287,7 +287,7 @@ impl SavedTerrainTemplate {
             cells: super::cow_cells::CowCells::new(self.cells),
             land_speed_costs: land_speed_cost_profiles(None),
             overlay_passability: Default::default(),
-            native_tmp_draw_heights: LookupMap::default(),
+            native_tmp_draw_heights: Default::default(),
             shared_cell_dummy,
             mutation_epoch: 0,
             native_allocated: self.native_allocated.map(Into::into),
@@ -444,7 +444,7 @@ impl ResolvedTerrainGrid {
             self.bridge_recalc_catalog = None;
             return;
         }
-        self.native_tmp_draw_heights = load_native_tmp_draw_heights(theater, assets);
+        self.native_tmp_draw_heights = load_native_tmp_draw_heights(theater, assets).into();
         self.destroyable_cliff_catalog = build_destroyable_cliff_catalog(theater, assets, rules);
         self.deformation_catalog =
             super::deformation::build_deformation_catalog(theater, assets, rules);
