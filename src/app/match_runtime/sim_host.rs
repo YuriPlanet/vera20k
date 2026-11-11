@@ -24,6 +24,7 @@ use std::sync::{Arc, mpsc};
 
 use crate::sim::command_queue::{FrameChecksumState, MultiplayerChecksumHistory};
 use crate::sim::runtime::SimRuntime;
+use crate::util::time::{Duration, Instant};
 
 /// What a lent job returns, for its owner to downcast.
 pub(crate) type SimJobResult = Box<dyn Any + Send>;
@@ -73,6 +74,12 @@ pub(crate) struct SimHost {
     /// with the live world until that changes. It lives only while the
     /// runtime is lent, apart from the `VERA20K_PRESENTATION_FRAME` opt-in.
     presentation: Option<Arc<SimRuntime>>,
+    /// What the last lent job's frame cost this thread: the copy when the
+    /// job left ([`Self::lend`]), kept in `copy_cost` meanwhile, and the
+    /// drop when it came back. `None` until one has come back in this
+    /// scenario.
+    presentation_cost: Option<Duration>,
+    copy_cost: Duration,
     /// Global B04474 and its comparison timer (`FrameChecksumState`):
     /// process state that launch and load retain, written and compared only
     /// inside a multiplayer tick.
@@ -111,7 +118,9 @@ impl SimHost {
         if self.lent_jobs == EARLY_RETURN_REPORT_JOBS {
             self.report_early_returns();
         }
+        let copy_started = Instant::now();
         self.publish_presentation();
+        self.copy_cost = copy_started.elapsed();
         let runtime = self.runtime.take().expect("installed runtime");
         self.worker
             .get_or_insert_with(SimWorker::spawn)
@@ -155,7 +164,9 @@ impl SimHost {
         self.runtime = Some(runtime);
         // The job's frame has done its work: reads see the live world again,
         // and nothing shares its storage or its resources.
+        let drop_started = Instant::now();
         self.presentation = None;
+        self.presentation_cost = Some(self.copy_cost + drop_started.elapsed());
         match result {
             Ok(result) => self.job_result = Some(result),
             Err(panic) => std::panic::resume_unwind(panic),
@@ -193,6 +204,13 @@ impl SimHost {
             .map(|runtime| Arc::new(runtime.clone()));
     }
 
+    /// What a lent job's published frame last cost this thread, to weigh
+    /// against the tick it frees this thread from. `None` before the first
+    /// job of a scenario is back.
+    pub(crate) fn presentation_cost(&self) -> Option<Duration> {
+        self.presentation_cost
+    }
+
     /// What drawing reads: the published frame, else the live world.
     pub(crate) fn presentation(&self) -> Option<&SimRuntime> {
         self.presentation.as_deref().or(self.runtime.as_ref())
@@ -218,6 +236,7 @@ impl SimHost {
         self.report_early_returns();
         self.job_result = None;
         self.presentation = None;
+        self.presentation_cost = None;
         self.runtime = runtime;
     }
 
@@ -227,6 +246,7 @@ impl SimHost {
         self.report_early_returns();
         self.job_result = None;
         self.presentation = None;
+        self.presentation_cost = None;
         self.runtime.take()
     }
 }
@@ -363,6 +383,8 @@ mod tests {
         assert_eq!((host.lent_jobs, host.early_returns), (1, 1));
         // Back home, the job's frame is gone and drawing reads the live world.
         assert_eq!(host.presentation().unwrap().simulation.session().tick(), 8);
+        // What it cost is known from then on, until another scenario.
+        assert!(host.presentation_cost().is_some());
         let result = host.take_job_result().unwrap();
         assert_eq!(*result.downcast::<u32>().unwrap(), 41);
         assert!(host.take_job_result().is_none());

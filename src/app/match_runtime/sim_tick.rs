@@ -1271,13 +1271,6 @@ fn advance_in_game_runtime_mode(
     let mouse_scroll =
         crate::app::input::camera::sample_mouse_scroll(state, decision.scroll_input, scroll_steps);
     if decision.run_sim {
-        // One Main_Tick, one tactical composite (RenderFrame 0x0055D8F2),
-        // however many frames debug speed runs in this pass.
-        state
-            .match_state
-            .match_presentation
-            .tactical_composite
-            .note_main_tick();
         let tick_lane = decision.tick_lane;
         let resume = if resume_wait {
             FrameResume::NetworkWait
@@ -1295,10 +1288,19 @@ fn advance_in_game_runtime_mode(
         // Only the last frame before the draw goes to the simulation thread
         // (docs/sim-thread.md): one the service or debug speed follows with
         // another ticks inline, as before the thread, and publishes nothing.
+        // It goes only when that saves this thread time: a tick expected to
+        // cost less here than the frame published for it ticks inline too.
         let (game_speed, network_fps) = local_pacing_inputs(state);
+        let pacer = &state.platform.frame_pacer;
+        let worth_lending = state
+            .match_state
+            .sim_runtime
+            .presentation_cost()
+            .is_none_or(|frame| pacer.expected_frame_cost() > frame);
         let inline = frame_stepping
             || matches!(mode, RuntimeAdvanceMode::ExactOneStep)
-            || state.platform.frame_pacer.another_pass_follows(
+            || !worth_lending
+            || pacer.another_pass_follows(
                 crate::util::time::Instant::now(),
                 crate::app::match_runtime::frame_pacer::wall_clock_ms(),
                 game_speed,
@@ -1334,6 +1336,18 @@ fn advance_in_game_runtime_mode(
                 FrameResume::None,
                 inline || frame < debug_frames,
             );
+        }
+        // One Main_Tick, one tactical composite (RenderFrame 0x0055D8F2),
+        // however many frames debug speed runs in this pass. A frame on the
+        // simulation thread has nothing to show yet: its composite is noted
+        // when it finishes ([`finish_threaded_frame`]), so its picture is
+        // drawn once, not once now and again then.
+        if !state.match_state.sim_runtime.is_lent() {
+            state
+                .match_state
+                .match_presentation
+                .tactical_composite
+                .note_main_tick();
         }
         state
             .match_state
@@ -1424,12 +1438,24 @@ pub(crate) fn finish_threaded_frame(state: &mut AppState) {
         return;
     }
     after_frame(state, frame_committed, TickLane::Ordinary);
+    // What the pass that admitted the frame left to its result: the
+    // Main_Tick's tactical composite, and its audio pump after Logic
+    // (`0x0055DE4A`), so the tick's sounds start now and not when the next
+    // frame is admitted.
+    state
+        .match_state
+        .match_presentation
+        .tactical_composite
+        .note_main_tick();
+    crate::app::presentation::building_anim::drain_sound_events(state);
+    if main_tick_owns_audio_pump(state, true) {
+        pump_audio_service(state, super::frame_pacer::wall_clock_ms());
+    }
 }
 
 /// Move the simulation's pending radar-terrain marks into the minimap's
 /// backlog. Without a minimap they stay with the simulation.
-pub(crate) fn drain_radar_terrain_marks(state: &mut AppState) {
-    let match_state = &mut state.match_state;
+pub(crate) fn drain_radar_terrain_marks(match_state: &mut super::state::MatchState) {
     if let (Some(minimap), Some(runtime)) = (
         match_state.match_presentation.minimap.as_mut(),
         match_state
@@ -1488,8 +1514,10 @@ fn after_simulation_pass(
     state.audio.main_tick_theme(in_game_music, music_now_ms);
     // Main_Tick's Network_ServiceLoop after Logic (`0x0055DE4A`). Logic's
     // sounds reach the arbiter in the drain above, so they start in this
-    // same Main_Tick, as native's direct submissions do.
-    if decision.run_sim && main_tick_pumps_audio {
+    // same Main_Tick, as native's direct submissions do. A frame on the
+    // simulation thread has delivered none yet: its pump runs when it
+    // finishes ([`finish_threaded_frame`]).
+    if decision.run_sim && main_tick_pumps_audio && !state.match_state.sim_runtime.is_lent() {
         pump_audio_service(state, music_now_ms);
     }
     for _ in 0..scroll_steps {
@@ -1755,6 +1783,12 @@ fn advance_one_simulation_frame(
         && resume == FrameResume::None
         && tick_lane == TickLane::Ordinary
         && super::sim_host::sim_thread_enabled();
+    if threaded {
+        // The frame published for this tick shows every cell ticked so far;
+        // their radar-terrain marks go to the minimap with it, since no draw
+        // takes them while the tick is out (`App::drain_radar_terrain_marks`).
+        drain_radar_terrain_marks(&mut state.match_state);
+    }
     let Some((rt, frame_checksums)) = state.match_state.sim_runtime.tick_parts() else {
         return threaded_finished.unwrap_or(false);
     };
@@ -1777,7 +1811,10 @@ fn advance_one_simulation_frame(
     // Delay-zero AnimClass construction can emit StartSound during the
     // final map-load sweep. Keep it until this first tactical drain;
     // `drain(..)` below still consumes every event exactly once.
-    let due_commands = if !replaying && !resuming && tick_lane == TickLane::Ordinary {
+    // A lent frame takes its due commands on the simulation thread, after
+    // its frame is published: taken here, the published world would have a
+    // selection or control group neither queued nor applied.
+    let due_commands = if !threaded && !replaying && !resuming && tick_lane == TickLane::Ordinary {
         sim.take_due_commands()
     } else {
         Vec::new()
@@ -1806,6 +1843,7 @@ fn advance_one_simulation_frame(
                 .deferred
                 .as_ref()
                 .expect("a threaded tick defers its client effects");
+            let due_commands = rt.simulation.take_due_commands();
             let output = run_deferred_tick(
                 rt,
                 deferred,
@@ -2073,7 +2111,7 @@ fn finish_threaded_tick(state: &mut AppState, mouse_scroll: Option<(f32, f32)>) 
     let committed = finish_simulation_frame(state, finish, output, tick_cost, mouse_scroll);
     // The draw left this tick's radar-terrain marks with it
     // (`App::drain_radar_terrain_marks`); they go to the minimap now.
-    drain_radar_terrain_marks(state);
+    drain_radar_terrain_marks(&mut state.match_state);
     Some(committed)
 }
 

@@ -634,9 +634,9 @@ impl LocalFramePacer {
     ///
     /// Only one tick can run beside a draw, so only a service's last frame
     /// goes to the simulation thread (docs/sim-thread.md). The frame's time
-    /// is taken as the smaller of the last inline and the last lent one: a
-    /// frame that only fills the budget because it was lent would otherwise
-    /// keep every later one lent, one frame per service.
+    /// is [`Self::expected_frame_cost`]: a frame that only fills the budget
+    /// because it was lent would otherwise keep every later one lent, one
+    /// frame per service.
     pub(crate) fn another_pass_follows(
         &self,
         now: Instant,
@@ -647,12 +647,19 @@ impl LocalFramePacer {
         let Some((started, finished)) = self.service_pass else {
             return false;
         };
-        let cost = match (self.inline_frame_cost, self.lent_frame_cost) {
+        Self::permits_catch_up(
+            finished + 1,
+            now.saturating_duration_since(started) + self.expected_frame_cost(),
+        ) && self.should_admit(now_ms, game_speed, network_fps, false)
+    }
+
+    /// What the next frame's tick is expected to take on this thread: the
+    /// smaller of the last inline and the last lent time, zero before either.
+    pub(crate) fn expected_frame_cost(&self) -> Duration {
+        match (self.inline_frame_cost, self.lent_frame_cost) {
             (Some(inline), Some(lent)) => inline.min(lent),
             (inline, lent) => inline.or(lent).unwrap_or_default(),
-        };
-        Self::permits_catch_up(finished + 1, now.saturating_duration_since(started) + cost)
-            && self.should_admit(now_ms, game_speed, network_fps, false)
+        }
     }
 
     pub(crate) fn debug_speed(&self) -> u8 {
@@ -1569,6 +1576,7 @@ mod tests {
         pacer.record_frame_cost(Duration::from_millis(9), true);
         assert!(!pacer.another_pass_follows(started, 0, 0, None));
         pacer.record_frame_cost(Duration::from_millis(5), false);
+        assert_eq!(pacer.expected_frame_cost(), Duration::from_millis(5));
         assert!(pacer.another_pass_follows(at(2), 0, 0, None));
         assert!(!pacer.another_pass_follows(at(3), 0, 0, None));
         pacer.end_service();

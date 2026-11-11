@@ -219,6 +219,13 @@ it did before the thread, and publishes nothing. The frame nothing follows
 is lent, and the service ends there: another pass would only wait for it.
 Debug speed's extra frames follow the same rule.
 
+A lent tick frees the main thread from the tick and costs it the frame:
+the copy when the tick leaves and the drop when it is back
+(`SimHost::presentation_cost`). A frame whose tick is expected to cost the
+main thread less than that ticks inline as well. In a 1v29 skirmish on the
+30-start map the frame costs more than a tick until the battle is large, so
+lending every last frame made GameSpeed 0 run 8 to 22% slower there.
+
 Between the dispatch and the next pass nothing on the main thread may take
 the live world: a write waits for the tick, and the tick then did not run
 beside the draw. The per-pass EXIT check therefore looks at the published

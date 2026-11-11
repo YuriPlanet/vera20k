@@ -1383,9 +1383,9 @@ where
 }
 
 /// The game simulation - owns all authoritative game state.
-/// `Clone` serves exactly one copy: the presentation frame each tick
-/// publishes for drawing (docs/sim-thread.md). No authority is copied:
-/// gameplay owns the one live world.
+/// `Clone` serves exactly one copy: the presentation frame a tick publishes
+/// for drawing when it goes to the simulation thread (docs/sim-thread.md).
+/// No authority is copied: gameplay owns the one live world.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Simulation {
     /// String interner for owner/type_ref — zero-cost ID clones instead of heap Strings.

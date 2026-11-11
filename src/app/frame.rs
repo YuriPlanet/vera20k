@@ -126,7 +126,7 @@ impl App {
     /// to, and taking them here would wait for the tick.
     fn drain_radar_terrain_marks(state: &mut AppState) {
         if !state.match_state.sim_runtime.is_lent() {
-            sim_tick::drain_radar_terrain_marks(state);
+            sim_tick::drain_radar_terrain_marks(&mut state.match_state);
         }
     }
 
