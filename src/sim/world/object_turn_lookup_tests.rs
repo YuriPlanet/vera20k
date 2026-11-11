@@ -72,18 +72,44 @@ fn a_tanks_turn_and_a_load_store_no_building_state() {
     assert_eq!(*loaded_plant.building_art, *plant.building_art);
 }
 
-/// The record every object carries stays small: state most objects lack
-/// (building art, damage fires, the managers, a bomb, a cloak, a miner's
-/// hold, a cargo hold, a temporal link) sits behind a pointer. A new field
-/// that pushes the record past this ceiling belongs behind one too.
+/// The record a turn walks stays small: state most objects lack sits
+/// behind a pointer, and state a turn does not read each step is the seldom
+/// part. A new field that pushes either past its ceiling belongs behind a
+/// pointer or in the other part.
 #[cfg(all(
     target_pointer_width = "64",
     not(any(feature = "ares", feature = "phobos", feature = "debug-tools"))
 ))]
 #[test]
 fn the_object_record_stays_under_its_ceiling() {
-    let size = std::mem::size_of::<crate::sim::game_entity::GameEntity>();
-    assert!(size <= 2240, "GameEntity is {size} bytes");
+    use crate::sim::game_entity::{GameEntity, Seldom};
+    let (main, seldom) = (
+        std::mem::size_of::<GameEntity>(),
+        std::mem::size_of::<Seldom>(),
+    );
+    assert!(
+        main <= 1424 && seldom <= 832,
+        "GameEntity is {main} bytes and Seldom {seldom}"
+    );
+}
+
+/// A presentation frame holds a copy of a resting tank's record. The tank's
+/// next turns write only the main part, so the seldom part is never copied:
+/// the frame and the live record still share it.
+#[test]
+fn a_resting_tanks_turn_leaves_the_seldom_part_shared() {
+    let (mut sim, rules, tank, _) = scene();
+    for _ in 0..3 {
+        sim.advance_live_object_turn(tank, &rules, techno_ai::ObjectAiCtx::default())
+            .unwrap();
+    }
+    let frame = sim.substrate.entities.get(tank).unwrap().clone();
+    for _ in 0..3 {
+        sim.advance_live_object_turn(tank, &rules, techno_ai::ObjectAiCtx::default())
+            .unwrap();
+    }
+    let live = sim.substrate.entities.get(tank).unwrap();
+    assert!(live.shares_seldom_with(&frame));
 }
 
 /// The sound owner's view of a turn: what was delivered, and whose looping
