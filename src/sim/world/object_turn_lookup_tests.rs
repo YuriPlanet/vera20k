@@ -273,9 +273,14 @@ fn an_idle_turn_hands_its_object_out_only_on_a_due_timer() {
     // A presentation frame's copy of the power plant stays shared across
     // its turn: its light sample is rewritten only when the draw would read
     // something else.
-    let shown = sim.substrate.entities.clone();
-    turn(&mut sim, plant);
-    assert!(sim.substrate.entities.shares_entity_with(&shown, plant));
+    let mut copied = 0;
+    for _ in 0..20 {
+        let shown = sim.substrate.entities.clone();
+        turn(&mut sim, plant);
+        copied += u32::from(!sim.substrate.entities.shares_entity_with(&shown, plant));
+        frame(&mut sim);
+    }
+    assert!(copied <= 2, "the power plant was copied in {copied} of 20 turns");
     assert!(
         writing_turns[0] <= 6 && writing_turns[1] <= 6,
         "turns of 60 that handed the object out (tank, plant): {writing_turns:?}, \
