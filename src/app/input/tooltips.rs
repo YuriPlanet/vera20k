@@ -1515,7 +1515,7 @@ mod tests {
             "fixture must reach the same ordinary picker before testing the text"
         );
         let mut runtime = SimRuntime::from_simulation(sim);
-        runtime.resources.rules = rules;
+        runtime.resources_mut().rules = rules;
         Some(MappedTipFixture {
             runtime,
 

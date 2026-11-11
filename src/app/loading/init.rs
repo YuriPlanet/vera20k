@@ -945,7 +945,7 @@ mod map_wall_owner_candidate_tests {
             sim.session().lighting(),
         ));
         let mut rt = crate::sim::runtime::SimRuntime::from_simulation(sim);
-        rt.resources.rules = rules;
+        rt.resources_mut().rules = rules;
         let frame = rt
             .advance_frame(
                 &[],

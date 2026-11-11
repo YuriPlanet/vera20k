@@ -3644,7 +3644,7 @@ mod tests {
                     Some(&retail.fixed_art),
                 ),
                 ..SimResources::empty()
-            },
+            }.into(),
         };
         let frame = |runtime: &mut SimRuntime, commands: &[CommandEnvelope]| {
             let output = runtime

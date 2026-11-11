@@ -585,7 +585,8 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
                     overlay_registry: result.scenario.overlay_registry,
                     terrain_template: result.scenario.resolved_terrain,
                     rules,
-                },
+                }
+                .into(),
             }
         }));
     if let Some(runtime) = state.match_state.sim_runtime.runtime() {
