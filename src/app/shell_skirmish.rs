@@ -9,6 +9,40 @@ impl App {
         crate::app::frontend::shell_layout::skirmish_layout(state)
     }
 
+    /// VERA's Team Starts: the selected map's start cells by start index. A
+    /// map gives its start waypoints; the random map gives the starts of the
+    /// last Generate (`0x0058B820`'s header), none before one.
+    fn selected_map_start_cells(state: &AppState) -> Vec<(i32, i32)> {
+        let shell = &state.frontend.skirmish_shell_state;
+        let Some(entry) = state
+            .frontend
+            .scenario_catalog
+            .shell_maps()
+            .get(shell.selected_map_idx)
+        else {
+            return Vec::new();
+        };
+        if crate::app::frontend::skirmish_shell_render::is_random_map_entry(entry) {
+            let header = state.frontend.random_map_retention.generated_header();
+            let count = usize::try_from(header.count).unwrap_or(0);
+            return header
+                .cells
+                .iter()
+                .take(count)
+                .map(|&(x, y)| (i32::from(x), i32::from(y)))
+                .collect();
+        }
+        // The Start column names a start by waypoint index, so only the
+        // leading unbroken run 0, 1, 2... can be given out by position.
+        entry
+            .multiplayer_start_waypoints
+            .iter()
+            .enumerate()
+            .take_while(|(position, waypoint)| waypoint.index as usize == *position)
+            .map(|(_, waypoint)| (i32::from(waypoint.rx), i32::from(waypoint.ry)))
+            .collect()
+    }
+
     /// Whether the selected map has a setup for Load Setup.
     pub(crate) fn skirmish_setup_saved(state: &AppState) -> bool {
         state
@@ -298,6 +332,15 @@ impl App {
                 {
                     setup.apply(&mut state.frontend.skirmish_shell_state, maps);
                 }
+            }
+            crate::ui::skirmish_shell::SkirmishShellAction::TeamStarts => {
+                let maps = state.frontend.scenario_catalog.shell_maps();
+                let starts = Self::selected_map_start_cells(state);
+                crate::ui::skirmish_shell::apply_team_starts(
+                    &mut state.frontend.skirmish_shell_state,
+                    maps,
+                    &starts,
+                );
             }
             crate::ui::skirmish_shell::SkirmishShellAction::None
             | crate::ui::skirmish_shell::SkirmishShellAction::SelectColor(_)

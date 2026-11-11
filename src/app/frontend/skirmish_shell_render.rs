@@ -123,6 +123,11 @@ const SHELL_BUTTON_TEXT_RGB_00000C05: [f32; 3] = [5.0 / 255.0, 12.0 / 255.0, 0.0
 const SHELL_LABEL_TEXT_RGB: [f32; 3] = [1.0, 1.0, 0.0];
 const SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F: [f32; 3] = [0x9F as f32 / 255.0, 0.0, 0.0];
 const RANDMAP_SENTINEL_FILE_NAME: &str = "RandMap.Sed";
+
+/// Whether a map list entry is the generated random map (`RandMap.Sed`).
+pub(crate) fn is_random_map_entry(entry: &crate::map::scenario_menu::MapMenuEntry) -> bool {
+    preview::is_random_map_sentinel_entry(entry)
+}
 const RANDMAP_PREVIEW_FILE_NAME: &str = "RandMap.img";
 const COMBODROPWIN_TEXT_INSET_X: i32 = 3;
 const COMBODROPWIN_TEXT_TRUNCATION_SCROLLBAR_RESERVE_PX: i32 = 20;
@@ -403,8 +408,16 @@ fn build_skirmish_shell_instances(
                     OwnerDrawButton::LoadSetup,
                     !load_setup_enabled,
                 ),
+                (
+                    layout.team_starts_button,
+                    OwnerDrawButton::TeamStarts,
+                    false,
+                ),
                 (layout.back_button, OwnerDrawButton::Back0x5c0, false),
-            ] {
+            ]
+            .into_iter()
+            .filter(|(rect, _, _)| rect.w > 0)
+            {
                 push_right_panel_button_shp(
                     &mut instances,
                     atlas,
@@ -1132,9 +1145,10 @@ mod tests {
             );
             (draws, [title, help], scale.factor())
         };
-        for (random, sample) in [true, false].into_iter().flat_map(|random| {
-            ["字".repeat(90), "A ".repeat(100)].map(|sample| (random, sample))
-        }) {
+        for (random, sample) in [true, false]
+            .into_iter()
+            .flat_map(|random| ["字".repeat(90), "A ".repeat(100)].map(|sample| (random, sample)))
+        {
             let base = draw(800, 600, random, &sample).0;
             assert!(base.iter().all(|draw| !draw.instances.is_empty()));
             for (width, height) in [(800, 600), (1200, 900), (1600, 1200)] {
@@ -1157,9 +1171,7 @@ mod tests {
                     }
                 }
                 let help = &fitted[1];
-                assert!(
-                    (help.instances[0].position[1] - rects[1].y as f32).abs() <= 0.5
-                );
+                assert!((help.instances[0].position[1] - rects[1].y as f32).abs() <= 0.5);
                 assert!(help.scissor.y + help.scissor.h <= height);
             }
         }

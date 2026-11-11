@@ -220,6 +220,9 @@ pub struct SkirmishShellLayout {
     /// Map; gamemd's `0x102` has no such buttons.
     pub save_setup_button: RectPx,
     pub load_setup_button: RectPx,
+    /// VERA's Team Starts, on the tile under Load Setup where the panel has
+    /// one above Back; an empty rect where it has none (640x480).
+    pub team_starts_button: RectPx,
     pub back_button: RectPx,
     pub map_preview: RectPx,
     pub column_labels: SkirmishColumnLabelRects,
@@ -459,6 +462,7 @@ pub fn translate_layout(mut layout: SkirmishShellLayout, dx: i32, dy: i32) -> Sk
     layout.choose_map_button = layout.choose_map_button.translate(dx, dy);
     layout.save_setup_button = layout.save_setup_button.translate(dx, dy);
     layout.load_setup_button = layout.load_setup_button.translate(dx, dy);
+    layout.team_starts_button = layout.team_starts_button.translate(dx, dy);
     layout.back_button = layout.back_button.translate(dx, dy);
     layout.map_preview = layout.map_preview.translate(dx, dy);
     layout.column_labels.players = layout.column_labels.players.translate(dx, dy);
@@ -740,6 +744,13 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
         ],
     };
     let opponent_scrollbar = opponent_scrollbar_rect(&rows);
+    let back_button = back_rect(screen_w, panel);
+    let team_starts_tile = choose_map_button.translate(0, 3 * SDBTNBKGD_H);
+    let team_starts_button = if team_starts_tile.y + team_starts_tile.h <= back_button.y {
+        team_starts_tile
+    } else {
+        RectPx::new(0, 0, 0, 0)
+    };
 
     SkirmishShellLayout {
         scale: ShellScale::RETAIL,
@@ -753,7 +764,8 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
         // Every panel keeps them above Back: it has six tiles at 640x480.
         save_setup_button: choose_map_button.translate(0, SDBTNBKGD_H),
         load_setup_button: choose_map_button.translate(0, 2 * SDBTNBKGD_H),
-        back_button: back_rect(screen_w, panel),
+        team_starts_button,
+        back_button,
         map_preview: right_static(
             AnchorRule::RightAnchor,
             RectPx::new(429, 23, 96, 69),
@@ -1357,6 +1369,7 @@ impl ScaledRects for SkirmishShellLayout {
             choose_map_button: self.choose_map_button.scaled_rects(scale),
             save_setup_button: self.save_setup_button.scaled_rects(scale),
             load_setup_button: self.load_setup_button.scaled_rects(scale),
+            team_starts_button: self.team_starts_button.scaled_rects(scale),
             back_button: self.back_button.scaled_rects(scale),
             map_preview: self.map_preview.scaled_rects(scale),
             column_labels: self.column_labels.scaled_rects(scale),
@@ -1591,6 +1604,15 @@ mod tests {
         // VERA's Save Setup and Load Setup fill the two tiles above Back.
         assert_eq!(layout.save_setup_button, RectPx::new(484, 325, 156, 42));
         assert_eq!(layout.load_setup_button, RectPx::new(484, 367, 156, 42));
+        // Back takes the next tile at 640x480, so Team Starts has none there;
+        // at 800x600 it sits between Load Setup and Back.
+        assert_eq!(layout.team_starts_button.w, 0);
+        let roomy = compute_layout(800, 600);
+        assert_eq!(
+            roomy.team_starts_button.y,
+            roomy.load_setup_button.y + roomy.load_setup_button.h
+        );
+        assert!(roomy.team_starts_button.y + roomy.team_starts_button.h <= roomy.back_button.y);
         assert_eq!(layout.map_preview, RectPx::new(484, 37, 144, 112));
         assert_eq!(layout.back_button, RectPx::new(484, 409, 156, 42));
     }
