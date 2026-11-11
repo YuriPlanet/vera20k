@@ -1766,7 +1766,18 @@ impl Simulation {
         // 0x00440D07..0x00440D2D above; only House AI reads the marks.
         self.mark_building_base_reservation_with_arg(stable_id, false, context);
         self.light_building_at_unlimbo(stable_id, context);
+        // Residual: 0x00440E02..0x00440E57. A LaserFencePost= building, in
+        // the world and not in limbo outside the placement scope
+        // (0x00A8E7AC), extends fence sections toward the posts in its four
+        // directions (0x00452DC0 with 0, 2, 4, 6) and reconnects
+        // (0x004533A0(1)). VERA has no fence sections: a mod's posts stand
+        // without a fence between them. No retail type is LaserFencePost=.
         self.discover_building_owner_after_unlimbo(stable_id, context);
+        // Residual: 0x00440E99..0x00440F5B. A type with NaturalParticleSystem=
+        // (Type+0x764) and no system yet (+0x30C) constructs one
+        // (0x0062DC50) at its location plus Type+0x768, owned by the
+        // building. Not ported: such a building shows no particles. No
+        // retail BuildingType sets the key.
         #[cfg(not(feature = "ares"))]
         self.construct_spotlight(stable_id, context.rules());
         // Unlimbo44119C clears this object's retained primary before
