@@ -526,6 +526,9 @@ otherwise on the next public-channel join.
 A session that still joins a game room from another version, through a buddy's game or
 its name, makes every member hear a `chat` line from the notice sender naming both
 versions.
+The same line, with both full `version` agreement strings, goes to the room once when
+a member's `ready` or `map_status` names another build of the host's version, since
+such a room cannot start.
 
 Each `join` of the public channel gives the joining session one `chat` line from the
 notice sender after its `joined`. The line says how many players are online: in the

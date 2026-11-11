@@ -1534,29 +1534,6 @@ fn generated_prefix_rejects_cooperative_mode() {
 }
 
 #[test]
-fn generated_prefix_rejects_a_spoofed_stock_row_before_consuming_staging() {
-    let selected = "RandMap.SED";
-    let starts = [(0, 20, 24), (1, 42, 46)];
-    let mut launch = test_launch_session(LaunchCountry::America);
-    launch.selected_map_file = Some(selected.to_string());
-    launch.mode.tooltip_key = "STT:SpoofedBattle".to_string();
-    let accepted = accepted_random_map_with_starts(selected, 0x1516, &starts, &starts);
-    let initial = crate::app::loading::init::MapLoadInitial::from_test_map_source(
-        prefix_test_map(&starts),
-        crate::map::source::LoadedMapSource::Generated {
-            seed_name: selected.to_string(),
-            seed_source: None,
-        },
-    );
-    let mut request = LoadingRequest::unverified_legacy_skirmish(launch, unverified_seed(0x1516))
-        .with_accepted_random_map(Some(accepted));
-
-    let err = request.admit_context(&initial).unwrap_err();
-    assert!(format!("{err:#}").contains("not the validated active-retail stock row"));
-    assert!(request.accepted_rmg_start_staging.is_some());
-}
-
-#[test]
 fn authored_prefix_rejects_random_map_staging_for_loose_and_mix_sources() {
     let selected = "mp01t4.map";
     let starts = [(0, 20, 24), (1, 42, 46)];

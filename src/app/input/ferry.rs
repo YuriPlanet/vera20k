@@ -75,6 +75,9 @@ const BOARDING_TICKS: u64 = 300;
 /// Logic frames a fresh boarding order counts as boarding before the unit's
 /// own mission shows it.
 const ORDER_GRACE_TICKS: u64 = 30;
+/// A crossing may land this many cells outside the drop zone when every cell
+/// in it is taken.
+const DROP_OVERFLOW_CELLS: i64 = 4;
 /// Upper bounds on the routes kept and the boarding orders of one look.
 const MAX_ROUTES: usize = 64;
 const MAX_BOARD_ORDERS: usize = 32;
@@ -203,13 +206,14 @@ impl FerryRoute {
                     self.target = self.pickup;
                     return FerryAction::MoveTo(self.pickup);
                 }
-                // Still loaded and at rest: the order was lost or the exit
-                // was blocked. Try again where the route says to unload.
+                // Still loaded and at rest: the passengers left aboard found
+                // no way out. Cross again, to a cell with room for them.
                 if !within(transport.cell, self.drop, LEASH_CELLS) {
                     return FerryAction::End;
                 }
-                self.begin(Leg::Unloading, now);
-                FerryAction::Unload
+                self.begin(Leg::ToDrop, now);
+                self.target = self.drop;
+                FerryAction::MoveTo(self.drop)
             }
             Leg::ToPickup => match self.arrival(transport, self.pickup, now) {
                 Arrival::Travelling => FerryAction::None,
@@ -386,7 +390,15 @@ impl FerryState {
                     // A crossing ends on a free cell of the drop zone that no
                     // other route is heading for.
                     let cell = if route.leg == Leg::ToDrop {
-                        let cell = drop_cell(sim, rules, registry, owner, route, &claimed);
+                        // With nowhere better, a transport already at the
+                        // drop stays where it is.
+                        let fallback = if within(facts.cell, route.drop, LEASH_CELLS) {
+                            facts.cell
+                        } else {
+                            route.drop
+                        };
+                        let cell =
+                            drop_cell(sim, rules, registry, owner, route, &claimed, fallback);
                         claimed.push((route.transport, cell));
                         cell
                     } else {
@@ -475,10 +487,12 @@ fn ferry_transport<'a>(
     (object.passengers > 0 && sim.techno_player_controllable(id, rules)).then_some((entity, object))
 }
 
-/// The cell of the route's drop zone this crossing heads for: the one nearest
-/// the drop spot that holds nothing on the ground, is not `claimed`, lies
-/// clear of the pick-up circle and is where a Move click on it would send the
-/// transport. The drop spot itself when no cell qualifies.
+/// The cell this crossing heads for: the one nearest the drop spot that holds
+/// nothing on the ground, is not `claimed`, lies clear of the pick-up circle,
+/// is where a Move click on it would send the transport and has an empty
+/// cell beside it for the passengers. Cells of the drop zone come first; when
+/// all are taken, cells up to [`DROP_OVERFLOW_CELLS`] outside it. `fallback`
+/// when no cell qualifies.
 fn drop_cell(
     sim: &Simulation,
     rules: &RuleSet,
@@ -486,12 +500,15 @@ fn drop_cell(
     owner: InternedId,
     route: &FerryRoute,
     claimed: &[(u64, Cell)],
+    fallback: Cell,
 ) -> Cell {
+    // Nearest first, so a cell inside the zone wins while one is free.
+    let reach = DROP_RADIUS_CELLS + DROP_OVERFLOW_CELLS;
     let mut cells: Vec<(i64, Cell)> = Vec::new();
-    for dy in -DROP_RADIUS_CELLS..=DROP_RADIUS_CELLS {
-        for dx in -DROP_RADIUS_CELLS..=DROP_RADIUS_CELLS {
+    for dy in -reach..=reach {
+        for dx in -reach..=reach {
             let distance = dx * dx + dy * dy;
-            if distance > DROP_RADIUS_CELLS * DROP_RADIUS_CELLS {
+            if distance > reach * reach {
                 continue;
             }
             if let (Ok(rx), Ok(ry)) = (
@@ -503,17 +520,35 @@ fn drop_cell(
         }
     }
     cells.sort();
-    cells
+    let empty = |cell: Cell| {
+        sim.cell_objects(cell, MovementLayer::Ground)
+            .all(|member| member == CellObjectMember::Entity(route.transport))
+    };
+    // Empty cells beside `cell`, for the passengers to step onto.
+    let room = |cell: Cell| {
+        (-1i32..=1)
+            .flat_map(|dy| (-1i32..=1).map(move |dx| (dx, dy)))
+            .filter(|&step| step != (0, 0))
+            .filter(|&(dx, dy)| {
+                match (
+                    u16::try_from(i32::from(cell.0) + dx),
+                    u16::try_from(i32::from(cell.1) + dy),
+                ) {
+                    (Ok(rx), Ok(ry)) => empty((rx, ry)),
+                    _ => false,
+                }
+            })
+            .count()
+    };
+    let free: Vec<(Cell, usize)> = cells
         .into_iter()
         .map(|(_, cell)| cell)
-        .find(|&cell| {
+        .filter(|&cell| {
             !claimed
                 .iter()
                 .any(|&(other, taken)| other != route.transport && taken == cell)
                 && !within(cell, route.pickup, PICKUP_RADIUS_CELLS + 2)
-                && sim
-                    .cell_objects(cell, MovementLayer::Ground)
-                    .all(|member| member == CellObjectMember::Entity(route.transport))
+                && empty(cell)
                 && ordinary_cell_move_goal(
                     sim,
                     rules,
@@ -524,7 +559,10 @@ fn drop_cell(
                     false,
                 ) == Some(cell)
         })
-        .unwrap_or(route.drop)
+        .map(|cell| (cell, room(cell)))
+        .filter(|&(_, room)| room > 0)
+        .collect();
+    free.first().map_or(fallback, |&(cell, _)| cell)
 }
 
 /// The units to tell aboard this look: the owner's own infantry and vehicles
@@ -778,10 +816,68 @@ pub(crate) fn frame_pass(state: &mut AppState) {
     }
 }
 
-/// The marks of the selected transports' routes in VERA's world-pixel frame:
-/// a ring of dots around each pick-up circle, a dotted line towards the drop
-/// spot and a ring around its drop zone.
-pub(crate) fn marks(state: &AppState) -> Vec<(f32, f32)> {
+/// The armed drop click as it would land on the cell under the cursor: the
+/// selected transports' cells, that cell, and whether the click would give at
+/// least one of them a route. `None` while no click is armed or no transport
+/// is selected.
+fn armed_preview(state: &AppState) -> Option<(Vec<Cell>, Cell, bool)> {
+    if !state.match_state.input.ferry.armed() {
+        return None;
+    }
+    let transports = selected_transports(state);
+    let runtime = state.match_state.sim_runtime.as_ref()?;
+    let sim = &runtime.simulation;
+    let owner = preferred_local_owner_name(state).and_then(|name| sim.interner().get(&name))?;
+    let clicked = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
+        state,
+        state.match_state.input.cursor_x,
+        state.match_state.input.cursor_y,
+    );
+    let pickups: Vec<Cell> = transports
+        .iter()
+        .filter_map(|&id| sim.entities().get(id))
+        .map(|entity| (entity.position.rx(), entity.position.ry()))
+        .collect();
+    if pickups.is_empty() {
+        return None;
+    }
+    let accepted = transports.iter().any(|&id| {
+        route_for(
+            sim,
+            &runtime.resources.rules,
+            Some(&runtime.resources.overlay_registry),
+            owner,
+            id,
+            clicked,
+            sim.session().tick(),
+        )
+        .is_some()
+    });
+    Some((pickups, clicked, accepted))
+}
+
+/// Whether the armed drop click would be taken where the cursor is; `None`
+/// while none is armed. The cursor shows a refusal.
+pub(crate) fn armed_click_accepted(state: &AppState) -> Option<bool> {
+    armed_preview(state).map(|(_, _, accepted)| accepted)
+}
+
+/// One circle of the ferry's marks: a closed line in VERA's world-pixel
+/// frame.
+#[derive(Debug, Clone)]
+pub(crate) struct FerryRing {
+    pub points: Vec<(f32, f32)>,
+    /// The drop zone's circle; otherwise a pick-up area's.
+    pub drop: bool,
+    /// Part of the preview of a click that would be refused.
+    pub refused: bool,
+}
+
+/// The ferry's marks: for each selected transport's route a circle around its
+/// pick-up area and one around its drop zone; and, while a drop click is
+/// armed, the same circles for the selected transports and the cell under the
+/// cursor.
+pub(crate) fn marks(state: &AppState) -> Vec<FerryRing> {
     use crate::util::lepton::{
         GROUND_LEVEL_HEIGHT_LEPTONS, LEPTONS_PER_CELL_I32, absolute_leptons_to_screen,
     };
@@ -799,62 +895,52 @@ pub(crate) fn marks(state: &AppState) -> Vec<(f32, f32)> {
                 .is_some_and(|entity| entity.selection.is_selected())
         })
         .collect();
-    if routes.is_empty() {
+    let preview = armed_preview(state);
+    if routes.is_empty() && preview.is_none() {
         return Vec::new();
     }
     let cells = state
         .sim_view()
         .and_then(|view| crate::app::match_runtime::sim_tick::tactical_cells(view.simulation()));
-    // A cell's centre in leptons, at its ground height.
-    let centre = |cell: Cell| {
-        let level = cells
-            .and_then(|cells| cells.cell_level(cell.0, cell.1))
-            .unwrap_or(0);
-        (
-            (i32::from(cell.0) * LEPTONS_PER_CELL_I32 + LEPTONS_PER_CELL_I32 / 2) as f32,
-            (i32::from(cell.1) * LEPTONS_PER_CELL_I32 + LEPTONS_PER_CELL_I32 / 2) as f32,
-            (i32::from(level) * GROUND_LEVEL_HEIGHT_LEPTONS) as f32,
-        )
-    };
-    let project = |x: f32, y: f32, z: f32| absolute_leptons_to_screen(x as i32, y as i32, z as i32);
     let cell = LEPTONS_PER_CELL_I32 as f32;
-    let mut points = Vec::new();
-    let ring = |points: &mut Vec<(f32, f32)>, at: (f32, f32, f32), radius: f32, dots: u32| {
-        for dot in 0..dots {
-            let angle = std::f32::consts::TAU * dot as f32 / dots as f32;
-            points.push(project(
-                at.0 + radius * angle.cos(),
-                at.1 + radius * angle.sin(),
-                at.2,
-            ));
+    let pickup_radius = (PICKUP_RADIUS_CELLS as f32 + 0.5) * cell;
+    let drop_radius = (DROP_RADIUS_CELLS as f32 + 0.5) * cell;
+    // A circle around a cell's centre, at its ground height, as 64 corners.
+    let ring = |at: Cell, drop: bool, refused: bool| {
+        let radius = if drop { drop_radius } else { pickup_radius };
+        let level = cells
+            .and_then(|cells| cells.cell_level(at.0, at.1))
+            .unwrap_or(0);
+        let x = (i32::from(at.0) * LEPTONS_PER_CELL_I32 + LEPTONS_PER_CELL_I32 / 2) as f32;
+        let y = (i32::from(at.1) * LEPTONS_PER_CELL_I32 + LEPTONS_PER_CELL_I32 / 2) as f32;
+        let z = i32::from(level) * GROUND_LEVEL_HEIGHT_LEPTONS;
+        FerryRing {
+            points: (0..64)
+                .map(|corner| {
+                    let angle = std::f32::consts::TAU * corner as f32 / 64.0;
+                    absolute_leptons_to_screen(
+                        (x + radius * angle.cos()) as i32,
+                        (y + radius * angle.sin()) as i32,
+                        z,
+                    )
+                })
+                .collect(),
+            drop,
+            refused,
         }
     };
+    let mut rings = Vec::new();
     for route in routes {
-        let pickup = centre(route.pickup);
-        let drop = centre(route.drop);
-        let radius = (PICKUP_RADIUS_CELLS as f32 + 0.5) * cell;
-        ring(&mut points, pickup, radius, 40);
-        ring(
-            &mut points,
-            drop,
-            (DROP_RADIUS_CELLS as f32 + 0.5) * cell,
-            28,
-        );
-        // The line starts at the circle's edge and ends short of the drop ring.
-        let (dx, dy, dz) = (drop.0 - pickup.0, drop.1 - pickup.1, drop.2 - pickup.2);
-        let length = (dx * dx + dy * dy).sqrt();
-        let mut along = radius + cell;
-        while along < length - (DROP_RADIUS_CELLS as f32 + 1.5) * cell {
-            let t = along / length;
-            points.push(project(
-                pickup.0 + dx * t,
-                pickup.1 + dy * t,
-                pickup.2 + dz * t,
-            ));
-            along += cell;
-        }
+        rings.push(ring(route.pickup, false, false));
+        rings.push(ring(route.drop, true, false));
     }
-    points
+    if let Some((pickups, clicked, accepted)) = preview {
+        for pickup in pickups {
+            rings.push(ring(pickup, false, !accepted));
+        }
+        rings.push(ring(clicked, true, !accepted));
+    }
+    rings
 }
 
 #[cfg(test)]

@@ -79,6 +79,16 @@ fn a_round_trip_unloads_and_returns_and_a_detour_ends_it() {
     assert_eq!(route.step(&facts(PICKUP, true, 0), 108), FerryAction::None);
     assert_eq!(route.step(&full, 116), FerryAction::MoveTo(DROP));
 
+    // Passengers left aboard after an unload: cross again, to find them room.
+    let mut stuck = FerryRoute::new(7, PICKUP, DROP, 4, 0);
+    assert_eq!(stuck.step(&full, 8), FerryAction::MoveTo(DROP));
+    assert_eq!(stuck.step(&facts((9, 5), false, 4), 16), FerryAction::None);
+    assert_eq!(stuck.step(&facts(DROP, true, 4), 24), FerryAction::Unload);
+    assert_eq!(
+        stuck.step(&facts(DROP, true, 1), 24 + RESEND_TICKS),
+        FerryAction::MoveTo(DROP)
+    );
+
     // Moving, then stopped away from the drop spot: the ferry is over.
     assert_eq!(route.step(&facts((6, 9), false, 4), 124), FerryAction::None);
     assert_eq!(route.step(&facts((6, 12), true, 4), 132), FerryAction::End);

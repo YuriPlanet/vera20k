@@ -738,6 +738,24 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return ObjectAiOutcome::default();
         };
+        // A member past its UnInit (`+0x90` clear) that Logic still holds: a
+        // rider killed inside an open-topped transport stays in the vector
+        // until its destructor (`0x005F3D75`). `FootClass::AI @ 0x004DA530`
+        // returns at its IsAlive test (`0x004DA53E`), as do the class bodies
+        // after it (`0x0051BCA4`, `0x007365BB`, `0x00414DA8`).
+        // Residual: `TechnoClass::AI @ 0x006F9E50` runs for it first, up to
+        // its IsAlive test at `0x006FA735` (`0x006FA23C` for a voxel body):
+        // the target-validity drops, the `+0xC4` counter, MissionClass::AI's
+        // sound block, the Slave and Capture manager updates, and the passive
+        // scan, which for a rider on Guard with its scan timer due writes
+        // that timer and draws from the Scenario RNG (`0x00709820`). VERA
+        // runs none of them. Trigger: a transport dies ahead of its rider's
+        // Logic slot with that timer due; effect: the Scenario stream differs
+        // from gamemd's by those draws, every other write lands on an object
+        // freed at this frame's drain; rare; VERA peers stay in step.
+        if !entity.lifecycle.object_alive() {
+            return outcome;
+        }
         // An infantry corpse is no dying object: it keeps IsAlive at Health 0
         // and takes the ordinary visit below (`world::infantry_death`).
         if entity.death.is_dying() {

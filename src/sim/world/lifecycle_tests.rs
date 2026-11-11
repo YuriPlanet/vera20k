@@ -2812,6 +2812,33 @@ fn destructor_takes_a_dead_open_topped_rider_out_of_logic() {
     assert!(sim.compute_retail_multiplayer_checksum().is_ok());
 }
 
+/// The Logic walk can reach a rider that died earlier in the frame: it is past
+/// UnInit (`+0x90` clear) but still in the vector until its destructor. Native
+/// `FootClass::AI` returns at the IsAlive test (`0x004DA53E`); the visit must
+/// not UnInit it again.
+#[test]
+fn logic_visit_of_a_dead_open_topped_rider_does_not_uninit_it_again() {
+    let mut sim = Simulation::new();
+    insert_entity(&mut sim, 1, EntityCategory::Infantry);
+    insert_entity(&mut sim, 2, EntityCategory::Unit);
+    let _ = sim.reveal(1);
+    let _ = sim.reveal(2);
+    assert_eq!(sim.techno_limbo(1), super::ConcealOutcome::Concealed);
+    sim.substrate.entities.get_mut(1).unwrap().passenger_role =
+        PassengerRole::inside_for_test(2, true);
+    assert!(sim.register_open_topped_passenger(1));
+    sim.uninit(1);
+
+    let _ = sim.object_ai_visit_one(1, None, ObjectAiCtx::default());
+
+    let uninits = sim
+        .lifecycle_test_events
+        .iter()
+        .filter(|event| **event == LifecycleTestEvent::UninitAliveCleared { stable_id: 1 })
+        .count();
+    assert_eq!(uninits, 1);
+}
+
 #[test]
 fn lifecycle_authority_second_reveal_is_idempotent() {
     let mut sim = Simulation::new();
@@ -10085,4 +10112,26 @@ fn aircraft_destructor_kills_its_passengers() {
             .object_alive()
     );
     assert_eq!(sim.substrate.pending_delete.object_ids(), vec![2]);
+}
+
+/// `TechnoClass::PointerExpired @ 0x007077C0` removes the expiring object from
+/// the listener's cargo only when its `removed` argument is set
+/// (`0x007077D8..0x007077E9`). A rider that cloaks sends Detach_All(false) and
+/// stays aboard.
+#[test]
+fn detach_all_false_keeps_a_rider_in_its_transports_cargo() {
+    let mut sim = Simulation::new();
+    insert_entity(&mut sim, 1, EntityCategory::Unit);
+    insert_entity(&mut sim, 2, EntityCategory::Infantry);
+    let _ = sim.reveal(1);
+    let mut cargo = PassengerCargo::new(5, 1.0);
+    cargo.board_forced_chain(&[(2, 1.0)]);
+    sim.substrate.entities.get_mut(1).unwrap().passenger_role = PassengerRole::transport(cargo);
+    sim.substrate.entities.get_mut(2).unwrap().passenger_role =
+        PassengerRole::inside_for_test(1, true);
+
+    sim.detach_all(2, false, super::UninitContext::default());
+
+    let transport = sim.substrate.entities.get(1).unwrap();
+    assert_eq!(transport.passenger_role.cargo().unwrap().passengers(), &[2]);
 }

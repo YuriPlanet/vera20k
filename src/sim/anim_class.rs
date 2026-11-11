@@ -2273,13 +2273,9 @@ impl Simulation {
                 draw_runtime: AnimDrawRuntime::default(),
                 owner: None,
             };
-            // RESIDUAL: this unwrap relies on the binder having bound the
-            // parent's whole `TrailerAnim=` closure. The strict binder
-            // guarantees it; the tolerant one stops on a malformed image
-            // header, so a tolerantly bound parent with an unbindable
-            // trailer would panic here. Missing images now bind successfully
-            // as zero-frame types. Trigger: malformed modded art
-            // only; no retail trailer chain starts from a tolerant root.
+            // The strict binder binds the parent's whole `TrailerAnim=`
+            // closure; the tolerant one stops on a malformed image header, so
+            // a mod's trailer can be unbindable here. It is then not spawned.
             match self.spawn_anim_at_world(rules, descriptor, world_coord) {
                 Ok(_) => {}
                 Err(AnimSpawnError::Tiberium(error)) => {
@@ -2287,7 +2283,7 @@ impl Simulation {
                         "trailer animation refused an invalid Tiberium Image start: {error}"
                     );
                 }
-                Err(error) => panic!("validated trailer closure must remain spawnable: {error}"),
+                Err(error) => log::warn!("trailer animation not spawned: {error}"),
             }
             let Some(reread) = self.anim(id).map(AnimGates::of) else {
                 return Ok(false);

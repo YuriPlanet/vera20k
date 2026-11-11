@@ -264,9 +264,16 @@ pub(crate) fn current_cursor_feedback_kind(
     // under the cursor for an empty selection too — DetermineAction's
     // `0x00692673` arm answers action 7, row 17 (Select) — so the arm below
     // answers instead. See `no_selection_cursor`.
-    // VERA ferry: the armed drop click shows the unload cursor.
+    // VERA ferry: the armed drop click shows the unload cursor, or its
+    // refusal where the click would give no transport a route.
     if state.match_state.input.ferry.armed() {
-        return Some(CursorFeedbackKind::Deploy);
+        return Some(
+            if crate::app::input::ferry::armed_click_accepted(state) == Some(false) {
+                CursorFeedbackKind::NoDeploy
+            } else {
+                CursorFeedbackKind::Deploy
+            },
+        );
     }
     // PlanMgr63AC41 selects native action0 over a planning node.
     if crate::app::input::planning_mode::node_at_cursor(state).is_some() {
