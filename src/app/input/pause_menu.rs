@@ -314,15 +314,60 @@ pub(crate) fn toggle_multiplayer_pause(state: &mut AppState) -> bool {
         return false;
     };
     if control.enabled
-        && state.match_state.scenario_exit.is_none()
-        && state.match_state.scenario_outcome.is_none()
-        && let Some(live) = state.match_state.live_network.as_mut()
-        && let Some(pause) = live.multiplayer_pause()
+        && let Some(pause) = live_pause(state)
     {
-        live.request_multiplayer_pause(!pause.paused);
-        state.platform.window.request_redraw();
+        request_multiplayer_pause(state, !pause.paused);
     }
     true
+}
+
+fn live_pause(state: &AppState) -> Option<crate::net::live_commands::MultiplayerPauseStatus> {
+    state.match_state.live_network.as_ref()?.multiplayer_pause()
+}
+
+/// Asks the relay to pause or resume, unless the match is ending. True when
+/// the request went out.
+fn request_multiplayer_pause(state: &mut AppState, paused: bool) -> bool {
+    let sent = state.match_state.scenario_exit.is_none()
+        && state.match_state.scenario_outcome.is_none()
+        && state
+            .match_state
+            .live_network
+            .as_mut()
+            .is_some_and(|live| live.request_multiplayer_pause(paused));
+    if sent {
+        state.platform.window.request_redraw();
+    }
+    sent
+}
+
+/// What a `/pause` (`want`) or `/resume` chat line does with the shared
+/// pause `control`: whether to ask the relay, and the [`crate::i18n`] label
+/// that answers the player. A match without the shared pause says so; a
+/// pause that is already there or on its way shows its status instead.
+fn chat_command_for(
+    control: Option<MultiplayerPauseControl>,
+    paused: bool,
+    want: bool,
+) -> (bool, Option<&'static str>) {
+    match control {
+        None => (false, Some("VERA:PauseNotAvailable")),
+        Some(control) if !control.enabled || paused == want => (false, control.status),
+        Some(_) if want => (true, Some("VERA:PauseRequested")),
+        Some(_) => (true, Some("VERA:ResumeRequested")),
+    }
+}
+
+/// VERA: `/pause` and `/resume` typed in match chat (`input::chat`) ask for
+/// the Pause key's shared pause and answer with a message row.
+pub(crate) fn chat_command(state: &mut AppState, want: bool) {
+    let paused = live_pause(state).is_some_and(|pause| pause.paused);
+    let (ask, answer) = chat_command_for(multiplayer_control(state), paused, want);
+    if let Some(label) = answer
+        && (!ask || request_multiplayer_pause(state, want))
+    {
+        crate::app::input::messages::post_chat_command_answer(state, &crate::i18n::tr(label));
+    }
 }
 
 /// The applied GameSpeed FF's init (4F1720) reads; a queued speed event
@@ -677,6 +722,40 @@ mod tests {
         );
         pause.available = false;
         assert!(multiplayer_control_for(pause, true).is_none());
+    }
+
+    #[test]
+    fn chat_pause_commands_ask_only_for_a_change_the_control_allows() {
+        let mut pause = crate::net::live_commands::MultiplayerPauseStatus {
+            available: true,
+            ..Default::default()
+        };
+        let running = multiplayer_control_for(pause, false);
+        assert_eq!(
+            chat_command_for(running, false, true),
+            (true, Some("VERA:PauseRequested"))
+        );
+        // `/resume` with nothing paused does nothing.
+        assert_eq!(chat_command_for(running, false, false), (false, None));
+        pause.paused = true;
+        let stopped = multiplayer_control_for(pause, true);
+        assert_eq!(
+            chat_command_for(stopped, true, false),
+            (true, Some("VERA:ResumeRequested"))
+        );
+        assert_eq!(
+            chat_command_for(stopped, true, true),
+            (false, Some("VERA:PausedForAllPlayers"))
+        );
+        // The barrier frame is not finished here yet: no resume.
+        assert_eq!(
+            chat_command_for(multiplayer_control_for(pause, false), true, false),
+            (false, Some("VERA:FinishingPause"))
+        );
+        assert_eq!(
+            chat_command_for(None, false, true),
+            (false, Some("VERA:PauseNotAvailable"))
+        );
     }
 
     #[test]
