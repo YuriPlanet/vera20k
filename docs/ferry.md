@@ -23,10 +23,17 @@ its route.
 After the Ferry key, hold the **Planning Mode** key (Z by default) and left
 click to add a waypoint; up to 8. Let go of it and click to set the drop spot.
 The transport passes the waypoints in order on the way out and in reverse on
-the way back, so one detour round an enemy covers both directions. It does not
-stop at a waypoint: within 2 cells of one it is sent on to the next. Each
-waypoint shows as a small white circle. A transport that stops short of a
-waypoint ends its ferry, like one that cannot reach its drop spot.
+the way back, so one detour round an enemy covers both directions. Each
+waypoint shows as a small white circle; a cell none of the selected transports
+can move to is refused and shows red.
+
+- **No stopping.** A ground transport is sent on to the next point within 2
+  cells of a waypoint, an aircraft within 4, before it slows to land.
+- **Several transports.** Sent to one waypoint together, they are each given a
+  cell near it, as any group move is. Each is sent on from its own cell.
+- **Blocked.** A transport that stops near a waypoint (within 8 cells) carries
+  on to the next point. One that stops farther away was sent elsewhere, and
+  its ferry ends. A waypoint a transport cannot be sent to at all is left out.
 
 ## The four legs
 
