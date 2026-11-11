@@ -374,12 +374,18 @@ impl ProjectileCollisionWorld<'_> {
                         CellRef::Real(c) => c.slope_type,
                         CellRef::Dummy { cell } => cell.snapshot().slope_type,
                     };
-                    motion.velocity = crate::sim::projectile::projectile_slope_reflect_double(
+                    // The reflection refuses a result its f32 store cannot
+                    // hold (an `Elasticity=` near 1e36 or not finite, which
+                    // only a mod sets; native `0x00467666..0x00467778` just
+                    // stores it). The bullet then impacts with its velocity
+                    // as it was.
+                    if let Some(reflected) = crate::sim::projectile::projectile_slope_reflect_double(
                         motion.velocity,
                         slope,
                         projectile.collision().elasticity_bits,
-                    )
-                    .expect("supported native Bullet slope matrix");
+                    ) {
+                        motion.velocity = reflected;
+                    }
                     impact = true;
                 } else if crossing != ProjectileBridgeCrossing::None {
                     candidate_z = f64::from(if crossing == ProjectileBridgeCrossing::Down {
