@@ -1881,12 +1881,13 @@ impl Simulation {
             .interner
             .resolve(descriptor.type_name)
             .to_ascii_uppercase();
+        // Borrowed from the rules, which outlive the spawn: the record is
+        // only read.
         let config = rules
             .art()
             .anim_runtime_config(&type_name)
-            .cloned()
             .ok_or(AnimSpawnError::MissingType(descriptor.type_name))?;
-        let (effective_end, effective_loop_end) = effective_bounds(&type_name, &config)?;
+        let (effective_end, effective_loop_end) = effective_bounds(&type_name, config)?;
         let reverse = descriptor.reverse || config.reverse;
         let stop_sound_id = config
             .stop_sound
@@ -1964,7 +1965,7 @@ impl Simulation {
         let draws = match constructor {
             AnimConstructorInput::Preconsumed(draws) => draws,
             AnimConstructorInput::Runtime | AnimConstructorInput::AssignedIdentity(_) => {
-                match anim_constructor_draws(&config, world_coord, &mut self.scenario_rng) {
+                match anim_constructor_draws(config, world_coord, &mut self.scenario_rng) {
                     Ok(draws) => draws,
                     Err(error) => {
                         // VERA's explicit unsupported-arithmetic failure precedes
@@ -1975,7 +1976,7 @@ impl Simulation {
                 }
             }
         };
-        let rate_reload = Self::anim_rate(&self.session, &config, draws.random_rate);
+        let rate_reload = Self::anim_rate(&self.session, config, draws.random_rate);
         let frame_timer =
             CdTimer::started(self.session.binary_frame() as i32, i32::from(rate_reload));
         let registered = self
@@ -2008,7 +2009,7 @@ impl Simulation {
         // and dispatch damage before the producer attaches its receiver.
         let start_reaches_display = descriptor.delay == 0
             && (config.tiberium_chain_reaction
-                || (middle_frame(&config).is_none()
+                || (middle_frame(config).is_none()
                     && (config.scorch
                         || config.crater
                         || (config.spawns_particle.is_some() && config.num_particles > 0))));
@@ -2026,7 +2027,7 @@ impl Simulation {
             self.reveal_drop_zone_from_anim(rules, initial_world_coord);
         }
         if descriptor.delay == 0 {
-            self.anim_start(stable_id, &config, rules, None, frame_effects)?;
+            self.anim_start(stable_id, config, rules, None, frame_effects)?;
         }
         if let Some(owner) = descriptor.owner {
             self.set_anim_owner_object(stable_id, Some(owner), rules);
@@ -3310,8 +3311,10 @@ impl Simulation {
         };
         let maximum = object_type.strength;
         let can_be_occupied = object_type.can_be_occupied;
-        let image = object_type.image.clone();
-        let foundation = object_type.foundation.clone();
+        // Borrowed from the rules, which outlive this visit: the image and
+        // foundation are read only when the fires start.
+        let image = &object_type.image;
+        let foundation = &object_type.foundation;
         let ratio = if can_be_occupied {
             rules.general.condition_red
         } else {
@@ -3334,7 +3337,7 @@ impl Simulation {
                 as usize;
             let offsets = rules
                 .art()
-                .get(&image)
+                .get(image)
                 .map(|entry| entry.damage_fire_offsets.clone())
                 .unwrap_or_default();
             let (foundation_w, foundation_h) = foundation.dimensions();
@@ -4256,16 +4259,16 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<(), AnimSpawnError> {
-        let Some(config) = rules.art().anim_runtime_config(next).cloned() else {
+        let Some(config) = rules.art().anim_runtime_config(next) else {
             self.destroy_anim(id, rules);
             return Ok(());
         };
-        let Ok((effective_end, effective_loop_end)) = effective_bounds(next, &config) else {
+        let Ok((effective_end, effective_loop_end)) = effective_bounds(next, config) else {
             self.destroy_anim(id, rules);
             return Ok(());
         };
         let type_id = self.interner.intern(next);
-        let rate_reload = Self::choose_anim_rate(&self.session, &mut self.scenario_rng, &config);
+        let rate_reload = Self::choose_anim_rate(&self.session, &mut self.scenario_rng, config);
         let frame_timer =
             CdTimer::started(self.session.binary_frame() as i32, i32::from(rate_reload));
         let stop_sound_id = config
@@ -4295,7 +4298,7 @@ impl Simulation {
             anim.runtime.first_ai_guard = false;
             anim.runtime.inactive = false;
         }
-        self.anim_start(id, &config, rules, overlay_registry, frame_effects)
+        self.anim_start(id, config, rules, overlay_registry, frame_effects)
     }
 }
 
