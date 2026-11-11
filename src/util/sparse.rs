@@ -21,7 +21,7 @@ pub trait SparseDefault: Default + PartialEq + 'static {
     fn sparse_default() -> &'static Self;
 }
 
-/// A `T` kept out of line, and not kept at all while it is the default.
+/// A `T` kept out of line, and not kept at all until it is first written.
 pub struct Sparse<T>(Option<Box<T>>);
 
 impl<T> Sparse<T> {
