@@ -314,7 +314,7 @@ fn assert_retail_wall_fire_profile(
         .hash_state_every(std::num::NonZeroU64::MAX);
     let initial_hash = scene.sim().state_hash();
     let owner = scene.sim().session.current_house().unwrap();
-    let mut orders: Vec<_> = profile["commands"]
+    let orders: Vec<_> = profile["commands"]
         .as_array()
         .unwrap()
         .iter()
@@ -327,16 +327,6 @@ fn assert_retail_wall_fire_profile(
             )
         })
         .collect();
-    if wall_name == "GAWALL" {
-        // Target the paid endpoint using an ordinary attack order. Filler
-        // constructor draws change the later damage history; retain this
-        // witness's pristine-child branch without seeding RNG or wall state.
-        for order in &mut orders {
-            if let Command::ForceAttackCell { target_ry, .. } = &mut order.payload {
-                *target_ry = 87;
-            }
-        }
-    }
     let (attacker_id, source) = orders
         .iter()
         .find_map(|order| match order.payload {
@@ -451,7 +441,11 @@ fn assert_retail_wall_fire_profile(
     // Wall damage (Cell480CB0) and that jitter draw the Scenario RNG, so other
     // Houses' play moves the removal by whole shots. Run one full rearm past
     // the removal, where a further shot at the expired Cell would land; four
-    // profiles' frames bound a run that never removes the wall.
+    // profiles' frames bound a run that never removes the wall. The stream
+    // also decides which spread visit removes the source: 4896B2..4896BA
+    // tests only the visited cell, so a source cleared by a neighbour's
+    // PostDestructionWallCleanup (0x00480630) keeps the tank's Cell target.
+    // A change to earlier draws can move this profile onto that branch.
     let profile_ticks = profile["ticks"].as_u64().unwrap();
     let mut step = 0;
     while step < 4 * profile_ticks && removed_at.is_none_or(|at| step < at + rearm) {
