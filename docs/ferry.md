@@ -29,8 +29,10 @@ its route.
   aboard holds the transport for at most 300 frames.
 - **Crossing.** It heads for the free cell nearest the drop spot inside the
   drop zone (3 cells around the spot): one that holds nothing, that no other
-  ferrying transport is heading for and that it can move to. So several
-  transports, or units already set down, do not block the drop.
+  ferrying transport is heading for, that it can move to and that has an
+  empty cell beside it for the passengers. So several transports, or units
+  already set down, do not block the drop. When every such cell of the zone
+  is taken, it lands on the nearest one up to 4 cells outside the zone.
 - **Unloading.** Where it stops it unloads as it does when clicked on
   itself. A transport on water first drives to the nearest land, as that
   order always does. If the way out is blocked it tries again.

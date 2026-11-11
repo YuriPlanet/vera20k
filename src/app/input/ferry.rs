@@ -75,6 +75,9 @@ const BOARDING_TICKS: u64 = 300;
 /// Logic frames a fresh boarding order counts as boarding before the unit's
 /// own mission shows it.
 const ORDER_GRACE_TICKS: u64 = 30;
+/// A crossing may land this many cells outside the drop zone when every cell
+/// in it is taken.
+const DROP_OVERFLOW_CELLS: i64 = 4;
 /// Upper bounds on the routes kept and the boarding orders of one look.
 const MAX_ROUTES: usize = 64;
 const MAX_BOARD_ORDERS: usize = 32;
@@ -475,10 +478,12 @@ fn ferry_transport<'a>(
     (object.passengers > 0 && sim.techno_player_controllable(id, rules)).then_some((entity, object))
 }
 
-/// The cell of the route's drop zone this crossing heads for: the one nearest
-/// the drop spot that holds nothing on the ground, is not `claimed`, lies
-/// clear of the pick-up circle and is where a Move click on it would send the
-/// transport. The drop spot itself when no cell qualifies.
+/// The cell this crossing heads for: the one nearest the drop spot that holds
+/// nothing on the ground, has an empty cell beside it for the passengers to
+/// step onto, is not `claimed`, lies clear of the pick-up circle and is where
+/// a Move click on it would send the transport. Cells of the drop zone come
+/// first; when all are taken, cells up to [`DROP_OVERFLOW_CELLS`] outside it.
+/// The drop spot itself when no cell qualifies.
 fn drop_cell(
     sim: &Simulation,
     rules: &RuleSet,
@@ -487,11 +492,13 @@ fn drop_cell(
     route: &FerryRoute,
     claimed: &[(u64, Cell)],
 ) -> Cell {
+    // Nearest first, so a cell inside the zone wins while one is free.
+    let reach = DROP_RADIUS_CELLS + DROP_OVERFLOW_CELLS;
     let mut cells: Vec<(i64, Cell)> = Vec::new();
-    for dy in -DROP_RADIUS_CELLS..=DROP_RADIUS_CELLS {
-        for dx in -DROP_RADIUS_CELLS..=DROP_RADIUS_CELLS {
+    for dy in -reach..=reach {
+        for dx in -reach..=reach {
             let distance = dx * dx + dy * dy;
-            if distance > DROP_RADIUS_CELLS * DROP_RADIUS_CELLS {
+            if distance > reach * reach {
                 continue;
             }
             if let (Ok(rx), Ok(ry)) = (
@@ -503,6 +510,10 @@ fn drop_cell(
         }
     }
     cells.sort();
+    let empty = |cell: Cell| {
+        sim.cell_objects(cell, MovementLayer::Ground)
+            .all(|member| member == CellObjectMember::Entity(route.transport))
+    };
     cells
         .into_iter()
         .map(|(_, cell)| cell)
@@ -511,9 +522,20 @@ fn drop_cell(
                 .iter()
                 .any(|&(other, taken)| other != route.transport && taken == cell)
                 && !within(cell, route.pickup, PICKUP_RADIUS_CELLS + 2)
-                && sim
-                    .cell_objects(cell, MovementLayer::Ground)
-                    .all(|member| member == CellObjectMember::Entity(route.transport))
+                && empty(cell)
+                // Room beside it for a passenger to step out.
+                && (-1i32..=1)
+                    .flat_map(|dy| (-1i32..=1).map(move |dx| (dx, dy)))
+                    .filter(|&step| step != (0, 0))
+                    .any(|(dx, dy)| {
+                        match (
+                            u16::try_from(i32::from(cell.0) + dx),
+                            u16::try_from(i32::from(cell.1) + dy),
+                        ) {
+                            (Ok(rx), Ok(ry)) => empty((rx, ry)),
+                            _ => false,
+                        }
+                    })
                 && ordinary_cell_move_goal(
                     sim,
                     rules,
