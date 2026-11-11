@@ -47,6 +47,27 @@ pub(crate) const RETAIL_SHELL_SIZE: ScreenSize = ScreenSize {
     width: 800,
     height: 600,
 };
+/// The size VERA opens the player's window at in place of gamemd's 800x600
+/// shell, in logical units. A VERA difference: 800x600 is small on today's
+/// screens. Only the window is larger; the shell's 800x600 art scales to fit
+/// it (`ShellScale`) and a match takes the window's size, as at any size the
+/// player drags it to.
+pub(crate) const VERA_LAUNCH_WINDOW_SIZE: ScreenSize = ScreenSize {
+    width: 1024,
+    height: 768,
+};
+
+/// The size the player's window opens at, and the Esc menu's Set Window Size
+/// button and Full Screen going off return to, for gamemd's startup shell
+/// size: [`VERA_LAUNCH_WINDOW_SIZE`] for the 800x600 shell, while the 640x480
+/// one a player asks for with `AllowModeToggle` stays.
+pub(crate) fn player_launch_window_size(startup_shell_screen: ScreenSize) -> ScreenSize {
+    if startup_shell_screen == RETAIL_SHELL_SIZE {
+        VERA_LAUNCH_WINDOW_SIZE
+    } else {
+        startup_shell_screen
+    }
+}
 
 /// The process-lifetime subset of active-YR `OptionsClass` owned by
 /// `VERA.INI` `[Options]`, `[Video]`, and `[Audio]`.
@@ -1418,6 +1439,32 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
                 load.retained_profile.screen_height
             ),
             (1024, 768)
+        );
+    }
+
+    /// The player's window opens at 1024x768 where gamemd's shell is 800x600,
+    /// with or without a VERA.INI; AllowModeToggle's 640x480 stays.
+    #[test]
+    fn player_window_opens_at_1024x768_in_place_of_the_800x600_shell() {
+        let defaults = RetailStartupOptions::default();
+        let no_file = RetailOptionsLoad::without_settings(&defaults);
+        let game_size = load_snapshot(&defaults, b"[Video]\nScreenWidth=640\nScreenHeight=480\n");
+        for load in [no_file, game_size] {
+            assert_eq!(
+                player_launch_window_size(load.startup_shell_screen),
+                ScreenSize {
+                    width: 1024,
+                    height: 768
+                }
+            );
+        }
+        let toggle = load_snapshot(&defaults, b"[Video]\nAllowModeToggle=yes\n");
+        assert_eq!(
+            player_launch_window_size(toggle.startup_shell_screen),
+            ScreenSize {
+                width: 640,
+                height: 480
+            }
         );
     }
 
