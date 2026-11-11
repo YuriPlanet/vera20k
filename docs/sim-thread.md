@@ -145,7 +145,10 @@ storage with the live world copy-on-write (`util::shared`):
 - `CellMap` strips are one column each, shared the same way.
 - `Shared<T>` for state that rarely changes as a whole: entities (each one
   separately), the zone grid, the interner, AI script definitions, terrain
-  objects and the terrain's TMP headers and per-cell side arrays.
+  objects and the terrain's TMP headers and per-cell side arrays. An entity
+  is two such values: the record its turn reads each step, and its `Seldom`
+  part (orders, events, drawing), which a turn that does not write it leaves
+  shared.
 - `DerivedCache` for caches a copy can rebuild; a copy starts empty.
 
 Writers that usually leave a value unchanged compare before they borrow it

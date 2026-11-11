@@ -319,7 +319,7 @@ impl SlotScene {
                 actor.lifecycle.object_alive(),
                 actor.lifecycle.in_limbo(),
                 &actor.position,
-                actor.mission,
+                actor.mission.clone(),
                 actor.temporal.warp_target()
             ))
         );

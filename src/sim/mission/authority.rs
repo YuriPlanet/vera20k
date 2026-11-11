@@ -816,9 +816,8 @@ impl Simulation {
             if entity.category() != EntityCategory::Structure {
                 entity.navigation.suspend_nav_com();
             }
-            entity
-                .suspended_attack_target
-                .archive(entity.attack_target.target());
+            let target = entity.attack_target.target();
+            entity.suspended_attack_target.archive(target);
             verb::override_base(&mut entity.mission, packet.mission);
         }
         effects.apply_target(self, &prepared, packet.combat_target);
