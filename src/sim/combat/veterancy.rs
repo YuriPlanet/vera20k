@@ -655,9 +655,10 @@ pub fn self_heal_interval_frames(repair_rate_minutes: f64) -> i32 {
 ///    per-object timer, so every eligible object pulses on the same frame.
 /// 3. `Health != Type->Strength` and `Health != 0`.
 ///
-/// The native IDIV uses a signed frame and signed low32 period. Native divide
-/// faults remain explicit deterministic faults, never ordinary ineligibility;
-/// tools/spatial_oracle/object_health records five original fault executions.
+/// The native IDIV uses a signed frame and signed low32 period. gamemd traps
+/// at `0x0070BF17` on a zero period (`RepairRate` below 1/900 minute) and on
+/// MIN/-1 (tools/spatial_oracle/object_health records five such executions);
+/// VERA carries on: such a period never pulses.
 pub fn self_heal_eligible(
     entity: &GameEntity,
     object: &ObjectType,
@@ -670,15 +671,7 @@ pub fn self_heal_eligible(
             return false;
         }
     }
-    let remainder = (frame as i32)
-        .checked_rem(interval_frames)
-        .unwrap_or_else(|| {
-            panic!(
-                "native self-heal IDIV fault at 0070BF17: frame={} period={interval_frames}",
-                frame as i32
-            )
-        });
-    if remainder != 0 {
+    if (frame as i32).checked_rem(interval_frames) != Some(0) {
         return false;
     }
     let health = entity.health.current();
@@ -1135,8 +1128,7 @@ mod tests {
         let mut per_type = object_with(&[], &[]);
         per_type.self_healing = true;
         assert!(self_heal_eligible(&rookie, &per_type, 28, interval));
-        assert!(
-            std::panic::catch_unwind(|| self_heal_eligible(&rookie, &per_type, 28, 0)).is_err()
-        );
+        // A zero period (gamemd traps at 0x0070BF17) never pulses.
+        assert!(!self_heal_eligible(&rookie, &per_type, 28, 0));
     }
 }
