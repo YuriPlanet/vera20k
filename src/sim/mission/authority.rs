@@ -374,6 +374,12 @@ pub(crate) fn commence_entity_mission(
     verb::commence_base(&mut entity.mission, now)
 }
 
+/// Whether [`commence_entity_mission`] writes: an aircraft's clears `+0x6D2`
+/// first, and the base promotes a queued mission.
+pub(crate) fn commence_entity_mission_writes(entity: &crate::sim::game_entity::GameEntity) -> bool {
+    entity.mission_leaf.as_aircraft().is_some() || verb::commences(&entity.mission)
+}
+
 /// The `RandomRanged(0, 2)` ceiling of the Rate epilogue.
 pub(crate) const RATE_EPILOGUE_JITTER_MAX_FRAMES: u32 = 2;
 
@@ -810,9 +816,8 @@ impl Simulation {
             if entity.category() != EntityCategory::Structure {
                 entity.navigation.suspend_nav_com();
             }
-            entity
-                .suspended_attack_target
-                .archive(entity.attack_target.target());
+            let target = entity.attack_target.target();
+            entity.suspended_attack_target.archive(target);
             verb::override_base(&mut entity.mission, packet.mission);
         }
         effects.apply_target(self, &prepared, packet.combat_target);
@@ -945,10 +950,13 @@ impl crate::sim::world::ObjectSubstrate {
             return Ok(false);
         }
 
-        let entity = self
+        // With nothing queued, Commence fails and writes nothing.
+        let Some(entity) = self
             .entities
-            .get_mut(receiver)
-            .expect("building-ready receiver remains present");
+            .get_mut_if(receiver, commence_entity_mission_writes)
+        else {
+            return Ok(false);
+        };
         if !commence_entity_mission(entity, now) {
             return Ok(false);
         }
@@ -1006,7 +1014,7 @@ mod tests {
             mission: &MissionCom,
         ) -> bool {
             self.reads.set(self.reads.get() + 1);
-            self.missions.borrow_mut().push(*mission);
+            self.missions.borrow_mut().push(mission.clone());
             self.values
                 .borrow_mut()
                 .pop_front()
@@ -1034,7 +1042,7 @@ mod tests {
             mission: &MissionCom,
         ) -> bool {
             self.reads.set(self.reads.get() + 1);
-            self.missions.borrow_mut().push(*mission);
+            self.missions.borrow_mut().push(mission.clone());
             self.ready
         }
     }
@@ -1066,7 +1074,7 @@ mod tests {
     fn mission_authority_assign_applies_aircraft_gate_before_writes() {
         let mut aircraft = entity(EntityCategory::Aircraft, MissionId::from_raw(4));
         aircraft.mission_leaf = MissionLeafState::aircraft_raw_for_test(9, 1);
-        let before = aircraft.mission;
+        let before = aircraft.mission.clone();
         let mut sim = sim_with(aircraft);
 
         sim.substrate
@@ -1086,7 +1094,7 @@ mod tests {
     #[test]
     fn mission_authority_assign_preserves_base_guard_and_raw_ids() {
         let mut sim = sim_with(entity(EntityCategory::Unit, MissionId::from_raw(28)));
-        let before = sim.substrate.entities.get(1).unwrap().mission;
+        let before = sim.substrate.entities.get(1).unwrap().mission.clone();
         sim.substrate.mission_assign_exact(1, GUARD, 10).unwrap();
         assert_eq!(sim.substrate.entities.get(1).unwrap().mission, before);
 
@@ -1145,7 +1153,7 @@ mod tests {
         for requested in [MissionId::NONE, MissionId::from_raw(0x1234_5678)] {
             let mut aircraft = entity(EntityCategory::Aircraft, MissionId::from_raw(4));
             aircraft.mission_leaf = MissionLeafState::aircraft_raw_for_test(9, 1);
-            let before_mission = aircraft.mission;
+            let before_mission = aircraft.mission.clone();
             let before_leaf = aircraft.mission_leaf;
             let mut sim = sim_with(aircraft);
             let readiness = TestReadyProvider::ready(true);
@@ -1195,7 +1203,7 @@ mod tests {
             (MissionId::from_raw(28), GUARD),
         ] {
             let mut sim = sim_with(entity(EntityCategory::Unit, current));
-            let before = sim.substrate.entities.get(1).unwrap().mission;
+            let before = sim.substrate.entities.get(1).unwrap().mission.clone();
             let readiness = TestReadyProvider::ready(true);
 
             sim.mission_queue_exact(1, requested, 1, 10, &readiness)
@@ -1210,7 +1218,7 @@ mod tests {
     fn mission_authority_queue_none_and_redundant_requests_still_read_once() {
         for requested in [MissionId::NONE, GUARD] {
             let mut sim = sim_with(entity(EntityCategory::Unit, GUARD));
-            let before = sim.substrate.entities.get(1).unwrap().mission;
+            let before = sim.substrate.entities.get(1).unwrap().mission.clone();
             let readiness = TestReadyProvider::ready(false);
 
             sim.mission_queue_exact(1, requested, 1, 10, &readiness)
@@ -1754,7 +1762,7 @@ mod tests {
         unit.attack_target.set_for_test(Some(TargetKind::Entity(7)));
         unit.navigation
             .set_nav_com_for_test(Some(NavTargetRef::cell(1, 2)));
-        let before_mission = unit.mission;
+        let before_mission = unit.mission.clone();
         let mut sim = sim_with(unit);
         let mut effects = RecordingConcreteMissionEffects::available();
 
@@ -1840,7 +1848,7 @@ mod tests {
             ai_counter: 12,
             dispatch_timer: MissionDispatchTimer::from_raw(13, 14),
         });
-        let before = unit.mission;
+        let before = unit.mission.clone();
         let mut sim = sim_with(unit);
 
         assert!(matches!(

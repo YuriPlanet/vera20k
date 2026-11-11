@@ -140,25 +140,29 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get(actor_id) else {
             return Ok(VehicleCaptureOutcome::default());
         };
-        if actor.category() != EntityCategory::Infantry
-            || !self.entity_object_type(actor, rules).is_some_and(|ty| {
-                #[cfg(not(feature = "ares"))]
-                {
-                    ty.thief
-                }
-                // Ares 3.0 InfantryClass_UpdateVehicleThief_Check (10049970,
-                // hook 0x5202F9): VehicleThief (+EC6) or CanDrive.
-                #[cfg(feature = "ares")]
-                {
-                    ty.vehicle_thief || ty.driver_rules().can_drive()
-                }
-            })
-        {
+        if actor.category() != EntityCategory::Infantry {
             return Ok(VehicleCaptureOutcome::default());
         }
+        // The NavCom is read before the type only to spare an infantryman
+        // that is not walking to an object the type lookup; neither test
+        // writes (VERA-only order).
         let Some(nav @ NavTargetRef::Object { id: target_id }) = actor.navigation.nav_com() else {
             return Ok(VehicleCaptureOutcome::default());
         };
+        if !self.entity_object_type(actor, rules).is_some_and(|ty| {
+            #[cfg(not(feature = "ares"))]
+            {
+                ty.thief
+            }
+            // Ares 3.0 InfantryClass_UpdateVehicleThief_Check (10049970,
+            // hook 0x5202F9): VehicleThief (+EC6) or CanDrive.
+            #[cfg(feature = "ares")]
+            {
+                ty.vehicle_thief || ty.driver_rules().can_drive()
+            }
+        }) {
+            return Ok(VehicleCaptureOutcome::default());
+        }
         let Some(target) = self.substrate.entities.get(target_id) else {
             return Ok(VehicleCaptureOutcome::default());
         };

@@ -135,6 +135,8 @@ pub(crate) struct ObjectImageState {
     anim_bounds_loads: Option<Vec<ObjectImageLoad>>,
     anim_theater_bounds_loads: Option<Vec<ObjectImageLoad>>,
     voxel_load: Option<String>,
+    #[serde(default)]
+    pub(crate) model_slots: super::voxel_model_plan::ModelSlots,
 }
 
 impl ObjectImageState {
@@ -152,6 +154,7 @@ impl ObjectImageState {
             anim_bounds_loads: None,
             anim_theater_bounds_loads: None,
             voxel_load: None,
+            model_slots: Default::default(),
         }
     }
 

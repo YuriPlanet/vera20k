@@ -1386,35 +1386,48 @@ impl UnitModel {
         let use_buffer = rules.is_some_and(|rules| {
             rules.object(type_id).is_some() && rules.art().use_buffer(type_id)
         });
-        if let Some((turret, barrel)) = building_voxel_names(type_id, rules) {
-            // BuildingType45FA90 independently admits B8/C0 on each VXL's
-            // availability. In particular SAM lives in C0 alone; GTGCAN
-            // has both GTGCANTUR and GTGCANBARL. The missing-HVA fallback
-            // remains the loader's established malformed-asset tolerance.
-            let guns = GunParts {
-                turret: turret.and_then(|image| VoxelPart::load(asset_manager, &image, false)),
-                barrel: VoxelPart::load(asset_manager, &barrel, false),
-            };
-            if guns.turret.is_none() && guns.barrel.is_none() {
-                return None;
-            }
-            return Some(Self {
-                type_id: type_id.into(),
-                body: None,
-                guns: vec![guns],
-                shadow: None,
-                use_buffer,
+        // ObjectType5F8110 and BuildingType45FA90 have one physical loader.
+        // The catalog retains optional old slots and copied generations;
+        // rendering must not reinterpret them from current file names.
+        let model =
+            crate::rules::voxel_asset_catalog::load_voxel_model(asset_manager, type_id, rules)?;
+        let body = model.main().cloned();
+        let building = rules
+            .and_then(|rules| rules.object(type_id))
+            .is_some_and(|object| {
+                object.category == crate::rules::object_type::ObjectCategory::Building
             });
+        if !building && body.is_none()
+            || building && model.auxiliary().is_none() && model.barrel().is_none()
+        {
+            return None;
         }
-        let (body, guns) =
-            crate::rules::voxel_asset_catalog::load_main_voxel(asset_manager, type_id, rules)?;
-        let guns = guns
-            .into_iter()
-            .map(|(turret, barrel)| GunParts { turret, barrel })
-            .collect();
+        let count = crate::rules::voxel_frame_catalog::indexed_turret_count(type_id, rules);
+        let guns = if count > 0 {
+            // The loader owns the bounded native slot array; never allocate
+            // arbitrary space from an unchecked authored TurretCount.
+            (0..(count as usize).min(model.indexed_count()))
+                .map(|index| {
+                    let (turret, barrel) = model.indexed_parts(index);
+                    GunParts {
+                        turret: turret.cloned(),
+                        barrel: barrel.cloned(),
+                    }
+                })
+                .collect()
+        } else if building
+            || crate::rules::voxel_frame_catalog::draws_turret_parts(type_id, rules, 0)
+        {
+            vec![GunParts {
+                turret: model.auxiliary().cloned(),
+                barrel: model.barrel().cloned(),
+            }]
+        } else {
+            Vec::new()
+        };
         Some(Self {
             type_id: type_id.into(),
-            body: Some(body),
+            body,
             guns,
             shadow: rules.and_then(|rules| ShadowModel::for_type(rules, type_id)),
             use_buffer,
@@ -1737,66 +1750,61 @@ impl UnitModel {
     /// A `VoxelAnimClass` piece at its bounce matrix: the body, drawn without
     /// an HVA and lit diffusely, and its ground shadow stencil
     /// (`VoxelAnimClass::DrawIt @ 0x00749B70`). DrawIt draws only the type's
-    /// `VoxelIndex=` section; this draws a single-section model at index zero
-    /// and nothing otherwise. Every stock `[VoxelAnims]` image (`TIRE`,
-    /// `PIECE`, `GASTANK`, `MTRS`, `MTRB`) is a single-section model, and no
-    /// stock type authors `VoxelIndex=`. `use_buffer` is 0xB43180 at the
+    /// `VoxelIndex=` section for both passes (749CCF/749DCE), while diffuse
+    /// lighting still reads physical section zero (749D9F/753CE8).
+    /// Invalid indices omit the draw instead of native's unchecked access.
+    /// `use_buffer` is 0xB43180 at the
     /// draw; the shadow ignores it.
     pub(crate) fn render_tumble(
-        &self,
+        body: &VoxelPart,
         section: i32,
         matrix: glam::Mat4,
         vpl: Option<&VplFile>,
         use_buffer: bool,
         depth: Option<&mut vxl_raster::DepthMap>,
     ) -> Option<(VxlSprite, Option<VxlSprite>)> {
-        let body = self.tumble_body(section)?;
-        let (sprite, _) = self.render_matrix(
+        let index = usize::try_from(section).ok()?;
+        let (vxl, hva, params, _) = Self::matrix_draw(
+            body,
             matrix,
             0,
             false,
             vxl_raster::VxlLighting::Diffuse,
-            vpl,
             use_buffer,
-            depth,
+            Some(index),
         )?;
         Some((
-            sprite,
-            vxl_raster::shadow::render_matrix(body.vxl(), matrix, 0, false),
+            vxl_raster::render_vxl_on(vxl, hva, &params, vpl, depth),
+            vxl_raster::shadow::render_matrix(vxl, matrix, section, false),
         ))
     }
 
     /// [`Self::render_tumble`] on a clear depth map, as images for the GPU
     /// raster.
-    pub(crate) fn tumble_images(
-        &self,
+    pub(crate) fn tumble_images<'a>(
+        body: &'a VoxelPart,
         section: i32,
         matrix: glam::Mat4,
         vpl: Option<&VplFile>,
         use_buffer: bool,
     ) -> Option<(
-        vxl_raster::VoxelImage<'_>,
-        Option<vxl_raster::VoxelImage<'_>>,
+        vxl_raster::VoxelImage<'a>,
+        Option<vxl_raster::VoxelImage<'a>>,
     )> {
-        let body = self.tumble_body(section)?;
-        let (image, _) = self.matrix_image(
+        let index = usize::try_from(section).ok()?;
+        let (vxl, hva, params, _) = Self::matrix_draw(
+            body,
             matrix,
             0,
             false,
             vxl_raster::VxlLighting::Diffuse,
-            vpl,
             use_buffer,
+            Some(index),
         )?;
         Some((
-            image,
-            vxl_raster::shadow::matrix_image(body.vxl(), matrix, 0, false),
+            vxl_raster::voxel_image(vxl, hva, &params, vpl),
+            vxl_raster::shadow::matrix_image(vxl, matrix, section, false),
         ))
-    }
-
-    fn tumble_body(&self, section: i32) -> Option<&VoxelPart> {
-        self.body
-            .as_ref()
-            .filter(|body| section == 0 && body.vxl().limbs.len() == 1)
     }
 
     /// Shared direct-matrix body raster. Bullet46B0C0 submits every section
@@ -1815,8 +1823,15 @@ impl UnitModel {
         use_buffer: bool,
         depth: Option<&mut vxl_raster::DepthMap>,
     ) -> Option<(VxlSprite, Option<[i32; 4]>)> {
-        let (vxl, hva, params, bounds) =
-            self.matrix_draw(matrix, frame, use_hva, lighting, use_buffer)?;
+        let (vxl, hva, params, bounds) = Self::matrix_draw(
+            self.body.as_ref()?,
+            matrix,
+            frame,
+            use_hva,
+            lighting,
+            use_buffer,
+            None,
+        )?;
         Some((
             vxl_raster::render_vxl_on(vxl, hva, &params, vpl, depth),
             Some(bounds),
@@ -1834,8 +1849,15 @@ impl UnitModel {
         vpl: Option<&VplFile>,
         use_buffer: bool,
     ) -> Option<(vxl_raster::VoxelImage<'_>, Option<[i32; 4]>)> {
-        let (vxl, hva, params, bounds) =
-            self.matrix_draw(matrix, frame, use_hva, lighting, use_buffer)?;
+        let (vxl, hva, params, bounds) = Self::matrix_draw(
+            self.body.as_ref()?,
+            matrix,
+            frame,
+            use_hva,
+            lighting,
+            use_buffer,
+            None,
+        )?;
         Some((
             vxl_raster::voxel_image(vxl, hva, &params, vpl),
             Some(bounds),
@@ -1844,14 +1866,14 @@ impl UnitModel {
 
     /// A direct-matrix body draw's files, parameters and native draw bounds.
     fn matrix_draw(
-        &self,
+        body: &VoxelPart,
         matrix: glam::Mat4,
         frame: u32,
         use_hva: bool,
         lighting: vxl_raster::VxlLighting,
         use_buffer: bool,
+        section: Option<usize>,
     ) -> Option<(&VxlFile, Option<&HvaFile>, VxlRenderParams, [i32; 4])> {
-        let body = self.body.as_ref()?;
         let hva = if use_hva { Some(body.hva()?) } else { None };
         let frame = if let Some(hva) = hva {
             frame.checked_rem(hva.frame_count)?
@@ -1862,6 +1884,7 @@ impl UnitModel {
             body_tilt: Some(vxl_raster::BodyTilt::Matrix(matrix)),
             lighting,
             frame,
+            section,
             use_buffer,
             ..VxlRenderParams::default()
         };

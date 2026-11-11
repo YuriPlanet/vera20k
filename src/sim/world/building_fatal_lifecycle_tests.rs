@@ -1347,7 +1347,7 @@ impl Fixture {
         let door_phase = actor.door_phase();
         assert_eq!(door_phase, crate::sim::door::DoorPhase::Opening);
         let door_timer = actor.door_timer_fields();
-        let mission = actor.mission;
+        let mission = actor.mission.clone();
         let grid = self.sim.smudge_grid.as_ref().unwrap();
         assert_eq!(grid.object_count(), constructors.len());
         for ((id, object), native) in grid.objects().zip(constructors) {

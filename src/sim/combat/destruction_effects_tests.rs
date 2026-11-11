@@ -1288,7 +1288,7 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
             [&input["max_debris"], &input["min_debris"]].map(|v| v.as_i64().unwrap() as i32)
         );
         assert_eq!(gapowr.foundation.dimensions(), (2, 2));
-        let flagged = |burn: bool, crater: bool, w: u8, h: u8| {
+        let flagged = |burn: bool, crater: bool, w: i32, h: i32| {
             (burn || crater).then_some((burn, crater, w, h))
         };
         assert_eq!(
@@ -1309,8 +1309,8 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
                     flagged(
                         field("burn") == 1,
                         field("crater") == 1,
-                        field("width") as u8,
-                        field("height") as u8,
+                        field("width") as i32,
+                        field("height") as i32,
                     )
                     .map(|flags| (def["name"].as_str().unwrap().to_string(), flags))
                 })

@@ -546,7 +546,7 @@ impl MatchDiagnosticsState {
                 log.header.version = crate::sim::replay::REPLAY_VERSION;
                 log.startup = Some(Box::new(startup));
             }
-            Err(error) => log::debug!("Standalone replay startup unavailable: {error}"),
+            Err(error) => log::warn!("This match's replay cannot be replayed: {error:#}"),
         }
     }
 

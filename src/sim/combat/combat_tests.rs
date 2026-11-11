@@ -4123,13 +4123,13 @@ fn gsi_04_07_damage_spawn_and_slave_managers_block_retaliation() {
                 .object("SLAVEMASTER")
                 .and_then(|object| object.enslaves.as_deref())
                 .expect("resolved Enslaves profile creates native SlaveManager");
-            victim.slave_manager = Some(crate::sim::slave_manager::SlaveManager::new(
+            victim.slave_manager = Some(Box::new(crate::sim::slave_manager::SlaveManager::new(
                 interner.intern(slave_type),
                 [None; 0],
                 0,
                 0,
                 0,
-            ));
+            )));
         }
         entities.insert(victim);
 
@@ -4225,11 +4225,11 @@ fn gsi_04_07_damage_full_capture_manager_blocks_retaliation() {
             entities.insert(controlled);
         }
         // The stock tower's link limit (`[MultipleMindControlTower] Damage=3`).
-        victim.capture_manager = Some(
+        victim.capture_manager = Some(Box::new(
             crate::sim::capture_manager::CaptureManagerState::with_victims_for_test(
                 3, false, &links,
             ),
-        );
+        ));
         entities.insert(victim);
 
         let event = EntityDamageEvent::area(2, 1, 0, 1, Some(source_owner), hit_wh);

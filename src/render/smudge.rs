@@ -9,8 +9,10 @@
 //! SmudgeType SHPs have a single composite frame. Native asks every occupied
 //! footprint cell to draw frame 0. On the selected coherent flat footprint with
 //! uniform Cell material, each call recenters on the same origin and repeated
-//! opaque draws are pixel-idempotent. This builder emits the origin once;
-//! per-cell material differences and partially cleared footprints remain open.
+//! opaque draws are pixel-idempotent. This builder emits the origin once for
+//! positive footprints whose cell-data byte does not wrap. Per-cell material
+//! differences and partially cleared footprints remain open on that optimized
+//! path. Wrapped and nonpositive footprints retain every source-cell draw.
 //!
 //! ## Dependency rules
 //! - Part of render/ — depends on map/, rules/, sim/.
@@ -22,7 +24,7 @@ use crate::map::terrain::{TILE_WIDTH, TilePlacement, iso_to_screen};
 use crate::render::batch::SpriteInstance;
 use crate::render::cell_window::{AnchorBounds, ArtExtent, CellWindow};
 use crate::render::palette_light::PaletteLight;
-use crate::rules::smudge_type::SmudgeTypeRegistry;
+use crate::rules::smudge_type::{SmudgeTypeDef, SmudgeTypeRegistry};
 use crate::sim::smudge_grid::{SmudgeCell, SmudgeGrid};
 
 #[cfg(test)]
@@ -40,18 +42,64 @@ pub type SmudgeInstance = SpriteInstance;
 /// entities establishes the layer, independently of this value.
 const SMUDGE_DEPTH: f32 = 0.5;
 
+fn can_collapse_footprint(definition: &SmudgeTypeDef) -> bool {
+    definition.width > 0
+        && definition.height > 0
+        && i64::from(definition.width) * i64::from(definition.height) <= 256
+}
+
+/// SmudgeType.Draw_It6B5621..5661: data0 bypasses IDIV, while every other
+/// byte recenters using the current signed Width. Height never enters the
+/// native draw. Keep the original source cell's level and material separate.
+fn decoded_pixel_offset(definition: &SmudgeTypeDef, data: u8) -> Option<[i32; 2]> {
+    let (x, y) = if data == 0 {
+        (0, 0)
+    } else {
+        definition.encoded_cell_offset(data)?
+    };
+    Some([30 * (y - x), -15 * (y + x)])
+}
+
+fn recentered_art_extent(registry: &SmudgeTypeRegistry, art: ArtExtent) -> ArtExtent {
+    let mut offsets = ArtExtent::default();
+    for (_, definition) in registry.iter_with_id() {
+        if can_collapse_footprint(definition) {
+            continue;
+        }
+        // Cell data has only 256 states, independently of the signed type's
+        // dimensions. Use the same draw decision for these cull bounds; stock
+        // unwrapped types need no extra padding or per-cell decode.
+        for data in 1..=u8::MAX {
+            let Some([x, y]) = decoded_pixel_offset(definition, data) else {
+                continue;
+            };
+            offsets.left = offsets.left.min(x as f32);
+            offsets.right = offsets.right.max(x as f32);
+            offsets.top = offsets.top.min(y as f32);
+            offsets.bottom = offsets.bottom.max(y as f32);
+        }
+    }
+    ArtExtent {
+        left: art.left + offsets.left,
+        top: art.top + offsets.top,
+        right: art.right + offsets.right,
+        bottom: art.bottom + offsets.bottom,
+    }
+}
+
 /// Build a `SpriteInstance` buffer for visible smudges.
 ///
 /// Cell4804B4→Smudge6B55F0 passes the Cell center X, unchanged tile Y, and
 /// signed common intensity (+10C) with its CellConvert (+34). Original
 /// full-view/type/SHP execution: `tools/spatial_oracle/smudge_render`.
 ///
-/// `atlas_lookup` resolves a (smudge_type_id, frame_offset) to a TilePlacement
+/// `atlas_lookup` resolves a (smudge_type_id, SHP frame) to a TilePlacement
 /// (atlas UVs + pixel size + draw offset). The closure is borrowed because the
 /// smudge atlas lives on the renderer side and uses interior types we don't
 /// want to expose here. `art` bounds every placement it returns; only the
-/// cells whose art can then reach the view are visited, in storage order,
-/// which is the draw order (no Z orders smudges).
+/// cells whose recentered art can then reach the view are visited, in storage
+/// order, which is the draw order (no Z orders smudges). The SHP frame is
+/// always zero; the stored cell-data byte controls only position.
 pub fn build_visible_instances(
     grid: &SmudgeGrid,
     registry: &SmudgeTypeRegistry,
@@ -75,7 +123,9 @@ pub fn build_visible_instances(
             [camera_x, camera_y, screen_w, screen_h],
         )
     };
-    // The cull below admits art drawn half a tile right of the anchor.
+    // The cull below admits art drawn half a tile right of the source anchor,
+    // including every byte-decoded shift that can bring it into the view.
+    let art = recentered_art_extent(registry, art);
     let window = CellWindow::covering(
         AnchorBounds {
             left: camera_x - TILE_WIDTH / 2.0 - art.right,
@@ -125,33 +175,37 @@ fn visible_instances_in(
         let Some(type_id) = cell.type_id else {
             continue;
         };
-        // Multi-cell smudge footprints are stored as W×H occupied cells, but
-        // For the coherent flat uniform-material path, native per-cell
-        // SmudgeTypeClass::Draw_It calls recenter frame0 at the same point.
-        // Keep one opaque draw; unequal Cell material/partial clears remain
-        // outside this optimization's demonstrated coverage.
-        if cell.frame_offset != 0 {
-            continue;
-        }
         // Confirm the type still exists in the registry — defensive against
         // map/rules mismatches; an unknown id is silently skipped.
-        if registry.get(type_id).is_none() {
+        let Some(definition) = registry.get(type_id) else {
+            continue;
+        };
+        // Keep the established coherent, flat, uniform-material optimization
+        // only when data has not wrapped. In wrapped footprints, a decoded
+        // anchor need not have any data0 source. Unequal material and partial
+        // clears on the collapsed path remain outside its proven coverage.
+        if can_collapse_footprint(definition) && cell.frame_offset != 0 {
             continue;
         }
         let Some(terrain_cell) = resolved_terrain.cell(rx, ry) else {
             continue;
         };
         let (sx, sy): (f32, f32) = iso_to_screen(rx, ry, terrain_cell.level);
-        let placement: TilePlacement = match atlas_lookup(type_id, cell.frame_offset) {
+        let placement: TilePlacement = match atlas_lookup(type_id, 0) {
             Some(p) => p,
             None => continue,
+        };
+        // The native art-null test precedes IDIV. Refuse an invalid retained
+        // nonzero-data/Width0 mark here, without clamping the type at load.
+        let Some([offset_x, offset_y]) = decoded_pixel_offset(definition, cell.frame_offset) else {
+            continue;
         };
         // iso_to_screen returns the NW corner of the cell's bounding box;
         // native caller adds half a tile only in X. Adding half-height in Y
         // here places the complete crater 15px too low. The atlas retains
         // the full-canvas centered anchor, as the native shape caller does.
-        let draw_x = sx + TILE_WIDTH / 2.0 + placement.draw_offset[0];
-        let draw_y = sy + placement.draw_offset[1];
+        let draw_x = sx + TILE_WIDTH / 2.0 + offset_x as f32 + placement.draw_offset[0];
+        let draw_y = sy + offset_y as f32 + placement.draw_offset[1];
         // Cull against the complete composite SHP bounds. Testing the origin
         // cell's diamond would hide a wide footprint while part of its art is
         // still inside the tactical viewport.
@@ -200,7 +254,6 @@ mod tests {
                 ry,
                 SmudgeCell {
                     type_id: Some(0),
-                    footprint_origin: Some((rx, ry)),
                     frame_offset: 0,
                 },
             );

@@ -50,6 +50,7 @@ use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::game_entity::GameEntity;
 use crate::sim::houses::Houses;
 use crate::sim::intern::StringInterner;
 use crate::sim::mission::MissionType;
@@ -861,12 +862,12 @@ impl crate::sim::world::ObjectSubstrate {
     /// using the resulting native Mission+AC, including when an order interrupts
     /// Attack. It neither reads nor clears the separate readiness latch+6D2.
     fn aircraft_ammo_after_commence(&mut self, id: u64) {
-        let Some(entity) = self.entities.get_mut(id) else {
-            return;
-        };
-        if entity.category() == EntityCategory::Aircraft
-            && entity.mission.current().raw() != 1
-            && let Some(ammo) = entity.ammo_mut()
+        if let Some(ammo) = self
+            .entities
+            .get_mut_if(id, |entity| {
+                entity.category() == EntityCategory::Aircraft && entity.mission.current().raw() != 1
+            })
+            .and_then(GameEntity::ammo_mut)
         {
             ammo.consume_release(false);
         }
@@ -925,7 +926,10 @@ fn techno_ai_shell(
     // Unit7363C9..7363DE precedes Hunt/Ready/Foot AI, after the existing
     // Tube, death and Temporal entry gates. Limboed Units have no Logic visit.
     if category == EntityCategory::Unit
-        && let Some(entity) = sim.substrate.entities.get_mut(id)
+        && let Some(entity) = sim
+            .substrate
+            .entities
+            .get_mut_if(id, |entity| entity.unit_firing_counter.counting())
     {
         crate::sim::animation::tick_unit_firing_counter(entity);
     }
@@ -955,10 +959,15 @@ fn techno_ai_shell(
     // Techno6F9F6E..9F precedes veterancy promotion, missions and acquisition for every
     // Techno category. object_ai_visit_one excludes the entry-active Tube leaf
     // before this common owner. Actual health and this retained estimate differ.
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+    let frame = sim.session.binary_frame();
+    if let Some(entity) = sim.substrate.entities.get_mut_if(id, |entity| {
         entity
             .estimated_health
-            .recover(entity.health.current(), sim.session.binary_frame());
+            .recovers(entity.health.current(), frame)
+    }) {
+        entity
+            .estimated_health
+            .recover(entity.health.current(), frame);
     }
     match category {
         EntityCategory::Unit => {
@@ -1292,7 +1301,10 @@ fn veterancy_promotion_step(
     id: u64,
     rules: &RuleSet,
 ) {
-    let Some(entity) = substrate.entities.get_mut(id) else {
+    let Some(entity) = substrate
+        .entities
+        .get_mut_if(id, |entity| entity.veterancy.rank_changed())
+    else {
         return;
     };
     let Some(promotion) = entity
@@ -1529,15 +1541,19 @@ fn self_heal_step(
     );
     #[cfg(not(feature = "ares"))]
     let amount = {
-        let interval = crate::sim::combat::veterancy::self_heal_interval_frames(
-            rules.general.repair_rate_minutes,
-        );
-        i32::from(crate::sim::combat::veterancy::self_heal_eligible(
-            entity,
-            object,
-            session.binary_frame(),
-            interval,
-        ))
+        use crate::sim::combat::veterancy;
+        // The period is an x87 conversion of a rules value, so only an
+        // object past the virtual's ability gate, which answers false
+        // without it, works it out (VERA-only order).
+        i32::from(
+            veterancy::holds_self_heal(entity, object)
+                && veterancy::self_heal_eligible(
+                    entity,
+                    object,
+                    session.binary_frame(),
+                    veterancy::self_heal_interval_frames(rules.general.repair_rate_minutes),
+                ),
+        )
     };
     if amount == 0 {
         return;
@@ -1665,9 +1681,7 @@ fn mission_counter_step(
     ctx: ObjectAiCtx<'_>,
     outcome: &mut ObjectAiOutcome,
 ) -> bool {
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        entity.mission.increment_ai_counter();
-    }
+    sim.substrate.entities.count_mission_ai_visit(id);
     // The sound block (`0x005F3E78..0x005F3F0C`) runs before the fall block
     // (`0x005F3F11`), so a faller its landing kills still plays its sounds.
     sim.object_ai_sounds(id, rules, ctx.effects);
@@ -1848,14 +1862,18 @@ fn techno_common_steps(
             .then(|| rules.object_by_handle(object))
     });
     if let Some(object) = rocking_type {
-        let needs_self_damage = sim.substrate.entities.get_mut(id).is_some_and(|entity| {
-            crate::sim::rocking::update(
-                entity,
-                object,
-                rules.general.fallback_coefficient,
-                sim.session.binary_frame(),
-            )
-        });
+        let needs_self_damage = sim
+            .substrate
+            .entities
+            .get_mut_if(id, crate::sim::rocking::updates)
+            .is_some_and(|entity| {
+                crate::sim::rocking::update(
+                    entity,
+                    object,
+                    rules.general.fallback_coefficient,
+                    sim.session.binary_frame(),
+                )
+            });
         if needs_self_damage {
             // RockingUpdate70BC23..70BCA3 calls the actual receiver with
             // type Strength, Rules C4Warhead, ignore-defenses and arg6=false.
@@ -1882,15 +1900,24 @@ fn techno_common_steps(
     behind_indicator_step(sim, id, rules);
     allied_target_drop_step(sim, id, rules);
     illegal_target_drop_step(sim, id, rules);
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+    if let Some(entity) = sim
+        .substrate
+        .entities
+        .get_mut_if(id, GameEntity::voxel_recoil_moves)
+    {
         entity.update_voxel_recoil(); // Techno6FA4D1, before ChargeTurret.
     }
     charge_turret_step(&sim.interner, &sim.session, &mut sim.substrate, id, rules);
     //Techno6FA5BE..6FA5D6, before Mission AI: every Techno finishes its own
     //due Door transition here. Gate/Factory mission work observes this change
     //inside the same LogicVector visit; no global phase advances Door clocks.
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        entity.advance_door(sim.session.binary_frame());
+    let frame = sim.session.binary_frame();
+    if let Some(entity) = sim
+        .substrate
+        .entities
+        .get_mut_if(id, |entity| entity.door_advances(frame))
+    {
+        entity.advance_door(frame);
     }
     true
 }
@@ -1909,7 +1936,11 @@ fn berserk_step(
     overlay_registry: Option<&OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) {
-    let Some(entity) = sim.substrate.entities.get_mut(id) else {
+    let Some(entity) = sim
+        .substrate
+        .entities
+        .get_mut_if(id, |entity| entity.berserk.is_active())
+    else {
         return;
     };
     if !entity.berserk.count_down() {
@@ -1950,12 +1981,15 @@ fn iron_tint_step(
     let airstrike_active = substrate.airstrike_tint_active(id);
     if let Some(curtain) = substrate
         .entities
-        .get_mut(id)
+        .get_mut_if(id, |entity| entity.invulnerability.is_some())
         .and_then(|entity| entity.invulnerability.as_mut())
     {
         curtain.update_tint(frame, scenario_rng);
     }
-    if let Some(entity) = substrate.entities.get_mut(id) {
+    if let Some(entity) = substrate
+        .entities
+        .get_mut_if(id, |entity| entity.airstrike_tint.updates(airstrike_active))
+    {
         entity
             .airstrike_tint
             .update_tint(frame, airstrike_active, scenario_rng);
@@ -1971,13 +2005,17 @@ fn charge_turret_step(
     id: u64,
     rules: &RuleSet,
 ) {
-    let Some(entity) = substrate.entities.get_mut(id) else {
+    let Some(object) = substrate
+        .entities
+        .get(id)
+        .and_then(|entity| interner.object_type(entity.type_ref(), rules))
+        .filter(|object| GameEntity::charges_turret(object))
+    else {
         return;
     };
-    let Some(object) = interner.object_type(entity.type_ref(), rules) else {
-        return;
-    };
-    entity.update_charge_turret(session.binary_frame() as i32, object);
+    if let Some(entity) = substrate.entities.get_mut(id) {
+        entity.update_charge_turret(session.binary_frame() as i32, object);
+    }
 }
 
 /// `TechnoClass::AI_Update @ 0x006FA472..0x006FA4CB`, after the drain
@@ -2148,6 +2186,11 @@ fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
+    // The target is read before the house only to spare an object without
+    // one the house lookups; neither test writes (VERA-only order).
+    let Some(target) = entity.attack_target.target() else {
+        return;
+    };
     let house = combat_weapon::controlled_transport_house(
         &sim.substrate.entities,
         rules,
@@ -2158,9 +2201,6 @@ fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     if sim.owner_is_human(house) {
         return;
     }
-    let Some(target) = entity.attack_target.target() else {
-        return;
-    };
     let Some(obj) = sim.interner.object_type(entity.type_ref(), rules) else {
         return;
     };
@@ -2365,7 +2405,7 @@ fn behind_indicator_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
         if let Some(anim) = sim
             .substrate
             .entities
-            .get_mut(id)
+            .get_mut_if(id, |entity| entity.behind_anim().is_some())
             .and_then(|entity| entity.take_behind_anim())
         {
             sim.destroy_anim(anim, rules);
@@ -2549,10 +2589,11 @@ fn techno_common_post(sim: &mut Simulation, id: u64, rules: &RuleSet, _effects: 
     // Native6FABBC..C2 skips ONLY the generic Stage block to6FAC31; the
     //shared flash/particle/EMP tail still precedes Building's Gattling code.
     //Do not reset Stage.changed or flash twice when migrating this caller.
-    if let Some(entity) = sim.substrate.entities.get_mut(id)
-        && entity.category() != EntityCategory::Structure
-    {
-        entity.tick_native_stage(sim.session.binary_frame() as i32);
+    let now = sim.session.binary_frame() as i32;
+    if let Some(entity) = sim.substrate.entities.get_mut_if(id, |entity| {
+        entity.category() != EntityCategory::Structure && entity.native_stage().advances(now)
+    }) {
+        entity.tick_native_stage(now);
     }
     flash_step(&mut sim.substrate, id, sim.session.binary_frame());
 
@@ -2576,7 +2617,10 @@ fn flash_step(substrate: &mut ObjectSubstrate, id: u64, frame: u32) {
     if !ai_alive(substrate, id) {
         return;
     }
-    let Some(entity) = substrate.entities.get_mut(id) else {
+    let Some(entity) = substrate
+        .entities
+        .get_mut_if(id, |entity| entity.flashing.counting())
+    else {
         return;
     };
     let was_flashed = entity.flashing.flashed();
@@ -4934,7 +4978,7 @@ mod tests {
             }
             let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
             cloak.set_state_for_test(2);
-            sim.substrate.entities.get_mut(2).unwrap().cloak = Some(cloak);
+            sim.substrate.entities.get_mut(2).unwrap().cloak = Some(Box::new(cloak));
             sim.substrate
                 .entities
                 .get_mut(1)
@@ -4992,7 +5036,7 @@ mod tests {
             if cloaked {
                 let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
                 cloak.set_state_for_test(2);
-                sim.substrate.entities.get_mut(2).unwrap().cloak = Some(cloak);
+                sim.substrate.entities.get_mut(2).unwrap().cloak = Some(Box::new(cloak));
             }
             let dog = sim.substrate.entities.get_mut(1).unwrap();
             dog.attack_target.set_for_test(Some(TargetKind::Entity(2)));

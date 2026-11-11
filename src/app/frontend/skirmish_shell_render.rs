@@ -12,18 +12,17 @@ use draw_order::{
     random_map_setup_semantic_draw_order, skirmish_shell_semantic_draw_order,
     validation_modal_semantic_draw_order,
 };
-mod in_game_options;
 mod in_game_shell;
 pub(crate) use in_game_shell::{
     current_in_game_shell_layout, in_game_shell_cursor, in_game_shell_size,
-    native_in_game_shell_active, render_in_game_options_shell,
+    native_in_game_shell_active,
 };
 mod pause_menu;
 pub(crate) use pause_menu::render_pause_menu_shell;
 mod saved_games;
 pub(crate) use saved_games::{family_saved_game_overlays, render_saved_game_shell};
 mod launcher_options;
-pub(crate) use launcher_options::{paint_options_settings, render_launcher_options, zoom_label};
+pub(crate) use launcher_options::{paint_options_settings, render_launcher_options};
 mod modals;
 mod network_failure;
 pub(crate) use modals::render_saved_game_loading;
@@ -251,6 +250,7 @@ fn build_skirmish_shell_instances(
                 atlas,
                 layout,
                 choose_map_layout,
+                1.0,
             );
             push_saved_seed_modal_instances(
                 &mut instances,
@@ -304,6 +304,7 @@ fn build_skirmish_shell_instances(
                 atlas,
                 layout,
                 choose_map_layout,
+                modals::CHOOSE_MAP_BACKGROUND_BRIGHTNESS,
             );
             // `0x6B`'s slides draw the top panel and the column like `0x102`'s
             // (no map button); the slide-out repaint blanks every child.
@@ -329,6 +330,7 @@ fn build_skirmish_shell_instances(
                 push_choose_map_modal_control_instances(
                     &mut instances,
                     atlas,
+                    font,
                     choose_map_layout,
                     interior,
                     shell,
@@ -1132,9 +1134,10 @@ mod tests {
             );
             (draws, [title, help], scale.factor())
         };
-        for (random, sample) in [true, false].into_iter().flat_map(|random| {
-            ["字".repeat(90), "A ".repeat(100)].map(|sample| (random, sample))
-        }) {
+        for (random, sample) in [true, false]
+            .into_iter()
+            .flat_map(|random| ["字".repeat(90), "A ".repeat(100)].map(|sample| (random, sample)))
+        {
             let base = draw(800, 600, random, &sample).0;
             assert!(base.iter().all(|draw| !draw.instances.is_empty()));
             for (width, height) in [(800, 600), (1200, 900), (1600, 1200)] {
@@ -1157,9 +1160,7 @@ mod tests {
                     }
                 }
                 let help = &fitted[1];
-                assert!(
-                    (help.instances[0].position[1] - rects[1].y as f32).abs() <= 0.5
-                );
+                assert!((help.instances[0].position[1] - rects[1].y as f32).abs() <= 0.5);
                 assert!(help.scissor.y + help.scissor.h <= height);
             }
         }

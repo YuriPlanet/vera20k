@@ -35,7 +35,7 @@ pub(crate) use state::status_help_key_for_hover_with_catalog;
 pub use state::{
     AcceptOutcome, ChooseMapContext, ChooseMapHoverTarget, ChooseMapListPress, ChooseMapModalState,
     ChooseMapPrompt, ChooseMapPromptAnswer, ChooseMapPromptButton, ChooseMapPromptKind, ChooseMapSelection,
-    ONLINE_MAPS_ROW, SEARCH_MAX_CHARS,
+    FAVORITES_ROW, ONLINE_MAPS_ROW, SEARCH_MAX_CHARS, favorite_key,
     DropdownScrollDragState, DropdownScrollbarPart, DropdownScrollbarPressState, MainRngRanged,
     OpenComboDropdown, OwnerDrawButton, PLAYER_NAME_CARET_MARGIN_PX, PLAYER_NAME_DEFAULT,
     PLAYER_NAME_EDIT_LIMIT_BYTES, PLAYERS_RANGE, ADVANCED_RANGE, PlayerNameEditState,

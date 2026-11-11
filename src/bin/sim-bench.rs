@@ -69,6 +69,11 @@
 //! client's simulation thread does for drawing (docs/sim-thread.md), and
 //! counts the copy and the drop of the previous one in the frame's time.
 //!
+//! Idle objects sleep as in a real match (`sim::world::idle_sleep`):
+//! `--no-sleep` runs every turn, which must give the same hashes, and
+//! `--sleep-check` runs every turn sleeping would skip and stops if one
+//! changed anything. The summary prints how many visits were counted.
+//!
 //! The simulation batches its path searches and target scans as a real
 //! match does; `--serial-paths` searches and `--serial-scans` scans in native
 //! order instead.
@@ -145,6 +150,8 @@ struct Args {
     csv: Option<PathBuf>,
     serial_paths: bool,
     serial_scans: bool,
+    no_sleep: bool,
+    sleep_check: bool,
     frame_profile: bool,
     lan: bool,
     frame_hashes: Option<PathBuf>,
@@ -186,6 +193,8 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
         csv: None,
         serial_paths: false,
         serial_scans: false,
+        no_sleep: false,
+        sleep_check: false,
         frame_profile: false,
         lan: false,
         frame_hashes: None,
@@ -245,6 +254,8 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
             "--frame-hashes" => args.frame_hashes = Some(PathBuf::from(value()?)),
             "--client-timing" => args.client_timing = true,
             "--serial-scans" => args.serial_scans = true,
+            "--no-sleep" => args.no_sleep = true,
+            "--sleep-check" => args.sleep_check = true,
             "--presentation-frame" => args.presentation_frame = true,
             other => return Err(format!("unrecognised argument {other}")),
         }
@@ -717,6 +728,8 @@ fn main() -> Result<(), String> {
     if !args.serial_scans {
         scenario.runtime.simulation.batch_target_scans();
     }
+    scenario.runtime.simulation.sleep_idle_objects(!args.no_sleep);
+    scenario.runtime.simulation.check_idle_sleep(args.sleep_check);
     scenario
         .runtime
         .simulation
@@ -814,6 +827,8 @@ fn main() -> Result<(), String> {
     frame_hashes_written?;
     let final_hash = runtime.simulation.state_hash();
     println!("final_hash={final_hash:016x}");
+    let (asleep, counted) = runtime.simulation.idle_sleep_counts();
+    println!("idle_sleep asleep_now={asleep} visits_counted={counted}");
     Ok(())
 }
 

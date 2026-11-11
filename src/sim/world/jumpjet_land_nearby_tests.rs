@@ -22,11 +22,22 @@ enum Block {
     /// Two frames after the order, long before the Nighthawk arrives.
     Early,
     DuringDescent,
+    /// In the descent, once the landing cell's list holds the Nighthawk.
+    WhileListed,
 }
 
 /// The Nighthawk's cell at the end, and the frames from its order to its
 /// touchdown when it landed within 1000 frames. `None` without retail rules.
 fn blocked_landing(patch: &str, block: Block) -> Option<((u16, u16), Option<u32>)> {
+    let (sim, hawk, landed_after) = flight(patch, block)?;
+    let position = sim.entities().get(hawk).unwrap().position;
+    Some(((position.rx(), position.ry()), landed_after))
+}
+
+/// The world after the Nighthawk's flight to `LANDING`, the Nighthawk, and
+/// the frames from its order to its touchdown when it landed within 1000
+/// frames. `None` without retail rules.
+fn flight(patch: &str, block: Block) -> Option<(Simulation, u64, Option<u32>)> {
     let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
         "Hills.mmx",
         &IniFile::from_str(patch),
@@ -88,10 +99,34 @@ fn blocked_landing(patch: &str, block: Block) -> Option<((u16, u16), Option<u32>
         let now = phase(&sim);
         if !blocked
             && (block == Block::Early && frames == 2
-                || block == Block::DuringDescent && now == STATE_DESCEND)
+                || block == Block::DuringDescent && now == STATE_DESCEND
+                || block == Block::WhileListed
+                    && now == STATE_DESCEND
+                    && sim.occupancy().contains_entity(LANDING.0, LANDING.1, hawk))
         {
-            sim.spawn_object("MTNK", "Americans", LANDING.0, LANDING.1, 0, rules)
-                .unwrap();
+            if block == Block::WhileListed {
+                // The listed Nighthawk refuses a spawn on its cell, so a
+                // soldier is set down there (`FootClass::SetLocation`), as one
+                // walking in to board stands there.
+                let soldier = sim
+                    .spawn_object("E1", "Americans", LANDING.0, LANDING.1 + 6, 0, rules)
+                    .unwrap();
+                let mut coord = crate::sim::movement::ground_pose::position_world_coord(
+                    &sim.entities().get(soldier).unwrap().position,
+                );
+                coord.x = i32::from(LANDING.0) * 256 + 128;
+                coord.y = i32::from(LANDING.1) * 256 + 128;
+                sim.foot_set_location_marked(
+                    soldier,
+                    coord,
+                    rules,
+                    None,
+                    crate::sim::world::FrameEffects::empty(),
+                );
+            } else {
+                sim.spawn_object("MTNK", "Americans", LANDING.0, LANDING.1, 0, rules)
+                    .unwrap();
+            }
             sim.resolve_type_handles(rules);
             blocked = true;
         }
@@ -101,8 +136,7 @@ fn blocked_landing(patch: &str, block: Block) -> Option<((u16, u16), Option<u32>
             break;
         }
     }
-    let position = sim.entities().get(hawk).unwrap().position;
-    Some(((position.rx(), position.ry()), landed_after))
+    Some((sim, hawk, landed_after))
 }
 
 /// The original hovers over a landing cell something else took
@@ -124,6 +158,25 @@ fn land_nearby_lands_beside_a_taken_cell() {
         i32::from(cell.1) - i32::from(LANDING.1),
     );
     assert!(cell != LANDING && dx * dx + dy * dy <= 9, "{cell:?}");
+}
+
+/// A Nighthawk refused low in its descent is in the landing cell's list
+/// (Update's Mark(DOWN) below two levels, `0x0054D6A6`). Leaving for the
+/// cruise unlinks it, as native's own exits from State 4 do
+/// (`0x0054C5F9..0x0054C610`): the cruise moves it with no Mark pair, so a
+/// link left behind stays in that cell after the Nighthawk is gone.
+#[test]
+fn land_nearby_leaves_the_refused_cell_s_list() {
+    let Some((sim, hawk, landed_after)) =
+        flight("[JumpjetControls]\nLandNearby=3\n", Block::WhileListed)
+    else {
+        return;
+    };
+    let position = sim.entities().get(hawk).unwrap().position;
+    let cell = (position.rx(), position.ry());
+    assert!(landed_after.is_some() && cell != LANDING, "{cell:?}");
+    assert!(sim.occupancy().contains_entity(cell.0, cell.1, hawk));
+    assert!(!sim.occupancy().contains_entity(LANDING.0, LANDING.1, hawk));
 }
 
 /// A cell taken while the Nighthawk is still on its way is replaced on the

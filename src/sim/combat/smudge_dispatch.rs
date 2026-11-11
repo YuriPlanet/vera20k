@@ -490,7 +490,7 @@ mod oracle_tests {
     /// The oracle's placer: CanPlace answers the row's admit mask per type
     /// index, and cell (0, 0) places nothing.
     struct OracleMarks<'a> {
-        table: &'a [(bool, bool, u8, u8)],
+        table: &'a [(bool, bool, i32, i32)],
         admit_mask: u64,
         cell_zero: bool,
         events: Vec<String>,
@@ -562,13 +562,13 @@ mod oracle_tests {
                     value[1].as_i64().unwrap() as i32,
                 )
             };
-            let table: Vec<(bool, bool, u8, u8)> = input["table"]
+            let table: Vec<(bool, bool, i32, i32)> = input["table"]
                 .as_array()
                 .unwrap()
                 .iter()
                 .map(|entry| {
                     let e = |i: usize| entry[i].as_i64().unwrap();
-                    (e(0) != 0, e(1) != 0, e(2) as u8, e(3) as u8)
+                    (e(0) != 0, e(1) != 0, e(2) as i32, e(3) as i32)
                 })
                 .collect();
             let (width, height) = if int("image") == 0 {

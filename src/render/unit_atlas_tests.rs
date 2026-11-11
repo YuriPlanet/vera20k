@@ -874,7 +874,9 @@ fn indexed_model_loader_requires_turret_pairs_but_allows_absent_barrels() {
     };
     for (name, turret, gattling, missing, bad_barrel, expected_guns) in [
         ("valid", true, false, None, false, Some(2)),
-        ("no-turret-flag", false, false, None, true, Some(2)),
+        // ObjectType5F827E/5F8287 branches before the indexed loop: a
+        // Turret=no Unit never loads FVTUR1, regardless of TurretCount.
+        ("no-turret-flag", false, false, None, true, Some(0)),
         (
             "missing-turret",
             true,
@@ -971,6 +973,184 @@ fn kirov_direct_matrix_requires_hva_and_wraps_its_native_frame() {
             .render_matrix(matrix, 0, false, lighting, Some(&vpl), false, None)
             .is_some(),
         "the explicit debris no-HVA caller still uses the same raster owner"
+    );
+}
+
+/// VoxelAnim749CCF/749DCE submit one physical section to the existing
+/// shadow/body owners, without HVA; 749D9F still selects section0's lighting.
+#[test]
+fn tumble_selects_one_physical_section_for_body_and_shadow() {
+    let fixture = crate::test_fixture::json("tools/voxel_oracle/aircraft_shadow.json");
+    let decode = |key| {
+        fixture["generated"][key]
+            .as_str()
+            .unwrap()
+            .as_bytes()
+            .chunks_exact(2)
+            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+            .collect::<Vec<_>>()
+    };
+    let mut bytes = decode("vxl");
+    let tailers = bytes.len() - 4 * 92;
+    // Authored input: give the selected limb its own bounds so using section0
+    // for either crop or shadow is observable. No numeric golden is invented.
+    for offset in [64, 76] {
+        let at = tailers + 2 * 92 + offset;
+        let value = f32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()) + 12.0;
+        bytes[at..at + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    let directory = crate::map::source::test_support::TestDirectory::new("tumble-section");
+    std::fs::write(directory.path().join("MULTI.VXL"), &bytes).unwrap();
+    std::fs::write(directory.path().join("MULTI.HVA"), decode("hva")).unwrap();
+    let assets = AssetManager::from_loose_root_for_test(directory.path());
+    let model = UnitModel::load(&assets, "MULTI", None).unwrap();
+    let vpl = VplFile::from_bytes(&decode("vpl")).unwrap();
+    let matrix = vxl_raster::projectile_voxel_matrix(
+        crate::sim::projectile::ProjectileVelocity::new(3, -2, 1),
+    )
+    .unwrap();
+    let (body, shadow) = UnitModel::render_tumble(
+        model.body.as_ref().unwrap(),
+        2,
+        matrix,
+        Some(&vpl),
+        false,
+        None,
+    )
+    .unwrap();
+    let shadow = shadow.unwrap();
+    let (other, other_shadow) = UnitModel::render_tumble(
+        model.body.as_ref().unwrap(),
+        0,
+        matrix,
+        Some(&vpl),
+        false,
+        None,
+    )
+    .unwrap();
+    let other_shadow = other_shadow.unwrap();
+    assert_ne!(body.palette_indices, other.palette_indices);
+    assert_ne!(
+        (shadow.offset_x, shadow.offset_y),
+        (other_shadow.offset_x, other_shadow.offset_y)
+    );
+
+    let (paint, stencil) =
+        UnitModel::tumble_images(model.body.as_ref().unwrap(), 2, matrix, Some(&vpl), false)
+            .unwrap();
+    let vxl_raster::VoxelImage::Paint {
+        raster: paint_raster,
+        hva,
+        ..
+    } = paint
+    else {
+        panic!("selected encoded section must reach the ordinary GPU preparation");
+    };
+    assert!(hva.is_none());
+    assert_eq!(
+        paint_raster
+            .sections
+            .iter()
+            .map(|(index, _)| *index)
+            .collect::<Vec<_>>(),
+        [2]
+    );
+    assert_eq!(
+        paint_raster.pages,
+        crate::render::vxl_normals::diffuse_pages(4, glam::Mat3::from_mat4(matrix))
+    );
+    let Some(vxl_raster::VoxelImage::Stencil {
+        raster: shadow_raster,
+        ..
+    }) = stencil
+    else {
+        panic!("selected section must reach the existing stencil preparation");
+    };
+    assert_eq!(shadow_raster.limb, 2);
+    assert!(
+        UnitModel::render_tumble(
+            model.body.as_ref().unwrap(),
+            -1,
+            matrix,
+            Some(&vpl),
+            false,
+            None
+        )
+        .is_none()
+    );
+    assert!(
+        UnitModel::tumble_images(model.body.as_ref().unwrap(), 4, matrix, Some(&vpl), false)
+            .is_none()
+    );
+
+    // Unselected geometry cannot enlarge the crop. The selected tailer's
+    // transform and normals mode are ignored by this no-HVA/diffuse caller.
+    for offset in [64, 76] {
+        let at = tailers + offset;
+        let value = f32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()) + 100.0;
+        bytes[at..at + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    bytes[tailers + 2 * 92 + 28..tailers + 2 * 92 + 32].copy_from_slice(&80f32.to_le_bytes());
+    bytes[tailers + 2 * 92 + 91] = 2;
+    std::fs::write(directory.path().join("OTHER.VXL"), &bytes).unwrap();
+    let changed = UnitModel::load(
+        &AssetManager::from_loose_root_for_test(directory.path()),
+        "OTHER",
+        None,
+    )
+    .unwrap();
+    let (changed_body, changed_shadow) = UnitModel::render_tumble(
+        changed.body.as_ref().unwrap(),
+        2,
+        matrix,
+        Some(&vpl),
+        false,
+        None,
+    )
+    .unwrap();
+    let (changed_image, _) =
+        UnitModel::tumble_images(changed.body.as_ref().unwrap(), 2, matrix, Some(&vpl), false)
+            .unwrap();
+    let vxl_raster::VoxelImage::Paint {
+        raster: changed_raster,
+        ..
+    } = changed_image
+    else {
+        panic!("changed unselected section must not reject native paint");
+    };
+    assert_eq!(
+        paint_raster.pages, changed_raster.pages,
+        "diffuse lighting still uses section0"
+    );
+    assert_eq!(body.palette_indices, changed_body.palette_indices);
+    assert_eq!(
+        (body.offset_x, body.offset_y, body.width, body.height),
+        (
+            changed_body.offset_x,
+            changed_body.offset_y,
+            changed_body.width,
+            changed_body.height
+        )
+    );
+    let changed_shadow = changed_shadow.unwrap();
+    assert_eq!(shadow.palette_indices, changed_shadow.palette_indices);
+    assert_eq!(
+        (shadow.offset_x, shadow.offset_y),
+        (changed_shadow.offset_x, changed_shadow.offset_y)
+    );
+
+    // A preview fallback retains the same physical selection.
+    let mut legacy = VxlFile::from_bytes(&bytes).unwrap();
+    legacy.limbs[2].native_spans = None;
+    let params = VxlRenderParams {
+        section: Some(2),
+        ..Default::default()
+    };
+    assert_eq!(
+        vxl_raster::prepare_limb_data(&legacy, None, &params)
+            .0
+            .len(),
+        1
     );
 }
 

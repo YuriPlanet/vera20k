@@ -3500,15 +3500,16 @@ mod tests {
             if input["controlling"].as_bool().unwrap_or(false)
                 || input["empty_controller"].as_bool().unwrap_or(false)
             {
-                passenger.capture_manager = Some(CaptureManagerState::with_victims_for_test(
-                    1,
-                    false,
-                    if input["controlling"].as_bool().unwrap_or(false) {
-                        &[99]
-                    } else {
-                        &[]
-                    },
-                ));
+                passenger.capture_manager =
+                    Some(Box::new(CaptureManagerState::with_victims_for_test(
+                        1,
+                        false,
+                        if input["controlling"].as_bool().unwrap_or(false) {
+                            &[99]
+                        } else {
+                            &[]
+                        },
+                    )));
             }
             sim.substrate.entities.insert(passenger);
             if input["building"].as_bool().unwrap_or(false) {

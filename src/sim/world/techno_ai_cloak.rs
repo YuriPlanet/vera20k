@@ -893,7 +893,7 @@ fn original_health_ratio_corpus_populates_cloak_tick_facts() {
             5,
             true,
         );
-        entity.cloak = Some(crate::sim::cloak_disguise::CloakRuntime::new(0));
+        entity.cloak = Some(Box::new(crate::sim::cloak_disguise::CloakRuntime::new(0)));
         sim.substrate.entities.insert(entity);
         let facts = stock_cloak_tick_facts(&sim, 1, &rules, None).expect("cloakable unit facts");
         assert_eq!(

@@ -604,11 +604,15 @@ impl Simulation {
         sim.complete_pending_order(stable_id, rules, overlay_registry, effects);
         // Drive4B050B..0557 / Ship69FC1B..FC67 samples the containing
         // cell slope before any active-track, destination or turn return.
-        if let Some(entity) = sim.substrate.entities.get_mut(stable_id)
-            && let Some(slope) = sim.resolved_terrain.as_ref().and_then(|terrain| {
-                terrain
-                    .cell(entity.position.rx(), entity.position.ry())
-                    .map(|cell| cell.slope_type)
+        let slope = sim.substrate.entities.get(stable_id).and_then(|entity| {
+            sim.resolved_terrain
+                .as_ref()?
+                .cell(entity.position.rx(), entity.position.ry())
+                .map(|cell| cell.slope_type)
+        });
+        if let Some(slope) = slope
+            && let Some(entity) = sim.substrate.entities.get_mut_if(stable_id, |entity| {
+                movement::slope_transition::process_entry_changes(entity, slope)
             })
         {
             movement::slope_transition::sample_process_entry(
@@ -625,20 +629,19 @@ impl Simulation {
             }
             movement::track_turn::TrackProcessEntry::Return => return Ok(outcome),
         }
-        let mut pending_movement = {
-            let current_grid = sim.path_grid_snapshot();
-            movement::movement_tick::begin_movement(
-                &mut sim.substrate.entities,
-                stable_id,
-                current_grid.as_deref(),
-                sim.session.binary_frame(),
-                sim.resolved_terrain.as_ref(),
-                sim.playfield_bounds,
-                &mut sim.interner,
-                rules,
-                &sim.houses,
-            )
-        };
+        // The grid is borrowed in place, beside the other fields: a snapshot
+        // would count a shared handle up and down for every mover's visit.
+        let mut pending_movement = movement::movement_tick::begin_movement(
+            &mut sim.substrate.entities,
+            stable_id,
+            sim.path_grid.as_deref(),
+            sim.session.binary_frame(),
+            sim.resolved_terrain.as_ref(),
+            sim.playfield_bounds,
+            &mut sim.interner,
+            rules,
+            &sim.houses,
+        );
         // Process_Movement's no-queue request and the Process_Track after it.
         // When the active-track Process_Track(0) ends its track, the same
         // Process continues into Process_Movement and Process_Track(1)
@@ -789,8 +792,10 @@ impl Simulation {
         // Foot AI 4DAB3C..4DABB1: a DropAsBomb object starting to fall plays
         // its type's VoiceFalling at its Location, before the sinking/crash
         // edges and looping-sound position update (PlayAt7509E0, ungated).
-        if let Some(entity) = sim.substrate.entities.get_mut(stable_id)
-            && entity.observe_falling_edge()
+        if let Some(entity) = sim.substrate.entities.get_mut_if(
+            stable_id,
+            crate::sim::game_entity::GameEntity::falling_edge_pending,
+        ) && entity.observe_falling_edge()
             && let Some(voice) = sim
                 .interner
                 .object_type(entity.type_ref(), rules)
@@ -889,7 +894,17 @@ impl Simulation {
                 .entities
                 .get(stable_id)
                 .and_then(crate::sim::debug_event_log::DebugObservation::capture);
+            // A sleeping object's visit is counted, not run (`idle_sleep`).
+            let check = match sim.visit_sleeper(stable_id, rules, overlay_registry, effects) {
+                super::idle_sleep::SleepVisit::Counted => return Ok(()),
+                super::idle_sleep::SleepVisit::Awake => None,
+                super::idle_sleep::SleepVisit::Check(check) => Some(check),
+            };
             let turn = sim.advance_live_object_turn(stable_id, rules, object_ctx)?;
+            if let Some(check) = check {
+                sim.finish_sleep_check(stable_id, *check);
+            }
+            sim.sleep_after_turn(stable_id, rules);
             #[cfg(feature = "debug-tools")]
             if let Some(before) = debug_before
                 && let Some(entity) = sim.substrate.entities.get_mut(stable_id)
@@ -1036,11 +1051,12 @@ impl Simulation {
         // Foot4DA54E follows the post-TechnoAI Object+90 gate above.
         // An entry-active Tube bypasses FootAI; it must retain the byte.
         if !tube_active_at_entry
-            && let Some(entity) = sim.substrate.entities.get_mut(stable_id)
-            && matches!(
-                entity.category(),
-                EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
-            )
+            && let Some(entity) = sim.substrate.entities.get_mut_if(stable_id, |entity| {
+                matches!(
+                    entity.category(),
+                    EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
+                ) && entity.mission_leaf.foot_idle_entry_latch() != 0
+            })
         {
             entity.mission_leaf.set_foot_idle_entry_latch(0);
         }
@@ -1146,8 +1162,20 @@ impl Simulation {
                     air_rate,
                 ))
             });
-            if let (Some((cadence, hover_attack, deploy_to_land, air_rate)), Some(entity)) =
-                (foot_body_cadence, sim.substrate.entities.get_mut(stable_id))
+            let frame = sim.session.binary_frame();
+            if let Some((cadence, hover_attack, deploy_to_land, air_rate)) = foot_body_cadence
+                && let Some(entity) = sim.substrate.entities.get_mut_if(stable_id, |entity| {
+                    crate::sim::animation::foot_body_frame_due(
+                        entity,
+                        crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses),
+                        cadence,
+                        hover_attack,
+                        deploy_to_land,
+                        air_rate,
+                        sim.resolved_terrain.as_ref(),
+                        frame,
+                    )
+                })
             {
                 crate::sim::animation::tick_foot_body_frame_counter(
                     entity,
@@ -1197,7 +1225,11 @@ impl Simulation {
         sim.try_end_piggyback(stable_id, rules);
         // Foot4DAECA clears the transient draw lift after piggyback callbacks,
         // before the warp-in/pending-entry predicate and ParasiteAI.
-        if let Some(entity) = sim.substrate.entities.get_mut(stable_id) {
+        if let Some(entity) = sim
+            .substrate
+            .entities
+            .get_mut_if(stable_id, |entity| entity.ion_blast_lift_pixels() != 0)
+        {
             entity.clear_ion_blast_lift();
         }
         sim.foot_pending_entry_and_parasite(stable_id, rules, overlay_registry, object_ctx.effects);
@@ -1319,9 +1351,14 @@ impl Simulation {
             // precedes the second Ready/Commence. Aircraft/Infantry have
             // no corresponding ordinary Reload dispatch here. The native
             // post-Foot alive gate precedes firing; no second gate is added.
-            if let Some(entity) = sim.substrate.entities.get_mut(stable_id)
-                && entity.category() == EntityCategory::Unit
-                && let Some(obj) = sim.interner.object_type(entity.type_ref(), rules)
+            let now = sim.session.binary_frame() as i32;
+            if let Some(entity) = sim.substrate.entities.get_mut_if(stable_id, |entity| {
+                entity.category() == EntityCategory::Unit
+                    && sim
+                        .interner
+                        .object_type(entity.type_ref(), rules)
+                        .is_some_and(|obj| entity.reload_unit_ammo_writes(obj, now))
+            }) && let Some(obj) = sim.interner.object_type(entity.type_ref(), rules)
             {
                 entity
                     .reload_unit_ammo(obj, sim.session.binary_frame() as i32)
