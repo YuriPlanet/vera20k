@@ -4702,6 +4702,12 @@ fn gsi_05_03_duplicate_uninit_repeats_direct_expiry_and_queue_but_finalizes_once
             LifecycleTestEvent::DeferredDeleteSelected {
                 ticket: super::DeferredDeleteTicket::Object(1),
             },
+            // The Unit destructor's own Limbo (`0x0073584F`), already in limbo.
+            LifecycleTestEvent::ConcealAlreadyLimboReturn {
+                stable_id: 1,
+                object_alive: false,
+                resolvable: true,
+            },
             LifecycleTestEvent::UninitRemovalListenerVisited {
                 expired_id: 1,
                 listener_id: 1,
@@ -5346,6 +5352,12 @@ fn lifecycle_authority_duplicate_queue_finalizes_once() {
             LifecycleTestEvent::DeferredDeleteSelected {
                 ticket: super::DeferredDeleteTicket::Object(1),
             },
+            // The Unit destructor's own Limbo (`0x0073584F`), already in limbo.
+            LifecycleTestEvent::ConcealAlreadyLimboReturn {
+                stable_id: 1,
+                object_alive: false,
+                resolvable: true,
+            },
             LifecycleTestEvent::UninitRemovalListenerVisited {
                 expired_id: 1,
                 listener_id: 1,
@@ -5381,6 +5393,12 @@ fn lifecycle_authority_entity_and_anim_share_ordered_drain() {
             LifecycleTestEvent::DeferredDeleteSelected {
                 ticket: super::DeferredDeleteTicket::Object(1),
             },
+            // The Unit destructor's own Limbo (`0x0073584F`), already in limbo.
+            LifecycleTestEvent::ConcealAlreadyLimboReturn {
+                stable_id: 1,
+                object_alive: false,
+                resolvable: true,
+            },
             LifecycleTestEvent::UninitRemovalListenerVisited {
                 expired_id: 1,
                 listener_id: 1,
@@ -5410,6 +5428,12 @@ fn lifecycle_authority_late_tail_commits_frame_before_drain() {
             LifecycleTestEvent::PendingDeleteDrainStarted,
             LifecycleTestEvent::DeferredDeleteSelected {
                 ticket: super::DeferredDeleteTicket::Object(1),
+            },
+            // The Unit destructor's own Limbo (`0x0073584F`), already in limbo.
+            LifecycleTestEvent::ConcealAlreadyLimboReturn {
+                stable_id: 1,
+                object_alive: false,
+                resolvable: true,
             },
             LifecycleTestEvent::UninitRemovalListenerVisited {
                 expired_id: 1,
@@ -10016,4 +10040,49 @@ fn a_missile_is_tracked_in_the_cell_its_flight_step_reached() {
     let cell = (missile.position.rx(), missile.position.ry());
     assert_eq!(cell, (13, 12), "the flight step left the launch cell");
     assert_eq!(missile.air_spatial_bucket(), Some(bucket(&sim, cell)));
+}
+
+/// `UnitClass::~UnitClass @ 0x00735780` Limbos the Unit itself
+/// (`FootClass::Limbo`, `0x0073584F`), so one destroyed while placed leaves
+/// its cell.
+#[test]
+fn unit_destructor_limbos_a_unit_still_on_the_map() {
+    let mut sim = Simulation::new();
+    insert_entity(&mut sim, 1, EntityCategory::Unit);
+    let _ = sim.try_reveal_entity(1, common_raw_request(3, 4, 0, 128, 128));
+    assert!(sim.substrate.occupancy.contains_entity(3, 4, 1));
+
+    sim.finalize_and_remove_common(1, super::UninitContext::default(), 1);
+
+    assert!(!sim.substrate.entities.contains(1));
+    assert!(!sim.substrate.occupancy.contains_entity(3, 4, 1));
+    assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(3, 4), 0);
+}
+
+/// `AircraftClass::~AircraftClass @ 0x00414080` kills its passengers
+/// (`KillPassengers(NULL)`, `0x004140E6`): none outlives a carrier destroyed
+/// without UnInit.
+#[test]
+fn aircraft_destructor_kills_its_passengers() {
+    let mut sim = Simulation::new();
+    insert_entity(&mut sim, 1, EntityCategory::Aircraft);
+    insert_entity(&mut sim, 2, EntityCategory::Infantry);
+    let mut cargo = PassengerCargo::new(5, 1.0);
+    cargo.board_forced_chain(&[(2, 1.0)]);
+    sim.substrate.entities.get_mut(1).unwrap().passenger_role = PassengerRole::transport(cargo);
+    sim.substrate.entities.get_mut(2).unwrap().passenger_role =
+        PassengerRole::inside_for_test(1, false);
+
+    sim.finalize_and_remove_common(1, super::UninitContext::default(), 1);
+
+    assert!(!sim.substrate.entities.contains(1));
+    assert!(
+        !sim.substrate
+            .entities
+            .get(2)
+            .unwrap()
+            .lifecycle
+            .object_alive()
+    );
+    assert_eq!(sim.substrate.pending_delete.object_ids(), vec![2]);
 }

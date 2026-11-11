@@ -1201,6 +1201,25 @@ pub(in crate::sim) fn update_factory_queue(
     }
 }
 
+/// The Building destructor's scalar delete of its Factory (`+0x524`,
+/// `0x0043BF40..0x0043BF51`). `FactoryClass::~FactoryClass @ 0x004C9A10`
+/// leaves the factory vector and, while the game is active, abandons what it
+/// holds first (`0x004C9A7F..0x004C9A8A` -> `0x004C9FF0`).
+pub(in crate::sim) fn delete_building_factory(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    building: u64,
+    effects: FrameEffects<'_>,
+    game_active: bool,
+) {
+    if game_active {
+        super::factory_ai::detach_all(sim, rules, building, effects);
+    }
+    sim.production
+        .factories_mut()
+        .remove_building_factory(building);
+}
+
 /// BuildingDetach44EBF0's production prelude, shared by Conceal and the
 /// exact-zero damage callback. The separate Building+524 Factory is abandoned
 /// first. House slots have no retained human producer binding: test the held

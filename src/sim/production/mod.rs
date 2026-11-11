@@ -108,8 +108,8 @@ pub(in crate::sim) use self::factory_lifecycle::construct_active_factory_fixture
 #[cfg(any(test, feature = "test-support"))]
 pub(in crate::sim) use self::factory_lifecycle::release_delivered_mobile;
 pub(in crate::sim) use self::factory_lifecycle::{
-    abandon_house_factories, detach_building_production, recalculate_strips,
-    refresh_factory_rates_for_house, step_factories, update_factory_queue,
+    abandon_house_factories, delete_building_factory, detach_building_production,
+    recalculate_strips, refresh_factory_rates_for_house, step_factories, update_factory_queue,
 };
 pub(in crate::sim) use self::production_queue::exit_produced_object;
 pub(crate) use self::production_tech::factory_category_for_building;
