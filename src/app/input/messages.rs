@@ -913,6 +913,12 @@ pub(crate) fn post_match_speed(state: &mut AppState, text: &str) {
     post_grey_row(state, text, false, false);
 }
 
+/// VERA: the answer to a `/pause` or `/resume` chat line
+/// (`pause_menu::chat_command`); `text` is VERA's own, not a CSF key.
+pub(crate) fn post_chat_command_answer(state: &mut AppState, text: &str) {
+    post_grey_row(state, text, false, false);
+}
+
 /// VERA: a match whose `veraui.ini` had lines the game could not use says so
 /// once, naming the first; the log lists them all.
 pub(crate) fn post_layout_problem(state: &mut AppState) {
