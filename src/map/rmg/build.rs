@@ -176,7 +176,7 @@ pub fn generate_map(
     options: &RmgOptions,
     settings: &RmgSettings,
     resolved: &ResolvedTheaterInputs,
-    blocks: &dyn TileBlocks,
+    blocks: &(dyn TileBlocks + Sync),
     objects: &GenerationObjects<'_>,
 ) -> GeneratedMap {
     generate_map_observed(options, settings, resolved, blocks, objects, &mut |_| {})
@@ -252,15 +252,16 @@ const FAIR_SEED_STEP: u32 = 7919;
 /// over shared, so an observed run generates exactly what an unobserved one does.
 ///
 /// VERA extension: with [`RmgOptions::fair_starts`] this generates from a few
-/// seeds, the options' own first, and returns the first fair map or else the
-/// fairest (`fairness::FairnessReport`). The search reads only the options,
-/// so the setup preview and the match load find the same map; the observer
-/// sees every attempt.
+/// seeds, the options' own first, and returns the first fair map in that
+/// order or else the fairest, the earlier one on a tie
+/// (`fairness::FairnessReport`). The search reads only the options, so the
+/// setup preview and the match load find the same map; the observer sees the
+/// first seed's run, and the others' too where they run one after another.
 pub fn generate_map_observed(
     options: &RmgOptions,
     settings: &RmgSettings,
     resolved: &ResolvedTheaterInputs,
-    blocks: &dyn TileBlocks,
+    blocks: &(dyn TileBlocks + Sync),
     objects: &GenerationObjects<'_>,
     observe: &mut dyn FnMut(GenerationPointView<'_>),
 ) -> GeneratedMap {
@@ -269,27 +270,81 @@ pub fn generate_map_observed(
     if !options.fair_starts {
         return generate_once(&options, settings, resolved, blocks, objects, observe).0;
     }
-    let mut best: Option<(GeneratedMap, super::fairness::FairnessReport)> = None;
-    for attempt in 0..fair_start_attempts(&options) {
-        let seed = (u32::from(options.seed_u16()) + attempt * FAIR_SEED_STEP) & 0xFFFF;
-        let candidate = RmgOptions {
-            seed: seed as i32,
+    let candidates: Vec<RmgOptions> = (0..fair_start_attempts(&options))
+        .map(|attempt| RmgOptions {
+            seed: ((u32::from(options.seed_u16()) + attempt * FAIR_SEED_STEP) & 0xFFFF) as i32,
             ..options.clone()
-        };
-        let (map, report) = generate_once(&candidate, settings, resolved, blocks, objects, observe);
+        })
+        .collect();
+    let mut maps = fair_candidates(&candidates, settings, resolved, blocks, objects, observe);
+    let chosen = maps
+        .iter()
+        .position(|(_, report)| report.is_fair())
+        .or_else(|| {
+            // The highest score, the earliest of equals.
+            let best = maps.iter().map(|(_, report)| report.score()).max()?;
+            maps.iter().position(|(_, report)| report.score() == best)
+        })
+        .unwrap_or(0);
+    maps.swap_remove(chosen).0
+}
+
+/// Generate Fair Starts' candidates, in order, each with its report.
+///
+/// The seeds run side by side on their own threads, so the search takes
+/// about one generation's time; the first runs here with the observer. With
+/// Ares' urban inputs (their Main draw is not shareable) or on the browser
+/// build they run one after another and stop at the first fair map, which
+/// is the one the caller takes either way.
+fn fair_candidates(
+    candidates: &[RmgOptions],
+    settings: &RmgSettings,
+    resolved: &ResolvedTheaterInputs,
+    blocks: &(dyn TileBlocks + Sync),
+    objects: &GenerationObjects<'_>,
+    observe: &mut dyn FnMut(GenerationPointView<'_>),
+) -> Vec<(GeneratedMap, super::fairness::FairnessReport)> {
+    let Some((first, others)) = candidates.split_first() else {
+        return Vec::new();
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    if objects.urban_areas.is_none() && !others.is_empty() {
+        let tech_types = objects.tech_types;
+        return std::thread::scope(|scope| {
+            let runs: Vec<_> = others
+                .iter()
+                .map(|candidate| {
+                    scope.spawn(move || {
+                        let objects = GenerationObjects::tech(tech_types);
+                        generate_once(candidate, settings, resolved, blocks, &objects, &mut |_| {})
+                    })
+                })
+                .collect();
+            let mut maps = vec![generate_once(
+                first, settings, resolved, blocks, objects, observe,
+            )];
+            for run in runs {
+                match run.join() {
+                    Ok(map) => maps.push(map),
+                    Err(panic) => std::panic::resume_unwind(panic),
+                }
+            }
+            maps.into_iter()
+                .map(|(map, report)| (map, report.unwrap_or_default()))
+                .collect()
+        });
+    }
+    let mut maps = Vec::new();
+    for candidate in candidates {
+        let (map, report) = generate_once(candidate, settings, resolved, blocks, objects, observe);
         let report = report.unwrap_or_default();
         let fair = report.is_fair();
-        if best
-            .as_ref()
-            .is_none_or(|(_, kept)| report.score() > kept.score())
-        {
-            best = Some((map, report));
-        }
+        maps.push((map, report));
         if fair {
             break;
         }
     }
-    best.expect("Fair Starts makes at least one attempt").0
+    maps
 }
 
 /// One generation from `options` as they stand (already normalized), and the
@@ -298,7 +353,7 @@ fn generate_once(
     options: &RmgOptions,
     settings: &RmgSettings,
     resolved: &ResolvedTheaterInputs,
-    blocks: &dyn TileBlocks,
+    blocks: &(dyn TileBlocks + Sync),
     objects: &GenerationObjects<'_>,
     observe: &mut dyn FnMut(GenerationPointView<'_>),
 ) -> (GeneratedMap, Option<super::fairness::FairnessReport>) {
@@ -1064,6 +1119,26 @@ mod tests {
         let again = generate_map(&fair, &settings, &resolved, &blocks, &objects);
         assert_eq!(overlays(&searched), overlays(&again));
         assert_eq!(searched.start_waypoints, again.start_waypoints);
+
+        // The seeds searched side by side pick the map the one-after-another
+        // search picks. Urban inputs, unused without the urban switch, are
+        // what keeps a search on one thread.
+        let catalog = super::super::phases::urban_areas::UrbanCatalog::default();
+        let one_by_one = generate_map(
+            &fair,
+            &settings,
+            &resolved,
+            &blocks,
+            &GenerationObjects {
+                tech_types: &[],
+                urban_areas: Some(super::super::phases::urban_areas::UrbanInputs {
+                    catalog: &catalog,
+                    main_draw: &|| 0,
+                }),
+            },
+        );
+        assert_eq!(overlays(&searched), overlays(&one_by_one));
+        assert_eq!(searched.start_waypoints, one_by_one.start_waypoints);
     }
 
     #[test]
@@ -1214,7 +1289,7 @@ mod tests {
         options: &RmgOptions,
         settings: &RmgSettings,
         resolved: &ResolvedTheaterInputs,
-        blocks: &dyn TileBlocks,
+        blocks: &(dyn TileBlocks + Sync),
     ) -> ObservedRun {
         let mut points = Vec::new();
         let mut snapshots = Vec::new();
