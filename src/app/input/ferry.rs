@@ -397,16 +397,8 @@ impl FerryState {
                         } else {
                             route.drop
                         };
-                        let cell = drop_cell(
-                            sim,
-                            rules,
-                            registry,
-                            owner,
-                            route,
-                            &claimed,
-                            facts.passengers,
-                            fallback,
-                        );
+                        let cell =
+                            drop_cell(sim, rules, registry, owner, route, &claimed, fallback);
                         claimed.push((route.transport, cell));
                         cell
                     } else {
@@ -497,10 +489,10 @@ fn ferry_transport<'a>(
 
 /// The cell this crossing heads for: the one nearest the drop spot that holds
 /// nothing on the ground, is not `claimed`, lies clear of the pick-up circle,
-/// is where a Move click on it would send the transport and has empty cells
-/// beside it for the passengers: as many as are aboard, up to three, else
-/// fewer. Cells of the drop zone come first; when all are taken, cells up to
-/// [`DROP_OVERFLOW_CELLS`] outside it. `fallback` when no cell qualifies.
+/// is where a Move click on it would send the transport and has an empty
+/// cell beside it for the passengers. Cells of the drop zone come first; when
+/// all are taken, cells up to [`DROP_OVERFLOW_CELLS`] outside it. `fallback`
+/// when no cell qualifies.
 fn drop_cell(
     sim: &Simulation,
     rules: &RuleSet,
@@ -508,7 +500,6 @@ fn drop_cell(
     owner: InternedId,
     route: &FerryRoute,
     claimed: &[(u64, Cell)],
-    passengers: u32,
     fallback: Cell,
 ) -> Cell {
     // Nearest first, so a cell inside the zone wins while one is free.
@@ -571,11 +562,7 @@ fn drop_cell(
         .map(|cell| (cell, room(cell)))
         .filter(|&(_, room)| room > 0)
         .collect();
-    // The nearest cell with room for everyone aboard, else for fewer.
-    (1..=(passengers.clamp(1, 3) as usize))
-        .rev()
-        .find_map(|need| free.iter().find(|&&(_, room)| room >= need))
-        .map_or(fallback, |&(cell, _)| cell)
+    free.first().map_or(fallback, |&(cell, _)| cell)
 }
 
 /// The units to tell aboard this look: the owner's own infantry and vehicles
