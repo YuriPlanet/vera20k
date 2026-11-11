@@ -242,29 +242,19 @@ impl HoverRuntime {
             target = one;
         }
         if X87Chop53::compare(target, load(self.speed_current)) == X87Ordering::Greater {
-            let raised = X87Chop53::add(
-                reciprocal_minutes(rules.general.hover_acceleration),
-                load(self.speed_current),
-            );
-            self.speed_current =
-                store(if X87Chop53::compare(raised, target) == X87Ordering::Less {
-                    raised
-                } else {
-                    target
-                });
+            // `HoverAcceleration=0` divides to +INF at 0x0051617F, which the
+            // compare sends to the target.
+            let raised = reciprocal_minutes(rules.general.hover_acceleration)
+                .map(|step| X87Chop53::add(step, load(self.speed_current)))
+                .filter(|&raised| X87Chop53::compare(raised, target) == X87Ordering::Less);
+            self.speed_current = store(raised.unwrap_or(target));
         }
         if X87Chop53::compare(target, load(self.speed_current)) == X87Ordering::Less {
-            let lowered = X87Chop53::sub(
-                load(self.speed_current),
-                reciprocal_minutes(rules.general.hover_brake),
-            );
-            self.speed_current = store(
-                if X87Chop53::compare(lowered, zero) == X87Ordering::Greater {
-                    lowered
-                } else {
-                    zero
-                },
-            );
+            // `HoverBrake=0` divides to +INF at 0x005161B7: a full stop.
+            let lowered = reciprocal_minutes(rules.general.hover_brake)
+                .map(|step| X87Chop53::sub(load(self.speed_current), step))
+                .filter(|&lowered| X87Chop53::compare(lowered, zero) == X87Ordering::Greater);
+            self.speed_current = store(lowered.unwrap_or(zero));
         }
     }
 
@@ -353,12 +343,13 @@ impl HoverRuntime {
 }
 
 /// `1 / (minutes * 900)`, FLD/FMUL/FDIVR at 0x0051617F and 0x005161B7.
-fn reciprocal_minutes(minutes: NativeF64Bits) -> X87Value {
+/// `None` for a zero key, where the masked divide gives infinity.
+fn reciprocal_minutes(minutes: NativeF64Bits) -> Option<X87Value> {
     X87Chop53::div(
         load(NativeF64Bits::ONE),
         X87Chop53::mul(load(minutes), load(FRAMES_PER_MINUTE)),
     )
-    .expect("the Hover time keys are nonzero")
+    .ok()
 }
 
 fn load(bits: NativeF64Bits) -> X87Value {
