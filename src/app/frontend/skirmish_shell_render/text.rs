@@ -1065,12 +1065,29 @@ pub(super) fn push_random_map_setup_modal_text_draws(
                 RandomMapSetupControl::ExportMap,
             )
         },
+        if modal.options.fair_starts {
+            (
+                "VERA:RandomMapFairStartsOn",
+                "Fair Starts: On",
+                layout.fair_starts,
+                RandomMapSetupControl::FairStartsToggle,
+            )
+        } else {
+            (
+                "VERA:RandomMapFairStartsOff",
+                "Fair Starts: Off",
+                layout.fair_starts,
+                RandomMapSetupControl::FairStartsToggle,
+            )
+        },
     ]
     .into_iter()
     .filter(|(_, _, _, control)| {
         let vera = matches!(
             control,
-            RandomMapSetupControl::AdvancedToggle | RandomMapSetupControl::ExportMap
+            RandomMapSetupControl::AdvancedToggle
+                | RandomMapSetupControl::ExportMap
+                | RandomMapSetupControl::FairStartsToggle
         );
         !sliding && (!vera || modal.extended)
     }) {

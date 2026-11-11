@@ -640,12 +640,15 @@ pub(super) fn push_random_map_setup_modal_control_instances(
         (layout.cancel, RandomMapSetupControl::Cancel0x5c0),
         (layout.advanced, RandomMapSetupControl::AdvancedToggle),
         (layout.export, RandomMapSetupControl::ExportMap),
+        (layout.fair_starts, RandomMapSetupControl::FairStartsToggle),
     ]
     .into_iter()
     .filter(|(_, control)| {
         let vera = matches!(
             control,
-            RandomMapSetupControl::AdvancedToggle | RandomMapSetupControl::ExportMap
+            RandomMapSetupControl::AdvancedToggle
+                | RandomMapSetupControl::ExportMap
+                | RandomMapSetupControl::FairStartsToggle
         );
         steady && (!vera || modal.extended)
     }) {

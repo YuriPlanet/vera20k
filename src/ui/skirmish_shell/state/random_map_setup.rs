@@ -359,6 +359,7 @@ impl RandomMapSetupModalState {
             }
             // VERA's towns are offline-only, like the Advanced view.
             self.options.urban_enabled = false;
+            self.options.fair_starts = false;
         }
     }
 
@@ -392,7 +393,7 @@ impl RandomMapSetupModalState {
             C::Advanced(AdvancedField::PlateauSize) => {
                 self.extended && matches!(self.options.map_type, 3 | 4)
             }
-            C::AdvancedToggle | C::Advanced(_) => self.extended,
+            C::AdvancedToggle | C::Advanced(_) | C::FairStartsToggle => self.extended,
             C::ExportMap => self.extended && self.generated && !self.exported,
             _ => true,
         }
@@ -616,6 +617,16 @@ impl RandomMapSetupModalState {
                 *advanced_field_mut(&mut self.options, field) = values[field.row()];
             }
         }
+    }
+
+    /// VERA extension: switch Fair Starts. Like any option edit it makes the
+    /// generated result stale.
+    pub fn toggle_fair_starts(&mut self) {
+        if !self.extended {
+            return;
+        }
+        self.options.fair_starts = !self.options.fair_starts;
+        self.generated = false;
     }
 
     /// Switch the option rows between the original controls and the
@@ -883,8 +894,14 @@ mod tests {
             false,
         );
         assert!(!network.is_enabled(RandomMapSetupControl::AdvancedToggle));
+        network.toggle_fair_starts();
+        assert!(!network.options.fair_starts, "Fair Starts is offline-only");
         let mut offline = opened();
         assert!(offline.is_enabled(RandomMapSetupControl::AdvancedToggle));
+        offline.generated = true;
+        offline.toggle_fair_starts();
+        assert!(offline.options.fair_starts);
+        assert!(!offline.generated, "the shown map no longer matches");
         let plateau = RandomMapSetupControl::Advanced(AdvancedField::PlateauSize);
         offline.set_map_type(1);
         assert!(

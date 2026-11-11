@@ -230,11 +230,32 @@ fn urban_inputs<'a>(
     (None, options.urban_presence, None)
 }
 
+/// Seeds Fair Starts tries, by generated interior area: fewer on the large
+/// sizes, where one generation takes seconds.
+fn fair_start_attempts(options: &RmgOptions) -> u32 {
+    let geometry = MapGeometry::from_options(options);
+    match geometry.gen_w * geometry.gen_h {
+        ..=14_400 => 6,
+        14_401..=62_500 => 4,
+        _ => 2,
+    }
+}
+
+/// Step between the seeds Fair Starts tries (a prime, so the sixteen-bit
+/// seeds it visits never repeat within a search).
+const FAIR_SEED_STEP: u32 = 7919;
+
 /// As [`generate_map`], calling `observe` at every generation boundary.
 ///
 /// The observer sees the run; it cannot alter it. Everything that decides the
 /// output — the RNG, the scratch, the grid — is either not handed over or handed
 /// over shared, so an observed run generates exactly what an unobserved one does.
+///
+/// VERA extension: with [`RmgOptions::fair_starts`] this generates from a few
+/// seeds, the options' own first, and returns the first fair map or else the
+/// fairest (`fairness::FairnessReport`). The search reads only the options,
+/// so the setup preview and the match load find the same map; the observer
+/// sees every attempt.
 pub fn generate_map_observed(
     options: &RmgOptions,
     settings: &RmgSettings,
@@ -245,6 +266,43 @@ pub fn generate_map_observed(
 ) -> GeneratedMap {
     let mut options = options.clone();
     options.normalize();
+    if !options.fair_starts {
+        return generate_once(&options, settings, resolved, blocks, objects, observe).0;
+    }
+    let mut best: Option<(GeneratedMap, super::fairness::FairnessReport)> = None;
+    for attempt in 0..fair_start_attempts(&options) {
+        let seed = (u32::from(options.seed_u16()) + attempt * FAIR_SEED_STEP) & 0xFFFF;
+        let candidate = RmgOptions {
+            seed: seed as i32,
+            ..options.clone()
+        };
+        let (map, report) = generate_once(&candidate, settings, resolved, blocks, objects, observe);
+        let report = report.unwrap_or_default();
+        let fair = report.is_fair();
+        if best
+            .as_ref()
+            .is_none_or(|(_, kept)| report.score() > kept.score())
+        {
+            best = Some((map, report));
+        }
+        if fair {
+            break;
+        }
+    }
+    best.expect("Fair Starts makes at least one attempt").0
+}
+
+/// One generation from `options` as they stand (already normalized), and the
+/// fairness report under Fair Starts.
+fn generate_once(
+    options: &RmgOptions,
+    settings: &RmgSettings,
+    resolved: &ResolvedTheaterInputs,
+    blocks: &dyn TileBlocks,
+    objects: &GenerationObjects<'_>,
+    observe: &mut dyn FnMut(GenerationPointView<'_>),
+) -> (GeneratedMap, Option<super::fairness::FairnessReport>) {
+    let options = options.clone();
     // VERA extension: an opted-in Urban Presence runs the same urban pass with
     // VERA's catalogue, and its foot picks draw from a stream seeded by the
     // map seed, so the setup preview and the match load build the same map.
@@ -291,6 +349,8 @@ pub fn generate_map_observed(
         // (0..3); a final binary confirmation is still open.
         width: options.width,
         max_trees: settings.max_trees,
+        fair_starts: options.fair_starts,
+        seed: options.seed_u16(),
         urban_presence,
         urban_fill,
         urban_areas: urban,
@@ -342,7 +402,7 @@ pub fn generate_map_observed(
     );
     emit::populate_urban(&mut map_file, &output.urban_areas);
 
-    GeneratedMap {
+    let generated = GeneratedMap {
         map_file,
         mapgen_continuation: Some(rng.into_continuation()),
         construction_trace: output.construction_trace,
@@ -350,7 +410,8 @@ pub fn generate_map_observed(
         #[cfg(any(test, feature = "test-support"))]
         stages_run: executed_stages(&options),
         unfilled_start_slots: output.unfilled_start_slots,
-    }
+    };
+    (generated, output.fairness)
 }
 
 #[cfg(test)]
@@ -952,6 +1013,57 @@ mod tests {
             let waypoint = &read.waypoints[&u32::from(*slot)];
             assert_eq!((waypoint.rx, waypoint.ry), (*x, *y));
         }
+    }
+
+    /// VERA extension: Fair Starts leaves the terrain and the starts of a
+    /// seed as they were, evens the ore near every start, and finds the same
+    /// map on every run.
+    #[test]
+    fn fair_starts_even_the_ore_and_repeat() {
+        let (settings, resolved, blocks) = (RmgSettings::default(), resolved(), one_by_one());
+        let objects = GenerationObjects::tech(&[]);
+        let fair = RmgOptions {
+            fair_starts: true,
+            ..options(1, 0)
+        };
+        let plain = generate_map(&options(1, 0), &settings, &resolved, &blocks, &objects);
+        let (first, report) =
+            generate_once(&fair, &settings, &resolved, &blocks, &objects, &mut |_| {});
+        let report = report.expect("Fair Starts measures the map");
+        let tiles = |map: &GeneratedMap| -> Vec<(i32, u8)> {
+            map.map_file
+                .cells
+                .iter()
+                .map(|cell| (cell.tile_index, cell.z))
+                .collect()
+        };
+        assert_eq!(
+            tiles(&first),
+            tiles(&plain),
+            "the pass runs after every stage"
+        );
+        assert_eq!(first.start_waypoints, plain.start_waypoints);
+        assert!(report.ore_max > 0, "the starts have ore");
+        assert!(
+            report.ore_min * 100 >= report.ore_max * 95,
+            "ore near the starts is even: {report:?}"
+        );
+        assert!(
+            report.expansion_min > 0 && report.expansion_min * 100 >= report.expansion_max * 90,
+            "every start has an expansion field of about the same ore: {report:?}"
+        );
+
+        let overlays = |map: &GeneratedMap| -> Vec<(u16, u16, u8, u8)> {
+            map.map_file
+                .overlays
+                .iter()
+                .map(|o| (o.rx, o.ry, o.overlay_id, o.frame))
+                .collect()
+        };
+        let searched = generate_map(&fair, &settings, &resolved, &blocks, &objects);
+        let again = generate_map(&fair, &settings, &resolved, &blocks, &objects);
+        assert_eq!(overlays(&searched), overlays(&again));
+        assert_eq!(searched.start_waypoints, again.start_waypoints);
     }
 
     #[test]

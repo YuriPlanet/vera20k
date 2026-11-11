@@ -287,6 +287,7 @@ pub fn status_help_key_for_random_map_setup(control: RandomMapSetupControl) -> &
         C::Cancel0x5c0 => "STT:GenerateButtonCancel",
         C::AdvancedToggle => "VERA:RandomMapAdvancedHelp",
         C::ExportMap => "VERA:RandomMapExportHelp",
+        C::FairStartsToggle => "VERA:RandomMapFairStartsHelp",
         C::Advanced(super::super::layout::AdvancedField::PlateauSize) => {
             "VERA:RandomMapPlateauSizeHelp"
         }
