@@ -94,13 +94,18 @@ impl GameEntity {
             return;
         }
         let rearm_remaining = self.rearm_timer.remaining(frame);
-        let selection = &mut self.turret_selection;
-        selection.current_turret_index = if selection.charge_turret_delay <= 0 {
+        let selection = &self.turret_selection;
+        let index = if selection.charge_turret_delay <= 0 {
             0
         } else {
             (object.turret_count.wrapping_mul(rearm_remaining) / selection.charge_turret_delay)
                 .clamp(0, object.turret_count - 1)
         };
+        // The index sits in the record's seldom part: an unchanged index
+        // writes nothing, so a presentation frame keeps sharing that part.
+        if selection.current_turret_index != index {
+            self.turret_selection.current_turret_index = index;
+        }
     }
 
     /// Raw native state for component oracle inputs; production uses the

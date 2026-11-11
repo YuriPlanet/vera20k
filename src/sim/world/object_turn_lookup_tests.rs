@@ -88,7 +88,7 @@ fn the_object_record_stays_under_its_ceiling() {
         std::mem::size_of::<Seldom>(),
     );
     assert!(
-        main <= 1424 && seldom <= 832,
+        main <= 1440 && seldom <= 816,
         "GameEntity is {main} bytes and Seldom {seldom}"
     );
 }

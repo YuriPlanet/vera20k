@@ -561,6 +561,17 @@ pub struct GameEntity {
     /// attached to a victim, paralysis ([`parasite`](crate::sim::combat::parasite)).
     #[serde(default)]
     pub parasite: crate::sim::combat::parasite::FootParasite,
+    /// The voxel turret's animation counter (`TechnoClass+0x148`), a
+    /// [`TurretAnimCounter`] that `combat::gattling` owns.
+    ///
+    /// [`TurretAnimCounter`]: crate::sim::combat::gattling::TurretAnimCounter
+    #[serde(default)]
+    pub turret_anim_frame: crate::sim::combat::gattling::TurretAnimCounter,
+    /// Techno `+0x508`, a [`SpatialThreat`] that `sim::house_threat` owns.
+    ///
+    /// [`SpatialThreat`]: crate::sim::house_threat::SpatialThreat
+    #[serde(default)]
+    pub(crate) cached_spatial_threat: crate::sim::house_threat::SpatialThreat,
     /// The state this object's turn does not read each step, stored apart.
     seldom: crate::util::shared::Shared<Seldom>,
 }
@@ -835,12 +846,6 @@ pub struct Seldom {
     /// radar reads it, so the world hash leaves it out.
     #[serde(default)]
     pub radar_combat_flash: crate::sim::timer::CdTimer,
-    /// The voxel turret's animation counter (`TechnoClass+0x148`), a
-    /// [`TurretAnimCounter`] that `combat::gattling` owns.
-    ///
-    /// [`TurretAnimCounter`]: crate::sim::combat::gattling::TurretAnimCounter
-    #[serde(default)]
-    pub turret_anim_frame: crate::sim::combat::gattling::TurretAnimCounter,
     /// Techno+3B8 burst and +43C radial launch indices, owned by
     /// `combat::burst`. Only the burst index resets on a null target.
     #[serde(default)]
@@ -1065,11 +1070,6 @@ pub struct Seldom {
     /// [`UnloadKeep`]: crate::sim::transport_unload::UnloadKeep
     #[serde(default)]
     pub(crate) transport_unload_keep_count: crate::sim::transport_unload::UnloadKeep,
-    /// Techno `+0x508`, a [`SpatialThreat`] that `sim::house_threat` owns.
-    ///
-    /// [`SpatialThreat`]: crate::sim::house_threat::SpatialThreat
-    #[serde(default)]
-    pub(crate) cached_spatial_threat: crate::sim::house_threat::SpatialThreat,
 }
 
 impl GameEntity {
@@ -2392,8 +2392,9 @@ impl GameEntity {
             produce_cash: crate::sim::credit_income::ProduceCash::new(construction_frame),
             drain: Default::default(),
             parasite: crate::sim::combat::parasite::FootParasite::new(construction_frame),
+            cached_spatial_threat: Default::default(),
+            turret_anim_frame: Default::default(),
             seldom: crate::util::shared::Shared::new(Seldom {
-                cached_spatial_threat: Default::default(),
                 tracking_facts: Default::default(),
                 house_tracking_latches: Default::default(),
                 #[cfg(feature = "phobos")]
@@ -2457,7 +2458,6 @@ impl GameEntity {
                     construction_frame as i32,
                     0,
                 ),
-                turret_anim_frame: Default::default(),
                 weapon_burst: Default::default(),
                 #[cfg(feature = "ares")]
                 ares_chronoshifting: false,
