@@ -5138,9 +5138,14 @@ impl Simulation {
                 continue;
             }
 
+            // Native Restore cannot fail. VERA's preflight can refuse it
+            // (see the expiry receiver's Restore below); the sweep carries on.
             let restored = self
                 .mission_restore_represented(listener_id, rules, registry, effects)
-                .expect("detach sweep listener was resolved immediately before the Restore");
+                .unwrap_or_else(|error| {
+                    log::error!("detach sweep: listener {listener_id} kept its override: {error}");
+                    false
+                });
             // `0x0070D513..0x0070D532`, whatever the Restore did.
             if let Some(listener) = self.substrate.entities.get_mut(listener_id) {
                 crate::sim::aircraft::restart_patrol_after_restore(listener);
@@ -5421,8 +5426,18 @@ impl Simulation {
             self.assign_target_represented(listener_id, None, rules, registry, effects)
                 .expect("expiry listener remains present");
             if mission_is_suspended {
-                self.mission_restore_represented(listener_id, rules, registry, effects)
-                    .expect("represented expiry restore remains available");
+                // Native Restore (`0x00707A51`) cannot fail. VERA's is one
+                // transaction whose preflight refuses when a class setter's
+                // inputs are missing: an archived NavCom naming no object, no
+                // overlay table for a Teleport destination. Residual: the
+                // listener then keeps its override mission with the target
+                // cleared, until its next mission change. Rare; the broadcast
+                // carries on instead of stopping the game.
+                if let Err(error) =
+                    self.mission_restore_represented(listener_id, rules, registry, effects)
+                {
+                    log::error!("expiry: listener {listener_id} kept its override: {error}");
+                }
                 // `0x00707A51..0x00707A6C`.
                 if let Some(listener) = self.substrate.entities.get_mut(listener_id) {
                     crate::sim::aircraft::restart_patrol_after_restore(listener);
