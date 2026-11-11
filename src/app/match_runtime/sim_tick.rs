@@ -2708,6 +2708,7 @@ fn finish_simulation_frame(
             // VERA Auto Repair: Repair orders for damaged buildings, the same
             // way.
             crate::app::input::auto_repair::frame_pass(state);
+            // VERA primary rotation: the factory groups' turns.
             crate::app::input::primary_rotation::frame_pass(state);
         }
         // Black-cell census, on a schedule rather than a keypress: nobody hits a debug key

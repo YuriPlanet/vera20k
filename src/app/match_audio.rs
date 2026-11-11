@@ -46,6 +46,11 @@ pub(crate) enum QuietSound {
         sub_x: SimFixed,
         sub_y: SimFixed,
     },
+    /// [`SimSoundEvent::HouseEva`] of this line for this House.
+    HouseEva {
+        owner: InternedId,
+        event: &'static str,
+    },
 }
 
 impl QuietSound {
@@ -78,6 +83,13 @@ impl QuietSound {
                 sound_id == event_sound
                     && (rx, ry, sub_x, sub_y) == (event_rx, event_ry, event_sub_x, event_sub_y)
             }
+            (
+                Self::HouseEva { owner, event },
+                SimSoundEvent::HouseEva {
+                    owner: event_owner,
+                    event: event_line,
+                },
+            ) => owner == event_owner && event == event_line,
             _ => false,
         }
     }
@@ -85,7 +97,9 @@ impl QuietSound {
 
 /// The sounds the player's own automatic orders will cause and this game
 /// skips: VERA Auto Repair's starts (`app::input::auto_repair`), which play
-/// like a wrench click otherwise. Each entry keeps one matching fact out of
+/// like a wrench click otherwise, and primary rotation's turns
+/// (`app::input::primary_rotation`), which would each say "Primary building
+/// selected". Each entry keeps one matching fact out of
 /// `match_runtime::sound_dispatch` and lapses after its last frame if none
 /// came. Presentation only: the simulation, replays and other players' games
 /// still have every fact.

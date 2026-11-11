@@ -9,15 +9,18 @@ come out of each in turn.
 
 Select two or more factories of one kind and press the **Rotate Primary** key
 (I by default). A line says how many factories now take turns. Press the key
-again with the same factories selected to stop.
+again with the same factories selected, in any order, to stop.
 
 - **Turns.** Each time you finish an object of that kind, the next factory of
   the group becomes primary, in the order you selected them. The unit after
-  that comes out of it.
+  that comes out of it. The turns are quiet: the game does not say "Primary
+  building selected" for them.
 - **Kinds.** Barracks, War Factories, Naval Yards and Airfields each have a
   group of their own. Selecting factories of several kinds at once sets a
-  group for each. Construction Yards are left alone: their primary decides
-  where buildings are placed, not where anything comes out.
+  group for each. War Factories and Naval Yards each count only their own
+  units, though the game keeps one count for both. Construction Yards are left
+  alone: their primary decides where buildings are placed, not where anything
+  comes out.
 - **Rally points.** Each factory keeps its own, so a group can send every
   second unit somewhere else.
 - **Losses.** A factory that is destroyed, sold or captured leaves its group.
@@ -31,13 +34,14 @@ again with the same factories selected to stop.
   the one-primary rule itself is unchanged.
 - The turn is taken when an object is finished, so the first object after the
   key is pressed may still come out of the old primary.
+- The order for a turn is a switch: sent to a factory that is primary already,
+  it would leave the kind without one. So a group waits while a turn's order
+  is on its way, which online can take a moment, and an object finished
+  meanwhile turns the group once the order has arrived.
 - Clicking a factory to make it primary yourself still works; the group
   carries on from that factory.
-- War Factories and Naval Yards share one counter of finished vehicles, so a
-  finished ship also turns the War Factory group, and a tank the Naval Yard
-  group.
-- A group belongs to the player's own game. It is not kept in a save game,
-  and computer players do not use it.
+- A group belongs to the player's own game. It ends with the match, it is not
+  kept in a save game, and computer players do not use it.
 
 ## Keys
 

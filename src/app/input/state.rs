@@ -724,6 +724,8 @@ impl MatchInputState {
         self.formation_locks.clear();
         // Its building ids and frames belong to the world that ended.
         self.auto_repair = Default::default();
+        // Its factory ids and counts belong to the world that ended.
+        self.primary_rotation = Default::default();
         self.targeting_mode = None;
         self.building_placement_preview = None;
         self.saved_building_placement = None;
