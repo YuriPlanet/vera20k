@@ -247,7 +247,7 @@ impl App {
         )));
     }
 
-    /// The Esc menu's Set Window Size button, and the Full Screen switch going
+    /// The main menu Esc menu's Set Window Size button, and the Full Screen switch going
     /// off: the window as a launch opens it.
     /// A full-screen window leaves full screen first and macOS animates that,
     /// so `follow_window_full_screen` does the rest once the window is out.

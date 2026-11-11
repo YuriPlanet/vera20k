@@ -332,9 +332,8 @@ pub enum DisplayList {
 }
 
 /// VERA's Display group: the main menu's Zoom and Sidebar lists with their
-/// captions, its Full Screen and Original 4:3 Shape boxes, the Performance
-/// Stats box under them, and the main menu's Set Window Size button with its
-/// caption beside it. gamemd's menus have none of them. It
+/// captions, its Full Screen and Original 4:3 Shape boxes, and the
+/// Performance Stats box under them. gamemd's menus have none of them. It
 /// sits where FF's Internet Game Controls group does, or under it in FF, and
 /// takes the same ordinary placement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -347,9 +346,6 @@ pub struct DisplayControlsLayout {
     pub full_screen: RectPx,
     pub original_shape: RectPx,
     pub performance_stats: RectPx,
-    /// The Set Window Size button and its caption, where the build has a
-    /// window to size (`HAS_SET_WINDOW_SIZE`).
-    pub window_size: Option<(RectPx, RectPx)>,
 }
 
 impl DisplayControlsLayout {
@@ -475,7 +471,7 @@ pub fn pause_menu_layout(
         )
     };
     let display = DisplayControlsLayout {
-        group: ordinary(58, top, 301, 110),
+        group: ordinary(58, top, 301, 92),
         captions: [
             ordinary(61, top + 14, 67, 15),
             ordinary(61, top + 33, 67, 15),
@@ -487,14 +483,6 @@ pub fn pause_menu_layout(
         // under Full Screen, alone on it, so its caption runs to the edge
         // Original 4:3 Shape ends at: room for the longer translations.
         performance_stats: ordinary(134, top + 74, 218, 10),
-        // The main menu's 83x15 DLU button on a row of its own, its caption
-        // to the right, where the translations have room.
-        window_size: crate::ui::main_menu_dialogs::options::HAS_SET_WINDOW_SIZE.then(|| {
-            (
-                ordinary(134, top + 90, 83, 15),
-                ordinary(222, top + 90, 130, 15),
-            )
-        }),
     };
     PauseMenuLayout {
         template,
@@ -735,14 +723,6 @@ mod tests {
         // The Performance Stats box takes the next row under Full Screen.
         assert_eq!(display.performance_stats.x, display.full_screen.x);
         assert!(display.full_screen.y + display.full_screen.h < display.performance_stats.y);
-        // The Set Window Size button takes the last row, its caption beside it.
-        if let Some((button, caption)) = display.window_size {
-            assert_eq!(button.x, display.full_screen.x);
-            assert!(display.performance_stats.y + display.performance_stats.h < button.y);
-            assert!(button.x + button.w <= caption.x);
-            assert!(caption.x + caption.w <= group.x + group.w);
-            assert!(button.y + button.h < group.y + group.h);
-        }
         assert!(display.performance_stats.y + display.performance_stats.h < group.y + group.h);
         assert!(display.performance_stats.x + display.performance_stats.w <= group.x + group.w);
         assert!(group.y + group.h < ff.footer.y);

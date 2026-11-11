@@ -60,8 +60,7 @@ impl InternetPauseControls {
 /// shape, and the window owns full screen; the group copies them each frame.
 /// Each applies at once, as on the main menu's Options pages, and the
 /// profile saves them with the rest of its values. The Performance Stats box reads
-/// and switches the performance panel itself, which no profile saves. The
-/// Set Window Size button is the main menu's: `App::restore_launch_window`.
+/// and switches the performance panel itself, which no profile saves.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct DisplayPauseControls {
     /// The window's `Zoom::choices`, one list row each.
@@ -218,16 +217,6 @@ fn display_press(state: &mut AppState, layout: &PauseMenuLayout) -> bool {
         state.persistence.options_profile.original_shape = display.original_shape;
         refit_match(state);
         play_checkbox_sound(state);
-        return true;
-    }
-    if controls
-        .window_size
-        .is_some_and(|(button, _)| button.contains(x, y))
-    {
-        // The main menu's Set Window Size: the window as a launch opens it.
-        // The resize that follows refits the match.
-        App::play_skirmish_shell_generic_click_sound(state);
-        App::restore_launch_window(state);
         return true;
     }
     if box_at(controls.performance_stats) {
