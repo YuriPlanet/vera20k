@@ -35,7 +35,8 @@ its route.
   is taken, it lands on the nearest one up to 4 cells outside the zone.
 - **Unloading.** Where it stops it unloads as it does when clicked on
   itself. A transport on water first drives to the nearest land, as that
-  order always does. If the way out is blocked it tries again.
+  order always does. If some passengers find no way out, it moves to
+  another free cell with room for them and unloads the rest there.
 - **Returning.** Empty, it moves back to the pick-up spot and loads again.
 
 ## What ends a ferry
