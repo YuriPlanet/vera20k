@@ -13,7 +13,7 @@ persistent state is created.
 `POST /v1/sessions` accepts exactly
 `{nickname,protocol:4,password?,remember?,sign_in_token?}` and returns
 `{player_id,nickname,token,expires_at}`, plus `motd` while an operator welcome is set:
-text the game prints in the chat lobby in place of its own welcome, one line per `\n`.
+text the game prints in the chat lobby, one line per `\n`. Without it the game prints no welcome.
 A client names its player's language in `Vera-Language: <tag>`, a BCP 47 tag of two or
 three letters and at most three subtags such as `zh-CN`; the operator's welcome, notice
 and maintenance message then come in that language when the operator wrote it: the
@@ -438,10 +438,18 @@ A game whose online match reached play adds `network_quality` to that match's
 `network:{gaps,repair_pulls,command_round_trip_ms,max_jitter_reserve_ms,underruns,`
 `underrun_wait_ms,max_underrun_wait_ms,link},`
 `performance:{tick_ms_p50,tick_ms_p99,fps_p50,fps_p5,unfocused_seconds},`
-`pacing:{slowdowns,slowed_by,slowed_seconds},outcome:{desync_frame,reconnects}}`.
+`pacing:{slowdowns,slowed_by,slowed_seconds},outcome:{desync_frame,reconnects,started,failure,start_hash}}`.
 Times are seconds, or milliseconds where the name says so; `command_round_trip_ms`
 is `{mean,max,samples}` or null, `tick_ms_p50`, `tick_ms_p99`, `fps_p50`, `fps_p5` and
 `desync_frame` may be null, and `slowed_by` lists the House each relay slowdown named.
+`started` says the relay's clock for the match started. `failure` is null, or names the
+error that ended the match on this game: `agreement_mismatch`, `start_cancelled`, `modified_retry`,
+`invalid_cursor`, `refused`, `history_expired`, `invalid_timeline`, `desync`, `unavailable`,
+`absent` (no answer from the relay for ten minutes), `queue_full`, `newer_client_required` or
+`local_error`. `start_hash` is null once the
+relay's clock started; before that it maps each part of the start this game offered the
+relay to 16 hex digits, so two games' reports of one match differ in the part that differs.
+Games before these fields send none of them.
 `fps_p50` and `fps_p5` read the presents of a moving picture: one that stands between
 frames is not drawn again, and the present after it starts a new interval.
 `underruns` counts the waits for a frame due but not yet received; `underrun_wait_ms`
@@ -518,6 +526,9 @@ otherwise on the next public-channel join.
 A session that still joins a game room from another version, through a buddy's game or
 its name, makes every member hear a `chat` line from the notice sender naming both
 versions.
+The same line, with both full `version` agreement strings, goes to the room once when
+a member's `ready` or `map_status` names another build of the host's version, since
+such a room cannot start.
 
 Each `join` of the public channel gives the joining session one `chat` line from the
 notice sender after its `joined`. The line says how many players are online: in the
@@ -616,20 +627,18 @@ or `sign_in_token` for a name without an account returns 404 `no_account`; other
 that name enters as a guest. A lobby without accounts set up refuses a password with
 503 `accounts_unavailable`.
 
-VERA20k's online login page has its buttons beside an info pane, and each button opens
-a popup. Login asks for the name and password, with Remember password, and Play as Guest
-for the name alone, with no password or remembered sign-in; Enter on the page opens Login.
-Create Account asks for the name, email and password, then the mailed code, and signs in.
-Forgot Password asks for the name and mails its code, then asks for it and a new
-password, and signs in. Delete Account asks for the name and its password, then says the
-account is deleted and forgets a remembered sign-in of it. The pane shows the players
-online, or while nobody is, the last 24 hours' games (`GET /v1/stats`), vera20k.org's five
-newest news posts in the game's language (`GET https://vera20k.org/news.json?lang=<tag>`,
-the tag of VERA's interface language such as `en`, `zh-CN` or `ru`, each post in English
-where the site has no translation: `{posts:[{date,title,summary}]}`) and the online rules;
-it reads both each time the page opens. A remembered
-sign-in lives in `Account.json` beside `VERA.INI` as `{name, sign_in_token}` per lobby,
-readable only by its owner; Login's popup then opens on the name with a masked password.
+VERA20k's online login page is its sign-in form: a username, which starts from the last
+name signed in, a password and Remember password. Play, or Enter, signs in: a username
+alone enters as a guest, and with its password as that account. Under the form the page
+shows the players online and the last 24 hours' games (`GET /v1/stats`, read each time
+the page opens), leaving out a count of none. Every other button opens a popup that
+starts from the form's username. Create Account asks for the name, email and password,
+then the mailed code, and signs in. Forgot Password asks for the name and mails its
+code, then asks for it and a new password, and signs in. Delete Account asks for the name
+and its password, then says the account is deleted and forgets a remembered sign-in of
+it. A remembered sign-in lives in `Account.json` beside `VERA.INI` as `{name,
+sign_in_token}` per lobby, readable only by its owner; the form then opens on the name
+with a masked password, and Play needs none.
 Unticking Remember password forgets it here and at the lobby, and so does a password
 sign-in of that name or a remembered sign-in of another account. A `wrong_password` or
 `no_account` answer to it forgets it too. Signing in under another name leaves it.
@@ -677,7 +686,9 @@ every 4 OS, from Corporal (32 points) at 18 to Five-Star General (1501) at 46, a
 Commander in Chief (2001) for the running season's number 1 from OS 46. Its `rank` is
 their place this season, 0 when unranked. One lookup fills both of the game's tables: its
 ladder table from `records`, and its high-score table, whose points pick each player's
-badge, from `high_scores`. A lobby from before badges sends no `high_scores`, and the game
+badge, from `high_scores`. Until the operator starts the first season no one has a rating,
+and `high_scores` gives every name asked for the Colonel's 251 points with `rank` 0; a
+lobby from before that sends none then. A lobby from before badges sends no `high_scores`, and the game
 then shows none; one from before `os` leaves it out, and the game shows the rounded OS.
 After a ranked game each of its players hears from `VERA20k` how it counted: their new OS,
 their place in the season and the badge the game brought them, such as `Ranked game won:

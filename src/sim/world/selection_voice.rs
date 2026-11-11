@@ -177,9 +177,13 @@ impl Simulation {
             Some(&self.house_alliances),
         )?;
         // GetWeapon(-1) returns a NULL slot, which7090C0 dereferences before
-        // any voice or draw. A valid slot containing a NULL weapon is distinct
-        // and continues to the ordinary override/list logic.
-        assert_ne!(index, -1, "VoiceAttack7090C0 dereferences GetWeapon(-1)");
+        // any voice or draw (`DeployFireWeapon=-1` on a deployed unit reaches
+        // it). VERA plays no attack voice there. A valid slot containing a
+        // NULL weapon is distinct and continues to the ordinary override/list
+        // logic.
+        if index == -1 {
+            return None;
+        }
         let weapon = combat_weapon::get_weapon(
             entity,
             object,

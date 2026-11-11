@@ -59,7 +59,7 @@ fn scene(extra: &str) -> Option<(RuleSet, Simulation, u64, u64)> {
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.intern_rule_type_ids(&rules);
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     let owner = sim.interner.get("Americans").unwrap();
     sim.session.set_current_house_for_test(Some(owner));
     let actor = sim

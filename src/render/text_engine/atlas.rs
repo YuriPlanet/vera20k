@@ -132,11 +132,13 @@ impl GlyphAtlas {
         if self.width < self.max_dim {
             self.width = (self.width * 2).min(self.max_dim);
             self.height = self.width;
-            if let (Some((device, batch)), Some(old)) = (gpu, self.gpu.as_ref()) {
-                let queue = old.queue.clone();
-                self.gpu = Some(Self::create_texture(device, &queue, batch, self.width));
-            }
             log::info!("Glyph atlas grew to {0}x{0}", self.width);
+        }
+        // A new texture even at the largest size: the previous frame may still
+        // be on its way to the driver (`frame_handoff`) and samples this one.
+        if let (Some((device, batch)), Some(old)) = (gpu, self.gpu.as_ref()) {
+            let queue = old.queue.clone();
+            self.gpu = Some(Self::create_texture(device, &queue, batch, self.width));
         }
         self.shelf = ShelfCursor::with_padding(self.width, self.height, PADDING);
         #[cfg(test)]

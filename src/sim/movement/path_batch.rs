@@ -562,7 +562,11 @@ fn no_queue_destination(actor: &GameEntity) -> Option<DriveCoord> {
 /// Whether `foot`'s `request` heads for the cell the Foot stands in: its
 /// core search would start in its goal cell. Such a request never waits;
 /// see the module docs.
-fn heads_for_own_cell(foot: &GameEntity, request: WaitingRequest) -> bool {
+fn heads_for_own_cell(
+    foot: &GameEntity,
+    request: WaitingRequest,
+    terrain: Option<&ResolvedTerrainGrid>,
+) -> bool {
     let destination = match request {
         WaitingRequest::Code2Ladder { .. } => code2_ladder_destination(foot),
         WaitingRequest::NoQueue
@@ -570,7 +574,7 @@ fn heads_for_own_cell(foot: &GameEntity, request: WaitingRequest) -> bool {
         | WaitingRequest::StraightReentry { .. } => no_queue_destination(foot),
     };
     destination.is_some_and(|destination| {
-        let (start, goal) = super::movement_tick::core_search_cells(foot, destination);
+        let (start, goal) = super::movement_tick::core_search_cells(foot, destination, terrain);
         start == goal
     })
 }
@@ -611,7 +615,7 @@ impl Simulation {
         }
         if entities
             .get(id)
-            .is_some_and(|foot| heads_for_own_cell(foot, request))
+            .is_some_and(|foot| heads_for_own_cell(foot, request, resolved_terrain.as_ref()))
         {
             return false;
         }
@@ -695,6 +699,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) {
+        let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::PATHFINDING);
         self.answer_path_searches_within(rules, registry, URGENCY2_STEPS_PER_PASS);
     }
 
@@ -1050,7 +1055,12 @@ impl Simulation {
         let location = super::ground_pose::position_world_coord(&actor.position);
         Some(FootSearchKey {
             location: (location.x, location.y, location.z),
-            start: (actor.position.rx(), actor.position.ry()),
+            start: super::movement_tick::core_search_cells(
+                actor,
+                goal,
+                self.resolved_terrain.as_ref(),
+            )
+            .0,
             on_bridge: actor.on_bridge(),
             facing: actor.body_facing.current(self.session.binary_frame()),
             goal: (goal.x, goal.y, goal.z),
@@ -1061,7 +1071,7 @@ impl Simulation {
             movement_zone: snap.movement_zone,
             crushers: (snap.regular_crusher, snap.omni_crusher),
             locomotor: snap.locomotor.as_ref().map(|loco| loco.active_kind()),
-            allow_zone_hierarchy: snap.allow_zone_hierarchy,
+            allow_zone_hierarchy: self.foot_search_allows_hierarchy(request),
             threat_coefficient: self.foot_path_threat_coefficient(request.entity_id).bits(),
             owner: actor.owner(),
             veterancy: actor.veterancy.rank(),

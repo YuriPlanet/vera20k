@@ -966,8 +966,21 @@ impl Simulation {
                 blocker_neighbor_counts: Some(counts),
             },
             &entry,
+            self.foot_search_allows_hierarchy(request),
         );
         (searched, entry.read_own_cell.get())
+    }
+
+    /// The mover's terms of AStar's allowHS (`0x0042CACC..0x0042CAEC`): the
+    /// snapshot's TechnoClass+0x3D5 byte, then Foot+0x320
+    /// ([`Self::foot_allows_outside_playfield`]). A mover allowed to leave the
+    /// map takes the plain cell A*, past the zone refusal and the corridor.
+    /// `IsTrain=` (Type+0xC94) is unset in retail.
+    pub(crate) fn foot_search_allows_hierarchy(&self, request: &FootPathRequest) -> bool {
+        request.snapshot().allow_zone_hierarchy
+            && !self
+                .foot_allows_outside_playfield(request.entity_id)
+                .expect("live path requester")
     }
 
     /// The live Foot's threat coefficient for its searches (Foot 0x4DC760),

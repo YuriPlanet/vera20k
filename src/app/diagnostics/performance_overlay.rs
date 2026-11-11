@@ -56,13 +56,78 @@ struct OverlayFrame {
     size: [u32; 2],
     depth: wgpu::TextureView,
     logged_first_frame: bool,
-    simulation: Option<crate::app::presentation::interpolation::SimulationReadout>,
+    simulation_rate: SimulationRate,
     stats: PanelStats,
     /// Where the status line starts: below the panel while it shows.
     status_top: f32,
     /// In a match, how far down the battlefield the panel reaches: see
     /// [`PerformanceOverlay::message_top`]. 0 elsewhere.
     message_top: i32,
+}
+
+/// The Logic frames per second on the panel's Sim row, counted over
+/// half-second windows of presented frames, so draws between two game frames
+/// do not count.
+#[derive(Default)]
+struct SimulationRate {
+    /// `None` outside a match, which hides the row.
+    tps: Option<f32>,
+    last_frame: Option<u32>,
+    window_start_ms: u32,
+    window_frames: u32,
+}
+
+impl SimulationRate {
+    fn observe(&mut self, frame: u32, now_ms: u32, held: bool) {
+        let mut tps = self.tps.unwrap_or(0.0);
+        if self.last_frame != Some(frame) {
+            match self.last_frame.map(|last| frame.wrapping_sub(last)) {
+                Some(delta) if delta <= 300 => {
+                    self.window_frames = self.window_frames.saturating_add(delta);
+                }
+                // A new match, or a jump no window could have held.
+                _ => {
+                    self.window_start_ms = now_ms;
+                    self.window_frames = 0;
+                    tps = 0.0;
+                }
+            }
+            self.last_frame = Some(frame);
+        }
+        let elapsed = now_ms.wrapping_sub(self.window_start_ms);
+        if held {
+            self.window_start_ms = now_ms;
+            self.window_frames = 0;
+            tps = 0.0;
+        } else if elapsed >= 500 {
+            tps = self.window_frames as f32 * 1000.0 / elapsed as f32;
+            self.window_start_ms = now_ms;
+            self.window_frames = 0;
+        }
+        self.tps = Some(tps);
+    }
+}
+
+/// Once per presented frame: the Logic frames since the last one, for the
+/// panel's Sim row. Exact captures, pauses and a frozen window read 0.
+pub(crate) fn observe_simulation(state: &crate::app::AppState, exact_capture: bool) {
+    let overlay = &state.renderer.performance_overlay;
+    if state.frontend.screen != crate::ui::game_screen::GameScreen::InGame {
+        overlay.clear_simulation_rate();
+        return;
+    }
+    let held = exact_capture
+        || state
+            .match_state
+            .presentation_paused(&state.frontend.screen)
+        || state.focus_freeze_active();
+    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+        overlay.observe_simulation_frame(
+            runtime.simulation.session().binary_frame(),
+            crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32,
+            held,
+        );
+    }
 }
 
 /// Where the panel draws, in window pixels.
@@ -109,14 +174,19 @@ pub(crate) fn match_panel(state: &crate::app::AppState) -> Option<MatchPanel<'_>
     if state.frontend.screen != crate::ui::game_screen::GameScreen::InGame {
         return None;
     }
-    // The battlefield is the frame's top left, beside the sidebar column and
-    // above the command bar's strip.
-    let (width, _) = crate::app::input::camera::tactical_viewport_size(state);
+    // The battlefield is the frame beside the sidebar column and the command
+    // bar's strip: its top left in the original, wherever a layout puts it.
+    let (x, y, width, _) = crate::app::input::camera::tactical_viewport_px(state);
     let (scale, (left, top)) = state.tactical_zoom().map_or((1.0, (0, 0)), |zoom| {
         (zoom.percent as f32 / 100.0, zoom.origin)
     });
     Some(MatchPanel {
-        placement: PanelPlacement::top_left(left as f32, top as f32, width as f32 * scale, scale),
+        placement: PanelPlacement::top_left(
+            left as f32 + x as f32 * scale,
+            top as f32 + y as f32 * scale,
+            width as f32 * scale,
+            scale,
+        ),
         simulation: state
             .match_state
             .sim_runtime
@@ -139,7 +209,7 @@ impl PerformanceOverlay {
                 size: [gpu.config.width, gpu.config.height],
                 depth: gpu.create_depth_texture(),
                 logged_first_frame: false,
-                simulation: None,
+                simulation_rate: SimulationRate::default(),
                 stats: PanelStats::default(),
                 status_top: STATUS_TOP,
                 message_top: 0,
@@ -147,14 +217,21 @@ impl PerformanceOverlay {
         }
     }
 
-    pub(crate) fn set_simulation_readout(
-        &self,
-        simulation: Option<crate::app::presentation::interpolation::SimulationReadout>,
-    ) {
+    /// Count a presented frame's Logic frames. `held` zeroes the rate.
+    fn observe_simulation_frame(&self, binary_frame: u32, now_ms: u32, held: bool) {
         self.frame
             .lock()
             .expect("performance overlay frame lock")
-            .simulation = simulation;
+            .simulation_rate
+            .observe(binary_frame, now_ms, held);
+    }
+
+    /// Forget the rate: a match ended or a new one is loading.
+    pub(crate) fn clear_simulation_rate(&self) {
+        self.frame
+            .lock()
+            .expect("performance overlay frame lock")
+            .simulation_rate = SimulationRate::default();
     }
 
     /// One finished in-game render's phase spans, for the Most CPU row.
@@ -247,11 +324,11 @@ impl PerformanceOverlay {
         };
         if frame.stats.due(now) {
             let frame_ms = frame.timer.frame_ms_mean();
-            let readout = frame.simulation;
+            let tps = frame.simulation_rate.tps;
             let gpu_ms = gpu.timer.take_frame_ms();
             frame
                 .stats
-                .close_window(now, frame_ms, readout, simulation.map(match_sample), gpu_ms);
+                .close_window(now, frame_ms, tps, simulation.map(match_sample), gpu_ms);
         }
         let mut rows = panel::rows(&frame.stats.shown);
         let mut instances = Vec::new();
@@ -572,6 +649,19 @@ fn tint(rgb: [u8; 3]) -> [f32; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn simulation_rate_counts_logic_frames_not_draws() {
+        let mut rate = SimulationRate::default();
+        rate.observe(10, 100, false);
+        for now in 101..500 {
+            rate.observe(10, now, false);
+        }
+        rate.observe(11, 600, false);
+        assert_eq!(rate.tps, Some(2.0)); // One Logic frame / 500 ms.
+        rate.observe(11, 601, true);
+        assert_eq!(rate.tps, Some(0.0));
+    }
 
     #[test]
     fn a_row_too_wide_for_the_battlefield_loses_the_end_of_its_last_text() {

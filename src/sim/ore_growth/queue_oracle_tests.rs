@@ -1432,7 +1432,7 @@ fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlay
     .unwrap();
     assert!(u64::from(grown_source.overlay_data) > source["density"].as_u64().unwrap());
     assert!(i64::from(grown_source.nominal_value) > source["value"].as_i64().unwrap());
-    let (radar_cells, _) = scene.runtime.view().radar_terrain_dirty();
+    let radar_cells = scene.runtime.simulation.radar_terrain_dirty_cells();
     for &(rx, ry) in &witnesses {
         let resource = crate::sim::tiberium::tiberium_cell_view(
             grid,

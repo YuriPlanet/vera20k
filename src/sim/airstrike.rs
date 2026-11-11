@@ -42,6 +42,10 @@ struct AirstrikeManager {
 }
 
 impl AirstrikeState {
+    /// Whether Techno+294 names `id`, as a designating Techno's own link does.
+    pub fn links_to(&self, id: u64) -> bool {
+        self.link == Some(id)
+    }
     pub(crate) fn owns_manager(&self) -> bool {
         self.manager.is_some()
     }
@@ -541,7 +545,7 @@ impl Simulation {
         use crate::sim::combat::fire_coord::{FireSource, fire_coordinate};
         use crate::sim::movement::ground_pose::object_get_coords;
         let source = self.substrate.entities.get(owner)?;
-        if source.airstrike.link != Some(owner) {
+        if !source.airstrike.links_to(owner) {
             return None;
         }
         let target = self

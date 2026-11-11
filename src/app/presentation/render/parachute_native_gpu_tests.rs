@@ -15,7 +15,6 @@ use crate::app::presentation::detail::DetailState;
 use crate::app::presentation::instances::{
     DisplayEffectInputs, ShpInputs, build_display_effect_instances, build_shp_instances_from_inputs,
 };
-use crate::app::presentation::interpolation::RenderInterpolation;
 use crate::assets::shp_file::ShpFile;
 use crate::map::houses::HouseColorMap;
 use crate::map::lighting::{CellLightGrid, LightingConfig, build_cell_light_grid_from_heights};
@@ -42,9 +41,6 @@ use crate::sim::runtime::{SimResources, SimRuntime};
 use crate::sim::world::{FrameEffects, Simulation};
 use serde_json::{Value, json};
 use std::cell::RefCell;
-
-#[path = "parachute_interpolation_tests.rs"]
-mod interpolation_tests;
 
 const SIZE: [u32; 2] = [160, 160];
 const CLIP: [u32; 4] = [0, 0, 160, 160];
@@ -221,7 +217,6 @@ impl Scene {
     ) -> PlannedObjectInstance {
         let sim = &self.runtime.simulation;
         let order = NativeDisplayOrder::from_display(sim.display_layers());
-        let interpolation = RenderInterpolation::new(false);
         let voxel_images = RefCell::new(VoxelImageCache::default());
         let mut parents = Vec::new();
         build_shp_instances_from_inputs(
@@ -232,7 +227,6 @@ impl Scene {
                 unit_atlas: None,
                 voxel_images: &voxel_images,
                 depth_tested_images: None,
-                interpolation: &interpolation,
                 camera: vera_camera(),
                 render_size: SIZE,
                 zoom: 1.,
@@ -265,7 +259,6 @@ impl Scene {
         let detail = RefCell::new(detail);
         let hidden = Default::default();
         let input = DisplayEffectInputs {
-            interpolation: Some(&interpolation),
             sim,
             rules: &self.runtime.resources.rules,
             camera: vera_camera(),

@@ -1496,6 +1496,10 @@ pub struct PresentationLoadAssets {
     pub bridge_atlas: Option<BridgeAtlas>,
     pub sidebar_cameo_atlas: Option<SidebarCameoAtlas>,
     pub sidebar_chrome: Option<SidebarChromeSet>,
+    /// The game folder's `veraui.ini`, read for this match.
+    /// The mod's `veraui.ini`, parsed; the match lays the player's own over
+    /// it (`presentation::player_layout`).
+    pub match_layout_ini: Option<crate::rules::ini_parser::IniFile>,
     #[cfg(feature = "phobos")]
     pub sw_sidebar_ui: crate::rules::phobos_sw_sidebar::SuperWeaponSidebarUi,
     /// Phobos `uimd.ini [Sidebar] CenterPauseMenuBackground`, read from the
@@ -2631,12 +2635,13 @@ pub(crate) fn load_map_initial_with_assets(
         // VERA: the theater's civilian buildings, for an opted-in Urban
         // Presence; the same list the setup dialog's preview generated with.
         if options.urban_enabled {
-            settings.urban_types = crate::map::rmg::tech_catalog::resolve_urban(
+            settings.vera_urban = crate::map::rmg::tech_catalog::resolve_vera_urban(
                 generated_rules.native.rules(),
                 owner.fixed_art(),
                 &tech_types,
                 theater.extension,
                 theater_name,
+                options.seed_u16(),
                 |file| asset_manager.contains(file),
             );
         }
@@ -3734,10 +3739,7 @@ fn load_map_first_step(
         .install_team_ai_registry(
             &team_ai_registry,
             team_ai_rules_at_read.as_ref().unwrap_or(&rules),
-        )
-        .map_err(|refused| {
-            anyhow::anyhow!("active YR aimd.ini failed RuleSet resolution: {refused:?}")
-        })?;
+        );
 
                                                         if let (Some(launch), Some(projection)) = (
                                                             match_launch_descriptor.as_ref(),

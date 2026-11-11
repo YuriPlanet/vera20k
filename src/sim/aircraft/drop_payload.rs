@@ -32,6 +32,12 @@
 //! word, the ±0x3FFF wrap and the truncation after adding the table
 //! displacement to world XY (`native_trig` owns that math).
 //!
+//! In an Ares build, AircraftClass_Paradrop_Units (Ares.dll `10048BA0`,
+//! hook `0x415CA6`) sends a passenger that is not Infantry straight to
+//! SpawnParachuted (`0x00415DE3`) at the centre of the cell under the plane's
+//! coordinate, one lepton below it: no side step, Can_Enter_Cell or
+//! PlaceInfantryInCell. The success tail and the refusal are the same.
+//!
 //! Evidence: `tools/superweapon_oracle.py` sections `drop_payload` and
 //! `spawn_parachuted` run Drop_Payload and SpawnParachuted;
 //! `superweapon/paradrop_tests.rs` replays them. The landing coordinates
@@ -50,7 +56,8 @@
 //!
 //! Ledger:
 //! - Scenario draws: PlaceInfantryInCell's row draw for a centre or
-//!   north-west spot, and the Unlimbo's.
+//!   north-west spot (none for an Ares non-infantry passenger), and the
+//!   Unlimbo's.
 //! - Timer writes: the plane's rearm timer (`+0x2EC`) on success.
 //! - Detach calls: none.
 //!
@@ -224,6 +231,28 @@ fn drop_passenger(
         }
         Some(_) => {}
     }
+    // Ares 10048BA0 (hook 0x415CA6): `(X & ~0x7F) | 0x80` and the same for
+    // Y over GetCoords, Z - 1, then 0x415DE3.
+    #[cfg(feature = "ares")]
+    if sim
+        .substrate
+        .entities
+        .get(passenger)
+        .is_some_and(|rider| rider.category() != EntityCategory::Infantry)
+    {
+        let Some(plane_entity) = sim.substrate.entities.get(plane) else {
+            return Err(DepartureFailure::Placement);
+        };
+        let [x, y] = ground_pose::position_world_xy(&plane_entity.position);
+        let z = ground_pose::object_world_z_leptons(plane_entity, sim.resolved_terrain.as_ref());
+        let landing = DriveCoord {
+            x: (x & !0x7F) | 0x80,
+            y: (y & !0x7F) | 0x80,
+            z: z.wrapping_sub(1),
+        };
+        spawn_parachuted(sim, rules, registry, passenger, landing, 0, effects)?;
+        return Ok(landing);
+    }
     let frame = sim.session.binary_frame();
     let terrain = sim.resolved_terrain.as_ref();
     let Some(plane_entity) = sim.substrate.entities.get(plane) else {
@@ -281,7 +310,9 @@ fn drop_passenger(
 /// ObjectClass::Paradrop, then, once it placed the passenger, Guard for a
 /// house controlled by a human, else Hunt (`HouseClass::IsControlledByHuman
 /// @ 0x0050B730`, Queue_Mission at `0x00521788`/`0x00521798`), and a forced
-/// Paradrop action (Do_Action `0x21`, `0x005217A8`).
+/// Paradrop action (Do_Action `0x21`, `0x005217A8`). UnitClass keeps the
+/// base slot (its vtable `0x007F5C70` +0xE8 is ObjectClass::Paradrop), so a
+/// Unit is only placed.
 pub(crate) fn spawn_parachuted(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -1315,6 +1346,87 @@ mod tests {
                     .contains_entity(51, 20, passenger_id)
             );
         }
+    }
+
+    /// Ares 3.0 AircraftClass_Paradrop_Units (10048BA0, hook 0x415CA6): a
+    /// Unit passenger skips the side step, Can_Enter_Cell and
+    /// PlaceInfantryInCell and drops from the centre of the cell under the
+    /// plane, one lepton below it. Its SpawnParachuted is ObjectClass::Paradrop
+    /// (UnitClass vtable 0x007F5C70 +0xE8), so it gets no mission or action.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_a_unit_passenger_drops_from_the_centre_of_the_planes_cell() {
+        use crate::rules::locomotor_type::LocomotorKind;
+        use crate::sim::movement::locomotor::LocomotorState;
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[InfantryTypes]\n0=E1\n[VehicleTypes]\n0=MTNK\n[AircraftTypes]\n0=PDPLANE\n\
+                 [BuildingTypes]\n[E1]\nStrength=100\n[MTNK]\nStrength=300\n\
+                 [PDPLANE]\nStrength=400\nAmmo=100\n",
+            ),
+            &IniFile::empty(),
+        )
+        .expect("unit drop rules should parse");
+        let mut sim = Simulation::new();
+        insert_loaded_paradrop_pair(&mut sim, 1, 2);
+        sim.substrate.entities.remove(2);
+        let mut tank = GameEntity::new_at_frame_zero_for_test(
+            2,
+            50,
+            20,
+            0,
+            0,
+            sim.interner.intern("Americans"),
+            crate::sim::combat::Health::new(300),
+            sim.interner.intern("MTNK"),
+            EntityCategory::Unit,
+            0,
+            0,
+            true,
+        );
+        tank.passenger_role = PassengerRole::inside_for_test(1, false);
+        sim.substrate.entities.insert(tank);
+        let plane_z = 1500;
+        let plane = sim.substrate.entities.get_mut(1).unwrap();
+        plane.position.put_world_xy([50 * 256 + 30, 20 * 256 + 200]);
+        plane.position.set_exact_z_leptons_for_test(Some(plane_z));
+        plane.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Fly));
+
+        OBSERVED.with(|log| *log.borrow_mut() = Some(Vec::new()));
+        drop_payload(
+            &mut sim,
+            1,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+        let observed = OBSERVED.with(|log| log.borrow_mut().take()).unwrap();
+
+        let centre = [50 * 256 + 128, 20 * 256 + 128, plane_z - 1];
+        assert_eq!(observed[0], Observed::SpawnParachuted(2, centre));
+        assert!(
+            !observed
+                .iter()
+                .any(|call| matches!(call, Observed::Queue(..) | Observed::DoAction(..))),
+            "{observed:?}"
+        );
+        assert!(cargo(&sim, 1).is_empty());
+        let tank = sim.substrate.entities.get(2).unwrap();
+        assert!(tank.is_falling_down() && !tank.lifecycle.in_limbo());
+        assert_eq!(
+            (tank.position.rx(), tank.position.ry()),
+            (50, 20),
+            "not half a cell aside"
+        );
+        assert_eq!(
+            ground_pose::position_world_coord(&tank.position),
+            DriveCoord {
+                x: centre[0],
+                y: centre[1],
+                z: centre[2]
+            }
+        );
+        assert_eq!(chute_sounds(&sim), vec![(50, 20)]);
     }
 
     #[test]

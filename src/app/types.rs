@@ -367,6 +367,9 @@ pub(crate) enum CursorFeedbackKind {
     NoIvanBomb,
     /// Engineer defuse cursor (action 0x39 `DisarmBomb`, cursor row 59).
     DisarmBomb,
+    /// A bomb carrier's own Detonate (action 0x37, cursor row 52, the
+    /// Demolish frames; `0x004AB5CD`).
+    Detonate,
     /// Repair cursor mode active (sidebar wrench). `true` = an own building is
     /// under the cursor (wrench), `false` = no eligible target (no-repair).
     RepairMode(bool),

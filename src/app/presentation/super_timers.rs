@@ -337,10 +337,21 @@ impl TimerDock {
     }
 }
 
+/// The cursor in the pixels of the timers' box, where the dock keeps its hit
+/// areas: the battlefield's own pixels in the original interface.
+pub(crate) fn cursor_in_view(state: &AppState) -> (i32, i32) {
+    let (x, y) = state.match_state.input.cursor_px();
+    let [left, top, _, _] = crate::app::presentation::field_parts::rect(
+        state,
+        crate::ui::field_layout::FieldPart::Timers,
+    );
+    (x - left, y - top)
+}
+
 /// Consume wheel messages only over the expanded timer ink, before world zoom
 /// or sidebar scrolling. Empty space around the rows stays interactive terrain.
 pub(crate) fn wheel(state: &mut AppState, delta: f32) -> bool {
-    let (x, y) = state.match_state.input.cursor_px();
+    let (x, y) = cursor_in_view(state);
     state
         .match_state
         .match_presentation
@@ -383,7 +394,11 @@ pub(crate) fn build_super_timer_instances(
         .match_state
         .match_presentation
         .super_timer_next_flip_ms = None;
-    if state.frontend.screen != GameScreen::InGame {
+    use crate::app::presentation::field_parts;
+    use crate::ui::field_layout::FieldPart;
+    // A layout that leaves the timers out draws none and keeps no hit area.
+    if state.frontend.screen != GameScreen::InGame || !field_parts::shows(state, FieldPart::Timers)
+    {
         return (Vec::new(), Vec::new());
     }
     let (Some(runtime), Some(rules)) = (state.match_state.sim_runtime.as_ref(), state.rules())
@@ -452,12 +467,12 @@ pub(crate) fn build_super_timer_instances(
         .collect();
     let blink_rgb = blink_rgb(rules);
     let now_ms = crate::app::input::tooltips::now_ms(state);
-    let (view_w, view_h) = crate::app::input::camera::tactical_viewport_size(state);
-    // Screen-space lanes add back the world camera the UI shader subtracts.
-    let camera = [
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-    ];
+    // The dock stacks up from the bottom right of its box, the battlefield
+    // in the original interface, and works in the box's own pixels.
+    let [_, _, view_w, view_h] = field_parts::rect(state, FieldPart::Timers);
+    // Screen-space lanes add back the world camera the UI shader subtracts,
+    // and the box's corner.
+    let camera = field_parts::lane_camera(state, FieldPart::Timers);
 
     let font = &state.renderer.bit_font;
     let local = sim.session().current_house();

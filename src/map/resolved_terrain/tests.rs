@@ -3886,6 +3886,37 @@ NoUseTileLandType=no
 }
 
 #[test]
+fn a_tmp_ramp_byte_past_the_slope_tables_is_flat_ground() {
+    let tile = |ramp_type| TmpTile {
+        height: 0,
+        terrain_type: 14,
+        ramp_type,
+        radar_left: [0, 0, 0],
+        radar_right: [0, 0, 0],
+        pixels: Vec::new(),
+        depth: Vec::new(),
+        pixel_width: 60,
+        pixel_height: 30,
+        relative_extra_y: 0,
+        offset_x: 0,
+        offset_y: 0,
+        has_damaged_data: false,
+    };
+    let mut last_slope = TileMetadata::default();
+    merge_tmp_metadata(&mut last_slope, &tile(20));
+    assert_eq!(last_slope.slope_type, 20);
+    assert!(last_slope.has_ramp);
+    for ramp_type in [21, 255] {
+        let mut metadata = TileMetadata::default();
+        merge_tmp_metadata(&mut metadata, &tile(ramp_type));
+        assert_eq!(metadata.slope_type, 0, "ramp byte {ramp_type}");
+        assert!(!metadata.has_ramp);
+        // Every ground-height read takes the stored slope.
+        assert!(crate::util::lepton::ground_height_leptons(0, metadata.slope_type, 0, 0).is_ok());
+    }
+}
+
+#[test]
 fn gsi_04_04_rules_backed_land_type_uses_canonical_tmp_conversion() {
     let terrain_rules =
         TerrainRules::from_ini(&IniFile::from_str("[Rough]\nBuildable=yes\nTrack=75%\n"));
@@ -5150,7 +5181,7 @@ fn destroyable_cliff_a_collapses_old_sparse_footprint_then_stamps_two_halves() {
     grid.test_install_destroyable_cliff_catalog(100);
 
     let mutation = grid
-        .collapse_destroyable_cliff_terrain(4, 1, |_, _| {})
+        .collapse_destroyable_cliff_terrain(4, 1, None, |_, _| {})
         .expect("family-A destroyable cliff");
 
     assert_eq!(mutation.family, DestroyableCliffFamily::A);
@@ -5183,6 +5214,47 @@ fn destroyable_cliff_a_collapses_old_sparse_footprint_then_stamps_two_halves() {
             assert_eq!(cell.bridge_facts, BridgeCellFacts::default());
         }
     }
+}
+
+#[test]
+fn destroyable_cliff_collapse_turns_land_under_a_higher_neighbour_to_rock() {
+    use crate::rules::terrain_rules::{LandType, LandTypeSemantics, SpeedCostProfile};
+    let mut cells = Vec::new();
+    for ry in 0..6u16 {
+        for rx in 0..8u16 {
+            let mut cell = make_test_cell(rx, ry);
+            cell.level = 1;
+            if (1..7).contains(&rx) && (1..5).contains(&ry) {
+                let sub_tile = (ry - 1) * 6 + (rx - 1);
+                if ![0, 5, 18, 23].contains(&sub_tile) {
+                    cell.final_tile_index = 100;
+                    cell.final_sub_tile = sub_tile as u8;
+                }
+            }
+            cells.push(cell);
+        }
+    }
+    // (3, 0) stands four levels over the stamped (3, 1)'s final Level 1.
+    cells[3].level = 5;
+    let mut grid = ResolvedTerrainGrid::from_cells(8, 6, cells);
+    grid.test_install_destroyable_cliff_catalog(100);
+    let rock = LandTypeSemantics {
+        buildable: false,
+        ground_blocked: true,
+        speed_costs: SpeedCostProfile::ZERO,
+    };
+
+    grid.collapse_destroyable_cliff_terrain(4, 2, Some(&rock), |_, _| {})
+        .expect("family-A destroyable cliff");
+
+    let behind = grid.cell(3, 1).unwrap();
+    assert_eq!(behind.land_type, LandType::Rock.as_index());
+    assert_eq!(behind.base_land_type, LandType::Rock.as_index());
+    assert!(behind.ground_walk_blocked);
+    assert_eq!(behind.zone_type, zone_class::IMPASSABLE);
+    let open = grid.cell(3, 3).unwrap();
+    assert_eq!(open.land_type, LandType::Clear.as_index());
+    assert!(!open.ground_walk_blocked);
 }
 
 #[test]
@@ -5228,7 +5300,7 @@ fn destroyable_cliff_origin_recovery_accepts_every_present_a_and_b_subtile() {
             );
 
             let mutation = grid
-                .collapse_destroyable_cliff_terrain(selected.0, selected.1, |_, _| {})
+                .collapse_destroyable_cliff_terrain(selected.0, selected.1, None, |_, _| {})
                 .expect("present sparse subtile selects its family");
 
             assert_eq!(mutation.family, family);

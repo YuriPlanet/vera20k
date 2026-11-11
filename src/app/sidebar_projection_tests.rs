@@ -218,6 +218,7 @@ fn a_built_view_holds_only_while_its_inputs_and_strips_hold() {
         armed: None,
         supers: Vec::new(),
         gadgets: SidebarGadgetState::new(),
+        grids: Vec::new(),
     };
     let drawn = view(&sim, &options, &projection, SidebarTab::Building, 600.0);
     projection.replace_built_view(drawn, inputs(&kept, SidebarTab::Building));

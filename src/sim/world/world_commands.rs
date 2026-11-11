@@ -205,6 +205,22 @@ impl Simulation {
         Some(record)
     }
 
+    /// `FootClass::ClickedAction_Object`'s Detonate (0x37) arm
+    /// (`0x004D75F4..0x004D766F`): the DETONATE event on `carrier`, whose
+    /// house byte is its bomb's house (`bomb+0x28`, its ArrayIndex). `None`
+    /// without a bomb.
+    pub fn encode_detonate_record(&self, carrier: u64) -> Option<CommandRecord> {
+        let house = self.substrate.entities.get(carrier)?.bomb.as_ref()?.house();
+        let typed = crate::sim::command::DetonateRecord {
+            house_id: self.command_sender(house)?,
+            frame: self.session.binary_frame() as i32,
+            entity_id: i32::try_from(carrier).ok()?,
+        };
+        let mut record = CommandRecord::decode_exact(&[0; COMMAND_RECORD_LEN]).ok()?;
+        typed.write_into(&mut record);
+        Some(record)
+    }
+
     /// StopCommand730EE7 -> ClickedEvent6FFE34 -> EventCtor4C65E0 emits
     /// IDLE6 with the current issuer and the actor's five-byte object token.
     /// Keep the token even if its actor disappears before dispatch: native
@@ -607,9 +623,12 @@ impl Simulation {
         if !ordinary && !miner {
             return None;
         }
+        // An actor with no navigation cell (a mod type built without a
+        // locomotor) takes no Guard order, as its Move order is refused.
         let (x, y) = self
             .object_navigation_cell(id, rules)
-            .unwrap_or_else(|cause| panic!("Area Guard input cell: {cause}"));
+            .map_err(|cause| log::warn!("Area Guard input refused for {id}: {cause}"))
+            .ok()?;
         Some(Command::Guard {
             entity_id: id,
             target: Some(combat::TargetKind::Cell(x as u16, y as u16)),
@@ -1038,6 +1057,20 @@ impl Simulation {
         // Ares 3.0 TrenchRedirectClick (0x60) stays raw until its handler.
         #[cfg(feature = "ares")]
         if crate::sim::command::AresTrenchRedirectRecord::decode(record).is_some() {
+            let owner = self.command_sender_owner(record.house_id())?;
+            return self.houses.contains_key(&owner).then(|| {
+                CommandEnvelope::new(
+                    owner,
+                    execute_tick,
+                    Command::SynchronizedRecord {
+                        record: record.clone(),
+                    },
+                )
+            });
+        }
+        // DETONATE stays raw until its handler, which resolves the carrier
+        // late, as Execute does.
+        if crate::sim::command::DetonateRecord::decode(record).is_some() {
             let owner = self.command_sender_owner(record.house_id())?;
             return self.houses.contains_key(&owner).then(|| {
                 CommandEnvelope::new(
@@ -1816,6 +1849,17 @@ impl Simulation {
                         }
                     };
                     return self.execute_archive_event(entity_id, target);
+                }
+                if let Some(event) = crate::sim::command::DetonateRecord::decode(record) {
+                    let Ok(carrier) = u64::try_from(event.entity_id) else {
+                        return false;
+                    };
+                    return self.execute_detonate_event(
+                        carrier,
+                        rules,
+                        overlay_registry,
+                        frame_effects,
+                    );
                 }
                 #[cfg(feature = "ares")]
                 if let Some(event) = crate::sim::command::AresTrenchRedirectRecord::decode(record) {
@@ -3620,19 +3664,29 @@ impl Simulation {
             .get(entity_id)
             .is_some_and(|actor| actor.category() != EntityCategory::Structure);
         if mission == MissionType::AreaGuard && foot {
-            self.assign_target_represented(entity_id, None, rules, overlay_registry, frame_effects)
-                .unwrap_or_else(|cause| panic!("Area Guard order target: {cause}"));
+            // A refused setter is logged, as the ordinary arm below does
+            // (a mod type built without a locomotor has no coordinate).
+            if let Err(cause) = self.assign_target_represented(
+                entity_id,
+                None,
+                rules,
+                overlay_registry,
+                frame_effects,
+            ) {
+                log::warn!("Area Guard order target for {entity_id} refused: {cause}");
+            }
             // The target token, converted at `0x004C7418` for the
             // destination and again at `0x004C7428` for the archive.
             let post = self.resolve_event_token(target);
-            self.assign_destination_represented(
+            if let Err(cause) = self.assign_destination_represented(
                 entity_id,
                 post.map(Into::into),
                 rules,
                 overlay_registry,
                 frame_effects,
-            )
-            .unwrap_or_else(|cause| panic!("Area Guard order destination: {cause}"));
+            ) {
+                log::warn!("Area Guard order destination for {entity_id} refused: {cause}");
+            }
             // The archive write follows the virtual destination call even
             // when that class setter refuses its request.
             let archive = self.resolve_event_token(target);
@@ -4418,8 +4472,10 @@ mod tests {
             .as_mut()
             .unwrap()
             .ensure_installed_track_state();
-        // Revealed object: order admission reads the limbo byte.
+        // Revealed object: order admission reads the limbo byte. Its Unlimbo
+        // would have published its threat (`0x006F6ED2`); TANK poses none.
         ge.lifecycle.set_in_limbo_for_test(false);
+        ge.cached_spatial_threat.publish(0);
         sim.substrate.entities.insert(ge);
     }
 

@@ -827,6 +827,7 @@ impl FogState {
 
     /// Apply every plane's waiting writes once the object pass ends.
     pub(crate) fn settle_plane_writes(&mut self) {
+        let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::VISION);
         self.by_owner.settle();
     }
 
@@ -980,7 +981,7 @@ impl FogState {
         id: u64,
         viewer: InternedId,
         source_owner: InternedId,
-        admission: &SightAdmission,
+        source: impl Into<SightSource>,
     ) -> bool {
         if self.source_sight_is_latched(id, viewer) {
             return false;
@@ -988,7 +989,7 @@ impl FogState {
         // The native cache has source geometry; ordinary ReReveal takes its
         // House gate from the source owner, even when UpdateReveal's explicit
         // alternate House received the actual map contribution (70B0CB..B12C).
-        let mut source = SightSource::from(admission);
+        let mut source = source.into();
         source.owner = source_owner;
         self.note_sight(id, viewer);
         self.sight_sources.insert((id, viewer), source);
@@ -2005,6 +2006,7 @@ impl FogState {
 /// The settings a reveal reads, from the rules, the map and the game
 /// ([`VisionConfig::new`]; production builds it in
 /// `Simulation::sight_reveal_config`).
+#[derive(PartialEq)]
 pub struct VisionConfig {
     /// When true, Techno reveal/update readers require the canonical stored
     /// TechnoClass+0x3D5 membership byte. Headless fixtures without live
@@ -2266,7 +2268,7 @@ pub(crate) fn entity_sight_admission(
 /// The sight admission of a source with `geometry`: its footprint under
 /// `config` and `height_grid` ([`collect_reveal_cells`]); none on an
 /// unallocated map.
-fn sight_admission(
+pub(crate) fn sight_admission(
     fog: &FogState,
     geometry: SightGeometry,
     config: &VisionConfig,
@@ -2327,6 +2329,19 @@ pub(crate) struct SightGeometry {
     pub(crate) owner: InternedId,
     pub(crate) origin: (u16, u16, i32),
     pub(crate) radius: i32,
+}
+
+impl From<SightGeometry> for SightSource {
+    /// The client cache an admission with this geometry publishes
+    /// (`+0x250/+0x254/+0x260`); the footprint is no part of it.
+    fn from(geometry: SightGeometry) -> Self {
+        Self {
+            latched: true,
+            owner: geometry.owner,
+            origin: geometry.origin,
+            radius: geometry.radius,
+        }
+    }
 }
 
 /// [`entity_sight_admission`] without its footprint.

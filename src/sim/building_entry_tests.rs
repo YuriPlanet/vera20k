@@ -1940,14 +1940,17 @@ fn occupants_are_admitted_in_order_and_a_human_drops_its_seek() {
     sim.sound_events.clear_for_test();
 
     for id in [first, second] {
-        assert!(crate::sim::passenger::add_garrison_occupant(
-            &mut sim,
-            &rules,
-            id,
-            bunker,
-            None,
-            FrameEffects::default(),
-        ));
+        assert!(
+            crate::sim::passenger::add_garrison_occupant(
+                &mut sim,
+                &rules,
+                id,
+                bunker,
+                None,
+                FrameEffects::default(),
+            )
+            .unwrap()
+        );
     }
 
     assert_eq!(occupants(&sim, bunker), [first, second]);
@@ -2060,14 +2063,17 @@ fn an_ejected_human_occupant_drops_its_seek() {
     for (owner, ry) in [("Americans", 10), ("YuriCountry", 16)] {
         let bunker = spawn(&mut sim, &rules, "NABNKR", owner, 16, ry);
         let occupant = spawn(&mut sim, &rules, "E1", owner, 12, ry);
-        assert!(crate::sim::passenger::add_garrison_occupant(
-            &mut sim,
-            &rules,
-            occupant,
-            bunker,
-            None,
-            FrameEffects::default(),
-        ));
+        assert!(
+            crate::sim::passenger::add_garrison_occupant(
+                &mut sim,
+                &rules,
+                occupant,
+                bunker,
+                None,
+                FrameEffects::default(),
+            )
+            .unwrap()
+        );
         set_should_enter_occupiable_for_test(
             sim.substrate.entities.get_mut(occupant).unwrap(),
             true,

@@ -101,6 +101,7 @@ pub fn run(app_bundle: bool) -> Result<i32> {
 }
 
 fn run_with_args(app_bundle: bool, args: impl IntoIterator<Item = OsString>) -> Result<i32> {
+    let (mod_switch, args) = crate::app::mods::take_switch(args.into_iter().collect())?;
     let launch_mode = parse_launch_args(args)?;
 
     // Help must work without a display server or an OS event loop, including
@@ -108,6 +109,9 @@ fn run_with_args(app_bundle: bool, args: impl IntoIterator<Item = OsString>) -> 
     if matches!(launch_mode, AppLaunchMode::Usage) {
         return Ok(print_usage());
     }
+
+    // gamemd's 1 ms Windows timer period, until the event loop returns.
+    let _wall_clock_period = crate::app::match_runtime::frame_pacer::WallClockPeriod::hold();
 
     // Create the OS event loop. This drives the entire application:
     // window events, input, redraws, lifecycle events.
@@ -124,7 +128,7 @@ fn run_with_args(app_bundle: bool, args: impl IntoIterator<Item = OsString>) -> 
     }
     let event_loop: EventLoop<()> = builder.build()?;
 
-    run_with_loop(launch_mode, app_bundle, event_loop)
+    run_with(launch_mode, app_bundle, event_loop, mod_switch)
 }
 
 fn print_usage() -> i32 {
@@ -140,6 +144,15 @@ pub fn run_with_loop(
     launch_mode: AppLaunchMode,
     app_bundle: bool,
     event_loop: EventLoop<()>,
+) -> Result<i32> {
+    run_with(launch_mode, app_bundle, event_loop, None)
+}
+
+fn run_with(
+    launch_mode: AppLaunchMode,
+    app_bundle: bool,
+    event_loop: EventLoop<()>,
+    mod_switch: Option<crate::app::mods::ModSwitch>,
 ) -> Result<i32> {
     // A player started this launch and may have no console: a failure that
     // ends it shows a message box. Spawn, replay and capture launches come
@@ -220,6 +233,7 @@ pub fn run_with_loop(
             crate::app::App::new_tactical_capture(request)
         }
     };
+    app.set_mod_switch(mod_switch);
     // A panic skips `exiting`, where the match replay is saved. winit stops
     // its loop and hands the panic back here (macOS and Windows catch it in
     // their callbacks; elsewhere it unwinds straight out), with `app` intact.
@@ -231,6 +245,8 @@ pub fn run_with_loop(
         Ok(result) => result?,
         Err(panic) => {
             app.save_replay_after_panic();
+            // resume_unwind skips the hook: a worker's panic gets its box here.
+            crate::app::system_dialog::report_reraised_panic(&*panic);
             std::panic::resume_unwind(panic);
         }
     }

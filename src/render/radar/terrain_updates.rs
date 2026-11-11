@@ -4,7 +4,7 @@
 //! terrain-dirty generation changes. Full reconstruction and these updates
 //! both consume `CurrentRadarCellAuthority`.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use super::current_cell::CurrentRadarCellAuthority;
 use super::geometry::NativeRadarSurfaceGeometry;
@@ -57,6 +57,68 @@ impl StagedRadarTerrainUpdate {
             Ok(generation) => generation,
             Err(never) => match never {},
         }
+    }
+}
+
+/// Radar terrain cells drained from the simulation and not yet uploaded.
+///
+/// The client moves the simulation's pending batch here every frame
+/// (`SimRuntime::take_radar_terrain_dirty`), so the minimap presents and
+/// retries from its own state and never writes the simulation. A cell joins
+/// once; the generation advances whenever one joins, and only an upload of
+/// the current generation clears the backlog, so a failed or skipped upload
+/// retries and a stale acknowledgement cannot drop newer cells.
+#[derive(Debug, Default)]
+pub struct RadarTerrainBacklog {
+    cells: Vec<(u16, u16)>,
+    index: BTreeSet<(u16, u16)>,
+    generation: u64,
+}
+
+impl RadarTerrainBacklog {
+    pub fn extend(&mut self, cells: impl IntoIterator<Item = (u16, u16)>) {
+        let mut changed = false;
+        for cell in cells {
+            if self.index.insert(cell) {
+                self.cells.push(cell);
+                changed = true;
+            }
+        }
+        if changed {
+            self.generation = self.generation.wrapping_add(1);
+        }
+    }
+
+    pub fn cells(&self) -> &[(u16, u16)] {
+        &self.cells
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    /// Clears the backlog after an upload of `generation` completed. A stale
+    /// generation or an empty backlog is refused.
+    pub fn acknowledge(&mut self, generation: u64) -> bool {
+        if generation != self.generation || self.cells.is_empty() {
+            return false;
+        }
+        self.cells.clear();
+        self.index.clear();
+        true
+    }
+
+    /// Drops cells from an abandoned timeline: a restore rebuilds the radar
+    /// from the restored cells, not from a replay of earlier marks.
+    pub(super) fn clear(&mut self) {
+        self.cells.clear();
+        self.index.clear();
+    }
+}
+
+impl AsMut<RadarTerrainBacklog> for RadarTerrainBacklog {
+    fn as_mut(&mut self) -> &mut RadarTerrainBacklog {
+        self
     }
 }
 

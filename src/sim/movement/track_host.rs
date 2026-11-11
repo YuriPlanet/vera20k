@@ -393,7 +393,7 @@ impl Simulation {
                     stored_head,
                     cell(current),
                     true,
-                    false,
+                    None,
                     rules,
                     registry,
                     observe,
@@ -524,7 +524,7 @@ impl Simulation {
                 },
                 previous,
                 false,
-                family == TrackFamily::Drive,
+                Some(family),
                 rules,
                 registry,
                 observe,
@@ -644,7 +644,7 @@ impl Simulation {
                 chosen,
                 cell(current),
                 false,
-                false,
+                None,
                 rules,
                 registry,
                 observe,
@@ -674,13 +674,25 @@ impl Simulation {
             return;
         };
         let coord = position_world_coord(&entity.position);
-        Self::track_raw_mark_at(substrate, path_grid, resolved_terrain, coord, put);
+        Self::track_raw_mark_at(substrate, path_grid, resolved_terrain, id, coord, put);
     }
 
+    /// The Unit `id`'s vt+0xF0 (PUT, `0x007441B0`) or vt+0xF4 (REMOVE,
+    /// `0x00744210`) on `coord`: bit 0x20 on the plane
+    /// [`raw_occupation_plane`](super::foot_mark::raw_occupation_plane)
+    /// selects.
+    ///
+    /// Ares 3.0 UnitClass_MarkOccupationBits `1004BFF0` (hook `0x007441B6`)
+    /// records on the Unit which plane PUT marked, and
+    /// UnitClass_UnmarkOccupationBits `1004C3E0` (hook `0x00744216`) clears
+    /// that plane as well, once, in REMOVE's Cell. PUT needs the structural
+    /// bridge bit and REMOVE only the height, so without it a deck-high Unit
+    /// over a Cell without that bit marks the ground and clears the deck.
     pub(super) fn track_raw_mark_at(
         substrate: &mut ObjectSubstrate,
         path_grid: &Option<Arc<PathGrid>>,
         resolved_terrain: &Option<ResolvedTerrainGrid>,
+        id: u64,
         coord: DriveCoord,
         put: bool,
     ) {
@@ -691,12 +703,157 @@ impl Simulation {
             resolved_terrain.as_ref(),
             path_grid.as_deref(),
         );
+        let on_deck = layer == MovementLayer::Bridge;
+        if put {
+            #[cfg(feature = "ares")]
+            if let Some(entity) = substrate.entities.get_mut(id) {
+                entity.mark_ares_alt_occupation(on_deck);
+            }
+            let raw = &mut substrate.raw_cell_occupation;
+            if on_deck {
+                raw.mark_deck(at.0, at.1, VEHICLE_OCCUPATION_BIT);
+            } else {
+                raw.mark_ground(at.0, at.1, VEHICLE_OCCUPATION_BIT);
+            }
+            return;
+        }
+        #[cfg_attr(not(feature = "ares"), allow(unused_mut))]
+        let (mut deck, mut ground) = (on_deck, !on_deck);
+        #[cfg(feature = "ares")]
+        if let Some(last) = substrate
+            .entities
+            .get_mut(id)
+            .and_then(|entity| entity.take_ares_alt_occupation())
+        {
+            deck |= last;
+            ground |= !last;
+        }
+        #[cfg(not(feature = "ares"))]
+        let _ = id;
         let raw = &mut substrate.raw_cell_occupation;
-        match (put, layer) {
-            (true, MovementLayer::Bridge) => raw.mark_deck(at.0, at.1, VEHICLE_OCCUPATION_BIT),
-            (true, _) => raw.mark_ground(at.0, at.1, VEHICLE_OCCUPATION_BIT),
-            (false, MovementLayer::Bridge) => raw.clear_deck(at.0, at.1, VEHICLE_OCCUPATION_BIT),
-            (false, _) => raw.clear_ground(at.0, at.1, VEHICLE_OCCUPATION_BIT),
+        if deck {
+            raw.clear_deck(at.0, at.1, VEHICLE_OCCUPATION_BIT);
+        }
+        if ground {
+            raw.clear_ground(at.0, at.1, VEHICLE_OCCUPATION_BIT);
+        }
+    }
+
+    /// The train smash of Process_Drive_Track's crossing paid point, after
+    /// the bridge predicate and before Mark(DOWN): Drive
+    /// `0x004B1851..0x004B197E`, Ship `0x006A0EDD..0x006A100A`. An `IsTrain=`
+    /// (Type+0xC94) Unit that is not a follower car (Unit+0x6D0) walks the
+    /// entered cell's object list: the deck list (+0xE8) when it is OnBridge
+    /// or its Location Z is not below the floor there (`0x00578080`) plus the
+    /// deck height, else the ground list (+0xE4). The successor is read
+    /// before each object (`0x004B190B`). Every object that
+    /// `Is_Crushable_By @ 0x005F6CD0` refuses takes
+    /// ReceiveDamage(&10000, 0, C4Warhead, NULL, 1, 1, NULL) (`0x004B191A..
+    /// 0x004B1941`) and the train takes (&20, 0, C4Warhead, NULL, 1, 0, NULL)
+    /// (`0x004B1947..0x004B196E`). There is no alliance or class test.
+    ///
+    /// Terrain objects in the list are hit like any other. The block draws
+    /// no RNG, writes no timer and detaches nothing outside the two
+    /// ReceiveDamage calls and what a death does.
+    ///
+    /// Residual: a null C4Warhead is passed to ReceiveDamage natively and is
+    /// inert here (retail names Super). Only an authored `IsTrain=` type.
+    fn track_train_smash(
+        &mut self,
+        id: u64,
+        entered: (u16, u16),
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        let Some(train) = self.substrate.entities.get(id) else {
+            return;
+        };
+        if train.is_unit_follower()
+            || !self
+                .interner
+                .object_type(train.type_ref(), rules)
+                .is_some_and(|object| object.is_train)
+        {
+            return;
+        }
+        let Some(warhead) = rules.warhead(&rules.bridge_warheads.c4_name) else {
+            return;
+        };
+        let warhead_ref = self.interner.intern(&warhead.id);
+        let terrain = self.resolved_terrain.as_ref();
+        let location = super::ground_pose::object_location(train, terrain);
+        let layer = if train.on_bridge()
+            || location.z
+                >= super::ground_pose::ground_surface_z_at(
+                    [location.x, location.y],
+                    false,
+                    terrain,
+                    self.path_grid.as_deref(),
+                )
+                .unwrap_or(0)
+                    + crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
+        {
+            MovementLayer::Bridge
+        } else {
+            MovementLayer::Ground
+        };
+        use crate::sim::combat::combat_aoe::AreaDamageReceiver;
+        use crate::sim::combat::{EntityDamageEvent, ReceiverCallFlags, TerrainDamageEvent};
+        use crate::sim::occupancy::CellObjectMember;
+        let hit = |target: u64, damage: i32, arg6: bool| {
+            EntityDamageEvent::direct_receiver(
+                target,
+                damage,
+                0,
+                crate::sim::combat::RAD_NO_ATTACKER,
+                None,
+                warhead_ref,
+                ReceiverCallFlags {
+                    ignore_defenses: true,
+                    arg6,
+                },
+            )
+        };
+        let mut cursor = self.cell_objects(entered, layer).next();
+        while let Some(member) = cursor {
+            cursor = self.next_cell_object(member);
+            match member {
+                CellObjectMember::Entity(victim) => {
+                    if victim == id
+                        || self.substrate.entities.get(victim).is_none()
+                        || self.object_crushable_by_unit(id, victim, rules)
+                    {
+                        continue;
+                    }
+                    self.commit_direct_damage_receiver(
+                        rules,
+                        registry,
+                        hit(victim, 10000, true),
+                        effects,
+                    );
+                }
+                // A Terrain object is no Techno: Is_Crushable_By refuses it.
+                CellObjectMember::Terrain(tree) => {
+                    let Some(tree) = self.terrain_objects.objects().get(&tree) else {
+                        continue;
+                    };
+                    let tree = AreaDamageReceiver::Terrain(TerrainDamageEvent {
+                        damage_writeback: None,
+                        stable_id: tree.stable_id(),
+                        rx: tree.cell().0,
+                        ry: tree.cell().1,
+                        damage: 10000,
+                        distance_leptons: 0,
+                        warhead_ref,
+                        near_center_ic_isolation_eligible: false,
+                    });
+                    self.commit_noncombat_aoe_receivers(rules, registry, &[tree], effects);
+                }
+            }
+            if self.substrate.entities.get(id).is_some() {
+                self.commit_direct_damage_receiver(rules, registry, hit(id, 20, false), effects);
+            }
         }
     }
 
@@ -706,7 +863,7 @@ impl Simulation {
         coord: DriveCoord,
         previous_track_cell: (u16, u16),
         terminal: bool,
-        paid_drive_point: bool,
+        paid: Option<TrackFamily>,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         observe: &mut impl FnMut(&mut Simulation, u64, TrackWorldEvent),
@@ -741,7 +898,7 @@ impl Simulation {
         // Keep that identity across Mark(DOWN), which may stamp the shared
         // Dummy again. Only a crossing paid Drive point reaches4B1999;
         // terminal/residual placements and same-cell points skip this arm.
-        let pre_entry_cell = if crossing && paid_drive_point {
+        let pre_entry_cell = if crossing && paid == Some(TrackFamily::Drive) {
             self.resolved_terrain.as_ref().map(|terrain| {
                 crate::map::resolved_terrain::NativeCellQuery::canonical(terrain)
                     .lookup((selected_cell.0 as i16, selected_cell.1 as i16))
@@ -776,6 +933,19 @@ impl Simulation {
                 entity
                     .position
                     .store_cell_level(entered.ground_level, entity.on_bridge());
+            }
+        }
+        if crossing && paid.is_some() {
+            self.track_train_smash(id, selected_cell, rules, registry, effects);
+            // Drive4B197E/Ship6A100A: a train its own smash killed leaves
+            // before Mark(DOWN).
+            if !self
+                .substrate
+                .entities
+                .get(id)
+                .is_some_and(|entity| entity.lifecycle.object_alive())
+            {
+                return;
             }
         }
         if terminal && let Some(entity) = self.substrate.entities.get_mut(id) {
@@ -898,7 +1068,7 @@ impl Simulation {
         put: bool,
     ) {
         for coord in Self::track_occupation_coords(substrate, id, family, supplied) {
-            Self::track_raw_mark_at(substrate, path_grid, resolved_terrain, coord, put);
+            Self::track_raw_mark_at(substrate, path_grid, resolved_terrain, id, coord, put);
         }
     }
 
@@ -1008,6 +1178,7 @@ impl Simulation {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return Ok(false);
         };
+        let head_cell = super::foot_path::coord_cell(head(entity, family));
         let candidate = super::track_head::offset_head(head(entity, family), direction);
         let saved_speed = entity.foot_speed.native_applied_fraction();
         //4B1BA1..4B1C3E: Unit+1AC(cell(head + delta), dir, Object 0x5F5F00,
@@ -1051,9 +1222,11 @@ impl Simulation {
                 );
                 return Ok(false);
             }
-            //4B1EC0..4B1F43: the forced deck-aware Scatter_Objects on the cell.
+            //4B1EC0..4B1F43 (Ship 6A1503..6A1586): the deck flag comes from
+            //the candidate's Cell, but Scatter_Objects runs on Map[ESI], still
+            //&HeadTo from 4B1BA4. The fresh-step arms scatter the candidate.
             6 => {
-                self.scatter_blocked_track_cell(id, target, rules, registry, effects)?;
+                self.scatter_blocked_track_list(id, target, head_cell, rules, registry, effects)?;
                 return Ok(false);
             }
             _ => return Ok(false),

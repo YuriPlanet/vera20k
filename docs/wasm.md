@@ -229,7 +229,8 @@ set_lifecycle_callback(event => {
   and `samples`, `max_jitter_reserve_ms`, `underruns`), `performance`
   (nullable `tick_ms_p50`, `tick_ms_p99`, `fps_p50`, `fps_p5`, and
   `unfocused_seconds`), `pacing` (`slowdowns`, `slowed_by` Houses,
-  `slowed_seconds`) and `outcome` (nullable `desync_frame`, `reconnects`).
+  `slowed_seconds`) and `outcome` (nullable `desync_frame`, `reconnects`,
+  `started`, nullable `failure` and `start_hash`, as in `docs/lobby-protocol.md`).
   These are wall-clock observations of this client; desktop `-SPAWN` writes
   the same object into `spawn_result.json`, and every client logs it once as
   `Network quality:` when the match returns its transport.

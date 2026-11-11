@@ -3781,7 +3781,14 @@ impl TacticalCaptureSession {
                     } else if scheduled.gesture.is_minimap() {
                         state.match_state.input.minimap_press_active() && !mouse.captured
                     } else {
+                        // A plain click lands on the battlefield, or on a
+                        // button the side's layout added.
                         mouse.captured
+                            || gadgets
+                                .out
+                                .consumed_by
+                                .or(gadgets.focus.sticky)
+                                .is_some_and(|handle| gadgets.is_layout_button(handle))
                     };
                 if matches!(scheduled.gesture, MapGesture::Drag { .. }) {
                     let shown = |state: &AppState| {

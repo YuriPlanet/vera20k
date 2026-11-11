@@ -42,8 +42,10 @@ complete mission loading or all downstream campaign extensions.
 
 Supported extensions:
 
-- [Ordinary ground and tower EMP](ares-emp.md) (bounded human Drive/Walk, unteamed AI Drive and independent powered defensive buildings;
-  team members, spawners and Fly/Jumpjet victims follow in [warhead residuals](ares-warhead-residuals.md))
+- [Ground, airborne and powered-building EMP](ares-emp.md) (every Foot mover but Tunnel, human or AI,
+  miners, falling and mind-controlled victims, independent powered buildings with Radar and SpySat,
+  and the player's miner and base warnings; team members and spawners in
+  [warhead residuals](ares-warhead-residuals.md))
 - [Water and land type conversion](../src/sim/game_entity/type_conversion.rs):
   `Convert.Water` applies over water or beach; `Convert.Land` applies over land
   and bridges. It uses the same in-place conversion owner as script action 68,
@@ -79,7 +81,8 @@ Supported extensions:
   `MenuText.Status`, `File.Taunt`, `ListIndex`, random/AI selection weights,
   ParentCountry inheritance, and the shell/Co-Op flag and status consumers.
   Observer art is retained but has no renderer yet.
-- [Country paradrop overrides](ares-country-paradrop.md): `ParaDrop.Types`,
+- [Paradrop overrides](ares-country-paradrop.md): the superweapon's own
+  `ParaDrop.*` planes (vehicles too), then the country's `ParaDrop.Types`,
   `.Num`, `.Aircraft` and `Parachute.Anim` in front of the SideExt values.
 - [Country AI power plants](ares-country-powerplants.md): `AI.PowerPlants=`
   and the draw among the plants the AI can build when it splices one.
@@ -155,8 +158,8 @@ Supported extensions:
   `CloningFacility`.
 - [Ivan bombs, abductors and weapon extras](ares-ivan-bomb-abductor.md):
   `IvanBomb.*` from the planting weapon, `Abductor.*` with `ImmuneToAbduction`,
-  `ApplyDamage` and `ProjectileRange`. The player's Detonate action
-  (`IvanBomb.CanDetonate*`) and `Cursor.Attack*` remain outside this chain.
+  `ApplyDamage`, `ProjectileRange` and the player's Detonate
+  (`IvanBomb.CanDetonate*`). `Cursor.Attack*` remains outside this chain.
 - [Building types](ares-building-types.md): advanced rubble (`Rubble.*`),
   `EngineerRepairable`, urban combat and raidable garrisons (`UC.*`,
   `Bunker.Raidable`, `CanBeOccupiedBy`), `IsPassable`, `EngineerDamage`,
@@ -240,8 +243,10 @@ Supported extensions:
   the ProduceCash rework with `ProduceCashDisplay`, and `SecretLab.*`.
 - [Transports and payloads](ares-transports.md): `InitialPayload.*`,
   `Convert.Deploy`, Hospital/Armory eviction on sale and capture, Carryall
-  totes (`Carryall.Allowed`, `Carryall.SizeLimit` and the 3.0 drop hooks) and
-  `Passengers.Allowed`/`.Disallowed` on aircraft transports.
+  totes (`Carryall.Allowed`, `Carryall.SizeLimit` and the 3.0 drop hooks),
+  `Passengers.Allowed`/`.Disallowed` on aircraft transports, and
+  `Assaulter.Level` over the stock assault
+  ([dormant-stock-rules.md](dormant-stock-rules.md#assaulters)).
 - [Warhead, AI and techno residuals](ares-warhead-residuals.md): airborne
   victims of the curtain, EMP and AttachEffect, PoweredBy team, spawn and slave
   updates, `TeamRetaliate`, `AIInnerBase`, `EVA.Lost`, EMP on Fly and Jumpjet

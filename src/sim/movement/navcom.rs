@@ -10,7 +10,6 @@ use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::world::FrameEffects;
-use crate::util::fixed_math::SIM_ZERO;
 #[cfg(test)]
 use crate::util::fixed_math::SimFixed;
 
@@ -474,6 +473,14 @@ fn is_ship_locomotor(entity: &GameEntity) -> bool {
         .is_some_and(|loco| matches!(loco.active_kind(), LocomotorKind::Ship))
 }
 
+/// The Foot's Locomotor (`+0x674`) is a `HoverLocomotionClass` (CLSID `0x007E9A40`).
+fn is_hover_locomotor(entity: &GameEntity) -> bool {
+    entity
+        .locomotor
+        .as_ref()
+        .is_some_and(|loco| matches!(loco.active_kind(), LocomotorKind::Hover))
+}
+
 /// `CellClass::GetCoords` (`0x00486840`) of the cell `MapClass::Get_CellClass`
 /// (`0x005657A0`) gives for `(rx, ry)` through `cells`, which stamps the
 /// query's fallback CellClass on a miss. Z 0 for an unsupported slope
@@ -719,12 +726,13 @@ impl crate::sim::world::Simulation {
 
 /// Cell callers of the shared non-null destination owner. Object callers
 /// capture their receiver's +4C through `nav_target_coordinate` instead.
+#[cfg(test)]
 pub(crate) fn set_destination_internal_cell(
     entity: &mut GameEntity,
     target: (u16, u16),
     resolved_terrain: Option<&ResolvedTerrainGrid>,
     binary_frame: u32,
-) {
+) -> bool {
     let coord = target_cell_coord(
         target.0,
         target.1,
@@ -738,29 +746,52 @@ pub(crate) fn set_destination_internal_cell(
         coord,
         resolved_terrain,
         binary_frame,
-    );
+    )
 }
 
 /// Foot4D9510/4D9628 publishes the reference and dispatches its captured +4C
 /// coordinate. Cell and object orders reach the same active locomotor owner;
-/// `binary_frame` is the locomotor Move_To paralysis clock.
+/// `binary_frame` is the locomotor Move_To paralysis clock. True when Hover's
+/// Move_To still owes `Simulation::hover_move_to_path_step`.
 pub(crate) fn set_destination_internal_coord(
     entity: &mut GameEntity,
     target: NavTargetRef,
     coord: DriveCoord,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
     binary_frame: u32,
-) {
+) -> bool {
     publish_nav_com(entity, target);
 
     if is_drive_locomotor(entity) {
         drive_set_destination(entity, coord, resolved_terrain, binary_frame);
     } else if is_ship_locomotor(entity) {
         ship_set_destination(entity, coord, resolved_terrain, binary_frame);
-    } else if super::hover::hover_move_to(entity, coord, resolved_terrain, binary_frame) {
     } else {
-        set_walk_destination_coord(entity, coord, resolved_terrain);
+        use super::hover::HoverMoveTo;
+        // 0x004D95B3..0x004D9601: ahead of Hover's Move_To an expired +640
+        // restarts for one frame, so Path_And_Arrival's gate
+        // (0x00516621..0x00516645) refuses the search inside the order. The
+        // setter's tail (`DestinationTiming::accept`) zeroes the timer, and
+        // the first search is the next Process's.
+        if is_hover_locomotor(entity)
+            && entity
+                .navigation
+                .path_runtime()
+                .movement_timer()
+                .expired(binary_frame as i32)
+        {
+            entity
+                .navigation
+                .path_runtime_mut()
+                .start_movement(binary_frame, 1);
+        }
+        match super::hover::hover_move_to(entity, coord, resolved_terrain, binary_frame) {
+            HoverMoveTo::PathStepOwed => return true,
+            HoverMoveTo::Done => {}
+            HoverMoveTo::NotHover => set_walk_destination_coord(entity, coord, resolved_terrain),
+        }
     }
+    false
 }
 
 /// Foot4D94C7/4D9510: NavComAux cleared and the reference published, before
@@ -886,15 +917,8 @@ fn ship_stop_moving(entity: &mut GameEntity) {
         loco.store_track_target_fraction_native(TrackFamily::Ship, stopped_target_fraction(target));
     }
     loco.store_track_destination(TrackFamily::Ship, None);
-
-    // OPEN Process-host correction: this preexisting adapter applies the
-    // rest speed before the native Process-tail admission. FootStop4DF0D0
-    // does NOT clear Foot+5E0; explicit abandonment is a separate owner call.
-    if loco.track_head(TrackFamily::Ship).is_none()
-        && entity.foot_speed.speed_fraction_is_positive()
-    {
-        entity.foot_speed.set_speed_fraction(SIM_ZERO);
-    }
+    // Foot+578 is retained here. The common Process tail 0x69FEF0 owns its
+    // eventual zero, after the destination/head/path gates (track_turn).
 }
 
 impl crate::sim::world::Simulation {

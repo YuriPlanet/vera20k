@@ -77,6 +77,42 @@ A new language goes into the game once every line is translated. When it does, d
 your copy from the settings folder. A copy there replaces the one in the game, so any
 new lines would show in English.
 
+## Movie subtitles and names on the sidebar
+
+Two more files can sit next to your language file, with your language's code in their
+names. Both are optional, and the game reads them from the same folder.
+
+- **`vera20k.<code>.subtitles.txt`** holds the subtitles for the game's movies. Copy the
+  game's own `subtitlemd.txt`, translate the text in it, and save it as UTF-16 with a
+  byte order mark, as the game's file is saved.
+- **`vera20k.<code>.cameos`** holds the names drawn on the sidebar's pictures, which are
+  part of each picture. Draw your names on copies of the game's 60x48 cameos, then
+  make this file with `python -m tools.language_assets cameos`; the top of
+  [its script](../../tools/language_assets.py) explains how. The file keeps only the
+  difference from the game's own name rows, so it holds none of the game's art.
+
+Vietnamese has both. They and the letters in `vera20k.vi.letters` come from the language
+pack credited at the top of [its language file](vera20k.vi.ini).
+
+## Where the languages are after installing
+
+The game has English built in. An installed game keeps every other language in a
+`languages` folder, as the same files that are in this folder, along with the fonts for
+other writing systems:
+
+| System | Folder |
+| --- | --- |
+| Windows | `languages`, next to `vera20k.exe` |
+| macOS | `Contents/Resources/languages` inside `VERA20K.app` |
+| Linux | `usr/share/vera20k/languages` inside the AppImage |
+
+On Windows, delete a language's files from that folder to take it out of the game. The
+next update puts it back. A font can go too, but it isn't tied to one language: without
+it, any text only that font draws shows as empty boxes, even a player's name in an English
+game. The macOS app and the Linux AppImage are sealed when they are made, so for those,
+delete the files from the `languages` folder that
+[`languages.sh`](../../.github/release/languages.sh) makes before packaging.
+
 ## Keep a language up to date
 
 When the English text changes, the person who changes it also updates every language
@@ -102,9 +138,9 @@ is explained at the top of [`mod.rs`](mod.rs).
 
 ## Other text
 
-- **The original game's text**, such as unit names and missions, isn't in these files.
-  It comes from the player's game files. A language file can replace it using the game's
-  own labels, such as `NAME:MTNK=` or `GUI:Ok=`, but no language does that yet. Ask on
-  Discord for the list of labels, and keep any `%s` or `%d` in that text.
+- **The original game's text**, such as unit names and missions, comes from the player's
+  game files. A language file can replace it using the game's own labels, such as
+  `NAME:MTNK=` or `GUI:Ok=`, as the Vietnamese file does. Ask on Discord for the list of
+  labels, and keep any `%s` or `%d` in that text.
 - **The README and project page** are `README.<code>.md` and `docs/<code>/index.md`.
 - **The website** (vera20k.org) isn't in this repository. Ask on Discord.

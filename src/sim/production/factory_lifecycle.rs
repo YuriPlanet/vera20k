@@ -1087,8 +1087,9 @@ pub(in crate::sim) fn construct_active_factory_fixture(
 ///
 /// A retained head with only offline factories enters Suspend(0); a later
 /// callback with an online factory resumes only a system hold (+70 && !+71).
-/// Temporal start/stop has no native509140 callback. The independent
-/// GoOnline/GoOffline owner calls here at452337/452403.
+/// Temporal start/stop has no native509140 callback; Ares adds one (hooks
+/// `0x004521C8`, `0x00452218`: `Simulation::ares_refresh_temporal_factories`).
+/// The independent GoOnline/GoOffline owner calls here at452337/452403.
 pub(in crate::sim) fn update_factory_queue(
     sim: &mut Simulation,
     rules: &RuleSet,

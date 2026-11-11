@@ -195,9 +195,13 @@ pub(super) fn follow_selection_writes(
 }
 
 /// The client's hiding of a Super's ChronoPlacement anim: case 3 hides
-/// another house's at once and stops its sound (`0x006CC485..0x006CC4A0`),
-/// and every SuperClass::AI hides a held anim while the selection is not
-/// the Chrono Warp and stops its sound (`0x006CBCD4..0x006CBCF9`). The byte
+/// another house's at once and hard-stops its sound (`0x006CC485..
+/// 0x006CC4A0`, `VocHandle::StopAndClear @ 0x00405D40`), and every
+/// SuperClass::AI hides a held anim while the selection is not the Chrono
+/// Warp and ends its sound (`0x006CBCD4..0x006CBCF9`, `VocHandle::End @
+/// 0x00405FD0`: the loop stops repeating and plays its decay sample). Case 3
+/// returns before its stop when the launcher is the player (`0x006CC46C`),
+/// so the player's own loop only ever ends the second way. The byte
 /// (AnimClass `+0x19D`) has no other writer for this anim, so a hidden one
 /// stays hidden after its Super lets it go. `hidden` keeps the client's
 /// bytes; anims that are gone leave it.
@@ -215,10 +219,14 @@ pub(super) fn hide_placement_anims(
         if (local && chrono_warp_selected) || !hidden.insert(anim) {
             continue;
         }
-        output.push(GameSoundEvent::AnimationStopped {
-            anim_id: anim,
-            stop_sound_id: None,
-            source: None,
+        output.push(if local {
+            GameSoundEvent::AnimationDetached { anim_id: anim }
+        } else {
+            GameSoundEvent::AnimationStopped {
+                anim_id: anim,
+                stop_sound_id: None,
+                source: None,
+            }
         });
     }
 }
@@ -677,6 +685,22 @@ mod tests {
         hide_placement_anims(&mut hidden, &sim, false, Some("Americans"), &mut output);
         hide_placement_anims(&mut hidden, &sim, false, Some("Americans"), &mut output);
         assert_eq!(hidden, BTreeSet::from([own]));
+        // SuperClass::AI ends the player's own loop (`0x006CBCF9`, End
+        // `0x00405FD0`): ChronosphereSelect plays out its decay sample.
+        let ends = output.drain();
+        assert!(
+            matches!(
+                ends.as_slice(),
+                [GameSoundEvent::AnimationDetached { anim_id }] if *anim_id == own
+            ),
+            "{ends:?}"
+        );
+
+        // Seen from the Russians' client the anim is another house's, and
+        // Launch case 3 hard-stops its loop (`0x006CC4A0`, `0x00405D40`).
+        let mut theirs = BTreeSet::new();
+        hide_placement_anims(&mut theirs, &sim, true, Some("Russians"), &mut output);
+        assert_eq!(theirs, BTreeSet::from([own]));
         let stops = output.drain();
         assert!(
             matches!(
@@ -685,12 +709,6 @@ mod tests {
             ),
             "{stops:?}"
         );
-
-        // Seen from the Russians' client the anim is another house's.
-        let mut theirs = BTreeSet::new();
-        hide_placement_anims(&mut theirs, &sim, true, Some("Russians"), &mut output);
-        assert_eq!(theirs, BTreeSet::from([own]));
-        assert_eq!(output.drain().len(), 1);
 
         // Released by the warp, the anim plays out and leaves.
         click(&mut sim, &rules, americans, "ChronoWarpSpecial", (40, 40));

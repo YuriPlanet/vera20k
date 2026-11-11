@@ -472,6 +472,16 @@ pub(super) fn minimap_entity_visible(
     ) || fog.is_cell_revealed(local_owner, pos.rx(), pos.ry())
 }
 
+/// The live ally table of a world whose graph is `graph` (test helper).
+#[cfg(test)]
+pub(super) fn test_alliances(
+    graph: crate::map::houses::HouseAllianceMap,
+) -> crate::sim::house_diplomacy::HouseAlliances {
+    let mut sim = crate::sim::world::Simulation::new();
+    *sim.house_alliances_mut_for_test() = graph;
+    sim.house_alliances().clone()
+}
+
 /// Default minimap screen rectangle (bottom-left corner with margin).
 pub fn default_minimap_rect(screen_h: f32) -> (f32, f32, f32, f32) {
     let mm_w = MINIMAP_WIDTH as f32;

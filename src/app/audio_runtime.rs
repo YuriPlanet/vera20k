@@ -766,8 +766,8 @@ mod tests {
             master_groups: Default::default(),
             restore_muted: false,
         };
-        let mut frontend = crate::sim::rng::MainRng::new(1);
-        let mut main = crate::app::state::process_main_draws(None, &mut frontend);
+        let frontend = crate::sim::rng::MainRng::new(1);
+        let mut main = crate::app::state::process_main_draws(None, &frontend);
         runtime.service_audio(100, false, Some(&assets), None, &mut main);
         assert!(!runtime.service_clock.admit(100));
         runtime.service_audio(133, false, Some(&assets), None, &mut main);

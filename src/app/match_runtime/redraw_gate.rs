@@ -152,7 +152,6 @@ pub(crate) fn still_frame(
             let detail = presentation.detail.borrow();
             let moving = state.match_state.paused()
                 || !crate::app::input::camera::zoom_settled(state)
-                || presentation.interpolation.readout().sampling
                 || presentation
                     .radar_anim
                     .as_ref()
@@ -199,12 +198,6 @@ pub(crate) fn draw_limits(state: &AppState, status_step: bool) -> DrawLimits {
     let (_, page) = crate::app::input::precedence::presented(state);
     page_limits(
         page,
-        state
-            .match_state
-            .match_presentation
-            .interpolation
-            .readout()
-            .sampling,
         status_step,
         state.platform.hardware_cursor.on_cursor_plane(),
         super::network_match::game_frame_ms(state),
@@ -213,7 +206,6 @@ pub(crate) fn draw_limits(state: &AppState, status_step: bool) -> DrawLimits {
 
 fn page_limits(
     page: ScreenPage,
-    interpolating: bool,
     status_step: bool,
     os_cursor: bool,
     game_frame_ms: Option<f32>,
@@ -221,8 +213,6 @@ fn page_limits(
     let picture = match page {
         // Each pass runs one slice of the load.
         ScreenPage::Loading => Duration::ZERO,
-        // The player asked for pictures between game frames, one per refresh.
-        ScreenPage::Battlefield if interpolating => Duration::ZERO,
         // A status line reveals one step per paint on a 15 ms timer.
         _ if is_menu(page) && !status_step => MENU_INTERVAL,
         _ => PICTURE_INTERVAL,
@@ -725,11 +715,10 @@ mod tests {
 
     #[test]
     fn menus_battles_and_loads_have_their_own_limits() {
-        let limits = |page, interpolating, status_step, os_cursor| {
-            page_limits(page, interpolating, status_step, os_cursor, Some(48.0))
-        };
+        let limits =
+            |page, status_step, os_cursor| page_limits(page, status_step, os_cursor, Some(48.0));
         assert_eq!(
-            limits(ScreenPage::MainMenu, false, false, true),
+            limits(ScreenPage::MainMenu, false, true),
             DrawLimits {
                 picture: MENU_INTERVAL,
                 pointer: Some(MENU_INTERVAL),
@@ -737,30 +726,23 @@ mod tests {
         );
         // A status line's 15 ms steps keep their pace.
         assert_eq!(
-            limits(ScreenPage::Skirmish, false, true, true).picture,
+            limits(ScreenPage::Skirmish, true, true).picture,
             PICTURE_INTERVAL
         );
         assert_eq!(
-            limits(ScreenPage::Battlefield, false, false, true),
+            limits(ScreenPage::Battlefield, false, true),
             DrawLimits {
                 picture: PICTURE_INTERVAL,
                 pointer: Some(Duration::from_millis(64)),
             }
         );
         assert_eq!(
-            limits(ScreenPage::Battlefield, true, false, true).picture,
+            limits(ScreenPage::Loading, false, true).picture,
             Duration::ZERO
         );
+        assert_eq!(limits(ScreenPage::Battlefield, false, false).pointer, None);
         assert_eq!(
-            limits(ScreenPage::Loading, false, false, true).picture,
-            Duration::ZERO
-        );
-        assert_eq!(
-            limits(ScreenPage::Battlefield, false, false, false).pointer,
-            None
-        );
-        assert_eq!(
-            page_limits(ScreenPage::Battlefield, false, false, true, None).pointer,
+            page_limits(ScreenPage::Battlefield, false, true, None).pointer,
             Some(FRAME_BUCKET * 2),
             "unlimited speed has no game frame to wait for"
         );

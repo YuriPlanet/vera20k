@@ -2277,6 +2277,7 @@ pub(crate) fn commit_entities(
                     owner: target.owner(),
                     victim_type: target.type_ref(),
                     own_alert: true,
+                    line: crate::sim::combat::UnderAttackLine::OreMiner,
                 };
                 world.submit_under_attack_warning(event, rules, run.effects());
             }

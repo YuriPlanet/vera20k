@@ -167,7 +167,7 @@ fn loss_threshold_events_poll_recorded_losses_and_create_real_reinforcements() {
             ),
         );
         let teams = TeamAiIniRegistry::from_sources(&IniFile::from_str(""), &map.ini, false);
-        sim.install_team_ai_registry(&teams, &rules).unwrap();
+        sim.install_team_ai_registry(&teams, &rules);
         // The shared simple-map fixture initially has no Team registry.
         // Re-enter the real definition reader with the authored Team inputs.
         sim.initialize_trigger_definitions(&map, &teams, None, None, None);
@@ -1330,14 +1330,17 @@ fn action128_skips_only_passengers_with_a_transporter() {
         None,
         FrameEffects::default()
     ));
-    assert!(add_garrison_occupant(
-        &mut sim,
-        &rules,
-        occupant,
-        bunker,
-        None,
-        FrameEffects::default()
-    ));
+    assert!(
+        add_garrison_occupant(
+            &mut sim,
+            &rules,
+            occupant,
+            bunker,
+            None,
+            FrameEffects::default()
+        )
+        .unwrap()
+    );
     // Full reinforcements load through CargoClass::AddPassenger 0x4733A0,
     // which leaves +0x11C NULL.
     assert!(sim.add_cargo_passenger_chain(
@@ -1571,7 +1574,7 @@ fn retail_sov01_script_context() -> Option<(
             10,
         ));
     sim.session.set_current_house_for_test(Some(owner));
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     sim.initialize_trigger_definitions(&map, &registry, None, None, None);
     Some((sim, rules, overlay, map))
 }

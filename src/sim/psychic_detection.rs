@@ -23,12 +23,13 @@ impl Simulation {
         rules: &'a RuleSet,
     ) -> impl Iterator<Item = (DriveCoord, i32)> + 'a {
         let terrain = self.resolved_terrain.as_ref();
-        self.substrate.entities.values().filter_map(move |entity| {
-            if entity.owner() != viewer
-                || entity.category() != crate::map::entities::EntityCategory::Structure
-                || !entity.lifecycle.object_alive()
-                || entity.lifecycle.in_limbo()
-            {
+        // The viewer's own buildings, in the store's order: the draw asks
+        // this every frame, so no other object is read.
+        let entities = &self.substrate.entities;
+        let owned = entities.owned_ids(viewer, crate::map::entities::EntityCategory::Structure);
+        owned.iter().filter_map(move |&id| {
+            let entity = entities.get(id)?;
+            if !entity.lifecycle.object_alive() || entity.lifecycle.in_limbo() {
                 return None;
             }
             let radius = self

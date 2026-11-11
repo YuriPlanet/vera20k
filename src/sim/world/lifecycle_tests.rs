@@ -160,7 +160,7 @@ fn constructor_complete_foot_destructors_match_native_team_gate_and_rng() {
             "[TeamTypes]\n0=TT\n[TT]\nHouse=Americans\nScript=S\nTaskForce=F\nWaypoint=E\nMax=-1\n[ScriptTypes]\n0=S\n[S]\n0=3,4\n[TaskForces]\n0=F\n[F]\n0=1,{typ}\n"
         ));
         let registry = TeamAiIniRegistry::from_sources(&definitions, &IniFile::from_str(""), true);
-        sim.install_team_ai_registry(&registry, &rules).unwrap();
+        sim.install_team_ai_registry(&registry, &rules);
         let team_type = sim.interner.get("TT").unwrap();
         let team = sim
             .with_object_placement_scope(|sim| sim.create_team(team_type, Some(owner), &rules))
@@ -1443,9 +1443,10 @@ fn gsi_04_12_common_raw_occupation_structural_deck_unit_tracks_live_collapse_fla
 
     let _ = sim.object_conceal(2);
 
+    // Ares 3.0 1004C3E0 (hook 0x00744216) clears the recorded ground too.
     assert_eq!(
         sim.substrate.raw_cell_occupation.ground_bits(3, 4),
-        0x20,
+        if cfg!(feature = "ares") { 0 } else { 0x20 },
         "height-only clear still targets deck after the collapsed mark used ground"
     );
     assert_eq!(sim.substrate.raw_cell_occupation.deck_bits(3, 4), 0);
@@ -1509,9 +1510,11 @@ fn gsi_04_12_common_raw_occupation_high_nonstructural_unit_keeps_native_stale_gr
 
     let _ = sim.object_conceal(1);
 
+    // Ares 3.0 UnitClass_UnmarkOccupationBits 1004C3E0 (hook 0x00744216)
+    // also clears the ground plane UnitClass_MarkOccupationBits recorded.
     assert_eq!(
         sim.substrate.raw_cell_occupation.ground_bits(3, 4),
-        0x20,
+        if cfg!(feature = "ares") { 0 } else { 0x20 },
         "height-only clear targets deck even though nonstructural mark used ground"
     );
     assert_eq!(sim.substrate.raw_cell_occupation.deck_bits(3, 4), 0);
@@ -2782,6 +2785,31 @@ fn open_topped_direct_registration_keeps_hidden_passenger_live() {
 
     assert!(sim.register_open_topped_passenger(1));
     assert_eq!(sim.live_object_order_snapshot(), vec![2, 1]);
+}
+
+/// A rider killed inside an open-topped transport is already in limbo, so
+/// UnInit's Limbo returns at its entry guard and leaves it in Logic. Its
+/// destructor takes it out (`ObjectClass::~ObjectClass`, `0x005F3D65..0x005F3D75`);
+/// a slot left behind stops the next multiplayer frame's checksum.
+#[test]
+fn destructor_takes_a_dead_open_topped_rider_out_of_logic() {
+    let mut sim = Simulation::new();
+    insert_entity(&mut sim, 1, EntityCategory::Infantry);
+    insert_entity(&mut sim, 2, EntityCategory::Unit);
+    let _ = sim.reveal(1);
+    let _ = sim.reveal(2);
+    assert_eq!(sim.techno_limbo(1), super::ConcealOutcome::Concealed);
+    sim.substrate.entities.get_mut(1).unwrap().passenger_role =
+        PassengerRole::inside_for_test(2, true);
+    assert!(sim.register_open_topped_passenger(1));
+
+    sim.uninit(1);
+    assert_eq!(sim.live_object_order_snapshot(), vec![2, 1]);
+    sim.process_pending_delete();
+
+    assert!(!sim.substrate.entities.contains(1));
+    assert_eq!(sim.live_object_order_snapshot(), vec![2]);
+    assert!(sim.compute_retail_multiplayer_checksum().is_ok());
 }
 
 #[test]
@@ -8330,8 +8358,8 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
         for rx in 0..5i32 {
             for _ in 0..2 {
                 let type_index = expected_rng.next_range_u32_inclusive(0, 2) as usize;
-                let jitter_x = expected_rng.next_range_u32_inclusive(0, 16) as i32 - 8;
-                let jitter_y = expected_rng.next_range_u32_inclusive(0, 24) as i32 - 12;
+                let jitter_y = expected_rng.next_range_u32_inclusive(0, 16) as i32 - 8;
+                let jitter_x = expected_rng.next_range_u32_inclusive(0, 24) as i32 - 12;
                 let delay = expected_rng.next_range_u32_inclusive(0, 2) as u16;
                 let rate = expected_rng.next_range_u32_inclusive(1, 3) as u16;
                 expected_spawns.push((

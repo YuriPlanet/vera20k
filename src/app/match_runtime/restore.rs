@@ -26,7 +26,7 @@ pub(crate) fn commit_prepared_load(
     // reconstructs each voice handle/latch. Do this only after preparation
     // succeeded; the new FootLoad state starts silent until its next AI visit.
     // Ordinary Vox.Save7533B0 emits tags only, no nodes or selected voice;
-    // incoming announcements start empty. Saved static Voc is a separate path.
+    // incoming announcements start empty. Saved static Voc returns below.
     if let Some(sfx) = state.audio.sfx_player.as_mut() {
         sfx.stop_all();
     }
@@ -150,6 +150,15 @@ pub(crate) fn commit_prepared_load(
     let mut power = committed.power_bar_anim;
     power.reanchor_after_load(power_ms);
     state.match_state.match_presentation.power_bar_anim = power;
+
+    // VocClass::LoadStaticSounds (`0x00751710`) restarts the saved loopable
+    // coordinate sounds after its clear, which `stop_all` above performed.
+    if let (Some(sfx), Some(catalog)) = (
+        state.audio.sfx_player.as_mut(),
+        state.process_assets.audio_catalog(),
+    ) {
+        sfx.restore_static_sounds(committed.map.static_sounds(), catalog.sounds());
+    }
 
     crate::app::audio_runtime::bind_match_theme_context(state);
     let music_now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();

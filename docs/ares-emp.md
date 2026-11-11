@@ -1,14 +1,15 @@
-# Ares ordinary ground and powered-tower EMP
+# Ares ground, airborne and powered-building EMP
 
 This optional chain requires the compile-time `ares` feature. Default builds do
-not read the extension keys or run its Bullet/AI producers. It covers ordinary
-human-controlled Drive/Walk, AI Drive and every Fly/Jumpjet victim (Aircraft
-included), in or out of a Team, with Spawn, Slave or Capture managers, a held
-Magnetron victim or a Temporal warp, and the EMP.Threshold deaths; harvesters,
-falling objects and mind-controlled victims stay outside it. It also
-admits an independent ordinary powered defensive building without linked Prism
-support or factory/provider/occupant/undeploy dependencies. Other victims are not
-treated as generic offline objects. This is partial EMP support.
+not read the extension keys or run its Bullet/AI producers. It covers every Foot
+victim but a Tunnel mover: Drive, Walk, Hover, Ship, Teleport, Fly, Jumpjet and
+Rocket, human or AI, in or out of a Team, with Spawn, Slave or Capture managers,
+a held Magnetron victim or a Temporal warp, harvesters, falling and
+mind-controlled victims, and the EMP.Threshold deaths. It also admits an
+independent ordinary powered building, a Radar or SpySat provider included,
+without linked Prism support or factory/occupant/undeploy dependencies, and
+announces a hit on the player's miners and base (announceAttack). Other victims
+are not treated as generic offline objects. This is partial EMP support.
 
 ## Independent powered building
 
@@ -87,7 +88,7 @@ Airburst child fans and AttachEffect remain separate whole-weapon residuals.
 Parent `Airburst=yes` still enters the existing detonation receiver once, and
 EMP runs before ordinary damage and the later native Airburst tail; absence of
 a child-fan consumer is not a reason to suppress the parent's EMP. No complete
-Raccoon, factory, Radar/SpySat, Gap, superweapon, PowersUnit, LaserFence,
+Raccoon, factory, Gap, superweapon, PowersUnit, LaserFence,
 Tesla charging, occupied building, undeploy or linked Prism behavior is claimed.
 Positive-output buildings (including explicit ImmuneToEMP=no providers and
 upgrade-added output) are not covered by the negative-power tower comparisons.
@@ -121,6 +122,55 @@ regressions `ares_emp_flying_aircraft_crash_and_airborne_jumpjet_threshold`
 and `ares_emp_spawner_loses_flying_rockets_and_holds_timers_until_expiry`
 cover both paths. The ground recovery of a landed AI Aircraft or Jumpjet is
 the same queued EMPAIRecoverMission/Hunt as AI Drive.
+
+## Every mover, miners, falling and controlled victims
+
+Delivery10062320 tests no mover, so neither does the Rust admission, except a
+Tunnel mover, whose dig and underground states are not traced under Deactivate.
+Each admitted mover reaches only shared owners: Deactivate's Power_Off (Hover's
+override516BF0 spins it down and settles it), the Ares deactivated-Unit stop of
+TechnoClass_Update1004B320, Teleport's deactivated MoveTo refusal1005D3E0, and
+for a flying Aircraft, a V3 or Dreadnought rocket included, the crash of
+enableEMPEffect10062B40. A falling object keeps falling, since ObjectAI5F3F11
+tests no deactivation, and lands offline; its canopy spares it from the
+Threshold in-air arm. A mind-controlled victim keeps its controller; its owner
+is the controller's House, so a computer controller's victim recovers with
+Hunt.
+
+DisableEMPEffect100627F0's Foot tail (100628B2..10062972) is one owner,
+`recover_ares_emp_foot_mission`, which PoweredBy's DisableEMPEffect2 10062650
+calls with Hunt: a driverless Foot queues and starts Harmless; a Unit
+Harvester (Type+E0E) or ResourceGatherer (+5EC), human or computer, queues and
+starts its saved TechnoExt+14 LastMission, Enter for a saved Guard
+(100628DF..10062911); any other Foot of a House no human controls queues the
+recovery mission unstarted. The War Miner, the Chrono Miner and the Slave Miner
+take the miner branch; before this the Slave Miner took the computer Hunt.
+
+A Radar or SpySat provider follows the independent-building path. Both effect
+bodies dirty RecheckRadar (House+5779) for a Radar (+16A4) or SpySat (+16A5)
+type, enable at10062B73..10062B91 and disable at10062840..1006285E whatever the
+power, and the House radar and SpySat scans (Ares10024550/10024620, hooks
+508EBC/508F91) skip an EMPed provider. A Radar type is prone without a power
+drain (IsTypeEMPProne inlined in10062D90).
+
+## announceAttack
+
+enableEMPEffect10062B40 ends with announceAttack10062150. Native first tests
+Owner == PlayerPtr (10062162); Rust tests whether the owner is a human House,
+because the House Tags NotifyUnderAttack raises are state every peer shares, and
+the app plays the radar event and EVA for the local owner alone. With several
+humans native raises those Tags on the victim's client only, which this
+deliberately does not reproduce. A gatherer building (Type+5EC) and a Unit
+Harvester or gatherer get CreateRadarEvent(4) at GetMapCoords41BEA0 and
+`EVA_OreMinerUnderAttack` (100621F9..1006222C), with no siren, ally line or
+Tags. Another building that is neither Insignificant (+232) nor BaseNormal=no
+(+154F) gets NotifyUnderAttack4F93E0 for PlayerPtr (100621B3..100621CB): the
+base cue, the siren and House Tag event 6, but no ally line, since only the
+owner's client calls it; a 1x1 undeployer returns at once (4F93EB..4F93FB).
+The Malicious hook10053980 reads the global only ReceiveDamage sets
+(100536A0), so the own line plays. A flying Aircraft that crashes returns
+before the announcement. `UnderAttackLine` records which call raised a
+warning; the existing damage and Temporal producers keep theirs.
 
 ## Input and state ownership
 
@@ -334,12 +384,23 @@ can draw for authored RandomRate/bounce settings. Counter writes
 are delivery/cap and one decrement per actual AI visit; Deactivate/Reactivate keep
 their existing mission/destination timer writes. Anim expiry writes loop_remaining=0.
 
-Still open: the AI Walk path, harvesters (DisableEMPEffect's saved-mission
-recovery), mind-controlled and falling victims, Hover/Ship/Rocket movers, other
-building mechanisms and announceAttack10062150's radar event and EVA warning for
-the player's harvesters and base buildings. Their trigger is an EMP hit on
-those victims; the current producer omits the EMP effect there, which can change
-combat and scripted behavior whenever such victims are used. Native TypeImmune scanner indices18/19 have synthetic getter evidence,
+Regressions through real fire on retail Hills rules, with an EMP gun layered
+in through the map, are in
+[`emp_victim_tests.rs`](../src/sim/game_entity/emp_victim_tests.rs): a walking
+computer infantryman, the three miners, a Yuri-held tank, a falling
+paratrooper, a Hover APC and a Sea Scorpion, a V3 rocket tilting on its
+launcher, a Spy Satellite Uplink, and the player's miner and base warnings.
+
+Still open: a Tunnel mover, and the factory, Gap, superweapon, PowersUnit,
+LaserFence, Tesla charging, occupied, undeploy and linked Prism buildings, which
+the delivery reports as unsupported and leaves unaffected. Their trigger is an
+EMP hit on such a victim in a mod; the EMP effect is missing there. A landed
+Aircraft's Deactivate reaches Fly's Power_Off override4CFD20, whose
+Random(20, 30) spin and stop are not ported (`locomotor_power_off`); the base
+flag write runs instead, without those two scenario draws. Delivery's bunker
+test (a victim in a Building's bunker is spared unless the Warhead
+PenetratesBunker, 10062357..10062376) is not ported; a tank in a Tank Bunker takes the
+EMP. Native TypeImmune scanner indices18/19 have synthetic getter evidence,
 but their production configuration meaning is not established; the shared 18-slot
 weapon owner is not expanded. The native lazy default-immunity cache is represented
 by an equivalent immutable Type/category decision on this chain, not persisted as

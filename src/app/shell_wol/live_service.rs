@@ -1259,6 +1259,7 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
         if service.spawned {
             poll_spawned_exit(state, &mut service);
         }
+        show_problem_line(state);
     }
     put_service(state, service);
     Some(Instant::now() + POLL_INTERVAL)
@@ -1273,6 +1274,48 @@ fn notice(state: &mut AppState, text: &str) {
         },
     );
     state.platform.window.request_redraw();
+}
+
+/// The chat a returning player lands in: the kept room once the lobby gives
+/// it back, the chat lobby or the Quick Match page. Anywhere else, such as a
+/// sign-in after a lost connection, the line keeps waiting.
+fn problem_chat_open(
+    route: crate::app::shell_route::ShellRoute,
+    setup_open: bool,
+    quick_match_open: bool,
+    lobby_open: bool,
+    awaiting_room: bool,
+) -> bool {
+    match route {
+        crate::app::shell_route::ShellRoute::NetworkSetup => setup_open,
+        route if route.wol() => quick_match_open,
+        route => route.wol_lobby() && lobby_open && !awaiting_room,
+    }
+}
+
+fn show_problem_line(state: &mut AppState) {
+    let open = problem_chat_open(
+        state.frontend.shell_route,
+        state.frontend.multiplayer_setup.is_some(),
+        super::quick_match::page_open(state),
+        state
+            .frontend
+            .wol
+            .as_ref()
+            .is_some_and(|visit| visit.lobby().is_some()),
+        super::lobby::awaiting_room(state),
+    );
+    if !open {
+        return;
+    }
+    if let Some(text) = state
+        .frontend
+        .wol
+        .as_mut()
+        .and_then(|visit| visit.take_problem_line())
+    {
+        notice(state, &text);
+    }
 }
 
 fn fail_start(state: &mut AppState, text: &str) {
@@ -1349,6 +1392,10 @@ fn match_report(state: &AppState) -> MatchReport {
 }
 
 impl super::WolVisit {
+    fn take_problem_line(&mut self) -> Option<String> {
+        self.problem_line.take()
+    }
+
     fn match_returned(&mut self, report: MatchReport, now: Instant) {
         if self.provider != WolProvider::Online {
             return;
@@ -2225,9 +2272,10 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             service.player_id = player_id;
             state.frontend.wol_account.nickname = nickname;
             state.frontend.wol_account.password.clear();
+            // The operator's welcome is the only one: the game has none of its own.
             let motd = motd
                 .filter(|motd| !motd.trim().is_empty())
-                .unwrap_or_else(|| super::service::vera_motd(state));
+                .unwrap_or_default();
             service_event(state, WolServiceEvent::Login(Ok(WolLoginAccepted { motd })));
         }
         http::Response::LoginFailed { attempt, code } if attempt == service.auth_attempt => {
@@ -3465,6 +3513,47 @@ fn poll_relay(state: &mut AppState, service: &mut LiveService) -> Result<()> {
 mod completion_tests {
     use super::*;
     use crate::app::shell_wol::{WolHighScoreRecord, WolLadderRecord};
+
+    /// The reason must not land in a transcript the player is about to lose.
+    #[test]
+    fn a_failed_matchs_reason_waits_for_the_chat_the_player_lands_in() {
+        use crate::app::shell_route::ShellRoute;
+        assert!(problem_chat_open(
+            ShellRoute::WolLobby,
+            false,
+            false,
+            true,
+            false
+        ));
+        assert!(!problem_chat_open(
+            ShellRoute::WolLobby,
+            false,
+            false,
+            true,
+            true
+        ));
+        assert!(problem_chat_open(
+            ShellRoute::NetworkSetup,
+            true,
+            false,
+            true,
+            true
+        ));
+        assert!(problem_chat_open(
+            ShellRoute::Wol,
+            false,
+            true,
+            false,
+            false
+        ));
+        assert!(!problem_chat_open(
+            ShellRoute::Wol,
+            false,
+            false,
+            false,
+            false
+        ));
+    }
 
     #[test]
     fn relay_grant_requires_match_player_and_encryption_key_agreement() {

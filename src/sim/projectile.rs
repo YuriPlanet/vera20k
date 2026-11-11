@@ -3207,17 +3207,7 @@ pub fn projectile_shp_frame(
     projectile_type: &crate::rules::projectile_type::ProjectileType,
     frame: u32,
 ) -> u16 {
-    projectile_shp_frame_with_velocity(projectile, projectile_type, projectile.velocity, frame)
-}
-
-/// Read-only directional frame selection, also used with client-sampled
-/// velocity. Animation counters stay authoritative; only direction varies.
-pub fn projectile_shp_frame_with_velocity(
-    projectile: &Projectile,
-    projectile_type: &crate::rules::projectile_type::ProjectileType,
-    velocity: ProjectileVelocity,
-    frame: u32,
-) -> u16 {
+    let velocity = projectile.velocity;
     if projectile.visual.anim_low != 0 || projectile.visual.anim_high != 0 {
         return u16::from(projectile.visual.runtime_frame);
     }

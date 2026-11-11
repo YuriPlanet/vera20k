@@ -362,6 +362,12 @@ impl Simulation {
         // 0x0073A31F..0x0073A5EA, before the Ready/Commence below: a tethered
         // unit on Enter arriving north-adjacent to its dock sends DOCK_NOW.
         if reason == PerCellReason::Arrival {
+            // Ares 3.0 1004C530 (hook 0x739F21): a small visceroid arriving
+            // on the one it seeks merges into it and ends here.
+            #[cfg(feature = "ares")]
+            if self.ares_visceroid_merge(id, rules, registry, effects) {
+                return;
+            }
             // 0x00739F21..0x00739F59 come first: a `PoweredUnit=` type whose
             // house has no powered center goes offline off a building.
             self.powered_unit_arrival(id, rules, effects);
@@ -999,21 +1005,11 @@ impl Simulation {
     ///   `UndeploysInto=` only on the 4x4 Construction Yards and the 2x2
     ///   YAREFN, so the arm falls through to the building receiver. With such
     ///   a type, an infantryman in its cell would take it over (tag event,
-    ///   Detach_All, ChangeOwner `0x00519A27`, Techno `+0x338`, GotHijacked)
+    ///   Detach_All, ChangeOwner `0x00519A27` with announce=1, so
+    ///   `announce_building_capture`, Techno `+0x338`, GotHijacked)
     ///   and one stopped short would re-issue Set_Destination(NavCom)
     ///   (`0x00519AFA`), with early returns that skip the reveal
     ///   (`0x0051A8D7`).
-    /// - the water and rock death (`0x0051A94F..0x0051A9E8`) is not ported:
-    ///   a stationary infantryman whose type is not `C4=` and who has no C4
-    ///   ability, off a bridge on Water or Rock, takes ReceiveDamage of his
-    ///   current Health (`+0x6C`) with `C4Warhead=`, ignoring defenses, and
-    ///   the visit ends before the Foot body. No skirmish route reaches it
-    ///   with another outcome: a Walk or Teleport arrival is still moving;
-    ///   Drop_Payload drops a paratrooper only where his Can_Enter_Cell
-    ///   answers 0 (`0x00415D7D`); unload and Tube exits use passable cells;
-    ///   and a DropAsBomb faller from a lost deck dies of the landing's own
-    ///   `C4Warhead=` hit (`0x005F402B`) just after this call. Effect: that
-    ///   faller runs the Foot body before he dies.
     fn infantry_per_cell_process(
         &mut self,
         id: u64,
@@ -1159,6 +1155,11 @@ impl Simulation {
             if reason == PerCellReason::Arrival && self.per_cell_owner_alive(id) {
                 self.refresh_object_sight(id, rules, 0, effects);
                 self.refresh_object_sight_border(id, UninitContext::new(rules, registry));
+            }
+            if reason == PerCellReason::Arrival
+                && self.infantry_arrival_drowns(id, rules, registry, effects)
+            {
+                return Ok(bridge_state_changed);
             }
             if self.per_cell_owner_alive(id) {
                 self.foot_per_cell_process(id, reason, rules, registry, effects);
@@ -1640,8 +1641,9 @@ impl Simulation {
     /// (vt+0x480(0, 1)) and scatters from the building's coordinate
     /// (vt+0x174(coord, 1, 1)); admitted, the building's Tag hears event 1
     /// ("entered by", `0x00519710..0x00519725`) with him as the actor, and
-    /// he goes in ([`crate::sim::passenger::add_garrison_occupant`],
-    /// `0x0051972D`) with no recheck. Either way the call returns before the
+    /// he goes in, or an assaulter clears it
+    /// ([`crate::sim::passenger::add_garrison_occupant`], `0x0051972D`), with
+    /// no recheck. Either way the call returns before the
     /// Foot body. Answers whether the arm ran.
     fn infantry_per_cell_occupy(
         &mut self,
@@ -1687,11 +1689,79 @@ impl Simulation {
             self.dispatch_object_tag_event(building, 1, Some(id), None, context);
             crate::sim::passenger::add_garrison_occupant(
                 self, rules, id, building, registry, effects,
-            );
+            )?;
             return Ok(true);
         }
         self.turn_away_from_building(id, building, rules, registry, effects)?;
         Ok(true)
+    }
+
+    /// Infantry Per_Cell_Process's last check (`0x0051A92A..0x0051A9E8`): a
+    /// stationary infantryman (Is_Moving) who holds no C4, on Water or Rock
+    /// (`CellClass+0xEC`) and not on a bridge over it, takes his current
+    /// Health as `C4Warhead=` damage, ignoring defenses, and the visit ends
+    /// before the Foot body. A Walk or Teleport arrival is still moving; the
+    /// routes here are a DropAsBomb faller from a lost deck (`0x005F402B`)
+    /// and a Rocketeer on an Enter mission touching down on Water or Rock
+    /// (`0x0054C8F0`). No draw or timer of its own.
+    fn infantry_arrival_drowns(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        use crate::map::resolved_terrain::NativeCellQuery;
+        use crate::rules::terrain_rules::LandType;
+
+        // A dead owner's ReceiveDamage has nothing left to do.
+        if !self.per_cell_owner_alive(id) {
+            return false;
+        }
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        if super::motion_query::is_moving(entity) == Some(true)
+            || self
+                .object_type(entity.type_ref(), rules)
+                .is_none_or(|object| {
+                    crate::sim::combat::veterancy::holds_c4(entity.veterancy.rank_kind(), object)
+                })
+        {
+            return false;
+        }
+        let Some(terrain) = self.resolved_terrain.as_ref() else {
+            return false;
+        };
+        let cells = NativeCellQuery::canonical(terrain);
+        let at = position_world_coord(&entity.position);
+        let cell = cells.lookup_world(at.x, at.y);
+        let land = cells.land_type(cell);
+        if (land != LandType::Water as i32 && land != LandType::Rock as i32)
+            || (entity.on_bridge() && cells.flags(cell) & 0x100 != 0)
+        {
+            return false;
+        }
+        let damage = entity.health.current();
+        let warhead = self.interner.intern(&rules.bridge_warheads.c4_name);
+        self.commit_direct_damage_receiver(
+            rules,
+            registry,
+            crate::sim::combat::EntityDamageEvent::direct_receiver(
+                id,
+                damage,
+                0,
+                crate::sim::combat::RAD_NO_ATTACKER,
+                None,
+                warhead,
+                crate::sim::combat::ReceiverCallFlags {
+                    ignore_defenses: true,
+                    arg6: false,
+                },
+            ),
+            effects,
+        );
+        true
     }
 
     fn per_cell_owner_alive(&self, id: u64) -> bool {
@@ -1715,8 +1785,9 @@ impl Simulation {
     /// Ordinary Fly ingress remains unproven.
     /// Agent Infantry53 then54 follow1/59 at4D8A14..4D8A6B. Map zone24
     /// follows line25/26 at4D8B66..4D8CA5 through the
-    /// same Tag funnel. RESIDUAL: planning-waypoint upkeep
-    /// (`0x004D8DFF..0x004D8F1D`) still needs its own movement-owner audit.
+    /// same Tag funnel. Planning-waypoint upkeep (`0x004D8DFF..0x004D8F1D`) is
+    /// skipped while Foot+0x520 is -1, which a fresh YR game never changes
+    /// (`world::planning`).
     ///
     /// The off-playfield exit at 0x004D8D67..0x004D8DA4 asks the class IsLeavingMap
     /// after Map578460(cell,1), then UnInit and returns before the tail.

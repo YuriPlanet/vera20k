@@ -141,7 +141,11 @@ journal is not encrypted: it holds plain commands and relies on file permissions
 and world in the match; the client renews its ticket and reads missed frames when
 connectivity returns. The UI shows Reconnecting or Catching up while healthy
 clients continue. After ten minutes of silence the relay removes the player
-through the same stream. Like a native lost connection, a removal for silence
+through the same stream. A game that has had no answer from the relay for that
+long, and 15 seconds more, releases its relay route and sends it nothing more:
+its place is gone, and a game whose ticket lapsed gets no answer that says so.
+A match of two or more players then ends with the game-server connection
+message; a one-human match plays on without the relay. Like a native lost connection, a removal for silence
 destroys the player's House and shows "connection lost"; a player who quits still
 leaves through EXIT. While Reconnecting, the relay cannot sequence that EXIT, so
 a confirmed Abort Mission returns to the shell once the relay has been silent for
@@ -240,6 +244,10 @@ modern online ordering above is an intentional adaptation.
 - Ordinary waits use the private response maximum from `542450`; primary-global
   acknowledgement history is excluded. The native optional extra channel at
   manager `+50` remains an unimplemented dependency.
+- The LAN application message's name field holds 19 bytes and a terminator. An
+  online name may be 24 characters, so VERA writes the first 19 bytes of a longer
+  name and receivers match a sender by that same prefix (together with its
+  endpoint, as before). LAN names are at most 19 and travel unchanged.
 - Setup Back retains transport history within a lobby visit. A fresh post-match
   visit resets queues, sequence history, observations and lobby timing while
   retaining the portable socket bindings.

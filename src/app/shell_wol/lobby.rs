@@ -1020,16 +1020,16 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
     ));
     let _ = App::ensure_skirmish_shell_chrome(state);
     open_art(state);
-    // The MOTD [0xB73AE0]: one line per strtok("\n") token, a blank row,
-    // and the global is cleared.
+    // The MOTD [0xB73AE0], and the global is cleared.
     if let Some(motd) = motd.filter(|motd| !motd.is_empty()) {
-        for line in crate::rules::ini_value::strtok(&motd, &['\n']) {
-            message_line(state, line.to_owned());
+        let modern = state
+            .frontend
+            .wol
+            .as_ref()
+            .is_some_and(|visit| visit.modern_ui());
+        for row in motd_rows(&motd, modern) {
+            message_line(state, row);
         }
-        if modern_lobby(state) {
-            message_line(state, crate::i18n::tr(JOINED_LOBBY_LINE));
-        }
-        message_line(state, "\n".to_owned());
     }
     show_wait(state, "GUI:LoginComplete");
     // 0x00787BC8: the buddy mirror restarts (API+0xDC, 0x0079CE70 outside
@@ -1043,6 +1043,19 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
         list_lobbies(state);
     }
     state.platform.window.request_redraw();
+}
+
+/// The MOTD's transcript rows (runner `0x00787770`, `[0xB73AE0]`): one per
+/// `strtok("\n")` token, then a blank row. VERA20K Online's chat lobby
+/// leaves the blank row out; the native shell UI keeps it.
+fn motd_rows(motd: &str, modern: bool) -> Vec<String> {
+    let mut rows: Vec<String> = crate::rules::ini_value::strtok(motd, &['\n'])
+        .map(str::to_owned)
+        .collect();
+    if !modern {
+        rows.push("\n".to_owned());
+    }
+    rows
 }
 
 /// The runner's first list (`ListChannels(0, 0)`) behind `TXT_REQ_CHANLIST`.
@@ -1076,7 +1089,7 @@ pub(super) fn room_refused(state: &mut AppState) {
     }
 }
 
-fn awaiting_room(state: &AppState) -> bool {
+pub(super) fn awaiting_room(state: &AppState) -> bool {
     lobby(state).is_some_and(|lobby| matches!(lobby.step, Step::ReturningToRoom))
 }
 
@@ -1684,11 +1697,6 @@ fn left_channel(state: &mut AppState) {
     );
     message_line(state, text);
 }
-
-/// The label of VERA's line after the MOTD, once per sign-in, in its chat
-/// lobby, which has no `TXT_JOINED_S` line (VERA's own addition; gamemd's
-/// reads "You joined channel %s").
-const JOINED_LOBBY_LINE: &str = "VERA:JoinedLobby";
 
 /// The Room name VERA's online Create Game starts with; OK with it unchanged
 /// creates gamemd's own name.
@@ -2781,8 +2789,8 @@ fn joined(state: &mut AppState, result: Result<WolJoined, u32>) {
         return;
     }
     // A chat lobby: its number (0x7A5EFD, any type-0 name), the
-    // TXT_JOINED_S line (not in the modern lobby, which prints its own
-    // line once with the MOTD), the controls back with Join as the selected
+    // TXT_JOINED_S line (not in the modern lobby, whose operator writes
+    // its sign-in text), the controls back with Join as the selected
     // game admits for either role.
     state.frontend.wol_lobby_globals.lobby_number = joined.channel.joined_lobby_number();
     if quick_match_runner(state) {
@@ -4466,6 +4474,19 @@ mod tests {
         assert_eq!(republished_limit(&session, false), Some(4));
         assert_eq!(republished_limit(&session, true), Some(5));
         assert_eq!(slot_ex_info(&session), (0, 0, 1));
+    }
+
+    #[test]
+    fn the_modern_lobby_prints_no_blank_row_after_the_welcome() {
+        let welcome = "Welcome, General Commander.\nHave fun.";
+        assert_eq!(
+            motd_rows(welcome, true),
+            ["Welcome, General Commander.", "Have fun."]
+        );
+        assert_eq!(
+            motd_rows(welcome, false),
+            ["Welcome, General Commander.", "Have fun.", "\n"]
+        );
     }
 
     #[test]

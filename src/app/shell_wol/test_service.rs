@@ -376,13 +376,8 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
             service_event(state, WolServiceEvent::NetStatus(SERVER_STATUS_READY));
             WolServiceEvent::ServerList(Ok(servers()))
         }
-        // VERA's own message of the day, then this service's.
         WolServiceRequest::Connect { .. } => WolServiceEvent::Login(Ok(WolLoginAccepted {
-            motd: format!(
-                "{}\n{}",
-                super::service::vera_motd(state),
-                crate::i18n::tr(MOTD)
-            ),
+            motd: crate::i18n::tr(MOTD),
         })),
         WolServiceRequest::ListChannels { kind, .. } => WolServiceEvent::Channels {
             kind,

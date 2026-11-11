@@ -55,6 +55,10 @@ mod airborne_cell_tag_tests;
 #[path = "periodic_cell_object_turn_tests.rs"]
 mod periodic_cell_object_turn_tests;
 
+#[cfg(test)]
+#[path = "object_turn_lookup_tests.rs"]
+mod object_turn_lookup_tests;
+
 #[derive(Default)]
 pub(super) struct LiveObjectPassOutcome {
     pub destroyed_structure: bool,
@@ -247,6 +251,7 @@ impl Simulation {
         rules: &RuleSet,
         ctx: techno_ai::ObjectAiCtx<'_>,
     ) -> Result<LocomotorProcess, super::FrameAdvanceError> {
+        let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::MOVEMENT);
         let overlay_registry = ctx.overlay_registry;
         use crate::rules::locomotor_type::LocomotorKind;
         let admitted = self.substrate.entities.get(stable_id).and_then(|entity| {
@@ -615,7 +620,7 @@ impl Simulation {
         match sim.process_track_turn(stable_id, rules, overlay_registry, effects) {
             movement::track_turn::TrackProcessEntry::Movement => {}
             movement::track_turn::TrackProcessEntry::Tail => {
-                sim.drive_process_rest_tail(stable_id, rules, overlay_registry, effects);
+                sim.track_process_rest_tail(stable_id, rules, overlay_registry, effects);
                 return Ok(outcome);
             }
             movement::track_turn::TrackProcessEntry::Return => return Ok(outcome),
@@ -768,10 +773,80 @@ impl Simulation {
                 pending_movement,
             ));
         if process_tail {
-            sim.drive_process_rest_tail(stable_id, rules, overlay_registry, effects);
+            sim.track_process_rest_tail(stable_id, rules, overlay_registry, effects);
         }
         Ok(outcome)
     }
+
+    /// FootClass::AI's sound steps after the move sound, in native order.
+    fn foot_edge_sounds(
+        &mut self,
+        stable_id: u64,
+        rules: &RuleSet,
+        effects: super::FrameEffects<'_>,
+    ) {
+        let sim = self;
+        // Foot AI 4DAB3C..4DABB1: a DropAsBomb object starting to fall plays
+        // its type's VoiceFalling at its Location, before the sinking/crash
+        // edges and looping-sound position update (PlayAt7509E0, ungated).
+        if let Some(entity) = sim.substrate.entities.get_mut(stable_id)
+            && entity.observe_falling_edge()
+            && let Some(voice) = sim
+                .interner
+                .object_type(entity.type_ref(), rules)
+                .and_then(|object| object.voice_falling.clone())
+        {
+            let event =
+                super::SimSoundEvent::voc_at_location(voice, entity, sim.resolved_terrain.as_ref());
+            sim.sound_events.emit(event);
+        }
+        Self::sinking_edge_sounds(
+            &sim.interner,
+            &mut sim.substrate,
+            &mut sim.sound_events,
+            stable_id,
+            rules,
+        );
+        Self::crash_edge_sounds(
+            &sim.interner,
+            &mut sim.substrate,
+            &mut sim.sound_events,
+            &sim.session,
+            &sim.houses,
+            stable_id,
+            rules,
+        );
+        // Foot4DADF0 ->750D40 uses the coordinate BEFORE those callbacks
+        // and Unit's subsequent hull lowering. Finish PlayAt/Release first.
+        if let Some(entity) = sim.substrate.entities.get(stable_id) {
+            effects.update_looping_sound(sim, rules, stable_id, Self::movement_sound_world(entity));
+        }
+    }
+
+    /// FootClass::AI's pending entry, then the eater's ParasiteClass AI.
+    fn foot_pending_entry_and_parasite(
+        &mut self,
+        stable_id: u64,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: super::FrameEffects<'_>,
+    ) {
+        let sim = self;
+        // FootClass::AI 0x004DAED0..0x004DAEDC: with vt+0x1D8 (the warp-in)
+        // clear, the pending entry (`Unit+0x500`) asks for its slot.
+        if sim
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| !entity.is_warping_in() && entity.pending_entry().is_some())
+        {
+            crate::sim::docking::building_dock::try_pending_entry(sim, rules, stable_id, effects);
+        }
+        // FootClass::AI tail 0x004DAEE1..0x004DAEF3, after the piggyback swap:
+        // an infected Foot runs its eater's ParasiteClass AI in its own turn.
+        sim.parasite_ai_for_victim(stable_id, rules, overlay_registry, effects);
+    }
+
     pub(super) fn advance_live_object_pass(
         &mut self,
         rules: &RuleSet,
@@ -804,6 +879,9 @@ impl Simulation {
         // viewers once until the ally graph changes (`vision::RevealViewers`).
         let clients = self.fog_viewers();
         self.reveal_viewers.begin(clients);
+        // Its garrisonable civilian buildings walk the Houses for the
+        // Civilian-side one once between them (`CivilianSideHouse`).
+        self.civilian_house_memo.begin();
         let walked = self.try_for_each_live_object::<super::FrameAdvanceError>(|sim, stable_id| {
             #[cfg(feature = "debug-tools")]
             let debug_before = sim
@@ -825,6 +903,7 @@ impl Simulation {
         });
         self.fog.settle_plane_writes();
         self.reveal_viewers.end();
+        self.civilian_house_memo.end();
         self.finish_batched_path_searches();
         self.finish_batched_scans();
         walked?;
@@ -840,20 +919,26 @@ impl Simulation {
         let sim = self;
         let overlay_registry = object_ctx.overlay_registry;
         let mut outcome = ObjectTurnOutcome::default();
+        // The turn looks this object up by id about a hundred times; from
+        // here the store answers for it without its id index (VERA-only,
+        // every answer unchanged).
+        sim.substrate.entities.focus(stable_id);
         // UnitClass::AI / InfantryClass::AI give an active TubeMovement
         // object the whole live-object turn.  Capture before the leaf:
         // successful finalization clears the payload but must still skip
         // every ordinary locomotor tail and the second mission checkpoint.
-        let tube_active_at_entry = sim
-            .substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(tube_active);
-        let was_structure = sim
-            .substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(|entity| entity.category() == EntityCategory::Structure);
+        let (tube_active_at_entry, was_structure) =
+            sim.substrate
+                .entities
+                .get(stable_id)
+                .map_or((false, false), |entity| {
+                    (
+                        tube_active(entity),
+                        entity.category() == EntityCategory::Structure,
+                    )
+                });
+        let _building_area = was_structure
+            .then(|| crate::sim::frame_profile::area(crate::sim::frame_profile::phase::BUILDINGS));
         let mut ai = sim.object_ai_visit_one_with_effects(stable_id, rules, object_ctx);
         if let Some(error) = ai.frame_error.take() {
             return Err(error);
@@ -861,24 +946,20 @@ impl Simulation {
         outcome.bridge_state_changed |= ai.bridge_state_changed;
         outcome.destroyed_structure |= ai.destroyed_structure;
         outcome.ownership_changed |= ai.ownership_changed();
-        if was_structure
-            && sim
-                .substrate
-                .entities
-                .get(stable_id)
-                .is_none_or(|entity| entity.death.is_dying())
-        {
+        // One read serves the three gates after the AI visit.
+        let Some(entity) = sim.substrate.entities.get(stable_id) else {
+            outcome.destroyed_structure |= was_structure;
+            return Ok(outcome);
+        };
+        let dying = entity.death.is_dying();
+        let foot = matches!(
+            entity.category(),
+            EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
+        );
+        if was_structure && dying {
             outcome.destroyed_structure = true;
         }
-        if sim.substrate.entities.get(stable_id).is_none_or(|entity| {
-            entity.death.is_dying()
-                || (!tube_active_at_entry
-                    && matches!(
-                        entity.category(),
-                        EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
-                    )
-                    && !entity.lifecycle.object_alive())
-        }) {
+        if dying || (!tube_active_at_entry && foot && !entity.lifecycle.object_alive()) {
             // Foot4DA53E..548 reloads Object+90 after TechnoAI and returns
             // before locomotor Process when false. Health and the Rust dying
             // state are independent: even Process's slope prelude must wait
@@ -890,12 +971,40 @@ impl Simulation {
         // A temporal-warped object's leaf AI returned before its locomotor
         // Process (Unit 0x007362B5..0x007362CB, Infantry and Aircraft alike;
         // `Simulation::temporal_ai_prologue`).
-        if sim
-            .substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(crate::sim::game_entity::GameEntity::ai_frozen)
-        {
+        if entity.ai_frozen() {
+            return Ok(outcome);
+        }
+        // BuildingClass::AI calls no FootClass::AI. Every step below returns
+        // on a building's class, or on its missing locomotor, except three:
+        // the sound steps (which also deliver the frame's sounds so far) and
+        // the pending entry and parasite, which read state VERA keeps on
+        // every object, and the fire visit, which commits even when it fires
+        // nothing. A building without a locomotor takes those three, in
+        // their order, and skips the rest (VERA-only, results unchanged).
+        // One that is not alive took none: the tail returned on Object+90
+        // after the Process, before the first of them.
+        if !foot && entity.locomotor.is_none() {
+            if entity.lifecycle.object_alive() {
+                sim.foot_edge_sounds(stable_id, rules, object_ctx.effects);
+                sim.foot_pending_entry_and_parasite(
+                    stable_id,
+                    rules,
+                    overlay_registry,
+                    object_ctx.effects,
+                );
+                // A visit that fires nothing commits no consequences, which
+                // still delivers the overlay grid's pending navigation
+                // receipts and the smudge grid's dirty cells.
+                let receipt = super::damage_consequences::DamageConsequences::live_fire(
+                    Default::default(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                )
+                .commit(sim, rules, overlay_registry, object_ctx.effects);
+                outcome.bridge_state_changed |= receipt.bridge_state_changed;
+                outcome.destroyed_structure |= receipt.structure_destroyed;
+            }
             return Ok(outcome);
         }
 
@@ -1076,46 +1185,7 @@ impl Simulation {
             body_frame_before_process,
             rules,
         );
-        // Foot AI 4DAB3C..4DABB1: a DropAsBomb object starting to fall plays
-        // its type's VoiceFalling at its Location, before the sinking/crash
-        // edges and looping-sound position update (PlayAt7509E0, ungated).
-        if let Some(entity) = sim.substrate.entities.get_mut(stable_id)
-            && entity.observe_falling_edge()
-            && let Some(voice) = sim
-                .interner
-                .object_type(entity.type_ref(), rules)
-                .and_then(|object| object.voice_falling.clone())
-        {
-            let event =
-                super::SimSoundEvent::voc_at_location(voice, entity, sim.resolved_terrain.as_ref());
-            sim.sound_events.emit(event);
-        }
-        Self::sinking_edge_sounds(
-            &sim.interner,
-            &mut sim.substrate,
-            &mut sim.sound_events,
-            stable_id,
-            rules,
-        );
-        Self::crash_edge_sounds(
-            &sim.interner,
-            &mut sim.substrate,
-            &mut sim.sound_events,
-            &sim.session,
-            &sim.houses,
-            stable_id,
-            rules,
-        );
-        // Foot4DADF0 ->750D40 uses the coordinate BEFORE those callbacks
-        // and Unit's subsequent hull lowering. Finish PlayAt/Release first.
-        if let Some(entity) = sim.substrate.entities.get(stable_id) {
-            object_ctx.effects.update_looping_sound(
-                sim,
-                rules,
-                stable_id,
-                Self::movement_sound_world(entity),
-            );
-        }
+        sim.foot_edge_sounds(stable_id, rules, object_ctx.effects);
 
         // FootClass::AI 0x004DADF5..0x004DAE59: the64-frame idle Scatter.
         match sim.foot_idle_scatter(stable_id, rules, overlay_registry, object_ctx.effects) {
@@ -1130,24 +1200,7 @@ impl Simulation {
         if let Some(entity) = sim.substrate.entities.get_mut(stable_id) {
             entity.clear_ion_blast_lift();
         }
-        // FootClass::AI 0x004DAED0..0x004DAEDC: with vt+0x1D8 (the warp-in)
-        // clear, the pending entry (`Unit+0x500`) asks for its slot.
-        if sim
-            .substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(|entity| !entity.is_warping_in() && entity.pending_entry().is_some())
-        {
-            crate::sim::docking::building_dock::try_pending_entry(
-                sim,
-                rules,
-                stable_id,
-                object_ctx.effects,
-            );
-        }
-        // FootClass::AI tail 0x004DAEE1..0x004DAEF3, after the piggyback swap:
-        // an infected Foot runs its eater's ParasiteClass AI in its own turn.
-        sim.parasite_ai_for_victim(stable_id, rules, overlay_registry, object_ctx.effects);
+        sim.foot_pending_entry_and_parasite(stable_id, rules, overlay_registry, object_ctx.effects);
 
         // Unit73649C follows the complete Foot tail. Its disguise pick must
         // follow Foot's own Scenario draws and precede Unit's firing suffix.
@@ -1260,6 +1313,8 @@ impl Simulation {
             );
             outcome.bridge_state_changed |= receipt.bridge_state_changed;
             outcome.destroyed_structure |= receipt.structure_destroyed;
+            // Unit73666B..736685: a visceroid's UpdateVisceroid737180.
+            sim.unit_update_visceroid(stable_id, rules, overlay_registry, object_ctx.effects);
             // UnitAI736689 Reload+424 follows FireAtTarget/Facing and
             // precedes the second Ready/Commence. Aircraft/Infantry have
             // no corresponding ordinary Reload dispatch here. The native

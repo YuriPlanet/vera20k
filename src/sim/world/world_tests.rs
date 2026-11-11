@@ -9404,7 +9404,7 @@ fn engineer_capture_of_an_ordinary_building_requests_the_radar_event() {
         .position
         .set_rx_for_test(11);
 
-    sim.announce_engineer_capture(1, player, &rules);
+    sim.announce_building_capture(1, player, &rules);
     assert_eq!(
         captured_events(&sim),
         vec![(enemy, player, false, true, None)]
@@ -9412,7 +9412,7 @@ fn engineer_capture_of_an_ordinary_building_requests_the_radar_event() {
 
     // A second capture one cell away publishes its own request as well.
     sim.sound_events.clear_for_test();
-    sim.announce_engineer_capture(2, player, &rules);
+    sim.announce_building_capture(2, player, &rules);
     assert_eq!(
         captured_events(&sim),
         vec![(enemy, player, false, true, None)]
@@ -9432,7 +9432,7 @@ fn engineer_capture_of_a_tech_building_carries_its_capture_eva_event() {
     let civilian = insert_passive_house_with_counts(&mut sim, "Neutral", 1, 0);
     insert_test_entity_for_owner(&mut sim, 1, civilian, "CAOILD", EntityCategory::Structure);
 
-    sim.announce_engineer_capture(1, player, &rules);
+    sim.announce_building_capture(1, player, &rules);
     let line = sim.interner.get("EVA_OilRefineryCaptured");
     assert!(
         line.is_some(),
@@ -9466,12 +9466,12 @@ fn engineer_capture_is_silent_without_a_human_side_or_into_a_passive_house() {
     insert_test_entity_for_owner(&mut sim, 1, ai_a, "GAPOWR", EntityCategory::Structure);
     insert_test_entity_for_owner(&mut sim, 2, player, "GAPOWR", EntityCategory::Structure);
 
-    sim.announce_engineer_capture(1, ai_b, &rules);
+    sim.announce_building_capture(1, ai_b, &rules);
     assert!(
         captured_events(&sim).is_empty(),
         "AI-vs-AI capture: nobody listens"
     );
-    sim.announce_engineer_capture(2, civilian, &rules);
+    sim.announce_building_capture(2, civilian, &rules);
     assert!(
         captured_events(&sim).is_empty(),
         "passive new owner is silent"
@@ -9670,10 +9670,7 @@ fn radar_terrain_dirty_marks_deduplicate_and_clear() {
     sim.dirty_cells.mark_radar([(3, 3)]);
     sim.dirty_cells.mark_radar([(3, 3), (4, 4)]);
     assert_eq!(sim.dirty_cells.radar(), [(1, 1), (2, 2), (3, 3), (4, 4)]);
-    assert!(
-        sim.dirty_cells
-            .acknowledge_radar(sim.dirty_cells.radar_generation())
-    );
+    assert!(!sim.dirty_cells.take_radar().is_empty());
     sim.dirty_cells.mark_radar([(1, 1)]);
     assert_eq!(sim.dirty_cells.radar(), [(1, 1)]);
 }

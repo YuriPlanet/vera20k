@@ -364,3 +364,93 @@ fn no_effects_accumulates_and_next_clears_the_same_retained_owner() {
         health
     );
 }
+
+/// MO's Warhawk (`COMA`) attaches `COMARING`, an animation with `Damage=1`
+/// and `Weapon=ComancheHeal`. That weapon's warhead is 0% against every armor
+/// and only carries an AttachEffect, so the aura must not damage anything --
+/// in particular the war factory the freshly built Warhawk is sitting on.
+#[test]
+fn attached_heal_anim_weapon_never_damages_nearby_objects() {
+    let ini = crate::sim::arena_fixture::clear_ground_ini(
+        "[Countries]\n0=Americans\n1=Russians\n\
+         [VehicleTypes]\n0=TARGET\n\
+         [TARGET]\nStrength=1000\nArmor=light\n\
+         [Animations]\n0=COMARING\n\
+         [CombatDamage]\nFlameDamage2=FALLBACK\n\
+         [Warheads]\n0=FALLBACK\n1=ComancheHealWH\n\
+         [FALLBACK]\nCellSpread=3.2\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+         [ComancheHealWH]\nCellSpread=3.2\nVerses=0%,0%,0%,0%,0%,0%,0%,0%,0%,0%,0%\n\
+         AffectsAllies=yes\nAffectsEnemies=no\n\
+         [WeaponTypes]\n0=ComancheHeal\n\
+         [ComancheHeal]\nDamage=0\nWarhead=ComancheHealWH\nAreaFire=yes\n",
+    );
+    let art = IniFile::from_str("[COMARING]\nRate=400\nEnd=4\nDamage=1\nWeapon=ComancheHeal\n");
+    let processed = crate::rules::native_processing::RulesLayerStack::new(ini)
+        .process_with_fixed_art(&art)
+        .unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    let mut registry = crate::rules::art_data::ArtRegistry::from_ini(&art);
+    registry.bind_anim_frame_count_for_test("COMARING", 4);
+    rules.install_art_data(registry);
+    #[cfg(feature = "ares")]
+    let cfg = rules.art().anim_runtime_config("COMARING").unwrap();
+    #[cfg(feature = "ares")]
+    assert_eq!(
+        cfg.ares_weapon.as_deref(),
+        Some("ComancheHeal"),
+        "the animation's Weapon= must survive rule processing"
+    );
+    assert_eq!(
+        rules.weapon("ComancheHeal").is_some(),
+        cfg!(feature = "ares"),
+        "only Ares reads the explicit WeaponTypes list"
+    );
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let target = sim
+        .spawn_object("TARGET", "Russians", 20, 20, 0, &rules)
+        .unwrap();
+    let coord = crate::sim::movement::ground_pose::position_world_coord(
+        &sim.entities().get(target).unwrap().position,
+    );
+    let world = AnimWorldCoord {
+        x: coord.x,
+        y: coord.y,
+        z: coord.z,
+    };
+    let (rx, ry, sx, sy, z) = world.to_cell_sub_z();
+    let anim_type = sim.interner.intern("COMARING");
+    let anim = sim
+        .spawn_anim_at_world(
+            &rules,
+            AnimClassSpawnDescriptor::new(anim_type, rx, ry, sx, sy, z),
+            world,
+        )
+        .unwrap();
+    sim.set_anim_owner_object(anim, Some(target), &rules);
+    let (_, visits) = crate::sim::combat::receiver_fixture::trace_area_visits(|| {
+        for _ in 0..6 {
+            sim.advance_tick(&[], Some(&rules), None, Some(rules.overlay_registry()), 22);
+        }
+    });
+    let health = sim.entities().get(target).unwrap().health.current();
+    let warheads: Vec<_> = visits.iter().map(|v| v["warhead"].clone()).collect();
+    #[cfg(feature = "ares")]
+    assert_eq!(
+        health, 1000,
+        "the healing aura must not damage nearby objects (warheads: {warheads:?})"
+    );
+    #[cfg(not(feature = "ares"))]
+    assert!(health < 1000, "stock animations use FlameDamage2");
+    #[cfg(feature = "ares")]
+    {
+        assert!(!warheads.is_empty(), "the aura must still fire its weapon");
+        assert!(
+            warheads.iter().all(|w| w == "ComancheHealWH"),
+            "the healing warhead must be used, not the FlameDamage2 fallback: {warheads:?}"
+        );
+    }
+    #[cfg(not(feature = "ares"))]
+    assert!(warheads.iter().all(|warhead| warhead == "FALLBACK"));
+}

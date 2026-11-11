@@ -315,16 +315,7 @@ impl NetworkCommandBoundary for FrameClientBoundary<'_> {
         .map_err(|error| {
             log::error!("live network command exchange: {error}");
             match error {
-                LiveCommandError::Sequenced(
-                    crate::net::live_commands::SequencedError::Desync { .. },
-                ) => NetworkInterruption::ScenariosDiffer.into(),
-                LiveCommandError::Sequenced(
-                    crate::net::live_commands::SequencedError::QueueFull,
-                ) => NetworkInterruption::QueueFull.into(),
-                LiveCommandError::Sequenced(
-                    crate::net::live_commands::SequencedError::NewerClientRequired,
-                ) => NetworkInterruption::NewerClientRequired.into(),
-                LiveCommandError::Sequenced(_) => NetworkInterruption::ConnectionFailed.into(),
+                LiveCommandError::Sequenced(error) => error.interruption().into(),
                 LiveCommandError::Startup(crate::net::live_commands::StartupError::Aborted) => {
                     NetworkInterruption::ConnectionFailed.into()
                 }

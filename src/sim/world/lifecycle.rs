@@ -7098,6 +7098,13 @@ impl Simulation {
         if kind == Some(ObjectKind::Entity) {
             self.ares_tunnels.forget(stable_id);
         }
+        // `ObjectClass::~ObjectClass @ 0x005F3B80` ends by testing the Logic
+        // membership byte (`+0x98`, `0x005F3D65`) and calling
+        // `LogicClass::UnregisterObject` (`0x005F3D75`). Limbo has usually
+        // cleared it; a rider killed inside an open-topped transport was
+        // already in limbo, so Limbo returned at its entry guard
+        // (`0x005F4D45`) and this is the only removal.
+        self.unregister_logic_object(stable_id);
         let removed = match kind {
             Some(ObjectKind::Entity) => {
                 let entity = self.substrate.entities.remove(stable_id);

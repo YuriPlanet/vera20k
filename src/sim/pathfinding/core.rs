@@ -1080,9 +1080,8 @@ pub fn astar_search(
                 // Original429E54..429EAF exempts structural deck candidates
                 // from the ordinary zone comparison. The signed-height/list
                 // predicate is executed in astar_structural_height.json.
-                // Residual: HierarchyGate also consults blocker-neighbor counts;
-                // full equivalence of that adapter to the original hierarchy
-                // comparison is not established by the scalar fragment corpus.
+                // 0x00429E7F..0x00429EC1: a ground candidate passes when its
+                // zone is marked or Cell+0x122 is nonzero (`HierarchyGate`).
                 if let Some(gate) = options.hierarchy_gate
                     && !neighbor_use_bridge
                     && !gate.allows(nx, ny)

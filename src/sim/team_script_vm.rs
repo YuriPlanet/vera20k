@@ -462,31 +462,6 @@ pub enum TeamAiInstallDiagnostic {
     },
 }
 
-impl TeamAiInstallDiagnostic {
-    pub(crate) fn source(&self) -> TeamAiDefinitionSource {
-        match self {
-            Self::UnknownTaskForceMember { source, .. }
-            | Self::MissingTeamTypeScript { source, .. }
-            | Self::MissingTeamTypeTaskForce { source, .. }
-            | Self::MissingAiTriggerTeamType { source, .. }
-            | Self::UnknownAiTriggerOwner { source, .. }
-            | Self::UnknownAiTriggerObject { source, .. } => *source,
-        }
-    }
-
-    /// A fixed-AIMD resolution loss refuses the install, except an AITrigger
-    /// naming an absent TeamType. AITriggerTypeClass::Read_INI (`0x0041F580`)
-    /// looks the name up with TeamTypeClass::Find (`0x006F0FC0`, call at
-    /// `0x0041F665`), which returns null without allocating, and keeps the
-    /// trigger; Is_Eligible (`0x0041E720`) then rejects a null primary team at
-    /// `0x0041E754`. Mental Omega 3.3.6's AIMO ships one such trigger
-    /// (`FOETR176LB-G` -> `FOETT176LB-G`).
-    pub(crate) fn is_fixed_source_refusal(&self) -> bool {
-        self.source() == TeamAiDefinitionSource::FixedAimd
-            && !matches!(self, Self::MissingAiTriggerTeamType { .. })
-    }
-}
-
 /// A candidate member passed to a test seam's TaskForce admission.
 #[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1005,10 +980,7 @@ impl TeamScriptVm {
     }
 
     /// The TaskForce of TeamType `team_type_id`, if it resolved.
-    pub fn task_force_of(
-        &self,
-        team_type_id: InternedId,
-    ) -> Option<&TeamTaskForceDefinition> {
+    pub fn task_force_of(&self, team_type_id: InternedId) -> Option<&TeamTaskForceDefinition> {
         let team_type = self.team_types.get(&team_type_id)?;
         self.task_forces.get(&team_type.task_force_id)
     }
@@ -1645,6 +1617,8 @@ mod oracle_tests;
 mod packed_cell_tests;
 #[cfg(test)]
 mod path_threat_input_tests;
+#[cfg(test)]
+mod recruit_candidates_tests;
 #[cfg(test)]
 mod recruit_oracle_tests;
 #[cfg(test)]

@@ -1106,13 +1106,11 @@ pub(crate) fn resolve_rmg_tile_keys(
 /// The `[General] Medians=` ordinal ReadTheater545150 keeps. Ares' MediansFix
 /// (Ares.dll 1006A920, hook 0x545904 right after the ReadInt) turns the
 /// missing-key -1 into 71: SNOWMD.INI, the one shipped theater without the
-/// key, holds its "Paved road bits" medians there.
+/// key, holds its "Paved road bits" medians there. Every build applies it:
+/// the urban pass is this value's only reader, and VERA's opted-in Urban
+/// Presence runs that pass without Ares.
 fn medians_ordinal(read: i32) -> i32 {
-    #[cfg(feature = "ares")]
-    if read == -1 {
-        return 71;
-    }
-    read
+    if read == -1 { 71 } else { read }
 }
 
 fn resolve_cliff_ranges(

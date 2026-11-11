@@ -7,9 +7,9 @@
 //! to Foot, and XYZ/Mark/raw occupation use their existing shared owners.
 //!
 //! Native composed controls and coverage: tools/spatial_oracle/jumpjet_states.md.
-//! Other large mechanisms remain bounded: target-facing hold, radio/tag
-//! arrival side effects beyond the existing per-cell owner. The
-//! Magnetron's callbacks run through `sim::locomotor_lift`.
+//! Radio and tag arrival side effects beyond the existing per-cell owner
+//! remain bounded. The Magnetron's callbacks run through
+//! `sim::locomotor_lift`.
 //! Native Unit touchdown calls Cell PickupCrate481A00 at54C9F6 after phase0;
 //! the touchdown asks `Simulation::pickup_crate_at` after the tracker removal
 //! (54C9DC) as native does. The no-crate native controls do not establish
@@ -302,6 +302,18 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         self.sim.planning_start_actor(self.stable_id, self.rules);
     }
     /// `FacingClass::UpdateFacing @ 0x004C9300` on the body facing (`+0x388`).
+    fn smooth_facing(&self) -> bool {
+        self.rules.general.jumpjet_smooth_facing
+    }
+    fn land_nearby_range(&self) -> i32 {
+        self.rules.general.jumpjet_land_nearby
+    }
+    fn owner_id(&self) -> u64 {
+        self.stable_id
+    }
+    fn landing_cell_claimed_by(&self, cell: (i16, i16)) -> Option<u64> {
+        self.sim.airborne_jumpjet_bound_for(cell, self.stable_id)
+    }
     fn snap_body_facing(&mut self, facing: u16) {
         self.sim
             .substrate
@@ -311,8 +323,18 @@ impl JumpjetFlightHost for CruiseHost<'_> {
             .body_facing
             .snap(facing, self.frame);
     }
+    /// `0x0054D636..0x0054D684`: only a type with `JumpJetTurn=` (`+0xECB`)
+    /// and a TarCom aims. Its answer is DirectionToTarget (`0x005F3DB0`).
     fn hold_target_facing(&self) -> Option<u16> {
-        None
+        let owner = self.owner();
+        self.sim
+            .object_type(owner.type_ref(), self.rules)
+            .filter(|object| object.jumpjet_turn)?;
+        crate::sim::movement::turret::facing_toward_target(
+            owner,
+            &owner.attack_target.target()?,
+            self.sim,
+        )
     }
     fn cell_of(&self, xy: [i32; 2]) -> (i16, i16) {
         (lepton_to_cell_packed(xy[0]), lepton_to_cell_packed(xy[1]))
@@ -800,6 +822,33 @@ impl Simulation {
         }
     }
 
+    /// VERA `[JumpjetControls] LandNearby=`: the lowest id among the airborne
+    /// Jumpjets other than `except` whose destination is `cell`. The landing
+    /// search, the approach check and the group spread ask it.
+    pub(crate) fn airborne_jumpjet_bound_for(&self, cell: (i16, i16), except: u64) -> Option<u64> {
+        let entities = &self.substrate.entities;
+        entities
+            .airborne_ids()
+            .filter(|&id| id != except)
+            .filter_map(|id| entities.get(id))
+            .filter(|entity| {
+                entity
+                    .locomotor
+                    .as_ref()
+                    .and_then(|locomotor| locomotor.jumpjet_runtime())
+                    .is_some_and(|runtime| {
+                        let destination = runtime.destination();
+                        runtime.phase() != jumpjet_flight::STATE_GROUND
+                            && (
+                                lepton_to_cell_packed(destination.x),
+                                lepton_to_cell_packed(destination.y),
+                            ) == cell
+                    })
+            })
+            .map(|entity| entity.stable_id())
+            .min()
+    }
+
     /// Process54AEC0 through the one private instance and live owner callbacks.
     pub(crate) fn tick_jumpjet_cruise_one(
         &mut self,
@@ -867,6 +916,14 @@ impl Simulation {
 #[cfg(test)]
 #[path = "jumpjet_cruise_native_tests.rs"]
 mod native_tests;
+
+#[cfg(test)]
+#[path = "jumpjet_smooth_facing_tests.rs"]
+mod smooth_facing_tests;
+
+#[cfg(test)]
+#[path = "jumpjet_land_nearby_tests.rs"]
+mod land_nearby_tests;
 
 #[cfg(test)]
 mod tests {

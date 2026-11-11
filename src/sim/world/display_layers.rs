@@ -79,6 +79,15 @@ impl DisplayLayers {
         self.layers.iter().flatten()
     }
 
+    /// [`Self::ordered_ids`] with each member's layer, for a caller that
+    /// would otherwise look every member up in [`Self::layer_of`].
+    pub fn members_in_order(&self) -> impl Iterator<Item = (DisplayLayer, u64)> + '_ {
+        self.layers.iter().enumerate().flat_map(|(index, members)| {
+            let layer = DisplayLayer(index as u8);
+            members.iter().map(move |&id| (layer, id))
+        })
+    }
+
     /// Display4A9720 removes any old registration before querying/inserting the
     /// selected layer. Ground551A90 inserts before the first strictly greater
     /// key; equal keys stay ahead of a newly submitted object. Other layers

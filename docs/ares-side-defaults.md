@@ -36,7 +36,8 @@ while a side's own section can replace them:
 Each score name is substituted on its own, the way `0x1002F270` copies every
 SideExt field over gamemd's buffer, so an Ares build never selects the 640-wide
 `*SM.SHP` shapes: `SideExt::initialize` always holds a medium name. The SideExt
-reader also retains `HunterSeeker`; that has no consumer in this chain yet.
+reader also retains `HunterSeeker`, which the Hunter Seeker launch reads
+([ares-hunter-seeker.md](ares-hunter-seeker.md)).
 `DialogBackground.*` feeds the shell dialog chrome: the hook at `0x622223`
 (body `0x1002FB50`) substitutes the side's image and palette for the three
 side-selected backgrounds while both loaded slots are non-null, and resumes at
@@ -104,21 +105,9 @@ same build as `tools/rules_oracle/ares_side_sidebar.py`):
   the three side slots and is dropped when a load resolves a different pair, so
   a side that changes its `DialogBackground.*` between matches rebuilds on the
   next paint. Slot 0 (`PUDLGBGN`) is process art and never rebuilt.
-- **HunterSeeker** is retained but the Hunter Seeker superweapon launch is
-  not ported, so it has no effect.
-- **Vehicle entries in `ParaDrop.Types`** are retained but the passenger
-  owner resolves InfantryType names only; such entries board no passenger.
 - A custom `AI.BaseDefenseCounts` vector shorter than the difficulty row is
   rejected by preflight as a missing difficulty; the native read past the
   vector is undefined data.
-- **Paradrop layers.** Ares replaces the paradrop launch
-  (`SuperClass_Launch` hook `0x6CC390` -> `0x10074350`) and reads the
-  Super's own `ParaDrop.*` keys, then the Country's (`0x1001BC20`/
-  `0x1001BCB0`), then the Side's. VERA keeps the stock launch with the
-  [Country](ares-country-paradrop.md) and Side layers but no per-Super
-  layer. Side lists for Soviet and any side >= 3 keep the stock unchecked
-  list pair, where the Ares sender (`0x100741A0`) sends nothing unless both
-  lists are equally long and nonempty.
 - **Canopy layers.** The Ares canopy hook (`0x5F5ADD` -> `0x10047C80`)
   takes the dropped type's own `Parachute.Anim`, then the Country's, before
   the Side's. VERA reads the Country and Side layers but not the type key.

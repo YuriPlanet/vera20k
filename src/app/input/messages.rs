@@ -913,6 +913,46 @@ pub(crate) fn post_match_speed(state: &mut AppState, text: &str) {
     post_grey_row(state, text, false, false);
 }
 
+/// VERA: a match whose `veraui.ini` had lines the game could not use says so
+/// once, naming the first; the log lists them all.
+pub(crate) fn post_layout_problem(state: &mut AppState) {
+    let Some(place) = state
+        .match_state
+        .match_presentation
+        .match_layouts
+        .problems()
+        .first()
+        .map(crate::ui::match_layout::LayoutProblem::place)
+    else {
+        return;
+    };
+    let text = crate::i18n::tr_fill("VERA:LayoutFileProblem", &[("where", &place)]);
+    post_grey_row(state, &text, false, false);
+}
+
+/// Tell the player the layout edit mode is on and how to use it, or that it
+/// is off and what they moved is kept.
+pub(crate) fn post_layout_edit(state: &mut AppState, on: bool) {
+    let key = if on {
+        "VERA:LayoutEditHint"
+    } else {
+        "VERA:LayoutEditDone"
+    };
+    post_grey_row(state, &crate::i18n::tr(key), false, false);
+}
+
+/// VERA formation lock (`context_order::toggle_formation_lock`): say that
+/// the selection's units were locked, and how many, or unlocked. gamemd has
+/// no such line, so the text is VERA's own.
+pub(crate) fn post_formation_lock(state: &mut AppState, locked: bool, units: usize) {
+    let text = if locked {
+        crate::i18n::tr_fill("VERA:FormationLocked", &[("count", &units)])
+    } else {
+        crate::i18n::tr("VERA:FormationUnlocked")
+    };
+    post_grey_row(state, &text, false, true);
+}
+
 pub(super) fn post_command_backpressure(state: &mut AppState) {
     post_grey_row(
         state,
@@ -1025,16 +1065,21 @@ fn sync_view(state: &mut AppState) {
         .match_presentation
         .message_list
         .set_typing(typing);
-    // The list spans the tactical viewport: the frame left of the sidebar.
+    // The list spans its box: the tactical viewport, the frame beside the
+    // sidebar, unless the side's layout gives it another.
     // VERA's performance panel holds the viewport's top left while it shows, and the
     // list and its edit line start below it.
-    let tactical_w = crate::app::input::camera::tactical_viewport_size(state).0 as i32;
+    let [x, y, width, _] = crate::app::presentation::field_parts::rect(
+        state,
+        crate::ui::field_layout::FieldPart::Messages,
+    );
+    let (_, tactical_y, _, _) = crate::app::input::camera::tactical_viewport_px(state);
     let top = state.renderer.performance_overlay.message_top();
-    state
-        .match_state
-        .match_presentation
-        .message_list
-        .set_view(0, top, tactical_w);
+    state.match_state.match_presentation.message_list.set_view(
+        x,
+        y.max(tactical_y as i32 + top),
+        width,
+    );
 }
 
 /// Prepare one successful offline TextLabel paint, using raw wall time for
@@ -1059,6 +1104,13 @@ pub(crate) fn build_message_instances(
         for _ in 0..requests {
             crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
         }
+    }
+    // A layout that leaves the messages out only takes them off the screen.
+    if !crate::app::presentation::field_parts::shows(
+        state,
+        crate::ui::field_layout::FieldPart::Messages,
+    ) {
+        return (Vec::new(), Vec::new());
     }
     message_instances(
         &state.renderer.bit_font,

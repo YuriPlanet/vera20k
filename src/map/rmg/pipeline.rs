@@ -30,8 +30,6 @@ use super::phases::starts::{StartsArgs, StartsCtx};
 use super::phases::tech_buildings::{TechArgs, TechCtx, TechType};
 use super::phases::tiberium::{TiberiumArgs, TiberiumCtx};
 use super::phases::trees::{TreeArgs, TreeCtx};
-use super::phases::urban;
-#[cfg(feature = "ares")]
 use super::phases::urban_areas;
 use super::phases::water::{PlayableRect, WaterArgs};
 use super::phases::zones::{self, ZoneKind, ZoneParams};
@@ -43,7 +41,7 @@ use super::rng::RmgRng;
 use super::scratch::RmgScratch;
 use super::tiles::TileIds;
 use super::x87::Gaussian;
-use super::{MapGeometry, RmgConstructionPhase, RmgConstructionTrace, Stage};
+use super::{MapGeometry, RmgConstructionTrace, Stage};
 use crate::map::playfield::PlayfieldBounds;
 
 /// The land-type count of the wheel-impassable table (`zones::LAND_TYPES`).
@@ -98,19 +96,17 @@ pub struct PipelineInputs<'a> {
     pub width: i32,
     /// `MaxTrees` (`MapSeed+0x2FC`; 0 disables trees).
     pub max_trees: i32,
-    /// VERA extension: the urban stage's buildings, presence and opt-in, and
-    /// the seed its own stream starts from.
-    pub urban_types: &'a [TechType],
+    /// The presence the urban pass reads (`MapSeed+0x60`).
     pub urban_presence: i32,
-    pub urban_enabled: bool,
-    pub seed: u16,
+    /// VERA extension: the opted-in Buildings value the urban pass fills the
+    /// map by (`UrbanArgs::vera_fill`).
+    pub urban_fill: Option<i32>,
     /// Whether a river may attempt waterfall terrain, decided by the
     /// generation's very first draw. Only the river carver reads the value;
     /// the draw that produces it is stream-relevant to every map type.
     pub bridge_enabled: bool,
-    /// The Ares urban pass (hook 0x598FB8), present when `RMG::UrbanAreas`
-    /// is set; it reads `urban_presence` too.
-    #[cfg(feature = "ares")]
+    /// The urban pass (Ares hook 0x598FB8, or VERA's opted-in Urban
+    /// Presence), present when it runs; it reads `urban_presence` too.
     pub urban_areas: Option<&'a urban_areas::UrbanInputs<'a>>,
 }
 
@@ -140,8 +136,7 @@ pub struct PipelineOutput {
     pub(crate) construction_trace: RmgConstructionTrace,
     /// Start slots no region could fill. See `StartsOutcome`.
     pub unfilled_start_slots: usize,
-    /// Ares urban buildings and foots, emitted after `structures`.
-    #[cfg(feature = "ares")]
+    /// Urban buildings and foots, emitted after `structures`.
     pub urban_areas: Vec<urban_areas::UrbanObject>,
 }
 
@@ -299,7 +294,6 @@ pub fn run_pipeline(
     observe(Stage::RecalcAfterTerrain, grid, &waypoints, &terrain);
     // This recalc's land types are the ones the urban building gate reads:
     // no full recalc runs again before the urban pass.
-    #[cfg(feature = "ares")]
     let urban_rock = inputs
         .urban_areas
         .map(|_| trees::RecalcRock::snapshot(grid, inputs.blocks, inputs.cliff_back_impassability));
@@ -446,10 +440,8 @@ pub fn run_pipeline(
     scratch.reset_region_ids();
     observe(Stage::RegionReset, grid, &waypoints, &terrain);
 
-    // ---- Ares urban areas (hook 0x598FB8, before the recalc) ----------------
-    #[cfg(feature = "ares")]
+    // ---- Urban areas (Ares hook 0x598FB8 / VERA opt-in, before the recalc) -
     let mut urban_area_objects = Vec::new();
-    #[cfg(feature = "ares")]
     if let (Some(urban_inputs), Some(recalc_rock)) = (inputs.urban_areas, urban_rock.as_ref()) {
         let playfield = PlayfieldBounds::from_normalized_local_size(
             map_w,
@@ -474,6 +466,7 @@ pub fn run_pipeline(
             map_w,
             map_h,
             stride: stride as i32,
+            vera_fill: inputs.urban_fill,
         };
         let mut output = urban_areas::UrbanOutput {
             objects: &mut urban_area_objects,
@@ -482,7 +475,6 @@ pub fn run_pipeline(
         };
         urban_areas::run(&mut ctx, &args, &mut output);
     }
-    #[cfg(feature = "ares")]
     observe(Stage::UrbanAreas, grid, &waypoints, &terrain);
     lat_fixup::run(grid, inputs.ids);
     observe(Stage::RecalcAfterTiberium, grid, &waypoints, &terrain);
@@ -562,32 +554,6 @@ pub fn run_pipeline(
     }
     observe(Stage::Rocks, grid, &waypoints, &terrain);
 
-    // ---- VERA: towns for an opted-in Urban Presence ------------------------
-    // Last of the placement stages and on its own stream, so everything above
-    // is the original's; an original seed never gets here.
-    let urban_placements = if inputs.urban_enabled {
-        let args = TechArgs {
-            map_type: inputs.map_type,
-            map_w,
-            local_rect,
-            stride: stride as i32,
-            cliff_back_impassability: inputs.cliff_back_impassability,
-        };
-        let empty_regions = super::phases::regions::Regions::default();
-        let mut ctx = TechCtx {
-            grid: &mut *grid,
-            scratch: &mut *scratch,
-            ids: inputs.ids,
-            blocks: inputs.blocks,
-            rng: &mut *rng,
-            regions: &empty_regions,
-            types: inputs.urban_types,
-        };
-        urban::run(&mut ctx, &args, inputs.urban_presence, inputs.seed)
-    } else {
-        Vec::new()
-    };
-
     // ---- Final recalc ------------------------------------------------------
     lat_fixup::run(grid, inputs.ids);
     observe(Stage::RecalcFinal, grid, &waypoints, &terrain);
@@ -598,30 +564,6 @@ pub fn run_pipeline(
             .into_iter()
             .map(|placement| (placement.name, placement.x, placement.y)),
     );
-    // The urban buildings follow every original structure, each traced as an
-    // emitted constructor so the load replays it like the others.
-    #[cfg(feature = "ares")]
-    let towns = urban_placements.len();
-    for placement in urban_placements {
-        construction_trace.push_emitted(
-            RmgConstructionPhase::Urban,
-            placement.name.clone(),
-            structures.len(),
-            (placement.x as u16, placement.y as u16),
-        );
-        structures.push((placement.name, placement.x, placement.y));
-    }
-    // The Ares urban objects follow every structure, the towns included
-    // (`emit::populate_urban`); their rows were traced before the towns.
-    #[cfg(feature = "ares")]
-    for event in &mut construction_trace.events {
-        if event.phase == RmgConstructionPhase::UrbanAreas
-            && let crate::map::rmg::RmgConstructionOutcome::Emitted { entity_index, .. } =
-                &mut event.outcome
-        {
-            *entity_index += towns;
-        }
-    }
 
     PipelineOutput {
         waypoints,
@@ -629,7 +571,6 @@ pub fn run_pipeline(
         structures,
         construction_trace,
         unfilled_start_slots,
-        #[cfg(feature = "ares")]
         urban_areas: urban_area_objects,
     }
 }

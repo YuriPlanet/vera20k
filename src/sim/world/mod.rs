@@ -590,6 +590,10 @@ pub enum SimSoundEvent {
     /// Techno destructor6F4607 destroys its voice handle before its owned
     /// Anims. The app discards both pending and playing voice identities.
     UnitVoiceDestroyed { owner: u64 },
+    /// A deploy conversion copied the voice handle, pending and playing slots
+    /// (`+0x4DC..+0x4F4`) to the object replacing `from` and emptied `from`'s:
+    /// UnitClass::Deploy739971, BuildingClass::Mission_Selling44A0D4.
+    UnitVoiceMoved { from: u64, to: u64 },
     /// Voc7509E0 on the object's handle (Building+6A0 for Construction).
     /// The existing app/audio handle owner performs looping updates and release.
     ObjectSoundStarted {
@@ -677,15 +681,6 @@ pub enum SimSoundEvent {
         /// The object's own Location: Infantry Do_Action
         /// (`0x0051D998..0x0051D9CA`), `UnitClass::Undeploy @ 0x00739CD0`
         /// (`0x00739E81..0x00739EB3`).
-        world: crate::sim::anim_class::AnimWorldCoord,
-    },
-    /// A transport placed an ejected passenger — `UnitClass::Mission_Unload @
-    /// 0x0073D630` plays the transport type's `LeaveTransportSound=`
-    /// (`+0x568`) through `VocClass::PlayAtCoord @ 0x00750E20` at the
-    /// TRANSPORT's own Location after the passenger's Unlimbo
-    /// (`0x0073DC35`..`0x0073DC67`), once per placed passenger.
-    LeaveTransport {
-        sound_id: InternedId,
         world: crate::sim::anim_class::AnimWorldCoord,
     },
     /// A building finished construction — play EVA "Construction complete".
@@ -1519,6 +1514,8 @@ pub struct Simulation {
     pub(crate) lifecycle_outputs: FrameChannel<LifecycleOutput>,
     /// Derived presentation interest for the next admitted frame. The app
     /// copies only pending voice owners; this is never a second voice latch.
+    /// A deploy conversion renames its old object's entry to the new one
+    /// (`move_unit_voice`), following the audio owner's own move.
     /// `advance_app_frame` clears it on success and error, and restore starts
     /// empty. Neither snapshots nor world hashes include this transient set.
     #[serde(skip)]
@@ -1631,6 +1628,10 @@ pub struct Simulation {
     /// passes (`vision::RevealViewers`); never serialized or hashed.
     #[serde(skip)]
     pub(crate) reveal_viewers: crate::sim::vision::RevealViewers,
+    /// The Civilian-side House, remembered through the object pass
+    /// (`house_defeat::CivilianSideHouse`); never serialized or hashed.
+    #[serde(skip)]
+    civilian_house_memo: house_defeat::CivilianSideHouse,
     /// Which listeners each pointer expiry reaches (`expiry_listeners`).
     /// Derived from the listener stores; never serialized or hashed.
     #[serde(skip)]
@@ -2404,6 +2405,7 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> damage_consequences::DamageCommitReceipt {
+        let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::FIRING);
         #[cfg(test)]
         if let crate::sim::combat::world_fire::FireVisit::Building { id, shot } = &visit
             && crate::sim::combat::receiver_fixture::substitute_building_fire(
@@ -2992,14 +2994,19 @@ impl Simulation {
             let chance_draw = self.scenario_rng.next_range_u32_inclusive(0, 99) as i32;
             if chance_draw < rules.combat_damage.collapse_chance
                 && let Some(mutation) = self.resolved_terrain.as_mut().and_then(|terrain| {
-                    terrain.collapse_destroyable_cliff_terrain(rx, ry, |cell_x, cell_y| {
-                        if let Some(grid) = self.overlay_grid.as_mut() {
-                            let _ = grid.clear_overlay(cell_x, cell_y);
-                        }
-                        if let Some(grid) = self.smudge_grid.as_mut() {
-                            let _ = grid.clear_cell_slot(cell_x, cell_y);
-                        }
-                    })
+                    terrain.collapse_destroyable_cliff_terrain(
+                        rx,
+                        ry,
+                        overlay_registry.and_then(|registry| registry.cliff_back_rock()),
+                        |cell_x, cell_y| {
+                            if let Some(grid) = self.overlay_grid.as_mut() {
+                                let _ = grid.clear_overlay(cell_x, cell_y);
+                            }
+                            if let Some(grid) = self.smudge_grid.as_mut() {
+                                let _ = grid.clear_cell_slot(cell_x, cell_y);
+                            }
+                        },
+                    )
                 })
             {
                 // Cliff stamps change Cell+11B without refreshing
@@ -3047,8 +3054,10 @@ impl Simulation {
                 for &(cell_x, cell_y) in &mutation.animation_cells {
                     for _ in 0..2 {
                         let type_index = self.scenario_rng.next_range_u32_inclusive(0, 2) as usize;
-                        let jitter_x = self.scenario_rng.next_range_u32_inclusive(0, 16) as i32 - 8;
-                        let jitter_y =
+                        // 0x0058173A..0x005817C1, 0x00581E40..0x00581EC7: the
+                        // first draw offsets Y, the second X.
+                        let jitter_y = self.scenario_rng.next_range_u32_inclusive(0, 16) as i32 - 8;
+                        let jitter_x =
                             self.scenario_rng.next_range_u32_inclusive(0, 24) as i32 - 12;
                         let level = self
                             .resolved_terrain
@@ -3310,24 +3319,22 @@ impl Simulation {
         // entering their radar/EVA block. Keep all-owner producer facts for
         // replay, but only the reached local Unit call consumes this prefix.
         // HouseNotify can also warn a local ally of a nonlocal building.
-        let building_warning = self
-            .interner
-            .object_type(event.victim_type, rules)
-            .is_some_and(|object| {
-                object.category == crate::rules::object_type::ObjectCategory::Building
-            });
+        let building_warning = matches!(
+            event.line,
+            crate::sim::combat::UnderAttackLine::House { .. }
+        );
         if building_warning || self.session.current_house() == Some(event.owner) {
             effects.flush_sound(self, rules);
         }
     }
 
     /// `HouseClass::NotifyUnderAttack @ 0x004F93E0` for a building warning,
-    /// plus the `UnitClass::ReceiveDamage 0x00738530` harvester ping.
+    /// plus the ore-miner pings ([`crate::sim::combat::UnderAttackLine`]).
     ///
     /// The victim's own line: the radar diamond (type 4 miner / type 3 base,
     /// `0x004F94E4`/`0x004F9544`) is requested for the victim house; the app
     /// keeps the local-player filter and admits it there. The ally line (`0x004F955D..0x004F95B3`,
-    /// building path only): every *other* human house that the victim house
+    /// a House line reached on every client): every *other* human house that the victim house
     /// lists in its own ally bitfield (`House+0x5788`, read at `0x004F9450`
     /// through `IsAlliedWith`'s one-way rule) hears
     /// `EVA_OurAllyIsUnderAttack` behind `CreateRadarEvent(0x10, cell)`,
@@ -3347,11 +3354,16 @@ impl Simulation {
             let Some(object) = interner.object_type(event.victim_type, rules) else {
                 continue;
             };
-            let structure = object.category == crate::rules::object_type::ObjectCategory::Building;
             // House4F9491..4F94A3: a deployed miner needs both predicates.
-            // Non-building producers have already admitted Harvester= units.
+            // OreMiner producers have already admitted their own victims.
             // Native corpus: tools/spatial_oracle/temporal_house_notice.json.
-            let miner = !structure || (object.undeploys_into.is_some() && object.resource_gatherer);
+            let (miner, allies) = match event.line {
+                crate::sim::combat::UnderAttackLine::OreMiner => (true, false),
+                crate::sim::combat::UnderAttackLine::House { allies } => (
+                    object.undeploys_into.is_some() && object.resource_gatherer,
+                    allies,
+                ),
+            };
             let event_type = if miner {
                 RadarEventType::HarvesterUnderAttack
             } else {
@@ -3366,7 +3378,7 @@ impl Simulation {
                     radar: RadarEventRequest::new(event_type, event.rx, event.ry),
                 });
             }
-            if !structure {
+            if !allies {
                 continue;
             }
             let victim_passive = houses
@@ -4605,6 +4617,7 @@ impl Simulation {
         let mut out = Self {
             movement_pass_cache: Default::default(),
             reveal_viewers: Default::default(),
+            civilian_house_memo: Default::default(),
             expiry_listeners: Default::default(),
             path_batch: None,
             scan_batch: None,
@@ -5177,6 +5190,8 @@ impl Simulation {
     /// Overlay Mark5FC570 ->Recalc47D2B0 completes before its Logic caller
     /// returns. Both the global ore rung and a Terrain AI slot must publish
     /// the path view before the next object; retain render dirty receipts.
+    /// The Recalc's neighbour reads stayed inside each Mark
+    /// (`OverlayRecalc::DeferOrdinary`), so the batch makes none.
     pub(crate) fn publish_tiberium_cells(
         &mut self,
         rules: &RuleSet,
@@ -5188,7 +5203,7 @@ impl Simulation {
         {
             for &cell in cells {
                 if grid.cell(cell.0, cell.1).overlay_id.is_some() {
-                    grid.recalculate_runtime_cell(terrain, registry, cell);
+                    grid.recalculate_deferred_cell(terrain, registry, cell);
                 }
             }
         }
@@ -5738,7 +5753,17 @@ impl Simulation {
                     entity.stable_id()
                 );
             }
-            if !entity.lifecycle.cell_marked() || entity.passenger_role.is_inside_transport() {
+            if !entity.lifecycle.cell_marked()
+                || entity.passenger_role.is_inside_transport()
+                // A Jumpjet's hold and cruise (states 2 and 3) move it with
+                // no Mark pair (0x0054D0FF..0x0054D134), so one flown onto a
+                // cliff answers Ground with no list entry, in gamemd too.
+                || entity
+                    .locomotor
+                    .as_ref()
+                    .and_then(|locomotor| locomotor.jumpjet_runtime())
+                    .is_some_and(|jumpjet| matches!(jumpjet.phase(), 2 | 3))
+            {
                 continue;
             }
             // A marked Foot sits where its Mark put it: the Mark owner's own
@@ -8125,6 +8150,18 @@ impl Simulation {
             self.sound_events
                 .emit(SimSoundEvent::UnitVoiceVisit { owner });
         }
+    }
+
+    /// A deploy conversion's voice hand-off (UnitClass::Deploy
+    /// `0x00739971..0x007399B2`, BuildingClass::Mission_Selling
+    /// `0x0044A0D4..0x0044A115`). The audio owner moves the handle and latch;
+    /// a pending line's visit interest follows it to the new object.
+    pub(crate) fn move_unit_voice(&mut self, from: u64, to: u64) {
+        if self.unit_voice_visit_interest.remove(&from) {
+            self.unit_voice_visit_interest.insert(to);
+        }
+        self.sound_events
+            .emit(SimSoundEvent::UnitVoiceMoved { from, to });
     }
 }
 

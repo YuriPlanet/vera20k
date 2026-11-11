@@ -21,7 +21,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::components::Position;
 use crate::ui::main_menu_dialogs::options::HealthBarMode;
 use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 /// Authentic pip counts for unit health bars.
 const UNIT_PIPS_VEHICLE: u32 = 17; // vehicles + aircraft
 const UNIT_PIPS_INFANTRY: u32 = 8;
@@ -338,7 +338,7 @@ pub(crate) fn control_group_status_labels(
     ignore_visibility: bool,
     rules: Option<&RuleSet>,
 ) -> Vec<(u64, char)> {
-    let mut slot_by_id = HashMap::new();
+    let mut slot_by_id = crate::util::lookup_hash::LookupMap::default();
     for (slot, members) in control_groups.iter().take(10).enumerate() {
         for &stable_id in members {
             // Simulation derives this unique membership from each entity's
@@ -353,9 +353,9 @@ pub(crate) fn control_group_status_labels(
         return Vec::new();
     }
 
-    crate::app::presentation::instances::tactical_entity_encounter_order(sim)
-        .into_iter()
-        .filter_map(|stable_id| {
+    sim.display_layers()
+        .ordered_ids()
+        .filter_map(|&stable_id| {
             let slot = *slot_by_id.get(&stable_id)?;
             let entity = sim.entities().get(stable_id)?;
             if entity.sinking.is_active()
@@ -635,12 +635,12 @@ pub(crate) fn build_control_group_status_instances(
         return BTreeMap::new();
     };
     let local_owner_id = local_owner.and_then(|name| sim.interner().get(name));
-    let (tactical_width, tactical_height) =
-        crate::app::input::camera::tactical_viewport_size(state);
+    let (tactical_x, tactical_y, tactical_width, tactical_height) =
+        crate::app::input::camera::tactical_viewport_px(state);
     let zoom = state.match_state.input.zoom_level;
     let tactical_clip = [
-        0,
-        0,
+        (tactical_x as f32 / zoom).round() as i32,
+        (tactical_y as f32 / zoom).round() as i32,
         (tactical_width as f32 / zoom).round() as i32,
         (tactical_height as f32 / zoom).round() as i32,
     ];
@@ -755,10 +755,10 @@ pub(crate) fn build_building_status_render_instances(
             ((y - camera[1]) * zoom).round() as i32,
         ];
         //6D94DD..9516's coarse caller bounds precede the actual text clip.
-        if anchor[0] < -360
-            || anchor[0] > tactical_clip[2] + 360
-            || anchor[1] < -180
-            || anchor[1] > tactical_clip[3] + 180
+        if anchor[0] < tactical_clip[0] - 360
+            || anchor[0] > tactical_clip[0] + tactical_clip[2] + 360
+            || anchor[1] < tactical_clip[1] - 180
+            || anchor[1] > tactical_clip[1] + tactical_clip[3] + 180
         {
             continue;
         }
@@ -856,7 +856,7 @@ pub(crate) fn build_building_status_instances(
     else {
         return BuildingStatusTextInstances::default();
     };
-    let (width, height) = crate::app::input::camera::tactical_viewport_size(state);
+    let (left, top, width, height) = crate::app::input::camera::tactical_viewport_px(state);
     let zoom = state.match_state.input.zoom_level;
     build_building_status_render_instances(
         sim,
@@ -871,7 +871,7 @@ pub(crate) fn build_building_status_instances(
             state.match_state.input.camera_y,
         ],
         zoom,
-        [0, 0, width as i32, height as i32],
+        [left as i32, top as i32, width as i32, height as i32],
         rules,
     )
 }
@@ -1021,38 +1021,6 @@ impl TechnoExtras {
         self.fills.retain(|pip| viewport.contains(pip));
         self.scale.retain(|pip| viewport.contains(pip));
         self.self_heal = self.self_heal.take().filter(|pip| viewport.contains(pip));
-    }
-
-    /// Move every owned adornment with the prototype's painted body. Native
-    /// status generation and its material/selection/health semantics stay intact.
-    pub(crate) fn translate_for_interpolation(&mut self, offset: [f32; 2]) {
-        for instance in self
-            .bomb_clock
-            .iter_mut()
-            .chain(self.wrench.iter_mut())
-            .chain(self.rank.iter_mut())
-            .chain(self.background.iter_mut())
-            .chain(self.shield_background.iter_mut())
-            .chain(self.fills.iter_mut())
-            .chain(self.scale.iter_mut())
-            .chain(self.self_heal.iter_mut())
-            .chain(self.group.rectangles.iter_mut())
-            .chain(self.group.text.iter_mut())
-            .chain(self.talk_bubble.iter_mut())
-        {
-            instance.position[0] += offset[0];
-            instance.position[1] += offset[1];
-        }
-        for text in &mut self.digital_text {
-            for instance in text.rectangles.iter_mut().chain(text.text.iter_mut()) {
-                instance.position[0] += offset[0];
-                instance.position[1] += offset[1];
-            }
-        }
-        for (_, instance) in &mut self.digital_shapes {
-            instance.position[0] += offset[0];
-            instance.position[1] += offset[1];
-        }
     }
 }
 

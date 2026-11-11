@@ -311,6 +311,7 @@ impl App {
         replay_retail_directory: Option<&Path>,
         // A `-SPAWN` test run's opt-in invisible window (tools/spawn/README.md).
         hidden_spawn_window: bool,
+        mod_switch: Option<&crate::app::mods::ModSwitch>,
     ) -> Result<InitializationStep> {
         // One parsed retail profile snapshot yields two ordered products: the
         // independent frontend size selected after the early Video read, and the later
@@ -382,7 +383,7 @@ impl App {
             RetailOptionsLoad::from_settings,
         );
         let profile_screen = options_load.startup_shell_screen;
-        let mut options_profile = options_load.retained_profile;
+        let options_profile = options_load.retained_profile;
         personal_rules.set_terrain_deformation(options_profile.terrain_deformation);
         // Before the first CSF load below, which layers this language over it.
         crate::i18n::init(
@@ -394,13 +395,18 @@ impl App {
         // The Developer page's String Keys box arms Ctrl+Alt+K; a saved choice
         // still opens on the texts until the hotkey asks for keys.
         crate::i18n::set_show_string_keys(options_profile.show_string_keys);
-        options_profile.render_interpolation =
-            crate::app::presentation::interpolation::startup_enabled(
-                options_profile.render_interpolation,
-                std::env::var("VERA20K_RENDER_INTERPOLATION")
-                    .ok()
-                    .as_deref(),
-            );
+        // After the language is known: a mod that cannot be used is refused
+        // in it. A sealed capture takes no mod from config.toml, as it takes
+        // no VERA.INI or VERARULES.INI.
+        let mods = game_config
+            .as_ref()
+            .map(|config| {
+                crate::app::mods::begin(&config.paths, mod_switch, capture_dimensions.is_some())
+            })
+            .unwrap_or_default();
+        if let Some(dir) = mods.dir() {
+            crate::map::source::set_mod_dir(dir.to_owned());
+        }
         let (window_width, window_height, window_visible) =
             startup_window_projection(profile_screen, capture_dimensions);
         let window_visible = window_visible && !hidden_spawn_window;
@@ -484,6 +490,10 @@ impl App {
         if let Some(icon) = &window_icon {
             window_attrs = icon.apply(window_attrs);
         }
+        // Android's launcher icon is a compiled resource, so the same choice is
+        // applied through the two activity aliases instead.
+        #[cfg(target_os = "android")]
+        crate::util::app_icon::apply(options_profile.vera_icon);
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         {
             use winit::platform::web::WindowAttributesExtWebSys;
@@ -526,6 +536,7 @@ impl App {
                 main_menu_shell_error,
                 startup_files,
                 personal_rules,
+                mods,
                 options_profile,
                 startup_options,
                 startup_audio,
@@ -552,6 +563,7 @@ impl App {
         mut main_menu_shell_error: Option<String>,
         startup_files: StartupFiles,
         personal_rules: crate::rules::personal_rules::PersonalRules,
+        mods: crate::app::mods::Mods,
         options_profile: RetailOptionsProfile,
         startup_options: RetailStartupOptions,
         startup_audio: StartupAudioDisposition,
@@ -590,8 +602,12 @@ impl App {
         let sidebar_layout_spec = SidebarChromeLayoutSpec::stock();
         let mut startup_asset_manager = game_config.as_ref().and_then(|config| {
             startup_asset_or_error(
-                AssetManager::new(&config.paths.ra2_dir, startup_options.media_archive_mode)
-                    .and_then(|assets| assets.with_ini_roots(&config.ini))
+                AssetManager::with_mod(
+                    &config.paths.ra2_dir,
+                    mods.dir(),
+                    startup_options.media_archive_mode,
+                )
+                .and_then(|assets| assets.with_ini_roots(&config.ini))
                     .with_context(|| crate::i18n::tr("VERA:CannotLoadArchives")),
                 &mut main_menu_shell_error,
             )
@@ -718,7 +734,8 @@ impl App {
                         .map(|config| config.ini.clone())
                         .unwrap_or_default(),
                 )
-                .with_personal_rules(personal_rules);
+                .with_personal_rules(personal_rules)
+                .with_mod_dir(mods.dir().map(Path::to_path_buf));
             process_assets.csf = startup_csf;
             let (startup_rules, startup_rules_projection) = startup_asset_manager
                 .as_ref()
@@ -986,10 +1003,6 @@ impl App {
                 sim_runtime: None,
                 input: crate::app::input::state::MatchInputState::new(hotkey_bindings),
                 match_presentation: crate::app::presentation::state::MatchPresentationState {
-                    interpolation:
-                        crate::app::presentation::interpolation::RenderInterpolation::new(
-                            options_profile.render_interpolation,
-                        ),
                     sinking_waterlines: Default::default(),
                     voxel_images: Default::default(),
                     building_zshape: None,
@@ -1000,6 +1013,12 @@ impl App {
                     sidebar_projection: Default::default(),
                     active_sidebar_tab: SidebarTab::default_active_tab(),
                     sidebar_layout_spec,
+                    match_layouts: crate::ui::match_layout::MatchLayoutFile::none(),
+                    mod_layout_ini: None,
+                    player_layout_text: Vec::new(),
+                    layout_edit: None,
+                    added_parts: Default::default(),
+                    added_grid_scroll: Vec::new(),
                     tooltips: startup_tooltips,
                     tooltip_epoch: Instant::now(),
                     // The Constructor `0x005D39D0` (from Session's static
@@ -1080,6 +1099,7 @@ impl App {
                     theater_ext: "tem".to_string(),
                     target_lines: startup_target_lines,
                     cached_cell_body_instances: Vec::new(),
+                    cached_terrain_instances: Vec::new(),
                     terrain_grid: None,
                     overlays: Default::default(),
                     terrain_objects: Vec::new(),
@@ -1091,6 +1111,7 @@ impl App {
                     tile_atlas: None,
                     unit_atlas: None,
                     palette_set: None,
+                    surface_palette: Default::default(),
                     sprite_atlas: None,
                     atlas_growth: Default::default(),
                     overlay_atlas: None,
@@ -1166,6 +1187,7 @@ impl App {
                 map_library: Default::default(),
                 login_info: Default::default(),
                 map_pictures: Default::default(),
+                mods,
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                 updater: Default::default(),
                 skirmish_shell_state,
@@ -1331,6 +1353,7 @@ impl App {
                     crate::app::loading::pump::begin_loading(&mut state, request);
                 }
 
+                crate::app::mods::finish_start(&mut state, external_launch);
                 Ok(InitializationStep::Ready(Box::new(state), Vec::new()))
             })
         })

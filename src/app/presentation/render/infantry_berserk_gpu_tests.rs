@@ -9,7 +9,6 @@ use super::super::draw_plan_lowering::{
 };
 use super::*;
 use crate::app::presentation::instances::{ShpInputs, build_shp_instances_from_inputs};
-use crate::app::presentation::interpolation::RenderInterpolation;
 use crate::app::presentation::lighting::{
     body_extra_light, body_palette_light, shp_colour_word, techno_effect_light,
 };
@@ -518,7 +517,7 @@ fn render_original_body_pixels(
             let entry = atlas
                 .get(&ShpSpriteKey {
                     palette_context: ShpPaletteContext::Legacy,
-                    type_id: "E1".to_string(),
+                    type_id: "E1".into(),
                     facing: 0,
                     frame,
                     house_color,
@@ -584,7 +583,6 @@ fn render_original_body_pixels(
                         unit_atlas: None,
                         voxel_images: &voxel_images,
                         depth_tested_images: None,
-                        interpolation: &RenderInterpolation::new(false),
                         camera: view.camera_pos,
                         render_size: size,
                         zoom: 1.,

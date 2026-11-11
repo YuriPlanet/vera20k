@@ -830,6 +830,83 @@ impl FactorySearch {
     }
 }
 
+/// One building of a house that a FindFactory scan may pick for some type.
+#[derive(Clone, Copy)]
+struct FactoryCandidate<'a> {
+    id: u64,
+    building: &'a crate::sim::game_entity::GameEntity,
+    building_type: &'a ObjectType,
+    factory_type: FactoryType,
+}
+
+/// `house`'s buildings that pass the tests of the 5F7900 scan which do not
+/// read the wanted type, in House+6C order: out of limbo, a factory of some
+/// kind, and neither Selling selector.
+fn factory_candidates<'a>(
+    sim: &'a Simulation,
+    rules: &'a RuleSet,
+    house: &'a HouseState,
+) -> impl Iterator<Item = FactoryCandidate<'a>> + 'a {
+    let selling = MissionId::from_known(MissionType::Selling);
+    house
+        .base_projection()
+        .buildings()
+        .iter()
+        .filter_map(move |&id| {
+            let building = sim.substrate.entities.get(id)?;
+            let building_type = sim.entity_object_type(building, rules)?;
+            let factory_type = building_type.factory_type()?;
+            (!building.lifecycle.in_limbo()
+                && building.mission.effective() != selling
+                && building.mission.queued() != selling)
+                .then_some(FactoryCandidate {
+                    id,
+                    building,
+                    building_type,
+                    factory_type,
+                })
+        })
+}
+
+/// VERA-only: one house's [`factory_candidates`], kept for a caller that asks
+/// FindFactory of many types in a row ([`find_factory_among`]) while the
+/// world stands, so each question walks the factories and not every building
+/// of the house. It borrows the world, which therefore cannot change under it.
+pub(crate) struct FactoryRoster<'a>(Vec<FactoryCandidate<'a>>);
+
+impl<'a> FactoryRoster<'a> {
+    /// `None` for an owner without a House: its every search is empty.
+    pub(crate) fn of(sim: &'a Simulation, rules: &'a RuleSet, owner: InternedId) -> Option<Self> {
+        let house = sim.houses.get(&owner)?;
+        Some(Self(factory_candidates(sim, rules, house).collect()))
+    }
+}
+
+/// [`find_factory`] for `owner`, asked of the `roster` built for that house.
+pub(crate) fn find_factory_among(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    roster: &FactoryRoster<'_>,
+    obj: &ObjectType,
+    skip_busy_airfield: bool,
+    require_online: bool,
+    require_can_build: bool,
+) -> Option<u64> {
+    scan_factories(
+        sim,
+        rules,
+        owner,
+        roster.0.iter().copied(),
+        obj,
+        skip_busy_airfield,
+        require_online,
+        require_can_build,
+        false,
+    )
+    .available_factory()
+}
+
 /// One scan owner for stock5F7900 and the installed Ares10020D40 replacement.
 /// Ares CanBuild asks stop_first=true; the object-type hook asks false and
 /// retains the last eligible nonprimary, exactly as the stock route does.
@@ -846,6 +923,31 @@ fn query_factory(
     let Some(house) = sim.houses.get(&owner) else {
         return FactorySearch::Missing;
     };
+    scan_factories(
+        sim,
+        rules,
+        owner,
+        factory_candidates(sim, rules, house),
+        obj,
+        skip_busy_airfield,
+        require_online,
+        require_can_build,
+        stop_first,
+    )
+}
+
+/// The 5F7900 scan over `owner`'s `candidates`, in their order.
+fn scan_factories<'a>(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    candidates: impl Iterator<Item = FactoryCandidate<'a>>,
+    obj: &ObjectType,
+    skip_busy_airfield: bool,
+    require_online: bool,
+    require_can_build: bool,
+    stop_first: bool,
+) -> FactorySearch {
     //10020D43..10020D7A asks the limit-only CanBuild once, before scanning.
     // The first flag bypasses qualification and this factory query, so this
     // does not recurse through either admission gate.
@@ -853,24 +955,22 @@ fn query_factory(
     if require_can_build && can_build(sim, rules, owner, obj, true, true) != CanBuild::Yes {
         return FactorySearch::BuildLimitRefused;
     }
+    #[cfg(not(feature = "ares"))]
+    let _ = owner;
     let factory_type = FactoryType::for_category(obj.category);
     let game_mode_nonzero = sim.session.game_mode_nonzero();
     let ownable = get_ownable(obj, rules, game_mode_nonzero);
-    let selling = MissionId::from_known(MissionType::Selling);
     let naval_unit = obj.category == ObjectCategory::Vehicle && obj.naval;
     let mut candidate = FactorySearch::Missing;
-    for &id in house.base_projection().buildings() {
-        let Some(building) = sim.substrate.entities.get(id) else {
-            continue;
-        };
-        let Some(building_type) = sim.entity_object_type(building, rules) else {
-            continue;
-        };
-        if !building.lifecycle.in_limbo()
-            && building_type.factory_type() == Some(factory_type)
+    for FactoryCandidate {
+        id,
+        building,
+        building_type,
+        factory_type: building_factory_type,
+    } in candidates
+    {
+        if building_factory_type == factory_type
             && (crate::rules::ARES_ENABLED || !require_online || building.building_online())
-            && building.mission.effective() != selling
-            && building.mission.queued() != selling
             && (crate::rules::ARES_ENABLED
                 || !require_can_build
                 || can_build(sim, rules, building.owner(), obj, true, true) == CanBuild::Yes)

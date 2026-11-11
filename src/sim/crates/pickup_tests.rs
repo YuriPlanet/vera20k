@@ -1283,6 +1283,45 @@ fn a_walking_soldier_picks_up_the_crate_on_his_path() {
     assert!(sim.houses[&owner].economy().credits() > credits);
 }
 
+/// `CellClass::PickupCrate @ 0x0048208A..0x0048214B`: the miner arm asks for
+/// one of the first two `[AI] BuildRefinery=` types (Rules `+0x8E4`), not a
+/// construction yard. The house owns one building; listed as a refinery it
+/// earns the miner, listed only as a yard it draws a random goodie.
+#[test]
+fn unit_crate_gives_a_miner_to_a_house_with_a_refinery_and_no_miner() {
+    for (ai_lists, expected) in [
+        ("BuildRefinery=YARD\n", "HARV"),
+        ("BuildConst=YARD\nBuildRefinery=REF\n", "TNK"),
+    ] {
+        let (mut sim, arena_rules, _, owner, _) = arena();
+        sim.spawn_object("YARD", "Americans", 8, 8, 0, &arena_rules)
+            .expect("the building spawns");
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[Countries]\n0=Americans\n[Sides]\nAllied=Americans\n[Americans]\nSide=Allied\n\
+             [General]\nHarvesterUnit=HARV\n[AI]\n{ai_lists}\
+             [VehicleTypes]\n0=TNK\n1=HARV\n[BuildingTypes]\n0=YARD\n1=REF\n\
+             [TNK]\nStrength=300\nCrateGoodie=yes\n\
+             [HARV]\nStrength=1000\nOwner=Americans\nHarvester=yes\n\
+             [YARD]\nStrength=1000\n[REF]\nStrength=1000\n"
+        )))
+        .unwrap();
+        assert_eq!(
+            effects::choose_unit_crate_type(
+                &sim.interner,
+                &sim.session,
+                &mut sim.scenario_rng,
+                &sim.houses,
+                &rules,
+                owner,
+                false
+            )
+            .map(|object| object.id.as_str()),
+            Some(expected),
+            "with [AI] {ai_lists:?}"
+        );
+    }
+}
+
 /// A nonempty CrateGoodie pool can still have no acceptable candidate: an
 /// MCV is forbidden with Bases off, and for a non-preempted AI with Bases on.
 #[test]

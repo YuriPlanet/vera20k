@@ -1,6 +1,6 @@
 [package]
 name = "vera20k"
-version = "0.2.9"
+version = "0.3.0"
 edition = "2024"
 description = "Vera20k Engine — a from-scratch Rust engine for Red Alert 2: Yuri's Revenge"
 autobins = false
@@ -102,6 +102,8 @@ raw-window-handle = "0.6"
 # `Win32_UI_WindowsAndMessaging` covers ClipCursor/GetClipCursor/GetClientRect;
 # `Win32_Graphics_Gdi` adds ClientToScreen (maps the client rect into screen coords).
 windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi"] }
+# Atlas keys carry an object type name. Already built through winit.
+smol_str = "0.2"
 # bytemuck enables safe transmutation of structs to GPU-friendly byte slices.
 bytemuck = { version = "1", features = ["derive"] }
 
@@ -201,6 +203,14 @@ winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSAlert", "NSApplication", "NSButton", "NSControl", "NSCursor", "NSImage", "NSOpenPanel", "NSPanel", "NSResponder", "NSSavePanel", "NSView", "NSWindow"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSGeometry", "NSLocale", "NSString", "NSURL", "objc2-core-foundation"] }
+
+# --- Windows memory allocator ---
+# The game program (src/main.rs) allocates through mimalloc on Windows instead
+# of the process heap. MIT, linked statically, and built by the C compiler that
+# `ring` already needs. No features: the crate's default is mimalloc v3.
+# A trial for slow Windows machines; the gain has not been measured there yet.
+[target.'cfg(windows)'.dependencies]
+mimalloc = { version = "0.1.52", default-features = false }
 
 # --- Windows program icon and version details ---
 # build.rs compiles them into vera20k.exe with the Windows SDK's resource

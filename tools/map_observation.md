@@ -687,9 +687,6 @@ lifting, interrupted fade and Wave cleanup through ordinary commands. For a
 shot-in-progress image, copy the profile with `ticks = 20` and remove commands
 at or after step 20. Run the same map/profile/config bytes before and after the
 change, then use `tools.map_observation compare` on the completed captures.
-These exact-step captures disable render interpolation: they check ordinary
-output and cleanup, while the production interpolation regression covers an
-interpolated foldback that reproduces the scanline overflow.
 
 The [Dolphin Sonic profile](map_observation.sonic-wave.example.json) uses a
 stock DLPH, enemy CARRIER and a distant enemy survivor. Extract the physical
@@ -1137,9 +1134,10 @@ remains exact: no radar masks, channel tolerances or skipped pixels are applied.
 
 The [retail opening profile](map_observation.sidebar-opening.example.json)
 uses stock AnyTown and ordinary MCV deployment/production before clicking the GI.
-Numeric command handles belong to that seeded launch; rediscover them with a
-zero-step observation after population changes. Pass absolute profile/contract
-paths to the wrapper.
+Its commands name the MCV and the building types (profile v3), so they do not
+depend on that launch's numeric handles, and its cursor rests over the sidebar,
+where no unit can pass under it. Pass absolute profile/contract paths to the
+wrapper.
 
 A v2 profile may opt in to `observe_sidebar_steps: [0, 1, 100]`. Each listed
 capture completed step records the local retained sidebar view: tabs, ordered

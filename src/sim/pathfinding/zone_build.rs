@@ -252,16 +252,22 @@ pub(crate) fn rebuild_base_zone_topology(
     );
     let adjacency = edge_buckets.into_adjacency(zone_count);
 
-    let raw_zone_ids_by_row = std::array::from_fn(|row| {
+    // Each movement row derives its zones from the shared graph alone, so the
+    // rows run on the worker pool; `parallel::map` keeps them in row order.
+    let grid = crate::map::cell_index::CellGrid::for_extent(width, height);
+    let rows = crate::sim::parallel::map(MovementZone::all_ground(), |&movement_zone| {
         rebuild_zone_ids_for_movement_zone(
             &movement_classes,
             &zone_ids,
             zone_count,
             &adjacency,
-            MovementZone::all_ground()[row],
-            crate::map::cell_index::CellGrid::for_extent(width, height),
+            movement_zone,
+            grid,
         )
     });
+    let raw_zone_ids_by_row = rows
+        .try_into()
+        .unwrap_or_else(|_| unreachable!("all_ground lists the 13 concrete movement rows"));
 
     BaseZoneTopology {
         native_bridge_source_size,
@@ -815,19 +821,20 @@ pub(crate) fn build_bridge_redirect(
     bridge_records: &[BridgeEndpointRecord],
     width: u16,
     height: u16,
-) -> Option<Vec<Option<(u16, u16)>>> {
+) -> Option<super::zone_map::BridgeRedirect> {
     let terrain = resolved_terrain?;
 
-    let total = width as usize * height as usize;
-    let mut redirect: Vec<Option<(u16, u16)>> = vec![None; total];
-    let mut has_structural_cell = false;
-
-    for ry in 0..height {
+    // Each cell's entry reads only the terrain and the records, so the rows
+    // run on the worker pool; `parallel::map` keeps them in row order.
+    let rows: Vec<u16> = (0..height).collect();
+    let rows = crate::sim::parallel::map(&rows, |&ry| {
+        let mut row: Vec<Option<(u16, u16)>> = vec![None; usize::from(width)];
+        let mut has_structural_cell = false;
         for rx in 0..width {
             let Some(cell) = terrain.cell(rx, ry) else {
                 continue;
             };
-            let idx = ry as usize * width as usize + rx as usize;
+            let idx = usize::from(rx);
             if !cell.bridge_facts.has_structural_bridge() {
                 // A nonstructural cell keeps its own ground zone on the bridge
                 // layer only where a high record actually reaches it — the deck
@@ -835,17 +842,19 @@ pub(crate) fn build_bridge_redirect(
                 // have no bridge layer at all; that includes every cell of a low
                 // bridge, which is ground movement rather than deck movement.
                 if find_high_bridge_record(bridge_records, 0, (rx, ry), 1).is_some() {
-                    redirect[idx] = Some((rx, ry));
+                    row[idx] = Some((rx, ry));
                 }
                 continue;
             }
             has_structural_cell = true;
 
-            redirect[idx] = bridge_redirect_for_structural_cell(terrain, bridge_records, (rx, ry));
+            row[idx] = bridge_redirect_for_structural_cell(terrain, bridge_records, (rx, ry));
         }
-    }
+        (row, has_structural_cell)
+    });
 
-    has_structural_cell.then_some(redirect)
+    let has_structural_cell = rows.iter().any(|(_, structural)| *structural);
+    has_structural_cell.then(|| rows.into_iter().flat_map(|(row, _)| row).collect())
 }
 
 /// `MapClass::GetZoneID` 0x0056D230, bridge branch. Verified term by term

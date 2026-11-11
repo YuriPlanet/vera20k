@@ -889,8 +889,9 @@ pub struct GeneralRules {
     /// house at `MaxIQLevels` (`0x004FC0FF`), and a human house's MakeAlly
     /// (`0x004F9C5F`), run Computer_Paranoid. Retail yes.
     pub paranoid: bool,
-    /// Low byte of `CliffBackImpassability=` in `[General]`.
-    /// Byte 0 skips the scan; only byte 2 can write Rock. Default 2 in standard YR.
+    /// Low byte of `CliffBackImpassability=` in `[General]`, as
+    /// `read_cliff_back_impassability` reads it. Byte 0 skips the scan; only
+    /// byte 2 can write Rock.
     pub cliff_back_impassability: u8,
     /// `[General] TunnelSpeed=` (`Rules+0x20`): ReadDouble at `0x0066EDA9`
     /// over the constructor's 1.0 (`0x00665685..0x00665688`); retail 1. The
@@ -928,6 +929,16 @@ pub struct GeneralRules {
     /// Rules+420, [JumpjetControls] CruiseHeight. Object5F4260 uses this
     /// global threshold; linked Jumpjets instead use their own +2C height.
     pub display_cruise_height: i32,
+    /// VERA: `[JumpjetControls] SmoothFacing=` (default no). When set, a
+    /// Jumpjet's body no longer snaps to its locomotor's stale heading on
+    /// take-off and turns at its ROT for an Unload
+    /// ([docs/jumpjet-smooth-facing.md]).
+    pub jumpjet_smooth_facing: bool,
+    /// VERA: `[JumpjetControls] LandNearby=` (default 0, at most 8). A
+    /// Jumpjet refused its landing cell lands on the nearest clear cell
+    /// within this many cells instead of hovering
+    /// ([docs/jumpjet-land-nearby.md]).
+    pub jumpjet_land_nearby: i32,
     /// `[General] HoverHeight=`, Rules+0x5CC: the Hover altitude controller's
     /// cruise height in leptons (0x00513D20). Constructor 120 (0x00665E2B).
     pub hover_height: i32,
@@ -2090,6 +2101,11 @@ pub struct GeneralRules {
     /// death spawns it (`10049280` -> `TechnoExt::SpawnVisceroid @ 100468B0`).
     #[cfg(feature = "ares")]
     pub small_visceroid: Option<String>,
+    /// `[General] LargeVisceroid=` (`Rules+0x10`), read the same way just
+    /// before it (ReadString returning at `0x0066E677`). Ares' visceroid
+    /// merge makes two small ones this type (`1004C530`).
+    #[cfg(feature = "ares")]
+    pub large_visceroid: Option<String>,
 
     // -- Movement delay timers --
     /// Retained [AI] PathDelay double, in minutes (Rules+1760).
@@ -2736,6 +2752,8 @@ impl Default for GeneralRules {
             flight_level: 500,
             attacking_aircraft_sight_range: 5,
             display_cruise_height: 400, // Rules constructor665C3A
+            jumpjet_smooth_facing: false,
+            jumpjet_land_nearby: 0,
             // Rules constructor 0x00665E2B..0x00665E81.
             hover_height: 120,
             hover_bob: NativeF64Bits::from_bits(0x403e_0000_0000_0000),
@@ -3046,6 +3064,8 @@ impl Default for GeneralRules {
             tiberium_transmogrify: 0,
             #[cfg(feature = "ares")]
             small_visceroid: None,
+            #[cfg(feature = "ares")]
+            large_visceroid: None,
             // PathDelay=.01 min = 0.6 sec = 9 ticks at 15 Hz.
             path_delay: 0.016,
             // BlockagePathDelay=60 frames (directly in frames, not minutes).
@@ -3079,7 +3099,7 @@ impl Default for GeneralRules {
             iq_auto_crush: 2,
             iq_sell_back: 2,
             credit_reserve: 1000,
-            cliff_back_impassability: 2,
+            cliff_back_impassability: read_cliff_back_impassability(None),
             lightning_storm_duration: 900,
             lightning_damage: 200,
             lightning_deferment: 250,
@@ -3520,6 +3540,21 @@ pub(crate) fn ambient_change_terms(rate: f64, step: f64) -> (bool, i32, i32) {
     )
 }
 
+/// `[General] CliffBackImpassability=` (`Rules+0x664`, a byte): ReadInt in
+/// RulesClass::ReadGeneral (`0x0066D530`, `0x0066F1CB..0x0066F1E6`) over the
+/// constructor's 0 (`0x00665F3B`), keeping the low byte. Retail RULESMD sets 2.
+/// The early overlay branch of `CellClass::RecalcAttributes` (`0x0047D2B0`)
+/// skips its neighbour test when the byte is 0 (`0x0047D386..0x0047D393`) and
+/// writes Rock only when it is 2 (`0x0047D52F..0x0047D53E`).
+///
+/// Residual: gamemd constructs RulesClass once, in Init_Game (`0x0052BA60`,
+/// call at `0x0052BAD1`), so rules that never set the key keep the byte of the
+/// scenario played before. VERA starts every scenario at 0. No retail rules
+/// omit the key.
+pub(crate) fn read_cliff_back_impassability(general: Option<&IniSection>) -> u8 {
+    general.map_or(0, |general| general.read_int("CliffBackImpassability", 0)) as u8
+}
+
 impl GeneralRules {
     pub fn allow_shrouded_subterannean_moves(&self) -> bool {
         self.allow_shrouded_subterannean_moves
@@ -3691,6 +3726,15 @@ impl GeneralRules {
             .map_or(defaults.display_cruise_height, |s| {
                 s.read_int("CruiseHeight", defaults.display_cruise_height)
             });
+        // VERA key, not a gamemd one; absent means the original's snaps.
+        let jumpjet_smooth_facing = ini
+            .section("JumpjetControls")
+            .is_some_and(|s| s.read_bool("SmoothFacing", false));
+        // VERA key; 0 keeps the original's hover over a taken cell.
+        let jumpjet_land_nearby = ini
+            .section("JumpjetControls")
+            .map_or(0, |s| s.read_int("LandNearby", 0))
+            .clamp(0, 8);
         // AI IQ thresholds live in their own [IQ] read.
         let iq = ini.section_or_empty("IQ");
         // gamemd-derived: `RulesClass__ReadIQ @ 0x00674240` reads signed
@@ -3766,6 +3810,8 @@ impl GeneralRules {
                 iq_harvester,
                 iq_super_weapons,
                 display_cruise_height,
+                jumpjet_smooth_facing,
+                jumpjet_land_nearby,
                 condition_yellow: condition_yellow_native,
                 condition_red: condition_red_native,
                 path_delay,
@@ -3976,6 +4022,8 @@ impl GeneralRules {
                 defaults.attacking_aircraft_sight_range,
             ),
             display_cruise_height,
+            jumpjet_smooth_facing,
+            jumpjet_land_nearby,
             // ReadGeneral 0x0066EDC5..0x0066EE83 reads these into their
             // fields with the current value as default (%-aware ReadDouble).
             hover_height: general.read_int("HoverHeight", defaults.hover_height),
@@ -4375,9 +4423,11 @@ impl GeneralRules {
             #[cfg(feature = "ares")]
             tiberium_transmogrify: general
                 .read_int("TiberiumTransmogrify", defaults.tiberium_transmogrify),
-            // The ordered Process owner publishes it (`RulesTypeReferences`).
+            // The ordered Process owner publishes them (`RulesTypeReferences`).
             #[cfg(feature = "ares")]
             small_visceroid: None,
+            #[cfg(feature = "ares")]
+            large_visceroid: None,
             path_delay,
             blockage_path_delay_ticks,
             // ReadGeneral670235..670267 uses the same475D70 signed vector
@@ -4428,7 +4478,7 @@ impl GeneralRules {
             iq_auto_crush: iq.read_int("AutoCrush", defaults.iq_auto_crush),
             iq_sell_back: iq.read_int("SellBack", defaults.iq_sell_back),
             credit_reserve: ai.read_int("CreditReserve", defaults.credit_reserve),
-            cliff_back_impassability: general.read_int("CliffBackImpassability", 2) as u8,
+            cliff_back_impassability: read_cliff_back_impassability(Some(general)),
             lightning_storm_duration: general
                 .read_int("LightningStormDuration", defaults.lightning_storm_duration),
             lightning_damage: general.read_int("LightningDamage", defaults.lightning_damage),
@@ -10599,7 +10649,9 @@ impl RuleSet {
 
     /// Resolve a side name to its stable `[Sides]` registration index.
     pub fn side_index(&self, id: &str) -> Option<SideIdx> {
-        self.side_indices.get(&id.to_ascii_uppercase()).copied()
+        crate::util::native_string::with_ascii_uppercase(id, |key| {
+            self.side_indices.get(key).copied()
+        })
     }
 
     /// Commander personalities from `[AIPersonalities]`. Empty for retail data.
@@ -11601,6 +11653,20 @@ impl RuleSet {
             .type_handle(type_id)
             .expect("native fixture type exists");
         self.object_list[handle.0 as usize].size = size;
+    }
+
+    /// Write a type's slot-9 names (`BuildingType +0x11B0`, `+0x11C0`) as the
+    /// native slot corpora do, past ReadINI's empty-damaged copy.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_turret_anim_names_for_test(&mut self, id: &str, normal: &str, damaged: &str) {
+        let name = |name: &str| (!name.is_empty()).then(|| name.to_owned());
+        let object = self
+            .object_list
+            .iter_mut()
+            .find(|object| object.id == id)
+            .unwrap();
+        object.turret_anim = name(normal);
+        object.turret_anim_damaged = name(damaged);
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -13506,6 +13572,26 @@ CellSpread=0
                 "raw INI integer {raw}"
             );
         }
+    }
+
+    /// The RulesClass constructor (`0x00665650`) stores 0 at `Rules+0x664`
+    /// (`0x00665F3B`), and RulesClass::ReadGeneral (`0x0066D530`) hands ReadInt
+    /// that byte as its default (`0x0066F1CB..0x0066F1E6`). Retail RULESMD
+    /// sets 2, which the overlay registry reads from the processed rules too.
+    #[test]
+    fn cliff_back_rule_without_the_key_keeps_the_constructors_zero() {
+        assert_eq!(GeneralRules::default().cliff_back_impassability, 0);
+        let other_key = IniFile::from_str("[General]\nTreeStrength=200\n");
+        assert_eq!(
+            GeneralRules::from_ini(&other_key).cliff_back_impassability,
+            0
+        );
+        assert_eq!(read_cliff_back_impassability(None), 0);
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else {
+            return;
+        };
+        assert_eq!(retail.general.cliff_back_impassability, 2);
+        assert!(retail.overlay_registry().cliff_back_rock().is_some());
     }
 
     #[test]

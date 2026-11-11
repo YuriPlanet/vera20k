@@ -552,6 +552,7 @@ fn process_native_rules_cold_start_inner(
         selected_rules_root,
         "Animations",
         RulesTypeFamily::Animation,
+        0x20,
     );
     let after_animation_master = processor.native_type_construction_events.len();
     processor.process_anim_family(fixed_art, fixed_sounds);
@@ -560,6 +561,7 @@ fn process_native_rules_cold_start_inner(
         selected_rules_root,
         "BuildingTypes",
         RulesTypeFamily::Building,
+        0x20,
     );
     let after_building_master = processor.native_type_construction_events.len();
     processor.process_techno_family(
@@ -629,7 +631,12 @@ fn process_native_noncampaign_rules_prepass_inner(
     selected_rules_root: &IniFile,
 ) -> (NativeTypeConstructionTrace, [usize; 3]) {
     let mut processor = RulesPassProcessor::with_registry_state(registry_state);
-    processor.allocate_explicit_family(selected_rules_root, "Countries", RulesTypeFamily::Country);
+    processor.allocate_explicit_family(
+        selected_rules_root,
+        "Countries",
+        RulesTypeFamily::Country,
+        0x20,
+    );
     let after_countries = processor.native_type_construction_events.len();
     processor.allocate_general_references(selected_rules_root);
     let after_general = processor.native_type_construction_events.len();
@@ -649,7 +656,7 @@ pub(crate) fn read_native_multiplayer_country(
     current: i32,
 ) -> (i32, NativeTypeConstructionTrace) {
     let mut processor = RulesPassProcessor::with_registry_state(registry);
-    processor.allocate_explicit_family(root, "Countries", RulesTypeFamily::Country);
+    processor.allocate_explicit_family(root, "Countries", RulesTypeFamily::Country, 0x20);
     let name = settings
         .section_or_empty("MultiPlayer")
         .read_string("Side", "", 0x80);
@@ -6489,7 +6496,7 @@ impl RulesPassProcessor {
             if family == RulesTypeFamily::Side {
                 self.process_side_registry(pass)?;
             } else {
-                self.allocate_explicit_family(pass, registry, family);
+                self.allocate_explicit_family(pass, registry, family, 0x20);
             }
         }
 
@@ -6502,6 +6509,14 @@ impl RulesPassProcessor {
         });
         self.read_prerequisite_lists(pass);
         self.allocate_general_references(pass);
+        // Ares RulesData_LoadBeforeTypeData (hook 0x679A15, 1002AEF0):
+        // 1002B2FF..1002B34D reads each [WeaponTypes] value into the 0x800
+        // buffer and calls WeaponType FindOrAllocate10010570, before the
+        // type bodies. AnimType's Weapon= remains Find-only1000A370, so a
+        // declared animation-only weapon must already exist here.
+        // Source: Ares src/Ext/Rules/Body.cpp, LoadBeforeTypeData.
+        #[cfg(feature = "ares")]
+        self.allocate_explicit_family(pass, "WeaponTypes", RulesTypeFamily::Weapon, 0x800);
         #[cfg(feature = "ares")]
         self.ares_global_controls.read_before_type_data(pass);
         // The same 1002AB60 reads the tiberium globals after CanMakeStuffUp;
@@ -6680,12 +6695,13 @@ impl RulesPassProcessor {
         pass: &IniFile,
         registry: &str,
         family: RulesTypeFamily,
+        capacity: usize,
     ) {
         let Some(section) = pass.section(registry) else {
             return;
         };
         for key in section.keys() {
-            let identity = section.read_string(key, "", 32);
+            let identity = section.read_string(key, "", capacity);
             if !identity.is_empty() {
                 self.find_or_allocate(family, &identity);
             }
@@ -8349,6 +8365,63 @@ impl RulesPassProcessor {
                         // ValueableVector<TechnoTypeClass*>, Find.
                         reads.drop_pod_types =
                             self.resolve_existing_techno_type_list_from(&raw, "DropPod.Types");
+                    } else if is("ParaDrop") || is("AmerParaDrop") {
+                        // SW_ParaDrop::Initialize10073DC0 gives an AmerParaDrop
+                        // a default plane of Rules' AmerParaDropInf/Num as
+                        // this pass's ReadGeneral left them. LoadFromINI
+                        // 10073F70 reads Find-only: the plane through
+                        // detail::read (AircraftTypeClass::Find), the types
+                        // through ValueableVector<TechnoTypeClass*> 1000EDD0.
+                        let mut paradrop = self.families[&RulesTypeFamily::SuperWeapon][index]
+                            .super_weapon_launch
+                            .paradrop()
+                            .clone();
+                        if initialized && is("AmerParaDrop") {
+                            let types = self.general_type_lists.paradrop_infantry[0]
+                                .iter()
+                                .map(|id| crate::rules::superweapon_type::TechnoTypeReference {
+                                    category: ObjectCategory::Infantry,
+                                    id: id.clone(),
+                                })
+                                .collect();
+                            let counts = self
+                                .ordinary
+                                .as_ref()
+                                .and_then(|ini| ini.section("General"))
+                                .and_then(|general| general.read_ares_int_list("AmerParaDropNum"))
+                                .unwrap_or_default();
+                            paradrop.initialize_american(types, counts);
+                        }
+                        let sides: Vec<String> = self
+                            .families
+                            .get(&RulesTypeFamily::Side)
+                            .into_iter()
+                            .flatten()
+                            .map(|side| side.native_stored_id.clone())
+                            .collect();
+                        let countries: Vec<(String, i32)> = self
+                            .families
+                            .get(&RulesTypeFamily::Country)
+                            .into_iter()
+                            .flatten()
+                            .map(|country| {
+                                (country.native_stored_id.clone(), country.country_side_index)
+                            })
+                            .collect();
+                        paradrop.read_pass(
+                            &raw,
+                            &sides,
+                            &countries,
+                            |key| {
+                                self.resolve_existing_type_from(
+                                    &raw,
+                                    key,
+                                    RulesTypeFamily::Aircraft,
+                                )
+                            },
+                            |key| self.resolve_existing_techno_type_list_from(&raw, key),
+                        );
+                        reads.paradrop = Some(paradrop);
                     }
                     // 10033670: Nullable<WarheadTypeClass*> through the
                     // Warhead factory, for every type.

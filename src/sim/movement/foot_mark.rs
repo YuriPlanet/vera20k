@@ -395,26 +395,44 @@ impl Simulation {
         Some((cell, layer))
     }
 
-    /// The raw (Cell, plane) whose vehicle bit Mark(UP) clears for the Unit
-    /// `id` ([`Self::foot_mark_remove`]), read without clearing it: once
-    /// Mark(UP) admits it and [`Self::foot_pick_up`] finds its Cell,
-    /// [`Self::foot_mark_raw`] clears the plane its Location picks.
-    pub(crate) fn unit_mark_up_raw_cleared(&self, id: u64) -> Option<((u16, u16), MovementLayer)> {
-        let entity = self.substrate.entities.get(id)?;
+    /// The raw (Cell, plane) pairs whose vehicle bit Mark(UP) clears for the
+    /// Unit `id` ([`Self::foot_mark_remove`]), read without clearing them:
+    /// once Mark(UP) admits it and [`Self::foot_pick_up`] finds its Cell,
+    /// [`Self::foot_mark_raw`] clears the plane its Location picks, and in
+    /// an Ares build the plane its last mark chose
+    /// ([`Self::track_raw_mark_at`]).
+    pub(crate) fn unit_mark_up_raw_cleared(&self, id: u64) -> Vec<((u16, u16), MovementLayer)> {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return Vec::new();
+        };
         if entity.category() != EntityCategory::Unit
             || entity.lifecycle.in_limbo()
             || !entity.lifecycle.cell_marked()
             || !entity.foot_occupation_enabled()
+            || self.foot_mark_cell(id).is_none()
         {
-            return None;
+            return Vec::new();
         }
-        self.foot_mark_cell(id)?;
-        Some(raw_occupation_plane(
+        let (at, layer) = raw_occupation_plane(
             ground_pose::position_world_coord(&entity.position),
             false,
             self.resolved_terrain.as_ref(),
             self.path_grid.as_deref(),
-        ))
+        );
+        #[cfg_attr(not(feature = "ares"), allow(unused_mut))]
+        let mut cleared = vec![(at, layer)];
+        #[cfg(feature = "ares")]
+        if let Some(deck) = entity.ares_alt_occupation() {
+            let last = if deck {
+                MovementLayer::Bridge
+            } else {
+                MovementLayer::Ground
+            };
+            if last != layer {
+                cleared.push((at, last));
+            }
+        }
+        cleared
     }
 
     /// Remove/AddContent's receiver tail: Infantry returns first
@@ -456,7 +474,7 @@ impl Simulation {
         };
         match entity.category() {
             EntityCategory::Unit => {
-                Self::track_raw_mark_at(substrate, path_grid, resolved_terrain, coord, put);
+                Self::track_raw_mark_at(substrate, path_grid, resolved_terrain, id, coord, put);
             }
             EntityCategory::Infantry => {
                 let owner = entity.owner();

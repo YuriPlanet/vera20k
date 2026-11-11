@@ -64,9 +64,10 @@ impl AppState {
         // that page resolves every frame.
         if let Some(visit) = self.frontend.wol.as_mut()
             && let crate::app::shell_wol::WolPage::Login(login) = &mut visit.page
-            && let Some(form) = login.account.as_mut()
         {
-            form.refresh_text();
+            for form in login.form.iter_mut().chain(login.account.iter_mut()) {
+                form.refresh_text();
+            }
         }
     }
 
@@ -178,13 +179,6 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // Presentation only: the next EVA text line reads it.
         self.persistence.options_profile.detailed_eva_text = enabled;
     }
-    fn store_render_interpolation(&mut self, enabled: bool) {
-        self.persistence.options_profile.render_interpolation = enabled;
-        self.match_state
-            .match_presentation
-            .interpolation
-            .set_enabled(enabled);
-    }
     fn store_lock_cursor(&mut self, locked: bool) {
         // Saved, and applied at once: the window holds or frees the pointer.
         self.persistence.options_profile.lock_cursor = locked;
@@ -196,6 +190,15 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // star, the window keeps VERA's icon until the next launch, which
         // starts with the program's own.
         self.persistence.options_profile.vera_icon = vera_icon;
+        // Android's launcher icon is a compiled resource carried by the two
+        // activity aliases, and changing it closes the app, so the choice has to
+        // be on disk first. Every other platform applies the icon to the live
+        // window below and keeps its own write timing.
+        #[cfg(target_os = "android")]
+        {
+            crate::app::persistence::options::persist_options_profile(self);
+            crate::util::app_icon::apply(vera_icon);
+        }
         if self.platform.window.is_visible() == Some(false) {
             return;
         }
@@ -565,8 +568,8 @@ impl App {
             .multiplayer_shell_runtime
             .read_multiplayer_settings(&mut state.process_assets);
         let main = crate::app::state::process_main_draws(
-            state.match_state.sim_runtime.as_mut(),
-            &mut state.frontend.frontend_main_rng,
+            state.match_state.sim_runtime.as_ref(),
+            &state.frontend.frontend_main_rng,
         );
         state
             .match_state
@@ -1169,14 +1172,20 @@ impl App {
                     state.frontend.asset_import.body(&game_files_text, ""),
                 )
             } else {
-                shell_error_card(
+                let (title, mut text) = shell_error_card(
                     CardHost::CURRENT,
                     &state.frontend.startup_files,
                     state.process_assets.manager().is_some(),
                     game_files.as_deref(),
                     crate::util::logging::log_file(),
                     &error,
-                )
+                );
+                // The next start is without the mod (`mods::finish_start`).
+                if let Some(active) = &state.frontend.mods.active {
+                    text.push_str("\n\n");
+                    text.push_str(&crate::app::mods::start_failed_text(&active.title));
+                }
+                (title, text)
             };
         crate::app::frontend::status_screen::render(
             state,
@@ -1650,8 +1659,7 @@ impl App {
                 Self::close_shell_message_box_from_controller(state);
                 crate::app::updater::cancel_check(state);
             }
-            #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-            ShellMessageBoxPurpose::UpdateNotice => {
+            ShellMessageBoxPurpose::Notice => {
                 Self::close_shell_message_box_from_controller(state);
                 state.platform.window.request_redraw();
             }
@@ -2198,6 +2206,26 @@ impl App {
         state.frontend.shell_message_box = Some(message_box);
         Self::raise_shell_message_box(state);
         state.platform.window.request_redraw();
+    }
+
+    /// An OK box that only says `text`, in place of any box already open.
+    pub(crate) fn open_shell_notice(state: &mut AppState, text: String) {
+        if state.frontend.shell_message_box.is_some() {
+            Self::close_shell_message_box_from_controller(state);
+        }
+        let ok = Self::csf_label(state, "TXT_OK", "OK");
+        Self::open_shell_message_box(
+            state,
+            crate::app::frontend::state::ShellMessageBox {
+                labels: crate::ui::main_menu_dialogs::ShellMessageBoxLabels {
+                    title: text,
+                    confirm: ok,
+                    third: String::new(),
+                    cancel: String::new(),
+                },
+                purpose: crate::app::frontend::state::ShellMessageBoxPurpose::Notice,
+            },
+        );
     }
 
     /// Put the open box on top of the controller. A page under the box still

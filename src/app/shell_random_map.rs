@@ -10,9 +10,8 @@ pub(super) const RANDOM_MAP_DESCRIPTION_KEY: &str = "TXT_RANDOM_MAP_DESCRIPTION"
 pub(super) const RANDOM_MAP_DESCRIPTION_FALLBACK: &str = "Random Map";
 /// The players slider is the last of the setup dialog's six option rows.
 const SETUP_PLAYERS_ROW: usize = 5;
-/// Matches the rules default the map-load path falls back to; the preview only
-/// needs it because terrain resolution takes it, not because cliffs affect the
-/// image.
+/// Retail's `[General] CliffBackImpassability=`; the preview only needs it
+/// because terrain resolution takes it, not because cliffs affect the image.
 const RANDOM_MAP_PREVIEW_CLIFF_BACK_IMPASSABILITY: u8 = 2;
 /// Where the generated preview is written. The chooser's sentinel row reads this
 /// back, so writing it is what makes the random-map thumbnail appear there.
@@ -764,12 +763,13 @@ pub(super) fn prepare_random_map_generation(
     if options.urban_enabled
         && let Some((owner, preview)) = native_rules.zip(preview_rules.as_ref())
     {
-        settings.urban_types = crate::map::rmg::tech_catalog::resolve_urban(
+        settings.vera_urban = crate::map::rmg::tech_catalog::resolve_vera_urban(
             &preview.rules,
             owner.fixed_art(),
             &tech_types,
             theater.extension,
             theater_name,
+            options.seed_u16(),
             |file| asset_manager.contains(file),
         );
     }
@@ -1179,8 +1179,8 @@ impl App {
                 (
                     urban_catalog,
                     crate::app::state::process_main_draws(
-                        state.match_state.sim_runtime.as_mut(),
-                        &mut state.frontend.frontend_main_rng,
+                        state.match_state.sim_runtime.as_ref(),
+                        &state.frontend.frontend_main_rng,
                     ),
                 )
             }),
@@ -1450,8 +1450,8 @@ impl App {
         // never sees.
         let resolved_terrain = {
             let mut main = crate::app::state::process_main_draws(
-                state.match_state.sim_runtime.as_mut(),
-                &mut state.frontend.frontend_main_rng,
+                state.match_state.sim_runtime.as_ref(),
+                &state.frontend.frontend_main_rng,
             );
             let (manager, _, selector_cache) =
                 state.process_assets.manager_and_rules_with_tile_cache();
@@ -1733,8 +1733,8 @@ impl App {
         let mut open_browser: Option<SavedSeedMode> = None;
         let mut main =
             crate::ui::skirmish_shell::MainRngRanged(crate::app::state::process_main_draws(
-                state.match_state.sim_runtime.as_mut(),
-                &mut state.frontend.frontend_main_rng,
+                state.match_state.sim_runtime.as_ref(),
+                &state.frontend.frontend_main_rng,
             ));
         match released.expect("checked equal to pressed control") {
             Control::Randomize0x621 => {
@@ -2052,8 +2052,8 @@ mod tests {
             }
         };
         assert_eq!(entries, 1);
-        let mut main_rng = crate::sim::rng::MainRng::new(0x0401_599d);
-        let mut main = crate::app::state::process_main_draws(None, &mut main_rng);
+        let main_rng = crate::sim::rng::MainRng::new(0x0401_599d);
+        let mut main = crate::app::state::process_main_draws(None, &main_rng);
         let mut selector = crate::map::tile_variant_selector::TileVariantSelectorCache::default();
         let resolved = build_random_map_preview_grid(
             &generated.map_file,
@@ -2639,11 +2639,11 @@ mod tests {
         process_dummy.stamp_coord(12, -4);
         let expected = process_dummy.snapshot();
         let map = generated_preview(11, 10).map_file;
-        let mut frontend_main_rng = crate::sim::rng::MainRng::new(0x0401_599D);
+        let frontend_main_rng = crate::sim::rng::MainRng::new(0x0401_599D);
         let mut selector_cache =
             crate::map::tile_variant_selector::TileVariantSelectorCache::default();
         for _ in 0..6 {
-            let mut main = crate::app::state::process_main_draws(None, &mut frontend_main_rng);
+            let mut main = crate::app::state::process_main_draws(None, &frontend_main_rng);
             let preview_grid = build_random_map_preview_grid(
                 &map,
                 None,

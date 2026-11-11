@@ -599,6 +599,12 @@ pub struct GameEntity {
     #[cfg(feature = "ares")]
     #[serde(default)]
     ares_drop_pod: Option<crate::sim::superweapon::drop_pod::DropPodFlight>,
+    /// Ares 3.0 TechnoExt `AltOccupation` (`+0x99`, set at `+0x9A`): whether
+    /// a Unit's last raw mark (vt+0xF0) chose the deck plane, which its next
+    /// unmark also clears. Only `Simulation::track_raw_mark_at` writes it.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_alt_occupation: Option<bool>,
     /// Ares TechnoExt::SuperWeapon (+0xA0), the Super attached to this
     /// Techno: SW_HunterSeeker::Activate's launch source on its seeker and
     /// SW_EMPulse::Activate's firing Super on each cannon. The entity owns
@@ -891,6 +897,12 @@ pub struct GameEntity {
     #[cfg(feature = "ares")]
     #[serde(default)]
     pub(crate) display_production_to: crate::sim::spy_infiltration::DisplayProductionTo,
+    /// A Unit's `IdleWanderDirection` (`+0x6D4`), an [`IdleWander`] that
+    /// `sim::visceroid` owns.
+    ///
+    /// [`IdleWander`]: crate::sim::visceroid::IdleWander
+    #[serde(default)]
+    pub(crate) idle_wander: crate::sim::visceroid::IdleWander,
     /// A building's Ares `OwnerBeforeRaid` (BuildingExt `+0x8`), a
     /// [`RaidState`] that `sim::ares_garrison` owns.
     ///
@@ -1133,6 +1145,25 @@ impl GameEntity {
     #[cfg(feature = "ares")]
     pub(crate) fn end_ares_drop_pod(&mut self) {
         self.ares_drop_pod = None;
+    }
+
+    /// The plane this Unit's last raw mark chose (TechnoExt `AltOccupation`),
+    /// `true` for the deck, while that mark stands.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_alt_occupation(&self) -> Option<bool> {
+        self.ares_alt_occupation
+    }
+
+    /// A raw mark (vt+0xF0) records the plane it chose.
+    #[cfg(feature = "ares")]
+    pub(crate) fn mark_ares_alt_occupation(&mut self, on_deck: bool) {
+        self.ares_alt_occupation = Some(on_deck);
+    }
+
+    /// The unmark reads the recorded plane and forgets it.
+    #[cfg(feature = "ares")]
+    pub(crate) fn take_ares_alt_occupation(&mut self) -> Option<bool> {
+        self.ares_alt_occupation.take()
     }
 
     #[cfg(feature = "ares")]
@@ -2303,6 +2334,8 @@ impl GameEntity {
             ares_chronoshifting: false,
             #[cfg(feature = "ares")]
             ares_drop_pod: None,
+            #[cfg(feature = "ares")]
+            ares_alt_occupation: None,
             ares_super_weapon: None,
             ares_super_target: None,
             tesla_charge: Default::default(),
@@ -2379,6 +2412,7 @@ impl GameEntity {
             pending_c4_detonation: Default::default(),
             #[cfg(feature = "ares")]
             display_production_to: Default::default(),
+            idle_wander: Default::default(),
             #[cfg(feature = "ares")]
             ares_raid: Default::default(),
             #[cfg(feature = "ares")]
@@ -2492,7 +2526,7 @@ impl GameEntity {
     /// ObjectClass `+0x8D` IsFallingDown. `ObjectClass::Paradrop`
     /// (`0x005F5940`) raises it at `0x005F5965`, and `ObjectClass::AI`
     /// clears it when the fall grounds (`0x005F3F86`).
-    pub(crate) fn is_falling_down(&self) -> bool {
+    pub fn is_falling_down(&self) -> bool {
         self.fall.falling()
     }
 
@@ -2625,7 +2659,7 @@ impl GameEntity {
 
     /// Put a fixture into a fall where it is, with a FallRate of 0.
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn set_falling_down_for_test(&mut self, falling: bool) {
+    pub fn set_falling_down_for_test(&mut self, falling: bool) {
         self.fall.set_falling_for_test(falling);
     }
 

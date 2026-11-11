@@ -66,8 +66,6 @@ pub(crate) const ORIGINAL_SHAPE_LABEL: &str = "VERA:OriginalShape";
 pub(crate) const ORIGINAL_SHAPE_HELP: &str = "VERA:OriginalShapeHelp";
 pub(crate) const YR_ORIGINAL_STYLE_LABEL: &str = "VERA:YrOriginalStyle";
 pub(crate) const YR_ORIGINAL_STYLE_HELP: &str = "VERA:YrOriginalStyleHelp";
-pub(crate) const RENDER_INTERPOLATION_LABEL: &str = "VERA:RenderInterpolation";
-pub(crate) const RENDER_INTERPOLATION_HELP: &str = "VERA:RenderInterpolationHelp";
 pub(crate) const MOUSE_WHEEL_ZOOM_LABEL: &str = "VERA:MouseWheelZoom";
 pub(crate) const MOUSE_WHEEL_ZOOM_HELP: &str = "VERA:MouseWheelZoomHelp";
 pub(crate) const RIGHT_CLICK_ORDERS_LABEL: &str = "VERA:RightClickOrders";
@@ -681,8 +679,6 @@ pub(crate) enum LauncherCheckboxId {
     /// nuke leaves a crater. Saved; the next game's rules read it, so a match
     /// already running keeps its own.
     TerrainDeformation,
-    /// Client-only smoothing, independent of native simulation and detail.
-    RenderInterpolation,
     /// VERA's local camera option: the wheel changes battle view distance.
     MouseWheelZoom,
     /// VERA-only alternative controls: left selects, right commands.
@@ -782,7 +778,6 @@ pub(crate) enum LauncherOptionsEvent {
     YrOriginalStyleChanged(bool),
     ShiftQueueChanged(bool),
     TerrainDeformationChanged(bool),
-    RenderInterpolationChanged(bool),
     MouseWheelZoomChanged(bool),
     RightClickOrdersChanged(bool),
     LockCursorChanged(bool),
@@ -835,7 +830,6 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) full_screen: bool,
     pub(crate) original_shape: bool,
     pub(crate) yr_original_style: bool,
-    pub(crate) render_interpolation: bool,
     pub(crate) mouse_wheel_zoom: bool,
     pub(crate) right_click_orders: bool,
     pub(crate) lock_cursor: bool,
@@ -890,7 +884,6 @@ impl Default for LauncherOptionsValues {
             full_screen: false,
             original_shape: false,
             yr_original_style: false,
-            render_interpolation: false,
             mouse_wheel_zoom: false,
             right_click_orders: false,
             lock_cursor: false,
@@ -1305,7 +1298,6 @@ impl OptionsDialogState {
             LauncherCheckboxId::YrOriginalStyle => &mut self.values.yr_original_style,
             LauncherCheckboxId::ShiftQueue => &mut self.values.shift_queue,
             LauncherCheckboxId::TerrainDeformation => &mut self.values.terrain_deformation,
-            LauncherCheckboxId::RenderInterpolation => &mut self.values.render_interpolation,
             LauncherCheckboxId::MouseWheelZoom => &mut self.values.mouse_wheel_zoom,
             LauncherCheckboxId::RightClickOrders => &mut self.values.right_click_orders,
             LauncherCheckboxId::LockCursor => &mut self.values.lock_cursor,
@@ -1342,9 +1334,6 @@ impl OptionsDialogState {
             LauncherCheckboxId::TerrainDeformation => self
                 .pending_events
                 .push(LauncherOptionsEvent::TerrainDeformationChanged(checked)),
-            LauncherCheckboxId::RenderInterpolation => self
-                .pending_events
-                .push(LauncherOptionsEvent::RenderInterpolationChanged(checked)),
             LauncherCheckboxId::MouseWheelZoom => self
                 .pending_events
                 .push(LauncherOptionsEvent::MouseWheelZoomChanged(checked)),
@@ -1588,7 +1577,6 @@ impl Category {
                 Setting::List(List::ColorVision),
                 Setting::Checkbox(Check::FullScreen),
                 Setting::Checkbox(Check::OriginalShape),
-                Setting::Checkbox(Check::RenderInterpolation),
                 Setting::Checkbox(Check::YrOriginalStyle),
             ],
             Self::Gameplay => &[
@@ -2090,41 +2078,6 @@ mod tests {
     }
 
     #[test]
-    fn original_yr_style_and_render_interpolation_toggle_independently() {
-        let mut state = state(true);
-        let initial = state.values;
-        state.checkbox_mouse_down(LauncherCheckboxId::YrOriginalStyle, frame(5, 5, 220, 20));
-        assert_ne!(state.values.yr_original_style, initial.yr_original_style);
-        assert_eq!(
-            state.values.render_interpolation,
-            initial.render_interpolation
-        );
-        assert_eq!(
-            state.drain_output().events,
-            [
-                LauncherOptionsEvent::Cue(LauncherCue::Checkbox),
-                LauncherOptionsEvent::YrOriginalStyleChanged(!initial.yr_original_style),
-            ]
-        );
-        state.checkbox_mouse_down(
-            LauncherCheckboxId::RenderInterpolation,
-            frame(5, 5, 220, 20),
-        );
-        assert_ne!(
-            state.values.render_interpolation,
-            initial.render_interpolation
-        );
-        assert_ne!(state.values.yr_original_style, initial.yr_original_style);
-        assert_eq!(
-            state.drain_output().events,
-            [
-                LauncherOptionsEvent::Cue(LauncherCue::Checkbox),
-                LauncherOptionsEvent::RenderInterpolationChanged(!initial.render_interpolation),
-            ]
-        );
-    }
-
-    #[test]
     fn the_first_request_of_a_frame_wins_across_results_and_the_update_check() {
         let mut state = state(true);
         state.request_update_check();
@@ -2304,7 +2257,6 @@ mod tests {
                 Check::FullScreen,
                 Check::OriginalShape,
                 Check::YrOriginalStyle,
-                Check::RenderInterpolation,
                 Check::MouseWheelZoom,
                 Check::RightClickOrders,
                 Check::LockCursor,

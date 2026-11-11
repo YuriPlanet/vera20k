@@ -151,6 +151,23 @@ fn blocked_destination_surfaces_on_a_burrowable_neighbour() {
     );
 }
 
+/// A move order reaches the Unit setter through the class-setter dispatcher
+/// (vt+0x480 = `UnitClass::Assign_Destination @ 0x00741970`), so a Tunnel
+/// Unit starts digging instead of keeping a NavCom nothing drives toward.
+#[test]
+fn dispatched_order_reaches_the_unit_setter() {
+    let (mut sim, rules) = fixture();
+    sim.assign_destination_represented(
+        DIGGER,
+        Some(NavTargetRef::cell(30, 10)),
+        &rules,
+        None,
+        FrameEffects::default(),
+    )
+    .expect("dispatched destination");
+    assert_eq!(tunnel_state(&sim), Some(TunnelState::PreDigIn));
+}
+
 /// A short trip with a cheap ground route drives: the Unit setter's Tunnel
 /// arm (`0x007427C0..0x00742C14`) puts a Drive over the Tunnel.
 #[test]

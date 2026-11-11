@@ -1,5 +1,7 @@
 //! Active gamemd narrow/wide string boundary helpers.
 
+use std::borrow::Cow;
+
 /// Zero-extend each narrow byte to one Unicode scalar.
 ///
 /// This is the engine's ordinary internal conversion. It is deliberately not
@@ -19,6 +21,34 @@ pub fn narrow_widened(text: &str) -> Vec<u8> {
     text.chars()
         .map(|scalar| u8::try_from(u32::from(scalar)).unwrap_or(b'?'))
         .collect()
+}
+
+/// VERA: widened `text` as the characters its bytes spell when they are valid
+/// UTF-8, so a map that saves a Chinese or Russian name that way shows it.
+/// gamemd has no such step: it widens those bytes like any others
+/// (`SessionClass__ParseMultiplayerMapHeader` `0x006994F0` through
+/// `NativeString__WidenBytes` `0x00735060`) and shows accented Latin letters.
+///
+/// A last character a native buffer cut short is dropped. Text that is not
+/// UTF-8 comes back as it is: CP1252, GBK and the like look alike as bytes, so
+/// a name saved in GBK still shows as gamemd widens it.
+pub fn decode_widened_utf8(text: &str) -> Cow<'_, str> {
+    if text.is_ascii() {
+        return Cow::Borrowed(text);
+    }
+    let mut bytes = narrow_widened(text);
+    if let Err(error) = std::str::from_utf8(&bytes) {
+        // `error_len` is `None` when the text only ends too early.
+        if error.error_len().is_some() {
+            return Cow::Borrowed(text);
+        }
+        bytes.truncate(error.valid_up_to());
+    }
+    // Nothing but ASCII before a cut: a last high byte, not a UTF-8 name.
+    if bytes.is_ascii() {
+        return Cow::Borrowed(text);
+    }
+    Cow::Owned(String::from_utf8(bytes).expect("checked as UTF-8 above"))
 }
 
 /// `f` applied to `text` with its ASCII letters upper-cased, as
@@ -338,6 +368,19 @@ mod tests {
         assert_eq!(crt_wcstol(&wide("-2147483648"), 10), i32::MIN);
         assert_eq!(crt_wcstoul(&wide("-1"), 10), u32::MAX);
         assert_eq!(crt_wcstoul(&wide("x"), 10), 0);
+    }
+
+    #[test]
+    fn only_valid_utf8_is_decoded_from_widened_text() {
+        // CP1252, GBK (大仙), and a high last byte after nothing but ASCII.
+        for bytes in [
+            &b"D\xE9fense"[..],
+            &b"\xB4\xF3\xCF\xC9"[..],
+            &b"Francais\xE9"[..],
+        ] {
+            let widened = widen_bytes(bytes);
+            assert_eq!(decode_widened_utf8(&widened), widened);
+        }
     }
 
     /// The stack fold and the heap fallback past 64 bytes answer

@@ -19,11 +19,14 @@
 //!   not drift; conversion to milliseconds happens once, in [`FrameProfileReport`].
 //! - **Opt-in.** New and deserialized simulations do no clock reads. Enabled
 //!   measurement stamps existing boundaries without moving gameplay work.
-//! - **Current boundaries.** Combat, passengers and wall crushing mostly run
-//!   inside the live object pass. Slots without a separate current phase stay
-//!   zero; they do not claim an independently measured subsystem.
+//! - **Inside the object pass.** Most of a busy match's time is that one step,
+//!   so its parts have their own slots. An [`area`] at each part's owner counts
+//!   toward its slot until it ends, and `UNIT_AI` keeps what no area names.
+//!   An area inside another pauses it, so the slots never overlap and still add
+//!   up to the frame.
 
 use crate::util::time::{Duration, Instant};
+use std::cell::RefCell;
 use std::ops::Range;
 
 /// A local, enabled-only observer; never held by or serialized with the world.
@@ -49,15 +52,87 @@ impl FrameClock {
         self.previous = now;
     }
 
+    /// Run the live object pass with its [`area`]s counting. The time after
+    /// the last one ended waits for the `UNIT_AI` stamp that follows the pass.
+    pub(crate) fn split_object_pass<T>(&mut self, pass: impl FnOnce() -> T) -> T {
+        AREAS.set(Some(AreaClock {
+            previous: self.previous,
+            current: phase::UNIT_AI,
+            phases: FramePhases::default(),
+        }));
+        let result = pass();
+        if let Some(areas) = AREAS.take() {
+            for slot in 0..PHASE_COUNT {
+                self.phases.add(slot, areas.phases.get(slot));
+            }
+            self.previous = areas.previous;
+        }
+        result
+    }
+
     pub(crate) fn finish(self) -> (FramePhases, Duration) {
         (self.phases, self.previous.duration_since(self.started))
     }
 }
 
+thread_local! {
+    /// The running object pass's clock. Only that pass installs one, so an
+    /// unprofiled frame or a worker thread finds nothing here: the main
+    /// thread's wait for its workers is what the slot shows.
+    static AREAS: RefCell<Option<AreaClock>> = const { RefCell::new(None) };
+}
+
+/// The object pass's split of time among its parts.
+struct AreaClock {
+    previous: Instant,
+    /// The slot the time since `previous` belongs to.
+    current: usize,
+    phases: FramePhases,
+}
+
+impl AreaClock {
+    /// Close the current slot's span and count toward `slot` from now on.
+    /// Returns the slot it closed.
+    fn switch_to(&mut self, slot: usize) -> usize {
+        let now = Instant::now();
+        self.phases
+            .add(self.current, now.duration_since(self.previous));
+        self.previous = now;
+        std::mem::replace(&mut self.current, slot)
+    }
+}
+
+/// A running [`area`]. Dropping it gives the time back to the area around it.
+#[must_use = "an area ends when this guard is dropped"]
+pub(crate) struct Area {
+    outer: Option<usize>,
+}
+
+impl Drop for Area {
+    fn drop(&mut self) {
+        if let Some(outer) = self.outer {
+            AREAS.with_borrow_mut(|areas| {
+                if let Some(areas) = areas {
+                    areas.switch_to(outer);
+                }
+            });
+        }
+    }
+}
+
+/// Count the time until the guard drops toward `slot`. It costs one
+/// thread-local check when nothing is measuring.
+pub(crate) fn area(slot: usize) -> Area {
+    Area {
+        outer: AREAS.with_borrow_mut(|areas| areas.as_mut().map(|areas| areas.switch_to(slot))),
+    }
+}
+
 /// Slots in the per-frame ledger, in the order `advance_master_frame` runs
 /// them, except that `TEAM_AI` runs between the two stretches `BOMBS` folds
-/// (Kamikaze, then the Disk walk). Names are stable keys: the dashboard's
-/// i18n table is indexed by them. `DOCKS` has no step and stays zero.
+/// (Kamikaze, then the Disk walk), and that `UNIT_AI` through `EFFECTS` are
+/// parts of the one object pass. Names are stable keys: the dashboard's i18n
+/// table is indexed by them.
 pub mod phase {
     pub const COMMANDS_INGRESS: usize = 0;
     pub const COMMANDS_ADMIT: usize = 1;
@@ -69,27 +144,31 @@ pub mod phase {
     pub const SUPERWEAPONS: usize = 7;
     pub const RADIATION: usize = 8;
     pub const TEAM_AI: usize = 9;
-    pub const OBJECTS: usize = 10;
-    pub const WALL_CRUSH: usize = 11;
-    pub const WAKES: usize = 12;
-    pub const VISION: usize = 13;
-    pub const COMBAT: usize = 14;
-    pub const PASSENGERS: usize = 15;
-    pub const ION_BLASTS: usize = 16;
-    pub const CRATES: usize = 17;
-    pub const PRODUCTION: usize = 18;
-    pub const DOCKS: usize = 19;
-    pub const SPAWN_FOG: usize = 20;
-    pub const LATE_AI: usize = 21;
-    pub const OVERLAYS: usize = 22;
-    pub const DEBUG_ASSERTS: usize = 23;
-    pub const ANIMS: usize = 24;
-    pub const SCORE: usize = 25;
-    pub const HASH: usize = 26;
+    /// What no other part of the object pass names: above all units' missions.
+    pub const UNIT_AI: usize = 10;
+    pub const PATHFINDING: usize = 11;
+    pub const TARGETING: usize = 12;
+    pub const MOVEMENT: usize = 13;
+    pub const FIRING: usize = 14;
+    pub const BUILDINGS: usize = 15;
+    pub const BULLETS: usize = 16;
+    pub const EFFECTS: usize = 17;
+    pub const WAKES: usize = 18;
+    pub const VISION: usize = 19;
+    pub const COMBAT: usize = 20;
+    pub const ION_BLASTS: usize = 21;
+    pub const CRATES: usize = 22;
+    pub const PRODUCTION: usize = 23;
+    pub const LATE_AI: usize = 24;
+    pub const OVERLAYS: usize = 25;
+    pub const DEBUG_ASSERTS: usize = 26;
+    pub const ANIMS: usize = 27;
+    pub const SCORE: usize = 28;
+    pub const HASH: usize = 29;
 }
 
 /// Number of stamped phases per frame.
-pub const PHASE_COUNT: usize = 27;
+pub const PHASE_COUNT: usize = 30;
 
 /// Wire keys for the ledger, indexed by the `phase::*` slots.
 ///
@@ -106,17 +185,20 @@ pub const PHASE_KEYS: [&str; PHASE_COUNT] = [
     "superweapons",
     "radiation",
     "team_ai",
-    "objects",
-    "wall_crush",
+    "unit_ai",
+    "pathfinding",
+    "targeting",
+    "movement",
+    "firing",
+    "buildings",
+    "bullets",
+    "effects",
     "wakes",
     "vision",
     "combat",
-    "passengers",
     "ion_blasts",
     "crates",
     "production",
-    "docks",
-    "spawn_fog",
     "late_ai",
     "overlays",
     "debug_asserts",
@@ -127,8 +209,8 @@ pub const PHASE_KEYS: [&str; PHASE_COUNT] = [
 
 /// Bucket slices. Contiguous by construction, so the pies and the table read
 /// the same numbers.
-const LOGIC_SLICE: Range<usize> = phase::COMMANDS_INGRESS..phase::OBJECTS;
-const OBJECTS_SLICE: Range<usize> = phase::OBJECTS..phase::VISION;
+const LOGIC_SLICE: Range<usize> = phase::COMMANDS_INGRESS..phase::UNIT_AI;
+const OBJECTS_SLICE: Range<usize> = phase::UNIT_AI..phase::VISION;
 const VISION_SLICE: Range<usize> = phase::VISION..phase::COMBAT;
 const TAIL_SLICE: Range<usize> = phase::COMBAT..PHASE_COUNT;
 
@@ -372,7 +454,7 @@ mod tests {
         phases.set(phase::COMMANDS_ADMIT, Duration::from_micros(20));
         phases.set(phase::TRIGGERS, Duration::from_micros(30));
         phases.set(phase::TEAM_AI, Duration::from_micros(40));
-        phases.set(phase::OBJECTS, Duration::from_micros(500));
+        phases.set(phase::UNIT_AI, Duration::from_micros(500));
         phases.set(phase::VISION, Duration::from_micros(100));
         phases.set(phase::COMBAT, Duration::from_micros(60));
         phases.set(phase::PRODUCTION, Duration::from_micros(50));
@@ -405,6 +487,40 @@ mod tests {
                 .count();
             assert_eq!(buckets, 1, "slot {index} must sit in exactly one bucket");
         }
+    }
+
+    /// An area inside another pauses it, the outer one resumes afterwards,
+    /// and no time is counted twice or lost.
+    #[test]
+    fn areas_nest_without_overlapping_and_do_nothing_outside_the_pass() {
+        let outside = area(phase::FIRING);
+        assert!(outside.outer.is_none(), "nothing is measuring yet");
+        drop(outside);
+
+        let nap = Duration::from_millis(4);
+        let at_least = nap / 2;
+        let mut clock = FrameClock::start();
+        clock.split_object_pass(|| {
+            let building = area(phase::BUILDINGS);
+            {
+                let _scan = area(phase::TARGETING);
+                std::thread::sleep(nap);
+            }
+            // All of the building's own time comes after its scan ended.
+            std::thread::sleep(nap);
+            drop(building);
+            std::thread::sleep(nap);
+        });
+        clock.stamp(phase::UNIT_AI);
+        let (phases, total) = clock.finish();
+        assert!(phases.get(phase::TARGETING) >= at_least);
+        assert!(phases.get(phase::BUILDINGS) >= at_least);
+        assert!(phases.get(phase::UNIT_AI) >= at_least);
+        assert_eq!(phases.sim(), total, "every span is in exactly one slot");
+        assert!(
+            AREAS.with_borrow(Option::is_none),
+            "the clock is taken down"
+        );
     }
 
     #[test]

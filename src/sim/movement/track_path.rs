@@ -750,8 +750,8 @@ impl Simulation {
 
     /// Whether the Unit setter (`0x741970`) is represented for `id` as the
     /// team, harvest and undeploy callers use it: a Drive, Ship, Hover, Walk,
-    /// Jumpjet or Teleport receiver, or a `Teleporter=` Unit whatever its
-    /// locomotor.
+    /// Jumpjet, Teleport or Tunnel receiver, or a `Teleporter=` Unit whatever
+    /// its locomotor.
     pub(crate) fn unit_setter_receiver(&self, id: u64, rules: &RuleSet) -> bool {
         self.substrate.entities.get(id).is_some_and(|actor| {
             track_unit(actor)
@@ -759,6 +759,7 @@ impl Simulation {
                 || walk_unit(actor)
                 || jumpjet_unit(actor)
                 || teleport_unit(actor)
+                || tunnel_unit(actor)
                 || teleporter_unit(self, actor, rules)
         })
     }
@@ -1308,9 +1309,12 @@ impl Simulation {
                     | LocomotorKind::Walk,
                 ) => {
                     let coord = coord.expect("accepted Move_To captures target +4C");
-                    super::navcom::set_destination_internal_coord(
+                    if super::navcom::set_destination_internal_coord(
                         actor, requested, coord, terrain, frame,
-                    );
+                    ) && let Err(error) = self.hover_move_to_path_step(id, rules, frame_effects)
+                    {
+                        log::warn!("Unit Hover MoveTo {id}: {}", error.cause);
+                    }
                     true
                 }
                 Some(LocomotorKind::Tunnel) => {

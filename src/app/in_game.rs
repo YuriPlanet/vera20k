@@ -65,6 +65,7 @@ impl App {
     /// Quit Game's leave: a frame suspended in Wait_For_Players finishes its
     /// tail before the result-8 return.
     pub(super) fn leave_network_wait_to_main_menu(state: &mut AppState) {
+        crate::app::match_runtime::network_failure::hold_quit_line(state);
         if state
             .match_state
             .sim_runtime
@@ -267,6 +268,8 @@ impl App {
             .radar_movies
             .set_active(movie_active);
         state.match_state.input.keys_held.clear();
+        // VERA formation line: its held key's release may never arrive.
+        state.match_state.input.formation_line.clear_key();
         state.match_state.input.hotkey_modifiers = ModifiersState::empty();
         state.platform.live_modifiers = ModifiersState::empty();
         state.platform.held_modifier_keys.clear();

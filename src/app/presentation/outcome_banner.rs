@@ -384,12 +384,17 @@ pub(crate) fn instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<SpriteIns
         .as_ref()
         .is_some_and(|runtime| runtime.simulation.session().game_mode_nonzero());
     let (frame, label) = result_view(outcome_kind, campaign);
-    let (width, height) = crate::app::input::camera::tactical_viewport_size(state);
-    let view = [width as i32, height as i32];
-    let camera = [
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-    ];
+    use crate::app::presentation::field_parts;
+    use crate::ui::field_layout::FieldPart;
+    // A layout that leaves the banner out draws none.
+    if !field_parts::shows(state, FieldPart::Banner) {
+        return Default::default();
+    }
+    // The banner is centred in its box, the battlefield in the original
+    // interface, and laid out in the box's own pixels.
+    let [_, _, width, height] = field_parts::rect(state, FieldPart::Banner);
+    let view = [width, height];
+    let camera = field_parts::lane_camera(state, FieldPart::Banner);
     if let Some(quad) = active_art(state).and_then(|art| art.fit_quad(view, camera)) {
         return (vec![quad], Vec::new());
     }

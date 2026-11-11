@@ -17,6 +17,8 @@ IvanBomb.TickingSound=MyTick     ; else [AudioVisual]BombTickingSound; none sile
 IvanBomb.AttachSound=MyAttach    ; else BombAttachSound
 IvanBomb.Image=MYCLOCK           ; MYCLOCK.shp in place of BOMBCURS.SHP
 IvanBomb.FlickerRate=8           ; else IvanIconFlickerRate
+IvanBomb.CanDetonateTimeBomb=yes ; else [CombatDamage]CanDetonateTimeBomb
+IvanBomb.CanDetonateDeathBomb=no ; else [CombatDamage]CanDetonateDeathBomb
 
 [MyGrabber]                      ; WeaponType
 Abductor=yes                     ; the target goes into the firer's hold
@@ -48,6 +50,15 @@ deploying MCV or undeploying building hands its bomb to what it becomes
 (10045A80), and a cloaking planter keeps its bombs' credit (0x725961).
 Aircraft keep an illegal target on the sixteenth-frame check (0x6FA4C6).
 
+The player's Detonate on a lone selected carrier over itself is gamemd's
+([dormant-stock-rules.md](dormant-stock-rules.md#detonating-a-bomb-on-a-click));
+Ares asks it at the entry of What_Action (IvanBombsA 10056D30, hook 0x6FFEC0),
+so a berserk or warped carrier answers it too, skips the stock rung
+(IvanBombsB 10056D70, hook 0x6FFF9E), and `TechnoExt::CanDetonateAttachedBomb`
+(100433A0) reads the planting weapon's `IvanBomb.CanDetonate*` over the Rules
+keys. The click's berserk and deactivated refusals let it through (0x51F1D8,
+0x7388EB, 0x4D74EC); VERA's click sends the event directly.
+
 ## Abductors
 
 `conductAbduction` (Ares.dll 10054A80) runs for a bullet snapped to a Foot
@@ -65,8 +76,8 @@ it to the hold.
   and `ProjectileRange`; `rules/object_type.rs`: the two TechnoType keys.
   `IvanBomb.Warhead` and `Abductor.Anim` resolve in the ordered processor;
   the two cues bind with the other Rules sounds.
-- `sim/bomb.rs`: the plant, fuse, blast, sale detonation, transfer and the
-  clock frame (100568C0). `sim/combat/fire_error.rs` and the Engineer's
+- `sim/bomb.rs`: the plant, fuse, blast, sale detonation, transfer, the
+  clock frame (100568C0) and the Detonate predicate (`bomb_detonate_action`). `sim/combat/fire_error.rs` and the Engineer's
   cursor and click read `Simulation::bomb_detachable`.
 - `sim/abduction.rs`: conductAbduction; `sim/passenger.rs`: its hold tail.
 - `sim/projectile.rs`: the Range a FireAt bullet carries and spends.
@@ -75,10 +86,8 @@ it to the hold.
 
 ## Not covered
 
-- The player's Detonate action for an own bomb (`IvanBomb.CanDetonate*`,
-  [General]`CanDetonateTimeBomb`/`CanDetonateDeathBomb`, the What_Action and
-  Berzerk click hooks, `TechnoExt::CanDetonateAttachedBomb`): the two
-  weapon keys are read (`AresIvanBomb`), there is no action to gate.
+- Detonate on an Aircraft or Building carrier: their class ladders do not
+  reach the rung in VERA (`app::input::context_order::self_detonates`).
 - Abduction of a spawned or enslaved unit, a slave master's manager, the
   locomotor reset and a Building abductor's Absorbed flag (see
   `sim/abduction.rs`). The trigger events 0x47..0x4A are in

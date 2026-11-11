@@ -139,7 +139,7 @@ pub fn westwood_hash(name: &str) -> i32 {
 ///
 /// Standard algorithm: init with 0xFFFFFFFF, XOR each byte through
 /// the lookup table, final XOR with 0xFFFFFFFF.
-fn crc32(data: &[u8]) -> u32 {
+pub fn crc32(data: &[u8]) -> u32 {
     let mut crc: u32 = 0xFFFFFFFF;
     for &byte in data {
         let index: usize = ((crc ^ byte as u32) & 0xFF) as usize;

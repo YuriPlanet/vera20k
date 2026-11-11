@@ -761,3 +761,52 @@ fn ares_spy_plane_sends_its_count_of_its_type() {
         .collect();
     assert_eq!(planes, [(americans, true); 2]);
 }
+
+/// SW_ParaDrop on the retail American paradrop (Initialize 10073DC0,
+/// LoadFromINI 10073F70, SendParadrop 10074350, SendPDPlane 100741A0):
+/// `ParaDrop.Types=SREF` with `ParaDrop.Num=3` replaces Initialize's
+/// AmerParaDropInf plane, so one PDPLANE carries three Prism Tanks.
+/// Initialize clears `SW.CreateRadarEvent`.
+#[test]
+fn ares_american_paradrop_sends_its_vehicles_in_one_plane() {
+    const SUPER: &str = "AmericanParaDropSpecial";
+    let Some(rules) =
+        retail_ares_rules(&format!("[{SUPER}]\nParaDrop.Types=SREF\nParaDrop.Num=3\n"))
+    else {
+        return;
+    };
+    assert!(
+        !rules
+            .super_weapon_metadata(SUPER)
+            .unwrap()
+            .launch()
+            .radar_event()
+    );
+    let (rules, mut sim, americans) = super::spy_plane_tests::world(rules);
+    crate::sim::superweapon::chronosphere_tests::charge_super(&mut sim, americans, SUPER);
+    click(&mut sim, &rules, americans, SUPER, (40, 40));
+    let planes: Vec<_> = sim
+        .substrate
+        .entities
+        .values()
+        .filter(|entity| sim.interner.resolve(entity.type_ref()) == "PDPLANE")
+        .collect();
+    let [plane] = planes[..] else {
+        panic!("one plane: {}", planes.len());
+    };
+    let cargo: Vec<_> = plane
+        .passenger_role
+        .cargo()
+        .unwrap()
+        .passengers()
+        .iter()
+        .map(|&id| {
+            let tank = sim.substrate.entities.get(id).unwrap();
+            (sim.interner.resolve(tank.type_ref()), tank.category())
+        })
+        .collect();
+    assert_eq!(
+        cargo,
+        [("SREF", crate::map::entities::EntityCategory::Unit); 3]
+    );
+}

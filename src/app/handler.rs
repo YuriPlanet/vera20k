@@ -121,6 +121,8 @@ impl App {
     pub(crate) fn release_in_game_pointer_state(state: &mut AppState) {
         state.match_state.input.tactical_mouse.reset_on_focus_loss();
         state.match_state.input.selection_state.cancel_drag();
+        // VERA formation line: a line being drawn goes with the band box.
+        state.match_state.input.formation_line.cancel();
         state.match_state.input.cancel_minimap_press();
         // A touch stream can end without an `Ended` when the window loses
         // focus with fingers down, and the live gesture owns the edge-scroll
@@ -559,6 +561,7 @@ impl ApplicationHandler for App {
                 .as_ref()
                 .map(|request| request.retail_dir.as_path()),
             self.spawn_request.is_some() && Self::spawn_hidden_window_requested(),
+            self.mod_switch.as_ref(),
         );
         let result = if capture_dimensions.is_some() {
             result.and_then(super::initialize::InitializationStep::finish_synchronously)
@@ -924,13 +927,26 @@ impl ApplicationHandler for App {
             return;
         }
 
+        // A pause's end resyncs the held keys and gameplay modifiers; every
+        // event passes here, so the frame after the pause sees it.
+        let paused = state.match_state.paused();
+        let key_edge = match &event {
+            WindowEvent::KeyboardInput { event, .. } => match event.physical_key {
+                PhysicalKey::Code(code) => Some((code, event.state.is_pressed())),
+                _ => None,
+            },
+            _ => None,
+        };
+        state
+            .match_state
+            .input
+            .track_pause(paused, state.platform.live_modifiers, key_edge);
         // Key edges own the modifier views on every screen, including utility
         // cards that consume command input. A release there must not stay held
         // after returning to the shell or entering another match.
         if let WindowEvent::KeyboardInput { event, .. } = &event
             && let PhysicalKey::Code(code) = event.physical_key
         {
-            let paused = state.match_state.paused();
             crate::app::input::hotkeys::record_modifier_key(
                 &mut state.platform.held_modifier_keys,
                 &mut state.platform.live_modifiers,
@@ -1948,7 +1964,7 @@ impl ApplicationHandler for App {
                 (self.shell_capture.is_none() && self.hidden_run.is_none())
                     .then(|| crate::app::map_library::poll(state))
                     .flatten(),
-                // Nor the login page's counts and news.
+                // Nor the login page's counts.
                 (self.shell_capture.is_none() && self.hidden_run.is_none())
                     .then(|| crate::app::shell_wol::login_info::poll(state))
                     .flatten(),
@@ -1958,6 +1974,10 @@ impl ApplicationHandler for App {
                 Self::poll_campaign(state),
                 Self::poll_language_files(state),
                 Self::campaign_score_animation_deadline(state),
+                // Captures replay sealed input; no box tells them of a mod.
+                (self.shell_capture.is_none() && self.hidden_run.is_none())
+                    .then(|| crate::app::mods::poll(state))
+                    .flatten(),
                 // Captures replay sealed input; they never check or ask.
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                 (self.shell_capture.is_none() && self.hidden_run.is_none())
@@ -2197,6 +2217,7 @@ impl ApplicationHandler for App {
         if let Some(state) = self.state.as_mut() {
             crate::app::match_runtime::sim_tick::flush_replay_log(state);
             crate::app::map_picture::stop_for_exit(&mut state.frontend.map_pictures);
+            crate::app::mods::left(state);
         }
         log::logger().flush();
         // A confirmed quit (its cascade's Theme Stop(0), 0x0052E7EC, has run)

@@ -476,16 +476,16 @@ pub(super) fn move_gas(p: &mut Particle, sim: &Simulation, rules: &RuleSet) {
     let pt = rules.particle_type(p.type_id);
     let frame = sim.session.binary_frame() as i32;
     let mut coords = p.coords;
+    // gamemd divides by `10 / WindEffect` (zero above 10) and indexes its
+    // eight-entry tables with `[General] WindDirection` unchecked. VERA gives
+    // either value no wind, as Smoke does.
+    let wind = usize::try_from(rules.general.wind_direction())
+        .ok()
+        .filter(|&i| i < GAS_WIND_DX.len());
     if pt.wind_effect > 0
-        && frame
-            .checked_rem(10 / pt.wind_effect)
-            .expect("native Gas wind requires a nonzero divisor")
-            == 0
+        && frame.checked_rem(10 / pt.wind_effect) == Some(0)
+        && let Some(wind) = wind
     {
-        let wind = usize::try_from(rules.general.wind_direction())
-            .ok()
-            .filter(|&i| i < GAS_WIND_DX.len())
-            .expect("native Gas wind table requires WindDirection in 0..7");
         coords.x = coords.x.wrapping_add(GAS_WIND_DX[wind]);
         coords.y = coords.y.wrapping_add(GAS_WIND_DY[wind]);
     }

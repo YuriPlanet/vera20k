@@ -200,7 +200,6 @@ fn emit(
     let mut parents = Vec::new();
     build_display_effect_instances(
         &DisplayEffectInputs {
-            interpolation: None,
             sim,
             rules,
             camera,
@@ -322,7 +321,7 @@ fn retail_power_plant_slot_obeys_detail_without_pausing_its_ai() {
             (
                 ShpSpriteKey {
                     palette_context: context,
-                    type_id: "GAPOWR_A".to_owned(),
+                    type_id: "GAPOWR_A".into(),
                     facing: 0,
                     frame: frame as u16,
                     house_color: HouseColorIndex(0),

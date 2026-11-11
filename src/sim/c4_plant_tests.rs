@@ -205,6 +205,37 @@ fn expected_draws(sim: &Simulation, scatters: bool) -> (i32, crate::sim::rng::Si
 /// Target when its type is `CanC4=`, for either house: it heads for the
 /// building, queues Sabotage and returns 1. A building it may not plant on,
 /// or an infantryman without C4, falls through to the Foot body.
+/// Infantry Per_Cell_Process's last check (`0x0051A92A..0x0051A9E8`): a
+/// stationary infantryman arriving on Water dies of `C4Warhead=`; a type with
+/// `C4=` (the Seal and Tanya, who swim) does not.
+#[test]
+fn a_stationary_arrival_on_water_kills_all_but_c4_infantry() {
+    let rules = rules();
+    for (kind, survives) in [("E1", false), ("TANY", true)] {
+        let (mut sim, _) = arena(&rules);
+        let id = spawn(&mut sim, &rules, kind, "Americans", 8, 8);
+        sim.resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cell_mut_for_test(8, 8)
+            .unwrap()
+            .land_type = crate::rules::terrain_rules::LandType::Water as u8;
+        sim.per_cell_process(
+            id,
+            crate::sim::movement::PerCellReason::Arrival,
+            &rules,
+            None,
+            FrameEffects::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            sim.substrate.entities.get(id).unwrap().health.current() > 0,
+            survives,
+            "{kind}"
+        );
+    }
+}
+
 #[test]
 fn mission_attacks_c4_arm_sends_a_demolition_man_to_sabotage() {
     let rules = rules();

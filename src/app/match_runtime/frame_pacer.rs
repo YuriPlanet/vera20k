@@ -41,6 +41,56 @@ const SCORE_BUCKETS_PER_SECOND: i32 = 60;
 #[link(name = "winmm")]
 unsafe extern "system" {
     fn timeGetTime() -> u32;
+    fn timeBeginPeriod(period_ms: u32) -> u32;
+    fn timeEndPeriod(period_ms: u32) -> u32;
+}
+
+/// The timer period gamemd asks Windows for, in milliseconds.
+#[cfg(windows)]
+const WALL_CLOCK_PERIOD_MS: u32 = 1;
+
+/// Windows' 1 ms timer period, held for as long as this value lives.
+///
+/// gamemd holds it for its whole run: the static initializer `0x0040EB90`
+/// builds the global system timer through `0x005D5870`, which calls
+/// `timeBeginPeriod(1)`, and registers `0x0040EBC0` with `atexit`, which ends
+/// it through `0x005D5880` (`timeEndPeriod(1)`). [`wall_clock_ms`] reads
+/// `timeGetTime`, whose default precision "can be five milliseconds or more"
+/// until a period is requested, and since Windows 10 version 2004 a request
+/// by another program no longer covers this one:
+/// learn.microsoft.com/en-us/windows/win32/api/timeapi/nf-timeapi-timegettime
+/// learn.microsoft.com/en-us/windows/win32/api/timeapi/nf-timeapi-timebeginperiod
+/// Other platforms' clocks need no request, so there this holds nothing.
+pub(crate) struct WallClockPeriod {
+    #[cfg(windows)]
+    held: bool,
+}
+
+impl WallClockPeriod {
+    pub(crate) fn hold() -> Self {
+        Self {
+            #[cfg(windows)]
+            held: {
+                // SAFETY: timeBeginPeriod takes a millisecond count by value
+                // and returns TIMERR_NOERROR (0) or TIMERR_NOCANDO.
+                let held = unsafe { timeBeginPeriod(WALL_CLOCK_PERIOD_MS) } == 0;
+                if !held {
+                    log::warn!("Windows refused the {WALL_CLOCK_PERIOD_MS} ms timer period");
+                }
+                held
+            },
+        }
+    }
+}
+
+impl Drop for WallClockPeriod {
+    fn drop(&mut self) {
+        #[cfg(windows)]
+        if self.held {
+            // SAFETY: ends the one successful request above, with its period.
+            unsafe { timeEndPeriod(WALL_CLOCK_PERIOD_MS) };
+        }
+    }
 }
 
 /// Return system uptime for the app's wall-clock consumers.
@@ -713,28 +763,6 @@ impl LocalFramePacer {
         pacing_timer(game_speed, network_fps).map(PacingTimer::length_ms)
     }
 
-    /// Read-only presentation phase of the existing bucket-paced frame.
-    /// Use the pacer's bucket origin, not the end of a potentially expensive
-    /// simulation/render preparation, to avoid restarting visual time late.
-    pub(crate) fn interpolation_elapsed_ms(
-        &self,
-        now_ms: u64,
-        game_speed: u8,
-        network_fps: Option<(u16, u32)>,
-    ) -> Option<u32> {
-        self.last_frame_start_ms.map(|ms| {
-            let start = if matches!(
-                pacing_timer(game_speed, network_fps),
-                Some(PacingTimer::NinetyHz { .. })
-            ) {
-                ms
-            } else {
-                (ms >> FRAME_BUCKET_SHIFT) << FRAME_BUCKET_SHIFT
-            };
-            (now_ms as u32).wrapping_sub(start)
-        })
-    }
-
     pub(crate) fn should_admit(
         &self,
         now_ms: u64,
@@ -1395,7 +1423,6 @@ mod tests {
         assert_eq!(pacer.admitted_frame_start_ms(1_017, speed, None), 1_012);
         assert!(!pacer.should_admit(1_012, speed, None, true));
         pacer.record_admitted_frame(1_012);
-        assert_eq!(pacer.interpolation_elapsed_ms(1_017, speed, None), Some(5));
         pacer.record_admitted_frame(u64::from(u32::MAX - 7));
         assert!(pacer.should_admit(8, speed, None, false));
     }
@@ -1422,17 +1449,6 @@ mod tests {
             pacer.admitted_frame_start_ms(20, 0, Some((45, 0))) as u32,
             14
         );
-    }
-
-    #[test]
-    fn render_interpolation_phase_uses_pacing_bucket_and_wraps_with_uptime() {
-        let mut pacer = LocalFramePacer::new();
-        assert_eq!(pacer.interpolation_elapsed_ms(0, 1, None), None);
-        pacer.record_admitted_frame(31);
-        assert_eq!(pacer.interpolation_elapsed_ms(31, 1, None), Some(15));
-        assert_eq!(pacer.interpolation_elapsed_ms(47, 1, None), Some(31));
-        pacer.record_admitted_frame(u64::from(u32::MAX - 7));
-        assert_eq!(pacer.interpolation_elapsed_ms(8, 1, None), Some(24));
     }
     #[test]
     fn wall_clock_process_probe() {

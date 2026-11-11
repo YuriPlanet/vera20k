@@ -68,7 +68,10 @@ const TIP_LABEL_SHADOW: &str = "TXT_SHADOW";
 /// leave the region. Both halves are VERA-local: the native placement branches
 /// on a descriptor byte and its math is undecoded (plan deferred item), so this
 /// offset is a tuned constant, not a gamemd value.
-pub(crate) const TIP_CURSOR_OFFSET: [i32; 2] = [12, 16];
+pub(crate) const TIP_CURSOR_OFFSET: [i32; 2] = [
+    crate::ui::field_layout::TooltipPlace::ORIGINAL.x,
+    crate::ui::field_layout::TooltipPlace::ORIGINAL.y,
+];
 /// Popup outline weight. gamemd draws the tip as a 1 px frame in the tip's own
 /// text colour around the black fill; captured from the retail client at the
 /// cameo tooltip (frame RGB equals the glyph RGB, one pixel wide on all four
@@ -234,16 +237,15 @@ fn tactical_world_tip_text(
     world: (f32, f32),
     cursor_coordinates: bool,
 ) -> String {
-    tactical_world_tip_text_sampled(view, rules, csf, world, cursor_coordinates, None, None)
+    tactical_world_tip_text_for_viewer(view, rules, csf, world, cursor_coordinates, None)
 }
 
-fn tactical_world_tip_text_sampled(
+fn tactical_world_tip_text_for_viewer(
     view: crate::sim::runtime::SimView<'_>,
     rules: &crate::rules::ruleset::RuleSet,
     csf: Option<&crate::assets::csf_file::CsfFile>,
     world: (f32, f32),
     cursor_coordinates: bool,
-    interpolation: Option<&crate::app::presentation::interpolation::RenderInterpolation>,
     translucent_viewer: Option<crate::sim::intern::InternedId>,
 ) -> String {
     let Some((terrain, viewer)) = view.resolved_terrain().zip(view.session().current_house())
@@ -267,16 +269,13 @@ fn tactical_world_tip_text_sampled(
     // registrations. Share the normal click owner, including live admission
     // and foundation fallback, instead of keeping a tooltip object pointer.
     let sim = view.simulation();
-    let order = crate::app::presentation::instances::tactical_entity_encounter_order(sim);
-    let native = crate::app::presentation::interpolation::RenderInterpolation::new(false);
     let picked = crate::app::input::entity_pick::pick_entity_at_point(
         crate::app::input::entity_pick::PresentedWorld {
             sim,
             rules: Some(rules),
-            interpolation: interpolation.unwrap_or(&native),
             translucent_viewer,
         },
-        &order,
+        sim.display_layers().ordered_ids(),
         Some(view.fog()),
         Some(view.interner().resolve(viewer)),
         world.0,
@@ -476,13 +475,12 @@ fn tactical_tip_text(state: &AppState) -> String {
     );
     let translucent_viewer =
         crate::app::presentation::instances::translucent_fog_viewer(state, view.simulation());
-    tactical_world_tip_text_sampled(
+    tactical_world_tip_text_for_viewer(
         view,
         rules,
         state.process_assets.csf.as_ref(),
         world,
         input.cursor_coordinates,
-        Some(&state.match_state.match_presentation.interpolation),
         translucent_viewer,
     )
 }
@@ -844,6 +842,7 @@ pub(crate) fn build_tooltip_instances(
         // The darken strip is only the "a real FNT loaded" sentinel here (the
         // 5x7 fallback builds none); the pop-up itself no longer draws with it.
         state.renderer.bit_font.darken_texture().is_some(),
+        crate::app::presentation::field_parts::layout(state).tooltip,
     )
 }
 
@@ -865,6 +864,7 @@ pub(crate) fn tooltip_quads(
     tint: [f32; 3],
     camera_offset: [f32; 2],
     with_fill: bool,
+    place: crate::ui::field_layout::TooltipPlace,
 ) -> (
     Vec<SpriteInstance>,
     Vec<SpriteInstance>,
@@ -878,7 +878,7 @@ pub(crate) fn tooltip_quads(
     let box_h = layout.height as f32 + TIP_DRAW_PAD[1];
     let bx = place_tip(
         tip_xy[0] as f32,
-        TIP_CURSOR_OFFSET[0] as f32,
+        place.x as f32,
         placement_w,
         region[0],
         region[2],
@@ -887,11 +887,20 @@ pub(crate) fn tooltip_quads(
     let bx = bx.min(region[0] + (region[2] - box_w).max(0.0));
     let by = place_tip(
         tip_xy[1] as f32,
-        TIP_CURSOR_OFFSET[1] as f32,
+        place.y as f32,
         placement_h,
         region[1],
         region[3],
     );
+    // A layout may keep the tip in a corner of the screen instead of at the
+    // cursor; it still stays on the screen.
+    let [bx, by] = match place.fixed_in(region, [box_w, box_h]) {
+        Some([x, y]) => [
+            x.clamp(region[0], region[0] + (region[2] - box_w).max(0.0)),
+            y.clamp(region[1], region[1] + (region[3] - box_h).max(0.0)),
+        ],
+        None => [bx, by],
+    };
 
     let mut fill = Vec::with_capacity(1);
     if with_fill {
@@ -1486,7 +1495,7 @@ mod tests {
                 .as_ref()
                 .is_some_and(|cloak| cloak.is_fully_cloaked())
         );
-        let world = crate::app::presentation::instances::interpolated_screen_position_entity(
+        let world = crate::app::presentation::instances::entity_screen_position(
             sim.entities().get(entity_id).unwrap(),
         );
 
@@ -1805,6 +1814,7 @@ mod tests {
             [1.0, 1.0, 0.0],
             [0.0, 0.0],
             true,
+            crate::ui::field_layout::TooltipPlace::ORIGINAL,
         );
         let panned = tooltip_quads(
             &font,
@@ -1814,6 +1824,7 @@ mod tests {
             [1.0, 1.0, 0.0],
             [640.0, 480.0],
             true,
+            crate::ui::field_layout::TooltipPlace::ORIGINAL,
         );
 
         assert_eq!(at_origin.0.len(), 1);
@@ -1874,6 +1885,7 @@ mod tests {
             [1.0, 1.0, 0.0],
             [0.0, 0.0],
             true,
+            crate::ui::field_layout::TooltipPlace::ORIGINAL,
         );
         assert_eq!(
             fill[0].position,
@@ -1892,6 +1904,7 @@ mod tests {
             [1.0, 1.0, 0.0],
             [0.0, 0.0],
             true,
+            crate::ui::field_layout::TooltipPlace::ORIGINAL,
         );
         assert_eq!(flipped[0].position, [973.0, 316.0]);
         assert_eq!(flipped[0].size, [29.0, font.cell_height() + 4.0]);
@@ -1903,8 +1916,16 @@ mod tests {
         for region in [[0.0, 0.0, 800.0, 600.0], [0.0, 0.0, 1280.0, 720.0]] {
             for text in ["汉", "A1", "汉\nA1"] {
                 let layout = font.wrap_layout(text, region[2] as u32);
-                let (fill, _, glyphs) =
-                    tooltip_quads(&font, text, [100, 100], region, [1.0; 3], [0.0; 2], true);
+                let (fill, _, glyphs) = tooltip_quads(
+                    &font,
+                    text,
+                    [100, 100],
+                    region,
+                    [1.0; 3],
+                    [0.0; 2],
+                    true,
+                    crate::ui::field_layout::TooltipPlace::ORIGINAL,
+                );
                 assert_eq!(
                     fill[0].size,
                     [layout.width as f32 + 8.0, layout.height as f32 + 4.0]
@@ -1939,6 +1960,7 @@ mod tests {
             [1.0; 3],
             [0.0; 2],
             true,
+            crate::ui::field_layout::TooltipPlace::ORIGINAL,
         );
         assert_eq!(fill[0].position, [995.0, 316.0]);
         assert_eq!(fill[0].size, [29.0, font.cell_height() + 4.0]);
@@ -1959,6 +1981,7 @@ mod tests {
             [1.0, 1.0, 0.0],
             [0.0, 0.0],
             true,
+            crate::ui::field_layout::TooltipPlace::ORIGINAL,
         );
         assert_eq!(fill[0].tint, [0.0, 0.0, 0.0]);
         assert_eq!(fill[0].alpha, 1.0);

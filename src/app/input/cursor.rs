@@ -145,7 +145,7 @@ pub(crate) fn current_cursor_feedback_kind(
     if current_sidebar_view_hit(state) {
         return state.match_state.input.sidebar_cursor();
     }
-    let (x, y) = state.match_state.input.cursor_px();
+    let (x, y) = crate::app::presentation::super_timers::cursor_in_view(state);
     if state
         .match_state
         .match_presentation
@@ -264,6 +264,10 @@ pub(crate) fn current_cursor_feedback_kind(
     // under the cursor for an empty selection too — DetermineAction's
     // `0x00692673` arm answers action 7, row 17 (Select) — so the arm below
     // answers instead. See `no_selection_cursor`.
+    // VERA ferry: the armed drop click shows the unload cursor.
+    if state.match_state.input.ferry.armed() {
+        return Some(CursorFeedbackKind::Deploy);
+    }
     // PlanMgr63AC41 selects native action0 over a planning node.
     if crate::app::input::planning_mode::node_at_cursor(state).is_some() {
         return Some(CursorFeedbackKind::Default);
@@ -888,6 +892,12 @@ pub(super) fn capability_cursor_for_hover(
         && sim.bomb_seen_by(hover.stable_id, actor.owner())
     {
         return CursorFeedbackKind::DisarmBomb;
+    }
+
+    if let Some(rules) = rules
+        && super::context_order::self_detonates(sim, rules, selected, hover.stable_id)
+    {
+        return CursorFeedbackKind::Detonate;
     }
 
     // Techno7000B9's self action precedes Ctrl/Alt. All self consumers share
@@ -1703,6 +1713,7 @@ pub(crate) fn cursor_id_for_feedback(kind: CursorFeedbackKind) -> Option<CursorI
         // NoMove's row 0x13 but retains its distinct input action.
         CursorFeedbackKind::IvanBomb => Some(CursorId::IvanBomb),
         CursorFeedbackKind::DisarmBomb => Some(CursorId::Disarm),
+        CursorFeedbackKind::Detonate => Some(CursorId::Demolish),
         CursorFeedbackKind::Deploy => Some(CursorId::Deploy),
         CursorFeedbackKind::NoDeploy => Some(CursorId::NoDeploy),
         // Sidebar repair mode: gamemd's repair-mode arm (DetermineAction
@@ -1918,13 +1929,19 @@ fn sidebar_view_hit(frame: crate::ui::sidebar::SidebarFrame, cursor_x: f32, curs
         w: w as f32,
         h: h as f32,
     };
-    let (x, _, w, h) = frame.column();
-    let panel_rect = crate::ui::sidebar::Rect {
-        x: x as f32 - 10.0,
-        y: 10.0,
-        w: w as f32,
-        h: h as f32 - 20.0,
+    // The sidebar's zone is shifted 10 pixels toward the battlefield (left
+    // for the original's column on the right) and stops 10 pixels short of
+    // both its ends.
+    use crate::ui::sidebar::{Edge, Rect};
+    let (x, y, w, h) = frame.column();
+    let (x, y, w, h) = (x as f32, y as f32, w as f32, h as f32);
+    let (x, y, w, h) = match frame.places().side {
+        Edge::Left => (x + 10.0, y + 10.0, w, h - 20.0),
+        Edge::Right => (x - 10.0, y + 10.0, w, h - 20.0),
+        Edge::Top => (x + 10.0, y + 10.0, w - 20.0, h),
+        Edge::Bottom => (x + 10.0, y - 10.0, w - 20.0, h),
     };
+    let panel_rect = Rect { x, y, w, h };
     strip_rect.contains(cursor_x, cursor_y) || panel_rect.contains(cursor_x, cursor_y)
 }
 
@@ -3811,7 +3828,12 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
 
     /// Stock Crazy Ivan, Engineer and a heavy tank, with their weapons.
     fn bomb_cursor_rules() -> RuleSet {
-        RuleSet::from_ini(&IniFile::from_str(
+        bomb_cursor_rules_with("")
+    }
+
+    /// [`bomb_cursor_rules`] with `combat_damage` lines in `[CombatDamage]`.
+    fn bomb_cursor_rules_with(combat_damage: &str) -> RuleSet {
+        let rules = format!(
             "[InfantryTypes]\n\
              0=IVAN\n\
              1=ENGINEER\n\
@@ -3823,6 +3845,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
              2=AP\n\
              [CombatDamage]\n\
              IvanTimedDelay=450\n\
+             {combat_damage}\
              [IVAN]\n\
              Strength=125\n\
              Primary=IvanBomber\n\
@@ -3857,9 +3880,9 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
              [BombDisarm]\n\
              BombDisarm=yes\n\
              [AP]\n\
-             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
-        ))
-        .expect("bomb cursor rules")
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
+        );
+        RuleSet::from_ini(&IniFile::from_str(&rules)).expect("bomb cursor rules")
     }
 
     fn bomb_hover(
@@ -3974,6 +3997,48 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             CursorFeedbackKind::DisarmBomb,
             "a bomb the player does not see"
         );
+    }
+
+    /// Techno What_Action's Detonate rung (`0x006FFF8D..0x00700003`): with
+    /// `CanDetonateTimeBomb=yes` the lone selected carrier of the player's
+    /// bomb shows Detonate over itself, an enemy as well as its own; retail's
+    /// `no` keeps the self cursor.
+    #[test]
+    fn a_lone_bombed_carrier_offers_detonate_over_itself() {
+        use HoverTargetKind::{EnemyUnit, FriendlyUnit};
+        for (keys, detonates) in [("CanDetonateTimeBomb=yes\n", true), ("", false)] {
+            let rules = bomb_cursor_rules_with(keys);
+            let mut sim = Simulation::new();
+            sim.resolve_type_handles(&rules);
+            for house in ["Americans", "Soviets"] {
+                let id = sim.intern(house);
+                sim.houses_mut_for_test()
+                    .register(crate::sim::house_state::HouseState::new(
+                        id, 0, None, false, 0, 10,
+                    ));
+            }
+            sim.session_mut_for_test().set_game_mode(
+                crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+            );
+            let house = sim.interner().get("Americans");
+            sim.session_mut_for_test().set_current_house_for_test(house);
+            let mut spawn = |kind: &str, owner: &str, rx: u16| {
+                sim.spawn_object(kind, owner, rx, 5, 0, &rules)
+                    .expect("spawned")
+            };
+            let ivan = spawn("IVAN", "Americans", 5);
+            let own_tank = spawn("HTNK", "Americans", 9);
+            let enemy_tank = spawn("HTNK", "Soviets", 11);
+            sim.bomb_attach_for_test(ivan, Some(own_tank), &rules);
+            sim.bomb_attach_for_test(ivan, Some(enemy_tank), &rules);
+            for (tank, kind) in [(own_tank, FriendlyUnit), (enemy_tank, EnemyUnit)] {
+                assert_eq!(
+                    bomb_hover(&sim, &rules, tank, kind, tank) == CursorFeedbackKind::Detonate,
+                    detonates,
+                    "{keys:?} over {kind:?}"
+                );
+            }
+        }
     }
 }
 

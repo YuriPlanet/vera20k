@@ -336,21 +336,12 @@ enum InfantryTargetAdmission {
     SkipCurrent,
 }
 
-fn infantry_target_admission(
-    live: &EntryReadContext<'_>,
-    mover: &GameEntity,
-    obj: &ObjectType,
-    blocker_id: u64,
-    blocker: &BlockerFacts,
-    selected_cell: Cell,
-) -> Result<InfantryTargetAdmission, String> {
-    //51C2D3..51C37D: gate effects first. InfantryType EC2=C4 (52453D/
-    //825978), EC3=Engineer (524571/82596C). +1D4 is the warp latch.
-    if blocker.warped_out {
-        return Ok(InfantryTargetAdmission::Ordinary);
-    }
+/// 51C2E1..51C37D: the missions whose list walk compares each object with
+/// NavCom and Target. InfantryType EC2=C4 (52453D/825978), EC3=Engineer
+/// (524571/82596C).
+fn infantry_mission_tests_targets(mover: &GameEntity, obj: &ObjectType) -> bool {
     // Get_Mission (vt+0x184, 0x005B3040): current, else the queued mission.
-    let eligible = match mover.mission.effective().known() {
+    match mover.mission.effective().known() {
         Some(MissionType::Enter | MissionType::Capture | MissionType::Eaten) => true,
         // Ares 3.0 InfantryClass_IsCellOccupied_C4Ability 10025580 (hook
         // 0x0051C325) also admits a rank holding the C4 ability.
@@ -362,30 +353,47 @@ fn infantry_target_admission(
         Some(MissionType::Sabotage) => obj.c4,
         Some(MissionType::AreaGuard | MissionType::Patrol | MissionType::Guard) => obj.engineer,
         _ => false,
-    };
-    if !eligible {
+    }
+}
+
+/// 51C3B1: NavCom is the Cell `cell`. It executes even with NULL or a
+/// nonmatching object NavCom. The retained Cell NavCom resolves by identity
+/// without another lookup/stamp.
+fn nav_com_is_cell(live: &EntryReadContext<'_>, mover: &GameEntity, cell: Cell) -> bool {
+    if let Some(NavTargetRef::Cell { rx, ry }) = mover.navigation.nav_com() {
+        live.terrain()
+            .native_fixed_cell_index(rx as i16, ry as i16)
+            .map(Cell::Real)
+            .unwrap_or(Cell::Dummy)
+            == cell
+    } else {
+        false
+    }
+}
+
+fn infantry_target_admission(
+    live: &EntryReadContext<'_>,
+    mover: &GameEntity,
+    obj: &ObjectType,
+    blocker_id: u64,
+    blocker: &BlockerFacts,
+    selected_cell: Cell,
+) -> Result<InfantryTargetAdmission, String> {
+    //51C2D3: +1D4 is the warp latch.
+    if blocker.warped_out {
+        return Ok(InfantryTargetAdmission::Ordinary);
+    }
+    if !infantry_mission_tests_targets(mover, obj) {
         return Ok(InfantryTargetAdmission::Ordinary);
     }
     if object_target_is(mover, blocker_id) {
         return Ok(InfantryTargetAdmission::DirectTarget);
     }
-    //51C3B1 executes even with NULL or a nonmatching object NavCom. The
-    //retained Cell NavCom resolves by identity without another lookup/stamp.
     let current = blocker.position;
     let blocker_cell = live
         .terrain()
         .native_cell_identity(((current.x / 256) as i16, (current.y / 256) as i16));
-    let cell_target_is = |cell| {
-        if let Some(NavTargetRef::Cell { rx, ry }) = mover.navigation.nav_com() {
-            live.terrain()
-                .native_fixed_cell_index(rx as i16, ry as i16)
-                .map(Cell::Real)
-                .unwrap_or(Cell::Dummy)
-                == cell
-        } else {
-            false
-        }
-    };
+    let cell_target_is = |cell| nav_com_is_cell(live, mover, cell);
     let attack_target_is = |id| {
         mover.attack_target.target().is_some_and(
             |a| matches!(a, crate::sim::combat::TargetKind::Entity(target) if target == id),
@@ -1192,6 +1200,23 @@ fn full_foot_entry<'a>(
             if victim_cell == Some(p) {
                 return Ok(0);
             }
+            //51C37D..51C3B6 tests every listed object: NavCom on a tree's
+            //cell ends the walk at 51C71B (Terrain's +160 is false, 0x426490).
+            //Residual: the tree itself as NavCom or Target (51C3B6, 51C3C2)
+            //has no retail producer under these missions and no NavTargetRef.
+            if infantry && infantry_mission_tests_targets(e, obj) && nav_com_is_cell(live, e, cell)
+            {
+                return Ok(
+                    if layer == MovementLayer::Ground
+                        && e.tether.partner().is_none()
+                        && !target.row_nonzero(live, obj.speed_type)?
+                    {
+                        7
+                    } else {
+                        0
+                    },
+                );
+            }
             if !infantry {
                 // Unit73FBAC calls the target-sensitive +2E4 selector. Terrain
                 // has no Techno bit and is not a Cell (746CD0 ->6F3330).
@@ -1288,6 +1313,17 @@ fn full_foot_entry<'a>(
             {
                 return Ok(7);
             }
+        }
+        //73F5B5..73F5DB: a small visceroid enters the cell of a small
+        //visceroid Unit (0), past the contacted-Building skip and before the
+        //Building branches. The two then share a cell; Ares merges them
+        //(`Simulation::ares_visceroid_merge`).
+        if !infantry
+            && obj.small_visceroid
+            && b.category() == EntityCategory::Unit
+            && bt.small_visceroid
+        {
+            return Ok(0);
         }
         if b.category() == EntityCategory::Structure {
             if !infantry {
@@ -1434,9 +1470,19 @@ fn full_foot_entry<'a>(
                     continue;
                 }
             }
-            if allied {
-                return Ok(7);
-            }
+        }
+        //51C553..51C573: an Enter mover tethered to its NavCom enters past
+        //the alliance arms. Only a warped-out NavCom gets here (51C2D9 skips
+        //51C37D, which ends the walk for any other).
+        if infantry
+            && mission == Some(MissionType::Enter)
+            && object_target_is(e, blocker_id)
+            && e.tether.partner().is_some()
+        {
+            return Ok(0);
+        }
+        if b.category() == EntityCategory::Structure && allied {
+            return Ok(7);
         }
         //73F823..844: this exact Unit target is admitted immediately. Other
         //transport capacity/radio requirements belong to the order/PerCell

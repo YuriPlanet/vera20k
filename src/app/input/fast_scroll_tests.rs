@@ -252,6 +252,8 @@ fn a_drag_between_offline_polls_remains_a_cancel_click() {
         if decision.scroll_input {
             mouse.poll_right_drag((500.0, 300.0), (4, 4), false, 1.0);
         }
+        // The camera's own scroll steps between polls have nothing to pan.
+        assert!(!mouse.right_pan_active(), "{}", row["name"]);
         // Moving far and releasing during the throttle wait cannot cross a
         // latch which only the native admitted poll is allowed to write.
         assert_eq!(mouse.end_right_press(), Some(true), "{}", row["name"]);

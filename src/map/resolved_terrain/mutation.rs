@@ -3,20 +3,32 @@
 //! in production.
 
 use super::{ResolvedTerrainGrid, overlay_reduced_zone_type, recalc_zone_type, zone_class};
-use crate::rules::overlay_types::{OverlayTypeFlags, retained_overlay_land};
-use crate::rules::terrain_rules::{LandType, SpeedCostProfile};
+use crate::rules::overlay_types::{
+    OverlayTypeFlags, retained_overlay_land, uses_early_recalc_land_branch,
+};
+use crate::rules::terrain_rules::{LandType, LandTypeSemantics, SpeedCostProfile};
 
 impl ResolvedTerrainGrid {
     /// Commit the overlay-derived Land, blocking and Zone projection together.
     /// Literal overlay storage/removal belongs to OverlayGrid. `land_flags` may
     /// retain the removed Tiberium's Land branch on a slope, as in RecalcAttributes
     /// (`0x0047D2B0`); `flags` always describes the surviving overlay identity.
+    /// `cliff_back_rock` is the Rock row under `CliffBackImpassability=2`, which
+    /// that function's early overlay branch writes unconditionally behind a
+    /// cliff (`0x0047D31E..0x0047D53E`).
+    ///
+    /// This projects a Recalc's result and runs again as a replay (frame end,
+    /// snapshot rebuild), so it reads no cell through the Map lookup: the
+    /// Recalc's own neighbour reads are [`Self::read_cliff_back_neighbours`].
+    /// A replay tests the neighbours' current levels, which differ from the
+    /// Recalc's only if one changed since.
     pub(crate) fn apply_overlay_attributes(
         &mut self,
         rx: u16,
         ry: u16,
         flags: Option<&OverlayTypeFlags>,
         land_flags: Option<&OverlayTypeFlags>,
+        cliff_back_rock: Option<&LandTypeSemantics>,
     ) -> bool {
         let overlay_zone = overlay_reduced_zone_type(flags);
         let new_blocks = matches!(
@@ -24,6 +36,12 @@ impl ResolvedTerrainGrid {
             Some(zone_class::WALL) | Some(zone_class::IMPASSABLE)
         );
 
+        let overlay_cliff_rock = cliff_back_rock.filter(|_| {
+            land_flags.is_some_and(uses_early_recalc_land_branch)
+                && self
+                    .index(rx, ry)
+                    .is_some_and(|index| self.replayed_cell_is_behind_cliff(index))
+        });
         let Some(terrain_cell) = self.cell_mut(rx, ry) else {
             return false;
         };
@@ -54,6 +72,11 @@ impl ResolvedTerrainGrid {
             // value baked into `base_ground_walk_blocked`.
             land_ground_blocked =
                 terrain_cell.canonical_ramp.is_none() && flags.land_ground_blocked;
+        }
+        if let Some(rock) = overlay_cliff_rock {
+            terrain_cell.land_type = LandType::Rock.as_index();
+            terrain_cell.speed_costs = rock.speed_costs;
+            land_ground_blocked = rock.ground_blocked;
         }
 
         terrain_cell.overlay_blocks = new_blocks;

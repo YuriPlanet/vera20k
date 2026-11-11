@@ -427,6 +427,9 @@ fn check_vehicle_transport_trip(mut fx: Fixture, carrier_type: &str, passenger_t
 /// astar_mtnk_inputs.json executes the original Foot coefficient-copy body.
 /// This checks the real boarding/Limbo/departure consumers at one frame,
 /// without claiming native equivalence of the whole transport mission.
+/// Stock only: Ares 3.0 ThreatPosedEstimates_GetIndex `1005D4A0` (hook
+/// `0x0056BC54`) moves the nine slots this publication writes.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn vehicle_unload_republishes_threat_and_foot_coefficient_before_movement() {
     use crate::sim::house_state::HouseState;
@@ -661,8 +664,11 @@ fn bfrt_unloads_one_per_dispatch_in_reverse_boarding_order_while_turning() {
         .sound_events
         .iter()
         .filter(|e| {
-            matches!(e, SimSoundEvent::LeaveTransport { world, .. }
-                if world.to_cell_sub_z().0 == 20 && world.to_cell_sub_z().1 == 20)
+            // PlayAtCoord750E20 at the transport's Location, flags 0
+            // (`0x0073DC35..0x0073DC67`): a retained request.
+            matches!(e, SimSoundEvent::VocAtCoord { sound_id, coordinate, flags: 0 }
+                if sound_id == "ExitTransport"
+                    && coordinate.x >> 8 == 20 && coordinate.y >> 8 == 20)
         })
         .count();
     assert!(leave_sounds >= 1, "LeaveTransportSound at the transport");
@@ -2387,7 +2393,7 @@ fn cargo_departure_ground_reveal_rejection_preserves_route_retry_state() {
                 fx.sim
                     .sound_events
                     .iter()
-                    .all(|event| !matches!(event, SimSoundEvent::LeaveTransport { .. }))
+                    .all(|event| !matches!(event, SimSoundEvent::VocAtCoord { .. }))
             );
             // Real placement still consumed its draw before Reveal rejected.
             assert_ne!(fx.sim.scenario_rng.state(), rng_before);
