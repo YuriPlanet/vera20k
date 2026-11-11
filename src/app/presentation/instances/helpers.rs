@@ -257,7 +257,7 @@ fn tactical_bounded_entity_encounter_order(
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|rt| &rt.simulation)
     else {
         return Vec::new();

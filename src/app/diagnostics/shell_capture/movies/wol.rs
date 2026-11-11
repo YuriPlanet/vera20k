@@ -1890,7 +1890,7 @@ impl WolCapture {
                 let sim = &state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .context("installed WOL runtime")?
                     .simulation;
                 ensure!(
@@ -1996,7 +1996,7 @@ impl WolCapture {
                 let sim = &state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .context("the clan peer's EXIT lost the runtime")?
                     .simulation;
                 let peer = clan_peer_house(state)?;
@@ -2086,7 +2086,7 @@ impl WolCapture {
                     let sim = &state
                         .match_state
                         .sim_runtime
-                        .as_ref()
+                        .runtime()
                         .context("EXIT runtime")?
                         .simulation;
                     ensure!(sim.quit_requested(), "the return began before EXIT ran");
@@ -2953,7 +2953,7 @@ impl WolCapture {
             let sim = &state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .context("the clan match runtime")?
                 .simulation;
             let session = sim.session();
@@ -2978,7 +2978,7 @@ impl WolCapture {
         let after = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("the clan match runtime")?
             .simulation
             .pending_command_snapshot()
@@ -3012,7 +3012,7 @@ impl WolCapture {
                 let tick = state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .context("the clan match runtime")?
                     .simulation
                     .session()
@@ -4257,7 +4257,10 @@ impl WolCapture {
         use crate::app::shell_wol::chat_translation as app_page;
         use crate::ui::wol_chat_translation::{OK, SAME_ALPHABET};
         self.options_before = Some((read_settings(state)?, state.frontend.wol_preferences));
-        ensure!(!Self::lobby(state)?.shown, "the lobby must hide under the page");
+        ensure!(
+            !Self::lobby(state)?.shown,
+            "the lobby must hide under the page"
+        );
         let layout = app_page::layout(state);
         let page = app_page::page(state).context("the page")?;
         ensure!(page.settings.language.is_none(), "translation starts off");
@@ -4329,7 +4332,9 @@ impl WolCapture {
                 .context("the language list did not open")?;
             set_window_pointer_to_rect_center(state, row);
         } else {
-            let same = layout.checkbox_rect(SAME_ALPHABET).context("the checkbox")?;
+            let same = layout
+                .checkbox_rect(SAME_ALPHABET)
+                .context("the checkbox")?;
             set_window_pointer_to_rect_center(state, same);
         }
         App::handle_wol_mouse_move(state);
@@ -4623,7 +4628,7 @@ impl WolCapture {
         self.page_tick = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|runtime| runtime.simulation.session().tick());
         // The controlled service answers the request it was sent.
         let requests = self.requests(state, frame)?;
@@ -4916,7 +4921,7 @@ impl WolCapture {
                 state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .is_some_and(|runtime| runtime.simulation.session().tick() > sent)
             });
             return Ok(self.phase == WolPhase::Settle(0)
@@ -5040,7 +5045,7 @@ fn clan_peer_house(state: &AppState) -> Result<crate::sim::intern::InternedId> {
     let sim = &state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("the clan match runtime")?
         .simulation;
     state

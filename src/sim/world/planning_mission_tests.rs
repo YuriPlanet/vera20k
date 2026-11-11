@@ -308,7 +308,7 @@ fn retail_rate_one_plans_replay_with_the_same_publication_order_and_state() {
         Some((
             SimRuntime {
                 simulation: sim,
-                resources,
+                resources: std::sync::Arc::new(resources),
             },
             owner,
         ))

@@ -530,7 +530,7 @@ fn live_world_navigation_and_sentinel_repair_match_native_hierarchy_graphs() {
         sim.install_resolved_terrain_for_new_map(terrain);
         sim.rebuild_zone_grid(&path);
         let terrain = sim.resolved_terrain.as_mut().unwrap();
-        let zones = sim.zone_grid.as_mut().unwrap();
+        let zones = sim.zone_grid.as_deref_mut().unwrap();
         assert_native_hierarchy_graphs(
             zones.hierarchy_for(MovementZone::Normal).unwrap(),
             terrain,

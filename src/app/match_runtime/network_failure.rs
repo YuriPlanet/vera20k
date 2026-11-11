@@ -20,7 +20,7 @@ fn interruption(state: &AppState) -> Option<NetworkInterruption> {
     state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .and_then(|rt| rt.simulation.pending_network_interruption())
 }
 
@@ -154,7 +154,7 @@ impl NetworkFailureModal {
 pub(crate) fn pending(state: &AppState) -> bool {
     state.frontend.screen == crate::app::GameScreen::InGame
         && (state.match_state.frame_stopped
-            || state.match_state.sim_runtime.as_ref().is_some_and(|rt| {
+            || state.match_state.sim_runtime.runtime().is_some_and(|rt| {
                 rt.simulation.pending_network_failure().is_some()
                     || rt.simulation.pending_network_interruption().is_some()
             }))
@@ -167,7 +167,7 @@ pub(crate) fn show(state: &mut AppState) {
         if let Some(failure) = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .and_then(|rt| rt.simulation.pending_network_failure())
         {
             log::error!("{failure}");
@@ -175,7 +175,7 @@ pub(crate) fn show(state: &mut AppState) {
         if let Some(failure) = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .and_then(|rt| rt.simulation.pending_network_interruption())
         {
             log::error!("{failure}");

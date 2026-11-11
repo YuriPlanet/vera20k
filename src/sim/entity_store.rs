@@ -56,7 +56,7 @@ pub struct EntityStore {
     /// The entity of each slot. Boxed: an entity is about 3 KB, so insert,
     /// remove and compaction move pointers, not entities. serde writes a
     /// `Box<T>` as its `T`.
-    entities: Vec<Option<Box<GameEntity>>>,
+    entities: Vec<Option<crate::util::shared::Shared<GameEntity>>>,
     /// stable_id -> slot, for every slot that holds an entity. Only looked
     /// up, never iterated, so its order cannot reach a result.
     slot_of: LookupMap<u64, u32>,
@@ -255,7 +255,7 @@ impl EntityStore {
         }
         self.anim_holders
             .extend(entity.held_anims().map(|anim| (anim, id)));
-        let entity = Some(Box::new(entity));
+        let entity = Some(crate::util::shared::Shared::new(entity));
         if let Some(&slot) = self.slot_of.get(&id) {
             self.entities[slot as usize] = entity;
             self.owners[slot as usize] = owner;
@@ -318,7 +318,9 @@ impl EntityStore {
     pub fn remove(&mut self, stable_id: u64) -> Option<GameEntity> {
         let slot = self.slot_of.remove(&stable_id)? as usize;
         self.refocus();
-        let removed = self.entities[slot].take().map(|entity| *entity);
+        let removed = self.entities[slot]
+            .take()
+            .map(crate::util::shared::Shared::into_inner);
         if let Some(entity) = &removed {
             self.unlist_owned(stable_id, (entity.owner(), entity.category()));
             if let Some(entry) = airborne_entry(entity) {
@@ -918,7 +920,7 @@ impl EntityStore {
 /// empty slots. Its length is exact, so a collect allocates once.
 struct Stored<'a> {
     ids: std::slice::Iter<'a, u64>,
-    entities: std::slice::Iter<'a, Option<Box<GameEntity>>>,
+    entities: std::slice::Iter<'a, Option<crate::util::shared::Shared<GameEntity>>>,
     /// Stored entities not yet yielded from either end.
     remaining: usize,
 }
@@ -981,7 +983,9 @@ impl<'de> serde::Deserialize<'de> for EntityStore {
             store.ids.push(id);
             store.owners.push(entity.owner());
             store.categories.push(entity.category());
-            store.entities.push(Some(entity));
+            store
+                .entities
+                .push(Some(crate::util::shared::Shared::new(*entity)));
         }
         store.refocus();
         store.rebuild_class_registries();

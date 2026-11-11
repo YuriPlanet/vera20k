@@ -37,11 +37,11 @@ fn shoreline_runtime(loaded: &crate::headless_scenario::HeadlessScenario) -> Sim
     assert!(sim.rebuild_dynamic_navigation(rules));
     SimRuntime {
         simulation: sim,
-        resources: SimResources {
+        resources: std::sync::Arc::new(SimResources {
             overlay_registry: loaded.runtime.resources.overlay_registry.clone(),
             terrain_template: Some(terrain.clone()),
             rules: rules.clone(),
-        },
+        }),
     }
 }
 

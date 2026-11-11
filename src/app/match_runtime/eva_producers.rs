@@ -795,7 +795,7 @@ mod tests {
         Some((
             SimRuntime {
                 simulation: sim,
-                resources,
+                resources: resources.into(),
             },
             local,
             enemy,

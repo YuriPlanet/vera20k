@@ -29,7 +29,7 @@ pub(super) fn build(
     if !state.match_state.input.planning.active() {
         return (out, highlights);
     }
-    let Some(rt) = state.match_state.sim_runtime.as_ref() else {
+    let Some(rt) = state.match_state.sim_runtime.presentation() else {
         return (out, highlights);
     };
     let sim = &rt.simulation;

@@ -69,7 +69,7 @@ pub(crate) fn projectile_visitor<'a>(
     state: &'a AppState,
     order: &'a NativeDisplayOrder,
 ) -> Option<impl FnMut(&mut Vec<PlannedObjectInstance>, u64) + 'a> {
-    let rt = state.match_state.sim_runtime.as_ref()?;
+    let rt = state.match_state.sim_runtime.presentation()?;
     let atlas = state.match_state.match_presentation.sprite_atlas.as_ref();
     let assets = state.process_assets.manager();
     let sim = &rt.simulation;

@@ -74,50 +74,151 @@ identical frame by frame.
   Phase 1's `SimHost` closes this. Presentation then gets only a shared
   view and cannot reach the runtime mutably.
 
-### Phase 1: a `SimHost` owns everything a tick touches
+### Phase 1: a tick that borrows no app state
 
-Move the mid-tick effect *owners* next to the simulation instead of turning
-their calls into events. A `SimHost` holds:
+The host lives as long as the process, like the thread it becomes. Several
+owners a tick reaches are process globals in gamemd, so they survive launch
+and load: the checksum ring `B04474` is one. A host that lived and died with
+each scenario could not hold them.
 
-- `SimRuntime`;
-- the live network session and the checksum history (`MatchSession`,
-  `LiveCommandSession`);
-- the sound producer: `SfxPlayer` and its `SoundEventQueue`;
-- the outcome-voice wait;
-- the scenario pause clock;
-- the planning input that a defeat leaves.
+Moving every client owner into the host does not work: the sound player,
+the network transport and the input state are shared with menus, the lobby
+and the UI. Instead, a tick that runs on the simulation thread takes what it
+reads from those owners before it starts. It records what it writes, and the
+main thread applies the record in order afterwards
+(`app/match_runtime/deferred_effects.rs`):
 
-The main thread talks to it through:
+- **Sound** is not delivered mid-tick. The frame tail already plays every
+  sound fact the tick left undelivered, and refreshes looping sound
+  positions.
+- **The radar availability cue, the production strip's request clear and
+  Ares bounty text** are recorded, then applied in order after the tick.
+- **Planning Mode**: the flag is taken before the tick. Leaving it issues
+  the same PLANCOMMIT (`planning_mode::plan_commit_command`), and the main
+  thread leaves its own planner after the tick.
+- **The outcome-voice wait** polls a copy of the wait with the voice state
+  taken before the tick. It moves only wall time.
+- **Scenario pause and resume effects** go to the frame tail's
+  `apply_trigger_effects`, as on the headless path.
 
-- `submit(commands)`;
-- `outputs()`: the per-tick `SimFrameOutput` remainder, screen shake, camera,
-  HUD and radar events;
-- `request(query)`, for input queries that need live state.
+Only presentation order moves: sounds and the radar cue follow the tick
+instead of interleaving with it. Network frames (the `Queue_AI` exchange),
+replay playback, a campaign's initial save and command observation still
+need the lent owners. Those frames stay on the borrowing path
+(`DeferredClientEffects::applies`).
 
-`SimHost` still runs on the main thread in this phase. Done when every
-`sim_runtime.as_mut()` outside `SimHost` is gone.
+Done:
+
+- [x] `MatchState::sim_runtime` is the process-lifetime `SimHost`
+  (`app/match_runtime/sim_host.rs`), holding `Option<SimRuntime>`.
+  - Reads take `runtime()`.
+  - Every write names its route through `write_sim(SimWrite::…)`.
+  - The tick takes its parts through `tick_parts()`.
+- [x] The checksum history moved from `MatchSession` into the host.
+- [x] Deferred client effects, opt-in through
+  `VERA20K_DEFERRED_TICK_EFFECTS=1`. In a hidden 1v29 client run, the state
+  hashes at every common tick from 1 to 9000 are identical with and without
+  it.
+- [x] The radar terrain updates per changed cell instead of redrawing its
+  whole surface.
+  - In a hidden 1v29 client run at 600–800 objects, frame time fell from
+    22.9 ms to 14.5 ms and render time from 10.5 ms to 3.7 ms.
+  - The tick is now most of each frame.
 
 ### Phase 2: a presentation frame for the hot draw path
 
-At the end of each tick, `SimHost` publishes an immutable
-`Arc<PresentationFrame>`. It holds per-object draw records (pose, type,
-owner, health, flags), the display order, anim, particle and projectile
-points, and cell deltas for fog, terrain and overlays. Object, anim and
-particle drawing reads only the last two frames. That is the work that scales
-with unit count.
+At the end of each committed tick, `SimHost::publish_presentation` keeps a
+copy of the runtime (`Arc<SimRuntime>`), and drawing reads it through
+`SimHost::presentation`. A rules or lifecycle write drops it first. It is
+opted into with `VERA20K_PRESENTATION_FRAME=1` until phase 4 turns it on.
 
-### Phase 3: cold paths and input
+A plain copy of the world is too slow: 40–60 ms in a 1v7 skirmish on the
+30-start map, about half of it the terrain cells. The copy therefore shares
+storage with the live world copy-on-write (`util::shared`):
 
-The sidebar, tooltips and cursor legality read the frame when the data is
-small. Heavy queries such as reachability and fire error either go to
-`SimHost` as a request answered after the next tick (one tick, 22 ms), or
-take a short lock between ticks.
+- `ChunkedVec` (256-element chunks) for per-cell state written in small
+  parts every tick: fog planes and their caches, overlays, smudges and the
+  terrain cells. A write copies only its chunk.
+- `CellMap` strips are one column each, shared the same way.
+- `Shared<T>` for state that rarely changes as a whole: entities (each one
+  separately), the zone grid, the interner, AI script definitions, terrain
+  objects and the terrain's TMP headers and per-cell side arrays.
+- `DerivedCache` for caches a copy can rebuild; a copy starts empty.
+
+Writers that usually leave a value unchanged compare before they borrow it
+mutably, so an unchanged write copies nothing: the terrain cell recalc
+(`CellClass::RecalcAttributes @ 0x0047D2B0`) and the overlay projection
+work on a one-cell shadow (`cow_cells`), and the zone grid checks a cell's
+class and level before refreshing it.
+
+Measured with `sim-bench`, 1v29 skirmish on the 30-start map, 3,000 ticks,
+447–583 objects, keeping each tick's copy until the next one:
+
+| | mean tick |
+|---|---|
+| before phase 2 | 3.5 ms |
+| phase 2, no frame | 3.7 ms |
+| phase 2, a frame each tick | 7.2 ms (copy 1.5 ms, drop of the previous 1.2 ms) |
+
+`final_hash` is the same in all three. The copy still deep-copies the 30
+houses (~0.3 ms) and the entity store's index (~0.2 ms); the remaining
+tick cost is the chunks and entities a tick really writes.
+
+Follow-ups: fog planes keep one byte per cell per house where gameplay
+needs a few bits; packing them would shrink both the copy and the cache
+footprint.
+
+### Phase 3: lending the runtime
+
+`SimHost::lend` hands the runtime to a persistent simulation thread for
+one job. While it is away, `runtime()` serves the published presentation
+frame, so the sidebar, tooltips, cursor legality and the other cold readers
+see the last tick without waiting. Every write route (`write_sim`,
+`tick_parts`, `install`, `take_runtime`) first takes the runtime back,
+waiting for the job; its result then waits in the host. A panic in the job
+resumes on the main thread.
+
+A player command therefore waits for the tick in flight, at most one tick.
+Heavy queries can still move to requests answered after the next tick if
+that wait shows in play.
 
 ### Phase 4: the thread
 
-`SimHost` runs on a dedicated thread at the game speed. The browser build
-keeps the inline mode behind a cfg until a Worker thread with shared memory
-exists.
+`advance_one_simulation_frame` is split into three parts:
+
+- the prepare, on the main thread: client reads, due commands and the
+  deferred effects;
+- `run_deferred_tick`, which borrows nothing from the app;
+- `finish_simulation_frame`, the frame tail on the main thread.
+
+With `VERA20K_SIM_THREAD=1`, an ordinary offline frame on the deferred path
+is lent to the simulation thread instead of run inline. Each admitted pass
+then does four things in order:
+
+1. waits for the tick in flight;
+2. runs that tick's tail with this pass's camera scroll;
+3. publishes the frame;
+4. dispatches the next tick and draws while it runs.
+
+Drawing therefore shows the world one tick behind the simulation. These
+frames stay inline:
+
+- network play, replay, a campaign's initial save and command observation
+  (the deferred path does not apply to them);
+- resumed frames: outcome, network and checksum waits.
+
+A pass whose finished tick left an outcome wait or a network failure
+dispatches nothing, so the next pass resumes that frame inline.
+
+The browser build has no thread and always ticks inline.
+
+Residuals:
+
+- `ExactOneStep` diagnostics expect the frame inside the call, so they run
+  without the flag.
+- A tick whose tail has not run when a debug tool or a load takes the
+  runtime back keeps its result until the next pass, or drops it when a
+  scenario is installed.
 
 ## Validation
 

@@ -196,7 +196,8 @@ fn accepted_chain_runs_sensor_callback_and_consumes_more_paid_points_in_same_obj
         crate::sim::pathfinding::PathGrid::from_resolved_terrain(&terrain),
     ));
     sim.resolved_terrain = Some(terrain);
-    sim.add_unit_sensor_after_unlimbo(1, &rules, None);
+    // The fixture inserts its unit already placed, so no Unlimbo stamped it.
+    sim.add_unit_sensors_at_current(1, &rules, None);
     let selection = drive_track::select_drive_track(32, 64, false).unwrap();
     assert!(selection.entry_index > 0);
     let entity = sim.substrate.entities.get_mut(1).unwrap();

@@ -51,6 +51,8 @@ pub(crate) struct FrameClientBoundary<'a> {
     tactical_radar: Option<RefCell<&'a mut TacticalRadarSetter<'a>>>,
     planning: Option<RefCell<(&'a mut PlanningInputState, &'a mut SelectionState)>>,
     network: Option<RefCell<&'a mut super::session::MatchSession>>,
+    /// The host's process-lifetime checksum history (`SimHost::tick_parts`).
+    frame_checksums: Option<RefCell<&'a mut crate::sim::command_queue::FrameChecksumState>>,
     live_network: Option<RefCell<&'a mut crate::net::live_commands::LiveCommandSession>>,
     logic_frame_rate: u32,
     outcome_wait: Option<RefCell<&'a mut Option<super::scenario_exit::ScenarioOutcomeVoiceWait>>>,
@@ -88,6 +90,7 @@ impl<'a> FrameClientBoundary<'a> {
             tactical_radar: None,
             planning: None,
             network: None,
+            frame_checksums: None,
             live_network: None,
             logic_frame_rate: 0,
             outcome_wait: None,
@@ -138,6 +141,14 @@ impl<'a> FrameClientBoundary<'a> {
         session: &'a mut super::session::MatchSession,
     ) -> Self {
         self.network = Some(RefCell::new(session));
+        self
+    }
+
+    pub(crate) fn with_frame_checksums(
+        mut self,
+        checksums: &'a mut crate::sim::command_queue::FrameChecksumState,
+    ) -> Self {
+        self.frame_checksums = Some(RefCell::new(checksums));
         self
     }
 
@@ -334,8 +345,10 @@ impl NetworkCommandBoundary for FrameClientBoundary<'_> {
     }
 
     fn record_frame_checksum(&self, frame: u32, checksum: u32) {
-        if let Some(network) = &self.network {
-            network.borrow_mut().record_frame_checksum(frame, checksum);
+        if let Some(checksums) = &self.frame_checksums {
+            checksums
+                .borrow_mut()
+                .record_frame_checksum(frame, checksum);
         }
     }
 
@@ -344,9 +357,9 @@ impl NetworkCommandBoundary for FrameClientBoundary<'_> {
         record: &crate::sim::command::CommandRecord,
         current_frame: i32,
     ) -> Result<bool, NetworkCommandError> {
-        let network = self.network.as_ref().ok_or_else(|| {
+        let checksums = self.frame_checksums.as_ref().ok_or_else(|| {
             NetworkCommandError::Unavailable(
-                "FRAMEINFO requires the network session checksum owner".to_owned(),
+                "FRAMEINFO requires the host's checksum owner".to_owned(),
             )
         })?;
         let info = crate::net::lockstep::FrameInfo::decode(record).ok_or_else(|| {
@@ -354,7 +367,7 @@ impl NetworkCommandBoundary for FrameClientBoundary<'_> {
                 "network comparison received a non-FRAMEINFO record".to_owned(),
             )
         })?;
-        network
+        checksums
             .borrow()
             .compare_frame_info(info, current_frame)
             .map_err(NetworkCommandError::Mismatch)
@@ -613,9 +626,9 @@ mod network_command_tests {
             .unwrap()
             .value;
         let mut runtime = frame_256_runtime();
-        let mut session = crate::app::match_runtime::session::MatchSession::default();
-        session.record_frame_checksum(0, 0);
-        session.record_frame_checksum(255, expected ^ 2);
+        let mut checksums = crate::sim::command_queue::FrameChecksumState::default();
+        checksums.record_frame_checksum(0, 0);
+        checksums.record_frame_checksum(255, expected ^ 2);
         let info = crate::net::lockstep::FrameInfo {
             house_id: 0,
             event_frame: 256,
@@ -630,7 +643,7 @@ mod network_command_tests {
         let mut radar = |_, _, _: &RuleSet| false;
         let prefix = {
             let boundary = FrameClientBoundary::new(None, Some("Human"), &mut sounds, &mut radar)
-                .with_network_session(&mut session);
+                .with_frame_checksums(&mut checksums);
             runtime
                 .advance_frame(
                     &[],
@@ -645,7 +658,7 @@ mod network_command_tests {
             .expect("real session comparator rejects the peer CRC");
         assert_eq!(failure.local_checksum, expected);
         assert_eq!(failure.remote_checksum, expected ^ 1);
-        assert_eq!(session.checksum_history().get(256), expected);
+        assert_eq!(checksums.checksum_history().get(256), expected);
         assert_eq!(runtime.simulation.session().binary_frame(), 256);
         assert!(!prefix.tick.frame_committed);
         let suffix = runtime

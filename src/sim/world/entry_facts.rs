@@ -44,6 +44,15 @@ pub(crate) struct EntryFacts {
     blockers_claimed: KeptBits,
 }
 
+/// A copy starts empty. The facts belong to the batch in flight, and the one
+/// copy of a world, the presentation frame (docs/sim-thread.md), never
+/// searches; a batch rebuilds them from its first ask.
+impl Clone for EntryFacts {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
 /// One bit per table entry, set when an ask fills it, so a reset empties only
 /// the filled entries. Searches on several threads may set one bit at once.
 #[derive(Default)]

@@ -156,7 +156,7 @@ pub(super) fn apply(state: &mut AppState, result: u16) -> bool {
             && state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .is_some_and(|runtime| runtime.simulation.local_player_defeated())
         {
             return true;

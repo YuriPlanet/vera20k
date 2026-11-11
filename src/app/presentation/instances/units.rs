@@ -463,7 +463,7 @@ pub(crate) fn build_unit_instances(
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|rt| &rt.simulation)
     else {
         return;
@@ -491,7 +491,7 @@ pub(crate) fn unit_visitor<'a>(
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .presentation()
             .map(|rt| &rt.simulation),
         &state.match_state.match_presentation.unit_atlas,
     ) {
@@ -522,7 +522,7 @@ pub(crate) fn unit_visitor<'a>(
     let terrain = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .and_then(|rt| rt.view().resolved_terrain());
     // The draw's own query of the live map: lighting and Hover's Is_Powered
     // height read through it, and a miss stamps its dummy, not the simulation's.
@@ -2113,7 +2113,7 @@ fn emit_lifted_unit_shadow(
     {
         return;
     }
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.presentation() else {
         return;
     };
     let view = runtime.view();
@@ -2250,7 +2250,7 @@ fn aircraft_draw_sample(
     if entity.category() != EntityCategory::Aircraft || entity.sinking.is_active() {
         return None;
     }
-    let runtime = state.match_state.sim_runtime.as_ref()?;
+    let runtime = state.match_state.sim_runtime.presentation()?;
     let view = runtime.view();
     let object = view
         .interner()

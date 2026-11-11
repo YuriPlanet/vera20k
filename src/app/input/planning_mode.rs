@@ -4,6 +4,7 @@
 use crate::app::AppState;
 use crate::app::input::dispatch::selected_in_order;
 use crate::app::input::hotkeys::{HotkeyCommand, HotkeyResolution};
+use crate::app::match_runtime::sim_host::SimWrite;
 use crate::audio::events::{GameSoundEvent, SoundEventQueue};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::CommandEnvelope;
@@ -13,6 +14,14 @@ use crate::sim::world::{
 };
 use winit::event::ElementState;
 use winit::keyboard::KeyCode;
+
+/// The local house's PLANCOMMIT that leaving Planning Mode issues
+/// (Planning__EndMode ->637A10), stamped for the current tick.
+pub(crate) fn plan_commit_command(sim: &Simulation) -> Option<CommandEnvelope> {
+    let owner = sim.session().current_house()?;
+    let record = sim.encode_plan_commit_record(owner)?;
+    Some(CommandEnvelope::synchronized(record, sim.session().tick()))
+}
 
 #[derive(Debug, Default)]
 pub(crate) struct PlanningInputState {
@@ -91,11 +100,7 @@ impl PlanningInputState {
         let commit = if active {
             None
         } else {
-            sim.and_then(|sim| {
-                let owner = sim.session().current_house()?;
-                let record = sim.encode_plan_commit_record(owner)?;
-                Some(CommandEnvelope::synchronized(record, sim.session().tick()))
-            })
+            sim.and_then(plan_commit_command)
         };
         // Planning__EndMode clears AC4CCC and AC4BF0 (0x00637A52..0x00637A5E).
         if !active {
@@ -416,9 +421,9 @@ fn set_active(state: &mut AppState, active: bool, intro_source: Option<bool>) {
     let defeated = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_some_and(|rt| rt.simulation.local_player_defeated());
-    let rt = state.match_state.sim_runtime.as_mut();
+    let rt = state.match_state.sim_runtime.write_sim(SimWrite::Command);
     let command = state.match_state.input.planning.set_active(
         active,
         rt.as_ref().map(|rt| &rt.simulation),
@@ -448,7 +453,7 @@ pub(crate) fn queue_orders(
     orders: Vec<CommandEnvelope>,
     clicked_cell: Option<(u16, u16)>,
 ) -> bool {
-    let Some(rt) = state.match_state.sim_runtime.as_mut() else {
+    let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return false;
     };
     let Some(owner) = rt.simulation.session().current_house() else {
@@ -524,7 +529,7 @@ fn queue_orders_in_sim(
 /// selection may connect to. While a right press holds AC4CB0 it keeps the
 /// node it had at the press (0x00638E60's early return).
 pub(crate) fn hover_node(state: &AppState) -> Option<u64> {
-    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     if let Some(held) = state.match_state.input.planning.right_hover {
         return held.filter(|&node| sim.planning_node_exists(node));
     }
@@ -533,7 +538,7 @@ pub(crate) fn hover_node(state: &AppState) -> Option<u64> {
 
 fn live_hover_node(state: &AppState) -> Option<u64> {
     let point = hover_native_screen(state)?;
-    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     let owner = sim.session().current_house()?;
     // Only a node under the cursor reads the selection, which walks every
     // object: the cursor asks this at every draw.
@@ -562,7 +567,7 @@ pub(crate) fn refuse_press_at_cursor(state: &mut AppState) -> bool {
     let Some(refusal) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .and_then(|rt| rt.simulation.planning_press_refusal(&selected, point))
     else {
         return false;
@@ -618,7 +623,7 @@ pub(crate) fn connect_at_cursor(state: &mut AppState) -> bool {
             state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .is_some_and(|rt| rt.simulation.planning_release_refused(&selected, point))
         });
     };
@@ -629,7 +634,7 @@ pub(crate) fn connect_at_cursor(state: &mut AppState) -> bool {
     }
     let point = cursor_native_screen(state);
     let mut collected = false;
-    if let Some(rt) = state.match_state.sim_runtime.as_mut()
+    if let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Command)
         && let Some(owner) = rt.simulation.session().current_house()
     {
         for actor in rt.simulation.planning_connect_actors(&selected) {
@@ -657,7 +662,7 @@ pub(crate) fn delete_highlighted(state: &mut AppState) -> bool {
     let Some(node) = state.match_state.input.planning.highlighted_node else {
         return false;
     };
-    let Some(rt) = state.match_state.sim_runtime.as_mut() else {
+    let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return false;
     };
     if !rt.simulation.planning_node_exists(node) {
@@ -1101,7 +1106,7 @@ mod tests {
         resources.overlay_registry = overlays;
         let mut runtime = SimRuntime {
             simulation: sim,
-            resources,
+            resources: resources.into(),
         };
         // The raw native stamp controls execution; the preserved diagnostic
         // issue ordinal 2 above cannot postpone an event issued at frame0.

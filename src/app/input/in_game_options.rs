@@ -94,7 +94,7 @@ pub(crate) fn on_open(state: &mut AppState) {
             state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .is_some_and(|runtime| runtime.simulation.local_player_defeated()),
             state.frontend.campaign_speed_control,
         );

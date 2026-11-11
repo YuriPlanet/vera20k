@@ -210,11 +210,11 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
         },
         runtime: crate::sim::runtime::SimRuntime {
             simulation: sim,
-            resources: crate::sim::runtime::SimResources {
+            resources: std::sync::Arc::new(crate::sim::runtime::SimResources {
                 overlay_registry: overlays,
                 terrain_template: None,
                 rules,
-            },
+            }),
         },
         map,
     }

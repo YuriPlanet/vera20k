@@ -2119,7 +2119,7 @@ impl Simulation {
             (leader_location.y / 256) as u16,
         );
         let terrain = self.resolved_terrain.as_ref()?;
-        let zone = self.zone_grid.as_ref()?.get_zone_id_native(
+        let zone = self.zone_grid.as_deref()?.get_zone_id_native(
             terrain,
             leader_cell,
             object.movement_zone,

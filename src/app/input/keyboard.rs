@@ -46,8 +46,10 @@ pub(crate) fn in_game_key_edge(
     {
         state.match_state.input.keys_held.remove(&edge.physical);
     }
-    // The Formation Line key comes up whoever owns the edge, as above.
+    // The Formation Line key comes up whoever owns the edge, as above; so
+    // does the ferry's waypoint key.
     if !edge.state.is_pressed() {
+        state.match_state.input.ferry.release_via_key(edge.physical);
         state
             .match_state
             .input
@@ -82,6 +84,18 @@ pub(crate) fn in_game_key_edge(
     // for the Escape base key even if its ordinary binding cannot execute.
     if locked && is_escape {
         resolution = hotkeys::HotkeyResolution::Command(hotkeys::HotkeyCommand::Options);
+    }
+    // VERA ferry: while its drop click is armed, the Planning Mode key marks
+    // the clicks that add waypoints and does not open Planning Mode.
+    if state.match_state.input.ferry.armed()
+        && !locked
+        && !paused_at_event
+        && resolution == hotkeys::HotkeyResolution::Command(hotkeys::HotkeyCommand::PlanningMode)
+    {
+        if edge.state.is_pressed() {
+            state.match_state.input.ferry.press_via_key(edge.physical);
+        }
+        return;
     }
     let owned_planning_release =
         !edge.state.is_pressed() && state.match_state.input.planning.owns_key(edge.physical);

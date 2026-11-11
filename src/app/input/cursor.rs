@@ -164,7 +164,7 @@ pub(crate) fn current_cursor_feedback_kind(
         selected.is_empty(),
     );
     if let super::state::TacticalPointerMode::SuperWeapon(section) = pointer_mode {
-        if let Some(runtime) = state.match_state.sim_runtime.as_ref()
+        if let Some(runtime) = state.match_state.sim_runtime.runtime()
             && let Some(owner) = preferred_local_owner_name(state)
                 .and_then(|name| runtime.simulation.interner().get(&name))
             && let Some(sw_type) = runtime.simulation.interner().get(section)
@@ -220,7 +220,7 @@ pub(crate) fn current_cursor_feedback_kind(
     let sim = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation)?;
     // DetermineAction's no-selection path keeps Repair/Sell only when no
     // armed Super overrides it. Use the same priority as the release owner;

@@ -504,7 +504,8 @@ pub struct TerrainObjectStore {
     #[serde(skip)]
     cell_grid: CellGrid,
     animations: BTreeMap<u64, TerrainAnimationState>,
-    objects: BTreeMap<u64, TerrainObjectState>,
+    /// Shared copy-on-write with presentation frames (docs/sim-thread.md).
+    objects: crate::util::shared::Shared<BTreeMap<u64, TerrainObjectState>>,
     cells: BTreeMap<(u16, u16), u64>,
     tiberium_spawning_cells: BTreeSet<(u16, u16)>,
     #[serde(skip)]
@@ -608,7 +609,7 @@ impl TerrainObjectStore {
                 next = object.next_in_cell;
             }
         }
-        for (&id, object) in &self.objects {
+        for (&id, object) in self.objects.iter() {
             // TerrainTypeCtor71DA80 at71DAF1 leaves Occupy_List null;
             // TerrainTypeOccupyList71DE40 returns a sentinel-only list while
             // ObjectUnlimbo5F4EC0 still succeeds. CellLoad483B9F restores its own head;
@@ -676,7 +677,7 @@ impl TerrainObjectStore {
             stable_id.hash(hasher);
             spawner.hash(hasher);
         }
-        for (&stable_id, terrain) in &self.objects {
+        for (&stable_id, terrain) in self.objects.iter() {
             stable_id.hash(hasher);
             terrain.hash(hasher);
         }
@@ -1132,7 +1133,7 @@ impl TerrainObjectStore {
     pub fn objects_mut_for_test(&mut self) -> &mut BTreeMap<u64, TerrainObjectState> {
         self.touched.note_all();
         self.membership_epoch = self.membership_epoch.wrapping_add(1);
-        &mut self.objects
+        &mut *self.objects
     }
 
     #[cfg(any(test, feature = "test-support"))]

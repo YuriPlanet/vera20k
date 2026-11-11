@@ -1126,7 +1126,7 @@ pub(crate) fn build_overlay_instances(
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .presentation()
             .map_or((None, None, false), |runtime| {
                 let sim = &runtime.simulation;
                 let viewer = crate::app::input::commands::preferred_local_owner_name(state)
@@ -1144,7 +1144,7 @@ pub(crate) fn build_overlay_instances(
     let terrain = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .and_then(|runtime| runtime.simulation.resolved_terrain());
     // Only the entries whose body can reach the view, still in index order:
     // the opaque leaf keeps the first pixel on equal Z (0x004991EA..0x004991EC),
@@ -1160,14 +1160,14 @@ pub(crate) fn build_overlay_instances(
         live_grid: state
             .match_state
             .sim_runtime
-            .as_ref()
+            .presentation()
             .and_then(|runtime| runtime.simulation.overlay_grid()),
         registry: state.overlay_registry(),
         rules: state.rules(),
         interner: state
             .match_state
             .sim_runtime
-            .as_ref()
+            .presentation()
             .map(|runtime| runtime.simulation.interner()),
         tiberium_types: state.rules().map(|rules| &rules.tiberium_types),
         terrain,
@@ -1210,7 +1210,7 @@ pub(crate) fn build_overlay_instances(
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|rt| &rt.simulation)
     else {
         return;
@@ -1387,7 +1387,7 @@ pub(crate) fn build_weapon_wave_instances(
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|rt| &rt.simulation)
     else {
         return;
@@ -1405,7 +1405,7 @@ pub(crate) fn build_weapon_wave_instances(
         let rules = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .presentation()
             .expect("the wave owner's runtime")
             .resources
             .rules;

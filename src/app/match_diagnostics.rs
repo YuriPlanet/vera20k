@@ -336,6 +336,11 @@ impl MatchDiagnosticsState {
 
     /// Disjoint borrows keep the recorder/observation owner beside playback;
     /// no caller moves the cursor out or temporarily disables the input gate.
+    /// Whether a command execution log observes each applied command.
+    pub(crate) fn observes_commands(&self) -> bool {
+        self.command_executions.is_some()
+    }
+
     pub(crate) fn playback_and_observations_mut(
         &mut self,
     ) -> (

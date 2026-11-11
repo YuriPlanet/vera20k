@@ -899,11 +899,7 @@ impl crate::sim::world::Simulation {
     /// zone grids, the playfield, the radius cap from the map's Size
     /// ([`map_owned_radius_cap`]) and the current frame for the no-target
     /// pick. `None` when nothing passes or the map size is unknown.
-    pub fn nearby_passable_cell(
-        &self,
-        seed: (i32, i32),
-        args: NearbyArgs,
-    ) -> Option<(u16, u16)> {
+    pub fn nearby_passable_cell(&self, seed: (i32, i32), args: NearbyArgs) -> Option<(u16, u16)> {
         #[cfg(test)]
         if let Some(answer) =
             crate::sim::movement::fresh_oracle_seam::supplied_nearby_cell(seed, args)
@@ -940,7 +936,7 @@ impl crate::sim::world::Simulation {
                 overlay_grid: self.overlay_grid.as_ref(),
                 occupancy: Some(&self.substrate.occupancy),
                 entities: Some(&self.substrate.entities),
-                zone_grid: self.zone_grid.as_ref(),
+                zone_grid: self.zone_grid.as_deref(),
                 playfield_bounds: self.playfield_bounds(),
             },
             args.options,
@@ -982,7 +978,7 @@ impl crate::sim::world::Simulation {
         };
         let zone = self
             .zone_grid
-            .as_ref()
+            .as_deref()
             .zip(self.resolved_terrain.as_ref())
             .and_then(|(zones, terrain)| {
                 zones.get_zone_id_native(
@@ -1026,7 +1022,7 @@ impl crate::sim::world::Simulation {
     ) -> Option<(u16, u16)> {
         let zone = self
             .zone_grid
-            .as_ref()
+            .as_deref()
             .zip(self.resolved_terrain.as_ref())
             .and_then(|(zones, terrain)| {
                 zones.get_zone_id_native(terrain, seed, movement_zone, false)
