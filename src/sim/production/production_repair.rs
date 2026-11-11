@@ -48,6 +48,7 @@ use crate::map::entities::EntityCategory;
 use crate::rules::object_type::{FactoryType, ObjectType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::credit_income::{available_money, spend_money};
+use crate::sim::intern::InternedId;
 use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF64Bits};
 
@@ -309,6 +310,36 @@ pub fn can_repair_building(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
         && object.repairable
         && entity.health.current() != object.strength
         && !(object.foundation.dimensions() == (1, 1) && undeploys(rules, object))
+}
+
+/// VERA Auto Repair (`docs/auto-repair.md`): `owner`'s buildings a player
+/// would click with the wrench now, in stored-id order. Each is one the house
+/// may repair ([`can_repair_building`]), on neither Construction nor Selling
+/// and not repairing already: what [`update_repair_and_power`] and the
+/// computer's auto-repair start ask before starting one (`0x00450630`,
+/// `0x004506B2`). The owner's available money also covers one repair step,
+/// because the step stops a repair it cannot pay for (`0x00450813`). Read
+/// only: the player's own game sends each the ordinary REPAIR event, and
+/// stock play never asks.
+pub fn buildings_wanting_repair(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Vec<u64> {
+    let money = available_money(&sim.houses, owner);
+    sim.substrate
+        .entities
+        .owned_ids(owner, EntityCategory::Structure)
+        .iter()
+        .copied()
+        .filter(|&id| {
+            let Some(entity) = sim.substrate.entities.get(id) else {
+                return false;
+            };
+            !entity.repairing.on
+                && !entity.constructing_or_selling()
+                && can_repair_building(sim, rules, id)
+                && sim
+                    .object_type(entity.type_ref(), rules)
+                    .is_some_and(|object| money >= repair_step_cost(rules, object))
+        })
+        .collect()
 }
 
 /// Shared TechnoType repair step cost, vt+0xB0 (`0x007120D0`):

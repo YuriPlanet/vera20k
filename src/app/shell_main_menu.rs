@@ -170,6 +170,10 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // The next cameo press reads it; Options' accept writes it out.
         self.persistence.options_profile.shift_queue = shift_queue;
     }
+    fn store_auto_repair(&mut self, enabled: bool) {
+        // The next logic frame's pass reads it; Options' accept writes it out.
+        self.persistence.options_profile.auto_repair = enabled;
+    }
     fn store_terrain_deformation(&mut self, enabled: bool) {
         // The next game's rules and every later network agreement read it;
         // Options' accept writes it out.
