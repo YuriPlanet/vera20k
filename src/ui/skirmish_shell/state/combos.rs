@@ -58,11 +58,22 @@ fn combo_popup(
     if item_count == 0 {
         return None;
     }
+    let cap = combo_dropdown_max_visible_rows(id);
+    let mut face = combo_face_rect(rect, layout.scale);
+    // ComboDropWin__WndProc (0x0060D540) narrows a scrolling list by its
+    // scrollbar and cuts each caption at the client width less 0x14
+    // (0x0060DF38). gamemd's Start list never passes its nine rows, so it never
+    // scrolls; VERA's thirty starts would leave the 38 px Start list no width
+    // for a caption. A scrolling Start list grows by the scrollbar instead, so
+    // its rows keep the face's width.
+    if matches!(id, SkirmishComboId::Start(_)) && item_count > cap {
+        face.w += DropdownMetrics::scaled(layout.scale).scrollbar_w;
+    }
     Some(ComboPopup::new(
-        combo_face_rect(rect, layout.scale),
+        face,
         layout.scale,
         item_count as usize,
-        combo_dropdown_max_visible_rows(id) as usize,
+        cap as usize,
         top_index,
     ))
 }
