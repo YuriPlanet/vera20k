@@ -1021,7 +1021,7 @@ pub(crate) fn advance_in_game_runtime_exact_step(
     }
     // A tick an earlier pass sent to the simulation thread finishes first,
     // so the step is counted on the live world, not the published frame.
-    finish_threaded_tick(state, None);
+    finish_threaded_frame(state);
     let (tick_before, binary_frame_before) = state
         .match_state
         .sim_runtime
@@ -1321,54 +1321,110 @@ fn advance_in_game_runtime_mode(
             super::network_failure::show(state);
             return false;
         }
-        #[cfg(feature = "telemetry-dashboard")]
-        if frame_committed && state.diag.telemetry_active() {
-            state.match_state.telemetry_tick_rate.record(Instant::now());
-        }
-        crate::app::presentation::sidebar_render::advance_sidebar_credits_after_frame(
-            state,
-            frame_committed,
-            tick_lane,
-        );
-        if frame_committed {
-            // House4F92E2's strip pass reaches this frame as a pending
-            // recheck; membership must not wait for the next player input.
-            let recheck = state
-                .match_state
-                .match_presentation
-                .sidebar_projection
-                .cameo_recheck_pending();
-            // Native Strip AI6A8CF3 requests redraw throughout the authored
-            // flash window, even with no input. Reuse the one projection owner
-            // only in these windows; ordinary idle ticks do not enumerate cameos.
-            let flashing = state
-                .match_state
-                .sim_runtime
-                .runtime()
-                .is_some_and(|runtime| {
-                    state
-                        .match_state
-                        .match_presentation
-                        .sidebar_projection
-                        .cameo_redraw_requested(runtime.simulation.session().binary_frame() as i32)
-                });
-            // StripDraw6A9540 asks each entry's availability and reads its
-            // Factory while drawing, so the drawn state follows the simulation
-            // even when no pass, input or flash window rebuilt the projection
-            // this frame.
-            if recheck || flashing {
-                // The rebuilt view takes the same drawn state.
-                crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
-            } else {
-                crate::app::presentation::sidebar_render::refresh_sidebar_cameo_draw_state(state);
-            }
-            #[cfg(feature = "phobos")]
-            crate::app::presentation::sw_sidebar::refresh_draw_state(state);
+        // A frame sent to the simulation thread has no result yet: the pass
+        // that finishes it does this ([`finish_threaded_frame`]).
+        if frame_committed || !state.match_state.sim_runtime.is_lent() {
+            after_frame(state, frame_committed, tick_lane);
         }
     } else if let Some(request) = mouse_scroll {
         crate::app::input::camera::commit_camera_scroll(state, request);
     }
+    after_simulation_pass(
+        state,
+        decision,
+        main_tick_pumps_audio,
+        scroll_steps,
+        replaying,
+    )
+}
 
+/// The client work that follows one frame's result, committed or not.
+fn after_frame(state: &mut AppState, frame_committed: bool, tick_lane: TickLane) {
+    #[cfg(feature = "telemetry-dashboard")]
+    if frame_committed && state.diag.telemetry_active() {
+        state.match_state.telemetry_tick_rate.record(Instant::now());
+    }
+    crate::app::presentation::sidebar_render::advance_sidebar_credits_after_frame(
+        state,
+        frame_committed,
+        tick_lane,
+    );
+    if frame_committed {
+        // House4F92E2's strip pass reaches this frame as a pending
+        // recheck; membership must not wait for the next player input.
+        let recheck = state
+            .match_state
+            .match_presentation
+            .sidebar_projection
+            .cameo_recheck_pending();
+        // Native Strip AI6A8CF3 requests redraw throughout the authored
+        // flash window, even with no input. Reuse the one projection owner
+        // only in these windows; ordinary idle ticks do not enumerate cameos.
+        let flashing = state
+            .match_state
+            .sim_runtime
+            .runtime()
+            .is_some_and(|runtime| {
+                state
+                    .match_state
+                    .match_presentation
+                    .sidebar_projection
+                    .cameo_redraw_requested(runtime.simulation.session().binary_frame() as i32)
+            });
+        // StripDraw6A9540 asks each entry's availability and reads its
+        // Factory while drawing, so the drawn state follows the simulation
+        // even when no pass, input or flash window rebuilt the projection
+        // this frame.
+        if recheck || flashing {
+            // The rebuilt view takes the same drawn state.
+            crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
+        } else {
+            crate::app::presentation::sidebar_render::refresh_sidebar_cameo_draw_state(state);
+        }
+        #[cfg(feature = "phobos")]
+        crate::app::presentation::sw_sidebar::refresh_draw_state(state);
+    }
+}
+
+/// Finish the frame the simulation thread ran since the last pass: its tail,
+/// then the client work that follows a frame. Every pass starts with it, so
+/// pause service, exit routing, menus and saves read a world whose last tick
+/// the client has fully taken. Nothing happens when no tick is out.
+pub(crate) fn finish_threaded_frame(state: &mut AppState) {
+    let Some(frame_committed) = finish_threaded_tick(state, None) else {
+        return;
+    };
+    // As after an inline frame: an outcome wait or a failure holds the rest.
+    if crate::app::App::house_outcome_wait_pending(state) || super::network_failure::pending(state)
+    {
+        return;
+    }
+    after_frame(state, frame_committed, TickLane::Ordinary);
+}
+
+/// Move the simulation's pending radar-terrain marks into the minimap's
+/// backlog. Without a minimap they stay with the simulation.
+pub(crate) fn drain_radar_terrain_marks(state: &mut AppState) {
+    let match_state = &mut state.match_state;
+    if let (Some(minimap), Some(runtime)) = (
+        match_state.match_presentation.minimap.as_mut(),
+        match_state
+            .sim_runtime
+            .write_sim(super::sim_host::SimWrite::Presentation),
+    ) {
+        minimap.queue_radar_terrain_cells(runtime.take_radar_terrain_dirty());
+    }
+}
+
+/// What every pass does after its simulation step, whether or not a frame
+/// ran.
+fn after_simulation_pass(
+    state: &mut AppState,
+    decision: RuntimePassDecision,
+    main_tick_pumps_audio: bool,
+    scroll_steps: u32,
+    replaying: bool,
+) -> bool {
     // MainThrottle55E33B publishes Logic visits per60 wall-clock buckets,
     // including the path where the pacer admitted no simulation frame.
     let wall_ms = state.radar_presentation_ms();
@@ -2066,7 +2122,12 @@ fn finish_simulation_frame(
             if output.outcome_waiting {
                 // The simulation retains this frame's non-sound facts until
                 // the same House suffix finishes. Its sound prefix has already
-                // reached the synchronous boundary above exactly once.
+                // reached the synchronous boundary above exactly once. A
+                // deferred frame's client writes, the outcome wait it polled
+                // among them, still reach their owners.
+                if let Some(deferred) = deferred {
+                    deferred.apply(state);
+                }
                 return false;
             }
             let tick_ms = tick_cost.as_secs_f32() * 1000.0;
@@ -2313,8 +2374,10 @@ fn finish_simulation_frame(
             deferred.apply(state);
         }
         // docs/sim-thread.md phase 2: drawing reads the world as this tick
-        // left it while the next tick runs.
+        // left it while the next tick runs. The tick's radar-terrain marks
+        // go to the minimap with it.
         if frame_committed && super::sim_host::presentation_frames_enabled() {
+            drain_radar_terrain_marks(state);
             state.match_state.sim_runtime.publish_presentation();
         }
         if frame_committed {

@@ -195,13 +195,25 @@ that wait shows in play.
 
 An ordinary offline frame on the deferred path is lent to the simulation
 thread instead of run inline. This is the default; `VERA20K_SIM_THREAD=0`
-turns the thread, the deferred effects and the presentation frames off. Each admitted pass
-then does four things in order:
+turns the thread, the deferred effects and the presentation frames off. A
+pass then goes:
 
-1. waits for the tick in flight;
-2. runs that tick's tail with this pass's camera scroll;
-3. publishes the frame;
-4. dispatches the next tick and draws while it runs.
+1. `finish_threaded_frame`, first thing in the pass: wait for the tick in
+   flight, run its tail, hand its radar-terrain marks to the minimap and
+   publish the frame;
+2. the pass's own service: pause and chrono service, exit and outcome
+   routing, menus, saves. They read a world whose last tick the client has
+   fully taken, and nothing is in flight;
+3. if a frame is admitted, dispatch it and draw while it runs.
+
+Between the dispatch and the next pass nothing on the main thread may take
+the live world: a write waits for the tick, and the tick then did not run
+beside the draw. The per-pass EXIT check therefore looks at the published
+frame before it takes the world, and the draw-time radar drain leaves the
+marks to the tail while a tick is out. `SimHost` counts jobs taken back
+early and logs them every 1,024 ticks and when a scenario leaves. Player
+commands between passes do take the world back; they wait for the tick, and
+its tail still runs at the next pass.
 
 Drawing therefore shows the world one tick behind the simulation. These
 frames stay inline:
@@ -213,15 +225,17 @@ frames stay inline:
   the call. A tick already in flight finishes before an exact step is
   counted.
 
-A pass whose finished tick left an outcome wait or a network failure
-dispatches nothing, so the next pass resumes that frame inline.
+A pass whose finished tick left an outcome wait, a stopped frame, an open
+menu, a pause or a result to route dispatches nothing: step 2 sees it
+before step 3.
 
 The browser build has no thread and always ticks inline.
 
 Residuals:
 
-- While the game is paused, the tail of the tick that was in flight (its
-  sounds and its published frame) waits for the next admitted frame.
+- At 20,000 units and 30 houses (`sim-bench --scenario march
+  --presentation-frame`), keeping a frame each tick takes the mean tick from
+  54.0 ms to 64.6 ms; the final hash is unchanged.
 - A tick whose tail has not run when a debug tool or a load takes the
   runtime back keeps its result until the next pass, or drops it when a
   scenario is installed.

@@ -10,7 +10,6 @@ use super::{
     ActiveEventLoop, App, AppState, GameScreen, Instant, Result, frontend::startup_splash, render,
     sim_tick,
 };
-use crate::app::match_runtime::sim_host::SimWrite;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ShellFramePreludeStep {
@@ -121,14 +120,13 @@ fn apply_screen_shake(
 
 impl App {
     /// Move the simulation's pending radar-terrain marks into the minimap's
-    /// backlog. Without a minimap they stay with the simulation, as before.
+    /// backlog before a draw. While a tick runs on the simulation thread the
+    /// marks stay with it: that tick's tail hands them over
+    /// ([`sim_tick::drain_radar_terrain_marks`]) with the frame they belong
+    /// to, and taking them here would wait for the tick.
     fn drain_radar_terrain_marks(state: &mut AppState) {
-        let match_state = &mut state.match_state;
-        if let (Some(minimap), Some(runtime)) = (
-            match_state.match_presentation.minimap.as_mut(),
-            match_state.sim_runtime.write_sim(SimWrite::Presentation),
-        ) {
-            minimap.queue_radar_terrain_cells(runtime.take_radar_terrain_dirty());
+        if !state.match_state.sim_runtime.is_lent() {
+            sim_tick::drain_radar_terrain_marks(state);
         }
     }
 
@@ -277,6 +275,9 @@ impl App {
         event_loop: &ActiveEventLoop,
         simulation_allowed: bool,
     ) -> RuntimeServiceResult {
+        // A tick the simulation thread ran since the last pass ends here,
+        // before anything in this pass reads or routes its result.
+        sim_tick::finish_threaded_frame(state);
         let mut main_tick_admitted = false;
         // GScreen Input reads the current native frame parity but does not
         // advance it. Hidden background service still owns Input while the

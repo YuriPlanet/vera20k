@@ -59,6 +59,10 @@ pub(crate) struct SimHost {
     lent: bool,
     /// The last job's result, once the runtime is back.
     job_result: Option<SimJobResult>,
+    /// Jobs lent, and those a write took back before
+    /// [`Self::take_job_result`] asked for them, since the last report.
+    lent_jobs: u32,
+    early_returns: u32,
     /// The simulation thread, started by the first [`Self::lend`].
     worker: Option<SimWorker>,
     /// The presentation frame (phase 2): the world as the last published
@@ -95,9 +99,13 @@ impl SimHost {
     /// published frame until a write takes the runtime back. Returns false,
     /// running nothing, when no runtime is installed.
     pub(crate) fn lend(&mut self, job: SimJob) -> bool {
-        self.reclaim();
+        self.reclaim(true);
         if self.runtime.is_none() {
             return false;
+        }
+        self.lent_jobs += 1;
+        if self.lent_jobs == EARLY_RETURN_REPORT_JOBS {
+            self.report_early_returns();
         }
         if self.presentation.is_none() {
             self.publish_presentation();
@@ -112,12 +120,29 @@ impl SimHost {
         true
     }
 
+    /// Log how many lent jobs a write took back early, then start counting
+    /// again. Such a job ran while the main thread waited for it, so the two
+    /// did not overlap; common ones are worth finding.
+    fn report_early_returns(&mut self) {
+        if self.lent_jobs > 0 {
+            log::info!(
+                "Simulation thread: {} of the last {} ticks were taken back early",
+                self.early_returns,
+                self.lent_jobs
+            );
+        }
+        self.lent_jobs = 0;
+        self.early_returns = 0;
+    }
+
     /// Wait for a lent runtime to come back. A panic in the job resumes here.
-    fn reclaim(&mut self) {
+    /// `early` when the caller is not the one collecting the job's result.
+    fn reclaim(&mut self, early: bool) {
         if !self.lent {
             return;
         }
         self.lent = false;
+        self.early_returns += u32::from(early);
         let (runtime, result) = self
             .worker
             .as_ref()
@@ -134,14 +159,14 @@ impl SimHost {
 
     /// The last lent job's result, waiting for the job if it still runs.
     pub(crate) fn take_job_result(&mut self) -> Option<SimJobResult> {
-        self.reclaim();
+        self.reclaim(false);
         self.job_result.take()
     }
 
     /// Mutable access to the installed runtime for one write route; a lent
     /// runtime comes back first.
     pub(crate) fn write_sim(&mut self, route: SimWrite) -> Option<&mut SimRuntime> {
-        self.reclaim();
+        self.reclaim(true);
         if matches!(route, SimWrite::Rules | SimWrite::Lifecycle) {
             // These may rebind the shared resources (`resources_mut`).
             self.presentation = None;
@@ -168,7 +193,7 @@ impl SimHost {
     /// The [`SimWrite::Tick`] route: the installed runtime and the checksum
     /// owner its tick borrows at the native queue boundary, together.
     pub(crate) fn tick_parts(&mut self) -> Option<(&mut SimRuntime, &mut FrameChecksumState)> {
-        self.reclaim();
+        self.reclaim(true);
         let runtime = self.runtime.as_mut()?;
         Some((runtime, &mut self.frame_checksums))
     }
@@ -181,7 +206,8 @@ impl SimHost {
     /// Install `runtime` in place of any current one.
     pub(crate) fn install(&mut self, runtime: Option<SimRuntime>) {
         // A job's result belongs to the world it ran on.
-        self.reclaim();
+        self.reclaim(true);
+        self.report_early_returns();
         self.job_result = None;
         self.presentation = None;
         self.runtime = runtime;
@@ -189,12 +215,16 @@ impl SimHost {
 
     /// Remove and return the installed runtime.
     pub(crate) fn take_runtime(&mut self) -> Option<SimRuntime> {
-        self.reclaim();
+        self.reclaim(true);
+        self.report_early_returns();
         self.job_result = None;
         self.presentation = None;
         self.runtime.take()
     }
 }
+
+/// How many lent jobs pass between two log lines on early returns.
+const EARLY_RETURN_REPORT_JOBS: u32 = 1024;
 
 /// The simulation thread: runs each lent job and sends the runtime back.
 /// It ends when the host drops its sender.
@@ -320,9 +350,14 @@ mod tests {
         let live = host.write_sim(SimWrite::Command).unwrap();
         assert_eq!(live.simulation.session().tick(), 8);
         assert!(!host.is_lent());
+        assert_eq!((host.lent_jobs, host.early_returns), (1, 1));
         let result = host.take_job_result().unwrap();
         assert_eq!(*result.downcast::<u32>().unwrap(), 41);
         assert!(host.take_job_result().is_none());
+        // A job its owner collects is not an early return.
+        assert!(host.lend(Box::new(|_| Box::new(()))));
+        assert!(host.take_job_result().is_some());
+        assert_eq!((host.lent_jobs, host.early_returns), (2, 1));
     }
 
     #[test]
