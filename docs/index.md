@@ -61,6 +61,7 @@ simulation, session and network command owners.
 - [End-game screens](ini-end-game-screens.md): the verdict card, its theme and the score page's own art.
 - [Health-strip modes](health-bars.md): the `[VERA] HealthBars=` client option.
 - [Interface layout](interface-layout.md): `veraui.ini`, a mod's own places for the sidebar, the command bar and the sidebar's parts.
+- [Smooth Jumpjet facing](jumpjet-smooth-facing.md): the `[JumpjetControls] SmoothFacing=` rules key that stops a Nighthawk's body snapping at take-off and unload.
 - [SHP building turrets](ini-shp-turret-anims.md): the rules keys for a building turret drawn as a 32-frame animation.
 - [Terrain deformation](terrain-deformation.md): the Options box that lets explosions dent the ground and nukes leave craters.
 - [Stock rules retail leaves off](dormant-stock-rules.md): `Assaulter=`, `CanDetonateTimeBomb=` and other gamemd keys only a mod or map switches on.
