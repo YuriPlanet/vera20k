@@ -184,6 +184,33 @@ fn always_granted_needs_no_provider_but_keeps_availability_gates() {
     );
 }
 
+/// Ares's UpdateSuperWeaponsOwned (hook `0x0050AF10`,
+/// `0x10039617..0x1003965F`) keeps an `SW.AutoFire=yes`, `SW.ShowCameo=no`
+/// super off the strip; without `SW.AutoFire` the cameo still shows.
+#[test]
+fn show_cameo_hides_only_an_auto_fire_super_from_the_strip() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let rules = rules(
+        "[SuperWeaponTypes]\n0=Guard\n1=Manual\n\
+         [Guard]\nType=GenericWarhead\nSW.Warhead=Payload\nSW.AlwaysGranted=yes\n\
+         IsPowered=no\nSW.AutoFire=yes\nSW.ShowCameo=no\n\
+         [Manual]\nType=GenericWarhead\nSW.Warhead=Payload\nSW.AlwaysGranted=yes\n\
+         IsPowered=no\nSW.ShowCameo=no\n",
+    );
+    let (mut sim, owner, _) = scene(&rules, "Guard");
+    grant_provided_supers(&mut sim, &rules, owner);
+    update_owned_supers(&mut sim, &rules, owner);
+    let mut shown: Vec<_> = superweapon_views_for_owner(&sim, &rules, &owner)
+        .into_iter()
+        .map(|view| (view.display_name, view.ares_show_cameo))
+        .collect();
+    shown.sort();
+    assert_eq!(
+        shown,
+        [("Guard".to_string(), false), ("Manual".to_string(), true)]
+    );
+}
+
 #[test]
 fn protect_curtains_its_rectangle_with_its_duration_and_affected_houses() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
