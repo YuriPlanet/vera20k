@@ -1742,9 +1742,14 @@ impl ProjectileStore {
         } else {
             kind.spawn_delay
         };
-        let remainder = (binary_frame as i32)
-            .checked_rem(delay)
-            .expect("Bullet Trailer native IDIV requires a nonzero, nonoverflowing SpawnDelay");
+        // gamemd's signed IDIVs of the frame (0x00466844 by the scaled
+        // delay, 0x0046687C by the type's) trap on `SpawnDelay=0` and on
+        // frame i32::MIN with a delay of -1, values only a map or mod can
+        // set. VERA carries on without a trailer for that visit.
+        let Some(remainder) = (binary_frame as i32).checked_rem(delay) else {
+            log::warn!("Bullet Trailer [{name}] not spawned: SpawnDelay={delay} cannot divide");
+            return None;
+        };
         (remainder == 0).then_some((name, position))
     }
 }

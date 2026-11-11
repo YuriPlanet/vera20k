@@ -3391,8 +3391,13 @@ impl Simulation {
                         );
                         break;
                     }
+                    // A map or mod can list a `DamageFireTypes=` entry with
+                    // no bound art. Nothing is written for this slot before
+                    // the spawn, so the building keeps its earlier fires and
+                    // gets no more this pass, as for the trailer above.
                     Err(error) => {
-                        panic!("validated stock damage-fire animation must spawn: {error}")
+                        log::warn!("damage-fire animation not spawned: {error}");
+                        break;
                     }
                 };
                 // Original43C0D0/43C1EB retains only the Building5C8 slot.
@@ -7693,6 +7698,27 @@ mod tests {
         sim.update_building_damage_fire(building_id, &rules);
         let building = sim.substrate.entities.get(building_id).unwrap();
         assert!(!building.damage_fires.active);
+        assert!(building.damage_fires.anim_ids.iter().all(Option::is_none));
+        assert_eq!(sim.live_object_order_snapshot(), vec![building_id]);
+    }
+
+    #[test]
+    fn unspawnable_damage_fire_type_leaves_the_slots_empty() {
+        let (mut sim, mut rules, building_id) = damage_fire_fixture(false);
+        for fire in &mut rules.general.damage_fire_types {
+            fire.name = "NOSUCHFIRE".to_string();
+        }
+        sim.substrate
+            .entities
+            .get_mut(building_id)
+            .unwrap()
+            .health
+            .set_for_test(50);
+
+        sim.update_building_damage_fire(building_id, &rules);
+
+        let building = sim.substrate.entities.get(building_id).unwrap();
+        assert!(building.damage_fires.active);
         assert!(building.damage_fires.anim_ids.iter().all(Option::is_none));
         assert_eq!(sim.live_object_order_snapshot(), vec![building_id]);
     }
