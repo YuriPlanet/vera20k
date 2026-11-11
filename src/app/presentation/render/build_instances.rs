@@ -932,31 +932,43 @@ pub(super) fn build_ui_instances(
             input.camera_y,
         ));
     }
-    // VERA ferry: the routes' dashes, from world pixels back to the screen (the
-    // inverse of `sim_tick::screen_point_to_world`), kept to the battlefield
-    // so none is drawn over the sidebar.
-    if let Some(overlay) = &state.match_state.match_presentation.selection_overlay {
+    // VERA ferry: the routes' circles, from world pixels back to the screen
+    // (the inverse of `sim_tick::screen_point_to_world`), in the Move action
+    // line's green, kept to the battlefield so none is drawn over the sidebar.
+    if let (Some(overlay), Some(palette)) = (
+        &state.match_state.match_presentation.selection_overlay,
+        state
+            .match_state
+            .match_presentation
+            .surface_palette(state.process_assets.manager()),
+    ) {
         let input = &state.match_state.input;
         let (left, top, width, height) = crate::app::input::camera::tactical_viewport_px(state);
-        let (left, top) = (left as f32, top as f32);
-        let (right, bottom) = (left + width as f32, top + height as f32);
-        let marks = crate::app::input::ferry::marks(state);
-        for refused in [false, true] {
-            let screen: Vec<((f32, f32), (f32, f32))> = marks
+        let clip = [
+            left as f32,
+            top as f32,
+            (left + width) as f32,
+            (top + height) as f32,
+        ];
+        let green = crate::app::presentation::target_lines::move_action_line_color(palette);
+        for ring in crate::app::input::ferry::marks(state) {
+            let screen: Vec<(f32, f32)> = ring
+                .points
                 .iter()
-                .filter(|mark| mark.refused == refused)
-                .map(|mark| {
+                .map(|&(x, y)| {
                     (
-                        (
-                            (mark.point.0 - input.camera_x) * input.zoom_level,
-                            (mark.point.1 - input.camera_y) * input.zoom_level,
-                        ),
-                        mark.along,
+                        (x - input.camera_x) * input.zoom_level,
+                        (y - input.camera_y) * input.zoom_level,
                     )
                 })
-                .filter(|&((x, y), _)| (left..right).contains(&x) && (top..bottom).contains(&y))
                 .collect();
-            drag.extend(overlay.build_ferry_dots(&screen, refused, input.camera_x, input.camera_y));
+            drag.extend(overlay.build_ferry_ring(
+                &screen,
+                (!ring.refused).then_some(green),
+                clip,
+                input.camera_x,
+                input.camera_y,
+            ));
         }
     }
 

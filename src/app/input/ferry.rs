@@ -824,22 +824,20 @@ pub(crate) fn armed_click_accepted(state: &AppState) -> Option<bool> {
     armed_preview(state).map(|(_, _, accepted)| accepted)
 }
 
-/// One dash of the ferry's marks in VERA's world-pixel frame.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct FerryMark {
-    pub point: (f32, f32),
-    /// The unit direction the dash lies along: its ring's tangent, or the
-    /// route from the pick-up spot to the drop spot.
-    pub along: (f32, f32),
+/// One circle of the ferry's marks: a closed line in VERA's world-pixel
+/// frame.
+#[derive(Debug, Clone)]
+pub(crate) struct FerryRing {
+    pub points: Vec<(f32, f32)>,
     /// Part of the preview of a click that would be refused.
     pub refused: bool,
 }
 
-/// The ferry's marks: for each selected transport's route a ring of dashes
-/// around its pick-up circle, a dotted line towards the drop spot and a ring
-/// around its drop zone; and, while a drop click is armed, the same rings for
-/// the selected transports and the cell under the cursor.
-pub(crate) fn marks(state: &AppState) -> Vec<FerryMark> {
+/// The ferry's marks: for each selected transport's route a circle around its
+/// pick-up area and one around its drop zone; and, while a drop click is
+/// armed, the same circles for the selected transports and the cell under the
+/// cursor.
+pub(crate) fn marks(state: &AppState) -> Vec<FerryRing> {
     use crate::util::lepton::{
         GROUND_LEVEL_HEIGHT_LEPTONS, LEPTONS_PER_CELL_I32, absolute_leptons_to_screen,
     };
@@ -864,79 +862,44 @@ pub(crate) fn marks(state: &AppState) -> Vec<FerryMark> {
     let cells = state
         .sim_view()
         .and_then(|view| crate::app::match_runtime::sim_tick::tactical_cells(view.simulation()));
-    // A cell's centre in leptons, at its ground height.
-    let centre = |cell: Cell| {
-        let level = cells
-            .and_then(|cells| cells.cell_level(cell.0, cell.1))
-            .unwrap_or(0);
-        (
-            (i32::from(cell.0) * LEPTONS_PER_CELL_I32 + LEPTONS_PER_CELL_I32 / 2) as f32,
-            (i32::from(cell.1) * LEPTONS_PER_CELL_I32 + LEPTONS_PER_CELL_I32 / 2) as f32,
-            (i32::from(level) * GROUND_LEVEL_HEIGHT_LEPTONS) as f32,
-        )
-    };
-    let project = |x: f32, y: f32, z: f32| absolute_leptons_to_screen(x as i32, y as i32, z as i32);
     let cell = LEPTONS_PER_CELL_I32 as f32;
+    // A circle of `radius` leptons around a cell's centre, at its ground
+    // height, as 64 corners.
+    let ring = |at: Cell, radius: f32, refused: bool| {
+        let level = cells
+            .and_then(|cells| cells.cell_level(at.0, at.1))
+            .unwrap_or(0);
+        let x = (i32::from(at.0) * LEPTONS_PER_CELL_I32 + LEPTONS_PER_CELL_I32 / 2) as f32;
+        let y = (i32::from(at.1) * LEPTONS_PER_CELL_I32 + LEPTONS_PER_CELL_I32 / 2) as f32;
+        let z = i32::from(level) * GROUND_LEVEL_HEIGHT_LEPTONS;
+        FerryRing {
+            points: (0..64)
+                .map(|corner| {
+                    let angle = std::f32::consts::TAU * corner as f32 / 64.0;
+                    absolute_leptons_to_screen(
+                        (x + radius * angle.cos()) as i32,
+                        (y + radius * angle.sin()) as i32,
+                        z,
+                    )
+                })
+                .collect(),
+            refused,
+        }
+    };
     let pickup_radius = (PICKUP_RADIUS_CELLS as f32 + 0.5) * cell;
     let drop_radius = (DROP_RADIUS_CELLS as f32 + 0.5) * cell;
-    let mut marks = Vec::new();
-    let unit = |from: (f32, f32), to: (f32, f32)| {
-        let (dx, dy) = (to.0 - from.0, to.1 - from.1);
-        let length = (dx * dx + dy * dy).sqrt();
-        if length > 0.0 {
-            (dx / length, dy / length)
-        } else {
-            (1.0, 0.0)
-        }
-    };
-    let ring = |marks: &mut Vec<FerryMark>, at: Cell, radius: f32, dashes: u32, refused: bool| {
-        let at = centre(at);
-        let on_ring = |angle: f32| {
-            project(
-                at.0 + radius * angle.cos(),
-                at.1 + radius * angle.sin(),
-                at.2,
-            )
-        };
-        for dash in 0..dashes {
-            let angle = std::f32::consts::TAU * dash as f32 / dashes as f32;
-            let point = on_ring(angle);
-            marks.push(FerryMark {
-                point,
-                along: unit(point, on_ring(angle + 0.05)),
-                refused,
-            });
-        }
-    };
+    let mut rings = Vec::new();
     for route in routes {
-        ring(&mut marks, route.pickup, pickup_radius, 30, false);
-        ring(&mut marks, route.drop, drop_radius, 24, false);
-        // The line starts at the circle's edge and ends short of the drop ring.
-        let (pickup, drop) = (centre(route.pickup), centre(route.drop));
-        let (dx, dy, dz) = (drop.0 - pickup.0, drop.1 - pickup.1, drop.2 - pickup.2);
-        let length = (dx * dx + dy * dy).sqrt();
-        let heading = unit(
-            project(pickup.0, pickup.1, pickup.2),
-            project(drop.0, drop.1, drop.2),
-        );
-        let mut along = pickup_radius + cell;
-        while along < length - drop_radius - cell {
-            let t = along / length;
-            marks.push(FerryMark {
-                point: project(pickup.0 + dx * t, pickup.1 + dy * t, pickup.2 + dz * t),
-                along: heading,
-                refused: false,
-            });
-            along += cell;
-        }
+        rings.push(ring(route.pickup, pickup_radius, false));
+        rings.push(ring(route.drop, drop_radius, false));
     }
     if let Some((pickups, clicked, accepted)) = preview {
         for pickup in pickups {
-            ring(&mut marks, pickup, pickup_radius, 30, !accepted);
+            rings.push(ring(pickup, pickup_radius, !accepted));
         }
-        ring(&mut marks, clicked, drop_radius, 24, !accepted);
+        rings.push(ring(clicked, drop_radius, !accepted));
     }
-    marks
+    rings
 }
 
 #[cfg(test)]

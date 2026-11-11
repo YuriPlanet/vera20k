@@ -9,14 +9,14 @@ until it is told to do something else. The drop spot is the cell a Move click
 there would send the transport to. A second press of the key, or a right
 click, drops the armed click again.
 
-After the key is pressed, the same rings show before the click: one around
-each selected transport and one around the cell under the cursor. Where the
-click would give no transport a route (too near the pick-up spot, or a cell it
-cannot move to) the rings are red and the cursor is the refusal cursor.
+After the key is pressed, a thin green circle shows around each selected
+transport (its pick-up area) and another around the cell under the cursor (the
+drop zone), in the colour of the game's move lines. Where the click would give
+no transport a route (too near the pick-up spot, or a cell it cannot move to)
+the circles are red and the cursor is the refusal cursor.
 
-While the transport is selected, a ring of light blue dashes marks its pick-up
-circle, a dashed line leads towards the drop spot and a second ring marks the
-drop zone.
+While a ferrying transport is selected, the same two green circles mark its
+route.
 
 - **Loading.** The transport waits at the pick-up spot. Any of your infantry
   and vehicles that comes to a stop inside the circle (4 cells around the

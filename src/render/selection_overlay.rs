@@ -38,14 +38,8 @@ const FORMATION_DOT: [(f32, f32, f32, f32, f32); 5] = [
     (5.0, 1.0, 1.0, 4.0, FORMATION_DOT_EDGE_ALPHA),
     (1.0, 1.0, 4.0, 4.0, FORMATION_DOT_CORE_ALPHA),
 ];
-/// VERA ferry route dashes: 12 screen pixels long and 2 wide, drawn as six
-/// 2-pixel squares stepped along the dash's direction (a sprite has no
-/// rotation), with no edge, and their colour.
-const FERRY_DASH_SQUARE: f32 = 2.0;
-const FERRY_DASH_SQUARES: u32 = 6;
-const FERRY_DOT_TINT: [f32; 3] = [0.4, 0.9, 1.0];
-/// The dots of an armed drop click that would be refused.
-const FERRY_DOT_REFUSED_TINT: [f32; 3] = [1.0, 0.25, 0.2];
+/// VERA ferry circles of an armed drop click that would be refused.
+const FERRY_REFUSED_TINT: [f32; 3] = [1.0, 0.25, 0.2];
 
 /// Manages textures and rendering for selection overlays.
 pub struct SelectionOverlay {
@@ -650,44 +644,50 @@ impl SelectionOverlay {
         self.pipbrd.as_ref()
     }
 
-    /// VERA ferry order (`app::input::ferry`): one dash at each given screen
-    /// point, lying along its unit direction, in the band box's batch and
-    /// coordinate frame (screen pixels plus the camera offset). Light blue,
-    /// or red for a `refused` click's preview.
-    pub fn build_ferry_dots(
+    /// VERA ferry order (`app::input::ferry`): one closed line, a pixel
+    /// wide, through the given screen points, in the band box's batch and
+    /// coordinate frame (screen pixels plus the camera offset). `tint` is the
+    /// Move action line's colour; `None` draws a refused click's red. Pixels
+    /// outside `clip` (left, top, right, bottom) are left out.
+    pub fn build_ferry_ring(
         &self,
-        dashes: &[((f32, f32), (f32, f32))],
-        refused: bool,
+        screen_points: &[(f32, f32)],
+        tint: Option<[f32; 3]>,
+        clip: [f32; 4],
         camera_x: f32,
         camera_y: f32,
     ) -> Vec<SpriteInstance> {
-        let tint = if refused {
-            FERRY_DOT_REFUSED_TINT
-        } else {
-            FERRY_DOT_TINT
-        };
-        let half = (FERRY_DASH_SQUARES - 1) as f32 / 2.0;
-        dashes
-            .iter()
-            .flat_map(|&((x, y), (dx, dy))| {
-                (0..FERRY_DASH_SQUARES).map(move |square| {
-                    let along = (square as f32 - half) * FERRY_DASH_SQUARE;
-                    SpriteInstance {
-                        position: [
-                            camera_x + (x + dx * along).round() - FERRY_DASH_SQUARE / 2.0,
-                            camera_y + (y + dy * along).round() - FERRY_DASH_SQUARE / 2.0,
-                        ],
-                        size: [FERRY_DASH_SQUARE, FERRY_DASH_SQUARE],
-                        uv_origin: [0.0, 0.0],
-                        uv_size: [1.0, 1.0],
-                        depth: DRAG_RECT_DEPTH,
-                        tint,
-                        alpha: 1.0,
-                        ..Default::default()
-                    }
-                })
-            })
-            .collect()
+        let tint = tint.unwrap_or(FERRY_REFUSED_TINT);
+        let mut instances = Vec::new();
+        let mut last = None;
+        for (index, &(x0, y0)) in screen_points.iter().enumerate() {
+            let (x1, y1) = screen_points[(index + 1) % screen_points.len()];
+            let steps = (x1 - x0).abs().max((y1 - y0).abs()).ceil().max(1.0) as u32;
+            for step in 0..steps {
+                let t = step as f32 / steps as f32;
+                let pixel = ((x0 + (x1 - x0) * t).round(), (y0 + (y1 - y0) * t).round());
+                if last == Some(pixel)
+                    || pixel.0 < clip[0]
+                    || pixel.1 < clip[1]
+                    || pixel.0 >= clip[2]
+                    || pixel.1 >= clip[3]
+                {
+                    continue;
+                }
+                last = Some(pixel);
+                instances.push(SpriteInstance {
+                    position: [camera_x + pixel.0, camera_y + pixel.1],
+                    size: [1.0, 1.0],
+                    uv_origin: [0.0, 0.0],
+                    uv_size: [1.0, 1.0],
+                    depth: DRAG_RECT_DEPTH,
+                    tint,
+                    alpha: 1.0,
+                    ..Default::default()
+                });
+            }
+        }
+        instances
     }
 
     /// VERA formation line: one round dot per unit at the given screen
