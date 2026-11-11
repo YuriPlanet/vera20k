@@ -500,6 +500,7 @@ mod tests {
             structures: Vec::new(),
             infantry: vec![foot("CIV1")],
             vehicles: vec![foot("TRUCKA")],
+            ..Default::default()
         };
         let draws = std::cell::Cell::new(0u32);
         let main_draw = || {
@@ -786,6 +787,67 @@ mod tests {
                 entity.type_id
             );
         }
+
+        // Street furniture: props and trees on pavement that touches a road.
+        let props = &settings.vera_urban.props;
+        assert!(!props.is_empty() && !settings.vera_urban.trees.is_empty());
+        let tile_at = |x: u16, y: u16| {
+            urban
+                .map_file
+                .cells
+                .iter()
+                .find(|cell| (cell.rx, cell.ry) == (x, y))
+                .map_or(-1, |cell| cell.tile_index)
+        };
+        let placed: Vec<_> = urban
+            .map_file
+            .entities
+            .iter()
+            .filter(|entity| props.iter().any(|prop| prop.name == entity.type_id))
+            .collect();
+        assert!(!placed.is_empty(), "the districts have street furniture");
+        for prop in placed {
+            let (x, y) = (prop.cell_x, prop.cell_y);
+            let by_road = [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
+                .into_iter()
+                .any(|(nx, ny)| resolved.ids.is_paved_road(tile_at(nx, ny)));
+            assert!(by_road, "{} at {x},{y} stands off the road", prop.type_id);
+        }
+        let street_trees = urban
+            .map_file
+            .terrain_objects
+            .iter()
+            .filter(|tree| {
+                let tile = tile_at(tree.rx, tree.ry);
+                resolved.ids.is_pave(tile) || resolved.ids.is_misc_pave(tile)
+            })
+            .count();
+        assert!(street_trees > 0, "trees stand on the pavement");
+
+        // A city over the largest size keeps its buildings within budget.
+        let largest = generate_map(
+            &RmgOptions {
+                urban_enabled: true,
+                urban_presence: 100,
+                width: 8,
+                height: 8,
+                ..base.clone()
+            },
+            &settings,
+            &resolved,
+            &blocks,
+            &objects,
+        );
+        let buildings = largest
+            .map_file
+            .entities
+            .iter()
+            .filter(|entity| entity.category == crate::map::entities::EntityCategory::Structure)
+            .count();
+        assert!(
+            (1500..3000).contains(&buildings),
+            "{buildings} buildings on the largest map"
+        );
     }
 
     #[test]
