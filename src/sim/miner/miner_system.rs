@@ -209,15 +209,17 @@ pub(crate) fn native_mission_is_harvest(entity: &crate::sim::game_entity::GameEn
 /// (`0x00740A99`, `0x00740B1A`, `0x00740F10`); they run inside FootClass::AI
 /// and nothing reads the byte in between, so this clear covers them.
 pub(crate) fn unit_ai_clear_harvesting(substrate: &mut ObjectSubstrate, id: u64) {
-    if let Some(miner) = substrate
-        .entities
-        .get_mut_if(id, |entity| {
-            !entity.death.is_dying()
-                && entity.category() == EntityCategory::Unit
-                && !native_mission_is_harvest(entity)
-                && entity.miner.as_ref().is_some_and(|miner| miner.harvesting)
-        })
-        .and_then(|entity| entity.miner.as_mut())
+    // A quiet unit is not harvesting (`world::quiet_units`).
+    if !substrate.entities.is_quiet(id)
+        && let Some(miner) = substrate
+            .entities
+            .get_mut_if(id, |entity| {
+                !entity.death.is_dying()
+                    && entity.category() == EntityCategory::Unit
+                    && !native_mission_is_harvest(entity)
+                    && entity.miner.as_ref().is_some_and(|miner| miner.harvesting)
+            })
+            .and_then(|entity| entity.miner.as_mut())
     {
         miner.harvesting = false;
     }

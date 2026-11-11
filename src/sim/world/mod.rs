@@ -42,6 +42,9 @@ mod idle_sleep_tests;
 mod network_commands;
 mod object_entry;
 mod queued_command;
+mod quiet_units;
+#[cfg(test)]
+mod quiet_units_tests;
 mod sinking;
 mod terrain_deformation;
 mod time_warp;
@@ -2480,6 +2483,24 @@ impl Simulation {
             crate::sim::combat::receiver_fixture::observe_fire_visit(self, id, "return");
         }
         receipt
+    }
+
+    /// The commit of a visit that fires nothing: no consequences, but it
+    /// still delivers the overlay grid's pending navigation receipts and the
+    /// smudge grid's dirty cells, as [`Self::commit_fire_visit`] does.
+    pub(crate) fn commit_no_fire(
+        &mut self,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> damage_consequences::DamageCommitReceipt {
+        damage_consequences::DamageConsequences::live_fire(
+            Default::default(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .commit(self, rules, overlay_registry, frame_effects)
     }
 
     /// Commit a completed Bullet's detonation while its current Logic slot and

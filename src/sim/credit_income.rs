@@ -124,6 +124,12 @@ impl Drain {
         self.draining_me
     }
 
+    /// Neither drain step can act: no link either way and no ray
+    /// ([`drain_common_step`], [`drain_unit_ai_step`]).
+    pub(crate) fn is_idle(&self) -> bool {
+        self.target.is_none() && self.draining_me.is_none() && self.anim.is_none()
+    }
+
     /// The drainer's DrainAnim.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn anim(&self) -> Option<crate::sim::anim_class::AnimId> {
