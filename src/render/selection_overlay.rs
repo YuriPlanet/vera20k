@@ -42,6 +42,8 @@ const FORMATION_DOT: [(f32, f32, f32, f32, f32); 5] = [
 /// colour.
 const FERRY_DOT_HALF: f32 = 1.5;
 const FERRY_DOT_TINT: [f32; 3] = [0.4, 0.9, 1.0];
+/// The dots of an armed drop click that would be refused.
+const FERRY_DOT_REFUSED_TINT: [f32; 3] = [1.0, 0.25, 0.2];
 
 /// Manages textures and rendering for selection overlays.
 pub struct SelectionOverlay {
@@ -648,10 +650,12 @@ impl SelectionOverlay {
 
     /// VERA ferry order (`app::input::ferry`): one dot at each given screen
     /// point, in the band box's batch and coordinate frame (screen pixels
-    /// plus the camera offset). Each is a light blue square on a black one.
+    /// plus the camera offset). Each is a light blue square on a black one,
+    /// or a red one for a `refused` click's preview.
     pub fn build_ferry_dots(
         &self,
         screen_points: &[(f32, f32)],
+        refused: bool,
         camera_x: f32,
         camera_y: f32,
     ) -> Vec<SpriteInstance> {
@@ -670,7 +674,15 @@ impl SelectionOverlay {
             .flat_map(|&point| {
                 [
                     square(point, FERRY_DOT_HALF + 1.0, [0.0, 0.0, 0.0]),
-                    square(point, FERRY_DOT_HALF, FERRY_DOT_TINT),
+                    square(
+                        point,
+                        FERRY_DOT_HALF,
+                        if refused {
+                            FERRY_DOT_REFUSED_TINT
+                        } else {
+                            FERRY_DOT_TINT
+                        },
+                    ),
                 ]
             })
             .collect()

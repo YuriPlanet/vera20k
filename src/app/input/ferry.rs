@@ -778,10 +778,65 @@ pub(crate) fn frame_pass(state: &mut AppState) {
     }
 }
 
-/// The marks of the selected transports' routes in VERA's world-pixel frame:
-/// a ring of dots around each pick-up circle, a dotted line towards the drop
-/// spot and a ring around its drop zone.
-pub(crate) fn marks(state: &AppState) -> Vec<(f32, f32)> {
+/// The armed drop click as it would land on the cell under the cursor: the
+/// selected transports' cells, that cell, and whether the click would give at
+/// least one of them a route. `None` while no click is armed or no transport
+/// is selected.
+fn armed_preview(state: &AppState) -> Option<(Vec<Cell>, Cell, bool)> {
+    if !state.match_state.input.ferry.armed() {
+        return None;
+    }
+    let transports = selected_transports(state);
+    let runtime = state.match_state.sim_runtime.as_ref()?;
+    let sim = &runtime.simulation;
+    let owner = preferred_local_owner_name(state).and_then(|name| sim.interner().get(&name))?;
+    let clicked = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
+        state,
+        state.match_state.input.cursor_x,
+        state.match_state.input.cursor_y,
+    );
+    let pickups: Vec<Cell> = transports
+        .iter()
+        .filter_map(|&id| sim.entities().get(id))
+        .map(|entity| (entity.position.rx(), entity.position.ry()))
+        .collect();
+    if pickups.is_empty() {
+        return None;
+    }
+    let accepted = transports.iter().any(|&id| {
+        route_for(
+            sim,
+            &runtime.resources.rules,
+            Some(&runtime.resources.overlay_registry),
+            owner,
+            id,
+            clicked,
+            sim.session().tick(),
+        )
+        .is_some()
+    });
+    Some((pickups, clicked, accepted))
+}
+
+/// Whether the armed drop click would be taken where the cursor is; `None`
+/// while none is armed. The cursor shows a refusal.
+pub(crate) fn armed_click_accepted(state: &AppState) -> Option<bool> {
+    armed_preview(state).map(|(_, _, accepted)| accepted)
+}
+
+/// One dot of the ferry's marks in VERA's world-pixel frame.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FerryMark {
+    pub point: (f32, f32),
+    /// Part of the preview of a click that would be refused.
+    pub refused: bool,
+}
+
+/// The ferry's marks: for each selected transport's route a ring of dots
+/// around its pick-up circle, a dotted line towards the drop spot and a ring
+/// around its drop zone; and, while a drop click is armed, the same rings for
+/// the selected transports and the cell under the cursor.
+pub(crate) fn marks(state: &AppState) -> Vec<FerryMark> {
     use crate::util::lepton::{
         GROUND_LEVEL_HEIGHT_LEPTONS, LEPTONS_PER_CELL_I32, absolute_leptons_to_screen,
     };
@@ -799,7 +854,8 @@ pub(crate) fn marks(state: &AppState) -> Vec<(f32, f32)> {
                 .is_some_and(|entity| entity.selection.is_selected())
         })
         .collect();
-    if routes.is_empty() {
+    let preview = armed_preview(state);
+    if routes.is_empty() && preview.is_none() {
         return Vec::new();
     }
     let cells = state
@@ -818,43 +874,47 @@ pub(crate) fn marks(state: &AppState) -> Vec<(f32, f32)> {
     };
     let project = |x: f32, y: f32, z: f32| absolute_leptons_to_screen(x as i32, y as i32, z as i32);
     let cell = LEPTONS_PER_CELL_I32 as f32;
-    let mut points = Vec::new();
-    let ring = |points: &mut Vec<(f32, f32)>, at: (f32, f32, f32), radius: f32, dots: u32| {
+    let pickup_radius = (PICKUP_RADIUS_CELLS as f32 + 0.5) * cell;
+    let drop_radius = (DROP_RADIUS_CELLS as f32 + 0.5) * cell;
+    let mut marks = Vec::new();
+    let ring = |marks: &mut Vec<FerryMark>, at: Cell, radius: f32, dots: u32, refused: bool| {
+        let at = centre(at);
         for dot in 0..dots {
             let angle = std::f32::consts::TAU * dot as f32 / dots as f32;
-            points.push(project(
-                at.0 + radius * angle.cos(),
-                at.1 + radius * angle.sin(),
-                at.2,
-            ));
+            marks.push(FerryMark {
+                point: project(
+                    at.0 + radius * angle.cos(),
+                    at.1 + radius * angle.sin(),
+                    at.2,
+                ),
+                refused,
+            });
         }
     };
     for route in routes {
-        let pickup = centre(route.pickup);
-        let drop = centre(route.drop);
-        let radius = (PICKUP_RADIUS_CELLS as f32 + 0.5) * cell;
-        ring(&mut points, pickup, radius, 40);
-        ring(
-            &mut points,
-            drop,
-            (DROP_RADIUS_CELLS as f32 + 0.5) * cell,
-            28,
-        );
+        ring(&mut marks, route.pickup, pickup_radius, 40, false);
+        ring(&mut marks, route.drop, drop_radius, 28, false);
         // The line starts at the circle's edge and ends short of the drop ring.
+        let (pickup, drop) = (centre(route.pickup), centre(route.drop));
         let (dx, dy, dz) = (drop.0 - pickup.0, drop.1 - pickup.1, drop.2 - pickup.2);
         let length = (dx * dx + dy * dy).sqrt();
-        let mut along = radius + cell;
-        while along < length - (DROP_RADIUS_CELLS as f32 + 1.5) * cell {
+        let mut along = pickup_radius + cell;
+        while along < length - drop_radius - cell {
             let t = along / length;
-            points.push(project(
-                pickup.0 + dx * t,
-                pickup.1 + dy * t,
-                pickup.2 + dz * t,
-            ));
+            marks.push(FerryMark {
+                point: project(pickup.0 + dx * t, pickup.1 + dy * t, pickup.2 + dz * t),
+                refused: false,
+            });
             along += cell;
         }
     }
-    points
+    if let Some((pickups, clicked, accepted)) = preview {
+        for pickup in pickups {
+            ring(&mut marks, pickup, pickup_radius, 40, !accepted);
+        }
+        ring(&mut marks, clicked, drop_radius, 28, !accepted);
+    }
+    marks
 }
 
 #[cfg(test)]

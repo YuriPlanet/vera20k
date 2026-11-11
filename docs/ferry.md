@@ -9,6 +9,11 @@ until it is told to do something else. The drop spot is the cell a Move click
 there would send the transport to. A second press of the key, or a right
 click, drops the armed click again.
 
+After the key is pressed, the same rings show before the click: one around
+each selected transport and one around the cell under the cursor. Where the
+click would give no transport a route (too near the pick-up spot, or a cell it
+cannot move to) the rings are red and the cursor is the refusal cursor.
+
 While the transport is selected, a ring of light blue dots marks its pick-up
 circle, a dotted line leads towards the drop spot and a second ring marks the
 drop zone.
