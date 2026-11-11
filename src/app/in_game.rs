@@ -649,6 +649,17 @@ impl App {
                 .and_then(|sim| sim.interner().get(owner))
         });
         let local_outcome_exit_ready = Self::local_outcome_exit_ready(state);
+        // Almost every pass has no EXIT to take. Only one that does takes
+        // the world for writing, which waits for a tick on the simulation
+        // thread and drops the published frame.
+        if !state
+            .match_state
+            .sim_runtime
+            .runtime()
+            .is_some_and(|rt| rt.simulation.executed_exit_owner_pending())
+        {
+            return;
+        }
         let executed_owner = state
             .match_state
             .sim_runtime

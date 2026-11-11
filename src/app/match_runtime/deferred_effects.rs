@@ -60,7 +60,8 @@ pub(crate) struct DeferredClientEffects {
 
 impl DeferredClientEffects {
     /// Whether the next ordinary frame can run without the lent owners.
-    /// The simulation thread (`VERA20K_SIM_THREAD=1`) ticks this way;
+    /// The simulation thread ticks this way, and so does every such frame
+    /// while the thread is on; with it off (`VERA20K_SIM_THREAD=0`),
     /// `VERA20K_DEFERRED_TICK_EFFECTS=1` opts an inline tick in.
     pub(crate) fn applies(
         state: &AppState,

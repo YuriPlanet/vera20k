@@ -1,8 +1,8 @@
 //! Copy-on-write cell storage (docs/sim-thread.md, phase 2).
 //!
-//! The presentation frame each tick publishes shares the live grid's cells
-//! in fixed chunks ([`ChunkedVec`]). A write copies only its own chunk, and
-//! only while a frame still shares it.
+//! A published presentation frame shares the live grid's cells in fixed
+//! chunks ([`ChunkedVec`]). A write copies only its own chunk, and only
+//! while a frame still shares it.
 //!
 //! `CellClass::RecalcAttributes @ 0x0047D2B0` runs whenever an object marks
 //! or leaves a cell, and almost always derives the attributes the cell

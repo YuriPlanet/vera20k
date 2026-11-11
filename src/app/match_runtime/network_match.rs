@@ -280,6 +280,11 @@ pub(crate) fn post_connection_line(state: &mut AppState, destroyed: ConnectionDe
 /// DestroyConnection(house, 0) (`0x0064C9B1`). Remote sources the relay ended
 /// for silence run DestroyConnection(house, 1) after their EVENT_REMOVEPLAYER.
 pub(crate) fn drain_departures(state: &mut AppState) {
+    // A tick on the simulation thread is never a network frame, so it has
+    // no departures; taking the world here would only wait for it.
+    if state.match_state.sim_runtime.is_lent() {
+        return;
+    }
     let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Network) else {
         return;
     };

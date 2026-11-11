@@ -50,6 +50,8 @@ fn reset_live_window(state: &mut AppState) {
 }
 
 pub(crate) fn synchronize_observer(state: &mut AppState) {
+    // The observer writes the live world: a tick still out finishes first.
+    crate::app::match_runtime::sim_tick::finish_threaded_frame(state);
     let active = state.diag.telemetry_active();
     let simulation = state
         .match_state
