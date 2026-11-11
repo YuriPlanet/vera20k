@@ -24,7 +24,7 @@ const DRAG_RECT_DEPTH: f32 = 0.001;
 /// Thickness of the drag rectangle outline in pixels (1px = RA2 original style).
 const DRAG_RECT_THICKNESS: f32 = 1.0;
 
-/// VERA formation line dots: a circle [`FORMATION_DOT_SIZE`] screen pixels
+/// VERA formation line dots: a circle [`FORMATION_DOT_SIZE`] world pixels
 /// across, as rects (left, top, width, height, alpha) inside its box. A
 /// 4-pixel core and, around it, the circle's remaining pixels fainter. No
 /// two rects overlap, so each pixel is blended once.
@@ -641,22 +641,21 @@ impl SelectionOverlay {
         self.pipbrd.as_ref()
     }
 
-    /// VERA formation line: one round dot per unit at the given screen
-    /// points, in the band box's batch and coordinate frame (screen pixels
-    /// plus the camera offset). `tint` is the Move action line's colour,
-    /// drawn see-through: a core with a fainter edge of the same colour.
+    /// VERA formation line: one round dot per unit at the given world-pixel
+    /// points, as world-surface stores for the ground pass (`draw_passes`,
+    /// "ground_marks"): drawn on the finished ground and before the buildings
+    /// and objects, which cover them. `tint` is the Move action line's
+    /// colour, drawn see-through: a core with a fainter edge of the same
+    /// colour.
     pub fn build_formation_dots(
-        &self,
-        screen_points: &[(f32, f32)],
+        world_points: &[(f32, f32)],
         tint: [f32; 3],
-        camera_x: f32,
-        camera_y: f32,
     ) -> Vec<SpriteInstance> {
-        let mut instances = Vec::with_capacity(screen_points.len() * FORMATION_DOT.len());
-        for &(x, y) in screen_points {
+        let mut instances = Vec::with_capacity(world_points.len() * FORMATION_DOT.len());
+        for &(x, y) in world_points {
             let corner = [
-                camera_x + x.round() - FORMATION_DOT_SIZE / 2.0,
-                camera_y + y.round() - FORMATION_DOT_SIZE / 2.0,
+                x.round() - FORMATION_DOT_SIZE / 2.0,
+                y.round() - FORMATION_DOT_SIZE / 2.0,
             ];
             for &(left, top, width, height, alpha) in &FORMATION_DOT {
                 instances.push(SpriteInstance {
@@ -664,7 +663,6 @@ impl SelectionOverlay {
                     size: [width, height],
                     uv_origin: [0.0, 0.0],
                     uv_size: [1.0, 1.0],
-                    depth: DRAG_RECT_DEPTH,
                     tint,
                     alpha,
                     ..Default::default()
@@ -836,4 +834,20 @@ fn generate_diamond_cell(color: [u8; 4]) -> Vec<u8> {
         }
     }
     rgba
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn formation_dots_are_placed_in_world_pixels() {
+        let dots = SelectionOverlay::build_formation_dots(&[(100.4, 50.6)], [0.0, 1.0, 0.0]);
+        // The 4x4 core of the 6-pixel dot centred on the rounded point.
+        let core = dots
+            .iter()
+            .find(|dot| dot.size == [4.0, 4.0])
+            .expect("the dot's core");
+        assert_eq!(core.position, [98.0, 49.0]);
+    }
 }

@@ -74,7 +74,8 @@ pub(super) struct UiInstances {
     pub software_cursor_draw: Option<crate::app::presentation::ui_overlays::SoftwareCursorDraw>,
     pub drag: Vec<SpriteInstance>,
     /// World-surface stores that lie on the ground: drawn before the
-    /// buildings and objects, which cover them (the VERA ferry's circles).
+    /// buildings and objects, which cover them (the VERA formation line's
+    /// dots and ferry's circles).
     pub ground_marks: Vec<SpriteInstance>,
     pub placement: Vec<SpriteInstance>,
     /// Phobos placement preview artwork, drawn after the PLACE cells.
@@ -900,7 +901,7 @@ pub(super) fn build_ui_instances(
     cursor: &crate::app::input::cursor::CursorTargets,
 ) -> UiInstances {
     let (software_cursor, software_cursor_draw) = build_software_cursor_instances(state, cursor);
-    let mut drag = match &state.match_state.match_presentation.selection_overlay {
+    let drag = match &state.match_state.match_presentation.selection_overlay {
         Some(o) => o.build_drag_rect(
             &state.match_state.input.selection_state,
             state.match_state.input.camera_x,
@@ -908,34 +909,23 @@ pub(super) fn build_ui_instances(
         ),
         None => Vec::new(),
     };
-    // VERA formation line: its dots, from world pixels back to the screen
-    // (the inverse of `sim_tick::screen_point_to_world`), in the Move action
-    // line's colour from the palette those lines read.
-    if let (Some(overlay), Some(path), Some(palette)) = (
-        &state.match_state.match_presentation.selection_overlay,
+    // VERA formation line: its dots, in world pixels, in the Move action
+    // line's colour from the palette those lines read. They lie on the
+    // ground, with the ferry's circles.
+    let mut ground_marks = Vec::new();
+    if let (Some(path), Some(palette)) = (
         state.match_state.input.formation_line.path(),
         state
             .match_state
             .match_presentation
             .surface_palette(state.process_assets.manager()),
     ) {
-        let input = &state.match_state.input;
-        let screen: Vec<(f32, f32)> = path
-            .dots()
-            .into_iter()
-            .map(|(x, y)| {
-                (
-                    (x - input.camera_x) * input.zoom_level,
-                    (y - input.camera_y) * input.zoom_level,
-                )
-            })
-            .collect();
-        drag.extend(overlay.build_formation_dots(
-            &screen,
-            crate::app::presentation::target_lines::move_action_line_color(palette),
-            input.camera_x,
-            input.camera_y,
-        ));
+        ground_marks.extend(
+            crate::render::selection_overlay::SelectionOverlay::build_formation_dots(
+                &path.dots(),
+                crate::app::presentation::target_lines::move_action_line_color(palette),
+            ),
+        );
     }
     let placement_preview = build_placement_preview(state);
 
@@ -990,6 +980,7 @@ pub(super) fn build_ui_instances(
             tactical_line_calls.push(TacticalLineCall::Designation { id, coords, style });
         }
     };
+    ground_marks.extend(ferry_lines::build_rings(state, view));
     let (mut target_line, planning_highlights) = planning_lines::build(state, view, wall_ms);
     target_line.extend(ferry_lines::build_paths(state, view, wall_ms));
     let action_lines = crate::app::presentation::target_lines::build_target_line_instances(
@@ -1034,7 +1025,7 @@ pub(super) fn build_ui_instances(
         software_cursor,
         software_cursor_draw,
         drag,
-        ground_marks: ferry_lines::build_rings(state, view),
+        ground_marks,
         placement: placement_preview.cells,
         #[cfg(feature = "phobos")]
         placement_ghost: placement_preview.ghost,
