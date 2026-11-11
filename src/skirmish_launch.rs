@@ -203,9 +203,8 @@ impl SkirmishLaunchMode {
 
     /// Stock YR `MPModesMD.ini` row `id` after its override INI, the one
     /// versioned copy of the retail rows. Fixed launches (headless, CnCNet
-    /// spawn) take their row here, and the pre-Fill owner accepts a session
-    /// only through [`Self::matching_stock`]. A test pins every row to the
-    /// retail roster.
+    /// spawn) take their row here. A test pins every row to the retail
+    /// roster.
     pub fn stock(id: i32) -> Option<Self> {
         use crate::skirmish_modes::MpModeClass::{
             Battle, Cooperative, FreeForAll, ManBattle, Unholy,
