@@ -488,6 +488,54 @@ fn a_captured_buildings_ring_sits_height_levels_above_its_centre() {
     assert_eq!(sim.anim(ring).unwrap().z_adjust(), -1024);
 }
 
+/// CaptureUnit (`0x00471DAE`) and FreeUnit (`0x004720D5`) pass announce=1 to
+/// the target's ChangeOwner. A building's (`0x00448260`) then raises radar
+/// event 10 and `EVA_BuildingCaptured` for the player on either side; a
+/// unit's has no announce block.
+#[test]
+fn mind_controlling_a_building_announces_its_capture_and_its_release() {
+    fn captures(sim: &Simulation) -> Vec<(String, String, bool)> {
+        sim.sound_events
+            .iter()
+            .filter_map(|event| match event {
+                SimSoundEvent::BuildingCaptured {
+                    old_owner,
+                    new_owner,
+                    radar,
+                    ..
+                } => Some((
+                    sim.interner.resolve(*old_owner).to_string(),
+                    sim.interner.resolve(*new_owner).to_string(),
+                    radar.is_some(),
+                )),
+                _ => None,
+            })
+            .collect()
+    }
+    let rules = rules();
+    let mut sim = sim(25);
+    let effects = crate::sim::world::FrameEffects::default;
+    let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
+    let soldier = spawn(&mut sim, &rules, "E1", "Americans", 11, 10);
+    let plant = spawn(&mut sim, &rules, "GAPOWR", "Americans", 14, 10);
+    let now = sim.session.binary_frame();
+    let _ =
+        sim.substrate
+            .mission_assign_exact(plant, MissionId::from_known(MissionType::Guard), now);
+
+    assert!(sim.capture_unit(yuri, soldier, &rules, None, effects()));
+    assert_eq!(captures(&sim), [], "a unit's ChangeOwner announces nothing");
+
+    // The single link frees the soldier first, silently, then takes the plant.
+    assert!(sim.capture_unit(yuri, plant, &rules, None, effects()));
+    let taken = ("Americans".to_string(), "YuriCountry".to_string(), true);
+    assert_eq!(captures(&sim), [taken.clone()]);
+
+    assert!(sim.free_unit(yuri, plant, &rules, None, effects()));
+    let returned = ("YuriCountry".to_string(), "Americans".to_string(), true);
+    assert_eq!(captures(&sim), [taken, returned]);
+}
+
 /// A single-link controller releases its victim before taking the next one:
 /// the first returns home (a human house: no fate draw), loses its ring and
 /// plays MindCleared; the manager holds one node.
@@ -768,6 +816,31 @@ fn a_removed_foot_controller_frees_its_captives() {
             .mind_control
             .is_mind_controlled()
     );
+}
+
+/// Ares CaptureManagerClass_DecideUnitFate_BuildingFate (1005C680, hook
+/// 0x47243F): a computer's captured building queues Guard with no fate roll.
+#[cfg(feature = "ares")]
+#[test]
+fn a_computer_building_guards_without_a_fate_roll() {
+    let rules = rules();
+    let mut sim = sim(1);
+    let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
+    let plant = spawn(&mut sim, &rules, "GAPOWR", "Russians", 14, 10);
+    let mut replay = sim.scenario_rng.clone();
+    sim.decide_unit_fate(
+        yuri,
+        plant,
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    let entity = sim.substrate.entities.get(plant).unwrap();
+    assert!(
+        entity.mission.queued().known() == Some(MissionType::Guard)
+            || entity.mission.current().known() == Some(MissionType::Guard)
+    );
+    assert_eq!(sim.scenario_rng.next_u32(), replay.next_u32(), "no roll");
 }
 
 /// Original DecideUnitFate `0x004723B0` under Unicorn
@@ -1074,7 +1147,7 @@ fn native_overload_update_corpus() {
             "{name}: constructor pip countdown"
         );
         let entity = sim.substrate.entities.get_mut(mind).unwrap();
-        entity.capture_manager = Some(manager);
+        entity.capture_manager = Some(Box::new(manager));
         if input.get("kill").is_some() {
             // Dies to the first damaging row, as the fixture's owner does.
             entity.health.set_for_test(50);

@@ -17,6 +17,14 @@ impl GameEntity {
             .expect("building body requires Structure")
             .bind_control(control);
     }
+    /// Ares: the type's sale frame rate, bound beside its control.
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_building_sell_rate(&mut self, rate: i32) {
+        self.building_body
+            .as_mut()
+            .expect("building body requires Structure")
+            .bind_sell_rate(rate);
+    }
     #[cfg(any(test, feature = "test-support"))]
     pub fn install_building_up(&mut self, entry: BuildingUp, now: i32) {
         entry.install(self, now);
@@ -61,10 +69,11 @@ impl GameEntity {
         self.mission_leaf.set_building_ready_latch(0);
     }
     pub(crate) fn begin_building_body(&mut self, mode: BuildingBodyMode, now: i32) {
+        let selling = self.mission.current().known() == Some(MissionType::Selling);
         self.building_body
             .as_mut()
             .expect("building body requires Structure")
-            .begin(mode, &mut self.stage, now);
+            .begin(mode, &mut self.stage, now, selling);
     }
     pub(crate) fn initialize_building_idle_body(&mut self, now: i32) {
         self.building_body
@@ -81,7 +90,7 @@ impl GameEntity {
         has_turret: bool,
         options: &GameOptions,
     ) {
-        let ready_allowed = !has_turret || self.constructing_or_selling();
+        let ready_allowed = self.building_ready_allowed(has_turret);
         if self.building_body.as_ref().is_some_and(|body| {
             body.update(
                 &mut self.stage,
@@ -94,9 +103,33 @@ impl GameEntity {
             self.mission_leaf.set_building_ready_latch(1);
         }
     }
+    /// Whether [`Self::advance_building_body`] writes at `now`: the stage
+    /// steps or clears its changed byte, or an unstepped body answers ready
+    /// while `+0x6DD` is still clear.
+    pub(crate) fn building_body_advances(&self, now: i32, has_turret: bool) -> bool {
+        self.building_body.as_ref().is_some_and(|body| {
+            self.stage.advances(now)
+                || (self.building_ready_latch() != 1
+                    && self.building_ready_allowed(has_turret)
+                    && body.ready_unstepped(&self.stage))
+        })
+    }
+    /// UpdateAnimation's ready gate (`0x00451145..0x00451218`): no turret,
+    /// or effective Construction/Selling.
+    fn building_ready_allowed(&self, has_turret: bool) -> bool {
+        !has_turret || self.constructing_or_selling()
+    }
+    /// Whether a body mode is queued, which
+    /// [`Self::apply_queued_building_body`] applies or clears.
+    pub(crate) fn building_body_queued(&self) -> bool {
+        self.building_body
+            .as_ref()
+            .is_some_and(|body| body.is_queued())
+    }
     pub(crate) fn apply_queued_building_body(&mut self, now: i32, options: &GameOptions) {
+        let selling = self.mission.current().known() == Some(MissionType::Selling);
         if let Some(body) = self.building_body.as_mut() {
-            body.apply_queued(&mut self.stage, now, options);
+            body.apply_queued(&mut self.stage, now, options, selling);
         }
     }
     pub fn building_body_state(&self) -> Option<i32> {

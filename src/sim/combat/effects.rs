@@ -121,6 +121,28 @@ pub struct UnderAttackEvent {
     /// The VICTIM's owner — the player whose radar/EVA should react.
     pub owner: InternedId,
     pub victim_type: InternedId,
+    /// The victim house's own radar/EVA line. Ares
+    /// HouseClass_BuildingUnderAttack_Malicious (10053980, hook 0x4F94A5)
+    /// skips it for a building hit by a `Malicious=no` warhead; the ally
+    /// line and the House Tags still follow.
+    pub own_alert: bool,
+    pub line: UnderAttackLine,
+}
+
+/// Which native call raises an [`UnderAttackEvent`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnderAttackLine {
+    /// `HouseClass::NotifyUnderAttack @ 0x004F93E0` for a building: the
+    /// victim house's own line, which picks the ore-miner cue for a deployed
+    /// miner and the base cue otherwise, and, when `allies`, the line its
+    /// human allies hear. Ares announceAttack (10062150) calls it only after
+    /// testing Owner == PlayerPtr, so on the victim's own client alone, where
+    /// the own branch runs: no ally hears it.
+    House { allies: bool },
+    /// `CreateRadarEvent(4)` and `EVA_OreMinerUnderAttack` called by the
+    /// producer itself (Unit `0x00738530`, Temporal `0x0071B04C`, Ares
+    /// announceAttack 10062150), with no siren, ally line or House Tags.
+    OreMiner,
 }
 
 /// `TechnoClass::Death_Announcement @ 0x004D98C0` input: a non-building
@@ -128,7 +150,7 @@ pub struct UnderAttackEvent {
 /// 0x00416613`, infantry `0x005180F4`, `UnitClass 0x00737DC9/0x00737E39/
 /// 0x00737E68`, all vtable slot `+0x3B8`) and its type is not `Spawned=`.
 /// The world applies the owner-is-human gate and the radar type-7 dedupe.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct UnitLostEvent {
     pub rx: u16,
     pub ry: u16,
@@ -136,6 +158,14 @@ pub struct UnitLostEvent {
     /// The dead techno's interned type, for the optional detailed EVA text;
     /// a transient fact, never a state input.
     pub type_id: InternedId,
+    /// Ares: the victim type's `EVA.Lost`, spoken whether or not the client
+    /// admits the radar event.
+    #[cfg(feature = "ares")]
+    pub eva: String,
+    /// Ares: a Foot creates the radar event (FootClass_Destroyed 10049080);
+    /// a building does not (BuildingClass_Destroyed_UnitLost 10013F10).
+    #[cfg(feature = "ares")]
+    pub radar_event: bool,
 }
 
 /// One ordered accumulator for weapon emission and recursive receiver effects.

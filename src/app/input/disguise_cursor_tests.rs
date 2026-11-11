@@ -1,7 +1,6 @@
 use super::*;
 use crate::app::input::cursor::{capability_cursor_for_hover, cursor_id_for_feedback};
 use crate::app::input::entity_pick::{PickSource, PresentedWorld, hover_target_at_point};
-use crate::app::presentation::interpolation::RenderInterpolation;
 use crate::app::types::{CursorId, HoverTargetKind};
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
@@ -83,11 +82,9 @@ fn cursor(
     actor: u64,
     target: u64,
 ) -> Option<CursorId> {
-    let interpolation = RenderInterpolation::new(false);
     let source = PresentedWorld {
         sim,
         rules: Some(rules),
-        interpolation: &interpolation,
         translucent_viewer: None,
     };
     let (x, y) = source.screen_position(sim.entities().get(target).unwrap());

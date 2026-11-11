@@ -34,8 +34,7 @@ fn recruiting_team_fixture() -> (Simulation, RuleSet, u64, [u64; 2]) {
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules)
-        .expect("clean fixed AIMD installs");
+    sim.install_team_ai_registry(&registry, &rules);
     let owner = sim.interner.intern("Computer");
     sim.houses
         .register(HouseState::new(owner, 0, None, false, 0, 10));
@@ -228,11 +227,7 @@ fn production_install_resolves_both_ai_team_buffers_in_fixed_and_map_passes() {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    assert!(
-        sim.install_team_ai_registry(&registry, &rules)
-            .expect("native team buffers resolve before fixed-source validation")
-            .is_empty()
-    );
+    assert!(sim.install_team_ai_registry(&registry, &rules).is_empty());
 
     let triggers: Vec<_> = sim.team_script_vm.ai_triggers_in_order().collect();
     assert_eq!(triggers.len(), 2);
@@ -342,7 +337,7 @@ fn team_lookup_ordinary_ai_recruits_and_moves_first_name() {
         );
         sim.session.install_waypoints(&map.waypoints);
         sim.initialize_trigger_definitions(&map, &registry, None, None, None);
-        sim.install_team_ai_registry(&registry, &rules).unwrap();
+        sim.install_team_ai_registry(&registry, &rules);
         assert_eq!(sim.spawn_from_map(&map.entities, Some(&rules)), 5);
         let owner = sim.interner.get("Computer").unwrap();
         let script = sim.interner.get("LOOKUP_MOVE").unwrap();
@@ -424,7 +419,7 @@ fn team_lookup_ordinary_ai_recruits_and_moves_first_name() {
 }
 
 #[test]
-fn production_install_refuses_fixed_resolution_loss_but_keeps_scenario_omissions() {
+fn production_install_keeps_fixed_and_scenario_resolution_losses_as_diagnostics() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[InfantryTypes]\n0=E1\n[E1]\nStrength=100\n",
     ))
@@ -443,9 +438,7 @@ fn production_install_refuses_fixed_resolution_loss_but_keeps_scenario_omissions
     let mut fixed_sim = Simulation::new();
     fixed_sim.intern_rule_type_ids(&rules);
     fixed_sim.resolve_type_handles(&rules);
-    let fixed_diagnostics = fixed_sim
-        .install_team_ai_registry(&fixed_registry, &rules)
-        .expect_err("a fixed-origin resolution loss refuses the install");
+    let fixed_diagnostics = fixed_sim.install_team_ai_registry(&fixed_registry, &rules);
 
     assert_eq!(
         fixed_diagnostics,
@@ -455,11 +448,20 @@ fn production_install_refuses_fixed_resolution_loss_but_keeps_scenario_omissions
             source: TeamAiDefinitionSource::FixedAimd,
         }]
     );
-    assert!(fixed_diagnostics[0].is_fixed_source_refusal());
+    // TaskForceClass::ReadINI 0x006E8420 drops the member and keeps the rest.
     assert_eq!(
         fixed_sim.team_script_vm.registry_counts(),
-        (0, 0, 0, 0),
-        "a fixed-origin resolution refusal must not install a partial registry"
+        (1, 1, 1, 1),
+        "a stale fixed-AIMD name is diagnosed and the registry still installs"
+    );
+    let force = fixed_sim.interner.get("F").expect("F is interned");
+    assert!(
+        fixed_sim
+            .team_script_vm
+            .task_force(force)
+            .expect("F installs")
+            .entries
+            .is_empty()
     );
 
     let clean_fixed = IniFile::from_str(&format!(
@@ -475,9 +477,7 @@ fn production_install_refuses_fixed_resolution_loss_but_keeps_scenario_omissions
     let mut scenario_sim = Simulation::new();
     scenario_sim.intern_rule_type_ids(&rules);
     scenario_sim.resolve_type_handles(&rules);
-    let scenario_diagnostics = scenario_sim
-        .install_team_ai_registry(&scenario_registry, &rules)
-        .expect("scenario-origin omissions still install");
+    let scenario_diagnostics = scenario_sim.install_team_ai_registry(&scenario_registry, &rules);
 
     assert_eq!(
         scenario_diagnostics,
@@ -487,7 +487,6 @@ fn production_install_refuses_fixed_resolution_loss_but_keeps_scenario_omissions
             source: TeamAiDefinitionSource::Scenario,
         }]
     );
-    assert!(!scenario_diagnostics[0].is_fixed_source_refusal());
     assert_eq!(
         scenario_sim.team_script_vm.registry_counts(),
         (2, 1, 1, 1),
@@ -510,9 +509,7 @@ fn fixed_trigger_naming_an_absent_team_type_installs_without_a_team() {
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
 
-    let diagnostics = sim
-        .install_team_ai_registry(&registry, &rules)
-        .expect("a fixed trigger's absent TeamType does not refuse the install");
+    let diagnostics = sim.install_team_ai_registry(&registry, &rules);
 
     assert_eq!(
         diagnostics,
@@ -528,7 +525,7 @@ fn fixed_trigger_naming_an_absent_team_type_installs_without_a_team() {
 }
 
 #[test]
-fn production_install_refuses_fixed_resolution_loss_masked_by_same_identity_map_overlays() {
+fn production_install_diagnoses_fixed_resolution_loss_under_same_identity_map_overlays() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[InfantryTypes]\n0=E1\n[E1]\nStrength=100\n",
     ))
@@ -551,9 +548,7 @@ fn production_install_refuses_fixed_resolution_loss_masked_by_same_identity_map_
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
 
-    let diagnostics = sim
-        .install_team_ai_registry(&registry, &rules)
-        .expect_err("a fixed-origin resolution loss refuses the install");
+    let diagnostics = sim.install_team_ai_registry(&registry, &rules);
 
     assert_eq!(
         diagnostics,
@@ -570,15 +565,11 @@ fn production_install_refuses_fixed_resolution_loss_masked_by_same_identity_map_
             },
         ]
     );
-    assert!(
-        diagnostics
-            .iter()
-            .all(TeamAiInstallDiagnostic::is_fixed_source_refusal)
-    );
+    // TeamTypeClass::ReadINI 0x006F1090 allocates the missing Script.
     assert_eq!(
         sim.team_script_vm.registry_counts(),
-        (0, 0, 0, 0),
-        "map repair/relabeling cannot erase fixed-AIMD resolution obligations"
+        (1, 2, 1, 1),
+        "the fixed losses stay diagnosed and the overlaid registry installs"
     );
 }
 
@@ -606,8 +597,7 @@ fn team_fixture(
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules)
-        .expect("clean fixed AIMD installs");
+    sim.install_team_ai_registry(&registry, &rules);
     let owner = sim.interner.intern("Computer");
     let enemy = sim.interner.intern("Human");
     let mut computer = HouseState::new(owner, 0, None, false, 0, 10);
@@ -962,6 +952,10 @@ fn a_computer_team_waits_on_its_charging_iron_curtain() {
 /// centre (11,10) and its Chrono Warp at the plant's cell, and the warp
 /// carries each member from the source block to the same place in the
 /// destination block, beside the plant.
+// Stock case 4 forces a Unit's track to its destination; installed Ares's
+// SW_ChronoWarp lambda (1006F4D0) forces it to the Unit's own coordinates,
+// which leaves the Drive's destination at the source block after the warp.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn a_computer_team_chronoshifts_onto_the_enemy_power_plant() {
     let (mut sim, rules, team_id, members, [_, bigger]) = super_team_fixture("0=57,9\n1=49,0");
@@ -1001,4 +995,51 @@ fn a_computer_team_chronoshifts_onto_the_enemy_power_plant() {
             "member {member} arrived beside the plant"
         );
     }
+}
+
+/// Ares TeamClass_GatherAtFriendlyBase_Distance (1003A2A0, hook 0x6EFB69):
+/// action 54 regroups its argument plus `AIFriendlyDistance` (else
+/// `AISafeDistance`) cells from the base towards the enemy's, and action 53
+/// (1003A270, hook 0x6EF8A1) gathers its argument plus `AISafeDistance`
+/// from the enemy's base: each lands where the same total distance alone
+/// does, and not where `AISafeDistance` alone does.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_gather_actions_add_their_argument_to_the_distance() {
+    let target = |general: &str, script: &str| {
+        let (mut sim, rules, team_id, _, _) = team_fixture(
+            &format!(
+                "[General]\n{general}\
+                 [InfantryTypes]\n0=E1\n[E1]\nStrength=100\nSpeed=4\n\
+                 Locomotor={{4A582744-9839-11D1-B709-00A024DDAFD1}}\n\
+                 [BuildingTypes]\n0=PLANTA\n1=PLANTB\n\
+                 [PLANTA]\nStrength=750\nPower=100\nFoundation=2x2\n\
+                 [PLANTB]\nStrength=750\nPower=200\nFoundation=2x2\n"
+            ),
+            "E1",
+            [("PLANTA", 18, 8), ("PLANTB", 18, 13)],
+            script,
+        );
+        for _ in 0..300 {
+            sim.advance_tick(&[], Some(&rules), None, None, 67);
+            if let Some(target) = sim
+                .team_script_vm
+                .team(team_id)
+                .and_then(|team| team.mission_target_for_test())
+            {
+                return target;
+            }
+        }
+        panic!("{script} assigns no mission target");
+    };
+    let regroup = target("AISafeDistance=4\nAIFriendlyDistance=3\n", "0=54,2");
+    assert_eq!(regroup, target("AISafeDistance=5\n", "0=54,0"));
+    assert_ne!(regroup, target("AISafeDistance=4\n", "0=54,0"));
+    assert_eq!(
+        target("AISafeDistance=4\n", "0=54,1"),
+        target("AISafeDistance=5\n", "0=54,0")
+    );
+    let gather = target("AISafeDistance=3\nAIFriendlyDistance=9\n", "0=53,2");
+    assert_eq!(gather, target("AISafeDistance=5\n", "0=53,0"));
+    assert_ne!(gather, target("AISafeDistance=3\n", "0=53,0"));
 }

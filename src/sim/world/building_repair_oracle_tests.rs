@@ -960,3 +960,112 @@ fn a_sale_s_first_visit_stops_the_repair() {
         );
     }
 }
+
+/// Ares 3.0 10014630 (hook 0x4509B4): with `[General]
+/// RepairStopOnInsufficientFunds=no` a human player's broke repair stays on
+/// and heals nothing; a computer house's stops as in stock.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_broke_human_repair_stays_on_without_repair_stop() {
+    for (human, repairing) in [(true, true), (false, false)] {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nRepairStep=4\nRepairStopOnInsufficientFunds=no\n[InfantryTypes]\n\
+             [VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n0=GAPOWR\n\
+             [GAPOWR]\nStrength=1000\nCost=800\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        let owner = sim.interner.intern("Americans");
+        sim.houses
+            .register(HouseState::new(owner, 0, None, human, 0, 10));
+        let kind = sim.interner.intern("GAPOWR");
+        let mut building = GameEntity::new_at_frame_zero_for_test(
+            1,
+            10,
+            10,
+            0,
+            0,
+            owner,
+            Health::new(500),
+            kind,
+            EntityCategory::Structure,
+            0,
+            5,
+            false,
+        );
+        building.repairing.set_for_test(true);
+        sim.substrate.entities.insert(building);
+        production::update_repair_and_power(
+            &mut sim,
+            &rules,
+            1,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+        let building = sim.substrate.entities.get(1).unwrap();
+        assert_eq!(
+            (building.health.current(), building.repairing.is_on()),
+            (500, repairing),
+            "human={human}"
+        );
+    }
+}
+
+/// VERA Auto Repair asks which of a house's buildings want the Repair order
+/// ([`production::buildings_wanting_repair`]).
+#[test]
+fn buildings_wanting_repair_are_the_damaged_idle_ones_the_owner_can_pay_for() {
+    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = fixture.rules;
+    let strength = rules.object("GAPOWR").unwrap().strength;
+    let wanting = |credits: i32| {
+        let mut sim = Simulation::new();
+        let owner = sim.interner.intern("Americans");
+        let other = sim.interner.intern("Russians");
+        sim.houses
+            .register(HouseState::new(owner, 0, None, true, credits, 10));
+        sim.houses
+            .register(HouseState::new(other, 0, None, true, 1000, 10));
+        let kind = sim.interner.intern("GAPOWR");
+        // 1 damaged, 2 whole, 3 damaged and repairing, 4 another house's.
+        for (id, house, health) in [
+            (1, owner, strength / 2),
+            (2, owner, strength),
+            (3, owner, strength / 2),
+            (4, other, strength / 2),
+        ] {
+            sim.substrate
+                .entities
+                .insert(GameEntity::new_at_frame_zero_for_test(
+                    id,
+                    12 + id as u16 * 4,
+                    12,
+                    0,
+                    0,
+                    house,
+                    Health::new(health),
+                    kind,
+                    EntityCategory::Structure,
+                    0,
+                    5,
+                    false,
+                ));
+        }
+        sim.substrate
+            .entities
+            .get_mut(3)
+            .unwrap()
+            .repairing
+            .set_for_test(true);
+        production::buildings_wanting_repair(&sim, &rules, owner)
+    };
+    assert_eq!(wanting(1000), [1]);
+    // A house that cannot pay one step gets none: the step would stop it.
+    assert!(wanting(0).is_empty());
+    // Building 3's running repair pays its step first; 1 needs a second.
+    let step = production::repair_step_cost(&rules, rules.object("GAPOWR").unwrap());
+    assert!(wanting(2 * step - 1).is_empty());
+    assert_eq!(wanting(2 * step), [1]);
+}

@@ -69,7 +69,7 @@ impl MissionId {
 /// Field order mirrors the deterministic snapshot/hash contract.  The fields
 /// stay private so all gameplay writes pass through a named compatibility or
 /// exact-authority transition.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MissionCom {
     current: MissionId,
     suspended: MissionId,
@@ -77,8 +77,58 @@ pub struct MissionCom {
     movement_bypass_latch: u8,
     handler_state: u32,
     mission_start_frame: u32,
-    ai_counter: u32,
+    ai_counter: AiCounter,
     dispatch_timer: MissionDispatchTimer,
+}
+
+/// The mission AI counter (`MissionClass+0xC4`), which every techno steps on
+/// every AI visit. VERA-only storage: it is stepped through a shared
+/// reference ([`MissionCom::count_ai_visit`]), so the step needs no mutable
+/// hand-out of the object, which would copy an object a presentation frame
+/// still shares (`util::shared`) on every frame. The value, its save form,
+/// its hash and its comparisons are a plain `u32`'s. A presentation copy
+/// that still shares the object sees later steps; nothing drawn reads it.
+#[derive(Debug, Default)]
+pub struct AiCounter(std::sync::atomic::AtomicU32);
+
+impl AiCounter {
+    const fn new(value: u32) -> Self {
+        Self(std::sync::atomic::AtomicU32::new(value))
+    }
+
+    fn get(&self) -> u32 {
+        self.0.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn set(&self, value: u32) {
+        self.0.store(value, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+impl Clone for AiCounter {
+    fn clone(&self) -> Self {
+        Self::new(self.get())
+    }
+}
+
+impl PartialEq for AiCounter {
+    fn eq(&self, other: &Self) -> bool {
+        self.get() == other.get()
+    }
+}
+
+impl Eq for AiCounter {}
+
+impl serde::Serialize for AiCounter {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.get().serialize(serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for AiCounter {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        u32::deserialize(deserializer).map(Self::new)
+    }
 }
 
 impl MissionCom {
@@ -91,7 +141,7 @@ impl MissionCom {
             movement_bypass_latch: 0,
             handler_state: 0,
             mission_start_frame: 0,
-            ai_counter: 0,
+            ai_counter: AiCounter::new(0),
             dispatch_timer: MissionDispatchTimer::at_frame(frame),
         }
     }
@@ -120,8 +170,8 @@ impl MissionCom {
         self.mission_start_frame
     }
 
-    pub const fn ai_counter(&self) -> u32 {
-        self.ai_counter
+    pub fn ai_counter(&self) -> u32 {
+        self.ai_counter.get()
     }
 
     pub const fn dispatch_timer(&self) -> MissionDispatchTimer {
@@ -143,7 +193,7 @@ impl MissionCom {
         self.movement_bypass_latch = 0;
         self.handler_state = 0;
         self.mission_start_frame = now;
-        self.ai_counter = 0;
+        self.ai_counter.set(0);
         self.dispatch_timer = MissionDispatchTimer::at_frame(now);
     }
 
@@ -158,7 +208,7 @@ impl MissionCom {
         self.movement_bypass_latch = 0;
         self.handler_state = 0;
         self.mission_start_frame = now;
-        self.ai_counter = 0;
+        self.ai_counter.set(0);
         self.dispatch_timer = MissionDispatchTimer::at_frame(now);
     }
 
@@ -185,7 +235,21 @@ impl MissionCom {
     }
 
     pub(crate) fn increment_ai_counter(&mut self) {
-        self.ai_counter = self.ai_counter.wrapping_add(1);
+        self.count_ai_visit();
+    }
+
+    /// `+0xC4 += 1`, wrapping, for one AI visit (`0x006FA646..0x006FA64F`),
+    /// through a shared reference ([`AiCounter`]).
+    pub(crate) fn count_ai_visit(&self) {
+        self.ai_counter.set(self.ai_counter.get().wrapping_add(1));
+    }
+
+    /// The `visits` increments a sleeping object was owed
+    /// (`GameEntity::settle_sleep`).
+    /// Through a shared reference, as [`Self::count_ai_visit`] steps it.
+    pub(crate) fn add_owed_ai_visits(&self, visits: u32) {
+        self.ai_counter
+            .set(self.ai_counter.get().wrapping_add(visits));
     }
 
     /// `+0xC4 = 0` outside an assignment: Unit and Infantry PerCellProcess
@@ -195,7 +259,7 @@ impl MissionCom {
     /// Mission_Attack's drop, CLOAKED and aim-only arms
     /// (`world::techno_ai::building_missions`).
     pub(crate) fn clear_ai_counter(&mut self) {
-        self.ai_counter = 0;
+        self.ai_counter.set(0);
     }
 
     pub(crate) fn write_dispatch_epilogue(&mut self, start_frame: i32, delay: i32) {
@@ -252,7 +316,7 @@ impl MissionCom {
         self.movement_bypass_latch = fixture.movement_bypass_latch;
         self.handler_state = fixture.handler_state;
         self.mission_start_frame = fixture.mission_start_frame;
-        self.ai_counter = fixture.ai_counter;
+        self.ai_counter.set(fixture.ai_counter);
         self.dispatch_timer = fixture.dispatch_timer;
     }
 }
@@ -332,7 +396,7 @@ mod tests {
 
         state.increment_ai_counter();
         assert_eq!(state.ai_counter(), 0);
-        let before = state;
+        let before = state.clone();
 
         state.write_dispatch_epilogue(-17, -29);
 

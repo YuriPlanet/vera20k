@@ -10,6 +10,33 @@ use crate::rules::foundation;
 use crate::rules::ini_parser::IniSection;
 use crate::util::native_x87::NativeF32Bits;
 
+/// The stock forest-fire Rules keys gamemd reads but never consumes; Ares
+/// 3.0's terrain fire (`sim::terrain_fire`) is their consumer.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct ForestFireRules {
+    /// `[AudioVisual] TreeFire=` (TypeList<AnimTypeClass*>, ReadAudioVisual
+    /// `0x0066AFC8`; constructor empty, an empty read retains it), the anims
+    /// `TerrainClass::Catch_Fire @ 0x0071C5B0` picks from.
+    pub(crate) tree_fire: Vec<String>,
+    /// `[General] TreeFlammability=` (Rules+0x588; the constructor stores
+    /// 0.1 at `0x00665D9C`, ReadGeneral `0x0066EC08` retains the current
+    /// value): the chance a burning tree sets each unburnt neighbour alight.
+    pub(crate) tree_flammability: crate::util::native_x87::NativeF64Bits,
+}
+
+#[cfg(feature = "ares")]
+impl Default for ForestFireRules {
+    fn default() -> Self {
+        Self {
+            tree_fire: Vec::new(),
+            tree_flammability: crate::util::native_x87::NativeF64Bits::from_bits(
+                0x3FB9_9999_9999_999A,
+            ),
+        }
+    }
+}
+
 /// Type-class data for a terrain object (e.g. `[TIBTRE01]`).
 ///
 /// Fields consumed by terrain occupation, damage and animation. Other terrain

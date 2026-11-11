@@ -4,7 +4,6 @@
 
 use crate::app::diagnostics::core_load::CoreLoadSampler;
 use crate::app::diagnostics::state::RenderTimingMeter;
-use crate::app::presentation::interpolation::SimulationReadout;
 use crate::app::presentation::render::RenderPhases;
 use crate::i18n::{tr, tr_fill};
 use crate::sim::frame_profile::PHASE_COUNT;
@@ -22,7 +21,8 @@ const WINDOW: Duration = Duration::from_secs(1);
 pub(super) const DOT: &str = "  ·  ";
 /// Areas under this share of the window stay off the Most CPU row.
 const MIN_AREA_PERCENT: f32 = 1.0;
-const MOST_AREAS: usize = 5;
+/// Room for the object pass's parts beside the costliest drawing.
+const MOST_AREAS: usize = 8;
 
 /// The labels of the simulation's frame-profile phases, by
 /// `frame_profile::phase` slot.
@@ -37,17 +37,20 @@ const SIM_AREAS: [&str; PHASE_COUNT] = [
     "VERA:CpuSuperweapons",
     "VERA:CpuRadiation",
     "VERA:CpuTeamAI",
-    "VERA:CpuObjects",
-    "VERA:CpuWallCrush",
+    "VERA:CpuUnitAI",
+    "VERA:CpuPathfinding",
+    "VERA:CpuTargeting",
+    "VERA:CpuMovement",
+    "VERA:CpuFiring",
+    "VERA:CpuBuildings",
+    "VERA:CpuBullets",
+    "VERA:CpuEffects",
     "VERA:CpuWakes",
     "VERA:CpuVision",
     "VERA:CpuCombat",
-    "VERA:CpuPassengers",
     "VERA:CpuIonBlasts",
     "VERA:CpuCrates",
     "VERA:CpuProduction",
-    "VERA:CpuDocks",
-    "VERA:CpuSpawnFog",
     "VERA:CpuLateAI",
     "VERA:CpuOverlays",
     "VERA:CpuDebugChecks",
@@ -83,7 +86,7 @@ pub(super) struct MatchSample {
 #[derive(Default)]
 pub(super) struct Shown {
     pub(super) frame_ms: f32,
-    pub(super) simulation: Option<SimulationReadout>,
+    pub(super) tps: Option<f32>,
     pub(super) units: Option<usize>,
     /// The costliest areas first: their labels and percent of the window's
     /// wall time.
@@ -120,7 +123,7 @@ impl PanelStats {
         &mut self,
         now: Instant,
         frame_ms: f32,
-        simulation: Option<SimulationReadout>,
+        tps: Option<f32>,
         sample: Option<MatchSample>,
         gpu_ms: Option<f32>,
     ) {
@@ -135,7 +138,7 @@ impl PanelStats {
         self.sim_baseline = sample.map(|sample| sample.profile);
         self.shown = Shown {
             frame_ms,
-            simulation,
+            tps,
             units: sample.map(|sample| sample.units),
             areas: wall.map_or_else(Vec::new, |wall| most_cpu(wall, sim_spans.as_ref(), &render)),
             core_loads: self.cores.sample(),
@@ -254,8 +257,8 @@ fn first_row(shown: &Shown) -> String {
     } else {
         tr_fill("VERA:FpsPanelFps", &[("fps", &"--")])
     };
-    if let Some(simulation) = shown.simulation {
-        let tps = format!("{:.0}", simulation.tps);
+    if let Some(tps) = shown.tps {
+        let tps = format!("{tps:.0}");
         let sim = tr_fill("VERA:FpsPanelSim", &[("tps", &tps)]);
         row.push_str(&format!("{DOT}{sim}"));
     }
@@ -290,11 +293,6 @@ fn thousands(value: usize) -> String {
 mod tests {
     use super::*;
 
-    const READOUT: SimulationReadout = SimulationReadout {
-        tps: 30.0,
-        sampling: true,
-    };
-
     fn text(part: &Part) -> &str {
         match part {
             Part::Text(text, _) => text,
@@ -306,10 +304,10 @@ mod tests {
     fn panel_rows_read_rates_costliest_areas_and_cores() {
         let shown = Shown {
             frame_ms: 1000.0 / 60.0,
-            simulation: Some(READOUT),
+            tps: Some(30.0),
             units: Some(12_345),
             areas: vec![
-                ("VERA:CpuObjects", 38.4),
+                ("VERA:CpuMovement", 38.4),
                 ("VERA:CpuDrawWorld", 27.0),
                 ("VERA:CpuVision", 11.0),
             ],
@@ -321,7 +319,7 @@ mod tests {
             text(&rows[0][0]),
             "FPS 60  ·  17 ms  ·  Sim 30 TPS  ·  Units 12,345"
         );
-        assert_eq!(rows[1][1], Part::Text("Objects 38%".to_owned(), WARM));
+        assert_eq!(rows[1][1], Part::Text("Movement 38%".to_owned(), WARM));
         assert_eq!(text(&rows[1][2]), "  ·  Draw world 27%  ·  Vision 11%");
         assert_eq!(rows[2][1], Part::Bars(vec![90.0, 10.0]));
         assert_eq!(text(&rows[2][2]), "   avg 50%");
@@ -365,7 +363,7 @@ mod tests {
     fn every_panel_label_has_english_text() {
         let rows = rows_of(Shown {
             frame_ms: f32::NAN,
-            simulation: Some(READOUT),
+            tps: Some(30.0),
             areas: SIM_AREAS
                 .iter()
                 .chain(&RENDER_AREAS)
@@ -385,7 +383,7 @@ mod tests {
     #[test]
     fn most_cpu_ranks_sim_and_render_areas_and_skips_a_restarted_profile() {
         let mut sim = [0u128; PHASE_COUNT];
-        sim[crate::sim::frame_profile::phase::OBJECTS] = 300_000_000;
+        sim[crate::sim::frame_profile::phase::MOVEMENT] = 300_000_000;
         sim[crate::sim::frame_profile::phase::VISION] = 5_000_000;
         let mut render = [Duration::ZERO; RenderPhases::COUNT];
         render[0] = Duration::from_millis(200);
@@ -395,7 +393,7 @@ mod tests {
             most_cpu(Duration::from_secs(1), Some(&sim), &render),
             [
                 ("VERA:CpuDriverHandoff", 40.0),
-                ("VERA:CpuObjects", 30.0),
+                ("VERA:CpuMovement", 30.0),
                 ("VERA:CpuDrawWorld", 20.0)
             ]
         );

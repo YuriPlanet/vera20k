@@ -125,6 +125,10 @@ pub fn candidate_allowed(
 }
 
 /// Resolve the first passing BuildingType pointer from one authored AI list.
+/// Ares 3.0 HouseClass_FirstBuildableFromArray 100238E0 (hook `0x005051E0`)
+/// replaces the body with HouseExt::FindBuildable: CanExpectToBuild with
+/// the parent country's Owner bit and the shell-disabled test, the same
+/// [`candidate_allowed`] gates.
 pub(crate) fn first_buildable_from_array<'a>(
     rules: &'a RuleSet,
     type_ids: &[String],

@@ -340,7 +340,7 @@ fn all06_elapsed_enable_chain(with_enemy: bool) {
     );
     let cropped = super::tests::trigger_fixture_map(&body);
     sim.initialize_trigger_definitions(&cropped, &teams, None, None, None);
-    sim.install_team_ai_registry(&teams, &rules).unwrap();
+    sim.install_team_ai_registry(&teams, &rules);
     sim.install_authored_cell_trigger_tags(&cropped);
     sim.classify_map_triggers(&rules);
     // Explicit prerequisite: Wave4 has already arrived. ALL06 starts with no

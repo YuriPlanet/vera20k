@@ -1,6 +1,6 @@
 //! VERA's offline WOL test service: a developer stand-in behind the same
-//! request/event boundary a real service will use, chosen by the Options
-//! page's `[VERA] WolTestService=` box. It is not gamemd behavior: it lets
+//! request/event boundary a real service will use, chosen by
+//! `[VERA] WolTestService=`. It is not gamemd behavior: it lets
 //! the Internet screens (login `0x10F`, lobby `0x113`, setup C2/C9) be
 //! opened and clicked without a server.
 //!
@@ -376,13 +376,8 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
             service_event(state, WolServiceEvent::NetStatus(SERVER_STATUS_READY));
             WolServiceEvent::ServerList(Ok(servers()))
         }
-        // VERA's own message of the day, then this service's.
         WolServiceRequest::Connect { .. } => WolServiceEvent::Login(Ok(WolLoginAccepted {
-            motd: format!(
-                "{}\n{}",
-                super::service::vera_motd(state),
-                crate::i18n::tr(MOTD)
-            ),
+            motd: crate::i18n::tr(MOTD),
         })),
         WolServiceRequest::ListChannels { kind, .. } => WolServiceEvent::Channels {
             kind,

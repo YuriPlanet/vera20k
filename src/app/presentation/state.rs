@@ -25,7 +25,6 @@ use crate::render::unit_atlas::UnitAtlas;
 use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarTab};
 
 pub(crate) struct MatchPresentationState {
-    pub(crate) interpolation: super::interpolation::RenderInterpolation,
     /// Native Techno+3CA waterline cache, captured by drawing and retained in
     /// the snapshot presentation supplement rather than simulation authority.
     pub(crate) sinking_waterlines: std::cell::RefCell<crate::render::sinking::SinkingWaterlines>,
@@ -38,6 +37,8 @@ pub(crate) struct MatchPresentationState {
     pub(crate) unit_atlas: Option<UnitAtlas>,
     /// Palette + per-house RGB ramp GPU resources for the voxel sprite shader.
     pub(crate) palette_set: Option<crate::render::palette_textures::PaletteSet>,
+    /// PALETTE.PAL as `surface_palette` parsed it; a world install empties it.
+    pub(crate) surface_palette: std::cell::OnceCell<crate::assets::pal_file::Palette>,
     pub(crate) sprite_atlas: Option<SpriteAtlas>,
     /// The unit and sprite atlas growths rasterizing on workers.
     pub(crate) atlas_growth: crate::render::entity_atlas_growth::EntityAtlasGrowth,
@@ -173,6 +174,9 @@ pub(crate) struct MatchPresentationState {
     // -- Reusable per-frame scratch buffers (avoid allocation each frame) --
     /// Cell body instance scratch vec — cleared and refilled each frame.
     pub(crate) cached_cell_body_instances: Vec<crate::render::batch::SpriteInstance>,
+    /// The ground tile list of the last draw, handed back so the next draw
+    /// fills the same allocation.
+    pub(crate) cached_terrain_instances: Vec<crate::render::batch::SpriteInstance>,
     /// Animated power bar — segment-by-segment transition matching original PowerClass.
     pub(crate) power_bar_anim: crate::ui::sidebar::PowerBarAnimState,
     /// Persistent flash + mode state for in-game sidebar gadgets. Ticked from
@@ -187,8 +191,23 @@ pub(crate) struct MatchPresentationState {
     pub(crate) sidebar_projection: crate::app::sidebar_projection::SidebarProjectionState,
     /// Active tab for the custom in-game sidebar.
     pub(crate) active_sidebar_tab: SidebarTab,
-    /// Native side-specific geometry in physical render pixels.
+    /// The side's sidebar geometry in sidebar pixels: the original's, with
+    /// the numbers the side's `veraui.ini` layout changes.
     pub(crate) sidebar_layout_spec: SidebarChromeLayoutSpec,
+    /// The layouts this match uses: the mod's `veraui.ini` with the player's
+    /// own laid over it (`presentation::player_layout`).
+    pub(crate) match_layouts: crate::ui::match_layout::MatchLayoutFile,
+    /// The mod's file as the loader parsed it.
+    pub(crate) mod_layout_ini: Option<crate::rules::ini_parser::IniFile>,
+    /// The player's own file's text, as read and as the edit mode changes it.
+    pub(crate) player_layout_text: Vec<u8>,
+    /// The layout edit mode, while it is on (`input::layout_edit`).
+    pub(crate) layout_edit: Option<crate::app::input::layout_edit::LayoutEditState>,
+    /// The buttons and texts the local side's layout adds.
+    pub(crate) added_parts: std::sync::Arc<[crate::ui::added_parts::AddedPart]>,
+    /// The row each grid of build pictures the layout adds is scrolled to,
+    /// by the grid's place in `added_parts`.
+    pub(crate) added_grid_scroll: Vec<usize>,
     /// Shared tooltip service (study S1) — the model is clock-injected; only
     /// `input::tooltips` reads the wall clock.
     pub(crate) tooltips: crate::ui::tooltips::TooltipService,
@@ -206,7 +225,7 @@ pub(crate) struct MatchPresentationState {
     pub(crate) beacons: crate::app::match_runtime::beacons::BeaconManager,
     /// In-scenario modal state — the port of gamemd's in-scenario state
     /// variable. Owns the in-game menu, the abort-mission confirmation and the
-    /// parent/child relationship with the `0xBBB` Options dialog.
+    /// menu's child dialogs (Sound, Keyboard, Surrender, Diplomacy).
     pub(crate) in_game_menu: crate::ui::pause_menu::InGameMenuState,
     /// `[0x822CFC]`, State_Machine's admission latch: `Main_Game` sets it at
     /// each scenario start (`0x0048CE7E`) and a confirmed Abort clears it
@@ -219,8 +238,11 @@ pub(crate) struct MatchPresentationState {
     pub(crate) pause_menu_template: crate::ui::shell::pause_menu::PauseMenuTemplate,
     /// FF's trackbars (WOL in-game menu), recreated on every state-1 entry.
     pub(crate) internet_pause: crate::app::input::pause_menu::InternetPauseControls,
-    /// VERA's Display group (Zoom, Full Screen) in every in-game menu.
-    pub(crate) display_pause: crate::app::input::pause_menu::DisplayPauseControls,
+    /// VERA's Options pages on the in-game menu, while it is open.
+    pub(crate) options_page: Option<crate::app::input::pause_menu::InGameOptionsPage>,
+    /// The page the menu showed when it left for one of its dialogs, which it
+    /// returns to. `None` from play: Escape opens on Game Controls.
+    pub(crate) options_page_category: Option<crate::ui::main_menu_dialogs::options::Category>,
     /// What B6 init (4F1840) made of control712 when the dialog last opened;
     /// its stored results stay for that dialog's lifetime.
     pub(crate) abort_secondary: crate::ui::shell::abort::AbortSecondary,
@@ -238,14 +260,26 @@ pub(crate) struct MatchPresentationState {
     pub(crate) restate_text: String,
     pub(crate) saved_game_browser:
         Option<crate::ui::skirmish_shell::SavedSeedBrowserState<std::path::PathBuf>>,
-    /// Client-side in-game Options (0xBBB) state: the six [Options] values plus
-    /// transient interaction flags. `game_speed` mirrors the launched sim and
-    /// queues an authoritative transition on close; `sim_speed_tps` is its local
-    /// presentation readout. App/ui-level.
+    /// What BBB's init (4E1FE0) reads when the menu opens: the [Options]
+    /// values, the speed context and whether the Game Speed row shows.
+    /// `game_speed` mirrors the launched sim; a moved Game Speed on the menu's
+    /// Game Controls page queues an authoritative transition on close.
     pub(crate) in_game_options: crate::ui::shell::in_game_options_state::InGameOptionsState,
-    /// Laid-out 0xBBB anchor cached by the overlay render pass each frame it draws,
-    /// so the paused mouse handler hit-tests the exact rects that were rendered
-    /// (the sidebar-anchored button Y is render-derived; see KD-6). None until the
-    /// overlay first renders.
-    pub(crate) in_game_options_anchor: Option<crate::ui::shell::layout::InGameOptionsAnchor>,
+}
+
+impl MatchPresentationState {
+    /// PALETTE.PAL in gamemd's converted form, for every per-frame reader:
+    /// action lines, lasers, bolts and the selected building's brackets. A
+    /// missing archive is not remembered, so a later draw can still find it.
+    pub(crate) fn surface_palette(
+        &self,
+        assets: Option<&crate::assets::asset_manager::AssetManager>,
+    ) -> Option<&crate::assets::pal_file::Palette> {
+        if let Some(palette) = self.surface_palette.get() {
+            return Some(palette);
+        }
+        let bytes = assets?.get_ref("palette.pal")?;
+        let palette = crate::assets::pal_file::Palette::from_bytes(bytes).ok()?;
+        Some(self.surface_palette.get_or_init(|| palette))
+    }
 }

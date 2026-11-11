@@ -23,7 +23,7 @@ use crate::skirmish_launch::{
 use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
 use crate::ui::skirmish_shell::{
     PlayerNameEditState, SkirmishAiRowType, SkirmishSavedSetup, SkirmishShellState,
-    SkirmishTrackbarId, game_speed_from_visual_position, game_speed_visual_position,
+    SkirmishTrackbarId,
 };
 use cooperative::{
     CooperativeCountryRole, CooperativeCountryRosterEntry, CooperativeError,
@@ -202,6 +202,10 @@ pub(crate) struct MultiplayerShellRuntime {
     /// Process-persistent native MapSeed options. The setup dialog edits a
     /// working copy, but closing it does not reconstruct this global record.
     random_map_options: crate::map::rmg::RmgOptions,
+    /// Ares MapSeedClass_LoadFromINI's latch (Ares.dll DAT_100c2151): the
+    /// first RMGMD.INI read sets the urban switch, later ones leave it.
+    #[cfg(feature = "ares")]
+    urban_areas_read: bool,
     ini_path: Option<PathBuf>,
     /// VERA's per-map Skirmish setups, by `SkirmishSetups.ini` section; read
     /// once at startup like the profile.
@@ -484,13 +488,13 @@ impl MultiplayerShellRuntime {
             .or_else(|| (0..records.len()).find(|index| valid(mode, *index)))
             .and_then(|index| records.get(index))
             .ok_or_else(|| anyhow::anyhow!("network game mode has no eligible map"))?;
-        options.game_speed = game_speed_from_visual_position(
-            bounds
-                .range(SkirmishTrackbarId::GameSpeed0x529)
-                .set_up(game_speed_visual_position(snapshot.game_speed)),
+        options.game_speed = crate::ui::shell::game_speed::SpeedContext::Offline.stored_speed(
+            bounds.range(SkirmishTrackbarId::GameSpeed0x529).set_up(
+                crate::ui::shell::game_speed::SpeedContext::Offline
+                    .visual_position(snapshot.game_speed),
+            ),
         );
-        let credits = bounds.range(SkirmishTrackbarId::Credits0x511);
-        options.starting_credits = credits.stepped(credits.set_up(snapshot.credits));
+        options.starting_credits = bounds.credits_value(bounds.set_up_credits(snapshot.credits));
         options.unit_count = bounds
             .range(SkirmishTrackbarId::UnitCount0x50c)
             .set_up(snapshot.unit_count);
@@ -924,6 +928,8 @@ impl MultiplayerShellRuntime {
             taunt_clock: Default::default(),
             scenario_rng,
             random_map_options: crate::map::rmg::RmgOptions::default(),
+            #[cfg(feature = "ares")]
+            urban_areas_read: false,
             ini_path,
             saved_setups,
             last_setup,
@@ -1018,12 +1024,14 @@ impl MultiplayerShellRuntime {
         // slider through `TBM_SETRANGE` and `TBM_SETPOS`.
         let bounds = state.trackbar_bounds;
         let speed = bounds.range(SkirmishTrackbarId::GameSpeed0x529);
-        let credits = bounds.range(SkirmishTrackbarId::Credits0x511);
         let units = bounds.range(SkirmishTrackbarId::UnitCount0x50c);
-        state.game_speed = game_speed_from_visual_position(
-            speed.set_up(game_speed_visual_position(self.snapshot.game_speed)),
+        state.game_speed = crate::ui::shell::game_speed::SpeedContext::Offline.stored_speed(
+            speed.set_up(
+                crate::ui::shell::game_speed::SpeedContext::Offline
+                    .visual_position(self.snapshot.game_speed),
+            ),
         );
-        state.starting_credits = credits.set_up(self.snapshot.credits);
+        state.starting_credits = bounds.set_up_credits(self.snapshot.credits);
         state.unit_count = units.set_up(self.snapshot.unit_count);
         state.short_game = self.snapshot.short_game;
         state.super_weapons = self.snapshot.super_weapons_allowed;
@@ -1606,6 +1614,21 @@ impl MultiplayerShellRuntime {
         self.random_map_options.clone()
     }
 
+    /// `RandomMapSetupDialog::Run @ 0x00595BC0` reads RMGMD.INI before the
+    /// dialog opens; Ares' MapSeedClass_LoadFromINI (Ares.dll 1006ABF0, hook
+    /// 0x5982D5) takes `[General] GenerateUrbanAreas=` into the urban switch
+    /// on the process's first read only.
+    #[cfg(feature = "ares")]
+    pub(crate) fn read_generate_urban_areas_once(
+        &mut self,
+        settings: &crate::map::rmg::RmgSettings,
+    ) {
+        if !self.urban_areas_read {
+            self.random_map_options.urban_areas = settings.generate_urban_areas;
+            self.urban_areas_read = true;
+        }
+    }
+
     /// Persist the dialog's working record back into the process MapSeed owner.
     pub(crate) fn remember_random_map_options(&mut self, options: &crate::map::rmg::RmgOptions) {
         self.random_map_options = options.clone();
@@ -1751,6 +1774,8 @@ fn draw_native_shell_country(
         draw_country_for_progress(registry, progress, cooperative_role, roster, rng)
             .map(|index| LaunchCountry::from_country_index(index as u32))
     } else {
+        // Ares 3.0 HouseTypeExt::PickRandomCountry: 1001DD30 (hook
+        // 0x0069B670) for AI rows, 1001DD50 (hook 0x0069B774) for humans.
         #[cfg(feature = "ares")]
         {
             let ai = matches!(role, RandomCountryRole::Ai { .. });
@@ -2151,6 +2176,8 @@ mod tests {
             taunt_clock: Default::default(),
             scenario_rng,
             random_map_options: crate::map::rmg::RmgOptions::default(),
+            #[cfg(feature = "ares")]
+            urban_areas_read: false,
             ini_path: None,
             saved_setups: HashMap::new(),
             last_setup: None,
@@ -2182,6 +2209,8 @@ mod tests {
             taunt_clock: Default::default(),
             scenario_rng: SimRng::new(u64::from(seed)),
             random_map_options: crate::map::rmg::RmgOptions::default(),
+            #[cfg(feature = "ares")]
+            urban_areas_read: false,
             ini_path: None,
             saved_setups: HashMap::new(),
             last_setup: None,
@@ -2849,6 +2878,8 @@ mod tests {
             );
         for ((credits, units, speed), expected) in [
             ((7549, 4, 2), (7549, 7500, 4, 2)),
+            ((30000, 4, 8), (30000, 30000, 4, 8)),
+            ((100000, 4, 0), (100000, 100000, 4, 0)),
             ((20000, 15, 9), (10000, 10000, 0, 6)),
             ((4999, -1, -1), (10000, 10000, 0, 6)),
         ] {

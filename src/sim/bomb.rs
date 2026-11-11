@@ -35,6 +35,12 @@
 //! - Fire legality (`TechnoClass::GetFireError` `0x006FCB8D`, `0x006FCBAD`): a
 //!   BombDisarm weapon needs a bombed target, an IvanBomb weapon an unbombed
 //!   one.
+//! - A player's Detonate: the lone selected carrier of a human player's bomb
+//!   answers Detonate over itself where `[CombatDamage]
+//!   CanDetonateTimeBomb=`/`CanDetonateDeathBomb=` allow its kind, both no in
+//!   retail ([`Simulation::bomb_detonate_action`]); the click sends DETONATE
+//!   with the bomb's house, whose Execute sets it off
+//!   ([`Simulation::execute_detonate_event`]).
 //! - Who sees it (`BombListClass::UpdateAll @ 0x00438BF0`, every frame before
 //!   the object AI): every 46th call, and the second call after an attach, the
 //!   carrier's `+0x68` becomes "the local player owns the planter's house or a
@@ -46,6 +52,17 @@
 //!   carrier for every player while it is out of limbo. The bomb keeps the
 //!   sound selected at attach; the app drives it under `ticking_sound_owner`.
 //!
+//! Ares builds (`docs/ares-ivan-bomb-abductor.md`): `PlantBomb` (Ares.dll
+//! 10055AE0) remembers the planting weapon on its bomb, and every hook reads
+//! that weapon's `IvanBomb.*` keys over the Rules ones: any Techno plants,
+//! a CellSpread warhead plants on every Techno around its target
+//! ([`Simulation::ares_ivan_bomb_detonation`]), the fuse, cues, damage,
+//! warhead and hut bridge come from the weapon, a death bomb has no fuse, an
+//! undetachable bomb refuses the Engineer, a sold carrier's bomb goes off,
+//! a captured building keeps its bomb, a deploying or undeploying carrier
+//! hands it on, a cloaking planter keeps its credit, and the clock is drawn
+//! from `IvanBomb.Image`.
+//!
 //! Scenario draws: none of its own; the blast's receivers and anim draw in
 //! their owners.
 //!
@@ -55,10 +72,8 @@
 //!
 //! RESIDUALS:
 //! - The death bomb (kind `+0x30 = 1`: no fuse, clock frame 12) has no native
-//!   writer, so only timed bombs exist here.
-//! - The player's DETONATE action (`EventClass` `0x004C7823`, behind
-//!   `CanDetonateTimeBomb=`/`CanDetonateDeathBomb=`, both off in stock) is not
-//!   represented.
+//!   writer, so only timed bombs exist in stock builds; Ares PlantBomb writes
+//!   it.
 //! - Campaign visibility: `HouseClass::IsHumanPlayer @ 0x0050B6F0` also admits
 //!   a house with PlayerControl (`+0x1ED`) in a campaign; the app tests the
 //!   local player's house only, as for the other gated sounds. Trigger: a
@@ -73,6 +88,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
+#[cfg(feature = "ares")]
+use crate::rules::ares_weapon::AresIvanBomb;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::warhead_type::WarheadType;
@@ -143,6 +160,18 @@ pub struct Bomb {
     /// `bomb_list_update`; saved like `+0x68`, but not hashed.
     #[serde(default)]
     seen_by: u64,
+    /// Ares `WeaponTypeExt::BombExt`: the weapon whose `PlantBomb`
+    /// (10055AE0) planted it, whose `IvanBomb.*` settings every bomb hook
+    /// reads. Saved like the extension map; native's CRC omits it.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    weapon: Option<InternedId>,
+    /// `+0x30`, the kind: a death bomb (1) has no fuse (`IsTimerExpired`)
+    /// and shows the clock's last frame. Only Ares PlantBomb writes it;
+    /// `BombClass::CRC` omits it.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    death_bomb: bool,
 }
 
 impl Hash for Bomb {
@@ -222,9 +251,60 @@ impl Bomb {
         self.planter
     }
 
-    /// `BombClass::IsTimerExpired @ 0x00438A70` for a timed bomb.
+    /// `+0x28`: the planter's house at the attach.
+    pub(crate) fn house(&self) -> InternedId {
+        self.planter_house
+    }
+
+    /// `BombClass::GetType @ 0x004389F0`, the kind `+0x30`: a death bomb (1).
+    fn is_death_bomb(&self) -> bool {
+        #[cfg(feature = "ares")]
+        return self.death_bomb;
+        #[cfg(not(feature = "ares"))]
+        false
+    }
+
+    /// `BombClass::IsTimerExpired @ 0x00438A70`: a timed bomb (kind 0)
+    /// once `Frame > end`; a death bomb never.
     pub(crate) fn expired(&self, frame: i32) -> bool {
+        #[cfg(feature = "ares")]
+        if self.death_bomb {
+            return false;
+        }
         frame > self.end_frame
+    }
+
+    /// The planting weapon's Ares `IvanBomb.*` settings, or the
+    /// constructor's for a bomb without one.
+    #[cfg(feature = "ares")]
+    fn ares_settings<'r>(&self, interner: &StringInterner, rules: &'r RuleSet) -> &'r AresIvanBomb {
+        ivan_bomb_settings(interner, self.weapon, rules)
+    }
+
+    /// Ares BombClass_GetCurrentFrame (Ares.dll 100568C0, hook 0x438A00), in
+    /// place of GetClockFrame, for an image of `frames` frames: frame 0 for
+    /// fewer than two; a death bomb's last frame; else `frames / 2` stages of
+    /// two frames, the stage `elapsed / (delay / stages)` capped at the last
+    /// and its second frame in the blink half of `2 * rate`. A rate below 1
+    /// counts `elapsed / (delay / frames)` over single frames, capped at the
+    /// last stage's index. `None` where native divides by zero.
+    #[cfg(feature = "ares")]
+    fn ares_clock_frame(&self, frame: i32, frames: i32, delay: i32, rate: i32) -> Option<i32> {
+        if frames < 2 {
+            return Some(0);
+        }
+        if self.death_bomb {
+            return Some(frames - 1);
+        }
+        let elapsed = frame.wrapping_sub(self.start_frame);
+        let stages = frames / 2;
+        let last = stages - 1;
+        if rate < 1 {
+            return Some(elapsed.checked_div(delay / (stages * 2))?.min(last));
+        }
+        let stage = elapsed.checked_div(delay / stages)?.min(last);
+        let blink = frame.checked_rem(rate.wrapping_mul(2))? >= rate;
+        Some(stage.wrapping_mul(2) + i32::from(blink))
     }
 
     /// `BombClass::GetClockFrame @ 0x00438A00`: the clock art's frame, the
@@ -248,6 +328,13 @@ pub(crate) struct BombBlast {
     /// bridge all use (`0x00438775..0x0043879F`).
     location: ProjectileCoord,
     bridge_hut: bool,
+    /// The blast's damage and warhead (`0x00438799`, `0x00438843`):
+    /// `IvanDamage`/`IvanWarhead`, or under Ares the planting weapon's
+    /// `IvanBomb.Damage`/`IvanBomb.Warhead` over them
+    /// (BombClass_Detonate1/2, Ares.dll 10056770/100567F0). `None` blasts
+    /// nothing.
+    damage: i32,
+    warhead: Option<String>,
 }
 
 impl Simulation {
@@ -428,19 +515,29 @@ impl Simulation {
     /// The IvanBomb arm of `BulletClass::DetonateAtCoord` (`0x00469343`) and
     /// `BombListClass::Attach @ 0x00438E70`: the bullet's owner plants a bomb
     /// on its target when the owner is Infantry and the target carries none.
+    ///
+    /// Ares builds reach it only through `PlantBomb` (Ares.dll 10055AE0,
+    /// [`Self::ares_ivan_bomb_detonation`]), with `weapon` the planting
+    /// weapon: BombListClass_Plant_AllTechnos (10056A50, hook 0x438E86)
+    /// admits any Techno planter, BombListClass_Plant_AttachSound (10056AA0,
+    /// hook 0x438FD7) skips the stock cue, and PlantBomb then rewrites the
+    /// fuse and ticking cue from the weapon's `IvanBomb.Delay` and
+    /// `IvanBomb.TickingSound`, makes it a death bomb by `IvanBomb.DeathBomb`
+    /// (`DeathBombOnAllies` for a victim the planter's house counts an ally,
+    /// `HouseClass::IsAlliedWith` inlined) and plays `IvanBomb.AttachSound`
+    /// (else BombAttachSound) under the same player gate.
     pub(crate) fn bomb_attach(
-        interner: &StringInterner,
-        session: &ScenarioSession,
-        substrate: &mut ObjectSubstrate,
-        sound_events: &mut FrameChannel<SimSoundEvent>,
-        resolved_terrain: &Option<ResolvedTerrainGrid>,
-        bombs: &mut BombList,
+        &mut self,
         planter: u64,
         target: Option<u64>,
+        weapon: Option<InternedId>,
         rules: &RuleSet,
     ) {
+        #[cfg(not(feature = "ares"))]
+        let _ = weapon;
         // An object UnInit has passed reads as the null pointer its expiry
         // left natively.
+        let substrate = &self.substrate;
         let live = |id| {
             substrate
                 .entities
@@ -450,6 +547,7 @@ impl Simulation {
         let Some(planter_entity) = live(planter) else {
             return;
         };
+        #[cfg(not(feature = "ares"))]
         if planter_entity.category() != EntityCategory::Infantry {
             return;
         }
@@ -466,15 +564,46 @@ impl Simulation {
         let position = carrier.position;
         let world_z_leptons = crate::sim::movement::ground_pose::object_world_z_leptons(
             carrier,
-            resolved_terrain.as_ref(),
+            self.resolved_terrain.as_ref(),
         );
-        let start_frame = session.binary_frame() as i32;
+        let start_frame = self.session.binary_frame() as i32;
+        #[cfg(feature = "ares")]
+        let settings = ivan_bomb_settings(&self.interner, weapon, rules);
+        #[cfg(feature = "ares")]
+        let death_bomb =
+            if self
+                .house_alliances
+                .is_allied(&self.interner, planter_house, carrier.owner())
+            {
+                settings.death_bomb_on_allies
+            } else {
+                settings.death_bomb
+            };
         // `BombListClass::Attach`'s inlined constructor (`0x00438EFD`):
         // capture the bound cue only after the attach gates admit the bomb.
         // Keep presentation names outside the gameplay interner so a sound
         // change cannot shift IDs allocated for later gameplay state.
-        let ticking_sound = rules.general.bomb_ticking_sound.clone();
-        let end_frame = start_frame.wrapping_add(rules.combat_damage.ivan_timed_delay);
+        #[cfg(not(feature = "ares"))]
+        let (ticking_sound, delay, attach_sound) = (
+            rules.general.bomb_ticking_sound.clone(),
+            rules.combat_damage.ivan_timed_delay,
+            rules.general.bomb_attach_sound.clone(),
+        );
+        #[cfg(feature = "ares")]
+        let (ticking_sound, delay, attach_sound) = (
+            settings
+                .ticking_sound
+                .clone()
+                .unwrap_or_else(|| rules.general.bomb_ticking_sound.clone()),
+            settings
+                .delay
+                .unwrap_or(rules.combat_damage.ivan_timed_delay),
+            settings
+                .attach_sound
+                .clone()
+                .unwrap_or_else(|| rules.general.bomb_attach_sound.clone()),
+        );
+        let end_frame = start_frame.wrapping_add(delay);
         let bomb = Bomb {
             planter: Some(planter),
             planter_house,
@@ -482,28 +611,32 @@ impl Simulation {
             end_frame,
             ticking_sound,
             seen_by: 0,
+            #[cfg(feature = "ares")]
+            weapon,
+            #[cfg(feature = "ares")]
+            death_bomb,
         };
         // Native Attach438E70 constructs a fresh BombClass/VocHandle. The
         // app reuses the carrier key, so retire any previous bomb's binding
         // before installing the new one, including a silent replacement.
-        sound_events.emit(SimSoundEvent::ObjectSoundDetached {
+        self.sound_events.emit(SimSoundEvent::ObjectSoundDetached {
             owner: ticking_sound_owner(target),
         });
-        if let Some(carrier) = substrate.entities.get_mut(target) {
-            carrier.bomb = Some(bomb);
+        if let Some(carrier) = self.substrate.entities.get_mut(target) {
+            carrier.bomb = Some(Box::new(bomb));
         }
-        bombs.carriers.insert(target);
+        self.bombs.carriers.insert(target);
         // 0x00438FCA: the carrier is seen from the second UpdateAll on.
-        bombs.visibility_countdown = 1;
+        self.bombs.visibility_countdown = 1;
         log::info!(
             "BOMB {target} planted by {planter} ({}), fuse {start_frame}..{}",
-            interner.resolve(planter_house),
+            self.interner.resolve(planter_house),
             end_frame,
         );
         // 0x00438FD7..0x0043901D: BombAttachSound at the target, only for the
         // player who owns the planter (+0x21C).
-        if let Some(sound_id) = rules.general.bomb_attach_sound.clone() {
-            sound_events.emit(SimSoundEvent::VocAt {
+        if let Some(sound_id) = attach_sound {
+            self.sound_events.emit(SimSoundEvent::VocAt {
                 sound_id,
                 audible_to: Some([planter_house, planter_house]),
                 rx: position.rx(),
@@ -513,6 +646,201 @@ impl Simulation {
                 world_z_leptons,
             });
         }
+    }
+
+    /// Ares BulletClass_DetonateAt_IvanBombs (Ares.dll 10056AF0, hook
+    /// 0x46934D, resuming past the arm at 0x469AA4) in place of the stock
+    /// IvanBomb arm: with a live bullet owner and an installed weapon (else a
+    /// logged warning and nothing), a warhead `CellSpread` under 0.5 plants
+    /// on a Techno target alone; a wider one plants on every Techno the
+    /// cell-spread walk (CellSpreadIterator 10056550, `(int)CellSpread`
+    /// rings around the cell of the target's GetCoords, or the bullet's own
+    /// when it has none) finds, except the owner and those already carrying
+    /// one. Each plant is `PlantBomb` ([`Self::bomb_attach`]).
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_ivan_bomb_detonation(
+        &mut self,
+        detonation: &crate::sim::projectile::ProjectileDetonation,
+        rules: &RuleSet,
+    ) {
+        use crate::sim::projectile::ProjectileTarget;
+        let owner = detonation.source_id;
+        if !self.substrate.entities.contains(owner) {
+            return;
+        }
+        let Some(weapon) = detonation.payload.installed_weapon() else {
+            log::warn!("IvanBomb bullet without attached WeaponType.");
+            return;
+        };
+        let Some(warhead) = rules.warhead(self.interner.resolve(detonation.payload.warhead)) else {
+            return;
+        };
+        if warhead.cell_spread_f64 < 0.5 {
+            if let ProjectileTarget::Entity(target) = detonation.target {
+                self.bomb_attach(owner, Some(target), Some(weapon), rules);
+            }
+            return;
+        }
+        // GetCoords (vt+0x48) of the target, or of the bullet itself; VERA
+        // reads the bullet's detonation point for that one.
+        let target = match detonation.target {
+            ProjectileTarget::Entity(id) | ProjectileTarget::Terrain(id) => {
+                Some(crate::sim::combat::TargetKind::Entity(id))
+            }
+            ProjectileTarget::Cell { rx, ry } => Some(crate::sim::combat::TargetKind::Cell(rx, ry)),
+            ProjectileTarget::None | ProjectileTarget::DummyCell => None,
+        };
+        let cells = self
+            .resolved_terrain
+            .as_ref()
+            .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+        let center = target
+            .and_then(|target| {
+                crate::sim::movement::ground_pose::target_get_coords(target, self, cells.as_ref())
+            })
+            .unwrap_or(crate::sim::components::DriveCoord {
+                x: detonation.impact.x,
+                y: detonation.impact.y,
+                z: detonation.impact.z,
+            });
+        let mut victims = Vec::new();
+        self.ares_cell_spread_technos(
+            crate::sim::movement::coord_cell(center),
+            warhead.cell_spread_f64 as i32 as u32,
+            |id| victims.push(id),
+        );
+        for victim in victims {
+            // The walk's own test; PlantBomb repeats the bomb one.
+            if victim != owner {
+                self.bomb_attach(owner, Some(victim), Some(weapon), rules);
+            }
+        }
+    }
+
+    /// Whether an Engineer may defuse the carrier's bomb: always in stock;
+    /// under Ares unless its weapon says `IvanBomb.Detachable=no`
+    /// (TechnoClass_CanFire_IvanBomb 10056C60, hook 0x6FCBAD;
+    /// InfantryClass_GetActionOnObject2 10056C00, hook 0x51E488).
+    pub fn bomb_detachable(&self, carrier: u64, rules: &RuleSet) -> bool {
+        #[cfg(feature = "ares")]
+        if let Some(bomb) = self
+            .substrate
+            .entities
+            .get(carrier)
+            .and_then(|entity| entity.bomb.as_ref())
+        {
+            return bomb.ares_settings(&self.interner, rules).detachable;
+        }
+        let _ = (carrier, rules);
+        true
+    }
+
+    /// The clock frame over the carrier for an image of `frames` frames:
+    /// `BombClass::GetClockFrame @ 0x00438A00` ([`Bomb::clock_frame`]), or
+    /// under Ares BombClass_GetCurrentFrame (100568C0) with the planting
+    /// weapon's `IvanBomb.Delay`/`IvanBomb.FlickerRate` over the Rules ones.
+    /// `None` without a bomb or where native divides by zero.
+    pub fn bomb_clock_frame(&self, carrier: u64, rules: &RuleSet, frames: usize) -> Option<i32> {
+        let bomb = self.substrate.entities.get(carrier)?.bomb.as_ref()?;
+        let frame = self.session.binary_frame() as i32;
+        let (delay, rate) = (
+            rules.combat_damage.ivan_timed_delay,
+            rules.combat_damage.ivan_icon_flicker_rate,
+        );
+        #[cfg(feature = "ares")]
+        {
+            let settings = bomb.ares_settings(&self.interner, rules);
+            // TechnoClass_DrawExtras reads the SHP header's frame count, a
+            // short.
+            let frames = i32::from(i16::try_from(frames).unwrap_or(i16::MAX));
+            bomb.ares_clock_frame(
+                frame,
+                frames,
+                settings.delay.unwrap_or(delay),
+                settings.flicker_rate.unwrap_or(rate),
+            )
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            let _ = frames;
+            bomb.clock_frame(frame, delay, rate)
+        }
+    }
+
+    /// The carrier bomb's Ares `IvanBomb.Image` candidates, in pass order
+    /// (TechnoClass_DrawExtras_IvanBombImage 10056CC0, hook 0x6F523C, draws
+    /// the last that loads in place of BOMBCURS.SHP).
+    #[cfg(feature = "ares")]
+    pub fn bomb_images<'r>(&self, carrier: u64, rules: &'r RuleSet) -> &'r [String] {
+        self.substrate
+            .entities
+            .get(carrier)
+            .and_then(|entity| entity.bomb.as_ref())
+            .map_or(&[], |bomb| &bomb.ares_settings(&self.interner, rules).image)
+    }
+
+    /// Ares `WeaponTypeExt::OnSell` (10055A80) from the sale hooks
+    /// BuildingClass_Sell_DetonateNoBuildup (10056AD0, hook 0x4471D5),
+    /// BuildingClass_Mi_Selling_DetonatePostBuildup (10056AB0, hook 0x44A1FF)
+    /// and FootClass_Sell_Detonate (10056AD0, hook 0x4D9F7B): the sold
+    /// carrier's bomb goes off ([`Self::bomb_detonate`]) when its weapon has
+    /// `IvanBomb.DetonateOnSell` (the default). Returns whether the carrier
+    /// is still alive afterwards.
+    #[cfg(feature = "ares")]
+    pub(crate) fn bomb_detonate_on_sell(
+        &mut self,
+        carrier: u64,
+        rules: &RuleSet,
+        overlay_registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> bool {
+        let sells = self
+            .substrate
+            .entities
+            .get(carrier)
+            .and_then(|entity| entity.bomb.as_ref())
+            .is_some_and(|bomb| bomb.ares_settings(&self.interner, rules).detonate_on_sell);
+        if sells {
+            self.bomb_detonate(carrier, rules, overlay_registry, frame_effects);
+        }
+        self.substrate
+            .entities
+            .get(carrier)
+            .is_some_and(|entity| entity.lifecycle.object_alive())
+    }
+
+    /// Ares TransferIvanBomb, inlined in 10045A80 (UnitClass_Deploy_Transfer,
+    /// hook 0x739956; BuildingClass_Mi_Selling_Transfer, hook 0x44A03C): a
+    /// deploying or undeploying object's bomb moves to the object it becomes
+    /// when that one carries none, with its BombVisible (`+0x68`). The
+    /// record keeps its fuse; the app restarts its loop on the new carrier.
+    #[cfg(feature = "ares")]
+    pub(crate) fn transfer_ivan_bomb(&mut self, from: u64, to: u64) {
+        if self
+            .substrate
+            .entities
+            .get(to)
+            .is_none_or(|entity| entity.bomb.is_some())
+        {
+            return;
+        }
+        let Some(bomb) = self
+            .substrate
+            .entities
+            .get_mut(from)
+            .and_then(|entity| entity.bomb.take())
+        else {
+            return;
+        };
+        self.bombs.carriers.remove(&from);
+        self.sound_events.emit(SimSoundEvent::ObjectSoundDetached {
+            owner: ticking_sound_owner(from),
+        });
+        if let Some(entity) = self.substrate.entities.get_mut(to) {
+            entity.bomb = Some(bomb);
+        }
+        self.bombs.carriers.insert(to);
+        log::info!("BOMB moved from {from} to {to}");
     }
 
     /// `BombClass::Defuse @ 0x004389B0`: remove the bomb and detach its cue
@@ -587,11 +915,34 @@ impl Simulation {
             && interner
                 .object_type(entity.type_ref(), rules)
                 .is_some_and(|object| object.bridge_repair_hut);
+        // Ares BombClass_Detonate1/2/3 (10056770, 100567F0, 10056870; hooks
+        // 0x438799, 0x438843, 0x438879): the weapon's damage and warhead
+        // over the Rules ones, and `IvanBomb.DestroysBridges=no` skips the
+        // hut's bridge (to 0x438989).
+        #[cfg(feature = "ares")]
+        let (damage, warhead, bridge_hut) = {
+            let settings = bomb.ares_settings(interner, rules);
+            (
+                settings.damage.unwrap_or(rules.combat_damage.ivan_damage),
+                settings
+                    .warhead
+                    .clone()
+                    .unwrap_or_else(|| rules.combat_damage.ivan_warhead.clone()),
+                bridge_hut && settings.destroys_bridges,
+            )
+        };
+        #[cfg(not(feature = "ares"))]
+        let (damage, warhead) = (
+            rules.combat_damage.ivan_damage,
+            rules.combat_damage.ivan_warhead.clone(),
+        );
         let location = object_location(entity, resolved_terrain.as_ref());
         Some(BombBlast {
             source: bomb.planter.unwrap_or(crate::sim::combat::RAD_NO_ATTACKER),
             location: ProjectileCoord::new(location.x, location.y, location.z),
             bridge_hut,
+            damage,
+            warhead,
         })
     }
 
@@ -615,6 +966,87 @@ impl Simulation {
         if !expired || entity.lifecycle.in_limbo() {
             return false;
         }
+        self.bomb_detonate(carrier, rules, overlay_registry, frame_effects)
+    }
+
+    /// The Detonate rung of `TechnoClass::What_Action_OnObject`
+    /// (`0x006FFF8D..0x00700003`), past the lone-selection (`[0xA8ECC8] == 1`)
+    /// and self tests its callers make: `carrier` holds a bomb of a human
+    /// player's house (`HouseClass::IsHumanPlayer @ 0x0050B6F0`), and Rules
+    /// lets that kind go off on a click: a death bomb `CanDetonateDeathBomb=`,
+    /// a timed one `CanDetonateTimeBomb=`. Retail sets both to no.
+    ///
+    /// Ares 3.0 answers it at the entry of What_Action instead
+    /// (`TechnoClass_GetActionOnObject_IvanBombsA @ 10056D30`, hook
+    /// `0x006FFEC0`, ahead of the berserk and warp exits; `IvanBombsB @
+    /// 10056D70`, hook `0x006FFF9E`, skips the stock rung):
+    /// `TechnoExt::CanDetonateAttachedBomb @ 100433A0` reads the planting
+    /// weapon's `IvanBomb.CanDetonateTimeBomb`/`.CanDetonateDeathBomb` over the
+    /// Rules keys.
+    pub fn bomb_detonate_action(&self, carrier: u64, rules: &RuleSet) -> bool {
+        let Some(bomb) = self
+            .substrate
+            .entities
+            .get(carrier)
+            .and_then(|entity| entity.bomb.as_ref())
+        else {
+            return false;
+        };
+        let combat = &rules.combat_damage;
+        if !self.house_is_human_player(bomb.planter_house) {
+            return false;
+        }
+        #[cfg(feature = "ares")]
+        return bomb.ares_settings(&self.interner, rules).can_detonate(
+            bomb.is_death_bomb(),
+            combat.can_detonate_time_bomb,
+            combat.can_detonate_death_bomb,
+        );
+        #[cfg(not(feature = "ares"))]
+        if bomb.is_death_bomb() {
+            combat.can_detonate_death_bomb
+        } else {
+            combat.can_detonate_time_bomb
+        }
+    }
+
+    /// The DETONATE arm of `EventClass::Execute @ 0x004C6CB0`
+    /// (`0x004C7823..0x004C7850`): the event's object as a Techno
+    /// (`TargetClass::As_Techno`) drops its planning tokens
+    /// (`TechnoClass::ClearPlanningTokens`, [`Self::planning_detach_actor`]),
+    /// then its bomb, if any, goes off ([`Self::bomb_detonate`]). The event's
+    /// house and the carrier's owner are not asked. Answers whether a bomb
+    /// went off.
+    pub(crate) fn execute_detonate_event(
+        &mut self,
+        carrier: u64,
+        rules: &RuleSet,
+        overlay_registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> bool {
+        // Every entity in the store is a Techno.
+        let Some(entity) = self.substrate.entities.get(carrier) else {
+            return false;
+        };
+        let armed = entity.bomb.is_some();
+        self.planning_detach_actor(carrier);
+        if !armed {
+            return false;
+        }
+        self.bomb_detonate(carrier, rules, overlay_registry, frame_effects);
+        true
+    }
+
+    /// `BombClass::Detonate @ 0x00438720` outside any damage transaction
+    /// ([`apply_area_damage`]): the fuse, a player's DETONATE event and
+    /// Ares's sale detonation. Returns whether a bridge changed.
+    pub(crate) fn bomb_detonate(
+        &mut self,
+        carrier: u64,
+        rules: &RuleSet,
+        overlay_registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> bool {
         let Some(blast) = Self::take_bomb_blast(
             &self.interner,
             &self.session,
@@ -627,7 +1059,7 @@ impl Simulation {
         ) else {
             return false;
         };
-        let Some(warhead) = ivan_warhead(rules) else {
+        let Some(warhead) = blast.warhead(rules) else {
             self.sound_events.emit(SimSoundEvent::ObjectSoundDetached {
                 owner: ticking_sound_owner(carrier),
             });
@@ -639,7 +1071,7 @@ impl Simulation {
             rules,
             overlay_registry,
             blast.location,
-            rules.combat_damage.ivan_damage,
+            blast.damage,
             warhead,
             true,
             origin,
@@ -678,7 +1110,7 @@ impl Simulation {
             carrier,
             rules,
         )?;
-        let Some(warhead) = ivan_warhead(rules) else {
+        let Some(warhead) = blast.warhead(rules) else {
             self.sound_events.emit(SimSoundEvent::ObjectSoundDetached {
                 owner: ticking_sound_owner(carrier),
             });
@@ -691,7 +1123,7 @@ impl Simulation {
             rules,
             overlay_registry,
             blast.location,
-            rules.combat_damage.ivan_damage,
+            blast.damage,
             warhead,
             true,
             origin,
@@ -730,7 +1162,7 @@ impl Simulation {
             self,
             rules,
             warhead,
-            rules.combat_damage.ivan_damage,
+            blast.damage,
             land,
             blast.location,
             blast.location,
@@ -757,17 +1189,28 @@ impl Simulation {
     }
 }
 
-/// `[CombatDamage] IvanWarhead=` (`Rules+0xFC8`); without one a bomb's record
-/// still goes but nothing blasts.
-fn ivan_warhead(rules: &RuleSet) -> Option<&WarheadType> {
-    rules
-        .combat_damage
-        .ivan_warhead
-        .as_deref()
-        .and_then(|name| rules.warhead(name))
+/// The Ares `IvanBomb.*` settings of `weapon`, or the constructor's
+/// (`WeaponTypeExt::BombExt` of a bomb no weapon planted).
+#[cfg(feature = "ares")]
+fn ivan_bomb_settings<'r>(
+    interner: &StringInterner,
+    weapon: Option<InternedId>,
+    rules: &'r RuleSet,
+) -> &'r AresIvanBomb {
+    static CONSTRUCTED: AresIvanBomb = AresIvanBomb::CONSTRUCTED;
+    weapon
+        .and_then(|weapon| rules.weapon(interner.resolve(weapon)))
+        .map_or(&CONSTRUCTED, |weapon| &weapon.ares_ivan_bomb)
 }
 
 impl BombBlast {
+    /// The blast's warhead (`[CombatDamage] IvanWarhead=`, `Rules+0xFC8`, or
+    /// Ares's `IvanBomb.Warhead`); without one a bomb's record still goes but
+    /// nothing blasts.
+    fn warhead<'r>(&self, rules: &'r RuleSet) -> Option<&'r WarheadType> {
+        self.warhead.as_deref().and_then(|name| rules.warhead(name))
+    }
+
     /// Apply_area_damage's source: the planter and no house.
     fn origin(
         &self,
@@ -781,3 +1224,7 @@ impl BombBlast {
 #[cfg(test)]
 #[path = "bomb_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "bomb_detonate_tests.rs"]
+pub(crate) mod detonate_tests;

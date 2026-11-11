@@ -55,10 +55,13 @@ pub(crate) struct RendererState {
     /// Previous presented pre-cursor composition, retained for input-time
     /// screenshot parity.
     pub(crate) retail_screenshot_frame_cache: crate::render::screenshot::PresentedFrameCache,
+    /// The finished terrain layer, kept while its inputs hold still.
+    pub(crate) terrain_picture: crate::app::presentation::render::terrain_picture::TerrainPicture,
 }
 
 impl RendererState {
-    /// Completed match frame, including chrome and cursor, in frame pixels.
+    /// Completed match frame with its chrome, in frame pixels. The software
+    /// cursor goes over this frame's copies, so it stays cursor-free.
     pub(crate) fn game_frame_texture(&self) -> &wgpu::Texture {
         self.world_zoom_pass.as_ref().map_or_else(
             || self.combat_light_renderer.composition_texture(),

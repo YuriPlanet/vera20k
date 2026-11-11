@@ -4,6 +4,7 @@
 use crate::app::AppState;
 use crate::app::input::dispatch::selected_in_order;
 use crate::app::input::hotkeys::{HotkeyCommand, HotkeyResolution};
+use crate::app::match_runtime::sim_host::SimWrite;
 use crate::audio::events::{GameSoundEvent, SoundEventQueue};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::CommandEnvelope;
@@ -13,6 +14,14 @@ use crate::sim::world::{
 };
 use winit::event::ElementState;
 use winit::keyboard::KeyCode;
+
+/// The local house's PLANCOMMIT that leaving Planning Mode issues
+/// (Planning__EndMode ->637A10), stamped for the current tick.
+pub(crate) fn plan_commit_command(sim: &Simulation) -> Option<CommandEnvelope> {
+    let owner = sim.session().current_house()?;
+    let record = sim.encode_plan_commit_record(owner)?;
+    Some(CommandEnvelope::synchronized(record, sim.session().tick()))
+}
 
 #[derive(Debug, Default)]
 pub(crate) struct PlanningInputState {
@@ -91,11 +100,7 @@ impl PlanningInputState {
         let commit = if active {
             None
         } else {
-            sim.and_then(|sim| {
-                let owner = sim.session().current_house()?;
-                let record = sim.encode_plan_commit_record(owner)?;
-                Some(CommandEnvelope::synchronized(record, sim.session().tick()))
-            })
+            sim.and_then(plan_commit_command)
         };
         // Planning__EndMode clears AC4CCC and AC4BF0 (0x00637A52..0x00637A5E).
         if !active {
@@ -121,6 +126,16 @@ impl PlanningInputState {
 
     fn admit_refusal(&mut self) -> bool {
         !std::mem::replace(&mut self.refusal_latched, true)
+    }
+
+    /// One key walk's `calls` to 639FD0 (ClickedEvent6FFE00 in Planning
+    /// Mode). Each call posts the message with a ScoldSound when AC4C08 is
+    /// clear (`0x00639FD6..0x0063A09E`), then plays ScoldSound again whatever
+    /// the latch (`0x0063A0A3..0x0063A0BB`). Returns whether the message
+    /// posts and how many ScoldSounds start.
+    fn clicked_event_refusal(&mut self, calls: usize) -> (bool, usize) {
+        let posts = calls > 0 && self.admit_refusal();
+        (posts, calls + usize::from(posts))
     }
 
     /// The help counter test of 0x0063A1B0 (`threshold` 1) and 0x0063A120,
@@ -294,9 +309,10 @@ impl PlanningRefusal {
     }
 }
 
-/// Guard730D60 ->63A0D0, ClickedEvent6FFE00 ->639FD0, 639130, the append
-/// 638120 and PlanMgr637270 share AC4C08, silent730A90 duration1E0, and
-/// Rules+700 ScoldSound.
+/// Guard730D60 ->63A0D0, 639130, the append 638120 and PlanMgr637270 share
+/// AC4C08, silent730A90 duration1E0, and Rules+700 ScoldSound.
+/// ClickedEvent6FFE00 ->639FD0 shares them too and scolds once more:
+/// [`refuse_clicked_event`].
 pub(crate) fn refuse(state: &mut AppState, action: PlanningRefusal) {
     let Some(csf_key) = action.csf_key() else {
         return;
@@ -309,6 +325,31 @@ pub(crate) fn refuse(state: &mut AppState, action: PlanningRefusal) {
         .rules()
         .and_then(|rules| rules.general.scold_sound.clone());
     ui_sound(state, sound);
+}
+
+/// ClickedEvent6FFE00 ->639FD0 for the Stop, Scatter and Deploy keys: the
+/// latched message of [`refuse`], and an unlatched second ScoldSound on every
+/// call. The Stop and Scatter walks end at their first refusal
+/// (`0x00730EF5`, ScatterSelectedObjects `0x00730FE0`), one call; the Deploy
+/// walk goes on (`0x00730D1D`), one call per object it admits.
+pub(crate) fn refuse_clicked_event(state: &mut AppState, action: PlanningRefusal, calls: usize) {
+    let Some(csf_key) = action.csf_key() else {
+        return;
+    };
+    let (posts, scolds) = state
+        .match_state
+        .input
+        .planning
+        .clicked_event_refusal(calls);
+    if posts {
+        crate::app::input::messages::post_planning_message(state, csf_key);
+    }
+    let sound = state
+        .rules()
+        .and_then(|rules| rules.general.scold_sound.clone());
+    for _ in 0..scolds {
+        ui_sound(state, sound.clone());
+    }
 }
 
 /// A sim lifecycle output of the append 0x00638120 for `owner`; only the
@@ -380,9 +421,9 @@ fn set_active(state: &mut AppState, active: bool, intro_source: Option<bool>) {
     let defeated = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_some_and(|rt| rt.simulation.local_player_defeated());
-    let rt = state.match_state.sim_runtime.as_mut();
+    let rt = state.match_state.sim_runtime.write_sim(SimWrite::Command);
     let command = state.match_state.input.planning.set_active(
         active,
         rt.as_ref().map(|rt| &rt.simulation),
@@ -412,7 +453,7 @@ pub(crate) fn queue_orders(
     orders: Vec<CommandEnvelope>,
     clicked_cell: Option<(u16, u16)>,
 ) -> bool {
-    let Some(rt) = state.match_state.sim_runtime.as_mut() else {
+    let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return false;
     };
     let Some(owner) = rt.simulation.session().current_house() else {
@@ -488,7 +529,7 @@ fn queue_orders_in_sim(
 /// selection may connect to. While a right press holds AC4CB0 it keeps the
 /// node it had at the press (0x00638E60's early return).
 pub(crate) fn hover_node(state: &AppState) -> Option<u64> {
-    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     if let Some(held) = state.match_state.input.planning.right_hover {
         return held.filter(|&node| sim.planning_node_exists(node));
     }
@@ -497,7 +538,7 @@ pub(crate) fn hover_node(state: &AppState) -> Option<u64> {
 
 fn live_hover_node(state: &AppState) -> Option<u64> {
     let point = hover_native_screen(state)?;
-    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     let owner = sim.session().current_house()?;
     // Only a node under the cursor reads the selection, which walks every
     // object: the cursor asks this at every draw.
@@ -526,7 +567,7 @@ pub(crate) fn refuse_press_at_cursor(state: &mut AppState) -> bool {
     let Some(refusal) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .and_then(|rt| rt.simulation.planning_press_refusal(&selected, point))
     else {
         return false;
@@ -540,37 +581,27 @@ pub(crate) fn hover_native_screen(state: &AppState) -> Option<[i32; 2]> {
     if !state.match_state.input.planning.active() {
         return None;
     }
-    let (width, height) = crate::app::input::camera::tactical_viewport_size(state);
-    let (x, y) = (
-        state.match_state.input.cursor_x,
-        state.match_state.input.cursor_y,
-    );
-    if x < 0. || y < 0. || x >= width as f32 || y >= height as f32 {
+    if !crate::app::input::camera::cursor_over_battlefield(state) {
         return None;
     }
     Some(cursor_native_screen(state))
 }
 
 fn cursor_native_screen(state: &AppState) -> [i32; 2] {
-    let (x, y, _, _) = crate::app::input::camera::tactical_viewport_px(state);
-    input_native_screen(&state.match_state.input, [x as i32, y as i32])
+    input_native_screen(&state.match_state.input)
 }
 
-fn input_native_screen(
-    input: &crate::app::input::state::MatchInputState,
-    origin: [i32; 2],
-) -> [i32; 2] {
-    // Match the overlay's rounded camera and logical clip origin, using the
-    // shared inverse view transform before quantizing its native hit point.
+fn input_native_screen(input: &crate::app::input::state::MatchInputState) -> [i32; 2] {
+    // Match the overlay's rounded camera, using the shared inverse view
+    // transform before quantizing its native hit point. The camera is the
+    // world point at the frame's corner, so the cursor's frame pixel needs
+    // no battlefield origin.
     let point = crate::app::match_runtime::sim_tick::screen_point_to_world_with_camera(
         (input.cursor_x, input.cursor_y),
         (input.camera_x.round(), input.camera_y.round()),
         input.zoom_level,
     );
-    [
-        point.0.floor() as i32 - origin[0],
-        point.1.floor() as i32 - origin[1],
-    ]
+    [point.0.floor() as i32, point.1.floor() as i32]
 }
 
 /// PlanMgr 0x0063A8E0 on the left release: connect at an admitted hover
@@ -592,7 +623,7 @@ pub(crate) fn connect_at_cursor(state: &mut AppState) -> bool {
             state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .is_some_and(|rt| rt.simulation.planning_release_refused(&selected, point))
         });
     };
@@ -603,7 +634,7 @@ pub(crate) fn connect_at_cursor(state: &mut AppState) -> bool {
     }
     let point = cursor_native_screen(state);
     let mut collected = false;
-    if let Some(rt) = state.match_state.sim_runtime.as_mut()
+    if let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Command)
         && let Some(owner) = rt.simulation.session().current_house()
     {
         for actor in rt.simulation.planning_connect_actors(&selected) {
@@ -631,7 +662,7 @@ pub(crate) fn delete_highlighted(state: &mut AppState) -> bool {
     let Some(node) = state.match_state.input.planning.highlighted_node else {
         return false;
     };
-    let Some(rt) = state.match_state.sim_runtime.as_mut() else {
+    let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return false;
     };
     if !rt.simulation.planning_node_exists(node) {
@@ -712,12 +743,11 @@ mod tests {
             input.camera_x = x - 100.25;
             input.camera_y = y - 80.75;
             input.zoom_level = zoom;
-            let origin = [13, 17];
             // Forward projection mirrors the render viewport, including its
-            // rounded camera and logical clip origin.
-            input.cursor_x = (x as i32 - input.camera_x.round() as i32 + origin[0]) as f32 * zoom;
-            input.cursor_y = (y as i32 - input.camera_y.round() as i32 + origin[1]) as f32 * zoom;
-            let point = input_native_screen(&input, origin);
+            // rounded camera.
+            input.cursor_x = (x as i32 - input.camera_x.round() as i32) as f32 * zoom;
+            input.cursor_y = (y as i32 - input.camera_y.round() as i32) as f32 * zoom;
+            let point = input_native_screen(&input);
             let node = sim.planning_hover_node(local, &[], point);
             assert!(node.is_some(), "zoom {zoom}");
             let connect = sim
@@ -763,6 +793,19 @@ mod tests {
         assert_eq!(input.highlighted_node(), Some(5));
         input.begin_frame_pass(false);
         assert_eq!(input.highlighted_node(), None);
+    }
+
+    /// 639FD0: the message and its ScoldSound are latched by AC4C08, the
+    /// second ScoldSound (`0x0063A0BB`) is not, and the Deploy walk calls it
+    /// once per admitted object.
+    #[test]
+    fn a_key_refusal_scolds_again_on_every_call_whatever_the_latch() {
+        let mut input = PlanningInputState::default();
+        assert_eq!(input.clicked_event_refusal(1), (true, 2), "Stop key");
+        assert_eq!(input.clicked_event_refusal(1), (false, 1), "repeat press");
+        input.end_frame_pass();
+        assert_eq!(input.clicked_event_refusal(3), (true, 4), "Deploy, 3 units");
+        assert_eq!(input.clicked_event_refusal(0), (false, 0));
     }
 
     #[test]
@@ -1063,7 +1106,7 @@ mod tests {
         resources.overlay_registry = overlays;
         let mut runtime = SimRuntime {
             simulation: sim,
-            resources,
+            resources: resources.into(),
         };
         // The raw native stamp controls execution; the preserved diagnostic
         // issue ordinal 2 above cannot postpone an event issued at frame0.

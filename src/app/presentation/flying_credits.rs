@@ -123,7 +123,8 @@ impl FlyingCredits {
         font: &BitFont,
         camera: [f32; 2],
         zoom: f32,
-        viewport: [u32; 2],
+        // The battlefield in frame pixels: left, top, width, height.
+        viewport: [u32; 4],
     ) -> Vec<SpriteInstance> {
         let mut out = Vec::new();
         for record in &self.live {
@@ -137,7 +138,8 @@ impl FlyingCredits {
             // while placing the anchor on the same zoomed map point.
             let x = (x - camera[0]) * zoom;
             let y = (y - camera[1]) * zoom;
-            if x >= 0.0 && y >= 0.0 && x < viewport[0] as f32 && y < viewport[1] as f32 {
+            let [left, top, width, height] = viewport.map(|side| side as f32);
+            if x >= left && y >= top && x < left + width && y < top + height {
                 let rise = (record.life - 70).min(0);
                 let left = x - (font.text_width(&record.text) / 2) as f32;
                 let rgb = crate::render::native_surface_format::RGB565;
@@ -211,27 +213,27 @@ mod tests {
             credits.step();
             credits.build_instances(&font, camera, 1.0, view)
         };
-        let first = composite(&mut credits, camera, [2048, 2048]);
+        let first = composite(&mut credits, camera, [0, 0, 2048, 2048]);
         assert!(!first.is_empty());
         for _ in 0..5 {
             assert_eq!(
-                composite(&mut credits, camera, [2048, 2048])[0].position,
+                composite(&mut credits, camera, [0, 0, 2048, 2048])[0].position,
                 first[0].position
             );
         }
-        let rising = composite(&mut credits, camera, [2048, 2048]);
+        let rising = composite(&mut credits, camera, [0, 0, 2048, 2048]);
         assert_eq!(rising[0].position[1], first[0].position[1] - 1.0);
         assert!(
             rising.iter().all(|glyph| glyph.alpha == 1.0),
             "native labels do not fade"
         );
         assert_eq!(
-            credits.build_instances(&font, camera, 1.0, [2048, 2048])[0].position,
+            credits.build_instances(&font, camera, 1.0, [0, 0, 2048, 2048])[0].position,
             rising[0].position,
             "a draw between composites does not rise"
         );
         for _ in 0..70 {
-            assert!(composite(&mut credits, [1e6, 1e6], [1, 1]).is_empty());
+            assert!(composite(&mut credits, [1e6, 1e6], [0, 0, 1, 1]).is_empty());
         }
         assert!(credits.live.is_empty(), "offscreen labels still expire");
         credits.admit(&sim, &rules, event);

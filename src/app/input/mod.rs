@@ -11,12 +11,19 @@ pub(crate) mod commands;
 pub(crate) mod coop_score;
 pub(crate) mod context_order;
 pub(crate) mod cursor;
+pub(crate) mod hardware_cursor;
 pub(crate) mod connection;
 pub(crate) mod diplomacy;
 pub(crate) mod restate;
 pub(crate) mod dispatch;
 pub(crate) mod entity_pick;
+pub(crate) mod auto_repair;
+pub(crate) mod ferry;
+pub(crate) mod primary_rotation;
+pub(crate) mod formation_line;
+pub(crate) mod formation_lock;
 pub(crate) mod gadget_input;
+pub(crate) mod layout_edit;
 pub(crate) mod hotkeys;
 pub(crate) mod ime;
 pub(crate) mod in_game_options;
@@ -37,6 +44,8 @@ pub(crate) mod tooltips;
 pub(crate) mod transport_orders;
 
 pub(crate) mod abort;
+#[cfg(feature = "ares")]
+pub(crate) mod ares_cursor;
 pub(crate) mod surrender;
 #[cfg(test)]
 mod bridge_click_tests;

@@ -1073,7 +1073,10 @@ fn a_deployed_gis_alt_over_the_ifv_skips_the_row() {
 /// `Dock=` list (only GAAIRC and AMRADR) and answers NoEnter (0x1F). The
 /// cursor is NoEnter; Aircraft ClickedAction (`0x00417BD0`) passes 0x1F to
 /// Foot ClickedAction (`0x004D74E0`), whose default orders nothing, so the
-/// click orders nothing and no longer selects the depot.
+/// click orders nothing and no longer selects the depot. Ares drops the
+/// `UnitRepair=` gate (hook `0x417E16`), so there the jet keeps Select
+/// (`sim::world::passenger_entry_tests`).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn a_players_jet_over_the_players_service_depot_gets_no_enter() {
     let Some((retail, registry)) = retail() else {
@@ -1107,4 +1110,100 @@ fn a_players_jet_over_the_players_service_depot_gets_no_enter() {
             "{jet}"
         );
     }
+}
+
+/// A player's empty Carryall (`Carryall=`, `+0xDFC`) over the player's tank
+/// shows the Tote row (What_Action `0x00417D06..0x00417D75`, action 0x11),
+/// and its click sends Move onto the tank (Aircraft ClickedAction
+/// `0x00417BD0` case 0x11, `Player_Assign_Mission(Move, NULL, unit)`).
+#[test]
+fn a_carryall_over_the_players_tank_totes_it() {
+    let ini = crate::rules::ini_parser::IniFile::from_str(
+        "[Countries]\n0=Americans\n1=Russians\n\
+         [AircraftTypes]\n0=CARRY\n[CARRY]\nCarryall=yes\nLandable=yes\nStrength=75\n\
+         Locomotor={4A582746-9839-11d1-B709-00A024DDAFD1}\n\
+         [VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=300\nSpeed=4\n\
+         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+    );
+    let rules = RuleSet::from_ini(&ini).unwrap();
+    let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
+    let mut sim = arena(&rules);
+    let carryall = sim
+        .spawn_object("CARRY", "Americans", 13, 16, 0, &rules)
+        .expect("carryall");
+    let tank = sim
+        .spawn_object("MTNK", "Americans", 16, 16, 0, &rules)
+        .expect("tank");
+    let hover = HoverTargetKindWithId {
+        stable_id: tank,
+        kind: HoverTargetKind::FriendlyUnit,
+    };
+    assert_eq!(
+        cursor_id_for_feedback(capability_cursor_for_hover(
+            &sim,
+            &[carryall],
+            Some(carryall),
+            &hover,
+            Some(&rules),
+            Some(&registry),
+            OrderModifier::Normal,
+            false,
+            false,
+        )),
+        Some(CursorId::Tote)
+    );
+    let mut selected = vec![carryall];
+    assert_eq!(
+        entry_orders(
+            &sim,
+            &rules,
+            &[carryall],
+            &mut selected,
+            &hover,
+            OrderModifier::Normal,
+            false,
+            Some(&registry),
+        ),
+        Some(vec![Command::MoveToObject {
+            entity_id: carryall,
+            target_id: tank,
+        }])
+    );
+    assert!(selected.is_empty());
+}
+
+/// A Carryall's hold counts (`+0x114`, Aircraft What_Action
+/// `0x00417DCD..0x00417DDA`) though its type has no `Passengers=`: loaded,
+/// its self-click offers Unload.
+#[test]
+fn a_loaded_carryall_offers_unload() {
+    let ini = crate::rules::ini_parser::IniFile::from_str(
+        "[Countries]\n0=Americans\n1=Russians\n\
+         [AircraftTypes]\n0=CARRY\n[CARRY]\nCarryall=yes\nLandable=yes\nStrength=75\n\
+         Locomotor={4A582746-9839-11d1-B709-00A024DDAFD1}\n",
+    );
+    let rules = RuleSet::from_ini(&ini).unwrap();
+    let mut sim = arena(&rules);
+    let carryall = sim
+        .spawn_object("CARRY", "Americans", 13, 16, 0, &rules)
+        .expect("carryall");
+    let owner = sim.interner().get("Americans");
+    let unload = |sim: &Simulation| {
+        let entity = sim.entities().get(carryall).unwrap();
+        let object = sim.interner().object_type(entity.type_ref(), &rules);
+        crate::app::input::transport_orders::unload_command(entity, object, owner)
+    };
+    assert_eq!(unload(&sim), None, "empty");
+    let mut cargo = crate::sim::passenger::PassengerCargo::new(0, 0.0);
+    cargo.board_forced_chain(&[(999, 2.0)]);
+    sim.entities_mut_for_test()
+        .get_mut(carryall)
+        .unwrap()
+        .passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+    assert_eq!(
+        unload(&sim),
+        Some(Command::UnloadPassengers {
+            transport_id: carryall
+        })
+    );
 }

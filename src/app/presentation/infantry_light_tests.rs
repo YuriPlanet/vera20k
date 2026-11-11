@@ -152,7 +152,7 @@ fn assert_shp_light(
                 (
                     ShpSpriteKey {
                         palette_context: ShpPaletteContext::Legacy,
-                        type_id: "E1".to_owned(),
+                        type_id: "E1".into(),
                         facing: 0,
                         frame,
                         house_color: HouseColorIndex(0),
@@ -162,7 +162,6 @@ fn assert_shp_light(
             })
             .collect(),
     );
-    let interpolation = crate::app::presentation::interpolation::RenderInterpolation::new(false);
     let voxel_images = std::cell::RefCell::default();
     let colors =
         crate::map::houses::HouseColorMap::from([(owner_name.clone(), HouseColorIndex(0))]);
@@ -178,7 +177,6 @@ fn assert_shp_light(
             unit_atlas: None,
             voxel_images: &voxel_images,
             depth_tested_images: None,
-            interpolation: &interpolation,
             camera: [screen.0 - 400.0, screen.1 - 300.0],
             render_size: [800, 600],
             zoom: 1.0,
@@ -246,7 +244,7 @@ fn infantry_shp_top_light_follows_public_move_head_production() {
         .unwrap();
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: SimResources::new(rules),
+        resources: SimResources::new(rules).into(),
     };
     // Observed whole GI draws: null-head/destination-only700; a produced
     // head over top1000 gives1200, or700 when only the two tops are swapped.

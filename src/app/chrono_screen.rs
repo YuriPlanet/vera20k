@@ -64,6 +64,7 @@ impl ChronoScreenPresentation {
         encoder: &mut wgpu::CommandEncoder,
         source: &wgpu::Texture,
         tactical: [u32; 4],
+        bar_under: bool,
     ) {
         let Some(draw) = self.draw else {
             return;
@@ -86,7 +87,7 @@ impl ChronoScreenPresentation {
         self.renderer
             .as_ref()
             .unwrap()
-            .draw(gpu, encoder, source, draw, tactical);
+            .draw(gpu, encoder, source, draw, tactical, bar_under);
         if matches!(draw, ChronoScreenDraw::Restore) {
             self.draw = None;
             self.renderer = None;
@@ -98,7 +99,7 @@ fn play_cue(state: &mut AppState, returning: bool) {
     let sound = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .and_then(|runtime| {
             let general = &runtime.resources.rules.general;
             if returning {

@@ -119,7 +119,11 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
             .shared_cell_dummy()
             .test_set_land_type(input["dummy_land"].as_i64().unwrap() as i32);
     }
-    let base = sim.zone_grid.as_mut().unwrap().base_topology_mut_for_test();
+    let base = sim
+        .zone_grid
+        .as_deref_mut()
+        .unwrap()
+        .base_topology_mut_for_test();
     base.set_native_bridge_source_size_for_test(Some((8, 8)));
     base.zone_ids_mut_for_test().fill(0);
     for row in base.raw_zone_ids_by_row_mut_for_test() {
@@ -240,7 +244,7 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
         e.set_on_bridge(input["obstacle_deck"] == true);
         let mut cloak = CloakRuntime::new(0);
         cloak.set_state_for_test(input["cloak"].as_i64().unwrap_or(0) as i32);
-        e.cloak = Some(cloak);
+        e.cloak = Some(Box::new(cloak));
         sim.substrate.occupancy.add(
             10,
             10,
@@ -351,7 +355,15 @@ fn compare(sim: &Simulation, id: u64, other: Option<u64>, expected: &Value, row:
             row["input"]
         );
     }
-    let cloak = other.map(|other| sim.substrate.entities.get(other).unwrap().cloak.unwrap());
+    let cloak = other.map(|other| {
+        *sim.substrate
+            .entities
+            .get(other)
+            .unwrap()
+            .cloak
+            .clone()
+            .unwrap()
+    });
     let logical = cloak.map_or([0; 6], |c| {
         [
             c.state(),

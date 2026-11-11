@@ -160,7 +160,7 @@ fn constructor_complete_foot_destructors_match_native_team_gate_and_rng() {
             "[TeamTypes]\n0=TT\n[TT]\nHouse=Americans\nScript=S\nTaskForce=F\nWaypoint=E\nMax=-1\n[ScriptTypes]\n0=S\n[S]\n0=3,4\n[TaskForces]\n0=F\n[F]\n0=1,{typ}\n"
         ));
         let registry = TeamAiIniRegistry::from_sources(&definitions, &IniFile::from_str(""), true);
-        sim.install_team_ai_registry(&registry, &rules).unwrap();
+        sim.install_team_ai_registry(&registry, &rules);
         let team_type = sim.interner.get("TT").unwrap();
         let team = sim
             .with_object_placement_scope(|sim| sim.create_team(team_type, Some(owner), &rules))
@@ -1443,9 +1443,10 @@ fn gsi_04_12_common_raw_occupation_structural_deck_unit_tracks_live_collapse_fla
 
     let _ = sim.object_conceal(2);
 
+    // Ares 3.0 1004C3E0 (hook 0x00744216) clears the recorded ground too.
     assert_eq!(
         sim.substrate.raw_cell_occupation.ground_bits(3, 4),
-        0x20,
+        if cfg!(feature = "ares") { 0 } else { 0x20 },
         "height-only clear still targets deck after the collapsed mark used ground"
     );
     assert_eq!(sim.substrate.raw_cell_occupation.deck_bits(3, 4), 0);
@@ -1509,9 +1510,11 @@ fn gsi_04_12_common_raw_occupation_high_nonstructural_unit_keeps_native_stale_gr
 
     let _ = sim.object_conceal(1);
 
+    // Ares 3.0 UnitClass_UnmarkOccupationBits 1004C3E0 (hook 0x00744216)
+    // also clears the ground plane UnitClass_MarkOccupationBits recorded.
     assert_eq!(
         sim.substrate.raw_cell_occupation.ground_bits(3, 4),
-        0x20,
+        if cfg!(feature = "ares") { 0 } else { 0x20 },
         "height-only clear targets deck even though nonstructural mark used ground"
     );
     assert_eq!(sim.substrate.raw_cell_occupation.deck_bits(3, 4), 0);
@@ -2782,6 +2785,58 @@ fn open_topped_direct_registration_keeps_hidden_passenger_live() {
 
     assert!(sim.register_open_topped_passenger(1));
     assert_eq!(sim.live_object_order_snapshot(), vec![2, 1]);
+}
+
+/// A rider killed inside an open-topped transport is already in limbo, so
+/// UnInit's Limbo returns at its entry guard and leaves it in Logic. Its
+/// destructor takes it out (`ObjectClass::~ObjectClass`, `0x005F3D65..0x005F3D75`);
+/// a slot left behind stops the next multiplayer frame's checksum.
+#[test]
+fn destructor_takes_a_dead_open_topped_rider_out_of_logic() {
+    let mut sim = Simulation::new();
+    insert_entity(&mut sim, 1, EntityCategory::Infantry);
+    insert_entity(&mut sim, 2, EntityCategory::Unit);
+    let _ = sim.reveal(1);
+    let _ = sim.reveal(2);
+    assert_eq!(sim.techno_limbo(1), super::ConcealOutcome::Concealed);
+    sim.substrate.entities.get_mut(1).unwrap().passenger_role =
+        PassengerRole::inside_for_test(2, true);
+    assert!(sim.register_open_topped_passenger(1));
+
+    sim.uninit(1);
+    assert_eq!(sim.live_object_order_snapshot(), vec![2, 1]);
+    sim.process_pending_delete();
+
+    assert!(!sim.substrate.entities.contains(1));
+    assert_eq!(sim.live_object_order_snapshot(), vec![2]);
+    assert!(sim.compute_retail_multiplayer_checksum().is_ok());
+}
+
+/// The Logic walk can reach a rider that died earlier in the frame: it is past
+/// UnInit (`+0x90` clear) but still in the vector until its destructor. Native
+/// `FootClass::AI` returns at the IsAlive test (`0x004DA53E`); the visit must
+/// not UnInit it again.
+#[test]
+fn logic_visit_of_a_dead_open_topped_rider_does_not_uninit_it_again() {
+    let mut sim = Simulation::new();
+    insert_entity(&mut sim, 1, EntityCategory::Infantry);
+    insert_entity(&mut sim, 2, EntityCategory::Unit);
+    let _ = sim.reveal(1);
+    let _ = sim.reveal(2);
+    assert_eq!(sim.techno_limbo(1), super::ConcealOutcome::Concealed);
+    sim.substrate.entities.get_mut(1).unwrap().passenger_role =
+        PassengerRole::inside_for_test(2, true);
+    assert!(sim.register_open_topped_passenger(1));
+    sim.uninit(1);
+
+    let _ = sim.object_ai_visit_one(1, None, ObjectAiCtx::default());
+
+    let uninits = sim
+        .lifecycle_test_events
+        .iter()
+        .filter(|event| **event == LifecycleTestEvent::UninitAliveCleared { stable_id: 1 })
+        .count();
+    assert_eq!(uninits, 1);
 }
 
 #[test]
@@ -4674,6 +4729,12 @@ fn gsi_05_03_duplicate_uninit_repeats_direct_expiry_and_queue_but_finalizes_once
             LifecycleTestEvent::DeferredDeleteSelected {
                 ticket: super::DeferredDeleteTicket::Object(1),
             },
+            // The Unit destructor's own Limbo (`0x0073584F`), already in limbo.
+            LifecycleTestEvent::ConcealAlreadyLimboReturn {
+                stable_id: 1,
+                object_alive: false,
+                resolvable: true,
+            },
             LifecycleTestEvent::UninitRemovalListenerVisited {
                 expired_id: 1,
                 listener_id: 1,
@@ -5318,6 +5379,12 @@ fn lifecycle_authority_duplicate_queue_finalizes_once() {
             LifecycleTestEvent::DeferredDeleteSelected {
                 ticket: super::DeferredDeleteTicket::Object(1),
             },
+            // The Unit destructor's own Limbo (`0x0073584F`), already in limbo.
+            LifecycleTestEvent::ConcealAlreadyLimboReturn {
+                stable_id: 1,
+                object_alive: false,
+                resolvable: true,
+            },
             LifecycleTestEvent::UninitRemovalListenerVisited {
                 expired_id: 1,
                 listener_id: 1,
@@ -5353,6 +5420,12 @@ fn lifecycle_authority_entity_and_anim_share_ordered_drain() {
             LifecycleTestEvent::DeferredDeleteSelected {
                 ticket: super::DeferredDeleteTicket::Object(1),
             },
+            // The Unit destructor's own Limbo (`0x0073584F`), already in limbo.
+            LifecycleTestEvent::ConcealAlreadyLimboReturn {
+                stable_id: 1,
+                object_alive: false,
+                resolvable: true,
+            },
             LifecycleTestEvent::UninitRemovalListenerVisited {
                 expired_id: 1,
                 listener_id: 1,
@@ -5382,6 +5455,12 @@ fn lifecycle_authority_late_tail_commits_frame_before_drain() {
             LifecycleTestEvent::PendingDeleteDrainStarted,
             LifecycleTestEvent::DeferredDeleteSelected {
                 ticket: super::DeferredDeleteTicket::Object(1),
+            },
+            // The Unit destructor's own Limbo (`0x0073584F`), already in limbo.
+            LifecycleTestEvent::ConcealAlreadyLimboReturn {
+                stable_id: 1,
+                object_alive: false,
+                resolvable: true,
             },
             LifecycleTestEvent::UninitRemovalListenerVisited {
                 expired_id: 1,
@@ -5736,8 +5815,8 @@ fn homing_ground_impact_reaches_damage_and_cleanup_through_runtime_frame() {
             );
         }
         let mut runtime = SimRuntime::from_simulation(sim);
-        runtime.resources.rules = RuleSet::from_ini(&ini).unwrap();
-        runtime.resources.overlay_registry =
+        runtime.resources_mut().rules = RuleSet::from_ini(&ini).unwrap();
+        runtime.resources_mut().overlay_registry =
             crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, Some(&art));
 
         let _ = runtime
@@ -7179,7 +7258,7 @@ fn wave_pointer_expiry_target_survives_dying_then_uninit_starts_decay_tail() {
     sim.admit_wave(wave_id, wave);
     sim.active_wave_links.insert(owner_id, wave_id);
 
-    let represented = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), &rules);
+    let represented = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), &rules, None);
     assert_eq!(
         represented.target_position,
         Some(ProjectileCoord::new(4 * 256 + 128, 128, 0)),
@@ -7202,7 +7281,7 @@ fn wave_pointer_expiry_target_survives_dying_then_uninit_starts_decay_tail() {
         "UnInit synchronously expires +0xAC"
     );
     assert_eq!(sim.active_wave_links.get(&owner_id), Some(&wave_id));
-    let expired = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), &rules);
+    let expired = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), &rules, None);
     assert_eq!(expired.target_position, None);
     let _ = sim
         .waves
@@ -7256,11 +7335,13 @@ fn wave_pointer_expiry_owner_allows_dying_damage_then_uninit_nulls_later_calls()
         firer_id: owner_id,
         recorded_cells: vec![WaveRecordedCell::real(4, 5)],
         wave_z: 0,
+        ares_weapon: None,
     };
     assert!(
         sim.wave_update_context(
             sim.waves.get(wave_id).unwrap(),
-            crate::rules::ruleset::RuleSet::empty_for_test()
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+            None
         )
         .owner_position
         .is_some(),
@@ -8020,7 +8101,11 @@ fn wave_tail_consumes_wall_roll_before_mandatory_cliff_chance_roll() {
 
     sim.scenario_rng = crate::sim::rng::SimRng::new(0x57_41_4c_4c);
     let mut expected = sim.scenario_rng.clone();
-    let _wall_roll = expected.next_range_u32_inclusive(0, 100);
+    // Ares WaveClass_DamageCell_Wall (1005D7A0, hook 0x75F46E) leaves the
+    // wall to a `Wall=yes` warhead; WH is not one, so no wall roll.
+    if !cfg!(feature = "ares") {
+        let _wall_roll = expected.next_range_u32_inclusive(0, 100);
+    }
     let _cliff_chance_roll = expected.next_range_u32_inclusive(0, 99);
 
     assert!(sim.object_ai_visit_one(
@@ -8058,7 +8143,7 @@ fn assert_direct_fatal_death_weapon_starts_crater(bridge: bool) {
     let ini = IniFile::from_str(
         "[CombatDamage]\nC4Warhead=KILLWH\n[InfantryTypes]\n[VehicleTypes]\n0=VICTIM\n1=FIRER\n\
          [AircraftTypes]\n[BuildingTypes]\n[OverlayTypes]\n\
-         [Warheads]\n0=KILLWH\n1=CRATERWH\n[SmudgeTypes]\n0=CR1\n\
+         [Warheads]\n0=KILLWH\n1=CRATERWH\n[SmudgeTypes]\n0=CR1\n[Animations]\n0=CRATERANIM\n\
          [VICTIM]\nStrength=1\nArmor=light\nExplodes=yes\nDeathWeapon=DeathBoom\n\
          [FIRER]\nStrength=100\nArmor=light\nPrimary=SONIC\n\
          [SONIC]\nDamage=1\nAmbientDamage=10\nWarhead=KILLWH\nIsSonic=yes\n\
@@ -8270,7 +8355,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
         )
     };
     assert_eq!(
-        remote_bridge_route(sim.zone_grid.as_ref().unwrap()),
+        remote_bridge_route(sim.zone_grid.as_deref().unwrap()),
         (true, true)
     );
     let without_bridge_records = crate::sim::pathfinding::zone_map::ZoneGrid::build_with_terrain(
@@ -8324,8 +8409,8 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
         for rx in 0..5i32 {
             for _ in 0..2 {
                 let type_index = expected_rng.next_range_u32_inclusive(0, 2) as usize;
-                let jitter_x = expected_rng.next_range_u32_inclusive(0, 16) as i32 - 8;
-                let jitter_y = expected_rng.next_range_u32_inclusive(0, 24) as i32 - 12;
+                let jitter_y = expected_rng.next_range_u32_inclusive(0, 16) as i32 - 8;
+                let jitter_x = expected_rng.next_range_u32_inclusive(0, 24) as i32 - 12;
                 let delay = expected_rng.next_range_u32_inclusive(0, 2) as u16;
                 let rate = expected_rng.next_range_u32_inclusive(1, 3) as u16;
                 expected_spawns.push((
@@ -8380,11 +8465,11 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
     // Check before any later frame repair: native cliff collapse rebuilds
     // connectivity synchronously with the retained global bridge vector.
     assert_eq!(
-        remote_bridge_route(sim.zone_grid.as_ref().unwrap()),
+        remote_bridge_route(sim.zone_grid.as_deref().unwrap()),
         (true, true)
     );
     assert_eq!(
-        sim.zone_grid.as_ref().unwrap().bridge_records(),
+        sim.zone_grid.as_deref().unwrap().bridge_records(),
         bridge_records
     );
     let canonical_path = crate::sim::pathfinding::PathGrid::from_resolved_terrain_with_bridges(
@@ -8465,7 +8550,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
     // history, so this compares exact saved authority without normalizing a
     // live graph merely to make its hash agree with ordinary load.
     let expected_authority = save_codec::serialize(&sim).unwrap();
-    let expected_base = save_codec::serialize(sim.zone_grid.as_ref().unwrap()).unwrap();
+    let expected_base = save_codec::serialize(sim.zone_grid.as_deref().unwrap()).unwrap();
     let bytes = GameSnapshot::save(&sim, 0, 0, "collapsed-dcliff", 0);
     let mut restored = GameSnapshot::load(&bytes)
         .expect("collapsed cliff snapshot")
@@ -8476,7 +8561,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
     assert!(
         restored
             .zone_grid
-            .as_ref()
+            .as_deref()
             .unwrap()
             .is_native_load_pending()
     );
@@ -8485,7 +8570,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
         expected_authority
     );
     assert_eq!(
-        save_codec::serialize(restored.zone_grid.as_ref().unwrap()).unwrap(),
+        save_codec::serialize(restored.zone_grid.as_deref().unwrap()).unwrap(),
         expected_base
     );
     restored.rebuild_caches_after_load(pristine_terrain, Default::default(), &rules);
@@ -8496,7 +8581,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
     assert!(
         !restored
             .zone_grid
-            .as_ref()
+            .as_deref()
             .unwrap()
             .is_native_load_pending()
     );
@@ -8505,14 +8590,14 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
         expected_authority
     );
     assert_eq!(
-        save_codec::serialize(restored.zone_grid.as_ref().unwrap()).unwrap(),
+        save_codec::serialize(restored.zone_grid.as_deref().unwrap()).unwrap(),
         expected_base
     );
     // Native LoadContent67E8CD ->581F50 clears the incremental hierarchy
     // and rebuilds it from this saved base. The physical Anytown restore
     // packet establishes that its history-sensitive live hash may change.
     assert_eq!(
-        remote_bridge_route(restored.zone_grid.as_ref().unwrap()),
+        remote_bridge_route(restored.zone_grid.as_deref().unwrap()),
         (true, true)
     );
     let restored_terrain = restored.resolved_terrain.as_ref().unwrap();
@@ -9982,4 +10067,108 @@ fn a_missile_is_tracked_in_the_cell_its_flight_step_reached() {
     let cell = (missile.position.rx(), missile.position.ry());
     assert_eq!(cell, (13, 12), "the flight step left the launch cell");
     assert_eq!(missile.air_spatial_bucket(), Some(bucket(&sim, cell)));
+}
+
+/// `UnitClass::~UnitClass @ 0x00735780` Limbos the Unit itself
+/// (`FootClass::Limbo`, `0x0073584F`), so one destroyed while placed leaves
+/// its cell.
+#[test]
+fn unit_destructor_limbos_a_unit_still_on_the_map() {
+    let mut sim = Simulation::new();
+    insert_entity(&mut sim, 1, EntityCategory::Unit);
+    let _ = sim.try_reveal_entity(1, common_raw_request(3, 4, 0, 128, 128));
+    assert!(sim.substrate.occupancy.contains_entity(3, 4, 1));
+
+    sim.finalize_and_remove_common(1, super::UninitContext::default(), 1);
+
+    assert!(!sim.substrate.entities.contains(1));
+    assert!(!sim.substrate.occupancy.contains_entity(3, 4, 1));
+    assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(3, 4), 0);
+}
+
+/// `AircraftClass::~AircraftClass @ 0x00414080` kills its passengers
+/// (`KillPassengers(NULL)`, `0x004140E6`): none outlives a carrier destroyed
+/// without UnInit.
+#[test]
+fn aircraft_destructor_kills_its_passengers() {
+    let mut sim = Simulation::new();
+    insert_entity(&mut sim, 1, EntityCategory::Aircraft);
+    insert_entity(&mut sim, 2, EntityCategory::Infantry);
+    let mut cargo = PassengerCargo::new(5, 1.0);
+    cargo.board_forced_chain(&[(2, 1.0)]);
+    sim.substrate.entities.get_mut(1).unwrap().passenger_role = PassengerRole::transport(cargo);
+    sim.substrate.entities.get_mut(2).unwrap().passenger_role =
+        PassengerRole::inside_for_test(1, false);
+
+    sim.finalize_and_remove_common(1, super::UninitContext::default(), 1);
+
+    assert!(!sim.substrate.entities.contains(1));
+    assert!(
+        !sim.substrate
+            .entities
+            .get(2)
+            .unwrap()
+            .lifecycle
+            .object_alive()
+    );
+    assert_eq!(sim.substrate.pending_delete.object_ids(), vec![2]);
+}
+
+/// `TechnoClass::PointerExpired @ 0x007077C0` removes the expiring object from
+/// the listener's cargo only when its `removed` argument is set
+/// (`0x007077D8..0x007077E9`). A rider that cloaks sends Detach_All(false) and
+/// stays aboard.
+#[test]
+fn detach_all_false_keeps_a_rider_in_its_transports_cargo() {
+    let mut sim = Simulation::new();
+    insert_entity(&mut sim, 1, EntityCategory::Unit);
+    insert_entity(&mut sim, 2, EntityCategory::Infantry);
+    let _ = sim.reveal(1);
+    let mut cargo = PassengerCargo::new(5, 1.0);
+    cargo.board_forced_chain(&[(2, 1.0)]);
+    sim.substrate.entities.get_mut(1).unwrap().passenger_role = PassengerRole::transport(cargo);
+    sim.substrate.entities.get_mut(2).unwrap().passenger_role =
+        PassengerRole::inside_for_test(1, true);
+
+    sim.detach_all(2, false, super::UninitContext::default());
+
+    let transport = sim.substrate.entities.get(1).unwrap();
+    assert_eq!(transport.passenger_role.cargo().unwrap().passengers(), &[2]);
+}
+
+/// The Restore inside the expiry broadcast (`TechnoClass::PointerExpired`
+/// `0x00707A51`) cannot fail natively. VERA's preflight can refuse it, here
+/// for an archived NavCom that names no object; the broadcast must carry on
+/// and still clear the expiring target.
+#[test]
+fn target_expiry_carries_on_when_the_suspended_mission_cannot_be_restored() {
+    let rules = receiver_authority_rules();
+    let mut sim = Simulation::with_seed(0x1234);
+    insert_entity(&mut sim, 1, EntityCategory::Unit);
+    insert_entity(&mut sim, 2, EntityCategory::Unit);
+    let _ = sim.try_reveal_entity(2, request(9, 11, PlacementEvidence::MarkSucceeded));
+
+    let listener = sim.substrate.entities.get_mut(1).unwrap();
+    listener
+        .attack_target
+        .set_for_test(Some(TargetKind::Entity(2)));
+    listener
+        .navigation
+        .set_suspended_nav_com_for_test(Some(NavTargetRef::Object { id: 99 }));
+    listener.mission.apply_test_fixture(MissionTestFixture {
+        current: MissionId::from_known(MissionType::Attack),
+        suspended: MissionId::from_known(MissionType::Guard),
+        queued: MissionId::NONE,
+        movement_bypass_latch: 0,
+        handler_state: 0,
+        mission_start_frame: 100,
+        ai_counter: 0,
+        dispatch_timer: MissionDispatchTimer::at_frame(100),
+    });
+
+    sim.uninit_with_rules(2, &rules);
+
+    let listener = sim.substrate.entities.get(1).unwrap();
+    assert_eq!(listener.attack_target.target(), None);
+    assert!(!sim.substrate.entities.get(2).unwrap().is_object_alive());
 }

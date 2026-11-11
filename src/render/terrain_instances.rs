@@ -37,6 +37,9 @@ fn visible_cell_slice(grid: &TerrainGrid, view_top: f32, view_bottom: f32) -> &[
 /// tiles are fully opaque inside the diamond shape (confirmed via diagnostics),
 /// so no base clear-ground layer is needed. Missing tiles are skipped —
 /// the caller's UV lookup should provide fallbacks if desired.
+///
+/// The instances go into `buffer`, emptied first: a draw hands back the list
+/// of the draw before, so its allocation is reused.
 pub fn build_visible_instances(
     grid: &TerrainGrid,
     lighting_grid: Option<&CellLightGrid>,
@@ -46,15 +49,15 @@ pub fn build_visible_instances(
     screen_height: f32,
     uv_fn: UvLookupFn<'_>,
     live_terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    mut buffer: Vec<SpriteInstance>,
 ) -> TerrainInstances {
     let view_left: f32 = camera_x - CULL_MARGIN;
     let view_right: f32 = camera_x + screen_width + CULL_MARGIN;
     let view_top: f32 = camera_y - CULL_MARGIN;
     let view_bottom: f32 = camera_y + screen_height + CULL_MARGIN;
 
-    let mut instances = TerrainInstances {
-        normal: Vec::with_capacity(grid.cells.len() / 2),
-    };
+    buffer.clear();
+    let mut instances = TerrainInstances { normal: buffer };
 
     for cell in visible_cell_slice(grid, view_top, view_bottom) {
         // AABB visibility test against viewport.
@@ -160,3 +163,45 @@ pub fn build_visible_instances(
 #[cfg(test)]
 #[path = "bridge_pavement_caller_tests.rs"]
 mod pavement_caller_tests;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A draw hands back the list of the draw before; none of it may reach
+    /// this draw's tiles.
+    #[test]
+    fn a_handed_back_buffer_holds_only_this_draws_tiles() {
+        let grid = TerrainGrid {
+            cells: vec![TerrainCell {
+                screen_x: 0.0,
+                screen_y: 0.0,
+                tile_id: 0,
+                sub_tile: 0,
+                z: 0,
+                rx: 1,
+                ry: 1,
+                variant: 0,
+                tint: [1.0; 3],
+                radar_left: [0; 3],
+                radar_right: [0; 3],
+            }],
+            world_width: TILE_WIDTH,
+            world_height: TILE_HEIGHT,
+            origin_x: 0.0,
+            origin_y: 0.0,
+            bridge_middle_tiles: None,
+            deformation_tiles: Vec::new(),
+        };
+        let draw = |buffer| {
+            build_visible_instances(&grid, None, 0.0, 0.0, 800.0, 600.0, None, None, buffer).normal
+        };
+        let fresh = draw(Vec::new());
+        assert_eq!(fresh.len(), 1);
+        let stale = vec![SpriteInstance::default(); 3];
+        assert_eq!(
+            bytemuck::cast_slice::<_, u8>(&draw(stale)),
+            bytemuck::cast_slice::<_, u8>(&fresh)
+        );
+    }
+}

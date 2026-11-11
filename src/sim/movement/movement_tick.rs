@@ -150,13 +150,21 @@ pub(crate) struct FootPathRequest {
 }
 
 /// The start and goal cells of `actor`'s core search toward `goal`
-/// ([`FootPathRequest::search`]): the Foot's own cell and the goal's.
+/// ([`FootPathRequest::search`]). Run_AStar `0x004CBBA0` starts at the cell of
+/// Foot vt+0x4C (`0x004DBDF0`), the live head before the Foot's own
+/// coordinates: Walk searches with no head, Drive and Ship at a head they have
+/// reached, and only a Hover (Process `0x0051448A`) can still be short of its.
 pub(super) fn core_search_cells(
     actor: &crate::sim::game_entity::GameEntity,
     goal: crate::sim::components::DriveCoord,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
 ) -> ((u16, u16), (u16, u16)) {
+    let start = super::foot_path::coord_cell(
+        super::foot_coordinate::navigation_coordinate(actor, terrain)
+            .expect("a path requester has its active locomotor"),
+    );
     (
-        (actor.position.rx(), actor.position.ry()),
+        (start.0 as u16, start.1 as u16),
         ((goal.x / 256) as u16, (goal.y / 256) as u16),
     )
 }
@@ -242,17 +250,21 @@ impl FootPathRequest {
     /// whose `foot_entry` emulates the lift (`foot_path::MoverLift`). The
     /// context's blocker plane is current; this reuses the single existing
     /// search. `foot_entry` answers every class question and walks every
-    /// code-2 chain.
+    /// code-2 chain. `allow_zone_hierarchy` is the mover's half of AStar's
+    /// allowHS, [`Simulation::foot_search_allows_hierarchy`].
+    ///
+    /// [`Simulation::foot_search_allows_hierarchy`]: crate::sim::world::Simulation::foot_search_allows_hierarchy
     pub(super) fn search(
         &self,
         goal: crate::sim::components::DriveCoord,
         entities: &EntityStore,
         ctx: PathfindingContext<'_>,
         foot_entry: &dyn crate::sim::pathfinding::SearchFootEntry,
+        allow_zone_hierarchy: bool,
     ) -> Result<Vec<(u16, u16)>, super::movement_path::MovePathFailure> {
         let snap = &self.visit.snap;
         let actor = entities.get(self.entity_id).expect("live suspended mover");
-        let (start, goal) = core_search_cells(actor, goal);
+        let (start, goal) = core_search_cells(actor, goal, ctx.resolved_terrain);
         // AStar 0x00429A90 takes the start height from the Foot's OnBridge
         // byte (+0x8C): the cell level, +4 on a bridge. No path layer.
         let layer = if actor.on_bridge() {
@@ -275,7 +287,7 @@ impl FootPathRequest {
             //The admitted search prepares markers and applies native42AECA
             //urgency downgrade through the live Foot provider.
             self.urgency,
-            snap.allow_zone_hierarchy,
+            allow_zone_hierarchy,
             foot_entry,
         )
         // Foot+5E0 words carry no layer; the Process reads OnBridge.
@@ -293,11 +305,15 @@ impl FootPathRequest {
         actor: &mut crate::sim::game_entity::GameEntity,
         path: &[(u16, u16)],
     ) {
-        let current = (actor.position.rx(), actor.position.ry());
+        // The route's first cell is the search's start (`core_search_cells`).
+        let start = path
+            .first()
+            .copied()
+            .unwrap_or((actor.position.rx(), actor.position.ry()));
         actor
             .navigation
             .path_replay_mut()
-            .install_directions(current, path, 1);
+            .install_directions(start, path, 1);
     }
 }
 
@@ -579,18 +595,20 @@ fn advance_ordinary_mover(
 /// way). The entity touch log maintains building contributions (and, in
 /// fixtures without an overlay grid, mobiles).
 /// Debug checks compare against a fresh sum. No cache data is saved or hashed.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct MovementPassCache {
     blocker: BlockerPlaneCache,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct BlockerPlaneCache {
     entry: Option<BlockerPlaneEntry>,
     /// How often the plane was rebuilt from the whole map and every entity.
     #[cfg(any(test, feature = "test-support"))]
     world_rebuilds: usize,
 }
+
+#[derive(Clone)]
 
 struct BlockerPlaneEntry {
     key: BlockerPlaneKey,
@@ -789,7 +807,7 @@ impl MovementPassCache {
 /// Walk tail. Returns whether the object still advances as an ordinary
 /// mover.
 fn prepare_movement_visit(entities: &mut EntityStore, entity_id: u64) -> bool {
-    let Some(entity) = entities.get_mut(entity_id) else {
+    let Some(entity) = entities.get(entity_id) else {
         return false;
     };
     // Walk75AEC0 is the Process of every live Foot (FootClass::AI
@@ -800,9 +818,7 @@ fn prepare_movement_visit(entities: &mut EntityStore, entity_id: u64) -> bool {
         loco.active_kind() == LocomotorKind::Walk
             && (loco.step_head().is_some() || loco.walk_destination().is_some())
     });
-    if entity.is_active() && !walk_route {
-        super::walk_step::finish_idle(entity);
-    }
+    let idle_tail = entity.is_active() && !walk_route;
     // A Drive or Ship got here through the outer Process gates
     // (`track_turn`: Drive 0x4B08D1..0x4B0A69 / Ship 0x69FF98..0x6A0131),
     // which admit Process_Movement (0x4B0A79 / 0x6A0142) for a moving class
@@ -810,10 +826,17 @@ fn prepare_movement_visit(entities: &mut EntityStore, entity_id: u64) -> bool {
     let track_route = entity.locomotor.as_ref().is_some_and(|loco| {
         super::track_process::TrackFamily::from_kind(loco.active_kind()).is_some()
     });
+    // The idle tail writes only speed and the scold latch, which neither
+    // route nor layer reads.
+    let layer = entity.movement_layer_or_ground();
+    if idle_tail
+        && let Some(entity) = entities.get_mut_if(entity_id, super::walk_step::finish_idle_writes)
+    {
+        super::walk_step::finish_idle(entity);
+    }
     if !walk_route && !track_route {
         return false;
     }
-    let layer = entity.movement_layer_or_ground();
     !matches!(layer, MovementLayer::Air | MovementLayer::Underground)
 }
 
@@ -848,7 +871,7 @@ pub(crate) fn tick_movement_with_grids(
     sim.session.set_binary_frame_for_test(native_frame);
     *sim.house_alliances_mut_for_test() = alliances.clone();
     sim.path_grid = path_grid.cloned().map(std::sync::Arc::new);
-    sim.zone_grid = zone_grid.cloned();
+    sim.zone_grid = zone_grid.cloned().map(Into::into);
     sim.resolved_terrain = resolved_terrain.cloned();
     sim.set_playfield_bounds_for_test(playfield_bounds);
     sim.set_terrain_speed_config_for_test(terrain_speed_config.clone());

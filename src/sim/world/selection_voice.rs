@@ -177,9 +177,13 @@ impl Simulation {
             Some(&self.house_alliances),
         )?;
         // GetWeapon(-1) returns a NULL slot, which7090C0 dereferences before
-        // any voice or draw. A valid slot containing a NULL weapon is distinct
-        // and continues to the ordinary override/list logic.
-        assert_ne!(index, -1, "VoiceAttack7090C0 dereferences GetWeapon(-1)");
+        // any voice or draw (`DeployFireWeapon=-1` on a deployed unit reaches
+        // it). VERA plays no attack voice there. A valid slot containing a
+        // NULL weapon is distinct and continues to the ordinary override/list
+        // logic.
+        if index == -1 {
+            return None;
+        }
         let weapon = combat_weapon::get_weapon(
             entity,
             object,
@@ -188,6 +192,47 @@ impl Simulation {
             rules,
             &self.interner,
         );
+        // Ares 3.0 TechnoClass_SelectFiringVoice (1004B1D0, hook 0x7090A8):
+        // a repairing weapon takes `VoiceRepair`, else the case-sensitive
+        // `FV` VoiceIFVRepair; then the rank's slot override, an elite one
+        // falling back to the rookie one; then a `RandomRanged(0, n - 1)`
+        // Main draw over VoiceAttack. Each unset tier falls through.
+        #[cfg(feature = "ares")]
+        {
+            let set = |voice: Option<&'a str>| voice.filter(|voice| !voice.is_empty());
+            let repair = weapon.is_some_and(|weapon| weapon.damage < 0);
+            let voice = repair
+                .then(|| {
+                    set(object.ares_voice_repair()).or_else(|| {
+                        (object.id == "FV")
+                            .then(|| set(rules.general.voice_ifv_repair()))
+                            .flatten()
+                    })
+                })
+                .flatten()
+                .or_else(|| {
+                    veterancy::raw_is_elite(entity.veterancy.raw())
+                        .then(|| set(object.voice_attack_override(index, true)))
+                        .flatten()
+                })
+                .or_else(|| set(object.voice_attack_override(index, false)));
+            if let Some(sound) = voice {
+                return Self::queue_voice_request(Some(sound), voices_enabled, human_player);
+            }
+            let voices = object.voice_attack();
+            if voices.is_empty() {
+                return None;
+            }
+            let index = self
+                .main_rng
+                .next_range_i32_inclusive(0, voices.len() as i32 - 1);
+            return Self::queue_voice_request(
+                voices.get(index as usize).map(String::as_str),
+                voices_enabled,
+                human_player,
+            );
+        }
+        #[cfg(not(feature = "ares"))]
         let scalar = if weapon.is_some_and(|weapon| weapon.damage < 0)
             && object.id.eq_ignore_ascii_case("FV")
         {
@@ -197,11 +242,13 @@ impl Simulation {
         } else {
             object.voice_attack_override(index, veterancy::raw_is_elite(entity.veterancy.raw()))
         };
+        #[cfg(not(feature = "ares"))]
         if let Some(sound) = scalar {
             return Self::queue_voice_request(Some(sound), voices_enabled, human_player);
         }
         //70918D..7091C4: unsigned raw draw/modulo, including a singleton.
-        self.voice_request_from_list(object.voice_attack(), voices_enabled, human_player)
+        #[cfg(not(feature = "ares"))]
+        return self.voice_request_from_list(object.voice_attack(), voices_enabled, human_player);
     }
 
     /// QueueVoice708D90's sole admission predicate. The caller owns any list

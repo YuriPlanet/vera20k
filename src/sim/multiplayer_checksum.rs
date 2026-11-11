@@ -15,7 +15,6 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::particles::Particle;
 use crate::sim::world::Simulation;
 use crate::util::direction_tables::round_facing16_to_8;
-use crate::util::native_x87::{NativeF32Bits, X87Chop53};
 
 const RTTI_UNIT: i32 = 1;
 const RTTI_AIRCRAFT: i32 = 2;
@@ -33,7 +32,6 @@ const RTTI_TERRAIN: i32 = 0x24;
 const RTTI_VOXEL_ANIM: i32 = 0x29;
 const RTTI_WAVE: i32 = 0x240;
 const SYNC_EXEMPT_ANIM_ID: i32 = -2;
-const WAVE_EXTENDED_ENDPOINT_SCALE: NativeF32Bits = NativeF32Bits::from_bits(0x3f86_6666);
 
 /// One ObjectClass entry as seen by a display-layer checksum pass.
 ///
@@ -164,27 +162,12 @@ fn coordinate_term(world_x: i32, world_y: i32) -> u32 {
 }
 
 #[inline]
-fn wave_object_axis(source: i32, target: i32, wave_type: u8) -> Option<i32> {
-    let scale = match wave_type {
-        0 | 3 => return Some(source),
-        1 | 2 => X87Chop53::load_f32(WAVE_EXTENDED_ENDPOINT_SCALE).ok()?,
-        _ => return None,
-    };
-    let complement = X87Chop53::sub(X87Chop53::load_f32(NativeF32Bits::ONE).ok()?, scale);
-    let source_term = X87Chop53::mul(X87Chop53::load_i32(source), scale);
-    let target_term = X87Chop53::mul(X87Chop53::load_i32(target), complement);
-    i32::try_from(X87Chop53::ftol_i64(X87Chop53::add(source_term, target_term)).ok()?).ok()
-}
-
-#[inline]
 fn wave_world_xy(wave: &crate::sim::wave::Wave) -> Option<(i32, i32)> {
     // gamemd-derived: `WaveClass__Constructor @ 0x0075E950` Reveals at the
-    // coordinate produced by `0x00761640/0x00762070`: source for types 0/3,
-    // and ftol(source*1.05f + target*(1-1.05f)) for types 1/2.
-    Some((
-        wave_object_axis(wave.source().x, wave.target().x, wave.wave_type())?,
-        wave_object_axis(wave.source().y, wave.target().y, wave.wave_type())?,
-    ))
+    // coordinate produced by `0x00761640/0x00762070`, SourceCoords (+0xB4),
+    // which `sim::wave` holds as `source` with the laser types' 1.05 endpoint
+    // push already applied.
+    (wave.wave_type() <= 3).then_some((wave.source().x, wave.source().y))
 }
 
 #[inline]
@@ -555,14 +538,14 @@ mod tests {
         );
 
         let wave_id = sim.substrate.allocate_stable_id();
-        sim.waves.spawn(
-            wave_id,
-            Wave::new(
-                1,
-                ProjectileCoord::new(1000, 2000, 0),
-                ProjectileCoord::new(0, 0, 0),
-            ),
+        let mut wave = Wave::new(
+            1,
+            ProjectileCoord::new(1000, 2000, 0),
+            ProjectileCoord::new(0, 0, 0),
         );
+        // The constructor's Draw_NonMagnetic moves the laser's SourceCoords.
+        wave.initialize(crate::sim::wave::WaveUpdateContext::default(), None);
+        sim.waves.spawn(wave_id, wave);
 
         let ids = [
             entity_id,

@@ -765,3 +765,46 @@ fn designation_coordinates_follow_the_existing_sortie_target_through_departure_a
         "Phobos draws the Tactical beam to a foot target"
     );
 }
+
+/// Ares AirstrikeClass_Fire_AirstrikeAttackVoice (10048D60, hook 0x41D940)
+/// and AirstrikeClass_PointerGotInvalid_AirstrikeAbortSound (10048DE0, hook
+/// 0x41D5AE): the first aircraft's `VoiceAirstrikeAttack`/`Abort` replaces
+/// the Rules sound, the designator's replaces that, and `none` silences it.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_airstrike_voices_take_the_aircraft_then_the_designator() {
+    use crate::rules::ini_parser::IniFile;
+    let ini = IniFile::from_str(
+        "[AudioVisual]\nAirstrikeAttackVoice=Rules\nAirstrikeAbortSound=Rules\n\
+         [InfantryTypes]\n0=SPOTTER\n1=PLAIN\n[AircraftTypes]\n0=JET\n1=OTHERJET\n\
+         [SPOTTER]\nVoiceAirstrikeAbort=none\n[PLAIN]\nStrength=1\n\
+         [JET]\nVoiceAirstrikeAttack=Jet\nVoiceAirstrikeAbort=Jet\n[OTHERJET]\nStrength=1\n",
+    );
+    let mut rules = RuleSet::from_ini(&ini).unwrap();
+    let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
+        "[SoundList]\n0=Rules\n1=Jet\n",
+    ));
+    rules.bind_type_sound_references(&ini, &sounds);
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+    let mut spawn = |name, x| {
+        sim.spawn_object(name, "Americans", x, 5, 0, &rules)
+            .unwrap()
+    };
+    let [spotter, plain, jet, other] = [
+        spawn("SPOTTER", 4),
+        spawn("PLAIN", 6),
+        spawn("JET", 8),
+        spawn("OTHERJET", 10),
+    ];
+    assert_eq!(
+        sim.airstrike_voice(false, other, plain, &rules),
+        Some("Rules")
+    );
+    assert_eq!(sim.airstrike_voice(false, jet, plain, &rules), Some("Jet"));
+    assert_eq!(sim.airstrike_voice(true, jet, plain, &rules), Some("Jet"));
+    assert_eq!(sim.airstrike_voice(true, jet, spotter, &rules), None);
+    assert_eq!(
+        sim.airstrike_voice(false, other, spotter, &rules),
+        Some("Rules")
+    );
+}

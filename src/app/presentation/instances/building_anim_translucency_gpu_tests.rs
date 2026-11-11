@@ -319,7 +319,7 @@ impl SlotScene {
                 actor.lifecycle.object_alive(),
                 actor.lifecycle.in_limbo(),
                 &actor.position,
-                actor.mission,
+                actor.mission.clone(),
                 actor.temporal.warp_target()
             ))
         );
@@ -399,6 +399,8 @@ impl SlotScene {
                 overlay_grid: sim.overlay_grid(),
                 overlay_registry: Some(&self.scene.runtime.resources.overlay_registry),
                 alliances: Some(sim.house_alliances()),
+                #[cfg(feature = "ares")]
+                buildings: Some(crate::sim::combat::line_of_fire::CellBuildings::of(sim)),
             },
         );
         // Observe the unchanged placement before the command: Approach's

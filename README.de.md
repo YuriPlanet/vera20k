@@ -21,12 +21,6 @@ Red Alert 2: Yuri's Revenge.
 VERA20K wird von Spielern für Spieler gemacht, und die Spieler haben das letzte Wort, wohin sich
 das Projekt entwickelt.
 
-**Wir brauchen mehr Maintainer.** Wenn du beim Review von PRs helfen, neue Mitwirkende
-unterstützen oder dich um einen Teil der Engine kümmern möchtest, sag uns auf
-[Discord](https://discord.gg/kmjRUn5m5F) oder in der QQ-Gruppe (1097193563) Bescheid.
-
-**Hab keine Scheu, einen PR zu öffnen.** Er muss nicht perfekt sein; wir helfen dir beim Rest.
-
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K: Gefechtseinstellungen und eine Szene aus dem Spiel" width="100%">
 
 ## Projektziele
@@ -49,13 +43,15 @@ Wie du Einzelspieler-Gefechte oder Kampagnen von YR über einen CnCNet-Client st
 
 ## Mitmachen
 
+**Hab keine Scheu, einen PR zu öffnen.** Er muss nicht perfekt sein; wir helfen dir beim Rest.
+
 Hilfe ist überall willkommen, und diese Bereiche brauchen sie am meisten. Jeder Bereich
 verlinkt auf seine Seite in der Roadmap, mit der laufenden Arbeit und dem nächsten Schritt:
 
 - **[Spielmechanik und Kampf](https://github.com/YuriPlanet/vera20k/issues/3830):** Einheitenverhalten, Schaden und zuverlässige Gefechte.
 - **[Leistung](https://github.com/YuriPlanet/vera20k/issues/3831):** Bildrate und Reaktionsfähigkeit in großen Schlachten und auf älterer Hardware.
 - **[Mehrspielermodus](https://github.com/YuriPlanet/vera20k/issues/3832):** Online-Partien beitreten, starten und am Laufen halten sowie zuverlässiges Koop-Spiel.
-- **[Oberfläche und Audio](https://github.com/YuriPlanet/vera20k/issues/3833):** Menüs, Texte, Übersetzungen und Ton.
+- **[Oberfläche und Audio](https://github.com/YuriPlanet/vera20k/issues/3833):** Menüs, Texte, [Übersetzungen](src/i18n/README.md) und Ton.
 - **[Kampagnen](https://github.com/YuriPlanet/vera20k/issues/3834):** Missionen lassen sich starten, aber sie bis zum Ende durchzuspielen braucht noch Arbeit: Ziele, Trigger, geskriptete Übergänge, Speichern/Laden und der Wechsel zur nächsten Mission.
 - **[Mod-Kompatibilität](https://github.com/YuriPlanet/vera20k/issues/3835):** Funktionen aus Ares und Phobos, ohne die Standardwerte des Originalspiels zu ändern.
 - **[Testen](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity):** VERA20K neben dem Original spielen und melden, was sich anders spielt.
@@ -122,6 +118,8 @@ aus Mods wie Ares, muss ausgeschaltet bleiben, bis sie auf einem dieser Wege akt
 Einstellungen für Ton, Grafik und Steuerung werden in `VERA.INI` gespeichert. Die Spielregeln
 stammen aus den Lobby-Einstellungen, Mods oder Karten.
 
+Die [Modding-Anleitung](docs/modding.md) erklärt, wie man eigene Mods erstellt.
+
 ## Unterstützen
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="Unterstütze VERA20K über PayPal" height="23"></a>
@@ -148,11 +146,14 @@ App-Symbol, der rote Stern aus Red Alert 2, zeigen Spielgrafiken, die Electronic
 VERA20K steht in keiner Verbindung zu Electronic Arts und wird nicht von Electronic Arts
 unterstützt.
 
+This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
 **Lies den [rechtlichen Hinweis](LEGAL.md), bevor du VERA20K weitergibst, verkaufst oder forkst.**
 
 ## Dokumentation
 
 - [WebAssembly-Vorschau](docs/wasm.md): ein optionaler Einzelspieler-Build, der im Browser läuft.
+- [Modding-Anleitung](docs/modding.md): was Mods können und was nicht und worin sich VERA20K vom Originalspiel unterscheidet.
 - [INI-Profile](docs/ini-roots.md): Regel-, Grafik- und KI-Dateien auswählen.
 - [Ares](docs/ares.md), [Phobos](docs/phobos.md) und [NPatch](docs/npatch.md): Unterstützung der Erweiterungen und ihre Grenzen.
 - [Engine-Überblick](docs/index.md): Aufbau des Codes und wie die Teile der Engine zusammenspielen.

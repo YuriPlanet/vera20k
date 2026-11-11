@@ -21,7 +21,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::components::Position;
 use crate::ui::main_menu_dialogs::options::HealthBarMode;
 use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 /// Authentic pip counts for unit health bars.
 const UNIT_PIPS_VEHICLE: u32 = 17; // vehicles + aircraft
 const UNIT_PIPS_INFANTRY: u32 = 8;
@@ -149,6 +149,22 @@ fn health_strip_visibility(
     widened: bool,
 ) -> (bool, bool) {
     let selected = entity.selection.is_selected();
+    // Ares TechnoClass_DrawExtras_Submerged10048350 (hook6F5388) also
+    // treats an object below the surface (IsSurfaced5F6C10: GetHeight >
+    // -20) whose cell the player senses as selected here.
+    #[cfg(feature = "ares")]
+    let selected = selected
+        || (entity.category() != crate::map::entities::EntityCategory::Aircraft
+            && crate::sim::movement::air_movement::queried_flight_height(
+                entity,
+                sim.resolved_terrain()
+                    .map(crate::map::resolved_terrain::NativeCellQuery::isolated)
+                    .as_ref(),
+            ) <= -20
+            && player.is_some_and(|player| {
+                sim.fog()
+                    .has_sensor_for_house(player, entity.position.rx(), entity.position.ry())
+            }));
     let hovered = (widened || hovered_id == Some(entity.stable_id()))
         && (selected
             || !player.is_some_and(|player| {
@@ -258,6 +274,8 @@ fn admitted_techno_observer(
 /// Its only writers found (the constructor 0x006F2D05, 0x0044162A and the
 /// ChangeOwner clears 0x00448324/0x00448DB3) store zero, so the non-allied
 /// arm is dormant and only the current-owned / allied path is modelled.
+/// Ares writes the bit (`sim::spy_infiltration::DisplayProductionTo`, which
+/// records why this arm stays out).
 /// Building6F67DC..67FE also admits CanBeOccupied/PipsDrawForAll; the
 /// mobile caller never reads the latter.709B61 suppresses the complete
 /// Building Tiberium tail. All pip/group consumers share these decisions.
@@ -320,7 +338,7 @@ pub(crate) fn control_group_status_labels(
     ignore_visibility: bool,
     rules: Option<&RuleSet>,
 ) -> Vec<(u64, char)> {
-    let mut slot_by_id = HashMap::new();
+    let mut slot_by_id = crate::util::lookup_hash::LookupMap::default();
     for (slot, members) in control_groups.iter().take(10).enumerate() {
         for &stable_id in members {
             // Simulation derives this unique membership from each entity's
@@ -335,9 +353,9 @@ pub(crate) fn control_group_status_labels(
         return Vec::new();
     }
 
-    crate::app::presentation::instances::tactical_entity_encounter_order(sim)
-        .into_iter()
-        .filter_map(|stable_id| {
+    sim.display_layers()
+        .ordered_ids()
+        .filter_map(|&stable_id| {
             let slot = *slot_by_id.get(&stable_id)?;
             let entity = sim.entities().get(stable_id)?;
             if entity.sinking.is_active()
@@ -610,19 +628,19 @@ pub(crate) fn build_control_group_status_instances(
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .presentation()
             .map(|runtime| &runtime.simulation),
         state.rules(),
     ) else {
         return BTreeMap::new();
     };
     let local_owner_id = local_owner.and_then(|name| sim.interner().get(name));
-    let (tactical_width, tactical_height) =
-        crate::app::input::camera::tactical_viewport_size(state);
+    let (tactical_x, tactical_y, tactical_width, tactical_height) =
+        crate::app::input::camera::tactical_viewport_px(state);
     let zoom = state.match_state.input.zoom_level;
     let tactical_clip = [
-        0,
-        0,
+        (tactical_x as f32 / zoom).round() as i32,
+        (tactical_y as f32 / zoom).round() as i32,
         (tactical_width as f32 / zoom).round() as i32,
         (tactical_height as f32 / zoom).round() as i32,
     ];
@@ -674,26 +692,57 @@ pub(crate) fn build_building_status_render_instances(
         if !body_opportunities.contains(&entity.stable_id())
             || !entity.lifecycle.cell_marked()
             || !entity.selection.is_selected()
-            || !crate::map::houses::is_allied_with(
-                sim.house_alliances().as_map(),
-                sim.interner().resolve(entity.owner()),
-                current_house,
-            )
         {
             continue;
         }
-        //43E7EF's separate non-allied Techno+210 display-bit arm is
-        //dormant: no writer found sets the bit nonzero (see
-        //entity_status_pips_drawable).
+        let allied = crate::map::houses::is_allied_with(
+            sim.house_alliances().as_map(),
+            sim.interner().resolve(entity.owner()),
+            current_house,
+        );
         let Some(object) = sim.interner().object_type(entity.type_ref(), rules) else {
             continue;
         };
         let primary = sim.production().is_primary_factory(entity.stable_id());
+        //Without Ares, 43E7EF's separate non-allied Techno+210 display-bit
+        //arm is dormant: no writer found sets the bit nonzero (see
+        //entity_status_pips_drawable).
         //70AA88..70AAA4 admits the positive type Power arm only when the
         //primary latch is clear.70ABEA then tests that latch for PRIMARY.
-        if !primary && object.power <= 0 {
-            continue;
-        }
+        #[cfg(not(feature = "ares"))]
+        let text = match (allied, primary, object.power > 0) {
+            (false, _, _) | (true, false, false) => continue,
+            (true, true, _) => BuildingStatusText::Primary,
+            (true, false, true) => BuildingStatusText::Power,
+        };
+        // Ares 3.0 10015AB0 (hook 0x0043E7B0) also admits a building whose
+        // `SpyEffect.RevealProduction` spy bit the current house holds
+        // (`sim::spy_infiltration::DisplayProductionTo`); its DrawExtraInfo
+        // 10015F10 (hook 0x0070AA60) puts the Power arm first, shows a
+        // `Storage=` building's money to a house not allied to its owner,
+        // and PRIMARY only to an allied one. A `Fake=` type's TXT_FAKE
+        // (10015F10's first test, `TypeExt+0x5F`) replaces all three.
+        // RESIDUAL: Ares' observer arms are not ported; an observer sees
+        // what the house it watches sees.
+        #[cfg(feature = "ares")]
+        let text = {
+            let revealed =
+                object.spy_reveals_production() && entity.shows_production_to(current_house_id);
+            if !(allied || revealed) {
+                continue;
+            }
+            if object.ares_fake() {
+                BuildingStatusText::Fake
+            } else if object.power > 0 {
+                BuildingStatusText::Power
+            } else if object.storage > 0 && !allied {
+                BuildingStatusText::Money
+            } else if primary && allied {
+                BuildingStatusText::Primary
+            } else {
+                continue;
+            }
+        };
         let location =
             crate::sim::movement::ground_pose::object_location(entity, sim.resolved_terrain());
         //6D9472 calls virtual+AC=459EF0, not GetCoords447AC0. Neither
@@ -706,37 +755,52 @@ pub(crate) fn build_building_status_render_instances(
             ((y - camera[1]) * zoom).round() as i32,
         ];
         //6D94DD..9516's coarse caller bounds precede the actual text clip.
-        if anchor[0] < -360
-            || anchor[0] > tactical_clip[2] + 360
-            || anchor[1] < -180
-            || anchor[1] > tactical_clip[3] + 180
+        if anchor[0] < tactical_clip[0] - 360
+            || anchor[0] > tactical_clip[0] + tactical_clip[2] + 360
+            || anchor[1] < tactical_clip[1] - 180
+            || anchor[1] > tactical_clip[1] + tactical_clip[3] + 180
         {
             continue;
         }
-        let text = if primary {
-            //70AC24's45EC90 uses foundation CELL width, not Dimension2 leptons.
-            let key = if object.foundation.dimensions().0 == 1 {
-                "TXT_PRI"
-            } else {
-                "TXT_PRIMARY"
-            };
-            csf.text(key)
-        } else {
-            //70AAAA..70AAEA reads the owner's retained IHouse4F6A00/4F6A10
-            //slots and formats physical TXT_POWER_DRAIN2. Drawing neither
-            //reassesses power nor substitutes the selected building's output.
-            let (output, drain) = crate::sim::production::power_balance_for_owner(
-                sim,
-                rules,
-                sim.interner().resolve(entity.owner()),
-            );
-            Cow::Owned(format_csf(
-                &csf.text("TXT_POWER_DRAIN2"),
-                &[
-                    CsfArg::Int(i64::from(output)),
-                    CsfArg::Int(i64::from(drain)),
-                ],
-            ))
+        let text = match text {
+            BuildingStatusText::Primary => {
+                //70AC24's45EC90 uses foundation CELL width, not Dimension2 leptons.
+                let key = if object.foundation.dimensions().0 == 1 {
+                    "TXT_PRI"
+                } else {
+                    "TXT_PRIMARY"
+                };
+                csf.text(key)
+            }
+            BuildingStatusText::Power => {
+                //70AAAA..70AAEA reads the owner's retained IHouse4F6A00/4F6A10
+                //slots and formats physical TXT_POWER_DRAIN2. Drawing neither
+                //reassesses power nor substitutes the selected building's output.
+                let (output, drain) = crate::sim::production::power_balance_for_owner(
+                    sim,
+                    rules,
+                    sim.interner().resolve(entity.owner()),
+                );
+                Cow::Owned(format_csf(
+                    &csf.text("TXT_POWER_DRAIN2"),
+                    &[
+                        CsfArg::Int(i64::from(output)),
+                        CsfArg::Int(i64::from(drain)),
+                    ],
+                ))
+            }
+            #[cfg(feature = "ares")]
+            BuildingStatusText::Fake => csf.text("TXT_FAKE"),
+            // Ares 10015F10: the owner's Available_Money (IHouse +0x18).
+            #[cfg(feature = "ares")]
+            BuildingStatusText::Money => Cow::Owned(format_csf(
+                &csf.text("TXT_MONEY_FORMAT_1"),
+                &[CsfArg::Int(i64::from(
+                    sim.houses()
+                        .get(&entity.owner())
+                        .map_or(0, |house| house.economy().available_money()),
+                ))],
+            )),
         };
         let measure = font.compute_text_rect(&text, anchor, 0x149, [4, 2]);
         let clipped = crate::util::rect::clip_rect(measure, tactical_clip);
@@ -758,6 +822,19 @@ pub(crate) fn build_building_status_render_instances(
     labels
 }
 
+/// Which of DrawExtraInfo's texts a selected building shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BuildingStatusText {
+    Primary,
+    Power,
+    /// Ares' money arm (`TXT_MONEY_FORMAT_1`).
+    #[cfg(feature = "ares")]
+    Money,
+    /// Ares' `Fake=` arm (`TXT_FAKE`).
+    #[cfg(feature = "ares")]
+    Fake,
+}
+
 /// AppState supplies current resources and the existing tactical viewport;
 /// simulation owners supply primary identity and retained power, and the
 /// per-frame body plan supplies the current opportunities.
@@ -766,7 +843,7 @@ pub(crate) fn build_building_status_instances(
     body_opportunities: &BTreeSet<u64>,
 ) -> BuildingStatusTextInstances {
     let (Some(runtime), Some(rules), Some(csf)) = (
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.presentation(),
         state.rules(),
         state.process_assets.csf.as_ref(),
     ) else {
@@ -779,7 +856,7 @@ pub(crate) fn build_building_status_instances(
     else {
         return BuildingStatusTextInstances::default();
     };
-    let (width, height) = crate::app::input::camera::tactical_viewport_size(state);
+    let (left, top, width, height) = crate::app::input::camera::tactical_viewport_px(state);
     let zoom = state.match_state.input.zoom_level;
     build_building_status_render_instances(
         sim,
@@ -794,7 +871,7 @@ pub(crate) fn build_building_status_instances(
             state.match_state.input.camera_y,
         ],
         zoom,
-        [0, 0, width as i32, height as i32],
+        [left as i32, top as i32, width as i32, height as i32],
         rules,
     )
 }
@@ -944,38 +1021,6 @@ impl TechnoExtras {
         self.fills.retain(|pip| viewport.contains(pip));
         self.scale.retain(|pip| viewport.contains(pip));
         self.self_heal = self.self_heal.take().filter(|pip| viewport.contains(pip));
-    }
-
-    /// Move every owned adornment with the prototype's painted body. Native
-    /// status generation and its material/selection/health semantics stay intact.
-    pub(crate) fn translate_for_interpolation(&mut self, offset: [f32; 2]) {
-        for instance in self
-            .bomb_clock
-            .iter_mut()
-            .chain(self.wrench.iter_mut())
-            .chain(self.rank.iter_mut())
-            .chain(self.background.iter_mut())
-            .chain(self.shield_background.iter_mut())
-            .chain(self.fills.iter_mut())
-            .chain(self.scale.iter_mut())
-            .chain(self.self_heal.iter_mut())
-            .chain(self.group.rectangles.iter_mut())
-            .chain(self.group.text.iter_mut())
-            .chain(self.talk_bubble.iter_mut())
-        {
-            instance.position[0] += offset[0];
-            instance.position[1] += offset[1];
-        }
-        for text in &mut self.digital_text {
-            for instance in text.rectangles.iter_mut().chain(text.text.iter_mut()) {
-                instance.position[0] += offset[0];
-                instance.position[1] += offset[1];
-            }
-        }
-        for (_, instance) in &mut self.digital_shapes {
-            instance.position[0] += offset[0];
-            instance.position[1] += offset[1];
-        }
     }
 }
 
@@ -1287,6 +1332,36 @@ fn phobos_insignia_draw<'a>(
     Some((shape, frame, (x, y)))
 }
 
+/// DrawExtras' wrench test (`0x006F5253`): a repairing building. Ares
+/// TechnoClass_DrawExtras_PowerOff (10049FE0, hook 0x6F526C) draws none over
+/// a building warping out (+0x270, +0x271) and shows it to a player not
+/// allied with the owner only while the building is uncloaked and
+/// `[General] EnemyWrench=` holds; an observer (no viewer) sees it. The
+/// power-off marker the hook also draws is not ported.
+fn repair_wrench_admitted(
+    sim: &crate::sim::world::Simulation,
+    entity: &crate::sim::game_entity::GameEntity,
+    rules: Option<&RuleSet>,
+    local_owner: Option<&str>,
+) -> bool {
+    let repairing = entity.category() == EntityCategory::Structure && entity.repairing.is_on();
+    #[cfg(feature = "ares")]
+    let repairing = repairing
+        && !entity.is_warped_out()
+        && !entity.is_warping_in()
+        && (local_owner
+            .and_then(|name| sim.interner().get(name))
+            .is_none_or(|viewer| {
+                sim.house_alliances()
+                    .is_allied(sim.interner(), viewer, entity.owner())
+            })
+            || (entity.cloak.as_ref().is_none_or(|cloak| cloak.state() == 0)
+                && rules.is_none_or(RuleSet::ares_enemy_wrench)));
+    #[cfg(not(feature = "ares"))]
+    let _ = (sim, rules, local_owner);
+    repairing
+}
+
 /// One Techno DrawExtras6F5190 parent: clock, wrench, rank, then health6F64A0.
 /// Rank70A990 precedes the selected/hovered health gate at6F5388. It uses
 /// the shared cloak/disguise and raw Veterancy owners, with opaque status art.
@@ -1328,7 +1403,7 @@ pub(crate) fn techno_extras_for_parent(
             || local_owner
                 .and_then(|name| sim.interner().get(name))
                 .is_some_and(|viewer| sim.bomb_seen_by(entity.stable_id(), viewer)));
-    let repairing = entity.category() == EntityCategory::Structure && entity.repairing.is_on();
+    let repairing = repair_wrench_admitted(sim, entity, rules, local_owner);
     if (bomb_visible || repairing)
         && (viewport.ignore_visibility
             || local_owner
@@ -1373,14 +1448,17 @@ pub(crate) fn techno_extras_for_parent(
             )
             .then_some(instance)
         };
+        // Ares hook 0x6F523C (10056CC0) draws the bomb weapon's
+        // `IvanBomb.Image` in place of BOMBCURS.SHP, and hook 0x438A00
+        // (100568C0) counts the frame over that image.
+        #[cfg(feature = "ares")]
+        let images = rules.map_or(&[][..], |rules| sim.bomb_images(entity.stable_id(), rules));
+        #[cfg(not(feature = "ares"))]
+        let images: &[String] = &[];
         if bomb_visible
-            && let (Some(bomb), Some(rules), Some(shape)) =
-                (entity.bomb.as_ref(), rules, overlay.bomb_clock())
-            && let Some(frame) = bomb.clock_frame(
-                sim.session().binary_frame() as i32,
-                rules.combat_damage.ivan_timed_delay,
-                rules.combat_damage.ivan_icon_flicker_rate,
-            )
+            && let (Some(rules), Some(shape)) = (rules, overlay.bomb_image(images))
+            && let Some(frame) =
+                sim.bomb_clock_frame(entity.stable_id(), rules, shape.frame_count())
             && let Ok(frame) = usize::try_from(frame)
         {
             strip.bomb_clock = prefix(shape, frame);
@@ -1521,6 +1599,12 @@ pub(crate) fn techno_extras_for_parent(
         let (Some(rules), Some(object), Some(shape)) = (rules, object, overlay.pips()) else {
             return strip;
         };
+        // Ares TechnoClass_DrawHealthBar_FirestormWall (100150D0, hook
+        // 0x6F64CB): a `Firestorm.Wall` section draws no bar (0x6F6832).
+        #[cfg(feature = "ares")]
+        if object.ares_firestorm_wall() {
+            return strip;
+        }
         let geometry = BuildingBarGeometry::new(rules, object);
         let (ax, ay) = geometry.edge;
         let num_pips = geometry.num_pips;
@@ -1714,9 +1798,10 @@ pub(crate) fn techno_extras_for_parent(
                 SelfHealPip::Units => rules.general.self_heal_unit_frames,
             };
             let frame = sim.session().binary_frame() as i32;
-            let remainder = frame.checked_rem(period).unwrap_or_else(|| {
-                panic!("native self-heal marker IDIV fault at 0070A549/0070A5B5: frame={frame} period={period}")
-            });
+            // A zero period traps in gamemd (IDIV at 0x0070A549 / 0x0070A5B5)
+            // and never heals in VERA, so the marker stays on its steady
+            // frame.
+            let remainder = frame.checked_rem(period).unwrap_or(i32::MAX);
             let selector = u8::from(remainder <= 5 && entity.health.current() < object.strength);
             let (offset_x, offset_y) = self_heal_pip_offset(entity.category());
             strip.self_heal = instance(shape, arm.frame(), (sx + offset_x, sy + offset_y), 0.0004)
@@ -2060,17 +2145,32 @@ pub(crate) fn build_software_cursor_instances(
     let Some(animated) = software_cursor_frame_index(id, sequence) else {
         return (Vec::new(), None);
     };
-    let index = if id == CursorId::Default
+    let (id, sequence, index) = if id == CursorId::Default
         && crate::app::input::planning_mode::node_at_cursor(state).is_some()
     {
         //63AC41..4E selects row0's static small frame when only hovering.
-        1
+        let Some(cursor) = state
+            .match_state
+            .match_presentation
+            .software_cursor
+            .as_ref()
+        else {
+            return (Vec::new(), None);
+        };
+        let (small, frame) = cursor.planning_arrow();
+        let Some(small_sequence) = cursor.get(small) else {
+            return (Vec::new(), None);
+        };
+        (small, small_sequence, frame)
     } else {
-        animated
+        (id, sequence, animated)
     };
     let Some(frame) = sequence.frames.get(index) else {
         return (Vec::new(), None);
     };
+    if crate::app::input::hardware_cursor::takes_cursor(state, id, index) {
+        return (Vec::new(), None);
+    }
     // Cursor rendering: the hotspot pixel must sit exactly at the OS cursor position.
     // Scroll cursors use edge-aligned hotspots, so cursor_x/y represents the hotspot
     // location — subtract the hotspot offset to find the top-left of the sprite.
@@ -2132,6 +2232,35 @@ mod mind_control_pip_tests;
 
 #[cfg(test)]
 mod tests {
+    /// Ares TechnoClass_DrawExtras_PowerOff (10049FE0, hook 0x6F526C): the
+    /// owner sees its repairing building's wrench, an enemy only with
+    /// `EnemyWrench=yes` (the default).
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_enemy_wrench_gates_the_enemys_repair_wrench() {
+        use crate::rules::ruleset::RuleSet;
+        let shown = |general: &str| {
+            let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&format!(
+                "[General]\n{general}[BuildingTypes]\n0=POWR\n[POWR]\nStrength=750\n"
+            )))
+            .unwrap();
+            let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+            let id = sim
+                .spawn_object("POWR", "Americans", 8, 8, 0, &rules)
+                .unwrap();
+            crate::sim::arena_fixture::install_status_repair(
+                sim.entities_mut_for_test().get_mut(id).unwrap(),
+                true,
+            );
+            let entity = sim.entities().get(id).unwrap();
+            ["Americans", "Russians"].map(|viewer| {
+                super::repair_wrench_admitted(&sim, entity, Some(&rules), Some(viewer))
+            })
+        };
+        assert_eq!(shown(""), [true, true]);
+        assert_eq!(shown("EnemyWrench=no\n"), [true, false]);
+    }
+
     /// Phobos `DrawShieldBar_Pip`: the shield type's own frames first, then the
     /// global `[AudioVisual] Pips.Shield*` triplet, then the native 16/5.
     #[cfg(feature = "phobos")]
@@ -2444,6 +2573,44 @@ mod tests {
         assert!(drawable(EntityCategory::Unit, false, true));
         assert!(drawable(EntityCategory::Unit, true, false));
         assert!(drawable(EntityCategory::Infantry, false, false));
+    }
+
+    /// Ares TechnoClass_DrawExtras_Submerged10048350 (hook6F5388): a
+    /// subterranean enemy the player senses shows its strip unselected.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_a_sensed_subterranean_object_draws_its_strip() {
+        use crate::sim::{combat::Health, game_entity::GameEntity, world::Simulation};
+        let draws = |depth: i32, sensed: bool| {
+            let mut sim = Simulation::new();
+            let player = sim.intern("Player");
+            let owner = sim.intern("Enemy");
+            *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(32, 32);
+            if sensed {
+                sim.fog_mut_for_test().increment_sensor_at(player, 20, 20);
+            }
+            let mut entity = GameEntity::new_at_frame_zero_for_test(
+                1,
+                20,
+                20,
+                0,
+                0,
+                owner,
+                Health::new(100),
+                sim.intern("DRILL"),
+                EntityCategory::Unit,
+                0,
+                5,
+                false,
+            );
+            entity.position.set_exact_z_leptons_for_test(Some(depth));
+            sim.entities_mut_for_test().insert(entity);
+            let entity = sim.entities().get(1).unwrap();
+            health_strip_visibility(&sim, entity, None, Some(player), false).1
+        };
+        assert!(draws(-20, true));
+        assert!(!draws(-19, true), "IsSurfaced holds above -20");
+        assert!(!draws(-40, false));
     }
 
     /// One full-health tank on cell (20,20) and one viewer's fog plane. The

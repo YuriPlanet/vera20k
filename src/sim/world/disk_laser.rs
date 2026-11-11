@@ -58,7 +58,7 @@ struct DiskLaser {
 
 /// Shared stable IDs are strictly increasing. Thus key order is the original
 /// vector's birth order; removal is stable without a second ordered registry.
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub(super) struct DiskLasers {
     shots: BTreeMap<u64, DiskLaser>,
 }
@@ -323,7 +323,7 @@ impl Simulation {
                 let warhead_name = weapon.warhead.as_deref().expect("Disk damage warhead");
                 let warhead = rules.weapon_warhead(weapon).expect("Disk damage warhead");
                 let warhead_id = self.interner.intern(warhead_name);
-                bridge_changed |= crate::sim::combat::world_receiver::apply_area_damage(
+                let receipt = crate::sim::combat::world_receiver::apply_area_damage(
                     self,
                     rules,
                     registry,
@@ -333,8 +333,8 @@ impl Simulation {
                     true,
                     (source_id, None, warhead_id),
                     effects,
-                )
-                .bridge_state_changed;
+                );
+                bridge_changed |= receipt.bridge_state_changed;
                 if let Some(source) = self.substrate.entities.get(source_id)
                     && let Some(report) = crate::sim::combat::world_fire::per_shot_report(
                         weapon,
@@ -351,6 +351,54 @@ impl Simulation {
                         },
                     ));
                     effects.flush_sound(self, rules);
+                }
+                // Ares DiskLaserClass_Update_Anim (1004CFF0, hook 0x4A76ED):
+                // with DiskLaserAnimEnabled, the warhead's damage animation
+                // over Clear land (AnimClass(type, coords, 0, 1, 0x600, 0)),
+                // then always the warhead's flash at the hit.
+                #[cfg(feature = "ares")]
+                {
+                    if rules.ares_general().disk_laser_anim_enabled()
+                        && let Some(anim) = crate::sim::combat::detonation_anim::select(
+                            self,
+                            rules,
+                            warhead,
+                            shot.damage,
+                            0,
+                            impact,
+                            receipt.crit_active,
+                        )
+                    {
+                        let coord = AnimWorldCoord {
+                            x: impact.x,
+                            y: impact.y,
+                            z: impact.z,
+                        };
+                        let (rx, ry, sub_x, sub_y, level) = coord.to_cell_sub_z();
+                        let descriptor = crate::sim::components::AnimClassSpawnDescriptor {
+                            delay: 0,
+                            loop_count: 1,
+                            draw_flags: 0x600,
+                            z_adjust: 0,
+                            reverse: false,
+                            ..crate::sim::components::AnimClassSpawnDescriptor::new(
+                                anim, rx, ry, sub_x, sub_y, level,
+                            )
+                        };
+                        if let Err(error) = self.spawn_anim_at_world(rules, descriptor, coord) {
+                            log::debug!("disk laser anim did not construct: {error}");
+                        }
+                    }
+                    self.combat_light_requests.emit(
+                        crate::sim::combat::CombatLightRequest::Impact {
+                            target_id: None,
+                            damage: shot.damage,
+                            warhead_ref: warhead_id,
+                            coord: impact,
+                            force_create: false,
+                            flags: 0,
+                        },
+                    );
                 }
                 self.disk_lasers.shots.get_mut(&id).unwrap().countdown = -1;
             } else {

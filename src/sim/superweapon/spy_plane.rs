@@ -81,10 +81,60 @@ pub(super) fn launch(
                 SPY_PLANE,
                 MissionType::SpyplaneApproach,
                 (rx, ry),
-                None,
+                super::paradrop::Payload::None,
                 frame_effects,
             );
         }
     }
     sent
+}
+
+/// SW_SpyPlane::Activate (Ares 3.0 `10075780`, hook 6CC390): a charged
+/// Super sends its owner's `SpyPlane.Count` planes of `SpyPlane.Type`
+/// (Initialize: `SPYP`) in `SpyPlane.Mission` (Initialize:
+/// SpyplaneApproach) at the cell `GetCellAt` finds, with no destination,
+/// through `HouseClass::SendSpyPlanes @ 0x0065EAB0`, whose loop stops at the
+/// first plane it cannot build or put on the map. The activation is
+/// reported even uncharged; its Flags are none, so the common Launch runs
+/// whole.
+///
+/// RESIDUALS: an unknown `SpyPlane.Type` (index -1) indexes the type array
+/// out of range natively; VERA sends nothing. An off-map cell targets the
+/// shared dummy cell natively; VERA targets the requested cell.
+#[cfg(feature = "ares")]
+pub(super) fn ares_launch(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    sw_type: InternedId,
+    sw: &crate::rules::superweapon_type::SuperWeaponType,
+    cell: (u16, u16),
+    frame_effects: FrameEffects<'_>,
+) {
+    if !super::is_charged(sim, owner, sw_type) {
+        return;
+    }
+    let Some(spy_plane) = rules
+        .super_weapon_metadata(&sw.id)
+        .map(|metadata| metadata.launch().spy_plane().clone())
+    else {
+        return;
+    };
+    let Some(plane) = spy_plane.plane.as_deref() else {
+        return;
+    };
+    for _ in 0..spy_plane.count {
+        if !super::paradrop::send_planes(
+            sim,
+            rules,
+            owner,
+            plane,
+            spy_plane.mission,
+            cell,
+            super::paradrop::Payload::None,
+            frame_effects,
+        ) {
+            break;
+        }
+    }
 }

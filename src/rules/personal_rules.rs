@@ -3,6 +3,8 @@
 //! Compose before the existing Rules readers rather than adding a Process pass:
 //! another pass can reset omitted fields and repeat native postprocessing.
 
+use std::borrow::Cow;
+
 use crate::rules::error::RulesError;
 use crate::rules::ini_parser::IniFile;
 
@@ -10,6 +12,9 @@ use crate::rules::ini_parser::IniFile;
 pub struct PersonalRules {
     patch: IniFile,
     override_map_rules: bool,
+    /// The Options page's Terrain Deformation box (`[VERA] TerrainDeformation=`
+    /// in VERA.INI). Each new scenario's root reads it, so it needs no restart.
+    terrain_deformation: bool,
 }
 
 impl Default for PersonalRules {
@@ -17,6 +22,7 @@ impl Default for PersonalRules {
         Self {
             patch: IniFile::empty(),
             override_map_rules: false,
+            terrain_deformation: false,
         }
     }
 }
@@ -31,7 +37,12 @@ impl PersonalRules {
         Ok(Self {
             patch,
             override_map_rules,
+            terrain_deformation: false,
         })
+    }
+
+    pub fn set_terrain_deformation(&mut self, on: bool) {
+        self.terrain_deformation = on;
     }
 
     pub fn is_empty(&self) -> bool {
@@ -56,16 +67,52 @@ impl PersonalRules {
         }
     }
 
-    /// Network admission must compare the precedence policy as well as values.
-    /// A comment-only file has no effect, including on the compatibility hash.
+    /// The selected root as each scenario reads it, unchanged while the
+    /// Options switches are off. Terrain Deformation turns on
+    /// `[CombatDamage] TerrainDeformation=` and gives the nuke's warhead each
+    /// of `Deform=100%`, `DeformDepth=3` and `DeformRadius=10` the root does
+    /// not set, so a nuke digs a crater three levels deep and 23 cells across,
+    /// as wide as its retail `CellSpread=10` blast: gamemd names that warhead
+    /// `NUKE` (0x0081AF98), and retail sets none of them. Map and mode rules
+    /// still read after it and can turn it off.
+    pub(crate) fn scenario_root<'a>(&self, root: &'a IniFile) -> Cow<'a, IniFile> {
+        if !self.terrain_deformation {
+            return Cow::Borrowed(root);
+        }
+        let mut options = String::from("[CombatDamage]\nTerrainDeformation=yes\n");
+        if let Some(nuke) = root.section("NUKE") {
+            let crater: String = [
+                ("Deform", "100%"),
+                ("DeformDepth", "3"),
+                ("DeformRadius", "10"),
+            ]
+            .into_iter()
+            .filter(|(key, _)| !nuke.is_present(key))
+            .map(|(key, value)| format!("{key}={value}\n"))
+            .collect();
+            if !crater.is_empty() {
+                options.push_str("[NUKE]\n");
+                options.push_str(&crater);
+            }
+        }
+        let mut root = root.clone();
+        root.merge_source_sections(&IniFile::from_str(&options), true);
+        Cow::Owned(root)
+    }
+
+    /// Network admission must compare the precedence policy and the Options
+    /// switches as well as values. A comment-only file with the switches off
+    /// has no effect, including on the compatibility hash.
     pub fn compatibility_crc(&self) -> Option<u32> {
-        if self.is_empty() {
+        if self.is_empty() && !self.terrain_deformation {
             return None;
         }
         let policy = if self.override_map_rules { "yes" } else { "no" };
-        let mut input = IniFile::from_str(&format!(
-            "[VERA]\nPersonalRulesVersion=1\nOverrideMapRules={policy}\n"
-        ));
+        let mut header = format!("[VERA]\nPersonalRulesVersion=1\nOverrideMapRules={policy}\n");
+        if self.terrain_deformation {
+            header.push_str("TerrainDeformation=yes\n");
+        }
+        let mut input = IniFile::from_str(&header);
         input.merge_source_sections(&self.patch, true);
         Some(input.native_crc())
     }
@@ -231,5 +278,36 @@ mod tests {
             PersonalRules::from_bytes(b"[VERA]\nOverrideMapRules=yes\n[TEST]\nStrength=200\n")
                 .unwrap();
         assert_ne!(base.compatibility_crc(), force.compatibility_crc());
+    }
+
+    #[test]
+    fn terrain_deformation_box_reaches_the_next_scenario_and_network_agreement() {
+        let scenario = |root: &[u8], on: bool| {
+            let mut owner = sources(root)
+                .into_owner(Default::default(), Default::default())
+                .unwrap();
+            let digests = owner.multiplayer_source_digests();
+            owner.set_terrain_deformation(on);
+            let (rules, _, _, _) = owner
+                .load_scenario(
+                    NativeScenarioRulesPrefix::NonCampaign(None),
+                    &IniFile::empty(),
+                )
+                .unwrap()
+                .into_parts();
+            let nuke = rules.warhead("NUKE").unwrap();
+            (
+                rules.combat_damage.terrain_deformation,
+                (nuke.deform_f64, nuke.deform_depth, nuke.deform_radius),
+                digests != owner.multiplayer_source_digests(),
+                owner.personal_rules_compatibility_crc().is_some(),
+            )
+        };
+        let root = b"[Warheads]\n0=NUKE\n[NUKE]\nVerses=100%\n";
+        assert_eq!(scenario(root, false), (false, (0.0, 1, 0), false, false));
+        assert_eq!(scenario(root, true), (true, (1.0, 3, 10), true, true));
+        // Keys the root already sets, from a mod or VERARULES.INI, stay.
+        let modded = b"[Warheads]\n0=NUKE\n[NUKE]\nDeform=25%\nDeformRadius=2\n";
+        assert_eq!(scenario(modded, true).1, (0.25, 3, 2));
     }
 }

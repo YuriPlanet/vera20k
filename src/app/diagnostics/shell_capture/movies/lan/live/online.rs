@@ -26,7 +26,6 @@ enum RoundPhase {
     HostAi,
     HostReady,
     GuestSetup,
-    Loading,
     Running,
     HoldFailureGuest,
     EndRound,
@@ -340,7 +339,7 @@ impl LiveRoundFlow {
         let prefix_frame = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("prefix world")?
             .simulation
             .session()
@@ -410,7 +409,7 @@ impl LiveRoundFlow {
         let sim = &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("checkpoint world")?
             .simulation;
         let port = state
@@ -448,6 +447,7 @@ impl LiveRoundFlow {
                 WolPage::Message { .. } => "message",
                 WolPage::Lobby => "lobby",
                 WolPage::Options(_) => "options",
+                WolPage::ChatTranslation(_) => "chat_translation",
                 WolPage::AutoLoginQuery(_) => "auto_login",
                 WolPage::Locale(_) => "locale",
                 WolPage::MyInformation(_) => "my_information",
@@ -489,7 +489,7 @@ impl LiveRoundFlow {
         let sim = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|runtime| &runtime.simulation);
         let native_frame = sim.map(|sim| sim.session().binary_frame());
         let fps = sim
@@ -695,7 +695,7 @@ impl LiveRoundFlow {
         }
         if self.config.is_some()
             && !self.input_host(core)
-            && matches!(self.phase, RoundPhase::GuestSetup | RoundPhase::Loading)
+            && self.phase == RoundPhase::GuestSetup
             && lobby_ready(state, rendered)
         {
             ensure!(
@@ -753,15 +753,13 @@ impl LiveRoundFlow {
                 if rendered == PresentedShell::WolLogin
                     && MoviesCapture::slide_settled(state, ShellSlideKind::WolLogin) =>
             {
-                let layout = crate::app::shell_wol::login_layout(state);
-                click(
-                    state,
-                    layout
-                        .page
-                        .button_rect(crate::ui::wol_login::PLAY_AS_GUEST)
-                        .context("Play as Guest button")?,
-                );
-                // Its popup starts from the last username: replace it.
+                // The page's form starts from the last username: replace it.
+                let username = crate::app::shell_wol::login_layout(state)
+                    .online
+                    .context("the online sign-in form")?
+                    .fields[0]
+                    .1;
+                click(state, username);
                 App::handle_wol_key(state, Some(KeyCode::Home), true, None);
                 for _ in 0..32 {
                     App::handle_wol_key(state, Some(KeyCode::Delete), true, None);
@@ -773,12 +771,11 @@ impl LiveRoundFlow {
                         .wol
                         .as_ref()
                         .and_then(|visit| visit.login())
-                        .and_then(|login| login.account.as_ref())
-                        .is_some_and(|form| form.ok_enabled()),
-                    "the online username did not enable Play as Guest's OK"
+                        .is_some_and(|login| login.button_enabled(crate::ui::wol_login::PLAY)),
+                    "the online username did not enable Play"
                 );
                 App::handle_wol_key(state, Some(KeyCode::Enter), true, None);
-                self.record(frame, "Username submitted through Play as Guest");
+                self.record(frame, "Username submitted through Play");
                 self.phase = RoundPhase::Lobby;
             }
             RoundPhase::Lobby if lobby_ready(state, rendered) => {
@@ -1052,10 +1049,7 @@ impl LiveRoundFlow {
                     );
                 }
             }
-            RoundPhase::Loading
-            | RoundPhase::HostReady
-            | RoundPhase::GuestSetup
-            | RoundPhase::QuickMatch
+            RoundPhase::HostReady | RoundPhase::GuestSetup | RoundPhase::QuickMatch
                 if state.frontend.screen == GameScreen::InGame =>
             {
                 ensure!(
@@ -1660,7 +1654,7 @@ impl LiveRoundFlow {
                 let scenario_retired = state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .is_none_or(|runtime| !runtime.simulation.session().started());
                 ensure!(
                     visits_retired

@@ -12,7 +12,7 @@ use std::collections::HashMap;
 fn atlas() -> (SpriteAtlas, ShpSpriteKey, ShpSpriteEntry) {
     let key = ShpSpriteKey {
         palette_context: ShpPaletteContext::Legacy,
-        type_id: "MGTK".to_string(),
+        type_id: "MGTK".into(),
         facing: 0,
         frame: 0,
         house_color: HouseColorIndex(0),

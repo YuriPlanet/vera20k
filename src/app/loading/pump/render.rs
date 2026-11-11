@@ -103,6 +103,9 @@ pub(super) fn present_blank(
         });
     encode_blank(presenter, &mut encoder, &output.texture);
     performance_overlay.encode(gpu, batch, &mut encoder, &output.texture, font, None);
+    // Synchronous repaints present outside the frame loop: the shared filter
+    // keeps the loading screen corrected like every other presented frame.
+    gpu.encode_color_vision(&mut encoder, &output.texture);
     gpu.queue.submit(std::iter::once(encoder.finish()));
     output.present(&gpu.queue);
     Ok(())
@@ -901,6 +904,9 @@ pub(super) fn present_native_loading(
         &output.texture,
     )?;
     performance_overlay.encode(gpu, batch, &mut encoder, &output.texture, font, None);
+    // Synchronous repaints present outside the frame loop: the shared filter
+    // keeps the loading screen corrected like every other presented frame.
+    gpu.encode_color_vision(&mut encoder, &output.texture);
     gpu.queue.submit(std::iter::once(encoder.finish()));
     output.present(&gpu.queue);
     Ok(())

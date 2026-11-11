@@ -8,7 +8,9 @@ use crate::sim::entity_store::EntityStore;
 use crate::sim::intern::InternedId;
 use crate::sim::world::Simulation;
 
-use super::can_build::{CanBuild, can_build, check_build_limit, find_factory};
+use super::can_build::{
+    CanBuild, FactoryRoster, can_build, check_build_limit, find_factory, find_factory_among,
+};
 use super::production_types::*;
 
 #[cfg(test)]
@@ -72,8 +74,16 @@ fn append_construction_options(
     let Some(building) = sim.entities().get(building_id) else {
         return;
     };
+    // Ares 3.0 BuildingClass_UpdateConstructionOptions_ExcludeDisabled
+    // (10053D80, hook 0x4456E5) adds IsUnderEMP (vt+0x37C, Building's is
+    // Techno 0x0070EFD0: +0x504 > 0) to the limbo test.
+    #[cfg(feature = "ares")]
+    let disabled = building.emp_remaining() > 0;
+    #[cfg(not(feature = "ares"))]
+    let disabled = false;
     if sim.session.current_house() != Some(building.owner())
         || building.lifecycle.in_limbo()
+        || disabled
         || !building.discovery.discovered_by_current_house()
         || !building.building_online()
     {
@@ -104,15 +114,17 @@ fn append_construction_options(
 /// instead (`SelectClass::Action @ 0x006AAD00` and `HouseClass::Begin_Production
 /// @ 0x004FA350` test none).
 /// `owner` is the house's interned name; `None` for a name nothing interned.
-pub(super) fn build_option_for_owner(
+/// `factories` is that house's roster ([`FactoryRoster::of`]).
+fn build_option_among(
     sim: &Simulation,
     rules: &RuleSet,
     owner: Option<InternedId>,
+    factories: Option<&FactoryRoster<'_>>,
     type_id: &str,
 ) -> Option<BuildOption> {
     let obj = rules.object(type_id)?;
     let reason = match owner {
-        Some(owner_id) => sidebar_state(sim, rules, owner_id, obj),
+        Some(owner_id) => sidebar_state(sim, rules, owner_id, factories, obj),
         None => Some(BuildDisabledReason::NoFactory),
     };
     let type_interned = sim.interner.get(type_id).unwrap_or_default();
@@ -129,6 +141,18 @@ pub(super) fn build_option_for_owner(
         at_build_limit: owner.is_some_and(|owner| check_build_limit(sim, rules, owner, obj)),
         reason,
     })
+}
+
+/// [`build_option_among`] for one type alone.
+#[cfg(test)]
+pub(super) fn build_option_for_owner(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: Option<InternedId>,
+    type_id: &str,
+) -> Option<BuildOption> {
+    let factories = owner.and_then(|owner| FactoryRoster::of(sim, rules, owner));
+    build_option_among(sim, rules, owner, factories.as_ref(), type_id)
 }
 
 /// Whether the player's strip keeps a cameo of `obj` (`StripClass::Recalculate
@@ -153,7 +177,23 @@ fn strip_refusal(
     owner: InternedId,
     obj: &ObjectType,
 ) -> Option<BuildDisabledReason> {
-    if find_factory(sim, rules, owner, obj, true, false, false).is_none() {
+    let factories = FactoryRoster::of(sim, rules, owner);
+    strip_refusal_among(sim, rules, owner, factories.as_ref(), obj)
+}
+
+/// [`strip_refusal`] with `owner`'s roster in hand; a house-less owner has
+/// none, and so no factory.
+fn strip_refusal_among(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    factories: Option<&FactoryRoster<'_>>,
+    obj: &ObjectType,
+) -> Option<BuildDisabledReason> {
+    let could_build = factories.is_some_and(|factories| {
+        find_factory_among(sim, rules, owner, factories, obj, true, false, false).is_some()
+    });
+    if !could_build {
         Some(BuildDisabledReason::NoFactory)
     } else if can_build(sim, rules, owner, obj, false, true) == CanBuild::No {
         Some(BuildDisabledReason::CannotBuild)
@@ -178,12 +218,16 @@ fn sidebar_state(
     sim: &Simulation,
     rules: &RuleSet,
     owner: InternedId,
+    factories: Option<&FactoryRoster<'_>>,
     obj: &ObjectType,
 ) -> Option<BuildDisabledReason> {
-    if let Some(refusal) = strip_refusal(sim, rules, owner, obj) {
+    if let Some(refusal) = strip_refusal_among(sim, rules, owner, factories, obj) {
         return Some(refusal);
     }
-    if find_factory(sim, rules, owner, obj, true, true, true).is_none() {
+    let ready = factories.is_some_and(|factories| {
+        find_factory_among(sim, rules, owner, factories, obj, true, true, true).is_some()
+    });
+    if !ready {
         return Some(BuildDisabledReason::NoReadyFactory);
     }
     if draw_at_build_limit(sim, rules, owner, obj) {
@@ -247,27 +291,19 @@ pub fn all_build_options_for_owner(
     owner: &str,
 ) -> Vec<BuildOption> {
     let owner = sim.interner.get(owner);
-    let mut out: Vec<BuildOption> = Vec::new();
-    for id in &rules.building_ids {
-        if let Some(opt) = build_option_for_owner(sim, rules, owner, id) {
-            out.push(opt);
-        }
-    }
-    for id in &rules.infantry_ids {
-        if let Some(opt) = build_option_for_owner(sim, rules, owner, id) {
-            out.push(opt);
-        }
-    }
-    for id in &rules.vehicle_ids {
-        if let Some(opt) = build_option_for_owner(sim, rules, owner, id) {
-            out.push(opt);
-        }
-    }
-    for id in &rules.aircraft_ids {
-        if let Some(opt) = build_option_for_owner(sim, rules, owner, id) {
-            out.push(opt);
-        }
-    }
+    // Every type asks FindFactory of the same house: list its factories once
+    // instead of walking all its buildings for each type.
+    let factories = owner.and_then(|owner| FactoryRoster::of(sim, rules, owner));
+    let mut out: Vec<BuildOption> = [
+        &rules.building_ids,
+        &rules.infantry_ids,
+        &rules.vehicle_ids,
+        &rules.aircraft_ids,
+    ]
+    .into_iter()
+    .flatten()
+    .filter_map(|id| build_option_among(sim, rules, owner, factories.as_ref(), id))
+    .collect();
     out.sort_by_key(|opt| opt.queue_category);
     out
 }

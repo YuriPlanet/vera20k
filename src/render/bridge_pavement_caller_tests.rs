@@ -68,6 +68,7 @@ fn retail_pavement_live_damage_changes_actual_terrain_pixels() {
         origin_x: 0.0,
         origin_y: 0.0,
         bridge_middle_tiles: None,
+        deformation_tiles: Vec::new(),
     };
     let draw = |sim: &crate::sim::world::Simulation, expected: TileKey| {
         let selected = std::cell::RefCell::new(Vec::new());
@@ -94,6 +95,7 @@ fn retail_pavement_live_damage_changes_actual_terrain_pixels() {
             tile.height as f32,
             Some(&uv),
             sim.resolved_terrain(),
+            Vec::new(),
         );
         assert_eq!(*selected.borrow(), [expected]);
         assert_eq!(instances.normal.len(), 1);

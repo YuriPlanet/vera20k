@@ -45,6 +45,7 @@ pub(crate) fn registered_commands() -> &'static [CommandMetadata] {
 
 /// Original gamemd registration only; the keyboard-page fixture compares it
 /// row for row, so VeraX's own commands stay outside it.
+#[cfg(test)]
 pub(crate) fn retail_commands() -> &'static [CommandMetadata] {
     &RETAIL_COMMANDS
 }
@@ -100,8 +101,9 @@ const CAMERA_COMMANDS: [CommandMetadata; 4] = [
 
 /// VERA's built-in keys, with their default keys in the binding owner
 /// (`hotkeys::VERA_DEFAULT_KEYS`). Each name is the Options page's label for
-/// the same setting; each category literal is [`VERA_CATEGORY_KEY`].
-const SHORTCUT_COMMANDS: [CommandMetadata; 4] = [
+/// the same setting, but Ferry's and the two Formation commands', which have
+/// none; each category literal is [`VERA_CATEGORY_KEY`].
+const SHORTCUT_COMMANDS: [CommandMetadata; 9] = [
     command!(
         HotkeyCommand::PerformanceStats,
         "PerformanceStats",
@@ -127,11 +129,51 @@ const SHORTCUT_COMMANDS: [CommandMetadata; 4] = [
         None
     ),
     command!(
-        HotkeyCommand::RenderInterpolation,
-        "RenderInterpolation",
-        "VERA:RenderInterpolation",
+        HotkeyCommand::StringKeys,
+        "StringKeys",
+        "VERA:ShowStringKeys",
         "VERA:HotkeyCategory",
-        "VERA:RenderInterpolationDesc",
+        "VERA:ShowStringKeysDesc",
+        None
+    ),
+    command!(
+        HotkeyCommand::LayoutEdit,
+        "LayoutEdit",
+        "VERA:LayoutEdit",
+        "VERA:HotkeyCategory",
+        "VERA:LayoutEditDesc",
+        None
+    ),
+    command!(
+        HotkeyCommand::FormationLine,
+        "FormationLine",
+        "VERA:FormationLine",
+        "VERA:HotkeyCategory",
+        "VERA:FormationLineDesc",
+        None
+    ),
+    command!(
+        HotkeyCommand::FormationLock,
+        "FormationLock",
+        "VERA:FormationLock",
+        "VERA:HotkeyCategory",
+        "VERA:FormationLockDesc",
+        None
+    ),
+    command!(
+        HotkeyCommand::Ferry,
+        "Ferry",
+        "VERA:Ferry",
+        "VERA:HotkeyCategory",
+        "VERA:FerryDesc",
+        None
+    ),
+    command!(
+        HotkeyCommand::RotatePrimary,
+        "RotatePrimary",
+        "VERA:RotatePrimary",
+        "VERA:HotkeyCategory",
+        "VERA:RotatePrimaryDesc",
         None
     ),
 ];

@@ -110,7 +110,13 @@ impl AiFireArm {
             | SuperWeaponKind::ChronoSphere
             | SuperWeaponKind::ChronoWarp
             | SuperWeaponKind::NoEffect
-            | SuperWeaponKind::HunterSeeker => Self::None,
+            | SuperWeaponKind::HunterSeeker
+            | SuperWeaponKind::Protect
+            | SuperWeaponKind::Battery
+            | SuperWeaponKind::SonarPulse
+            | SuperWeaponKind::EMPulse
+            | SuperWeaponKind::Firestorm
+            | SuperWeaponKind::DropPod => Self::None,
         }
     }
 }
@@ -289,11 +295,11 @@ fn extension_constraints(
 }
 
 /// Sidebar select hook10034DA0: base CanFire, which `SW.AutoFire` without
-/// `SW.ManualFire` skips, precedes the wallet, which precedes the UseAI
-/// constraint warning; that AutoFire-only type is then refused silently.
-/// The constraint result is the view's `constraints_blocked`. The
-/// AutoFire-only refusal applies to the two extension types whose automatic
-/// launch VERA ports.
+/// `SW.ManualFire` skips, refuses with `EVA.Impatient`; then the wallet,
+/// then the UseAI constraint warning; an AutoFire-only or a draining
+/// `SW.Unstoppable` type is then refused silently. The constraint result is
+/// the view's `constraints_blocked`. The AutoFire-only refusal applies to the
+/// extension types whose automatic launch VERA ports.
 #[cfg(feature = "ares")]
 pub(super) fn manual_cameo_refusal(
     rules: &RuleSet,
@@ -301,19 +307,22 @@ pub(super) fn manual_cameo_refusal(
     native_can_fire: bool,
     can_afford: bool,
     constraints_blocked: bool,
+    unstoppable: bool,
 ) -> Option<super::AresCameoRefusal> {
     use super::AresCameoRefusal as R;
     let manual_disabled = rules
         .super_weapon_target_policy(&sw.id)
         .is_some_and(|policy| policy.auto_fire() && !policy.manual_fire());
     if !native_can_fire && !manual_disabled {
-        None
+        Some(R::NotReady)
     } else if !can_afford {
         Some(R::InsufficientFunds)
     } else if constraints_blocked {
         Some(R::CannotFire)
+    } else if manual_disabled {
+        Some(R::ManualFireDisabled)
     } else {
-        manual_disabled.then_some(R::ManualFireDisabled)
+        unstoppable.then_some(R::Unstoppable)
     }
 }
 
@@ -415,6 +424,32 @@ fn extension_target(
                 .is_ok()
                 .then_some(cell)
         }
+        // PickTarget10038640's case 0x13 (Ares `Mode::DropPod`): a Scenario
+        // RandomRanged(1, 4) zone, House501AC0's random cell in it, and the
+        // nearby Foot cell there (FNPC 0x56DC20: no zone, Normal, 1x1,
+        // bridges allowed, no target). The empty cell or a refused CanFireAt
+        // (vt+4, not manual) is no target.
+        M::DropPod => {
+            let zone = sim.scenario_rng.next_range_i32_inclusive(1, 4);
+            let seed = sim.house_random_cell_in_zone(owner, zone)?;
+            let cell = sim
+                .nearby_passable_cell(
+                    seed,
+                    NearbyArgs::plain(
+                        PassabilityArgs {
+                            speed_type: SpeedType::Foot,
+                            required_zone_id: None,
+                            movement_zone: MovementZone::Normal,
+                            bridge_aware_zone: false,
+                        },
+                        NearbyFootprint::SINGLE,
+                    ),
+                )
+                .filter(|&cell| cell != (0, 0))?;
+            super::targeting::check_with_data(sim, rules, owner, sw, cell, true, &data)
+                .is_ok()
+                .then_some(cell)
+        }
         // These distinct3.0 selectors are still pending native ports. Do not
         // silently replace a parsed mode with Offensive or another behavior.
         M::Stealth
@@ -422,7 +457,6 @@ fn extension_target(
         | M::Base
         | M::MultiMissile
         | M::EnemyBase
-        | M::DropPod
         | M::LightningRandom => None,
     }
 }
@@ -823,6 +857,13 @@ fn pick_best_rally_target(entries: &[RallyEntry], rng: &mut SimRng) -> (i16, i16
     let mut picks: Vec<(i16, i16)> = Vec::new();
     for entry in entries {
         let mut value = if entry.in_playfield { entry.value } else { 0 };
+        // Ares 3.0 HouseClass_PickOffensiveSWTarget 10034C50 (hook
+        // 0x0050CFAA, size 0, resuming at 0x0050CFC9) replaces the cloaked
+        // entry's draw: its value becomes 0 and it is no candidate.
+        #[cfg(feature = "ares")]
+        if entry.cloaked {
+            continue;
+        }
         if entry.cloaked {
             value = rng.next_range_i32_inclusive(0, best.wrapping_add(10));
         }

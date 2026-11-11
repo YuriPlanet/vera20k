@@ -1,11 +1,12 @@
 //! The app side of VERA's chat translation ([`crate::ui::chat_translation`]):
 //! the `/translate` command, which received lines are sent, and where their
 //! translations appear. The online service's request queue carries them to
-//! the lobby; WOL's test service never sees them.
+//! the lobby; WOL's test service never sees them. Each reply is checked
+//! against the settings as they are when it arrives.
 
 use super::{WolProvider, WolServiceRequest};
 use crate::app::AppState;
-use crate::ui::chat_translation::{self, TranslateCommand};
+use crate::ui::chat_translation::{self, ChatPlace, ChatReply, MARKER, TranslateCommand};
 use crate::ui::lan_shell::LanChatLine;
 
 /// Where a translation is shown: under a WOL transcript line, with that
@@ -16,9 +17,6 @@ pub(crate) enum TranslatedLine {
     Match { name: String, color: i32 },
 }
 
-/// Set between a line's prefix and its translation.
-const MARKER: &str = "» ";
-
 /// `/translate` typed into a WOL chat edit shows, saves or stops the choice.
 /// Any other line returns false and goes to the native parser.
 pub(crate) fn command(state: &mut AppState, line: &[u16]) -> bool {
@@ -27,12 +25,12 @@ pub(crate) fn command(state: &mut AppState, line: &[u16]) -> bool {
     };
     let text = match command {
         TranslateCommand::Show => {
-            chat_translation::notice(state.persistence.options_profile.translate_chat)
+            chat_translation::notice(state.persistence.options_profile.chat_translation.language)
         }
         TranslateCommand::Usage => chat_translation::usage(),
         TranslateCommand::Set(language) => {
             let profile = &mut state.persistence.options_profile;
-            profile.translate_chat = language;
+            profile.chat_translation.set_language(language);
             if let Some(config) = state.platform.game_config.as_ref()
                 && let Err(error) = profile.commit_chat_translation(config.paths.settings_dir())
             {
@@ -51,13 +49,11 @@ pub(crate) fn command(state: &mut AppState, line: &[u16]) -> bool {
     true
 }
 
-/// A line another player wrote reached the screen. With a language chosen
-/// and the line in the other script, ask the online service to translate it.
-pub(crate) fn received(state: &mut AppState, text: &[u16], line: TranslatedLine) {
-    let Some(target) = state.persistence.options_profile.translate_chat else {
-        return;
-    };
-    if target.needs(text)
+/// A line another player wrote reached the screen at `place`. If the settings
+/// want it translated, ask the online service.
+pub(crate) fn received(state: &mut AppState, text: &[u16], line: TranslatedLine, place: ChatPlace) {
+    let settings = state.persistence.options_profile.chat_translation;
+    if settings.target_for(place, text).is_some()
         && state
             .frontend
             .wol
@@ -75,8 +71,13 @@ pub(crate) fn received(state: &mut AppState, text: &[u16], line: TranslatedLine)
 }
 
 /// A translation arrived. A WOL line shows outside a match, a match row in
-/// one; a translation that outlived its screen is dropped.
-pub(super) fn show(state: &mut AppState, line: TranslatedLine, translated: &str) {
+/// one; a translation that outlived its screen is dropped, and so is a line
+/// that turned out to be in a language the player reads.
+pub(super) fn show(state: &mut AppState, line: TranslatedLine, reply: &ChatReply) {
+    let settings = state.persistence.options_profile.chat_translation;
+    let Some(translated) = settings.shown(reply) else {
+        return;
+    };
     let in_match = super::in_match(state);
     match line {
         TranslatedLine::Wol { mut prefix, color } if !in_match => {

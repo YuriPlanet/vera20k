@@ -181,7 +181,23 @@ impl App {
                 }
             }
             SavedSeedOutcome::Load(path) => {
-                crate::app::persistence::commands::request_saved_game_load(state, path);
+                let loadable = state
+                    .match_state
+                    .match_presentation
+                    .saved_game_browser
+                    .as_ref()
+                    .and_then(|browser| browser.selected_entry())
+                    .is_none_or(|row| row.loadable);
+                if loadable {
+                    crate::app::persistence::commands::request_saved_game_load(state, path);
+                } else {
+                    Self::show_saved_game_prompt(
+                        state,
+                        SavedSeedPromptPurpose::Error,
+                        crate::i18n::tr("VERA:SaveFromOtherVersionText"),
+                        false,
+                    );
+                }
             }
             SavedSeedOutcome::Delete(file_name) => {
                 let prefix = Self::csf_label(state, "TXT_DELETE_FILE_QUERY", "Delete this file?");

@@ -395,6 +395,8 @@ fn spotlight_cone_geometry_matches_original_before_projection() {
     }
 }
 
+// An Ares build keeps the direct delete (`uninit_spotlight_for_parent_limbo`).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn spotlight_real_building_unlimbo_registers_the_child_and_limbo_cleans_both_owners() {
     use crate::sim::superweapon::chronosphere_tests::{place, world_with};
@@ -415,7 +417,25 @@ fn spotlight_real_building_unlimbo_registers_the_child_and_limbo_cleans_both_own
         order.iter().position(|&x| x == id).unwrap() < order.iter().position(|&x| x == p).unwrap()
     );
     sim.uninit_with_context(p, UninitContext::new(&rules, None));
-    assert!(!sim.substrate.spotlights.contains_key(id));
+    // BuildingClass::Limbo @ 0x00445D81 UnInits the light (0x005F65F0): it
+    // is dead, out of Logic and Display and queued, and Building+0x600 is
+    // clear (0x0044E93A), but it keeps its 8B4190 slot until the drain.
+    let light = sim
+        .substrate
+        .spotlights
+        .get(id)
+        .expect("deleted at the drain");
+    assert!(!light.alive && !light.in_logic_vector);
+    assert!(!sim.substrate.logic.as_slice().contains(&id));
+    assert!(!sim.display_layers().ordered_ids().any(|&x| x == id));
+    assert!(sim.substrate.spotlights.order.contains(&id));
+    assert!(
+        sim.substrate
+            .pending_delete
+            .object_tickets()
+            .any(|i| i == id)
+    );
+    assert!(sim.building_spotlight(id, None, &rules).is_none());
     assert_eq!(
         sim.substrate
             .entities
@@ -426,6 +446,22 @@ fn spotlight_real_building_unlimbo_registers_the_child_and_limbo_cleans_both_own
         None
     );
     sim.debug_assert_logic_membership_consistent();
+    // A light constructed before the drain takes vector index 1, so its
+    // +0xD8 sweep direction is set (Constructor @ 0x00435B0F..0x00435B3F).
+    let q = place(&mut sim, &rules, "LIGHT", (30, 30), 0, false, false);
+    let second = sim
+        .substrate
+        .entities
+        .get(q)
+        .unwrap()
+        .building_light
+        .light()
+        .unwrap();
+    assert!(sim.substrate.spotlights.get(second).unwrap().increasing);
+    sim.process_pending_delete();
+    assert!(!sim.substrate.spotlights.contains_key(id));
+    assert_eq!(sim.substrate.spotlights.order, [second]);
+    assert!(sim.substrate.spotlights.get(second).unwrap().alive);
 }
 #[test]
 fn spotlight_tracking_selects_first_nearest_enemy_and_expiry_clears_the_pointer() {
@@ -492,4 +528,40 @@ fn spotlight_tracking_selects_first_nearest_enemy_and_expiry_clears_the_pointer(
         (light.mode, light.angle.bits(), light.coord),
         (1, 0, before)
     );
+}
+
+/// Ares 3.0 TechnoClass_Put_1/_2 (1004EDE0, hooks 0x6F6D0E/0x6F6F20): a
+/// `HasSpotlight=` vehicle gets its light when it is put on the map, and a
+/// building keeps exactly one (BuildingClass_Put_DontSpawnSpotlight
+/// 1004EA10, hook 0x441163).
+#[cfg(feature = "ares")]
+#[test]
+fn ares_spotlighted_technos_get_their_light_at_unlimbo() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=TANK\n[TANK]\nStrength=100\nHasSpotlight=yes\n\
+         [BuildingTypes]\n0=LIGHT\n[LIGHT]\nHasSpotlight=yes\nStrength=100\nFoundation=1x1\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::with_seed(9);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let tank = sim
+        .spawn_object("TANK", "Americans", 5, 5, 0, &rules)
+        .unwrap();
+    let light = sim
+        .spawn_object("LIGHT", "Americans", 9, 9, 0, &rules)
+        .unwrap();
+    for parent in [tank, light] {
+        assert!(
+            sim.substrate
+                .entities
+                .get(parent)
+                .unwrap()
+                .building_light
+                .light()
+                .is_some(),
+            "{parent}"
+        );
+    }
+    assert_eq!(sim.substrate.spotlights.objects.len(), 2);
 }

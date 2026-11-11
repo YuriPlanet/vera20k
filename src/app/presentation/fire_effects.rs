@@ -32,13 +32,49 @@ fn weapon_wave_visible(
     )
 }
 
-/// Native type0/3 geometry is owned by WaveClass, including projected fade
+/// Ares GetWaveColorData (Ares.dll 10055270), which WaveClass_Draw_Colors
+/// (10057080, hook 0x75FA29) computes once per DrawIt: the colours of the
+/// weapon CreateWave registered, with `Wave.IsHouseColor` taking the
+/// owner's House+56F9 through the shared colour-map lookup.
+#[cfg(feature = "ares")]
+pub(crate) fn ares_wave_blend(
+    sim: &Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    house_colors: &crate::map::houses::HouseColorMap,
+    wave: &crate::sim::wave::Wave,
+) -> crate::render::wave_geometry::WaveBlend {
+    use crate::render::wave_geometry::{WaveBlend, WaveColor};
+    let Some(weapon) = sim.ares_wave_weapon(wave, rules) else {
+        return WaveBlend::Native;
+    };
+    let owner_rgb = wave
+        .owner_id()
+        .and_then(|owner| sim.entities().get(owner))
+        .map(|owner| {
+            let index = house_colors
+                .get(sim.interner().resolve(owner.owner()))
+                .copied()
+                .unwrap_or(crate::rules::house_colors::NO_REMAP);
+            crate::render::palette_light::house_color_rgb(&rules.house_color_ramps, index)
+        });
+    match weapon
+        .ares_visuals
+        .wave_color_data(weapon.is_mag_beam, weapon.is_sonic, owner_rgb)
+    {
+        Some((intensity, color)) => WaveBlend::Ares(WaveColor { intensity, color }),
+        None => WaveBlend::AresDisabled,
+    }
+}
+
+/// Native type0..3 geometry is owned by WaveClass, including projected fade
 /// and the type3 Unit endpoint reversal. Rendering translates it once and supplies the
 /// current packed destination; it never rebuilds a quad from world endpoints.
+/// `blend` answers each wave's pixel colouring.
 pub(crate) fn build_weapon_wave_draws(
     sim: &Simulation,
     observer: Option<crate::sim::intern::InternedId>,
     camera: [i32; 2],
+    blend: impl Fn(&crate::sim::wave::Wave) -> crate::render::wave_geometry::WaveBlend,
 ) -> Vec<(u64, crate::render::wave_geometry::WaveDraw)> {
     use crate::render::wave_geometry::{WaveClipPath, WaveDraw, WavePolygon};
 
@@ -49,6 +85,14 @@ pub(crate) fn build_weapon_wave_draws(
                 0 => {
                     let geometry = wave.sonic_draw_geometry(camera)?;
                     (WavePolygon::Sonic(geometry.polygon), geometry.source_point)
+                }
+                // DrawIt75F9F0's Draw_Laser arm for the TS laser types. Its
+                // detail-level-2 gate always passes: Ares
+                // WaveClass_Draw_NodLaser_Details (10057120, hook 0x7609E3)
+                // reads the level as 2, and only Ares creates lasers.
+                1 | 2 => {
+                    let geometry = wave.sonic_draw_geometry(camera)?;
+                    (WavePolygon::Laser(geometry.polygon), geometry.source_point)
                 }
                 3 => {
                     let geometry = wave.magnetic_draw_geometry(camera)?;
@@ -68,12 +112,16 @@ pub(crate) fn build_weapon_wave_draws(
                     polygon,
                     source_point,
                     source_z: wave.source().z,
-                    phase: wave.lifetime(),
+                    phase: match polygon {
+                        WavePolygon::Laser(_) => wave.intensity(),
+                        _ => wave.lifetime(),
+                    },
                     direction: u8::try_from(wave.direction_octant()).ok()?,
                     // VERA's existing scene Z is contiguous. Native ring
                     // fallback can differ by one clipping-edge pixel; C32's
                     // production footprints remain inside both margins.
                     clip_path: WaveClipPath::Fast,
+                    blend: blend(wave),
                 },
             ))
         })

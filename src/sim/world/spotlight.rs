@@ -5,9 +5,14 @@
 //! RecalcArcPositions436A40 and the plain Destructor435B50 have no call, jump
 //! or data reference in the exe, so the game never runs them.
 //! Independent ObjectClass child of Building+600. The global8B4190 vector
-//! retains construction order; D8 is assigned from its constructor index and
-//! never recomputed after removal. No RNG or timer writes. Parent Limbo deletes
-//! immediately; an orphan's AI uses ObjectUnInit5F65F0/deferred destruction.
+//! retains construction order; D8 is its constructor index's parity
+//! (435B0F..435B3F), never recomputed after removal. No RNG or timer writes.
+//! Native parent Limbo (Building445D75..445D81, which the building destructor
+//! reaches at 43BD6E) calls the light's vt+0xF8, ObjectUnInit5F65F0 (VT slot
+//! 7E3BC8): expiry broadcast, Limbo437030, Object+90 cleared and a deferred
+//! delete, so the light stays in 8B4190 until that frame's drain (725C70)
+//! runs 4370C0; an orphan's AI (4368E1) retires the same way. gamemd deletes
+//! a light directly only at scenario teardown (5345A2).
 use super::display_layers::DisplayLayer;
 use super::{Simulation, UninitContext};
 use crate::map::entities::EntityCategory;
@@ -245,11 +250,15 @@ impl Simulation {
                 self.resolved_terrain.as_ref(),
             ) < -10
         {
-            // BuildingLightDraw_Start1004EB42..1004EB96 hides the beam,
+            // BuildingLightDraw_Start1004EB42..1004EB96 (hook 0x435BFA) hides the beam,
             // retaining its child through cloak, EMP and underground travel.
             return None;
         }
         let (start_height, middle_height, edge_height, glow_flags) = (430, 400, 250, 0);
+        // Ares BuildingLightClass_Draw_430/_400/_250 (1004EAA0, 1004EA70,
+        // 1004EA40; hooks 0x436072, 0x4360D8, 0x4360FF) offset the three
+        // heights from `Spotlight.StartHeight`; Draw_Spotlight (1004EAC0,
+        // hook 0x435CD3) sets the colour flags.
         #[cfg(feature = "ares")]
         let (start_height, middle_height, edge_height, glow_flags) =
             self.entity_object_type(parent, rules).map_or(
@@ -420,6 +429,39 @@ impl Simulation {
         // Limbo @ 0x00437030 is `conceal_spotlight_logic`.
         self.register_spotlight_logic(id);
     }
+    /// BuildingClass::Limbo @ 0x00445D75..0x00445D81, in its not-yet-in-Limbo
+    /// block (0x004458C6): the light's vt+0xF8, ObjectClass::UnInit @
+    /// 0x005F65F0. The expiry broadcast clears Building+0x600
+    /// (BuildingClass::PointerExpired @ 0x0044E93A); the light leaves Display
+    /// and Logic, dies and keeps its 8B4190 slot until the drain deletes it.
+    /// A Foot's light is Ares' own and keeps its direct delete. So does a
+    /// building's in an Ares build: its hook 0x441163 skips the stock
+    /// construction that stores Building+0x600 and Ares owns the light, so
+    /// whether this stock arm still runs there is not established (Ares'
+    /// 1004EDE0 was not read). RESIDUAL for Ares builds only: the light is
+    /// deleted at once, which decides the sweep direction of a light
+    /// constructed before that frame's drain.
+    pub(super) fn uninit_spotlight_for_parent_limbo(
+        &mut self,
+        parent: u64,
+        context: UninitContext<'_>,
+    ) {
+        let Some(entity) = self.substrate.entities.get(parent) else {
+            return;
+        };
+        match entity.building_light.light() {
+            Some(id)
+                if entity.category() == EntityCategory::Structure
+                    && !crate::rules::ARES_ENABLED =>
+            {
+                self.uninit_with_context(id, context)
+            }
+            Some(_) => self.destroy_spotlight_for_parent(parent, context),
+            None => {}
+        }
+    }
+    /// The direct delete of a parent's light: Ares' Deactivate and type
+    /// conversion, and a parent destroyed without its Limbo.
     pub(crate) fn destroy_spotlight_for_parent(&mut self, parent: u64, context: UninitContext<'_>) {
         if let Some(id) = self
             .substrate
@@ -431,8 +473,10 @@ impl Simulation {
         }
     }
     /// BuildingLightClass::ScalarDeletingDestructor @ 0x004370C0 (it inlines
-    /// the unreferenced Destructor @ 0x00435B50): Limbo and Logic unregister,
-    /// removal from the 8B4190 vector, then ObjectClass's destructor.
+    /// the unreferenced Destructor @ 0x00435B50): Limbo and Logic unregister
+    /// (nothing for a light UnInit already limboed), removal from the 8B4190
+    /// vector, then ObjectClass's destructor. The drain calls it for a dead
+    /// queued light (0x00725D7A).
     pub(super) fn destroy_spotlight(&mut self, id: u64, context: UninitContext<'_>) {
         let Some(parent) = self.substrate.spotlights.get(id).map(|s| s.parent) else {
             return;
@@ -444,6 +488,9 @@ impl Simulation {
         self.substrate
             .pending_delete
             .remove(super::substrate::DeferredDeleteTicket::Object(id));
+        // Ares BuildingLightClass_SDDTOR (1004EBE0, hook 0x4370C0) clears
+        // TechnoExt::Spotlight; BuildingLightClass_CTOR (1004EA20, hook
+        // 0x435820) set it. The parent's one owned pointer is both fields.
         if let Some(parent) = parent.and_then(|p| self.substrate.entities.get_mut(p)) {
             if parent.building_light.light() == Some(id) {
                 parent.building_light.take();
@@ -685,6 +732,18 @@ impl Simulation {
                 });
             if seen {
                 self.dispatch_object_tag_event(parent_id, 35, Some(parent_id), None, context);
+                // Ares 3.0 BuildingLightClass_Update_Trigger (10050550, hook
+                // 0x4368C9): then 66 (in spotlight) on the same object while
+                // it is alive.
+                #[cfg(feature = "ares")]
+                if self
+                    .substrate
+                    .entities
+                    .get(parent_id)
+                    .is_some_and(|parent| parent.lifecycle.object_alive())
+                {
+                    self.dispatch_object_tag_event(parent_id, 66, Some(parent_id), None, context);
+                }
             }
         }
     }

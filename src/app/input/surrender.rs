@@ -36,7 +36,7 @@ pub(crate) fn open(state: &mut AppState) {
     let finished = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .and_then(|runtime| {
             let sim = &runtime.simulation;
             let house = sim.houses().get(&sim.session().current_house()?)?;

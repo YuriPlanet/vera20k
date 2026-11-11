@@ -311,6 +311,7 @@ impl App {
         replay_retail_directory: Option<&Path>,
         // A `-SPAWN` test run's opt-in invisible window (tools/spawn/README.md).
         hidden_spawn_window: bool,
+        mod_switch: Option<&crate::app::mods::ModSwitch>,
     ) -> Result<InitializationStep> {
         // One parsed retail profile snapshot yields two ordered products: the
         // independent frontend size selected after the early Video read, and the later
@@ -382,7 +383,8 @@ impl App {
             RetailOptionsLoad::from_settings,
         );
         let profile_screen = options_load.startup_shell_screen;
-        let mut options_profile = options_load.retained_profile;
+        let options_profile = options_load.retained_profile;
+        personal_rules.set_terrain_deformation(options_profile.terrain_deformation);
         // Before the first CSF load below, which layers this language over it.
         crate::i18n::init(
             game_config
@@ -390,13 +392,21 @@ impl App {
                 .map(|config| config.paths.settings_dir()),
             options_profile.language.as_deref(),
         );
-        options_profile.render_interpolation =
-            crate::app::presentation::interpolation::startup_enabled(
-                options_profile.render_interpolation,
-                std::env::var("VERA20K_RENDER_INTERPOLATION")
-                    .ok()
-                    .as_deref(),
-            );
+        // The Developer page's String Keys box arms Ctrl+Alt+K; a saved choice
+        // still opens on the texts until the hotkey asks for keys.
+        crate::i18n::set_show_string_keys(options_profile.show_string_keys);
+        // After the language is known: a mod that cannot be used is refused
+        // in it. A sealed capture takes no mod from config.toml, as it takes
+        // no VERA.INI or VERARULES.INI.
+        let mods = game_config
+            .as_ref()
+            .map(|config| {
+                crate::app::mods::begin(&config.paths, mod_switch, capture_dimensions.is_some())
+            })
+            .unwrap_or_default();
+        if let Some(dir) = mods.dir() {
+            crate::map::source::set_mod_dir(dir.to_owned());
+        }
         let (window_width, window_height, window_visible) =
             startup_window_projection(profile_screen, capture_dimensions);
         let window_visible = window_visible && !hidden_spawn_window;
@@ -410,8 +420,7 @@ impl App {
         let capture = capture_dimensions.is_some();
         // A player window opens at that size on every launch, as gamemd's
         // shell does (`WinMain` 006BD9B5, `RetailOptionsLoad`), however large
-        // it was left; only its corner is kept.
-        let placement = options_profile.window_placement.filter(|_| !capture);
+        // it was left.
         let inner_size: winit::dpi::Size = if capture {
             PhysicalSize::new(window_width, window_height).into()
         } else {
@@ -428,7 +437,6 @@ impl App {
         } else {
             crate::app::display_target::current_displays_for(event_loop)
         };
-        let wanted_display = super::display_target::screen_for(&displays, &options_profile.display);
         let fullscreen = (!capture && !hidden_spawn_window && options_profile.full_screen)
             .then(|| super::display_target::fullscreen_for(&displays, &options_profile.display));
         // A hidden run's window has a title of its own, so a second launch's
@@ -482,37 +490,21 @@ impl App {
         if let Some(icon) = &window_icon {
             window_attrs = icon.apply(window_attrs);
         }
+        // Android's launcher icon is a compiled resource, so the same choice is
+        // applied through the two activity aliases instead.
+        #[cfg(target_os = "android")]
+        crate::util::app_icon::apply(options_profile.vera_icon);
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         {
             use winit::platform::web::WindowAttributesExtWebSys;
             window_attrs = window_attrs.with_canvas(Some(crate::web::canvas()));
         }
         let window: Arc<Window> = Arc::new(event_loop.create_window(window_attrs)?);
-        // A windowed launch opens where the player last left the window, while
-        // that spot still shows its title bar on the chosen screen (any screen
-        // when none is chosen); otherwise it opens centred on the chosen
-        // screen. Full screen already covers it from the attributes above.
-        if !options_profile.full_screen {
-            let saved_corner = placement
-                .map(|placement| winit::dpi::PhysicalPosition::new(placement.x, placement.y))
-                .filter(|corner| {
-                    let screens = displays
-                        .iter()
-                        .map(|display| &display.handle)
-                        .filter(|screen| match &wanted_display {
-                            Some(wanted) => wanted == *screen,
-                            None => true,
-                        })
-                        .map(|screen| (screen.position(), screen.size()));
-                    super::display_target::title_bar_on_a_screen(*corner, screens)
-                });
-            if let Some(corner) = saved_corner {
-                window.set_outer_position(corner);
-            } else if let Some(monitor) = wanted_display.as_ref() {
-                window.set_outer_position(super::display_target::centered_outer_position(
-                    &window, monitor,
-                ));
-            }
+        // A windowed launch opens in the middle of the chosen screen, or of the
+        // one the system picked when none is chosen. Full screen already covers
+        // it from the attributes above.
+        if !capture && !options_profile.full_screen {
+            super::display_target::center_at_launch(&window, &displays, &options_profile.display);
         }
         // gamemd's WinMain builds WWMouse (`0x006BDF1C`), whose constructor hides
         // the cursor, before the startup splash; from the first frame after it,
@@ -544,10 +536,12 @@ impl App {
                 main_menu_shell_error,
                 startup_files,
                 personal_rules,
+                mods,
                 options_profile,
                 startup_options,
                 startup_audio,
                 capture_dimensions,
+                profile_screen,
                 external_launch,
                 quickplay_allowed,
             )
@@ -569,10 +563,12 @@ impl App {
         mut main_menu_shell_error: Option<String>,
         startup_files: StartupFiles,
         personal_rules: crate::rules::personal_rules::PersonalRules,
+        mods: crate::app::mods::Mods,
         options_profile: RetailOptionsProfile,
         startup_options: RetailStartupOptions,
         startup_audio: StartupAudioDisposition,
         capture_dimensions: Option<(u32, u32)>,
+        launch_window_size: ScreenSize,
         external_launch: bool,
         quickplay_allowed: bool,
     ) -> Result<InitializationStep> {
@@ -606,8 +602,12 @@ impl App {
         let sidebar_layout_spec = SidebarChromeLayoutSpec::stock();
         let mut startup_asset_manager = game_config.as_ref().and_then(|config| {
             startup_asset_or_error(
-                AssetManager::new(&config.paths.ra2_dir, startup_options.media_archive_mode)
-                    .and_then(|assets| assets.with_ini_roots(&config.ini))
+                AssetManager::with_mod(
+                    &config.paths.ra2_dir,
+                    mods.dir(),
+                    startup_options.media_archive_mode,
+                )
+                .and_then(|assets| assets.with_ini_roots(&config.ini))
                     .with_context(|| crate::i18n::tr("VERA:CannotLoadArchives")),
                 &mut main_menu_shell_error,
             )
@@ -693,6 +693,12 @@ impl App {
             // Without it the splash goes up now and the load is spent inside
             // its hold. A present that did not reach the screen stays unarmed
             // for the frame loop to retry.
+            // No AppState exists yet, so publish the persisted mode here:
+            // the first splash must present through the same filter as the
+            // frame loop that follows.
+            gpu.set_color_vision_matrix(crate::app::state::color_vision_matrix_for(
+                options_profile.color_vision,
+            ));
             let splash = startup_splash.as_mut().filter(|_| !play_startup);
             match startup_splash::render_and_present(
                 &gpu,
@@ -728,7 +734,8 @@ impl App {
                         .map(|config| config.ini.clone())
                         .unwrap_or_default(),
                 )
-                .with_personal_rules(personal_rules);
+                .with_personal_rules(personal_rules)
+                .with_mod_dir(mods.dir().map(Path::to_path_buf));
             process_assets.csf = startup_csf;
             let (startup_rules, startup_rules_projection) = startup_asset_manager
                 .as_ref()
@@ -982,6 +989,7 @@ impl App {
                 window,
                 game_config,
                 capture_dimensions.map(|(w, h)| PhysicalSize::new(w, h)),
+                launch_window_size,
             ),
             match_state: crate::app::match_runtime::state::MatchState {
                 campaign_names: Default::default(),
@@ -992,13 +1000,9 @@ impl App {
                 live_network: None,
                 lan_service: None,
                 startup: Default::default(),
-                sim_runtime: None,
+                sim_runtime: Default::default(),
                 input: crate::app::input::state::MatchInputState::new(hotkey_bindings),
                 match_presentation: crate::app::presentation::state::MatchPresentationState {
-                    interpolation:
-                        crate::app::presentation::interpolation::RenderInterpolation::new(
-                            options_profile.render_interpolation,
-                        ),
                     sinking_waterlines: Default::default(),
                     voxel_images: Default::default(),
                     building_zshape: None,
@@ -1009,6 +1013,12 @@ impl App {
                     sidebar_projection: Default::default(),
                     active_sidebar_tab: SidebarTab::default_active_tab(),
                     sidebar_layout_spec,
+                    match_layouts: crate::ui::match_layout::MatchLayoutFile::none(),
+                    mod_layout_ini: None,
+                    player_layout_text: Vec::new(),
+                    layout_edit: None,
+                    added_parts: Default::default(),
+                    added_grid_scroll: Vec::new(),
                     tooltips: startup_tooltips,
                     tooltip_epoch: Instant::now(),
                     // The Constructor `0x005D39D0` (from Session's static
@@ -1023,7 +1033,8 @@ impl App {
                     pause_menu_interaction: Default::default(),
                     pause_menu_template: Default::default(),
                     internet_pause: Default::default(),
-                    display_pause: Default::default(),
+                    options_page: None,
+                    options_page_category: None,
                     abort_secondary: Default::default(),
                     sound_dialog: None,
                     abort_buttons: Default::default(),
@@ -1033,7 +1044,6 @@ impl App {
                     restate_text: String::new(),
                     saved_game_browser: None,
                     in_game_options: startup_in_game_options,
-                    in_game_options_anchor: None,
                     combat_lights: Default::default(),
                     screen_shake: Default::default(),
                     line_trails: Default::default(),
@@ -1089,6 +1099,7 @@ impl App {
                     theater_ext: "tem".to_string(),
                     target_lines: startup_target_lines,
                     cached_cell_body_instances: Vec::new(),
+                    cached_terrain_instances: Vec::new(),
                     terrain_grid: None,
                     overlays: Default::default(),
                     terrain_objects: Vec::new(),
@@ -1100,6 +1111,7 @@ impl App {
                     tile_atlas: None,
                     unit_atlas: None,
                     palette_set: None,
+                    surface_palette: Default::default(),
                     sprite_atlas: None,
                     atlas_growth: Default::default(),
                     overlay_atlas: None,
@@ -1175,6 +1187,7 @@ impl App {
                 map_library: Default::default(),
                 login_info: Default::default(),
                 map_pictures: Default::default(),
+                mods,
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                 updater: Default::default(),
                 skirmish_shell_state,
@@ -1273,6 +1286,7 @@ impl App {
                 outcome_banner_art,
                 vxl_pose_frame_cache: std::cell::RefCell::new(Default::default()),
                 retail_screenshot_frame_cache: Default::default(),
+                terrain_picture: Default::default(),
             },
             process_assets,
             audio: startup_audio_runtime,
@@ -1339,6 +1353,7 @@ impl App {
                     crate::app::loading::pump::begin_loading(&mut state, request);
                 }
 
+                crate::app::mods::finish_start(&mut state, external_launch);
                 Ok(InitializationStep::Ready(Box::new(state), Vec::new()))
             })
         })

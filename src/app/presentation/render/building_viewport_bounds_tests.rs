@@ -5,7 +5,6 @@
 use super::draw_plan_lowering::{NativeDisplayOrder, lower_object_instances};
 use super::merge_passes::{ObjectDrawPhase, draw_native_object_pass};
 use crate::app::presentation::instances::{ShpInputs, build_shp_instances_from_inputs};
-use crate::app::presentation::interpolation::RenderInterpolation;
 use crate::map::{houses::HouseColorMap, lighting::CellLightGrid};
 use crate::render::batch::{BatchRenderer, DepthAxis, InstanceBufferPool};
 use crate::render::sprite_atlas::build_sprite_atlas;
@@ -40,8 +39,10 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
         rules.object("CANEWY06").unwrap().strength
     );
     assert!(building.passenger_role.occupants().is_empty());
-    let interpolation = RenderInterpolation::new(false);
-    let pose = interpolation.sample_entity(building, sim.session().binary_frame());
+    let pose = crate::app::presentation::render_pose::RenderPose::read(
+        building,
+        sim.session().binary_frame(),
+    );
     let anchor =
         crate::render::locomotor_visual::building_art_anchor(pose.screen[0], pose.screen[1]);
     assert_eq!(anchor, (1260., 2895.));
@@ -130,7 +131,6 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
             unit_atlas: None,
             voxel_images: &voxel_images,
             depth_tested_images: None,
-            interpolation: &interpolation,
             camera: [1160., 2502.],
             render_size: [1024, 768],
             zoom: 4.,

@@ -289,7 +289,11 @@ pub fn combo_items(
 }
 
 /// Shared4E3A00 country catalog: registered source order, Multiplay enabled,
-/// and a nonempty HouseType UIName. Random is the first entry.
+/// and a nonempty HouseType UIName. Random is the first entry. The catalog
+/// has no index cap, which Ares 3.0 HTExt_Unlimit1..5 (1001DD70..1001DDB0,
+/// hooks 0x4E3792, 0x4E3A9C, 0x4E3F31, 0x4E412C, 0x4E41A7) lift from the
+/// shell's 0..9 country range checks; the status line is the Country's
+/// `MenuText.Status` (LoadPlayerCountryString 1001DF10, hook 0x4E38D8).
 pub fn country_choices(rules: &crate::rules::ruleset::RuleSet) -> Vec<SkirmishComboItem> {
     let mut countries: Vec<(i32, usize, LaunchCountry)> = rules
         .cooperative_country_candidates()

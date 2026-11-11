@@ -27,9 +27,7 @@
 //! over a spawner.
 //!
 //! The Move slot (`vt+0x22C`) is `0x004166C0`, which sends a `Carryall=`
-//! type (Type+0xDFC) to `0x00416D50` instead. RESIDUAL: that handler is not
-//! ported. No retail aircraft type sets the key
-//! (`retail_aircraft_types_are_not_carryalls`), so it is dormant.
+//! type (Type+0xDFC) to `0x00416D50` instead ([`super::carryall`]).
 //!
 //! Evidence: tools/spatial_oracle/aircraft_move.py runs the original
 //! 0x004166E0 from states 0..5 with a NULL, Cell and object NavCom, moving or

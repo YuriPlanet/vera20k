@@ -719,6 +719,11 @@ fn general_helpers_match_original_reader_and_signed_repair_keys() {
             .as_str()
             .or_else(|| case["file"].as_str())
             .unwrap();
+        // Ares's `INIClass_Parse_Override` (`0x5260D9`) keeps only the later
+        // of two equal keys; this control records the vanilla reader.
+        if cfg!(feature = "ares") && matches!(name, "duplicate_key" | "duplicate_key_reversed") {
+            continue;
+        }
         let text = case["input_text"]
             .as_str()
             .or_else(|| case["general_text"].as_str())
@@ -1058,6 +1063,24 @@ fn gsi_04_03a_rmg_tile_keys_parse_ramp_smooth_and_resolve_ordinals() {
     );
     assert_eq!(keys.sand_tile, None, "absent key must stay None, not 0");
     assert_eq!(keys.shore_pieces, None);
+}
+
+/// Ares MediansFix (Ares.dll 1006A920, hook 0x545904): a theater without
+/// `Medians=` (retail SNOWMD.INI) reads ordinal 71; an authored key is kept.
+/// In every build: VERA's opted-in urban pass stamps these tiles without Ares.
+#[test]
+fn missing_medians_key_reads_ordinal_71() {
+    let mut lookup = parse_tileset_ini(b"", "sno").unwrap();
+    lookup.tileset_bounds = vec![TilesetBounds { start: 0, count: 0 }; 72];
+    lookup.tileset_bounds[40].start = 400;
+    lookup.tileset_bounds[71].start = 710;
+    let medians = |text: &str| {
+        let ini = IniFile::from_str(text);
+        super::resolve_rmg_tile_keys(&lookup, ini.section("General"), None).medians
+    };
+    assert_eq!(medians("[General]\nPavedRoads=20\n"), Some(710));
+    assert_eq!(medians(""), Some(710), "no [General] section reads -1 too");
+    assert_eq!(medians("[General]\nMedians=40\n"), Some(400));
 }
 
 #[test]

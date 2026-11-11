@@ -16,7 +16,8 @@
 //! Pure, read-only, deterministic. No allocation, no state.
 //!
 //! ## Dependency rules
-//! - Part of sim/combat/ — depends only on `crate::util::native_x87`. Never on render/ui/audio/net.
+//! - Part of sim/combat/ — depends only on `crate::util::native_x87` (and, for the Ares walk,
+//!   `sim::cell_rect`'s CellSpreadEnumerator). Never on render/ui/audio/net.
 
 use crate::util::native_x87::X87Chop53;
 
@@ -99,6 +100,29 @@ pub fn splash_count_index(cell_spread: f64) -> usize {
 /// out-of-range value clamps to band 11 rather than reading past the table).
 pub fn splash_cells(cell_spread: f64) -> &'static [(i16, i16)] {
     sweep(splash_count_index(cell_spread))
+}
+
+/// The cells `Apply_area_damage` walks, in order. Stock walks [`splash_cells`].
+/// Ares 3.0 replaces that table walk with a `CellSpreadEnumerator`
+/// (DamageArea_CellSpread1/2/3, `100531F0`/`10053250`/`10053270`, hooks
+/// `0x4895B8`/`0x4895C7`/`0x4899BE`) over the same band, `ftol(CellSpread +
+/// 0.99)` (EAX at `0x4895B8`): ring by ring up to `min(band, 0x100)`, and no
+/// cell at all for a negative band. Bands 1..10 hold the stock cells with
+/// `(-1,-1)` and `(1,-1)` swapped; band 11 has no repeated `(-3,11)` and
+/// wider bands are no longer clamped.
+pub fn area_damage_cells(cell_spread: f64) -> std::borrow::Cow<'static, [(i16, i16)]> {
+    #[cfg(feature = "ares")]
+    {
+        let band = X87Chop53::ftol_f64_low_masked(cell_spread + 0.99);
+        match usize::try_from(band) {
+            Ok(band) => std::borrow::Cow::Owned(crate::sim::cell_rect::cell_spread_offsets(band)),
+            Err(_) => std::borrow::Cow::Borrowed(&[]),
+        }
+    }
+    #[cfg(not(feature = "ares"))]
+    {
+        std::borrow::Cow::Borrowed(splash_cells(cell_spread))
+    }
 }
 
 /// `ftol(CellSpread)`, the spread in whole cells: `Apply_area_damage`'s

@@ -1,5 +1,4 @@
 use super::*;
-use crate::app::presentation::interpolation::RenderInterpolation;
 use crate::rules::ini_parser::IniFile;
 use crate::sim::world::Simulation;
 
@@ -18,15 +17,10 @@ fn fixture() -> (Simulation, RuleSet) {
     (sim, rules)
 }
 
-fn view<'a>(
-    sim: &'a Simulation,
-    rules: &'a RuleSet,
-    interpolation: &'a RenderInterpolation,
-) -> PresentedWorld<'a> {
+fn view<'a>(sim: &'a Simulation, rules: &'a RuleSet) -> PresentedWorld<'a> {
     PresentedWorld {
         sim,
         rules: Some(rules),
-        interpolation,
         translucent_viewer: None,
     }
 }
@@ -44,8 +38,7 @@ fn an_invisible_lamp_is_never_registered_for_the_click_or_the_band() {
     let beside = sim
         .spawn_object("VISIBLE", "Neutral", 10, 10, 0, &rules)
         .unwrap();
-    let interpolation = RenderInterpolation::new(false);
-    let source = view(&sim, &rules, &interpolation);
+    let source = view(&sim, &rules);
     let (x, y) = source.screen_position(sim.entities().get(lamp).unwrap());
     assert!(rules.object("LAMP").unwrap().invisible);
     assert_eq!(
@@ -78,8 +71,7 @@ fn own_invisible_object_and_nonselectable_visible_object_still_answer_hover() {
     let visible = sim
         .spawn_object("VISIBLE", "Neutral", 20, 20, 0, &rules)
         .unwrap();
-    let interpolation = RenderInterpolation::new(false);
-    let source = view(&sim, &rules, &interpolation);
+    let source = view(&sim, &rules);
     assert!(
         sim.entities()
             .get(own)
@@ -104,8 +96,7 @@ fn invisible_cell_fallback_is_rejected_after_the_ground_list_head_is_chosen() {
     let lamp = sim
         .spawn_object("LAMP", "Neutral", 10, 10, 0, &rules)
         .unwrap();
-    let interpolation = RenderInterpolation::new(false);
-    let source = view(&sim, &rules, &interpolation);
+    let source = view(&sim, &rules);
     let (x, y) = source.screen_position(sim.entities().get(lamp).unwrap());
     assert_eq!(
         sim.first_ground_cell_object((10, 10)),

@@ -40,7 +40,21 @@ impl GameEntity {
         self.turret_selection.current_turret_index
     }
 
-    /// TechnoClass::SetGunnerWeapon70DC70 -> TechnoType7178B0.
+    /// Ares TechnoClass_Update (Ares.dll 1004B320, hook 0x6F9E50, `#1208`):
+    /// a `PassengerTurret=` type's current turret (`+0x124`) is its passenger
+    /// count, at most 17 and `TurretCount - 1`.
+    #[cfg(feature = "ares")]
+    pub(crate) fn update_passenger_turret(&mut self, object: &ObjectType) {
+        if object.techno_combat().movement().passenger_turret() {
+            let passengers =
+                i32::try_from(self.passenger_role.passenger_count()).unwrap_or(i32::MAX);
+            self.turret_selection.current_turret_index =
+                passengers.min(17).min(object.turret_count.wrapping_sub(1));
+        }
+    }
+
+    /// TechnoClass::SetGunnerWeapon70DC70 -> TechnoType7178B0 (Ares
+    /// TechnoClass_SwitchGunner 10042480 reads indices from 18 on).
     /// Charge types retain both words; out-of-range signed modes select mode0.
     /// This changes no timer, attachment or RNG state.
     pub(crate) fn set_gunner_weapon(&mut self, mode: i32, object: &ObjectType) {
@@ -66,26 +80,32 @@ impl GameEntity {
         self.rearm_timer.start(frame, duration);
     }
 
+    /// Whether [`Self::update_charge_turret`] runs for `object`'s type: a
+    /// charge turret with turrets, not a Gattling. Others keep their index.
+    pub(crate) fn charges_turret(object: &ObjectType) -> bool {
+        object.gunner_turrets.is_charge_turret() && object.turret_count > 0 && !object.is_gattling
+    }
+
     /// TechnoAI6FA4FB..6FA5BE, after target validity and before missions.
     /// The signed wrapping product precedes IDIV, then the result is clamped.
     /// Only drawing reads this index; no weapon, timer or RNG is changed.
     pub(crate) fn update_charge_turret(&mut self, frame: i32, object: &ObjectType) {
-        if !object.gunner_turrets.is_charge_turret()
-            || object.turret_count <= 0
-            || object.is_gattling
-        {
+        if !Self::charges_turret(object) {
             return;
         }
-        let selection = &mut self.turret_selection;
-        selection.current_turret_index = if selection.charge_turret_delay <= 0 {
+        let rearm_remaining = self.rearm_timer.remaining(frame);
+        let selection = &self.turret_selection;
+        let index = if selection.charge_turret_delay <= 0 {
             0
         } else {
-            (object
-                .turret_count
-                .wrapping_mul(self.rearm_timer.remaining(frame))
-                / selection.charge_turret_delay)
+            (object.turret_count.wrapping_mul(rearm_remaining) / selection.charge_turret_delay)
                 .clamp(0, object.turret_count - 1)
         };
+        // The index sits in the record's seldom part: an unchanged index
+        // writes nothing, so a presentation frame keeps sharing that part.
+        if selection.current_turret_index != index {
+            self.turret_selection.current_turret_index = index;
+        }
     }
 
     /// Raw native state for component oracle inputs; production uses the

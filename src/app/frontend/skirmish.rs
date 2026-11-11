@@ -1867,7 +1867,7 @@ mod tests {
             session.options.bases = false;
             session.options.unit_count = 0;
 
-            let result = apply_explicit_skirmish_launch_session(
+            apply_explicit_skirmish_launch_session(
                 &mut sim,
                 &map,
                 &roster,
@@ -2233,6 +2233,9 @@ mod tests {
         );
     }
 
+    // The stock budget: Ares 3.0 MPGameModeClass_CreateStartingUnits_UnitCost
+    // (1001EE10, hook 0x5D6D9A) averages a type set without BaseUnit.
+    #[cfg(not(feature = "ares"))]
     #[test]
     fn skirmish_positive_unit_count_spawns_extra_starting_units() {
         let mut sim = Simulation::new();
@@ -2319,11 +2322,75 @@ mod tests {
         };
         assert_eq!(credits("Player"), Some(10_000));
         assert_eq!(credits("Computer1"), Some(10_000));
+
+        // The base unit (`0x005D708B`) and the extra units (`0x00688F90`,
+        // `0x0068927F`) all Unlimbo with facing 0.
+        let frame = sim.session().binary_frame();
+        for entity in sim.entities().values() {
+            assert_eq!(
+                entity.body_facing_byte(frame),
+                0,
+                "{} must start facing north",
+                sim.interner().resolve(entity.type_ref())
+            );
+        }
+    }
+
+    /// Unholy Alliance's base-unit callback (`0x005CB440`): every house gets
+    /// one unit per `BaseUnit=` entry, whatever its Owner. The last entry
+    /// takes the base cell (the fallback's seed cell, no draw) and entry 0
+    /// the base cell plus (3, 3).
+    #[test]
+    fn unholy_alliance_starts_every_house_with_one_unit_per_base_unit_entry() {
+        let mut sim = Simulation::new();
+        let mut session = test_session();
+        session.mode = SkirmishLaunchMode::stock(4).expect("stock Unholy Alliance row");
+        session.options.bases = true;
+        session.options.unit_count = 0;
+        let terrain = test_terrain(64, 64);
+        let starts = test_in_playfield_launch_starts();
+        let map = test_map_with_starts(&starts);
+        let rules = RuleSet::from_ini(&launch_fixture_ini(
+            "[General]\nBaseUnit=AMCV,SMCV\n[VehicleTypes]\n1=AMCV\n2=SMCV\n\
+             [AMCV]\nOwner=Americans\n[SMCV]\nOwner=Russians\n",
+        ))
+        .expect("unholy rules parse");
+
+        let result = apply_explicit_skirmish_launch_session(
+            &mut sim,
+            &map,
+            &roster_with_neutral_and_playable(),
+            &rules,
+            &terrain,
+            &launch_descriptor(&session),
+        );
+
+        assert_eq!(result.spawned_mcvs, 4);
+        for owner in ["Player", "Computer1"] {
+            let base =
+                crate::sim::house_state::house_state_for_owner(sim.houses(), owner, sim.interner())
+                    .and_then(|house| house.base_center())
+                    .expect("the house has a base cell");
+            let cell_of = |type_id: &str| {
+                sim.entities()
+                    .values()
+                    .find(|entity| {
+                        sim.interner().resolve(entity.owner()) == owner
+                            && sim.interner().resolve(entity.type_ref()) == type_id
+                    })
+                    .map(|entity| (entity.position.rx(), entity.position.ry()))
+            };
+            assert_eq!(cell_of("SMCV"), Some(base), "{owner}");
+            assert_eq!(cell_of("AMCV"), Some((base.0 + 3, base.1 + 3)), "{owner}");
+        }
     }
 
     /// `Post_Map_Init` calls `Generate_Starting_Units` at `0x00686937` before
     /// the AI grant loop at `0x006869BE`, so the Hard multiplier applies to the
     /// balance that already includes the credited leftover budget.
+    // The stock budget: Ares 3.0 MPGameModeClass_CreateStartingUnits_UnitCost
+    // (1001EE10, hook 0x5D6D9A) averages a type set without BaseUnit.
+    #[cfg(not(feature = "ares"))]
     #[test]
     fn gsi_09_01_ai_grant_multiplies_post_leftover_balance() {
         let mut sim = Simulation::new();

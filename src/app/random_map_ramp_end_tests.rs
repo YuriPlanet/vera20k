@@ -23,6 +23,7 @@ fn ordinary_recipe(seed: i32, map_type: i32) -> RmgOptions {
         tiberium: 35,
         vegetation: 30,
         urban_presence: 40,
+        urban_enabled: false,
         seed,
         ..Default::default()
     }
@@ -159,7 +160,7 @@ fn generated_connector_uses_native_slope_piece_tileset() {
         &prepared.settings,
         &prepared.resolved_inputs,
         &prepared.blocks,
-        &prepared.tech_types,
+        &crate::map::rmg::build::GenerationObjects::tech(&prepared.tech_types),
         &mut |view| match view.point() {
             GenerationPoint::After(Stage::Regions) => {
                 before_islands = Some(
@@ -228,8 +229,8 @@ fn generated_connector_uses_native_slope_piece_tileset() {
             .contains_geometry_packed(i32::from(cell.rx), i32::from(cell.ry))
         })
         .expect("a generated native ramp end survives later stages into the emitted playable map");
-    let mut main_rng = crate::sim::rng::MainRng::new(0x0401_599d);
-    let mut main = crate::app::state::process_main_draws(None, &mut main_rng);
+    let main_rng = crate::sim::rng::MainRng::new(0x0401_599d);
+    let mut main = crate::app::state::process_main_draws(None, &main_rng);
     let mut selector = crate::map::tile_variant_selector::TileVariantSelectorCache::default();
     let resolved = build_random_map_preview_grid(
         &generated.map_file,
@@ -280,6 +281,7 @@ fn generated_connector_uses_native_slope_piece_tileset() {
         None,
         crate::app::match_runtime::session::SessionMode::Skirmish,
         false,
+        None,
         &mut SilentProgress,
     )
     .expect("ordinary selected-.SED load");
@@ -362,7 +364,7 @@ fn generated_raised_ridge_materializes_native_cliff_faces() {
         &prepared.settings,
         &prepared.resolved_inputs,
         &prepared.blocks,
-        &prepared.tech_types,
+        &crate::map::rmg::build::GenerationObjects::tech(&prepared.tech_types),
         &mut |view| {
             if view.point() == GenerationPoint::After(Stage::Regions) {
                 let cells = view.snapshot().map_file.cells;

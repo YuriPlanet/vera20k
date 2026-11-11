@@ -291,9 +291,15 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
         }
     }
     // Muzzle animations `TechnoClass::Fire_At` constructs
-    // (`sim::world::damage_consequences`, `combat::fire_coord`).
+    // (`sim::world::damage_consequences`, `combat::fire_coord`), and the
+    // assault anim at each occupant KillOccupants (`0x004586B7`) kills.
     for weapon in rules.weapons_iter() {
-        for name in weapon.anim.iter().chain(&weapon.occupant_anim) {
+        for name in weapon
+            .anim
+            .iter()
+            .chain(&weapon.occupant_anim)
+            .chain(&weapon.assault_anim)
+        {
             insert(name);
         }
     }
@@ -302,6 +308,13 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     // as every other producer, including in headless matches.
     for projectile in rules.projectiles_iter() {
         if let Some(name) = projectile.trailer.as_deref() {
+            insert(name);
+        }
+    }
+    // AircraftAI414ED0..414F42 constructs this retained fixed-ART AnimType
+    // through ordinary Anim421EA0, including dynamically allocated aliases.
+    for object in rules.all_objects() {
+        if let Some(name) = object.aircraft_trailer().animation() {
             insert(name);
         }
     }
@@ -326,6 +339,12 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     // General list. The completion owner must find bound physical shapes
     // even when no warhead or other producer names these corpse animations.
     for name in &rules.general.dead_bodies {
+        insert(name);
+    }
+    // BuildingReceiveDamage442832..4428F4 constructs an OnFire Anim before
+    // attaching it. Keep each resolved slot key, including unread late AV
+    // allocations, in the ordinary AnimClass asset-binding closure.
+    for name in &rules.general.on_fire {
         insert(name);
     }
     for name in &rules.general.metallic_debris {
@@ -506,6 +525,19 @@ pub fn tolerant_anim_class_roots(rules: &RuleSet) -> Vec<String> {
             .art()
             .building_anim_roots()
             .into_iter()
+            .filter(|name| rules.anim_type_names.contains(name)),
+    );
+    // Slot 9's names are on the rules section (`0x00464450..0x004644FD`), so
+    // no art row above reaches them. Unbound, the constructor is refused and
+    // Grand_Opening (`0x00446662`) leaves the turret undrawn.
+    roots.extend(
+        rules
+            .all_objects()
+            .filter_map(crate::rules::art_data::shp_turret_anim_config)
+            .flat_map(|row| {
+                let damaged = row.damaged_variant.map(|variant| variant.anim_type);
+                std::iter::once(row.anim_type).chain(damaged)
+            })
             .filter(|name| rules.anim_type_names.contains(name)),
     );
     roots
@@ -1036,7 +1068,9 @@ mod anim_class_root_tests {
     #[test]
     fn bridge_roots_preserve_literal_factory_tokens_and_unread_types() {
         let rules = RuleSet::from_ini(&IniFile::from_str(
-            "[General]\nMetallicDebris=ONE, FX, none, ,D,ONE\n\
+            // FX is registered: Ares reads BridgeExplosions Find-only
+            // (Buf_General 1005BB00, hook 0x66D55E).
+            "[Animations]\n0=FX\n[General]\nMetallicDebris=ONE, FX, none, ,D,ONE\n\
              BridgeExplosions=FX, FX,none,<none>\n",
         ))
         .unwrap();
@@ -1053,7 +1087,9 @@ mod anim_class_root_tests {
     #[test]
     fn roots_cover_teleport_superweapon_and_lightning_producers() {
         let rules = RuleSet::from_ini(&IniFile::from_str(
-            "[General]\nBehind=MYBEHIND\nWarpOut=MYWARP\nIronCurtainInvokeAnim=MYIRON\n\
+            // The weather anims are registered for Ares's Find-only lists.
+            "[Animations]\n0=MYCLOUD1\n1=MYCLOUD2\n2=MYBOLT\n\
+             [General]\nBehind=MYBEHIND\nWarpOut=MYWARP\nIronCurtainInvokeAnim=MYIRON\n\
              ForceShieldInvokeAnim=MYSHIELD\nIonBlast=MYRING\n\
              DominatorFirstAnim=MYHEAD\nDominatorSecondAnim=MYLOC\n\
              WeatherConClouds=MYCLOUD1,MYCLOUD2\nWeatherConBolts=MYBOLT\n\

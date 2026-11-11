@@ -7,6 +7,7 @@
 //!
 //! The app owns diagnostic samples and log delivery; gameplay state is read-only.
 
+use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::{AppState, BUILD_STAMP};
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::SpeedType;
@@ -49,11 +50,13 @@ fn reset_live_window(state: &mut AppState) {
 }
 
 pub(crate) fn synchronize_observer(state: &mut AppState) {
+    // The observer writes the live world: a tick still out finishes first.
+    crate::app::match_runtime::sim_tick::finish_threaded_frame(state);
     let active = state.diag.telemetry_active();
     let simulation = state
         .match_state
         .sim_runtime
-        .as_mut()
+        .write_sim(SimWrite::Debug)
         .map(|rt| &mut rt.simulation);
     if state
         .diag
@@ -74,7 +77,7 @@ fn bounded_text(value: &str, maximum: usize) -> String {
 
 /// Capture one full dashboard snapshot, or `None` when no match is running.
 pub fn capture_snapshot(state: &AppState) -> Option<TelemetrySnapshot> {
-    let runtime = state.match_state.sim_runtime.as_ref()?;
+    let runtime = state.match_state.sim_runtime.runtime()?;
     let mut snapshot = runtime.simulation.telemetry_snapshot();
     #[cfg(feature = "debug-tools")]
     {
@@ -104,12 +107,9 @@ pub fn capture_snapshot(state: &AppState) -> Option<TelemetrySnapshot> {
             })
             .map(|name| bounded_text(name, TELEMETRY_MAX_NAME_BYTES));
     }
-    let speed = runtime
-        .simulation
-        .session()
-        .game_options()
-        .game_speed
-        .clamp(0, 6) as u8;
+    let speed = crate::sim::game_options::clamp_game_speed(
+        runtime.simulation.session().game_options().game_speed,
+    );
     let mut timing =
         state
             .match_state
@@ -327,7 +327,7 @@ pub fn publish_if_due(state: &mut AppState) {
 /// world replacement.
 fn build_terrain_grid(state: &AppState) -> Option<crate::sim::telemetry::TerrainGrid> {
     const HEX: &[u8; 16] = b"0123456789abcdef";
-    let runtime = state.match_state.sim_runtime.as_ref()?;
+    let runtime = state.match_state.sim_runtime.runtime()?;
     let sim = &runtime.simulation;
     let width = sim.session().map_width();
     let height = sim.session().map_height();

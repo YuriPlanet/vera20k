@@ -12,6 +12,7 @@ use crate::map::overlay_mark::{
 };
 use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::{overlay_types::OverlayTypeRegistry, ruleset::RuleSet};
+use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::movement::{ground_pose, infantry_entry::InfantryEntryArgs};
 use crate::sim::occupancy::CellObjectMember;
 use crate::sim::overlay_mark_host::SimulationMarkHost;
@@ -19,8 +20,17 @@ use crate::sim::world::lifecycle::RevealFailure;
 use crate::sim::world::{FrameEffects, UninitContext};
 
 impl Simulation {
-    /// None delegates nonwalls to the existing class/generic Reveal path.
-    /// The native wall arm never reaches Building's live enrollment suffix.
+    /// None delegates nonwalls to the existing class/generic Reveal path,
+    /// after [`Self::clear_site_before_building_unlimbo`] has removed what
+    /// they stand on. The native wall arm never reaches Building's live
+    /// enrollment suffix. `game_active` is native `0x00A8E9A0`, which the
+    /// cell's building lookup (`0x0047C520`) answers null without.
+    /// RESIDUAL: callers pass false during scenario load, as
+    /// `building_upgrade_host_at` does, but `Main__PrepareSession` sets the
+    /// byte at `0x0052D9D7`, before Start_Scenario, so native runs the
+    /// LaserFencePost arm for a map-authored post too. Trigger: a map that
+    /// authors a `LaserFencePost=` on its house's `LaserFence=` building
+    /// (no retail type is either). Effect: both buildings stay on the cell.
     pub(super) fn unlimbo_constructed_wall(
         &mut self,
         id: u64,
@@ -28,11 +38,21 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
+        game_active: bool,
     ) -> Option<RevealOutcome> {
         let entity = self.substrate.entities.get(id)?;
-        if entity.category() != EntityCategory::Structure
-            || !self.object_type(entity.type_ref(), rules)?.wall
-        {
+        if entity.category() != EntityCategory::Structure {
+            return None;
+        }
+        if !self.object_type(entity.type_ref(), rules)?.wall {
+            self.clear_site_before_building_unlimbo(
+                id,
+                requested,
+                rules,
+                registry,
+                effects,
+                game_active,
+            );
             return None;
         }
         let rejected = Some(RevealOutcome::Failed(RevealFailure::RejectedEarly));
@@ -64,28 +84,14 @@ impl Simulation {
         let (Ok(rx), Ok(ry)) = (u16::try_from(rx), u16::try_from(ry)) else {
             return rejected;
         };
-        let Some((overlay_id, owner)) = self.substrate.entities.get(id).and_then(|entity| {
-            Some((
-                crate::sim::production::linked_wall_overlay_id(
-                    self.object_type(entity.type_ref(), rules)?,
-                    registry,
-                )?,
-                entity.owner(),
-            ))
-        }) else {
+        if self.substrate.entities.get(id).is_none_or(|entity| {
+            self.object_type(entity.type_ref(), rules)
+                .and_then(|ty| crate::sim::production::linked_wall_overlay_id(ty, registry))
+                .is_none()
+        }) {
             return rejected;
-        };
-        let replaces_owned = self.overlay_grid.as_ref().is_some_and(|grid| {
-            rx < grid.width()
-                && ry < grid.height()
-                && grid.cell(rx, ry).overlay_id == Some(overlay_id)
-                && grid.cell(rx, ry).wall_owner == Some(owner)
-        });
-        if replaces_owned {
-            //44065C ignores House4FCE80's answer; only the cue is suppressed.
-            let house = self.resolve(owner).to_owned();
-            self.sell_wall_at_cell(&house, rx as i16, ry as i16, true, rules, registry, effects);
         }
+        self.sell_owned_walls_before_building_unlimbo(id, (rx, ry), rules, registry, effects);
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return rejected;
         };
@@ -260,4 +266,189 @@ impl Simulation {
         self.uninit_with_context(id, context);
         Some(RevealOutcome::Consumed)
     }
+
+    /// `BuildingClass::Unlimbo @ 0x00440580` for a building that is not a
+    /// wall, between its own Can_Enter_Cell (`0x004405A5`) and
+    /// `TechnoClass::Unlimbo` (`0x00440B0F`): the arms that remove what an
+    /// admitted building stands on. Both need that Can_Enter_Cell to answer 0
+    /// (`0x004405B6`, `0x00440A6D`), and neither refuses the Unlimbo.
+    ///
+    /// - `0x004405BC..0x00440770`:
+    ///   [`Self::sell_owned_walls_before_building_unlimbo`].
+    /// - `0x00440A6D..0x00440B01`: a `LaserFencePost=` type (`+0x16BE`)
+    ///   UnInits (vt+0xF8) the first building of its coordinate's cell
+    ///   (`0x0047C520`) when that is a `LaserFence=` type (`+0x16BF`) of the
+    ///   same house. Its `+0x618 = 0` write (`0x00440A83`), like the
+    ///   LaserFence facing frames at `0x00440A32..0x00440A63`, has no VERA
+    ///   reader: fence sections are not ported (see the residual at
+    ///   `0x00440E2F` in `lifecycle.rs`).
+    ///
+    /// No RNG draw and no timer write on either arm. Residual: an upgrade
+    /// type is consumed before this (`unlimbo_constructed_upgrade`), where
+    /// native walks the sell arms first; only an upgrade that is also the
+    /// WallTower, a ToOverlay or a Gate type could tell the two apart.
+    fn clear_site_before_building_unlimbo(
+        &mut self,
+        id: u64,
+        requested: RevealPosition,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+        game_active: bool,
+    ) {
+        let Some((owner, ty)) =
+            self.substrate.entities.get(id).and_then(|entity| {
+                Some((entity.owner(), self.object_type(entity.type_ref(), rules)?))
+            })
+        else {
+            return;
+        };
+        let gates = &rules.general.building_types;
+        let wall_tower = gates
+            .wall_tower
+            .as_deref()
+            .is_some_and(|name| name.eq_ignore_ascii_case(&ty.id));
+        if !(wall_tower || ty.to_overlay.is_some() || ty.gate || ty.laser_fence_post) {
+            return;
+        }
+        let Some(terrain) = self.resolved_terrain.as_ref() else {
+            return;
+        };
+        let cells = NativeCellQuery::canonical(terrain);
+        let coord = ground_pose::position_world_coord(&requested);
+        let cell = cells.lookup_world(coord.x, coord.y);
+        if !matches!(
+            super::super::object_entry::classify_object(
+                self,
+                rules,
+                registry,
+                CellObjectMember::Entity(id),
+                cell,
+                InfantryEntryArgs::REPAIR,
+            ),
+            Ok(0)
+        ) {
+            return;
+        }
+        let (rx, ry) = cells.coord(cell);
+        let (Ok(rx), Ok(ry)) = (u16::try_from(rx), u16::try_from(ry)) else {
+            return;
+        };
+        if let Some(registry) = registry {
+            self.sell_owned_walls_before_building_unlimbo(id, (rx, ry), rules, registry, effects);
+        }
+        if !(ty.laser_fence_post && game_active) {
+            return;
+        }
+        let own_fence = self
+            .substrate
+            .occupancy
+            .first_building_on_layer(rx, ry, MovementLayer::Ground)
+            .filter(|&other| {
+                self.substrate.entities.get(other).is_some_and(|other| {
+                    other.owner() == owner
+                        && self
+                            .object_type(other.type_ref(), rules)
+                            .is_some_and(|other| other.laser_fence)
+                })
+            });
+        if let Some(fence) = own_fence {
+            self.uninit_with_context(
+                fence,
+                UninitContext::new(rules, registry).with_effects(effects),
+            );
+        }
+    }
+
+    /// `BuildingClass::Unlimbo @ 0x00440580`, `0x004405BC..0x00440770`, once
+    /// its Can_Enter_Cell has admitted building `id` at cell `(rx, ry)`: the
+    /// owner's walls under it go through `HouseClass::Sell_Building_At_Cell
+    /// @ 0x004FCE80` with the sell cue suppressed (second argument 1). The
+    /// first arm that matches the type decides, and the others are not tried:
+    ///
+    /// - `[General] WallTower=` names the type (`Rules+0x87C`, `0x004405C7`):
+    ///   its cell, when the overlay is 0 or 2 (GASAND, GAWALL).
+    /// - The type has a `ToOverlay=` (`+0xE54`, `0x00440606`): its cell, when
+    ///   the overlay is that one (`0x0044064A`).
+    /// - The type is `Gate=` (`+0x16B7`, read at `0x004609EA..0x00460A13`,
+    ///   default no): each foundation cell (vt+0x90(1)) whose overlay is 0, 2
+    ///   or 0x1A (NAWALL), `0x00440674..0x00440720`.
+    ///
+    /// A cell counts only when its wall owner (`Cell+0x50`) is the building's
+    /// house. The sale's answer is ignored. That sale refunds nothing, sells
+    /// only a human's wall and draws no RNG; a wall it refuses stays under
+    /// the building.
+    ///
+    /// Residual: the Gate arm also calls `0x00453240` on each foundation cell
+    /// whose first building is a `LaserFence=` type of the same house
+    /// (`0x00440725..0x0044075F`). That walks the fence run along the fence's
+    /// facing to its post, reconnects the post (`0x00453060`) or else UnInits
+    /// the fence, and belongs to the fence-section mechanism VERA does not
+    /// have. Until then a Gate placed on its owner's LaserFence building
+    /// shares the cell with it. No retail type is `LaserFence=`.
+    fn sell_owned_walls_before_building_unlimbo(
+        &mut self,
+        id: u64,
+        (rx, ry): (u16, u16),
+        rules: &RuleSet,
+        registry: &OverlayTypeRegistry,
+        effects: FrameEffects<'_>,
+    ) {
+        use crate::sim::build_site::{OVERLAY_GASAND, OVERLAY_GAWALL, OVERLAY_NAWALL};
+        const TOWER_WALLS: &[Option<u8>] = &[Some(OVERLAY_GASAND), Some(OVERLAY_GAWALL)];
+        const GATE_WALLS: &[Option<u8>] = &[
+            Some(OVERLAY_GASAND),
+            Some(OVERLAY_GAWALL),
+            Some(OVERLAY_NAWALL),
+        ];
+        let Some((owner, ty)) =
+            self.substrate.entities.get(id).and_then(|entity| {
+                Some((entity.owner(), self.object_type(entity.type_ref(), rules)?))
+            })
+        else {
+            return;
+        };
+        let wall_tower = rules
+            .general
+            .building_types
+            .wall_tower
+            .as_deref()
+            .is_some_and(|name| name.eq_ignore_ascii_case(&ty.id));
+        let to_overlay = [ty
+            .to_overlay
+            .as_deref()
+            .and_then(|name| registry.id_for_name(name))];
+        let (offsets, sold) = if wall_tower {
+            (vec![(0, 0)], TOWER_WALLS)
+        } else if to_overlay[0].is_some() {
+            (vec![(0, 0)], to_overlay.as_slice())
+        } else if ty.gate {
+            (ty.foundation.cell_offsets(), GATE_WALLS)
+        } else {
+            return;
+        };
+        let house = self.resolve(owner).to_owned();
+        for (dx, dy) in offsets {
+            let (Ok(x), Ok(y)) = (
+                u16::try_from(i32::from(rx) + i32::from(dx)),
+                u16::try_from(i32::from(ry) + i32::from(dy)),
+            ) else {
+                continue;
+            };
+            let owned = self.overlay_grid.as_ref().is_some_and(|grid| {
+                x < grid.width()
+                    && y < grid.height()
+                    && grid.cell(x, y).wall_owner == Some(owner)
+                    && sold.contains(&grid.cell(x, y).overlay_id)
+            });
+            if owned {
+                //44065C/440720 ignore House4FCE80's answer; only the cue is suppressed.
+                self.sell_wall_at_cell(&house, x as i16, y as i16, true, rules, registry, effects);
+            }
+        }
+    }
 }
+
+#[cfg(test)]
+#[path = "wall_unlimbo_tests.rs"]
+mod tests;

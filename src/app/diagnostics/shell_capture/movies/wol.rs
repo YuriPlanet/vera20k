@@ -16,6 +16,7 @@ use crate::app::shell_wol::{
     WolApiStatus, WolLoginAccepted, WolProvider, WolServer, WolServerList, WolServiceEvent,
     WolServiceRequest, service_event,
 };
+use crate::ui::chat_translation::ChatLanguage;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::wol_chat::WolChatLine;
 use crate::ui::wol_lobby::{
@@ -31,13 +32,13 @@ mod quick_match;
 pub enum WolTarget {
     /// `0x10F` settled after a controlled server list, empty fields.
     LoginSteady,
-    /// The online login page and its info pane, filled in place; nothing is
-    /// read or sent.
+    /// The online login page, its counts set in place; nothing is read or
+    /// sent.
     ModernLoginPage,
-    /// Login's popup over it, a username and password typed and Remember
+    /// Its sign-in form with a username and password typed and Remember
     /// password ticked; nothing is sent.
     ModernLogin,
-    /// Play as Guest's popup with a typed username; nothing is sent.
+    /// Its sign-in form with a username alone, a guest's; nothing is sent.
     ModernUsername,
     /// Create Account's popup, filled in; nothing is sent.
     ModernCreateAccount,
@@ -133,8 +134,6 @@ pub enum WolTarget {
     AbortReturn,
     /// A started WOL match's FF menu after a physical speed-trackbar jump.
     InternetMenu,
-    /// FF's Game Controls press opens BBB over the running WOL match.
-    GameControls,
     /// `0x113` Back: the channel left and a fresh `0x10E` settled.
     LobbyBack,
     /// The Options page's offline test service: login to a settled 0x113.
@@ -184,6 +183,12 @@ pub enum WolTarget {
     /// The modern lobby's Options over the test service: `0x2BC` settled
     /// with Play Music alone, help under it.
     ModernOptions,
+    /// The modern lobby's Chat Translation: the list picks Simplified Chinese,
+    /// Same-Alphabet Languages is checked and OK saves them; the reopened page
+    /// shows them, the help under that box.
+    ModernChatTranslation,
+    /// The same, then the language list open over the page.
+    ModernChatTranslationList,
     /// `0x2BC` Play Music unchecked: the preview queues -3, nothing saved.
     OptionsMusicOff,
     /// Pages and Buddies toggled, then Cancel: the lobby again, applied
@@ -539,6 +544,8 @@ impl WolTarget {
                     | Self::ModernRoomOptions
                     | Self::ModernSpectators
                     | Self::ModernOptions
+                    | Self::ModernChatTranslation
+                    | Self::ModernChatTranslationList
                     | Self::TestServiceCreate
                     | Self::TestServiceJoin
                     | Self::GuestChoices
@@ -616,7 +623,6 @@ impl WolTarget {
                 | Self::SetupStart
                 | Self::AbortReturn
                 | Self::InternetMenu
-                | Self::GameControls
                 | Self::IngameConnectionLost
                 | Self::IngamePage
                 | Self::IngamePageCancel
@@ -648,7 +654,6 @@ impl WolTarget {
             self,
             Self::AbortReturn
                 | Self::InternetMenu
-                | Self::GameControls
                 | Self::IngameConnectionLost
                 | Self::IngamePage
                 | Self::IngamePageCancel
@@ -717,7 +722,6 @@ pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-c9-back", WolTarget::GuestBack),
     ("wol-abort-return", WolTarget::AbortReturn),
     ("wol-0xff-menu", WolTarget::InternetMenu),
-    ("wol-game-controls", WolTarget::GameControls),
     ("wol-test-service-lobby", WolTarget::TestServiceLobby),
     ("wol-modern-lobby", WolTarget::ModernLobby),
     ("wol-modern-create", WolTarget::ModernCreate),
@@ -735,6 +739,14 @@ pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-0x130-mismatch-ok", WolTarget::MismatchOk),
     ("wol-0x2bc-steady", WolTarget::OptionsSteady),
     ("wol-modern-options", WolTarget::ModernOptions),
+    (
+        "wol-modern-chat-translation",
+        WolTarget::ModernChatTranslation,
+    ),
+    (
+        "wol-modern-chat-translation-list",
+        WolTarget::ModernChatTranslationList,
+    ),
     ("wol-0x2bc-music-off", WolTarget::OptionsMusicOff),
     ("wol-0x2bc-cancel", WolTarget::OptionsCancel),
     ("wol-0x2bc-ok", WolTarget::OptionsOk),
@@ -869,6 +881,9 @@ enum WolPhase {
     ServiceSetup,
     /// `0x113` Options pressed: waiting for `0x2BC`.
     OptionsOpening,
+    ChatTranslationOpening,
+    ChatTranslationReturn,
+    ChatTranslationReopened,
     /// `0x2BC` closed: waiting for the lobby.
     OptionsReturn,
     /// OK's result checked: `0x2BC` opened again.
@@ -1114,7 +1129,9 @@ impl WolCapture {
                     | WolTarget::ModernChangeCountry
                     | WolTarget::ModernRoomOptions
                     | WolTarget::ModernSpectators
-                    | WolTarget::ModernOptions => WolPhase::ServiceLogin,
+                    | WolTarget::ModernOptions
+                    | WolTarget::ModernChatTranslation
+                    | WolTarget::ModernChatTranslationList => WolPhase::ServiceLogin,
                     _ => WolPhase::Welcome,
                 };
             }
@@ -1366,23 +1383,47 @@ impl WolCapture {
                 let layout = crate::app::shell_wol::login_layout(state);
                 match self.target {
                     target if target.online_login() => {
-                        use crate::app::shell_wol::login_info::{LobbyStats, News};
-                        // Captures read nothing: the pane shows fixed news.
-                        state.frontend.login_info.set(
-                            Some(LobbyStats {
+                        // Captures read nothing: the page shows fixed counts.
+                        state.frontend.login_info.set(Some(
+                            crate::app::shell_wol::login_info::LobbyStats {
                                 online: 12,
                                 games_24h: 30,
-                            }),
-                            News::Posts(capture_news()),
-                        );
+                            },
+                        ));
                         let login = login_mut(state)?;
                         ensure!(
                             login.policy == crate::ui::wol_login::LoginPolicy::Online
                                 && login.account.is_none(),
                             "the online login page did not open on its own"
                         );
-                        self.event(frame, "the online login page and its info pane");
-                        if target != WolTarget::ModernLoginPage {
+                        self.event(frame, "the online login page");
+                        if matches!(target, WolTarget::ModernUsername | WolTarget::ModernLogin) {
+                            let online = layout.online.context("the online sign-in form")?;
+                            let typed: &[&str] = if target == WolTarget::ModernLogin {
+                                &["Player", "s3cret-pw"]
+                            } else {
+                                &["Player"]
+                            };
+                            account_type(state, typed);
+                            if target == WolTarget::ModernLogin {
+                                welcome_click(
+                                    state,
+                                    crate::ui::skirmish_shell::checkbox_icon_rect(
+                                        online.remember,
+                                        layout.page.scale,
+                                    ),
+                                );
+                            }
+                            let login = login_mut(state)?;
+                            ensure!(
+                                login.online_name() == "Player"
+                                    && login.button_enabled(crate::ui::wol_login::PLAY)
+                                    && login.form.as_ref().and_then(|form| form.remember)
+                                        == Some(target == WolTarget::ModernLogin),
+                                "the typed sign-in did not enable Play"
+                            );
+                            self.event(frame, "the sign-in form filled in");
+                        } else if target != WolTarget::ModernLoginPage {
                             self.account_popup(state, frame, target, &layout)?;
                         }
                         MoviesCapture::restore_neutral_pointer(state);
@@ -1844,7 +1885,7 @@ impl WolCapture {
                 let sim = &state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .context("installed WOL runtime")?
                     .simulation;
                 ensure!(
@@ -1927,11 +1968,6 @@ impl WolCapture {
                     WolTarget::InternetMenu => {
                         abort_return::AbortReturnInput::begin_menu(state, &mut self.route, frame)?
                     }
-                    WolTarget::GameControls => abort_return::AbortReturnInput::begin_game_controls(
-                        state,
-                        &mut self.route,
-                        frame,
-                    )?,
                     // A Quick Match game is a tournament game (+0x14 = 1):
                     // Abort opens the Surrender box, whose OK leaves.
                     WolTarget::QmPostmatch | WolTarget::QmPostmatchYes => {
@@ -1950,7 +1986,7 @@ impl WolCapture {
                 let sim = &state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .context("the clan peer's EXIT lost the runtime")?
                     .simulation;
                 let peer = clan_peer_house(state)?;
@@ -2020,10 +2056,7 @@ impl WolCapture {
                 {
                     self.phase = if self.target == WolTarget::ClanSurrender {
                         WolPhase::Settle(2)
-                    } else if matches!(
-                        self.target,
-                        WolTarget::InternetMenu | WolTarget::GameControls
-                    ) {
+                    } else if matches!(self.target, WolTarget::InternetMenu) {
                         ensure!(
                             crate::app::input::pause_menu::current_template(state)
                                 == crate::ui::shell::pause_menu::PauseMenuTemplate::Internet,
@@ -2040,7 +2073,7 @@ impl WolCapture {
                     let sim = &state
                         .match_state
                         .sim_runtime
-                        .as_ref()
+                        .runtime()
                         .context("EXIT runtime")?
                         .simulation;
                     ensure!(sim.quit_requested(), "the return began before EXIT ran");
@@ -2134,6 +2167,8 @@ impl WolCapture {
                                     | WolTarget::ModernRoomOptions
                                     | WolTarget::ModernSpectators
                                     | WolTarget::ModernOptions
+                                    | WolTarget::ModernChatTranslation
+                                    | WolTarget::ModernChatTranslationList
                             ) {
                                 1
                             } else {
@@ -2297,6 +2332,20 @@ impl WolCapture {
                     );
                     self.event(frame, "0x113 Options");
                     self.phase = WolPhase::OptionsOpening;
+                    return Ok(());
+                }
+                if matches!(
+                    self.target,
+                    WolTarget::ModernChatTranslation | WolTarget::ModernChatTranslationList
+                ) {
+                    let layout = crate::app::shell_wol::lobby::layout(state);
+                    lobby_button(state, &layout, lobby_ui::CHAT_TRANSLATION)?;
+                    ensure!(
+                        state.frontend.shell_exit.is_some(),
+                        "Chat Translation did not slide the lobby out"
+                    );
+                    self.event(frame, "lobby Chat Translation");
+                    self.phase = WolPhase::ChatTranslationOpening;
                     return Ok(());
                 }
                 if self.target == WolTarget::BuddyFromLobby && !self.rejoined {
@@ -2506,6 +2555,24 @@ impl WolCapture {
                     && Self::page_settled(state, ShellSlideKind::WolOptions) =>
             {
                 self.options_settled(state, frame)?;
+            }
+            WolPhase::ChatTranslationOpening
+                if rendered == PresentedShell::WolChatTranslation
+                    && Self::page_settled(state, ShellSlideKind::WolChatTranslation) =>
+            {
+                self.chat_translation_opened(state, frame)?;
+            }
+            WolPhase::ChatTranslationReturn
+                if rendered == PresentedShell::WolLobby
+                    && Self::page_settled(state, ShellSlideKind::WolLobby) =>
+            {
+                self.chat_translation_saved(state, frame)?;
+            }
+            WolPhase::ChatTranslationReopened
+                if rendered == PresentedShell::WolChatTranslation
+                    && Self::page_settled(state, ShellSlideKind::WolChatTranslation) =>
+            {
+                self.chat_translation_reopened(state, frame)?;
             }
             WolPhase::OptionsReturn
                 if rendered == PresentedShell::WolLobby
@@ -2841,7 +2908,6 @@ impl WolCapture {
                     WolTarget::SetupStart
                     | WolTarget::AbortReturn
                     | WolTarget::InternetMenu
-                    | WolTarget::GameControls
                     | WolTarget::IngameConnectionLost
                     | WolTarget::IngamePage
                     | WolTarget::IngamePageCancel
@@ -2873,7 +2939,7 @@ impl WolCapture {
             let sim = &state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .context("the clan match runtime")?
                 .simulation;
             let session = sim.session();
@@ -2898,7 +2964,7 @@ impl WolCapture {
         let after = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .context("the clan match runtime")?
             .simulation
             .pending_command_snapshot()
@@ -2932,7 +2998,7 @@ impl WolCapture {
                 let tick = state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .context("the clan match runtime")?
                     .simulation
                     .session()
@@ -4171,6 +4237,102 @@ impl WolCapture {
         Ok(())
     }
 
+    /// The Chat Translation page settled: real clicks choose Simplified
+    /// Chinese, which turns Same-Alphabet Languages on, then OK.
+    fn chat_translation_opened(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        use crate::app::shell_wol::chat_translation as app_page;
+        use crate::ui::wol_chat_translation::{OK, SAME_ALPHABET};
+        self.options_before = Some((read_settings(state)?, state.frontend.wol_preferences));
+        ensure!(
+            !Self::lobby(state)?.shown,
+            "the lobby must hide under the page"
+        );
+        let layout = app_page::layout(state);
+        let page = app_page::page(state).context("the page")?;
+        ensure!(page.settings.language.is_none(), "translation starts off");
+        ensure!(!page.enabled(SAME_ALPHABET), "off locks the checkboxes");
+        welcome_click(state, language_list_arrow(&layout));
+        let page = app_page::page(state).context("the page")?;
+        let popup = page
+            .popup_geometry(&layout)
+            .context("the language list did not open")?;
+        welcome_click(state, popup.row_rect(2).context("Simplified Chinese")?);
+        let page = app_page::page(state).context("the page")?;
+        ensure!(
+            page.settings.language == Some(ChatLanguage::SimplifiedChinese)
+                && page.settings.same_alphabet
+                && page.popup.control.is_none(),
+            "the clicks did not set the page: {:?}",
+            page.settings
+        );
+        welcome_click(state, layout.page.button_rect(OK).context("OK")?);
+        ensure!(
+            state.frontend.shell_exit.is_some(),
+            "the page did not slide out"
+        );
+        self.event(frame, "Simplified Chinese, OK");
+        self.phase = WolPhase::ChatTranslationReturn;
+        Ok(())
+    }
+
+    /// OK kept and wrote the choices; the page opens again to show them.
+    fn chat_translation_saved(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        let chat = state.persistence.options_profile.chat_translation;
+        ensure!(
+            chat.language == Some(ChatLanguage::SimplifiedChinese) && chat.same_alphabet,
+            "OK did not keep the choices: {chat:?}"
+        );
+        let saved = read_settings(state)?.context("VERA.INI")?;
+        let saved = String::from_utf8_lossy(&saved);
+        ensure!(
+            saved.contains("TranslateChat=zh-Hans") && saved.contains("TranslateSameAlphabet=yes"),
+            "OK did not write VERA.INI"
+        );
+        self.event(frame, "the lobby again: the choices are saved");
+        let layout = crate::app::shell_wol::lobby::layout(state);
+        lobby_button(state, &layout, lobby_ui::CHAT_TRANSLATION)?;
+        self.phase = WolPhase::ChatTranslationReopened;
+        Ok(())
+    }
+
+    fn chat_translation_reopened(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        use crate::app::shell_wol::chat_translation as app_page;
+        use crate::ui::wol_chat_translation::SAME_ALPHABET;
+        let layout = app_page::layout(state);
+        let page = app_page::page(state).context("the page")?;
+        ensure!(
+            page.settings.language == Some(ChatLanguage::SimplifiedChinese)
+                && page.is_checked(SAME_ALPHABET),
+            "the reopened page does not show the saved choices"
+        );
+        self.event(frame, "reopened with the saved choices");
+        // The capture's isolated profile goes back as it was.
+        let (bytes, _) = self.options_before.clone().context("saved VERA.INI")?;
+        restore_settings(state, bytes)?;
+        if self.target == WolTarget::ModernChatTranslationList {
+            welcome_click(state, language_list_arrow(&layout));
+            let page = app_page::page(state).context("the page")?;
+            let row = page
+                .popup_geometry(&layout)
+                .and_then(|popup| popup.row_rect(4))
+                .context("the language list did not open")?;
+            set_window_pointer_to_rect_center(state, row);
+        } else {
+            let same = layout
+                .checkbox_rect(SAME_ALPHABET)
+                .context("the checkbox")?;
+            set_window_pointer_to_rect_center(state, same);
+        }
+        App::handle_wol_mouse_move(state);
+        ensure!(
+            app_page::status_key(state).is_some()
+                || self.target == WolTarget::ModernChatTranslationList,
+            "the box has no help"
+        );
+        self.settle();
+        Ok(())
+    }
+
     /// The lobby shown again after `0x2BC` closed.
     fn options_returned(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         let lobby = Self::lobby(state)?;
@@ -4452,7 +4614,7 @@ impl WolCapture {
         self.page_tick = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|runtime| runtime.simulation.session().tick());
         // The controlled service answers the request it was sent.
         let requests = self.requests(state, frame)?;
@@ -4721,7 +4883,6 @@ impl WolCapture {
                 Some(crate::ui::pause_menu::InGameMenuState::Closed)
             }
             WolTarget::IngamePage => Some(crate::ui::pause_menu::InGameMenuState::Page),
-            WolTarget::GameControls => Some(crate::ui::pause_menu::InGameMenuState::Options),
             WolTarget::ClanSurrender => Some(crate::ui::pause_menu::InGameMenuState::Surrender),
             WolTarget::ClanLeaver | WolTarget::ClanCantKick => {
                 Some(crate::ui::pause_menu::InGameMenuState::Closed)
@@ -4745,7 +4906,7 @@ impl WolCapture {
                 state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .is_some_and(|runtime| runtime.simulation.session().tick() > sent)
             });
             return Ok(self.phase == WolPhase::Settle(0)
@@ -4776,41 +4937,15 @@ impl WolCapture {
         layout: &crate::ui::wol_login::WolLoginLayout,
     ) -> Result<()> {
         use crate::ui::wol_account::{AccountFormAction, AccountRequest, FORM_OK, FormKind};
-        use crate::ui::wol_login::{
-            CREATE_ACCOUNT, DELETE_ACCOUNT, FORGOT_PASSWORD, LOGIN, PLAY_AS_GUEST,
-        };
+        use crate::ui::wol_login::{CREATE_ACCOUNT, DELETE_ACCOUNT, FORGOT_PASSWORD};
         const PASSWORD: &str = "s3cret-pw";
         let control = match target {
-            WolTarget::ModernLogin => LOGIN,
-            WolTarget::ModernUsername => PLAY_AS_GUEST,
             WolTarget::ModernForgotPassword => FORGOT_PASSWORD,
             WolTarget::ModernDeleteAccount => DELETE_ACCOUNT,
             _ => CREATE_ACCOUNT,
         };
         welcome_click(state, button(layout, control)?);
         match target {
-            WolTarget::ModernLogin => {
-                account_type(state, &["Player", PASSWORD]);
-                let remember = crate::app::shell_wol::account_form_layout(state)
-                    .and_then(|rects| rects.remember)
-                    .context("Remember password")?;
-                welcome_click(
-                    state,
-                    crate::ui::skirmish_shell::checkbox_icon_rect(remember, layout.page.scale),
-                );
-                ensure!(
-                    login_mut(state)?
-                        .account
-                        .as_ref()
-                        .is_some_and(|form| form.remember == Some(true)),
-                    "Remember password did not tick"
-                );
-                self.event(frame, "Login: username and password typed, Remember ticked");
-            }
-            WolTarget::ModernUsername => {
-                account_type(state, &["Player"]);
-                self.event(frame, "Play as Guest: username typed");
-            }
             WolTarget::ModernForgotPassword => {
                 account_type(state, &["Player"]);
                 let form = login_mut(state)?
@@ -4895,7 +5030,7 @@ fn clan_peer_house(state: &AppState) -> Result<crate::sim::intern::InternedId> {
     let sim = &state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("the clan match runtime")?
         .simulation;
     state
@@ -5078,6 +5213,14 @@ fn restore_settings(state: &AppState, bytes: Option<Vec<u8>>) -> Result<()> {
     .with_context(|| format!("restore {}", path.display()))
 }
 
+/// The language list's face where a press opens it: the arrow at its right.
+fn language_list_arrow(
+    layout: &crate::ui::wol_chat_translation::WolChatTranslationLayout,
+) -> RectPx {
+    let face = layout.language;
+    RectPx::new(face.x + face.w - 12, face.y, 4, face.h)
+}
+
 fn lobby_button(state: &mut AppState, layout: &lobby_ui::WolLobbyLayout, id: u16) -> Result<()> {
     welcome_click(state, layout.page.button_rect(id).context("0x113 button")?);
     Ok(())
@@ -5179,38 +5322,6 @@ fn welcome_click(state: &mut AppState, rect: RectPx) {
     App::handle_wol_mouse_down(state);
     App::handle_wol_mouse_up(state);
     MoviesCapture::restore_neutral_pointer(state);
-}
-
-/// The info pane's posts in the online login captures.
-fn capture_news() -> Vec<crate::app::shell_wol::login_info::NewsPost> {
-    [
-        (
-            "2026-11-03",
-            "The map library on the website, and a leaderboard on the way",
-            "Browse the online map library and send in your own maps. A large team \
-             leaderboard comes next.",
-        ),
-        (
-            "2026-11-01",
-            "VERA20K 0.2.4: automatic updates and rooms for 30 players",
-            "The game now updates itself, runs on Intel Macs, and online rooms seat up to \
-             30 players.",
-        ),
-        (
-            "2026-10-29",
-            "VERA20K 0.2.3: steadier online matches",
-            "Online matches no longer hang on a player who drops, and one busy match can't \
-             freeze the others.",
-        ),
-    ]
-    .map(
-        |(date, title, summary)| crate::app::shell_wol::login_info::NewsPost {
-            date: date.into(),
-            title: title.into(),
-            summary: summary.into(),
-        },
-    )
-    .into()
 }
 
 fn login_mut(state: &mut AppState) -> Result<&mut crate::ui::wol_login::WolLoginState> {

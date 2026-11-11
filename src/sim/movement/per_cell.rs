@@ -362,6 +362,12 @@ impl Simulation {
         // 0x0073A31F..0x0073A5EA, before the Ready/Commence below: a tethered
         // unit on Enter arriving north-adjacent to its dock sends DOCK_NOW.
         if reason == PerCellReason::Arrival {
+            // Ares 3.0 1004C530 (hook 0x739F21): a small visceroid arriving
+            // on the one it seeks merges into it and ends here.
+            #[cfg(feature = "ares")]
+            if self.ares_visceroid_merge(id, rules, registry, effects) {
+                return;
+            }
             // 0x00739F21..0x00739F59 come first: a `PoweredUnit=` type whose
             // house has no powered center goes offline off a building.
             self.powered_unit_arrival(id, rules, effects);
@@ -491,6 +497,8 @@ impl Simulation {
             if !kills.contains(&victim) {
                 continue;
             }
+            #[cfg(feature = "ares")]
+            self.ares_crush_damage(id, victim, rules, registry, effects);
             if let Some(entity) = self.substrate.entities.get(victim) {
                 super::bump_crush::emit_crush_kill_sounds_at(
                     entity,
@@ -512,7 +520,7 @@ impl Simulation {
                 .is_some_and(|entity| entity.category() == EntityCategory::Unit)
             {
                 crushed_unit = true;
-                self.unit_death_explosion(rules, victim, &mut Vec::new());
+                self.unit_death_explosion(rules, victim, &mut Vec::new(), registry, effects);
             }
             self.free_all_captures(victim, rules, registry, effects);
             // `UnitClass::Crush_Or_Prescatter_Cell @ 0x007416A0`: the
@@ -545,6 +553,54 @@ impl Simulation {
         if self.per_cell_owner_alive(id) {
             self.foot_per_cell_process(id, reason, rules, registry, effects);
         }
+    }
+
+    /// Ares UnitClass_CrushCell_CrushDamage (Ares.dll 1004BCE0, hook
+    /// 0x7418AA), ahead of the CrushSound: the crusher receives the victim
+    /// type's `CrushDamage` for the victim's rank with its
+    /// `CrushDamage.Warhead`, else `[CombatDamage] C4Warhead`, as
+    /// `ReceiveDamage(&damage, 0, warhead, null, false, false, null)`. A zero
+    /// damage or a null warhead deals none.
+    #[cfg(feature = "ares")]
+    fn ares_crush_damage(
+        &mut self,
+        crusher: u64,
+        victim: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        use crate::sim::combat::veterancy::VeterancyRank;
+        let Some(entity) = self.substrate.entities.get(victim) else {
+            return;
+        };
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
+            return;
+        };
+        let rank = match entity.veterancy.rank_kind() {
+            VeterancyRank::Rookie => 0,
+            VeterancyRank::Veteran => 1,
+            VeterancyRank::Elite => 2,
+        };
+        let (damage, warhead) = object.techno_combat().combat().crush_damage(rank);
+        let warhead = warhead.unwrap_or(Some(rules.bridge_warheads.c4_name.as_str()));
+        let Some(warhead) = warhead.filter(|name| !name.is_empty() && damage != 0) else {
+            return;
+        };
+        let warhead_ref = self.interner.intern(warhead);
+        let receiver = crate::sim::combat::EntityDamageEvent::direct_receiver(
+            crusher,
+            damage,
+            0,
+            crate::sim::combat::RAD_NO_ATTACKER,
+            None,
+            warhead_ref,
+            crate::sim::combat::ReceiverCallFlags {
+                ignore_defenses: false,
+                arg6: false,
+            },
+        );
+        self.commit_direct_damage_receiver(rules, registry, receiver, effects);
     }
 
     /// Unit73AFD4..73B06E. The Cell is selected from the entry sample;
@@ -949,21 +1005,11 @@ impl Simulation {
     ///   `UndeploysInto=` only on the 4x4 Construction Yards and the 2x2
     ///   YAREFN, so the arm falls through to the building receiver. With such
     ///   a type, an infantryman in its cell would take it over (tag event,
-    ///   Detach_All, ChangeOwner `0x00519A27`, Techno `+0x338`, GotHijacked)
+    ///   Detach_All, ChangeOwner `0x00519A27` with announce=1, so
+    ///   `announce_building_capture`, Techno `+0x338`, GotHijacked)
     ///   and one stopped short would re-issue Set_Destination(NavCom)
     ///   (`0x00519AFA`), with early returns that skip the reveal
     ///   (`0x0051A8D7`).
-    /// - the water and rock death (`0x0051A94F..0x0051A9E8`) is not ported:
-    ///   a stationary infantryman whose type is not `C4=` and who has no C4
-    ///   ability, off a bridge on Water or Rock, takes ReceiveDamage of his
-    ///   current Health (`+0x6C`) with `C4Warhead=`, ignoring defenses, and
-    ///   the visit ends before the Foot body. No skirmish route reaches it
-    ///   with another outcome: a Walk or Teleport arrival is still moving;
-    ///   Drop_Payload drops a paratrooper only where his Can_Enter_Cell
-    ///   answers 0 (`0x00415D7D`); unload and Tube exits use passable cells;
-    ///   and a DropAsBomb faller from a lost deck dies of the landing's own
-    ///   `C4Warhead=` hit (`0x005F402B`) just after this call. Effect: that
-    ///   faller runs the Foot body before he dies.
     fn infantry_per_cell_process(
         &mut self,
         id: u64,
@@ -1109,6 +1155,11 @@ impl Simulation {
             if reason == PerCellReason::Arrival && self.per_cell_owner_alive(id) {
                 self.refresh_object_sight(id, rules, 0, effects);
                 self.refresh_object_sight_border(id, UninitContext::new(rules, registry));
+            }
+            if reason == PerCellReason::Arrival
+                && self.infantry_arrival_drowns(id, rules, registry, effects)
+            {
+                return Ok(bridge_state_changed);
             }
             if self.per_cell_owner_alive(id) {
                 self.foot_per_cell_process(id, reason, rules, registry, effects);
@@ -1311,6 +1362,26 @@ impl Simulation {
             {
                 return Ok(None);
             }
+            // Ares 3.0 10017760 (hook 0x51A2AD): a `Tunnel=` building takes
+            // him into its owner's network (`sim::ares_tunnel`) instead,
+            // through CAN_LOAD; a refusal takes the transport arm's refusal
+            // (`0x0051A488`).
+            #[cfg(feature = "ares")]
+            if let Some(tunnel) = self.ares_tunnel_type(candidate, rules) {
+                let house = self
+                    .substrate
+                    .entities
+                    .get(candidate)
+                    .map(|building| building.owner());
+                if let Some(house) = house
+                    && self.ares_can_enter_tunnel(
+                        id, candidate, house, tunnel, rules, registry, effects,
+                    )
+                {
+                    return Ok(Some(false));
+                }
+                return self.infantry_per_cell_enter_refused(id, rules, registry, effects);
+            }
             board_passenger(
                 self,
                 rules,
@@ -1348,6 +1419,18 @@ impl Simulation {
             );
             return Ok(Some(false));
         }
+        self.infantry_per_cell_enter_refused(id, rules, registry, effects)
+    }
+
+    /// The Infantry Enter arm's refusal (`0x0051A488..0x0051A4BC`): the NULL
+    /// destination, Guard queued and a Scatter from no coordinate.
+    fn infantry_per_cell_enter_refused(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> Result<Option<bool>, FrameAdvanceError> {
         self.assign_null_destination(id, rules, registry, effects);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             crate::sim::mission::authority::queue_entity_mission_deferred(
@@ -1395,6 +1478,21 @@ impl Simulation {
         ) else {
             return false;
         };
+        // Ares 3.0 10017870 (hook 0x73A23F), before the `UnitAbsorb=` test:
+        // on Enter with a `Tunnel=` building as its NavCom, the unit asks it
+        // CAN_LOAD and enters its own House's network (`sim::ares_tunnel`);
+        // a refusal takes the refusal below (`0x0073A796`).
+        #[cfg(feature = "ares")]
+        if let Some(tunnel) = self.ares_tunnel_type(building, rules)
+            && unit.mission.effective() == MissionId::from_known(MissionType::Enter)
+            && nav_com_is(unit, building)
+        {
+            let house = unit.owner();
+            if !self.ares_can_enter_tunnel(id, building, house, tunnel, rules, registry, effects) {
+                self.unit_per_cell_enter_refused(id, rules, registry, effects);
+            }
+            return true;
+        }
         if !self
             .substrate
             .entities
@@ -1543,8 +1641,9 @@ impl Simulation {
     /// (vt+0x480(0, 1)) and scatters from the building's coordinate
     /// (vt+0x174(coord, 1, 1)); admitted, the building's Tag hears event 1
     /// ("entered by", `0x00519710..0x00519725`) with him as the actor, and
-    /// he goes in ([`crate::sim::passenger::add_garrison_occupant`],
-    /// `0x0051972D`) with no recheck. Either way the call returns before the
+    /// he goes in, or an assaulter clears it
+    /// ([`crate::sim::passenger::add_garrison_occupant`], `0x0051972D`), with
+    /// no recheck. Either way the call returns before the
     /// Foot body. Answers whether the arm ran.
     fn infantry_per_cell_occupy(
         &mut self,
@@ -1590,11 +1689,79 @@ impl Simulation {
             self.dispatch_object_tag_event(building, 1, Some(id), None, context);
             crate::sim::passenger::add_garrison_occupant(
                 self, rules, id, building, registry, effects,
-            );
+            )?;
             return Ok(true);
         }
         self.turn_away_from_building(id, building, rules, registry, effects)?;
         Ok(true)
+    }
+
+    /// Infantry Per_Cell_Process's last check (`0x0051A92A..0x0051A9E8`): a
+    /// stationary infantryman (Is_Moving) who holds no C4, on Water or Rock
+    /// (`CellClass+0xEC`) and not on a bridge over it, takes his current
+    /// Health as `C4Warhead=` damage, ignoring defenses, and the visit ends
+    /// before the Foot body. A Walk or Teleport arrival is still moving; the
+    /// routes here are a DropAsBomb faller from a lost deck (`0x005F402B`)
+    /// and a Rocketeer on an Enter mission touching down on Water or Rock
+    /// (`0x0054C8F0`). No draw or timer of its own.
+    fn infantry_arrival_drowns(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        use crate::map::resolved_terrain::NativeCellQuery;
+        use crate::rules::terrain_rules::LandType;
+
+        // A dead owner's ReceiveDamage has nothing left to do.
+        if !self.per_cell_owner_alive(id) {
+            return false;
+        }
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        if super::motion_query::is_moving(entity) == Some(true)
+            || self
+                .object_type(entity.type_ref(), rules)
+                .is_none_or(|object| {
+                    crate::sim::combat::veterancy::holds_c4(entity.veterancy.rank_kind(), object)
+                })
+        {
+            return false;
+        }
+        let Some(terrain) = self.resolved_terrain.as_ref() else {
+            return false;
+        };
+        let cells = NativeCellQuery::canonical(terrain);
+        let at = position_world_coord(&entity.position);
+        let cell = cells.lookup_world(at.x, at.y);
+        let land = cells.land_type(cell);
+        if (land != LandType::Water as i32 && land != LandType::Rock as i32)
+            || (entity.on_bridge() && cells.flags(cell) & 0x100 != 0)
+        {
+            return false;
+        }
+        let damage = entity.health.current();
+        let warhead = self.interner.intern(&rules.bridge_warheads.c4_name);
+        self.commit_direct_damage_receiver(
+            rules,
+            registry,
+            crate::sim::combat::EntityDamageEvent::direct_receiver(
+                id,
+                damage,
+                0,
+                crate::sim::combat::RAD_NO_ATTACKER,
+                None,
+                warhead,
+                crate::sim::combat::ReceiverCallFlags {
+                    ignore_defenses: true,
+                    arg6: false,
+                },
+            ),
+            effects,
+        );
+        true
     }
 
     fn per_cell_owner_alive(&self, id: u64) -> bool {
@@ -1618,8 +1785,9 @@ impl Simulation {
     /// Ordinary Fly ingress remains unproven.
     /// Agent Infantry53 then54 follow1/59 at4D8A14..4D8A6B. Map zone24
     /// follows line25/26 at4D8B66..4D8CA5 through the
-    /// same Tag funnel. RESIDUAL: planning-waypoint upkeep
-    /// (`0x004D8DFF..0x004D8F1D`) still needs its own movement-owner audit.
+    /// same Tag funnel. Planning-waypoint upkeep (`0x004D8DFF..0x004D8F1D`) is
+    /// skipped while Foot+0x520 is -1, which a fresh YR game never changes
+    /// (`world::planning`).
     ///
     /// The off-playfield exit at 0x004D8D67..0x004D8DA4 asks the class IsLeavingMap
     /// after Map578460(cell,1), then UnInit and returns before the tail.
@@ -1638,6 +1806,12 @@ impl Simulation {
         effects: FrameEffects<'_>,
     ) {
         if reason != PerCellReason::Arrival {
+            return;
+        }
+        // Ares 3.0 10049280 (hook 0x4D85E4): tiberium damage first; a Foot it
+        // kills leaves the whole call (0x4D8F29), Techno tail included.
+        #[cfg(feature = "ares")]
+        if self.ares_foot_tiberium_damage(id, rules, registry, effects) {
             return;
         }
         self.refresh_unit_sensor_at_per_cell(id, rules, registry);
@@ -1705,6 +1879,10 @@ impl Simulation {
                     EntityCategory::Structure => false,
                 })
         {
+            // Ares 3.0 FootClass_UpdatePosition_HunterSeeker (1004E050, hook
+            // 0x4D8D95): a hunter leaving the map hits its Target first.
+            #[cfg(feature = "ares")]
+            self.ares_hunter_seeker_parting_strike(id, rules, registry, effects);
             self.uninit_with_context(
                 id,
                 UninitContext::new(rules, registry).with_effects(effects),

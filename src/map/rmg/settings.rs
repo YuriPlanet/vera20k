@@ -33,6 +33,40 @@ pub struct RmgSettings {
     /// Indexed by map type.
     pub vegetation_min: [i32; MAP_TYPE_BUCKETS],
     pub vegetation_max: [i32; MAP_TYPE_BUCKETS],
+    /// VERA extension: the urban pass's lists for an opted-in Urban Presence
+    /// (`tech_catalog::resolve_vera_urban`). Not from `RMGMD.INI`; the app
+    /// fills it per theater. Empty places no buildings or foots.
+    pub vera_urban: crate::map::rmg::phases::urban_areas::UrbanCatalog,
+    /// Ares `[General] GenerateUrbanAreas=`: the process's first value of
+    /// the urban-areas switch ([`RmgOptions::urban_areas`]).
+    #[cfg(feature = "ares")]
+    pub generate_urban_areas: bool,
+    /// Ares `[Urban] Structures=`, `Infantry=` and `Vehicles=` names.
+    #[cfg(feature = "ares")]
+    pub urban_structures: Vec<String>,
+    #[cfg(feature = "ares")]
+    pub urban_infantry: Vec<String>,
+    #[cfg(feature = "ares")]
+    pub urban_vehicles: Vec<String>,
+}
+
+/// The `[Urban]` defaults of MapSeedClass_LoadFromINI (Ares.dll 1006ABF0).
+#[cfg(feature = "ares")]
+const URBAN_STRUCTURES: &str = "CABUNK01,CABUNK02,CAARMY01,CAARMY02,CAARMY03,CAARMY04,CACHIG03,\
+CANEWY01,CANEWY14,CANWY09,CANWY26,CANWY25,CATEXS07";
+#[cfg(feature = "ares")]
+const URBAN_INFANTRY: &str = "CIV1,CIV2,CIV3,CIVA,CIVB,CIVC";
+#[cfg(feature = "ares")]
+const URBAN_VEHICLES: &str = "TRUCKA,TRUCKB,COP,EUROC,SUVW,SUVB,FTRK,AMBU";
+
+/// Ares `VectorNames::Tokenize`: `strtok` on commas alone, so empty tokens
+/// vanish and spaces stay in the names.
+#[cfg(feature = "ares")]
+fn tokenize_names(text: &str) -> Vec<String> {
+    text.split(',')
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 /// `MapSeedClass::InitDefaults @ 0x00595740`.
@@ -49,6 +83,16 @@ impl Default for RmgSettings {
             snow_rgb: Default::default(),
             vegetation_min: [0; MAP_TYPE_BUCKETS],
             vegetation_max: [0; MAP_TYPE_BUCKETS],
+            vera_urban: Default::default(),
+            // RMG::UrbanAreas starts false; an absent file reads the defaults.
+            #[cfg(feature = "ares")]
+            generate_urban_areas: false,
+            #[cfg(feature = "ares")]
+            urban_structures: tokenize_names(URBAN_STRUCTURES),
+            #[cfg(feature = "ares")]
+            urban_infantry: tokenize_names(URBAN_INFANTRY),
+            #[cfg(feature = "ares")]
+            urban_vehicles: tokenize_names(URBAN_VEHICLES),
         }
     }
 }
@@ -65,6 +109,18 @@ impl RmgSettings {
             .chain(self.vegetation_max)
         {
             bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        #[cfg(feature = "ares")]
+        for list in [
+            &self.urban_structures,
+            &self.urban_infantry,
+            &self.urban_vehicles,
+        ] {
+            for name in list {
+                bytes.extend_from_slice(name.as_bytes());
+                bytes.push(b',');
+            }
+            bytes.push(0);
         }
         crate::util::sha256::sha256_hex(&bytes)
     }
@@ -164,6 +220,22 @@ impl RmgSettings {
         if let Some(value) = int_list::<MAP_TYPE_BUCKETS>(general, "RMGVegetationMaximums") {
             self.vegetation_max = value;
         }
+        // MapSeedClass_LoadFromINI (Ares.dll 1006ABF0, hook 0x5982D5, after
+        // RMGMaximumTiberium): gamemd's ReadBool and 0x800-byte ReadString.
+        // Ares reads them once per process; RMGMD.INI does not change, so
+        // each load reads the same values.
+        #[cfg(feature = "ares")]
+        {
+            self.generate_urban_areas =
+                general.read_bool("GenerateUrbanAreas", self.generate_urban_areas);
+            let urban = ini.section_or_empty("Urban");
+            self.urban_structures =
+                tokenize_names(&urban.read_string("Structures", URBAN_STRUCTURES, 0x800));
+            self.urban_infantry =
+                tokenize_names(&urban.read_string("Infantry", URBAN_INFANTRY, 0x800));
+            self.urban_vehicles =
+                tokenize_names(&urban.read_string("Vehicles", URBAN_VEHICLES, 0x800));
+        }
     }
 }
 
@@ -224,6 +296,33 @@ mod tests {
         assert_eq!(settings.level_light, [3, 3, 3, 3]);
         assert_eq!(settings.vegetation_min, [60; 5]);
         assert_eq!(settings.vegetation_max, [100; 5]);
+    }
+
+    /// Ares MapSeedClass_LoadFromINI (Ares.dll 1006ABF0, hook 0x5982D5):
+    /// gamemd's ReadBool and ReadString with Ares' defaults, split on commas
+    /// alone. The loader drops a key with an empty value, so it keeps the
+    /// default.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn urban_keys_read_with_ares_defaults_and_comma_tokens() {
+        let defaults = RmgSettings::default();
+        assert!(!defaults.generate_urban_areas);
+        assert_eq!(
+            defaults.urban_infantry,
+            ["CIV1", "CIV2", "CIV3", "CIVA", "CIVB", "CIVC"]
+        );
+        assert_eq!(defaults.urban_structures.len(), 13);
+        assert_eq!(defaults.urban_structures[12], "CATEXS07");
+
+        let mut settings = RmgSettings::default();
+        settings.apply(&IniFile::from_str(
+            "[General]\nGenerateUrbanAreas=yes\n\
+             [Urban]\nStructures=CAX,,CA Y\nVehicles=\n",
+        ));
+        assert!(settings.generate_urban_areas);
+        assert_eq!(settings.urban_structures, ["CAX", "CA Y"]);
+        assert_eq!(settings.urban_vehicles, defaults.urban_vehicles);
+        assert_eq!(settings.urban_infantry, defaults.urban_infantry);
     }
 
     #[test]

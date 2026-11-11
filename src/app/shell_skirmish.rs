@@ -466,16 +466,19 @@ impl App {
                 state.frontend.scenario_catalog.records(),
                 &layout,
             ));
-        // VERA: online rooms list the online map library under its own row.
-        if crate::app::map_library::listed_in_choose_map(state) {
-            let favorites = state.frontend.map_library.favorites().clone();
-            if let Some(modal) = state
-                .frontend
-                .skirmish_shell_state
-                .choose_map_modal
-                .as_mut()
-            {
-                modal.add_online_maps_row(favorites);
+        // VERA: the starred maps list under Favorites, and online rooms list
+        // the online map library under its own row.
+        let favorites = crate::app::map_library::read_favorites(state);
+        let online = crate::app::map_library::listed_in_choose_map(state);
+        if let Some(modal) = state
+            .frontend
+            .skirmish_shell_state
+            .choose_map_modal
+            .as_mut()
+        {
+            modal.add_favorites_row(favorites);
+            if online {
+                modal.add_online_maps_row();
             }
         }
         Self::list_cooperative_campaigns(state, false);
@@ -849,22 +852,20 @@ impl App {
             crate::ui::skirmish_shell::ChooseMapModalButton::Cancel0x5c0 => {
                 crate::app::frontend::shell_transition::ShellExitThen::ChooseMapCancel
             }
-            // Under Online Maps this button stars or unstars the map.
-            crate::ui::skirmish_shell::ChooseMapModalButton::CreateRandomMap0x583
-                if modal.online_maps_selected() =>
-            {
-                if let Some((sha256, starred)) = modal.toggle_favorite(
+            crate::ui::skirmish_shell::ChooseMapModalButton::CreateRandomMap0x583 => {
+                crate::app::frontend::shell_transition::ShellExitThen::ChooseMapRandomMap
+            }
+            // VERA: stars or unstars the highlighted map.
+            crate::ui::skirmish_shell::ChooseMapModalButton::Favorite => {
+                if let Some((key, starred)) = modal.toggle_favorite(
                     &state.frontend.skirmish_modes,
                     state.frontend.scenario_catalog.records(),
                     &layout,
                 ) {
-                    crate::app::map_library::set_favorite(state, sha256, starred);
+                    crate::app::map_library::set_favorite(state, key, starred);
                 }
                 state.platform.window.request_redraw();
                 return true;
-            }
-            crate::ui::skirmish_shell::ChooseMapModalButton::CreateRandomMap0x583 => {
-                crate::app::frontend::shell_transition::ShellExitThen::ChooseMapRandomMap
             }
         };
         Self::leave_shell_dialog(state, then);
@@ -1087,6 +1088,23 @@ impl App {
         true
     }
 
+    /// VERA's Esc menu (`app::shell_menu`): Esc stays with the seed browser,
+    /// a validation box and a chooser's prompt, and does nothing while a
+    /// random map generates.
+    pub(super) fn skirmish_leaves_escape(state: &AppState) -> bool {
+        let shell = &state.frontend.skirmish_shell_state;
+        shell.saved_seed_browser.is_none()
+            && shell.validation_modal.is_none()
+            && shell
+                .choose_map_modal
+                .as_ref()
+                .is_none_or(|modal| modal.message_box.is_none())
+            && shell
+                .random_map_setup_modal
+                .as_ref()
+                .is_none_or(|modal| !modal.generating)
+    }
+
     /// Enter or Escape on Use Map's box answer Cancel (`0x005D370D`). VERA's
     /// download boxes take Enter as OK, as the room's missing-map offer
     /// does: Download, or going on with a downloaded map. While the
@@ -1140,6 +1158,18 @@ impl App {
         };
         modal.hide();
         let previous = modal.cancel_selection();
+        #[cfg(feature = "ares")]
+        {
+            let settings = state
+                .process_assets
+                .manager()
+                .map(crate::map::rmg::RmgSettings::load)
+                .unwrap_or_default();
+            state
+                .frontend
+                .multiplayer_shell_runtime
+                .read_generate_urban_areas_once(&settings);
+        }
         let options = state
             .frontend
             .multiplayer_shell_runtime

@@ -1,6 +1,7 @@
-// Shadow halves after a depth-tested read-write interval (terrain_depth.wgsl).
-// Bodies already stored their colour and every admitted piece its Z; per
-// pixel, the shadows admitted after its last admitted body remain counted.
+// Shadow halves after a depth-tested interval (terrain_depth.wgsl).
+// Bodies already stored their colour and, outside read-only intervals, every
+// admitted piece its Z; per pixel, the shadows admitted after its last admitted
+// body remain counted.
 // Shadow496250 halves the packed word once per shadow, in sequence, so the
 // result is that many halvings of the word the interval left.
 @group(0) @binding(0) var old_words: texture_2d<u32>;
@@ -21,7 +22,5 @@ fn fs_main(@builtin(position) position: vec4f) -> @location(0) vec4f {
     var word = textureLoad(old_words, p, 0).r;
     // Every native RGB565 word reaches zero after six original half operations.
     for (var i = 0u; i < min(shadows, 6u); i += 1u) { word = native_half_word(word); }
-    let encoded = vec3f(f32(RETAIL_FIVE[(word >> 11u) & 31u]),
-        f32(RETAIL_SIX[(word >> 5u) & 63u]), f32(RETAIL_FIVE[word & 31u])) / 255.0;
-    return vec4f(srgb_decode(encoded), 1.0);
+    return vec4f(retail_linear(word), 1.0);
 }

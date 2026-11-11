@@ -50,6 +50,22 @@ pub(crate) fn reset_scenario_exit_runtime(state: &mut AppState) {
     state.audio.restore_sound_master();
 }
 
+/// The correction matrix for `[VERA] ColorVisionMode=`, or `None` for `Off`.
+/// Startup needs it before an `AppState` exists, so the mapping lives here
+/// rather than on the state: `render/` only ever sees a plain matrix.
+pub(crate) fn color_vision_matrix_for(
+    mode: crate::ui::main_menu_dialogs::options::ColorVisionMode,
+) -> Option<crate::render::color_vision::Mat3> {
+    use crate::render::color_vision as cv;
+    use crate::ui::main_menu_dialogs::options::ColorVisionMode as Mode;
+    match mode {
+        Mode::Off => None,
+        Mode::Generic | Mode::Deuteranopia => Some(cv::CORRECT_DEUTERANOPIA),
+        Mode::Protanopia => Some(cv::CORRECT_PROTANOPIA),
+        Mode::Tritanopia => Some(cv::CORRECT_TRITANOPIA),
+    }
+}
+
 impl AppState {
     /// Client presentation preference; the simulation never reads this option.
     pub(crate) fn translucent_fog_enabled(&self) -> bool {
@@ -63,6 +79,19 @@ impl AppState {
     /// the simulation never reads it.
     pub(crate) fn health_bar_mode(&self) -> crate::ui::main_menu_dialogs::options::HealthBarMode {
         self.persistence.options_profile.health_bars
+    }
+
+    /// `[VERA] ColorVisionMode=`: the final-frame colour filter. Presentation
+    /// only; the simulation never reads it, and the frame reads it live.
+    pub(crate) fn color_vision_mode(
+        &self,
+    ) -> crate::ui::main_menu_dialogs::options::ColorVisionMode {
+        self.persistence.options_profile.color_vision
+    }
+
+    /// Publish this frame's matrix to the shared frame-output filter.
+    pub(crate) fn color_vision_matrix(&self) -> Option<crate::render::color_vision::Mat3> {
+        color_vision_matrix_for(self.color_vision_mode())
     }
 
     /// Is the match frozen because the window is not the foreground? Only the
@@ -139,6 +168,13 @@ impl AppState {
         }
     }
 
+    /// Whether VERA's online client draws its enlarged art smoothed
+    /// (`[VERA] SmoothOnlineMenus=`). The native-UI diagnostics, the only
+    /// sessions without that client, keep their art's own pixels.
+    pub(crate) fn smooth_online_menus(&self) -> bool {
+        self.persistence.options_profile.smooth_online_menus && !self.frontend.native_shell_ui
+    }
+
     /// Whether the setup screens show VERA's own map pictures
     /// (`[VERA] HdMapPreviews=`, `app::map_picture`). Captures keep the map's
     /// `[PreviewPack]` picture, which retail comparisons check, and the
@@ -161,7 +197,13 @@ impl AppState {
         } else {
             self.persistence.options_profile.sidebar
         };
+        // The side's layout decides how wide the column is and where it and
+        // the bar sit.
+        let spec = self.match_state.match_presentation.sidebar_layout_spec;
         crate::ui::sidebar::SidebarFrame::new(width, height, size.percent(width, height))
+            .with_column_width(spec.sidebar_width as u32)
+            .with_band_height(spec.side_height as u32)
+            .with_places(spec.places)
     }
 
     /// The zoom pass a match frame goes through: the battlefield and the
@@ -243,6 +285,17 @@ impl AppState {
                     .draws_over_battlefield())
     }
 
+    /// The main menu at rest, where a box may ask or tell the player
+    /// something: its page takes input (not sliding, no movie, page or error
+    /// over it), past the splash, with no dialog.
+    pub(crate) fn main_menu_at_rest(&self) -> bool {
+        use crate::app::input::precedence::{InputLayer, ScreenPage, input_layer};
+        input_layer(self) == InputLayer::Screen(ScreenPage::MainMenu)
+            && self.frontend.shell_route == crate::app::shell_route::ShellRoute::MainMenu
+            && self.frontend.startup_splash.is_none()
+            && !self.main_menu_dialog_open()
+    }
+
     /// Whether any main-menu modal dialog (exit confirm, options, keyboard)
     /// is currently open.
     pub(crate) fn main_menu_dialog_open(&self) -> bool {
@@ -278,7 +331,7 @@ impl AppState {
     /// hold `&mut` app fields keep the `sim_runtime` field chain and call
     /// `rt.view()` directly for split borrows.
     pub(crate) fn sim_view(&self) -> Option<crate::sim::runtime::SimView<'_>> {
-        self.match_state.sim_runtime.as_ref().map(|rt| rt.view())
+        self.match_state.sim_runtime.runtime().map(|rt| rt.view())
     }
 
     /// Current terrain authority, replaced together with the running world on
@@ -288,7 +341,7 @@ impl AppState {
     ) -> Option<&crate::map::resolved_terrain::ResolvedTerrainGrid> {
         self.match_state
             .sim_runtime
-            .as_ref()?
+            .runtime()?
             .simulation
             .resolved_terrain()
     }
@@ -300,7 +353,7 @@ impl AppState {
     pub(crate) fn overlay_registry(&self) -> Option<&OverlayTypeRegistry> {
         self.match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.resources.overlay_registry)
             .or(self.frontend.shell_preview_overlay_registry.as_ref())
     }
@@ -312,7 +365,7 @@ impl AppState {
     pub(crate) fn rules(&self) -> Option<&crate::rules::ruleset::RuleSet> {
         self.match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.resources.rules)
             .or(self.frontend.frontend_rules.as_ref())
     }
@@ -324,7 +377,7 @@ impl AppState {
     pub(crate) fn terrain_template(&self) -> Option<&ResolvedTerrainGrid> {
         self.match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .and_then(|rt| rt.resources.terrain_template.as_ref())
     }
 }
@@ -335,8 +388,8 @@ impl AppState {
 /// to it. In-scenario Load preserves that cell, including outstanding draws.
 /// There is never a separately seeded audio/Theme cursor.
 pub(crate) fn process_main_draws(
-    runtime: Option<&mut crate::sim::runtime::SimRuntime>,
-    frontend: &mut crate::sim::rng::MainRng,
+    runtime: Option<&crate::sim::runtime::SimRuntime>,
+    frontend: &crate::sim::rng::MainRng,
 ) -> crate::sim::rng::MainRngDraws {
     match runtime {
         Some(runtime) => runtime.simulation.presentation_main_draws(),
@@ -355,10 +408,10 @@ mod main_draw_tests {
 
     #[test]
     fn process_main_draws_uses_frontend_only_before_a_world_is_installed() {
-        let mut frontend = MainRng::new(31);
+        let frontend = MainRng::new(31);
         let mut reference = SimRng::new(31);
         {
-            let main = process_main_draws(None, &mut frontend);
+            let main = process_main_draws(None, &frontend);
             assert_eq!(main.next_u32(), reference.next_u32());
             assert_eq!(
                 main.ranged(0, 99),
@@ -367,14 +420,14 @@ mod main_draw_tests {
         }
         assert_eq!(frontend.logical_state(), reference.logical_state());
 
-        let mut runtime = SimRuntime::from_simulation(Simulation::with_seed(42));
+        let runtime = SimRuntime::from_simulation(Simulation::with_seed(42));
         let frontend_before = frontend.logical_state();
         let world_before = runtime.simulation.rng_state();
         let mut world_reference = SimRng::new(42);
         // The installed world remains authoritative when retained behind the
         // shell. There is deliberately no screen/active-frame switch here.
         for _ in 0..2 {
-            let main = process_main_draws(Some(&mut runtime), &mut frontend);
+            let main = process_main_draws(Some(&runtime), &frontend);
             assert_eq!(main.next_u32(), world_reference.next_u32());
         }
         let world_after = runtime.simulation.rng_state();

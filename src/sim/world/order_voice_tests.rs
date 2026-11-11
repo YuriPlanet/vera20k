@@ -16,6 +16,9 @@ fn native_voice_corpus() -> serde_json::Value {
     corpus
 }
 
+// Ares replaces VoiceAttack's choice (TechnoClass_SelectFiringVoice
+// 1004B1D0, hook 0x7090A8): `ares_firing_voice_tiers_fall_through`.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_attack_acknowledgement_spends_the_original_singleton_main_draw() {
     use crate::map::entities::EntityCategory;
@@ -430,6 +433,9 @@ fn attack_control_rules(corpus: &serde_json::Value, input: &serde_json::Value) -
     rules
 }
 
+// Ares replaces VoiceAttack's choice (TechnoClass_SelectFiringVoice
+// 1004B1D0, hook 0x7090A8): `ares_firing_voice_tiers_fall_through`.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn attack_voice_matches_native_target_slots_rng_and_queue_admission() {
     use crate::map::entities::EntityCategory;
@@ -539,9 +545,12 @@ fn attack_voice_matches_native_target_slots_rng_and_queue_admission() {
         });
         if output["fault"].is_object() {
             native_faults += 1;
-            assert!(
-                result.is_err(),
-                "{name}: original NULL slot faults before a draw"
+            // VoiceAttack7090C0 dereferences the NULL slot here; VERA carries
+            // on with no attack voice and, as checked below, no draw.
+            assert_eq!(
+                result.unwrap(),
+                None,
+                "{name}: no voice where the original faults on a NULL slot"
             );
         } else {
             let request = result.unwrap();
@@ -875,4 +884,29 @@ fn allied_object_move_voice_matches_native_rng_and_queue() {
     ] {
         assert!(count > 0, "missing native {name} control");
     }
+}
+
+/// Ares 3.0 TechnoClass_SelectFiringVoice (1004B1D0, hook 0x7090A8): an
+/// elite unit without an elite override speaks its rookie override, with no
+/// Main draw (stock draws from VoiceAttack instead).
+#[cfg(feature = "ares")]
+#[test]
+fn ares_firing_voice_tiers_fall_through() {
+    use crate::util::native_x87::NativeF32Bits;
+    let (mut sim, rules, actor) = scene(
+        "Primary=Gun\nVoicePrimaryWeaponAttack=Special\nVoiceAttack=Attack\n\
+         [Gun]\nDamage=10\nWarhead=AP\n[AP]\nVerses=100%\n",
+    );
+    sim.substrate
+        .entities
+        .get_mut(actor)
+        .unwrap()
+        .veterancy
+        .set_raw_for_test(NativeF32Bits::from_bits(2.0f32.to_bits()));
+    let main = sim.main_rng.native_state_hex();
+    assert_eq!(
+        sim.order_voice_request(&rules, actor, "VoiceAttack", None, true),
+        Some("Special")
+    );
+    assert_eq!(sim.main_rng.native_state_hex(), main);
 }

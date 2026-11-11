@@ -42,6 +42,14 @@ pub enum NetworkInterruption {
     /// VERA relay adaptation: the relay sent a record this build cannot read.
     #[error("this online match needs a newer VERA20k")]
     NewerClientRequired,
+    /// VERA relay adaptation: the relay refused this game's start because it
+    /// differs from the start another player's game already offered.
+    #[error("this game's match start differs from another player's")]
+    StartMismatch,
+    /// VERA relay adaptation: the relay closed the match before it started,
+    /// which a player leaving does.
+    #[error("another player left before the match started")]
+    StartCancelled,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

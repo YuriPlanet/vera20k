@@ -165,6 +165,10 @@ struct RevealCalls {
     /// Map578100 receiver calls.
     edge_visits: usize,
     edge_notifications: Vec<(bool, (u16, u16), bool)>,
+    /// [`Simulation::sight_reveal_config`] builds.
+    settings_reads: usize,
+    /// Footprints UpdateReveal derived for a map that admitted its source.
+    footprints: usize,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -225,14 +229,24 @@ impl Simulation {
     /// selects shared fog. Offline/campaign retains its one current viewpoint.
     pub(crate) fn represented_player_maps(&self) -> Vec<InternedId> {
         if self.session.game_mode().is_network() {
-            self.houses
-                .in_order()
-                .filter(|house| house.is_human())
-                .map(|house| house.name())
-                .collect()
+            self.network_player_maps().collect()
         } else {
-            self.session.current_house().into_iter().collect()
+            self.offline_player_map().into_iter().collect()
         }
+    }
+
+    /// The represented maps of a network game, in House order, for a caller
+    /// that walks them without keeping a list.
+    pub(super) fn network_player_maps(&self) -> impl Iterator<Item = InternedId> + '_ {
+        self.houses
+            .in_order()
+            .filter(|house| house.is_human())
+            .map(|house| house.name())
+    }
+
+    /// The one represented map outside a network game: the current house's.
+    pub(super) fn offline_player_map(&self) -> Option<InternedId> {
+        self.session.current_house()
     }
 
     /// The movement step that drops another house's object from the player's
@@ -243,11 +257,12 @@ impl Simulation {
     /// `MapClass::IsFogged @ 0x005865E0` is `xor al, al; ret 4`, so it never
     /// deselects. Without a player house or map nothing is asked.
     ///
-    /// Three movement steps run it, each with its own owner test:
+    /// Four movement steps run it, each with its own owner test:
     /// - Foot's `PerCellProcess` (`0x004D8DA7..0x004D8DF5`), on every Unit
     ///   and Infantry cell arrival, and Fly's `Horizontal_Step`
     ///   (`0x004CF55D..0x004CF5EC`) ask `0x0050B6F0`
-    ///   ([`Self::house_is_human_player`]);
+    ///   ([`Self::house_is_human_player`]), as does Tunnel's `Process`
+    ///   (`0x007290F6..0x0072918F`);
     /// - Jumpjet's `Process` (`0x0054B07D..0x0054B10C`) compares the owner
     ///   with PlayerPtr (`0x00A83D4C`).
     ///
@@ -711,7 +726,7 @@ impl Simulation {
         let target_zone = {
             let (Some(terrain), Some(zones)) = (
                 context.terrain().or(self.resolved_terrain.as_ref()),
-                self.zone_grid.as_ref(),
+                self.zone_grid.as_deref(),
             ) else {
                 return false;
             };
@@ -749,7 +764,7 @@ impl Simulation {
             let half_level = {
                 let (Some(terrain), Some(zones)) = (
                     context.terrain().or(self.resolved_terrain.as_ref()),
-                    self.zone_grid.as_ref(),
+                    self.zone_grid.as_deref(),
                 ) else {
                     return false;
                 };
@@ -1921,29 +1936,51 @@ impl Simulation {
             return;
         }
         let override_radius = (radius != 0).then_some(radius);
-        let Some(admission) = vision::entity_sight_admission(
-            &self.fog,
+        // An unallocated map admits nothing ([`vision::sight_admission`]).
+        if self.fog.width() == 0 || self.fog.height() == 0 {
+            return;
+        }
+        let terrain = context.terrain().or(self.resolved_terrain.as_ref());
+        let geometry = vision::entity_sight_geometry(
             entity,
             owner,
             config,
-            heights.and_then(|heights| heights.cell_levels(self.resolved_terrain.as_ref())),
-            context.terrain().or(self.resolved_terrain.as_ref()),
+            terrain,
             config.sight_ability(entity, &self.interner, context.rules()),
             override_radius,
-        ) else {
-            return;
-        };
+        );
         // Each logical PlayerPtr has its own native Techno +250/+254/+260.
         // Publish all source state before any RevealArea receiver can reenter;
         // a client whose +250 is already set takes no part.
         let admitted: Vec<_> = requested_viewers
             .iter()
             .copied()
-            .filter(|&viewer| self.fog.retain_source_sight(id, viewer, owner, &admission))
+            .filter(|&viewer| self.fog.retain_source_sight(id, viewer, owner, geometry))
             .filter(|&viewer| {
                 vision::reveal_admits(&self.house_alliances, owner, viewer, config, &self.interner)
             })
             .collect();
+        // The footprint indexes an admitting map's source counts. A source no
+        // requested map admits has published its geometry and needs none
+        // (VERA-only: a computer house's unit on a human's client).
+        if admitted.is_empty() {
+            return;
+        }
+        #[cfg(any(test, feature = "test-support"))]
+        REVEAL_CALLS.with_borrow_mut(|trace| {
+            if let Some(trace) = trace {
+                trace.footprints += 1;
+            }
+        });
+        let Some(admission) = vision::sight_admission(
+            &self.fog,
+            geometry,
+            config,
+            heights.and_then(|heights| heights.cell_levels(self.resolved_terrain.as_ref())),
+            terrain,
+        ) else {
+            return;
+        };
         // Register each accepted map contribution before walking any cells.
         // A newly latched source may follow a rejected release while its old
         // knowledge counts remain; retire that stale index without changing
@@ -1977,6 +2014,17 @@ impl Simulation {
         context: UninitContext<'_>,
     ) {
         let config = self.sight_reveal_config(context.rules());
+        self.release_object_sight_in_view(id, &config, context);
+    }
+
+    /// [`Self::release_object_sight_with_context`] under settings the caller
+    /// has read.
+    fn release_object_sight_in_view(
+        &mut self,
+        id: u64,
+        config: &vision::VisionConfig,
+        context: UninitContext<'_>,
+    ) {
         let viewers = if self.substrate.entities.contains(id) {
             self.release_viewers(id)
         } else {
@@ -1992,7 +2040,7 @@ impl Simulation {
         self.release_object_sight_event(
             id,
             &viewers,
-            &config,
+            config,
             context,
             self.session.current_house(),
         );
@@ -2479,6 +2527,17 @@ impl Simulation {
     /// house does, the map's `Size=` diamond bounds them, and the rules'
     /// sight keys and `AllyReveal=` shape them.
     pub(crate) fn sight_reveal_config(&self, rules: &RuleSet) -> vision::VisionConfig {
+        #[cfg(any(test, feature = "test-support"))]
+        REVEAL_CALLS.with_borrow_mut(|trace| {
+            if let Some(trace) = trace {
+                trace.settings_reads += 1;
+            }
+        });
+        self.read_sight_reveal_config(rules)
+    }
+
+    /// [`Self::sight_reveal_config`]'s read of the settings as they stand.
+    fn read_sight_reveal_config(&self, rules: &RuleSet) -> vision::VisionConfig {
         let passive_owners = self
             .houses
             .iter()
@@ -2525,8 +2584,17 @@ impl Simulation {
         }
         let context = UninitContext::new(rules, None).with_effects(effects);
         //The two functions each re-read their receiver after callbacks.
-        self.release_object_sight_with_context(stable_id, context);
-        self.update_object_sight_with_context(stable_id, radius, None, context);
+        self.release_object_sight_in_view(stable_id, &config, context);
+        // The pair shares one read of the settings: the rules, the map's
+        // size and playfield and each House's construction make them, and
+        // no release callback writes those (VERA-only; debug builds check).
+        debug_assert!(
+            !crate::sim::touch_log::live_read_check_enabled()
+                || config == self.read_sight_reveal_config(rules),
+            "a release changed the reveal settings"
+        );
+        let heights = self.sight_height_grid(&config);
+        self.update_object_sight_in_view(stable_id, radius, None, &config, Some(&heights), context);
     }
 
     /// Whether the ally brackets visit `entity` at all

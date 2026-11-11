@@ -53,8 +53,10 @@ Each player gets eight handshakes/second, admitted or not, enough for paired
 old/new routes during renewal; Leave acknowledgements, which need no admission,
 share that budget. Leave for a room the relay no longer holds also has a
 relay-wide 512/second. Only permitted handshakes count toward the relay's
-512/second. Relay-wide input of 16,384 datagrams/second, and ordering output of
-as many packets, count only datagrams that authenticate and pass their sender's
+8,192/second, room for the lobby's 256 sessions and an hour's 512 new guests each
+at their own rate. A Pull that reads the journal spends its sender's own
+256/second before it reads. Relay-wide input of 16,384 datagrams/second, and
+ordering output of as many packets, count only datagrams that authenticate and pass their sender's
 own limits, including the replay window and the 2,048 packet/second principal
 cap, so forged, junk or replayed traffic cannot spend capacity other players
 need. Rejecting one costs at most three HMACs. These packet caps are joined by
@@ -327,7 +329,9 @@ journals therefore advertise oldest sequence1 throughout the match.
 A short outage never removes a player. Healthy players continue; the returning
 player can replay from its old cursor even after every short hop ticket expired.
 Any authenticated packet, keepalives included, keeps a source's place. A started
-source silent for 10 minutes departs through the stream. Before the start, a
+source silent for 10 minutes departs through the stream (`ABSENT_MS`; a game
+that hears nothing from its relay for that long releases its route, which ends
+a match of two or more players). Before the start, a
 source that never sent Ready departs in frame 1 after 60 seconds of silence,
 counted from its last packet even before the room existed, or once the room is 3
 minutes old, and the others start without it; a Ready source waits. A federated
@@ -354,9 +358,9 @@ that cleanup, longer than any of its certificates lasts, a cleaned-up match
 answers Ready with `Inactive`, so a player returning later cannot start a new
 timeline under its ID; the marker lives in memory and a relay restart drops it. No reader
 acknowledgement gates advancement or retention.
-The service checks deadlines every6ms even when no packets arrive. Its pass over
-every room starts a millisecond after the previous one ended, plus once after
-each datagram it accepts, so rejected traffic, junk included, adds no pass.
+The service checks deadlines every 6 ms even when no packets arrive. Its pass
+over every room starts a millisecond after the previous one ended, so no
+datagram, accepted or junk, adds a pass.
 
 Explicit Leave is retried on the original socket until a terminal acknowledgement
 echoes that exact signed request. After a Leave, or once its ticket expired, a

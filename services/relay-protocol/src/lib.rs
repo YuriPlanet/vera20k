@@ -28,7 +28,7 @@ pub use link::{ClientLinkStats, HopFeedback, LinkState, OrderingGap, ReaderLinkS
 pub use sequenced::federation::{MAX_FEDERATED_RELAYS, sign_federation_roster};
 pub use sequenced::pack::{decode_pack_v2, encode_pack_v2};
 pub use sequenced::{
-    CHECKSUM_INTERVAL, CertificatePacing, ORDERING_BATCH_CAPACITY, ORDERING_CERTIFICATE_LEN,
+    ABSENT_MS, CHECKSUM_INTERVAL, CertificatePacing, ORDERING_BATCH_CAPACITY, ORDERING_CERTIFICATE_LEN,
     ORDERING_CERTIFICATE_V2_LEN, ORDERING_PULL_LIMIT, OrderEntry, OrderError, OrderEvent,
     OrderPace, OrderStatus, OrderingCertificate, is_ordering_certificate_len, paced_rates,
     turn_frames, turn_ms,
@@ -59,8 +59,12 @@ const TICKET_DOMAIN: &[u8] = b"VERA20k relay ticket v2\0";
 const KEY_DOMAIN: &[u8] = b"VERA20k relay packet key v2\0";
 const COOKIE_DOMAIN: &[u8] = b"VERA20k relay source v2\0";
 const INGRESS_PER_SECOND: u64 = 16_384;
-const HANDSHAKES_PER_SECOND: u64 = 512;
+// Room for the lobby's 256 sessions and an hour's 512 new guests, whose tickets
+// live 300 seconds, each at their own rate. A handshake costs a few HMACs.
+const HANDSHAKES_PER_SECOND: u64 = 8192;
 const PLAYER_HANDSHAKES_PER_SECOND: u64 = 8;
+// Pulls that read the journal. A catching-up client sends about ten a second.
+const PLAYER_ARCHIVE_PULLS_PER_SECOND: u64 = 256;
 const PLAYER_BYTES_PER_SECOND: u64 = 2 * 1024 * 1024;
 const ROOM_BYTES_PER_SECOND: u64 = 64 * 1024 * 1024;
 const TOTAL_BYTES_PER_SECOND: u64 = 64 * 1024 * 1024;
@@ -264,6 +268,8 @@ pub struct ClientSession {
     hop: link::HopLink,
     // The `now_ms` of the timed call in progress (spec §4.2, §4.4).
     clock_ms: u64,
+    // The hop rides a reliable stream to a UDP gateway (`use_stream_transport`).
+    stream_transport: bool,
     // Test support: start the uplink measured good (see
     // `preset_uplink_measured_good`).
     #[cfg(any(test, feature = "test-support"))]
@@ -317,9 +323,20 @@ impl ClientSession {
             federation: None,
             hop: link::HopLink::default(),
             clock_ms: 0,
+            stream_transport: false,
             #[cfg(any(test, feature = "test-support"))]
             measured_good: false,
         })
+    }
+
+    /// Marks a hop whose datagrams ride a reliable, ordered stream to a
+    /// gateway that forwards each one as a UDP datagram: the browser's
+    /// WebSocket to `tools/wasm/gateway`. A copy there can only queue behind
+    /// its original, so the lossy-state copies (spec §6.3 row 6) are not
+    /// sent; RTO resends (row 4) still recover what the gateway drops or the
+    /// UDP leg loses. Renewals keep the mark.
+    pub fn use_stream_transport(&mut self) {
+        self.stream_transport = true;
     }
 
     /// Carry a federated match's roster in every admission of this session.
@@ -370,6 +387,7 @@ impl ClientSession {
         }
         next.ordering = self.ordering.clone();
         next.federation = self.federation.clone();
+        next.stream_transport = self.stream_transport;
         Ok(next)
     }
     pub fn forget_readiness(&mut self) {
@@ -786,6 +804,7 @@ struct Admission {
     retain_until: u64,
     handshakes: RateBudget,
     packets: RateBudget,
+    archive_pulls: RateBudget,
     outgoing: RateBudget,
     order_packets: RateBudget,
 }
@@ -1443,6 +1462,7 @@ impl RelayServer {
                 .remove(&message.ticket.player)
                 .unwrap_or_default(),
             packets: RateBudget::default(),
+            archive_pulls: RateBudget::default(),
             outgoing: RateBudget::default(),
             order_packets: RateBudget::default(),
         });
@@ -2166,9 +2186,11 @@ mod tests {
             SocketAddrV4::new(Ipv4Addr::LOCALHOST, 32002),
         );
 
-        // Distinct players still share the relay-wide budget.
+        // Distinct players still share the relay-wide budget, which outlasts
+        // the lobby's 256 sessions and an hour's 512 new guests.
         let mut server = RelayServer::new(key.clone(), 1);
         let players = HANDSHAKES_PER_SECOND / PLAYER_HANDSHAKES_PER_SECOND;
+        assert!(players >= 768);
         for player in 1..=players + 1 {
             let mut id = [0; 16];
             id[..8].copy_from_slice(&player.to_le_bytes());

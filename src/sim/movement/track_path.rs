@@ -95,6 +95,16 @@ fn teleport_unit(entity: &GameEntity) -> bool {
             .is_some_and(|loco| loco.active_kind() == LocomotorKind::Teleport)
 }
 
+/// A Unit on a Tunnel locomotor: the Unit setter's Foot tail reaches Tunnel
+/// Move_To (`0x00728AF0`).
+fn tunnel_unit(entity: &GameEntity) -> bool {
+    entity.category() == EntityCategory::Unit
+        && entity
+            .locomotor
+            .as_ref()
+            .is_some_and(|loco| loco.active_kind() == LocomotorKind::Tunnel)
+}
+
 /// A Unit on a Jumpjet locomotor: its null destination reaches the Jumpjet's
 /// `Stop_Moving` through the same Unit setter. The Foot tail then calls
 /// `JumpjetLocomotionClass::Move_To` (`0x0054B1C0`) or `Stop_Moving` (`0x0054B4D0`).
@@ -668,7 +678,11 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        let Some(actor) = self.substrate.entities.get_mut(id) else {
+        let Some(actor) = self
+            .substrate
+            .entities
+            .get_mut_if(id, |actor| actor.navigation.destination_setter_owed())
+        else {
             return;
         };
         if !actor.navigation.take_destination_setter() {
@@ -740,8 +754,8 @@ impl Simulation {
 
     /// Whether the Unit setter (`0x741970`) is represented for `id` as the
     /// team, harvest and undeploy callers use it: a Drive, Ship, Hover, Walk,
-    /// Jumpjet or Teleport receiver, or a `Teleporter=` Unit whatever its
-    /// locomotor.
+    /// Jumpjet, Teleport or Tunnel receiver, or a `Teleporter=` Unit whatever
+    /// its locomotor.
     pub(crate) fn unit_setter_receiver(&self, id: u64, rules: &RuleSet) -> bool {
         self.substrate.entities.get(id).is_some_and(|actor| {
             track_unit(actor)
@@ -749,6 +763,7 @@ impl Simulation {
                 || walk_unit(actor)
                 || jumpjet_unit(actor)
                 || teleport_unit(actor)
+                || tunnel_unit(actor)
                 || teleporter_unit(self, actor, rules)
         })
     }
@@ -773,15 +788,16 @@ impl Simulation {
     /// - The Foot tail (0x4D94B0) writes NavCom and calls the active
     ///   locomotor's Move_To — Drive/Ship ([`set_destination_internal_coord`]),
     ///   Teleport ([`teleport_move_to`]), Jumpjet
-    ///   ([`Self::jumpjet_move_to`]), Hover ([`hover_move_to`]) or Walk
-    ///   ([`set_walk_destination_coord`]) — unless Foot+0x6AC skips it once.
-    /// - RESIDUALS, both dormant on retail data: the `MovementZone=Subterannean`
-    ///   arm (`0x00742097..0x007422D7`, TechnoType `+0xD2C`, which
-    ///   TechnoTypeClass::ReadINI sets at `0x0071608A`), whose planner
-    ///   `0x007447B0` fills the NavQueue and heads for its first post, and the
-    ///   Tunnel-locomotor arm (`0x007427C0..0x00742C14`, CLSID `0x007E9A50`),
-    ///   which tries a ground path (`0x00746000`) before digging. No retail
-    ///   rules, mode or map file names that zone or that locomotor.
+    ///   ([`Self::jumpjet_move_to`]), Hover ([`hover_move_to`]), Walk
+    ///   ([`set_walk_destination_coord`]) or Tunnel
+    ///   ([`Self::tunnel_move_to`]) — unless Foot+0x6AC skips it once.
+    /// - The `MovementZone=Subterannean` arm (`0x00742097..0x007422D7`,
+    ///   Type+D2C read71608A) uses the shared burrowing planner7447B0 and
+    ///   existing NavQueue before the ordinary Foot setter.
+    /// - A surfacing Tunnel queues the destination and holds its own Cell
+    ///   (`0x007422F7`), and the Tunnel-locomotor arm
+    ///   ([`Self::unit_tunnel_arm`], `0x007427C0..0x00742C14`) may put a
+    ///   Drive over the Tunnel for a short trip.
     ///
     /// Returns false for a receiver without a represented Move_To or a
     /// refused destination. Foot4D9628 calls the destination's +4C coordinate
@@ -810,7 +826,8 @@ impl Simulation {
             || hover
             || jumpjet
             || walk_unit(actor)
-            || teleport_unit(actor))
+            || teleport_unit(actor)
+            || tunnel_unit(actor))
             || !super::can_accept_destination(actor)
         {
             return false;
@@ -868,6 +885,24 @@ impl Simulation {
                 rules,
                 frame_effects,
             );
+        }
+        // 741B28..741BC5: a Unit asleep (Get_Mission) and tethered to the
+        // Carryall coming to lift it (`aircraft::carryall`) calls the
+        // Carryall off: its destination is dropped, then UNTETHER and BREAK.
+        if let Some(unit) = self.substrate.entities.get(id)
+            && unit.tether.partner().is_some()
+            && unit.mission.effective()
+                == crate::sim::mission::MissionId::from_known(MissionType::Sleep)
+            && let Some(carryall) = unit.radio_contacts.slot(0)
+            && self.is_carryall(carryall, rules)
+        {
+            self.assign_aircraft_destination(carryall, None, rules, frame_effects);
+            for message in [
+                crate::sim::radio::RadioMessage::Untether,
+                crate::sim::radio::RadioMessage::Break,
+            ] {
+                crate::sim::radio::transmit_to_contact(self, id, message, rules, frame_effects);
+            }
         }
         // 741C4F..741C78 decides on the state after that break.
         let enter_radio_arm = {
@@ -928,13 +963,20 @@ impl Simulation {
             .filter(|(_, category)| *category == EntityCategory::Unit)
             .map(|(id, _)| id);
         // 741CE5..741D0D: a `UnitAbsorb=` building waits there too, whatever
-        // its contacts.
+        // its contacts; with Ares 3.0 a `Tunnel=` one as well (10017830,
+        // hook 0x741CE5).
         let absorber = original_building.filter(|&building| {
             self.substrate
                 .entities
                 .get(building)
                 .and_then(|building| self.entity_object_type(building, rules))
-                .is_some_and(|object| object.unit_absorb)
+                .is_some_and(|object| {
+                    #[cfg(feature = "ares")]
+                    if object.building_type_ext().tunnel.is_some() {
+                        return true;
+                    }
+                    object.unit_absorb
+                })
         });
         if let Some(target) = mobile_target.or(absorber)
             && enter_radio_arm
@@ -1048,6 +1090,11 @@ impl Simulation {
                 }
             }
         }
+        let requested_clear = clear_queue;
+        let (burrowing_destination, clear_queue) = self
+            .burrowing_setter_destination(id, destination, clear_queue, rules)
+            .unwrap_or_else(|cause| panic!("Unit {id} burrowing destination: {cause}"));
+        destination = burrowing_destination;
         // Native7422F4/7423CA clears NavQueue after the Enter arm, before
         // the UnitRepair/Bunker tail. A false flag preserves non-NULL requests for
         // Enter's pop; the modified-NULL arm7423CA clears the queue regardless.
@@ -1055,6 +1102,27 @@ impl Simulation {
             && let Some(unit) = self.substrate.entities.get_mut(id)
         {
             unit.navigation.clear_nav_queue();
+        }
+        // 0x007422F7..0x00742395: after that clear (or the burrowing
+        // planner, which jumps here past it at 0x007422D0), a locomotor that
+        // is surfacing (vt+0x98, Tunnel `0x0072A1E0`) queues the destination
+        // at the NavQueue's front and takes the Cell under its Location.
+        if requested_clear
+            && let Some(requested) = destination
+            && let Some(unit) = self.substrate.entities.get_mut(id)
+            && unit
+                .locomotor
+                .as_ref()
+                .and_then(|loco| loco.tunnel_runtime())
+                .is_some_and(super::tunnel_movement::TunnelRuntime::is_surfacing)
+        {
+            unit.navigation.push_nav_queue_front(requested);
+            let location =
+                super::ground_pose::object_location(unit, self.resolved_terrain.as_ref());
+            destination = Some(NavTargetRef::Cell {
+                rx: (location.x / 256) as u16,
+                ry: (location.y / 256) as u16,
+            });
         }
         // Native runs this UnitRepair/Bunker tail (`0x00742C14..0x00742D3F`) after
         // the Teleporter arm (`0x007423CD..0x00742C14`), which VERA runs
@@ -1160,6 +1228,7 @@ impl Simulation {
             _ => None,
         };
         let skip_move_to = teleporter && self.unit_teleporter_arm(id, requested_cell, rules);
+        self.unit_tunnel_arm(id, requested, rules);
         // UnitClass::Set_Destination 0x00741970: successful UnitRepair/Bunker
         // docking jumps from 0x00742C8E/0x00742D08 to Foot's setter at
         // 0x00742D09 and returns before the WeaponsFactory arm (0x00742D46).
@@ -1244,8 +1313,23 @@ impl Simulation {
                     | LocomotorKind::Walk,
                 ) => {
                     let coord = coord.expect("accepted Move_To captures target +4C");
-                    super::navcom::set_destination_internal_coord(
+                    if super::navcom::set_destination_internal_coord(
                         actor, requested, coord, terrain, frame,
+                    ) && let Err(error) = self.hover_move_to_path_step(id, rules, frame_effects)
+                    {
+                        log::warn!("Unit Hover MoveTo {id}: {}", error.cause);
+                    }
+                    true
+                }
+                Some(LocomotorKind::Tunnel) => {
+                    super::navcom::publish_nav_com(actor, requested);
+                    let coord = coord.expect("accepted Move_To captures target +4C");
+                    self.tunnel_move_to(
+                        id,
+                        coord,
+                        rules,
+                        frame_effects.overlay_registry(),
+                        frame_effects,
                     );
                     true
                 }

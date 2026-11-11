@@ -9,6 +9,10 @@ use crate::sim::house_state::HouseState;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::world::SimSoundEvent;
 
+/// Experience awards an erase gives a Trainable head: the Update's
+/// (`0x0071A917`) and Record_The_Kill's; Ares 1004BBC0 replaces the first.
+const ERASE_AWARDS: usize = if cfg!(feature = "ares") { 1 } else { 2 };
+
 const RULES: &str = "\
 [General]
 WarpAway=WARPAWAY
@@ -217,7 +221,8 @@ fn link(sim: &Simulation, id: u64) -> TemporalLink {
     entity(sim, id)
         .temporal
         .link
-        .clone()
+        .as_deref()
+        .cloned()
         .expect("a Temporal firer")
 }
 
@@ -247,7 +252,7 @@ fn chain(sim: &mut Simulation, target: u64, attackers: &[u64], warp_remaining: i
             .get_mut(attacker)
             .unwrap()
             .temporal
-            .link = Some(link);
+            .link = Some(Box::new(link));
     }
     sim.substrate
         .entities
@@ -608,7 +613,7 @@ fn native_update_corpus() {
                     add[2].as_i64().unwrap() as i32,
                     add[3].as_i64().unwrap() as i32,
                 );
-                for _ in 0..2 {
+                for _ in 0..ERASE_AWARDS {
                     expected.veterancy.award_kill(
                         owner_cost,
                         target_cost,
@@ -703,8 +708,16 @@ fn erase_awards_price_each_cost_by_its_house() {
     chain(&mut sim, tank, &[cleg], 1);
     let mut expected = entity(&sim, cleg).clone();
     // (legionnaire cost, tank cost): Russian and American Houses, then both
-    // American.
-    for (owner_cost, target_cost) in [(750, 450), (1500, 450)] {
+    // American. Ares 1004BBC0 drops the first (the Update's), and its
+    // RegisterDestruction AddExperience (1004EE30) prices the recipient by
+    // its own House, so the remaining award is again Russian and American.
+    let awards = if cfg!(feature = "ares") {
+        &[(750, 450)][..]
+    } else {
+        &[(750, 450), (1500, 450)][..]
+    };
+    assert_eq!(awards.len(), ERASE_AWARDS);
+    for &(owner_cost, target_cost) in awards {
         expected.veterancy.award_kill(
             owner_cost,
             target_cost,
@@ -1476,7 +1489,9 @@ fn a_chrono_legionnaire_erases_a_tank() {
     let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 13, 10);
     let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
     let mut experienced = entity(&sim, cleg).clone();
-    for _ in 0..2 {
+    // Ares TemporalClass_Update_Erase (1004BBC0) drops the Update's award,
+    // leaving Record_The_Kill's.
+    for _ in 0..ERASE_AWARDS {
         experienced.veterancy.award_kill(
             1500,
             900,
@@ -1537,6 +1552,102 @@ fn a_chrono_legionnaire_erases_a_tank() {
             ),
         "no survivors"
     );
+}
+
+/// Retail rules and real orders: a Chrono Legionnaire warps the Americans'
+/// only War Factory while it builds a Grizzly, then walks off and lets it
+/// go. In stock the warp and release make no queue callback and the tank
+/// keeps building. Ares 3.0 BuildingClass_Disable_Temporal_Factories and
+/// _Enable_Temporal_Factories (`10013FA0`, hooks `0x004521C8` and
+/// `0x00452218`) refresh the vehicle queue: with no online factory the warp
+/// suspends it (`0x00509252`), and the release resumes it.
+#[test]
+fn a_warped_war_factory_holds_its_queue_until_released() {
+    use crate::sim::command::{Command, CommandEnvelope};
+    use crate::sim::production::ProductionCategory;
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = retail.rules;
+    let (mut sim, grid) = arena(0x4521C8, &rules);
+    let americans = sim.interner.intern("Americans");
+    sim.houses
+        .get_mut(&americans)
+        .unwrap()
+        .economy_mut()
+        .set_credits_for_test(10_000);
+    spawn(&mut sim, &rules, "GAPOWR", "Americans", 22, 16);
+    let factory = spawn(&mut sim, &rules, "GAWEAP", "Americans", 14, 8);
+    let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
+    let order = |sim: &mut Simulation, command: Command| {
+        let at = sim.session.tick() + 1;
+        sim.queue_command(CommandEnvelope::new(americans, at, command));
+    };
+    let step = |sim: &mut Simulation, frames: usize| {
+        for _ in 0..frames {
+            let commands = sim.take_due_commands();
+            sim.advance_tick(&commands, Some(&rules), Some(&grid), None, 33);
+        }
+    };
+    let queue = |sim: &Simulation| {
+        let view = sim
+            .production
+            .factories()
+            .view(americans, ProductionCategory::Vehicle)
+            .expect("the Grizzly's factory");
+        (view.suspended, view.progress)
+    };
+    let tank = sim.interner.intern("MTNK");
+    order(&mut sim, Command::QueueProduction { type_id: tank });
+    step(&mut sim, 30);
+    let (held, before) = queue(&sim);
+    assert!(!held && before > 0, "the Grizzly builds");
+
+    order(
+        &mut sim,
+        Command::Attack {
+            attacker_id: cleg,
+            target_id: factory,
+        },
+    );
+    for _ in 0..300 {
+        if head_of(&sim, factory) == Some(cleg) {
+            break;
+        }
+        step(&mut sim, 1);
+    }
+    assert_eq!(head_of(&sim, factory), Some(cleg), "the warp starts");
+    step(&mut sim, 2);
+    let (held, warped) = queue(&sim);
+    step(&mut sim, 60);
+    let (_, later) = queue(&sim);
+    assert_eq!(held, cfg!(feature = "ares"), "suspended while warped");
+    assert_eq!(
+        later > warped,
+        !cfg!(feature = "ares"),
+        "builds while warped"
+    );
+
+    order(
+        &mut sim,
+        Command::Move {
+            entity_id: cleg,
+            target_rx: 4,
+            target_ry: 4,
+        },
+    );
+    for _ in 0..300 {
+        if head_of(&sim, factory).is_none() {
+            break;
+        }
+        step(&mut sim, 1);
+    }
+    assert_eq!(head_of(&sim, factory), None, "the walk lets it go");
+    step(&mut sim, 2);
+    let (held, released) = queue(&sim);
+    step(&mut sim, 60);
+    assert!(!held, "resumed on release");
+    assert!(queue(&sim).1 > released, "builds again");
 }
 
 /// The normal loader must bind both General references before Temporal can
@@ -2648,7 +2759,7 @@ fn native_initiate_warp_corpus() {
                 .get_mut(target)
                 .unwrap()
                 .temporal
-                .link = Some(TemporalLink::default());
+                .link = Some(Box::default());
             chain(&mut sim, other, &[target], 555);
         }
         sim.substrate
@@ -2695,8 +2806,20 @@ fn native_initiate_warp_corpus() {
                 ),
                 "{name}: temporal{n} links"
             );
+            // Ares TemporalClass_Fire_HealthFactor (10053C20) gives a new
+            // head at least 1; the native 0 is the zero-Strength target's.
+            let expected = if cfg!(feature = "ares")
+                && n == 0
+                && link.target == Some(target)
+                && head_of(&sim, target) == Some(attackers[0])
+                && native.warp_remaining < 1
+            {
+                1
+            } else {
+                native.warp_remaining
+            };
             assert_eq!(
-                link.warp_remaining, native.warp_remaining,
+                link.warp_remaining, expected,
                 "{name}: temporal{n} WarpRemaining"
             );
         }
@@ -3085,14 +3208,15 @@ fn arena(seed: u64, rules: &RuleSet) -> (Simulation, crate::sim::pathfinding::Pa
 /// The Temporal arm skips a Foot outside the ground layer (`0x0046946C`,
 /// vt+0x78 != 2): an aircraft landing below two levels answers Top (Fly
 /// `0x004CFCF0`) though it is not high flying, so it is not warped; landed,
-/// it is.
+/// it is. Ares BulletClass_DetonateAt_CanTemporalTarget (1005C600, hook
+/// 0x469467) admits the Air and Top layers, so there it is warped too.
 #[test]
 fn a_landing_aircraft_is_not_warped() {
     let rules = rules();
     let (mut sim, _) = arena(12, &rules);
     let plane = spawn(&mut sim, &rules, "HTNK", "Americans", 13, 10);
     let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
-    for (height, warped) in [(100, false), (0, true)] {
+    for (height, warped) in [(100, cfg!(feature = "ares")), (0, true)] {
         let entity = sim.substrate.entities.get_mut(plane).unwrap();
         entity.set_category_for_test(EntityCategory::Aircraft);
         entity.locomotor = Some(
@@ -3114,4 +3238,98 @@ fn a_landing_aircraft_is_not_warped() {
             "height {height}"
         );
     }
+}
+
+/// Ares TemporalClass_Fire_HealthFactor (10053C20): the first head's warp
+/// shrinks with the target's missing health, scaled by the warp weapon's
+/// `Temporal.HealthFactor=`: 400 * 10 at a quarter health and factor 0.5
+/// leaves `(1 - 0.375) * 4000 = 2500`.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_health_factor_shortens_a_damaged_targets_warp() {
+    let warp = |extra: &str| {
+        let text = RULES.replace("Temporal=yes\n", &format!("Temporal=yes\n{extra}"));
+        let rules = rules_from(&text, ART);
+        let mut sim = sim(9);
+        let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
+        let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
+        sim.substrate
+            .entities
+            .get_mut(tank)
+            .unwrap()
+            .health
+            .set_for_test(100);
+        sim.temporal_initiate_warp(
+            cleg,
+            Some(tank),
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+        link(&sim, cleg).warp_remaining
+    };
+    assert_eq!(warp(""), 4000);
+    assert_eq!(warp("Temporal.HealthFactor=0.5\n"), 2500);
+}
+
+/// Ares TechnoExt::CanWarpTarget (1004F300, hook 0x71AE50): a veteran whose
+/// type has `VeteranAbilities=UNWARPABLE` cannot be warped; a rookie of the
+/// same type can.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_an_unwarpable_veteran_is_not_warped() {
+    let rules = rules_from(
+        &RULES.replace(
+            "[HTNK]\nStrength=400\n",
+            "[HTNK]\nStrength=400\nVeteranAbilities=UNWARPABLE\n",
+        ),
+        ART,
+    );
+    let mut sim = sim(4);
+    let veteran = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
+    let rookie = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 14);
+    let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
+    sim.substrate
+        .entities
+        .get_mut(veteran)
+        .unwrap()
+        .veterancy
+        .set_raw_for_test(crate::util::native_x87::NativeF32Bits::from_bits(
+            1.0f32.to_bits(),
+        ));
+    for target in [veteran, rookie] {
+        sim.temporal_initiate_warp(
+            cleg,
+            Some(target),
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+    }
+    assert_eq!(head_of(&sim, veteran), None);
+    assert_eq!(head_of(&sim, rookie), Some(cleg));
+}
+
+/// Ares 3.0 TemporalClass_UpdateA (1004BB60, hook 0x71A84E): the Update
+/// frees its target's JammerClass, unjamming what it held.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_temporal_update_frees_the_targets_radar_jammer() {
+    let rules = rules_from(
+        &RULES.replace("[HTNK]\n", "[HTNK]\nRadarJamRadius=5\n"),
+        ART,
+    );
+    let mut sim = sim(7);
+    let target = spawn(&mut sim, &rules, "HTNK", "Russians", 20, 20);
+    let attacker = spawn(&mut sim, &rules, "CLEG", "Americans", 22, 20);
+    sim.update_ares_radar_jammer(target, &rules);
+    assert!(!entity(&sim, target).radar_jam.is_default());
+    chain(&mut sim, target, &[attacker], 1_000_000);
+    sim.temporal_update_head(
+        attacker,
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    assert!(entity(&sim, target).radar_jam.is_default());
 }

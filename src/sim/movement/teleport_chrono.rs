@@ -595,6 +595,20 @@ impl Simulation {
         ) {
             let mut next = self.cell_objects(cell, layer).next();
             while let Some(member) = next {
+                // Ares 3.0 1004B980 (hook 0x718275) replaces the walk; it reads
+                // each successor before the kill, as the vanilla loop does.
+                #[cfg(feature = "ares")]
+                self.ares_chrono_make_room(
+                    id,
+                    owner_infantry,
+                    member,
+                    coord,
+                    &mut blocked,
+                    rules,
+                    registry,
+                    effects,
+                );
+                #[cfg(not(feature = "ares"))]
                 self.chrono_telefrag(
                     id,
                     owner_infantry,
@@ -630,7 +644,76 @@ impl Simulation {
         true
     }
 
+    /// TeleportLocomotionClass_MakeRoom (Ares 3.0 `1004B980`, hook
+    /// `0x718275`, resuming at `0x7184CE`) for one object of the destination
+    /// cell's list: an object is protected while under the Iron Curtain or
+    /// when its TechnoTypeExt `Chronoshift.Crushable` is off. With RulesExt
+    /// `ChronoInfantryCrush=no` arriving infantry dies on anything but
+    /// infantry; infantry on infantry kills only the unprotected one at
+    /// exactly `coord`; a protected object kills the arriving one, an
+    /// unprotected Foot dies, and anything else sends the arrival to
+    /// another cell. Every kill is the victim's Strength as `C4Warhead=`,
+    /// ignoring defenses, with no attacker or house.
+    #[cfg(feature = "ares")]
+    #[allow(clippy::too_many_arguments)]
+    fn ares_chrono_make_room(
+        &mut self,
+        id: u64,
+        owner_infantry: bool,
+        member: CellObjectMember,
+        coord: DriveCoord,
+        blocked: &mut bool,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        let crush_infantry = rules.ares_chrono_infantry_crush();
+        // A TerrainClass is no infantry, no Techno and never curtained.
+        let (other, object_infantry, protected, object_foot) = match member {
+            CellObjectMember::Entity(other) => {
+                let frame = self.session.binary_frame();
+                let Some(entity) = self.substrate.entities.get(other) else {
+                    return;
+                };
+                let crushable = self
+                    .object_type(entity.type_ref(), rules)
+                    .is_none_or(|object| object.ares_chronoshift().crushable);
+                (
+                    Some(other),
+                    entity.category() == EntityCategory::Infantry,
+                    crate::sim::superweapon::invulnerability::is_invulnerable(
+                        entity.invulnerability.as_ref(),
+                        frame,
+                    ) || !crushable,
+                    foot(entity.category()),
+                )
+            }
+            _ => (None, false, false, false),
+        };
+        let victim = if !crush_infantry && owner_infantry && !object_infantry {
+            Some(id)
+        } else if !protected && object_infantry && owner_infantry {
+            other.filter(|&other| {
+                self.substrate.entities.get(other).is_some_and(|entity| {
+                    super::ground_pose::object_get_coords(entity, self.resolved_terrain.as_ref())
+                        == coord
+                })
+            })
+        } else if protected {
+            Some(id)
+        } else if object_foot {
+            other
+        } else {
+            *blocked = true;
+            None
+        };
+        if let Some(victim) = victim {
+            self.chrono_c4_kill(victim, rules, registry, effects);
+        }
+    }
+
     /// One object of Update_Position's walk (`0x007182DC..0x0071842A`).
+    #[cfg(not(feature = "ares"))]
     fn chrono_telefrag(
         &mut self,
         id: u64,
@@ -737,7 +820,7 @@ impl Simulation {
                 let bridge = cells.flags(cells.lookup((target.0 as i16, target.1 as i16)))
                     & CELL_FLAG_BRIDGE
                     != 0;
-                let zone = self.zone_grid.as_ref().and_then(|zones| {
+                let zone = self.zone_grid.as_deref().and_then(|zones| {
                     zones.get_zone_id_native(
                         terrain,
                         (current.0 as u16, current.1 as u16),
@@ -814,7 +897,10 @@ impl Simulation {
                 .cell_objects((cx as u16, cy as u16), MovementLayer::Ground)
                 .next();
             while let Some(member) = next {
+                // Ares 3.0 TeleportLocomotionClass_Unwarp_PreventSelfCrush
+                // (10037BC0, hook 0x7187DA) skips the warper itself.
                 if let CellObjectMember::Entity(other) = member
+                    && !(crate::rules::ARES_ENABLED && other == id)
                     && self.substrate.entities.get(other).is_some_and(|entity| {
                         crate::sim::superweapon::invulnerability::is_invulnerable(
                             entity.invulnerability.as_ref(),
@@ -832,12 +918,47 @@ impl Simulation {
                 (
                     entity.category(),
                     object.naval,
-                    object.speed_type == SpeedType::Hover
-                        && !(object.powered_unit && !self.has_powered_center(entity.owner())),
+                    // Ares 3.0 TeleportLocomotionClass_UnfreezeObject_SinkOrSwim
+                    // (1005D420, hook 0x718871): an Amphibious,
+                    // AmphibiousCrusher, AmphibiousDestroyer or WaterBeach
+                    // MovementZone floats too, powered or not.
+                    crate::rules::ARES_ENABLED
+                        && matches!(
+                            object.movement_zone,
+                            MovementZone::Amphibious
+                                | MovementZone::AmphibiousCrusher
+                                | MovementZone::AmphibiousDestroyer
+                                | MovementZone::WaterBeach
+                        )
+                        || object.speed_type == SpeedType::Hover
+                            && !(object.powered_unit && !self.has_powered_center(entity.owner())),
                 )
             })
         }) else {
             return;
+        };
+        // Ares 3.0 TeleportLocomotionClass_Unwarp_SinkJumpJets (10037BE0,
+        // hook 0x7188F2): on a water tile (`0x004865D0`) a Unit offline for
+        // want of power (`+0x1C8`) does not float, and a `SpeedType=Hover`
+        // `JumpJet=` Unit goes straight to `0x00718A66`, whose water-tile,
+        // non-infantry arm sinks it with no kill booked.
+        #[cfg(feature = "ares")]
+        let hover = {
+            let unit = (water_tile && category == EntityCategory::Unit)
+                .then(|| {
+                    let entity = self.substrate.entities.get(id)?;
+                    let object = self.object_type(entity.type_ref(), rules)?;
+                    Some((
+                        entity.deactivated.is_offline(),
+                        object.speed_type == SpeedType::Hover && object.jumpjet,
+                    ))
+                })
+                .flatten();
+            if unit.is_some_and(|(_, jumpjet)| jumpjet) {
+                self.chrono_warp_sink(id, rules, registry, effects);
+                return;
+            }
+            hover && !unit.is_some_and(|(offline, _)| offline)
         };
         let road = land == LandType::Road.as_index() as i32;
         let bridge = flags & CELL_FLAG_BRIDGE != 0;

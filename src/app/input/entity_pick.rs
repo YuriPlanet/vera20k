@@ -118,7 +118,6 @@ impl PickWorld for &crate::sim::world::Simulation {
 pub(crate) struct PresentedWorld<'a> {
     pub sim: &'a crate::sim::world::Simulation,
     pub rules: Option<&'a RuleSet>,
-    pub interpolation: &'a crate::app::presentation::interpolation::RenderInterpolation,
     /// [`crate::app::presentation::instances::translucent_fog_viewer`].
     pub translucent_viewer: Option<InternedId>,
 }
@@ -139,10 +138,8 @@ impl PickSource for PresentedWorld<'_> {
         self.sim.entities()
     }
     fn screen_position(&self, entity: &crate::sim::game_entity::GameEntity) -> (f32, f32) {
-        let pose = self
-            .interpolation
-            .sample_entity(entity, self.sim.session().binary_frame());
-        (pose.screen[0], pose.screen[1] - pose.visual_lift)
+        let (x, y) = crate::render::locomotor_visual::screen_position(entity);
+        (x, y - f32::from(entity.ion_blast_lift_pixels()))
     }
     fn first_ground_cell_object(&self, cell: (u16, u16)) -> Option<CellObjectMember> {
         self.sim.first_ground_cell_object(cell)
@@ -171,7 +168,6 @@ pub(crate) fn presented<'a>(
     PresentedWorld {
         sim,
         rules: state.rules(),
-        interpolation: &state.match_state.match_presentation.interpolation,
         translucent_viewer: crate::app::presentation::instances::translucent_fog_viewer(state, sim),
     }
 }
@@ -249,20 +245,42 @@ pub(crate) fn hover_object_at_point(
 /// TacticalPick of a frame, whose target both the cursor's action and the
 /// hover health bar read.
 pub(crate) fn cursor_hover_object(state: &crate::app::AppState) -> Option<HoverObject> {
-    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     let owner = crate::app::input::commands::preferred_local_owner_name(state)?;
     let (world_x, world_y) = crate::app::match_runtime::sim_tick::screen_point_to_world(
         state,
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );
-    hover_object_at_point(
+    tactical_hover_object_at_point(
         presented(state, sim),
         world_x,
         world_y,
         &owner,
         state.match_state.sandbox_full_visibility,
+        crate::app::input::campaign_input::is_locked(state),
     )
+}
+
+/// Live tactical hover admission, separate from raw geometric picking.
+/// ScrollClass::UpdateMouseScrolling (0x00692F30, gate 0x00692F3D) skips
+/// TacticalPick while input is locked. All frame hover consumers share this
+/// gate, including health bars, even while the hidden pointer keeps moving.
+/// Native Display (0x004AAEEC) sets Techno+0x431 and Techno AI (0x006F9E65)
+/// clears it. This immediate suppression does not retain that old flag until
+/// its object's next AI visit; lock/pause transition timing remains a residual.
+fn tactical_hover_object_at_point(
+    source: impl PickWorld,
+    world_x: f32,
+    world_y: f32,
+    local_owner: &str,
+    ignore_visibility: bool,
+    input_locked: bool,
+) -> Option<HoverObject> {
+    if input_locked {
+        return None;
+    }
+    hover_object_at_point(source, world_x, world_y, local_owner, ignore_visibility)
 }
 
 /// Classify an identity already picked by a retained input source (radar or
@@ -1192,11 +1210,13 @@ pub(crate) fn selection_dynamic_prefix(
     // BuildingClass::CanBeSelectedNow459C00 calls the existing type query
     // Is1x1WithUndeploy465D40 before the shared Techno6FC030 prefix below.
     let building = entity.category() == EntityCategory::Structure;
+    // Ares 3.0 10013CF0 (hook 0x00459C03): `MassSelectable=` overrides
+    // that answer ([`ObjectType::band_selectable`]).
     if building
         && !rules
             .zip(interner)
             .and_then(|(rules, interner)| rules.object(interner.resolve(entity.type_ref())))
-            .is_some_and(|object| object.is_1x1_with_undeploy())
+            .is_some_and(|object| object.band_selectable())
     {
         return false;
     }
@@ -1505,6 +1525,75 @@ mod tests {
     use crate::sim::game_entity::GameEntity;
     use crate::sim::intern::StringInterner;
 
+    #[test]
+    fn locked_tactical_hover_cannot_repick_health_bars() {
+        use crate::app::presentation::ui_overlays::{health_bar_drawable, health_hover_target};
+        use crate::rules::ini_parser::IniFile;
+        use crate::sim::world::Simulation;
+
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[BuildingTypes]\n0=VISIBLE\n[VISIBLE]\nStrength=100\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        sim.resolve_type_handles(&rules);
+        let first = sim
+            .spawn_object("VISIBLE", "Player", 10, 10, 0, &rules)
+            .unwrap();
+        let second = sim
+            .spawn_object("VISIBLE", "Player", 20, 20, 0, &rules)
+            .unwrap();
+        let point = |sim: &Simulation, id| {
+            crate::render::locomotor_visual::screen_position(sim.entities().get(id).unwrap())
+        };
+        let pick = |sim: &Simulation, id| {
+            let (x, y) = point(sim, id);
+            tactical_hover_object_at_point(sim, x, y, "Player", true, sim.session().input_locked())
+        };
+        assert_eq!(health_hover_target(pick(&sim, first)), Some(first));
+        sim.session_mut_for_test().set_input_locked_for_test(true);
+        assert_eq!(pick(&sim, first), None);
+        assert_eq!(
+            pick(&sim, second),
+            None,
+            "hidden pointer cannot acquire another object"
+        );
+        assert!(!health_bar_drawable(
+            &sim,
+            sim.entities().get(second).unwrap(),
+            health_hover_target(pick(&sim, second)),
+            Some("Player"),
+            Some(&rules),
+        ));
+        sim.entities_mut_for_test()
+            .get_mut(first)
+            .unwrap()
+            .selection
+            .set_selected_for_test(true);
+        assert!(
+            health_bar_drawable(
+                &sim,
+                sim.entities().get(first).unwrap(),
+                health_hover_target(pick(&sim, first)),
+                Some("Player"),
+                Some(&rules),
+            ),
+            "the lock removes hover, not selected health bars"
+        );
+        let (x, y) = point(&sim, second);
+        assert_eq!(
+            health_hover_target(hover_object_at_point(&sim, x, y, "Player", true)),
+            Some(second),
+            "non-input geometric picking remains available",
+        );
+        sim.session_mut_for_test().set_input_locked_for_test(false);
+        assert_eq!(
+            health_hover_target(pick(&sim, second)),
+            Some(second),
+            "unlock uses the current point"
+        );
+    }
+
     fn item83_entity(
         id: u64,
         rx: u16,
@@ -1633,7 +1722,7 @@ mod tests {
         *sim.fog_mut_for_test() = FogState::new(32, 32);
         sim.fog_mut_for_test().reveal_all_for_owner(viewer);
         let mut building = item83_entity(1, 10, 10, other, typ, EntityCategory::Structure, false);
-        building.cloak = Some(CloakRuntime::new(0));
+        building.cloak = Some(Box::new(CloakRuntime::new(0)));
         let (x, y) = crate::render::locomotor_visual::screen_position(&building);
         sim.entities_mut_for_test().insert(building);
         sim.occupancy_mut().add(
@@ -1685,7 +1774,6 @@ mod tests {
     /// band preflight registers it whatever the fog mode (`0x006D9CE0`).
     #[test]
     fn a_building_frozen_in_fog_of_war_refuses_the_pick_on_its_cell() {
-        use crate::app::presentation::interpolation::RenderInterpolation;
         use crate::sim::world::Simulation;
 
         let mut sim = Simulation::new();
@@ -1712,7 +1800,6 @@ mod tests {
             crate::sim::occupancy::CellListInsertion::AppendBuilding,
         );
         sim.resubmit_entity_display_for_test(1);
-        let native = RenderInterpolation::new(false);
         for (fog_of_war, fogged) in [(true, false), (true, true), (false, true)] {
             sim.session_mut_for_test()
                 .game_options_mut_for_test()
@@ -1761,7 +1848,6 @@ mod tests {
                 let source = PresentedWorld {
                     sim: &sim,
                     rules: None,
-                    interpolation: &native,
                     translucent_viewer,
                 };
                 let (bx, by) = source.screen_position(sim.entities().get(1).unwrap());
@@ -1795,7 +1881,6 @@ mod tests {
         use crate::app::presentation::instances::{
             TacticalEntityPurpose, tactical_entity_admission, translucent_fog_conceals,
         };
-        use crate::app::presentation::interpolation::RenderInterpolation;
         use crate::sim::world::Simulation;
 
         let mut sim = Simulation::new();
@@ -1847,7 +1932,6 @@ mod tests {
             sim.resubmit_entity_display_for_test(id);
         }
         let all: Vec<u64> = cases.iter().map(|case| case.0).collect();
-        let native = RenderInterpolation::new(false);
         for (id, _, owner, retail, translucent) in cases {
             let entity = sim.entities().get(id).unwrap();
             assert_eq!(!translucent_fog_conceals(&sim, viewer, entity), translucent);
@@ -1871,7 +1955,6 @@ mod tests {
                 let source = PresentedWorld {
                     sim: &sim,
                     rules: None,
-                    interpolation: &native,
                     translucent_viewer,
                 };
                 let case = format!("{id} {translucent_viewer:?}");
@@ -2062,9 +2145,8 @@ mod tests {
                 .set_owned_by_current_house_for_test(retained_owned);
             let mut cloak = CloakRuntime::new(0);
             cloak.set_state_for_test(cloak_state);
-            entity.cloak = Some(cloak);
-            let world =
-                crate::app::presentation::instances::interpolated_screen_position_entity(&entity);
+            entity.cloak = Some(Box::new(cloak));
+            let world = crate::app::presentation::instances::entity_screen_position(&entity);
             sim.entities_mut_for_test().insert(entity);
             sim.resubmit_entity_display_for_test(1);
             let order = crate::app::presentation::instances::tactical_entity_encounter_order(&sim);

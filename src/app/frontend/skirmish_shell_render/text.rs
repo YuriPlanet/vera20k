@@ -26,7 +26,7 @@ use crate::ui::skirmish_shell::{
     SkirmishShellState, SkirmishTrackbarId, checkbox_text_rect, combo_dropdown_content_rect,
     combo_dropdown_rect, combo_dropdown_visible_row_count, combo_enabled, combo_items,
     combo_text_rect, player_name_edit_text_rect, player_row_visible,
-    random_map_setup_dropdown_rect, trackbar_visual_value,
+    random_map_setup_dropdown_rect,
 };
 
 use super::controls::trackbar_rect_for_id;
@@ -131,7 +131,9 @@ pub(super) fn country_label(state: &AppState, country: LaunchCountry) -> String 
 
 pub(super) fn trackbar_display_value(shell: &SkirmishShellState, id: SkirmishTrackbarId) -> String {
     match id {
-        SkirmishTrackbarId::GameSpeed0x529 => trackbar_visual_value(shell, id).to_string(),
+        SkirmishTrackbarId::GameSpeed0x529 => {
+            crate::ui::shell::game_speed::SpeedContext::Offline.value_text(shell.game_speed)
+        }
         SkirmishTrackbarId::Credits0x511 => shell.credits().to_string(),
         SkirmishTrackbarId::UnitCount0x50c => shell.unit_count.to_string(),
     }
@@ -398,7 +400,7 @@ fn rects_intersect(a: RectPx, b: RectPx) -> bool {
         && a.y + a.h > b.y
 }
 
-fn text_covered_by_overlay(rect: RectPx, overlays: &[RectPx]) -> bool {
+pub(super) fn text_covered_by_overlay(rect: RectPx, overlays: &[RectPx]) -> bool {
     overlays
         .iter()
         .any(|overlay| rects_intersect(rect, *overlay))
@@ -893,6 +895,39 @@ pub(super) fn push_random_map_setup_modal_text_draws(
 
     // Row order: map type, time, theater, size, resources, players. The 0x405
     // label reads "Environment" even though the control writes the map type.
+    // VERA: the Advanced view labels its sliders and shows each value in the
+    // slider's plaque, as the Players slider does.
+    if modal.advanced {
+        for field in crate::ui::skirmish_shell::AdvancedField::ALL {
+            let (key, fallback) = field.label();
+            let color = if modal.is_enabled(RandomMapSetupControl::Advanced(field)) {
+                SHELL_LABEL_TEXT_RGB
+            } else {
+                crate::render::shell_paint::SHELL_TEXT_RGB_DISABLED
+            };
+            push_text_draw(
+                out,
+                state,
+                &localized_label(state, key, fallback),
+                rect_to_text_rect(layout.advanced_label_rects[field.row()]),
+                color,
+                ShellAlign::V_CENTER,
+                SHELL_DROPDOWN_TEXT_DEPTH - 0.00008,
+                scale.factor(),
+            );
+            let value_rect = value_text_rect(layout.advanced_control_rects[field.row()], scale);
+            push_text_draw(
+                out,
+                state,
+                &modal.advanced_value(field).to_string(),
+                rect_to_text_rect(value_rect),
+                color,
+                ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+                SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
+                scale.factor(),
+            );
+        }
+    }
     for (row, (key, fallback)) in [
         ("GUI:Environment", "Environment"),
         ("GUI:TimeOfDay", "Time of Day"),
@@ -903,12 +938,29 @@ pub(super) fn push_random_map_setup_modal_text_draws(
     ]
     .into_iter()
     .enumerate()
+    .filter(|_| !modal.advanced)
     {
         push_text_draw(
             out,
             state,
             &localized_label(state, key, fallback),
             rect_to_text_rect(layout.label_rects[row]),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::V_CENTER,
+            SHELL_DROPDOWN_TEXT_DEPTH - 0.00008,
+            scale.factor(),
+        );
+    }
+
+    // Ares' Urban Areas box takes its caption beside the icon, like the
+    // `0x102` checkboxes, in the basic view only.
+    #[cfg(feature = "ares")]
+    if !modal.advanced {
+        push_text_draw(
+            out,
+            state,
+            &localized_label(state, "GUI:UrbanAreas", "Urban Areas"),
+            rect_to_text_rect(checkbox_text_rect(layout.urban_areas, scale)),
             SHELL_LABEL_TEXT_RGB,
             ShellAlign::V_CENTER,
             SHELL_DROPDOWN_TEXT_DEPTH - 0.00008,
@@ -973,10 +1025,26 @@ pub(super) fn push_random_map_setup_modal_text_draws(
             layout.cancel,
             RandomMapSetupControl::Cancel0x5c0,
         ),
+        if modal.advanced {
+            (
+                "VERA:RandomMapBasic",
+                "Basic",
+                layout.advanced,
+                RandomMapSetupControl::AdvancedToggle,
+            )
+        } else {
+            (
+                "VERA:RandomMapAdvanced",
+                "Advanced",
+                layout.advanced,
+                RandomMapSetupControl::AdvancedToggle,
+            )
+        },
     ]
     .into_iter()
-    .filter(|_| !sliding)
-    {
+    .filter(|(_, _, _, control)| {
+        !sliding && (*control != RandomMapSetupControl::AdvancedToggle || modal.extended)
+    }) {
         push_text_draw(
             out,
             state,
@@ -1002,7 +1070,11 @@ pub(super) fn push_random_map_setup_modal_text_draws(
     // Selected entry on each closed combo face. A value with no entry -- map
     // type 0, which the list omits -- leaves the face blank, as the original's
     // match-the-entry selection does.
-    for (row, combo) in SETUP_COMBO_ROWS.iter().enumerate() {
+    for (row, combo) in SETUP_COMBO_ROWS
+        .iter()
+        .enumerate()
+        .filter(|_| !modal.advanced)
+    {
         let items = modal.combo_items(*combo);
         let Some(selected) = modal.selected_item_index(*combo) else {
             continue;
@@ -1026,7 +1098,7 @@ pub(super) fn push_random_map_setup_modal_text_draws(
 
     // The players trackbar carries its value in the plaque at its right end.
     let value_rect = value_text_rect(layout.control_rects[PLAYERS_ROW], scale);
-    if !text_covered_by_overlay(value_rect, &open_list) {
+    if !modal.advanced && !text_covered_by_overlay(value_rect, &open_list) {
         push_text_draw(
             out,
             state,
@@ -1139,15 +1211,18 @@ pub(super) fn push_choose_map_modal_text_draws(
                 ChooseMapModalButton::Cancel0x5c0,
             ),
             (
-                // VERA: under Online Maps this button stars the map.
-                match modal.favorite_button(state.frontend.scenario_catalog.records()) {
-                    Some(true) => tr("VERA:RemoveFavorite"),
-                    Some(false) => tr("VERA:AddFavorite"),
-                    None if modal.online_maps_selected() => tr("VERA:AddFavorite"),
-                    None => localized_label(state, "GUI:CreateRandomMap", "Create Random Map"),
-                },
+                localized_label(state, "GUI:CreateRandomMap", "Create Random Map"),
                 layout.create_random_map_button,
                 ChooseMapModalButton::CreateRandomMap0x583,
+            ),
+            (
+                // VERA: stars the highlighted map, or takes its star away.
+                match modal.favorite_button(state.frontend.scenario_catalog.records()) {
+                    Some(true) => tr("VERA:RemoveFavorite"),
+                    _ => tr("VERA:AddFavorite"),
+                },
+                layout.favorite_button,
+                ChooseMapModalButton::Favorite,
             ),
         ] {
             let disabled = !modal.button_enabled(button);
@@ -1191,6 +1266,8 @@ pub(super) fn push_choose_map_modal_text_draws(
     {
         let label = if *mode_id == crate::ui::skirmish_shell::ONLINE_MAPS_ROW {
             tr("VERA:OnlineMaps")
+        } else if *mode_id == crate::ui::skirmish_shell::FAVORITES_ROW {
+            tr("VERA:Favorites")
         } else {
             let Some(mode) = mode_by_id(&state.frontend.skirmish_modes, *mode_id) else {
                 continue;
@@ -1231,8 +1308,9 @@ pub(super) fn push_choose_map_modal_text_draws(
                 .records()
                 .get(*record_idx)
                 .map(|record| {
-                    // Starred online maps carry a star.
-                    if modal.is_favorite(record) {
+                    // Starred maps carry a star, except under Favorites,
+                    // where every map is one.
+                    if !modal.favorites_selected() && modal.is_favorite(record) {
                         format!("* {}", record.display_name)
                     } else {
                         record.display_name.clone()
@@ -1259,13 +1337,27 @@ pub(super) fn push_choose_map_modal_text_draws(
             scale.factor(),
         );
     }
-    // VERA: an empty Online Maps list says why, wrapped down the list.
-    if modal.online_maps_selected() && modal.filtered_record_indices.is_empty() {
+    // VERA: an empty Online Maps or Favorites list says why, wrapped down
+    // the list.
+    let empty = if !modal.filtered_record_indices.is_empty() {
+        None
+    } else if modal.online_maps_selected() {
+        Some(crate::app::map_library::empty_online_maps_text(state))
+    } else if modal.favorites_selected() && modal.search.is_empty() {
+        Some(tr(if modal.favorites.is_empty() {
+            "VERA:NoFavorites"
+        } else {
+            "VERA:NoFavoritesHere"
+        }))
+    } else {
+        None
+    };
+    if let Some(empty) = empty {
         let row = geometry.row(0);
         push_text_draw(
             out,
             state,
-            &crate::app::map_library::empty_online_maps_text(state),
+            &empty,
             rect_to_text_rect(RectPx::new(
                 row.x + list_text_inset(scale),
                 row.y,
@@ -1278,33 +1370,76 @@ pub(super) fn push_choose_map_modal_text_draws(
             scale.factor(),
         );
     }
-    // VERA: the search line under the map list; typing anywhere fills it.
-    let search = if modal.search.is_empty() {
-        tr("VERA:MapSearchHint")
+    // VERA: the search box over the map list; typing anywhere fills it. An
+    // empty box says so in the label colour: the disabled red does not read
+    // over the chooser's background.
+    let field = scale.derive_rect(layout.map_search, |rect| {
+        RectPx::new(
+            rect.x + LIST_TEXT_INSET,
+            rect.y,
+            rect.w - LIST_TEXT_INSET,
+            rect.h,
+        )
+    });
+    let hint;
+    let (search, rgb) = if modal.search.is_empty() {
+        hint = tr("VERA:MapSearchHint");
+        (&*hint, SHELL_LABEL_TEXT_RGB)
     } else {
-        tr_fill("VERA:MapSearch", &[("search", &modal.search)])
+        let box_w = scale.base_rect(layout.map_search).w;
+        let (tail, _) = map_search_tail(&state.renderer.bit_font, &modal.search, box_w);
+        (tail, SHELL_LABEL_TEXT_RGB)
     };
-    let list = layout.map_list;
-    let px = |value: f32| (value * scale.factor()).round() as i32;
     push_text_draw(
         out,
         state,
-        &search,
-        rect_to_text_rect(RectPx::new(
-            list.x,
-            list.y + list.h + px(10.0),
-            list.w,
-            px(20.0),
-        )),
-        if modal.search.is_empty() {
-            SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F
-        } else {
-            SHELL_LABEL_TEXT_RGB
-        },
+        search,
+        rect_to_text_rect(field),
+        rgb,
         ShellAlign::V_CENTER,
         SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
         scale.factor(),
     );
+}
+
+/// The search caret's width, in 800x600 numbers like a NewEdit's.
+pub(super) const MAP_SEARCH_CARET_W: i32 = 2;
+
+/// The end of `search` that fits a `box_w` wide search box with the caret
+/// after it, and that text's width: a long search scrolls its start out of
+/// the box. All in 800x600 numbers.
+pub(super) fn map_search_tail<'a>(font: &BitFont, search: &'a str, box_w: i32) -> (&'a str, i32) {
+    let room = box_w - 2 * LIST_TEXT_INSET - MAP_SEARCH_CARET_W;
+    let mut tail = search;
+    loop {
+        let width = font.text_width(tail) as i32;
+        let mut chars = tail.chars();
+        if width <= room || chars.next().is_none() {
+            return (tail, width);
+        }
+        tail = chars.as_str();
+    }
+}
+
+/// Where the search caret goes: after the text, inside the box. `None`
+/// while the box is empty and shows its hint.
+pub(super) fn map_search_caret_rect(
+    font: &BitFont,
+    search: &str,
+    map_search: RectPx,
+    scale: ShellScale,
+) -> Option<RectPx> {
+    if search.is_empty() {
+        return None;
+    }
+    let base = scale.base_rect(map_search);
+    let (_, width) = map_search_tail(font, search, base.w);
+    Some(scale.scale_rect(RectPx::new(
+        base.x + LIST_TEXT_INSET + width,
+        base.y + 2,
+        MAP_SEARCH_CARET_W,
+        base.h - 4,
+    )))
 }
 
 pub(super) fn push_validation_modal_text_draws(
@@ -1881,6 +2016,25 @@ mod tests {
 
         assert_eq!(label.as_ref(), "ab");
         assert!(font.text_width(label.as_ref()) <= 14);
+    }
+
+    /// A search longer than its box keeps its end and the caret inside the
+    /// box; an empty box shows its hint and no caret.
+    #[test]
+    fn a_long_map_search_scrolls_to_keep_its_end_and_caret_in_the_box() {
+        let font = crate::render::bit_font::tests::make_test_font(&[(b'a' as u16, 6)], 4);
+        let field = RectPx::new(338, 119, 196, 17);
+        let long = "a".repeat(40);
+        // 196 less two 2 px insets and the 2 px caret leaves 190: 27 of the
+        // font's 7 px advances.
+        assert_eq!(map_search_tail(&font, &long, field.w), (&long[13..], 189));
+        let caret = map_search_caret_rect(&font, &long, field, ShellScale::RETAIL).unwrap();
+        assert_eq!(caret, RectPx::new(529, 121, 2, 13));
+        assert!(caret.x + caret.w <= field.x + field.w - LIST_TEXT_INSET);
+        assert_eq!(
+            map_search_caret_rect(&font, "", field, ShellScale::RETAIL),
+            None
+        );
     }
 
     /// A map name wider than its row (a file name with no description) used to

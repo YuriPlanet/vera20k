@@ -205,12 +205,19 @@ pub(crate) fn cells_by_distance_from(cells: &[(u16, u16)], anchor: (u16, u16)) -
 }
 
 /// Build a texture atlas from pre-loaded theater data and the terrain grid.
+/// `terrain_deformation` is the scenario rules' `[CombatDamage]
+/// TerrainDeformation=`.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "theater inputs, the grid, the GPU pair and the deformation switch"
+)]
 pub(crate) fn build_tile_atlas(
     asset_manager: &AssetManager,
     lookup: &theater::TilesetLookup,
     palette: &Palette,
     _ext: &str,
     grid: &TerrainGrid,
+    terrain_deformation: bool,
     gpu: &GpuContext,
     batch: &BatchRenderer,
 ) -> Option<TileAtlas> {
@@ -234,6 +241,22 @@ pub(crate) fn build_tile_atlas(
         theater::inject_bridge_middle_tiles(&mut needed, table, lookup, asset_manager);
         log::info!(
             "Atlas pre-load: injected {} bridge middle TileKeys",
+            needed.len() - before,
+        );
+    }
+    // Terrain deformation stamps clear and ramp tiles, and its LAT and slope
+    // fixups pick neighbours' tiles, that the map may never use.
+    if terrain_deformation && !grid.deformation_tiles.is_empty() {
+        let before = needed.len();
+        for &tile_id in &grid.deformation_tiles {
+            if let Err(error) =
+                theater::inject_template_tiles(&mut needed, tile_id, lookup, asset_manager)
+            {
+                log::debug!("Deformation tile_id {tile_id} not pre-loaded: {error}");
+            }
+        }
+        log::info!(
+            "Atlas pre-load: injected {} terrain deformation TileKeys",
             needed.len() - before,
         );
     }
@@ -564,6 +587,22 @@ pub(crate) fn prepare_presentation_manifest(
     }
 }
 
+/// Read the mod's `veraui.ini` (loose in the game or mod folder, or in a mod
+/// MIX) for the match being loaded. The match lays the player's own file
+/// over it and reports what either refuses (`presentation::player_layout`).
+fn read_match_layouts(asset_manager: &AssetManager) -> Option<crate::rules::ini_parser::IniFile> {
+    let (bytes, source) = asset_manager.get_with_source_ref(crate::ui::match_layout::FILE_NAME)?;
+    log::info!(
+        "Interface layout file {} found in {source}",
+        crate::ui::match_layout::FILE_NAME
+    );
+    // `LoadFromStraw` drops a last line that has no line break.
+    let mut complete = Vec::with_capacity(bytes.len() + 1);
+    complete.extend_from_slice(bytes);
+    complete.push(b'\n');
+    crate::rules::ini_parser::IniFile::from_bytes(&complete).ok()
+}
+
 /// Complete the common presentation preparation after the caller's world is
 /// ready. Fresh loading builds terrain/entity/overlay parts at its existing
 /// milestones, then finishes here after its post-map tail; saved loading can
@@ -599,6 +638,7 @@ pub(crate) fn finish_presentation_assets(
         }
     }
     let sidebar_cameo_atlas = build_sidebar_cameo_atlas(gpu, batch, asset_manager, Some(rules));
+    let match_layout_ini = read_match_layouts(asset_manager);
     #[cfg(feature = "phobos")]
     let uimd_bytes = asset_manager.get_ref("UIMD.INI");
     #[cfg(feature = "phobos")]
@@ -695,6 +735,16 @@ pub(crate) fn finish_presentation_assets(
     if building_zshape.is_none() {
         log::warn!("BUILDNGZ.SHA not loaded: building bodies write flat depth");
     }
+    // Ares draws every cursor through the scenario's [MouseCursors] list
+    // (`render::cursor_atlas`, hook 0x5BDC8C).
+    #[cfg(feature = "ares")]
+    let software_cursor = crate::render::cursor_atlas::build_ares_software_cursor(
+        gpu,
+        batch,
+        asset_manager,
+        rules.ares_mouse_cursors(),
+    );
+    #[cfg(not(feature = "ares"))]
     let software_cursor =
         crate::render::cursor_atlas::build_software_cursor(gpu, batch, asset_manager);
     if software_cursor.is_some() {
@@ -718,6 +768,7 @@ pub(crate) fn finish_presentation_assets(
         bridge_atlas: overlays.bridge_atlas,
         sidebar_cameo_atlas,
         sidebar_chrome,
+        match_layout_ini,
         #[cfg(feature = "phobos")]
         sw_sidebar_ui,
         #[cfg(feature = "phobos")]

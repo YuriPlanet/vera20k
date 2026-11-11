@@ -35,7 +35,6 @@ pub(crate) enum ObjectTexture {
     CombatLight(usize),
     /// Initial Building Extras status, sharing the late run's instance range.
     Status(usize),
-    OverlayAtlas,
     /// Per-piece native destination edit; never a texture-only coalesced draw.
     TerrainShp(crate::render::terrain_draw::TerrainPiece),
     /// An atlas SHP whose source mask performs a native destination edit.
@@ -792,7 +791,7 @@ mod tests {
                     policy: BlitPolicy::z_read(SpriteEncoding::Rle),
                 },
                 vec![ObjectPieceInstance {
-                    target: ObjectTexture::OverlayAtlas,
+                    target: ObjectTexture::ShpPage(0),
                     render_z: RenderZPolicy::ReadOnly,
                     instance: SpriteInstance::default(),
                 }],
@@ -848,7 +847,7 @@ mod tests {
         };
         let parent = |id, display_order, tail_draws: Vec<SurfaceDraw>| {
             let piece = || ObjectPieceInstance {
-                target: ObjectTexture::OverlayAtlas,
+                target: ObjectTexture::ShpPage(0),
                 render_z: RenderZPolicy::ReadOnly,
                 instance: SpriteInstance::default(),
             };
@@ -876,9 +875,9 @@ mod tests {
                 .map(|run| (run.target, run.start, run.count))
                 .collect::<Vec<_>>(),
             [
-                (ObjectTexture::OverlayAtlas, 0, 2),
+                (ObjectTexture::ShpPage(0), 0, 2),
                 (ObjectTexture::SurfaceLines(0), 2, 0),
-                (ObjectTexture::OverlayAtlas, 2, 2),
+                (ObjectTexture::ShpPage(0), 2, 2),
             ]
         );
     }
@@ -906,7 +905,7 @@ mod tests {
                 kind: BuildingPieceKind::Body,
                 z_bias: 0,
                 policy: BlitPolicy::z_read(SpriteEncoding::Rle),
-                target: ObjectTexture::OverlayAtlas,
+                target: ObjectTexture::ShpPage(0),
                 instance: SpriteInstance::default(),
             }],
         );
@@ -959,7 +958,7 @@ mod tests {
                 .iter()
                 .map(|run| run.target)
                 .collect::<Vec<_>>(),
-            [ObjectTexture::OverlayAtlas]
+            [ObjectTexture::ShpPage(0)]
         );
     }
 
@@ -1421,7 +1420,7 @@ mod tests {
         let pass = lower_ground_object_instances(vec![
             PlannedObjectInstance::object(
                 order.object_draw(10, SpriteEncoding::Terrain).unwrap(),
-                vec![marked_piece(ObjectTexture::OverlayAtlas, 10)],
+                vec![marked_piece(ObjectTexture::ShpPage(1), 10)],
             ),
             building,
             PlannedObjectInstance::object(
@@ -1433,7 +1432,7 @@ mod tests {
         assert_eq!(pass.owners, [20, 30, 10]);
         assert_eq!(
             pass.runs.iter().map(|run| run.target).collect::<Vec<_>>(),
-            [ObjectTexture::UnitAtlasPage(9), ObjectTexture::OverlayAtlas,]
+            [ObjectTexture::UnitAtlasPage(9), ObjectTexture::ShpPage(1),]
         );
         assert_eq!(
             pass.building_base_runs
@@ -1481,7 +1480,7 @@ mod tests {
             ),
             PlannedObjectInstance::object(
                 plain_parent(&order, 1),
-                vec![marked_piece(ObjectTexture::OverlayAtlas, 1)],
+                vec![marked_piece(ObjectTexture::ShpPage(2), 1)],
             ),
         ]);
 

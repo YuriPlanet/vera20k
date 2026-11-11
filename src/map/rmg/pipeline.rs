@@ -30,6 +30,7 @@ use super::phases::starts::{StartsArgs, StartsCtx};
 use super::phases::tech_buildings::{TechArgs, TechCtx, TechType};
 use super::phases::tiberium::{TiberiumArgs, TiberiumCtx};
 use super::phases::trees::{TreeArgs, TreeCtx};
+use super::phases::urban_areas;
 use super::phases::water::{PlayableRect, WaterArgs};
 use super::phases::zones::{self, ZoneKind, ZoneParams};
 use super::phases::{
@@ -95,10 +96,18 @@ pub struct PipelineInputs<'a> {
     pub width: i32,
     /// `MaxTrees` (`MapSeed+0x2FC`; 0 disables trees).
     pub max_trees: i32,
+    /// The presence the urban pass reads (`MapSeed+0x60`).
+    pub urban_presence: i32,
+    /// VERA extension: the opted-in Buildings value the urban pass fills the
+    /// map by (`UrbanArgs::vera_fill`).
+    pub urban_fill: Option<i32>,
     /// Whether a river may attempt waterfall terrain, decided by the
     /// generation's very first draw. Only the river carver reads the value;
     /// the draw that produces it is stream-relevant to every map type.
     pub bridge_enabled: bool,
+    /// The urban pass (Ares hook 0x598FB8, or VERA's opted-in Urban
+    /// Presence), present when it runs; it reads `urban_presence` too.
+    pub urban_areas: Option<&'a urban_areas::UrbanInputs<'a>>,
 }
 
 /// Watches the grid between stages, for callers that draw the map as it builds.
@@ -127,6 +136,8 @@ pub struct PipelineOutput {
     pub(crate) construction_trace: RmgConstructionTrace,
     /// Start slots no region could fill. See `StartsOutcome`.
     pub unfilled_start_slots: usize,
+    /// Urban buildings and foots, emitted after `structures`.
+    pub urban_areas: Vec<urban_areas::UrbanObject>,
 }
 
 /// Run the whole deterministic pipeline in place over `grid`/`scratch`, drawing
@@ -281,6 +292,11 @@ pub fn run_pipeline(
     observe(Stage::GreenSpread, grid, &waypoints, &terrain);
     lat_fixup::run(grid, inputs.ids);
     observe(Stage::RecalcAfterTerrain, grid, &waypoints, &terrain);
+    // This recalc's land types are the ones the urban building gate reads:
+    // no full recalc runs again before the urban pass.
+    let urban_rock = inputs
+        .urban_areas
+        .map(|_| trees::RecalcRock::snapshot(grid, inputs.blocks, inputs.cliff_back_impassability));
 
     // ---- Starts (needs the zone field) ------------------------------------
     let (outcome, start_tech_placements) = {
@@ -423,6 +439,43 @@ pub fn run_pipeline(
     // ---- Region reset + second recalc -------------------------------------
     scratch.reset_region_ids();
     observe(Stage::RegionReset, grid, &waypoints, &terrain);
+
+    // ---- Urban areas (Ares hook 0x598FB8 / VERA opt-in, before the recalc) -
+    let mut urban_area_objects = Vec::new();
+    if let (Some(urban_inputs), Some(recalc_rock)) = (inputs.urban_areas, urban_rock.as_ref()) {
+        let playfield = PlayfieldBounds::from_normalized_local_size(
+            map_w,
+            local_rect[0],
+            local_rect[1],
+            local_rect[2],
+            local_rect[3],
+        );
+        let mut ctx = urban_areas::UrbanCtx {
+            grid: &mut *grid,
+            scratch: &mut *scratch,
+            ids: inputs.ids,
+            blocks: inputs.blocks,
+            rng: &mut *rng,
+            gauss: &mut *gauss,
+            playfield: &playfield,
+            recalc_rock,
+            inputs: urban_inputs,
+        };
+        let args = urban_areas::UrbanArgs {
+            urban_presence: inputs.urban_presence,
+            map_w,
+            map_h,
+            stride: stride as i32,
+            vera_fill: inputs.urban_fill,
+        };
+        let mut output = urban_areas::UrbanOutput {
+            objects: &mut urban_area_objects,
+            trace: &mut construction_trace,
+            entity_base: structures.len() + tech_placements.len(),
+        };
+        urban_areas::run(&mut ctx, &args, &mut output);
+    }
+    observe(Stage::UrbanAreas, grid, &waypoints, &terrain);
     lat_fixup::run(grid, inputs.ids);
     observe(Stage::RecalcAfterTiberium, grid, &waypoints, &terrain);
     // This recalc (Generate 0x00598960, just before CreateHills) is the last
@@ -518,10 +571,13 @@ pub fn run_pipeline(
         structures,
         construction_trace,
         unfilled_start_slots,
+        urban_areas: urban_area_objects,
     }
 }
 
-#[cfg(test)]
+// A stock oracle: Ares' bridge end hooks (0x58FBDD..0x5900F7) skip the end
+// coins and shift every later draw.
+#[cfg(all(test, not(feature = "ares")))]
 mod tests {
     use super::*;
     use crate::map::rmg::options::RmgOptions;

@@ -783,10 +783,17 @@ impl Simulation {
         //causing nested Find_Path calls before the outer loop revisits an
         //identity. Check only this admitted traversal, without forbidding
         //cycles at map admission/save or adding a persistent graph cache.
+        //gamemd's loop at 4D3ECD never ends on such a cycle (a hang). VERA
+        //carries on: the mover keeps its own path and no follower is routed,
+        //since a walk cut at the repeat could still nest without end.
         let mut probe = next;
         while let Some(id) = probe {
             if !visited.insert(id) {
-                return Err("Find_Path reached a cyclic Unit follower chain".into());
+                log::warn!(
+                    "Unit {} heads a cyclic FOLLOWS chain (repeats at {id}); its followers are not routed",
+                    request.entity_id
+                );
+                return Ok(());
             }
             let peer = self
                 .substrate
@@ -799,11 +806,11 @@ impl Simulation {
         visited.clear();
         visited.insert(request.entity_id);
         while let Some(id) = next {
-            //The native loop has no completed result for a surviving cycle.
-            //Report that unsupported traversal instead of imposing a hop
-            //limit or pretending a truncated chain succeeded.
+            //The native loop never ends on a cycle that callbacks linked
+            //during this walk; VERA ends the chain at the repeat.
             if !visited.insert(id) {
-                return Err("Find_Path reached a cyclic Unit follower chain".into());
+                log::warn!("Unit follower chain closed on {id} during its walk; ended there");
+                break;
             }
             destination = {
                 let cells = NativeCellQuery::canonical(
@@ -960,14 +967,27 @@ impl Simulation {
             &self.substrate.entities,
             super::PathfindingContext {
                 path_grid: Some(grid),
-                zone_grid: self.zone_grid.as_ref(),
+                zone_grid: self.zone_grid.as_deref(),
                 resolved_terrain: self.resolved_terrain.as_ref(),
                 playfield_bounds: self.playfield_bounds(),
                 blocker_neighbor_counts: Some(counts),
             },
             &entry,
+            self.foot_search_allows_hierarchy(request),
         );
         (searched, entry.read_own_cell.get())
+    }
+
+    /// The mover's terms of AStar's allowHS (`0x0042CACC..0x0042CAEC`): the
+    /// snapshot's TechnoClass+0x3D5 byte, then Foot+0x320
+    /// ([`Self::foot_allows_outside_playfield`]). A mover allowed to leave the
+    /// map takes the plain cell A*, past the zone refusal and the corridor.
+    /// `IsTrain=` (Type+0xC94) is unset in retail.
+    pub(crate) fn foot_search_allows_hierarchy(&self, request: &FootPathRequest) -> bool {
+        request.snapshot().allow_zone_hierarchy
+            && !self
+                .foot_allows_outside_playfield(request.entity_id)
+                .expect("live path requester")
     }
 
     /// The live Foot's threat coefficient for its searches (Foot 0x4DC760),
@@ -1252,9 +1272,9 @@ impl Simulation {
     /// FNPC 0x56DC20 as `Find_Path` calls it (0x4D3B0A..0x4D3B76 and
     /// 0x4D3D6C..0x4D3DD8): seed = target cell, Type+67C speed, zone =
     /// GetZoneID(current cell, table row, OnBridge), the table row, OnBridge,
-    /// footprint 1x1, height check on, occupancy check = the Subterranean
-    /// obstacle flag (Type+D2C, never set for stock infantry), bridge cells
-    /// allowed, nearest to the actor's current cell.
+    /// footprint 1x1, height check on, independent burrow flag when Type+D2C
+    /// and the original destination passes486FF0, no occupancy check, bridge
+    /// cells allowed, nearest to the actor's current cell.
     fn find_path_nearby_cell(
         &self,
         id: u64,
@@ -1269,11 +1289,6 @@ impl Simulation {
         let object = self
             .object_type(actor.type_ref(), rules)
             .ok_or("Find_Path FNPC requires the mover type")?;
-        if object.movement_zone == MovementZone::Subterranean {
-            return Err(
-                "Find_Path FNPC obstacle flag (Type+D2C, 0x486FF0) is not represented".into(),
-            );
-        }
         let zone = find_path_search_zone(object.movement_zone)
             .ok_or("Find_Path FNPC requires a valid MovementZone")?;
         let terrain = self
@@ -1282,12 +1297,27 @@ impl Simulation {
             .ok_or("Find_Path FNPC requires map cells")?;
         let zones = self
             .zone_grid
-            .as_ref()
+            .as_deref()
             .ok_or("Find_Path FNPC requires zone topology")?;
         self.map_size_diamond()
             .ok_or("Find_Path FNPC requires original Map Size")?;
         let current = coord_cell(ground_pose::position_world_coord(&actor.position));
         let current = (i32::from(current.0), i32::from(current.1));
+        // Find_Path4D3AEE/4D3D50 tests the original destination, not the
+        // replacement candidates. Its answer becomes FNPC's tenth argument.
+        let require_burrowable = object.movement_zone == MovementZone::Subterranean && {
+            let cells = NativeCellQuery::canonical(terrain);
+            let target = cells.lookup(target);
+            crate::sim::cell_rect::cell_allows_burrowing(
+                &cells,
+                target,
+                self.playfield_bounds(),
+                Some(crate::sim::cell_rect::BurrowingContents {
+                    occupancy: &self.substrate.occupancy,
+                    terrain_objects: self.terrain_objects.cell_index(),
+                }),
+            )
+        };
         let required_zone_id = zones.get_zone_id_native(
             terrain,
             (current.0 as u16, current.1 as u16),
@@ -1299,6 +1329,7 @@ impl Simulation {
                 (i32::from(target.0), i32::from(target.1)),
                 NearbyArgs {
                     check_height: true,
+                    require_burrowable,
                     target_cell: Some(current),
                     ..NearbyArgs::plain(
                         PassabilityArgs {
@@ -1316,9 +1347,9 @@ impl Simulation {
     }
 
     /// `PathfinderClass::EstimateZoneCost` 0x42D170, shared by Find_Path and
-    /// Approach_Target. Both native callers pass a Foot and movement override
-    /// -1, so its type supplies the movement row. The caller owns its limit:
-    /// Find_Path uses Chebyshev+6; Approach uses Chebyshev+8.
+    /// Approach_Target. Those callers pass a Foot and movement override-1,
+    /// so its type supplies the movement row. Unit746000 instead requests
+    /// Normal explicitly. The caller owns its cost limit.
     ///
     /// The two CellStruct arguments and bridge booleans are already copied
     /// inputs. The body retains both GetCell results before projecting either
@@ -1341,6 +1372,7 @@ impl Simulation {
             start_bridge,
             goal_bridge,
             rules,
+            None,
         )
     }
 
@@ -1349,6 +1381,7 @@ impl Simulation {
     /// read: the second lookup and the bridge helpers may restamp Dummy,
     /// including before the original arguments are reread for distances.
     /// The bridge booleans are copied inputs, not live Cell flag queries.
+    /// A movement override supplies42D170's explicit row; None is native-1.
     pub(crate) fn estimate_zone_cost_in_query(
         &self,
         id: u64,
@@ -1357,8 +1390,8 @@ impl Simulation {
         start_bridge: bool,
         goal_bridge: bool,
         rules: &RuleSet,
+        movement_override: Option<MovementZone>,
     ) -> Result<i32, String> {
-        use crate::sim::cell_rect::get_cellclass_fallback;
         use crate::sim::pathfinding::zone_build::find_high_bridge_record_index;
         use crate::sim::pathfinding::zone_hierarchy::{
             ZonePrecheckExclusions, ZonePrecheckOutcome, ZonePrecheckThreat, zone_precheck_flat,
@@ -1379,30 +1412,28 @@ impl Simulation {
             .ok_or("EstimateZoneCost requires map cells")?;
         let zones = self
             .zone_grid
-            .as_ref()
+            .as_deref()
             .ok_or("EstimateZoneCost requires zone topology")?;
-        let lookup = |cell: (i16, i16)| {
-            get_cellclass_fallback(Some(terrain), i32::from(cell.0), i32::from(cell.1))
-        };
         let cells = NativeCellQuery::canonical(terrain);
-        let start_cell = lookup(start.coord(&cells)); //42D1A1
-        let goal_cell = lookup(goal.coord(&cells)); //42D1B2, after start's lookup
+        let start_cell = cells.lookup(start.coord(&cells)); //42D1A1
+        let goal_cell = cells.lookup(goal.coord(&cells)); //42D1B2, after start's lookup
         let start_projection = live_hierarchy_projection(
-            terrain,
+            &cells,
             zones.bridge_records(),
-            &start_cell,
+            start_cell,
             start_bridge,
             self.playfield_bounds(),
         )?;
         let goal_projection = live_hierarchy_projection(
-            terrain,
+            &cells,
             zones.bridge_records(),
-            &goal_cell,
+            goal_cell,
             goal_bridge,
             self.playfield_bounds(),
         )?;
+        let movement_zone = movement_override.unwrap_or(object.movement_zone);
         let hierarchy = zones
-            .hierarchy_for(object.movement_zone)
+            .hierarchy_for(movement_zone)
             .ok_or("EstimateZoneCost requires the native movement row")?;
         let start_zone = zones
             .hierarchy_zone_at_native(0, start_projection)
@@ -1424,7 +1455,7 @@ impl Simulation {
             hierarchy,
             start_zone,
             goal_zone,
-            object.movement_zone,
+            movement_zone,
             &ZonePrecheckExclusions::default(),
             Some(ZonePrecheckThreat::new(coefficient, &threat_lookup)),
         )?
@@ -1629,7 +1660,7 @@ impl Simulation {
         let cells = NativeCellQuery::canonical(terrain);
         let zones = self
             .zone_grid
-            .as_ref()
+            .as_deref()
             .ok_or("Foot precheck requires zone topology")?;
         let bounds = self
             .playfield_bounds()
@@ -1747,7 +1778,7 @@ mod tests {
                 goal_cell,
                 MovementLayer::Ground,
             ));
-            sim.zone_grid = Some(zones);
+            sim.zone_grid = Some(zones.into());
             let goal = DriveCoord::cell(goal_cell.0, goal_cell.1, 0);
             let request = FootPathRequest::track(
                 &sim.substrate.entities,

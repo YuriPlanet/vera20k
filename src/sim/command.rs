@@ -67,6 +67,9 @@ pub(crate) fn stage_megamission<T: Clone>(
 
 /// Native selected-object Scatter event.
 pub const SCATTER_OPCODE: u8 = 0x07;
+/// DETONATE, a player's click on its own bomb's lone selected carrier
+/// (`FootClass::ClickedAction_Object` action 0x37, `0x004D7616`).
+pub const DETONATE_OPCODE: u8 = 0x0a;
 /// IDLE6, issued by StopCommand730EA0 through ClickedEvent6FFE00.
 pub const IDLE_OPCODE: u8 = 0x06;
 /// Selected-object DEPLOY, issued by the D key through ClickedEvent6FFE00.
@@ -727,6 +730,76 @@ impl CycleProducerRecord {
     }
 }
 
+/// Ares 3.0 `AresNetEvent::Events::TrenchRedirectClick`: a selected
+/// trench's occupants move into the trench on the clicked Cell.
+#[cfg(feature = "ares")]
+pub const ARES_TRENCH_REDIRECT_OPCODE: u8 = 0x60;
+/// Its payload length (Ares.dll `1006A130` answers 10 for 0x60).
+#[cfg(feature = "ares")]
+pub const ARES_TRENCH_REDIRECT_PAYLOAD_LEN: u8 = 10;
+
+/// Typed view of the Ares TrenchRedirectClick event (0x60): the target
+/// Cell's five-byte TargetClass token, then the source Building's
+/// (RaiseTrenchRedirectClick `1006A170`). The Cell token is
+/// `x + y * 1000`, kind `0x0B` unless the value is 0, which leaves kind 0.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AresTrenchRedirectRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub target: MegaMissionTarget,
+    pub source: MegaMissionTarget,
+}
+
+#[cfg(feature = "ares")]
+impl AresTrenchRedirectRecord {
+    /// `cell` is the clicked building's Cell, `source_id` the selected
+    /// building's ID.
+    pub fn encode_cell(
+        house_id: i8,
+        frame: i32,
+        (x, y): (i16, i16),
+        source_id: i32,
+    ) -> Result<CommandRecord, CommandRecordError> {
+        let value = i32::from(x) + i32::from(y) * CELL_TOKEN_ROW_STRIDE;
+        let kind = if value != 0 { CELL_TARGET_KIND } else { 0 };
+        let mut payload = [0u8; ARES_TRENCH_REDIRECT_PAYLOAD_LEN as usize];
+        payload[..4].copy_from_slice(&value.to_le_bytes());
+        payload[4] = kind;
+        payload[5..9].copy_from_slice(&source_id.to_le_bytes());
+        payload[9] = ABSTRACT_OBJECT_TARGET_KIND;
+        CommandRecord::encode(
+            ARES_TRENCH_REDIRECT_OPCODE,
+            i32::from(house_id),
+            frame,
+            &payload,
+        )
+    }
+
+    /// A token that resolves to no Cell or no object decodes to
+    /// [`MegaMissionTarget::Null`], which the handler drops as
+    /// `TargetClass::As_Cell`/`As_Building` answering null does.
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        if record.opcode() != ARES_TRENCH_REDIRECT_OPCODE {
+            return None;
+        }
+        let payload = record.payload();
+        let token = |at: usize| {
+            let value = i32::from_le_bytes(payload[at..at + 4].try_into().ok()?);
+            Some(
+                MegaMissionTarget::from_token(value, payload[at + 4])
+                    .unwrap_or(MegaMissionTarget::Null),
+            )
+        };
+        Some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            target: token(0)?,
+            source: token(5)?,
+        })
+    }
+}
+
 /// Typed view of native opcode `0x17`'s fixed record fields.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SellWallAtCellRecord {
@@ -805,6 +878,33 @@ impl ScatterRecord {
 
     pub fn decode(record: &CommandRecord) -> Option<Self> {
         if record.opcode() != SCATTER_OPCODE {
+            return None;
+        }
+        Some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            entity_id: record.object_target_id()?,
+        })
+    }
+}
+
+/// DETONATE10 carries the carrier's object token, as SCATTER7
+/// (`EventClass` constructor `0x004C65E0`, called at `0x004D762E`). Its
+/// house byte is the bomb's house (`+0x28`), not the clicking player's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DetonateRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub entity_id: i32,
+}
+
+impl DetonateRecord {
+    pub fn write_into(self, record: &mut CommandRecord) {
+        record.write_object_target(DETONATE_OPCODE, self.house_id, self.frame, self.entity_id);
+    }
+
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        if record.opcode() != DETONATE_OPCODE {
             return None;
         }
         Some(Self {
@@ -1461,7 +1561,7 @@ pub enum Command {
     /// Execute the local player's native EXIT event and end the active scenario.
     ExitMatch,
     /// Apply an offline in-game Options speed transition before the next logic
-    /// frame. The dialog emits only the stored range 0..=6; live network opcode
+    /// frame. The dialog emits 0..=6 or VERA's 90-tick preset 8; live network opcode
     /// 0x0D keeps its separate EventClass-tail timing when networking is added.
     SetGameSpeed { speed: u8 },
     /// Strip6A8EB8's mobile PLACE event. House4FB0E0 resolves the category's

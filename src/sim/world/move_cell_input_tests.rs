@@ -27,6 +27,7 @@ fn ordinary_foot_input_matches_native_admission_rows() {
             zones: &zones,
             raw: &raw,
             overlays: None,
+            burrowing_contents: None,
             bounds: bounds(),
             size: (8, 8),
             frame: input["frame"].as_u64().unwrap_or(100) as u32,
@@ -674,14 +675,17 @@ impl Simulation {
                 active: true,
                 bridge_kind: BridgeRecordKind::High,
             }];
-            sim.zone_grid = Some(ZoneGrid::build_with_native_bridge_geometry(
-                sim.path_grid().unwrap(),
-                sim.resolved_terrain.as_ref().unwrap(),
-                &records,
-                16,
-                16,
-                Some((8, 8)),
-            ));
+            sim.zone_grid = Some(
+                ZoneGrid::build_with_native_bridge_geometry(
+                    sim.path_grid().unwrap(),
+                    sim.resolved_terrain.as_ref().unwrap(),
+                    &records,
+                    16,
+                    16,
+                    Some((8, 8)),
+                )
+                .into(),
+            );
         }
         let start = if bridge { (7, 6) } else { (5, 5) };
         let actor = sim

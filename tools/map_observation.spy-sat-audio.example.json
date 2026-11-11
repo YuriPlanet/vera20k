@@ -415,7 +415,7 @@
   ],
   "gestures": [
     {
-      "issue_after_step": 1,
+      "issue_after_step": 69,
       "gesture": {
         "kind": "sidebar",
         "target": {

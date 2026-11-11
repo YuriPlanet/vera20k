@@ -51,23 +51,10 @@
 //! with matching zones falls back to the plain A*, and one with differing
 //! zones returns `None`. What is missing:
 //!
-//! - **Two uncommon `allowHS` terms remain unmodelled.** VERA now threads the
-//!   canonical `TechnoClass+0x3D5` byte and applies exact bridge-resolved mode-1
-//!   endpoint membership before admitting hierarchy. It still does not model
-//!   `IsTrain=` (the INI key
-//!   behind `TechnoTypeClass+0xC94`, string `0x008444BC`, stored at
-//!   `0x00712284` — absent from stock `rulesmd.ini`, so this term never fires);
-//!   the `0x004DA1D0` predicate, which — given the other terms already hold at
-//!   the call site — reduces to
-//!   `mover+0x3D4 != 0` **or** current-or-queued mission == Retreat(4) **or**
-//!   (`mover+0x5D4` non-null and `FUN_006EC300`). Player effect: for such a
-//!   mover gamemd runs an unrestricted A*
-//!   and can return a route where VERA answers "unreachable" from the zone map,
-//!   so the unit refuses an order retail accepts. Frequency: a unit on Retreat
-//!   or linked to the remaining team predicate — uncommon in ordinary
-//!   skirmish, but not zero. Team6EC300 can perform mode1 waypoint lookups
-//!   before endpoint membership. Foot's shared outside-playfield owner now
-//!   calls the single Team6EC300 port, backed by Scenario waypoint authority.
+//! - **`IsTrain=` stays unmodelled.** The `allowHS` term for the INI key behind
+//!   `TechnoTypeClass+0xC94` (string `0x008444BC`, stored at `0x00712284`) is
+//!   absent from stock `rulesmd.ini`, so it never fires. The `0x004DA1D0` term
+//!   is `Simulation::foot_search_allows_hierarchy`.
 //! - **Without blocker counts there is no hierarchy search.** The one
 //!   production search, the live Foot search in `movement_tick`, supplies
 //!   blocker counts, and every `ZoneGrid` carries levels 0/1/2. A caller

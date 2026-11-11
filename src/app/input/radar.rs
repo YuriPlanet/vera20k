@@ -65,6 +65,15 @@ pub(crate) enum RadarAction {
     GuardArea,
     /// The armed superweapon's.
     SuperWeapon(RadarSuperWeapon),
+    /// Ares: an action whose cursor override `0x653CA6` let through, with the
+    /// cursors 10057F10 draws over a mapped and a shrouded Cell
+    /// ([`crate::app::input::ares_cursor::radar_action`]).
+    #[cfg(feature = "ares")]
+    Ares { main: i32, shrouded: i32 },
+    /// Ares: the armed superweapon's `Cursor` or `NoCursor` (hook `0x653B3A`),
+    /// which launches only where it may fire.
+    #[cfg(feature = "ares")]
+    AresSuperWeapon { cursor: i32, launch: bool },
 }
 
 impl RadarAction {
@@ -82,10 +91,10 @@ impl RadarAction {
             Kind::Demolish => Self::Sabotage,
             Kind::GuardArea => Self::GuardArea,
             // Action0 and AttackSupport (0x3B), Self (4), Select (7),
-            // ToggleSelect (8), Grind (0xB), Damage (0x1C), GRepair (0x1D),
+            // ToggleSelect (8), Grind (0xB), Tote (0x11), Damage (0x1C), GRepair (0x1D),
             // NoDeploy (0x1E), NoEnter (0x1F), NoGRepair (0x20), IvanBomb
-            // (0x35), NoIvanBomb (0x36), DisarmBomb (0x39), Demolish (0x40)
-            // and Airstrike (0x47).
+            // (0x35), NoIvanBomb (0x36), Detonate (0x37), DisarmBomb (0x39),
+            // Demolish (0x40) and Airstrike (0x47).
             Kind::Default
             | Kind::Deploy
             | Kind::Select
@@ -96,9 +105,11 @@ impl RadarAction {
             | Kind::RepairAction(_)
             | Kind::NoDeploy
             | Kind::NoEnter
+            | Kind::Tote
             | Kind::IvanBomb
             | Kind::NoIvanBomb
             | Kind::DisarmBomb
+            | Kind::Detonate
             | Kind::WeaponDemolish
             | Kind::AirStrike => return None,
             // The cursor's own modes, never a What_Action answer.
@@ -113,6 +124,8 @@ impl RadarAction {
             | Kind::SellMode(_)
             | Kind::PlaceBeacon
             | Kind::SuperWeaponTarget(_) => return None,
+            #[cfg(feature = "ares")]
+            Kind::AresAction(_) | Kind::SellUnit => return None,
         })
     }
 
@@ -144,6 +157,18 @@ impl RadarAction {
             // Row 22 (`0x00731CC0`) in both.
             Self::GuardArea => CursorId::MinimapGuardArea,
             Self::SuperWeapon(super_weapon) => super_weapon.cursor(),
+            #[cfg(feature = "ares")]
+            Self::Ares {
+                main,
+                shrouded: under_shroud,
+            } => crate::app::input::ares_cursor::cursor_id(
+                if shrouded { under_shroud } else { main },
+                true,
+            ),
+            #[cfg(feature = "ares")]
+            Self::AresSuperWeapon { cursor, .. } => {
+                crate::app::input::ares_cursor::cursor_id(cursor, true)
+            }
         }
     }
 }
@@ -241,7 +266,20 @@ pub(crate) fn action(
     cell: (u16, u16),
     object: Option<HoverObject>,
 ) -> Option<RadarAction> {
+    // Ares RadarClass_GetMouseAction_CustomSWAction 10034D00 (hook
+    // 0x653B3A) asks a handled superweapon before the index map.
+    #[cfg(feature = "ares")]
+    let ares_super_weapon = armed.and_then(|armed| {
+        let vanilla = match armed_action(armed) {
+            Armed::Kept(super_weapon) => Some(RadarAction::SuperWeapon(super_weapon)),
+            Armed::Dropped | Armed::Unlisted => None,
+        };
+        crate::app::input::ares_cursor::radar_super_weapon(query, armed, cell, vanilla)
+    });
+    #[cfg(not(feature = "ares"))]
+    let ares_super_weapon: Option<Option<RadarAction>> = None;
     let action = match armed.map_or(Armed::Unlisted, armed_action) {
+        _ if ares_super_weapon.is_some() => ares_super_weapon.flatten(),
         Armed::Kept(super_weapon) => Some(RadarAction::SuperWeapon(super_weapon)),
         Armed::Dropped => None,
         Armed::Unlisted if query.selected.is_empty() => None,
@@ -250,7 +288,18 @@ pub(crate) fn action(
             None if query.cell_visible(cell) => query.selection_action(cell, None),
             None => Some(query.hidden_cell(cell)),
         }
-        .and_then(RadarAction::kept),
+        .and_then(|kind| {
+            // Ares RadarClass_GetMouseAction_AllowMinimap 100583F0 (hook
+            // 0x653CA6).
+            #[cfg(feature = "ares")]
+            return crate::app::input::ares_cursor::radar_action(
+                query,
+                kind,
+                RadarAction::kept(kind),
+            );
+            #[cfg(not(feature = "ares"))]
+            RadarAction::kept(kind)
+        }),
     };
     // Planning Mode (`0x00637AA0`) wants every selected object to take
     // waypoints (`0x00639DA0`).
@@ -286,7 +335,7 @@ fn hover(state: &AppState) -> Option<Hover> {
     if target.cell == (0, 0) {
         return None;
     }
-    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     let owner = crate::app::input::commands::preferred_local_owner_name(state)?;
     let object = target
         .tracker_hit
@@ -382,11 +431,25 @@ pub(crate) fn finish_order_press(state: &mut AppState, button: MouseButton) {
     else {
         return;
     };
+    // An Ares superweapon's NoCursor action (0x7E) reaches each selected
+    // Foot's ClickedAction, which takes it and does nothing (hook 0x4D7524,
+    // 10058390).
+    #[cfg(feature = "ares")]
+    if matches!(action, RadarAction::AresSuperWeapon { launch: false, .. }) {
+        return;
+    }
+    #[cfg(feature = "ares")]
+    let super_weapon = matches!(
+        action,
+        RadarAction::SuperWeapon(_) | RadarAction::AresSuperWeapon { .. }
+    );
+    #[cfg(not(feature = "ares"))]
+    let super_weapon = matches!(action, RadarAction::SuperWeapon(_));
     crate::app::input::dispatch::band_box_left_up(
         state,
         LeftUp::Radar {
             target,
-            super_weapon: matches!(action, RadarAction::SuperWeapon(_)),
+            super_weapon,
         },
     );
 }

@@ -21,12 +21,6 @@ kopyanıza ihtiyacınız var.
 VERA20K oyuncular tarafından, oyuncular için yapılıyor ve projenin nereye gideceğine son sözü
 oyuncular söylüyor.
 
-**Daha fazla bakımcıya ihtiyacımız var.** PR'ları incelemeye yardım etmek, yeni katkıda
-bulunanlara yol göstermek veya motorun bir bölümünün sorumluluğunu almak isterseniz, bunu bize
-[Discord](https://discord.gg/kmjRUn5m5F) üzerinden ya da QQ grubunda (1097193563) bildirin.
-
-**PR göndermekten çekinmeyin.** Mükemmel olması gerekmiyor; gerisi için biz yardımcı oluruz.
-
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K çatışma ayarları ekranı ve oyun içi görünüm" width="100%">
 
 ## Projenin hedefleri
@@ -49,13 +43,15 @@ Tek oyunculu YR çatışmalarını veya senaryolarını bir CnCNet istemcisinden
 
 ## Katkıda bulunma
 
+**PR göndermekten çekinmeyin.** Mükemmel olması gerekmiyor; gerisi için biz yardımcı oluruz.
+
 Her alanda yardımınızı bekliyoruz; en çok yardıma ihtiyaç duyan alanlar aşağıda. Her biri yol
 haritasındaki sayfasına bağlanır; orada süren çalışmayı ve sonraki adımı bulabilirsiniz:
 
 - **[Oynanış ve çatışma](https://github.com/YuriPlanet/vera20k/issues/3830):** birim davranışı, hasar ve çatışma maçlarının güvenilirliği.
 - **[Performans](https://github.com/YuriPlanet/vera20k/issues/3831):** büyük savaşlarda ve eski donanımda kare hızı ve tepki süresi.
 - **[Çok oyunculu mod](https://github.com/YuriPlanet/vera20k/issues/3832):** çevrimiçi maçlara katılma, maç başlatma ve maçları sürdürme, ayrıca ortak oyunun güvenilirliği.
-- **[Arayüz ve ses](https://github.com/YuriPlanet/vera20k/issues/3833):** menüler, metinler, çeviriler ve ses.
+- **[Arayüz ve ses](https://github.com/YuriPlanet/vera20k/issues/3833):** menüler, metinler, [çeviriler](src/i18n/README.md) ve ses.
 - **[Senaryolar](https://github.com/YuriPlanet/vera20k/issues/3834):** görevler başlatılabiliyor, ancak sonuna kadar oynanabilmeleri için daha çalışma gerekiyor: hedefler, tetikleyiciler, betikli geçişler, kaydetme/yükleme ve sonraki göreve geçiş.
 - **[Mod uyumluluğu](https://github.com/YuriPlanet/vera20k/issues/3835):** orijinal oyunun varsayılanlarını değiştirmeden Ares ve Phobos özellikleri.
 - **[Test](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity):** VERA20K'yi orijinal oyunla yan yana oynayıp farklı oynanan yerleri bildirmek.
@@ -121,6 +117,8 @@ diğer her yeni özellik, şu yollardan biriyle açılana kadar kapalı kalmalı
 Ses, grafik ve kontrol ayarları `VERA.INI` dosyasına kaydedilir. Oynanış kuralları lobi
 ayarlarından, modlardan veya haritalardan gelir.
 
+Kendi modlarınızı nasıl yapacağınızı [mod yapım kılavuzu](docs/modding.md) anlatıyor.
+
 ## Destek
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="VERA20K'yi PayPal üzerinden destekleyin" height="23"></a>
@@ -147,11 +145,14 @@ Ekran görüntülerindeki ve uygulama simgesindeki (Red Alert 2'nin kırmızı y
 Electronic Arts'a aittir. VERA20K, Electronic Arts ile bağlantılı değildir ve Electronic Arts
 tarafından desteklenmemektedir.
 
+This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
 **VERA20K'yı paylaşmadan, satmadan veya fork'lamadan önce [yasal bildirimi](LEGAL.md) okuyun.**
 
 ## Belgeler
 
 - [WebAssembly önizlemesi](docs/wasm.md): tarayıcıda çalışan, isteğe bağlı tek oyunculu bir derleme.
+- [Mod yapım kılavuzu](docs/modding.md): modların neleri yapıp neleri yapamayacağı ve VERA20K ile orijinal oyun arasındaki farklar.
 - [INI profilleri](docs/ini-roots.md): kural, grafik ve yapay zekâ dosyalarını seçme.
 - [Ares](docs/ares.md), [Phobos](docs/phobos.md) ve [NPatch](docs/npatch.md): eklenti desteği ve sınırlamaları.
 - [Motora genel bakış](docs/index.md): kodun düzeni ve motorun parçalarının nasıl bir araya geldiği.

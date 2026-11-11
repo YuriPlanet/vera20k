@@ -6,4 +6,9 @@
     <style name="Theme.Vera20k" parent="android:Theme.Black.NoTitleBar.Fullscreen">
         <item name="android:windowBackground">@drawable/splash_background</item>
     </style>
+
+    <!-- One theme per launcher entry. Before Android 12 the launch window is the
+         same for both; from 12 the system splash can carry the chosen icon. -->
+    <style name="Theme.Vera20k.RetailSplash" parent="Theme.Vera20k" />
+    <style name="Theme.Vera20k.VeraSplash" parent="Theme.Vera20k" />
 </resources>

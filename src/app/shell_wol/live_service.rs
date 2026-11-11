@@ -32,6 +32,7 @@ use crate::app::shell_network_setup::{NetworkSetupEvent, NetworkSetupRequest};
 use crate::i18n::tr;
 use crate::net::reliable::{LanConnectionConfig, LanConnections, RetryTiming};
 use crate::net::udp::{LanUdpTransport, UdpBindConfig};
+use crate::ui::chat_translation::{ChatReply, only_repeats, without_note};
 use crate::ui::wol_account::AccountRequest;
 use crate::ui::wol_chat::WolChatLine;
 
@@ -494,11 +495,12 @@ impl StartPreparation {
 const MAX_PENDING_TRANSLATIONS: usize = 4;
 const TRANSLATION_PAUSE: Duration = Duration::from_secs(60);
 
-/// Received chat lines waiting for `POST /v1/translate`, by request id.
+/// Received chat lines waiting for `POST /v1/translate`, by request id: where
+/// each one shows, and its text.
 #[derive(Default)]
 struct Translations {
     next: u64,
-    pending: BTreeMap<u64, super::translation::TranslatedLine>,
+    pending: BTreeMap<u64, (super::translation::TranslatedLine, String)>,
     paused_until: Option<Instant>,
 }
 
@@ -521,23 +523,26 @@ impl Translations {
         let id = self.next;
         self.next = self.next.wrapping_add(1);
         let target = target.tag();
-        if requests
-            .send(http::Request::Translate { id, text, target })
-            .is_ok()
-        {
-            self.pending.insert(id, line);
+        let request = http::Request::Translate {
+            id,
+            text: text.clone(),
+            target,
+        };
+        if requests.send(request).is_ok() {
+            self.pending.insert(id, (line, text));
         }
     }
 
     fn reply(
         &mut self,
         id: u64,
-        outcome: Result<String, http::TranslateFailure>,
+        outcome: Result<ChatReply, http::TranslateFailure>,
         now: Instant,
-    ) -> Option<(super::translation::TranslatedLine, String)> {
-        let line = self.pending.remove(&id)?;
+    ) -> Option<(super::translation::TranslatedLine, ChatReply)> {
+        let (line, original) = self.pending.remove(&id)?;
         match outcome {
-            Ok(text) => Some((line, text)),
+            Ok(reply) if only_repeats(&original, without_note(&reply.text)) => None,
+            Ok(reply) => Some((line, reply)),
             Err(failure) => {
                 if failure == http::TranslateFailure::Unavailable {
                     self.paused_until = Some(now + TRANSLATION_PAUSE);
@@ -1254,6 +1259,7 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
         if service.spawned {
             poll_spawned_exit(state, &mut service);
         }
+        show_problem_line(state);
     }
     put_service(state, service);
     Some(Instant::now() + POLL_INTERVAL)
@@ -1268,6 +1274,48 @@ fn notice(state: &mut AppState, text: &str) {
         },
     );
     state.platform.window.request_redraw();
+}
+
+/// The chat a returning player lands in: the kept room once the lobby gives
+/// it back, the chat lobby or the Quick Match page. Anywhere else, such as a
+/// sign-in after a lost connection, the line keeps waiting.
+fn problem_chat_open(
+    route: crate::app::shell_route::ShellRoute,
+    setup_open: bool,
+    quick_match_open: bool,
+    lobby_open: bool,
+    awaiting_room: bool,
+) -> bool {
+    match route {
+        crate::app::shell_route::ShellRoute::NetworkSetup => setup_open,
+        route if route.wol() => quick_match_open,
+        route => route.wol_lobby() && lobby_open && !awaiting_room,
+    }
+}
+
+fn show_problem_line(state: &mut AppState) {
+    let open = problem_chat_open(
+        state.frontend.shell_route,
+        state.frontend.multiplayer_setup.is_some(),
+        super::quick_match::page_open(state),
+        state
+            .frontend
+            .wol
+            .as_ref()
+            .is_some_and(|visit| visit.lobby().is_some()),
+        super::lobby::awaiting_room(state),
+    );
+    if !open {
+        return;
+    }
+    if let Some(text) = state
+        .frontend
+        .wol
+        .as_mut()
+        .and_then(|visit| visit.take_problem_line())
+    {
+        notice(state, &text);
+    }
 }
 
 fn fail_start(state: &mut AppState, text: &str) {
@@ -1344,6 +1392,10 @@ fn match_report(state: &AppState) -> MatchReport {
 }
 
 impl super::WolVisit {
+    fn take_problem_line(&mut self) -> Option<String> {
+        self.problem_line.take()
+    }
+
     fn match_returned(&mut self, report: MatchReport, now: Instant) {
         if self.provider != WolProvider::Online {
             return;
@@ -1692,7 +1744,7 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
             request_match(service, matchbot, &request)
         }
         WolServiceRequest::Translate { text, line } => {
-            if let Some(target) = state.persistence.options_profile.translate_chat {
+            if let Some(target) = state.persistence.options_profile.chat_translation.language {
                 service.translations.request(
                     &service.requests,
                     &text,
@@ -2220,9 +2272,10 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             service.player_id = player_id;
             state.frontend.wol_account.nickname = nickname;
             state.frontend.wol_account.password.clear();
+            // The operator's welcome is the only one: the game has none of its own.
             let motd = motd
                 .filter(|motd| !motd.trim().is_empty())
-                .unwrap_or_else(|| super::service::vera_motd(state));
+                .unwrap_or_default();
             service_event(state, WolServiceEvent::Login(Ok(WolLoginAccepted { motd })));
         }
         http::Response::LoginFailed { attempt, code } if attempt == service.auth_attempt => {
@@ -2368,8 +2421,8 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             _ => notice(state, &tr("VERA:OnlineRequestRefused")),
         },
         http::Response::Translated { id, outcome } => {
-            if let Some((line, text)) = service.translations.reply(id, outcome, Instant::now()) {
-                super::translation::show(state, line, &text);
+            if let Some((line, reply)) = service.translations.reply(id, outcome, Instant::now()) {
+                super::translation::show(state, line, &reply);
             }
         }
         http::Response::AccountAnswered { attempt, answer } => {
@@ -3461,6 +3514,47 @@ mod completion_tests {
     use super::*;
     use crate::app::shell_wol::{WolHighScoreRecord, WolLadderRecord};
 
+    /// The reason must not land in a transcript the player is about to lose.
+    #[test]
+    fn a_failed_matchs_reason_waits_for_the_chat_the_player_lands_in() {
+        use crate::app::shell_route::ShellRoute;
+        assert!(problem_chat_open(
+            ShellRoute::WolLobby,
+            false,
+            false,
+            true,
+            false
+        ));
+        assert!(!problem_chat_open(
+            ShellRoute::WolLobby,
+            false,
+            false,
+            true,
+            true
+        ));
+        assert!(problem_chat_open(
+            ShellRoute::NetworkSetup,
+            true,
+            false,
+            true,
+            true
+        ));
+        assert!(problem_chat_open(
+            ShellRoute::Wol,
+            false,
+            true,
+            false,
+            false
+        ));
+        assert!(!problem_chat_open(
+            ShellRoute::Wol,
+            false,
+            false,
+            false,
+            false
+        ));
+    }
+
     #[test]
     fn relay_grant_requires_match_player_and_encryption_key_agreement() {
         use crate::net::udp::{
@@ -4100,8 +4194,15 @@ mod completion_tests {
             })
             .collect();
         assert_eq!(sent, [0, 1, 2, 3].map(|id| (id, "zh-Hans")));
-        let shown = translations.reply(0, Ok("冲".into()), now);
-        assert!(shown.is_some_and(|(shown, text)| shown == line("A") && text == "冲"));
+        let shown = translations.reply(
+            0,
+            Ok(ChatReply {
+                text: "冲".into(),
+                source: None,
+            }),
+            now,
+        );
+        assert!(shown.is_some_and(|(shown, reply)| shown == line("A") && reply.text == "冲"));
         let failed = translations.reply(1, Err(http::TranslateFailure::Unavailable), now);
         assert!(failed.is_none());
         let mut ask = |name, at| {
@@ -4118,6 +4219,38 @@ mod completion_tests {
         assert_eq!(input.try_iter().count(), 0);
         ask("G", now + TRANSLATION_PAUSE);
         assert_eq!(input.try_iter().count(), 1);
+    }
+
+    #[test]
+    fn a_reply_that_only_repeats_its_line_shows_nothing() {
+        use super::super::translation::TranslatedLine;
+        use crate::ui::chat_translation::ChatLanguage;
+        let (requests, _input) = mpsc::channel();
+        let mut translations = Translations::default();
+        let now = Instant::now();
+        for (id, (original, reply, shown)) in [
+            ("gg", "gg", false),
+            ("GG!", "gg", false),
+            ("2v2 go", "2V2, go.", false),
+            ("gg wp", "gg 打得好", true),
+            ("gg", "[从英语翻译] gg", false),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let text: Vec<u16> = original.encode_utf16().collect();
+            let line = TranslatedLine::Match {
+                name: "A".into(),
+                color: 0,
+            };
+            translations.request(&requests, &text, ChatLanguage::SimplifiedChinese, line, now);
+            let reply = ChatReply {
+                text: reply.into(),
+                source: None,
+            };
+            let reply = translations.reply(id as u64, Ok(reply), now);
+            assert_eq!(reply.is_some(), shown, "{original}");
+        }
     }
 
     fn setup_session() -> crate::app::match_runtime::session::MatchSession {

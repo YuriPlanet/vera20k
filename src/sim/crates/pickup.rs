@@ -195,7 +195,7 @@ fn crate_land_type(sim: &Simulation, cell: (i16, i16)) -> u8 {
         })
 }
 
-/// `VocClass::PlayAt @ 0x007509E0` of one `[AudioVisual]` crate sound at the
+/// `VocClass::PlayAt @ 0x007509E0` of one configured crate sound at the
 /// crate centre. Every arm but Reveal plays it only when `HouseClass::
 /// IsControlledByCurrentPlayer @ 0x0050B6F0` admits the actor's house
 /// (`heard_by`): the sim cannot see the local player, so the event carries
@@ -541,6 +541,7 @@ pub(crate) fn pickup_crate(
             POWERUP_MONEY => {
                 let amount = effects::money_crate_amount(
                     &mut sim.scenario_rng,
+                    rules,
                     selection.solo_money,
                     magnitude,
                 );
@@ -568,6 +569,9 @@ pub(crate) fn pickup_crate(
                     cell,
                     center,
                 );
+                // PickupCrate482C13 plays before the first healing receiver
+                // at482C8C, including that receiver's sound/RNG effects.
+                frame_effects.flush_sound(sim, rules);
                 effects::apply_heal_base_crate(sim, rules, Some(registry), actor_id, frame_effects);
             }
             POWERUP_DARKNESS => {

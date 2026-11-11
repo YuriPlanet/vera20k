@@ -35,7 +35,10 @@ pub(crate) fn unload_command(
         EntityCategory::Structure => {
             !entity.passenger_role.occupants().is_empty() || (obj.infantry_absorb && has_passengers)
         }
-        EntityCategory::Unit | EntityCategory::Aircraft => obj.passengers > 0 && has_passengers,
+        EntityCategory::Unit => obj.passengers > 0 && has_passengers,
+        // Aircraft417DCD..417DDA keeps Self while the hold (+0x114) holds
+        // anyone, whatever Passengers=: a Carryall's cargo too.
+        EntityCategory::Aircraft => has_passengers,
         EntityCategory::Infantry => false,
     };
     if !can_unload {

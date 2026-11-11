@@ -35,9 +35,9 @@ mod web_present;
 pub(crate) const MAX_USEFUL_TEXTURE_DIM: u32 = 16_384;
 
 /// True on the browser's WebGL2 fallback device, which has no storage buffers,
-/// compute, fragment atomics or reinterpreting texture views. Renderers that
-/// use those select render-target equivalents there; every other device keeps
-/// its ordinary path. Always false outside the browser build.
+/// compute or reinterpreting texture views. Renderers that use those select
+/// render-target equivalents there; every other device keeps its ordinary path.
+/// Always false outside the browser build.
 pub(crate) fn webgl_fallback(device: &wgpu::Device) -> bool {
     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
     {
@@ -166,6 +166,9 @@ impl<'a> From<&'a wgpu::AdapterInfo> for GpuAdapterObservation<'a> {
 /// Created once during app initialization when the window becomes available.
 /// Other render modules borrow `device` and `queue` from this struct.
 pub struct GpuContext {
+    /// The thread frames reach the driver on. First, so it finishes the frame
+    /// on its way and ends before the surface and device below drop.
+    handoff: super::frame_handoff::FrameHandoff,
     /// The GPU surface we render to (tied to the window).
     // Loading progress shares the GPU context with asset uploads. Only this
     // owner locks the surface, briefly, to acquire or replace a lost swapchain.
@@ -176,7 +179,7 @@ pub struct GpuContext {
     /// The logical GPU device — used to create buffers, textures, pipelines.
     pub device: wgpu::Device,
     /// The command queue — used to submit render commands to the GPU.
-    pub queue: wgpu::Queue,
+    pub queue: super::frame_handoff::HandoffQueue,
     /// Current surface configuration (format, size, present mode).
     pub config: wgpu::SurfaceConfiguration,
     /// The texture format the surface uses (needed when creating pipelines).
@@ -186,6 +189,9 @@ pub struct GpuContext {
     capture_target: Option<CaptureTarget>,
     /// The GPU time of each frame, while the Performance Stats panel shows.
     pub(crate) timer: super::gpu_timer::GpuTimer,
+    /// VERA's whole-viewport colour-vision filter. Every present path shares
+    /// it, including the synchronous loading repaints outside the frame loop.
+    pub(crate) color_vision: super::color_vision::ColorVisionFilter,
     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
     web_present: Arc<web_present::WebPresent>,
 }
@@ -377,16 +383,17 @@ impl GpuContext {
                 downlevel.flags
             );
         }
-        // TerrainDrawRenderer reduces ordered read-only Bullet destinations
-        // with fragment atomics. Reject an insufficient downlevel adapter here
-        // rather than panicking later during render-pipeline validation.
+        // The packed sprite resolve reads its compute results through a
+        // writable storage binding (terrain_packed.rs). Reject an insufficient
+        // downlevel adapter here rather than panicking later during bind group
+        // layout validation.
         if !webgl
             && !downlevel
                 .flags
                 .contains(wgpu::DownlevelFlags::FRAGMENT_WRITABLE_STORAGE)
         {
             bail!(
-                "native projectile drawing requires fragment-writable storage, \
+                "native sprite drawing requires fragment-writable storage, \
                  adapter downlevel flags are {:?}",
                 downlevel.flags
             );
@@ -448,7 +455,10 @@ impl GpuContext {
             surface_format
         );
 
+        let handoff = super::frame_handoff::FrameHandoff::new();
+        let queue = super::frame_handoff::HandoffQueue::new(queue, handoff.waiter());
         Ok(Self {
+            handoff,
             surface: Mutex::new(Some(surface)),
             instance,
             window,
@@ -459,9 +469,51 @@ impl GpuContext {
             adapter_info,
             capture_target,
             timer,
+            color_vision: super::color_vision::ColorVisionFilter::new(),
             #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
             web_present,
         })
+    }
+
+    /// Publish this frame's colour-vision correction; `None` means `Off`.
+    /// The frame loop calls this once per frame, so the synchronous loading
+    /// repaints (which present outside the frame loop) use the same value.
+    pub(crate) fn set_color_vision_matrix(&self, matrix: Option<super::color_vision::Mat3>) {
+        self.color_vision.set_matrix(matrix);
+    }
+
+    /// Apply the published correction as the last draw before `present`.
+    pub(crate) fn encode_color_vision(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        target: &wgpu::Texture,
+    ) {
+        self.color_vision
+            .encode(&self.device, &self.queue, encoder, target);
+    }
+
+    /// Finish and submit `encoder`, then present `frame`, on the hand-off
+    /// thread (`frame_handoff`). Bounded submissions the frame already made
+    /// stay ahead of this one, as they went through the queue on this thread.
+    pub(crate) fn hand_off_frame(
+        &self,
+        encoder: wgpu::CommandEncoder,
+        frame: GpuFrame,
+    ) -> super::frame_handoff::FrameSubmission {
+        let queue = (*self.queue).clone();
+        let index = Arc::new(std::sync::OnceLock::new());
+        let submitted = Arc::clone(&index);
+        self.handoff.send(move || {
+            let _ = submitted.set(queue.submit(std::iter::once(encoder.finish())));
+            frame.present(&queue);
+        });
+        super::frame_handoff::FrameSubmission::new(index, self.handoff.waiter())
+    }
+
+    /// The time this thread spent blocked on a frame on its way to the driver
+    /// since the last call.
+    pub(crate) fn take_handoff_wait(&self) -> crate::util::time::Duration {
+        self.handoff.waiter().take_waited()
     }
 
     /// Return a borrowed capture-only view of the selected adapter identity.
@@ -484,6 +536,7 @@ impl GpuContext {
     /// https://docs.rs/winit/0.30.13/winit/application/trait.ApplicationHandler.html#method.suspended
     #[cfg(target_os = "android")]
     pub(crate) fn suspend_surface(&mut self) {
+        self.handoff.waiter().wait();
         drop(
             self.surface
                 .get_mut()
@@ -503,6 +556,7 @@ impl GpuContext {
     /// updates the depth and offscreen targets together with the surface.
     #[cfg(target_os = "android")]
     pub(crate) fn restore_surface(&mut self) -> anyhow::Result<()> {
+        self.handoff.waiter().wait();
         let slot = self
             .surface
             .get_mut()
@@ -532,6 +586,8 @@ impl GpuContext {
         if width == 0 || height == 0 {
             return; // Minimized window — skip reconfigure
         }
+        // Configuring a surface needs its last frame presented.
+        self.handoff.waiter().wait();
         self.config.width = width;
         self.config.height = height;
         if let Some(surface) = self
@@ -563,6 +619,9 @@ impl GpuContext {
     /// occlusion skip this redraw. Validation failures remain errors.
     /// https://docs.rs/wgpu/30.0.1/wgpu/enum.CurrentSurfaceTexture.html
     pub fn acquire_frame(&self) -> Result<Option<GpuFrame>> {
+        // A surface gives out one frame at a time, and drawing keeps plain
+        // queue clones that do not wait for themselves (`HandoffQueue`).
+        self.handoff.waiter().wait();
         let mut surface = self.surface.lock().unwrap_or_else(PoisonError::into_inner);
         let Some(surface) = surface.as_mut() else {
             return Ok(None);
@@ -617,7 +676,10 @@ impl GpuContext {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Depth32Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
         texture.create_view(&Default::default())

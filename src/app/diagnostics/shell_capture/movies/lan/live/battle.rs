@@ -5,6 +5,7 @@ use super::*;
 use crate::app::input::entity_pick::PickSource;
 use crate::app::input::hotkeys::{self, HotkeyCommand, HotkeyResolution};
 use crate::app::input::{commands, dispatch, keyboard};
+use crate::app::match_runtime::sim_host::SimWrite;
 use crate::sim::combat::TargetKind;
 use crate::sim::command::{
     ArchiveRecord, Command, MegaMissionOrder, MegaMissionRecord, MegaMissionTarget, ObjectAction,
@@ -2453,7 +2454,7 @@ fn simulation(state: &AppState) -> Result<&Simulation> {
     Ok(&state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("live simulation")?
         .simulation)
 }
@@ -3101,7 +3102,7 @@ pub(super) fn latency_move_with_mouse(
         &mut state
             .match_state
             .sim_runtime
-            .as_mut()
+            .write_sim(SimWrite::Debug)
             .context("latency simulation")?
             .simulation,
         before,
@@ -3204,7 +3205,7 @@ pub(super) fn latency_stop_with_keyboard(state: &mut AppState, actor: u64) -> Re
         &mut state
             .match_state
             .sim_runtime
-            .as_mut()
+            .write_sim(SimWrite::Debug)
             .context("latency simulation")?
             .simulation,
         before,
@@ -3599,7 +3600,7 @@ pub(super) fn projected_selection(state: &AppState) -> Vec<u64> {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|runtime| &runtime.simulation),
         state.rules(),
         &state.match_state.input.selection_order,

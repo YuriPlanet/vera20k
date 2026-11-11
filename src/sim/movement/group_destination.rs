@@ -8,7 +8,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::util::lepton::lepton_to_cell;
 use crate::util::native_x87::{
     NativeF32Bits, NativeF64Bits, X87Chop53, distance_3d_leptons, sqrt_approx_f32,
 };
@@ -25,6 +24,10 @@ pub struct GroupDestinationMember {
     pub coord: [i32; 3],
     /// Cell returned by the member's source-cell virtual.
     pub source_cell: (i16, i16),
+    /// Cell of the member's navigation coordinate (vt+0x4C at `0x0064D27A`:
+    /// the active locomotor's head, else its Location). Its probe ray starts
+    /// here, which is one cell ahead of `coord` for a member on the move.
+    pub navigation_cell: (i32, i32),
 }
 
 /// Read-only results of the native candidate gates.
@@ -119,13 +122,15 @@ where
             continue;
         }
         let member = &members[member_index];
-        let member_cell = (
-            lepton_to_cell(member.coord[0]),
-            lepton_to_cell(member.coord[1]),
-        );
         let direction = (
-            member_cell.0.wrapping_sub(i32::from(anchor_source_cell.0)),
-            member_cell.1.wrapping_sub(i32::from(anchor_source_cell.1)),
+            member
+                .navigation_cell
+                .0
+                .wrapping_sub(i32::from(anchor_source_cell.0)),
+            member
+                .navigation_cell
+                .1
+                .wrapping_sub(i32::from(anchor_source_cell.1)),
         );
         let step = normalized_step(direction);
         let mut candidate_x = cell_center_f32(clicked_target.0);
@@ -272,6 +277,7 @@ mod tests {
                 0,
             ],
             source_cell: cell,
+            navigation_cell: (i32::from(cell.0), i32::from(cell.1)),
         }
     }
 
@@ -290,6 +296,7 @@ mod tests {
                 entity_id: index as u64,
                 coord: [115_329, 115_329, 0],
                 source_cell: (450, 450),
+                navigation_cell: (450, 450),
             })
             .collect::<Vec<_>>();
         members.last_mut().unwrap().coord = [115_328, 115_328, 0];

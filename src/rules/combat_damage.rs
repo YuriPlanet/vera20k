@@ -17,6 +17,9 @@
 
 use crate::rules::ini_parser::IniSection;
 
+/// VERA's `DeformLowestLevel=` default.
+const DEFORM_LOWEST_LEVEL: i32 = -4;
+
 /// Default particle-system fallbacks read from `[CombatDamage]`.
 ///
 /// Each reference is the stored ID of a Type (a `ParticleSystemType` resolved
@@ -39,6 +42,17 @@ pub struct CombatDamageDefaults {
     /// Signed, unclamped destroyable-cliff chance compared against one
     /// Scenario RandomRanged(0,99) draw. Native constructor default is 100.
     pub collapse_chance: i32,
+    /// VERA's `TerrainDeformation=`: warheads with `Deform=` may lower the
+    /// ground they explode on (see `docs/terrain-deformation.md`). gamemd
+    /// still reads `Deform=` and `DeformThreshhold=` but nothing uses them,
+    /// so retail warheads that set them stay inert unless this is on.
+    /// Default no; the Options page's Terrain Deformation box switches it on
+    /// in each new scenario's root (`PersonalRules::scenario_root`).
+    pub terrain_deformation: bool,
+    /// VERA's `DeformLowestLevel=`: the lowest Level deformation lowers a
+    /// corner to, a signed int clamped to a cell Level's `-128..=127`.
+    /// Default -4.
+    pub deform_lowest_level: i32,
     /// `RailgunDamageRadius=`: the most a Techno may sit from a railgun line
     /// and still be hit. `RulesClass::Constructor` writes 0x80
     /// (`0x00665CDE`); `ReadCombatDamage` (`0x0066BC18..0x0066BC31`) reads a
@@ -103,6 +117,12 @@ pub struct CombatDamageDefaults {
     /// constructor 1): that damage starts from the dropped Unit's current
     /// Health rather than its type's `Strength=` (`0x0074621D`).
     pub current_strength_damage: bool,
+    /// `TiberiumExplosive=` (`RulesClass+0x17E5`, ReadBool over the current
+    /// value at `0x0066CE7E`; constructor false). Stock UnitClass::
+    /// Death_Explosion only sums a dead local with it; Ares 1004BD90 (hook
+    /// `0x738749`) turns it into the harvester's blast.
+    #[cfg(feature = "ares")]
+    pub tiberium_explosive: bool,
     /// `IvanWarhead=` (`RulesClass+0xFC8`, ReadINI `0x0066C52A`; constructor
     /// null): the warhead of an Ivan bomb's blast (`BombClass::Detonate @
     /// 0x00438720`). Stock `IvanWH`.
@@ -116,6 +136,14 @@ pub struct CombatDamageDefaults {
     /// `IvanIconFlickerRate=` in frames (`RulesClass+0xFD8`, ReadINI
     /// `0x0066C62B`; constructor 8 at `0x00666BA8`): the bomb clock's blink.
     pub ivan_icon_flicker_rate: i32,
+    /// `CanDetonateTimeBomb=` and `CanDetonateDeathBomb=` (`RulesClass+0xFD4`,
+    /// `+0xFD5`, ReadBool over the current value at `0x0066C545` and
+    /// `0x0066C564`; constructor false at `0x00666B9C`): the lone selected
+    /// carrier of a player's timed or death bomb over itself answers Detonate
+    /// (`TechnoClass::What_Action_OnObject` `0x006FFF8D..0x00700003`;
+    /// `Simulation::bomb_detonate_action`). Retail sets both to no.
+    pub can_detonate_time_bomb: bool,
+    pub can_detonate_death_bomb: bool,
     /// `SplashList=` (`RulesClass+0xBC4`, count `+0xBD0`; constructor empty):
     /// the water explosions. A bouncing debris chunk landing in water below
     /// the deck plays the first (`AnimClass::AI 0x00423DD2`).
@@ -166,6 +194,10 @@ impl CombatDamageDefaults {
             tiberium_explosion_damage: section.read_int("TiberiumExplosionDamage", 100),
             max_damage: section.read_int("MaxDamage", 1000),
             collapse_chance: section.read_int("CollapseChance", 100),
+            terrain_deformation: section.read_bool("TerrainDeformation", false),
+            deform_lowest_level: section
+                .read_int("DeformLowestLevel", DEFORM_LOWEST_LEVEL)
+                .clamp(i32::from(i8::MIN), i32::from(i8::MAX)),
             railgun_damage_radius: section.read_int("RailgunDamageRadius", 0x80),
             ballistic_scatter: section.read_range("BallisticScatter", 0x100),
             crush: section.read_range("Crush", 0x180),
@@ -178,10 +210,14 @@ impl CombatDamageDefaults {
             drain_animation_type: None,
             falling_damage_multiplier: section.read_float("FallingDamageMultiplier", 1.0),
             current_strength_damage: section.read_bool("CurrentStrengthDamage", true),
+            #[cfg(feature = "ares")]
+            tiberium_explosive: section.read_bool("TiberiumExplosive", false),
             ivan_warhead: None,
             ivan_damage: section.read_int("IvanDamage", 100),
             ivan_timed_delay: section.read_int("IvanTimedDelay", 450),
             ivan_icon_flicker_rate: section.read_int("IvanIconFlickerRate", 8),
+            can_detonate_time_bomb: section.read_bool("CanDetonateTimeBomb", false),
+            can_detonate_death_bomb: section.read_bool("CanDetonateDeathBomb", false),
             splash_list: Vec::new(),
             default_large_grey_smoke_system: None,
             default_small_grey_smoke_system: None,
@@ -203,6 +239,8 @@ impl Default for CombatDamageDefaults {
             tiberium_explosion_damage: 100,
             max_damage: 1000,
             collapse_chance: 100,
+            terrain_deformation: false,
+            deform_lowest_level: DEFORM_LOWEST_LEVEL,
             railgun_damage_radius: 0x80,
             ballistic_scatter: 0x100,
             crush: 0x180,
@@ -215,10 +253,14 @@ impl Default for CombatDamageDefaults {
             drain_animation_type: None,
             falling_damage_multiplier: 1.0,
             current_strength_damage: true,
+            #[cfg(feature = "ares")]
+            tiberium_explosive: false,
             ivan_warhead: None,
             ivan_damage: 100,
             ivan_timed_delay: 450,
             ivan_icon_flicker_rate: 8,
+            can_detonate_time_bomb: false,
+            can_detonate_death_bomb: false,
             splash_list: Vec::new(),
             default_large_grey_smoke_system: None,
             default_small_grey_smoke_system: None,

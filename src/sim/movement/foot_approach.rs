@@ -133,6 +133,11 @@ impl Simulation {
             reach: rules.combat_damage.crush,
             techno: true,
             object: true,
+            // Ares UnitClass_ApproachTarget_OmniCrusher (Ares.dll 1004BC10,
+            // hook 0x741613): `OmniCrusher.Aggressive=no` skips the arm.
+            #[cfg(feature = "ares")]
+            omni: object.omni_crusher && object.techno_combat().combat().omni_crusher_aggressive(),
+            #[cfg(not(feature = "ares"))]
             omni: object.omni_crusher,
             is_human: self
                 .houses
@@ -176,17 +181,8 @@ impl Simulation {
     /// the call, or None where native goes on to FootClass::Approach_Target
     /// (`0x00741685`).
     ///
-    /// Residuals:
-    /// - With the no-move flag set, native returns the Target without the
-    ///   destination. Every mission passes 0, and no VERA caller passes 1.
-    /// - Mission_Patrol calls Approach too (`0x004D473A`), and VERA has no
-    ///   Foot Patrol body (`FootClass::Mission_Patrol @ 0x004D4280`). Trigger:
-    ///   a Foot on Patrol holding a target. Effect: it does not approach the
-    ///   target; only the reach block's (`0x006FAB74`) does, for one it
-    ///   cannot reach. Frequency: a map can author Patrol in an object's
-    ///   `MISSION=` column (retail maps not surveyed); the team script's
-    ///   Patrol action (`0x006ECCE0`) is not ported. Risk: a whole unported
-    ///   mission.
+    /// Residual: with the no-move flag set, native returns the Target without
+    /// the destination. Every mission passes 0, and no VERA caller passes 1.
     pub(crate) fn unit_approach_head(&self, id: u64, rules: &RuleSet) -> Option<NavTargetRef> {
         let crush = self.approach_crush(id, rules);
         if let Some((facts, target)) = crush
@@ -535,6 +531,8 @@ impl Simulation {
             overlay_grid: self.overlay_grid.as_ref(),
             overlay_registry: registry,
             alliances: Some(&self.house_alliances),
+            #[cfg(feature = "ares")]
+            buildings: Some(combat::line_of_fire::CellBuildings::of(self)),
         };
         let can_fire = match (weapon, identity) {
             //0x006F7242: In_Range answers false ahead of any map query when
@@ -568,10 +566,17 @@ impl Simulation {
             .houses
             .get(&actor.owner())
             .is_none_or(|h| h.is_controlled_by_human(self.session.game_mode_nonzero()));
+        // Ares 3.0 FootClass_ApproachTarget_Passive (1005C9F0, hook
+        // 0x4D5782): a passively acquired Target (`+0x50C`) is not chased
+        // either.
+        #[cfg(feature = "ares")]
+        let passive_target = actor.passive_scan.acquired();
+        #[cfg(not(feature = "ares"))]
+        let passive_target = false;
         let may_approach = object.can_approach_target
             && actor.drain.target().is_none()
             && actor.bunker.link().installed_in().is_none()
-            && !actor.passenger_role.in_open_transport();
+            && !(actor.passenger_role.in_open_transport() || passive_target);
         //4D5716..4D57E4: the drop arms ahead of the search. A Sticky mission,
         // or a mover that may not approach off Attack, a human's Area Guard or
         // a computer's Hunt, clears the Target and the destination.
@@ -1135,6 +1140,8 @@ impl Simulation {
                     overlay_grid: self.overlay_grid.as_ref(),
                     overlay_registry: registry,
                     alliances: Some(&self.house_alliances),
+                    #[cfg(feature = "ares")]
+                    buildings: Some(combat::line_of_fire::CellBuildings::of(self)),
                 },
             )
         });
@@ -1189,7 +1196,7 @@ impl Simulation {
         let object = self
             .object_type(actor.type_ref(), rules)
             .ok_or("Approach mover type absent")?;
-        let zones = self.zone_grid.as_ref().ok_or("Approach requires zones")?;
+        let zones = self.zone_grid.as_deref().ok_or("Approach requires zones")?;
         let source = coord_cell(self.foot_navigation_coordinate(id)?);
         let zone = zones
             .get_zone_id_native_in_query(
@@ -1260,7 +1267,7 @@ impl Simulation {
         let source = coord_cell(source);
         let zone = self
             .zone_grid
-            .as_ref()
+            .as_deref()
             .ok_or("Approach requires zones")?
             .get_zone_id_native_in_query(
                 cells.terrain(),

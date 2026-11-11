@@ -173,6 +173,10 @@ fn status_two_fires_from_the_native_stage() {
 /// one of the retail types bound with the row's frame count; a row with no
 /// frames uses no anim, which VERA reads as finished (its stage is then its
 /// frame count, 0, so the stage-5 row is replayed through the test alone).
+// Stock PsyDom Start/Process (0x0053AE50, 0x0053AF40); installed Ares runs
+// SW_PsychicDominator's state machine (10070BA0) and Fire hook (10037840)
+// instead. Ares coverage: `ares_stock_types_tests`.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_process_steps_match_native() {
     let Some(rules) = retail_rules() else {
@@ -582,6 +586,10 @@ fn dominator_lighting_read_matches_native() {
 /// click while it runs is refused and keeps its charge. The tint fades back
 /// at `DominatorAmbientChangeRate=` and the Dominator ends when the ambient
 /// is back.
+// Stock PsyDom Start/Process (0x0053AE50, 0x0053AF40); installed Ares runs
+// SW_PsychicDominator's state machine (10070BA0) and Fire hook (10037840)
+// instead. Ares coverage: `ares_stock_types_tests`.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_dominator_strike_captures_the_block() {
     let Some(rules) = retail_rules() else {
@@ -697,7 +705,7 @@ fn retail_dominator_strike_captures_the_block() {
         400
     );
     // The player's captives take no Hunt.
-    let mission = sim.substrate.entities.get(tank).unwrap().mission;
+    let mission = sim.substrate.entities.get(tank).unwrap().mission.clone();
     assert_ne!(mission.queued().known(), Some(MissionType::Hunt));
 
     // A save mid-strike restores the Dominator and its captives.
@@ -815,7 +823,7 @@ fn retail_computer_dominator_sends_its_captives_hunting() {
     }
     for id in [tank, gi] {
         assert_eq!(owner_name(&sim, id), "Russians");
-        let mission = sim.substrate.entities.get(id).unwrap().mission;
+        let mission = sim.substrate.entities.get(id).unwrap().mission.clone();
         assert!(
             [mission.current().known(), mission.queued().known()]
                 .contains(&Some(MissionType::Hunt)),
@@ -883,7 +891,7 @@ fn retail_computer_aims_its_dominator_at_the_group() {
     }
     for id in group {
         assert_eq!(owner_name(&sim, id), "Russians");
-        let mission = sim.substrate.entities.get(id).unwrap().mission;
+        let mission = sim.substrate.entities.get(id).unwrap().mission.clone();
         assert!(
             [mission.current().known(), mission.queued().known()]
                 .contains(&Some(MissionType::Hunt)),

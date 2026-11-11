@@ -67,6 +67,9 @@ fn request_move(
     )
 }
 
+/// Stock only: Ares 3.0 ThreatPosedEstimates_GetIndex `1005D4A0` (hook
+/// `0x0056BC54`) writes row 15 away from the cell this search and read take.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn live_avoid_threats_membership_reads_admitted_house_grid_through_search_and_snapshot() {
     let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(

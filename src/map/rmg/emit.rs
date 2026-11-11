@@ -148,28 +148,9 @@ pub fn populate(
     }
 
     for (name, x, y) in structures {
-        map_file.entities.push(MapEntity {
-            owner: NEUTRAL_OWNER.to_string(),
-            type_id: name.clone(),
-            health: i32::from(NEUTRAL_HEALTH),
-            cell_x: *x as u16,
-            cell_y: *y as u16,
-            facing: 0,
-            category: EntityCategory::Structure,
-            sub_cell: 0,
-            veterancy: None,
-            high: false,
-            mission: None,
-            recruitable_a: true,
-            recruitable_b: true,
-            group: -1,
-            follows: None,
-            structure_columns: Default::default(),
-            structure_ai_sellable: false,
-            structure_ai_repairable: false,
-            structure_online: true,
-            trigger_tag: None,
-        });
+        map_file
+            .entities
+            .push(neutral_entity(name, EntityCategory::Structure, (*x, *y), 0));
     }
 
     for (slot, x, y) in waypoints {
@@ -182,6 +163,46 @@ pub fn populate(
                 ry: *y,
             },
         );
+    }
+}
+
+/// A generated neutral object at full health: `Put` at the cell centre,
+/// then Strength (`0x005A6510`, `0x005A6920`, the tech and hut placers).
+fn neutral_entity(name: &str, category: EntityCategory, cell: (i16, i16), facing: u8) -> MapEntity {
+    MapEntity {
+        owner: NEUTRAL_OWNER.to_string(),
+        type_id: name.to_string(),
+        health: i32::from(NEUTRAL_HEALTH),
+        cell_x: cell.0 as u16,
+        cell_y: cell.1 as u16,
+        facing,
+        category,
+        sub_cell: 0,
+        veterancy: None,
+        high: false,
+        mission: None,
+        recruitable_a: true,
+        recruitable_b: true,
+        group: -1,
+        follows: None,
+        structure_columns: Default::default(),
+        structure_ai_sellable: false,
+        structure_ai_repairable: false,
+        structure_online: true,
+        trigger_tag: None,
+    }
+}
+
+/// Append the urban objects after the structures [`populate`] wrote, in the
+/// order the trace's entity indices name them.
+pub fn populate_urban(map_file: &mut MapFile, objects: &[super::phases::urban_areas::UrbanObject]) {
+    for object in objects {
+        map_file.entities.push(neutral_entity(
+            &object.name,
+            object.category,
+            object.cell,
+            object.facing,
+        ));
     }
 }
 

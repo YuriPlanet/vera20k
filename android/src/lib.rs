@@ -63,6 +63,25 @@ fn cancel_import() -> bool {
     .unwrap_or(false)
 }
 
+/// Launcher and app-switcher icon hook for `vera20k::util::app_icon`.
+///
+/// The choice lives in the two activity aliases, which only `PackageManager`
+/// can flip; the activity keeps that knowledge in [`VeraActivity.applyAppIcon`].
+fn apply_app_icon(vera_icon: bool) {
+    let applied = with_activity(|env, activity| {
+        env.call_method(
+            activity,
+            "applyAppIcon",
+            "(Z)V",
+            &[jni::objects::JValue::Bool(u8::from(vera_icon))],
+        )
+        .is_ok()
+    });
+    if applied != Some(true) {
+        log::warn!("Could not apply the app icon");
+    }
+}
+
 /// The activity's folder-picker answer: the chosen tree as a `content://` URI,
 /// or an empty string when the player cancelled.
 #[unsafe(no_mangle)]
@@ -248,6 +267,9 @@ fn keep_screen_on(app: &AndroidApp) {
 fn android_main(app: AndroidApp) {
     keep_screen_on(&app);
     vera20k::util::folder_picker::install(request_folder_picker, cancel_import);
+    // The launcher icon is a compiled resource, so the VERA Icon box's choice
+    // reaches the two activity aliases only through PackageManager.
+    vera20k::util::app_icon::install(apply_app_icon);
     // Android starts every process in "/" with no writable home. Hand the app's
     // private folder to the engine before anything opens a file: it becomes
     // both the working directory and the settings folder, so logs, config.toml,

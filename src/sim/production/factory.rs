@@ -23,7 +23,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::hash::{Hash, Hasher};
 
-use crate::rules::object_type::{BuildCategory, FactoryType, ObjectCategory, ObjectType};
+use crate::rules::object_type::{BuildCategory, FactoryType, ObjectType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::economy::Economy;
 use crate::sim::house_tracking::FactorySlot;
@@ -527,6 +527,39 @@ pub fn type_base_build_time(cost: i32, build_speed: NativeF64Bits) -> i32 {
     ))
 }
 
+/// Ares `TechnoTypeClass_GetBuildSpeed` (`10041D40`, hook `0x00711EE0`):
+/// `BuildTime.Speed` (else `[General] BuildSpeed=`) times `BuildTime.Cost`
+/// (else `Cost=`), over 1000.0 (`1009E580`), times 900.0 (`10095ED0`),
+/// truncated by ftol `100772B0` under the process's 53-bit chop word.
+#[cfg(feature = "ares")]
+pub fn ares_type_build_time(cost: i32, build_speed: NativeF64Bits) -> i32 {
+    use crate::util::native_x87::MaskedX87Chop53 as X87;
+
+    X87::ftol_i32_low_masked(X87::mul(
+        X87::div(
+            X87::mul(X87::load_f64(build_speed), X87::load_i32(cost)),
+            X87::load_f64(NativeF64Bits::from_bits(0x408F_4000_0000_0000)),
+        ),
+        X87::load_f64(NativeF64Bits::from_bits(0x408C_2000_0000_0000)),
+    ))
+}
+
+/// TechnoType vt+0x88 for `obj`: [`type_base_build_time`], or with Ares
+/// [`ares_type_build_time`] over its `BuildTime.Cost`/`BuildTime.Speed`.
+pub fn type_build_time(obj: &ObjectType, rules: &RuleSet) -> i32 {
+    #[cfg(feature = "ares")]
+    {
+        let ext = obj.ares_production();
+        ares_type_build_time(
+            ext.build_time_cost().unwrap_or(obj.cost),
+            ext.build_time_speed()
+                .unwrap_or(rules.production.build_speed),
+        )
+    }
+    #[cfg(not(feature = "ares"))]
+    type_base_build_time(obj.cost, rules.production.build_speed)
+}
+
 /// Resume4C9EEF and GetRate4C9FC0 share the signed total/54 clamp.
 fn build_step_rate(time_to_build: i32) -> u16 {
     let per_step = time_to_build / i32::from(PRODUCTION_STEPS);
@@ -607,6 +640,97 @@ pub fn time_to_build(inputs: &TimeToBuildInputs) -> i32 {
     time
 }
 
+/// Ares `TechnoClass_GetBuildTime` (`10041AB0`, hook `0x006F47A0`, resuming
+/// at `0x006F4955`), which replaces [`time_to_build`]'s body:
+/// - the base is [`ares_type_build_time`], times the country multiplier
+///   (`0x0050C0A0`), then the type's BuildTimeMultiplier times the time
+///   stored as a float (`10041B46..10041B4E`);
+/// - the power ratio (`0x004FCE30`) stays binary64 (no float spill);
+///   `BuildTime.LowPowerPenalty`, `.MinLowPower` and `.MaxLowPower` replace
+///   the `[General]` floats; any speed below 0.01 (`1009E578`, binary64)
+///   becomes 0.01, not only zero;
+/// - `BuildTime.MultipleFactory` replaces `MultipleFactory=`;
+/// - the wall coefficient applies only while `BuildTime.Speed` is unset,
+///   which `inputs.wall` already holds ([`ObjectType::wall_build_speed_applies`]).
+#[cfg(feature = "ares")]
+pub fn ares_time_to_build(
+    inputs: &TimeToBuildInputs,
+    ext: &crate::rules::ares_production::ProductionTypeRules,
+) -> i32 {
+    use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering as Order};
+
+    let base = ares_type_build_time(
+        ext.build_time_cost().unwrap_or(inputs.cost),
+        ext.build_time_speed().unwrap_or(inputs.build_speed),
+    );
+    let mut time = X87::ftol_i32_low_masked(X87::mul(
+        X87::load_f32(inputs.country_multiplier),
+        X87::load_i32(base),
+    ));
+    time = X87::ftol_i32_low_masked(X87::mul(
+        X87::load_f32(inputs.build_time_multiplier),
+        X87::load_f32(X87::store_f32_masked_chop(X87::load_i32(time))),
+    ));
+    let power =
+        crate::sim::power_system::native_power_ratio(inputs.power_output, inputs.power_drain);
+    let read = |value: Option<NativeF64Bits>, general: NativeF32Bits| {
+        value.map_or_else(|| X87::load_f32(general), X87::load_f64)
+    };
+    let penalty = read(ext.build_time_low_power_penalty(), inputs.low_power_penalty);
+    let min_speed = read(ext.build_time_min_low_power(), inputs.min_low_power_speed);
+    let max_speed = read(ext.build_time_max_low_power(), inputs.max_low_power_speed);
+    let one = X87::load_f64(NativeF64Bits::ONE);
+    let mut speed = X87::sub(one, X87::mul(X87::sub(one, power), penalty));
+    // 10041BC1..10041BDB: `fcomi` + `jbe`, so only a strict excess clamps.
+    if X87::compare(min_speed, speed) == Order::Greater {
+        speed = min_speed;
+    }
+    if X87::compare(one, power) == Order::Greater
+        && X87::compare(speed, max_speed) == Order::Greater
+    {
+        speed = max_speed;
+    }
+    let floor = X87::load_f64(NativeF64Bits::from_bits(0x3F84_7AE1_47AE_147B));
+    if X87::compare(floor, speed) == Order::Greater {
+        speed = floor;
+    }
+    time = X87::ftol_i32_low_masked(X87::div(X87::load_i32(time), speed));
+    let multiple_factory = read(ext.build_time_multiple_factory(), inputs.multiple_factory);
+    if X87::compare(
+        multiple_factory,
+        X87::load_f64(NativeF64Bits::POSITIVE_ZERO),
+    ) == Order::Greater
+    {
+        for _ in 0..inputs.factory_count.wrapping_sub(1).max(0) {
+            time = X87::ftol_i32_low_masked(X87::mul(X87::load_i32(time), multiple_factory));
+        }
+    }
+    if inputs.wall {
+        time = X87::ftol_i32_low_masked(X87::mul(
+            X87::load_i32(time),
+            X87::load_f64(inputs.wall_coefficient),
+        ));
+    }
+    time
+}
+
+/// `TechnoClass::Time_To_Build @ 0x006F47A0` for `owner` building `obj`:
+/// [`time_to_build`], or with Ares its replacement [`ares_time_to_build`].
+pub(super) fn object_time_to_build(
+    sim: &crate::sim::world::Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    obj: &ObjectType,
+) -> i32 {
+    let inputs = time_to_build_inputs(sim, rules, owner, obj);
+    #[cfg(feature = "ares")]
+    {
+        ares_time_to_build(&inputs, obj.ares_production())
+    }
+    #[cfg(not(feature = "ares"))]
+    time_to_build(&inputs)
+}
+
 /// Resolve [`time_to_build`]'s inputs for `owner` building `obj`: the rules
 /// and type fields, the owner's country multiplier (`0x0050C0A0`), power
 /// (House `+0x53A4`/`+0x53A8`) and factory count (`GetFactoryCount @
@@ -642,7 +766,7 @@ pub(super) fn time_to_build_inputs(
         max_low_power_speed: rules.production.max_low_power_production_speed,
         factory_count,
         multiple_factory: rules.production.multiple_factory,
-        wall: obj.category == ObjectCategory::Building && obj.wall,
+        wall: obj.wall_build_speed_applies(),
         wall_coefficient: rules.production.wall_build_speed_coefficient,
     }
 }
@@ -659,9 +783,8 @@ pub(super) fn held_time_to_build(
     held.entity_id
         .and_then(|id| sim.substrate.entities.get(id))
         .and_then(|entity| {
-            sim.entity_object_type(entity, rules).map(|object| {
-                time_to_build(&time_to_build_inputs(sim, rules, entity.owner(), object))
-            })
+            sim.entity_object_type(entity, rules)
+                .map(|object| object_time_to_build(sim, rules, entity.owner(), object))
         })
         .unwrap_or(0)
 }
@@ -870,16 +993,20 @@ impl FactoryRegistry {
     /// either expiry control: only a matching held product (+58) is cleared.
     /// The factory, queue, stage, balance, rates and timers remain intact.
     /// Source: cameo_order.md current/saved product-expiry histories.
-    pub(crate) fn pointer_expired(&mut self, entity_id: u64) {
+    /// Answers whether any factory held `entity_id`.
+    pub(crate) fn pointer_expired(&mut self, entity_id: u64) -> bool {
+        let mut held = false;
         for factory in self.factories.values_mut() {
             if factory
                 .object
                 .as_ref()
                 .is_some_and(|object| object.entity_id == Some(entity_id))
             {
+                held = true;
                 factory.object = None;
             }
         }
+        held
     }
 
     /// `FactoryClass::CountTotal @ 0x004CA670` on `owner`'s factory for
@@ -1723,6 +1850,10 @@ fn native_e2_head(
 #[cfg(test)]
 #[path = "factory_system_hold_tests.rs"]
 mod system_hold_tests;
+
+#[cfg(all(test, feature = "ares"))]
+#[path = "ares_build_time_tests.rs"]
+mod ares_build_time_tests;
 
 #[cfg(test)]
 mod tests {

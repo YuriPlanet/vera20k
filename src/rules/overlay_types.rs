@@ -26,10 +26,11 @@ const STOCK_FLAT_RIPARIUS_VARIANT_COUNT: usize = 12;
 /// overlays; every other overlay type gets 0.
 const OVERLAY_TYPE_Y_DRAW_BIAS_PX: f32 = -12.0;
 
-/// A reached native null dereference, array access or division cannot be
-/// interpreted as an empty resource. Loading/runtime owners stop that operation;
-/// presentation owners report it and omit the draw. An unused cold-null Image
-/// remains valid stored state and is not rejected by speculative atlas loading.
+/// A reached native array access or division that has no defined result.
+/// A `[Tiberiums]` entry without a usable `Image=` is not one of these: the
+/// rules owner marks it inert (`TiberiumType::is_inert`) and the lookups below
+/// find no Tiberium there, so rules data alone cannot raise these in a frame.
+/// Presentation owners report an error and omit the draw.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TiberiumImageError {
     #[error("Tiberium slot {0:?} does not exist")]
@@ -276,6 +277,13 @@ pub struct OverlayTypeRegistry {
     alpha_images: Vec<String>,
     /// Immutable projection; ProcessedType remains the mutable reader owner.
     images: Vec<ObjectImageState>,
+    /// The scenario's `[General] CliffBackImpassability=` byte
+    /// (`read_cliff_back_impassability`): `CellClass::RecalcAttributes`
+    /// (`0x0047D2B0`) reads a cell's CliffBack neighbours unless it is 0.
+    cliff_back_impassability: u8,
+    /// The Rock row when that byte is 2, which the Recalc then writes on an
+    /// overlay cell behind a cliff (`0x0047D53E`).
+    cliff_back_rock: Option<crate::rules::terrain_rules::LandTypeSemantics>,
 }
 
 impl OverlayTypeRegistry {
@@ -329,15 +337,15 @@ impl OverlayTypeRegistry {
     }
 
     fn from_projected_ini(ini: &IniFile, terrain_rules: &TerrainRules) -> Self {
+        let cliff_back_impassability =
+            crate::rules::ruleset::read_cliff_back_impassability(ini.section("General"));
         let section = match ini.section("OverlayTypes") {
             Some(s) => s,
             None => {
                 log::warn!("[OverlayTypes] section not found in rules.ini");
                 return OverlayTypeRegistry {
-                    names: Vec::new(),
-                    flags: Vec::new(),
-                    alpha_images: Vec::new(),
-                    images: Vec::new(),
+                    cliff_back_impassability,
+                    ..Self::empty()
                 };
             }
         };
@@ -350,10 +358,8 @@ impl OverlayTypeRegistry {
         if names.is_empty() {
             log::warn!("[OverlayTypes] present but empty");
             return OverlayTypeRegistry {
-                names: Vec::new(),
-                flags: Vec::new(),
-                alpha_images: Vec::new(),
-                images: Vec::new(),
+                cliff_back_impassability,
+                ..Self::empty()
             };
         }
 
@@ -461,6 +467,9 @@ impl OverlayTypeRegistry {
             flags,
             alpha_images,
             images: Vec::new(),
+            cliff_back_impassability,
+            cliff_back_rock: (cliff_back_impassability == 2)
+                .then(|| *terrain_rules.row(LandType::Rock)),
         }
     }
 
@@ -507,7 +516,23 @@ impl OverlayTypeRegistry {
             flags: Vec::new(),
             alpha_images: Vec::new(),
             images: Vec::new(),
+            cliff_back_impassability: 0,
+            cliff_back_rock: None,
         }
+    }
+
+    /// The scenario's `CliffBackImpassability=` byte, which gates the
+    /// CliffBack neighbour reads of every RecalcAttributes.
+    pub(crate) fn cliff_back_impassability(&self) -> u8 {
+        self.cliff_back_impassability
+    }
+
+    /// The Rock row the early overlay branch of RecalcAttributes writes behind
+    /// a cliff, when `CliffBackImpassability=2`.
+    pub(crate) fn cliff_back_rock(
+        &self,
+    ) -> Option<&crate::rules::terrain_rules::LandTypeSemantics> {
+        self.cliff_back_rock.as_ref()
     }
 
     /// AlphaImage strings retained by the allocated OverlayType entries.
@@ -618,8 +643,9 @@ impl OverlayTypeRegistry {
     }
 
     /// OverlayToTiberiumIndex5FDD20: flag gate, then ordered pointer/range
-    /// reads. A reached null before a later match faults natively; an earlier
-    /// match returns without touching later nulls. Flagged misses return slot0.
+    /// reads. Flagged misses return slot0. gamemd faults on a reached null
+    /// Image (`[pImage+0x294]`); an inert entry is skipped instead, and a miss
+    /// whose slot0 is inert or absent is no Tiberium at all.
     pub fn tiberium_type_for_overlay(
         &self,
         tiberium_types: &TiberiumTypeRegistry,
@@ -633,6 +659,9 @@ impl OverlayTypeRegistry {
         }
         let ordinal = i32::from(overlay_id);
         for ty in tiberium_types.types() {
+            if ty.is_inert() {
+                continue;
+            }
             let base = self.tiberium_image_base(ty)?;
             let primary_end = base.wrapping_add(ty.image().primary_count());
             let extra_end = primary_end.wrapping_add(ty.image().slope_count());
@@ -641,10 +670,7 @@ impl OverlayTypeRegistry {
                 return Ok(Some(ty.id));
             }
         }
-        tiberium_types
-            .get(TiberiumTypeId(0))
-            .ok_or(TiberiumImageError::MissingType(TiberiumTypeId(0)))?;
-        Ok(Some(TiberiumTypeId(0)))
+        Ok(tiberium_types.live(TiberiumTypeId(0)).map(|ty| ty.id))
     }
 
     /// Speculative atlas prefetch, not a native read. Only return available
@@ -1336,8 +1362,8 @@ Image=5
         let cold_first = TiberiumTypeRegistry::from_ini(&cold_first);
         assert_eq!(
             overlays.tiberium_type_for_overlay(&cold_first, target),
-            Err(TiberiumImageError::UnboundImage(TiberiumTypeId(0))),
-            "the first visited null cannot be skipped to a later match"
+            Ok(Some(TiberiumTypeId(1))),
+            "an entry without Image= is inert, so the walk reaches the later match"
         );
         let cold_later =
             IniFile::from_str(&text.replace("[FirstDefault]\nImage=1", "[FirstDefault]"));
@@ -1365,7 +1391,37 @@ Image=5
         let stray_id = overlays.id_for_name("STRAY").expect("STRAY id");
         assert_eq!(
             overlays.tiberium_type_for_overlay(&empty_types, stray_id),
-            Err(TiberiumImageError::MissingType(TiberiumTypeId(0)))
+            Ok(None)
+        );
+    }
+
+    /// `TiberiumClass::ReadINI @ 0x00721A50` leaves `+0xE0..+0xEC` at the
+    /// constructor's zeros when `Image=` is absent (`0x00721C3F` default -1).
+    /// The entry keeps its array position and matches no overlay.
+    #[test]
+    fn tiberium_entry_without_image_is_inert_in_place() {
+        let mut ini = stock_shaped_tiberium_ini(None);
+        ini.merge(&IniFile::from_str(
+            "[Tiberiums]\n4=NoImage\n[NoImage]\nValue=5\n",
+        ));
+        let overlays = OverlayTypeRegistry::from_ini(&ini, None);
+        let tiberiums = TiberiumTypeRegistry::from_ini(&ini);
+        assert_eq!(tiberiums.len(), 5);
+        let inert: Vec<bool> = tiberiums.types().iter().map(|ty| ty.is_inert()).collect();
+        assert_eq!(inert, [false, false, false, false, true]);
+        assert!(tiberiums.live(TiberiumTypeId(4)).is_none());
+        for (slot, overlay) in [(0, "TIB01"), (1, "GEM01"), (2, "TIB2_01"), (3, "TIB3_01")] {
+            assert_eq!(
+                overlays
+                    .tiberium_type_for_overlay(&tiberiums, overlays.id_for_name(overlay).unwrap()),
+                Ok(Some(TiberiumTypeId(slot)))
+            );
+        }
+        // A flagged overlay outside every range walks past the fifth entry.
+        let stray = overlays.id_for_name("STRAY").unwrap();
+        assert_eq!(
+            overlays.tiberium_type_for_overlay(&tiberiums, stray),
+            Ok(Some(TiberiumTypeId(0)))
         );
     }
 

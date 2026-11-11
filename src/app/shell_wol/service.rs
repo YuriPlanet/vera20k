@@ -82,14 +82,6 @@ pub(crate) struct WolLoginAccepted {
     pub(crate) motd: String,
 }
 
-/// The game's own message of the day for an accepted login, used when the
-/// lobby sends no operator welcome: a welcome, and how to page with the chat's
-/// `TXT_PAGE_COMMAND`, since the online screens have no Page button.
-pub(super) fn vera_motd(state: &AppState) -> String {
-    let page = App::csf_label(state, "TXT_PAGE_COMMAND", "TXT_PAGE_COMMAND");
-    crate::i18n::tr_fill("VERA:OnlineWelcome", &[("page", &page)])
-}
-
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) enum WolServiceRequest {
     /// `WOL__EnsureWolapiObject` `0x00786390`.
@@ -199,8 +191,8 @@ pub(crate) enum WolServiceRequest {
         matchbot: String,
         request: super::quick_match::MatchRequest,
     },
-    /// VERA's chat translation of a received line into `[VERA]
-    /// TranslateChat=`'s language; [`super::translation`] shows the reply.
+    /// VERA's chat translation of a received line into the chosen language;
+    /// [`super::translation`] shows the reply.
     Translate {
         text: Vec<u16>,
         line: super::translation::TranslatedLine,
@@ -1544,8 +1536,8 @@ mod tests {
         let column = ShellSlideKind::WolLogin.column(9, Some(modern));
         assert_eq!(
             (column.top_buttons, column.bottom_button),
-            (5, true),
-            "Login, Play as Guest and the three account buttons"
+            (4, true),
+            "Play and the three account buttons"
         );
         visit.page = WolPage::Login(Box::new(WolLoginState::open(&mut globals, &[])));
         let native = visit.login().unwrap().policy.page_spec();
