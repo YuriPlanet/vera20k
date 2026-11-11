@@ -420,16 +420,28 @@ pub(crate) fn on_open(state: &mut AppState) {
     });
 }
 
-/// The menu is closing, or its match ending: what its page holds applies and
-/// is saved before the next page reads those values.
+/// The menu is closing: what its page holds applies and is saved before the
+/// next page reads those values.
 pub(crate) fn on_close(state: &mut AppState) {
+    close_page(state, true);
+}
+
+/// The match is ending, or the program quitting, with the menu open. The
+/// page's settings are still saved, but a moved Game Speed is dropped: only
+/// BBB's Back result (1) applies and writes it through 4E1DE0, its result 2
+/// does neither, and a speed command would reach a session that is over.
+pub(crate) fn on_match_end(state: &mut AppState) {
+    close_page(state, false);
+}
+
+fn close_page(state: &mut AppState, apply_speed: bool) {
     let Some(page) = state.match_state.match_presentation.options_page.take() else {
         return;
     };
     state.match_state.match_presentation.options_page_category = Some(page.dialog.category());
     // A moved Game Speed is BBB's accepted speed (4E1DE0): the profile and
     // the match take it, and the commit below writes the profile once.
-    let speed = page.moved_speed_position();
+    let speed = page.moved_speed_position().filter(|_| apply_speed);
     if let Some(position) = speed {
         let options = &mut state.match_state.match_presentation.in_game_options;
         let stored = options.speed_context.stored_speed(i32::from(position));
@@ -759,6 +771,16 @@ mod tests {
         };
         assert!(page.untouched(&profile));
         assert_eq!(page.moved_speed_position(), None);
+
+        // A moved Game Speed applies on close, unless BBB's init hid the row.
+        page.dialog
+            .set_in_game_controls(String::new(), Vec::new(), 6, String::new());
+        assert_eq!(page.moved_speed_position(), Some(6));
+        page.game_speed_shown = false;
+        assert_eq!(page.moved_speed_position(), None);
+        page.game_speed_shown = true;
+        page.dialog
+            .set_in_game_controls(String::new(), Vec::new(), 0, String::new());
 
         page.dialog.select_category(Category::Display);
         assert!(page.untouched(&profile), "a tab only shows other controls");

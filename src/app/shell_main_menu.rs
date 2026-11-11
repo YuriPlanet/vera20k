@@ -1577,7 +1577,7 @@ impl App {
             });
         }
         Some((
-            crate::ui::shell::descriptor::DialogId(kind.template_id(false)),
+            crate::ui::shell::descriptor::DialogId(kind.template_id()),
             feed,
         ))
     }
@@ -1702,7 +1702,7 @@ impl App {
         // Complete that transaction before unrelated shell teardown.
         crate::app::input::keyboard::prepare_terminal_exit(state);
         Self::close_launcher_options_terminal(state);
-        crate::app::input::pause_menu::on_close(state);
+        crate::app::input::pause_menu::on_match_end(state);
         if Self::native_skirmish_shell_active(state) {
             // A terminal exit has no Start/Back transaction, so pack the
             // page's current controls into the durable record first. The
@@ -2256,7 +2256,7 @@ impl App {
             return;
         };
         let dialog =
-            crate::ui::shell::descriptor::DialogId(message_box.labels.kind().template_id(false));
+            crate::ui::shell::descriptor::DialogId(message_box.labels.kind().template_id());
         if state.frontend.shell_controller.top_id() != Some(dialog) {
             state.frontend.shell_controller.push(dialog, true);
         }

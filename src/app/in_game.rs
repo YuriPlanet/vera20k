@@ -102,7 +102,7 @@ impl App {
         }
         state.match_state.scenario_restart_requested = false;
         state.match_state.debug_pause = false;
-        crate::app::input::pause_menu::on_close(state);
+        crate::app::input::pause_menu::on_match_end(state);
         state.match_state.match_presentation.options_page_category = None;
         state.match_state.match_presentation.in_game_menu =
             crate::ui::pause_menu::InGameMenuState::Closed;
@@ -371,10 +371,11 @@ impl App {
         }
         if previous == InGameMenuState::Menu {
             crate::app::input::pause_menu::on_close(state);
-            if !next.is_open() {
-                // Back in play: the next Escape opens on the volumes again.
-                state.match_state.match_presentation.options_page_category = None;
-            }
+        }
+        if !next.is_open() {
+            // Back in play by any route (Resume, or a cancelled Abort or
+            // Surrender): the next Escape opens on Game Controls again.
+            state.match_state.match_presentation.options_page_category = None;
         }
         let was_open = previous.is_open();
         let will_be_open = next.is_open();

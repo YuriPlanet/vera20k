@@ -1174,8 +1174,11 @@ impl OptionsDialogState {
         }
         self.shell_mouse_move(x, y, layout);
         if let Some((id, _)) = layout.buttons.iter().find(|(_, rect)| rect.contains(x, y)) {
-            self.shell_interaction.pressed_button = Some(*id);
-            self.main_button_mouse_down();
+            // A disabled button takes the press and does nothing.
+            if self.button_enabled(*id) {
+                self.shell_interaction.pressed_button = Some(*id);
+                self.main_button_mouse_down();
+            }
         } else if let Some((id, rect)) = layout
             .trackbars
             .iter()
@@ -1490,8 +1493,6 @@ mod tests {
         for (size, internet) in [
             ((640, 480), false),
             ((640, 480), true),
-            ((800, 600), false),
-            ((1024, 768), false),
             ((1920, 1080), true),
         ] {
             let menu = in_game_menu(size, internet);

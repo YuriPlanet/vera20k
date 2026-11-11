@@ -52,10 +52,9 @@ pub(super) struct AbortReturnInput {
     /// The B6 button to press, or none to stop once B6 has presented.
     choice: Option<AbortButton>,
     /// Stop on the presented menu instead of pressing Abort; on FF, first
-    /// jump the speed trackbar to its fastest end.
+    /// open the Game Options page, which FF's group heads, and jump its speed
+    /// trackbar to the fastest end.
     stop_at_menu: bool,
-    /// The menu button to press: Abort, or Game Controls to stop on BBB.
-    menu_press: PauseMenuButton,
     /// Abort opens the Surrender box instead of B6: `Some(true)` presses
     /// its OK, `Some(false)` stops once it has presented.
     surrender: Option<bool>,
@@ -163,7 +162,6 @@ impl AbortReturnInput {
             },
             choice,
             stop_at_menu: false,
-            menu_press: PauseMenuButton::Abort,
             surrender: None,
         })
     }
@@ -211,10 +209,36 @@ impl AbortReturnInput {
                 route.push(
                     json!({"frame": frame, "action": "pause menu presented", "dialog": dialog}),
                 );
-                let layout = crate::app::input::pause_menu::current_layout(state)
+                let mut layout = crate::app::input::pause_menu::current_layout(state)
                     .context("B5 has no loaded hit geometry")?;
                 if self.stop_at_menu {
-                    if let Some(internet) = layout.internet {
+                    let internet = state.match_state.match_presentation.pause_menu_template
+                        == crate::ui::shell::pause_menu::PauseMenuTemplate::Internet;
+                    if internet {
+                        // The menu opens on Game Controls; FF's group heads
+                        // the Game Options page, the first page tab.
+                        let tab = *layout
+                            .page_tabs()
+                            .first()
+                            .context("FF has no Game Options page tab")?;
+                        let point = set_window_pointer_to_rect_center(state, tab);
+                        crate::app::input::dispatch::handle_cursor_moved_in_game(state);
+                        for button_state in [ElementState::Pressed, ElementState::Released] {
+                            crate::app::input::dispatch::handle_mouse_input(
+                                state,
+                                MouseButton::Left,
+                                button_state,
+                            );
+                        }
+                        layout = crate::app::input::pause_menu::current_layout(state)
+                            .context("FF has no loaded hit geometry")?;
+                        route.push(json!({"frame": frame, "action": "Game Options tab",
+                            "dialog": dialog, "point": point}));
+                    }
+                    if internet {
+                        let internet = layout.internet.context(
+                            "FF's Game Options page has no Internet Game Controls group",
+                        )?;
                         use crate::ui::shell::pause_menu::InternetSlider;
                         let rect = internet.sliders[InternetSlider::Speed as usize];
                         // The admitted strip's last pixel row, beside the
@@ -249,7 +273,7 @@ impl AbortReturnInput {
                     self.phase = AbortInputPhase::Queued;
                     return Ok(true);
                 }
-                let press = self.menu_press;
+                let press = PauseMenuButton::Abort;
                 let rect = layout
                     .button(press)
                     .with_context(|| format!("the in-game menu has no {press:?}"))?;
@@ -281,7 +305,7 @@ impl AbortReturnInput {
                             .match_state
                             .match_presentation
                             .pause_menu_interaction
-                            .is_pressed(self.menu_press),
+                            .is_pressed(PauseMenuButton::Abort),
                     "the menu press changed before its presented release"
                 );
                 crate::app::input::dispatch::handle_mouse_input(

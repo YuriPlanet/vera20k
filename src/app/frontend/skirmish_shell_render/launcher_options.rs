@@ -122,7 +122,7 @@ pub(super) fn build_controls(
             page_buttons.push(crate::render::shell_paint::ModalButton {
                 rect,
                 pressed,
-                enabled: true,
+                enabled: dialog.button_enabled(id),
             });
         } else if buttons {
             // The page that shows keeps its category button lit in the
@@ -285,7 +285,7 @@ pub(super) fn build_text(
                 native_text.h as i32,
             ),
             ShellAlign::BUTTON_CAPTION,
-            button_label_color(),
+            super::text::button_label_color_for_disabled(!dialog.button_enabled(id)),
             glyph,
         ));
     }

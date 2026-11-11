@@ -14,12 +14,12 @@
 //! | 1 | the in-game menu | the sidebar menu control | its buttons |
 //! | 3 | abort-mission confirm | the menu's Abort Mission button | see below |
 //! | 5 | Game Controls / Options | the menu's Options button | back to 1 |
+//! | 8 | Diplomacy (dialog 0x73) | the sidebar Diplomacy button, Tab | Return: 0 |
+//! | 9 | mission restate briefing (dialog 0x10C) | the sidebar Diplomacy button in campaign and Cooperative | Return: 0 |
 //!
 //! VERA has no state 5: gamemd's Game Controls (dialog BBB) is the first page
 //! of the in-game menu here, with its Sound (state 6) and Keyboard (state 4)
 //! dialogs opened from the menu and returning to it.
-//! | 8 | Diplomacy (dialog 0x73) | the sidebar Diplomacy button, Tab | Return: 0 |
-//! | 9 | mission restate briefing (dialog 0x10C) | the sidebar Diplomacy button in campaign and Cooperative | Return: 0 |
 //!
 //! Two re-entry rules matter to the player and are reproduced here:
 //!

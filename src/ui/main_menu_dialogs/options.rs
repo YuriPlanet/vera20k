@@ -1150,6 +1150,13 @@ impl OptionsDialogState {
         !id.is_audio() || self.launcher_audio_available
     }
 
+    /// Whether a button window is enabled: BBB's init disables its Sound
+    /// button without an output device (`0x004E2201..0x004E2223`), and the
+    /// in-game page's Sound button stands for it.
+    pub(crate) const fn button_enabled(&self, id: LauncherButton) -> bool {
+        !matches!(id, LauncherButton::InGameSound) || self.launcher_audio_available
+    }
+
     /// gamemd-derived: the parent snapshot consumed by
     /// `OptionsClass__ApplyFromLauncherDialog @ 0x0055FAA0` maps the six
     /// positions and three normalized checkboxes exactly as below.
