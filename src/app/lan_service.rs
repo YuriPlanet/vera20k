@@ -1653,6 +1653,14 @@ pub(crate) fn poll(state: &mut AppState, now_ms: u64) {
     if !matches!(mode, Some(SessionMode::Lan | SessionMode::Wol)) {
         return;
     }
+    // A Wi-Fi network that appeared, left or changed makes every address the
+    // visit learned stale: forget the games and announce again on the network
+    // that is current.
+    #[cfg(target_os = "android")]
+    if crate::util::lan_network::take_changed() {
+        restart_lobby_visit(state);
+        log::info!("LAN network changed; announcing on the new Wi-Fi network");
+    }
     let now = super::match_runtime::frame_pacer::frame_bucket(now_ms);
     if state.match_state.live_network.is_none()
         && state

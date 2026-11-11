@@ -82,6 +82,27 @@ fn apply_app_icon(vera_icon: bool) {
     }
 }
 
+/// LAN network hooks for `vera20k::util::lan_network`.
+///
+/// Android routes a datagram by the process's default network, so the LAN visit
+/// runs bound to Wi-Fi while the lobby is open; the activity reports changes
+/// back through [`Java_org_vera20k_VeraActivity_nativeOnLanNetworkChanged`].
+fn bind_lan_network() {
+    let bound = with_activity(|env, activity| {
+        env.call_method(activity, "bindLanNetwork", "()V", &[]).is_ok()
+    });
+    if bound != Some(true) {
+        log::warn!("Could not bind the LAN visit to the Wi-Fi network");
+    }
+}
+
+fn release_lan_network() {
+    let _ = with_activity(|env, activity| {
+        env.call_method(activity, "releaseLanNetwork", "()V", &[])
+            .is_ok()
+    });
+}
+
 /// The activity's folder-picker answer: the chosen tree as a `content://` URI,
 /// or an empty string when the player cancelled.
 #[unsafe(no_mangle)]
@@ -191,6 +212,15 @@ pub extern "system" fn Java_org_vera20k_VeraActivity_nativeImportProgress(
     import_status::note(ImportEvent::Progress(copied_bytes.max(0) as u64));
 }
 
+/// The activity reports that its Wi-Fi network appeared, left or changed.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_org_vera20k_VeraActivity_nativeOnLanNetworkChanged(
+    _env: jni::JNIEnv,
+    _activity: JObject,
+) {
+    vera20k::util::lan_network::note_changed();
+}
+
 /// Bind `nativeOnFolderPicked` to this activity's class.
 ///
 /// Registered from `android_main`, not `JNI_OnLoad`: `FindClass` on the loading
@@ -228,6 +258,12 @@ fn register_folder_picker_native() -> bool {
                 name: "nativeConfigForImport".into(),
                 sig: "(Ljava/lang/String;)Ljava/lang/String;".into(),
                 fn_ptr: Java_org_vera20k_VeraActivity_nativeConfigForImport
+                    as *mut std::ffi::c_void,
+            },
+            jni::NativeMethod {
+                name: "nativeOnLanNetworkChanged".into(),
+                sig: "()V".into(),
+                fn_ptr: Java_org_vera20k_VeraActivity_nativeOnLanNetworkChanged
                     as *mut std::ffi::c_void,
             },
         ];
@@ -270,6 +306,12 @@ fn android_main(app: AndroidApp) {
     // The launcher icon is a compiled resource, so the VERA Icon box's choice
     // reaches the two activity aliases only through PackageManager.
     vera20k::util::app_icon::install(apply_app_icon);
+    // LAN discovery rides the Wi-Fi network: the lobby binds this process to it
+    // and the activity reports network changes back through the JNI callback.
+    vera20k::util::lan_network::install(vera20k::util::lan_network::Hooks {
+        acquire: bind_lan_network,
+        release: release_lan_network,
+    });
     // Android starts every process in "/" with no writable home. Hand the app's
     // private folder to the engine before anything opens a file: it becomes
     // both the working directory and the settings folder, so logs, config.toml,
