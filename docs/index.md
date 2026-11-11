@@ -63,6 +63,7 @@ simulation, session and network command owners.
 - [Formation line](formation-line.md): hold F and drag with the left button to line a group up along a drawn line.
 - [Health-strip modes](health-bars.md): the `[VERA] HealthBars=` client option.
 - [Interface layout](interface-layout.md): `veraui.ini`, a mod's own places for the sidebar, the command bar and the sidebar's parts.
+- [Jumpjets land beside a taken cell](jumpjet-land-nearby.md): the `[JumpjetControls] LandNearby=` rules key that sends a Nighthawk refused its landing cell to the nearest clear one.
 - [Smooth Jumpjet facing](jumpjet-smooth-facing.md): the `[JumpjetControls] SmoothFacing=` rules key that stops a Nighthawk's body snapping at take-off and unload.
 - [SHP building turrets](ini-shp-turret-anims.md): the rules keys for a building turret drawn as a 32-frame animation.
 - [Terrain deformation](terrain-deformation.md): the Options box that lets explosions dent the ground and nukes leave craters.

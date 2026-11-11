@@ -810,6 +810,11 @@ impl EntityStore {
         }
     }
 
+    /// The ids the AircraftTracker holds, in no order a caller may rely on.
+    pub(crate) fn airborne_ids(&self) -> impl Iterator<Item = u64> + '_ {
+        self.airborne.iter().map(|&(_, _, id)| id)
+    }
+
     /// The stored entities the AircraftTracker holds, by enter order and,
     /// for the ties only fixtures make, stable_id.
     #[cfg(any(test, feature = "test-support"))]
