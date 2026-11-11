@@ -133,7 +133,7 @@ impl SavedTerrainTemplate {
                 });
             }
         }
-        for (index, (cell, live)) in self.cells.iter_mut().zip(&live.cells).enumerate() {
+        for (index, (cell, live)) in self.cells.iter_mut().zip(live.cells.iter()).enumerate() {
             if self
                 .native_allocated
                 .as_ref()
@@ -320,7 +320,7 @@ impl ResolvedTerrainGrid {
             land_role: SavedLandRole::Baseline,
             width: self.width,
             height: self.height,
-            cells: self.cells.as_slice().to_vec(),
+            cells: self.cells.all().to_vec(),
             native_allocated: self.native_allocated.as_deref().cloned(),
             radar_color_valid: (*self.radar_color_valid).clone(),
             tube_facts: self.tube_facts.clone(),

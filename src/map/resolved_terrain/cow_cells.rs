@@ -1,8 +1,8 @@
 //! Copy-on-write cell storage (docs/sim-thread.md, phase 2).
 //!
-//! The presentation frame each tick publishes shares the live grid's cells.
-//! A write copies them only while a frame still shares them, so the
-//! terrain is copied only on ticks that really change it.
+//! The presentation frame each tick publishes shares the live grid's cells
+//! in fixed chunks ([`ChunkedVec`]). A write copies only its own chunk, and
+//! only while a frame still shares it.
 //!
 //! `CellClass::RecalcAttributes @ 0x0047D2B0` runs whenever an object marks
 //! or leaves a cell, and almost always derives the attributes the cell
@@ -12,21 +12,30 @@
 //! unchanged recalc copies nothing.
 
 use std::ops::{Index, IndexMut};
-use std::sync::Arc;
 
 use super::ResolvedTerrainCell;
+use crate::util::shared::ChunkedVec;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub(super) struct CowCells {
-    cells: Arc<Vec<ResolvedTerrainCell>>,
+    cells: ChunkedVec<ResolvedTerrainCell>,
     /// The recalc's private copy of one cell, by index.
     shadow: Option<(usize, ResolvedTerrainCell)>,
+}
+
+impl Default for CowCells {
+    fn default() -> Self {
+        Self {
+            cells: ChunkedVec::new(),
+            shadow: None,
+        }
+    }
 }
 
 impl CowCells {
     pub(super) fn new(cells: Vec<ResolvedTerrainCell>) -> Self {
         Self {
-            cells: Arc::new(cells),
+            cells: cells.into(),
             shadow: None,
         }
     }
@@ -52,34 +61,28 @@ impl CowCells {
         {
             return Some(cell);
         }
-        Arc::make_mut(&mut self.cells).get_mut(index)
+        self.cells.get_mut(index)
     }
 
     /// Every cell, for whole-grid readers; never inside a shadowed recalc.
-    pub(super) fn as_slice(&self) -> &[ResolvedTerrainCell] {
+    pub(super) fn all(&self) -> &ChunkedVec<ResolvedTerrainCell> {
         debug_assert!(self.shadow.is_none(), "whole-grid read inside a recalc");
         &self.cells
     }
 
     /// Every cell, for whole-grid writers; never inside a shadowed recalc.
-    pub(super) fn as_mut_slice(&mut self) -> &mut [ResolvedTerrainCell] {
+    /// A write still copies only the chunk it lands in.
+    pub(super) fn all_mut(&mut self) -> &mut ChunkedVec<ResolvedTerrainCell> {
         debug_assert!(self.shadow.is_none(), "whole-grid write inside a recalc");
-        Arc::make_mut(&mut self.cells).as_mut_slice()
+        &mut self.cells
     }
 
-    /// The storage itself, for fixtures that reshape a grid.
-    #[cfg(any(test, feature = "test-support"))]
-    pub(super) fn vec_mut(&mut self) -> &mut Vec<ResolvedTerrainCell> {
-        debug_assert!(self.shadow.is_none());
-        Arc::make_mut(&mut self.cells)
+    pub(super) fn iter(&self) -> impl DoubleEndedIterator<Item = &ResolvedTerrainCell> + '_ {
+        self.all().iter()
     }
 
-    pub(super) fn iter(&self) -> std::slice::Iter<'_, ResolvedTerrainCell> {
-        self.as_slice().iter()
-    }
-
-    pub(super) fn iter_mut(&mut self) -> std::slice::IterMut<'_, ResolvedTerrainCell> {
-        self.as_mut_slice().iter_mut()
+    pub(super) fn iter_mut(&mut self) -> impl Iterator<Item = &mut ResolvedTerrainCell> + '_ {
+        self.all_mut().iter_mut()
     }
 
     /// Give a recalc of `index` a private copy of that cell.
@@ -94,21 +97,23 @@ impl CowCells {
         if let Some((index, cell)) = self.shadow.take()
             && self.cells[index] != cell
         {
-            Arc::make_mut(&mut self.cells)[index] = cell;
+            self.cells[index] = cell;
         }
     }
 
-    /// Whether `other` shares this storage (a published frame's copy).
+    /// Whether `other` shares the chunk holding `index` (a published
+    /// frame's copy).
     #[cfg(test)]
-    pub(super) fn shares_storage_with(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.cells, &other.cells)
+    pub(super) fn shares_storage_with(&self, other: &Self, index: usize) -> bool {
+        self.cells
+            .shares_chunk_with(&other.cells, index / crate::util::shared::CHUNK)
     }
 }
 
 /// Equal cells, whether or not the storage is shared.
 impl PartialEq for CowCells {
     fn eq(&self, other: &Self) -> bool {
-        self.as_slice() == other.as_slice()
+        self.all() == other.all()
     }
 }
 
@@ -126,30 +131,16 @@ impl IndexMut<usize> for CowCells {
     }
 }
 
-impl<'a> IntoIterator for &'a CowCells {
-    type Item = &'a ResolvedTerrainCell;
-    type IntoIter = std::slice::Iter<'a, ResolvedTerrainCell>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
-
-impl<'a> IntoIterator for &'a mut CowCells {
-    type Item = &'a mut ResolvedTerrainCell;
-    type IntoIter = std::slice::IterMut<'a, ResolvedTerrainCell>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter_mut()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn cells() -> CowCells {
-        CowCells::new((0..4).map(|x| super::super::test_flat_cell(x, 0)).collect())
+        CowCells::new(
+            (0..600)
+                .map(|x| super::super::test_flat_cell(x % 300, x / 300))
+                .collect(),
+        )
     }
 
     #[test]
@@ -161,11 +152,11 @@ mod tests {
         live[2].level = level.wrapping_add(1);
         live[2].level = level;
         live.end_shadow();
-        assert!(live.shares_storage_with(&published));
+        assert!(live.shares_storage_with(&published, 2));
     }
 
     #[test]
-    fn a_changed_recalc_copies_once_and_leaves_the_published_copy_as_it_was() {
+    fn a_changed_cell_copies_only_its_chunk() {
         let mut live = cells();
         let published = live.clone();
         live.begin_shadow(1);
@@ -174,7 +165,8 @@ mod tests {
         assert_eq!(live.get(1).map(|cell| cell.level), Some(3));
         assert_eq!(live[0], published[0]);
         live.end_shadow();
-        assert!(!live.shares_storage_with(&published));
+        assert!(!live.shares_storage_with(&published, 1));
+        assert!(live.shares_storage_with(&published, 599));
         assert_eq!(live[1].level, 3);
         assert_eq!(published[1].level, super::super::test_flat_cell(1, 0).level);
     }

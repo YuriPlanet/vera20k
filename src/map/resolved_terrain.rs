@@ -1428,8 +1428,9 @@ impl ResolvedTerrainGrid {
     }
 
     /// Immutable cells in the grid's established storage order.
-    pub fn cells(&self) -> &[ResolvedTerrainCell] {
-        self.cells.as_slice()
+    /// Shared in chunks with presentation frames (see `cow_cells`).
+    pub fn cells(&self) -> &crate::util::shared::ChunkedVec<ResolvedTerrainCell> {
+        self.cells.all()
     }
 
     /// Mutable cell access that moves `mutation_epoch`, private to this
@@ -1461,9 +1462,11 @@ impl ResolvedTerrainGrid {
     /// The cell storage, for fixtures that reshape a grid. Does not move
     /// `mutation_epoch`; widens the level span to [`LevelSpan::FULL`].
     #[cfg(any(test, feature = "test-support"))]
-    pub fn cells_mut_for_test(&mut self) -> &mut Vec<ResolvedTerrainCell> {
+    pub fn cells_mut_for_test(
+        &mut self,
+    ) -> &mut crate::util::shared::ChunkedVec<ResolvedTerrainCell> {
         self.level_span = LevelSpan::FULL;
-        self.cells.vec_mut()
+        self.cells.all_mut()
     }
 
     /// The one writer of a stored cell's level; keeps [`Self::level_span`].

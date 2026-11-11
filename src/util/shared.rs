@@ -114,7 +114,7 @@ impl<T> DerefMut for DerivedCache<T> {
 /// Elements per chunk of a [`ChunkedVec`]: small enough that a scattered
 /// write copies little, large enough that a copy of the whole vector shares
 /// few pointers.
-const CHUNK: usize = 256;
+pub const CHUNK: usize = 256;
 
 /// A vector shared copy-on-write with presentation copies in chunks of
 /// [`CHUNK`] elements; a write copies only its chunk.
