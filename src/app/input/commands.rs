@@ -991,6 +991,37 @@ pub(crate) fn try_schedule_command(
     )
 }
 
+/// Frames past the relay's head, or past MaxAhead, that a command sent now
+/// may still take to execute: its trip to the relay and back.
+const EXECUTE_MARGIN: u64 = 90;
+
+/// The frame by which a command scheduled at frame `now` has surely executed.
+/// Offline it executes at the next frame. Online it joins the relay's next
+/// unsealed frame (`docs/Networking.md`), past the relay's head this game
+/// last heard of, which is far ahead while the game catches up; a direct
+/// match's lockstep puts it up to MaxAhead frames past now. A VERA helper
+/// that sends a toggle waits for this before it sends another.
+pub(crate) fn command_executed_by(state: &AppState, now: u64) -> u64 {
+    executed_by(
+        now,
+        state
+            .match_state
+            .live_network
+            .as_ref()
+            .and_then(|live| live.relay_head_frame()),
+        state
+            .match_state
+            .sim_runtime
+            .runtime()
+            .and_then(|runtime| runtime.simulation.session().network_max_ahead_frames()),
+    )
+}
+
+fn executed_by(now: u64, relay_head: Option<u32>, max_ahead: Option<i32>) -> u64 {
+    let ahead = max_ahead.map_or(0, |frames| u64::try_from(frames).unwrap_or(0));
+    now.max(relay_head.map_or(0, u64::from)) + ahead + EXECUTE_MARGIN
+}
+
 // The ordinary AppState entry and component tests share this rules-dependent
 // issue boundary; the live OutList still owns the only pending command state.
 fn schedule_rules_command_in_sim(
@@ -1104,8 +1135,19 @@ pub(super) fn queue_house_cheer_in_sim(
 #[cfg(test)]
 mod tests {
     use super::{
-        schedule_command_in_sim, schedule_stress_attack_moves, sell_wall_command_for_cell,
+        EXECUTE_MARGIN, executed_by, schedule_command_in_sim, schedule_stress_attack_moves,
+        sell_wall_command_for_cell,
     };
+
+    /// Online a command executes past the relay's head while this game
+    /// catches up, or MaxAhead frames on; offline at the next frame.
+    #[test]
+    fn a_command_has_executed_by_the_relay_head_or_max_ahead() {
+        assert_eq!(executed_by(100, None, None), 100 + EXECUTE_MARGIN);
+        assert_eq!(executed_by(100, Some(40), None), 100 + EXECUTE_MARGIN);
+        assert_eq!(executed_by(100, Some(1000), None), 1000 + EXECUTE_MARGIN);
+        assert_eq!(executed_by(100, None, Some(260)), 360 + EXECUTE_MARGIN);
+    }
 
     use crate::map::entities::EntityCategory;
     use crate::rules::ini_parser::IniFile;

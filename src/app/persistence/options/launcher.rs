@@ -43,6 +43,7 @@ pub(crate) fn launcher_values_from_profile(
         smooth_online_menus: profile.smooth_online_menus,
         hd_map_previews: profile.hd_map_previews,
         shift_queue: profile.shift_queue,
+        auto_repair: profile.auto_repair,
         terrain_deformation: profile.terrain_deformation,
         performance_stats: false,
         show_string_keys: profile.show_string_keys,
@@ -130,6 +131,8 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     /// Switch VERA's interface to the language `tag` names (`[VERA] Language=`).
     fn store_language(&mut self, tag: String);
     fn store_shift_queue(&mut self, shift_queue: bool);
+    /// Send the Repair order for damaged buildings by itself (`[VERA] AutoRepair=`).
+    fn store_auto_repair(&mut self, enabled: bool);
     /// Let explosions dent the ground from the next game on
     /// (`[VERA] TerrainDeformation=`).
     fn store_terrain_deformation(&mut self, enabled: bool);
@@ -194,6 +197,9 @@ pub(crate) fn dispatch_launcher_preview_event(
         }
         LauncherOptionsEvent::ShiftQueueChanged(shift_queue) => {
             operations.store_shift_queue(shift_queue);
+        }
+        LauncherOptionsEvent::AutoRepairChanged(enabled) => {
+            operations.store_auto_repair(enabled);
         }
         LauncherOptionsEvent::TerrainDeformationChanged(enabled) => {
             operations.store_terrain_deformation(enabled);

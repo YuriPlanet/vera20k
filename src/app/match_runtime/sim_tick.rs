@@ -1998,7 +1998,8 @@ fn advance_one_simulation_frame(
         )
         .with_outcome_wait(&mut state.match_state.scenario_outcome)
         .with_deferred_verdict(defer_verdict_to_clip)
-        .with_eva_text(detailed_eva_text.then_some(&finish.prefix_eva_text));
+        .with_eva_text(detailed_eva_text.then_some(&finish.prefix_eva_text))
+        .with_quiet_sounds(&mut state.match_state.match_audio.quiet);
         let effects = FrameEffects::for_sound(&boundary)
             .with_tactical_radar(&boundary)
             .with_local_planning(&boundary)
@@ -2213,6 +2214,7 @@ fn finish_simulation_frame(
                         })
                     };
                     let delivered = output.sound_events_delivered;
+                    let quiet = &mut state.match_state.match_audio.quiet;
                     super::sound_dispatch::dispatch_sim_sound_events(
                         std::mem::take(&mut output.sound_events)
                             .into_iter()
@@ -2223,6 +2225,7 @@ fn finish_simulation_frame(
                                         event,
                                         crate::sim::world::SimSoundEvent::MatchOutcome { .. }
                                     ))
+                                    && quiet.admit(event, radar_frame)
                             }),
                         sim,
                         rules,
@@ -2417,11 +2420,12 @@ fn finish_simulation_frame(
             // option is on. A disabled switch passes None, so the dispatch
             // never builds a fact and no rules/CSF lookup follows.
             let mut eva_text_messages = Vec::new();
+            let quiet = &mut state.match_state.match_audio.quiet;
             super::sound_dispatch::dispatch_sim_sound_events(
                 frame_sound_events
                     .into_iter()
                     .skip(sound_events_delivered)
-                    // The same rule as the frame boundary's, for the facts
+                    // The same rules as the frame boundary's, for the facts
                     // that arrived after that boundary's last pass.
                     .filter(|event| {
                         !(defer_verdict_to_clip
@@ -2429,6 +2433,7 @@ fn finish_simulation_frame(
                                 event,
                                 crate::sim::world::SimSoundEvent::MatchOutcome { .. }
                             ))
+                            && quiet.admit(event, radar_frame)
                     }),
                 sim,
                 &resources.rules,
@@ -2700,6 +2705,9 @@ fn finish_simulation_frame(
             // VERA ferry: the routes' orders, as ordinary input for a later
             // frame.
             crate::app::input::ferry::frame_pass(state);
+            // VERA Auto Repair: Repair orders for damaged buildings, the same
+            // way.
+            crate::app::input::auto_repair::frame_pass(state);
         }
         // Black-cell census, on a schedule rather than a keypress: nobody hits a debug key
         // at the exact moment they notice the artifact. Spread-out ticks give a time series,

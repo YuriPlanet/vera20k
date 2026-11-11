@@ -8,14 +8,14 @@
 //! one column at the places retail's first band uses.
 
 use super::{
-    CHECK_FOR_UPDATES_HELP, CHECK_FOR_UPDATES_LABEL, COLOR_VISION_HELP, COLOR_VISION_LABEL,
-    CONTROLS_LABEL, CUSTOM_END_GAME_BANNER_HELP, CUSTOM_END_GAME_BANNER_LABEL,
-    CUSTOM_END_GAME_MOVIE_HELP, CUSTOM_END_GAME_MOVIE_LABEL, CUSTOM_END_GAME_SCORE_HELP,
-    CUSTOM_END_GAME_SCORE_LABEL, Category, ColorVisionMode, DETAILED_EVA_TEXT_HELP,
-    DETAILED_EVA_TEXT_LABEL, DEVELOPER_OPTIONS_LABEL, DISPLAY_AUTO_LABEL, DISPLAY_HELP,
-    DISPLAY_LABEL, DisplayTarget, FULL_SCREEN_HELP, FULL_SCREEN_LABEL, HAS_CHECK_FOR_UPDATES,
-    HAS_SET_WINDOW_SIZE, HD_MAP_PREVIEWS_HELP, HD_MAP_PREVIEWS_LABEL, HD_RADAR_HELP,
-    HD_RADAR_LABEL, HEALTH_BARS_HELP, HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP,
+    AUTO_REPAIR_HELP, AUTO_REPAIR_LABEL, CHECK_FOR_UPDATES_HELP, CHECK_FOR_UPDATES_LABEL,
+    COLOR_VISION_HELP, COLOR_VISION_LABEL, CONTROLS_LABEL, CUSTOM_END_GAME_BANNER_HELP,
+    CUSTOM_END_GAME_BANNER_LABEL, CUSTOM_END_GAME_MOVIE_HELP, CUSTOM_END_GAME_MOVIE_LABEL,
+    CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL, Category, ColorVisionMode,
+    DETAILED_EVA_TEXT_HELP, DETAILED_EVA_TEXT_LABEL, DEVELOPER_OPTIONS_LABEL, DISPLAY_AUTO_LABEL,
+    DISPLAY_HELP, DISPLAY_LABEL, DisplayTarget, FULL_SCREEN_HELP, FULL_SCREEN_LABEL,
+    HAS_CHECK_FOR_UPDATES, HAS_SET_WINDOW_SIZE, HD_MAP_PREVIEWS_HELP, HD_MAP_PREVIEWS_LABEL,
+    HD_RADAR_HELP, HD_RADAR_LABEL, HEALTH_BARS_HELP, HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP,
     HOUSE_COLOR_STRENGTH_LABEL, HealthBarMode, LANGUAGE_HELP, LANGUAGE_LABEL, LOCK_CURSOR_HELP,
     LOCK_CURSOR_LABEL, LauncherButton, LauncherCheckboxId, LauncherComboId, LauncherCue,
     LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId, MOUSE_WHEEL_ZOOM_HELP,
@@ -588,6 +588,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::SmoothOnlineMenus => SMOOTH_ONLINE_MENUS_LABEL,
             LauncherCheckboxId::HdMapPreviews => HD_MAP_PREVIEWS_LABEL,
             LauncherCheckboxId::ShiftQueue => SHIFT_QUEUE_LABEL,
+            LauncherCheckboxId::AutoRepair => AUTO_REPAIR_LABEL,
             LauncherCheckboxId::TerrainDeformation => TERRAIN_DEFORMATION_LABEL,
             LauncherCheckboxId::PerformanceStats => PERFORMANCE_STATS_LABEL,
             LauncherCheckboxId::ShowStringKeys => SHOW_STRING_KEYS_LABEL,
@@ -659,6 +660,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::SmoothOnlineMenus => self.values.smooth_online_menus,
             LauncherCheckboxId::HdMapPreviews => self.values.hd_map_previews,
             LauncherCheckboxId::ShiftQueue => self.values.shift_queue,
+            LauncherCheckboxId::AutoRepair => self.values.auto_repair,
             LauncherCheckboxId::TerrainDeformation => self.values.terrain_deformation,
             LauncherCheckboxId::PerformanceStats => self.values.performance_stats,
             LauncherCheckboxId::ShowStringKeys => self.values.show_string_keys,
@@ -915,6 +917,7 @@ impl OptionsDialogState {
                 }
                 LauncherCheckboxId::HdMapPreviews => LauncherStatusHelp::Vera(HD_MAP_PREVIEWS_HELP),
                 LauncherCheckboxId::ShiftQueue => LauncherStatusHelp::Vera(SHIFT_QUEUE_HELP),
+                LauncherCheckboxId::AutoRepair => LauncherStatusHelp::Vera(AUTO_REPAIR_HELP),
                 LauncherCheckboxId::TerrainDeformation => {
                     LauncherStatusHelp::Vera(TERRAIN_DEFORMATION_HELP)
                 }

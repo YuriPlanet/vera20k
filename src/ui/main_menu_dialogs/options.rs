@@ -87,6 +87,7 @@ pub(crate) const HAS_HD_MAP_PREVIEWS: bool =
 pub(crate) const HD_MAP_PREVIEWS_LABEL: &str = "VERA:HdMapPreviews";
 pub(crate) const HD_MAP_PREVIEWS_HELP: &str = "VERA:HdMapPreviewsHelp";
 pub(crate) const SHIFT_QUEUE_LABEL: &str = "VERA:ShiftQueue";
+pub(crate) const AUTO_REPAIR_LABEL: &str = "VERA:AutoRepair";
 /// The two category pages retail's string table has no band name for.
 pub(crate) const CONTROLS_LABEL: &str = "VERA:Controls";
 pub(crate) const DEVELOPER_OPTIONS_LABEL: &str = "VERA:DeveloperOptions";
@@ -113,6 +114,7 @@ pub(crate) const CUSTOM_END_GAME_MOVIE_HELP: &str = "VERA:CustomEndGameMovieHelp
 pub(crate) const DETAILED_EVA_TEXT_LABEL: &str = "VERA:DetailedEvaText";
 pub(crate) const DETAILED_EVA_TEXT_HELP: &str = "VERA:DetailedEvaTextHelp";
 pub(crate) const SHIFT_QUEUE_HELP: &str = "VERA:ShiftQueueHelp";
+pub(crate) const AUTO_REPAIR_HELP: &str = "VERA:AutoRepairHelp";
 /// VERA's terrain deformation box (`docs/terrain-deformation.md`).
 pub(crate) const TERRAIN_DEFORMATION_LABEL: &str = "VERA:TerrainDeformation";
 pub(crate) const TERRAIN_DEFORMATION_HELP: &str = "VERA:TerrainDeformationHelp";
@@ -675,6 +677,9 @@ pub(crate) enum LauncherCheckboxId {
     /// VERA's own box: Shift + left click on a mobile build cameo queues
     /// several copies instead of gamemd's one. It applies at once.
     ShiftQueue,
+    /// VERA's own box: the player's damaged buildings are sent the Repair
+    /// order by themselves (`app::input::auto_repair`). It applies at once.
+    AutoRepair,
     /// VERA's own box: explosions dent open ground as in Tiberian Sun and a
     /// nuke leaves a crater. Saved; the next game's rules read it, so a match
     /// already running keeps its own.
@@ -777,6 +782,7 @@ pub(crate) enum LauncherOptionsEvent {
     OriginalShapeChanged(bool),
     YrOriginalStyleChanged(bool),
     ShiftQueueChanged(bool),
+    AutoRepairChanged(bool),
     TerrainDeformationChanged(bool),
     MouseWheelZoomChanged(bool),
     RightClickOrdersChanged(bool),
@@ -839,6 +845,7 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) smooth_online_menus: bool,
     pub(crate) hd_map_previews: bool,
     pub(crate) shift_queue: bool,
+    pub(crate) auto_repair: bool,
     pub(crate) terrain_deformation: bool,
     /// The FPS readout's live state when the page opened, then each toggle.
     pub(crate) performance_stats: bool,
@@ -893,6 +900,7 @@ impl Default for LauncherOptionsValues {
             smooth_online_menus: false,
             hd_map_previews: true,
             shift_queue: false,
+            auto_repair: false,
             terrain_deformation: false,
             performance_stats: false,
             show_string_keys: false,
@@ -1297,6 +1305,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::OriginalShape => &mut self.values.original_shape,
             LauncherCheckboxId::YrOriginalStyle => &mut self.values.yr_original_style,
             LauncherCheckboxId::ShiftQueue => &mut self.values.shift_queue,
+            LauncherCheckboxId::AutoRepair => &mut self.values.auto_repair,
             LauncherCheckboxId::TerrainDeformation => &mut self.values.terrain_deformation,
             LauncherCheckboxId::MouseWheelZoom => &mut self.values.mouse_wheel_zoom,
             LauncherCheckboxId::RightClickOrders => &mut self.values.right_click_orders,
@@ -1331,6 +1340,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::ShiftQueue => self
                 .pending_events
                 .push(LauncherOptionsEvent::ShiftQueueChanged(checked)),
+            LauncherCheckboxId::AutoRepair => self
+                .pending_events
+                .push(LauncherOptionsEvent::AutoRepairChanged(checked)),
             LauncherCheckboxId::TerrainDeformation => self
                 .pending_events
                 .push(LauncherOptionsEvent::TerrainDeformationChanged(checked)),
@@ -1585,6 +1597,7 @@ impl Category {
                 Setting::Checkbox(Check::TargetLines),
                 Setting::Checkbox(Check::ShowHidden),
                 Setting::Checkbox(Check::ShiftQueue),
+                Setting::Checkbox(Check::AutoRepair),
                 Setting::Checkbox(Check::TerrainDeformation),
                 Setting::Checkbox(Check::CustomEndGameBanner),
                 Setting::Checkbox(Check::CustomEndGameScore),
@@ -2266,6 +2279,7 @@ mod tests {
                 Check::SmoothOnlineMenus,
                 Check::HdMapPreviews,
                 Check::ShiftQueue,
+                Check::AutoRepair,
                 Check::TerrainDeformation,
                 Check::PerformanceStats,
                 Check::ShowStringKeys,
