@@ -420,13 +420,18 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                     .filter(|ai| ai.raw_slot_index != row && !ai.color_random)
                     .map(|ai| usize::from(ai.color_index)),
             );
-        let color_claims =
-            color_claims.filter(|_| launch.humans.len() + launch.opponents.len() <= 8);
-        let colors =
-            skirmish_shell::available_color_choices(usize::try_from(color).ok(), color_claims)
-                .into_iter()
-                .map(|item| choice(state, item))
-                .collect::<Vec<_>>();
+        let lobby_colors = state.lobby_colors();
+        let color_claims = color_claims.filter(|_| {
+            launch.humans.len() + launch.opponents.len() <= lobby_colors.lobby_color_count()
+        });
+        let colors = skirmish_shell::available_color_choices(
+            lobby_colors,
+            usize::try_from(color).ok(),
+            color_claims,
+        )
+        .into_iter()
+        .map(|item| choice(state, item))
+        .collect::<Vec<_>>();
         // VERA shared control: outside Cooperative a player may pick a start
         // another player holds, which joins that player's House. Such starts
         // stay listed, marked "+".

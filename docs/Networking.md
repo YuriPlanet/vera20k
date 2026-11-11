@@ -253,6 +253,11 @@ modern online ordering above is an intentional adaptation.
   online name may be 24 characters, so VERA writes the first 19 bytes of a longer
   name and receivers match a sender by that same prefix (together with its
   endpoint, as before). LAN names are at most 19 and travel unchanged.
+- A player's colour travels as the number the lobby lists it under: 0 to 7 for
+  gamemd's eight, 8 for an observer and 9 to 30 for VERA's
+  [extra lobby colours](skirmish-colors.md). The LAN fields and the online slot
+  already carried that range, so no packet changed, and a room keeps each colour to
+  one player while it lists at least as many colours as it has players.
 - Setup Back retains transport history within a lobby visit. A fresh post-match
   visit resets queues, sequence history, observations and lobby timing while
   retaining the portable socket bindings.

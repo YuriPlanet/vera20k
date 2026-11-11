@@ -75,7 +75,7 @@ use crate::render::shell_text::ShellAlign;
 use crate::render::shell_text::ShellTextDraw;
 use crate::render::shell_transition_pass::ShellRenderTarget;
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
-use crate::rules::color_scheme::ColorSchemeEntry;
+use crate::rules::ruleset::RuleSet;
 use crate::skirmish_launch::LaunchCountry;
 use crate::ui::shell::modal::body_ok_layout;
 #[cfg(test)]
@@ -232,7 +232,7 @@ fn build_skirmish_shell_instances(
     seed_layout: Option<&SavedSeedLayout>,
     setup_layout: Option<&RandomMapSetupLayout>,
     shell: &SkirmishShellState,
-    color_schemes: &[ColorSchemeEntry],
+    rules: Option<&RuleSet>,
     maps: &[MapMenuEntry],
     wave: Option<&ShellFrameWave>,
     leaving: bool,
@@ -439,7 +439,7 @@ fn build_skirmish_shell_instances(
     // The player-name edit is a dialog child, so it follows the parent
     // background: this batch has no depth test and paints in queue order.
     push_player_name_edit_instances(&mut instances, atlas, font, layout, shell);
-    push_combo_instances(&mut instances, atlas, color_schemes, layout, shell, maps);
+    push_combo_instances(&mut instances, atlas, rules, layout, shell, maps);
     push_checkbox_instances(&mut instances, atlas, layout, shell);
     push_trackbar_instances(&mut instances, atlas, layout, shell);
     push_opponent_scrollbar_instances(&mut instances, atlas, layout, shell, maps);
@@ -721,10 +721,6 @@ fn render_skirmish_shell_with_atlas(
         .batch_renderer
         .create_instance_buffer(&state.renderer.gpu, &marker_instances);
 
-    let color_schemes = state
-        .rules()
-        .map(|rules| rules.color_schemes.as_slice())
-        .unwrap_or(&[]);
     let validation_ok_pressed = state.frontend.shell_controller.top_id()
         == Some(crate::ui::shell::descriptor::DialogId(0x00CE))
         && state.frontend.shell_controller.pressed() == Some(crate::ui::shell::modal::control::OK);
@@ -758,7 +754,7 @@ fn render_skirmish_shell_with_atlas(
             seed_layout.as_ref(),
             setup_layout,
             &state.frontend.skirmish_shell_state,
-            color_schemes,
+            state.rules(),
             state.frontend.scenario_catalog.shell_maps(),
             wave.as_ref(),
             leaving,
@@ -782,7 +778,7 @@ fn render_skirmish_shell_with_atlas(
         push_dropdown_instances(
             &mut dropdown_instances,
             atlas,
-            color_schemes,
+            state.rules(),
             &layout,
             &state.frontend.skirmish_shell_state,
             state.frontend.scenario_catalog.shell_maps(),

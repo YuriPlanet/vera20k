@@ -576,6 +576,13 @@ fn request(state: &mut AppState) -> bool {
                 .slot,
         ),
     };
+    // Quick Match plays in YR's eight colours: one of VERA's extra lobby
+    // colours goes as Random, which the paired games draw from the eight.
+    let color = if (0..crate::skirmish_launch::HOUSE_COLOR_COUNT as i32).contains(&color) {
+        color
+    } else {
+        crate::app::frontend::skirmish_session::RANDOM_ITEM_DATA
+    };
     csf_line(state, "WOL:RequestingMatch", REQUEST_COLOR);
     service::request(
         state,
@@ -950,6 +957,7 @@ fn build_host_options(
         guest_seat,
         false,
         PeerChoicePolicy::Wol { countries: None },
+        crate::skirmish_launch::HOUSE_COLOR_COUNT,
     );
     draw_random_picks(&mut launch.humans, countries, pairing.seed)?;
     Ok(crate::app::shell_network_setup::HostOptions {

@@ -341,6 +341,10 @@ pub(crate) struct MatchSession {
     /// Process byte B07788, set by the first ReadMultiPlayerSettings call.
     /// It survives dialog, match and saved-game transitions.
     multiplayer_settings_initialized: bool,
+    /// How many colours the loaded rules list for a lobby, refreshed before
+    /// each setup dialog. A room with no more players than this keeps every
+    /// colour to one player.
+    lobby_color_count: usize,
     /// LatencyFudge `0xA8DB9C`, a zero-initialized process global. LAN
     /// start (`0x005DD2E4`/`0x005DD4A4`) writes 0, WOL Start Game Now
     /// (`0x007950C9..0x0079510B`) 1 or 2, and EVENT_LATENCYFUDGE
@@ -412,6 +416,7 @@ impl Default for MatchSession {
             network: None,
             host: false,
             multiplayer_settings_initialized: false,
+            lobby_color_count: crate::skirmish_launch::HOUSE_COLOR_COUNT,
             latency_fudge: 0,
             pause_event_limiters: PauseEventLimiters::default(),
         }
@@ -424,6 +429,13 @@ impl MatchSession {
     /// PortPool key. Keep this shared stream effect at its process lifetime.
     /// Port allocation and firewall detection consume the resulting default
     /// only in transport services, outside the shell implementation.
+    pub(crate) fn set_lobby_colors(
+        &mut self,
+        colors: crate::rules::skirmish_colors::SkirmishColorMode,
+    ) {
+        self.lobby_color_count = colors.lobby_color_count();
+    }
+
     pub(crate) fn prepare_multiplayer_settings(&mut self, main: &crate::sim::rng::MainRngDraws) {
         if !self.multiplayer_settings_initialized {
             let _port_pool_default = 4096 + main.ranged(0, 32768);
@@ -966,6 +978,7 @@ impl MatchSession {
         observer: bool,
         policy: PeerChoicePolicy<'_>,
     ) -> anyhow::Result<PeerChoicesChange> {
+        let listed_colors = self.lobby_color_count;
         let Some(NetworkSession {
             phase:
                 NetworkPhase::Setup {
@@ -985,6 +998,7 @@ impl MatchSession {
             choices,
             observer,
             policy,
+            listed_colors,
         ))
     }
 
@@ -1034,7 +1048,7 @@ impl MatchSession {
         else {
             return false;
         };
-        network_color_in_use(launch, inactive_ai_options, color)
+        network_color_in_use(launch, inactive_ai_options, color, self.lobby_color_count)
     }
 
     pub(crate) fn network_row_choices(&self, row: u8) -> Option<SkirmishLocalSlot> {
@@ -3064,6 +3078,7 @@ pub(crate) enum PeerChoicePolicy<'a> {
 
 /// Shared69B600/5E9720 collision checks; caller selects the native country/team policy.
 /// A Quick Match host seats the matchbot's guest through it too.
+/// `listed_colors` is how many colours the lobby lists.
 pub(crate) fn apply_peer_choices(
     launch: &mut SkirmishLaunchSession,
     inactive_ai_options: &[NetworkAiOptions; NETWORK_PLAYER_SLOT_COUNT],
@@ -3071,6 +3086,7 @@ pub(crate) fn apply_peer_choices(
     choices: SkirmishLocalSlot,
     observer: bool,
     policy: PeerChoicePolicy<'_>,
+    listed_colors: usize,
 ) -> PeerChoicesChange {
     let mut change = PeerChoicesChange::default();
     let current = launch.humans[index].slot.clone();
@@ -3100,8 +3116,9 @@ pub(crate) fn apply_peer_choices(
     let native_color = |slot: &SkirmishLocalSlot| (!slot.color_random).then_some(slot.color_index);
     if native_color(&choices) != native_color(&current) {
         // 0x69B600: every node of the session and every AI row.
-        let taken = native_color(&choices)
-            .is_some_and(|color| network_color_in_use(launch, inactive_ai_options, color));
+        let taken = native_color(&choices).is_some_and(|color| {
+            network_color_in_use(launch, inactive_ai_options, color, listed_colors)
+        });
         slot.color_random = choices.color_random || taken;
         if !slot.color_random {
             slot.color_index = choices.color_index;
@@ -3135,12 +3152,15 @@ pub(crate) fn apply_peer_choices(
     change
 }
 
+/// `listed_colors` is how many colours the lobby lists: a room with more
+/// players than that has to share, so nothing counts as taken there.
 fn network_color_in_use(
     launch: &SkirmishLaunchSession,
     inactive: &[NetworkAiOptions; NETWORK_PLAYER_SLOT_COUNT],
     color: u8,
+    listed_colors: usize,
 ) -> bool {
-    if launch.humans.len() + launch.opponents.len() > 8 {
+    if launch.humans.len() + launch.opponents.len() > listed_colors {
         return false;
     }
     launch
