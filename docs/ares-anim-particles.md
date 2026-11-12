@@ -40,6 +40,9 @@ Railgun system qualifies. Such a system keeps two record vectors instead of
 ParticleClass children and draws from the synchronised Scenario stream in Ares' own
 order, so the records are simulation state: they are saved with the system
 (`ParticleSystem::ares`) and folded into the world hash. Owner: `sim::particles::ares_system`.
+Unlike the type keys above it is in every build: the constructor allocates the extension
+whenever the game's Ares switch (`RuleSet::ares`) is on, so retail data keeps the stock
+particles.
 
 | Hook | Ares.dll | Behaviour | Status |
 | --- | --- | --- | --- |

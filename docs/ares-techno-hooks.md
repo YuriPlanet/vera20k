@@ -102,7 +102,9 @@ Every `HasSpotlight=` Techno gets its BuildingLight at TechnoClass::Unlimbo
   ally the selected weapon's Verses reach, answer Select under Alt, and set
   InfantryHeal/UnitRepair; the click sends the same Attack
   (`healer_object_action`). The Infantryman over itself still takes the stock
-  self arm at 0x51E748, which VERA does not port (NoSelfGuardArea).
+  self arm at 0x51E748, which VERA does not port (NoSelfGuardArea). The arms
+  follow the game's Ares switch (`RuleSet::ares`) in every build; their
+  cursors go through the Ares cursor owner, still built only with the feature.
 - Init_1's capture manager and parasite for any weapon slot and the
   parasite slot hooks (0x629804, 0x62A020, 0x62A7B1); the gunner temporal
   swap (0x74642C, 0x74653C); Hover DeployToLand (0x513EAA, 0x514A21,

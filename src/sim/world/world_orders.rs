@@ -96,7 +96,6 @@ pub struct HealArmKeys {
 /// Ares' `InfantryClass_GetActionOnObject_Heal @ 1004E2E0` (hook
 /// `0x0051E710`) answer: Heal (0x1B) with the InfantryHeal (0x5A) cursor
 /// over an Organic or Infantry target, else UnitRepair (0x5B).
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AresHeal {
     pub organic: bool,
@@ -457,20 +456,13 @@ impl Simulation {
         {
             return Some(UnitRepairAction::Move);
         }
-        #[cfg(feature = "ares")]
-        return {
-            let _ = target_type;
-            self.ares_unit_heal_arm(actor_id, target_id, keys, rules)
-        };
-        #[cfg(not(feature = "ares"))]
-        return {
-            let _ = keys;
-            self.vanilla_unit_heal_arm(actor_id, target_id, target, target_type, rules)
-        };
+        if rules.ares() {
+            return self.ares_unit_heal_arm(actor_id, target_id, keys, rules);
+        }
+        self.vanilla_unit_heal_arm(actor_id, target_id, target, target_type, rules)
     }
 
     /// The stock arm from the target's vehicle test (`0x0073FDBD..0x0073FE43`).
-    #[cfg(not(feature = "ares"))]
     fn vanilla_unit_heal_arm(
         &self,
         actor_id: u64,
@@ -544,7 +536,6 @@ impl Simulation {
     /// the weapon the healer would pick against `target_id` (SelectWeapon,
     /// GetWeapon) for the target's armor
     /// (`WarheadTypeExt::ExtData::GetVerses`) is above 0.
-    #[cfg(feature = "ares")]
     fn ares_heal_verses_positive(&self, actor_id: u64, target_id: u64, rules: &RuleSet) -> bool {
         let (Some(actor), Some(target)) = (
             self.substrate.entities.get(actor_id),
@@ -603,7 +594,6 @@ impl Simulation {
     /// Rules+16F8, 1.0), a grounded aircraft on a building and a warhead
     /// whose Verses for the target's armor is not above 0 answer Select. Any
     /// other damaged ally is repaired, building or not.
-    #[cfg(feature = "ares")]
     fn ares_unit_heal_arm(
         &self,
         actor_id: u64,
@@ -639,7 +629,6 @@ impl Simulation {
     /// (`0x0051F190`) turns Heal into Attack. None goes on with the stock
     /// rows; the infantryman itself takes the stock self arm at `0x0051E748`,
     /// which VERA does not port.
-    #[cfg(feature = "ares")]
     pub fn ares_infantry_heal_action(
         &self,
         actor_id: u64,

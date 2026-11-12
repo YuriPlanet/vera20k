@@ -27,7 +27,6 @@ use glam::IVec3;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[cfg(feature = "ares")]
 pub mod ares_system;
 pub mod fire;
 pub mod gas;
@@ -112,7 +111,6 @@ pub struct ParticleSystem {
     in_limbo: bool,
     /// Ares 3.0 ParticleSystemExt (`ares_system`): present for a system Ares
     /// simulates itself, from the constructor hook `0x62DF05` on.
-    #[cfg(feature = "ares")]
     #[serde(default)]
     ares: Option<Box<ares_system::AresParticleSystemExt>>,
 }
@@ -575,7 +573,6 @@ impl ParticleSystem {
     }
 
     /// The Ares records of a system Ares simulates ([`ares_system`]).
-    #[cfg(feature = "ares")]
     pub fn ares(&self) -> Option<&ares_system::AresParticleSystemExt> {
         self.ares.as_deref()
     }
@@ -584,7 +581,6 @@ impl ParticleSystem {
     /// (`ExtData::Update @ 10026C70`), no record of its own either: the
     /// emptiness the AI tail retires a done system on.
     pub(crate) fn holds_no_particles(&self) -> bool {
-        #[cfg(feature = "ares")]
         if self.ares.as_ref().is_some_and(|ext| !ext.is_empty()) {
             return false;
         }
@@ -737,7 +733,6 @@ impl ParticleSystem {
             owner_fire_link: false,
             alive: true,
             in_limbo: false,
-            #[cfg(feature = "ares")]
             ares: None,
         }
     }

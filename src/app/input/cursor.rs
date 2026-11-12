@@ -1489,11 +1489,14 @@ fn unit_repair_feedback(
             crate::rules::ares_mouse_cursor::index::UNIT_REPAIR
         }
     };
+    // The Ares cursor owner (`ares_cursor`, `AresAction`) is still built
+    // only with the `ares` feature; the switch decides within it.
     #[cfg(feature = "ares")]
-    if sim
-        .entities()
-        .get(id)
-        .is_some_and(|actor| actor.category() == crate::map::entities::EntityCategory::Infantry)
+    if rules.ares()
+        && sim
+            .entities()
+            .get(id)
+            .is_some_and(|actor| actor.category() == crate::map::entities::EntityCategory::Infantry)
     {
         sim.ares_infantry_heal_action(id, hover.stable_id, house, keys, rules)?;
         return u16::try_from(heal_cursor())
@@ -1504,7 +1507,12 @@ fn unit_repair_feedback(
         match sim.unit_repair_action(id, hover.stable_id, house, keys, rules)? {
             crate::sim::world::UnitRepairAction::Repair => {
                 #[cfg(feature = "ares")]
-                super::ares_cursor::set_cursor(heal_cursor(), super::ares_cursor::action::GREPAIR);
+                if rules.ares() {
+                    super::ares_cursor::set_cursor(
+                        heal_cursor(),
+                        super::ares_cursor::action::GREPAIR,
+                    );
+                }
                 CursorFeedbackKind::RepairAction(true)
             }
             crate::sim::world::UnitRepairAction::Select => CursorFeedbackKind::FriendlyUnit,

@@ -358,7 +358,6 @@ struct CellBuilding {
 ///
 /// Without resolved terrain (fixtures) a spark meets nothing, the policy of
 /// [`constructor_ground_height`].
-#[cfg(feature = "ares")]
 pub(super) fn ares_spark_dies(
     sim: &Simulation,
     rules: &RuleSet,

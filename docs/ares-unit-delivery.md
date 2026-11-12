@@ -1,7 +1,9 @@
 # Optional Ares UnitDelivery
 
 Requires an explicit `--features ares` build. Default builds do not read or execute
-these extensions; see [build capability](ares.md).
+these extensions; see [build capability](ares.md). Within such a build a delivery
+also needs the game's Ares switch (`RuleSet::ares`) on, as the rest of the Ares
+superweapon framework is still gated by the build feature alone.
 
 ```ini
 [SuperWeaponTypes]

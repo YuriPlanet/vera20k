@@ -193,7 +193,6 @@ pub(crate) fn tick_particle_system(
         return false;
     };
     let behavior = rules.particle_system_type(sys.type_id).behaves_like;
-    #[cfg(feature = "ares")]
     let ares = sys.ares.is_some();
     // AI_Railgun reads the done byte first (`0x0062F242`).
     apply_fire_link_release(sim, id);
@@ -201,7 +200,6 @@ pub(crate) fn tick_particle_system(
     // at the AI's entry, returning to its `ret` at 0x62FE43): ExtData::Update
     // (10026C70) runs Ares' own Spark, Railgun or Smoke update, then the same
     // lifetime count and retirement as the stock tail, its records counted.
-    #[cfg(feature = "ares")]
     if ares {
         let mut sys = sim.substrate.particle_systems.take_for_tick(id).unwrap();
         super::ares_system::update(&mut sys, sim, rules);
@@ -541,7 +539,7 @@ mod tests {
     fn mixed_hosts_preserve_gas_source_house_for_allied_and_enemy_receivers() {
         // Ares runs Smoke and Spark hosts itself (hooks 0x62DF05, 0x62FD60)
         // and never visits their ParticleClass children.
-        let behaviors: &[&str] = if cfg!(feature = "ares") {
+        let behaviors: &[&str] = if crate::rules::ARES_BUILD {
             &["Fire"]
         } else {
             &["Smoke", "Fire", "Spark"]

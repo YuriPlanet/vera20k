@@ -150,6 +150,7 @@ pub(crate) fn admits(
 }
 
 /// Target-independent preflight is also shared with the AI before search/RNG.
+/// Only a game Ares plays in ([`RuleSet::ares`]) delivers.
 #[cfg(feature = "ares")]
 pub(crate) fn configured(
     sim: &Simulation,
@@ -157,7 +158,8 @@ pub(crate) fn configured(
     owner: InternedId,
     sw: &SuperWeaponType,
 ) -> bool {
-    !sw.pre_click
+    rules.ares()
+        && !sw.pre_click
         && !sw.post_click
         && !sw.use_charge_drain
         && sw.unit_delivery.as_ref().is_some_and(|delivery| {

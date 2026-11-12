@@ -660,7 +660,6 @@ pub(crate) fn build_display_effect_instances(
         }
     }
     // Ares hook 0x6D9427: its particle records after the Air layer.
-    #[cfg(feature = "ares")]
     super::particles::build_ares_particle_draws(input, &context, ground_objects);
     observations
 }

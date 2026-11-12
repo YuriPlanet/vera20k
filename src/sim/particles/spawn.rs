@@ -370,8 +370,11 @@ impl Simulation {
             // Ares 3.0 ParticleSystemClass_CTOR (Ares.dll 10028D10, hook
             // 0x62DF05 at the constructor's end) allocates the extension,
             // whose constructor (100267E0) picks Ares' own simulation.
-            #[cfg(feature = "ares")]
-            ares: super::ares_system::AresParticleSystemExt::for_system(pst, rules).map(Box::new),
+            ares: rules
+                .ares()
+                .then(|| super::ares_system::AresParticleSystemExt::for_system(pst, rules))
+                .flatten()
+                .map(Box::new),
         };
         debug_assert!(
             !self.substrate.entities.contains(stable_id)
@@ -617,7 +620,6 @@ pub(super) fn spawn_particle(
     // Ares 3.0 ParticleSystemClass_SpawnParticle (Ares.dll 100290B0, hook
     // 0x62E380 at the entry, returning to its `ret 8` at 0x62E428): a system
     // Ares simulates constructs no ParticleClass.
-    #[cfg(feature = "ares")]
     if sys.ares.is_some() {
         return false;
     }

@@ -951,11 +951,11 @@ pub(super) fn healer_object_action(
     issuing_house: InternedId,
     keys: crate::sim::world::HealArmKeys,
 ) -> Option<crate::sim::world::UnitRepairAction> {
-    #[cfg(feature = "ares")]
-    if sim
-        .entities()
-        .get(actor)
-        .is_some_and(|actor| actor.category() == EntityCategory::Infantry)
+    if rules.ares()
+        && sim
+            .entities()
+            .get(actor)
+            .is_some_and(|actor| actor.category() == EntityCategory::Infantry)
     {
         return sim
             .ares_infantry_heal_action(actor, target, issuing_house, keys, rules)

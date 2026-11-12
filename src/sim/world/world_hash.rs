@@ -1185,7 +1185,6 @@ impl Simulation {
             for particle in sys.particles() {
                 hash_particle(particle, hasher);
             }
-            #[cfg(feature = "ares")]
             if let Some(ext) = sys.ares() {
                 ext.hash_state(hasher);
             }

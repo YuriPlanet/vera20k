@@ -466,7 +466,6 @@ pub(in crate::app) struct OrdinaryWeldingScene {
 /// The WeldingSys's sparks: ParticleClass children, or under Ares the Spark
 /// records the system keeps itself (hooks 0x62DF05, 0x62FD60).
 fn welding_has_children(system: &crate::sim::particles::ParticleSystem) -> bool {
-    #[cfg(feature = "ares")]
     if system
         .ares()
         .is_some_and(|ares| !ares.particles().is_empty())
@@ -684,7 +683,7 @@ fn retail_repair_click_preserves_native_modifier_and_target_controls() {
             .collect();
         // Ares 1004E5A0 (hook 0x73FDBD): Alt answers Select and Ctrl+Alt's
         // GuardArea keeps its own path, so neither repairs.
-        let expected = if cfg!(feature = "ares") && matches!(name, "alt_friend" | "ctrl_alt_friend")
+        let expected = if crate::rules::ARES_BUILD && matches!(name, "alt_friend" | "ctrl_alt_friend")
         {
             0
         } else {
@@ -956,7 +955,7 @@ fn unit_repair_vehicle_class_matches_fire_error_including_undeploy_building() {
         ),
         // Ares 1004E5A0 (hook 0x73FDBD) drops the vt+80 vehicle test: any
         // damaged ally the warhead reaches is repaired.
-        Some(if cfg!(feature = "ares") {
+        Some(if crate::rules::ARES_BUILD {
             UnitRepairAction::Repair
         } else {
             UnitRepairAction::Select
@@ -980,7 +979,7 @@ fn unit_repair_vehicle_class_matches_fire_error_including_undeploy_building() {
             crate::sim::world::HealArmKeys::default(),
             &rules
         ),
-        cfg!(feature = "ares").then_some(UnitRepairAction::Repair)
+        crate::rules::ARES_BUILD.then_some(UnitRepairAction::Repair)
     );
     use crate::sim::combat::fire_error::FireError;
     assert_eq!(
@@ -993,7 +992,7 @@ fn unit_repair_vehicle_class_matches_fire_error_including_undeploy_building() {
     // Unit may be repaired.
     assert_eq!(
         sim.selected_weapon_fire_error(&rules, actor, TargetKind::Entity(targets[1]), true, None),
-        if cfg!(feature = "ares") {
+        if crate::rules::ARES_BUILD {
             FireError::Ok
         } else {
             FireError::Illegal

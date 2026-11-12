@@ -188,12 +188,13 @@ impl Simulation {
             if building.laser_fence_frame.is_off_frame() {
                 return Ok(false);
             }
-        } else {
+        } else if rules.ares() {
             // Ares 3.0 InfantryClass_Update 10014DB0 (hook 0x51BD4C): an
             // `IsPassable` building is ignored (0x51BD7D); a `Firestorm.Wall`
             // one takes the stock FirestormWall branch (0x51BD56) in place of
             // `FirestormWall=`: only while its owner's firestorm is up does
-            // the man scatter.
+            // the man scatter. The Ares building data is still built only
+            // with the `ares` feature.
             #[cfg(feature = "ares")]
             if object.building_type_ext().is_passable
                 || (object.building_type_ext().firestorm_wall
@@ -201,15 +202,13 @@ impl Simulation {
             {
                 return Ok(false);
             }
+        } else if object.firestorm_wall {
             // RESIDUAL: the stock FirestormWall branch (`0x0051BD4C`) reads
             // its owner's Firestorm+1FA, which only Ares sets (the Ares arm
             // above replaces it): a stock `FirestormWall=` building keeps the
             // prior no-Scatter behavior. Stock GAPILE and all ordinary
             // barracks have the flag false.
-            #[cfg(not(feature = "ares"))]
-            if object.firestorm_wall {
-                return Ok(false);
-            }
+            return Ok(false);
         }
         let slaves = crate::sim::slave_deposit::SlaveDepositQuery {
             entities: &self.substrate.entities,

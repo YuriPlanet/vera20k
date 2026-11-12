@@ -135,6 +135,7 @@ pub(super) fn build_particle_system_instance(
         system,
         kind,
         &mut input.detail.borrow_mut(),
+        input.rules.ares(),
     );
     if let Some(mut record) = record {
         record.coord = crate::sim::projectile::ProjectileCoord::new(coord.x, coord.y, coord.z);
@@ -383,9 +384,7 @@ fn particle_shp_piece(
 
 /// Frame-local parents for the Ares draw: past every simulation id and after
 /// every retained Air member, in the order the draw visits them.
-#[cfg(feature = "ares")]
 const ARES_DRAW_ID_BASE: u64 = 0xA4E5_0000_0000_0000;
-#[cfg(feature = "ares")]
 const ARES_DRAW_ORDER_BASE: u64 = 1 << 62;
 
 /// Ares 3.0 DrawParticleSystems (Ares.dll `10026760`), which the hook at
@@ -401,7 +400,6 @@ const ARES_DRAW_ORDER_BASE: u64 = 1 << 62;
 /// particle type's Ares `Palette=` (`ParticleTypeExt`, not ported), and a
 /// point whose colour index has no next entry is skipped where Ares reads past
 /// the list.
-#[cfg(feature = "ares")]
 pub(super) fn build_ares_particle_draws(
     input: &DisplayEffectInputs<'_>,
     context: &ParticleDrawContext,
