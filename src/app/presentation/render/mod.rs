@@ -308,13 +308,8 @@ pub(crate) fn render_game(
     // The selection in order and the cursor's pick each walk every object;
     // the draw reads them once (TacticalPick 6DA380 runs once per frame).
     let cursor_targets = crate::app::input::cursor::CursorTargets::read(state);
-    let mut world = build_instances::build_world_instances(
-        state,
-        vsw,
-        vsh,
-        bracket_palette,
-        cursor_targets.hover,
-    );
+    let mut world =
+        build_instances::build_world_instances(state, vsw, vsh, bracket_palette, &cursor_targets);
     for layer in &mut world.object_layers {
         object_extras::defer_health_to_frame(layer, world_camera.camera_pos, z);
     }

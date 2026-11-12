@@ -1370,18 +1370,18 @@ pub(crate) fn pick_object_at_point<'a>(
         let Some(entity) = entities.get(stable_id) else {
             continue;
         };
-        if !pick_admits_object(entity, fog, player)
-            || source.conceals(entity)
-            || source.invisible_in_game_building(entity)
-        {
-            continue;
-        }
         // Native6DA380 tests lifecycle/cloak after the clicked Cell gate;
         // it does not repeat a raw anchor-cell shroud or discovery test.
+        // VERA-only order: the distance test comes first, and only an
+        // object that would become the nearest asks the admission tests.
+        // They only read, so the winner is the same.
         let (sx, sy) = source.screen_position(entity);
         let distance = pick_distance_sq(sx - world_x, sy - world_y) as i32;
         if distance < PICK_DISTANCE_THRESHOLD as i32
             && best.is_none_or(|(_, best_distance)| distance < best_distance)
+            && pick_admits_object(entity, fog, player)
+            && !source.conceals(entity)
+            && !source.invisible_in_game_building(entity)
         {
             best = Some((entity.stable_id(), distance));
         }
@@ -1631,6 +1631,55 @@ mod tests {
         entity.lifecycle.set_in_limbo_for_test(false);
         entity.selection.set_selected_for_test(selected);
         entity
+    }
+
+    /// The pick asks its admission tests only of an object near enough to
+    /// win; an object far from the point costs only its distance.
+    #[test]
+    fn a_pick_asks_admission_only_near_the_point() {
+        use crate::sim::world::Simulation;
+
+        #[derive(Clone, Copy)]
+        struct Counting<'a> {
+            sim: &'a Simulation,
+            asked: &'a std::cell::Cell<u32>,
+        }
+        impl PickSource for Counting<'_> {
+            fn entities(&self) -> &EntityStore {
+                self.sim.entities()
+            }
+            fn conceals(&self, _entity: &GameEntity) -> bool {
+                self.asked.set(self.asked.get() + 1);
+                false
+            }
+        }
+
+        let mut sim = Simulation::new();
+        let viewer = sim.intern("viewer");
+        let typ = sim.intern("INIT");
+        for (id, rx) in [(1, 10), (2, 30), (3, 50)] {
+            sim.entities_mut_for_test().insert(item83_entity(
+                id,
+                rx,
+                10,
+                viewer,
+                typ,
+                EntityCategory::Infantry,
+                false,
+            ));
+        }
+        let asked = std::cell::Cell::new(0);
+        let source = Counting {
+            sim: &sim,
+            asked: &asked,
+        };
+        let (x, y) =
+            crate::render::locomotor_visual::screen_position(sim.entities().get(1).unwrap());
+        assert_eq!(
+            pick_object_at_point(source, &[1, 2, 3], None, None, x, y, None),
+            Some(CellObjectMember::Entity(1))
+        );
+        assert_eq!(asked.get(), 1);
     }
 
     #[test]

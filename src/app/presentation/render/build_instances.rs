@@ -166,8 +166,9 @@ pub(super) fn build_world_instances(
     sw: f32,
     sh: f32,
     bracket_palette: Option<[u16; 2]>,
-    hover: Option<crate::app::input::entity_pick::HoverObject>,
+    cursor: &crate::app::input::cursor::CursorTargets,
 ) -> WorldInstances {
+    let hover = cursor.hover;
     // The draw before hands its tile list back (`render_game`).
     let terrain_buffer = std::mem::take(
         &mut state
