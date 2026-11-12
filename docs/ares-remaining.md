@@ -99,7 +99,6 @@ data.
 | Expired Flamer/Scorch anims make no SmallFire/LargeFire anims (needs `MapClass::GetRandomCoordsNear`); retail sets neither key | `0x4250C9`, `0x42511B`, `0x42513F` | [ares-anim-particles.md](ares-anim-particles.md) |
 | Dormant on retail data: Doggie, the `DeathAnims=` owner, Mission_Guard's superweapon gate, the ICBM crate's Ares Nuke type, a bullet damage anim's MakeInfantryOwner outside Phobos | `0x51F628`, `0x518CB3`, `0x51ABD7`, `0x5200C1`, `0x51849A`, `0x449716`, `0x6CEEB0`, `0x469C4E` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
 | Superweapon money: charge-drain activation with `Money.Amount` | none | [ares-superweapon-money.md](ares-superweapon-money.md) |
-| UnitDelivery: `Deliver.Buildups`; the placement order and RNG are VERA's (Ares asks Pathfinding_Find `0x56DC20` once, with a `buildable` argument VERA's finder port does not take) | none | [ares-unit-delivery.md](ares-unit-delivery.md) |
 | AttachEffect: `TemporalHidesAnim` and the airborne half-distance collection | none | [ares-attach-effect.md](ares-attach-effect.md) |
 | Country power plants: a house with no candidate is a fatal error natively (`0x1001DEF6`); VERA splices nothing | none | [ares-country-powerplants.md](ares-country-powerplants.md) |
 | With Phobos too: Phobos `SuperWeaponSidebar.*Houses` keep the 0x80 buffer | `0x4750EC`, `0x475107` | [ares-bugfixes.md](ares-bugfixes.md) |
