@@ -1349,7 +1349,8 @@ fn repair_wrench_admitted(
     rules: Option<&RuleSet>,
     local_owner: Option<&str>,
 ) -> bool {
-    let repairing = entity.category() == EntityCategory::Structure && entity.repairing.is_on();
+    let repairing =
+        entity.category() == EntityCategory::Structure && entity.building.repairing.is_on();
     #[cfg(feature = "ares")]
     let repairing = repairing
         && !entity.is_warped_out()

@@ -773,7 +773,7 @@ fn a_damaged_computer_yard_starts_its_repair_as_its_build_up_completes() {
         frames.push((
             frame,
             entity.building_up(),
-            entity.repairing.is_on(),
+            entity.building.repairing.is_on(),
             house.repair_start_latch(),
         ));
     }

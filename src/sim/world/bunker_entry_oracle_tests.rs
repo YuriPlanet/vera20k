@@ -148,7 +148,7 @@ fn stock_tank_bunker_entry_contacts_before_arrival_then_installs() {
     assert_eq!(building.bunker.occupant(), Some(tank));
     assert_eq!(unit.bunker.link(), BunkerLink::Installed(bunker));
     assert_eq!(
-        building.bunker_runtime.unwrap().state(),
+        building.building.bunker_runtime.unwrap().state(),
         BunkerState::Occupied,
     );
     assert_eq!(unit.mission.effective().known(), Some(MissionType::Guard));
@@ -557,7 +557,7 @@ impl NativeScene {
             "unit_nav":self.nav(unit.navigation.nav_com()), "unit_contact":self.name(unit.radio_contacts.slot(0)),
             "bunker_contact":self.name(bunker.radio_contacts.slot(0)), "other_contact":self.name(other.radio_contacts.slot(0)),
             "bunker_mission":bunker.mission.current().raw(), "bunker_queued":bunker.mission.queued().raw(),
-            "bunker_state":bunker.bunker_runtime.unwrap().state() as u8,
+            "bunker_state":bunker.building.bunker_runtime.unwrap().state() as u8,
             "unit_coord":[position.x,position.y,position.z],
             "drive_destination":xyz(drive.destination()), "drive_head":xyz(drive.head_to()),
             "drive_power":u8::from(unit.locomotor.as_ref().unwrap().is_powered()),
@@ -694,6 +694,7 @@ impl NativeScene {
                     .entities
                     .get_mut(self.bunker)
                     .unwrap()
+                    .building
                     .bunker_runtime
                     .as_mut()
                     .unwrap()

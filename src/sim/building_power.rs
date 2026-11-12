@@ -59,7 +59,7 @@ impl BuildingOnline {
 impl GameEntity {
     /// Building+660, read by4555D0/44E88F/508EA3/50B020 and factory queries.
     pub fn building_online(&self) -> bool {
-        self.building_online.online
+        self.building.building_online.online
     }
 
     /// Ares BuildingExt `TogglePower_HasPower` (`+0x51`) clear: the last
@@ -67,7 +67,7 @@ impl GameEntity {
     /// (10049FE0, hook `0x6F526C`) draws the power-off marker from it.
     #[cfg(feature = "ares")]
     pub fn ares_toggled_off(&self) -> bool {
-        self.building_online.ares_toggled_off()
+        self.building.building_online.ares_toggled_off()
     }
 
     /// Phobos `TechnoExt::IsActive` (`src/Ext/Techno/Body.cpp`) plus the power
@@ -86,7 +86,7 @@ impl GameEntity {
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_building_online_for_test(&mut self, online: bool) {
-        self.building_online.online = online;
+        self.building.building_online.online = online;
     }
 }
 
@@ -119,6 +119,7 @@ impl Simulation {
             .entities
             .get_mut(id)
             .unwrap()
+            .building
             .building_online
             .toggle(false);
         Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, true);
@@ -163,6 +164,7 @@ impl Simulation {
             .entities
             .get_mut(id)
             .unwrap()
+            .building
             .building_online
             .toggle(true);
         Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, true);
@@ -260,7 +262,7 @@ impl crate::sim::world::ObjectSubstrate {
         if entity.category() != EntityCategory::Structure {
             return;
         }
-        entity.building_online.temporal(online);
+        entity.building.building_online.temporal(online);
         let slots = *entity.building_art.anim_slots();
         #[cfg(feature = "ares")]
         self.queue_ares_temporal_factory_refresh(id);

@@ -4981,6 +4981,7 @@ impl Simulation {
         }
         listener.radio_contacts.iter_live().for_each(&mut name);
         listener
+            .building
             .tesla_charge
             .chargers()
             .iter()
@@ -5017,13 +5018,14 @@ impl Simulation {
             listener.damage_smoke_system_id.system(),
             listener.ammo().and_then(|ammo| ammo.dock()),
             listener
+                .building
                 .pending_c4_detonation
                 .pending()
                 .and_then(|pending| pending.source_entity_id()),
             listener.lift.target(),
             listener.lift.source(),
             listener.drop_credit.manipulated_by(),
-            listener.building_light.light(),
+            listener.building.building_light.light(),
         ]
         .into_iter()
         .flatten()
@@ -5602,6 +5604,7 @@ impl Simulation {
         let clear_passenger_role =
             hull_gone && listener.passenger_role.inside_transport_id() == Some(expired_id);
         let clear_c4_source = listener
+            .building
             .pending_c4_detonation
             .pending()
             .as_ref()
@@ -5612,7 +5615,11 @@ impl Simulation {
         let expire_mega_pointer = listener.mega_mission.references(expired_id);
         // Building44EA77 removes a charger for either control, irrespective
         // of the base target exemptions. Only later AI changes the weapon latch.
-        let clear_tesla_charger = listener.tesla_charge.chargers().contains(&expired_id);
+        let clear_tesla_charger = listener
+            .building
+            .tesla_charge
+            .chargers()
+            .contains(&expired_id);
         // BuildingPointerExpired44EAB8..44EB02 removes a matching Occupant
         // only inside ScenarioInit(A8E7AC), after inherited Techno cleanup.
         // It neither depends on removed/control nor rewrites the fire cursor.
@@ -5626,7 +5633,7 @@ impl Simulation {
         // BuildingPointerExpired44E932..44E93A clears its owned child for
         // either control, before that storage is physically removed.
         let clear_spotlight = listener.category() == EntityCategory::Structure
-            && listener.building_light.light() == Some(expired_id);
+            && listener.building.building_light.light() == Some(expired_id);
         if !(clear_suspended_target
             || clear_fire_system
             || clear_spark_system
@@ -5703,7 +5710,7 @@ impl Simulation {
             listener.passenger_role.clear_carrier_relation();
         }
         if clear_c4_source {
-            listener.pending_c4_detonation.forget_source();
+            listener.building.pending_c4_detonation.forget_source();
         }
         if expire_mega_pointer {
             listener
@@ -5711,10 +5718,10 @@ impl Simulation {
                 .pointer_expired(expired_id, expired_get_coords_cell);
         }
         if clear_tesla_charger {
-            listener.tesla_charge.pointer_expired(expired_id);
+            listener.building.tesla_charge.pointer_expired(expired_id);
         }
         if clear_spotlight {
-            listener.building_light.take();
+            listener.building.building_light.take();
         }
         if clear_occupant {
             listener

@@ -526,5 +526,5 @@ pub fn install_status_ammo_state(
 }
 /// Explicit DrawExtras consumer prior; repair lifecycle tests use ToggleRepair.
 pub fn install_status_repair(entity: &mut crate::sim::game_entity::GameEntity, repairing: bool) {
-    entity.repairing.set_for_test(repairing);
+    entity.building.repairing.set_for_test(repairing);
 }

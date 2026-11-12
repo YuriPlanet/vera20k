@@ -3472,7 +3472,7 @@ fn structures_field_11_sets_the_building_lights_behaviour() {
                 .entities
                 .values()
                 .find(|entity| (entity.position.rx(), entity.position.ry()) == cell)
-                .and_then(|entity| entity.building_light.light())
+                .and_then(|entity| entity.building.building_light.light())
                 .expect("HasSpotlight building owns a light");
             sim.building_spotlight(light, None, &rules).is_some()
         })

@@ -1729,6 +1729,7 @@ pub(crate) fn commit_entities(
             // uncredited, while a later sourced lethal hit captures anew.
             target.kill_record.clear();
             target
+                .building
                 .pending_c4_detonation
                 .arm_post_mortem(current_frame, duration_frames);
             // PostMortem's restore (`0x00701F60`, `0x00701F67`).
@@ -2043,7 +2044,7 @@ pub(crate) fn commit_entities(
                         .entities
                         .get(target_id)
                         .is_some_and(|building| {
-                            !building.pending_c4_detonation.has_time_left(frame)
+                            !building.building.pending_c4_detonation.has_time_left(frame)
                         });
                 if callbacks_enabled(world) && !outlives {
                     world.apply_fatal_lifecycle_stage(
@@ -3166,7 +3167,7 @@ fn finish_concrete_death(
             .substrate
             .entities
             .get(dead_id)
-            .is_some_and(|building| building.pending_c4_detonation.has_time_left(frame))
+            .is_some_and(|building| building.building.pending_c4_detonation.has_time_left(frame))
     {
         effects.immediate_uninit_ids.push(dead_id);
     }

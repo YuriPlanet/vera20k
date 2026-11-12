@@ -202,7 +202,7 @@ fn exit_finished_object(
             let frame = sim.session.binary_frame() as i32;
             let delay = rules.general.placement_delay_frames();
             if let Some(entity) = sim.substrate.entities.get_mut(building) {
-                entity.ai_placement_timer.restart(frame, delay);
+                entity.building.ai_placement_timer.restart(frame, delay);
             }
         }
         BuildingExit::Failed => {
@@ -431,7 +431,7 @@ fn placement_wait_over(sim: &Simulation, building: u64) -> bool {
     sim.substrate
         .entities
         .get(building)
-        .is_some_and(|entity| entity.ai_placement_timer.expired(frame))
+        .is_some_and(|entity| entity.building.ai_placement_timer.expired(frame))
 }
 
 /// NP `BuildingClass::Factory_AI` count comparison: NPSE #359

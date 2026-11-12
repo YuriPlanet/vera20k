@@ -84,7 +84,7 @@ pub(super) fn prepare_powered_mover(
             && sim
                 .entities()
                 .get(center)
-                .is_some_and(|building| building.building_powered_center.is_counted())
+                .is_some_and(|building| building.building.building_powered_center.is_counted())
         {
             return;
         }

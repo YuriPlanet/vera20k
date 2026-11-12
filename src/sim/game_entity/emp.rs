@@ -2493,7 +2493,7 @@ mod receiver {
                         .spawn_object_at_height("CENTER", "Americans", 16, 16, 0, 0, &rules)
                         .unwrap();
                     let center = sim.substrate.entities.get_mut(center).unwrap();
-                    center.building_powered_center.set_for_test(true);
+                    center.building.building_powered_center.set_for_test(true);
                     center.emp.remaining = counter as i32;
                 }
                 let victim = sim.substrate.entities.get_mut(target).unwrap();

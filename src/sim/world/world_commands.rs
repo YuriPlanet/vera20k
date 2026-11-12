@@ -4221,6 +4221,7 @@ mod tests {
                 .entities
                 .get(building)
                 .unwrap()
+                .building
                 .repairing
                 .is_on()
         );
@@ -4242,6 +4243,7 @@ mod tests {
                 .entities
                 .get(building)
                 .unwrap()
+                .building
                 .repairing
                 .is_on()
         );
@@ -4432,7 +4434,8 @@ mod tests {
             5,
             false,
         );
-        ge.bunker_runtime = Some(crate::sim::docking::bunker_install::BunkerRuntime::idle());
+        ge.building.bunker_runtime =
+            Some(crate::sim::docking::bunker_install::BunkerRuntime::idle());
         // Revealed object: order admission reads the limbo byte.
         ge.lifecycle.set_in_limbo_for_test(false);
         sim.substrate.entities.insert(ge);
@@ -4560,6 +4563,7 @@ mod tests {
                     .entities
                     .get(2)
                     .unwrap()
+                    .building
                     .bunker_runtime
                     .unwrap()
                     .state(),
@@ -4604,7 +4608,7 @@ mod tests {
             assert_eq!(building.building_ready_latch(), 0, "{mission:?}");
             assert_eq!(building.mission.queued(), MissionId::NONE, "{mission:?}");
             assert_eq!(
-                building.bunker_runtime.unwrap().state(),
+                building.building.bunker_runtime.unwrap().state(),
                 BunkerState::Idle,
                 "{mission:?}"
             );
@@ -4877,6 +4881,7 @@ mod tests {
                 .entities
                 .get(2)
                 .unwrap()
+                .building
                 .bunker_runtime
                 .unwrap()
                 .state(),
@@ -4905,6 +4910,7 @@ mod tests {
                 .entities
                 .get(2)
                 .unwrap()
+                .building
                 .bunker_runtime
                 .unwrap()
                 .state();
@@ -4928,6 +4934,7 @@ mod tests {
             .entities
             .get(2)
             .unwrap()
+            .building
             .bunker_runtime
             .unwrap();
         assert_eq!(rt.state(), BunkerState::Occupied);
@@ -5061,6 +5068,7 @@ mod tests {
                 .entities
                 .get(2)
                 .unwrap()
+                .building
                 .bunker_runtime
                 .unwrap()
                 .state(),

@@ -270,7 +270,7 @@ fn remove_from_network(entities: &mut EntityStore, id: u64, cease: bool) {
         entity.ares_prism.charge_delay = 0;
         entity.ares_prism.modifier_reserve = 0;
         entity.ares_prism.damage_reserve = 0;
-        entity.pending_building_fire.pending = None;
+        entity.building.pending_building_fire.pending = None;
     }
     set_support_target(entities, id, None);
     let count = entities
@@ -337,6 +337,7 @@ impl Simulation {
             && self.substrate.entities.get(id).is_some_and(|entity| {
                 matches!(
                     entity
+                        .building
                         .pending_building_fire
                         .pending()
                         .map(|pending| pending.fire()),
@@ -422,12 +423,13 @@ pub(super) fn mission_attack_prism(
     let Some(entity) = sim.substrate.entities.get(id) else {
         return true;
     };
-    let slot = if object.weapon_at(1).is_some() && entity.tesla_charge.is_overpowered() {
+    let slot = if object.weapon_at(1).is_some() && entity.building.tesla_charge.is_overpowered() {
         WeaponSlot::Secondary
     } else {
         WeaponSlot::Primary
     };
     match entity
+        .building
         .pending_building_fire
         .pending()
         .map(|pending| pending.fire())
@@ -436,6 +438,7 @@ pub(super) fn mission_attack_prism(
             let delay = delayed_fire_delay(rules, object);
             if let Some(entity) = sim.substrate.entities.get_mut(id) {
                 entity
+                    .building
                     .pending_building_fire
                     .arm(delay, DelayedFire::Weapon(slot));
                 entity.ares_prism.modifier_reserve = 0;
@@ -461,7 +464,7 @@ pub(super) fn mission_attack_prism(
         }
         Some(DelayedFire::SupportBeam { .. }) => {
             if let Some(entity) = sim.substrate.entities.get_mut(id) {
-                if let Some(pending) = entity.pending_building_fire.pending.as_mut() {
+                if let Some(pending) = entity.building.pending_building_fire.pending.as_mut() {
                     pending.fire = DelayedFire::Weapon(slot);
                 }
                 entity.ares_prism.modifier_reserve = 0;
@@ -578,6 +581,7 @@ fn acquire_slaves_single_stage(
             .map_or(0, |(object, _)| delayed_fire_delay(rules, object));
         if let Some(entity) = sim.substrate.entities.get_mut(slave) {
             entity
+                .building
                 .pending_building_fire
                 .arm(delay, DelayedFire::SupportBeam { to });
         }
@@ -638,7 +642,7 @@ fn validate_support_tower(
         reload.start_frame() != crate::sim::timer::PAUSED_START_FRAME && reload.remaining(now) != 0;
     if reloading
         || slave == target
-        || entity.pending_building_fire.remaining_ticks() >= 1
+        || entity.building.pending_building_fire.remaining_ticks() >= 1
         || entity.drain.draining_me().is_some()
         || entity.is_warped_out()
         || busy
@@ -760,11 +764,9 @@ fn charge_delay_get(
             charge[link] = delay;
         }
     }
-    let countdown = sim
-        .substrate
-        .entities
-        .get(tower)
-        .map_or(0, |entity| entity.pending_building_fire.remaining_ticks());
+    let countdown = sim.substrate.entities.get(tower).map_or(0, |entity| {
+        entity.building.pending_building_fire.remaining_ticks()
+    });
     if fire[link] < countdown {
         fire[link] = countdown;
     }
@@ -796,9 +798,9 @@ fn charge_delay_set(
     };
     let delay = link_charge
         .wrapping_add(link_fire)
-        .wrapping_sub(entity.pending_building_fire.remaining_ticks());
+        .wrapping_sub(entity.building.pending_building_fire.remaining_ticks());
     entity.ares_prism.charge_delay = delay;
-    entity.prism_support_count.count = longest_chain.wrapping_sub(chain);
+    entity.building.prism_support_count.count = longest_chain.wrapping_sub(chain);
     if delay == 0 {
         start_charge_anim(sim, tower, rules);
     }
@@ -858,7 +860,7 @@ pub(super) fn update_prism(
     let Some(entity) = sim.substrate.entities.get_mut(id) else {
         return;
     };
-    if entity.pending_building_fire.pending().is_none() {
+    if entity.building.pending_building_fire.pending().is_none() {
         return;
     }
     if entity.ares_prism.charge_delay >= 1 {
@@ -868,7 +870,7 @@ pub(super) fn update_prism(
         }
         return;
     }
-    let Some(fire) = entity.pending_building_fire.count_down() else {
+    let Some(fire) = entity.building.pending_building_fire.count_down() else {
         return;
     };
     let support_target = entity.ares_prism.support_target;
@@ -944,7 +946,7 @@ pub(super) fn update_prism(
     }
     remove_all_senders(entities, id);
     if let Some(entity) = entities.get_mut(id) {
-        entity.prism_support_count.count = 0;
+        entity.building.prism_support_count.count = 0;
     }
     set_support_target(entities, id, None);
 }
@@ -968,7 +970,7 @@ fn fire_laser(sim: &mut Simulation, rules: &RuleSet, id: u64, to: ProjectileCoor
         return;
     };
     let owner = entity.owner();
-    let supporting = entity.prism_support_count.count();
+    let supporting = entity.building.prism_support_count.count();
     let weapon = usize::try_from(prism.support_weapon_index(is_elite(entity)))
         .ok()
         .and_then(|index| object.weapon_at(index))
@@ -1015,6 +1017,6 @@ fn fire_laser(sim: &mut Simulation, rules: &RuleSet, id: u64, to: ProjectileCoor
     let now = sim.session.binary_frame() as i32;
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.start_prism_support_downtime(now, rearm);
-        entity.prism_support_count.count = 0;
+        entity.building.prism_support_count.count = 0;
     }
 }

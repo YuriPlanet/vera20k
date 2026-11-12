@@ -67,7 +67,7 @@ impl crate::sim::game_entity::GameEntity {
     ///
     /// [`ObjectType::building_sensor_range`]: crate::rules::object_type::ObjectType::building_sensor_range
     pub fn gap_supercharged(&self) -> bool {
-        self.gap_generator.supercharged
+        self.building.gap_generator.supercharged
     }
 }
 
@@ -141,7 +141,7 @@ impl Simulation {
             // `0x004555DA`: an offline building (independent latch) is not
             // operational unless two retained Tesla chargers bypass it.
             online: entity.building_online(),
-            tesla_chargers: entity.tesla_charge.chargers().len() as i32,
+            tesla_chargers: entity.building.tesla_charge.chargers().len() as i32,
             charger_bypass: {
                 #[cfg(feature = "ares")]
                 let keep = self
@@ -159,7 +159,7 @@ impl Simulation {
             powered_special: object.powered_special,
             owner_outage: self.building_power_outage(id),
             needs_engineer: object.needs_engineer,
-            has_engineer: entity.building_has_engineer.is_set(),
+            has_engineer: entity.building.building_has_engineer.is_set(),
             effective_mission: entity.mission.effective().raw(),
         };
         Some(power_system::is_operational_for_output(&facts, || {
@@ -224,6 +224,7 @@ impl Simulation {
             .entities
             .get(id)
             .unwrap()
+            .building
             .building_last_operational
             .is_operational()
             == operational
@@ -237,7 +238,7 @@ impl Simulation {
         //43FBEF stores the caller's sample, independently of the dispatcher's
         //fresh vt350 read. Action36 also calls4549B0 but does not store6C8.
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.building_last_operational.operational = operational;
+            entity.building.building_last_operational.operational = operational;
         }
     }
 
@@ -279,7 +280,7 @@ impl Simulation {
             // also drops a super-charge.
             let deciding_client = self.gap_supercharge_deciding_client();
             let deposited = self.substrate.entities.get(id).is_some_and(|entity| {
-                let viewers = &entity.gap_generator.viewers;
+                let viewers = &entity.building.gap_generator.viewers;
                 match deciding_client {
                     Some(house) => viewers.get(&house).is_some_and(|deposit| deposit.active),
                     None => viewers.values().any(|deposit| deposit.active),
@@ -359,15 +360,16 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        if !entity.gap_generator.supercharged {
+        if !entity.building.gap_generator.supercharged {
             return;
         }
         let owner = entity.owner();
         let viewers = self.gap_viewers();
         let entity = self.substrate.entities.get_mut(id).unwrap();
-        entity.gap_generator.supercharged = false;
+        entity.building.gap_generator.supercharged = false;
         for viewer in viewers {
             entity
+                .building
                 .gap_generator
                 .viewers
                 .entry(viewer)
@@ -399,7 +401,7 @@ impl Simulation {
         if !object.gap_generator {
             return None;
         }
-        if entity.gap_generator.supercharged {
+        if entity.building.gap_generator.supercharged {
             return Some(true);
         }
         let (output, drain) = self
@@ -434,7 +436,7 @@ impl Simulation {
             return;
         }
         let owner = entity.owner();
-        let charged = entity.gap_generator.supercharged;
+        let charged = entity.building.gap_generator.supercharged;
         let normal = object.gap_radius_in_cells;
         let super_radius = object.super_gap_radius_in_cells;
         let operational = self.building_operational_state(id, rules) == Some(true);
@@ -455,6 +457,7 @@ impl Simulation {
             );
             let entity = self.substrate.entities.get_mut(id).unwrap();
             entity
+                .building
                 .gap_generator
                 .viewers
                 .entry(viewer)
@@ -480,6 +483,7 @@ impl Simulation {
                 .entities
                 .get_mut(id)
                 .unwrap()
+                .building
                 .gap_generator
                 .supercharged = charge;
             Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, false);
@@ -506,13 +510,18 @@ impl Simulation {
         // CreateGap/DestroyGap (0x006FB170/0x006FB470) branch on PlayerPtr+0x1F5;
         // MPlayer_Defeated (0x004FC0B0) sets it. Each retained viewer maps to its House.
         let viewer_defeated = houses.get(&viewer).is_some_and(|house| house.is_defeated());
-        let before = entity.gap_generator.viewers.get(&viewer);
+        let before = entity.building.gap_generator.viewers.get(&viewer);
         fog.note_gap_deposit(
             id,
             viewer,
             before.map(|deposit| (deposit.active, deposit.radius)),
         );
-        let deposit = entity.gap_generator.viewers.entry(viewer).or_default();
+        let deposit = entity
+            .building
+            .gap_generator
+            .viewers
+            .entry(viewer)
+            .or_default();
         if deposit.active == active {
             return;
         }
@@ -555,6 +564,7 @@ impl Simulation {
             return;
         };
         let viewers: Vec<_> = entity
+            .building
             .gap_generator
             .viewers
             .iter()

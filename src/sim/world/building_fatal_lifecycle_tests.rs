@@ -499,7 +499,7 @@ impl Fixture {
             "{boundary}: queued Building body",
         );
         assert_eq!(
-            building.building_last_operational.is_operational(),
+            building.building.building_last_operational.is_operational(),
             native["building"]["old_operational"] == 1,
             "{boundary}: retained operational state",
         );

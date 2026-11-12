@@ -284,12 +284,13 @@ impl Simulation {
         }
         ge.initialize_voxel_recoil(obj.recoil);
         if category == EntityCategory::Structure && obj.gate {
-            ge.building_gate = Some(crate::sim::game_entity::BuildingGateRuntime::at_frame(
-                session.binary_frame(),
-            ));
+            ge.building.building_gate = Some(
+                crate::sim::game_entity::BuildingGateRuntime::at_frame(session.binary_frame()),
+            );
         }
         if category == EntityCategory::Structure && obj.bunker {
-            ge.bunker_runtime = Some(crate::sim::docking::bunker_install::BunkerRuntime::idle());
+            ge.building.bunker_runtime =
+                Some(crate::sim::docking::bunker_install::BunkerRuntime::idle());
         }
         // BuildingClass::Init_Managers, from the constructor (`0x0043BB29`):
         // no Buildup SHP clears the AI sale byte (`0x00442CBC`).
@@ -506,7 +507,11 @@ fn stamp_building_cell_profile(
     let Some(obj) = obj else {
         return;
     };
-    ge.building_light.stamp(obj.has_spotlight);
+    // Written only on a change, so a type without a spotlight leaves a unit's
+    // building part unwritten.
+    if ge.building.building_light.spotlight_capable() != obj.has_spotlight {
+        ge.building.building_light.stamp(obj.has_spotlight);
+    }
     let category = ge.category();
     ge.type_facts.stamp(category, obj);
 }

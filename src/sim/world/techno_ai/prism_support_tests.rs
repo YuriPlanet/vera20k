@@ -132,7 +132,7 @@ fn mission_of(name: &str) -> MissionId {
 
 /// A delayed fire's mode (`+0x704`) and countdown (`+0x714`).
 fn delayed_fire(entity: &crate::sim::game_entity::GameEntity) -> (i64, i32) {
-    match entity.pending_building_fire.pending() {
+    match entity.building.pending_building_fire.pending() {
         None => (0, 0),
         Some(pending) => match pending.fire() {
             DelayedFire::Weapon(_) => (1, pending.remaining_ticks()),
@@ -318,7 +318,10 @@ impl Fixture {
             entity.drain.set_draining_me_for_test(Some(u64::MAX));
         }
         if let Some(count) = state["count"].as_i64() {
-            entity.prism_support_count.set_for_test(count as i32);
+            entity
+                .building
+                .prism_support_count
+                .set_for_test(count as i32);
         }
         if let Some(veterancy) = state["veterancy"].as_f64() {
             entity
@@ -327,9 +330,8 @@ impl Fixture {
         }
         let countdown = state["countdown"].as_i64().unwrap_or(0) as i32;
         let payload = |axis: usize| state["payload"][axis].as_i64().unwrap_or(0) as i32;
-        entity
-            .pending_building_fire
-            .set_for_test(match state["mode"].as_i64().unwrap_or(0) {
+        entity.building.pending_building_fire.set_for_test(
+            match state["mode"].as_i64().unwrap_or(0) {
                 0 if countdown == 0 => None,
                 0 => {
                     self.mode_unheld.insert(id);
@@ -385,7 +387,7 @@ impl Fixture {
         let name = self.name(id);
         let (mode, countdown) = delayed_fire(entity);
         assert_eq!(
-            i64::from(entity.prism_support_count.count()),
+            i64::from(entity.building.prism_support_count.count()),
             native["count"].as_i64().unwrap(),
             "{at} {name} count"
         );
@@ -510,7 +512,7 @@ fn prism_recruitment_matches_the_original() {
             .values()
             .map(|&id| {
                 let entity = fixture.sim.substrate.entities.get(id).unwrap();
-                (id, entity.pending_building_fire.pending())
+                (id, entity.building.pending_building_fire.pending())
             })
             .collect();
         let target = TargetKind::Entity(fixture.target);
@@ -537,7 +539,7 @@ fn prism_recruitment_matches_the_original() {
 
         let armed_now = |id: u64| {
             let entity = fixture.sim.substrate.entities.get(id).unwrap();
-            let pending = entity.pending_building_fire.pending();
+            let pending = entity.building.pending_building_fire.pending();
             pending.filter(|_| pending != pending_before[&id])
         };
         let recruited: Vec<&str> = fixture
@@ -588,7 +590,12 @@ fn prism_recruitment_matches_the_original() {
             .coord;
             let supporter = fixture.sim.substrate.entities.get(supporter).unwrap();
             assert_eq!(
-                supporter.pending_building_fire.pending().unwrap().fire,
+                supporter
+                    .building
+                    .pending_building_fire
+                    .pending()
+                    .unwrap()
+                    .fire,
                 DelayedFire::SupportBeam { to: flh },
                 "{name} beam point"
             );
@@ -749,7 +756,7 @@ fn prism_support_bonus_matches_the_original() {
         let entity = fixture.sim.substrate.entities.get(master).unwrap();
         let native = &row["master"];
         assert_eq!(
-            i64::from(entity.prism_support_count.count()),
+            i64::from(entity.building.prism_support_count.count()),
             native["count"].as_i64().unwrap(),
             "{name} count"
         );
@@ -840,7 +847,7 @@ fn pending_fires(fixture: &Fixture) -> BTreeMap<u64, Option<PendingBuildingFire>
         .values()
         .map(|&id| {
             let entity = fixture.sim.substrate.entities.get(id).unwrap();
-            (id, entity.pending_building_fire.pending())
+            (id, entity.building.pending_building_fire.pending())
         })
         .collect()
 }
@@ -1264,18 +1271,19 @@ fn ares_prism_master_recruits_its_whole_network_in_one_visit() {
     assert_eq!(network(&fixture, master).charge_delay(), 1);
     let entity = fixture.sim.substrate.entities.get(master).unwrap();
     assert_eq!(
-        entity.pending_building_fire.pending(),
+        entity.building.pending_building_fire.pending(),
         Some(PendingBuildingFire::new(
             DELAY,
             DelayedFire::Weapon(WeaponSlot::Primary)
         ))
     );
-    assert_eq!(entity.prism_support_count.count(), 1);
+    assert_eq!(entity.building.prism_support_count.count(), 1);
     assert_eq!(slot_anim(&fixture.sim, master, 10), None);
     for &id in &supporters {
         let entity = fixture.sim.substrate.entities.get(id).unwrap();
         assert!(
             entity
+                .building
                 .pending_building_fire
                 .pending()
                 .is_some_and(|pending| {
@@ -1294,7 +1302,10 @@ fn ares_prism_master_recruits_its_whole_network_in_one_visit() {
             .entities
             .get(fixture.id(name))
             .unwrap();
-        assert!(entity.pending_building_fire.pending().is_none(), "{name}");
+        assert!(
+            entity.building.pending_building_fire.pending().is_none(),
+            "{name}"
+        );
     }
 
     // The master's first visit ends its charge delay and starts its anim.
@@ -1311,7 +1322,7 @@ fn ares_prism_master_recruits_its_whole_network_in_one_visit() {
     // The beam's downtime runs on ReloadTimer (Techno+1FC), not the rearm.
     for &id in &supporters {
         let entity = fixture.sim.substrate.entities.get(id).unwrap();
-        assert!(entity.pending_building_fire.pending().is_none());
+        assert!(entity.building.pending_building_fire.pending().is_none());
         let reload = entity.ammo_reload_timer();
         assert_eq!([reload.start_frame(), reload.duration()], [FRAME, 45]);
         assert_eq!(entity.rearm_timer.remaining(FRAME), 0);
@@ -1355,7 +1366,7 @@ fn ares_prism_chains_relay_their_reserves_to_the_master() {
     for (id, delay, links) in [(master, 2, 2), (link, 1, 1), (end, 0, 0)] {
         assert_eq!(network(&fixture, id).charge_delay(), delay);
         let entity = fixture.sim.substrate.entities.get(id).unwrap();
-        assert_eq!(entity.prism_support_count.count(), links);
+        assert_eq!(entity.building.prism_support_count.count(), links);
     }
     // The network is saved and folded into the world hash.
     let bytes = crate::sim::snapshot::GameSnapshot::save(&fixture.sim, 1, 2, "prism.map", 0);
@@ -1432,7 +1443,7 @@ fn ares_prism_break_support_and_a_sale_break_up_the_network() {
     ares_attack(&mut fixture, breaker);
     let entity = fixture.sim.substrate.entities.get(breaker).unwrap();
     assert_eq!(
-        entity.pending_building_fire.pending(),
+        entity.building.pending_building_fire.pending(),
         Some(PendingBuildingFire::new(
             DELAY - 1,
             DelayedFire::Weapon(WeaponSlot::Primary)
@@ -1450,13 +1461,13 @@ fn ares_prism_break_support_and_a_sale_break_up_the_network() {
         crate::sim::world::FrameEffects::default(),
     );
     let entity = fixture.sim.substrate.entities.get(master).unwrap();
-    assert!(entity.pending_building_fire.pending().is_none());
+    assert!(entity.building.pending_building_fire.pending().is_none());
     assert!(network(&fixture, master).senders().is_empty());
     assert_eq!(network(&fixture, loyal).support_target(), None);
     for _ in 1..DELAY {
         ares_visit(&mut fixture, &[loyal]);
     }
     let entity = fixture.sim.substrate.entities.get(loyal).unwrap();
-    assert!(entity.pending_building_fire.pending().is_none());
+    assert!(entity.building.pending_building_fire.pending().is_none());
     assert!(ares_beams(&fixture).is_empty());
 }

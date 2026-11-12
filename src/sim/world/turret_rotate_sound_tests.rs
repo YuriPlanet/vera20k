@@ -127,6 +127,7 @@ fn retail_turning_cannon_updates_its_loop_before_fatal_limbo_releases_it() {
         sim.entities()
             .get(cannon)
             .unwrap()
+            .building
             .pending_c4_detonation
             .pending()
             .is_some()
