@@ -356,7 +356,13 @@ fn build_next(
         || defense
             .ready
             .is_some_and(|id| !brain.stranded_sites.contains(&id));
-    if building_busy || defense_busy {
+    // The two strips are two factories, and retail builds both at once: the
+    // Buildings line and the Defense line have separate queues and separate
+    // products. Requiring *both* to be idle before either may be queued was the
+    // wishlist's "a pillbox stops the main building" — measured in a real match,
+    // the Defense line holding one tower kept the Buildings line from starting
+    // anything for the whole of its build.
+    if building_busy && defense_busy {
         return;
     }
     let tick = obs.tick();
@@ -398,6 +404,16 @@ fn build_next(
     }
     let ty = chosen.ty;
     let type_id = chosen.type_id;
+    // Whichever strip owns the answer has to be the free one. The gate above
+    // only says the two are not *both* working; this says this one is not.
+    // Without it a Defense answer would be queued into a Defense line that is
+    // already building, and a Buildings answer into a Buildings line that is.
+    if chosen.item == Item::Defense && defense_busy {
+        return;
+    }
+    if chosen.item != Item::Defense && building_busy {
+        return;
+    }
     // A defense is made by the Defense factory, not the Buildings one, so the
     // guard above does not see it: a tower already on the line is queued again
     // on every frame of its build. Removing the repeats changes the match
