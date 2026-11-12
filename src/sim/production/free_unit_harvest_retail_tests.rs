@@ -84,6 +84,7 @@ fn nonharvester_free_unit_commits_harvest_through_paid_refinery_completion() {
         bans: Default::default(),
         teams: None,
         auto_balance: false,
+        queue: Vec::new(),
     };
     let mut scene = load_session(&root, map_name, 0x1234_5678, launch).unwrap();
     // Observation cadence only; every gameplay frame still uses the real runtime.

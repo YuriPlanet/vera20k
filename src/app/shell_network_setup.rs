@@ -19,7 +19,7 @@ pub(crate) use service::{
     refuse_local_acceptance, service_event, set_network_map_progress,
 };
 mod teams;
-pub(crate) use teams::{balance_answered, lobby_refused_teams};
+pub(crate) use teams::{balance_answered, lobby_refused_option};
 pub(crate) mod view;
 mod wol;
 pub(crate) use actions::{
@@ -203,6 +203,9 @@ pub(crate) struct NetworkSetupProtocol {
     /// (`service::tell_moved`).
     seat_place: Option<SeatPlace>,
     asked_place: Option<SeatPlace>,
+    /// VERA's rooms: the local player's place in the join queue in the
+    /// host's last options (`service::tell_moved`).
+    queue_place: Option<usize>,
     /// VERA's room Balance automatically (`teams::poll_balance`): the Teams
     /// count, who played and whether there was anything to balance when it
     /// last looked, when the next balance is due, and whether one waits for
@@ -432,6 +435,7 @@ impl NetworkSetupProtocol {
             cooperative_rematch_seat: false,
             seat_place: None,
             asked_place: None,
+            queue_place: None,
             balance_roster: None,
             balance_due: None,
             balance_sent: false,

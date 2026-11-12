@@ -161,7 +161,8 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let teams = session.network_teams();
     let team_seats = session.network_team_seats();
     // While the room balances itself, nobody picks a team: the Team lists and
-    // the headers' Join close for everyone, the host too.
+    // the headers' Join close for every seated player, the host too. A
+    // spectator's Join still asks to play, and the balance places it.
     let auto_balance = session.network_auto_balance();
     let listed = if several {
         listed_rows(
@@ -190,12 +191,17 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         }
     };
     // The local player's Join and Watch on the headers: a seated player
-    // joins another team, a guest watching takes a free seat on any.
+    // joins another team, a guest watching takes a free seat on any, or
+    // with none free joins the queue for the next.
     let starting = super::wol::start_pending(state);
     let placed = local.raw_slot_index.is_some();
     let seated = placed && !local.is_observer();
     let seat_free = !session.network_no_open_player_row();
     let watch_free = session.network_free_row(true).is_some();
+    let queued = session
+        .network_queue_place(launch.local_player_index)
+        .is_some();
+    let queue = !seated && !seat_free && session.network_queue_open();
     let ai_seat = (host && ai_allowed)
         .then(|| session.network_free_row(false))
         .flatten();
@@ -224,8 +230,14 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                         }
                 };
                 // A full team's Join is greyed; the host still moves anyone.
-                let join =
-                    |open: bool| (crate::i18n::tr("VERA:Join"), open && (seated || seat_free));
+                // With no seat free, a spectator's Join queues it, once.
+                let join = |open: bool| {
+                    if queue {
+                        (crate::i18n::tr("VERA:JoinQueue"), !queued)
+                    } else {
+                        (crate::i18n::tr("VERA:Join"), open && (seated || seat_free))
+                    }
+                };
                 let (caption, button) = match group {
                     SetupGroup::Team(team) => (
                         match team_seats {
@@ -253,11 +265,16 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                     SetupGroup::OpenSeats => (fill("VERA:OpenSeatsGroup"), None),
                     SetupGroup::Spectators => (
                         fill("VERA:SpectatorsGroup"),
-                        (seated && !host && watch_free)
-                            .then(|| (crate::i18n::tr("VERA:Watch"), true)),
+                        if queued {
+                            Some((crate::i18n::tr("VERA:LeaveQueue"), true))
+                        } else {
+                            (seated && !host && watch_free)
+                                .then(|| (crate::i18n::tr("VERA:Watch"), true))
+                        },
                     ),
                 };
-                let closed = auto_balance && group != SetupGroup::Spectators;
+                // A spectator's Join asks to play: the balance places it.
+                let closed = auto_balance && seated && group != SetupGroup::Spectators;
                 headers[visible_row] = Some(SetupHeader {
                     group,
                     caption,
@@ -349,8 +366,15 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 NetworkVacancy::Waiting => 1,
             }
         };
+        // A spectator in the join queue shows its place before its name.
         let slot_label = human
-            .map(|(_, human)| human.name.clone())
+            .map(|(index, human)| match session.network_queue_place(index) {
+                Some(place) => crate::i18n::tr_fill(
+                    "VERA:QueuedName",
+                    &[("place", &place), ("name", &human.name)],
+                ),
+                None => human.name.clone(),
+            })
             .unwrap_or_else(|| {
                 label(
                     state,
@@ -784,11 +808,12 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
 }
 
 /// VERA's room list: its seats, the host's Add slot row, then the
-/// spectators. In a mode with teams (`teams`, the Team list's items) a
-/// header for each team in use and for the list's next free letter goes
-/// over its players (with Teams set, `fixed`, one for each of its teams,
-/// empty or not), then come the players on no team, the free seats with
-/// the Add slot row, and the spectators, each group under its header.
+/// spectators, those in the join queue first. In a mode with teams
+/// (`teams`, the Team list's items) a header for each team in use and for
+/// the list's next free letter goes over its players (with Teams set,
+/// `fixed`, one for each of its teams, empty or not), then come the players
+/// on no team, the free seats with the Add slot row, and the spectators,
+/// each group under its header.
 fn listed_rows(
     session: &MatchSession,
     visible_limit: usize,
@@ -814,7 +839,17 @@ fn listed_rows(
         },
     };
     let seated = rows.clone().filter(|row| watching(*row) == Some(false));
-    let spectators = rows.filter(|row| watching(*row) == Some(true));
+    // The spectators in the join queue come first, in its order.
+    let place = |row: &u8| {
+        launch
+            .humans
+            .iter()
+            .position(|human| human.raw_slot_index == Some(*row))
+            .and_then(|index| session.network_queue_place(index))
+            .unwrap_or(usize::MAX)
+    };
+    let mut spectators: Vec<u8> = rows.filter(|row| watching(*row) == Some(true)).collect();
+    spectators.sort_by_key(place);
     let Some(choices) = teams else {
         return seated
             .chain(add_slot)
@@ -887,7 +922,6 @@ fn listed_rows(
             free.into_iter().chain(add_slot).collect(),
         );
     }
-    let spectators: Vec<u8> = spectators.collect();
     if !spectators.is_empty() || session.network_free_row(true).is_some() {
         group(SetupGroup::Spectators, spectators.len(), spectators);
     }
@@ -1005,6 +1039,34 @@ mod tests {
                 Row(3),
                 Header(Spectators, 0),
             ]
+        );
+    }
+
+    /// The spectators in the join queue list first, in its order.
+    #[test]
+    fn a_room_lists_its_queued_spectators_first() {
+        use crate::app::match_runtime::session::NetworkRowKind;
+        let mut session = vera_room();
+        let slot = session.network_setup().unwrap().humans[1].slot.clone();
+        session
+            .accept_network_peer_choices(1, slot.clone(), true, None)
+            .unwrap();
+        let mut third = session.network_setup().unwrap().humans[1].clone();
+        third.name = "Third".into();
+        third.raw_slot_index = Some(5);
+        session.add_network_participant(third).unwrap();
+        for row in 1..4 {
+            session
+                .choose_network_row_kind(row, NetworkRowKind::Closed)
+                .unwrap();
+        }
+        session
+            .accept_network_peer_choices(2, slot, false, None)
+            .unwrap();
+        let limit = usize::from(session.network_player_row_limit());
+        assert_eq!(
+            listed_rows(&session, limit, None, None, None),
+            [Listed::Row(0), Listed::Row(5), Listed::Row(4)]
         );
     }
 }

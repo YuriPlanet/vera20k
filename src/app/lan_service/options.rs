@@ -100,6 +100,7 @@ pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
             .expect("projected setup")
             .options
             .teams,
+        queue: session.network_queue().to_vec(),
     })?;
     let admitted = queue_payload(
         state,
@@ -140,6 +141,13 @@ struct ExtendedOptions {
     /// [`RoomOptions::teams`]: crate::skirmish_launch::RoomOptions::teams
     #[serde(default, skip_serializing_if = "Option::is_none")]
     teams: Option<u8>,
+    /// The room's join queue, beside `room`
+    /// ([`SkirmishLaunchOptions::queue`]). A guest whose game is older skips
+    /// it and shows no places.
+    ///
+    /// [`SkirmishLaunchOptions::queue`]: crate::skirmish_launch::SkirmishLaunchOptions::queue
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    queue: Vec<String>,
 }
 
 impl ExtendedOptions {
@@ -184,6 +192,7 @@ pub(super) fn reapply_received_options(state: &mut AppState) -> Result<()> {
         options.effective_digest,
         options.selected_map_file,
         room,
+        options.queue,
     )
 }
 
@@ -252,6 +261,7 @@ fn receive_options_text(
     effective_digest: String,
     selected_map_file: String,
     room: Option<crate::skirmish_launch::RoomOptions>,
+    queue: Vec<String>,
 ) -> Result<()> {
     ensure!(
         source_sha256.is_empty() || crate::map::source::valid_source_sha256(&source_sha256),
@@ -271,6 +281,8 @@ fn receive_options_text(
     if let Some(room) = room {
         options.launch.options.set_room_options(room);
     }
+    // The text starts from this guest's own setup: an empty queue clears it.
+    options.launch.options.queue = queue;
     crate::app::shell_network_setup::service_event(state, NetworkSetupEvent::HostSetup(options))?;
     state
         .match_state
@@ -466,6 +478,7 @@ pub(super) fn receive_extended(
                 options.effective_digest,
                 options.selected_map_file,
                 room,
+                options.queue,
             )?;
             super::maps::received_options(state, scope, options.random_map)
         }

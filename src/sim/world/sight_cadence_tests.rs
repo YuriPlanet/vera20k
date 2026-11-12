@@ -720,6 +720,7 @@ fn retail_goldst_initial_scenario() -> crate::headless_scenario::HeadlessScenari
         bans: Default::default(),
         teams: None,
         auto_balance: false,
+        queue: Vec::new(),
     };
     let scenario =
         crate::headless_scenario::load_session(&retail, "GoldSt.mmx", 0x1234_5678, session)

@@ -2373,10 +2373,10 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                 fail_start(state, &tr("VERA:SettingsNotPublished"));
             }
             "options" if failure == http::CommandFailure::InvalidOptions => {
-                // A lobby from before Teams or Balance automatically refuses
-                // the field: the room goes on without it and publishes its
-                // options again.
-                let text = crate::app::shell_network_setup::lobby_refused_teams(state)
+                // A lobby from before Teams, Balance automatically or the
+                // join queue refuses the field: the room goes on without it
+                // and publishes its options again.
+                let text = crate::app::shell_network_setup::lobby_refused_option(state)
                     .unwrap_or("VERA:OnlineRequestRefused");
                 notice(state, &tr(text));
             }

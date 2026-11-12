@@ -6242,6 +6242,53 @@ impl WolCapture {
                     "the host's Seat: {player:?} {requests:?}"
                 );
                 self.event(frame, json!({"host seats the spectator": {"row": 1}}));
+                // With no seat free, the spectator asking to play waits in
+                // the join queue, its place before its name, and the host's
+                // game seats it when a seat frees (`service::seat_queue`).
+                use crate::app::match_runtime::session::NetworkRowKind;
+                choices(state, player.slot.clone(), true);
+                let session = &mut state.match_state.session;
+                session.choose_network_row_kind(1, NetworkRowKind::Closed)?;
+                choices(state, player.slot.clone(), false);
+                let (index, waiting) = guest(state).context("guest")?;
+                let row = waiting.raw_slot_index.context("the spectator's row")?;
+                let name = crate::i18n::tr_fill(
+                    "VERA:QueuedName",
+                    &[("place", &1), ("name", &SERVICE_GUEST)],
+                );
+                let labelled = row_combo(&setup_view(state)?, SetupColumn::Player, row)
+                    .is_some_and(|(_, combo)| {
+                        combo
+                            .choices
+                            .iter()
+                            .any(|choice| choice.value == 0 && choice.text == name)
+                    });
+                let session = &state.match_state.session;
+                ensure!(
+                    waiting.is_observer()
+                        && session.network_queue() == [SERVICE_GUEST]
+                        && session.network_queue_place(index) == Some(1)
+                        && labelled,
+                    "the spectator did not wait first in the join queue: {waiting:?}"
+                );
+                self.event(
+                    frame,
+                    json!({"join queue": {"waiting": row, "label": name}}),
+                );
+                let session = &mut state.match_state.session;
+                session.choose_network_row_kind(1, NetworkRowKind::Open)?;
+                setup_requests(state);
+                crate::app::shell_network_setup::poll(state);
+                let requests = setup_requests(state);
+                let (_, seated) = guest(state).context("guest")?;
+                ensure!(
+                    !seated.is_observer()
+                        && seated.raw_slot_index == Some(1)
+                        && state.match_state.session.network_queue().is_empty()
+                        && requests.contains(&NetworkSetupRequest::PublishOptions),
+                    "the join queue did not seat the spectator: {seated:?} {requests:?}"
+                );
+                self.event(frame, json!({"join queue seats the spectator": {"row": 1}}));
             }
             WolTarget::ClanLockout | WolTarget::ClanNoStart | WolTarget::ClanChooseMap => {
                 return self.clan_room(state, frame);

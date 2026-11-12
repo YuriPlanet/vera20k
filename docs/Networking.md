@@ -245,13 +245,28 @@ again without it.
 
 Online, the host's Balance automatically travels the same way, as
 `launch.options.auto_balance`; setting a Teams count turns it on. While it is on, every
-game in the room closes the Team lists and the headers' Join, and the host's game asks
+game in the room closes its seated players' Team lists and team headers' Join (a
+spectator's Join still asks to play, and the balance places it), and the host's game asks
 the lobby to balance 5 seconds after who plays or the Teams count last changed, holding
 its Start Game until the answer comes. An older guest cannot read those options either,
 as with Teams. A lobby from before Balance automatically refuses the field; the host's
 game turns it off, says so and sends its options again, and a rollback past Teams then
 turns Teams Off too. The lobby decides each player's team, as for `/balance`; the host's
 game applies it.
+
+A VERA room queues its spectators for seats. A spectator who asks to play while no seat
+is free, with a team header's Join Queue or as a newcomer who prefers to play, joins the
+end of the host's join queue; Leave Queue, or picking to watch again, leaves it. The host's
+game owns the queue as it owns seating: when a seat frees (a player leaves or starts
+watching, or the host adds a slot or removes an AI), it seats the first spectator in the
+queue as its own Seat would and publishes its options. The queue's order travels online
+as `launch.options.queue` and on LAN as `queue` beside VERA's room options. Every game in
+the room lists the waiting spectators first, each with its place before its name, and a
+waiting player's own game says its place and when a seat came free. As with Teams, an
+older guest is refused at LAN's build check and online cannot read the options while
+anyone waits. A lobby from before the queue refuses the field; the host's game stops
+queueing in that room, says so and sends its options again, and its spectators keep
+watching. A rollback past Balance automatically and Teams then turns those off too.
 
 ## Native behavior and deliberate bounds
 

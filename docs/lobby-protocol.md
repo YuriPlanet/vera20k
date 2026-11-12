@@ -166,7 +166,13 @@ invalid-update line, in a room that cannot start anyway, since its players' vers
 differ. `launch.options.auto_balance`, the host's Balance automatically, is `true` or
 left out while it is off; the game sends it only with a Teams count. A lobby from before
 it refuses it in the same way, and the host's game then turns Balance automatically off
-first, then Teams if the lobby still refuses. `map_metadata` is
+first, then Teams if the lobby still refuses. `launch.options.queue`, a VERA room's join
+queue, lists by name the room's spectators (humans with the `Observer` role) who wait
+for a seat, first first, each once and at most 30; the game leaves it out while nobody
+waits, and the host's game seats the first when a seat frees. A lobby from before it
+refuses it in the same way; the host's game then stops queueing in that room, says so
+and sends its options again, before it turns off Balance automatically and then Teams
+if the lobby still refuses. `map_metadata` is
 `{display_name,player_capacity,official,byte_length,digest,source_sha256,effective_digest}`. The legacy
 INI `digest` remains distinct from lowercase SHA-256 over the physical map bytes;
 online `map_digest` agreements compare `source_sha256`. `effective_digest` and

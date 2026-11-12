@@ -437,6 +437,12 @@ pub struct SkirmishLaunchOptions {
     /// off; LAN never sets it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub auto_balance: bool,
+    /// VERA's room join queue: the spectators who asked to play while no
+    /// seat was free, by name, first first. The host's game seats the first
+    /// when a seat frees. Only the room reads it. Left out while nobody
+    /// waits.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub queue: Vec<String>,
 }
 
 /// The Teams counts a VERA room offers besides Off.
@@ -467,6 +473,7 @@ impl Default for SkirmishLaunchOptions {
             bans: RoomBans::default(),
             teams: None,
             auto_balance: false,
+            queue: Vec::new(),
         }
     }
 }
@@ -502,6 +509,7 @@ impl SkirmishLaunchOptions {
             bans: options.bans,
             teams: None,
             auto_balance: false,
+            queue: Vec::new(),
         }
     }
 

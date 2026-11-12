@@ -620,6 +620,7 @@ impl TacticalOptions {
             bans: Default::default(),
             teams: None,
             auto_balance: false,
+            queue: Vec::new(),
         }
     }
 }

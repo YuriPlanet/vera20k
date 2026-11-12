@@ -753,6 +753,7 @@ fn skirmish(
         bans: Default::default(),
         teams: None,
         auto_balance: false,
+        queue: Vec::new(),
     };
     let mut session = SkirmishLaunchSession {
         mode,

@@ -239,6 +239,10 @@ enum NetworkPhase {
         /// The most people a VERA room holds, players and spectators, its
         /// host's Create Game choice.
         people_limit: u8,
+        /// A VERA room queues the spectators who ask to play while no seat
+        /// is free (`launch.options.queue`), unless the online lobby
+        /// refused the queue.
+        join_queue: bool,
     },
     Frozen {
         startup: Arc<crate::app::match_bootstrap::PreparedNetworkStartup>,
@@ -613,6 +617,7 @@ impl MatchSession {
             several_observers,
             open_spectators: false,
             people_limit: NETWORK_PLAYER_SLOT_COUNT as u8,
+            join_queue: several_observers,
             launch,
             admission,
             vacancies: [NetworkVacancy::Open; NETWORK_PLAYER_SLOT_COUNT],
@@ -827,6 +832,7 @@ impl MatchSession {
         );
         let removed = launch.humans.remove(index);
         endpoints.remove(&removed.name);
+        launch.options.queue.retain(|name| *name != removed.name);
         admission.remove(index);
         if index < launch.local_player_index {
             launch.local_player_index -= 1;
@@ -926,8 +932,11 @@ impl MatchSession {
             change.roster = true;
             change.options = true;
             if self.network_no_open_player_row() {
-                // VERA's rooms keep the spectator watching.
-                if !self.network_several_observers() {
+                // VERA's rooms keep the spectator watching, in the join
+                // queue for the next free seat.
+                if self.network_several_observers() {
+                    self.queue_network_spectator(index)?;
+                } else {
                     self.set_network_row_kind(row, NetworkRowKind::OpenObserver)?;
                 }
                 return Ok(change);
@@ -951,7 +960,11 @@ impl MatchSession {
             human.slot.country_random = true;
             human.raw_slot_index = Some(free);
             self.keep_spectator_row()?;
-        } else if !was_observer && observer {
+            self.leave_network_queue(index)?;
+        } else if was_observer {
+            // A spectator asking to watch leaves the join queue.
+            change.options |= self.leave_network_queue(index)?;
+        } else if observer {
             change.roster = true;
             change.options = true;
             let target = self.network_free_row(true);
@@ -1744,6 +1757,16 @@ impl MatchSession {
             .options
             .teams
             .filter(|teams| crate::skirmish_launch::ROOM_TEAMS.contains(teams));
+        // The join queue names spectators, each once.
+        let queue = std::mem::take(&mut incoming.options.queue);
+        for name in queue {
+            let waits = incoming.humans.iter().any(|human| {
+                human.name == name && human.is_observer() && human.raw_slot_index.is_some()
+            });
+            if waits && !incoming.options.queue.contains(&name) {
+                incoming.options.queue.push(name);
+            }
+        }
         *launch = incoming;
         *vacancies = [NetworkVacancy::Open; NETWORK_PLAYER_SLOT_COUNT];
         vacancies[..N].copy_from_slice(&incoming_vacancies);
@@ -1876,6 +1899,95 @@ impl MatchSession {
         };
         *people_limit = people.clamp(2, NETWORK_PLAYER_SLOT_COUNT as u8);
         Ok(())
+    }
+
+    /// VERA's join queue (`launch.options.queue`): the spectators waiting
+    /// for a seat, by name, first first.
+    pub(crate) fn network_queue(&self) -> &[String] {
+        self.network_setup()
+            .map(|launch| launch.options.queue.as_slice())
+            .unwrap_or_default()
+    }
+
+    /// Where participant `index` waits in the join queue, 1 for the first.
+    pub(crate) fn network_queue_place(&self, index: usize) -> Option<usize> {
+        let launch = self.network_setup()?;
+        let name = &launch.humans.get(index)?.name;
+        let place = launch
+            .options
+            .queue
+            .iter()
+            .position(|queued| queued == name)?;
+        Some(place + 1)
+    }
+
+    /// Whether this VERA room queues the spectators who ask to play while
+    /// no seat is free.
+    pub(crate) fn network_queue_open(&self) -> bool {
+        matches!(
+            self.network.as_ref().map(|network| &network.phase),
+            Some(NetworkPhase::Setup {
+                join_queue: true,
+                ..
+            })
+        )
+    }
+
+    /// The participant the host's join queue seats next: its first
+    /// spectator, while a seat is free. The host's game seats it as the
+    /// host's Seat does (`service::move_player`).
+    pub(crate) fn network_queue_next(&self) -> Option<usize> {
+        if !self.host || self.network_no_open_player_row() {
+            return None;
+        }
+        let launch = self.network_setup()?;
+        launch.options.queue.iter().find_map(|name| {
+            launch.humans.iter().position(|human| {
+                human.name == *name && human.is_observer() && human.raw_slot_index.is_some()
+            })
+        })
+    }
+
+    /// The online lobby refused the join queue: the room goes on without
+    /// one, and its spectators keep watching. Returns whether anyone
+    /// waited.
+    pub(crate) fn stop_network_queue(&mut self) -> anyhow::Result<bool> {
+        anyhow::ensure!(self.host, "only the host keeps the join queue");
+        if let Some(NetworkSession {
+            phase: NetworkPhase::Setup { join_queue, .. },
+            ..
+        }) = self.network.as_mut()
+        {
+            *join_queue = false;
+        }
+        let queue = &mut self.editable_network_setup()?.options.queue;
+        let waited = !queue.is_empty();
+        queue.clear();
+        Ok(waited)
+    }
+
+    /// A spectator asking to play while no seat is free joins the end of
+    /// the join queue, once.
+    fn queue_network_spectator(&mut self, index: usize) -> anyhow::Result<()> {
+        if !self.network_queue_open() {
+            return Ok(());
+        }
+        let launch = self.editable_network_setup()?;
+        let name = &launch.humans[index].name;
+        if !launch.options.queue.contains(name) {
+            launch.options.queue.push(name.clone());
+        }
+        Ok(())
+    }
+
+    /// Participant `index` leaves the join queue. Returns whether it waited
+    /// there.
+    fn leave_network_queue(&mut self, index: usize) -> anyhow::Result<bool> {
+        let launch = self.editable_network_setup()?;
+        let name = &launch.humans[index].name;
+        let waited = launch.options.queue.len();
+        launch.options.queue.retain(|queued| queued != name);
+        Ok(launch.options.queue.len() != waited)
     }
 
     /// Whether this is a VERA room whose mode seats its players on teams:
@@ -3767,6 +3879,52 @@ mod tests {
         session.accept_lan_peer_choices(1, slot, false).unwrap();
         assert_eq!(guest(&session), (false, Some(2)));
         assert_eq!(observer_rows(&session), [4]);
+    }
+
+    /// Spectators who ask to play while no seat is free wait in the join
+    /// queue in order: the first takes the next free seat, and asking to
+    /// watch or leaving the room gives up the place.
+    #[test]
+    fn a_vera_room_queues_its_spectators_for_the_seats_that_free() {
+        use super::NetworkRowKind;
+        let mut session = vera_room();
+        let slot = session.network_setup().unwrap().humans[1].slot.clone();
+        session
+            .accept_network_peer_choices(1, slot.clone(), true, None)
+            .unwrap();
+        let mut third = session.network_setup().unwrap().humans[1].clone();
+        third.name = "Third".into();
+        third.raw_slot_index = Some(5);
+        session.add_network_participant(third).unwrap();
+        for row in 1..4 {
+            session
+                .choose_network_row_kind(row, NetworkRowKind::Closed)
+                .unwrap();
+        }
+        for index in [2, 1] {
+            session
+                .accept_network_peer_choices(index, slot.clone(), false, None)
+                .unwrap();
+        }
+        assert_eq!(session.network_queue(), ["Third", "Guest"]);
+        assert_eq!(session.network_queue_next(), None);
+        session
+            .choose_network_row_kind(2, NetworkRowKind::Open)
+            .unwrap();
+        assert_eq!(session.network_queue_next(), Some(2));
+        session
+            .accept_network_peer_choices(2, slot.clone(), false, None)
+            .unwrap();
+        assert_eq!(session.network_queue_place(1), Some(1));
+        session
+            .accept_network_peer_choices(1, slot.clone(), true, None)
+            .unwrap();
+        assert!(session.network_queue().is_empty());
+        session
+            .accept_network_peer_choices(1, slot, false, None)
+            .unwrap();
+        session.remove_network_participant(1).unwrap();
+        assert!(session.network_queue().is_empty());
     }
 
     /// No AI plays while anyone watches (`0x5EC9F0`'s
