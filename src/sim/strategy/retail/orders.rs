@@ -1215,10 +1215,51 @@ pub(super) fn harvesters(
         })
         .map(|unit| (unit.entity_id, unit.cell))
         .collect();
+    // Where the ore actually is, read on a term: the field does not move and a
+    // scan of the ring around the base is not free.
+    let extent = obs.map_extent();
+    let anchor = brain.census.base_cell;
+    if let Some(home) = anchor {
+        let stale = brain
+            .ore_scan
+            .as_ref()
+            .is_none_or(|(read_at, _)| read_at.saturating_add(super::ore::SCAN_TERM) <= tick);
+        if stale {
+            let cells = super::ore::cells_near(rules, obs, home, extent);
+            brain.ore_scan = Some((tick, cells));
+        }
+    }
+    let fields: &[(u16, u16)] = brain
+        .ore_scan
+        .as_ref()
+        .map(|(_, cells)| cells.as_slice())
+        .unwrap_or(&[]);
+    // What the trucks must not be sent into. Ore inside an enemy base is the
+    // wishlist's "the harvester walks into the enemy base to mine": the field is
+    // real and the trip is a donation.
+    let space = super::terrain::Space::read(obs, rules, &brain.census.home_cells, anchor);
     for (id, cell) in idle {
         if ordered_this_frame(out, id) {
             continue;
         }
+        // The best field is the nearest ore the house may work: close, and not
+        // under an enemy gun. Standing on ore already is its own answer, and the
+        // cell the unit holds is the one field the scan can prove it is on.
+        let target = if super::ore::at(rules, obs, cell) {
+            Some(cell)
+        } else {
+            super::ore::nearest(
+                cell,
+                &fields
+                    .iter()
+                    .copied()
+                    .filter(|field| space.ground_at(*field).buildable())
+                    .collect::<Vec<_>>(),
+            )
+        };
+        let Some(target) = target else {
+            continue;
+        };
         // No cell on the record: the click names the unit, not a place, and a
         // cell that is the unit's own position changes every frame the unit
         // walks — which would make the intent look stale and re-send it every

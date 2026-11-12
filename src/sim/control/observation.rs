@@ -1628,7 +1628,21 @@ impl<'a> Observation<'a> {
             .is_some_and(|flags| flags.wall)
     }
 
-    /// Whether any overlay stands on the cell, wall or not.
+    /// The overlay standing on the cell, by its internal `[OverlayTypes]` id.
+    ///
+    /// [`Self::overlay_at`] answers "is something there"; this answers *what*,
+    /// which is the only way to tell ore from a wall or a fence without a second
+    /// grid. The id is meaningful to the rules, so the caller that wants a
+    /// meaning reads it through the overlay registry (`Tiberium=`) rather than
+    /// comparing a number here.
+    pub fn overlay_id_at(&self, rx: u16, ry: u16) -> Option<u8> {
+        self.sim
+            .overlay_grid
+            .as_ref()
+            .and_then(|grid| grid.cell(rx, ry).overlay_id)
+    }
+
+    /// The overlay standing on the cell, wall or not.
     ///
     /// A wall is an overlay whose flags say so ([Self::wall_at]); a gate, a
     /// fence or a mod's own barricade is an overlay too and closes the cell

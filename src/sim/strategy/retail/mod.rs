@@ -111,6 +111,7 @@ pub(super) mod expand;
 pub(super) mod kite;
 pub(super) mod micro;
 pub(super) mod orders;
+pub(super) mod ore;
 pub(super) mod pilots;
 pub(super) mod plan;
 pub(super) mod squads;
@@ -344,6 +345,9 @@ pub struct RetailBrain {
     /// Which infiltration class each spy already sent was walking to, by unit.
     /// The unit is consumed on arrival, so its disappearance is the receipt.
     pub(super) spy_errand: std::collections::BTreeMap<u64, u8>,
+    /// The ore cells near the base and the frame they were read on.
+    /// A field does not move, so the scan stands for `ore::SCAN_TERM`.
+    pub(super) ore_scan: Option<(u64, Vec<(u16, u16)>)>,
     /// The structure the fist committed to, and the frame the commitment may be
     /// re-made: `(entity, until)`. Seven bases make "the nearest structure" a
     /// different answer every time the army moves, and an army that re-picks
@@ -431,6 +435,7 @@ impl RetailBrain {
             sale_at: 0,
             infiltrated: std::collections::BTreeSet::new(),
             spy_errand: std::collections::BTreeMap::new(),
+            ore_scan: None,
             push_target: None,
             issued: [0; 5],
             last_tick: 0,
