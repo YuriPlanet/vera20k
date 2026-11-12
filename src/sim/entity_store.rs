@@ -926,6 +926,28 @@ impl EntityStore {
             .filter_map(|(_, entity)| entity.as_deref())
     }
 
+    /// The entities `keep` selects by id and owner, in stable_id order,
+    /// chosen from the id and owner columns without loading the others.
+    /// Debug builds check each owner against its entity (the live-read
+    /// check).
+    pub(crate) fn values_of_owners(
+        &self,
+        keep: impl Fn(u64, InternedId) -> bool,
+    ) -> impl Iterator<Item = &GameEntity> {
+        self.ids
+            .iter()
+            .zip(&self.owners)
+            .zip(&self.entities)
+            .filter_map(move |((&id, &owner), entity)| {
+                let entity = entity.as_deref()?;
+                debug_assert!(
+                    !crate::sim::touch_log::live_read_check_enabled() || entity.owner() == owner,
+                    "the owner column disagrees with entity {id}"
+                );
+                keep(id, owner).then_some(entity)
+            })
+    }
+
     /// Iterate all entities mutably in stable_id order.
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut GameEntity> {
         self.touched.note_all();
