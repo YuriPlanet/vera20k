@@ -28,6 +28,7 @@
 use std::any::Any;
 use std::sync::{Arc, Condvar, PoisonError};
 
+use crate::app::presentation::frame::PresentationFrame;
 use crate::sim::command_queue::{FrameChecksumState, MultiplayerChecksumHistory};
 use crate::sim::runtime::SimRuntime;
 use crate::util::sync::Mutex;
@@ -95,6 +96,11 @@ pub(crate) struct SimHost {
     /// Called by the simulation thread when a job ends, so the frame loop
     /// finishes it without waiting for its next redraw.
     wake: Option<SimWake>,
+    /// What drawing reads (`presentation::frame`), captured from the world
+    /// it stands for; `frame_stale` once any write may have changed that
+    /// world since.
+    frame: Option<std::sync::Arc<PresentationFrame>>,
+    frame_stale: bool,
     /// Global B04474 and its comparison timer (`FrameChecksumState`):
     /// process state that launch and load retain, written and compared only
     /// inside a multiplayer tick.
@@ -206,6 +212,8 @@ impl SimHost {
         if self.runtime.is_none() {
             return false;
         }
+        // The frame drawn while the tick runs is the world as it finds it.
+        self.ensure_frame();
         self.lent_jobs += 1;
         if self.lent_jobs == EARLY_RETURN_REPORT_JOBS {
             self.report_early_returns();
@@ -259,6 +267,8 @@ impl SimHost {
         };
         let waited = wait_started.elapsed();
         self.runtime = Some(runtime);
+        // The tick moved the world past the frame it found.
+        self.frame_stale = true;
         // The job's frame has done its work: reads see the live world again,
         // and nothing shares its storage or its resources.
         let drop_started = Instant::now();
@@ -280,7 +290,31 @@ impl SimHost {
     /// runtime comes back first.
     pub(crate) fn write_sim(&mut self, _route: SimWrite) -> Option<&mut SimRuntime> {
         self.reclaim(true);
+        self.frame_stale = true;
         self.runtime.as_mut()
+    }
+
+    /// Capture the presentation frame again when the world may have changed
+    /// since the last capture. A lent runtime keeps the frame its tick
+    /// found.
+    pub(crate) fn ensure_frame(&mut self) {
+        if self.lent {
+            return;
+        }
+        let Some(runtime) = self.runtime.as_ref() else {
+            self.frame = None;
+            return;
+        };
+        if self.frame.is_none() || self.frame_stale {
+            self.frame = Some(std::sync::Arc::new(PresentationFrame::capture(runtime)));
+            self.frame_stale = false;
+        }
+    }
+
+    /// The presentation frame of the world drawing reads, once
+    /// [`Self::ensure_frame`] has captured it.
+    pub(crate) fn frame(&self) -> Option<&PresentationFrame> {
+        self.frame.as_deref()
     }
 
     /// What the last lent job cost this thread, to weigh against the tick
@@ -302,6 +336,7 @@ impl SimHost {
     /// owner its tick borrows at the native queue boundary, together.
     pub(crate) fn tick_parts(&mut self) -> Option<(&mut SimRuntime, &mut FrameChecksumState)> {
         self.reclaim(true);
+        self.frame_stale = true;
         let runtime = self.runtime.as_mut()?;
         Some((runtime, &mut self.frame_checksums))
     }
@@ -319,6 +354,7 @@ impl SimHost {
         self.job_result = None;
         self.lend_cost = None;
         self.runtime = runtime;
+        self.frame = None;
     }
 
     /// Remove and return the installed runtime.
@@ -327,6 +363,7 @@ impl SimHost {
         self.report_early_returns();
         self.job_result = None;
         self.lend_cost = None;
+        self.frame = None;
         self.runtime.take()
     }
 }

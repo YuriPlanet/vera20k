@@ -115,6 +115,7 @@ impl Patriot {
         let colors = HouseColorMap::default();
         let input = ShpInputs {
             runtime: &self.runtime,
+            frame: None,
             atlas: Some(&self.shp),
             overlay_atlas: None,
             unit_atlas: Some(&self.voxel),

@@ -126,6 +126,7 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
     build_shp_instances_from_inputs(
         &ShpInputs {
             runtime: &scene.runtime,
+            frame: None,
             atlas: Some(&atlas),
             overlay_atlas: None,
             unit_atlas: None,

@@ -34,6 +34,7 @@ use smol_str::StrExt;
 /// comparisons use the same admission, frame, light, depth and piece owners.
 pub(crate) struct ShpInputs<'a> {
     pub runtime: &'a crate::sim::runtime::SimRuntime,
+    pub frame: Option<&'a crate::app::presentation::frame::PresentationFrame>,
     pub atlas: Option<&'a crate::render::sprite_atlas::SpriteAtlas>,
     pub overlay_atlas: Option<&'a crate::render::overlay_atlas::OverlayAtlas>,
     pub unit_atlas: Option<&'a crate::render::unit_atlas::UnitAtlas>,
@@ -97,6 +98,7 @@ pub(crate) fn shp_inputs<'a>(
     );
     Some(ShpInputs {
         runtime,
+        frame: state.match_state.sim_runtime.frame(),
         atlas: presentation.sprite_atlas.as_ref(),
         overlay_atlas: presentation.overlay_atlas.as_ref(),
         unit_atlas: presentation.unit_atlas.as_ref(),
@@ -255,7 +257,8 @@ pub(crate) fn shp_visitor<'a>(
         }
         // One fresh read for this read-only entity draw, reused for the
         // infantry direction and building gun. Never retain it across draws.
-        let render_pose = crate::app::presentation::render_pose::RenderPose::read(
+        let render_pose = crate::app::presentation::frame::pose(
+            input.frame,
             entity,
             sim.session().binary_frame(),
         );

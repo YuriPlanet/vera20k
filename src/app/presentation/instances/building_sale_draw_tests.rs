@@ -202,6 +202,7 @@ fn gate_piece(
     let voxel_images = RefCell::new(VoxelImageCache::default());
     let input = ShpInputs {
         runtime,
+        frame: None,
         atlas: Some(atlas),
         overlay_atlas: None,
         unit_atlas: None,

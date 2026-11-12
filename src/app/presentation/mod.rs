@@ -17,6 +17,7 @@ pub(crate) mod player_layout;
 pub(crate) mod fire_effects;
 #[cfg(feature = "ares")]
 pub(crate) mod flying_credits;
+pub(crate) mod frame;
 pub(crate) mod house_ui;
 pub(crate) mod instances;
 pub(crate) mod ion_blasts;

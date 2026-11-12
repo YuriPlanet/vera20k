@@ -222,6 +222,7 @@ impl Scene {
         build_shp_instances_from_inputs(
             &ShpInputs {
                 runtime: &self.runtime,
+                frame: None,
                 atlas: Some(atlas),
                 overlay_atlas: None,
                 unit_atlas: None,

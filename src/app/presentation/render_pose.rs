@@ -3,7 +3,7 @@
 
 use crate::sim::game_entity::GameEntity;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct RenderPose {
     pub screen: [f32; 2],
     pub body: u16,

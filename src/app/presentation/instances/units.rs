@@ -573,7 +573,8 @@ pub(crate) fn unit_visitor<'a>(
                     (None, None) => return None,
                 };
                 let render_pose = shadow_render_pose.unwrap_or_else(|| {
-                    crate::app::presentation::render_pose::RenderPose::read(
+                    crate::app::presentation::frame::pose(
+                        state.match_state.sim_runtime.frame(),
                         entity,
                         sim.session().binary_frame(),
                     )
@@ -2261,7 +2262,8 @@ fn aircraft_draw_sample(
     let terrain = view.resolved_terrain()?;
     let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
     let frame = view.session().binary_frame();
-    let pose = crate::app::presentation::render_pose::RenderPose::read(entity, frame);
+    let pose =
+        crate::app::presentation::frame::pose(state.match_state.sim_runtime.frame(), entity, frame);
     let xyz = [
         xy[0],
         xy[1],
