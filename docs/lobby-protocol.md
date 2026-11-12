@@ -755,7 +755,7 @@ The room hears its playing humans split into its Teams count (`launch.options.te
 or into two teams without one, weighing each player by their OS, and the host's game gets
 a `balance` event with every playing human's `team` (0 for A, 1 for B and so on). Two
 teams get the most even odds, keeping as many players on their teams as it can. Three or
-more take Beyond All Reason's loser picks: from the strongest player down, each joins the
+more take loser picks: from the strongest player down, each joins the
 team with the least OS so far among those below the players over the teams, rounded up;
 each team then keeps the letter most of its players have, and teams as even as the picks
 stay as they are. The host's game moves each named player to that team, as their own team

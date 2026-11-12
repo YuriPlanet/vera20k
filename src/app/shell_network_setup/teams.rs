@@ -15,13 +15,13 @@ use crate::skirmish_launch::{
     LaunchStartPosition, LaunchTeam, NETWORK_PLAYER_SLOT_COUNT, SkirmishLaunchSession,
 };
 
-/// How long Balance automatically waits after who plays last changed, as
-/// BAR's room bot balances at most once every 5 seconds.
+/// How long Balance automatically waits after who plays last changed, so a
+/// room filling up is balanced once it settles, not after every join.
 const BALANCE_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// The host sets the room's Teams, Off or a count, and the options carry it.
 /// Online, setting a count where Teams was Off turns Balance automatically
-/// on, as BAR's team preset has it.
+/// on, so the new teams start out even.
 pub(super) fn set_teams(state: &mut AppState, teams: Option<u8>) -> anyhow::Result<()> {
     let was_off = state.match_state.session.network_teams().is_none();
     state.match_state.session.set_network_teams(teams)?;
@@ -357,8 +357,7 @@ fn colors_by_team(listed: &[(u8, u8)], teams: &[u8], count: u8) -> Vec<Option<u8
 /// them: its first place and how many it holds. The ranges hold the same
 /// number of colours, the first teams one more while they do not divide
 /// evenly, and follow each other round the circle from the first team's,
-/// whose middle is nearest red: two teams get warm against cool, as in
-/// Beyond All Reason's rooms.
+/// whose middle is nearest red: two teams get warm against cool.
 struct HueCircle {
     colors: Vec<(u8, i32)>,
     ranges: Vec<(usize, usize)>,
