@@ -1000,7 +1000,7 @@ pub(super) fn build_ui_instances(
             .match_state
             .match_presentation
             .surface_palette(state.process_assets.manager()),
-        &state.match_state.match_presentation.effective_house_color_map(),
+        &state.match_state.match_presentation.house_color_map,
         wall_ms,
         view,
         if interleave_enabled {
@@ -1020,7 +1020,7 @@ pub(super) fn build_ui_instances(
                 .map(|rt| &rt.simulation),
             state.rules(),
             &cursor.selected,
-            &state.match_state.match_presentation.effective_house_color_map(),
+            &state.match_state.match_presentation.house_color_map,
             preferred_local_owner(state).as_deref(),
             view,
         );
@@ -1171,14 +1171,15 @@ fn build_placement_ghost(
         return Vec::new();
     };
     let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
-    let remap_house = local_owner
-        .as_deref()
-        .map(|owner| {
-            state
-                .match_state
-                .match_presentation
-                .effective_house_color(owner)
-        });
+    // The placement ghost is a building of the local player's, so it follows
+    // the relation colours like the finished building will.
+    let remap_house = local_owner.as_deref().and_then(|owner| {
+        state
+            .match_state
+            .match_presentation
+            .effective_house_color_map()
+            .get(owner)
+    }).copied();
     let translucency = object
         .placement_preview_translucency()
         .unwrap_or(globals.translucency);

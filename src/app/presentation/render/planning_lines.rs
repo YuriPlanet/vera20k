@@ -264,7 +264,10 @@ pub(super) fn stroke_rgb(
     let index = state
         .match_state
         .match_presentation
-        .effective_house_color(name);
+        .house_color_map
+        .get(name)
+        .copied()
+        .unwrap_or(crate::rules::house_colors::NO_REMAP);
     let rgb = crate::render::palette_light::house_color_rgb(&rules.house_color_ramps, index);
     if bright {
         interpolate_rgb8(rgb, [255; 3], 100)

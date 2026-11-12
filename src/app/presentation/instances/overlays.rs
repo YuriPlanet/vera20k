@@ -1409,7 +1409,7 @@ pub(crate) fn build_weapon_wave_instances(
             .expect("the wave owner's runtime")
             .resources
             .rules;
-        let colors = state.match_state.match_presentation.effective_house_color_map();
+        let colors = &state.match_state.match_presentation.house_color_map;
         move |wave: &crate::sim::wave::Wave| {
             crate::app::presentation::fire_effects::ares_wave_blend(sim, rules, colors, wave)
         }

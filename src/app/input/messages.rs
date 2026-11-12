@@ -135,7 +135,7 @@ fn post_silent_house_feedback(state: &mut AppState, csf_key: &str, timeout_ms: u
     let now = message_now_ms(state);
     let rgb = house_message_rgb(
         crate::app::input::commands::preferred_local_owner_name(state).as_deref(),
-        &state.match_state.match_presentation.effective_house_color_map(),
+        &state.match_state.match_presentation.house_color_map,
         state.rules().map(|rules| rules.color_schemes.as_slice()),
     );
     let font = &state.renderer.bit_font;
@@ -210,7 +210,7 @@ pub(crate) fn post_selection_navigation_text(state: &mut AppState, text: &str) {
     let now = message_now_ms(state);
     let rgb = house_message_rgb(
         crate::app::input::commands::preferred_local_owner_name(state).as_deref(),
-        &state.match_state.match_presentation.effective_house_color_map(),
+        &state.match_state.match_presentation.house_color_map,
         state.rules().map(|rules| rules.color_schemes.as_slice()),
     );
     let font = &state.renderer.bit_font;
@@ -439,7 +439,7 @@ pub(crate) fn post_ares_superweapon_message(
         &settings,
         message,
         &rules.color_schemes,
-        &state.match_state.match_presentation.effective_house_color_map(),
+        &state.match_state.match_presentation.house_color_map,
         firer,
         player.as_deref(),
         rules.general.message_delay_minutes,
@@ -511,7 +511,7 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
             text: &label,
             rgb: house_message_rgb(
                 crate::app::input::commands::preferred_local_owner_name(state).as_deref(),
-                &state.match_state.match_presentation.effective_house_color_map(),
+                &state.match_state.match_presentation.house_color_map,
                 Some(&rules.color_schemes),
             ),
             timeout_ms: message.timeout_ms(rules),
@@ -542,7 +542,7 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
     };
     let rgb = house_message_rgb(
         crate::app::input::commands::preferred_local_owner_name(state).as_deref(),
-        &state.match_state.match_presentation.effective_house_color_map(),
+        &state.match_state.match_presentation.house_color_map,
         Some(&rules.color_schemes),
     );
     if let Some(post) = message.post(rules, rgb) {
@@ -638,7 +638,7 @@ fn post_eva_text(state: &mut AppState, label: &str, name: &str) {
     let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
     let rgb = house_message_rgb(
         crate::app::input::commands::preferred_local_owner_name(state).as_deref(),
-        &state.match_state.match_presentation.effective_house_color_map(),
+        &state.match_state.match_presentation.house_color_map,
         Some(&rules.color_schemes),
     );
     post_resolved_message(
@@ -737,7 +737,7 @@ fn post_named_house_line(
     let rgb = match color {
         HouseLineColor::Player => house_message_rgb(
             Some(&owner),
-            &state.match_state.match_presentation.effective_house_color_map(),
+            &state.match_state.match_presentation.house_color_map,
             Some(&rules.color_schemes),
         ),
         HouseLineColor::Country => {
@@ -775,7 +775,7 @@ pub(crate) fn player_line_rgb(state: &AppState, owner: crate::sim::intern::Inter
         .map(|runtime| runtime.simulation.interner().resolve(owner).to_string());
     house_message_rgb(
         owner.as_deref(),
-        &state.match_state.match_presentation.effective_house_color_map(),
+        &state.match_state.match_presentation.house_color_map,
         state.rules().map(|rules| rules.color_schemes.as_slice()),
     )
 }

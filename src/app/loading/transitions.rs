@@ -131,37 +131,6 @@ pub(crate) struct MapPresentationInputs {
 /// route-specific input, sidebar order, waterlines and timers stay outside it.
 /// Missing map-owned surfaces replace the old ones with absence, so a different
 /// map can never inherit the outgoing geometry or shroud dimensions.
-/// Build the per-house beacon art (tactical + radar palettes) using the
-/// *effective* house colours. When the relation-colours toggle is off this is
-/// identical to the original per-player colours; when on, every beacon ramps to
-/// its relation band (self/ally/enemy) or stays neutral. Pure presentation: it
-/// reads only the renderer and the simulation's house order and never touches
-/// the simulation, so it is safe to rebuild on every toggle flip.
-pub(crate) fn build_beacon_art(
-    state: &AppState,
-) -> Option<crate::render::beacon_art::BeaconArt> {
-    let assets = state.process_assets.manager()?;
-    let runtime = state.match_state.sim_runtime.runtime()?;
-    let sim = &runtime.simulation;
-    let presentation = &state.match_state.match_presentation;
-    let ramps: Vec<_> = sim
-        .houses()
-        .order()
-        .iter()
-        .map(|house| {
-            let index = presentation.effective_house_color(sim.interner().resolve(*house));
-            *runtime.resources.rules.house_color_ramps.ramp(index)
-        })
-        .collect();
-    Some(crate::render::beacon_art::BeaconArt::new(
-        &state.renderer.gpu.device,
-        &state.renderer.gpu.queue,
-        &state.renderer.batch_renderer,
-        assets,
-        &ramps,
-    ))
-}
-
 pub(crate) fn install_world_presentation(
     state: &mut AppState,
     map: MapPresentationInputs,
@@ -446,9 +415,32 @@ pub(crate) fn install_world_presentation(
         .borrow_mut()
         .reset();
     // Full_Init 687BB2 -> Init_BeaconArt 4309D0; each row's ColorScheme is
-    // its House's (+0x16054). Uses the effective colours so the relation-colours
-    // toggle recolours beacons; see `build_beacon_art`.
-    state.match_state.match_presentation.beacon_art = build_beacon_art(state);
+    // its House's (+0x16054).
+    state.match_state.match_presentation.beacon_art =
+        state.process_assets.manager().and_then(|assets| {
+            let runtime = state.match_state.sim_runtime.runtime()?;
+            let sim = &runtime.simulation;
+            let colors = &state.match_state.match_presentation.house_color_map;
+            let ramps: Vec<_> = sim
+                .houses()
+                .order()
+                .iter()
+                .map(|house| {
+                    let index = colors
+                        .get(sim.interner().resolve(*house))
+                        .copied()
+                        .unwrap_or(crate::rules::house_colors::NO_REMAP);
+                    *runtime.resources.rules.house_color_ramps.ramp(index)
+                })
+                .collect();
+            Some(crate::render::beacon_art::BeaconArt::new(
+                &state.renderer.gpu.device,
+                &state.renderer.gpu.queue,
+                &state.renderer.batch_renderer,
+                assets,
+                &ramps,
+            ))
+        });
     let shroud_buffer = state.process_assets.manager().and_then(|assets| {
         let grid = state
             .match_state

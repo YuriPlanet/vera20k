@@ -44,10 +44,17 @@ pub const RELATION_ENEMY: HouseColorIndex = HouseColorIndex(250);
 /// Fixed HSV (hue, saturation, value) for the three relation bands — a
 /// retail-style saturated sweep, matching the Warcraft III / StarCraft II
 /// "alliance colours" reading: self = blue, ally = green, enemy = red.
-/// Hue is on the engine's 0..=255 scale (0 = red, ~96 = green, ~191 = blue).
+///
+/// Hue is on the engine's 0..=255 scale and `hsv_to_rgb` walks six sextants of
+/// 42.5 each (`region = h * 6 / 255`). A sextant's *first* step is its pure
+/// primary and its last step is the next primary, so pure red, green and blue
+/// sit at h = 0, 85 and 170. Anything inside a sextant blends two primaries:
+/// h = 191 is 44% of the way from blue to magenta and reads violet, which is
+/// exactly the "my purple army turned blue-purple" bug this pins down. Keep
+/// these on the sextant starts.
 const RELATION_HUES: [[u8; 3]; 3] = [
-    [191, 214, 212], // RELATION_SELF: blue
-    [96, 214, 212],  // RELATION_ALLY: green
+    [170, 230, 255], // RELATION_SELF: blue
+    [85, 230, 255],  // RELATION_ALLY: green
     [0, 230, 255],   // RELATION_ENEMY: red
 ];
 
@@ -529,20 +536,29 @@ mod tests {
         assert_ne!(self_r, ally_r, "self and ally bands must differ");
         assert_ne!(self_r, enemy_r, "self and enemy bands must differ");
         assert_ne!(ally_r, enemy_r, "ally and enemy bands must differ");
-        // Shade 0 is the brightest per `build_scheme_ramp`; each band should
-        // read as its named hue there.
-        assert!(
-            self_r[0].b >= self_r[0].r && self_r[0].b >= self_r[0].g,
-            "self reads blue"
-        );
-        assert!(
-            ally_r[0].g >= ally_r[0].r && ally_r[0].g >= ally_r[0].b,
-            "ally reads green"
-        );
-        assert!(
-            enemy_r[0].r >= enemy_r[0].g && enemy_r[0].r >= enemy_r[0].b,
-            "enemy reads red"
-        );
+        // Shade 0 must read as the pure primary, not a blend toward the next
+        // one: h = 191 put 162 of red beside 250 of blue in the "blue" band
+        // and turned a purple player's army blue-violet. Retail's own shade 0
+        // keeps a little of both other channels (blue is 77/77/250), so pin
+        // their share of the primary instead of an absolute byte.
+        for (name, ramp, primary) in [
+            ("self", self_r, 2usize),
+            ("ally", ally_r, 1),
+            ("enemy", enemy_r, 0),
+        ] {
+            let channels = [ramp[0].r, ramp[0].g, ramp[0].b];
+            let strongest = channels[primary];
+            assert!(strongest >= 150, "{name} band's own channel is bright");
+            for (channel, &value) in channels.iter().enumerate() {
+                if channel != primary {
+                    assert!(
+                        u32::from(value) * 100 <= u32::from(strongest) * 45,
+                        "{name} band mixes {value} of channel {channel} into {strongest} of \
+                         its primary"
+                    );
+                }
+            }
+        }
     }
 
     /// `HouseColorRamps::ramp` must return the relation band for the three fixed

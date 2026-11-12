@@ -28,10 +28,7 @@ impl<'a> HouseUiSources<'a> {
             schemes: state
                 .rules()
                 .map_or(&[][..], |rules| rules.color_schemes.as_slice()),
-            colors: state
-                .match_state
-                .match_presentation
-                .effective_house_color_map(),
+            colors: &state.match_state.match_presentation.house_color_map,
         }
     }
 

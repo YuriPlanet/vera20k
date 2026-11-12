@@ -2748,10 +2748,7 @@ fn finish_simulation_frame(
                 LifecycleOutput::LaserCreated(birth) => {
                     let runtime = state.match_state.sim_runtime.runtime();
                     let presentation = &mut state.match_state.match_presentation;
-                    let colors = presentation
-                        .relation_color_map
-                        .as_ref()
-                        .unwrap_or(&presentation.house_color_map);
+                    let colors = &presentation.house_color_map;
                     presentation
                         .lasers
                         .create(birth, |owner| house_laser_rgb(runtime, colors, owner));
@@ -2766,10 +2763,7 @@ fn finish_simulation_frame(
                 LifecycleOutput::RadiationBeamCreated(birth) => {
                     let runtime = state.match_state.sim_runtime.runtime();
                     let presentation = &mut state.match_state.match_presentation;
-                    let colors = presentation
-                        .relation_color_map
-                        .as_ref()
-                        .unwrap_or(&presentation.house_color_map);
+                    let colors = &presentation.house_color_map;
                     presentation
                         .radiation_beams
                         .create(birth, |owner, kind| match kind {

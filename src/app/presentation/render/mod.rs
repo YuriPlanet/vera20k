@@ -557,10 +557,7 @@ pub(crate) fn render_game(
         match_presentation.target_lines.unit_action_lines_enabled(),
         &mut match_presentation.placement_range_pulse,
         &mut match_presentation.superweapon_range_pulse,
-        match_presentation
-            .relation_color_map
-            .as_ref()
-            .unwrap_or(&match_presentation.house_color_map),
+        &match_presentation.house_color_map,
         viewport,
         clock_ms,
         steps,
