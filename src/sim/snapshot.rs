@@ -3171,7 +3171,7 @@ mod tests {
         assert!(
             restored
                 .zone_grid
-                .as_deref()
+                .as_ref()
                 .unwrap()
                 .is_native_load_pending()
         );
@@ -3200,7 +3200,7 @@ mod tests {
         assert!(!path.is_walkable(2, 0));
         let normal_zones = restored
             .zone_grid
-            .as_deref()
+            .as_ref()
             .and_then(|zones| zones.map_for(MovementZone::Normal))
             .expect("canonical restored ground zones");
         assert_ne!(
@@ -3235,8 +3235,8 @@ mod tests {
             loaded_authority.len()
         );
         assert_zone_grids_equivalent(
-            sim.zone_grid.as_deref().unwrap(),
-            restored.zone_grid.as_deref().unwrap(),
+            sim.zone_grid.as_ref().unwrap(),
+            restored.zone_grid.as_ref().unwrap(),
         );
         assert_eq!(restored.state_hash(), authoritative_hash);
     }
@@ -8090,8 +8090,8 @@ mod tests {
             loaded_authority.len()
         );
         assert_zone_grids_equivalent(
-            live.zone_grid.as_deref().unwrap(),
-            restored.zone_grid.as_deref().unwrap(),
+            live.zone_grid.as_ref().unwrap(),
+            restored.zone_grid.as_ref().unwrap(),
         );
         assert_eq!(
             restored.state_hash(),
@@ -8888,7 +8888,7 @@ mod tests {
         assert_ne!(
             restored
                 .zone_grid
-                .as_deref()
+                .as_ref()
                 .and_then(|zones| zones.map_for(MovementZone::Normal))
                 .expect("normal zone map")
                 .zone_at(destroyed_cell.0, destroyed_cell.1, MovementLayer::Ground),
@@ -8971,8 +8971,8 @@ mod tests {
         a.rebuild_zone_grid(&path_a);
         b.rebuild_zone_grid(&path_b);
         assert_zone_grids_equivalent(
-            a.zone_grid.as_deref().expect("zone grid rebuilt"),
-            b.zone_grid.as_deref().expect("zone grid rebuilt"),
+            a.zone_grid.as_ref().expect("zone grid rebuilt"),
+            b.zone_grid.as_ref().expect("zone grid rebuilt"),
         );
         assert_eq!(a.state_hash(), b.state_hash());
     }

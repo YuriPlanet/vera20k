@@ -393,7 +393,8 @@ Not done:
   (`draw_state` fading building: its sensed-observer row needs a frame
   captured for a sensing player; `tooltips` IFV passenger; radar `minimap`
   Mirage and two `visibility` cases whose fixtures have no terrain).
-- The core lib suite had not finished when this was committed.
+- The core lib suite passes but for 495 cases that need retail assets this
+  machine lacks.
 - **Phase 4** (the simulation thread ticking on its own) is the next phase.
 
 ## Validation

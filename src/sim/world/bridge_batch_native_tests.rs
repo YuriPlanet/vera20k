@@ -198,7 +198,7 @@ fn live_bridge_batch_matches_original_order_recalc_cache_and_hierarchy() {
                         .collect();
                     terrain.test_set_native_allocated_cells(&allocated);
                 }
-                let zones = sim.zone_grid.as_deref_mut().unwrap();
+                let zones = sim.zone_grid.as_mut().unwrap();
                 let base = zones.base_topology_mut_for_test();
                 if let Some(value) = change.get("class") {
                     base.movement_classes_mut_for_test()[i] = value.as_u64().unwrap() as u8;
@@ -255,7 +255,7 @@ fn live_bridge_batch_matches_original_order_recalc_cache_and_hierarchy() {
             );
             let recalcs = trace.recalcs;
             let terrain = sim.resolved_terrain.as_ref().unwrap();
-            let zones = sim.zone_grid.as_deref_mut().unwrap();
+            let zones = sim.zone_grid.as_mut().unwrap();
             assert_native_hierarchy_graphs(
                 zones.hierarchy_for(MovementZone::Normal).unwrap(),
                 terrain,
@@ -338,7 +338,7 @@ fn live_raw_bridge_height_keeps_retained_cache_until_native_batch_publication() 
     let before_path = sim.path_grid_snapshot().unwrap();
     let before = sim
         .zone_grid
-        .as_deref_mut()
+        .as_mut()
         .unwrap()
         .base_topology_mut_for_test()
         .clone();
@@ -378,7 +378,7 @@ fn live_raw_bridge_height_keeps_retained_cache_until_native_batch_publication() 
         sim.path_grid().unwrap().cell(11, 10),
         before_path.cell(11, 10)
     );
-    let zones = sim.zone_grid.as_deref_mut().unwrap();
+    let zones = sim.zone_grid.as_mut().unwrap();
     assert_native_hierarchy_graphs(
         zones.hierarchy_for(MovementZone::Normal).unwrap(),
         terrain,
@@ -400,7 +400,7 @@ fn live_raw_bridge_height_keeps_retained_cache_until_native_batch_publication() 
     live.recalculate_bridge_zones(&[(10, 10), (12, 10)])
         .unwrap();
     let terrain = sim.resolved_terrain.as_ref().unwrap();
-    let zones = sim.zone_grid.as_deref_mut().unwrap();
+    let zones = sim.zone_grid.as_mut().unwrap();
     let expected = &case["states"][0];
     assert_native_hierarchy_graphs(
         zones.hierarchy_for(MovementZone::Normal).unwrap(),
@@ -524,7 +524,7 @@ fn live_bridge_batch_recovers_rust_append_capacity_without_replacing_base_connec
         .find(|case| case["input"]["name"] == "clear_local")
         .unwrap();
     let mut sim = bridge_batch_simulation(case);
-    let zones = sim.zone_grid.as_deref_mut().unwrap();
+    let zones = sim.zone_grid.as_mut().unwrap();
     let before = zones.base_topology_mut_for_test().clone();
     let (_, hierarchy) = zones.base_and_hierarchy_mut();
     let fine = &mut hierarchy.levels_mut()[0];
@@ -549,7 +549,7 @@ fn live_bridge_batch_recovers_rust_append_capacity_without_replacing_base_connec
     .recalculate_bridge_zones(&[(10, 10)])
     .unwrap();
     let terrain = sim.resolved_terrain.as_ref().unwrap();
-    let zones = sim.zone_grid.as_deref_mut().unwrap();
+    let zones = sim.zone_grid.as_mut().unwrap();
     // The supplied invalid TMP leaves class/height unchanged, so complete
     // reconstruction must reproduce the original native full-build snapshot.
     assert_native_hierarchy_graphs(

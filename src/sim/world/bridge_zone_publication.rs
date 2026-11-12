@@ -155,7 +155,7 @@ mod tests {
     ) -> Vec<Vec<Vec<(crate::sim::pathfinding::zone_map::ZoneId, u8)>>> {
         let hierarchy = sim
             .zone_grid
-            .as_deref()
+            .as_ref()
             .unwrap()
             .hierarchy_for(MovementZone::Normal)
             .unwrap();

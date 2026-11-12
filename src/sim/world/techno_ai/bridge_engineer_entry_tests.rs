@@ -227,8 +227,8 @@ fn retail_hills_engineer_cliff_start_is_rejected() {
     let header = &scenario.map.header;
     let output = json!({
         "schema_version":1,"native_size":[header.width,header.height],
-        "width":scenario.sim().zone_grid.as_deref().unwrap().width(),
-        "height":scenario.sim().zone_grid.as_deref().unwrap().height(),
+        "width":scenario.sim().zone_grid.as_ref().unwrap().width(),
+        "height":scenario.sim().zone_grid.as_ref().unwrap().height(),
         "local_size":[header.local_left,header.local_top,header.local_width,header.local_height],
         "map_hash":format!("{:016x}",scenario.map.ini.content_hash()),
         "rules_hash":format!("{:016x}",scenario.runtime.resources.rules.simulation_config_hash()),
@@ -473,7 +473,7 @@ fn engineer_navigation_state(actor: &crate::sim::game_entity::GameEntity) -> Val
 fn assert_repaired_hills_authorities(sim: &Simulation, engineer: u64, hut: u64) {
     let bridges = sim.bridge_state.as_ref().unwrap();
     assert_eq!(
-        sim.zone_grid.as_deref().unwrap().bridge_records(),
+        sim.zone_grid.as_ref().unwrap().bridge_records(),
         bridges.endpoint_records()
     );
     let cell = sim.resolved_terrain.as_ref().unwrap().cell(64, 69).unwrap();

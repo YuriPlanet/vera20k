@@ -483,7 +483,7 @@ mod tests {
             let target = &row["clicked_cell"];
             let answer = sim
                 .zone_grid
-                .as_deref()
+                .as_ref()
                 .unwrap()
                 .can_reach_native(
                     &cells,

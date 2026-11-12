@@ -119,11 +119,7 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
             .shared_cell_dummy()
             .test_set_land_type(input["dummy_land"].as_i64().unwrap() as i32);
     }
-    let base = sim
-        .zone_grid
-        .as_deref_mut()
-        .unwrap()
-        .base_topology_mut_for_test();
+    let base = sim.zone_grid.as_mut().unwrap().base_topology_mut_for_test();
     base.set_native_bridge_source_size_for_test(Some((8, 8)));
     base.zone_ids_mut_for_test().fill(0);
     for row in base.raw_zone_ids_by_row_mut_for_test() {

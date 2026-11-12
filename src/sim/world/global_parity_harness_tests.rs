@@ -536,7 +536,7 @@ fn fresh_drive_turn_publishes_on_request_frame_and_restores_before_admission() {
         assert!(
             restored
                 .zone_grid
-                .as_deref()
+                .as_ref()
                 .unwrap()
                 .is_native_load_pending()
         );
@@ -551,7 +551,7 @@ fn fresh_drive_turn_publishes_on_request_frame_and_restores_before_admission() {
         assert!(
             !restored
                 .zone_grid
-                .as_deref()
+                .as_ref()
                 .unwrap()
                 .is_native_load_pending()
         );
