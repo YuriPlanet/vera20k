@@ -704,7 +704,7 @@ pub(super) fn build_shell_text_draws(
         scale,
     );
 
-    for (slot, row, opponent) in shell.paged_opponents() {
+    for (slot, row, opponent) in shell.paged_opponents(layout.shown_rows) {
         if !player_row_visible(shell, maps, row) {
             continue;
         }

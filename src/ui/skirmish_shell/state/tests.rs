@@ -18,6 +18,7 @@ use crate::ui::skirmish_shell::layout::compute_choose_map_modal_layout;
 use crate::ui::skirmish_shell::{
     COMBO_DROPDOWN_ROW_H, COMBO_DROPDOWN_SCROLLBAR_BUTTON_H, COMBO_DROPDOWN_SCROLLBAR_W,
     COMBO_FACE_H, RectPx, checkbox_text_rect, combo_face_rect, compute_layout,
+    compute_layout_for_rows,
 };
 
 fn test_map_entry(name: &str) -> MapMenuEntry {
@@ -514,7 +515,7 @@ fn skirmish_status_help_includes_flag_and_right_panel_static_targets() {
     let maps = vec![test_map_entry("arena.map")];
 
     // Flag picture controls 0x6DA..0x6E1 -> STT:SkirmishPictureFlag.
-    for flag in &layout.flags {
+    for flag in layout.flags.iter().take(layout.shown_rows) {
         let target = hovered_shell_control(&layout, &shell, &maps, flag.x, flag.y);
         assert_eq!(target, Some(SkirmishHoverTarget::FlagPicture));
         assert_eq!(
@@ -1346,46 +1347,48 @@ fn thirty_start_map_scrolls_its_computer_rows_through_to_player_thirty() {
     let maps = [test_map_entry_with_starts("thirty.mmx", 30)];
     let mut shell = SkirmishShellState::default();
     initialize_rows_for_selected_map(&mut shell, &maps);
-    // The scrollbar stands right of Team beside the computer rows, short of
-    // the right panel.
-    let layout = compute_layout(800, 600);
+    // The page shows thirteen rows; the scrollbar stands right of Team from
+    // the player's row to the last, short of the right panel.
+    let layout = compute_layout_for_rows(800, 600, 30);
     let scrollbar = |shell: &SkirmishShellState| {
         opponent_scroll_geometry(&layout, shell, &maps).expect("thirty starts scroll")
     };
     let bar = scrollbar(&shell).scrollbar.expect("the rows overflow");
     let team = layout.rows.team_combos;
-    assert!(team[0].y + COMBO_FACE_H < bar.y && bar.y + bar.h <= team[7].y + COMBO_FACE_H);
-    assert!(team[7].x + team[7].w < bar.x && bar.x + bar.w < layout.right_panel.top.x);
+    assert!(team[0].y < bar.y && bar.y < team[0].y + COMBO_FACE_H);
+    assert!(team[12].y < bar.y + bar.h && bar.y + bar.h <= team[12].y + COMBO_FACE_H);
+    assert!(team[12].x + team[12].w < bar.x && bar.x + bar.w < layout.right_panel.top.x);
 
-    // The player's row and computer rows 1-7; a notch down shows row 8
-    // under the player's, and the down arrow row 9.
-    assert!(player_row_visible(&shell, &maps, 7));
-    assert!(!player_row_visible(&shell, &maps, 8));
+    // The player's row and computer rows 1-12; a notch down shows row 13
+    // under the player's, and the down arrow row 14.
+    assert!(player_row_visible(&shell, &maps, 12));
+    assert!(!player_row_visible(&shell, &maps, 13));
     assert!(handle_option_mouse_wheel(&mut shell, &maps, -1.0));
     assert!(!player_row_visible(&shell, &maps, 1));
-    assert!(player_row_visible(&shell, &maps, 8));
+    assert!(player_row_visible(&shell, &maps, 13));
     let x = bar.x + bar.w / 2;
     handle_option_mouse_down(&mut shell, &layout, &maps, x, bar.y + bar.h - 5);
     handle_option_mouse_up(&mut shell);
-    assert!(player_row_visible(&shell, &maps, 9));
+    assert!(player_row_visible(&shell, &maps, 14));
     assert!(!player_row_visible(&shell, &maps, 2));
 
-    // The thumb dragged to the bottom shows the last seven, player thirty in
-    // the seventh computer row's controls; the wheel goes no further.
+    // The thumb dragged to the bottom shows the last twelve, player thirty in
+    // the twelfth computer row's controls; the wheel goes no further.
     let thumb = scrollbar(&shell).thumb.expect("thumb");
     handle_option_mouse_down(&mut shell, &layout, &maps, x, thumb.y + thumb.h / 2);
     handle_option_mouse_move(&mut shell, &layout, &maps, x, bar.y + bar.h);
     handle_option_mouse_up(&mut shell);
     assert!(player_row_visible(&shell, &maps, 0));
-    assert!(!player_row_visible(&shell, &maps, 22));
+    assert!(!player_row_visible(&shell, &maps, 17));
+    assert!(player_row_visible(&shell, &maps, 18));
     assert!(!handle_option_mouse_wheel(&mut shell, &maps, -1.0));
     assert_eq!(
         combo_rect(&layout, &shell, SkirmishComboId::AiType(28)),
-        Some(layout.rows.ai_type_combos[6])
+        Some(layout.rows.ai_type_combos[11])
     );
     assert_eq!(
         combo_rect(&layout, &shell, SkirmishComboId::Start(29)),
-        Some(layout.rows.start_combos[7])
+        Some(layout.rows.start_combos[12])
     );
 
     // Player thirty can take the thirtieth start into the match.
@@ -2618,4 +2621,33 @@ fn a_scrolling_start_list_keeps_the_face_width_for_its_captions() {
     let bar = combo_dropdown_scrollbar_rect(&shell, &layout, &maps, id).unwrap();
     assert_eq!((content.x, content.w), (face.x, face.w));
     assert_eq!(bar.x, face.x + face.w);
+}
+
+#[test]
+fn a_low_row_of_the_longer_list_opens_its_list_upward() {
+    let maps = [test_map_entry_with_starts("thirty.mmx", 30)];
+    let mut shell = SkirmishShellState::default();
+    initialize_rows_for_selected_map(&mut shell, &maps);
+    for row in [1, 12] {
+        apply_combo_selection_for_test(
+            &mut shell,
+            SkirmishComboId::AiType(row - 1),
+            SkirmishComboItem::AiType(SkirmishAiRowType::Easy),
+        );
+    }
+    let layout = compute_layout_for_rows(800, 600, 30);
+    let list_and_face = |id| {
+        let face = combo_face_rect(combo_rect(&layout, &shell, id).unwrap(), layout.scale);
+        (
+            combo_dropdown_rect(&shell, &layout, &maps, id).unwrap(),
+            face,
+        )
+    };
+    // Row 12's nine-row Start list would run past the status line, so it
+    // opens above its face; row 1's opens below, as every retail list does.
+    let (list, face) = list_and_face(SkirmishComboId::Start(12));
+    assert!(face.y + face.h + 1 + list.h > layout.status_help.y);
+    assert_eq!(list.y + list.h, face.y - 1);
+    let (list, face) = list_and_face(SkirmishComboId::Start(1));
+    assert_eq!(list.y, face.y + face.h + 1);
 }

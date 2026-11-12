@@ -1,7 +1,7 @@
 //! Hit testing, hover targets, status-help keys, and action application for the skirmish shell.
 
 use crate::map::scenario_menu::MapMenuEntry;
-use crate::skirmish_launch::{LaunchCountry, SKIRMISH_PLAYER_SLOT_COUNT};
+use crate::skirmish_launch::LaunchCountry;
 
 use super::super::layout::{
     ChooseMapModalButton, ChooseMapModalLayout, ColorComboId, DropdownMetrics,
@@ -76,7 +76,7 @@ pub fn hovered_shell_control(
             return Some(SkirmishHoverTarget::Trackbar(id));
         }
     }
-    for slot in 0..SKIRMISH_PLAYER_SLOT_COUNT {
+    for slot in 0..layout.shown_rows {
         let row = state.slot_row(slot);
         if !player_row_visible(state, maps, row) {
             continue;
@@ -94,7 +94,7 @@ pub fn hovered_shell_control(
             }
         }
     }
-    for slot in 1..SKIRMISH_PLAYER_SLOT_COUNT {
+    for slot in 1..layout.shown_rows {
         let row = state.slot_row(slot);
         if !player_row_visible(state, maps, row) {
             continue;
