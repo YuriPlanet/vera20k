@@ -66,6 +66,10 @@ pub struct UrbanCatalog {
     /// ([`decorate_streets`]). Empty for Ares' lists.
     pub props: Vec<UrbanStructure>,
     pub trees: Vec<String>,
+    /// VERA extension: the theater's farm buildings and monuments, for the
+    /// Countryside and Landmark Extras (`embellish`). Empty for Ares' lists.
+    pub farms: Vec<UrbanStructure>,
+    pub landmarks: Vec<UrbanStructure>,
 }
 
 /// What the app supplies for an urban run.

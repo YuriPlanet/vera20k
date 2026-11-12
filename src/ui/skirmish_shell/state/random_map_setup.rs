@@ -239,31 +239,55 @@ pub enum RandomMapPreset {
     CityWar,
     /// Four players across an archipelago.
     Islands,
+    /// Eight players on Team Continents, the landform that gives each team
+    /// a continent; the Skirmish screen's Team Starts sets the teams on
+    /// them.
+    Teams,
+    /// One of the player's own, by slot from 0: the options the Extras
+    /// view's My Preset tool saved (`custom_presets`), all but the seed and
+    /// the description.
+    Mine(u8),
 }
 
-impl RandomMapPreset {
-    pub const ALL: [Self; 4] = [Self::Duel, Self::Brawl, Self::CityWar, Self::Islands];
+/// The player's own presets a dialog keeps (`RandomMapPreset::Mine`).
+pub const CUSTOM_PRESET_SLOTS: usize = 5;
 
-    /// The button caption while this preset stands.
+impl RandomMapPreset {
+    /// The ready-made ones, in the order the button steps through them; the
+    /// player's own follow.
+    pub const ALL: [Self; 5] = [
+        Self::Duel,
+        Self::Brawl,
+        Self::CityWar,
+        Self::Islands,
+        Self::Teams,
+    ];
+
+    /// The button caption while this preset stands. One of the player's own
+    /// is "My Preset" with its number, which the caption's drawer fills in.
     pub const fn label(self) -> (&'static str, &'static str) {
         match self {
             Self::Duel => ("VERA:RandomMapPresetDuel", "1v1 Duel"),
             Self::Brawl => ("VERA:RandomMapPresetBrawl", "30-Player Brawl"),
             Self::CityWar => ("VERA:RandomMapPresetCity", "City War"),
             Self::Islands => ("VERA:RandomMapPresetIslands", "Islands"),
+            Self::Teams => ("VERA:RandomMapPresetTeams", "Team Battle"),
+            Self::Mine(_) => ("VERA:RandomMapPresetMine", "My Preset {number}"),
         }
     }
 
-    /// Players, landform (`map_type`), size, resources, theater and the
-    /// Advanced values: water, hills, buildings, vegetation, ore fields,
-    /// plateau size, accessibility.
-    const fn values(self) -> (i32, i32, i32, i32, Option<i32>, [i32; 7]) {
-        match self {
+    /// A ready-made preset's players, landform (`map_type`), size, resources,
+    /// theater and Advanced values: water, hills, buildings, vegetation, ore
+    /// fields, plateau size, accessibility. None for one of the player's own.
+    const fn values(self) -> Option<(i32, i32, i32, i32, Option<i32>, [i32; 7])> {
+        Some(match self {
             Self::Duel => (2, 3, 1, 1, None, [10, 25, 0, 40, 60, 50, 80]),
             Self::Brawl => (30, 3, 7, 2, None, [5, 20, 0, 30, 70, 50, 90]),
             Self::CityWar => (4, 3, 2, 1, Some(2), [5, 10, 100, 20, 50, 60, 90]),
             Self::Islands => (4, 0, 2, 2, Some(0), [60, 20, 0, 50, 60, 50, 50]),
-        }
+            Self::Teams => (8, 2, 4, 2, None, [35, 25, 0, 40, 60, 50, 70]),
+            Self::Mine(_) => return None,
+        })
     }
 }
 
@@ -316,7 +340,28 @@ pub struct RandomMapSetupModalState {
     /// VERA extension: the preset the options still stand at; any edit of
     /// theirs clears it.
     pub preset: Option<RandomMapPreset>,
+    /// VERA extension: the Extras page on show (`random_map_extras`), in
+    /// place of the Advanced sliders; `advanced` is set with it.
+    pub extras_page: Option<usize>,
+    /// VERA extension: what the last Extras tool did, shown where the
+    /// progress text goes until the next press: a string-table key and its
+    /// English.
+    pub extras_note: Option<(&'static str, &'static str)>,
+    /// VERA extension: what the generated map on show offers each start
+    /// (`rmg::fairness`), for the readout under the options.
+    pub fairness: Option<crate::map::rmg::fairness::FairnessReport>,
+    /// VERA extension: the options of the maps generated since the dialog
+    /// opened, oldest first, the one on show last ([`Self::step_back`]).
+    pub history: Vec<RmgOptions>,
+    /// VERA extension: the player's own presets, by slot
+    /// ([`RandomMapPreset::Mine`]); the app loads and saves their files.
+    pub custom_presets: Vec<RmgOptions>,
+    /// The slot [`Self::save_custom_preset`] takes once every slot is taken.
+    pub next_custom_slot: usize,
 }
+
+/// Maps [`RandomMapSetupModalState::history`] remembers.
+const HISTORY_MAPS: usize = 12;
 
 /// The Advanced sliders' range, the fields' own clamp (`RmgOptions::normalize`).
 pub const ADVANCED_RANGE: TrackbarRange = TrackbarRange::new(0, 100, 1);
@@ -380,6 +425,12 @@ impl RandomMapSetupModalState {
             advanced_hold: None,
             exported: false,
             preset: None,
+            extras_page: None,
+            extras_note: None,
+            fairness: None,
+            history: Vec::new(),
+            custom_presets: Vec::new(),
+            next_custom_slot: 0,
         };
         modal.normalize_options();
         modal
@@ -407,7 +458,20 @@ impl RandomMapSetupModalState {
             // VERA's towns are offline-only, like the Advanced view.
             self.options.urban_enabled = false;
             self.options.fair_starts = false;
+            self.options.extras = Default::default();
         }
+    }
+
+    /// An option edit made by the Extras view.
+    pub(super) fn note_option_edit(&mut self) {
+        self.on_option_changed();
+    }
+
+    /// Hold every Advanced value at what the options hold, as if the player
+    /// had set each slider.
+    pub(super) fn pin_advanced_values(&mut self) {
+        self.advanced_values =
+            Some(AdvancedField::ALL.map(|field| advanced_field(&self.options, field)));
     }
 
     /// The Players slider's range for this dialog.
@@ -443,6 +507,7 @@ impl RandomMapSetupModalState {
             C::AdvancedToggle | C::Advanced(_) | C::FairStartsToggle | C::PresetCycle => {
                 self.extended
             }
+            C::ExtrasRow(row) => self.extended && self.extras_row(row).is_some(),
             C::ExportMap => self.extended && self.generated && !self.exported,
             _ => true,
         }
@@ -594,6 +659,7 @@ impl RandomMapSetupModalState {
         self.generated = false;
         self.generated_preview = None;
         self.preset = None;
+        self.fairness = None;
     }
 
     /// VERA extension: apply the preset after the one that stands (the first
@@ -603,34 +669,88 @@ impl RandomMapSetupModalState {
         if !self.extended {
             return;
         }
+        // The ready-made ones, then the player's own.
+        let presets: Vec<RandomMapPreset> = RandomMapPreset::ALL
+            .into_iter()
+            .chain((0..self.custom_presets.len()).map(|slot| RandomMapPreset::Mine(slot as u8)))
+            .collect();
         let next = match self.preset {
             Some(current) => {
-                let at = RandomMapPreset::ALL
+                let at = presets
                     .iter()
                     .position(|preset| *preset == current)
                     .unwrap_or(0);
-                RandomMapPreset::ALL[(at + 1) % RandomMapPreset::ALL.len()]
+                presets[(at + 1) % presets.len()]
             }
-            None => RandomMapPreset::ALL[0],
+            None => presets[0],
         };
-        let (players, map_type, size, resources, theater, advanced) = next.values();
-        self.options.num_players = players;
-        self.options.map_type = map_type;
-        self.options.width = size;
-        self.options.height = size;
-        self.options.resources = resources;
-        if let Some(theater) = theater {
-            self.options.theater = theater;
+        match (next, next.values()) {
+            (_, Some((players, map_type, size, resources, theater, advanced))) => {
+                self.options.num_players = players;
+                self.options.map_type = map_type;
+                self.options.width = size;
+                self.options.height = size;
+                self.options.resources = resources;
+                if let Some(theater) = theater {
+                    self.options.theater = theater;
+                }
+                for field in AdvancedField::ALL {
+                    *advanced_field_mut(&mut self.options, field) = advanced[field.row()];
+                }
+                self.advanced_values = Some(advanced);
+                self.options.urban_enabled = advanced[AdvancedField::Buildings.row()] > 0;
+                self.options.fair_starts = true;
+            }
+            (RandomMapPreset::Mine(slot), _) => {
+                let Some(saved) = self.custom_presets.get(usize::from(slot)) else {
+                    return;
+                };
+                self.options = RmgOptions {
+                    seed: self.options.seed,
+                    description: self.options.description.clone(),
+                    ..saved.clone()
+                };
+                self.pin_advanced_values();
+            }
+            _ => return,
         }
-        for field in AdvancedField::ALL {
-            *advanced_field_mut(&mut self.options, field) = advanced[field.row()];
-        }
-        self.advanced_values = Some(advanced);
-        self.options.urban_enabled = advanced[AdvancedField::Buildings.row()] > 0;
-        self.options.fair_starts = true;
         self.open_combo = None;
         self.on_option_changed();
         self.preset = Some(next);
+    }
+
+    /// VERA extension: keep the options as one of the player's own presets
+    /// and return its slot: the next free one, or the first again once all
+    /// are taken (the oldest goes). The app writes the slot's file.
+    pub fn save_custom_preset(&mut self) -> usize {
+        let slot = if self.custom_presets.len() < CUSTOM_PRESET_SLOTS {
+            self.custom_presets.push(self.options.clone());
+            self.custom_presets.len() - 1
+        } else {
+            let slot = self.next_custom_slot % CUSTOM_PRESET_SLOTS;
+            self.custom_presets[slot] = self.options.clone();
+            slot
+        };
+        self.next_custom_slot = (slot + 1) % CUSTOM_PRESET_SLOTS;
+        self.preset = Some(RandomMapPreset::Mine(slot as u8));
+        slot
+    }
+
+    /// VERA extension: go back to the map generated before the one on show:
+    /// its options return, with their seed, for the app to generate without
+    /// Generate's rolls. False when there is none to go back to.
+    pub fn step_back(&mut self) -> bool {
+        if self.history.len() < 2 {
+            return false;
+        }
+        self.history.pop();
+        let Some(previous) = self.history.last().cloned() else {
+            return false;
+        };
+        self.options = previous;
+        self.pin_advanced_values();
+        self.on_option_changed();
+        true
     }
 
     /// VERA: Load hands its seed over. The sliders let go of the values the
@@ -719,10 +839,16 @@ impl RandomMapSetupModalState {
         self.preset = None;
     }
 
-    /// Switch the option rows between the original controls and the
-    /// Advanced sliders. Any open list or held slider lets go.
+    /// Step the option rows to their next view: the original controls, the
+    /// Advanced sliders, then the Extras, whose first page shows. Any open
+    /// list or held slider lets go.
     pub fn toggle_advanced(&mut self) {
-        self.advanced = !self.advanced;
+        (self.advanced, self.extras_page) = match (self.advanced, self.extras_page) {
+            (false, _) => (true, None),
+            (true, None) => (true, Some(0)),
+            (true, Some(_)) => (false, None),
+        };
+        self.extras_note = None;
         self.open_combo = None;
         self.players_hold = None;
         self.advanced_hold = None;
@@ -830,6 +956,13 @@ impl RandomMapSetupModalState {
             self.preview_generation = self.preview_generation.wrapping_add(1);
         }
         self.generated_preview = preview;
+        // VERA: remember the map's options, for the Extras view's way back.
+        if self.history.last() != Some(&self.options) {
+            if self.history.len() == HISTORY_MAPS {
+                self.history.remove(0);
+            }
+            self.history.push(self.options.clone());
+        }
     }
 
     /// Accept. The original generates first when nothing has been generated
@@ -1011,6 +1144,12 @@ mod tests {
         assert_eq!(offline.advanced_value(AdvancedField::Buildings), 100);
         offline.cycle_preset();
         offline.cycle_preset();
+        assert_eq!(offline.preset, Some(RandomMapPreset::Teams));
+        assert_eq!(
+            (offline.options.num_players, offline.options.map_type),
+            (8, 2)
+        );
+        offline.cycle_preset();
         assert_eq!(offline.preset, Some(RandomMapPreset::Duel), "round again");
         assert!(!offline.options.urban_enabled);
         offline.set_num_players(3);
@@ -1027,6 +1166,100 @@ mod tests {
         assert!(offline.advanced);
         network.toggle_advanced();
         let _ = network;
+    }
+
+    /// VERA's Extras view: the toggle steps Basic, Advanced, Extras; a
+    /// variant row steps its value as an option edit and asks for its map at
+    /// once; a share code brings another dialog's options, seed included.
+    #[test]
+    fn the_extras_view_steps_choices_and_takes_share_codes() {
+        use super::super::random_map_extras::{ExtrasAction, ExtrasOutcome, ExtrasRow};
+        use crate::map::rmg::extras::Extra;
+        let mut dialog = opened();
+        assert!(dialog.extras_rows().is_empty(), "no rows outside the view");
+        dialog.toggle_advanced();
+        dialog.toggle_advanced();
+        assert_eq!((dialog.advanced, dialog.extras_page), (true, Some(0)));
+        let rows = dialog.extras_rows();
+        let ore = rows
+            .iter()
+            .position(|row| *row == ExtrasRow::Choice(Extra::OreVariant))
+            .expect("the first page lists the ore variant");
+        dialog.generated = true;
+        assert_eq!(
+            dialog.release_extras_row(ore),
+            Some(ExtrasOutcome::Regenerate),
+            "Generate's seed roll would make another map"
+        );
+        assert_eq!(dialog.options.extras.get(Extra::OreVariant), 1);
+        assert!(!dialog.generated, "a choice is an option edit");
+        let copy = rows
+            .iter()
+            .position(|row| *row == ExtrasRow::Action(ExtrasAction::CopyCode))
+            .expect("the first page has the share tools");
+        assert_eq!(
+            dialog.release_extras_row(copy),
+            Some(ExtrasOutcome::Tool(ExtrasAction::CopyCode))
+        );
+        assert_eq!(dialog.release_extras_row(EXTRAS_ROWS_PAST), None);
+
+        // The receiver takes the sender's options whole and shows the
+        // sender's slider values.
+        dialog.change_advanced(AdvancedField::Water, 37);
+        let code = dialog.options.share_code();
+        let mut receiver = opened();
+        assert_eq!(receiver.adopt_share_code("not a code"), None);
+        assert_eq!(
+            receiver.adopt_share_code(&code),
+            Some(crate::map::rmg::options::ShareVersion::this_build())
+        );
+        assert_eq!(receiver.options.extras.get(Extra::OreVariant), 1);
+        assert_eq!(receiver.options.seed, dialog.options.seed);
+        assert_eq!(receiver.advanced_value(AdvancedField::Water), 37);
+
+        dialog.toggle_advanced();
+        assert_eq!((dialog.advanced, dialog.extras_page), (false, None));
+    }
+
+    /// A row past the view's last.
+    const EXTRAS_ROWS_PAST: usize = 99;
+
+    /// VERA: the way back returns the options of the map before the one on
+    /// show, seed and all; a preset of the player's own keeps the options
+    /// but not the seed, follows the ready-made ones on the button, and the
+    /// sixth saved takes the first slot again.
+    #[test]
+    fn the_way_back_and_the_players_own_presets() {
+        let mut dialog = opened();
+        assert!(!dialog.step_back(), "nothing generated yet");
+        dialog.set_num_players(3);
+        dialog.options.seed = 111;
+        dialog.finish_generate(None);
+        dialog.set_num_players(5);
+        dialog.options.seed = 222;
+        dialog.finish_generate(None);
+        assert!(dialog.step_back());
+        assert_eq!((dialog.options.num_players, dialog.options.seed), (3, 111));
+        assert!(!dialog.generated, "the app generates the earlier map again");
+        dialog.finish_generate(None);
+        assert!(!dialog.step_back(), "the first map has none before it");
+
+        dialog.set_num_players(6);
+        assert_eq!(dialog.save_custom_preset(), 0);
+        assert_eq!(dialog.preset, Some(RandomMapPreset::Mine(0)));
+        dialog.set_num_players(2);
+        dialog.options.seed = 333;
+        // Past the four ready-made presets comes the player's own.
+        for _ in 0..RandomMapPreset::ALL.len() + 1 {
+            dialog.cycle_preset();
+        }
+        assert_eq!(dialog.preset, Some(RandomMapPreset::Mine(0)));
+        assert_eq!((dialog.options.num_players, dialog.options.seed), (6, 333));
+        let slots: Vec<usize> = (0..CUSTOM_PRESET_SLOTS + 1)
+            .map(|_| dialog.save_custom_preset())
+            .collect();
+        assert_eq!(slots, [1, 2, 3, 4, 0, 1]);
+        assert_eq!(dialog.custom_presets.len(), CUSTOM_PRESET_SLOTS);
     }
 
     #[test]

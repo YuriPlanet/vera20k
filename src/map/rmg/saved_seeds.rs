@@ -339,6 +339,7 @@ mod tests {
             urban_presence: 13,
             urban_enabled: false,
             fair_starts: false,
+            extras: Default::default(),
             width: 2,
             height: 1,
             accessibility: 89,

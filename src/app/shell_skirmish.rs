@@ -1275,13 +1275,17 @@ impl App {
             crate::app::match_runtime::session::SessionMode::Lan
                 | crate::app::match_runtime::session::SessionMode::Wol
         );
-        state.frontend.skirmish_shell_state.random_map_setup_modal =
-            Some(crate::ui::skirmish_shell::RandomMapSetupModalState::open(
-                options,
-                Some(previous),
-                available,
-                extended,
-            ));
+        let mut modal = crate::ui::skirmish_shell::RandomMapSetupModalState::open(
+            options,
+            Some(previous),
+            available,
+            extended,
+        );
+        // VERA: the player's own presets, for the Presets button.
+        if extended && let Some(dir) = Self::random_map_dir(state) {
+            modal.custom_presets = crate::app::shell_random_map::load_custom_presets(&dir);
+        }
+        state.frontend.skirmish_shell_state.random_map_setup_modal = Some(modal);
     }
 
     fn sync_player_name_edit_scroll(state: &mut AppState) {

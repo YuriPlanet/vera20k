@@ -503,7 +503,19 @@ pub(super) fn push_random_map_setup_modal_control_instances(
     // Rows 0..4 are combos; row 5 is the players trackbar. A collapsed combo
     // occupies only its face, not the dropdown extent the resource reserves.
     // VERA: the Advanced view replaces the option rows with its sliders.
-    if modal.advanced {
+    // VERA: an Extras row's face is a framed plate over the slider's window.
+    for row in (0..modal.extras_rows().len()).filter(|&row| modal.extras_row(row).is_some()) {
+        let face = layout.advanced_control_rects[row];
+        push_solid_rect(
+            out,
+            atlas,
+            face,
+            SHELL_MODAL_PANEL_RGB,
+            SHELL_DROPDOWN_DEPTH - 0.00009,
+        );
+        push_ownerdraw_two_pixel_bevel_frame(out, atlas, face, SHELL_DROPDOWN_DEPTH - 0.000095);
+    }
+    if modal.advanced && modal.extras_page.is_none() {
         for field in crate::ui::skirmish_shell::AdvancedField::ALL {
             let rect = layout.advanced_control_rects[field.row()];
             paint_control(

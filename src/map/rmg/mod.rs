@@ -6,7 +6,9 @@
 
 pub mod build;
 mod description;
+pub mod embellish;
 pub mod emit;
+pub mod extras;
 pub mod fairness;
 pub mod grid;
 pub mod options;
@@ -260,6 +262,9 @@ pub struct GeneratedMap {
     /// Start slots no region could fill. Non-zero means this map is short of
     /// spawns: fewer usable start positions than the player count implies.
     pub unfilled_start_slots: usize,
+    /// VERA extension: what the map offers each start (`fairness`), for the
+    /// dialog's readout. `None` for a map no generation run measured.
+    pub fairness: Option<fairness::FairnessReport>,
 }
 
 impl GeneratedMap {

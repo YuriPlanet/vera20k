@@ -46,11 +46,15 @@ pub fn resolve(names: &[String], art: &IniFile) -> Vec<TechType> {
 /// The foots are Ares' default `[Urban]` lists, kept where the Rules define
 /// the type. The props are the theater's surveyed street furniture
 /// (`[THEATER.PROPS]`) of one cell with body art; the trees are the kinds
-/// authored towns of the theater use.
+/// authored towns of the theater use. The farms and landmarks of the
+/// Countryside and Landmark Extras are the buildings `extras` names
+/// (`RMGMD.INI [Extras] Farms=`, `Landmarks=`).
+#[allow(clippy::too_many_arguments)]
 pub fn resolve_vera_urban(
     rules: &crate::rules::ruleset::RuleSet,
     art: &IniFile,
     tech: &[TechType],
+    extras: &crate::map::rmg::extras::ExtrasSettings,
     theater_ext: &str,
     theater_name: &str,
     seed: u16,
@@ -228,12 +232,43 @@ pub fn resolve_vera_urban(
             })
             .collect()
     };
+    // The farm buildings and monuments of the Countryside and Landmark
+    // Extras: the named types the Rules define whose body art exists on this
+    // theater, the test the town buildings above pass.
+    let named = |names: &[String]| -> Vec<UrbanStructure> {
+        names
+            .iter()
+            .filter_map(|name| {
+                let id = rules
+                    .building_ids
+                    .iter()
+                    .find(|id| id.eq_ignore_ascii_case(name))?;
+                let object = rules.object(id)?;
+                let image_id = registry.resolve_effective_image_id(id, &object.image);
+                crate::rules::art_data::building_body_shp_candidates(
+                    Some(registry),
+                    &object.image,
+                    &image_id,
+                    theater_ext,
+                    theater_name,
+                )
+                .iter()
+                .any(|file| has_file(file))
+                .then(|| UrbanStructure {
+                    name: id.clone(),
+                    footprint: Some(footprint_for(art, id)),
+                })
+            })
+            .collect()
+    };
     UrbanCatalog {
         structures,
         infantry: feet(&INFANTRY),
         vehicles: feet(&VEHICLES),
         props,
         trees: street_trees(theater_name),
+        farms: named(&extras.farms),
+        landmarks: named(&extras.landmarks),
     }
 }
 
@@ -298,8 +333,7 @@ pub fn resolve_ares_urban(
             .collect(),
         infantry: feet(&settings.urban_infantry, UrbanTypeKind::Infantry),
         vehicles: feet(&settings.urban_vehicles, UrbanTypeKind::Vehicle),
-        props: Vec::new(),
-        trees: Vec::new(),
+        ..Default::default()
     }
 }
 

@@ -50,6 +50,12 @@ const EXPANSION: Ring = Ring {
 };
 /// Half the side of the square of ground counted as a start's building room.
 const ROOM_RADIUS: i32 = 9;
+/// Half the side of the square of water counted as a start's sea access:
+/// a shipyard's reach from the base.
+const SEA_RADIUS: i32 = 22;
+/// Room the tightest start has with Base Room on before a map is fair: six
+/// cells in ten of the square.
+const WANTED_ROOM: i64 = ((2 * ROOM_RADIUS + 1) * (2 * ROOM_RADIUS + 1) * 6 / 10) as i64;
 /// Mixed into the map seed for the top-up's own draws.
 const FAIR_SALT: u16 = 0xFA12;
 
@@ -71,13 +77,32 @@ pub struct FairnessReport {
     pub room_max: i64,
     /// Start slots the generator could not place.
     pub unfilled_starts: i64,
+    /// Least and most water cells within a shipyard's reach of a start.
+    pub sea_min: i64,
+    pub sea_max: i64,
+    /// `Extra::SeaAccess` and `Extra::BaseRoom`: the search also weighs the
+    /// water, or weighs the room more, and asks more of it.
+    pub sea_wanted: bool,
+    pub room_wanted: bool,
+}
+
+/// A [`FairnessReport`] in the percents a player reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FairnessReadout {
+    pub ore: i64,
+    pub expansion: i64,
+    pub spacing: i64,
+    pub room: i64,
+    /// The driest start's water against the wettest's; none on a map with
+    /// no water near any start.
+    pub sea: Option<i64>,
 }
 
 impl FairnessReport {
-    /// The four shares the search weighs, each 0..=1000: start spacing
-    /// against 60% of an even spread, and the poorest start's ore, expansion
-    /// ore and room against the richest's.
-    fn shares(&self) -> [i64; 4] {
+    /// The shares the search weighs, each 0..=1000: start spacing against
+    /// 60% of an even spread, and the poorest start's ore, expansion ore,
+    /// room and water against the richest's.
+    fn shares(&self) -> [i64; 5] {
         let share = |part: i64, whole: i64| {
             if whole <= 0 {
                 1000
@@ -90,24 +115,58 @@ impl FairnessReport {
             share(self.ore_min, self.ore_max),
             share(self.expansion_min, self.expansion_max),
             share(self.room_min, self.room_max),
+            share(self.sea_min, self.sea_max),
         ]
     }
 
+    /// The report as the dialog shows it, in percent: the poorest start's
+    /// ore, expansion ore and building room against the richest's, and the
+    /// closest pair of starts against an even spread (which can pass 100).
+    pub fn readout(&self) -> FairnessReadout {
+        let [_, ore, expansion, room, sea] = self.shares();
+        // The distances' ratio, from their squares.
+        let spacing = if self.even_spacing_sq <= 0 {
+            100
+        } else {
+            (self.closest_starts_sq * 10_000 / self.even_spacing_sq).isqrt()
+        };
+        FairnessReadout {
+            ore: ore / 10,
+            expansion: expansion / 10,
+            spacing,
+            room: room / 10,
+            sea: (self.sea_max > 0).then_some(sea / 10),
+        }
+    }
+
     /// Higher is fairer; a map short of starts ranks below every full one.
+    /// The water counts only with Sea Access; with Base Room the room counts
+    /// twice more, by share and by the tightest start's cells.
     pub fn score(&self) -> i64 {
-        self.shares().iter().sum::<i64>() - self.unfilled_starts * 1_000_000
+        let [spacing, ore, expansion, room, sea] = self.shares();
+        let mut score = spacing + ore + expansion + room;
+        if self.sea_wanted {
+            score += sea;
+        }
+        if self.room_wanted {
+            score += room + (self.room_min * 1000 / WANTED_ROOM).min(1000);
+        }
+        score - self.unfilled_starts * 1_000_000
     }
 
     /// Fair enough to stop searching: every start placed, the closest pair at
     /// 60% of an even spread or more, ore and expansion ore within 15% and
-    /// room within 40%.
+    /// room within 40%. Sea Access asks for water within 50% as well; Base
+    /// Room for room within 20% and [`WANTED_ROOM`] cells at every start.
     pub fn is_fair(&self) -> bool {
-        let [spacing, ore, expansion, room] = self.shares();
+        let [spacing, ore, expansion, room, sea] = self.shares();
         self.unfilled_starts == 0
             && spacing >= 1000
             && ore >= 850
             && expansion >= 850
             && room >= 600
+            && (!self.sea_wanted || sea >= 500)
+            && (!self.room_wanted || (room >= 800 && self.room_min >= WANTED_ROOM))
     }
 }
 
@@ -121,7 +180,7 @@ pub struct FairCtx<'a> {
 }
 
 impl FairCtx<'_> {
-    fn in_play(&self, x: i32, y: i32) -> bool {
+    pub(super) fn in_play(&self, x: i32, y: i32) -> bool {
         self.grid.get(x, y).is_some_and(|cell| {
             diamond_frame_contains(
                 self.map_w,
@@ -135,7 +194,7 @@ impl FairCtx<'_> {
     }
 
     /// Flat, clear, unclaimed ground: where ore may be added.
-    fn takes_ore(&self, x: i32, y: i32) -> bool {
+    pub(super) fn takes_ore(&self, x: i32, y: i32) -> bool {
         self.in_play(x, y)
             && self.grid.get(x, y).is_some_and(|cell| {
                 self.ids.is_clear(cell.tile)
@@ -363,12 +422,14 @@ fn plant(ctx: &mut FairCtx<'_>, cell: (i32, i32), amount: i64, rng: &mut RmgRng)
 }
 
 /// Measure what the finished grid offers each of `starts`, for a map of
-/// `players` starts wanted and `unfilled` of them not placed.
+/// `players` starts wanted and `unfilled` of them not placed. `sea_wanted`
+/// and `room_wanted` are the Extras the report's score then follows.
 pub fn measure(
     ctx: &FairCtx<'_>,
     starts: &[(i32, i32)],
     players: i32,
     unfilled: usize,
+    (sea_wanted, room_wanted): (bool, bool),
 ) -> FairnessReport {
     let closest_starts_sq = starts
         .iter()
@@ -398,6 +459,22 @@ pub fn measure(
                 .count() as i64
         })
         .collect();
+    // Water proper: tile 0 is clear ground, which the window test of a
+    // theater without water tiles would take.
+    let sea: Vec<i64> = starts
+        .iter()
+        .map(|&start| {
+            square(start, SEA_RADIUS)
+                .filter(|&(x, y)| {
+                    ctx.in_play(x, y)
+                        && ctx.grid.get(x, y).is_some_and(|cell| {
+                            !ctx.ids.is_clear(cell.tile)
+                                && ctx.ids.is_water_shore_or_waterfall(cell.tile)
+                        })
+                })
+                .count() as i64
+        })
+        .collect();
     FairnessReport {
         closest_starts_sq,
         even_spacing_sq: cells / i64::from(players.max(1)),
@@ -408,5 +485,9 @@ pub fn measure(
         room_min: room.iter().copied().min().unwrap_or(0),
         room_max: room.iter().copied().max().unwrap_or(0),
         unfilled_starts: unfilled as i64,
+        sea_min: sea.iter().copied().min().unwrap_or(0),
+        sea_max: sea.iter().copied().max().unwrap_or(0),
+        sea_wanted,
+        room_wanted,
     }
 }
