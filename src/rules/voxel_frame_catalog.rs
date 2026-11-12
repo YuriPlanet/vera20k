@@ -13,7 +13,7 @@
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::hva_file::HvaFile;
 use crate::rules::art_data;
-use crate::rules::object_type::ObjectCategory;
+use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
 
 /// Which part of a multi-part voxel model an entity/atlas entry represents.
@@ -95,8 +95,12 @@ pub fn voxel_image_id(type_id: &str, rules: Option<&RuleSet>) -> String {
 /// Aircraft and building turret models never use the UnitType gun arrays.
 /// Native controls: tools/spatial_oracle/ifv_turret_switching.json.
 pub fn indexed_turret_count(type_id: &str, rules: Option<&RuleSet>) -> i32 {
-    rules
-        .and_then(|rules| rules.object(type_id))
+    object_indexed_turret_count(rules.and_then(|rules| rules.object(type_id)))
+}
+
+/// [`indexed_turret_count`] of a type already in hand.
+pub fn object_indexed_turret_count(object: Option<&ObjectType>) -> i32 {
+    object
         .filter(|object| object.category == ObjectCategory::Vehicle && !object.is_gattling)
         .map_or(0, |object| object.turret_count.max(0))
 }
@@ -106,7 +110,12 @@ pub fn indexed_turret_count(type_id: &str, rules: Option<&RuleSet>) -> i32 {
 /// Native does not bounds-check an indexed access. The renderer deliberately
 /// omits an invalid part instead of reproducing an unchecked pointer alias.
 pub fn voxel_turret_index(type_id: &str, rules: Option<&RuleSet>, current: i32) -> i32 {
-    if indexed_turret_count(type_id, rules) > 0 {
+    object_voxel_turret_index(rules.and_then(|rules| rules.object(type_id)), current)
+}
+
+/// [`voxel_turret_index`] of a type already in hand.
+pub fn object_voxel_turret_index(object: Option<&ObjectType>, current: i32) -> i32 {
+    if object_indexed_turret_count(object) > 0 {
         current
     } else {
         0
@@ -118,12 +127,15 @@ pub fn voxel_turret_index(type_id: &str, rules: Option<&RuleSet>, current: i32) 
 /// The type may be UnloadingClass or a disguise. Aircraft draw only their
 /// main voxel (4144B0), and building voxel turrets have their own loader.
 pub fn draws_turret_parts(type_id: &str, rules: Option<&RuleSet>, current: i32) -> bool {
-    rules
-        .and_then(|rules| rules.object(type_id))
-        .is_some_and(|object| {
-            object.category == ObjectCategory::Vehicle
-                && (object.has_turret || (object.turret_count > 0 && current != -1))
-        })
+    object_draws_turret_parts(rules.and_then(|rules| rules.object(type_id)), current)
+}
+
+/// [`draws_turret_parts`] of a type already in hand.
+pub fn object_draws_turret_parts(object: Option<&ObjectType>, current: i32) -> bool {
+    object.is_some_and(|object| {
+        object.category == ObjectCategory::Vehicle
+            && (object.has_turret || (object.turret_count > 0 && current != -1))
+    })
 }
 
 /// Shared native part naming (5F7A90 / 5F7DB0): index zero has no numeric
