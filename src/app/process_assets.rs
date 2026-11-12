@@ -361,6 +361,11 @@ impl ProcessAssets {
                 bytes.extend_from_slice(digest.as_bytes());
             }
         }
+        // Whether Ares plays (`rules::ares_switch`) follows these sources and
+        // the map, which the map agreement covers, and whether `ares.mix`
+        // ships. A build without Ares never plays it and keeps the old bytes.
+        #[cfg(feature = "ares")]
+        bytes.push(u8::from(assets.ships_ares()));
         Ok(crate::util::sha256::sha256_hex(&bytes))
     }
 

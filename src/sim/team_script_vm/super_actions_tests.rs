@@ -467,7 +467,7 @@ fn retail_superweapon_scripts_run_ported_actions() {
     for script in &scripts {
         for action in &script.actions {
             assert!(
-                super::super::actions::action_is_ported(action.action_id),
+                super::super::actions::action_is_ported(action.action_id, crate::rules::ARES_BUILD),
                 "{} runs action {}",
                 sim.interner.resolve(script.id),
                 action.action_id

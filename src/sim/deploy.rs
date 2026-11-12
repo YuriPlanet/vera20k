@@ -564,7 +564,7 @@ impl Simulation {
             // Ares 3.0 InfantryClass_Mi_Unload_Undeploy (1005CD20, hook
             // 0x51F716): this arm returns 1 after Guard instead of reaching
             // FootUnload's 450.
-            if crate::rules::ARES_ENABLED {
+            if rules.ares() {
                 delay = 1;
             }
         } else {

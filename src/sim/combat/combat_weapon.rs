@@ -1712,7 +1712,7 @@ mod tests {
             );
             assert_eq!(
                 primary_warhead_spares_medium_and_wood(&rules, obj, 0),
-                !crate::rules::ARES_ENABLED && medium != "0.001"
+                !crate::rules::ARES_BUILD && medium != "0.001"
             );
             assert!(
                 !primary_warhead_spares_medium_and_wood(&rules, obj, 200),

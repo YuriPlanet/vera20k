@@ -111,7 +111,7 @@ fn reached_alternate_events_match_executed_hook_controls() {
             assert_eq!(
                 sim.houses[&house].tech_recheck_pending(),
                 vanilla_building_capture
-                    || (crate::rules::ARES_ENABLED && row[field].as_bool().unwrap()),
+                    || (crate::rules::ARES_BUILD && row[field].as_bool().unwrap()),
                 "{} {field}",
                 row["name"],
             );
@@ -144,7 +144,7 @@ fn alternate_dtor_rechecks_with_another_copy_and_obeys_game_state_gate() {
         );
         assert_eq!(
             sim.houses[&owner].tech_recheck_pending(),
-            crate::rules::ARES_ENABLED
+            crate::rules::ARES_BUILD
         );
         sim.houses.get_mut(&owner).unwrap().take_tech_recheck();
         sim.finalize_and_remove_common(second, UninitContext::with_rules(&rules), 0x100);
@@ -171,7 +171,7 @@ fn repeated_successful_discovery_does_not_repeat_the_hook() {
         assert!(sim.record_techno_discovery(id, viewer, UninitContext::with_rules(&rules), 0));
         assert_eq!(
             sim.houses[&owner].tech_recheck_pending(),
-            crate::rules::ARES_ENABLED
+            crate::rules::ARES_BUILD
         );
         assert!(
             !sim.houses[&other].tech_recheck_pending(),

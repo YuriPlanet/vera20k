@@ -39,7 +39,7 @@ fn repair_scan(rules: &RuleSet, offset: (i32, i32), mission: MissionType) -> (Op
         .entities
         .get_mut(ifv)
         .unwrap()
-        .set_gunner_weapon(mode, ifv_type);
+        .set_gunner_weapon(mode, ifv_type, crate::rules::ARES_BUILD);
     let grizzly = sim.substrate.entities.get_mut(tank).unwrap();
     grizzly
         .position

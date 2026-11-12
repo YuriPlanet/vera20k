@@ -947,7 +947,7 @@ impl ScanContext<'_> {
         // TechnoClass_CanAutoTargetObject_Heal (1004E490, hook 0x6F7FC5)
         // jumps past it to 0x006F7FDF, so a healing vehicle may take any
         // damaged ally.
-        !cfg!(feature = "ares") && !vehicle_like(self, candidate, candidate_obj)
+        !self.rules.ares() && !vehicle_like(self, candidate, candidate_obj)
     }
 
     /// The candidate's owner is `MultiplayPassive` (HouseType `+0x1A6`).
@@ -1296,6 +1296,7 @@ pub(crate) fn greatest_threat(
                 && (crate::sim::world::techno_ai_cloak::ares_foot_is_cloakable(
                     scanner,
                     attacker_obj,
+                    rules.ares(),
                 )
                 .unwrap_or(false)
                     || crate::sim::combat::veterancy::has_weapon_ability(
@@ -1763,7 +1764,13 @@ fn scanner_mask<'r>(
         mask
     };
     ControlFlow::Continue((
-        threat_mask::preamble_rewrite(mask, attacker.category, healer, attacker_obj.engineer),
+        threat_mask::preamble_rewrite(
+            mask,
+            attacker.category,
+            healer,
+            attacker_obj.engineer,
+            rules.ares(),
+        ),
         foot_wrapper_entered,
     ))
 }
@@ -3280,7 +3287,7 @@ mod tests {
                 .entities
                 .get_mut(ifv)
                 .unwrap()
-                .set_gunner_weapon(slot, object);
+                .set_gunner_weapon(slot, object, crate::rules::ARES_BUILD);
             let pick = sim
                 .greatest_threat_represented(
                     &rules,

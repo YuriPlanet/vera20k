@@ -59,7 +59,7 @@ pub fn log_banner(log_path: Option<&Path>) {
         std::env::consts::OS,
         std::env::consts::ARCH,
     );
-    log::info!("Ares support compiled in: {}", crate::rules::ARES_ENABLED);
+    log::info!("Ares support compiled in: {}", crate::rules::ARES_BUILD);
     log::info!(
         "Phobos support compiled in: {}",
         crate::rules::PHOBOS_ENABLED

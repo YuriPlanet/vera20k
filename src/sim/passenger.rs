@@ -1508,7 +1508,7 @@ fn receive_gunner(
         != 0;
     if substrate.temporal_receive_gunner(transport_id, pax_id) {
         if let Some(transport) = substrate.entities.get_mut(transport_id) {
-            transport.set_gunner_weapon(7, object);
+            transport.set_gunner_weapon(7, object, rules.ares());
         }
         if donor_rearming {
             rearm_transferred_gunner(
@@ -1529,7 +1529,7 @@ fn receive_gunner(
         .and_then(|passenger| interner.object_type(passenger.type_ref(), rules))
         .map_or(0, |passenger| passenger.ifv_mode);
     if let Some(transport) = substrate.entities.get_mut(transport_id) {
-        transport.set_gunner_weapon(mode, object);
+        transport.set_gunner_weapon(mode, object, rules.ares());
     }
 }
 
@@ -1642,7 +1642,7 @@ impl Simulation {
             );
         }
         if let Some(transport) = self.substrate.entities.get_mut(transport_id) {
-            transport.set_gunner_weapon(0, object);
+            transport.set_gunner_weapon(0, object, rules.ares());
         }
     }
 }

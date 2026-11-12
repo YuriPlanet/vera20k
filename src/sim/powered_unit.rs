@@ -329,7 +329,7 @@ impl Simulation {
                 id,
             );
         }
-        let quiet = self.ares_activation_sound_mutex();
+        let quiet = self.ares_activation_sound_mutex(rules);
         Self::latch_deactivated(
             &self.interner,
             &mut self.substrate,
@@ -356,8 +356,8 @@ impl Simulation {
     /// Ares Activate `1004CCB0` and Deactivate `1004CDC0` play the type's
     /// sound only while IKnowWhatImDoing (`0xA8E7AC`) is clear; stock
     /// `0x0070FBE0`/`0x0070FC90` have no such test.
-    fn ares_activation_sound_mutex(&self) -> bool {
-        crate::rules::ARES_ENABLED && self.object_placement_scope_active()
+    fn ares_activation_sound_mutex(&self, rules: &RuleSet) -> bool {
+        rules.ares() && self.object_placement_scope_active()
     }
 
     /// Ares TechnoUpdate1004B439..1004B526, ordinary Foot branch. Operator
@@ -519,7 +519,7 @@ impl Simulation {
         {
             locomotor.power_on();
         }
-        let quiet = self.ares_activation_sound_mutex();
+        let quiet = self.ares_activation_sound_mutex(rules);
         Self::latch_deactivated(
             &self.interner,
             &mut self.substrate,

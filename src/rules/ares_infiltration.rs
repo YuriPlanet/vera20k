@@ -104,6 +104,7 @@ impl InfiltrationTypeRules {
     /// lookup (`detail::read<SuperWeaponTypeClass*> @ 1000CA80`): `None`
     /// keeps the field, `Some(None)` clears it for a blank value.
     pub(crate) fn read_pass(&mut self, section: &IniSection, super_weapon: Option<Option<String>>) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.custom = section.read_ares_bool("SpyEffect.Custom", self.custom);
         self.reveal_production =
             section.read_ares_bool("SpyEffect.RevealProduction", self.reveal_production);

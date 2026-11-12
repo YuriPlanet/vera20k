@@ -5,7 +5,8 @@ in `Misc/Bugfixes.cpp`, `Misc/Bugfixes.Safeguards.cpp`,
 `Misc/Bugfixes.Buffer.cpp` and `Misc/Bugfixes.Perf.cpp`; these take no INI
 keys. Default builds keep the original behaviour, bugs included. Each Rust
 port sits in the engine owner of the hooked gamemd function, behind
-`cfg(feature = "ares")` or `rules::ARES_ENABLED`, with the Ares.dll function
+`cfg(feature = "ares")` or the per-game switch `RuleSet::ares` (on when the
+game's data uses Ares, see `rules::ares_switch`), with the Ares.dll function
 and the gamemd hook cited next to it. Part 2 (the Buffer and Perf rows at
 the end of the table) also has `sim::ares_bugfixes_buffer_tests` and
 `sim::combat::ares_cliff_tests`.

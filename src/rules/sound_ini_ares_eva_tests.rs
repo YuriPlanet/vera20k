@@ -71,7 +71,7 @@ fn filenames_match_native_columns_and_keep_stock_fallback_without_ares() {
     let entry = registry.entry("EVA_TEST").unwrap();
     for row in controls().iter().filter(|row| row["kind"] == "filename") {
         let voice = i32::try_from(row["voice_index"].as_i64().unwrap()).unwrap();
-        let expected = if crate::rules::ARES_ENABLED || (0..=2).contains(&voice) {
+        let expected = if crate::rules::ARES_BUILD || (0..=2).contains(&voice) {
             row["filename"].as_str().unwrap()
         } else {
             "STOCK_Y"

@@ -245,7 +245,7 @@ fn retail_all01_facing_scripts_reach_the_shared_turn_owner() {
         .filter(|script| script.actions.iter().any(|action| action.action_id == 42))
         .collect();
     assert!(!scripts.is_empty(), "ALL01 registers facing scripts");
-    assert!(action_is_ported(42));
+    assert!(action_is_ported(42, crate::rules::ARES_BUILD));
     // The actual authored octants go through the production script decoder,
     // and the caller compares a raw direction word rather than type ROT.
     assert!(

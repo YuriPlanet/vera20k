@@ -89,6 +89,7 @@ impl BulletTypeExtRules {
     /// `100193C0`'s reads of these keys, in its order; absent, empty or
     /// invalid values keep the constructor's.
     pub(crate) fn from_section(section: &IniSection) -> Self {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let mut ext = Self::default();
         ext.subject_to_solid = section.read_ares_bool("SubjectToBuildings", ext.subject_to_solid);
         ext.solid_level = section.read_ares_int("SolidLevel", ext.solid_level);
@@ -106,7 +107,10 @@ impl BulletTypeExtRules {
         ext.splits = section.read_ares_bool("Splits", ext.splits);
         ext.retarget_self = section.read_ares_bool("RetargetSelf", ext.retarget_self);
         ext.around_target = section.read_ares_nullable_bool("AroundTarget", ext.around_target);
-        ext.ignores_firestorm = section.read_bool("IgnoresFirestorm", ext.ignores_firestorm);
+        // Retail projectiles already set the TS key.
+        ext.ignores_firestorm = crate::rules::ares_switch::not_ares_read(|| {
+            section.read_bool("IgnoresFirestorm", ext.ignores_firestorm)
+        });
         ext
     }
 

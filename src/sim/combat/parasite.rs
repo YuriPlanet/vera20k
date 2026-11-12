@@ -1301,7 +1301,7 @@ impl Simulation {
         rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
-        let removed = !crate::rules::ARES_ENABLED || removed;
+        let removed = !rules.ares() || removed;
         let Some(eater) = self
             .substrate
             .entities

@@ -104,6 +104,7 @@ impl AresPrerequisiteRules {
             &[crate::rules::prerequisite::Prerequisite],
         ) -> Vec<crate::rules::prerequisite::Prerequisite>,
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         // `INIClass::ReadInteger("Prerequisite.Lists", size - 1)`, at least
         // 0, plus one: the vector grows with empty lists or is truncated.
         // Initialize (1003DEC0) sized it to one at the first read.
@@ -651,6 +652,7 @@ impl Default for TechnoCombatGlobalRules {
 
 impl TechnoCombatGlobalRules {
     pub(crate) fn read_before_type_data(&mut self, pass: &IniFile) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let Some(section) = pass.section("CombatDamage") else {
             return;
         };
@@ -893,6 +895,7 @@ impl AresTechnoTypeRules {
         >,
         find: impl Fn(&str) -> Option<String>,
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         if !self.initialized {
             self.initialized = true;
             // 1003DEC0 strcmps the stored ID; it also seeds the EVA cues
@@ -1150,6 +1153,7 @@ impl AresTechnoTypeRules {
         section: Option<&IniSection>,
         sounds: &crate::rules::sound_ini::SoundRegistry,
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let read = |key| section.and_then(|section| sounds.read_ares_reference(section, key));
         self.presentation.airstrike_voices =
             ["VoiceAirstrikeAttack", "VoiceAirstrikeAbort"].map(read);

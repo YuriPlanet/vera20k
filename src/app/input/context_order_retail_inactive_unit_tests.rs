@@ -280,7 +280,7 @@ fn ares_deactivated_robot_tank_only_selects_and_takes_no_click() {
         sim.cell_move_action(viewer, robot, (18, 18), query, rules, Some(&registry)),
         Ok(crate::sim::world::MoveAction::None)
     );
-    assert!(sim.click_order_receivers(&[robot, own]) == [own]);
+    assert!(sim.click_order_receivers(&[robot, own], crate::rules::ARES_BUILD) == [own]);
 }
 
 /// SelectBestObjectForAction (0x005353D0) ranks an EMPed object 1 (vt+0x37C),

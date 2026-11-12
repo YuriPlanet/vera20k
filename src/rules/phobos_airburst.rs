@@ -99,6 +99,7 @@ impl PhobosAirburstType {
     /// The keys `BulletTypeExt::LoadFromINIFile` reads for this feature, in
     /// its source order.
     pub fn from_section(section: &IniSection) -> Self {
+        let _phobos = crate::rules::ares_switch::not_ares_reads();
         let mut value = Self::default();
         value.splits = section.read_ares_bool("Splits", value.splits);
         value.airburst_spread = section.read_phobos_double("AirburstSpread", value.airburst_spread);
@@ -225,6 +226,7 @@ pub struct PhobosAirburstGlobals {
 impl PhobosAirburstGlobals {
     /// `RulesExt::LoadFromINIFile` reads each key from `[CombatDamage]`.
     pub fn from_ini(ini: &IniFile) -> Self {
+        let _phobos = crate::rules::ares_switch::not_ares_reads();
         let Some(section) = ini.section("CombatDamage") else {
             return Self::default();
         };

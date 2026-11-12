@@ -152,7 +152,7 @@ fn thief_capture_normal_ai_changes_owner_and_retains_captor_type() {
     // usable factory, and this house owns none.
     assert_eq!(
         super::check_build_limit(&sim, &rules, owner, rules.object("THIEF").unwrap()),
-        crate::rules::ARES_ENABLED
+        crate::rules::ARES_BUILD
     );
     #[cfg(feature = "ares")]
     assert_eq!(

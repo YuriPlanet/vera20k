@@ -30,7 +30,7 @@ fn ares_no_manual_fire_native_physical_layers_reach_every_techno_family() {
             let rules = RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap();
             assert_eq!(
                 rules.object("CONTROL").unwrap().no_manual_fire(),
-                crate::rules::ARES_ENABLED && row["after"] == 1,
+                crate::rules::ARES_BUILD && row["after"] == 1,
                 "{family}: {}",
                 row["file"],
             );
@@ -60,12 +60,12 @@ fn ares_no_manual_fire_registry_save_retains_policy_and_configuration_identity()
     let disabled = continue_policy("no");
     assert_eq!(
         enabled.object("CONTROL").unwrap().no_manual_fire(),
-        crate::rules::ARES_ENABLED,
+        crate::rules::ARES_BUILD,
     );
     assert!(!disabled.object("CONTROL").unwrap().no_manual_fire());
     assert_eq!(
         enabled.simulation_config_hash() != disabled.simulation_config_hash(),
-        crate::rules::ARES_ENABLED,
+        crate::rules::ARES_BUILD,
         "identical current source stacks must retain effective policy identity",
     );
 }

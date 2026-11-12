@@ -500,7 +500,7 @@ impl WeaponType {
             #[cfg(feature = "ares")]
             ares_visuals: crate::rules::ares_weapon::AresWeaponVisuals::read(
                 section,
-                section.read_bool("IsMagBeam", false),
+                crate::rules::ares_switch::ares_read(|| section.read_bool("IsMagBeam", false)),
             ),
             #[cfg(feature = "ares")]
             ares_ivan_bomb: crate::rules::ares_weapon::AresIvanBomb::read(section),
@@ -547,11 +547,17 @@ impl WeaponType {
             // Phobos `Valueable<T>` reads through the shared Ares parser: a
             // failed conversion keeps the constructor's value.
             #[cfg(feature = "phobos")]
-            phobos_laser_is_single_color: section.read_ares_bool("IsSingleColor", false),
+            phobos_laser_is_single_color: crate::rules::ares_switch::not_ares_read(|| {
+                section.read_ares_bool("IsSingleColor", false)
+            }),
             #[cfg(feature = "phobos")]
-            phobos_laser_thickness: section.read_ares_int("LaserThickness", 3),
+            phobos_laser_thickness: crate::rules::ares_switch::not_ares_read(|| {
+                section.read_ares_int("LaserThickness", 3)
+            }),
             #[cfg(feature = "phobos")]
-            phobos_beam_is_house_color: section.read_ares_bool("Beam.IsHouseColor", false),
+            phobos_beam_is_house_color: crate::rules::ares_switch::not_ares_read(|| {
+                section.read_ares_bool("Beam.IsHouseColor", false)
+            }),
 
             // The constructor's nulls and empty list (`0x00771C70`); the
             // ordered Process owner reads the Animation references.
@@ -626,14 +632,16 @@ impl WeaponType {
             attach_effect_disallowed_houses,
             attach_effect_same_source_only,
             #[cfg(feature = "phobos")]
-            rof_random_delay: Some(section.read_ares_partial_int_pair(
-                "ROF.RandomDelay",
-                crate::rules::ini_value::PartialIntPair {
-                    low: 0,
-                    high: 0,
-                    values: 0,
-                },
-            ))
+            rof_random_delay: Some(crate::rules::ares_switch::not_ares_read(|| {
+                section.read_ares_partial_int_pair(
+                    "ROF.RandomDelay",
+                    crate::rules::ini_value::PartialIntPair {
+                        low: 0,
+                        high: 0,
+                        values: 0,
+                    },
+                )
+            }))
             .filter(|range| range.values > 0),
         }
     }

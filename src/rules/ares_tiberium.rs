@@ -65,6 +65,7 @@ impl TiberiumExtRules {
     /// One reached `LoadFromINI` (`100508D0`): the nine reads in order.
     /// `resolve` is the Find-only WarheadType read of a key.
     pub(crate) fn read_pass(&mut self, section: &IniSection, resolve: impl Fn(&str) -> Resolved) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.damage = section.read_ares_nullable_int("Damage", self.damage);
         if let Some(warhead) = resolve("Warhead") {
             self.warhead = Some(warhead);
@@ -157,6 +158,7 @@ impl TiberiumGlobalRules {
         pass: &IniFile,
         resolve: impl Fn(&IniSection, &str, bool) -> Resolved,
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         if let Some(general) = pass.section("General") {
             self.damage_enabled =
                 general.read_ares_bool("TiberiumDamageEnabled", self.damage_enabled);
@@ -233,7 +235,11 @@ impl TiberiumTechnoRules {
     /// pointer, so the relative order with the rest of the pass cannot
     /// change a result.
     pub(crate) fn read_pass(&mut self, section: &IniSection) {
-        self.tiberium_proof = section.read_ares_nullable_bool("TiberiumProof", self.tiberium_proof);
+        let _ares = crate::rules::ares_switch::ares_reads();
+        // Retail infantry already set the TS key.
+        self.tiberium_proof = crate::rules::ares_switch::not_ares_read(|| {
+            section.read_ares_nullable_bool("TiberiumProof", self.tiberium_proof)
+        });
         self.tiberium_remains =
             section.read_ares_nullable_bool("TiberiumRemains", self.tiberium_remains);
         self.tiberium_spill = section.read_ares_bool("TiberiumSpill", self.tiberium_spill);

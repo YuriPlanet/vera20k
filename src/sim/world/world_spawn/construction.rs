@@ -280,7 +280,7 @@ impl Simulation {
         // Unit constructor735678 and InitFromType74689B initialize the empty
         // Gunner through the shared selector, including its charge-type gate.
         if category == EntityCategory::Unit && obj.gunner {
-            ge.set_gunner_weapon(0, obj);
+            ge.set_gunner_weapon(0, obj, rules.ares());
         }
         ge.initialize_voxel_recoil(obj.recoil);
         if category == EntityCategory::Structure && obj.gate {

@@ -131,7 +131,9 @@ impl MindControlRules {
             // ReadDouble -> `FSTP dword [ESI+0xEC0]` (`0x00670509`).
             ai_capture_wounded_mark: general.read_float("AICaptureWoundedMark", 0.0),
             #[cfg(feature = "phobos")]
-            mind_control_ignore_size: general.read_ares_bool("MindControl.IgnoreSize", true),
+            mind_control_ignore_size: crate::rules::ares_switch::not_ares_read(|| {
+                general.read_ares_bool("MindControl.IgnoreSize", true)
+            }),
             #[cfg(not(feature = "phobos"))]
             mind_control_ignore_size: true,
             #[cfg(feature = "phobos")]
@@ -143,8 +145,9 @@ impl MindControlRules {
             #[cfg(not(feature = "phobos"))]
             mind_control_link_visible_to_house: crate::rules::phobos_shields::AffectedHouse::ALL,
             #[cfg(feature = "phobos")]
-            multi_mind_control_release_victim: general
-                .read_ares_bool("MultiMindControl.ReleaseVictim", false),
+            multi_mind_control_release_victim: crate::rules::ares_switch::not_ares_read(|| {
+                general.read_ares_bool("MultiMindControl.ReleaseVictim", false)
+            }),
             #[cfg(not(feature = "phobos"))]
             multi_mind_control_release_victim: false,
         }

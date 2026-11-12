@@ -134,6 +134,19 @@ fn inspection_reports_optional_corruption_and_both_cd_media_boundaries() {
     );
 }
 
+/// Startup mounting `ares.mix` (Load_Bootstrap_AresMIX, 0x0053029E) makes
+/// Ares play in every game (`rules::ares_switch`).
+#[cfg(feature = "ares")]
+#[test]
+fn a_mounted_ares_mix_ships_ares() {
+    let directory = audio_test_install("ships-ares");
+    let assets = AssetManager::new(directory.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+    assert!(!assets.ships_ares());
+    directory.write_mix("ares.mix", "probe.csf", b"ares");
+    let assets = AssetManager::new(directory.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+    assert!(assets.ships_ares());
+}
+
 /// Ares Expand_MIX_Reorg (0x006BD7E3) runs Init_Base_Mix_Files ahead of
 /// LANGMD.MIX, and Load_Bootstrap_AresMIX (0x0053029E) registers ares.mix
 /// after the expansions and before RA2MD.MIX: each later file below wins.

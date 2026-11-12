@@ -34,12 +34,8 @@ pub(crate) fn strip_rejects_entry(len: usize) -> bool {
 
 /// Leading strip entries `SidebarClass::FlashCameo` 6AC5F0 scans: its 75
 /// records, or (Ares.dll 1002C1D0, hook 0x6AC6D9) the whole tab vector.
-fn flash_scan_limit() -> usize {
-    if cfg!(feature = "ares") {
-        usize::MAX
-    } else {
-        75
-    }
+fn flash_scan_limit(ares: bool) -> usize {
+    if ares { usize::MAX } else { 75 }
 }
 
 /// The request retained by a cameo before its queued event reaches the Factory.
@@ -483,11 +479,12 @@ impl CameoStrips {
         duration: i32,
         frame: i32,
         mut index_of: impl FnMut(CameoId) -> Option<i32>,
+        ares: bool,
     ) {
         let deadline = frame.wrapping_add(duration);
         if let Some(entry) = self.strips[tab.tab_index()]
             .iter()
-            .take(flash_scan_limit())
+            .take(flash_scan_limit(ares))
             .find(|entry| index_of(entry.id) == Some(type_index))
         {
             self.flash_deadlines.insert(entry.id, deadline);

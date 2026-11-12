@@ -123,7 +123,7 @@ fn all_techno_families_project_factory_fields_from_process_without_a_second_read
 
         let rules = RuleSet::from_ini(&ini).unwrap();
         let object = rules.object("CONTROL").unwrap();
-        let allowed = if crate::rules::ARES_ENABLED {
+        let allowed = if crate::rules::ARES_BUILD {
             vec![CountryIdx(0), CountryIdx(0), CountryIdx(1)]
         } else {
             vec![]
@@ -131,7 +131,7 @@ fn all_techno_families_project_factory_fields_from_process_without_a_second_read
         assert_eq!(object.factory_owners(), allowed, "{family}");
         assert_eq!(
             object.forbidden_factory_owners(),
-            if crate::rules::ARES_ENABLED {
+            if crate::rules::ARES_BUILD {
                 vec![CountryIdx(1)]
             } else {
                 vec![]
@@ -139,7 +139,7 @@ fn all_techno_families_project_factory_fields_from_process_without_a_second_read
             "{family}"
         );
         assert!(!object.factory_owners_permanent(), "later alias wins");
-        assert_eq!(object.factory_has_all_plans(), crate::rules::ARES_ENABLED);
+        assert_eq!(object.factory_has_all_plans(), crate::rules::ARES_BUILD);
         let source = rules
             .type_array_index(ObjectCategory::Building, "SOURCE")
             .unwrap();
@@ -148,7 +148,7 @@ fn all_techno_families_project_factory_fields_from_process_without_a_second_read
         assert_eq!(rules.ares_find_building(" SOURCE"), None);
         assert_eq!(
             object.built_at(),
-            if crate::rules::ARES_ENABLED {
+            if crate::rules::ARES_BUILD {
                 vec![source, source]
             } else {
                 vec![]
@@ -156,11 +156,11 @@ fn all_techno_families_project_factory_fields_from_process_without_a_second_read
         );
         assert_eq!(
             object.factory_explicit_only(),
-            crate::rules::ARES_ENABLED && family == "BuildingTypes"
+            crate::rules::ARES_BUILD && family == "BuildingTypes"
         );
         assert_eq!(
             rules.object("SOURCE").unwrap().factory_explicit_only(),
-            crate::rules::ARES_ENABLED
+            crate::rules::ARES_BUILD
         );
     }
 }
@@ -547,7 +547,7 @@ fn global_controls_project_only_reached_build_capability_and_difficulty_indices(
     assert!(!rules.ares_ai_bypasses_build_limit(0));
     assert_eq!(
         rules.ares_ai_bypasses_build_limit(1),
-        crate::rules::ARES_ENABLED
+        crate::rules::ARES_BUILD
     );
     assert!(!rules.ares_ai_bypasses_build_limit(2));
     assert!(!rules.ares_ai_bypasses_build_limit(3));

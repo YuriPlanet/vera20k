@@ -1145,7 +1145,7 @@ fn shrapnel_children_and_lasers_match_original_spawn_shrapnel() {
                     .payload()
                     .installed_weapon()
                     .map(|id| world.interner.resolve(id)),
-                crate::rules::ARES_ENABLED.then_some(child_weapon.id.as_str()),
+                crate::rules::ARES_BUILD.then_some(child_weapon.id.as_str()),
                 "{name}: Construct does not SetWeapon"
             );
             assert_eq!(

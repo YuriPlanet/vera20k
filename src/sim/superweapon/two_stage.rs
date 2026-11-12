@@ -232,6 +232,7 @@ pub(super) fn source_available(
             providers.provided.contains(&source),
             !low_power && providers.online.contains(&source),
             providers.charging.contains(&source),
+            rules.ares(),
         ),
         super::SuperHold::Unchanged | super::SuperHold::Suspend(false)
     )

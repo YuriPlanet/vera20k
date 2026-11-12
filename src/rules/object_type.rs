@@ -3752,7 +3752,13 @@ impl ObjectType {
     /// Building GetSensorRange4566B0. The caller supplies retained+268 and
     /// GetCurrentWeapon70E1A0's resolved range; Option already represents the
     /// null WeaponStruct/WeaponType test70E240. No General.GapRadius fallback.
-    pub fn building_sensor_range(&self, gap_supercharged: bool, weapon_range: Option<i32>) -> i32 {
+    /// `ares` is [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
+    pub fn building_sensor_range(
+        &self,
+        gap_supercharged: bool,
+        weapon_range: Option<i32>,
+        ares: bool,
+    ) -> i32 {
         // Ares BuildingClass_GetRangeOfRadial_Radius (10048E60, hook
         // 0x4566B0) answers a set RadialIndicatorRadius at the entry.
         #[cfg(feature = "ares")]
@@ -3767,7 +3773,7 @@ impl ObjectType {
             } else {
                 self.gap_radius_in_cells
             }
-        } else if crate::rules::ARES_ENABLED && self.sensor_array {
+        } else if ares && self.sensor_array {
             // Ares GetRangeOfRadial_SensorArray10016D30 (hook4566F9) shows
             // the SensorsSight the array deposits.
             i32::from(self.sensors_sight)
@@ -4474,7 +4480,7 @@ impl ObjectType {
         // INIClass_ReadHouseTypesList (1005BED0 hook 0x4750EC, strtok
         // 1005BEF0 hook 0x475107) swaps in its 0x800 buffer. The two
         // prerequisite lists name BuildingTypes, so `RuleSet` parses them.
-        let house_list_capacity = if crate::rules::ARES_ENABLED {
+        let house_list_capacity = if crate::rules::ARES_BUILD {
             0x800
         } else {
             0x80
@@ -4836,7 +4842,9 @@ impl ObjectType {
             #[cfg(feature = "phobos")]
             phobos_insignia: crate::rules::insignia_type::PhobosInsignia::default(),
             #[cfg(feature = "phobos")]
-            phobos_passengers_by_size: section.read_ares_bool("Passengers.BySize", true),
+            phobos_passengers_by_size: crate::rules::ares_switch::not_ares_read(|| {
+                section.read_ares_bool("Passengers.BySize", true)
+            }),
             #[cfg(feature = "phobos")]
             phobos_invulnerability:
                 crate::rules::invulnerability_rules::PhobosInvulnerability::parse(section),
@@ -5290,7 +5298,9 @@ impl ObjectType {
             mind_control_ignore_size: section
                 .read_phobos_nullable_bool("MindControl.IgnoreSize", None),
             #[cfg(feature = "phobos")]
-            mind_control_size: section.read_ares_int("MindControlSize", 1),
+            mind_control_size: crate::rules::ares_switch::not_ares_read(|| {
+                section.read_ares_int("MindControlSize", 1)
+            }),
             #[cfg(feature = "phobos")]
             mind_control_link_visible_to_house: section.read_phobos_nullable_with(
                 "MindControlLink.VisibleToHouse",
@@ -5563,9 +5573,10 @@ impl ObjectType {
             // Ares 3.0 TechnoTypeClass_LoadFromINI_ListLength (1005BF90,
             // hook 0x7125DF) reads it through ParseList<int> (1005B030).
             #[cfg(feature = "ares")]
-            debris_maximums: section
-                .read_ares_int_list("DebrisMaximums")
-                .unwrap_or_default(),
+            debris_maximums: crate::rules::ares_switch::not_ares_read(|| {
+                section.read_ares_int_list("DebrisMaximums")
+            })
+            .unwrap_or_default(),
             #[cfg(not(feature = "ares"))]
             debris_maximums: section.read_int_list("DebrisMaximums").unwrap_or_default(),
             debris_anims: Vec::new(),
@@ -5602,9 +5613,13 @@ impl ObjectType {
             super_gap_radius_in_cells: i32::from(section.read_int("SuperGapRadiusInCells", 0) as i8),
             // Ares TechnoTypeExt::LoadFromINIFile Valueable<int> reads.
             #[cfg(feature = "ares")]
-            gap_radius_in_cells: section.read_ares_int("GapRadiusInCells", 0),
+            gap_radius_in_cells: crate::rules::ares_switch::not_ares_read(|| {
+                section.read_ares_int("GapRadiusInCells", 0)
+            }),
             #[cfg(feature = "ares")]
-            super_gap_radius_in_cells: section.read_ares_int("SuperGapRadiusInCells", 0),
+            super_gap_radius_in_cells: crate::rules::ares_switch::not_ares_read(|| {
+                section.read_ares_int("SuperGapRadiusInCells", 0)
+            }),
             psychic_detection_radius: section.read_int("PsychicDetectionRadius", 0),
             sensor_array: section.read_bool("SensorArray", false),
             sensors: section.read_bool("Sensors", false),
@@ -5631,14 +5646,17 @@ impl ObjectType {
                 * crate::util::lepton::LEPTONS_PER_CELL_I32 as f64)
                 as i32,
             #[cfg(feature = "phobos")]
-            power_plant_enhancer_amount: section.read_ares_int("PowerPlantEnhancer.Amount", 0),
+            power_plant_enhancer_amount: crate::rules::ares_switch::not_ares_read(|| {
+                section.read_ares_int("PowerPlantEnhancer.Amount", 0)
+            }),
             #[cfg(feature = "phobos")]
             power_plant_enhancer_factor: section
                 .read_phobos_nullable_double("PowerPlantEnhancer.Factor", Some(1.0))
                 .map_or(0.0, |factor| factor as f32),
             #[cfg(feature = "phobos")]
-            power_plant_enhancer_max_count: section
-                .read_ares_int("PowerPlantEnhancer.MaxCount", -1),
+            power_plant_enhancer_max_count: crate::rules::ares_switch::not_ares_read(|| {
+                section.read_ares_int("PowerPlantEnhancer.MaxCount", -1)
+            }),
             #[cfg(feature = "phobos")]
             power_plant_damage_factor: section.read_phobos_double("PowerPlant.DamageFactor", 1.0),
         }

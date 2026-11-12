@@ -157,7 +157,7 @@ pub(crate) fn build_identity() -> BuildIdentity {
     BuildIdentity {
         package_version: env!("CARGO_PKG_VERSION").to_owned(),
         network_build: env!("VERA20K_NETWORK_BUILD").to_owned(),
-        ares: crate::rules::ARES_ENABLED,
+        ares: crate::rules::ARES_BUILD,
         phobos: crate::rules::PHOBOS_ENABLED,
         npatch: crate::rules::NPATCH_ENABLED,
         verax: crate::rules::VERAX_ENABLED,

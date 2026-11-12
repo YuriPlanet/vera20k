@@ -225,6 +225,9 @@ struct RulesLayer {
 #[derive(Debug, Clone)]
 pub struct RulesLayerStack {
     layers: Vec<RulesLayer>,
+    /// The installed game or its mod ships `ares.mix` (`rules::ares_switch`).
+    #[cfg(feature = "ares")]
+    ships_ares: bool,
 }
 
 impl RulesLayerStack {
@@ -234,7 +237,19 @@ impl RulesLayerStack {
                 kind: RulesLayerKind::RulesMd,
                 ini: rulesmd,
             }],
+            // A test build's fixture stacks stand for the Ares game the Ares
+            // tests mean, as `ares.mix` would; the game's owner sets this from
+            // the installed archives (`NativeRulesProcessOwner::startup_layers`).
+            #[cfg(feature = "ares")]
+            ships_ares: cfg!(any(test, feature = "test-support")),
         }
+    }
+
+    /// Whether the installed game or its mod ships Ares's `ares.mix`, which
+    /// makes Ares play whatever these layers hold (`rules::ares_switch`).
+    #[cfg(feature = "ares")]
+    pub fn set_ships_ares(&mut self, ships_ares: bool) {
+        self.ships_ares = ships_ares;
     }
 
     pub fn push(&mut self, kind: RulesLayerKind, ini: IniFile) {
@@ -435,11 +450,18 @@ impl RulesLayerStack {
             if kind == RulesLayerKind::Scenario
                 && let Some(after_map) = after_map.take()
             {
+                #[cfg(feature = "ares")]
+                let ares_inputs = crate::rules::ares_switch::AresInputs::from_passes(
+                    &processor.ares_reads,
+                    self.ships_ares,
+                );
                 let (ini, native_type_construction_trace) = processor.clone().finish();
                 let prefix = ProcessedRulesLayers {
                     ini,
                     content_hash: self.content_hash_for_layers(index + 1),
                     native_type_construction_trace,
+                    #[cfg(feature = "ares")]
+                    ares_inputs,
                 };
                 let rules = match RuleSet::from_processed_rules(&prefix) {
                     Ok(rules) => rules,
@@ -464,12 +486,19 @@ impl RulesLayerStack {
             processor.init_overlay_theater();
             processor.init_anim_theater();
         }
+        #[cfg(feature = "ares")]
+        let ares_inputs = crate::rules::ares_switch::AresInputs::from_passes(
+            &processor.ares_reads,
+            self.ships_ares,
+        );
         let (ini, native_type_construction_trace) = processor.finish();
         Ok((
             ProcessedRulesLayers {
                 ini,
                 content_hash: self.content_hash(),
                 native_type_construction_trace,
+                #[cfg(feature = "ares")]
+                ares_inputs,
             },
             after_map_result,
         ))
@@ -764,9 +793,18 @@ pub struct ProcessedRulesLayers {
     ini: IniFile,
     content_hash: u64,
     native_type_construction_trace: NativeTypeConstructionTrace,
+    /// What the passes give the per-game Ares switch; saved with the rules,
+    /// so a loaded game projects the same answer.
+    #[cfg(feature = "ares")]
+    ares_inputs: crate::rules::ares_switch::AresInputs,
 }
 
 impl ProcessedRulesLayers {
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_inputs(&self) -> &crate::rules::ares_switch::AresInputs {
+        &self.ares_inputs
+    }
+
     #[cfg(feature = "ares")]
     pub(crate) fn ares_global_controls(&self) -> &AresGlobalControls {
         &self
@@ -1136,7 +1174,7 @@ impl ProcessedRulesLayers {
             return Err(RulesError::InvalidSavedState("invalid voxel model plan"));
         }
         let families = &registry.families;
-        if registry.ares_armors.is_some() != crate::rules::ARES_ENABLED {
+        if registry.ares_armors.is_some() != crate::rules::ARES_BUILD {
             return Err(RulesError::InvalidSavedState(
                 "saved armor capability differs from build",
             ));
@@ -3495,6 +3533,7 @@ impl AresSideState {
         types: &SideRegisteredTypes,
         color_index: impl Fn(&str) -> Option<i32>,
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         if !(0..=2).contains(&self.phase) {
             return;
         }
@@ -3727,6 +3766,7 @@ fn read_ares_type_ref(
     current: &Option<Option<String>>,
     resolve: impl Fn(&str) -> Option<String>,
 ) -> Option<Option<String>> {
+    let _ares = crate::rules::ares_switch::ares_reads();
     let Some(name) = section.read_name(key, 0x800) else {
         return current.clone();
     };
@@ -3749,6 +3789,7 @@ pub(crate) fn read_nullable_type_vector<T: Clone>(
     current: Option<&Vec<T>>,
     resolve: impl Fn(&str) -> Option<T>,
 ) -> Option<Vec<T>> {
+    let _ares = crate::rules::ares_switch::ares_reads();
     let Some(value) = section.read_name(key, 0x800) else {
         return current.cloned();
     };
@@ -3773,6 +3814,7 @@ fn read_nullable_int_vector(
     key: &str,
     current: Option<&Vec<i32>>,
 ) -> Option<Vec<i32>> {
+    let _ares = crate::rules::ares_switch::ares_reads();
     let Some(value) = section.read_name(key, 0x800) else {
         return current.cloned();
     };
@@ -3793,6 +3835,7 @@ fn read_valueable_type(
     current: &Option<String>,
     resolve: impl Fn(&str) -> Option<String>,
 ) -> Option<String> {
+    let _ares = crate::rules::ares_switch::ares_reads();
     read_ares_type_ref(section, key, &current.clone().map(Some), resolve).flatten()
 }
 
@@ -3806,6 +3849,7 @@ fn read_valueable_type_vector(
     current: &[String],
     resolve: impl Fn(&str) -> Option<String>,
 ) -> Vec<String> {
+    let _ares = crate::rules::ares_switch::ares_reads();
     match section.read_list(key, 0x800) {
         Some(tokens) => tokens.into_iter().filter_map(resolve).collect(),
         None => current.to_vec(),
@@ -3816,6 +3860,7 @@ fn read_valueable_type_vector(
 /// rule as [`read_valueable_type_vector`].
 #[cfg(feature = "ares")]
 fn read_valueable_int_vector(section: &IniSection, key: &str, current: &[i32]) -> Vec<i32> {
+    let _ares = crate::rules::ares_switch::ares_reads();
     section
         .read_ares_int_list(key)
         .unwrap_or_else(|| current.to_vec())
@@ -4115,6 +4160,7 @@ impl Default for AresGeneralRules {
 impl AresGeneralRules {
     /// 1002AB60's reads of these keys, in its order.
     fn read_before_type_data(&mut self, pass: &IniFile) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         if let Some(general) = pass.section("General") {
             self.can_make_stuff_up =
                 general.read_ares_bool("CanMakeStuffUp", self.can_make_stuff_up);
@@ -4142,6 +4188,7 @@ impl AresGeneralRules {
     /// Find-only lookup `electrocuted`), then after EngineerAlwaysCaptureTech
     /// EnemyWrench, and after HSBuilding the hunter-seeker values.
     fn read_after_type_data(&mut self, pass: &IniFile, electrocuted: Option<Option<String>>) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         if let Some(anim) = electrocuted {
             self.infantry_electrocuted = anim;
         }
@@ -4159,7 +4206,10 @@ impl AresGeneralRules {
         .into_iter()
         .enumerate()
         {
-            self.hunter_seeker[slot] = general.read_ares_int(key, self.hunter_seeker[slot]);
+            // Stock RulesClass keys, re-parsed.
+            self.hunter_seeker[slot] = crate::rules::ares_switch::not_ares_read(|| {
+                general.read_ares_int(key, self.hunter_seeker[slot])
+            });
         }
     }
 
@@ -4353,6 +4403,7 @@ impl AresGlobalControls {
     /// Unlike the Process-entry controls above, this unconditional reader
     /// runs immediately before Type data. The native named lookup is5B3910.
     fn read_before_type_data(&mut self, pass: &IniFile) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         // Installed Ares1002AC23..1002AC35: General, retained bool reader.
         if let Some(section) = pass.section("General") {
             self.type_select_use_deploy =
@@ -4394,6 +4445,7 @@ impl AresGlobalControls {
     }
 
     fn read_pass(&mut self, pass: &IniFile) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         if !(0..=2).contains(&self.phase) {
             return;
         }
@@ -4568,8 +4620,8 @@ impl Default for NativeRulesRegistryState {
         Self {
             rules_threat_coefficient_defaults: general.threat_coefficient_defaults(),
             compatibility: RulesCompatibility::default(),
-            ares_prerequisites: crate::rules::ARES_ENABLED.then(GenericPrerequisites::default),
-            ares_armors: crate::rules::ARES_ENABLED.then(ArmorCatalog::default),
+            ares_prerequisites: crate::rules::ARES_BUILD.then(GenericPrerequisites::default),
+            ares_armors: crate::rules::ARES_BUILD.then(ArmorCatalog::default),
             phobos_radiation_types: crate::rules::PHOBOS_ENABLED
                 .then(RadiationTypeCatalog::with_default),
             phobos_shield_types: crate::rules::PHOBOS_ENABLED.then(ShieldTypeCatalog::default),
@@ -4802,7 +4854,7 @@ impl NativeRulesRegistryState {
     }
 
     fn validate_prerequisites(&self) -> Result<(), RulesError> {
-        if self.ares_prerequisites.is_some() != crate::rules::ARES_ENABLED {
+        if self.ares_prerequisites.is_some() != crate::rules::ARES_BUILD {
             return Err(RulesError::InvalidSavedState(
                 "saved prerequisite catalog does not match the compiled capability",
             ));
@@ -5298,6 +5350,7 @@ impl AresFactoryOwners {
         find_country: impl Fn(&str) -> Option<crate::rules::ruleset::CountryIdx>,
         read_built_at: impl FnOnce() -> Option<Vec<i32>>,
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         // Extension dispatcher1003DEC0: only phases0/1/2 enter the common
         // reader. First-phase initialization does not reset these ctor fields.
         if !(0..=2).contains(&self.phase) {
@@ -5346,6 +5399,7 @@ impl AresExplicitFactory {
     }
 
     fn read_pass(&mut self, section: &IniSection, aircraft_repair: bool) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         if !(0..=2).contains(&self.phase) {
             return;
         }
@@ -6339,7 +6393,7 @@ fn find_or_construct_type(
         members[index].terrain_type_read_state =
             Some(crate::rules::terrain_object_type::TerrainTypeReadState::new());
     }
-    if crate::rules::ARES_ENABLED && family == RulesTypeFamily::Warhead {
+    if crate::rules::ARES_BUILD && family == RulesTypeFamily::Warhead {
         members[index].ares_verses = Some(AresWarheadVerses::default());
         members[index].ares_warhead = Some(Default::default());
     }
@@ -6466,6 +6520,11 @@ struct RulesPassProcessor {
     select_anim: SelectAnimRulesState,
     rules_death_weapon: Option<String>,
     rules_type_references: RulesTypeReferences,
+    /// What this Process call's passes read, for the per-game Ares switch
+    /// (`rules::ares_switch`). Not retained with the registry: each scenario
+    /// Process reads every one of its layers again.
+    #[cfg(feature = "ares")]
+    ares_reads: crate::rules::ares_switch::KeyReads,
 }
 
 impl Default for RulesPassProcessor {
@@ -6564,10 +6623,34 @@ impl RulesPassProcessor {
             ordinary: None,
             powerups: registry_state.rules_powerups,
             native_type_construction_events: Vec::new(),
+            #[cfg(feature = "ares")]
+            ares_reads: Default::default(),
         }
     }
 
+    /// One `RulesClass::Process @ 0x00668BF0` pass, its reader lookups
+    /// recorded for the per-game Ares switch.
     fn apply_pass(
+        &mut self,
+        pass: &IniFile,
+        fixed_art: &IniFile,
+        fixed_eva: &EvaRegistry,
+        primary_rules: bool,
+        fixed_sounds: &SoundRegistry,
+    ) -> Result<(), RulesError> {
+        #[cfg(feature = "ares")]
+        {
+            let (result, reads) = crate::rules::ares_switch::record(|| {
+                self.process_pass(pass, fixed_art, fixed_eva, primary_rules, fixed_sounds)
+            });
+            self.ares_reads.absorb(reads);
+            result
+        }
+        #[cfg(not(feature = "ares"))]
+        self.process_pass(pass, fixed_art, fixed_eva, primary_rules, fixed_sounds)
+    }
+
+    fn process_pass(
         &mut self,
         pass: &IniFile,
         fixed_art: &IniFile,
@@ -6718,12 +6801,15 @@ impl RulesPassProcessor {
                     self.resolve_existing_type_from(section, key, RulesTypeFamily::Animation)
                 })
             });
+            // Retail [CombatDamage] already names the TS key's warhead.
             let warhead = pass.section("CombatDamage").and_then(|section| {
-                self.resolve_existing_type_from(
-                    section,
-                    "FirestormWarhead",
-                    RulesTypeFamily::Warhead,
-                )
+                crate::rules::ares_switch::not_ares_read(|| {
+                    self.resolve_existing_type_from(
+                        section,
+                        "FirestormWarhead",
+                        RulesTypeFamily::Warhead,
+                    )
+                })
             });
             self.ares_global_controls.firestorm.read_after_type_data(
                 pass,
@@ -7102,6 +7188,7 @@ impl RulesPassProcessor {
         section: &IniSection,
         key: &str,
     ) -> Option<Option<crate::rules::superweapon_type::DeliveryType>> {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let name = section.read_name(key, 2048)?;
         if is_native_none_type_name(name) {
             return Some(None);
@@ -7118,6 +7205,7 @@ impl RulesPassProcessor {
         section: &IniSection,
         key: &str,
     ) -> Option<Vec<crate::rules::superweapon_type::TechnoTypeReference>> {
+        let _ares = crate::rules::ares_switch::ares_reads();
         Some(
             section
                 .read_list(key, 2048)?
@@ -7138,6 +7226,7 @@ impl RulesPassProcessor {
         key: &str,
         family: RulesTypeFamily,
     ) -> Option<Option<String>> {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let name = section.read_name(key, 2048)?;
         if is_native_none_type_name(name) {
             return Some(None);
@@ -7780,6 +7869,7 @@ impl RulesPassProcessor {
         // type bodies.
         #[cfg(feature = "phobos")]
         if let Some(section) = pass.section("AudioVisual") {
+            let _phobos = crate::rules::ares_switch::not_ares_reads();
             // `PhobosFixedString<32>`: an empty read keeps the earlier pass's
             // name, and `none` or `<none>` clears it.
             if let Some(name) = section.read_name("MissingCameo", 0x20) {
@@ -7890,6 +7980,7 @@ impl RulesPassProcessor {
     /// native controls live in tools/rules_oracle/ares_country_veterancy.*.
     #[cfg(feature = "ares")]
     fn process_ares_country(&mut self, index: usize, pass: &IniFile, primary_rules: bool) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let country = &self.families[&RulesTypeFamily::Country][index];
         let phase = country.country_veterancy.ares.phase;
         if !(0..=2).contains(&phase) {
@@ -8176,6 +8267,7 @@ impl RulesPassProcessor {
                 }
                 #[cfg(feature = "ares")]
                 {
+                    let _ares = crate::rules::ares_switch::ares_reads();
                     // LoadFromINIFile10033250: the first call runs the Type
                     // handler's Initialize, then LoadFromINI10033370 reads
                     // EVA.Ready/Activated/Detected before the other fields.
@@ -8486,7 +8578,11 @@ impl RulesPassProcessor {
                                 .ordinary
                                 .as_ref()
                                 .and_then(|ini| ini.section("General"))
-                                .and_then(|general| general.read_ares_int_list("AmerParaDropNum"))
+                                .and_then(|general| {
+                                    crate::rules::ares_switch::not_ares_read(|| {
+                                        general.read_ares_int_list("AmerParaDropNum")
+                                    })
+                                })
                                 .unwrap_or_default();
                             paradrop.initialize_american(types, counts);
                         }
@@ -8731,7 +8827,7 @@ impl RulesPassProcessor {
                 // that can allocate a BuildingType, each with its current list
                 // as the default.
                 let member = &self.families[&family][index];
-                let prerequisite_capacity = if crate::rules::ARES_ENABLED {
+                let prerequisite_capacity = if crate::rules::ARES_BUILD {
                     0x800
                 } else {
                     0x80
@@ -8848,6 +8944,7 @@ impl RulesPassProcessor {
                 // reach the common TechnoType extension before subclass reads.
                 #[cfg(feature = "ares")]
                 {
+                    let _ares = crate::rules::ares_switch::ares_reads();
                     //1003E01B sizes to the live Side array;1003E040..1003E070
                     // reads each Survivor.Side%u through Infantry Find only.
                     let side_count = self
@@ -8937,6 +9034,7 @@ impl RulesPassProcessor {
                 #[cfg(feature = "ares")]
                 {
                     use crate::rules::ares_driver::OperatorRequirement;
+                    let _ares = crate::rules::ares_switch::ares_reads();
                     let operator = raw.read_name("Operator", 2048).map(|name| {
                         if name.eq_ignore_ascii_case("_ANY_") {
                             OperatorRequirement::Any
@@ -9012,7 +9110,9 @@ impl RulesPassProcessor {
                     ];
                     //1003E232: the common extension applies to all Technos.
                     member.building_has_spotlight =
-                        raw.read_ares_bool("HasSpotlight", member.building_has_spotlight);
+                        crate::rules::ares_switch::not_ares_read(|| {
+                            raw.read_ares_bool("HasSpotlight", member.building_has_spotlight)
+                        });
                     member.spotlight.read_pass(&raw);
                     member.super_weapon_techno.read_pass(&raw);
                     // TypeExt LoadFromINI1003DFB0: the Experience.* block,
@@ -9281,6 +9381,7 @@ impl RulesPassProcessor {
                             .read_pass(fixed_art.section_or_empty(&image), has_turret);
                         #[cfg(feature = "phobos")]
                         {
+                            let _phobos = crate::rules::ares_switch::not_ares_reads();
                             // `UnitTypeExt::LoadFromINI` reads the three
                             // `OreGathering.*` vectors in this order at the end
                             // of the UnitType body. An absent key retains the
@@ -9401,6 +9502,7 @@ impl RulesPassProcessor {
     /// still override both).
     #[cfg(feature = "ares")]
     fn read_ares_prism_forwarding(&mut self, index: usize, type_id: &str, raw: &IniSection) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let targets = self.resolve_existing_list_from(
             raw,
             "PrismForwarding.Targets",
@@ -9468,6 +9570,7 @@ impl RulesPassProcessor {
 
     #[cfg(feature = "ares")]
     fn process_factory_owners(&mut self, family: RulesTypeFamily, index: usize, raw: &IniSection) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let mut state = self.family_mut(family)[index]
             .factory_owners
             .take()
