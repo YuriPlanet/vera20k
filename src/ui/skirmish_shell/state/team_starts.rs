@@ -3,7 +3,10 @@
 //! taken (`0x005D6890`), whatever the teams, so allies can land on opposite
 //! sides of the map. Team Starts fills the page's Start column instead:
 //! each team's players take starts next to each other, and the teams keep
-//! as far from each other as the map allows. The picks are ordinary Start
+//! as far from each other as the map allows. Distance is how far a ground
+//! unit drives between two starts (`sim::pathfinding::drive_distance`), so
+//! water and cliffs count; where the page cannot read the map's terrain
+//! (the random map) it is the straight line. The picks are ordinary Start
 //! choices, shown on the page for the player to change, and the launch
 //! reads them as it reads any other.
 
@@ -22,7 +25,9 @@ const NO_TEAM: i32 = -2;
 const TRY_EVERY_SEATING_UP_TO: usize = 8;
 
 /// A start for each seat, by seat: `starts` are the map's start cells by
-/// start index and `teams` each seat's team (`NO_TEAM` plays alone).
+/// start index, `drive` how far a ground unit drives between them (`None`
+/// where no route joins two; [`start_distances`] says how they are weighed)
+/// and `teams` each seat's team (`NO_TEAM` plays alone).
 ///
 /// A seating is judged by each player's margin: how much farther their
 /// nearest enemy starts than their nearest ally (a player on no team: how
@@ -33,7 +38,11 @@ const TRY_EVERY_SEATING_UP_TO: usize = 8;
 /// one the first guess is improved by swapping two rivals' starts, or moving
 /// a player to a free start, while that raises the margins. Among equal
 /// seatings the first guess stays. Seats past the map's starts get none.
-pub fn starts_by_team(starts: &[(i32, i32)], teams: &[i32]) -> Vec<Option<usize>> {
+pub fn starts_by_team(
+    starts: &[(i32, i32)],
+    drive: Option<&[Vec<Option<u32>>]>,
+    teams: &[i32],
+) -> Vec<Option<usize>> {
     let guess = first_guess(starts, teams);
     // The seats the guess gives a start, their teams and those starts.
     let seats: Vec<usize> = (0..teams.len())
@@ -41,18 +50,7 @@ pub fn starts_by_team(starts: &[(i32, i32)], teams: &[i32]) -> Vec<Option<usize>
         .collect();
     let seated_teams: Vec<i32> = seats.iter().map(|&seat| teams[seat]).collect();
     let mut seating: Vec<usize> = guess.iter().flatten().copied().collect();
-    let apart: Vec<Vec<i64>> = starts
-        .iter()
-        .map(|&(ax, ay)| {
-            starts
-                .iter()
-                .map(|&(bx, by)| {
-                    let (dx, dy) = (i64::from(ax) - i64::from(bx), i64::from(ay) - i64::from(by));
-                    (dx * dx + dy * dy).isqrt()
-                })
-                .collect()
-        })
-        .collect();
+    let apart = start_distances(starts, drive);
     if starts.len() <= TRY_EVERY_SEATING_UP_TO {
         let mut best = (margins(&apart, &seated_teams, &seating), seating.clone());
         try_every_seating(&apart, &seated_teams, &mut Vec::new(), &mut best);
@@ -65,6 +63,43 @@ pub fn starts_by_team(starts: &[(i32, i32)], teams: &[i32]) -> Vec<Option<usize>
         assigned[seat] = Some(start);
     }
     assigned
+}
+
+/// How far apart each two starts are, by start index, in cells: the drive
+/// where one was measured, the straight line where none was (a malformed
+/// `drive` counts as none). A start no ground unit can drive to from another
+/// counts as farther from it than any start one can, and such starts are
+/// then ordered by the straight line.
+fn start_distances(starts: &[(i32, i32)], drive: Option<&[Vec<Option<u32>>]>) -> Vec<Vec<i64>> {
+    let straight = |a: usize, b: usize| {
+        let (dx, dy) = (
+            i64::from(starts[a].0) - i64::from(starts[b].0),
+            i64::from(starts[a].1) - i64::from(starts[b].1),
+        );
+        (dx * dx + dy * dy).isqrt()
+    };
+    let drive = drive.filter(|drive| {
+        drive.len() == starts.len() && drive.iter().all(|row| row.len() == starts.len())
+    });
+    let beyond_every_drive = 1 + drive.map_or(0, |drive| {
+        drive
+            .iter()
+            .flatten()
+            .flatten()
+            .max()
+            .map_or(0, |&d| i64::from(d))
+    });
+    (0..starts.len())
+        .map(|a| {
+            (0..starts.len())
+                .map(|b| match drive.map(|drive| drive[a][b]) {
+                    None => straight(a, b),
+                    Some(Some(cells)) => i64::from(cells),
+                    Some(None) => beyond_every_drive + straight(a, b),
+                })
+                .collect()
+        })
+        .collect()
 }
 
 /// Whether seated players `a` and `b` are on the same team.
@@ -228,11 +263,14 @@ fn first_guess(starts: &[(i32, i32)], teams: &[i32]) -> Vec<Option<usize>> {
 
 /// Fill the Start column by team for the rows that play: the player's row
 /// and every computer row with a player type. `starts` are the selected
-/// map's start cells by start index; fewer than two leaves the page as it is.
+/// map's start cells by start index and `drive` how far a ground unit drives
+/// between them, where the page could measure it; fewer than two starts
+/// leaves the page as it is.
 pub fn apply_team_starts(
     state: &mut SkirmishShellState,
     maps: &[MapMenuEntry],
     starts: &[(i32, i32)],
+    drive: Option<&[Vec<Option<u32>>]>,
 ) {
     if starts.len() < 2 {
         return;
@@ -256,7 +294,7 @@ pub fn apply_team_starts(
             SkirmishComboItem::Start(LaunchStartPosition::Auto),
         );
     }
-    for (&row, start) in rows.iter().zip(starts_by_team(starts, &teams)) {
+    for (&row, start) in rows.iter().zip(starts_by_team(starts, drive, &teams)) {
         if let Some(start) = start.and_then(|start| u8::try_from(start).ok()) {
             pick(
                 state,
@@ -278,7 +316,7 @@ mod tests {
     fn allies_take_neighbouring_starts_and_teams_keep_apart() {
         // West pair (0, 1) and east pair (2, 3), far apart.
         let starts = [(10, 10), (10, 30), (90, 10), (90, 30)];
-        let seats = starts_by_team(&starts, &[0, 1, 0, 1]);
+        let seats = starts_by_team(&starts, None, &[0, 1, 0, 1]);
         let seat = |index: usize| seats[index].expect("every seat has a start");
         let west = |start: usize| start < 2;
         assert_eq!(west(seat(0)), west(seat(2)), "team A shares a side");
@@ -294,12 +332,33 @@ mod tests {
     #[test]
     fn lone_players_spread_out_and_extra_seats_stay_unplaced() {
         let starts = [(10, 10), (12, 10), (90, 90)];
-        let seats = starts_by_team(&starts, &[NO_TEAM, NO_TEAM, NO_TEAM, NO_TEAM]);
+        let seats = starts_by_team(&starts, None, &[NO_TEAM, NO_TEAM, NO_TEAM, NO_TEAM]);
         assert!(seats[..3].iter().all(Option::is_some));
         assert_eq!(seats[3], None);
         // The first seat takes the start away from the middle, the second
         // the one farthest from it.
         assert_eq!((seats[0], seats[1]), (Some(2), Some(0)));
+    }
+
+    /// Two islands of two starts each, with less water between them than
+    /// land on either: allies take an island each, where straight lines
+    /// would pair the starts facing each other across the water.
+    #[test]
+    fn allies_share_an_island_across_narrow_water() {
+        // Island A holds starts 0 and 1, island B starts 2 and 3; 0 faces 2
+        // and 1 faces 3 across 20 cells of water, and no route joins them.
+        let starts = [(10, 10), (10, 70), (30, 10), (30, 70)];
+        let drive = [
+            vec![Some(0), Some(60), None, None],
+            vec![Some(60), Some(0), None, None],
+            vec![None, None, Some(0), Some(60)],
+            vec![None, None, Some(60), Some(0)],
+        ];
+        let seats = starts_by_team(&starts, Some(&drive), &[0, 1, 0, 1]);
+        let island = |seat: usize| seats[seat].expect("every seat has a start") / 2;
+        assert_eq!(island(0), island(2), "team A shares an island");
+        assert_eq!(island(1), island(3), "team B shares an island");
+        assert_ne!(island(0), island(1));
     }
 
     /// Whether no seated player starts nearer an enemy than their nearest ally.
@@ -341,7 +400,7 @@ mod tests {
         assert!(allies_nearest(
             &starts,
             &teams,
-            &starts_by_team(&starts, &teams)
+            &starts_by_team(&starts, None, &teams)
         ));
     }
 
@@ -366,7 +425,7 @@ mod tests {
         assert!(allies_nearest(
             &starts,
             &teams,
-            &starts_by_team(&starts, &teams)
+            &starts_by_team(&starts, None, &teams)
         ));
     }
 }
