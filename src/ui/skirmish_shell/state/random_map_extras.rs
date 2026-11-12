@@ -23,6 +23,10 @@ pub enum ExtrasAction {
     CopyCode,
     /// Read a share code from the clipboard into the options.
     PasteCode,
+    /// Go back to the map generated before the one on show.
+    PreviousMap,
+    /// Keep the options as one of the player's own presets.
+    SavePreset,
 }
 
 /// What a press on an Extras row leaves for the app to do.
@@ -58,9 +62,11 @@ pub enum ExtrasValue {
 }
 
 /// Every entry, in view order: the tools, then the choices.
-const ENTRIES: [ExtrasRow; 4] = [
+const ENTRIES: [ExtrasRow; 6] = [
     ExtrasRow::Action(ExtrasAction::CopyCode),
     ExtrasRow::Action(ExtrasAction::PasteCode),
+    ExtrasRow::Action(ExtrasAction::PreviousMap),
+    ExtrasRow::Action(ExtrasAction::SavePreset),
     ExtrasRow::Choice(Extra::OreVariant),
     ExtrasRow::Choice(Extra::TownVariant),
 ];
@@ -80,6 +86,10 @@ impl ExtrasRow {
         match self {
             Self::Action(ExtrasAction::CopyCode) => ("VERA:RandomMapExtraCopyCode", "Share Code"),
             Self::Action(ExtrasAction::PasteCode) => ("VERA:RandomMapExtraPasteCode", "Use a Code"),
+            Self::Action(ExtrasAction::PreviousMap) => {
+                ("VERA:RandomMapExtraPrevious", "Previous Map")
+            }
+            Self::Action(ExtrasAction::SavePreset) => ("VERA:RandomMapExtraMyPreset", "My Preset"),
             Self::Choice(Extra::OreVariant) => ("VERA:RandomMapExtraOre", "Ore Fields"),
             Self::Choice(Extra::TownVariant) => ("VERA:RandomMapExtraTowns", "Towns"),
             Self::Pager => ("VERA:RandomMapExtraPage", "More"),
@@ -91,6 +101,8 @@ impl ExtrasRow {
         match self {
             Self::Action(ExtrasAction::CopyCode) => "VERA:RandomMapExtraCopyCodeHelp",
             Self::Action(ExtrasAction::PasteCode) => "VERA:RandomMapExtraPasteCodeHelp",
+            Self::Action(ExtrasAction::PreviousMap) => "VERA:RandomMapExtraPreviousHelp",
+            Self::Action(ExtrasAction::SavePreset) => "VERA:RandomMapExtraMyPresetHelp",
             Self::Choice(Extra::OreVariant) => "VERA:RandomMapExtraOreHelp",
             Self::Choice(Extra::TownVariant) => "VERA:RandomMapExtraTownsHelp",
             Self::Pager => "VERA:RandomMapExtraPageHelp",
@@ -147,6 +159,12 @@ impl RandomMapSetupModalState {
             ExtrasRow::Action(ExtrasAction::PasteCode) => {
                 ExtrasValue::Label("VERA:RandomMapExtraPaste", "Paste")
             }
+            ExtrasRow::Action(ExtrasAction::PreviousMap) => {
+                ExtrasValue::Label("VERA:RandomMapExtraBack", "Back")
+            }
+            ExtrasRow::Action(ExtrasAction::SavePreset) => {
+                ExtrasValue::Label("VERA:RandomMapExtraSave", "Save")
+            }
             ExtrasRow::Choice(extra) => choice_value(extra, self.options.extras.get(extra)),
             ExtrasRow::Pager => {
                 ExtrasValue::Page(self.extras_page.unwrap_or(0) + 1, extras_page_count())
@@ -159,6 +177,11 @@ impl RandomMapSetupModalState {
     /// pager turns the page; a tool is handed back for the app to carry out.
     pub fn release_extras_row(&mut self, row: usize) -> Option<ExtrasOutcome> {
         match self.extras_row(row)? {
+            // The way back is the dialog's own: the earlier options return
+            // and the app only generates them.
+            ExtrasRow::Action(ExtrasAction::PreviousMap) => {
+                self.step_back().then_some(ExtrasOutcome::Regenerate)
+            }
             ExtrasRow::Action(action) => Some(ExtrasOutcome::Tool(action)),
             ExtrasRow::Choice(extra) => {
                 self.options.extras.cycle(extra);

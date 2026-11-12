@@ -470,6 +470,7 @@ fn generated_preview_with_starts(
         start_waypoints: starts.to_vec(),
         stages_run: Vec::new(),
         unfilled_start_slots: 0,
+        fairness: None,
     }
 }
 
@@ -1682,6 +1683,7 @@ fn gsi_04_12_stock_ffa_preview_can_only_supply_loading_fallback_pixels() {
         start_waypoints: vec![(0, 70, 70), (1, 90, 70), (2, 70, 90)],
         stages_run: Vec::new(),
         unfilled_start_slots: 0,
+        fairness: None,
     };
     let _request =
         LoadingRequest::unverified_legacy_skirmish(launch.clone(), unverified_seed(0x4567))

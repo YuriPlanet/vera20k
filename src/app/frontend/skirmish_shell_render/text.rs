@@ -1161,10 +1161,17 @@ pub(super) fn push_random_map_setup_modal_text_draws(
         );
         !sliding && (!vera || modal.extended)
     }) {
+        let mut caption = localized_label(state, key, fallback);
+        // One of the player's own presets is named by its number.
+        if control == RandomMapSetupControl::PresetCycle
+            && let Some(crate::ui::skirmish_shell::RandomMapPreset::Mine(slot)) = modal.preset
+        {
+            caption = caption.replace("{number}", &(u32::from(slot) + 1).to_string());
+        }
         push_text_draw(
             out,
             state,
-            &localized_label(state, key, fallback),
+            &caption,
             button_text_rect(rect, modal.pressed_control == Some(control), scale),
             button_label_color_for_disabled(!modal.is_enabled(control)),
             ShellAlign::BUTTON_CAPTION,
@@ -1244,6 +1251,28 @@ pub(super) fn push_random_map_setup_modal_text_draws(
             out,
             state,
             &localized_label(state, key, fallback),
+            rect_to_text_rect(layout.progress_text),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::V_CENTER,
+            SHELL_DROPDOWN_TEXT_DEPTH - 0.0001,
+            scale.factor(),
+        );
+    } else if let Some(report) = modal.fairness.filter(|_| modal.extended && modal.generated) {
+        // VERA: how evenly the map on show treats its starts.
+        let readout = report.readout();
+        let text = localized_label(
+            state,
+            "VERA:RandomMapFairness",
+            "Fairness: ore {ore}%, 2nd field {expansion}%, room {room}%, spacing {spacing}%",
+        )
+        .replace("{ore}", &readout.ore.to_string())
+        .replace("{expansion}", &readout.expansion.to_string())
+        .replace("{room}", &readout.room.to_string())
+        .replace("{spacing}", &readout.spacing.to_string());
+        push_text_draw(
+            out,
+            state,
+            &text,
             rect_to_text_rect(layout.progress_text),
             SHELL_LABEL_TEXT_RGB,
             ShellAlign::V_CENTER,

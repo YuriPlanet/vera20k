@@ -467,6 +467,7 @@ fn generate_once(
         #[cfg(any(test, feature = "test-support"))]
         stages_run: executed_stages(&options),
         unfilled_start_slots: output.unfilled_start_slots,
+        fairness: output.fairness,
     };
     (generated, output.fairness)
 }

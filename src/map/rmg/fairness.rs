@@ -73,6 +73,15 @@ pub struct FairnessReport {
     pub unfilled_starts: i64,
 }
 
+/// A [`FairnessReport`] in the percents a player reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FairnessReadout {
+    pub ore: i64,
+    pub expansion: i64,
+    pub spacing: i64,
+    pub room: i64,
+}
+
 impl FairnessReport {
     /// The four shares the search weighs, each 0..=1000: start spacing
     /// against 60% of an even spread, and the poorest start's ore, expansion
@@ -91,6 +100,25 @@ impl FairnessReport {
             share(self.expansion_min, self.expansion_max),
             share(self.room_min, self.room_max),
         ]
+    }
+
+    /// The report as the dialog shows it, in percent: the poorest start's
+    /// ore, expansion ore and building room against the richest's, and the
+    /// closest pair of starts against an even spread (which can pass 100).
+    pub fn readout(&self) -> FairnessReadout {
+        let [_, ore, expansion, room] = self.shares();
+        // The distances' ratio, from their squares.
+        let spacing = if self.even_spacing_sq <= 0 {
+            100
+        } else {
+            (self.closest_starts_sq * 10_000 / self.even_spacing_sq).isqrt()
+        };
+        FairnessReadout {
+            ore: ore / 10,
+            expansion: expansion / 10,
+            spacing,
+            room: room / 10,
+        }
     }
 
     /// Higher is fairer; a map short of starts ranks below every full one.

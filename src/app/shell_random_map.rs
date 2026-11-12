@@ -901,8 +901,11 @@ pub(super) fn finish_random_map_generation_owners(
     let continuation = generated.take_mapgen_continuation();
     retention.publish_mapgen_continuation(resident_simulation, continuation);
     runtime.replay_random_map_preview_construction(&generated.construction_trace);
+    // VERA: the map's fairness report, for the dialog's readout.
+    let fairness = generated.fairness;
     retention.finish_generation(generated);
     modal.finish_generate(preview);
+    modal.fairness = fairness;
     accept_on_finish
         && matches!(
             modal.accept(),
@@ -920,6 +923,46 @@ pub(super) fn begin_random_map_generation_owners(
 ) {
     runtime.remember_random_map_options(options);
     retention.begin_generation();
+}
+
+/// VERA extension: the file of the player's own preset in `slot` (from 0):
+/// the options in the `.SED` text, under a name the seed browser does not
+/// list.
+fn custom_preset_path(dir: &std::path::Path, slot: usize) -> std::path::PathBuf {
+    dir.join(format!("VeraPreset{}.vpr", slot + 1))
+}
+
+/// Write the preset in `slot`; false when the file could not be written.
+fn save_custom_preset(
+    dir: &std::path::Path,
+    slot: usize,
+    options: &crate::map::rmg::RmgOptions,
+) -> bool {
+    let path = custom_preset_path(dir, slot);
+    let written = crate::util::file_system::create_dir_all(dir)
+        .and_then(|()| crate::util::file_system::write(&path, options.to_sed_bytes()));
+    if let Err(error) = &written {
+        log::warn!(
+            "random map: could not write preset {}: {error}",
+            path.display()
+        );
+    }
+    written.is_ok()
+}
+
+/// The player's own presets in `dir`, by slot, up to the first slot without
+/// a readable file.
+pub(super) fn load_custom_presets(dir: &std::path::Path) -> Vec<crate::map::rmg::RmgOptions> {
+    (0..crate::ui::skirmish_shell::CUSTOM_PRESET_SLOTS)
+        .map_while(|slot| {
+            let bytes = crate::util::file_system::read(custom_preset_path(dir, slot)).ok()?;
+            let ini = crate::rules::ini_parser::IniFile::from_bytes(&bytes).ok()?;
+            let mut options = crate::map::rmg::RmgOptions::default();
+            options.apply_sed(&ini);
+            options.normalize();
+            Some(options)
+        })
+        .collect()
 }
 
 /// Serialize the completed dialog preview at the native common-teardown
@@ -1597,6 +1640,19 @@ impl App {
 
     pub(super) fn handle_random_map_setup_mouse_down(state: &mut AppState) -> bool {
         let layout = Self::skirmish_random_map_setup_layout(state);
+        // VERA: a press on the preview enlarges it, as on the other setup
+        // screens (`preview_zoom`), while the dialog rests: no list open and
+        // no generation running.
+        if state
+            .frontend
+            .skirmish_shell_state
+            .random_map_setup_modal
+            .as_ref()
+            .is_some_and(|modal| !modal.generating && modal.open_combo.is_none())
+            && crate::app::frontend::preview_zoom::press_on_box(state, layout.preview)
+        {
+            return true;
+        }
         let (x, y) = state.match_state.input.cursor_px();
         let Some(modal) = state
             .frontend
@@ -1769,6 +1825,8 @@ impl App {
             .as_ref()
             .map(|csf| csf.text(RANDOM_MAP_DESCRIPTION_KEY).into_owned())
             .unwrap_or_else(|| RANDOM_MAP_DESCRIPTION_FALLBACK.to_string());
+        // VERA: where the Extras view keeps the player's own presets.
+        let preset_dir = Self::random_map_dir(state);
         let Some(modal) = state
             .frontend
             .skirmish_shell_state
@@ -1844,6 +1902,25 @@ impl App {
                             None => NO_CLIPBOARD,
                         })
                     }
+                    Some(ExtrasOutcome::Tool(ExtrasAction::SavePreset)) => {
+                        let slot = modal.save_custom_preset();
+                        let saved = preset_dir
+                            .as_deref()
+                            .is_some_and(|dir| save_custom_preset(dir, slot, &modal.options));
+                        Some(if saved {
+                            (
+                                "VERA:RandomMapExtraPresetSaved",
+                                "Saved: the Presets button now offers it",
+                            )
+                        } else {
+                            (
+                                "VERA:RandomMapExtraPresetFailed",
+                                "The preset is kept until you leave, but its file could not be written",
+                            )
+                        })
+                    }
+                    // The dialog goes back by itself and asks only for the map.
+                    Some(ExtrasOutcome::Tool(ExtrasAction::PreviousMap)) => None,
                     Some(ExtrasOutcome::Regenerate) => {
                         regenerate = true;
                         None
@@ -2819,6 +2896,7 @@ mod tests {
             start_waypoints: vec![(0, start_x, 20)],
             stages_run: Vec::new(),
             unfilled_start_slots: 0,
+            fairness: None,
         }
     }
 

@@ -640,8 +640,10 @@ pub fn run_pipeline(
     lat_fixup::run(grid, inputs.ids);
     observe(Stage::RecalcFinal, grid, &waypoints, &terrain);
 
-    // ---- VERA: Fair Starts, after every native stage and draw -------------
-    let fairness = inputs.fair_starts.then(|| {
+    // ---- VERA: fairness, after every native stage and draw ----------------
+    // Every map is measured (the dialog shows the report; measuring draws
+    // nothing and changes nothing); only Fair Starts evens the ore first.
+    let fairness = {
         let starts: Vec<(i32, i32)> = waypoints
             .iter()
             .map(|&(_, x, y)| (i32::from(x), i32::from(y)))
@@ -653,9 +655,16 @@ pub fn run_pipeline(
             map_w,
             local_rect,
         };
-        super::fairness::equalize_ore(&mut ctx, &starts, inputs.seed);
-        super::fairness::measure(&ctx, &starts, inputs.num_players, unfilled_start_slots)
-    });
+        if inputs.fair_starts {
+            super::fairness::equalize_ore(&mut ctx, &starts, inputs.seed);
+        }
+        Some(super::fairness::measure(
+            &ctx,
+            &starts,
+            inputs.num_players,
+            unfilled_start_slots,
+        ))
+    };
 
     // ---- Collect outputs for the emitter ----------------------------------
     structures.extend(
