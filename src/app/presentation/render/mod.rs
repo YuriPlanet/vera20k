@@ -311,13 +311,8 @@ pub(crate) fn render_game(
     // The selection in order and the cursor's pick each walk every object;
     // the draw reads them once (TacticalPick 6DA380 runs once per frame).
     let cursor_targets = crate::app::input::cursor::CursorTargets::read(state);
-    let mut world = build_instances::build_world_instances(
-        state,
-        vsw,
-        vsh,
-        bracket_palette,
-        cursor_targets.hover,
-    );
+    let mut world =
+        build_instances::build_world_instances(state, vsw, vsh, bracket_palette, &cursor_targets);
     for layer in &mut world.object_layers {
         object_extras::defer_health_to_frame(layer, world_camera.camera_pos, z);
     }
@@ -337,7 +332,8 @@ pub(crate) fn render_game(
     // the runtime directly for split borrows.
     if let Some(ref mut shroud_buf) = state.match_state.match_presentation.shroud_buffer
         && !state.match_state.sandbox_full_visibility
-        && let (Some(rt), Some(owner)) = (state.match_state.sim_runtime.presentation(), &local_owner)
+        && let (Some(rt), Some(owner)) =
+            (state.match_state.sim_runtime.presentation(), &local_owner)
     {
         let view = rt.view();
         let owner_id = view.interner().get(owner).unwrap_or_default();
