@@ -25,8 +25,8 @@ What it is for, in the order that decides when two of these pull apart:
 3. **It runs big battles.** **20,000 units and 30 players**, also on older PCs. Where a
    player cannot notice the difference, speed wins over gamemd's execution order.
 4. **It adds to the original.** Ares and Phobos features, and new ones only VERA has,
-   are wanted, built so a modder or a player switches them on and tunes them from INI
-   files or the Options screen. The original stays the default.
+   are wanted: extensions switch on from a mod's or map's data, VERA's own features
+   from INI files or the Options screen. The original stays the default.
 5. **Playing online is easy.** A match starts from inside the game, and an older
    version is told plainly when it can no longer join.
 
@@ -116,9 +116,11 @@ and the network, never `unwrap`, `expect` or index on them, and carry on whereve
 gamemd would. When something fails for a player, say in the game what happened and
 what they can do, not only in the log.
 
-Stock play stays as gamemd plays it. What an extension (Ares, Phobos, NPatch, VeraX)
-or a VERA feature adds to play stays off until a player option, a build feature or an
-INI key from a mod or map turns it on; a bug gamemd itself has stays unless the
+Stock play stays as gamemd plays it. An engine extension (Ares, Phobos, NPatch, VeraX)
+is in every build and switches on from the game's data: its keys in the rules or map,
+or a mod that ships it. With retail data the game plays as gamemd. Until an extension
+has that switch, it stays behind its build feature. A VERA feature stays off until a
+player option or an INI key turns it on; a bug gamemd itself has stays unless the
 maintainer asks for an opt-in fix (`npbug`). A change in or beside a
 [capability](docs/capabilities.md) compiles with it on as well as off
 (`python -m tools.capability_tests build <name>`; `focus <name>` runs its tests).
