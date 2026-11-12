@@ -39,7 +39,7 @@ pub use opponent_scroll::{
 pub use choose_map::{
     ChooseMapContext, ChooseMapListPress, ChooseMapModalState, ChooseMapPrompt,
     ChooseMapPromptAnswer, ChooseMapPromptButton, ChooseMapPromptKind, ChooseMapSelection,
-    FAVORITES_ROW, ONLINE_MAPS_ROW, SEARCH_MAX_CHARS, favorite_key, ai_rows_beyond_limit_occupied,
+    FAVORITES_ROW, ONLINE_MAPS_ROW, SEARCH_MAX_CHARS, ai_rows_beyond_limit_occupied, favorite_key,
 };
 pub(crate) use player_name::CountryMenuCatalog;
 pub use player_name::{
@@ -63,7 +63,7 @@ pub use saved_seed_browser::{
     SavedSeedDescriptionEdit, SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose,
 };
 pub use saved_setup::{SkirmishSavedSetup, SkirmishSetupComputer, SkirmishSetupSeat};
-pub use team_starts::apply_team_starts;
+pub use team_starts::{apply_team_starts, starts_by_team};
 pub use trackbars::{
     SkirmishTrackbarBounds, handle_option_mouse_down, handle_option_mouse_move,
     handle_option_mouse_up, handle_option_mouse_wheel, trackbar_visual_value,

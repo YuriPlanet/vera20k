@@ -258,9 +258,8 @@ fn a_damaged_factory_draws_its_damaged_bib_and_its_shadow() {
         emit_building_bib(
             &mut pieces,
             &atlas,
-            rules.art(),
-            Some(rules),
-            "GAWEAP",
+            Some(object),
+            Some(art),
             BibDraw {
                 entity,
                 cells: None,

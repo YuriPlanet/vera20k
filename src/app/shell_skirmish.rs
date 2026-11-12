@@ -9,17 +9,12 @@ impl App {
         crate::app::frontend::shell_layout::skirmish_layout(state)
     }
 
-    /// VERA's Team Starts: the selected map's start cells by start index. A
-    /// map gives its start waypoints; the random map gives the starts of the
-    /// last Generate (`0x0058B820`'s header), none before one.
-    fn selected_map_start_cells(state: &AppState) -> Vec<(i32, i32)> {
-        let shell = &state.frontend.skirmish_shell_state;
-        let Some(entry) = state
-            .frontend
-            .scenario_catalog
-            .shell_maps()
-            .get(shell.selected_map_idx)
-        else {
+    /// VERA's Team Starts, in skirmish and in the game room: the start cells
+    /// of shell map `map` by start index. A map gives its start waypoints;
+    /// the random map gives the starts of the last Generate
+    /// (`0x0058B820`'s header), none before one.
+    pub(crate) fn map_start_cells(state: &AppState, map: usize) -> Vec<(i32, i32)> {
+        let Some(entry) = state.frontend.scenario_catalog.shell_maps().get(map) else {
             return Vec::new();
         };
         if crate::app::frontend::skirmish_shell_render::is_random_map_sentinel_entry(entry) {
@@ -43,21 +38,18 @@ impl App {
             .collect()
     }
 
-    /// VERA's Team Starts: how far a ground unit drives between the selected
-    /// map's `starts`, by start index, or `None` where the page cannot read
+    /// VERA's Team Starts: how far a ground unit drives between shell map
+    /// `map`'s `starts`, by start index, or `None` where the page cannot read
     /// the map's terrain (the random map, or no resident assets or Rules) and
     /// Team Starts measures straight lines. Pressing the button reads the map
     /// file and its theater, which makes that theater's archives the active
     /// ones until a Generate or a match load picks its own.
-    fn selected_map_drive_distances(
+    pub(crate) fn map_drive_distances(
         state: &mut AppState,
+        map: usize,
         starts: &[(i32, i32)],
     ) -> Option<Vec<Vec<Option<u32>>>> {
-        let entry = state
-            .frontend
-            .scenario_catalog
-            .shell_maps()
-            .get(state.frontend.skirmish_shell_state.selected_map_idx)?;
+        let entry = state.frontend.scenario_catalog.shell_maps().get(map)?;
         if crate::app::frontend::skirmish_shell_render::is_random_map_sentinel_entry(entry) {
             return None;
         }
@@ -388,8 +380,9 @@ impl App {
                 }
             }
             crate::ui::skirmish_shell::SkirmishShellAction::TeamStarts => {
-                let starts = Self::selected_map_start_cells(state);
-                let drive = Self::selected_map_drive_distances(state, &starts);
+                let map = state.frontend.skirmish_shell_state.selected_map_idx;
+                let starts = Self::map_start_cells(state, map);
+                let drive = Self::map_drive_distances(state, map, &starts);
                 let maps = state.frontend.scenario_catalog.shell_maps();
                 crate::ui::skirmish_shell::apply_team_starts(
                     &mut state.frontend.skirmish_shell_state,

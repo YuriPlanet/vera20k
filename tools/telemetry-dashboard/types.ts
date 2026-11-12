@@ -319,16 +319,18 @@ export interface ReportPoint {
 export interface PathBatchStats {
   /** Registrations waiting when the latest pass started. */
   waiting: number;
-  /** Registrations it searched: after the per-pass cap, before the urgency-2 budget cut. */
+  /** Registrations it searched: after the per-pass cap, before the re-path budgets' cuts. */
   searched: number;
   /** Registrations it answered. */
   answered: number;
-  /** Registrations the cap or the urgency-2 budget left for a later pass. */
+  /** Registrations the cap, a re-path turn or a re-path budget left for a later pass. */
   left_out: number;
   /** Cells every search of the latest pass expanded. */
   steps: number;
   /** Of those, the urgency-2 re-paths' share. */
   urgency2_steps: number;
+  /** Of those, the urgency-1 re-paths' share. */
+  urgency1_steps: number;
   last_ms: number;
   mean_ms: number;
   peak_ms: number;

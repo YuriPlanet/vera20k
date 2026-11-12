@@ -319,10 +319,16 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
         }
         NetworkSetupEvent::PlayerChoices {
             index,
-            choices,
+            mut choices,
             observer,
         } => {
-            let change = accept_peer_choices(state, index, choices, observer)?;
+            // A guest's own team pick keeps to the room's Teams.
+            let refused = state
+                .match_state
+                .session
+                .admit_network_team(index, &mut choices);
+            let mut change = accept_peer_choices(state, index, choices, observer)?;
+            change.options |= refused;
             publish_choices(state, change);
         }
         NetworkSetupEvent::Teams(moves) => {
@@ -504,6 +510,9 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 local_map.as_deref(),
                 map_changed,
             )?;
+            if !dialog.host {
+                tell_moved(state, mode_changed);
+            }
             // 0x5E542B..0x5E5466: a changed mode's +9C/+20, then +7C.
             if mode_changed {
                 super::cooperative::mode_entered(state)?;
@@ -946,21 +955,49 @@ fn accept_peer_choices(
     )
 }
 
-/// Moves participant `index` to `team`: a guest's row as its own `R` would,
-/// the host's as the host's own team combo edit does (`actions::select`).
+/// `/balance`'s move of participant `index` to `team`.
 fn move_team(state: &mut AppState, index: usize, team: u8) -> anyhow::Result<PeerChoicesChange> {
+    move_player(state, index, LaunchTeam::Team(team), false)
+}
+
+/// The host moves participant `index` to `team`, and to the spectators or
+/// into a seat as `observer` says: a guest's row as the guest's own `R`
+/// would (LAN's Type18 receiver in a LAN room), the host's own as its own
+/// Team list does (`actions::select`). `/balance` and VERA's room headers
+/// and row lists move players through it.
+pub(super) fn move_player(
+    state: &mut AppState,
+    index: usize,
+    team: LaunchTeam,
+    observer: bool,
+) -> anyhow::Result<PeerChoicesChange> {
     let launch = state
         .match_state
         .session
         .network_setup()
         .ok_or_else(|| anyhow::anyhow!("no network setup"))?;
-    let human = &launch.humans[index];
+    let human = launch
+        .humans
+        .get(index)
+        .ok_or_else(|| anyhow::anyhow!("unknown participant"))?;
     let mut choices = human.slot.clone();
-    choices.team = LaunchTeam::Team(team);
+    choices.team = team;
     if index != launch.local_player_index {
-        return accept_peer_choices(state, index, choices, false);
+        if super::dialog(state).wol() {
+            return accept_peer_choices(state, index, choices, observer);
+        }
+        return state
+            .match_state
+            .session
+            .accept_lan_peer_choices(index, choices, observer);
     }
-    let row = human.raw_slot_index.expect("moves name seated rows");
+    anyhow::ensure!(
+        observer == human.is_observer(),
+        "the host does not move itself between playing and watching"
+    );
+    let row = human
+        .raw_slot_index
+        .ok_or_else(|| anyhow::anyhow!("moves name seated rows"))?;
     state
         .match_state
         .session
@@ -972,23 +1009,99 @@ fn move_team(state: &mut AppState, index: usize, team: u8) -> anyhow::Result<Pee
 }
 
 /// 0x5EC9F0's advertisement 0x78F000, 0x77DB90's slot names, then 0x5E32D0's
-/// options and the repaint 0x783C80, for what accepted choices changed.
-fn publish_choices(state: &mut AppState, change: PeerChoicesChange) {
+/// options and the repaint 0x783C80, for what accepted choices changed. A
+/// LAN room has no advertisement.
+pub(super) fn publish_choices(state: &mut AppState, change: PeerChoicesChange) {
+    let wol = super::dialog(state).wol();
     let protocol = state
         .frontend
         .network_setup_protocol
         .as_mut()
         .expect("setup owns protocol");
     if change.roster {
-        protocol.requests.extend([
-            NetworkSetupRequest::Advertise,
-            NetworkSetupRequest::PublishRoster,
-        ]);
+        if wol {
+            protocol.requests.push(NetworkSetupRequest::Advertise);
+        }
+        protocol.requests.push(NetworkSetupRequest::PublishRoster);
     }
     if change.options {
         protocol.requests.push(NetworkSetupRequest::PublishOptions);
     }
     state.platform.window.request_redraw();
+}
+
+/// VERA's room tells a guest in its own chat when the host's options move
+/// it to another team, to the spectators or into a seat: the host's Team
+/// list, row list or `/balance`. Where the guest asked to be is its own
+/// move (`actions::commit_row`), and a new mode may reset every team, so
+/// neither is told. A guest in the join queue hears its place when it joins
+/// or moves up, and when a seat comes free for it.
+fn tell_moved(state: &mut AppState, mode_changed: bool) {
+    let several = state.match_state.session.network_several_observers();
+    let Some(launch) = state.match_state.session.network_setup() else {
+        return;
+    };
+    let local = launch.local_player();
+    let place = (local.slot.team, local.is_observer());
+    let queue_place = state
+        .match_state
+        .session
+        .network_queue_place(launch.local_player_index);
+    // Online the user list names the host; on LAN its admission does, and
+    // VERA's rooms seat it first.
+    let host_name = state
+        .frontend
+        .network_setup_protocol
+        .as_ref()
+        .and_then(|protocol| protocol.wol_host.clone())
+        .or_else(|| crate::app::lan_service::admitted_host_name(state))
+        .or_else(|| {
+            launch
+                .humans
+                .iter()
+                .find(|human| human.raw_slot_index == Some(0))
+                .map(|human| human.name.clone())
+        })
+        .unwrap_or_default();
+    let Some(protocol) = state.frontend.network_setup_protocol.as_mut() else {
+        return;
+    };
+    let moved = protocol
+        .host_placed(place)
+        .filter(|_| several && !mode_changed);
+    let queued = std::mem::replace(&mut protocol.queue_place, queue_place);
+    let name: &dyn std::fmt::Display = &host_name;
+    let text = match (moved, queue_place) {
+        // A seat from the queue is the queue's, not a move of the host's.
+        _ if queued.is_some() && !place.1 => crate::i18n::tr("VERA:QueueSeated"),
+        (_, Some(now)) if queued != Some(now) => {
+            crate::i18n::tr_fill("VERA:QueuePlace", &[("place", &now)])
+        }
+        (Some(HostMove::Team(team)), _) => crate::i18n::tr_fill(
+            "VERA:HostMovedYouToTeam",
+            &[
+                ("name", name),
+                ("letter", &super::view::team_letter(state, team)),
+            ],
+        ),
+        (Some(HostMove::OffTeam), _) => {
+            crate::i18n::tr_fill("VERA:HostMovedYouOffTeam", &[("name", name)])
+        }
+        (Some(HostMove::Spectators), _) => {
+            crate::i18n::tr_fill("VERA:HostMovedYouToSpectators", &[("name", name)])
+        }
+        (Some(HostMove::Seat), _) => {
+            crate::i18n::tr_fill("VERA:HostGaveYouSeat", &[("name", name)])
+        }
+        (None, _) => return,
+    };
+    crate::app::shell_lan::append_chat(
+        state,
+        LanChatLine {
+            text: text.encode_utf16().collect(),
+            color: u32::MAX,
+        },
+    );
 }
 
 /// Verify through the existing map owner before the transport queues Type13.
@@ -1584,15 +1697,23 @@ fn choices_material(a: &SkirmishLocalSlot, b: &SkirmishLocalSlot) -> bool {
 
 pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     auto_accept(state);
+    seat_queue(state);
     point_out_briefing(state);
     let pings = super::wol::poll(state);
+    let balance = super::teams::poll_balance(state);
     let go = poll_go(state);
     let offer = poll_preview_offer(state);
     // A direct spawn's LAN service renews setup leases and waits for its
     // peers before GO; keep the frame loop servicing it.
     let direct = (super::external(state) && !super::dialog(state).wol())
         .then(|| Instant::now() + std::time::Duration::from_millis(16));
-    pings.into_iter().chain(go).chain(offer).chain(direct).min()
+    pings
+        .into_iter()
+        .chain(balance)
+        .chain(go)
+        .chain(offer)
+        .chain(direct)
+        .min()
 }
 
 /// VERA's game room (`SetupDialog::modern`) presses Accept for a guest
@@ -1618,6 +1739,46 @@ fn auto_accept(state: &mut AppState) {
         log::warn!("automatic Accept refused: {error:#}");
     }
     state.platform.window.request_redraw();
+}
+
+/// VERA's join queue in the host's game: each free seat goes to the queue's
+/// first spectator, as the host's Seat in its Player list does
+/// ([`move_player`]): on the team with the fewest players while Teams is
+/// set, where Balance automatically may move them next. A seat frees when a
+/// player leaves or starts watching, or the host adds a seat or takes an AI
+/// out.
+fn seat_queue(state: &mut AppState) {
+    if super::wol::start_pending(state)
+        || state
+            .frontend
+            .network_setup_protocol
+            .as_ref()
+            .is_none_or(|protocol| protocol.locked)
+    {
+        return;
+    }
+    let mut change = PeerChoicesChange::default();
+    let mut seated = Vec::new();
+    while let Some(index) = state.match_state.session.network_queue_next() {
+        // Each spectator once: one this could not seat stays in the queue.
+        if seated.contains(&index) {
+            break;
+        }
+        seated.push(index);
+        match move_player(state, index, LaunchTeam::None, false) {
+            Ok(moved) => {
+                change.roster |= moved.roster;
+                change.options |= moved.options;
+            }
+            Err(error) => {
+                log::warn!("the join queue could not seat a spectator: {error:#}");
+                break;
+            }
+        }
+    }
+    if change != PeerChoicesChange::default() {
+        publish_choices(state, change);
+    }
 }
 
 /// VERA's line pointing a player in its game room at the map's briefing

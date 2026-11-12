@@ -28,7 +28,7 @@ use crate::render::unit_atlas::{
 };
 use crate::rules::house_colors::{self, HouseColorIndex};
 use crate::rules::voxel_frame_catalog::{
-    NO_SPAWN_ALT_SUFFIX, draws_turret_parts, voxel_turret_index,
+    NO_SPAWN_ALT_SUFFIX, object_draws_turret_parts, object_voxel_turret_index,
 };
 #[cfg(test)]
 use crate::sim::movement::slope_transition::SLOPE_TRANSITION_FRAMES;
@@ -130,11 +130,12 @@ impl VoxelDrawer {
         let Some(rules) = rules.filter(|rules| rules.object(type_id).is_some()) else {
             return Self::default();
         };
-        let art = rules.art();
+        // The three flags share one section: read it once.
+        let entry = rules.art().exact_entry(type_id);
         Self {
-            use_buffer: art.use_buffer(type_id),
-            disable_voxel_cache: art.disable_voxel_cache(type_id),
-            disable_shadow_cache: art.disable_shadow_cache(type_id),
+            use_buffer: entry.is_some_and(|entry| entry.use_buffer),
+            disable_voxel_cache: entry.is_some_and(|entry| entry.disable_voxel_cache),
+            disable_shadow_cache: entry.is_some_and(|entry| entry.disable_shadow_cache),
         }
     }
 }
@@ -628,6 +629,10 @@ pub(crate) fn unit_visitor<'a>(
                         .and_then(|rules| sim.interner().object_type(entity.type_ref(), rules))
                         .is_some_and(|object| object.no_shadow);
                 let type_str = type_name.as_ref();
+                // The drawn model's record, once for its turret index and
+                // gun parts below.
+                let model_object =
+                    drawn_model_object(entity, type_str, sim.interner(), state.rules());
                 observer.drawn_voxel = Some(true);
                 let remap_owner = entity
                     .disguise
@@ -780,7 +785,7 @@ pub(crate) fn unit_visitor<'a>(
                 };
 
                 let turret_index =
-                    voxel_turret_index(type_str, state.rules(), entity.current_turret_index());
+                    object_voxel_turret_index(model_object, entity.current_turret_index());
                 let (anim_frame, turret_frame) =
                     unit_animation_frames(entity, type_str, turret_index, &atlas.frame_counts);
 
@@ -916,7 +921,7 @@ pub(crate) fn unit_visitor<'a>(
                         type_id: type_str.into(),
                         turret_index: 0,
                         facing: canonical_unit_facing(body_facing),
-                        layer: if draws_turret_parts(type_str, state.rules(), 0) {
+                        layer: if object_draws_turret_parts(model_object, 0) {
                             VxlLayer::Body
                         } else {
                             VxlLayer::Composite
@@ -1233,7 +1238,7 @@ pub(crate) fn drawn_model_id<'a>(
     observer: crate::render::draw_state::ObserverDrawContext,
 ) -> Cow<'a, str> {
     let base_type = interner.resolve(entity.type_ref());
-    let object = rules.and_then(|rules| rules.object(base_type));
+    let object = rules.and_then(|rules| interner.object_type(entity.type_ref(), rules));
     if entity.category() == EntityCategory::Unit
         && entity.is_fully_deployed()
         && let Some(unloading_type) = object.and_then(|object| object.unloading_class.as_deref())
@@ -1282,12 +1287,29 @@ fn unit_body_draw<'a>(
     if !super::helpers::drawn_type_uses_voxel(entity, &model, interner, rules) {
         return None;
     }
-    let tilt_crash_jumpjet = rules
-        .and_then(|rules| rules.object(&model))
-        .is_some_and(|object| object.tilt_crash_jumpjet);
-    let turret_parts = draws_turret_parts(&model, rules, entity.current_turret_index());
+    let model_object = drawn_model_object(entity, &model, interner, rules);
+    let tilt_crash_jumpjet = model_object.is_some_and(|object| object.tilt_crash_jumpjet);
+    let turret_parts = object_draws_turret_parts(model_object, entity.current_turret_index());
     let body = body_draw(entity, band, binary_frame, tilt_crash_jumpjet, turret_parts);
     Some((model, body))
+}
+
+/// The rules record of the model `entity` draws ([`drawn_model_id`]): its own
+/// type through the bound handle when the model is that type, which is the
+/// common case, else the model looked up by name. Both answer as
+/// `rules.object(model)` would.
+pub(super) fn drawn_model_object<'r>(
+    entity: &crate::sim::game_entity::GameEntity,
+    model: &str,
+    interner: &crate::sim::intern::StringInterner,
+    rules: Option<&'r crate::rules::ruleset::RuleSet>,
+) -> Option<&'r crate::rules::object_type::ObjectType> {
+    let rules = rules?;
+    if model == interner.resolve(entity.type_ref()) {
+        interner.object_type(entity.type_ref(), rules)
+    } else {
+        rules.object(model)
+    }
 }
 
 /// The locomotor pose is decided before the turret split. `tilt_crash_jumpjet` is

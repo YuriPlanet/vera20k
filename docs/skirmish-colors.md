@@ -83,6 +83,16 @@ for the original eight, 8 for an observer, and 9 to 30 for the list above in ord
 gamemd passes a number from 9 up straight through as a colour-scheme index; VERA20k
 reads 9 to 30 as its list instead and leaves any higher number as gamemd has it.
 
+## Team Colors in game rooms
+
+In a LAN or online game room with Teams set, the host's Team Colors button gives each
+team its own range of the list. The colours are sorted by their `[Colors]` hue and the
+circle is cut into one range per team, the same number of colours in each, the first
+team's centred on red, so two teams get warm against cool. Each team's players get
+colours spread across its range. While every team fits in its range of the original
+eight, only the eight are used. Every player still gets a different colour while the
+list has enough, and anyone can change theirs afterwards.
+
 ## Older versions and online play
 
 - Nothing new is sent: a room already carries each colour as a number from 0 to 255,
@@ -103,6 +113,7 @@ reads 9 to 30 as its list instead and leaves any higher number as gamemd has it.
 - `ui/skirmish_shell/state/combos.rs`: the list every colour box shows
   (`available_color_choices`).
 - `app/frontend/skirmish_shell_render/controls.rs`: the swatches (`house_color_tint`).
+- `app/shell_network_setup/teams.rs`: Team Colors in game rooms (`colors_by_team`).
 
 ## Residuals
 
