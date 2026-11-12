@@ -615,12 +615,36 @@ pub(crate) fn build_control_group_status_render_instances(
     parents
 }
 
+/// The control groups a draw's digits read. [`control_group_status_labels`]
+/// draws a digit only on an object the health strip admits, and without Ares
+/// that is a selected or hovered one ([`health_strip_visibility`] unwidened:
+/// `DrawHealthBar` `0x006F64A0` runs for those alone). So while `selected`
+/// lists exactly the selected objects (`selection_exact`: the frame's
+/// [`crate::app::input::dispatch::selected_in_order`] with no input pending),
+/// only they and the hovered object are projected, not every object
+/// (VERA-only; the same digits). Ares's submerged arm admits others, so an
+/// Ares build projects every object.
+pub(crate) fn label_control_groups(
+    sim: &crate::sim::world::Simulation,
+    selected: &[u64],
+    selection_exact: bool,
+    hovered_entity_id: Option<u64>,
+) -> [Vec<u64>; 10] {
+    if cfg!(feature = "ares") || !selection_exact {
+        return sim.projected_control_groups();
+    }
+    let hovered = hovered_entity_id.filter(|id| !selected.contains(id));
+    sim.projected_control_groups_of(selected.iter().copied().chain(hovered))
+}
+
 /// AppState adapter for the production tactical UI build. `hovered_entity_id`
-/// is this draw's [`health_hover_target`] for `local_owner`.
+/// is this draw's [`health_hover_target`] for `local_owner`, and `selected`
+/// the draw's selection in order.
 pub(crate) fn build_control_group_status_instances(
     state: &AppState,
     local_owner: Option<&str>,
     hovered_entity_id: Option<u64>,
+    selected: &[u64],
     sw: f32,
     sh: f32,
 ) -> BTreeMap<u64, StatusTextOverlayInstances> {
@@ -646,7 +670,12 @@ pub(crate) fn build_control_group_status_instances(
     ];
     build_control_group_status_render_instances(
         sim,
-        &sim.projected_control_groups(),
+        &label_control_groups(
+            sim,
+            selected,
+            !state.match_state.input.selection_order_pending,
+            hovered_entity_id,
+        ),
         hovered_entity_id,
         local_owner_id,
         state.match_state.sandbox_full_visibility,
@@ -2392,6 +2421,48 @@ mod mind_control_pip_tests;
 
 #[cfg(test)]
 mod tests {
+    /// A draw's group digits project the selected and hovered objects alone
+    /// while the frame's selection is exact, and every object while input is
+    /// pending.
+    #[cfg(not(feature = "ares"))]
+    #[test]
+    fn group_digits_project_only_the_selected_and_hovered_objects() {
+        use crate::map::entities::EntityCategory;
+        use crate::sim::combat::Health;
+        use crate::sim::game_entity::GameEntity;
+
+        let mut sim = crate::sim::world::Simulation::new();
+        let owner = sim.intern("Americans");
+        let tank = sim.intern("MTNK");
+        for id in 1..=3 {
+            let mut entity = GameEntity::new_at_frame_zero_for_test(
+                id,
+                10 + id as u16,
+                10,
+                0,
+                0,
+                owner,
+                Health::new(100),
+                tank,
+                EntityCategory::Unit,
+                0,
+                5,
+                false,
+            );
+            entity.set_object_group_for_test(0);
+            sim.entities_mut_for_test().insert(entity);
+        }
+        // Tank 1 is selected, tank 2 hovered and tank 3 neither.
+        assert_eq!(
+            super::label_control_groups(&sim, &[1], true, Some(2))[1],
+            [1, 2]
+        );
+        assert_eq!(
+            super::label_control_groups(&sim, &[1], false, Some(2))[1],
+            [1, 2, 3]
+        );
+    }
+
     /// Ares TechnoClass_DrawExtras_PowerOff (10049FE0, hook 0x6F526C): the
     /// owner sees its repairing building's wrench, an enemy only with
     /// `EnemyWrench=yes` (the default).

@@ -166,8 +166,9 @@ pub(super) fn build_world_instances(
     sw: f32,
     sh: f32,
     bracket_palette: Option<[u16; 2]>,
-    hover: Option<crate::app::input::entity_pick::HoverObject>,
+    cursor: &crate::app::input::cursor::CursorTargets,
 ) -> WorldInstances {
+    let hover = cursor.hover;
     // The draw before hands its tile list back (`render_game`).
     let terrain_buffer = std::mem::take(
         &mut state
@@ -388,8 +389,14 @@ pub(super) fn build_world_instances(
     // both read the hover flag the cursor's action target sets.
     let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
     let hovered = crate::app::presentation::ui_overlays::health_hover_target(hover);
-    let mut group_labels =
-        build_control_group_status_instances(state, local_owner.as_deref(), hovered, sw, sh);
+    let mut group_labels = build_control_group_status_instances(
+        state,
+        local_owner.as_deref(),
+        hovered,
+        &cursor.selected,
+        sw,
+        sh,
+    );
     if let (Some(sim), Some(overlay)) = (
         state
             .match_state
