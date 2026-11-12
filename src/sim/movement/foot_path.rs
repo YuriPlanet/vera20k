@@ -639,6 +639,10 @@ impl Simulation {
                     &self.interner,
                     rules,
                 );
+                //The search reads one unchanged world after Mark0, as a path
+                //batch's searches read theirs, so it keeps the entry facts it
+                //reads the same way (VERA-only; the answers are the same).
+                self.empty_entry_facts();
                 let counts = self.movement_pass_cache.current_blocker_plane();
                 //The track_fresh_response oracle substitutes the whole AStar
                 //core 0x4CBBA0 for a CoreNull row, so no +1AC call happens
@@ -661,7 +665,7 @@ impl Simulation {
                         grid,
                         counts,
                         MoverLift::Marked,
-                        None,
+                        self.entry_facts(),
                         None,
                     )
                     .0
@@ -879,9 +883,9 @@ impl Simulation {
 
     /// The core search (AStar 0x0042C900 with its bridge markers and both
     /// finishing passes) for `request` toward `goal` on the current world,
-    /// reading the blocker counts `counts` and a path batch's kept entry
-    /// `facts`. The flag says whether an [`MoverLift::Emulated`] search asked
-    /// about the mover's own cell.
+    /// reading the blocker counts `counts` and the kept entry `facts`
+    /// ([`Simulation::empty_entry_facts`]). The flag says whether an
+    /// [`MoverLift::Emulated`] search asked about the mover's own cell.
     pub(super) fn foot_core_search(
         &self,
         request: &FootPathRequest,
