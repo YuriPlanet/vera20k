@@ -2284,11 +2284,7 @@ fn pump_presentation(
         .pending_atlases
         .as_mut()
         .expect("pending presentation owner")
-        .poll(
-            &state.renderer.gpu,
-            &state.renderer.batch_renderer,
-            &mut result.presentation,
-        );
+        .poll(&state.renderer.gpu, &mut result.presentation);
     match polled {
         Err(error) => {
             session.retire(&mut state.process_assets);

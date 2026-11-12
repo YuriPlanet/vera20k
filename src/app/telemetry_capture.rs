@@ -480,7 +480,7 @@ fn capture_debug(state: &AppState, sim: &Simulation) -> DebugPanel {
             .match_presentation
             .unit_atlas
             .as_ref()
-            .map(|atlas| atlas.rendered as u32),
+            .map(|atlas| u32::try_from(atlas.sprite_count()).unwrap_or(u32::MAX)),
         entities_at_cursor,
         footprint,
         selected: capture_selection(sim),
