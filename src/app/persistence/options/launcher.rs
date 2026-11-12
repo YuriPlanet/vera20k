@@ -267,6 +267,9 @@ pub(crate) trait LauncherParentOperations {
     fn persist_profile(&mut self);
     fn route_keyboard(&mut self);
     fn reopen_parent(&mut self);
+    /// VERA's Mods page (`App::open_mods_page`); its Back builds the parent
+    /// again.
+    fn route_mods(&mut self);
 }
 
 /// Apply the packed parent subset in the literal native order.
@@ -349,6 +352,12 @@ pub(crate) fn dispatch_launcher_parent_result(
             operations.route_keyboard();
             operations.reopen_parent();
         }
+        // VERA's own. Written first: Use This Mod leaves the game from the
+        // Mods page.
+        LauncherParentResult::Mods => {
+            operations.persist_profile();
+            operations.route_mods();
+        }
     }
 }
 
@@ -419,6 +428,7 @@ mod tests {
         fn primary_dropped(&mut self) {}
         fn persist_profile(&mut self) {}
         fn route_keyboard(&mut self) {}
+        fn route_mods(&mut self) {}
         fn reopen_parent(&mut self) {}
     }
 

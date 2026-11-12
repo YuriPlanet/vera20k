@@ -296,6 +296,15 @@ pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
         top_panel: false,
         campaign_score: false,
     },
+    // VERA's Mods page: Use This Mod and Open Mods Folder, then Back.
+    SlideDialogSpec {
+        dialog_id: crate::ui::mods_shell::DIALOG.0,
+        top_buttons: 2,
+        bottom_button: true,
+        map_button: false,
+        top_panel: false,
+        campaign_score: false,
+    },
     // WOL Options 0x2BC: OK and Sound Options, then Cancel. Its nested
     // Sound Options 0xD6: Back only (executed slide records).
     SlideDialogSpec {

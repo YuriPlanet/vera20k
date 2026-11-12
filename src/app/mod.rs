@@ -96,12 +96,14 @@ pub(crate) mod radar_movie;
 #[cfg(test)]
 mod random_map_lifecycle_tests;
 pub(crate) mod renderer_state;
+pub(crate) mod restart;
 pub(crate) mod scenario_catalog;
 mod shell_campaign;
 pub(crate) mod shell_lan;
 mod shell_load_saved_game;
 mod shell_main_menu;
 mod shell_menu;
+mod shell_mods;
 mod shell_movies_credits;
 pub(crate) mod shell_network_setup;
 mod shell_random_map;

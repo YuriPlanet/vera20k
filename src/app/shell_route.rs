@@ -20,6 +20,8 @@ pub(crate) enum ShellRoute {
     MoviesAndCredits,
     /// Movie list `0x129`, reached from Movies & Credits.
     MovieList,
+    /// VERA's Mods page (`ui::mods_shell`), reached from the main menu.
+    Mods,
     /// Campaign selection `0x94`, reached from Single Player.
     Campaign,
     /// Load Saved Game `0xB7`, reached from Single Player.
@@ -53,6 +55,11 @@ impl ShellRoute {
     /// Movie list `0x129`.
     pub(crate) fn movie_list(self) -> bool {
         matches!(self, Self::MovieList)
+    }
+
+    /// VERA's Mods page.
+    pub(crate) fn mods(self) -> bool {
+        matches!(self, Self::Mods)
     }
 
     /// Campaign selection `0x94`.
@@ -104,6 +111,7 @@ mod tests {
             ShellRoute::SinglePlayer,
             ShellRoute::MoviesAndCredits,
             ShellRoute::MovieList,
+            ShellRoute::Mods,
             ShellRoute::Campaign,
             ShellRoute::LoadSavedGame,
             ShellRoute::Wol,
@@ -115,6 +123,7 @@ mod tests {
                 route.single_player(),
                 route.movies_and_credits(),
                 route.movie_list(),
+                route.mods(),
                 route.campaign(),
                 route.load_saved_game(),
                 route.wol(),

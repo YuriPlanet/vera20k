@@ -14,19 +14,19 @@ use super::{
     CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL, Category, ColorVisionMode,
     DETAILED_EVA_TEXT_HELP, DETAILED_EVA_TEXT_LABEL, DEVELOPER_OPTIONS_LABEL, DISPLAY_AUTO_LABEL,
     DISPLAY_HELP, DISPLAY_LABEL, DisplayTarget, FULL_SCREEN_HELP, FULL_SCREEN_LABEL,
-    HAS_CHECK_FOR_UPDATES, HAS_SET_WINDOW_SIZE, HD_MAP_PREVIEWS_HELP, HD_MAP_PREVIEWS_LABEL,
-    HD_RADAR_HELP, HD_RADAR_LABEL, HEALTH_BARS_HELP, HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP,
-    HOUSE_COLOR_STRENGTH_LABEL, HealthBarMode, LANGUAGE_HELP, LANGUAGE_LABEL, LOCK_CURSOR_HELP,
-    LOCK_CURSOR_LABEL, LauncherButton, LauncherCheckboxId, LauncherComboId, LauncherCue,
-    LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId, MOUSE_WHEEL_ZOOM_HELP,
-    MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL, OptionsDialogState,
-    PERFORMANCE_STATS_HELP, PERFORMANCE_STATS_LABEL, PhysicalControlFrame, RIGHT_CLICK_ORDERS_HELP,
-    RIGHT_CLICK_ORDERS_LABEL, SET_WINDOW_SIZE_HELP, SET_WINDOW_SIZE_LABEL, SHIFT_QUEUE_HELP,
-    SHIFT_QUEUE_LABEL, SHOW_STRING_KEYS_HELP, SHOW_STRING_KEYS_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL,
-    SKIP_INTRO_HELP, SKIP_INTRO_LABEL, SMOOTH_ONLINE_MENUS_HELP, SMOOTH_ONLINE_MENUS_LABEL,
-    SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL, Setting, SidebarSize, TERRAIN_DEFORMATION_HELP,
-    TERRAIN_DEFORMATION_LABEL, VERA_ICON_HELP, VERA_ICON_LABEL, YR_ORIGINAL_STYLE_HELP,
-    YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
+    HAS_CHECK_FOR_UPDATES, HAS_MODS, HAS_SET_WINDOW_SIZE, HD_MAP_PREVIEWS_HELP,
+    HD_MAP_PREVIEWS_LABEL, HD_RADAR_HELP, HD_RADAR_LABEL, HEALTH_BARS_HELP, HEALTH_BARS_LABEL,
+    HOUSE_COLOR_STRENGTH_HELP, HOUSE_COLOR_STRENGTH_LABEL, HealthBarMode, LANGUAGE_HELP,
+    LANGUAGE_LABEL, LOCK_CURSOR_HELP, LOCK_CURSOR_LABEL, LauncherButton, LauncherCheckboxId,
+    LauncherComboId, LauncherCue, LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId,
+    MOUSE_WHEEL_ZOOM_HELP, MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL,
+    OptionsDialogState, PERFORMANCE_STATS_HELP, PERFORMANCE_STATS_LABEL, PhysicalControlFrame,
+    RIGHT_CLICK_ORDERS_HELP, RIGHT_CLICK_ORDERS_LABEL, SET_WINDOW_SIZE_HELP, SET_WINDOW_SIZE_LABEL,
+    SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SHOW_STRING_KEYS_HELP, SHOW_STRING_KEYS_LABEL,
+    SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_INTRO_HELP, SKIP_INTRO_LABEL, SMOOTH_ONLINE_MENUS_HELP,
+    SMOOTH_ONLINE_MENUS_LABEL, SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL, Setting, SidebarSize,
+    TERRAIN_DEFORMATION_HELP, TERRAIN_DEFORMATION_LABEL, VERA_ICON_HELP, VERA_ICON_LABEL,
+    YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
 };
 use std::borrow::Cow;
 
@@ -80,6 +80,8 @@ pub(crate) const MAIN_MENU_BUTTON: u16 = 0x0686;
 /// retail controls: the ids only name their rects in the page layout.
 const CATEGORY_BUTTONS: [u16; 6] = [0x7FF0, 0x7FF1, 0x7FF2, 0x7FF3, 0x7FF4, 0x7FF5];
 const _: () = assert!(CATEGORY_BUTTONS.len() == Category::ALL.len());
+/// VERA's Mods button, on the tile between the last category and Main Menu.
+const MODS_BUTTON: u16 = 0x7FF6;
 
 /// A category's button: the stacked tops go on 27 DLUs at a time from
 /// Keyboard's, as the family pages' do, so each lands on the next tile.
@@ -94,30 +96,45 @@ const fn category_button(index: usize) -> MenuPageButtonSpec {
     }
 }
 
+/// The column above Main Menu, Mods last.
+const COLUMN: &[MenuPageButtonSpec] = &[
+    MenuPageButtonSpec {
+        id: KEYBOARD_BUTTON,
+        dlu_top: 122,
+        csf_key: "GUI:Keyboard",
+        tooltip_key: "STT:MainOptButtonKeyboard",
+        result: None,
+    },
+    category_button(0),
+    category_button(1),
+    category_button(2),
+    category_button(3),
+    category_button(4),
+    category_button(5),
+    MenuPageButtonSpec {
+        id: MODS_BUTTON,
+        dlu_top: 149 + 27 * 6,
+        csf_key: "",
+        tooltip_key: "",
+        result: None,
+    },
+];
+
 /// `0xD5` as a family page (Session `+0x30D8` clear at the main menu): the
 /// right-panel column is Keyboard and Network (`0x006092CB`), then Main Menu
 /// (`0x0060982C`); the heading and status line sit at the family places.
 /// VERA leaves Network (`0x5CD`) out: it opens the IPX settings page `0xD7`,
 /// and VERA's LAN runs on IPv4 UDP. VERA's category buttons take the six
-/// tiles under Keyboard. Button captions come from the dialog's own labels.
+/// tiles under Keyboard, and VERA's Mods the one after them, where the build
+/// has mods ([`HAS_MODS`]). Button captions come from the dialog's own labels.
 pub(crate) const OPTIONS_PAGE: MenuPageSpec = MenuPageSpec {
     dialog: DialogId(0x00D5),
     title_key: "GUI:OptionsMenu",
-    stacked: &[
-        MenuPageButtonSpec {
-            id: KEYBOARD_BUTTON,
-            dlu_top: 122,
-            csf_key: "GUI:Keyboard",
-            tooltip_key: "STT:MainOptButtonKeyboard",
-            result: None,
-        },
-        category_button(0),
-        category_button(1),
-        category_button(2),
-        category_button(3),
-        category_button(4),
-        category_button(5),
-    ],
+    stacked: if HAS_MODS {
+        COLUMN
+    } else {
+        COLUMN.split_at(COLUMN.len() - 1).0
+    },
     back: MenuPageButtonSpec {
         id: MAIN_MENU_BUTTON,
         dlu_top: 346,
@@ -129,7 +146,7 @@ pub(crate) const OPTIONS_PAGE: MenuPageSpec = MenuPageSpec {
 
 /// Whether the retail panel at this window size has a tile for every column
 /// button above Main Menu's. 640x480's six tiles hold five, too few for the
-/// seven, so `0xD5` takes the fitted 800x600 page there instead: not native,
+/// column, so `0xD5` takes the fitted 800x600 page there instead: not native,
 /// and the only size whose Options art is scaled while the other pages keep
 /// the 640-wide set.
 pub(crate) fn retail_column_fits(width: i32, height: i32) -> bool {
@@ -349,6 +366,9 @@ impl LauncherOptionsLayout {
                 .zip(CATEGORY_BUTTONS)
                 .map(|(category, id)| (LauncherButton::Category(category), column(id))),
         );
+        if let Some(mods) = panel.button_rect(MODS_BUTTON) {
+            buttons.push((LauncherButton::Exit(LauncherParentResult::Mods), mods));
+        }
         buttons.push((
             LauncherButton::Exit(LauncherParentResult::Back),
             column(MAIN_MENU_BUTTON),
@@ -752,6 +772,9 @@ impl OptionsDialogState {
             LauncherButton::Exit(LauncherParentResult::Back) => {
                 Cow::Borrowed(&self.labels.main_menu)
             }
+            LauncherButton::Exit(LauncherParentResult::Mods) => {
+                Cow::Owned(tr(crate::ui::mods_shell::TITLE_KEY))
+            }
             LauncherButton::Exit(LauncherParentResult::Terminal) => Cow::Borrowed(""),
             LauncherButton::Category(category) => self.shell_category_label(category),
             LauncherButton::CheckForUpdates => Cow::Owned(tr(CHECK_FOR_UPDATES_LABEL)),
@@ -1004,6 +1027,11 @@ impl OptionsDialogState {
                 }
                 LauncherButton::CheckForUpdates => {
                     return Some(LauncherStatusHelp::Vera(CHECK_FOR_UPDATES_HELP));
+                }
+                LauncherButton::Exit(LauncherParentResult::Mods) => {
+                    return Some(LauncherStatusHelp::Vera(
+                        crate::ui::mods_shell::BUTTON_HELP_KEY,
+                    ));
                 }
                 // The main menu's Esc box has no status line; the in-game
                 // menu has.
@@ -1373,13 +1401,17 @@ mod tests {
     }
 
     /// The right-hand column: retail's Keyboard, a button per category on the
-    /// tiles under it, and Main Menu on the last of the 800x600 panel's nine
-    /// tiles, each a 156x42 SDBTNANM cell flush with the panel's right edge.
+    /// tiles under it, VERA's Mods on the next, and Main Menu on the last of
+    /// the 800x600 panel's nine tiles, each a 156x42 SDBTNANM cell flush with
+    /// the panel's right edge.
     #[test]
-    fn the_column_holds_keyboard_every_category_and_main_menu() {
+    fn the_column_holds_keyboard_every_category_mods_and_main_menu() {
         let layout = page(Category::Display);
         let mut expected = vec![LauncherButton::Exit(LauncherParentResult::Keyboard)];
         expected.extend(Category::ALL.map(LauncherButton::Category));
+        if HAS_MODS {
+            expected.push(LauncherButton::Exit(LauncherParentResult::Mods));
+        }
         expected.push(LauncherButton::Exit(LauncherParentResult::Back));
         let ids: Vec<_> = layout.buttons.iter().map(|(id, _)| *id).collect();
         assert_eq!(ids, expected);
@@ -1403,7 +1435,7 @@ mod tests {
             layout,
             LauncherOptionsLayout::responsive(640, 480, Category::Display)
         );
-        assert_eq!(layout.buttons.len(), 8);
+        assert_eq!(layout.buttons.len(), 8 + usize::from(HAS_MODS));
         for (index, (id, a)) in layout.buttons.iter().enumerate() {
             assert!(a.x + a.w <= 640 && a.y + a.h <= 480, "{id:?} at {a:?}");
             for (other, b) in &layout.buttons[index + 1..] {
@@ -2034,6 +2066,49 @@ mod tests {
         ] {
             assert_eq!(at(checkbox(&layout, id)), text(help), "{id:?}");
         }
+    }
+
+    /// VERA's Mods button is a column button on every page: a press asks for
+    /// the Mods page as Keyboard's asks for the key page, and its caption and
+    /// status help are VERA's own texts.
+    #[test]
+    fn the_mods_button_asks_for_the_mods_page() {
+        if !HAS_MODS {
+            return;
+        }
+        let mods = LauncherButton::Exit(LauncherParentResult::Mods);
+        let mut state = state();
+        assert!(!mods.on_page());
+        for category in Category::ALL {
+            assert_eq!(
+                button(&page(category), mods),
+                RectPx::new(644, 199 + 42 * 7, 156, 42),
+                "{category:?}"
+            );
+            // A match's menu has no way to the Mods page, whose choice
+            // restarts the game.
+            assert!(
+                !in_game((800, 600), category, false)
+                    .buttons
+                    .iter()
+                    .any(|(id, _)| *id == mods),
+                "{category:?}"
+            );
+        }
+        let layout = page(Category::Display);
+        let rect = button(&layout, mods);
+        assert_eq!(state.shell_button_label(mods), "Mods");
+        assert_eq!(
+            state.shell_status_help_key(rect.x + 2, rect.y + 2, &layout),
+            Some(LauncherStatusHelp::Vera("VERA:ModsHelp"))
+        );
+        state.shell_mouse_down(rect.x + 5, rect.y + 5, &layout);
+        state.shell_mouse_up(rect.x + 5, rect.y + 5, &layout);
+        let output = state.drain_output();
+        assert_eq!(
+            (output.result, output.check_for_updates),
+            (Some(LauncherParentResult::Mods), false)
+        );
     }
 
     #[test]
