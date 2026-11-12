@@ -63,7 +63,7 @@ pub use saved_seed_browser::{
     SavedSeedDescriptionEdit, SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose,
 };
 pub use saved_setup::{SkirmishSavedSetup, SkirmishSetupComputer, SkirmishSetupSeat};
-pub use team_starts::{apply_team_starts, starts_by_team};
+pub use team_starts::apply_team_starts;
 pub use trackbars::{
     SkirmishTrackbarBounds, handle_option_mouse_down, handle_option_mouse_move,
     handle_option_mouse_up, handle_option_mouse_wheel, trackbar_visual_value,
