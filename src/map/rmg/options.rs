@@ -289,10 +289,16 @@ impl RmgOptions {
 
     /// VERA extension: the options as a short text a player can send to
     /// another, who reads it back with [`Self::from_share_code`] and
-    /// generates the same map. It carries every option, VERA's switches and
-    /// the Extras, not the description: `VR1-` then the bytes below and a
-    /// check byte, in Crockford base 32, five characters to a group.
+    /// generates the same map. It carries this build's version, every
+    /// option, VERA's switches and the Extras, not the description: `VR1-`
+    /// then the bytes below and a check byte, in Crockford base 32, five
+    /// characters to a group.
     pub fn share_code(&self) -> String {
+        self.share_code_made_by(ShareVersion::this_build())
+    }
+
+    /// [`Self::share_code`] as the VERA version `made_by` writes it.
+    fn share_code_made_by(&self, made_by: ShareVersion) -> String {
         let mut options = self.clone();
         options.normalize();
         let byte = |value: i32| value.clamp(0, 255) as u8;
@@ -302,7 +308,11 @@ impl RmgOptions {
             flags |= u8::from(options.urban_areas) << 2;
         }
         let seed = options.seed_u16().to_le_bytes();
+        let [major, minor, patch] = made_by.0;
         let mut bytes = vec![
+            major,
+            minor,
+            patch,
             byte(options.theater),
             byte(options.map_type),
             byte(options.resources),
@@ -358,11 +368,13 @@ impl RmgOptions {
         code
     }
 
-    /// Read a [`Self::share_code`] back over `self`, keeping the description.
-    /// Letters may be in either case, `I`/`L` read as `1` and `O` as `0`, and
-    /// dashes and spaces are skipped. `None` for a text that is no code, is
-    /// cut short or fails its check; `self` is then unchanged.
-    pub fn from_share_code(&self, code: &str) -> Option<Self> {
+    /// Read a [`Self::share_code`] back over `self`, keeping the description,
+    /// with the VERA version that made it: another version's generator may
+    /// build another map from the same options. Letters may be in either
+    /// case, `I`/`L` read as `1` and `O` as `0`, and dashes and spaces are
+    /// skipped. `None` for a text that is no code, is cut short or fails its
+    /// check; `self` is then unchanged.
+    pub fn from_share_code(&self, code: &str) -> Option<(Self, ShareVersion)> {
         let text = code.trim();
         let body = text
             .get(..SHARE_PREFIX.len())
@@ -387,9 +399,11 @@ impl RmgOptions {
             }
         }
         let (&check, bytes) = bytes.split_last()?;
-        if bytes.len() < SHARE_FIXED_BYTES || check != share_check(bytes) {
+        if bytes.len() < SHARE_VERSION_BYTES + SHARE_OPTION_BYTES || check != share_check(bytes) {
             return None;
         }
+        let (version, bytes) = bytes.split_at(SHARE_VERSION_BYTES);
+        let made_by = ShareVersion([version[0], version[1], version[2]]);
         let field = |at: usize| i32::from(bytes[at]);
         let mut options = Self {
             theater: field(0),
@@ -419,12 +433,33 @@ impl RmgOptions {
         options.extras = super::extras::RmgExtras::default();
         for (&extra, &value) in super::extras::Extra::ALL
             .iter()
-            .zip(&bytes[SHARE_FIXED_BYTES..])
+            .zip(&bytes[SHARE_OPTION_BYTES..])
         {
             options.extras.set(extra, value);
         }
         options.normalize();
-        Some(options)
+        Some((options, made_by))
+    }
+}
+
+/// The VERA version that made a share code: major, minor and patch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShareVersion(pub [u8; 3]);
+
+impl ShareVersion {
+    /// This build's package version, each part held to a byte.
+    pub fn this_build() -> Self {
+        let mut parts = env!("CARGO_PKG_VERSION")
+            .split(['.', '-', '+'])
+            .map(|part| part.parse::<u32>().map_or(0, |part| part.min(255) as u8));
+        Self(std::array::from_fn(|_| parts.next().unwrap_or(0)))
+    }
+}
+
+impl std::fmt::Display for ShareVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let [major, minor, patch] = self.0;
+        write!(f, "{major}.{minor}.{patch}")
     }
 }
 
@@ -432,8 +467,10 @@ impl RmgOptions {
 const SHARE_PREFIX: &str = "VR1";
 /// Crockford's base 32 digits: no `I`, `L`, `O` or `U`.
 const SHARE_DIGITS: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
-/// The bytes every share code holds ahead of its Extras.
-const SHARE_FIXED_BYTES: usize = 18;
+/// The bytes of the version a share code opens with.
+const SHARE_VERSION_BYTES: usize = 3;
+/// The option bytes every share code holds between its version and Extras.
+const SHARE_OPTION_BYTES: usize = 18;
 
 /// A share code's check byte over its other bytes.
 fn share_check(bytes: &[u8]) -> u8 {
@@ -517,7 +554,8 @@ mod tests {
             description: "theirs".into(),
             ..RmgOptions::default()
         };
-        let read = receiver.from_share_code(&code).expect("a whole code reads");
+        let (read, made_by) = receiver.from_share_code(&code).expect("a whole code reads");
+        assert_eq!(made_by, ShareVersion::this_build());
         assert_eq!(
             read,
             RmgOptions {
@@ -527,7 +565,7 @@ mod tests {
         );
         // Lower case, spaces for dashes and stray blanks still read.
         let typed = format!("  {}  ", code.to_ascii_lowercase().replace('-', " "));
-        assert_eq!(receiver.from_share_code(&typed), Some(read));
+        assert_eq!(receiver.from_share_code(&typed), Some((read, made_by)));
 
         // One changed character fails the check; other texts are no code.
         let last = code.len() - 1;
@@ -540,8 +578,28 @@ mod tests {
         // Options without Extras give a shorter code that reads as none.
         let plain = RmgOptions::default();
         assert!(plain.share_code().len() < code.len());
-        let back = sent.from_share_code(&plain.share_code()).expect("reads");
+        let (back, _) = sent.from_share_code(&plain.share_code()).expect("reads");
         assert!(back.extras.is_default() && !back.fair_starts);
+    }
+
+    /// A code from another VERA version still reads, and names that version,
+    /// whose generator may build another map from the same options.
+    #[test]
+    fn a_share_code_names_the_version_that_made_it() {
+        let this = ShareVersion::this_build();
+        assert!(env!("CARGO_PKG_VERSION").starts_with(&this.to_string()));
+        let older = ShareVersion([0, 1, 9]);
+        assert_ne!(older, this);
+        let sent = RmgOptions {
+            seed: 99,
+            ..RmgOptions::default()
+        };
+        let code = sent.share_code_made_by(older);
+        assert_ne!(code, sent.share_code(), "the version is part of the code");
+        let (read, made_by) = RmgOptions::default()
+            .from_share_code(&code)
+            .expect("another version's code reads");
+        assert_eq!((read.seed, made_by.to_string()), (99, "0.1.9".to_string()));
     }
 
     /// An Extra is saved under its own key only when on.

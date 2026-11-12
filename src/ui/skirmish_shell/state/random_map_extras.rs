@@ -8,6 +8,7 @@
 //! than six the last row turns the page.
 
 use crate::map::rmg::extras::Extra;
+use crate::map::rmg::options::ShareVersion;
 
 use super::random_map_setup::RandomMapSetupModalState;
 
@@ -251,18 +252,17 @@ impl RandomMapSetupModalState {
         }
     }
 
-    /// Take a share code's options, as an option edit; false for a text that
-    /// is no whole code. The app then generates without Generate's rolls,
-    /// which builds the sender's map. The Advanced values are held at the
-    /// code's, as if the player had set each slider, so the sliders show
-    /// them and a later Generate keeps them.
-    pub fn adopt_share_code(&mut self, code: &str) -> bool {
-        let Some(options) = self.options.from_share_code(code) else {
-            return false;
-        };
+    /// Take a share code's options, as an option edit, and give the VERA
+    /// version that made it; `None` for a text that is no whole code. The app
+    /// then generates without Generate's rolls, which builds the sender's map
+    /// when the versions match. The Advanced values are held at the code's,
+    /// as if the player had set each slider, so the sliders show them and a
+    /// later Generate keeps them.
+    pub fn adopt_share_code(&mut self, code: &str) -> Option<ShareVersion> {
+        let (options, made_by) = self.options.from_share_code(code)?;
         self.options = options;
         self.pin_advanced_values();
         self.note_option_edit();
-        true
+        Some(made_by)
     }
 }

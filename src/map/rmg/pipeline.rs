@@ -121,7 +121,7 @@ pub struct PipelineInputs<'a> {
     /// (`embellish`), VERA's catalogue for their buildings, and the two the
     /// fairness report's score follows (`Extra::SeaAccess`,
     /// `Extra::BaseRoom`).
-    pub embellish: super::embellish::EmbellishArgs,
+    pub embellish: super::embellish::EmbellishArgs<'a>,
     pub vera_catalog: &'a urban_areas::UrbanCatalog,
     pub sea_access: bool,
     /// The presence the urban pass reads (`MapSeed+0x60`).

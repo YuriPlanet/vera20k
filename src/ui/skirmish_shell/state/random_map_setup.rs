@@ -1208,8 +1208,11 @@ mod tests {
         dialog.change_advanced(AdvancedField::Water, 37);
         let code = dialog.options.share_code();
         let mut receiver = opened();
-        assert!(!receiver.adopt_share_code("not a code"));
-        assert!(receiver.adopt_share_code(&code));
+        assert_eq!(receiver.adopt_share_code("not a code"), None);
+        assert_eq!(
+            receiver.adopt_share_code(&code),
+            Some(crate::map::rmg::options::ShareVersion::this_build())
+        );
         assert_eq!(receiver.options.extras.get(Extra::OreVariant), 1);
         assert_eq!(receiver.options.seed, dialog.options.seed);
         assert_eq!(receiver.advanced_value(AdvancedField::Water), 37);

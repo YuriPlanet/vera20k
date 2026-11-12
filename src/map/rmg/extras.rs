@@ -6,6 +6,11 @@
 //! Extra existed. A value is saved in the `.SED` under the Extra's key only
 //! when it is not `0`, and rides in the share code
 //! ([`RmgOptions::share_code`](super::options::RmgOptions::share_code)).
+//! What the Extras place and the light of the moods are `RMGMD.INI
+//! [Extras]` keys ([`ExtrasSettings`]); `docs/random-map-extras.md` lists them.
+
+use crate::rules::ini_parser::IniSection;
+use crate::rules::ini_value::strtrim_ascii;
 
 /// One opt-in choice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -30,7 +35,8 @@ pub enum Extra {
     Fences,
     /// A gem field at the middle of the map: 1 small, 2 large.
     CentreGems,
-    /// One oil derrick at the same distance from every start.
+    /// One tech building at the same distance from every start: an oil
+    /// derrick unless `FairTech=` names another.
     FairTech,
     /// A paved track from every start to the middle of the map.
     Roads,
@@ -41,17 +47,97 @@ pub enum Extra {
     SeaAccess,
 }
 
-/// The moods of [`Extra::Mood`] from value 1: ambient light and red, green
-/// and blue, in the percents `RMGMD.INI` gives a time of day
-/// (`TemperateAmbientLight`, `TemperateAmbientRed`..): golden hour, red
-/// dusk, moonlight, overcast, toxic haze.
-pub const MOODS: [(i32, [i32; 3]); 5] = [
-    (90, [125, 98, 55]),
-    (62, [135, 70, 55]),
-    (52, [55, 85, 130]),
-    (68, [88, 92, 98]),
-    (70, [80, 120, 60]),
+/// The moods of [`Extra::Mood`] from value 1, by their `RMGMD.INI
+/// [Extras]` key, with the light each gives where its key is absent: ambient
+/// light, then red, green and blue, in the percents `RMGMD.INI [General]`
+/// gives a time of day (`TemperateAmbientLight`, `TemperateAmbientRed`..).
+pub const MOODS: [(&str, i32, [i32; 3]); 5] = [
+    ("GoldenHour", 90, [125, 98, 55]),
+    ("RedDusk", 62, [135, 70, 55]),
+    ("Moonlight", 52, [55, 85, 130]),
+    ("Overcast", 68, [88, 92, 98]),
+    ("ToxicHaze", 70, [80, 120, 60]),
 ];
+
+/// `Farms=` where absent: houses and barns (2x2), then the one-cell silo,
+/// outhouse and water tower.
+const FARMS: [&str; 7] = [
+    "CAFARM01", "CAFRMA", "CABARN02", "CATS01", "CAFARM02", "CAFRMB", "CAWT01",
+];
+/// `Landmarks=` where absent: none is capturable or a tech building, and
+/// each stands whole as one type.
+const LANDMARKS: [&str; 8] = [
+    "CAWSH12", "CAPARS11", "CAEURO05", "CASTL04", "CAWASH19", "CAWASH14", "CAWASH15", "CAMEX01",
+];
+/// The ReadString buffer of a `[Extras]` value, as Ares gives `[Urban]`.
+const VALUE_CAPACITY: usize = 0x800;
+
+/// VERA extension: `RMGMD.INI [Extras]`, what the Extras place and the light
+/// of the moods. An absent key keeps its default, today's values.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtrasSettings {
+    /// `Farms=`: the buildings of the Countryside Extra. Those of more than
+    /// one cell are the farmhouses a farmstead is built round.
+    pub farms: Vec<String>,
+    /// `Landmarks=`: the monuments the Landmark Extra draws one from.
+    pub landmarks: Vec<String>,
+    /// `FairTech=`: the neutral tech building (`[AI] NeutralTechBuildings=`)
+    /// the Fair Tech Extra stands by every start.
+    pub fair_tech: String,
+    /// `FarmFence=` and `TownFence=`: the fence overlays of the Countryside
+    /// and Fences Extras.
+    pub farm_fence: String,
+    pub town_fence: String,
+    /// Each mood's ambient light and red, green and blue, as [`MOODS`].
+    pub moods: [(i32, [i32; 3]); MOODS.len()],
+}
+
+impl Default for ExtrasSettings {
+    fn default() -> Self {
+        Self {
+            farms: FARMS.map(String::from).to_vec(),
+            landmarks: LANDMARKS.map(String::from).to_vec(),
+            fair_tech: "CAOILD".into(),
+            farm_fence: "CAFNCW".into(),
+            town_fence: "CAFNCB".into(),
+            moods: MOODS.map(|(_, ambient, rgb)| (ambient, rgb)),
+        }
+    }
+}
+
+impl ExtrasSettings {
+    /// Read `[Extras]` over the values held. Lists split on commas, as Ares'
+    /// `[Urban]` lists do, and each name drops the blanks round it; a mood
+    /// changes only when all four of its numbers read.
+    pub(super) fn apply(&mut self, section: &IniSection) {
+        let names = |key: &str, current: &mut Vec<String>| {
+            if let Some(list) = section.read_list(key, VALUE_CAPACITY) {
+                *current = list
+                    .into_iter()
+                    .map(strtrim_ascii)
+                    .filter(|name| !name.is_empty())
+                    .map(String::from)
+                    .collect();
+            }
+        };
+        names("Farms", &mut self.farms);
+        names("Landmarks", &mut self.landmarks);
+        for (key, name) in [
+            ("FairTech", &mut self.fair_tech),
+            ("FarmFence", &mut self.farm_fence),
+            ("TownFence", &mut self.town_fence),
+        ] {
+            *name = section.read_string(key, name, VALUE_CAPACITY);
+        }
+        for ((key, ..), mood) in MOODS.iter().zip(&mut self.moods) {
+            if let Some([ambient, red, green, blue]) =
+                section.read_int_fields_complete::<4>(key, VALUE_CAPACITY)
+            {
+                *mood = (ambient, [red, green, blue]);
+            }
+        }
+    }
+}
 
 impl Extra {
     /// Every Extra, in the order the dialog lists them and the share code

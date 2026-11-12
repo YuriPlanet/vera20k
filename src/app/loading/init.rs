@@ -2613,6 +2613,7 @@ pub(crate) fn load_map_initial_with_assets(
                 .rules()
                 .general
                 .cliff_back_impassability,
+            &settings.extras,
         );
 
         // Tile-block layouts (sub-cell height/terrain grids) from the theater's
@@ -2639,6 +2640,7 @@ pub(crate) fn load_map_initial_with_assets(
                 generated_rules.native.rules(),
                 owner.fixed_art(),
                 &tech_types,
+                &settings.extras,
                 theater.extension,
                 theater_name,
                 options.seed_u16(),

@@ -6,7 +6,8 @@
 //!
 //! - Base Room clears the trees round every start.
 //! - Roads pave a track from every start to the middle of the map.
-//! - Fair Tech stands one oil derrick at the same distance from every start.
+//! - Fair Tech stands one tech building, an oil derrick unless `RMGMD.INI
+//!   [Extras] FairTech=` names another, at the same distance from every start.
 //! - Landmark stands one monument at the middle of the map.
 //! - Centre Gems lays a gem field at the middle of the map.
 //! - Countryside scatters farmsteads over open ground, away from the starts.
@@ -43,8 +44,6 @@ const BASE_ROOM_RADIUS: i32 = 9;
 /// [`TECH_REACH`]: past the base, inside the home ore.
 const TECH_DISTANCE: i32 = 13;
 const TECH_REACH: i32 = 7;
-/// The name of the derrick among the neutral tech buildings.
-const DERRICK: &str = "CAOILD";
 /// Nothing an Extra adds stands nearer a start than this.
 const START_CLEARANCE: i32 = 14;
 /// How far from the middle of the map a landmark or the gem field may begin.
@@ -63,7 +62,7 @@ const FENCE_RUN: (i32, i32) = (3, 6);
 
 /// Which Extras run, each by its value (0 is off), and what they place.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct EmbellishArgs {
+pub struct EmbellishArgs<'a> {
     pub base_room: u8,
     pub roads: u8,
     pub fair_tech: u8,
@@ -72,13 +71,15 @@ pub struct EmbellishArgs {
     pub countryside: u8,
     pub fences: u8,
     pub seed: u16,
-    /// The overlay ids of the farm and the town fence (`CAFNCW`, `CAFNCB`),
-    /// where the Rules have them.
+    /// The neutral tech building Fair Tech stands, by name (`FairTech=`).
+    pub fair_tech_type: &'a str,
+    /// The overlay ids of the farm and the town fence (`FarmFence=`,
+    /// `TownFence=`), where the Rules have them.
     pub farm_fence: Option<i32>,
     pub town_fence: Option<i32>,
 }
 
-impl EmbellishArgs {
+impl EmbellishArgs<'_> {
     pub fn any(&self) -> bool {
         [
             self.base_room,
@@ -134,7 +135,7 @@ fn ring(centre: (i32, i32), radius: i32) -> Vec<(i32, i32)> {
 /// was paved, which the caller follows with a LAT pass.
 pub fn run(
     ctx: &mut FairCtx<'_>,
-    args: &EmbellishArgs,
+    args: &EmbellishArgs<'_>,
     starts: &[(i32, i32)],
     catalog: &UrbanCatalog,
     tech: &[TechType],
@@ -159,7 +160,7 @@ pub fn run(
     }
     let paved = args.roads != 0 && pave_roads(ctx, starts, centre);
     if args.fair_tech != 0 {
-        fair_tech(ctx, starts, tech, out);
+        fair_tech(ctx, starts, args.fair_tech_type, tech, out);
     }
     if args.landmark != 0 {
         landmark(ctx, args, starts, centre, catalog, out);
@@ -424,17 +425,19 @@ fn pave_roads(ctx: &mut FairCtx<'_>, starts: &[(i32, i32)], centre: (i32, i32)) 
     paved
 }
 
-/// Fair Tech: one derrick to a start, on the free site nearest
-/// [`TECH_DISTANCE`] from it that is nearer to it than to any other start.
+/// Fair Tech: one of the neutral tech buildings named `name` to a start, on
+/// the free site nearest [`TECH_DISTANCE`] from it that is nearer to it than
+/// to any other start.
 fn fair_tech(
     ctx: &mut FairCtx<'_>,
     starts: &[(i32, i32)],
+    name: &str,
     tech: &[TechType],
     out: &mut EmbellishOutput<'_>,
 ) {
     let Some(derrick) = tech
         .iter()
-        .find(|kind| kind.name.eq_ignore_ascii_case(DERRICK) && !kind.footprint.is_empty())
+        .find(|kind| kind.name.eq_ignore_ascii_case(name) && !kind.footprint.is_empty())
     else {
         return;
     };
@@ -470,7 +473,7 @@ fn fair_tech(
 /// a town that lies there.
 fn landmark(
     ctx: &mut FairCtx<'_>,
-    args: &EmbellishArgs,
+    args: &EmbellishArgs<'_>,
     starts: &[(i32, i32)],
     centre: (i32, i32),
     catalog: &UrbanCatalog,
@@ -501,7 +504,7 @@ fn landmark(
 /// middle of the map, thickest at its heart, clear of every start.
 fn centre_gems(
     ctx: &mut FairCtx<'_>,
-    args: &EmbellishArgs,
+    args: &EmbellishArgs<'_>,
     starts: &[(i32, i32)],
     centre: (i32, i32),
 ) {
@@ -546,7 +549,7 @@ fn centre_gems(
 /// gap in each.
 fn countryside(
     ctx: &mut FairCtx<'_>,
-    args: &EmbellishArgs,
+    args: &EmbellishArgs<'_>,
     starts: &[(i32, i32)],
     play: &[(i32, i32)],
     catalog: &UrbanCatalog,
@@ -627,7 +630,7 @@ fn countryside(
 
 /// Fences: short runs of fence on a town's pavement along the sides of its
 /// buildings, never on a road, so the streets stay open.
-fn town_fences(ctx: &mut FairCtx<'_>, args: &EmbellishArgs, play: &[(i32, i32)]) {
+fn town_fences(ctx: &mut FairCtx<'_>, args: &EmbellishArgs<'_>, play: &[(i32, i32)]) {
     let Some(fence) = args.town_fence else {
         return;
     };

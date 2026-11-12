@@ -62,18 +62,20 @@ pub struct ResolvedTheaterInputs {
     /// Unit tests of other phases pass `None`, which skips river carving.
     pub trig: Option<&'static TrigTable>,
     /// VERA extension: the overlay ids of the farm and the town fence
-    /// (`CAFNCW`, `CAFNCB`) for the Countryside and Fences Extras, where
-    /// the Rules list them.
+    /// (`RMGMD.INI [Extras] FarmFence=`, `TownFence=`) for the Countryside
+    /// and Fences Extras, where the Rules list them.
     pub fences: [Option<i32>; 2],
 }
 
 impl ResolvedTheaterInputs {
-    /// Snapshot a theater + rules into the resolved input set.
+    /// Snapshot a theater + rules into the resolved input set, with the
+    /// fences `extras` names.
     pub fn from_theater(
         theater: &TheaterData,
         rules: &TerrainRules,
         overlays: &OverlayTypeRegistry,
         cliff_back_impassability: u8,
+        extras: &super::extras::ExtrasSettings,
     ) -> Self {
         let morphable = (0..theater.lookup.len())
             .map(|tile| theater.lookup.is_morphable(tile as u16))
@@ -86,7 +88,7 @@ impl ResolvedTheaterInputs {
             morphable,
             trig: Some(TrigTable::embedded()),
             // 0xFF is the overlay pack's "none".
-            fences: ["CAFNCW", "CAFNCB"].map(|name| {
+            fences: [&extras.farm_fence, &extras.town_fence].map(|name| {
                 overlays
                     .id_for_name(name)
                     .filter(|&id| id != u8::MAX)
@@ -479,6 +481,7 @@ fn generate_once(
                 countryside: value(Extra::Countryside),
                 fences: value(Extra::Fences),
                 seed: options.seed_u16(),
+                fair_tech_type: &settings.extras.fair_tech,
                 farm_fence: resolved.fences[0],
                 town_fence: resolved.fences[1],
             }
@@ -901,6 +904,7 @@ mod tests {
             &rules,
             &art,
             &[],
+            &settings.extras,
             "tem",
             "TEMPERATE",
             4242,
@@ -1606,17 +1610,19 @@ mod tests {
         let theater = crate::map::theater::load_theater(&mut assets, theater_name)
             .unwrap_or_else(|| panic!("retail {theater_name} theater"));
         let ruleset = crate::rules::ruleset::RuleSet::from_ini(&rules).expect("retail rules");
+        let settings = RmgSettings::load(&assets);
         let resolved = ResolvedTheaterInputs::from_theater(
             &theater,
             &TerrainRules::from_ini(&rules),
             ruleset.overlay_registry(),
             ruleset.general.cliff_back_impassability,
+            &settings.extras,
         );
         let blocks =
             crate::map::rmg::theater_blocks::TheaterTileBlocks::build(&theater.lookup, |name| {
                 assets.get(name)
             });
-        Some((RmgSettings::load(&assets), resolved, blocks))
+        Some((settings, resolved, blocks))
     }
 
     /// [`observe_run`] of `options(map_type, theater)`, run once per test

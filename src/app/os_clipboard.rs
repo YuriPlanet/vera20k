@@ -1,126 +1,65 @@
 //! The system clipboard, for VERA's random-map share codes.
 //!
-//! VERA links no clipboard library. A share code is a few dozen ASCII
-//! characters asked for by a button press, so the clipboard is reached
-//! through the tool each desktop ships: `clip` and PowerShell's
-//! `Get-Clipboard` on Windows, `pbcopy`/`pbpaste` on macOS, and `wl-copy`/
-//! `wl-paste` or `xclip` on Linux. A missing tool is a `false` or a `None`,
-//! which the dialog reports; nothing here can stop the game. The browser
-//! build has no clipboard.
+//! Desktop builds reach it through the `arboard` crate: the Win32 clipboard
+//! on Windows, NSPasteboard on macOS and the X11 selection on Linux (Wayland
+//! sessions through XWayland). One handle lives as long as the interface
+//! thread, because an X11 selection is served by the program that set it and
+//! ends with its handle. A clipboard that cannot be opened or holds no text is
+//! a `false` or a `None`, which the dialog reports; nothing here can stop the
+//! game. Other builds (the browser, Android) have no clipboard.
 
-/// Put `text` on the clipboard; false when no tool took it.
+/// Put `text` on the clipboard; false when the clipboard refused it.
 pub(crate) fn set_text(text: &str) -> bool {
-    platform::copy_commands()
-        .into_iter()
-        .any(|command| platform::feed(command, text))
+    platform::set_text(text)
 }
 
-/// The clipboard's text, trimmed; `None` when no tool gave one.
+/// The clipboard's text, trimmed; `None` when it holds none.
 pub(crate) fn text() -> Option<String> {
-    platform::paste_commands()
-        .into_iter()
-        .find_map(platform::read)
-        .map(|text| text.trim().to_string())
+    platform::text().map(|text| text.trim().to_string())
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
 mod platform {
-    use std::io::Write as _;
-    use std::process::{Command, Stdio};
+    use std::cell::RefCell;
 
-    /// A tool and its arguments.
-    pub(super) type Tool = (&'static str, &'static [&'static str]);
-
-    #[cfg(target_os = "windows")]
-    pub(super) fn copy_commands() -> Vec<Tool> {
-        vec![("clip", &[])]
-    }
-    #[cfg(target_os = "windows")]
-    pub(super) fn paste_commands() -> Vec<Tool> {
-        vec![(
-            "powershell",
-            &["-NoProfile", "-NonInteractive", "-Command", "Get-Clipboard"],
-        )]
+    thread_local! {
+        /// Opened on first use and kept, so a selection outlives the call.
+        static CLIPBOARD: RefCell<Option<arboard::Clipboard>> = const { RefCell::new(None) };
     }
 
-    #[cfg(target_os = "macos")]
-    pub(super) fn copy_commands() -> Vec<Tool> {
-        vec![("pbcopy", &[])]
-    }
-    #[cfg(target_os = "macos")]
-    pub(super) fn paste_commands() -> Vec<Tool> {
-        vec![("pbpaste", &[])]
-    }
-
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    pub(super) fn copy_commands() -> Vec<Tool> {
-        vec![("wl-copy", &[]), ("xclip", &["-selection", "clipboard"])]
-    }
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    pub(super) fn paste_commands() -> Vec<Tool> {
-        vec![
-            ("wl-paste", &["--no-newline"]),
-            ("xclip", &["-selection", "clipboard", "-o"]),
-        ]
+    /// Run `act` on the clipboard, opening it first if need be.
+    fn with_clipboard<T>(act: impl FnOnce(&mut arboard::Clipboard) -> Option<T>) -> Option<T> {
+        CLIPBOARD.with(|cell| {
+            let mut handle = cell.try_borrow_mut().ok()?;
+            if handle.is_none() {
+                match arboard::Clipboard::new() {
+                    Ok(clipboard) => *handle = Some(clipboard),
+                    Err(error) => {
+                        log::warn!("The clipboard could not be opened: {error}");
+                        return None;
+                    }
+                }
+            }
+            act(handle.as_mut()?)
+        })
     }
 
-    /// The tool as a command that opens no console window of its own.
-    fn command((program, arguments): Tool) -> Command {
-        let mut command = Command::new(program);
-        command.args(arguments);
-        #[cfg(target_os = "windows")]
-        {
-            use std::os::windows::process::CommandExt as _;
-            // CREATE_NO_WINDOW: the game is a window, not a console.
-            command.creation_flags(0x0800_0000);
-        }
-        command
+    pub(super) fn set_text(text: &str) -> bool {
+        with_clipboard(|clipboard| clipboard.set_text(text).ok()).is_some()
     }
 
-    /// Run `tool` with `text` on its input; whether it took it.
-    pub(super) fn feed(tool: Tool, text: &str) -> bool {
-        let Ok(mut child) = command(tool)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-        else {
-            return false;
-        };
-        let written = child
-            .stdin
-            .take()
-            .is_some_and(|mut input| input.write_all(text.as_bytes()).is_ok());
-        child.wait().is_ok_and(|status| status.success()) && written
-    }
-
-    /// Run `tool` and take what it prints.
-    pub(super) fn read(tool: Tool) -> Option<String> {
-        let output = command(tool)
-            .stdin(Stdio::null())
-            .stderr(Stdio::null())
-            .output()
-            .ok()?;
-        output
-            .status
-            .success()
-            .then(|| String::from_utf8_lossy(&output.stdout).into_owned())
+    pub(super) fn text() -> Option<String> {
+        with_clipboard(|clipboard| clipboard.get_text().ok())
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
 mod platform {
-    pub(super) type Tool = ();
-    pub(super) fn copy_commands() -> Vec<Tool> {
-        Vec::new()
-    }
-    pub(super) fn paste_commands() -> Vec<Tool> {
-        Vec::new()
-    }
-    pub(super) fn feed(_tool: Tool, _text: &str) -> bool {
+    pub(super) fn set_text(_text: &str) -> bool {
         false
     }
-    pub(super) fn read(_tool: Tool) -> Option<String> {
+
+    pub(super) fn text() -> Option<String> {
         None
     }
 }

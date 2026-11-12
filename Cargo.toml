@@ -206,6 +206,15 @@ objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSAlert", "NSApplication", "NSButton", "NSControl", "NSCursor", "NSImage", "NSOpenPanel", "NSPanel", "NSResponder", "NSSavePanel", "NSView", "NSWindow"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSGeometry", "NSLocale", "NSString", "NSURL", "objc2-core-foundation"] }
 
+# --- Clipboard ---
+# The random-map dialog copies and pastes share codes (src/app/os_clipboard.rs).
+# arboard reaches the Win32 clipboard, NSPasteboard and the X11 selection
+# (Wayland through XWayland). Default features are off, which leaves out image
+# support and its `image` crate. arboard has no Android or browser backend, so
+# those builds have no clipboard.
+[target.'cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))'.dependencies]
+arboard = { version = "3.7", default-features = false }
+
 # --- Windows memory allocator ---
 # The game program (src/main.rs) allocates through mimalloc on Windows instead
 # of the process heap. MIT, linked statically, and built by the C compiler that

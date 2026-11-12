@@ -774,6 +774,7 @@ pub(super) fn prepare_random_map_generation(
             &preview.rules,
             owner.fixed_art(),
             &tech_types,
+            &settings.extras,
             theater.extension,
             theater_name,
             options.seed_u16(),
@@ -796,6 +797,7 @@ pub(super) fn prepare_random_map_generation(
             .as_ref()
             .map_or(&empty_overlays, |preview| preview.rules.overlay_registry()),
         cliff_back_impassability,
+        &settings.extras,
     );
     let blocks =
         crate::map::rmg::theater_blocks::TheaterTileBlocks::build(&theater.lookup, |name| {
@@ -1890,15 +1892,31 @@ impl App {
                         },
                     ),
                     Some(ExtrasOutcome::Tool(ExtrasAction::PasteCode)) => {
+                        use crate::map::rmg::options::ShareVersion;
                         Some(match crate::app::os_clipboard::text() {
-                            Some(text) if modal.adopt_share_code(&text) => {
-                                regenerate = true;
-                                ("VERA:RandomMapExtraCodeTaken", "Code read")
-                            }
-                            Some(_) => (
-                                "VERA:RandomMapExtraCodeBad",
-                                "The clipboard holds no map code",
-                            ),
+                            Some(text) => match modal.adopt_share_code(&text) {
+                                Some(made_by) => {
+                                    regenerate = true;
+                                    let this = ShareVersion::this_build();
+                                    if made_by == this {
+                                        ("VERA:RandomMapExtraCodeTaken", "Code read")
+                                    } else {
+                                        // Another generator may build another
+                                        // map from the same options; say so.
+                                        log::info!(
+                                            "Map code from VERA20k {made_by}; this is {this}"
+                                        );
+                                        (
+                                            "VERA:RandomMapExtraCodeOtherVersion",
+                                            "Code read. It is from another VERA20k version, so the map may differ",
+                                        )
+                                    }
+                                }
+                                None => (
+                                    "VERA:RandomMapExtraCodeBad",
+                                    "The clipboard holds no map code",
+                                ),
+                            },
                             None => NO_CLIPBOARD,
                         })
                     }

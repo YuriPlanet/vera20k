@@ -46,11 +46,15 @@ pub fn resolve(names: &[String], art: &IniFile) -> Vec<TechType> {
 /// The foots are Ares' default `[Urban]` lists, kept where the Rules define
 /// the type. The props are the theater's surveyed street furniture
 /// (`[THEATER.PROPS]`) of one cell with body art; the trees are the kinds
-/// authored towns of the theater use.
+/// authored towns of the theater use. The farms and landmarks of the
+/// Countryside and Landmark Extras are the buildings `extras` names
+/// (`RMGMD.INI [Extras] Farms=`, `Landmarks=`).
+#[allow(clippy::too_many_arguments)]
 pub fn resolve_vera_urban(
     rules: &crate::rules::ruleset::RuleSet,
     art: &IniFile,
     tech: &[TechType],
+    extras: &crate::map::rmg::extras::ExtrasSettings,
     theater_ext: &str,
     theater_name: &str,
     seed: u16,
@@ -231,7 +235,7 @@ pub fn resolve_vera_urban(
     // The farm buildings and monuments of the Countryside and Landmark
     // Extras: the named types the Rules define whose body art exists on this
     // theater, the test the town buildings above pass.
-    let named = |names: &[&str]| -> Vec<UrbanStructure> {
+    let named = |names: &[String]| -> Vec<UrbanStructure> {
         names
             .iter()
             .filter_map(|name| {
@@ -263,22 +267,10 @@ pub fn resolve_vera_urban(
         vehicles: feet(&VEHICLES),
         props,
         trees: street_trees(theater_name),
-        farms: named(&FARMS),
-        landmarks: named(&LANDMARKS),
+        farms: named(&extras.farms),
+        landmarks: named(&extras.landmarks),
     }
 }
-
-/// The farm buildings of the Countryside Extra: houses and barns (2x2),
-/// then the one-cell silo, outhouse and water tower.
-const FARMS: [&str; 7] = [
-    "CAFARM01", "CAFRMA", "CABARN02", "CATS01", "CAFARM02", "CAFRMB", "CAWT01",
-];
-
-/// The monuments of the Landmark Extra: none is capturable or a tech
-/// building, and each stands whole as one type.
-const LANDMARKS: [&str; 8] = [
-    "CAWSH12", "CAPARS11", "CAEURO05", "CASTL04", "CAWASH19", "CAWASH14", "CAWASH15", "CAMEX01",
-];
 
 /// The `TREExx` terrain objects authored towns of a theater stand along
 /// their streets (the same survey): temperate kinds, snow-laden ones on Snow
