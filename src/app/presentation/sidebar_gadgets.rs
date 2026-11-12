@@ -56,6 +56,12 @@ pub(crate) fn exit_sell_mode_without_buildings(
 /// The scroll roll moves one row per simulation frame; the view is rebuilt
 /// from the moved row by the idle tick that follows.
 pub(crate) fn update_sidebar_gadget_state(state: &mut AppState) {
+    // A ready tab's completed object is the frame's (`presentation::frame`).
+    let local_owner = preferred_local_owner_name(state);
+    state.match_state.sim_runtime.ensure_frame();
+    let Some(frame) = state.match_state.sim_runtime.frame() else {
+        return;
+    };
     let Some(sim) = state
         .match_state
         .sim_runtime
@@ -78,7 +84,7 @@ pub(crate) fn update_sidebar_gadget_state(state: &mut AppState) {
             .match_state
             .match_presentation
             .sidebar_projection
-            .ready_building_tabs(sim, owner)
+            .ready_building_tabs(sim, frame, owner)
     });
     let (tick, frame) = (sim.session().tick(), sim.session().binary_frame() as i32);
     let presentation = &mut state.match_state.match_presentation;

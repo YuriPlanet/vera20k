@@ -8,9 +8,10 @@ const OWNER: &str = "Americans";
 
 fn frames(sim: &Simulation, rules: &RuleSet, transport: u64, hover: Option<u64>) -> Vec<usize> {
     let hash = sim.state_hash();
+    let frame = crate::app::presentation::frame::PresentationFrame::of_test(sim, rules);
     let result = super::ui_overlays::scale_pip_draws(
         sim,
-        sim.entities().get(transport).unwrap(),
+        frame.object(transport).unwrap(),
         hover,
         Some(OWNER),
         rules,

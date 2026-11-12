@@ -151,6 +151,7 @@ fn emit_with_lighting(
     build_display_effect_instances(
         &DisplayEffectInputs {
             sim,
+            frame: &crate::app::presentation::frame::PresentationFrame::of_test(sim, rules),
             rules,
             camera,
             render_size: [160, 160],

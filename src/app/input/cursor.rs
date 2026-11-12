@@ -85,6 +85,9 @@ impl CursorVisibility {
 /// the cursor ([`crate::app::input::entity_pick::cursor_hover_object`]). Both
 /// walk every object, so a draw reads them once and also hands them to the
 /// hover health bar, the target lines and the placement rings.
+/// Read with the world home and kept for the draws beside a lent tick
+/// (`sim_host::home_answer`).
+#[derive(Clone, Debug, Default)]
 pub(crate) struct CursorTargets {
     pub(crate) selected: Vec<u64>,
     pub(crate) hover: Option<HoverObject>,
@@ -92,15 +95,32 @@ pub(crate) struct CursorTargets {
 
 impl CursorTargets {
     pub(crate) fn read(state: &AppState) -> Self {
-        Self {
-            selected: crate::app::input::dispatch::selected_in_order(state),
-            hover: crate::app::input::entity_pick::cursor_hover_object(state),
-        }
+        crate::app::match_runtime::sim_host::home_answer(
+            &state.match_state.sim_runtime,
+            &state.match_state.input.cursor_targets_seen,
+            || Self {
+                selected: crate::app::input::dispatch::selected_in_order(state),
+                hover: crate::app::input::entity_pick::cursor_hover_object(state),
+            },
+        )
     }
 }
 
-/// The cursor feedback for this frame's `targets`.
+/// The cursor feedback for this frame's `targets`. Its action asks the live
+/// objects, so it is answered with the world home and kept for the draws
+/// beside a lent tick (`sim_host::home_answer`).
 pub(crate) fn current_cursor_feedback_kind(
+    state: &AppState,
+    targets: &CursorTargets,
+) -> Option<CursorFeedbackKind> {
+    crate::app::match_runtime::sim_host::home_answer(
+        &state.match_state.sim_runtime,
+        &state.match_state.input.cursor_feedback_seen,
+        || find_cursor_feedback_kind(state, targets),
+    )
+}
+
+fn find_cursor_feedback_kind(
     state: &AppState,
     targets: &CursorTargets,
 ) -> Option<CursorFeedbackKind> {

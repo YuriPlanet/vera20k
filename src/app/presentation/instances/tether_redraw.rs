@@ -38,8 +38,8 @@ pub(crate) fn assign_tether_redraws(
         let Some(record) = frame.object(object.parent.id) else {
             continue;
         };
-        object.tether_redraws = record.tether.redraws.to_vec();
-        object.drawn_by_tether = record.tether.drawn_by_tether;
+        object.tether_redraws = record.tether_draw.redraws.to_vec();
+        object.drawn_by_tether = record.tether_draw.drawn_by_tether;
     }
 }
 

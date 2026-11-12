@@ -2252,7 +2252,7 @@ impl Simulation {
             // MouseLoad restores Map+68/raw rows before LoadContent67E8CD's
             // hierarchy pass. A user file cannot invent that saved topology
             // from the Cell+4C values which CellLoad has just reset to zero.
-            let zones = self.zone_grid.as_deref().ok_or(
+            let zones = self.zone_grid.as_ref().ok_or(
                 SnapshotRestoreError::MissingMapAuthorityComponent {
                     component: "ZoneGrid",
                 },

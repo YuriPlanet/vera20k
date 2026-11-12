@@ -84,10 +84,9 @@ pub struct MissionCom {
 /// The mission AI counter (`MissionClass+0xC4`), which every techno steps on
 /// every AI visit. VERA-only storage: it is stepped through a shared
 /// reference ([`MissionCom::count_ai_visit`]), so the step needs no mutable
-/// hand-out of the object, which would copy an object a presentation frame
-/// still shares (`util::shared`) on every frame. The value, its save form,
-/// its hash and its comparisons are a plain `u32`'s. A presentation copy
-/// that still shares the object sees later steps; nothing drawn reads it.
+/// hand-out of the object, which would wake a sleeping object and note it in
+/// the touch logs every frame. The value, its save form, its hash and its
+/// comparisons are a plain `u32`'s.
 #[derive(Debug, Default)]
 pub struct AiCounter(std::sync::atomic::AtomicU32);
 

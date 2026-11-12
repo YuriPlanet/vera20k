@@ -38,23 +38,37 @@ pub(super) fn build(
     let Some(viewer) = sim.session().current_house() else {
         return (out, highlights);
     };
-    let graph = sim.planning_draw_graph(
-        viewer,
-        crate::app::input::planning_mode::hover_node(state),
-        state.match_state.input.planning.highlighted_node(),
-    );
+    let Some(frame) = state.match_state.sim_runtime.frame() else {
+        return (out, highlights);
+    };
+    // The captured graph has no hovered or highlighted node: those are
+    // local input, applied here to the nodes it holds.
+    let Some(graph) = frame
+        .scene
+        .planning
+        .as_ref()
+        .filter(|graph| graph.viewer == viewer)
+        .map(|graph| &graph.graph)
+    else {
+        return (out, highlights);
+    };
+    let node = |id: Option<u64>| id.and_then(|id| graph.nodes.iter().find(|node| node.id == id));
+    let hovered = node(crate::app::input::planning_mode::hover_node(state));
+    let highlighted = node(state.match_state.input.planning.highlighted_node());
     let phase = stroke_phase(wall_ms);
     let color = |owner, bright| stroke_rgb(state, sim, &rt.resources.rules, owner, bright);
     // A derived frame-local membership index avoids scanning the whole graph
     // once per badge in large selected groups. It dies with this projection.
-    let highlighted_members: std::collections::HashSet<_> =
-        graph.highlighted_members.iter().copied().collect();
+    let highlighted_members: std::collections::HashSet<_> = highlighted
+        .into_iter()
+        .flat_map(|node| node.members.iter().copied())
+        .collect();
     let badge_white = |actor_id| {
-        if graph.highlighted_node.is_some() {
+        if highlighted.is_some() {
             highlighted_members.contains(&actor_id)
         } else {
-            sim.entities()
-                .get(actor_id)
+            frame
+                .object(actor_id)
                 .is_some_and(|actor| actor.selection.is_selected())
         }
     };
@@ -225,7 +239,10 @@ pub(super) fn build(
     // grown by4 inline); retained AC4BF0 uses the node's8x8 rect
     // (GetSurfaceRect6345A0) grown twice by4 (Inflate6357D0), giving24x24.
     // Both draw three white outlines.
-    for (coord, size) in [(graph.hovered_coord, 16), (graph.highlighted_coord, 24)] {
+    for (coord, size) in [
+        (hovered.map(|node| node.coord), 16),
+        (highlighted.map(|node| node.coord), 24),
+    ] {
         if let Some(coord) = coord {
             let at = project(coord, view);
             for inset in 0..3 {

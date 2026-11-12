@@ -81,7 +81,7 @@ impl StampCells for Vec<ResolvedTerrainCell> {
     }
 }
 
-impl StampCells for crate::util::shared::ChunkedVec<ResolvedTerrainCell> {
+impl StampCells for crate::util::synced::ChunkedVec<ResolvedTerrainCell> {
     fn cell_count(&self) -> usize {
         self.len()
     }

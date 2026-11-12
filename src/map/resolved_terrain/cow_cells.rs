@@ -1,20 +1,18 @@
-//! Copy-on-write cell storage (docs/sim-thread.md, phase 2).
-//!
-//! A published presentation frame shares the live grid's cells in fixed
-//! chunks ([`ChunkedVec`]). A write copies only its own chunk, and only
-//! while a frame still shares it.
+//! Terrain cell storage the presentation copy of the world keeps in step by
+//! copying only the chunks a write changed (docs/sim-thread.md,
+//! [`ChunkedVec`]).
 //!
 //! `CellClass::RecalcAttributes @ 0x0047D2B0` runs whenever an object marks
 //! or leaves a cell, and almost always derives the attributes the cell
 //! already holds. [`CowCells::begin_shadow`] gives that recalc a private copy
 //! of its one cell: reads and writes of that index use the copy, and
 //! [`CowCells::end_shadow`] writes it back only if it differs, so an
-//! unchanged recalc copies nothing.
+//! unchanged recalc marks nothing for the copy to take.
 
 use std::ops::{Index, IndexMut};
 
 use super::ResolvedTerrainCell;
-use crate::util::shared::ChunkedVec;
+use crate::util::synced::ChunkedVec;
 
 #[derive(Debug, Clone)]
 pub(super) struct CowCells {
@@ -101,16 +99,15 @@ impl CowCells {
         }
     }
 
-    /// Whether `other` shares the chunk holding `index` (a published
-    /// frame's copy).
-    #[cfg(test)]
-    pub(super) fn shares_storage_with(&self, other: &Self, index: usize) -> bool {
-        self.cells
-            .shares_chunk_with(&other.cells, index / crate::util::shared::CHUNK)
+    /// Bring `mirror`, the presentation copy, up to these cells.
+    pub(super) fn sync_into(&mut self, mirror: &mut Self) {
+        debug_assert!(self.shadow.is_none(), "a sync inside a recalc");
+        self.cells.sync_into(&mut mirror.cells);
+        mirror.shadow = None;
     }
 }
 
-/// Equal cells, whether or not the storage is shared.
+/// Equal cells.
 impl PartialEq for CowCells {
     fn eq(&self, other: &Self) -> bool {
         self.all() == other.all()
@@ -143,31 +140,46 @@ mod tests {
         )
     }
 
+    /// A copy synced, then changed where `live` was not written, keeps that
+    /// change after the next sync only if `live` left the cell alone.
+    fn kept_after_sync(live: &mut CowCells, index: usize) -> bool {
+        let mut copy = CowCells::default();
+        live.sync_into(&mut copy);
+        copy[index].level = copy[index].level.wrapping_add(7);
+        let marked = copy[index].level;
+        live.sync_into(&mut copy);
+        copy[index].level == marked
+    }
+
     #[test]
-    fn an_unchanged_recalc_keeps_a_published_copy_shared() {
+    fn an_unchanged_recalc_marks_nothing_for_the_copy() {
         let mut live = cells();
-        let published = live.clone();
+        let mut copy = CowCells::default();
+        live.sync_into(&mut copy);
         live.begin_shadow(2);
         let level = live[2].level;
         live[2].level = level.wrapping_add(1);
         live[2].level = level;
         live.end_shadow();
-        assert!(live.shares_storage_with(&published, 2));
+        copy[2].level = 9;
+        live.sync_into(&mut copy);
+        assert_eq!(copy[2].level, 9, "the unchanged chunk was not copied");
     }
 
     #[test]
-    fn a_changed_cell_copies_only_its_chunk() {
+    fn a_changed_cell_reaches_the_copy_with_its_chunk_only() {
         let mut live = cells();
-        let published = live.clone();
+        let mut copy = CowCells::default();
+        live.sync_into(&mut copy);
         live.begin_shadow(1);
         live[1].level = 3;
-        // The recalc reads its own write; other cells read shared storage.
+        // The recalc reads its own write.
         assert_eq!(live.get(1).map(|cell| cell.level), Some(3));
-        assert_eq!(live[0], published[0]);
         live.end_shadow();
-        assert!(!live.shares_storage_with(&published, 1));
-        assert!(live.shares_storage_with(&published, 599));
-        assert_eq!(live[1].level, 3);
-        assert_eq!(published[1].level, super::super::test_flat_cell(1, 0).level);
+        copy[599].level = 9;
+        live.sync_into(&mut copy);
+        assert_eq!(copy[1].level, 3);
+        assert_eq!(copy[599].level, 9, "another chunk was not copied");
+        assert!(kept_after_sync(&mut live, 300));
     }
 }

@@ -143,6 +143,7 @@ fn ordinary_repair_children_reach_the_actual_effect_builder_and_gpu_without_muta
         build_display_effect_instances(
             &DisplayEffectInputs {
                 sim: &sim,
+                frame: &crate::app::presentation::frame::PresentationFrame::of_test(&sim, &rules),
                 rules: &rules,
                 camera: view_camera,
                 render_size: size,

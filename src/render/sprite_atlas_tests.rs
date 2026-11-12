@@ -1243,7 +1243,7 @@ fn infantry_nonempty_shadow_is_uploaded_and_selected_from_the_second_half() {
     let selected = embedded_shp_shadow_piece(
         &atlas,
         rules.object("RAWGI"),
-        world.values().next().unwrap(),
+        &crate::app::presentation::frame::ObjectRecord::of_test(world.values().next().unwrap()),
         None,
         &key,
         body,

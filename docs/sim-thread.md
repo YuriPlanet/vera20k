@@ -127,50 +127,51 @@ Done:
     22.9 ms to 14.5 ms and render time from 10.5 ms to 3.7 ms.
   - The tick is now most of each frame.
 
-### Phase 2: a presentation frame for the hot draw path
+### Phase 2: drawing reads a snapshot, never the live world
 
-`SimHost::lend` keeps a copy of the runtime (`Arc<SimRuntime>`) when the
-simulation thread takes a tick (phase 4), and drawing reads it through
-`SimHost::presentation` until the tick is back and the copy is dropped.
+Drawing reads two things, both owned by the main thread, and shares no
+storage with the world the simulation thread ticks:
 
-A plain copy of the world is too slow: 40–60 ms in a 1v7 skirmish on the
-30-start map, about half of it the terrain cells. The copy therefore shares
-storage with the live world copy-on-write (`util::shared`):
+- **The presentation frame** (`app/presentation/frame.rs`,
+  `PresentationFrame`): one `ObjectRecord` per stored object. A record keeps
+  the object's state under `GameEntity`'s own names, so a drawer reads a
+  record as it read the object, plus what reading it needs more of the world
+  for, answered at capture by the same functions a draw used to call: the
+  local player's view of it (`Seen`), its placement (`Place`), its status
+  strip (`ui_overlays::HudFacts`), its radar facts (`frame_scene`), and the
+  frame-wide parts (anim coordinates, the sidebar's and the sounds' inputs,
+  spotlights, the planning graph). Values that need only the record and the
+  world copy (the Foot draw depth) are computed when an object is drawn.
+  `SimHost::frame` captures it from the home world on its first read after a
+  write, and `SimHost::lend` before a tick leaves.
+- **The world copy** (`SimRuntime::presentation_copy`): the world without
+  its objects. It leaves out the objects (its entity store is
+  `EntityStore::detached`, which panics on a read in debug builds, so a
+  drawer that still reaches for an object shows up in any draw), the zone
+  and path grids, the team script VM and the other state only gameplay
+  reads. Its fog is only the local player's (`FogState::presentation_copy`);
+  its terrain, overlays, smudges, terrain objects, interner and occupation
+  grids are the previous copy brought up to date by copying only the chunks
+  a write changed (`util::synced`); its Dummy cell, ally graph and Main RNG
+  are its own. Release builds take it when a tick is lent; debug builds with
+  every frame, so every test draw reads a lent tick's view.
 
-- `ChunkedVec` (256-element chunks) for per-cell state written in small
-  parts every tick: fog planes and their caches, overlays, smudges and the
-  terrain cells. A write copies only its chunk.
-- `CellMap` strips are one column each, shared the same way.
-- `Shared<T>` for state that rarely changes as a whole: entities (each one
-  separately), the zone grid, the interner, AI script definitions, terrain
-  objects and the terrain's TMP headers and per-cell side arrays. An entity
-  is two such values: the record its turn reads each step, and its `Seldom`
-  part (orders, events, drawing), which a turn that does not write it leaves
-  shared.
-- `DerivedCache` for caches a copy can rebuild; a copy starts empty.
+The app's Main RNG is its own cell from a scenario's install on
+(`Simulation::install_fresh_process_main`); the simulation draws its own.
+Main is outside saves and the hash: only which random voice plays can
+differ from gamemd.
 
-Writers that usually leave a value unchanged compare before they borrow it
-mutably, so an unchanged write copies nothing: the terrain cell recalc
-(`CellClass::RecalcAttributes @ 0x0047D2B0`) and the overlay projection
-work on a one-cell shadow (`cow_cells`), and the zone grid checks a cell's
-class and level before refreshing it.
+Per-frame questions the cursor asks of the live world (its action, hover,
+the ferry preview) are answered with the world home and kept for the draws
+beside a lent tick (`sim_host::home_answer`), one tick late at most.
 
-Measured with `sim-bench`, 1v29 skirmish on the 30-start map, 3,000 ticks,
-447–583 objects, keeping each tick's copy until the next one:
+Still shared, read-only: `SimResources` (the rules, the terrain template, the
+overlay registry), which nothing writes once a match is loaded.
 
-| | mean tick |
-|---|---|
-| before phase 2 | 3.5 ms |
-| phase 2, no frame | 3.7 ms |
-| phase 2, a frame each tick | 7.2 ms (copy 1.5 ms, drop of the previous 1.2 ms) |
-
-`final_hash` is the same in all three. The copy still deep-copies the 30
-houses (~0.3 ms) and the entity store's index (~0.2 ms); the remaining
-tick cost is the chunks and entities a tick really writes.
-
-Follow-ups: fog planes keep one byte per cell per house where gameplay
-needs a few bits; packing them would shrink both the copy and the cache
-footprint.
+Measured (release test build, sim-bench's 20,000-unit march on a loaded
+12-core machine whose tick ran 3.7–5.8x slower than quiet): capturing the
+frame 19–30 ms, bringing the world copy up to date 7–9 ms, the first whole
+copy 46 ms. Not yet within the 2 ms goal at 20,000 objects; see Status.
 
 ### Phase 3: lending the runtime
 
@@ -362,6 +363,38 @@ Residuals:
   brings that pass at once.
 - A pool worker's panic during an inline tick still leaves the main thread
   spinning in rayon, so the tab freezes instead of reporting it.
+
+## Status (render snapshot, phases 2–3)
+
+Done: drawing reads the presentation frame and the world copy only; the
+world the simulation thread ticks shares no storage with them (the read-only
+`SimResources` aside). Entities, the zone grid, fog planes and team script
+definitions are no longer copy-on-write. The app and the simulation draw
+separate Main RNG cells.
+
+Not done:
+
+- **Snapshot cost.** The goal was 2 ms per tick at 20,000 objects. Measured
+  in a release test build on the sim-bench march (12 cores, a loaded
+  machine): frame capture 14.9 ms mean (records 11.2 ms in parallel from
+  46 ms of thread time: placement 13.4, component copies 8.8, pose and
+  entity answers 8.0, local player's view 6.8, radar 6.3, status 1.8,
+  tether 1.0; the scene frame 3.7 ms serial), world copy sync 6.3 ms, frame
+  drop 1.8 ms, first whole copy 40 ms. A record is 1,200 bytes, about 24 MB
+  at 20,000 objects. Next: compute placement and radar values only for
+  drawn objects (as the Foot depth already is), slim the records (the
+  locomotor is cloned whole), parallelize the scene frame, and build the
+  first world copy while a match loads. The estimated floor at 20,000
+  objects is 1.5–2.5 ms.
+- **Tests.** The client lib suite passes but for 195 cases that need retail
+  assets this machine lacks (`Hills.mmx`, `MOVIES01.MIX`, language files)
+  and 7 others: the per-client-read pin (fails on main too), a retail cameo
+  label check, and five fixtures not yet adapted to the frame
+  (`draw_state` fading building: its sensed-observer row needs a frame
+  captured for a sensing player; `tooltips` IFV passenger; radar `minimap`
+  Mirage and two `visibility` cases whose fixtures have no terrain).
+- The core lib suite had not finished when this was committed.
+- **Phase 4** (the simulation thread ticking on its own) is the next phase.
 
 ## Validation
 

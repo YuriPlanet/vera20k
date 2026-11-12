@@ -686,7 +686,7 @@ impl Simulation {
         //correction; their shared Dummy order is preserved.
         let seed = self.house_random_cell_in_zone(house, 0)?;
         let terrain = self.resolved_terrain.as_ref()?;
-        let zones = self.zone_grid.as_deref()?;
+        let zones = self.zone_grid.as_ref()?;
         let native_cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
         let current_cell = (
             i32::from(crate::util::lepton::lepton_to_cell_packed(current.x)),

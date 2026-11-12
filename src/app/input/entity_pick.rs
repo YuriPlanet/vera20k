@@ -149,7 +149,12 @@ impl PickSource for PresentedWorld<'_> {
     }
     fn conceals(&self, entity: &crate::sim::game_entity::GameEntity) -> bool {
         self.translucent_viewer.is_some_and(|viewer| {
-            crate::app::presentation::instances::translucent_fog_conceals(self.sim, viewer, entity)
+            crate::app::presentation::instances::translucent_fog_conceals(
+                self.sim,
+                viewer,
+                &entity.position,
+                entity.owner(),
+            )
         })
     }
     fn owner_is_human_player(&self, owner: InternedId) -> Option<bool> {
@@ -1543,6 +1548,13 @@ mod tests {
         let second = sim
             .spawn_object("VISIBLE", "Player", 20, 20, 0, &rules)
             .unwrap();
+        // The frame's records answer for its local player.
+        let player = sim.interner().get("Player");
+        sim.session_mut_for_test()
+            .set_current_house_for_test(player);
+        let frame = |sim: &Simulation| {
+            crate::app::presentation::frame::PresentationFrame::of_test(sim, &rules)
+        };
         let point = |sim: &Simulation, id| {
             crate::render::locomotor_visual::screen_position(sim.entities().get(id).unwrap())
         };
@@ -1560,10 +1572,9 @@ mod tests {
         );
         assert!(!health_bar_drawable(
             &sim,
-            sim.entities().get(second).unwrap(),
+            frame(&sim).object(second).unwrap(),
             health_hover_target(pick(&sim, second)),
             Some("Player"),
-            Some(&rules),
         ));
         sim.entities_mut_for_test()
             .get_mut(first)
@@ -1573,10 +1584,9 @@ mod tests {
         assert!(
             health_bar_drawable(
                 &sim,
-                sim.entities().get(first).unwrap(),
+                frame(&sim).object(first).unwrap(),
                 health_hover_target(pick(&sim, first)),
                 Some("Player"),
-                Some(&rules),
             ),
             "the lock removes hover, not selected health bars"
         );
@@ -1932,12 +1942,19 @@ mod tests {
             sim.resubmit_entity_display_for_test(id);
         }
         let all: Vec<u64> = cases.iter().map(|case| case.0).collect();
+        let frame = crate::app::presentation::frame::PresentationFrame::of_test(
+            &sim,
+            RuleSet::empty_for_test(),
+        );
         for (id, _, owner, retail, translucent) in cases {
             let entity = sim.entities().get(id).unwrap();
-            assert_eq!(!translucent_fog_conceals(&sim, viewer, entity), translucent);
+            assert_eq!(
+                !translucent_fog_conceals(&sim, viewer, &entity.position, entity.owner()),
+                translucent
+            );
             let screen_selected = tactical_entity_admission(
                 TacticalEntityPurpose::ScreenSelection,
-                entity,
+                frame.object(id).unwrap(),
                 sim.interner().resolve(owner),
                 Some("Americans"),
                 Some(viewer),
@@ -2146,7 +2163,7 @@ mod tests {
             let mut cloak = CloakRuntime::new(0);
             cloak.set_state_for_test(cloak_state);
             entity.cloak = Some(Box::new(cloak));
-            let world = crate::app::presentation::instances::entity_screen_position(&entity);
+            let world = crate::render::locomotor_visual::screen_position(&entity);
             sim.entities_mut_for_test().insert(entity);
             sim.resubmit_entity_display_for_test(1);
             let order = crate::app::presentation::instances::tactical_entity_encounter_order(&sim);

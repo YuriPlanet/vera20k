@@ -2143,14 +2143,16 @@ fn disguise_inputs(
     let sim = &runtime.simulation;
     let draw = if entity.category() == crate::map::entities::EntityCategory::Unit {
         let local = crate::app::input::commands::preferred_local_owner_name(state);
-        let local_id = local.as_deref().and_then(|name| sim.interner().get(name));
-        let mut observer = instances::observer_draw_context(
-            sim,
-            entity,
-            local.as_deref(),
-            local_id,
-            state.rules(),
-        );
+        // The record the draw reads (`presentation::frame`).
+        let frame = state
+            .match_state
+            .sim_runtime
+            .frame()
+            .context("presentation frame absent")?;
+        let entity = frame
+            .object(entity.stable_id())
+            .context("disguised object has no record")?;
+        let mut observer = entity.seen.observer;
         let chosen = instances::drawn_model_id(
             entity,
             sim.interner(),

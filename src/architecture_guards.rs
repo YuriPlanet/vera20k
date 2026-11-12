@@ -1745,8 +1745,8 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         "a generic cell-keyed container; every CellMap is a private field of its owner";
     const COW_CELLS: &str = "the resolved terrain grid's private cell storage (pub(super)); \
                              ResolvedTerrainGrid owns every write to its cells";
-    const SHARED: &str = "generic copy-on-write containers for the presentation frame \
-                          (docs/sim-thread.md); every Shared, DerivedCache and ChunkedVec is a \
+    const SHARED: &str = "generic change-tracking containers the presentation copy syncs from \
+                          (docs/sim-thread.md); every Synced, DerivedCache and ChunkedVec is a \
                           field of its owner";
     const SPARSE: &str = "a generic out-of-line holder for state most objects leave at its \
                           default; every Sparse is a field of its owner and holds an owner struct";
@@ -1819,10 +1819,10 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "emit_and_finish",
             "a producer finishes the fact it just emitted, before the frame tail reads the channel",
         ),
-        ("util/shared.rs", "deref_mut", SHARED),
-        ("util/shared.rs", "get_mut", SHARED),
-        ("util/shared.rs", "iter_mut", SHARED),
-        ("util/shared.rs", "index_mut", SHARED),
+        ("util/synced.rs", "deref_mut", SHARED),
+        ("util/synced.rs", "get_mut", SHARED),
+        ("util/synced.rs", "iter_mut", SHARED),
+        ("util/synced.rs", "index_mut", SHARED),
         ("util/sparse.rs", "deref_mut", SPARSE),
         (
             "util/sync.rs",

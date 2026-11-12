@@ -7,6 +7,7 @@
 //! set (`0x0073D29C..0x0073D2C4`). `AircraftClass::Draw_It` (`0x004144B0`)
 //! draws the main voxel alone.
 use super::*;
+use crate::app::presentation::frame::ObjectRecord;
 use crate::assets::asset_manager::AssetManager;
 use crate::map::source::test_support::TestDirectory;
 use crate::rules::ini_parser::IniFile;
@@ -43,8 +44,9 @@ fn normal_fly_pose_uses_strict_pitch_speed_gate_and_secondary_turn_sign() {
 
     let production_pose = |sim: &Simulation| {
         let entity = sim.entities().get(id).unwrap();
+        let record = ObjectRecord::of_test_sim(sim, &retail.rules, id);
         let (model, body) = unit_body_draw(
-            entity,
+            &record,
             sim.interner(),
             Some(&retail.rules),
             EntityDrawBand::Top,
@@ -62,7 +64,7 @@ fn normal_fly_pose_uses_strict_pitch_speed_gate_and_secondary_turn_sign() {
             .as_ref()
             .and_then(|facing| facing.rotation_direction_at(sim.session().binary_frame()));
         let tilt = body_pose_with_angles(
-            entity,
+            &record,
             EntityDrawBand::Top,
             object.tilt_crash_jumpjet,
             [0.0; 2],
@@ -134,8 +136,9 @@ fn body_draw_against_seed(
 ) -> Result<Option<(String, bool)>, String> {
     let entity = sim.entities().get(id).expect("the object was just built");
     let base_type = sim.interner().resolve(entity.type_ref());
+    let record = ObjectRecord::of_test_sim(sim, rules, id);
     let Some((model, body)) = unit_body_draw(
-        entity,
+        &record,
         sim.interner(),
         Some(rules),
         EntityDrawBand::Ground,
@@ -263,8 +266,9 @@ Turret=yes
     let entity = sim.entities().get(plain).unwrap();
     let frame = sim.session().binary_frame();
     let ground = EntityDrawBand::Ground;
+    let record = ObjectRecord::of_test_sim(&sim, &rules, plain);
     let (_, body) = unit_body_draw(
-        entity,
+        &record,
         sim.interner(),
         Some(&rules),
         ground,
@@ -328,7 +332,13 @@ fn retail_siege_chopper_draws_schd_only_after_deployment_completes() {
         );
         if let Some((model, _)) = expected {
             assert_eq!(
-                unit_animation_frames(sim.entities().get(id).unwrap(), model, 0, &frame_counts).0,
+                unit_animation_frames(
+                    &ObjectRecord::of_test_sim(&sim, rules, id),
+                    model,
+                    0,
+                    &frame_counts
+                )
+                .0,
                 if model == "SCHP" { 1 } else { 0 },
                 "an odd SCHP counter must still draw the sole SCHD HVA frame"
             );
@@ -371,8 +381,12 @@ fn unit_hva_frames_match_native_selected_model_remainders() {
         entity
             .turret_anim_frame
             .set_for_test(row["turret_counter"].as_i64().unwrap() as i32);
-        let (body, turret) =
-            unit_animation_frames(&entity, row["selected"].as_str().unwrap(), 0, &frame_counts);
+        let (body, turret) = unit_animation_frames(
+            &ObjectRecord::of_test(&entity),
+            row["selected"].as_str().unwrap(),
+            0,
+            &frame_counts,
+        );
         assert_eq!(
             body as i32,
             row["body_frame"].as_i64().unwrap() as i32,
@@ -405,7 +419,8 @@ fn unit_hva_frames_match_native_selected_model_remainders() {
         aircraft
             .body_frame_counter
             .set_for_test(row["body_counter"].as_i64().unwrap() as u32);
-        let (body, _) = unit_animation_frames(&aircraft, "SPYP", 0, &frame_counts);
+        let (body, _) =
+            unit_animation_frames(&ObjectRecord::of_test(&aircraft), "SPYP", 0, &frame_counts);
         assert_eq!(
             body as i32,
             row["body_frame"].as_i64().unwrap() as i32,
@@ -552,7 +567,17 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
         let parent = NativeDisplayOrder::from_display(sim.display_layers())
             .object_draw(plane.stable_id(), SpriteEncoding::Voxel)
             .unwrap();
-        samples.push((plane.clone(), band, parent, sim.session().binary_frame()));
+        let record = crate::app::presentation::frame::PresentationFrame::capture(&scene.runtime)
+            .object(plane.stable_id())
+            .cloned()
+            .unwrap();
+        samples.push((
+            plane.clone(),
+            band,
+            parent,
+            sim.session().binary_frame(),
+            record,
+        ));
         if samples.len() == 2 {
             break;
         }
@@ -618,9 +643,9 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
         );
         batch.bind_shroud(&gpu.device, Some(&fog));
         let mut outputs = Vec::new();
-        for (plane, band, parent, binary_frame) in &samples {
+        for (plane, band, parent, binary_frame, record) in &samples {
             let (model, body) = unit_body_draw(
-                plane,
+                record,
                 sim.interner(),
                 Some(rules),
                 *band,
@@ -630,7 +655,7 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
             .unwrap();
             assert_eq!(model, "SPYP");
             assert_eq!(body, BodyDraw::Composite);
-            let (frame, _) = unit_animation_frames(plane, &model, 0, &atlas.frame_counts);
+            let (frame, _) = unit_animation_frames(record, &model, 0, &atlas.frame_counts);
             let original = native["aircraft_draw_frames"]
                 .as_array()
                 .unwrap()
@@ -798,7 +823,7 @@ fn deployed_model_overrides_disguise_no_spawn_alt_and_miner_display_hints() {
     }
     let model = |sim: &Simulation, id| {
         drawn_model_id(
-            sim.entities().get(id).unwrap(),
+            &ObjectRecord::of_test_sim(sim, &rules, id),
             sim.interner(),
             Some(&rules),
             0,
@@ -1021,8 +1046,8 @@ fn retail_mirage_unit_route_matches_original_observer_dispatch() {
             detects_disguise: input["sensor_count"].as_i64().unwrap() > 0,
             ..Default::default()
         };
-        let actor = sim.entities().get(id).unwrap();
-        let model = drawn_model_id(actor, sim.interner(), Some(rules), frame, observer);
+        let actor = ObjectRecord::of_test_sim(&sim, rules, id);
+        let model = drawn_model_id(&actor, sim.interner(), Some(rules), frame, observer);
         let pointer = |field: &str| {
             u64::from_str_radix(row[field].as_str().unwrap().strip_prefix("0x").unwrap(), 16)
                 .unwrap()
@@ -1036,7 +1061,7 @@ fn retail_mirage_unit_route_matches_original_observer_dispatch() {
         };
         assert_eq!(model, expected, "{}", row["name"]);
         let voxel = super::super::helpers::drawn_type_uses_voxel(
-            actor,
+            &actor,
             &model,
             sim.interner(),
             Some(rules),
@@ -1049,7 +1074,7 @@ fn retail_mirage_unit_route_matches_original_observer_dispatch() {
         );
         assert_eq!(
             unit_body_draw(
-                actor,
+                &actor,
                 sim.interner(),
                 Some(rules),
                 EntityDrawBand::Ground,
@@ -1139,8 +1164,14 @@ fn indexed_turret_animation_uses_its_selected_hva_count() {
         (("FV".into(), VxlLayer::Turret, 0), 1),
         (("FV".into(), VxlLayer::Turret, 1), 2),
     ]);
-    assert_eq!(unit_animation_frames(&entity, "FV", 0, &frames), (0, 0));
-    assert_eq!(unit_animation_frames(&entity, "FV", 1, &frames), (0, 1));
+    assert_eq!(
+        unit_animation_frames(&ObjectRecord::of_test(&entity), "FV", 0, &frames),
+        (0, 0)
+    );
+    assert_eq!(
+        unit_animation_frames(&ObjectRecord::of_test(&entity), "FV", 1, &frames),
+        (0, 1)
+    );
 }
 
 /// Phobos `IsControlledByCurrentPlayer_Wrapper` (`0x70EE5D`/`0x70EE70`,

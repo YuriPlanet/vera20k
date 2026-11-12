@@ -15,6 +15,7 @@ fn lines(sim: &Simulation, rules: &RuleSet, planning: bool, time: u32) -> Vec<Sp
         &TargetLineState::default(),
         planning,
         Some(sim),
+        Some(&crate::app::presentation::frame::PresentationFrame::of_test(sim, rules)),
         Some(rules),
         None,
         &HouseColorMap::new(),

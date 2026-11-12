@@ -69,7 +69,7 @@ const AMBIENT_SOUND_TAG: u64 = 1 << 59;
 const CUSTOM_SOUND_TAG: u64 = 1 << 58;
 
 /// The owner of an object's `+0x3C` AmbientSound handle.
-pub(crate) const fn ambient_sound_owner(object: u64) -> u64 {
+pub const fn ambient_sound_owner(object: u64) -> u64 {
     object | AMBIENT_SOUND_TAG
 }
 
@@ -79,7 +79,7 @@ pub(crate) const fn custom_sound_owner(object: u64) -> u64 {
 }
 
 /// The object whose `+0x3C` or `+0x50` handle `owner` names.
-pub(crate) const fn object_sound_object(owner: u64) -> Option<u64> {
+pub const fn object_sound_object(owner: u64) -> Option<u64> {
     if owner & (AMBIENT_SOUND_TAG | CUSTOM_SOUND_TAG) != 0 {
         Some(owner & !(AMBIENT_SOUND_TAG | CUSTOM_SOUND_TAG))
     } else {

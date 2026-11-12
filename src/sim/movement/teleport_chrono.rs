@@ -820,7 +820,7 @@ impl Simulation {
                 let bridge = cells.flags(cells.lookup((target.0 as i16, target.1 as i16)))
                     & CELL_FLAG_BRIDGE
                     != 0;
-                let zone = self.zone_grid.as_deref().and_then(|zones| {
+                let zone = self.zone_grid.as_ref().and_then(|zones| {
                     zones.get_zone_id_native(
                         terrain,
                         (current.0 as u16, current.1 as u16),

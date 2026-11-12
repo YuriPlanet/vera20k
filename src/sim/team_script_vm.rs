@@ -761,8 +761,7 @@ impl MemberTeams {
                 .is_none_or(|word| word & (1 << (*id % 64)) == 0)
         {
             debug_assert!(
-                !crate::sim::touch_log::live_read_check_enabled()
-                    || !self.teams.contains_key(id),
+                !crate::sim::touch_log::live_read_check_enabled() || !self.teams.contains_key(id),
                 "member {id} is in a team its bit does not list"
             );
             return None;
@@ -820,17 +819,17 @@ impl<'de> Deserialize<'de> for MemberTeams {
 /// state.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TeamScriptVm {
-    scripts: crate::util::shared::Shared<BTreeMap<InternedId, TeamScriptDefinition>>,
+    scripts: BTreeMap<InternedId, TeamScriptDefinition>,
     #[serde(default)]
     script_order: Vec<InternedId>,
-    task_forces: crate::util::shared::Shared<BTreeMap<InternedId, TeamTaskForceDefinition>>,
+    task_forces: BTreeMap<InternedId, TeamTaskForceDefinition>,
     #[serde(default)]
     task_force_order: Vec<InternedId>,
     team_types: BTreeMap<InternedId, TeamTypeDefinition>,
     #[serde(default)]
     team_type_ini: BTreeMap<InternedId, TeamTypeIniMetadata>,
     #[serde(default)]
-    ai_triggers: crate::util::shared::Shared<BTreeMap<InternedId, TeamAiTriggerDefinition>>,
+    ai_triggers: BTreeMap<InternedId, TeamAiTriggerDefinition>,
     #[serde(default)]
     ai_trigger_order: Vec<InternedId>,
     /// Live teams by id, which increases with construction, so key order is

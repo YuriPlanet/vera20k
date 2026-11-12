@@ -505,7 +505,7 @@ pub struct TerrainObjectStore {
     cell_grid: CellGrid,
     animations: BTreeMap<u64, TerrainAnimationState>,
     /// Shared copy-on-write with presentation frames (docs/sim-thread.md).
-    objects: crate::util::shared::Shared<BTreeMap<u64, TerrainObjectState>>,
+    objects: crate::util::synced::Synced<BTreeMap<u64, TerrainObjectState>>,
     cells: BTreeMap<(u16, u16), u64>,
     tiberium_spawning_cells: BTreeSet<(u16, u16)>,
     #[serde(skip)]
@@ -1355,6 +1355,31 @@ pub(crate) fn damage_terrain_object_at_cell(
     };
     let _ = area_state.restore_into(store, raw_occupation);
     result
+}
+
+impl TerrainObjectStore {
+    /// Bring `mirror`, the presentation copy of the world's terrain objects,
+    /// up to this store (docs/sim-thread.md).
+    pub(crate) fn sync_into(&mut self, mirror: &mut Self) {
+        let Self {
+            cell_grid,
+            animations,
+            objects,
+            cells,
+            tiberium_spawning_cells,
+            touched,
+            membership_epoch,
+        } = self;
+        mirror.cell_grid.clone_from(cell_grid);
+        mirror.animations.clone_from(animations);
+        objects.sync_into(&mut mirror.objects);
+        mirror.cells.clone_from(cells);
+        mirror
+            .tiberium_spawning_cells
+            .clone_from(tiberium_spawning_cells);
+        mirror.touched = touched.clone();
+        mirror.membership_epoch = *membership_epoch;
+    }
 }
 
 #[cfg(test)]

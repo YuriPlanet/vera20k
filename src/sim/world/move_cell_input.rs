@@ -429,7 +429,7 @@ impl Simulation {
             false,
         )?;
         let (Some(zones), Some(bounds), Some(height)) = (
-            self.zone_grid.as_deref(),
+            self.zone_grid.as_ref(),
             self.playfield_bounds,
             self.playfield_size_height(),
         ) else {
@@ -1096,7 +1096,7 @@ impl Simulation {
             .resolved_terrain
             .as_ref()
             .ok_or("Move click needs map cells")?;
-        let zones = self.zone_grid.as_deref().ok_or("Move click needs zones")?;
+        let zones = self.zone_grid.as_ref().ok_or("Move click needs zones")?;
         let bounds = self
             .playfield_bounds
             .ok_or("Move click needs the playfield")?;

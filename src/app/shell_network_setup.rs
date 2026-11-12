@@ -743,10 +743,7 @@ impl App {
         let agreed_seed = if dialog.wol() {
             wol::resident_seed(state)
         } else {
-            let main = crate::app::state::process_main_draws(
-                state.match_state.sim_runtime.runtime(),
-                &state.frontend.frontend_main_rng,
-            );
+            let main = crate::app::state::process_main_draws(&state.frontend.frontend_main_rng);
             initialize_host_seed(&main, &mut state.frontend.legacy_crt_rng)
         };
         state

@@ -1109,7 +1109,7 @@ impl Simulation {
     ) -> bool {
         use crate::sim::cell_rect::{CellPassabilityArgs, CellRef, check_cell_passability};
         let (Some(terrain), Some(zones)) =
-            (self.resolved_terrain.as_ref(), self.zone_grid.as_deref())
+            (self.resolved_terrain.as_ref(), self.zone_grid.as_ref())
         else {
             return false;
         };

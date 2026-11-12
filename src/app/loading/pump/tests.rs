@@ -581,7 +581,7 @@ fn begin_loading_plays_loading_theme_and_polls_theme_through_the_lease() {
     let assets = audio_service_asset_manager(&process_assets, Some(session))
         .expect("leased manager serves the Theme poll");
     let frontend = crate::sim::rng::MainRng::new(1);
-    let mut main = crate::app::state::process_main_draws(None, &frontend);
+    let mut main = crate::app::state::process_main_draws(&frontend);
     audio.service_audio(600, false, Some(assets), None, &mut main);
     assert!(
         !audio.service_clock.admit(600),

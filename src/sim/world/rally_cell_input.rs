@@ -53,7 +53,7 @@ impl Simulation {
             .ok_or("rally search lacks terrain")?;
         let zones = self
             .zone_grid
-            .as_deref()
+            .as_ref()
             .ok_or("rally input lacks native zones")?;
         let bounds = self
             .playfield_bounds

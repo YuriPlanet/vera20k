@@ -610,6 +610,9 @@ impl SlotScene {
         let sim = self.scene.sim();
         let rules = &self.scene.runtime.resources.rules;
         let building = sim.entities().get(self.plant).unwrap();
+        let frame =
+            crate::app::presentation::frame::PresentationFrame::capture(&self.scene.runtime);
+        let record = frame.object(self.plant).unwrap();
         let viewer_id = sim.session().current_house();
         let viewer = viewer_id.map(|id| sim.interner().resolve(id));
         let mut observer = super::super::helpers::observer_draw_context(
@@ -622,7 +625,7 @@ impl SlotScene {
         observer.drawn_voxel = Some(false);
         let color = HouseColorIndex(0); // add_human_house's launch color.
         let material = DrawState::for_building_slot_anims(
-            building,
+            record,
             sim.session().binary_frame(),
             super::super::units::house_color_to_remap_row(color),
             observer,
@@ -655,8 +658,9 @@ impl SlotScene {
             light,
             cell,
             sim,
+            &frame,
             viewer_id,
-            building,
+            record,
             &|_| true,
             anim_word,
             crate::render::batch::DepthAxis::NONE.origin_y,

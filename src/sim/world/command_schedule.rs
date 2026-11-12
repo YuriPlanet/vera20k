@@ -938,7 +938,7 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) {
         let (Some(terrain), Some(zones)) =
-            (self.resolved_terrain.as_ref(), self.zone_grid.as_deref())
+            (self.resolved_terrain.as_ref(), self.zone_grid.as_ref())
         else {
             return;
         };
@@ -1061,8 +1061,7 @@ impl Simulation {
             };
             let jumpjet = self.substrate.entities.get(id).is_some_and(|entity| {
                 entity.locomotor.as_ref().is_some_and(|locomotor| {
-                    locomotor.active_kind()
-                        == crate::rules::locomotor_type::LocomotorKind::Jumpjet
+                    locomotor.active_kind() == crate::rules::locomotor_type::LocomotorKind::Jumpjet
                 })
             });
             if !jumpjet {
@@ -1084,8 +1083,12 @@ impl Simulation {
                 }
                 cells.sort_unstable();
                 let free = cells.into_iter().find_map(|(_, dy, dx)| {
-                    let x = i16::try_from(i32::from(from.0) + dx).ok().filter(|x| *x >= 0)?;
-                    let y = i16::try_from(i32::from(from.1) + dy).ok().filter(|y| *y >= 0)?;
+                    let x = i16::try_from(i32::from(from.0) + dx)
+                        .ok()
+                        .filter(|x| *x >= 0)?;
+                    let y = i16::try_from(i32::from(from.1) + dy)
+                        .ok()
+                        .filter(|y| *y >= 0)?;
                     let clear = self
                         .mover_can_enter(
                             id,

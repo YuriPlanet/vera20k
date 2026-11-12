@@ -1227,6 +1227,49 @@ impl OccupancyGrid {
     }
 }
 
+impl OccupancyGrid {
+    /// Bring `mirror`, the presentation copy of the world's grid, up to
+    /// this one (docs/sim-thread.md).
+    pub(crate) fn sync_into(&mut self, mirror: &mut Self) {
+        let Self {
+            cells,
+            spare_list: _,
+            #[cfg(any(test, feature = "test-support"))]
+            generation,
+        } = self;
+        cells.sync_into(&mut mirror.cells);
+        #[cfg(any(test, feature = "test-support"))]
+        {
+            mirror.generation = *generation;
+        }
+    }
+}
+
+impl RawCellOccupationGrid {
+    /// Bring `mirror`, the presentation copy, up to this grid.
+    pub(crate) fn sync_into(&mut self, mirror: &mut Self) {
+        let Self { cells, dummy } = self;
+        cells.sync_into(&mut mirror.cells);
+        mirror.dummy = dummy.clone();
+    }
+}
+
+impl HiddenOccupationGrid {
+    /// Bring `mirror`, the presentation copy, up to this grid.
+    pub(crate) fn sync_into(&mut self, mirror: &mut Self) {
+        let Self { cells } = self;
+        cells.sync_into(&mut mirror.cells);
+    }
+}
+
+impl AirSlotGrid {
+    /// Bring `mirror`, the presentation copy, up to this grid.
+    pub(crate) fn sync_into(&mut self, mirror: &mut Self) {
+        let Self { cells } = self;
+        cells.sync_into(&mut mirror.cells);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
