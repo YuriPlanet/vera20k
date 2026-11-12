@@ -97,7 +97,7 @@ pub(crate) fn still_frame(
     let simulation = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|runtime| &runtime.simulation);
     let still = !capture
         && modal.is_none()

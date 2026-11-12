@@ -349,7 +349,7 @@ fn gsi_04_12_interaction_order_entry_threads_exact_blocker_counts() {
     }));
     sim.set_playfield_size_height_for_test(Some(4));
     sim.install_resolved_terrain_for_new_map(terrain);
-    sim.zone_grid = Some(zone_grid);
+    sim.zone_grid = Some(zone_grid.into());
     let engineer_id = sim
         .spawn_object("ENGINEER", "Americans", 1, 0, 0, &rules)
         .expect("engineer should spawn");

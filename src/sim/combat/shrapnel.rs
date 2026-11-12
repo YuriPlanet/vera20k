@@ -190,7 +190,9 @@ pub(super) fn emit_projectile_shrapnel(
             // 0x46A5B2 and 0x46AA27) store the shrapnel weapon in the child's
             // WeaponType (+0x130) before its Fire.
             .with_installed_weapon(
-                crate::rules::ARES_ENABLED.then(|| world.interner.intern(&child_weapon.id)),
+                rules
+                    .ares()
+                    .then(|| world.interner.intern(&child_weapon.id)),
             ),
             speed_leptons_per_frame: child_weapon.speed.clamp(1, i32::from(u16::MAX)) as u16,
             velocity: crate::sim::projectile::launch::shrapnel_launch_velocity(

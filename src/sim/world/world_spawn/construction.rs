@@ -176,8 +176,8 @@ impl Simulation {
         // InitManagers6F3F40 classifies the owner after construction; it does
         // not manufacture either discovery-history byte. The launch-owned
         // current house is distinct from the notification/viewer binding.
-        ge.discovery
-            .classify_owner(session.current_house() == Some(ge.owner()));
+        let owner_is_playing = session.current_house() == Some(ge.owner());
+        ge.discovery.classify_owner(owner_is_playing);
 
         #[cfg(feature = "ares")]
         ge.initialize_factory_country(houses.get(&ge.owner()).and_then(|house| {
@@ -280,7 +280,7 @@ impl Simulation {
         // Unit constructor735678 and InitFromType74689B initialize the empty
         // Gunner through the shared selector, including its charge-type gate.
         if category == EntityCategory::Unit && obj.gunner {
-            ge.set_gunner_weapon(0, obj);
+            ge.set_gunner_weapon(0, obj, rules.ares());
         }
         ge.initialize_voxel_recoil(obj.recoil);
         if category == EntityCategory::Structure && obj.gate {
@@ -347,7 +347,7 @@ impl Simulation {
         if let Some(kind) = miner_kind_for_object(obj) {
             let mcfg = MinerConfig::default();
             let storage = obj.storage.max(0) as u16;
-            ge.miner = Some(Miner::new(kind, &mcfg, storage));
+            ge.miner = Some(Box::new(Miner::new(kind, &mcfg, storage)));
         }
         // Cargo+114 is independent of Building occupants+684 (Ctor43B8DC).
         if obj.passengers > 0 {
@@ -358,7 +358,8 @@ impl Simulation {
 
         // TechnoClass::Init_Managers — manager-owned children are committed
         // after this parent enters the limbo store and before its Unlimbo.
-        ge.capture_manager = crate::sim::capture_manager::init_capture_manager(obj, rules);
+        ge.capture_manager =
+            crate::sim::capture_manager::init_capture_manager(obj, rules).map(Box::new);
         ge.temporal = crate::sim::temporal::init_temporal(obj, rules);
         ge.spawn_manager = crate::sim::spawn_manager::init_spawn_manager(
             obj,
@@ -506,7 +507,8 @@ fn stamp_building_cell_profile(
         return;
     };
     ge.building_light.stamp(obj.has_spotlight);
-    ge.type_facts.stamp(ge.category(), obj);
+    let category = ge.category();
+    ge.type_facts.stamp(category, obj);
 }
 
 /// `Crushable=` and `DeployedCrushable=`, copied when the object is built for
@@ -680,9 +682,11 @@ pub struct TypeFacts {
     foundation: crate::rules::foundation::Foundation,
     /// A building's hidden-object counter inputs
     /// (`ObjectType::hidden_occupancy`), so cell-list exit can reverse its
-    /// contribution.
+    /// contribution. Boxed: every object carries these facts, and only a
+    /// building has a profile.
     #[serde(default)]
-    building_hidden_occupancy: Option<crate::rules::object_type::BuildingHiddenOccupancyProfile>,
+    building_hidden_occupancy:
+        Option<Box<crate::rules::object_type::BuildingHiddenOccupancyProfile>>,
     /// `[AI] AIBaseSpacing=` for a building that runs the House base
     /// reservation writer; `None` is the native BuildingType gate.
     #[serde(default)]
@@ -719,8 +723,7 @@ impl TypeFacts {
         Self {
             spawned_non_missile_aircraft: false,
             foundation: default_foundation(),
-            building_hidden_occupancy: (category == EntityCategory::Structure)
-                .then(crate::rules::object_type::BuildingHiddenOccupancyProfile::default),
+            building_hidden_occupancy: (category == EntityCategory::Structure).then(Box::default),
             base_reservation_spacing: None,
             build_const_eligible: false,
             base_plan_type_index: default_base_plan_type_index(),
@@ -736,7 +739,7 @@ impl TypeFacts {
             category == EntityCategory::Aircraft && obj.spawned && !obj.missile_spawn;
         self.foundation = obj.foundation.clone();
         if category == EntityCategory::Structure {
-            self.building_hidden_occupancy = Some(obj.hidden_occupancy);
+            self.building_hidden_occupancy = Some(Box::new(obj.hidden_occupancy));
             self.base_reservation_spacing = obj.base_reservation_spacing;
             self.build_const_eligible = obj.build_const_eligible;
             self.base_plan_type_index = obj.base_plan_type_index;
@@ -758,7 +761,7 @@ impl TypeFacts {
     pub(crate) fn building_hidden_occupancy(
         &self,
     ) -> Option<crate::rules::object_type::BuildingHiddenOccupancyProfile> {
-        self.building_hidden_occupancy
+        self.building_hidden_occupancy.as_deref().copied()
     }
 
     /// `[AI] AIBaseSpacing=` for a base-reserving building.
@@ -798,7 +801,7 @@ impl TypeFacts {
         &mut self,
         value: Option<crate::rules::object_type::BuildingHiddenOccupancyProfile>,
     ) {
-        self.building_hidden_occupancy = value;
+        self.building_hidden_occupancy = value.map(Box::new);
     }
 
     /// Install a fixture's `base_reservation_spacing`.

@@ -645,7 +645,7 @@ fn retail_damage_scene(route: &Value) -> Option<RetailDamageScene> {
         &rules,
         Some(&map.ini),
     );
-    sim.install_team_ai_registry(&teams, &rules).unwrap();
+    sim.install_team_ai_registry(&teams, &rules);
     let eva =
         EvaRegistry::from_ini(&IniFile::from_bytes(assets.get_ref("EVAMD.INI").unwrap()).unwrap());
     sim.initialize_trigger_definitions(&excerpt, &teams, Some(&eva), None, None);
@@ -671,7 +671,8 @@ fn retail_damage_scene(route: &Value) -> Option<RetailDamageScene> {
             &[],
             Some((32, 32)),
             Some(bounds),
-        ),
+        )
+        .into(),
     );
     sim.install_fixture_path_grid(Some(&path));
     sim.install_resolved_terrain_for_new_map(terrain);

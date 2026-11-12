@@ -64,7 +64,9 @@ pub(crate) struct TimerLine {
 /// (`scenario_left`, None while its start is -1), each Super of the list in
 /// its order, then each house with blackout time left, in `HouseClass::Array`
 /// order. In GameMode 0 (`campaign`) a held Super whose timer has all of
-/// `GetRechargeTime` left takes no line (`0x006D49D1..0x006D4A06`).
+/// `GetRechargeTime` left takes no line (`0x006D49D1..0x006D4A06`). With
+/// Ares, `supers` holds only the Supers whose `SW.TimerVisibility` admits
+/// the player (hook `0x6D49D1`, filtered by the caller).
 pub(crate) fn timer_lines(
     scenario_left: Option<i32>,
     supers: &[SuperTimerView],
@@ -337,11 +339,14 @@ impl TimerDock {
     }
 }
 
-/// The cursor in the battlefield's own pixels, where the dock keeps its hit
-/// areas.
+/// The cursor in the pixels of the timers' box, where the dock keeps its hit
+/// areas: the battlefield's own pixels in the original interface.
 pub(crate) fn cursor_in_view(state: &AppState) -> (i32, i32) {
     let (x, y) = state.match_state.input.cursor_px();
-    let (left, top) = crate::app::input::camera::tactical_origin_px(state);
+    let [left, top, _, _] = crate::app::presentation::field_parts::rect(
+        state,
+        crate::ui::field_layout::FieldPart::Timers,
+    );
     (x - left, y - top)
 }
 
@@ -391,16 +396,28 @@ pub(crate) fn build_super_timer_instances(
         .match_state
         .match_presentation
         .super_timer_next_flip_ms = None;
-    if state.frontend.screen != GameScreen::InGame {
+    use crate::app::presentation::field_parts;
+    use crate::ui::field_layout::FieldPart;
+    // A layout that leaves the timers out draws none and keeps no hit area.
+    if state.frontend.screen != GameScreen::InGame || !field_parts::shows(state, FieldPart::Timers)
+    {
         return (Vec::new(), Vec::new());
     }
-    let (Some(runtime), Some(rules)) = (state.match_state.sim_runtime.as_ref(), state.rules())
+    let (Some(runtime), Some(rules)) =
+        (state.match_state.sim_runtime.presentation(), state.rules())
     else {
         return (Vec::new(), Vec::new());
     };
     let sim = &runtime.simulation;
     let frame = sim.session().binary_frame();
     let supers = crate::sim::superweapon::super_timer_views(sim, rules);
+    // Ares hook 0x6D49D1 (10035A80) asks SW.TimerVisibility at the head of
+    // each Super's line test; a hidden Super takes no line.
+    #[cfg(feature = "ares")]
+    let supers: Vec<_> = supers
+        .into_iter()
+        .filter(|view| crate::sim::superweapon::ares_timer_visible(sim, rules, *view))
+        .collect();
     let blackouts = sim.houses().order().iter().map(|&house| {
         let left = sim
             .power_states()
@@ -460,10 +477,12 @@ pub(crate) fn build_super_timer_instances(
         .collect();
     let blink_rgb = blink_rgb(rules);
     let now_ms = crate::app::input::tooltips::now_ms(state);
-    let (view_w, view_h) = crate::app::input::camera::tactical_viewport_size(state);
+    // The dock stacks up from the bottom right of its box, the battlefield
+    // in the original interface, and works in the box's own pixels.
+    let [_, _, view_w, view_h] = field_parts::rect(state, FieldPart::Timers);
     // Screen-space lanes add back the world camera the UI shader subtracts,
-    // and the battlefield's corner: the dock works in the view's own pixels.
-    let camera = crate::app::input::camera::battlefield_lane_camera(state);
+    // and the box's corner.
+    let camera = field_parts::lane_camera(state, FieldPart::Timers);
 
     let font = &state.renderer.bit_font;
     let local = sim.session().current_house();

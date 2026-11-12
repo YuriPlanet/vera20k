@@ -120,7 +120,7 @@ fn retail_all02_mind_control_attack_starts_the_authored_stallone_script() {
     sim.set_playfield_size_height_for_test(Some(map.header.height as i32));
     assert!(sim.rebuild_dynamic_navigation(&rules));
     sim.session.install_waypoints(&map.waypoints);
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     sim.initialize_trigger_definitions(
         &map,
         &registry,

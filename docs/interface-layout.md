@@ -2,12 +2,15 @@
 
 A mod can lay out the match screen with a file named `veraui.ini`: put the sidebar on
 any edge of the screen, put the command bar on top or leave it out, move the sidebar's
-parts, leave parts out, and change how many columns of build pictures it has and how
-big it is. Without the file the game looks exactly as the original does.
+parts, leave parts out, change how many columns of build pictures it has and how big it
+is, place the messages, the timers, the banner and the tooltips, and add buttons and
+text of your own. Without the file the game looks exactly as the original does.
 
-This is part of a larger plan. Later versions will let a layout add buttons and text
-and place the messages and timers on the battlefield. The keys on this page keep their
-meaning when that comes, so a layout you write now keeps working.
+A player can also [drag the parts in the game](#a-players-own-layout) and keep where
+they put them, on top of any mod's layout.
+
+The keys on this page keep their meaning in later versions, so a layout you write now
+keeps working.
 
 ## Where the file goes
 
@@ -30,9 +33,11 @@ three layouts, all with the original pictures:
 - The Allies get a mirrored screen: the sidebar on the left, the command bar on top,
   Repair swapped with Sell, Diplomacy with Options, and the tabs from right to left.
 - The Soviets get the sidebar along the bottom of the screen, with its panels side by
-  side.
+  side, and of the layout's own two buttons, the match clock and a second grid of
+  build pictures that always shows the infantry.
 - Yuri gets a wider sidebar with three columns of build pictures and no top buttons,
-  which needs wider pictures of your own to look finished.
+  which needs wider pictures of your own to look finished. His timers sit at the top
+  right of the battlefield and his tooltips stay in a corner of the screen.
 
 ## A small example
 
@@ -245,6 +250,273 @@ Parts=Repair,Tabs
 - Leaving a part out only takes it off the screen. The hotkeys for Repair, Sell, the
   tabs and Options still work, and the radar still goes on and off with its sounds.
 
+## On the battlefield
+
+The battlefield holds four pieces of its own:
+
+| Part | What it is | Where it sits |
+| --- | --- | --- |
+| `Messages` | The lines of text at the top left: chat, EVA and mission text | Starts at the top-left corner of its box. Lines are as wide as the box |
+| `Timers` | The superweapon and mission timers | Stacks up from the bottom-right corner of its box |
+| `Banner` | The picture or text that says you won or lost | In the middle of its box |
+| `Powers` | [Phobos](phobos.md)' column of superweapon buttons, when a mod turns it on | At the battlefield's left edge |
+
+`Messages`, `Timers` and `Banner` each have a box inside the battlefield. In the
+original the box is the whole battlefield. These keys move and size it:
+
+| Key | Meaning | Original |
+| --- | --- | --- |
+| `Hold` | The corner or edge of the battlefield the box is measured from: `TopLeft`, `Top`, `TopRight`, `Left`, `Middle`, `Right`, `BottomLeft`, `Bottom` or `BottomRight` | `TopLeft` |
+| `X`, `Y` | How far in from there the box starts | 0, 0 |
+| `Width`, `Height` | The box's size. `Rest` is what is left of the battlefield | `Rest` |
+
+These numbers are screen pixels. The Sidebar size option doesn't scale these pieces.
+
+This gives the timers a box 120 tall at the top of the battlefield, 8 pixels down:
+
+```ini
+[Mine.Timers]
+Hold=TopRight
+Y=8
+Height=120
+```
+
+The timers stack up from the box's bottom-right corner, so the first one sits 128
+pixels down at the right edge and the next ones go above it.
+
+This starts the messages 180 pixels in, clear of a sidebar that floats on the left:
+
+```ini
+[Mine.Messages]
+X=180
+```
+
+`Powers` has no box. Its `X` and `Y` move the column right and down from its own place.
+
+The battlefield's `Parts=` says which of the four it has:
+
+```ini
+[Mine.Field]
+Parts=Messages,Timers,Banner,Powers
+```
+
+A piece that isn't in the list isn't drawn. The game still plays its sounds, and the
+chat keys still work.
+
+### Tooltips
+
+`Tooltip` is the small box of text at the cursor. It belongs to the whole screen, so it
+is in no `Parts=` list and can't be left out.
+
+| Key | Meaning | Original |
+| --- | --- | --- |
+| `Hold` | `Cursor`, or a corner or edge of the screen to keep every tooltip in: the same nine words as above | `Cursor` |
+| `X`, `Y` | With `Cursor`: how far right and down from the cursor. With a corner: how far in from it | 12, 16 |
+
+```ini
+[Mine.Tooltip]
+Hold=BottomLeft
+X=8
+Y=8
+```
+
+## Adding buttons and text
+
+A layout can add parts of its own, of two kinds: a button that gives a command when it
+is clicked, and a text that shows a value.
+
+Give the new part a name, put the name in the `Parts=` of `Side` or of `Field`, and
+give it a section with `Type=`:
+
+```ini
+[Mine.Side]
+Parts=Credits,Top,Radar,Middle,Cameos,Power,StopAll
+
+[Mine.StopAll]
+Type=Button
+Command=StopObject
+Label=Stop
+X=10
+Y=300
+
+[Mine.Field]
+Parts=Messages,Timers,Banner,Powers,Clock
+
+[Mine.Clock]
+Type=Text
+Value=Time
+Hold=TopRight
+X=6
+Y=6
+```
+
+This puts a Stop button in the sidebar and the match clock in the top-right corner of
+the battlefield.
+
+| Key | Meaning |
+| --- | --- |
+| `Type` | `Button` or `Text`. `Row`, `Column` and `CameoGrid` are below |
+| `Command` | For a button: what a click does. See [Commands](#commands) |
+| `Label` | For a button without a picture: the words on it. The name of a line in the game's string table shows that line's text. Without `Label` the button shows its command's name |
+| `Art` | For a button: its picture, an SHP file like `mybutton.shp`. Frame 0 is the button and frame 1 the button held down. It uses the sidebar's palette (`sidebar.pal`), as the command bar's buttons do |
+| `Value` | For a text: what it shows. See [Values](#values) |
+| `Hold` | The corner or edge of `Side` or `Field` the part is measured from: the nine words of [On the battlefield](#on-the-battlefield). `TopLeft` if you leave it out |
+| `X`, `Y` | How far in from there the part sits |
+| `Width`, `Height` | The part's size. Left out, it is as big as its words or its picture. A picture is never stretched |
+
+- In `Side` the numbers are sidebar pixels and the part scales with the Sidebar size
+  option. In `Field` they are screen pixels.
+- An added part is drawn over the original parts. Words are in the colour of the
+  side's text. A button without a picture is a framed box with its label in it, and a
+  text on the battlefield stands on black, like the timers.
+- Put a button's picture file in your mod's folder, or name one of the game's own, like
+  `button06.shp`. If the file isn't found the button shows its label instead.
+- A part with a section but in no `Parts=` list isn't shown.
+- A new part needs a name of its own: not `Money`, `Radar` or another original part's.
+
+### Rows and columns
+
+A `Row` or a `Column` holds buttons and texts and places them one after another, so
+they need no `X` and `Y` of their own:
+
+```ini
+[Mine.Field]
+Parts=Messages,Timers,Banner,Powers,Orders
+
+[Mine.Orders]
+Type=Row
+Hold=Bottom
+Y=4
+Gap=2
+Parts=StopAll,GuardAll,Spread
+
+[Mine.StopAll]
+Type=Button
+Command=Stop
+Art=button08.shp
+
+[Mine.GuardAll]
+Type=Button
+Command=Guard
+Art=button06.shp
+
+[Mine.Spread]
+Type=Button
+Command=ScatterObject
+Label=Scatter
+```
+
+This puts three buttons side by side, in the middle of the battlefield's bottom edge.
+
+| Key | Meaning |
+| --- | --- |
+| `Type` | `Row` places its parts from left to right, `Column` from top to bottom |
+| `Parts` | The buttons and texts it holds, in order |
+| `Gap` | The pixels between one part and the next. 0 if you leave it out |
+| `Hold`, `X`, `Y` | Where the row or column sits in `Side` or `Field`, as for a button |
+| `Width` on a row, `Height` on a column | Starts a new line when the next part would pass it |
+
+- A part goes in one list only: the row's or column's, not also `Side`'s or `Field`'s.
+- Inside a row or column a part's own `Hold`, `X` and `Y` aren't used. `Width` and
+  `Height` still size it.
+- A row or column can't hold another row or column yet.
+
+With a row you can build a command bar of your own. Leave the original out with
+`Parts=Field,Side` on the layout, and use the bar's own pictures: `button00.shp` to
+`button10.shp` are `Team01`, `Team02`, `Team03`, `TypeSelect`, `Deploy`, `AttackMove`,
+`Guard`, `Beacon`, `Stop`, `PlanningMode` and `Cheer`.
+
+### More grids of build pictures
+
+A `CameoGrid` shows one tab's build pictures in the sidebar, beside the sidebar's own
+grid:
+
+```ini
+[Mine.Side]
+Parts=Credits,Top,Radar,Middle,Cameos,Power,Troops
+
+[Mine.Troops]
+Type=CameoGrid
+Tab=Infantry
+Columns=3
+Rows=2
+X=336
+Y=1
+```
+
+| Key | Meaning |
+| --- | --- |
+| `Tab` | Whose build pictures it shows: `Building`, `Defense`, `Infantry` or `Vehicle` |
+| `Columns` | How many pictures are in a row, 1 to 8. The sidebar's own number if you leave it out |
+| `Rows` | How many rows it shows, 1 to 60. 2 if you leave it out |
+| `Hold`, `X`, `Y` | Where its first picture sits in `Side`, as for a button |
+
+- It works like the sidebar's own grid: click to build, right-click to hold or cancel,
+  and the same tooltips, clocks and Ready labels.
+- The mouse wheel over the grid scrolls it, one row a notch. It has no scroll buttons.
+- It goes in `Side` only, and it has no background of its own: the pictures draw over
+  whatever is there.
+- Its pictures are spaced as `[Cameos]` says (`ColumnWidth`, `RowHeight`).
+- To show all four tabs at once, add a grid for each. You can then leave `Cameos` out
+  of `Side` and `Tabs` out of `Middle`.
+
+### Commands
+
+A button gives a command the game already has, as if you pressed its key:
+
+- Any name the keyboard file (`keyboardmd.ini`) binds a key to: `StopObject`,
+  `GuardObject`, `DeployObject`, `ScatterObject`, `ToggleRepair`, `ToggleSell`,
+  `CenterBase`, `Options`, `PlaceBeacon`, `TeamSelect_1` to `TeamSelect_10`,
+  `TeamCreate_1` to `TeamCreate_10`, `StructureTab`, `InfantryTab` and the rest. They
+  are the commands on the game's keyboard options page.
+- A command bar button's name from `uimd.ini`: `Team01`, `Team02`, `Team03`,
+  `TypeSelect`, `Deploy`, `AttackMove`, `Guard`, `Beacon`, `Stop`, `PlanningMode` or
+  `Cheer`. The button then does what that bar button does.
+
+Commands that only work while a key is held, like `CameraUp`, do nothing from a button.
+
+### Values
+
+| Value | What it shows |
+| --- | --- |
+| `Credits` | Your money, counting as the sidebar's number does |
+| `Power` | The power your base makes |
+| `Drain` | The power your base uses |
+| `Name` | Your player name |
+| `Time` | How long the match has run |
+| `Kills` | How many units and buildings you have destroyed |
+| `Losses` | How many you have lost |
+
+## A player's own layout
+
+A player can move the parts in a match without writing a file.
+
+1. In a match, press the **Edit Layout** key: Ctrl+Alt+E, unless you changed it on the
+   keyboard options page. Every part that can move gets an outline and its name.
+2. Drag a part with the left mouse button. It follows the cursor.
+3. Press the key again to finish. Until then the mouse only moves parts.
+
+What can be dragged: the sidebar's `Credits`, `Top`, `Radar`, `Middle`, `Cameos` and
+`Power`; the `Messages`, `Timers` and `Banner` on the battlefield, each by a small
+handle where it sits; and every button, text, row, column and grid of build pictures a
+layout added.
+
+The game keeps what you moved in a `veraui.ini` of your own, in the
+[VERA20k folder](modding.md#the-vera20k-folder). It is the same kind of file as a
+mod's, so you can also write it by hand, with any key on this page.
+
+- Your file is laid over the mod's. It changes only the keys it writes; everything
+  else stays as the mod has it.
+- A side the mod gives a layout keeps that layout, and your changes go under that
+  layout's name: `[Low.Radar]` for a mod's layout called `Low`. With another mod, or
+  without one, those changes simply aren't used.
+- A side the mod leaves as the original gets a layout of your own, named `Own` and the
+  side: `[OwnGDI.Radar]`.
+- To undo a change, delete its section from your file. To undo everything, delete the
+  file.
+- Putting the sidebar or the command bar on another edge isn't done by dragging:
+  write `Hold=` in your file.
+
 ## Not yet
 
 These keys belong to the format, but this version can't change them. You can leave them
@@ -252,18 +524,18 @@ out or write the original value. Any other value is skipped, and the game tells 
 
 | Key | What it is for | Original value |
 | --- | --- | --- |
-| `Type` | The kind of part: `Battlefield`, `Panel`, `Radar`, `CameoGrid`, `Tabs`, `PowerBar`, `Button` or `Text` | The part's own kind |
-| `Hold` | The edge or corner of its parent a part is measured from, for every part but `Side` and `Bar` | `TopLeft`. `Top` for `Money` |
-| `Width`, `Height` | A part's size, for every part but `Side`. `Rest` means what is left | `Width=Rest` and `Height=32` for `Bar`, `Rest` for both on `Field`, `Height=Rest` for `Cameos` |
-| `Art` | The pictures a part draws | None yet: replace the picture files instead |
+| `Type` on an original part, or a new part of an original kind | The kind of part: `Battlefield`, `Panel`, `Radar`, `Tabs` or `PowerBar`. A layout can only add a `Button`, a `Text`, a `Row`, a `Column` or a `CameoGrid` | The part's own kind |
+| `Hold` | The edge or corner of its parent a part is measured from, for the sidebar's own parts and `Field` | `TopLeft`. `Top` for `Money` |
+| `Width`, `Height` | A part's size, for the sidebar's own parts, `Bar` and `Field`. `Rest` means what is left | `Width=Rest` and `Height=32` for `Bar`, `Rest` for both on `Field`, `Height=Rest` for `Cameos` |
+| `Art` on an original part | The pictures an original part draws | None yet: replace the picture files instead |
 | `CellWidth`, `CellHeight` | The size of one build picture | 60, 48 |
-| `Command` | What a button does | None yet |
-| `Value` | What a text part shows | None yet |
+| `Command`, `Value` on an original part | A new command for an original button, or a new value for the money number | The part's own |
 
 The three big parts hold on to their edges: they have no `X` or `Y`. The command bar
 can't stand on the left or the right, and its buttons can't be changed here yet. A
-layout also can't add a part: a section for a part that isn't in the tables above is
-skipped.
+layout can add [buttons, text, rows, columns and grids of build
+pictures](#adding-buttons-and-text) but no other kind of part yet, and a section that
+is neither an original part nor one of those is skipped.
 
 ## If you make a mistake
 
@@ -275,6 +547,7 @@ A mistake in the file never stops the game.
 | A value that isn't a whole number | Skips it and keeps the original |
 | A number that is far too big or too small | Uses the nearest number it allows |
 | A `Parts=` list with a name that is no part, or a part held somewhere else | Skips that name and keeps the rest of the list |
+| A button with a `Command=` the game doesn't have, or a text with a `Value=` it doesn't show | Leaves that part out |
 | A layout named in `[Layouts]` that the file doesn't have | Keeps the original interface for that side |
 | A `Version=` newer than the game knows | Keeps the original interface for that side |
 
@@ -291,5 +564,5 @@ In a build with [Phobos](phobos.md), a side's
 [`Sidebar.GDIPositions=`](phobos-sidebar-gdi.md) still picks whether the side starts
 from the Allied or the Soviet numbers. The layout's numbers then go on top.
 
-Phobos' own column of superweapon buttons stays at the left edge of the screen. With
-the sidebar on the left the two overlap; a later version lets a layout place it.
+Phobos' own column of superweapon buttons sits at the battlefield's left edge, beside
+a sidebar on the left. A layout moves it with [`Powers`](#on-the-battlefield).

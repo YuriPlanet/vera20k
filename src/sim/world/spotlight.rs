@@ -5,9 +5,14 @@
 //! RecalcArcPositions436A40 and the plain Destructor435B50 have no call, jump
 //! or data reference in the exe, so the game never runs them.
 //! Independent ObjectClass child of Building+600. The global8B4190 vector
-//! retains construction order; D8 is assigned from its constructor index and
-//! never recomputed after removal. No RNG or timer writes. Parent Limbo deletes
-//! immediately; an orphan's AI uses ObjectUnInit5F65F0/deferred destruction.
+//! retains construction order; D8 is its constructor index's parity
+//! (435B0F..435B3F), never recomputed after removal. No RNG or timer writes.
+//! Native parent Limbo (Building445D75..445D81, which the building destructor
+//! reaches at 43BD6E) calls the light's vt+0xF8, ObjectUnInit5F65F0 (VT slot
+//! 7E3BC8): expiry broadcast, Limbo437030, Object+90 cleared and a deferred
+//! delete, so the light stays in 8B4190 until that frame's drain (725C70)
+//! runs 4370C0; an orphan's AI (4368E1) retires the same way. gamemd deletes
+//! a light directly only at scenario teardown (5345A2).
 use super::display_layers::DisplayLayer;
 use super::{Simulation, UninitContext};
 use crate::map::entities::EntityCategory;
@@ -226,7 +231,7 @@ impl Simulation {
         if !light.alive
             || light.mode == 0
             || !parent.lifecycle.object_alive()
-            || (parent.category() != EntityCategory::Structure && !cfg!(feature = "ares"))
+            || (parent.category() != EntityCategory::Structure && !rules.ares())
             || (parent.category() == EntityCategory::Structure
                 && self.building_operational_state(parent.stable_id(), rules) != Some(true))
             || viewer.is_some_and(|viewer| self.fog.is_object_fogged(viewer, parent.stable_id()))
@@ -360,8 +365,7 @@ impl Simulation {
     /// HasSpotlight type (BuildingLightClass::Constructor @ 0x00435820).
     pub(crate) fn construct_spotlight(&mut self, parent_id: u64, rules: &RuleSet) {
         let Some(parent) = self.substrate.entities.get(parent_id).filter(|e| {
-            (e.category() == EntityCategory::Structure
-                || (cfg!(feature = "ares") && e.category().is_foot()))
+            (e.category() == EntityCategory::Structure || (rules.ares() && e.category().is_foot()))
                 && self
                     .entity_object_type(e, rules)
                     .map_or(e.building_light.spotlight_capable(), |o| o.has_spotlight)
@@ -424,6 +428,38 @@ impl Simulation {
         // Limbo @ 0x00437030 is `conceal_spotlight_logic`.
         self.register_spotlight_logic(id);
     }
+    /// BuildingClass::Limbo @ 0x00445D75..0x00445D81, in its not-yet-in-Limbo
+    /// block (0x004458C6): the light's vt+0xF8, ObjectClass::UnInit @
+    /// 0x005F65F0. The expiry broadcast clears Building+0x600
+    /// (BuildingClass::PointerExpired @ 0x0044E93A); the light leaves Display
+    /// and Logic, dies and keeps its 8B4190 slot until the drain deletes it.
+    /// A Foot's light is Ares' own and keeps its direct delete. So does a
+    /// building's in an Ares build: its hook 0x441163 skips the stock
+    /// construction that stores Building+0x600 and Ares owns the light, so
+    /// whether this stock arm still runs there is not established (Ares'
+    /// 1004EDE0 was not read). RESIDUAL for Ares builds only: the light is
+    /// deleted at once, which decides the sweep direction of a light
+    /// constructed before that frame's drain.
+    pub(super) fn uninit_spotlight_for_parent_limbo(
+        &mut self,
+        parent: u64,
+        context: UninitContext<'_>,
+    ) {
+        let Some(entity) = self.substrate.entities.get(parent) else {
+            return;
+        };
+        match entity.building_light.light() {
+            Some(id)
+                if entity.category() == EntityCategory::Structure && !context.rules().ares() =>
+            {
+                self.uninit_with_context(id, context)
+            }
+            Some(_) => self.destroy_spotlight_for_parent(parent, context),
+            None => {}
+        }
+    }
+    /// The direct delete of a parent's light: Ares' Deactivate and type
+    /// conversion, and a parent destroyed without its Limbo.
     pub(crate) fn destroy_spotlight_for_parent(&mut self, parent: u64, context: UninitContext<'_>) {
         if let Some(id) = self
             .substrate
@@ -435,8 +471,10 @@ impl Simulation {
         }
     }
     /// BuildingLightClass::ScalarDeletingDestructor @ 0x004370C0 (it inlines
-    /// the unreferenced Destructor @ 0x00435B50): Limbo and Logic unregister,
-    /// removal from the 8B4190 vector, then ObjectClass's destructor.
+    /// the unreferenced Destructor @ 0x00435B50): Limbo and Logic unregister
+    /// (nothing for a light UnInit already limboed), removal from the 8B4190
+    /// vector, then ObjectClass's destructor. The drain calls it for a dead
+    /// queued light (0x00725D7A).
     pub(super) fn destroy_spotlight(&mut self, id: u64, context: UninitContext<'_>) {
         let Some(parent) = self.substrate.spotlights.get(id).map(|s| s.parent) else {
             return;
@@ -668,7 +706,7 @@ impl Simulation {
         let scan = (light.mode == 1 || lost_target)
             && self.object_has_trigger_tag(parent_id)
             && (self.building_operational_state(parent_id, rules) == Some(true)
-                || (cfg!(feature = "ares") && parent.category().is_foot()));
+                || (rules.ares() && parent.category().is_foot()));
         let coord = light.coord;
         self.substrate.spotlights.objects.insert(id, light);
         if lost_target {
@@ -711,11 +749,12 @@ impl Simulation {
 
 impl crate::sim::world::ObjectSubstrate {
     /// BuildingLightClass::PointerExpired @ 0x00436A00 for every light.
-    pub(super) fn spotlights_pointer_expired(&mut self, id: u64, removed: bool) {
+    /// `ares` is [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
+    pub(super) fn spotlights_pointer_expired(&mut self, id: u64, removed: bool, ares: bool) {
         //436A00 clears the target for either control. Ares1004EBC0 at
         //436A25 skips only the parent clear on DetachAll(false), allowing
         //the beam to reappear after its parent uncloaks. Real removal clears it.
-        let clear_parent = removed || !cfg!(feature = "ares");
+        let clear_parent = removed || !ares;
         for light in self.spotlights.values_mut() {
             if clear_parent && light.parent == Some(id) {
                 light.parent = None;

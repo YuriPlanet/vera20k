@@ -40,12 +40,14 @@ impl Simulation {
 fn has_stealth_ability(
     entity: &crate::sim::game_entity::GameEntity,
     object: &crate::rules::object_type::ObjectType,
+    ares: bool,
 ) -> bool {
     entity
         .stealth_ability
         .active(crate::sim::cloak_disguise::type_seeds_stealth(
             entity.category(),
             object,
+            ares,
         ))
         || entity.phobos_cloakable()
 }
@@ -59,9 +61,10 @@ fn has_stealth_ability(
 pub(crate) fn ares_foot_is_cloakable(
     entity: &crate::sim::game_entity::GameEntity,
     object: &crate::rules::object_type::ObjectType,
+    ares: bool,
 ) -> Option<bool> {
     Some(
-        has_stealth_ability(entity, object)
+        has_stealth_ability(entity, object, ares)
             && !(object.cloak_stop && crate::sim::movement::motion_query::is_moving(entity)?),
     )
 }
@@ -89,7 +92,7 @@ fn stock_cloak_tick_facts(
     let is_building = entity.category() == EntityCategory::Structure;
     let object = sim.interner.object_type(entity.type_ref(), rules)?;
     let rank_cloak = has_weapon_ability(entity.veterancy.rank_kind(), object, Ability::Cloak);
-    let intrinsic_cloak = has_stealth_ability(entity, object);
+    let intrinsic_cloak = has_stealth_ability(entity, object, rules.ares());
     // vt+0x1D4 / vt+0x1D8 (`0x0070C5B0` / `0x0070C5C0`, reading
     // `TechnoClass+0x270`/`+0x271`): a Chrono teleport or a Temporal warp.
     let chrono_active = entity.is_warped_out() || entity.is_warping_in();
@@ -102,7 +105,7 @@ fn stock_cloak_tick_facts(
     let is_cloakable = if is_building {
         intrinsic_cloak
     } else {
-        ares_foot_is_cloakable(entity, object)?
+        ares_foot_is_cloakable(entity, object, rules.ares())?
     };
     #[cfg(not(feature = "ares"))]
     let is_cloakable = intrinsic_cloak
@@ -140,7 +143,7 @@ fn stock_cloak_tick_facts(
     let driver_allows_self_cloak = !entity.driver_killed();
     #[cfg(not(feature = "ares"))]
     let driver_allows_self_cloak = true;
-    let active_cloak = if crate::rules::ARES_ENABLED {
+    let active_cloak = if rules.ares() {
         // ShouldNotCloak10043A97 falls back to the generator-cell test at
         //10043B04 when driverless; it does not reject generator cloak.
         (is_cloakable || rank_cloak)
@@ -159,14 +162,14 @@ fn stock_cloak_tick_facts(
             > 0;
     #[cfg(not(feature = "ares"))]
     let sonar_active = false;
-    let ares_admission = !crate::rules::ARES_ENABLED
+    let ares_admission = !rules.ares()
         || (object.cloak_allowed()
             && entity.parachute_animation().is_none()
             && !emp_active
             && !paralyzed
             && !chrono_active
             && !sonar_active);
-    let state_zero_head_allows = if crate::rules::ARES_ENABLED {
+    let state_zero_head_allows = if rules.ares() {
         ares_admission && active_cloak
     } else {
         is_cloakable && !emp_active && !paralyzed && !chrono_active || rank_cloak
@@ -217,7 +220,7 @@ fn stock_cloak_tick_facts(
         // 3. ROF rearm countdown at +0x2EC/+0x2F4. Preserve native lazy order:
         // it rejects before the retained-target weapon/range query.
         // Ares CloakAllowed10043990 asks recloak before weapon rearm.
-        && (!crate::rules::ARES_ENABLED || entity.cloak.as_ref().is_some_and(|cloak| cloak.recloak_delay().expired(current_frame)))
+        && (!rules.ares() || entity.cloak.as_ref().is_some_and(|cloak| cloak.recloak_delay().expired(current_frame)))
         && entity.rearm_timer.timer().expired(current_frame)
         // 4. `Target(+0x2B4) != 0 && CanFireAtTarget(vt+0x3AC)`.
         //    6FBEF4..6FBF01 calls the canonical selected-weapon/InRange owner
@@ -241,7 +244,7 @@ fn stock_cloak_tick_facts(
         && !(entity.lift.source().is_some() && entity.lift.swap_active())
         // 8. `GetHeight() < 1`. Ares CloakAllowed10043990 has no height
         //    gate; the passive arm above applies CloakHeight instead.
-        && (crate::rules::ARES_ENABLED
+        && (rules.ares()
             || crate::sim::movement::air_movement::current_fly_height(entity, sim.resolved_terrain.as_ref()) < 1)
         // `IsReadyToCloak_Wrapper`: a ready object still refuses while any
         // active effect forces a decloak.
@@ -258,7 +261,7 @@ fn stock_cloak_tick_facts(
     // nor CloakingTick's head reads the Unit deployment flags.
     // The `|| +0x3D2` disjunct is the raw stealth byte;
     // Type seed and crate grant both survive moving with CloakStop.
-    let should_uncloak = if crate::rules::ARES_ENABLED {
+    let should_uncloak = if rules.ares() {
         !ares_admission || !(active_cloak || cloaked_by_own_house)
     } else {
         if ((is_cloakable || intrinsic_cloak) && !emp_active && !paralyzed && !chrono_active)
@@ -893,7 +896,7 @@ fn original_health_ratio_corpus_populates_cloak_tick_facts() {
             5,
             true,
         );
-        entity.cloak = Some(crate::sim::cloak_disguise::CloakRuntime::new(0));
+        entity.cloak = Some(Box::new(crate::sim::cloak_disguise::CloakRuntime::new(0)));
         sim.substrate.entities.insert(entity);
         let facts = stock_cloak_tick_facts(&sim, 1, &rules, None).expect("cloakable unit facts");
         assert_eq!(
@@ -901,6 +904,35 @@ fn original_health_ratio_corpus_populates_cloak_tick_facts() {
             "{row:?}"
         );
     }
+}
+
+/// Whether [`tick_stock_cloak_producer`] calls the cloak virtual for
+/// `entity`: it can cloak, by its type, a granted ability, its rank or a
+/// Phobos stat, or a transition is still running. Native calls CloakingTick
+/// even after a temporary ability disappears, so the clock keeps going until
+/// its uncloak transition finishes.
+pub(crate) fn cloak_producer_ticks(
+    entity: &crate::sim::game_entity::GameEntity,
+    object: &crate::rules::object_type::ObjectType,
+    ares: bool,
+) -> bool {
+    entity
+        .stealth_ability
+        .active(crate::sim::cloak_disguise::type_seeds_stealth(
+            entity.category(),
+            object,
+            ares,
+        ))
+        || has_weapon_ability(
+            rank_from_u16(entity.veterancy.rank()),
+            object,
+            Ability::Cloak,
+        )
+        || entity
+            .cloak
+            .as_ref()
+            .is_some_and(|cloak| cloak.state() != 0)
+        || entity.phobos_cloakable()
 }
 
 /// The cloak virtual (vt+0x410): `TechnoClass::CloakingTick @ 0x006FB740`
@@ -914,23 +946,10 @@ pub(super) fn tick_stock_cloak_producer(
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) {
-    let Some((category, type_ref, veterancy, stealth_ability, active_transition, phobos_cloakable)) =
-        sim.substrate.entities.get(id).map(|entity| {
-            (
-                entity.category(),
-                entity.type_ref(),
-                entity.veterancy.rank(),
-                entity.stealth_ability,
-                entity
-                    .cloak
-                    .as_ref()
-                    .is_some_and(|cloak| cloak.state() != 0),
-                entity.phobos_cloakable(),
-            )
-        })
-    else {
+    let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
+    let category = entity.category();
     if !matches!(
         category,
         EntityCategory::Unit
@@ -940,18 +959,10 @@ pub(super) fn tick_stock_cloak_producer(
     ) {
         return;
     }
-    let Some(object) = sim.interner.object_type(type_ref, rules) else {
+    let Some(object) = sim.interner.object_type(entity.type_ref(), rules) else {
         return;
     };
-    let rank_cloak = has_weapon_ability(rank_from_u16(veterancy), object, Ability::Cloak);
-    // Native calls CloakingTick even after a temporary ability disappears.
-    // Keep the existing clock alive until its uncloak transition finishes.
-    if !stealth_ability.active(crate::sim::cloak_disguise::type_seeds_stealth(
-        category, object,
-    )) && !rank_cloak
-        && !active_transition
-        && !phobos_cloakable
-    {
+    if !cloak_producer_ticks(entity, object, rules.ares()) {
         return;
     }
 

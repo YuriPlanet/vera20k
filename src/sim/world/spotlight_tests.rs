@@ -36,7 +36,8 @@ fn overflowed_authored_spotlight_motion_keeps_its_last_pose_and_cleanup() {
         assert_eq!(sim.substrate.spotlights.get(id).unwrap().coord, before);
         assert!(sim.building_spotlight(id, None, &rules).is_some());
         // Invalid authored motion must not bypass ordinary orphan cleanup.
-        sim.substrate.spotlights_pointer_expired(p, true);
+        sim.substrate
+            .spotlights_pointer_expired(p, true, crate::rules::ARES_BUILD);
         sim.visit_spotlight(id, &rules, UninitContext::new(&rules, None));
         assert!(
             sim.substrate
@@ -395,6 +396,8 @@ fn spotlight_cone_geometry_matches_original_before_projection() {
     }
 }
 
+// An Ares build keeps the direct delete (`uninit_spotlight_for_parent_limbo`).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn spotlight_real_building_unlimbo_registers_the_child_and_limbo_cleans_both_owners() {
     use crate::sim::superweapon::chronosphere_tests::{place, world_with};
@@ -415,7 +418,25 @@ fn spotlight_real_building_unlimbo_registers_the_child_and_limbo_cleans_both_own
         order.iter().position(|&x| x == id).unwrap() < order.iter().position(|&x| x == p).unwrap()
     );
     sim.uninit_with_context(p, UninitContext::new(&rules, None));
-    assert!(!sim.substrate.spotlights.contains_key(id));
+    // BuildingClass::Limbo @ 0x00445D81 UnInits the light (0x005F65F0): it
+    // is dead, out of Logic and Display and queued, and Building+0x600 is
+    // clear (0x0044E93A), but it keeps its 8B4190 slot until the drain.
+    let light = sim
+        .substrate
+        .spotlights
+        .get(id)
+        .expect("deleted at the drain");
+    assert!(!light.alive && !light.in_logic_vector);
+    assert!(!sim.substrate.logic.as_slice().contains(&id));
+    assert!(!sim.display_layers().ordered_ids().any(|&x| x == id));
+    assert!(sim.substrate.spotlights.order.contains(&id));
+    assert!(
+        sim.substrate
+            .pending_delete
+            .object_tickets()
+            .any(|i| i == id)
+    );
+    assert!(sim.building_spotlight(id, None, &rules).is_none());
     assert_eq!(
         sim.substrate
             .entities
@@ -426,6 +447,22 @@ fn spotlight_real_building_unlimbo_registers_the_child_and_limbo_cleans_both_own
         None
     );
     sim.debug_assert_logic_membership_consistent();
+    // A light constructed before the drain takes vector index 1, so its
+    // +0xD8 sweep direction is set (Constructor @ 0x00435B0F..0x00435B3F).
+    let q = place(&mut sim, &rules, "LIGHT", (30, 30), 0, false, false);
+    let second = sim
+        .substrate
+        .entities
+        .get(q)
+        .unwrap()
+        .building_light
+        .light()
+        .unwrap();
+    assert!(sim.substrate.spotlights.get(second).unwrap().increasing);
+    sim.process_pending_delete();
+    assert!(!sim.substrate.spotlights.contains_key(id));
+    assert_eq!(sim.substrate.spotlights.order, [second]);
+    assert!(sim.substrate.spotlights.get(second).unwrap().alive);
 }
 #[test]
 fn spotlight_tracking_selects_first_nearest_enemy_and_expiry_clears_the_pointer() {

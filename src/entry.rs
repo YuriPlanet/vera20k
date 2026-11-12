@@ -59,7 +59,7 @@ pub fn log_banner(log_path: Option<&Path>) {
         std::env::consts::OS,
         std::env::consts::ARCH,
     );
-    log::info!("Ares support compiled in: {}", crate::rules::ARES_ENABLED);
+    log::info!("Ares support compiled in: {}", crate::rules::ARES_BUILD);
     log::info!(
         "Phobos support compiled in: {}",
         crate::rules::PHOBOS_ENABLED
@@ -245,6 +245,8 @@ fn run_with(
         Ok(result) => result?,
         Err(panic) => {
             app.save_replay_after_panic();
+            // resume_unwind skips the hook: a worker's panic gets its box here.
+            crate::app::system_dialog::report_reraised_panic(&*panic);
             std::panic::resume_unwind(panic);
         }
     }

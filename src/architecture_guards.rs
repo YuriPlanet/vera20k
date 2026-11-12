@@ -127,6 +127,8 @@ fn raw_ini_walks_have_pinned_production_callers() {
                 ("app/persistence/profile_file.rs", 1),
                 // `ini-get --reader raw` and the presence report.
                 ("asset_tools/verb_ini.rs", 1),
+                // A random map's `.yrm` export copies its sections as stored.
+                ("map/map_export.rs", 1),
                 // `[Colors]` entries copied into the processed registry.
                 ("rules/native_processing.rs", 1),
             ],
@@ -314,6 +316,10 @@ fn engine_platform_and_process_reads_have_pinned_files() {
                 // Switches that only remove debug assertions.
                 "util/debug_checks.rs",
                 "sim/world/master_frame.rs",
+                // The idle-sleep switch for fault reports: sleeping leaves
+                // results unchanged, and the hash and saves read a sleeper as
+                // settled.
+                "sim/world/idle_sleep.rs",
                 // Retail probes that movement_bridge_retail_tests.rs includes
                 // by `#[path]`, which the test-gate scan cannot see.
                 "sim/movement/bridge_restamp_retail_probe.rs",
@@ -396,6 +402,8 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/combat/aircraft_release.rs", 1),
                 ("sim/combat/world_fire.rs", 1),
                 ("sim/combat/world_receiver.rs", 1),
+                // Campaign Money crates pay PlayerPtr (0x004824B0): mode 0 only.
+                ("sim/crates/pickup.rs", 1),
                 ("sim/flashing.rs", 1),
                 ("sim/house_diplomacy.rs", 1),
                 ("sim/miner/ore_scan.rs", 1),
@@ -471,6 +479,9 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/combat/parasite.rs", 2),
                 ("sim/combat/techno_death.rs", 1),
                 ("sim/combat/world_receiver.rs", 2),
+                // Campaign Money crates (0x004824A7): mode 0 only, where it
+                // reads the House's own control flags.
+                ("sim/crates/pickup.rs", 1),
                 ("sim/docking/hospital.rs", 1),
                 ("sim/flashing.rs", 1),
                 ("sim/infantry.rs", 1),
@@ -1366,7 +1377,7 @@ const ROOTS: &[(&str, &str)] = &[
 /// owner: a struct whose fields are all private, so other modules change its
 /// state only through its operations. A raw container, primitive, enum or
 /// open struct in a root slot would let any module write that state directly.
-/// `Option`, `Box`, `Arc` and `Rc` wrappers are looked through.
+/// `Option`, `Box`, `Arc`, `Rc` and `Sparse` wrappers are looked through.
 #[test]
 fn composition_root_slots_are_owner_types() {
     // Root slots that are not owner structs, each with its reason.
@@ -1458,6 +1469,7 @@ fn slot_type_scan_reads_wrappers_tuples_and_visibility() {
         .map(|(name, fields)| (name, vec![fields]))
         .collect();
     assert!(owner_type_verdict(&structs, "Option<C>").is_ok());
+    assert!(owner_type_verdict(&structs, "Sparse<crate::x::C>").is_ok());
     assert!(owner_type_verdict(&structs, "crate::x::B").is_err());
     assert!(owner_type_verdict(&structs, "BTreeMap<u8, C>").is_err());
     assert!(owner_type_verdict(&structs, "SomeEnum").is_err());
@@ -1499,13 +1511,13 @@ fn owner_type_verdict(
     }
 }
 
-/// The type a slot names, through `Option`/`Box`/`Arc`/`Rc` and paths.
+/// The type a slot names, through `Option`/`Box`/`Arc`/`Rc`/`Sparse` and paths.
 fn slot_base_type(ty: &str) -> &str {
     let mut ty = ty.trim();
     loop {
         let (path, generics) = ty.find('<').map_or((ty, ""), |at| ty.split_at(at));
         let last = path.rsplit("::").next().unwrap_or(path).trim();
-        if ["Option", "Box", "Arc", "Rc"].contains(&last)
+        if ["Option", "Box", "Arc", "Rc", "Sparse"].contains(&last)
             && generics.starts_with('<')
             && generics.ends_with('>')
         {
@@ -1731,9 +1743,19 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         "a command's payload bytes under construction, which the simulation decodes";
     const CELL_MAP: &str =
         "a generic cell-keyed container; every CellMap is a private field of its owner";
+    const COW_CELLS: &str = "the resolved terrain grid's private cell storage (pub(super)); \
+                             ResolvedTerrainGrid owns every write to its cells";
+    const SHARED: &str = "generic copy-on-write containers for the presentation frame \
+                          (docs/sim-thread.md); every Shared, DerivedCache and ChunkedVec is a \
+                          field of its owner";
+    const SPARSE: &str = "a generic out-of-line holder for state most objects leave at its \
+                          default; every Sparse is a field of its owner and holds an owner struct";
     const LASER: &str = "LaserDraw 0x0054FE60 returns the new laser for its caller's postprocessing \
                          (FireAt 0x006FF50A..0x006FF571); the caller finishes its own frame fact";
     const PINNED_HANDOUTS: &[(&str, &str, &str)] = &[
+        ("map/resolved_terrain/cow_cells.rs", "get_mut", COW_CELLS),
+        ("map/resolved_terrain/cow_cells.rs", "iter_mut", COW_CELLS),
+        ("map/resolved_terrain/cow_cells.rs", "index_mut", COW_CELLS),
         ("map/rmg/grid.rs", "get_mut", RMG),
         ("map/rmg/grid.rs", "ref_cell_mut", RMG),
         ("map/rmg/grid.rs", "cell_native_mut", RMG),
@@ -1757,6 +1779,13 @@ fn mutable_handouts_and_setters_are_owner_operations() {
              entries, and fixtures reach it through art_entry_mut_for_test",
         ),
         ("sim/command.rs", "payload_mut", PAYLOAD),
+        (
+            "sim/game_entity.rs",
+            "deref_mut",
+            "the object record's seldom part is the same record stored apart \
+             (docs/sim-thread.md); its fields keep their visibility and owning modules, \
+             so the deref opens nothing that was closed",
+        ),
         ("sim/cell_map.rs", "get_mut", CELL_MAP),
         ("sim/cell_map.rs", "get_or_insert_with", CELL_MAP),
         ("sim/cell_map.rs", "values_mut", CELL_MAP),
@@ -1780,9 +1809,25 @@ fn mutable_handouts_and_setters_are_owner_operations() {
              invalidates navigation history",
         ),
         (
+            "sim/runtime.rs",
+            "resources_mut",
+            "SimRuntime's bound resources for a write; SimResources is the slot's own type, \
+             shared only with a presentation frame the host drops first (docs/sim-thread.md)",
+        ),
+        (
             "sim/world/frame_channel.rs",
             "emit_and_finish",
             "a producer finishes the fact it just emitted, before the frame tail reads the channel",
+        ),
+        ("util/shared.rs", "deref_mut", SHARED),
+        ("util/shared.rs", "get_mut", SHARED),
+        ("util/shared.rs", "iter_mut", SHARED),
+        ("util/shared.rs", "index_mut", SHARED),
+        ("util/sparse.rs", "deref_mut", SPARSE),
+        (
+            "util/sync.rs",
+            "get_mut",
+            "the threaded browser build's stand-in for OnceLock::get_mut, on a cell held exclusively",
         ),
     ];
     // (file, method, reason): `set`/`set_*` methods whose body stores one

@@ -196,11 +196,17 @@ pub(super) fn shell_content_fallback_rect(layout: &SkirmishShellLayout) -> RectP
     )
 }
 
+/// VERA: how bright Choose Map draws its background art, so list text
+/// reads over it. gamemd draws it at full brightness, as the saved-seed
+/// browser on the same art still does.
+pub(super) const CHOOSE_MAP_BACKGROUND_BRIGHTNESS: f32 = 0.8;
+
 pub(super) fn push_choose_map_background_instances(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
     shell_layout: &SkirmishShellLayout,
     modal_layout: &ChooseMapModalLayout,
+    brightness: f32,
 ) -> BackdropInteriorPaint {
     let background = choose_map_background_entry(atlas, modal_layout);
     let interior = backdrop_interior(background.is_some());
@@ -216,6 +222,9 @@ pub(super) fn push_choose_map_background_instances(
             modal_layout.scale,
             SHELL_PARENT_BACKGROUND_DEPTH,
         );
+        if let Some(art) = out.last_mut() {
+            art.tint = [brightness; 3];
+        }
     } else {
         let fallback = shell_content_fallback_rect(shell_layout);
         push_solid_rect(
@@ -239,6 +248,7 @@ pub(super) fn push_choose_map_background_instances(
 pub(super) fn push_choose_map_modal_control_instances(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
+    font: &crate::render::bit_font::BitFont,
     layout: &ChooseMapModalLayout,
     interior: BackdropInteriorPaint,
     shell: &SkirmishShellState,
@@ -268,6 +278,29 @@ pub(super) fn push_choose_map_modal_control_instances(
         interior.paints_solid_fill(),
         layout.scale,
     );
+    // VERA: the search box wears the list's frame, with a caret after its
+    // text. It has no focus to lose, so the caret does not blink.
+    if interior.paints_solid_fill() {
+        push_solid_rect(
+            out,
+            atlas,
+            layout.map_search,
+            SHELL_MODAL_PANEL_RGB,
+            SHELL_DROPDOWN_DEPTH - 0.00010,
+        );
+    }
+    super::list::paint_list_frame(out, atlas, layout.map_search);
+    if let Some(caret) =
+        super::text::map_search_caret_rect(font, &modal.search, layout.map_search, layout.scale)
+    {
+        push_solid_rect(
+            out,
+            atlas,
+            caret,
+            SHELL_LABEL_TEXT_RGB,
+            SHELL_DROPDOWN_DEPTH - 0.00012,
+        );
+    }
     // While a slide runs the column replaces the buttons and the preview
     // static is validate-only (`0x00606800`).
     if !steady {
@@ -284,6 +317,7 @@ pub(super) fn push_choose_map_modal_control_instances(
             layout.create_random_map_button,
             ChooseMapModalButton::CreateRandomMap0x583,
         ),
+        (layout.favorite_button, ChooseMapModalButton::Favorite),
     ] {
         push_right_panel_button_shp(
             out,
@@ -605,10 +639,18 @@ pub(super) fn push_random_map_setup_modal_control_instances(
         (layout.delete, RandomMapSetupControl::Delete0x6c4),
         (layout.cancel, RandomMapSetupControl::Cancel0x5c0),
         (layout.advanced, RandomMapSetupControl::AdvancedToggle),
+        (layout.export, RandomMapSetupControl::ExportMap),
+        (layout.fair_starts, RandomMapSetupControl::FairStartsToggle),
     ]
     .into_iter()
     .filter(|(_, control)| {
-        steady && (*control != RandomMapSetupControl::AdvancedToggle || modal.extended)
+        let vera = matches!(
+            control,
+            RandomMapSetupControl::AdvancedToggle
+                | RandomMapSetupControl::ExportMap
+                | RandomMapSetupControl::FairStartsToggle
+        );
+        steady && (!vera || modal.extended)
     }) {
         push_right_panel_button_shp(
             out,

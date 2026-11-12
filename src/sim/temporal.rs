@@ -174,7 +174,7 @@ pub struct TemporalLink {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TemporalState {
     /// `TechnoClass+0x274` TemporalImUsing.
-    link: Option<TemporalLink>,
+    link: Option<Box<TemporalLink>>,
     /// `TechnoClass+0x278` TemporalTargetingMe: the chain head's attacker.
     head: Option<u64>,
 }
@@ -283,7 +283,7 @@ pub(crate) fn init_temporal(object_type: &ObjectType, rules: &RuleSet) -> Tempor
         .and_then(|weapon| rules.weapon_warhead(weapon))
         .is_some_and(|warhead| warhead.temporal);
     TemporalState {
-        link: temporal.then(TemporalLink::default),
+        link: temporal.then(Box::<TemporalLink>::default),
         head: None,
     }
 }
@@ -305,7 +305,7 @@ impl Simulation {
         substrate
             .entities
             .get(attacker)
-            .and_then(|entity| entity.temporal.link.as_ref())
+            .and_then(|entity| entity.temporal.link.as_deref())
     }
 
     /// The Temporal arm of `BulletClass::DetonateAtCoord` (`0x00469423..
@@ -354,7 +354,7 @@ impl Simulation {
                     // (1005C600, hook 0x469467) also warps a Foot in the Air
                     // or Top layer.
                     let warpable_layer = layer == DisplayLayer::GROUND
-                        || crate::rules::ARES_ENABLED
+                        || rules.ares()
                             && (layer == DisplayLayer::AIR || layer == DisplayLayer::TOP);
                     if !warpable_layer {
                         return;
@@ -1596,7 +1596,7 @@ impl crate::sim::world::ObjectSubstrate {
     fn temporal_link_mut(&mut self, attacker: u64) -> Option<&mut TemporalLink> {
         self.entities
             .get_mut(attacker)
-            .and_then(|entity| entity.temporal.link.as_mut())
+            .and_then(|entity| entity.temporal.link.as_deref_mut())
     }
     fn set_temporal_head(&mut self, target: u64, head: Option<u64>) {
         if let Some(entity) = self.entities.get_mut(target) {

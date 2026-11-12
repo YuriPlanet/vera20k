@@ -140,25 +140,29 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get(actor_id) else {
             return Ok(VehicleCaptureOutcome::default());
         };
-        if actor.category() != EntityCategory::Infantry
-            || !self.entity_object_type(actor, rules).is_some_and(|ty| {
-                #[cfg(not(feature = "ares"))]
-                {
-                    ty.thief
-                }
-                // Ares 3.0 InfantryClass_UpdateVehicleThief_Check (10049970,
-                // hook 0x5202F9): VehicleThief (+EC6) or CanDrive.
-                #[cfg(feature = "ares")]
-                {
-                    ty.vehicle_thief || ty.driver_rules().can_drive()
-                }
-            })
-        {
+        if actor.category() != EntityCategory::Infantry {
             return Ok(VehicleCaptureOutcome::default());
         }
+        // The NavCom is read before the type only to spare an infantryman
+        // that is not walking to an object the type lookup; neither test
+        // writes (VERA-only order).
         let Some(nav @ NavTargetRef::Object { id: target_id }) = actor.navigation.nav_com() else {
             return Ok(VehicleCaptureOutcome::default());
         };
+        if !self.entity_object_type(actor, rules).is_some_and(|ty| {
+            #[cfg(not(feature = "ares"))]
+            {
+                ty.thief
+            }
+            // Ares 3.0 InfantryClass_UpdateVehicleThief_Check (10049970,
+            // hook 0x5202F9): VehicleThief (+EC6) or CanDrive.
+            #[cfg(feature = "ares")]
+            {
+                ty.vehicle_thief || ty.driver_rules().can_drive()
+            }
+        }) {
+            return Ok(VehicleCaptureOutcome::default());
+        }
         let Some(target) = self.substrate.entities.get(target_id) else {
             return Ok(VehicleCaptureOutcome::default());
         };
@@ -373,16 +377,23 @@ impl Simulation {
     /// though Unit's healer arm `0x0073FD7C` still answers Repair). The event
     /// queues the mission and sets the target, which the next frozen AI frame
     /// drops (`Simulation::temporal_ai_prologue`); the queued mission waits.
-    pub fn click_order_receivers(&self, selection: &[u64]) -> Vec<u64> {
+    ///
+    /// With `ares` a Deactivated (`+0x1C8`) object is refused as well: Foot
+    /// ClickedAction_Object and _Cell (hooks `0x004D74EC`, `0x004D7D58`;
+    /// Ares.dll `1004CBC0`, `1004CBA0`), Building Active_Click_With_Cell
+    /// (`0x004436F7`, `1004CB30`) and Building ClickedAction_Object's
+    /// Deactivated arm (`0x00443414`, `10016F60`), which consumes the click.
+    /// The one action they let through, Detonate, is sent by the self-click
+    /// producer, which reads the whole selection.
+    /// `ares` is [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
+    pub fn click_order_receivers(&self, selection: &[u64], ares: bool) -> Vec<u64> {
         selection
             .iter()
             .copied()
             .filter(|&id| {
-                !self
-                    .substrate
-                    .entities
-                    .get(id)
-                    .is_some_and(|entity| entity.berserk.is_active())
+                !self.substrate.entities.get(id).is_some_and(|entity| {
+                    entity.berserk.is_active() || (ares && entity.deactivated.is_offline())
+                })
             })
             .collect()
     }

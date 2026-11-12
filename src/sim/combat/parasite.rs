@@ -1109,7 +1109,7 @@ impl Simulation {
     ) -> bool {
         use crate::sim::cell_rect::{CellPassabilityArgs, CellRef, check_cell_passability};
         let (Some(terrain), Some(zones)) =
-            (self.resolved_terrain.as_ref(), self.zone_grid.as_ref())
+            (self.resolved_terrain.as_ref(), self.zone_grid.as_deref())
         else {
             return false;
         };
@@ -1301,7 +1301,7 @@ impl Simulation {
         rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
-        let removed = !crate::rules::ARES_ENABLED || removed;
+        let removed = !rules.ares() || removed;
         let Some(eater) = self
             .substrate
             .entities

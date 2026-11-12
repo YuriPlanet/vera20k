@@ -87,7 +87,10 @@ SizeLimit=15              ; the largest Size= that may enter
   captor dropped, `EnterTransportSound=` played, limboed
   (EnterTunnel `10009000`). Self-clicking an entrance whose network holds
   a Foot unloads it (`100173A0`), last in first out, one per Unload
-  dispatch (UnloadOne `100098A0`, `sim::transport_unload`). When the last
+  dispatch (UnloadOne `100098A0`, `sim::transport_unload`). A
+  `PipScale=Passengers` entrance's passenger pips show the network, as many
+  as GetPipMax and the tunnel's MaxCap allow (GetPassengerPips `10044C90`:
+  an infantryman's `Pip=`, else frame 4; `ui_overlays::scale_pip_draws`). When the last
   entrance (no other alive, unlimboed building of the type that is neither
   built nor sold) dies or is erased, the network dies with it, credited
   to the C4 planter or the eraser (`100093C0`); when it is sold, every
@@ -98,12 +101,13 @@ SizeLimit=15              ; the largest Size= that may enter
 
 ## Not included
 
-- The `Gate=` arm of `BuildingClass::Unlimbo @ 0x00440580` (a placed gate
-  sells its house's walls under its foundation, `Sell_Building_At_Cell`
-  after the wall test at `0x00440709`, and removes laser fences there) and
-  its WallTower arm (`0x00440656`) are not in VERA, so Ares' wall test
-  there (hook `0x440709`) has no host. No retail buildable type is a gate
-  or WallTower.
+- Ares' wall test in the `Gate=` arm of `BuildingClass::Unlimbo @ 0x00440580`
+  (hook `0x440709`). VERA ports the stock arm (a placed gate sells its
+  house's walls under its foundation, and the WallTower arm at
+  `0x004405BC`): `sim::world::world_spawn::wall_unlimbo`. It tests the
+  stock overlay ids 0, 2 and 0x1A; Ares' hook, which admits any `Wall=`
+  overlay there, is not ported, so under Ares a mod wall stays under a
+  gate. No retail buildable type is a gate or WallTower.
 - Trench traversal: the cursor and click rows are those of a selection of
   buildings only; a mixed selection with a trench does not offer them,
   and Ctrl+Alt over a friendly trench keeps its stock empty answer. The
@@ -114,10 +118,7 @@ SizeLimit=15              ; the largest Size= that may enter
 - Tunnels: the building click that radios a clicked unit (`0x10`, hook
   `0x44351A`, `100172F0`) has no host, since VERA does not port the
   absorbers' arm of `BuildingClass::ClickedAction_Object` (no RESERVE_DOCK
-  radio, `sim::radio`); the tunnel arm of the passenger pips
-  (`TechnoExt::GetPassengerPips 10044C90`: the network's members, frame
-  4 or the infantry's `Pip=`) is not drawn, as that function is not
-  ported; EnterTunnel clears OnBridge after Limbo instead of before (as
+  radio, `sim::radio`); EnterTunnel clears OnBridge after Limbo instead of before (as
   `board_passenger` does); UnloadOne keeps a member whose nearest-cell
   search or Unlimbo fails, where native puts a vehicle on cell (0, 0) or
   drops it.
@@ -135,7 +136,7 @@ SizeLimit=15              ; the largest Size= that may enter
 
 | Hook | Ares.dll | Name | Disposition |
 |---|---|---|---|
-| `0x440709` | `100156F0` | BuildingClass_Put | residual: the stock Unlimbo gate arm is not ported (above) |
+| `0x440709` | `100156F0` | BuildingClass_Put | residual: the stock gate arm is ported with the stock wall ids; the hook's wall test is not (above) |
 | `0x47C8AB` | `10015780` | CellClass_CanThisExistHere_GateOnWall | ported: `sim::build_site::overlay_admits` |
 | `0x480534` | `10015740` | CellClass_AttachesToNeighbourOverlay | ported: `sim::cell_kernel::wall_connection_step` |
 | `0x4574D2` | `10015E70` | BuildingClass_Infiltrate_Standard | not applicable: a sidebar repaint; VERA redraws the sidebar every frame |
@@ -143,7 +144,7 @@ SizeLimit=15              ; the largest Size= that may enter
 | `0x509303` | `10015EE0` | HouseClass_AllyWith_unused | not applicable: gamemd `0x005092F0` has no caller |
 | `0x4557BC` | `10016DF0` | BuildingClass_SensorArray_BuildingRedraw | not applicable: marks a cloaked enemy building for redraw; VERA redraws every frame |
 | `0x455923` | `10016DF0` | BuildingClass_SensorArray_BuildingRedraw | not applicable: as above |
-| `0x443414` | `10016F60` | BuildingClass_ActionOnObject | ported: `app::input::context_order::building_object_orders` raises event 0x60 (`AresTrenchRedirectRecord`; handler `Simulation::ares_respond_to_trench_redirect`); its Deactivated arm is the deactivated-click residual of [ares-cloak-power.md](ares-cloak-power.md) |
+| `0x443414` | `10016F60` | BuildingClass_ActionOnObject | ported: `app::input::context_order::building_object_orders` raises event 0x60 (`AresTrenchRedirectRecord`; handler `Simulation::ares_respond_to_trench_redirect`); its Deactivated arm is `Simulation::click_order_receivers` ([ares-techno-hooks.md](ares-techno-hooks.md)) |
 | `0x44725F` | `100171B0` | BuildingClass_GetActionOnObject_TargetABuilding | ported: `app::input::cursor::capability_cursor_for_hover` and the click release, through `Simulation::ares_can_traverse_to` |
 | `0x4C6CCD` | `1006A540` | Networking_RespondToEvent | ported for 0x60: `decode_native_command_record` keeps the record raw and `apply_command` runs `Simulation::ares_respond_to_trench_redirect`; the 0x61 FirewallToggle arm has no raiser ([ares-firestorm.md](ares-firestorm.md)) |
 | `0x64B704` | `1006A5F0` | sub_64B660_PayloadSize | ported: `net::event_packet::event_payload_len` answers 10 for 0x60 (GetEventPayloadSize `1006A130`); 0x61 has no raiser |

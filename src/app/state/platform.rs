@@ -117,8 +117,10 @@ pub(crate) struct PlatformState {
     /// window is really there. Presentation-only, never serialized.
     pub(crate) recenter_windowed: bool,
     /// The size a launch opens the player's window at, in logical units:
-    /// gamemd's startup size (`RetailOptionsLoad::startup_shell_screen`). The
-    /// Esc menu's Set Window Size button goes back to it. Presentation-only.
+    /// `player_launch_window_size` of gamemd's startup size
+    /// (`RetailOptionsLoad::startup_shell_screen`), 1024x768 by default. The
+    /// Esc menu's Set Window Size button and Full Screen going off go back to
+    /// it. Presentation-only.
     pub(crate) launch_window_size: ScreenSize,
     /// Whether that button is still waiting for the window to come out of full
     /// screen. Presentation-only, never serialized.

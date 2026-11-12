@@ -38,7 +38,10 @@ fn ares_gap_radius_keeps_the_whole_int() {
     let object =
         ObjectType::from_ini_section("GAP", ini.section_or_empty("GAP"), ObjectCategory::Building);
     assert_eq!(object.gap_radius_in_cells, 128);
-    assert_eq!(object.building_sensor_range(false, None), 128);
+    assert_eq!(
+        object.building_sensor_range(false, None, crate::rules::ARES_BUILD),
+        128
+    );
 }
 
 /// Ares BuildingClass_GetRangeOfRadial_Radius (10048E60, hook 0x4566B0):
@@ -54,10 +57,11 @@ fn ares_radial_indicator_radius_answers_the_sensor_range() {
     ))
     .unwrap();
     let range = |name: &str| {
-        rules
-            .object(name)
-            .unwrap()
-            .building_sensor_range(true, Some(0x800))
+        rules.object(name).unwrap().building_sensor_range(
+            true,
+            Some(0x800),
+            crate::rules::ARES_BUILD,
+        )
     };
     assert_eq!(range("GAP"), 3);
     assert_eq!(range("PSY"), 9);
@@ -114,7 +118,7 @@ fn constructors_and_each_admitted_radial_reader_history_match_original() {
         for (flag, expected) in row["range_by_268"].as_array().unwrap().iter().enumerate() {
             // Ares hook4566F9 shows a sensor array's SensorsSight instead
             // (`sim::sensor_lifecycle`'s Ares test).
-            if crate::rules::ARES_ENABLED
+            if crate::rules::ARES_BUILD
                 && object.sensor_array
                 && object.psychic_detection_radius <= 0
                 && !object.gap_generator
@@ -122,7 +126,7 @@ fn constructors_and_each_admitted_radial_reader_history_match_original() {
                 continue;
             }
             assert_eq!(
-                object.building_sensor_range(flag != 0, None),
+                object.building_sensor_range(flag != 0, None, crate::rules::ARES_BUILD),
                 expected.as_i64().unwrap() as i32
             );
         }

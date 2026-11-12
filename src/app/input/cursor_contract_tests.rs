@@ -154,7 +154,7 @@ fn ares_no_manual_fire_native_modifier_cursors_use_the_shared_action() {
             let case = &row["input"];
             // The same authored key is ignored by the default build. Its
             // expected result is the actual DLL control with the flag off.
-            let expected = if crate::rules::ARES_ENABLED {
+            let expected = if crate::rules::ARES_BUILD {
                 row
             } else {
                 rows.iter()

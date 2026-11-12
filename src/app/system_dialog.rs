@@ -11,8 +11,9 @@
 //! Their words come from VERA's language files (`crate::i18n`), in the
 //! language `app::initialize` chose; a failure before that reads in English.
 
-use std::sync::OnceLock;
+use std::any::Any;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock, PoisonError};
 use std::thread::ThreadId;
 
 /// Whether a fatal failure may wait on a click; see [`enable_fatal_messages`].
@@ -22,7 +23,8 @@ static FATAL_MESSAGES: AtomicBool = AtomicBool::new(false);
 static FATAL_MESSAGE_SHOWN: AtomicBool = AtomicBool::new(false);
 /// The thread that turned fatal messages on: the game's main thread, whose
 /// panic always ends the game. A worker's panic may not (the random map
-/// dialog recovers from its generator's death), so it gets no box.
+/// dialog recovers from its generator's death), so it gets no box unless the
+/// main thread re-raises it ([`report_reraised_panic`]).
 static MAIN_THREAD: OnceLock<ThreadId> = OnceLock::new();
 
 /// Let fatal failures show a message box. Only a launch a player is watching
@@ -34,13 +36,56 @@ pub fn enable_fatal_messages() {
     FATAL_MESSAGES.store(true, Ordering::Release);
 }
 
+/// What the last worker thread's panic said, kept for the box the main
+/// thread shows if that panic is re-raised there.
+static WORKER_PANIC: Mutex<Option<String>> = Mutex::new(None);
+
 /// The panic hook's notifier (`util::logging::install_panic_hook`). It runs
 /// after the log and `except.txt` are written, and must not panic itself.
 pub fn report_panic(info: &std::panic::PanicHookInfo<'_>) {
-    if MAIN_THREAD.get() != Some(&std::thread::current().id()) {
-        return;
+    let on_main = MAIN_THREAD.get() == Some(&std::thread::current().id());
+    if let Some(what) = note_panic(on_main, info.to_string(), &WORKER_PANIC) {
+        show_crash(what);
     }
-    let mut what = info.to_string();
+}
+
+/// The main thread is about to re-raise a panic it caught
+/// (`entry::run_app`). `resume_unwind` does not run the panic hook, so a
+/// panic that began on a worker (pooled sim work, the frame hand-off thread)
+/// would end the game with no box; show it here. A panic that began on the
+/// main thread already showed its box, and [`show_fatal`] shows only one.
+pub fn report_reraised_panic(payload: &(dyn Any + Send)) {
+    show_crash(reraised_panic_text(payload, &WORKER_PANIC));
+}
+
+/// A panic the hook saw: the text for a box now, on the main thread, or
+/// `None` on a worker, whose text is kept in case the main thread re-raises
+/// it. A worker's panic alone shows nothing: it may not end the game.
+fn note_panic(on_main: bool, what: String, worker: &Mutex<Option<String>>) -> Option<String> {
+    if on_main {
+        return Some(what);
+    }
+    *worker.lock().unwrap_or_else(PoisonError::into_inner) = Some(what);
+    None
+}
+
+/// The text for a re-raised panic: the worker's own report (it has the
+/// source location) when it is this panic's, else the payload's message.
+fn reraised_panic_text(payload: &(dyn Any + Send), worker: &Mutex<Option<String>>) -> String {
+    let message = payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("");
+    worker
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .take()
+        .filter(|what| !message.is_empty() && what.contains(message))
+        .unwrap_or_else(|| message.to_owned())
+}
+
+fn show_crash(mut what: String) {
     if let Some((end, _)) = what.char_indices().nth(600) {
         what.truncate(end);
         what.push('…');
@@ -223,5 +268,33 @@ impl DialogTool {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_worker_panic_shows_its_box_only_when_the_main_thread_re_raises_it() {
+        let worker = Mutex::new(None);
+        let report = "panicked at src/sim/parallel.rs:13:5:\nzone build failed".to_owned();
+        // On the worker: no box (the random-map generator's death is survived).
+        assert_eq!(note_panic(false, report.clone(), &worker), None);
+        // Re-raised on main with the same payload: the worker's full report.
+        let payload: Box<dyn Any + Send> = Box::new("zone build failed".to_owned());
+        assert_eq!(reraised_panic_text(&*payload, &worker), report);
+        // A survived worker death is not shown for a later, different panic.
+        assert_eq!(
+            note_panic(false, "panicked: generator died".into(), &worker),
+            None
+        );
+        let other: Box<dyn Any + Send> = Box::new("frame hand-off failed");
+        assert_eq!(
+            reraised_panic_text(&*other, &worker),
+            "frame hand-off failed"
+        );
+        // A main-thread panic still shows at once.
+        assert_eq!(note_panic(true, report.clone(), &worker), Some(report));
     }
 }

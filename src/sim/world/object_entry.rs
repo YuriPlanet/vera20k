@@ -1257,7 +1257,7 @@ fn full_foot_entry<'a>(
         }
         let (b, blocker) = live
             .blocker(blocker_id)
-            .ok_or("repair list has retired blocker")?;
+            .ok_or_else(|| format!("repair list has retired blocker {blocker_id} at cell {p:?}"))?;
         if victim_cell.is_some_and(|cell| cell == crate::sim::movement::coord_cell(b.position)) {
             return Ok(0);
         }
@@ -1460,7 +1460,7 @@ fn full_foot_entry<'a>(
                 // 0x73F7DD): only a building whose owner is allied with the
                 // unit's house has its bib passed over.
                 if bt.bib
-                    && (!crate::rules::ARES_ENABLED || mover.is_ally_of(live, b.owner))
+                    && (!live.rules.ares() || mover.is_ally_of(live, b.owner))
                     && live.sim.substrate.occupancy.first_building_on_layer(
                         (p.0 as u16).wrapping_add(1),
                         p.1 as u16,
@@ -2246,13 +2246,13 @@ mod tests {
             crate::sim::slave_manager::SlaveLink::for_test(Some(hut), Vec::new());
         let slav = sim.intern("SLAV");
         let manager = |slaves: &[u64]| {
-            Some(crate::sim::slave_manager::SlaveManager::new(
+            Some(Box::new(crate::sim::slave_manager::SlaveManager::new(
                 slav,
                 slaves.iter().copied().map(Some),
                 0,
                 0,
                 0,
-            ))
+            )))
         };
         sim.substrate.entities.get_mut(hut).unwrap().slave_manager = manager(&[slave]);
         sim.substrate.raw_cell_occupation.mark_ground(16, 15, 0x20);

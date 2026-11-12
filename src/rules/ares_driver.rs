@@ -53,6 +53,7 @@ impl DriverTypeRules {
         section: &IniSection,
         operator: Option<OperatorRequirement>,
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         if let Some(operator) = operator {
             self.operator = operator;
         }

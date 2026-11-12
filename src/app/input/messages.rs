@@ -36,7 +36,7 @@ pub(crate) fn message_now_ms(state: &AppState) -> u64 {
 /// scenario-side priority through69A310 and adds a non-silent4046 row.
 /// MessageDelay's ftol result is in WallClock16ms buckets, not sim frames.
 pub(crate) fn post_trigger_message(state: &mut AppState, csf_key: &str) {
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         return;
     };
     // The selected campaign opening keeps its startup player/country. The
@@ -457,7 +457,7 @@ pub(crate) fn post_ares_superweapon_message(
 pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
     #[cfg(feature = "ares")]
     if let HudMessage::AresSuperWeaponRefused(sw_type) = message {
-        let section = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+        let section = state.match_state.sim_runtime.runtime().and_then(|runtime| {
             runtime
                 .simulation
                 .interner()
@@ -480,7 +480,7 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
         firer,
     } = message
     {
-        let names = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+        let names = state.match_state.sim_runtime.runtime().and_then(|runtime| {
             let interner = runtime.simulation.interner();
             Some((
                 interner.try_resolve(sw_type)?.to_owned(),
@@ -494,7 +494,7 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
     }
     #[cfg(feature = "ares")]
     if let HudMessage::AresTechCaptureLabel(label) = message {
-        let Some(label) = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+        let Some(label) = state.match_state.sim_runtime.runtime().and_then(|runtime| {
             runtime
                 .simulation
                 .interner()
@@ -560,7 +560,7 @@ fn eva_text_product_name(
     let section = state
         .match_state
         .sim_runtime
-        .as_ref()?
+        .runtime()?
         .simulation
         .interner()
         .resolve(type_id);
@@ -720,7 +720,7 @@ fn post_named_house_line(
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|runtime| &runtime.simulation)
     else {
         return;
@@ -771,7 +771,7 @@ pub(crate) fn player_line_rgb(state: &AppState, owner: crate::sim::intern::Inter
     let owner = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|runtime| runtime.simulation.interner().resolve(owner).to_string());
     house_message_rgb(
         owner.as_deref(),
@@ -913,6 +913,12 @@ pub(crate) fn post_match_speed(state: &mut AppState, text: &str) {
     post_grey_row(state, text, false, false);
 }
 
+/// VERA: the answer to a `/pause` or `/resume` chat line
+/// (`pause_menu::chat_command`); `text` is VERA's own, not a CSF key.
+pub(crate) fn post_chat_command_answer(state: &mut AppState, text: &str) {
+    post_grey_row(state, text, false, false);
+}
+
 /// VERA: a match whose `veraui.ini` had lines the game could not use says so
 /// once, naming the first; the log lists them all.
 pub(crate) fn post_layout_problem(state: &mut AppState) {
@@ -928,6 +934,41 @@ pub(crate) fn post_layout_problem(state: &mut AppState) {
     };
     let text = crate::i18n::tr_fill("VERA:LayoutFileProblem", &[("where", &place)]);
     post_grey_row(state, &text, false, false);
+}
+
+/// Tell the player the layout edit mode is on and how to use it, or that it
+/// is off and what they moved is kept.
+pub(crate) fn post_layout_edit(state: &mut AppState, on: bool) {
+    let key = if on {
+        "VERA:LayoutEditHint"
+    } else {
+        "VERA:LayoutEditDone"
+    };
+    post_grey_row(state, &crate::i18n::tr(key), false, false);
+}
+
+/// VERA formation lock (`context_order::toggle_formation_lock`): say that
+/// the selection's units were locked, and how many, or unlocked. gamemd has
+/// no such line, so the text is VERA's own.
+pub(crate) fn post_formation_lock(state: &mut AppState, locked: bool, units: usize) {
+    let text = if locked {
+        crate::i18n::tr_fill("VERA:FormationLocked", &[("count", &units)])
+    } else {
+        crate::i18n::tr("VERA:FormationUnlocked")
+    };
+    post_grey_row(state, &text, false, true);
+}
+
+/// VERA primary rotation (`input::primary_rotation`): say how many factories
+/// now take turns, or that the selected ones stopped. gamemd has no such
+/// line, so the text is VERA's own.
+pub(crate) fn post_primary_rotation(state: &mut AppState, factories: usize) {
+    let text = if factories > 0 {
+        crate::i18n::tr_fill("VERA:PrimaryRotationOn", &[("count", &factories)])
+    } else {
+        crate::i18n::tr("VERA:PrimaryRotationOff")
+    };
+    post_grey_row(state, &text, false, true);
 }
 
 pub(super) fn post_command_backpressure(state: &mut AppState) {
@@ -1042,16 +1083,20 @@ fn sync_view(state: &mut AppState) {
         .match_presentation
         .message_list
         .set_typing(typing);
-    // The list spans the tactical viewport: the frame beside the sidebar.
+    // The list spans its box: the tactical viewport, the frame beside the
+    // sidebar, unless the side's layout gives it another.
     // VERA's performance panel holds the viewport's top left while it shows, and the
     // list and its edit line start below it.
-    let (tactical_x, tactical_y, tactical_w, _) =
-        crate::app::input::camera::tactical_viewport_px(state);
+    let [x, y, width, _] = crate::app::presentation::field_parts::rect(
+        state,
+        crate::ui::field_layout::FieldPart::Messages,
+    );
+    let (_, tactical_y, _, _) = crate::app::input::camera::tactical_viewport_px(state);
     let top = state.renderer.performance_overlay.message_top();
     state.match_state.match_presentation.message_list.set_view(
-        tactical_x as i32,
-        tactical_y as i32 + top,
-        tactical_w as i32,
+        x,
+        y.max(tactical_y as i32 + top),
+        width,
     );
 }
 
@@ -1077,6 +1122,13 @@ pub(crate) fn build_message_instances(
         for _ in 0..requests {
             crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
         }
+    }
+    // A layout that leaves the messages out only takes them off the screen.
+    if !crate::app::presentation::field_parts::shows(
+        state,
+        crate::ui::field_layout::FieldPart::Messages,
+    ) {
+        return (Vec::new(), Vec::new());
     }
     message_instances(
         &state.renderer.bit_font,

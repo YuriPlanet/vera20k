@@ -229,14 +229,24 @@ impl Simulation {
     /// selects shared fog. Offline/campaign retains its one current viewpoint.
     pub(crate) fn represented_player_maps(&self) -> Vec<InternedId> {
         if self.session.game_mode().is_network() {
-            self.houses
-                .in_order()
-                .filter(|house| house.is_human())
-                .map(|house| house.name())
-                .collect()
+            self.network_player_maps().collect()
         } else {
-            self.session.current_house().into_iter().collect()
+            self.offline_player_map().into_iter().collect()
         }
+    }
+
+    /// The represented maps of a network game, in House order, for a caller
+    /// that walks them without keeping a list.
+    pub(super) fn network_player_maps(&self) -> impl Iterator<Item = InternedId> + '_ {
+        self.houses
+            .in_order()
+            .filter(|house| house.is_human())
+            .map(|house| house.name())
+    }
+
+    /// The one represented map outside a network game: the current house's.
+    pub(super) fn offline_player_map(&self) -> Option<InternedId> {
+        self.session.current_house()
     }
 
     /// The movement step that drops another house's object from the player's
@@ -716,7 +726,7 @@ impl Simulation {
         let target_zone = {
             let (Some(terrain), Some(zones)) = (
                 context.terrain().or(self.resolved_terrain.as_ref()),
-                self.zone_grid.as_ref(),
+                self.zone_grid.as_deref(),
             ) else {
                 return false;
             };
@@ -754,7 +764,7 @@ impl Simulation {
             let half_level = {
                 let (Some(terrain), Some(zones)) = (
                     context.terrain().or(self.resolved_terrain.as_ref()),
-                    self.zone_grid.as_ref(),
+                    self.zone_grid.as_deref(),
                 ) else {
                     return false;
                 };

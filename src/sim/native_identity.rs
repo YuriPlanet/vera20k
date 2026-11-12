@@ -41,7 +41,7 @@ enum NativeFreshIdPhase {
 /// One Scenario's wrapping numeric-ID cursor. Original689310/689470 save/load
 /// +214 as part of the raw Scenario block;683560 preserves it while resetting
 /// the adjacent RNG. Evidence: tools/spatial_oracle/native_id_snapshot.
-#[derive(Debug, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Hash, serde::Serialize, serde::Deserialize)]
 pub struct NativeUniqueIdCursor {
     value: u32,
     saved_after_fresh_prefix: u32,

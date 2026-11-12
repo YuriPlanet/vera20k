@@ -347,7 +347,7 @@ fn mission_attack_matches_the_original() {
         entity.body_facing.snap(away, FRAME);
         let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(FRAME as i32);
         cloak.set_state_for_test(2);
-        entity.cloak = Some(cloak);
+        entity.cloak = Some(Box::new(cloak));
 
         let (returns, fire_calls) = with_building_fire_stub(None, || {
             with_draws(&mut sim, row, |sim| {
@@ -504,7 +504,7 @@ fn enter_idle_mode_matches_the_unlimbo_rows() {
         let building = sim
             .spawn_object_limbo_at_height("DEF", "Americans", 7, 7, 0, 0, &rules)
             .unwrap();
-        let before = sim.substrate.entities.get(building).unwrap().mission;
+        let before = sim.substrate.entities.get(building).unwrap().mission.clone();
         assert_eq!(before.current(), MissionId::NONE, "{name}");
         assert_eq!(before.queued(), MissionId::NONE, "{name}");
         let initial = input["args"][0] != 0;

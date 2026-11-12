@@ -65,7 +65,9 @@ fn cameo_draw_state_darkens_where_draw_does_not_decide_retention() {
     assert!(strip_refusal(&sim, &rules, owner, plain).is_none());
     let offline = cameo_draw_state(&sim, &rules, owner, plain);
     assert!(!offline.enabled);
-    assert!(!offline.at_build_limit);
+    // Ares hook 0x50B370 (10024F80) also answers at-limit without a usable
+    // factory.
+    assert_eq!(offline.at_build_limit, crate::rules::ARES_BUILD);
     // The same live query clears the overlay when the yard is back online.
     sim.substrate
         .entities
@@ -227,7 +229,7 @@ fn construction_options_match_original_gates_type_order_limit_and_warp_grant() {
         // The rows are stock gamemd. Ares's outer CanBuild (Ares.dll
         // 0x10021BA1) also asks the factory finder, which refuses this row's
         // Naval=yes unit at its land factory.
-        if crate::rules::ARES_ENABLED && row["name"] == "unit uses its registry order" {
+        if crate::rules::ARES_BUILD && row["name"] == "unit uses its registry order" {
             continue;
         }
         let mut text = String::from("[Countries]\n0=C0\n[C0]\nSide=GDI\n");

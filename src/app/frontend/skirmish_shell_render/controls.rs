@@ -10,7 +10,7 @@ use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
 use crate::render::skirmish_shell_chrome::{
     ControlChrome, SkirmishShellChromeAtlas, SkirmishShellChromeEntry,
 };
-use crate::rules::color_scheme::ColorSchemeEntry;
+use crate::rules::ruleset::RuleSet;
 use crate::ui::shell::geom::ShellScale;
 use crate::ui::shell::trackbar::{PLAQUE_RESERVE, THUMB_W};
 use crate::ui::skirmish_shell::{
@@ -439,12 +439,10 @@ pub(super) fn scrollbar_arrow_entry(
     }
 }
 
-/// Resolve a normal Skirmish lobby color slot to its fixed owner-draw swatch.
+/// YR's eight lobby colours' fixed owner-draw swatches.
 ///
 /// The active native initializer copies these eight packed RGB values from
-/// `0x008316A8`; gameplay `[Colors]` schemes do not feed this UI table. The
-/// existing parameter remains part of the renderer seam but deliberately has no
-/// authority here.
+/// `0x008316A8`; gameplay `[Colors]` schemes do not feed this UI table.
 const SKIRMISH_SWATCH_RGB: [[u8; 3]; 8] = [
     [221, 226, 13],
     [255, 25, 25],
@@ -456,10 +454,29 @@ const SKIRMISH_SWATCH_RGB: [[u8; 3]; 8] = [
     [255, 154, 235],
 ];
 
-pub(super) fn house_color_tint(_color_schemes: &[ColorSchemeEntry], index: usize) -> [f32; 3] {
+/// Resolve a lobby colour priority to its owner-draw swatch.
+///
+/// YR's eight read the fixed table whatever `rules` hold. gamemd has no
+/// swatch for VERA's extra colours, so theirs is the colour gamemd prints
+/// their House's text in: the scheme's own H,S,V (`house_text_rgb`). Anything
+/// else is the native observer grey.
+pub(super) fn house_color_tint(rules: Option<&RuleSet>, index: usize) -> [f32; 3] {
     let [r, g, b] = SKIRMISH_SWATCH_RGB
         .get(index)
         .copied()
+        .or_else(|| {
+            let rules = rules?;
+            let priority = i32::try_from(index).ok()?;
+            let colors = rules.skirmish_colors();
+            colors.is_lobby_priority(priority).then(|| {
+                crate::rules::house_colors::house_text_rgb(
+                    &rules.color_schemes,
+                    crate::rules::house_colors::HouseColorIndex(
+                        colors.entry_for_priority(priority) as u8,
+                    ),
+                )
+            })
+        })
         .unwrap_or([96, 96, 96]);
     [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0]
 }
@@ -809,7 +826,7 @@ pub(super) fn push_trackbar_instances(
 pub(super) fn push_combo_instances(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
-    color_schemes: &[ColorSchemeEntry],
+    rules: Option<&RuleSet>,
     layout: &SkirmishShellLayout,
     shell: &SkirmishShellState,
     maps: &[MapMenuEntry],
@@ -823,8 +840,7 @@ pub(super) fn push_combo_instances(
     // popup + shared scrollbar stay on `atlas` (4D).
     let chrome = atlas.control_chrome();
     let open = shell.open_combo_dropdown.map(|dropdown| dropdown.id);
-    let swatch_for =
-        |color_index: Option<usize>| color_index.map(|ci| house_color_tint(color_schemes, ci));
+    let swatch_for = |color_index: Option<usize>| color_index.map(|ci| house_color_tint(rules, ci));
     paint_control(
         out,
         &chrome,
@@ -878,7 +894,7 @@ pub(super) fn push_combo_instances(
         layout.scale,
     );
 
-    for (slot, row, opponent) in shell.paged_opponents() {
+    for (slot, row, opponent) in shell.paged_opponents(layout.shown_rows) {
         if !player_row_visible(shell, maps, row) {
             continue;
         }
@@ -972,7 +988,7 @@ pub(super) fn push_opponent_scrollbar_instances(
 pub(super) fn push_dropdown_instances(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
-    color_schemes: &[ColorSchemeEntry],
+    rules: Option<&RuleSet>,
     layout: &SkirmishShellLayout,
     shell: &SkirmishShellState,
     maps: &[MapMenuEntry],
@@ -1005,7 +1021,7 @@ pub(super) fn push_dropdown_instances(
                 layout
                     .scale
                     .derive_rect(row, |row| RectPx::new(row.x + 2, row.y + 2, row.w - 4, 19)),
-                house_color_tint(color_schemes, color),
+                house_color_tint(rules, color),
             ))
         });
     let scrollbar = needs_scrollbar
@@ -1137,28 +1153,30 @@ mod tests {
                 rgb[1] as f32 / 255.0,
                 rgb[2] as f32 / 255.0,
             ];
-            assert_eq!(house_color_tint(&[], slot), expected, "slot {slot}");
+            assert_eq!(house_color_tint(None, slot), expected, "slot {slot}");
         }
     }
 
     #[test]
-    fn gameplay_color_schemes_cannot_change_skirmish_ui_swatches() {
-        let deliberately_different = [ColorSchemeEntry {
-            name: "NotTheLobbySwatch".to_string(),
-            hsv: [0, 0, 0],
-        }];
-        assert_eq!(
-            house_color_tint(&deliberately_different, 2),
-            house_color_tint(&[], 2)
-        );
-    }
+    fn extra_colour_swatches_come_from_the_rules_and_the_eight_do_not() {
+        use crate::rules::ini_parser::IniFile;
 
-    #[test]
-    fn out_of_range_swatch_uses_native_observer_grey() {
-        assert_eq!(
-            house_color_tint(&[], 8),
-            [96.0 / 255.0, 96.0 / 255.0, 96.0 / 255.0]
-        );
+        // Entry 10 is priority 2's scheme, here black; Mine is the one extra.
+        let mut text = String::from("[Colors]\n");
+        for index in 0..15 {
+            text.push_str(&format!("Stock{index}=0,0,0\n"));
+        }
+        text.push_str("Mine=0,255,255\n[SkirmishColors]\n1=Mine\n");
+        let rules = RuleSet::from_ini(&IniFile::from_str(&text)).unwrap();
+        let grey = [96.0 / 255.0; 3];
+
+        assert_eq!(house_color_tint(Some(&rules), 2), house_color_tint(None, 2));
+        // Priority 9 is the first extra colour: pure red here.
+        assert_eq!(house_color_tint(Some(&rules), 9), [1.0, 0.0, 0.0]);
+        // 8 is the observer's, 10 is past this list, and no rules list none.
+        assert_eq!(house_color_tint(Some(&rules), 8), grey);
+        assert_eq!(house_color_tint(Some(&rules), 10), grey);
+        assert_eq!(house_color_tint(None, 9), grey);
     }
 
     #[test]

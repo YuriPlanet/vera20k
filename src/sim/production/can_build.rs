@@ -123,7 +123,7 @@ pub fn can_build(
     if status < RequirementStatus::Complete {
         return CanBuild::No;
     }
-    if !crate::rules::ARES_ENABLED && !controlled_by_human {
+    if !rules.ares() && !controlled_by_human {
         return CanBuild::Yes;
     }
     if !bypass_prerequisites && controlled_by_human && !owns_prerequisites(sim, rules, house, obj) {
@@ -178,7 +178,7 @@ pub(crate) fn requirements_met(
     let _ = owner;
     let controlled_by_human = house.is_controlled_by_human(sim.session.game_mode_nonzero());
     let override_on_map = obj.prerequisite_override.iter().any(|&entry| {
-        if crate::rules::ARES_ENABLED {
+        if rules.ares() {
             // Ares3.0 qualification10021FF0 calls
             // HouseOwnsAny100081E0 at100220C0, before its human/AI split.
             prerequisite_on_map(sim, rules, house, entry)
@@ -227,7 +227,7 @@ pub(crate) fn requirements_met(
     let type_tech_level = sim.object_tech_level(obj);
     // Installed qualification100220FE calls10020AD0, the same session-
     //aware human predicate; only its human arm rejects TechLevel=-1.
-    if (type_tech_level == -1 && (!crate::rules::ARES_ENABLED || controlled_by_human))
+    if (type_tech_level == -1 && (!rules.ares() || controlled_by_human))
         || !house.has_stolen_tech_for(obj)
     {
         return RequirementStatus::Incomplete;
@@ -252,7 +252,7 @@ pub(crate) fn requirements_met(
     }
     // Ares disabled-shell predicate10021A00..10021A6A bypasses this
     // skirmish-shell restriction in mode0, before inspecting the Type.
-    if (!crate::rules::ARES_ENABLED || sim.session.game_mode_nonzero())
+    if (!rules.ares() || sim.session.game_mode_nonzero())
         && !sim.session.game_options().super_weapons
         && obj.category == ObjectCategory::Building
         && let Some(super_weapon) = obj.super_weapon.as_deref()
@@ -389,18 +389,18 @@ fn specific_prerequisite_on_map(
         return false;
     };
     let count = buildings_on_map(sim, rules, house, index);
-    if crate::rules::ARES_ENABLED && count > 0 {
+    if rules.ares() && count > 0 {
         // Ares HouseOwnsSpecific100082B0 accepts a positive direct/member
         // count before PowersUpBuilding, including a separately on-map upgrade.
         return true;
     }
     if building_type.building_upgrade().host().is_none() {
-        return !crate::rules::ARES_ENABLED && count != 0;
+        return !rules.ares() && count != 0;
     }
     let Some(type_id) = sim.interner.get(&building_type.id) else {
         return false;
     };
-    if crate::rules::ARES_ENABLED {
+    if rules.ares() {
         // Ares HouseOwnsSpecific100082B0 resolves the declared host, requires
         // its active count>0, then scans every House+6C building of that type. It reads
         // all three installed slots and no HP/limbo/online/Selling/count gate.
@@ -671,43 +671,24 @@ fn build_limit(
 /// holds; with a positive one, once the
 /// tracked count (`owned_count`) and the factory's reach it. An infantry
 /// `VehicleThief=` adds the units that hold one (`0x0050B4C4..0x0050B506`).
+#[cfg(not(feature = "ares"))]
 pub(crate) fn check_build_limit(
     sim: &Simulation,
     rules: &RuleSet,
     owner: InternedId,
     obj: &ObjectType,
 ) -> bool {
-    let strip = match obj.category {
-        ObjectCategory::Building => super::ProductionCategory::Building,
-        _ => super::production_tech::production_category_for_object(obj),
-    };
-    let tracking = sim.houses.get(&owner).map(HouseState::tracking);
-    let in_factory = |type_id: Option<InternedId>| {
-        type_id.map_or(0, |type_id| {
-            sim.production
-                .factories()
-                .count_total(owner, strip, type_id)
-        })
-    };
+    let strip = build_limit_strip(obj);
     if obj.category == ObjectCategory::Aircraft && obj.airport_bound {
-        let pads = rules
-            .general
-            .pad_aircraft_types
-            .iter()
-            .filter_map(|name| rules.object_in_category(ObjectCategory::Aircraft, name))
-            .map(|pad| {
-                let type_id = sim.interner.get(&pad.id);
-                let on_map = type_id.zip(tracking).map_or(0, |(type_id, tracking)| {
-                    tracking.active_count(EntityCategory::Aircraft, type_id)
-                });
-                on_map.wrapping_add(in_factory(type_id))
-            })
-            .fold(0, i32::wrapping_add);
-        return pads >= tracking.map_or(0, HouseTracking::airport_docks);
+        return airport_docks_full(sim, rules, owner, strip);
     }
     let limit = obj.build_limit;
     let type_id = sim.interner.get(&obj.id);
-    let queued = in_factory(type_id);
+    let queued = type_id.map_or(0, |type_id| {
+        sim.production
+            .factories()
+            .count_total(owner, strip, type_id)
+    });
     if limit < 1 {
         // 50B405/48B/537/60B use the same retained produced item as
         // CanBuild, add Factory CountTotal with ADD32, then compare signed.
@@ -719,13 +700,102 @@ pub(crate) fn check_build_limit(
             });
         return produced.wrapping_add(queued) >= limit.wrapping_abs();
     }
-    let owned = type_id.zip(tracking).map_or(0, |(type_id, tracking)| {
-        tracking.owned_count(EntityCategory::from(obj.category), type_id)
-    });
+    let owned = type_id
+        .zip(sim.houses.get(&owner))
+        .map_or(0, |(type_id, house)| {
+            house
+                .tracking()
+                .owned_count(EntityCategory::from(obj.category), type_id)
+        });
     owned
         .wrapping_add(captured_vehicle_thief_count(sim, rules, owner, obj))
         .wrapping_add(queued)
         >= limit
+}
+
+/// With `ares`, hook `0x0050B370` (HouseClass_ShouldDisableCameo, Ares.dll
+/// `10024F80`) replaces the whole of CheckBuildLimit and returns at
+/// `0x0050B669`, for every caller. It counts what the house's primary factory
+/// for the type holds (GetPrimaryFactory `0x00500510` with BuildCat DontCare,
+/// the Buildings factory for every structure). An `AirportBound=` aircraft is
+/// still at its limit once the `[General] PadAircraft=` aircraft present and
+/// queued reach the AirportDocks, but otherwise goes on to its `BuildLimit=`.
+/// Under a positive limit the object that factory holds counts once less, as
+/// the house's counters hold it too. The type is at its limit when
+/// [`ares_build_limit_remaining`] less that count is not positive, and
+/// otherwise unless the shared search `10020D40`, with Ares CanBuild's
+/// arguments, finds a usable factory.
+#[cfg(feature = "ares")]
+pub(crate) fn check_build_limit(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    obj: &ObjectType,
+) -> bool {
+    let strip = build_limit_strip(obj);
+    if obj.category == ObjectCategory::Aircraft
+        && obj.airport_bound
+        && airport_docks_full(sim, rules, owner, strip)
+    {
+        return true;
+    }
+    let factories = sim.production.factories();
+    let queued = sim.interner.get(&obj.id).map_or(0, |type_id| {
+        let total = factories.count_total(owner, strip, type_id);
+        let held = obj.build_limit > 0
+            && factories
+                .view(owner, strip)
+                .and_then(|factory| factory.object)
+                .is_some_and(|object| object.type_id == type_id);
+        if held { total.wrapping_sub(1) } else { total }
+    });
+    ares_build_limit_remaining(sim, rules, owner, obj).wrapping_sub(queued) <= 0
+        || !matches!(
+            query_factory(sim, rules, owner, obj, true, true, false, true),
+            FactorySearch::Online(_) | FactorySearch::Primary(_)
+        )
+}
+
+/// The strip whose House factory CheckBuildLimit counts: both structure
+/// strips count the Buildings factory (`0x0050B3B9`; Ares' GetPrimaryFactory
+/// `0x00500510` with BuildCat DontCare answers the same one).
+fn build_limit_strip(obj: &ObjectType) -> super::ProductionCategory {
+    match obj.category {
+        ObjectCategory::Building => super::ProductionCategory::Building,
+        _ => super::production_tech::production_category_for_object(obj),
+    }
+}
+
+/// CheckBuildLimit's `AirportBound=` arm (`0x0050B570..0x0050B5EB`, kept by
+/// Ares `10024F80`): the `[General] PadAircraft=` aircraft on the map
+/// (`+0x558C`) and in the house's factory for `strip` have reached its
+/// AirportDocks ([`HouseTracking::airport_docks`]).
+fn airport_docks_full(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    strip: super::ProductionCategory,
+) -> bool {
+    let tracking = sim.houses.get(&owner).map(HouseState::tracking);
+    let pads = rules
+        .general
+        .pad_aircraft_types
+        .iter()
+        .filter_map(|name| rules.object_in_category(ObjectCategory::Aircraft, name))
+        .map(|pad| {
+            let type_id = sim.interner.get(&pad.id);
+            let on_map = type_id.zip(tracking).map_or(0, |(type_id, tracking)| {
+                tracking.active_count(EntityCategory::Aircraft, type_id)
+            });
+            let in_factory = type_id.map_or(0, |type_id| {
+                sim.production
+                    .factories()
+                    .count_total(owner, strip, type_id)
+            });
+            on_map.wrapping_add(in_factory)
+        })
+        .fold(0, i32::wrapping_add);
+    pads >= tracking.map_or(0, HouseTracking::airport_docks)
 }
 
 /// The shared Unit census in House::CanBuild4F80E6..4F8128 and
@@ -970,8 +1040,8 @@ fn scan_factories<'a>(
     } in candidates
     {
         if building_factory_type == factory_type
-            && (crate::rules::ARES_ENABLED || !require_online || building.building_online())
-            && (crate::rules::ARES_ENABLED
+            && (rules.ares() || !require_online || building.building_online())
+            && (rules.ares()
                 || !require_can_build
                 || can_build(sim, rules, building.owner(), obj, true, true) == CanBuild::Yes)
             && ownable & get_ownable(building_type, rules, game_mode_nonzero) != 0
@@ -1015,7 +1085,7 @@ fn scan_factories<'a>(
             } else {
                 FactorySearch::Online(id)
             };
-            if primary || (crate::rules::ARES_ENABLED && stop_first) {
+            if primary || (rules.ares() && stop_first) {
                 break;
             }
         }

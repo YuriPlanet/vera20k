@@ -2,12 +2,10 @@
 //! scenario no committed fixture in this repo covered: a ground vehicle driving
 //! across a **high bridge** under the live `advance_tick` path.
 //!
-//! `global_parity_harness_tests.rs` is the model for the shape (record a
-//! `ReplayLog`, replay it through `ReplayRunner` on a fresh `Simulation`, assert
-//! tick-for-tick hash equality plus a committed final baseline). Every "bridge"
-//! in that harness is the *mission* bridge — a code concept — so a regression in
-//! deck height, the `on_bridge` flag, or the bridge occupancy layer sails
-//! straight through the default `--lib` suite. This file closes that gap.
+//! It records a `ReplayLog`, replays it through `ReplayRunner` on a fresh
+//! `Simulation`, and asserts tick-for-tick hash equality plus a committed final
+//! baseline, so a regression in deck height, the `on_bridge` flag, or the
+//! bridge occupancy layer does not sail through the default `--lib` suite.
 //!
 //! Scope note: the fixture stamps a synthetic span into matching path and resolved terrain rather than
 //! loading a retail map, so it runs with no assets and belongs in the DEFAULT

@@ -1428,17 +1428,18 @@ impl Simulation {
     /// are interned and before the first gameplay tick. This is data ingress
     /// only: the installed VM contains no live TeamClass instances.
     ///
-    /// A fixed-AIMD definition that fails RuleSet resolution refuses the whole
-    /// install (`Err`, nothing installed); scenario-origin omissions install
-    /// and come back as logged, nonfatal diagnostics.
+    /// A definition that names something the RuleSet lacks still installs, from
+    /// fixed AIMD as from a scenario, and comes back as a logged diagnostic.
+    /// gamemd refuses none of them: TaskForceClass::ReadINI (`0x006E8420`)
+    /// keeps a member only when its type resolved; TeamTypeClass::ReadINI
+    /// (`0x006F1090`) finds or allocates its Script and TaskForce;
+    /// AITriggerTypeClass::ReadINI (`0x0041F580`) keeps a trigger whose owner
+    /// (`nOwnerMode` stays 0) or condition object (null) did not resolve.
     pub fn install_team_ai_registry(
         &mut self,
         registry: &crate::rules::team_ai_ini::TeamAiIniRegistry,
         rules: &crate::rules::ruleset::RuleSet,
-    ) -> Result<
-        Vec<crate::sim::team_script_vm::TeamAiInstallDiagnostic>,
-        Vec<crate::sim::team_script_vm::TeamAiInstallDiagnostic>,
-    > {
+    ) -> Vec<crate::sim::team_script_vm::TeamAiInstallDiagnostic> {
         // Cold callers stage the same physical Team prefix. Ordinary loaders
         // already prepared the map and its action-created identities; never
         // replay those reads or replace that tail during AI installation.
@@ -1452,12 +1453,6 @@ impl Simulation {
                 &mut self.interner,
                 rules,
             );
-        if diagnostics
-            .iter()
-            .any(crate::sim::team_script_vm::TeamAiInstallDiagnostic::is_fixed_source_refusal)
-        {
-            return Err(diagnostics);
-        }
         if let Some(definitions) = staged {
             self.trigger_runtime.definitions = definitions;
         }
@@ -1465,7 +1460,7 @@ impl Simulation {
         for diagnostic in &diagnostics {
             log::warn!("Team AI install diagnostic: {diagnostic:?}");
         }
-        Ok(diagnostics)
+        diagnostics
     }
 
     pub(crate) fn trigger_definitions_prepared(&self) -> bool {
@@ -3038,7 +3033,7 @@ impl Simulation {
                     //are asymmetric; do not reverse these endpoints.
                     let source_bridge = cells.flags(cells.lookup(attached)) & 0x100 != 0;
                     let movement_zone = self.object_type(entity.type_ref(), rules)?.movement_zone;
-                    self.zone_grid.as_ref()?.can_reach_native(
+                    self.zone_grid.as_deref()?.can_reach_native(
                         &cells,
                         crate::sim::pathfinding::zone_map::ZoneQueryCell::Copied(attached),
                         crate::sim::pathfinding::zone_map::ZoneQueryCell::Copied(destination),

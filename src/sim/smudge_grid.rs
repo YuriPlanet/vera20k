@@ -8,11 +8,12 @@
 
 use crate::map::cell_index::NativeCellIdentity;
 use crate::map::map_file::MapSmudgeEntry;
-use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::smudge_type::SmudgeTypeRegistry;
 use crate::sim::occupancy::OccupancyGrid;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::rng::SimRng;
+use crate::util::shared::{ChunkedVec, Shared};
 use std::collections::BTreeMap;
 use std::hash::Hash;
 
@@ -122,19 +123,14 @@ pub enum SmudgeKind {
 /// Per-cell smudge slot.
 ///
 /// `type_id` indexes into SmudgeTypeRegistry. None = no smudge on this cell.
-/// `footprint_origin` is the top-left cell of the W×H footprint that owns this cell.
-/// `frame_offset` distinguishes the footprint origin (== 0) from non-origin
-/// cells of multi-cell smudges. Computed as
-/// `(rx - origin.rx) + (ry - origin.ry) * footprint_width`. The origin cell
-/// of any placed footprint always has `frame_offset == 0`. Non-origin cells
-/// are skipped at render time — multi-cell SmudgeType SHPs have a single
-/// composite frame, drawn once per footprint at the origin cell.
+/// `frame_offset` is native Cell+11F: the low byte of `y * Width + x`.
+/// Removal and drawing decode it with the current signed type Width. It can
+/// wrap to zero inside a large footprint; no separately saved origin owns it.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
 )]
 pub struct SmudgeCell {
     pub type_id: Option<u16>,
-    pub footprint_origin: Option<(u16, u16)>,
     pub frame_offset: u8,
 }
 
@@ -143,10 +139,11 @@ pub struct SmudgeCell {
 pub struct SmudgeGrid {
     width: u16,
     height: u16,
-    cells: Vec<SmudgeCell>,
+    /// Shared in chunks with presentation frames (docs/sim-thread.md).
+    cells: ChunkedVec<SmudgeCell>,
     /// Generic Object/SmudgeClass vector membership lasts through UnInit.
     /// Never joins Logic; scalar destruction removes only the object.
-    objects: BTreeMap<u64, SmudgeObject>,
+    objects: Shared<BTreeMap<u64, SmudgeObject>>,
     /// Cells mutated this tick — drained per tick by the render-update path.
     /// Not part of game state; never serialized.
     #[serde(skip, default)]
@@ -159,8 +156,8 @@ impl SmudgeGrid {
         Self {
             width,
             height,
-            cells: vec![SmudgeCell::default(); count],
-            objects: BTreeMap::new(),
+            cells: ChunkedVec::filled(SmudgeCell::default(), count),
+            objects: Shared::default(),
             dirty_cells: Vec::new(),
         }
     }
@@ -219,41 +216,17 @@ impl SmudgeGrid {
         }
     }
 
+    /// Whether [`Self::drain_dirty`] would return any cell.
+    pub(crate) fn has_dirty(&self) -> bool {
+        !self.dirty_cells.is_empty()
+    }
+
     pub fn drain_dirty(&mut self) -> Vec<(u16, u16)> {
         std::mem::take(&mut self.dirty_cells)
     }
 
-    /// Clear every complete smudge footprint touched by the supplied cells.
-    /// Intersections are visited in caller order; each owning footprint is
-    /// erased immediately in row-major cell order, so a later intersection
-    /// with that same footprint observes an empty cell and emits no duplicate.
-    pub(crate) fn clear_intersecting_footprints(&mut self, intersections: &[(u16, u16)]) -> usize {
-        let mut cleared = 0;
-        for &(rx, ry) in intersections {
-            let Some(origin) = self
-                .index_of(rx, ry)
-                .and_then(|index| self.cells[index].footprint_origin)
-            else {
-                continue;
-            };
-            for index in 0..self.cells.len() {
-                if self.cells[index].type_id.is_none()
-                    || self.cells[index].footprint_origin != Some(origin)
-                {
-                    continue;
-                }
-                self.cells[index] = SmudgeCell::default();
-                let cell_rx = (index % usize::from(self.width)) as u16;
-                let cell_ry = (index / usize::from(self.width)) as u16;
-                self.dirty_cells.push((cell_rx, cell_ry));
-                cleared += 1;
-            }
-        }
-        cleared
-    }
-
     /// Raw CellClass Mark(1) writer: clear only this cell's native smudge slot
-    /// and data byte, without expanding to the owning Rust footprint.
+    /// and data byte, without decoding a surrounding footprint.
     pub(crate) fn clear_cell_slot(&mut self, rx: u16, ry: u16) -> bool {
         let Some(index) = self.index_of(rx, ry) else {
             return false;
@@ -272,47 +245,72 @@ impl SmudgeGrid {
     /// Original Execute1186E2C20 calls this in allocated578350/578290 order.
     pub(crate) fn clear_footprint_identity_at(
         &mut self,
-        source: (u16, u16),
+        source: (i16, i16),
         registry: &SmudgeTypeRegistry,
         terrain: &ResolvedTerrainGrid,
+        mut visit: impl FnMut(NativeCellIdentity, (i16, i16), bool),
     ) -> Option<usize> {
-        let value = *self.cell(source.0, source.1);
-        let Some(type_id) = value.type_id else {
+        let query = NativeCellQuery::canonical(terrain);
+        let source = query.lookup(source);
+        let source_coord = query.coord(source);
+        let (type_id, data) = match source {
+            NativeCellIdentity::Real(_) => {
+                let value = self.cell(source_coord.0 as u16, source_coord.1 as u16);
+                (value.type_id, value.frame_offset)
+            }
+            NativeCellIdentity::Dummy => {
+                let (id, data) = query.dummy().smudge_identity_data();
+                (
+                    if id == -1 {
+                        None
+                    } else {
+                        Some(u16::try_from(id).ok()?)
+                    },
+                    data,
+                )
+            }
+        };
+        let Some(type_id) = type_id else {
             return Some(0);
         };
         let definition = registry.get(type_id)?;
-        // The current retail reader retains positive stock dimensions1/2;
-        // its existing1..255 compatibility clamp is a separate mod boundary.
-        let width = i16::from(definition.width);
-        let data = i16::from(value.frame_offset);
+        // Both Map588B3D and Building43F33F/43F846 divide before testing
+        // either loop bound. A zero divisor refuses this source safely.
+        let (dx, dy) = definition.encoded_cell_offset(data)?;
+        if definition.width <= 0 || definition.height <= 0 {
+            return Some(0);
+        }
         let origin = (
-            (source.0 as i16).wrapping_sub(data % width),
-            (source.1 as i16).wrapping_sub(data / width),
+            source_coord.0.wrapping_sub(dx as i16),
+            source_coord.1.wrapping_sub(dy as i16),
         );
         let mut changed = 0;
-        for dy in 0..i16::from(definition.height) {
-            for dx in 0..width {
+        for dy in 0..definition.height {
+            for dx in 0..definition.width {
                 //588B80..BA4: signed-word linear lookup and shared Dummy stamp.
-                let selected = terrain
-                    .native_cell_identity((origin.0.wrapping_add(dx), origin.1.wrapping_add(dy)));
-                match selected {
+                let selected = query.lookup((
+                    origin.0.wrapping_add(dx as i16),
+                    origin.1.wrapping_add(dy as i16),
+                ));
+                let at = query.coord(selected);
+                let did_change = match selected {
                     NativeCellIdentity::Real(_) => {
-                        let at = terrain.native_cell_coord(selected);
-                        if let Some(index) = self.index_of(at.0 as u16, at.1 as u16)
-                            && self.cells[index].type_id.take().is_some()
-                        {
-                            // Keep+11F and derived origin metadata; an empty
-                            // identity stops drawing, not an invented data reset.
-                            self.dirty_cells.push((at.0 as u16, at.1 as u16));
-                            changed += 1;
-                        }
+                        let value = self
+                            .index_of(at.0 as u16, at.1 as u16)
+                            .is_some_and(|index| self.cells[index].type_id.take().is_some());
+                        changed += usize::from(value);
+                        value
                     }
                     NativeCellIdentity::Dummy => {
-                        let dummy = terrain.shared_cell_dummy();
-                        let (_, data) = dummy.smudge_identity_data();
+                        let dummy = query.dummy();
+                        let (id, data) = dummy.smudge_identity_data();
                         dummy.write_smudge_identity_data(-1, data);
+                        id != -1
                     }
-                }
+                };
+                // Building43F3DA/43F8DB invalidates every visited target;
+                // the Map caller retains its changed-cell adapter separately.
+                visit(selected, at, did_change);
             }
         }
         Some(changed)
@@ -344,7 +342,6 @@ impl SmudgeGrid {
 
 const DEFAULT_CELL: SmudgeCell = SmudgeCell {
     type_id: None,
-    footprint_origin: None,
     frame_offset: 0,
 };
 
@@ -416,19 +413,24 @@ impl SmudgeGrid {
     fn passes_placement_gates(
         &self,
         origin: (i16, i16),
-        w: u8,
-        h: u8,
+        w: i32,
+        h: i32,
         terrain: &ResolvedTerrainGrid,
         overlay: &OverlayGrid,
         occupancy: Option<&OccupancyGrid>,
         allow_building: bool,
     ) -> bool {
+        // CanPlace6B5F95/6B5FA9 succeeds without any cell lookup for an
+        // empty signed footprint, even when its origin would be blocked.
+        if w <= 0 || h <= 0 {
+            return true;
+        }
         let in_bounds = origin_in_bounds(terrain, origin);
         for dy in 0..h {
             for dx in 0..w {
                 let cell = terrain.native_cell_identity((
-                    origin.0.wrapping_add(i16::from(dx)),
-                    origin.1.wrapping_add(i16::from(dy)),
+                    origin.0.wrapping_add(dx as i16),
+                    origin.1.wrapping_add(dy as i16),
                 ));
                 if !in_bounds || terrain.native_cell_ground_fields(cell).1 != 0 {
                     return false;
@@ -473,18 +475,20 @@ impl SmudgeGrid {
         &mut self,
         origin: (i16, i16),
         type_id: u16,
-        w: u8,
-        h: u8,
+        w: i32,
+        h: i32,
         terrain: &ResolvedTerrainGrid,
     ) {
-        // CanPlace admitted the origin, an allocated slot.
-        let footprint_origin = (origin.0 as u16, origin.1 as u16);
+        // Place6B6090/6B60A4 has no writes for either nonpositive bound.
+        if w <= 0 || h <= 0 {
+            return;
+        }
         for dy in 0..h {
             for dx in 0..w {
-                let data = dy.wrapping_mul(w).wrapping_add(dx);
+                let data = (dy as u8).wrapping_mul(w as u8).wrapping_add(dx as u8);
                 let cell = terrain.native_cell_identity((
-                    origin.0.wrapping_add(i16::from(dx)),
-                    origin.1.wrapping_add(i16::from(dy)),
+                    origin.0.wrapping_add(dx as i16),
+                    origin.1.wrapping_add(dy as i16),
                 ));
                 if cell == NativeCellIdentity::Dummy {
                     terrain
@@ -499,7 +503,6 @@ impl SmudgeGrid {
                 };
                 self.cells[index] = SmudgeCell {
                     type_id: Some(type_id),
-                    footprint_origin: Some(footprint_origin),
                     frame_offset: data,
                 };
                 self.dirty_cells.push((x, y));
@@ -576,7 +579,7 @@ impl SmudgeGrid {
         }
 
         // Pass 1 — flag filter and per-candidate placement check.
-        let mut placeable: Vec<(u16, u8, u8)> = Vec::new();
+        let mut placeable: Vec<(u16, i32, i32)> = Vec::new();
         for (id, def) in registry.iter_with_id() {
             let flagged = match kind {
                 SmudgeKind::Burn => def.burn,
@@ -642,7 +645,7 @@ impl SmudgeGrid {
 /// Native execution: `tools/spatial_oracle/anim_middle.py` and
 /// `smudge_can_place.py` (`placer`, `centre_mark`).
 pub(crate) fn pick_smudge_candidate(
-    placeable: &[(u16, u8, u8)],
+    placeable: &[(u16, i32, i32)],
     width: i32,
     height: i32,
     force_big: bool,
@@ -780,7 +783,6 @@ pub(crate) mod oracle_fixture {
                     ry,
                     SmudgeCell {
                         type_id: Some(id as u16),
-                        footprint_origin: Some((rx, ry)),
                         frame_offset: int(&cell["smudge_data"]) as u8,
                     },
                 );
@@ -1038,8 +1040,8 @@ mod tests {
             oracle_fixture::reset_dummy_coord(&map.terrain);
             let actual = map.smudges.passes_placement_gates(
                 (int(&origin[0]) as i16, int(&origin[1]) as i16),
-                int(&row["width"]) as u8,
-                int(&row["height"]) as u8,
+                int(&row["width"]) as i32,
+                int(&row["height"]) as i32,
                 &map.terrain,
                 &map.overlay,
                 Some(&map.occupancy),

@@ -614,7 +614,7 @@ fn gsi_04_01_production_size_diamond_closes_exact_capacity_edge() {
         rejected
             .native_allocated
             .as_ref()
-            .is_some_and(Vec::is_empty)
+            .is_some_and(|v| v.is_empty())
     );
     assert_eq!(rejected_stats.fill_calls, 0);
     assert!(rejected.cell(0, 0).is_none());
@@ -3882,6 +3882,37 @@ NoUseTileLandType=no
                 assert!(!effects.overlay_blocks);
             }
         }
+    }
+}
+
+#[test]
+fn a_tmp_ramp_byte_past_the_slope_tables_is_flat_ground() {
+    let tile = |ramp_type| TmpTile {
+        height: 0,
+        terrain_type: 14,
+        ramp_type,
+        radar_left: [0, 0, 0],
+        radar_right: [0, 0, 0],
+        pixels: Vec::new(),
+        depth: Vec::new(),
+        pixel_width: 60,
+        pixel_height: 30,
+        relative_extra_y: 0,
+        offset_x: 0,
+        offset_y: 0,
+        has_damaged_data: false,
+    };
+    let mut last_slope = TileMetadata::default();
+    merge_tmp_metadata(&mut last_slope, &tile(20));
+    assert_eq!(last_slope.slope_type, 20);
+    assert!(last_slope.has_ramp);
+    for ramp_type in [21, 255] {
+        let mut metadata = TileMetadata::default();
+        merge_tmp_metadata(&mut metadata, &tile(ramp_type));
+        assert_eq!(metadata.slope_type, 0, "ramp byte {ramp_type}");
+        assert!(!metadata.has_ramp);
+        // Every ground-height read takes the stored slope.
+        assert!(crate::util::lepton::ground_height_leptons(0, metadata.slope_type, 0, 0).is_ok());
     }
 }
 

@@ -820,7 +820,7 @@ impl Simulation {
                 let bridge = cells.flags(cells.lookup((target.0 as i16, target.1 as i16)))
                     & CELL_FLAG_BRIDGE
                     != 0;
-                let zone = self.zone_grid.as_ref().and_then(|zones| {
+                let zone = self.zone_grid.as_deref().and_then(|zones| {
                     zones.get_zone_id_native(
                         terrain,
                         (current.0 as u16, current.1 as u16),
@@ -900,7 +900,7 @@ impl Simulation {
                 // Ares 3.0 TeleportLocomotionClass_Unwarp_PreventSelfCrush
                 // (10037BC0, hook 0x7187DA) skips the warper itself.
                 if let CellObjectMember::Entity(other) = member
-                    && !(crate::rules::ARES_ENABLED && other == id)
+                    && !(rules.ares() && other == id)
                     && self.substrate.entities.get(other).is_some_and(|entity| {
                         crate::sim::superweapon::invulnerability::is_invulnerable(
                             entity.invulnerability.as_ref(),
@@ -922,7 +922,7 @@ impl Simulation {
                     // (1005D420, hook 0x718871): an Amphibious,
                     // AmphibiousCrusher, AmphibiousDestroyer or WaterBeach
                     // MovementZone floats too, powered or not.
-                    crate::rules::ARES_ENABLED
+                    rules.ares()
                         && matches!(
                             object.movement_zone,
                             MovementZone::Amphibious

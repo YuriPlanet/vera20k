@@ -121,6 +121,8 @@ impl App {
     pub(crate) fn release_in_game_pointer_state(state: &mut AppState) {
         state.match_state.input.tactical_mouse.reset_on_focus_loss();
         state.match_state.input.selection_state.cancel_drag();
+        // VERA formation line: a line being drawn goes with the band box.
+        state.match_state.input.formation_line.cancel();
         state.match_state.input.cancel_minimap_press();
         // A touch stream can end without an `Ended` when the window loses
         // focus with fingers down, and the live gesture owns the edge-scroll
@@ -132,15 +134,12 @@ impl App {
             .match_presentation
             .in_game_gadgets
             .cancel_pointer_capture();
-        state
-            .match_state
-            .match_presentation
-            .in_game_options
-            .dragging_slider = None;
-        state.match_state.match_presentation.in_game_options.buttons = Default::default();
         state.match_state.match_presentation.pause_menu_interaction = Default::default();
         state.match_state.match_presentation.abort_buttons = Default::default();
         state.match_state.match_presentation.diplomacy = Default::default();
+        if let Some(page) = state.match_state.match_presentation.options_page.as_mut() {
+            page.dialog.shell_cancel_pointer_gesture();
+        }
         if let Some(dialog) = state.match_state.match_presentation.sound_dialog.as_mut() {
             dialog.reset_interaction();
         }
@@ -228,11 +227,15 @@ impl App {
     /// window then comes back on the same screen the choice names
     /// ([`crate::app::display_target`]).
     pub(crate) fn set_full_screen(state: &mut AppState, full_screen: bool) {
-        let window = state.platform.window.clone();
         if !full_screen {
-            window.set_fullscreen(None);
+            // VERA: the game's own switch (the Options and Esc menu boxes, the
+            // Full Screen key) leaves full screen to the launch window, not to
+            // the placement winit saved on entry. The title-bar button and the
+            // system shortcut stay the window system's.
+            Self::restore_launch_window(state);
             return;
         }
+        let window = state.platform.window.clone();
         let displays = crate::app::display_target::current_displays(&window);
         let target = state.persistence.options_profile.display.clone();
         crate::app::display_target::center_windowed(&window, &displays, &target);
@@ -241,7 +244,8 @@ impl App {
         )));
     }
 
-    /// The Esc menu's Set Window Size button: the window as a launch opens it.
+    /// The main menu Esc menu's Set Window Size button, and the Full Screen switch going
+    /// off: the window as a launch opens it.
     /// A full-screen window leaves full screen first and macOS animates that,
     /// so `follow_window_full_screen` does the rest once the window is out.
     pub(crate) fn restore_launch_window(state: &mut AppState) {
@@ -309,6 +313,9 @@ impl App {
         state.persistence.options_profile.full_screen = full_screen;
         if let Some(dialog) = state.frontend.options_dialog.as_mut() {
             dialog.sync_full_screen(full_screen);
+        }
+        if let Some(page) = state.match_state.match_presentation.options_page.as_mut() {
+            page.dialog.sync_full_screen(full_screen);
         }
         Self::shell_menu_follow_full_screen(state, full_screen, changed);
     }
@@ -637,6 +644,24 @@ impl ApplicationHandler for App {
                 _ => state.platform.redraw_gate.note_input(),
             }
         }
+        // docs/sim-thread.md, "The browser": an event may write the world,
+        // which the browser's main thread cannot take back from a tick still
+        // on the simulation worker. Every event but a redraw waits, in order,
+        // for the pass that finds the tick back ([`Self::release_held_events`]).
+        #[cfg(all(
+            feature = "wasm-threads",
+            target_arch = "wasm32",
+            target_os = "unknown"
+        ))]
+        if !matches!(event, WindowEvent::RedrawRequested)
+            && self
+                .state
+                .as_ref()
+                .is_some_and(|state| state.match_state.sim_runtime.is_lent())
+        {
+            self.held_window_events.push((_id, event));
+            return;
+        }
         let shell_capture_active = self.shell_capture.is_some();
         let hidden_run_active = self.hidden_run.is_some();
         // Set while this call re-dispatches a touch's mouse events: those carry
@@ -925,13 +950,26 @@ impl ApplicationHandler for App {
             return;
         }
 
+        // A pause's end resyncs the held keys and gameplay modifiers; every
+        // event passes here, so the frame after the pause sees it.
+        let paused = state.match_state.paused();
+        let key_edge = match &event {
+            WindowEvent::KeyboardInput { event, .. } => match event.physical_key {
+                PhysicalKey::Code(code) => Some((code, event.state.is_pressed())),
+                _ => None,
+            },
+            _ => None,
+        };
+        state
+            .match_state
+            .input
+            .track_pause(paused, state.platform.live_modifiers, key_edge);
         // Key edges own the modifier views on every screen, including utility
         // cards that consume command input. A release there must not stay held
         // after returning to the shell or entering another match.
         if let WindowEvent::KeyboardInput { event, .. } = &event
             && let PhysicalKey::Code(code) = event.physical_key
         {
-            let paused = state.match_state.paused();
             crate::app::input::hotkeys::record_modifier_key(
                 &mut state.platform.held_modifier_keys,
                 &mut state.platform.live_modifiers,
@@ -1876,6 +1914,18 @@ impl ApplicationHandler for App {
             }
             WindowEvent::Ime(ime) => crate::app::input::ime::event(state, ime),
             WindowEvent::RedrawRequested => {
+                #[cfg(all(
+                    feature = "wasm-threads",
+                    target_arch = "wasm32",
+                    target_os = "unknown"
+                ))]
+                let state = {
+                    self.release_held_events(event_loop);
+                    let Some(state) = self.state.as_mut() else {
+                        return;
+                    };
+                    state
+                };
                 // Inside the draw limits the draw waits for `about_to_wait`.
                 if state
                     .platform
@@ -1926,6 +1976,12 @@ impl ApplicationHandler for App {
             // final admission. Ordinary input starts only with the full state.
             return;
         }
+        #[cfg(all(
+            feature = "wasm-threads",
+            target_arch = "wasm32",
+            target_os = "unknown"
+        ))]
+        self.release_held_events(event_loop);
         let shell_scroll_wake = if let Some(state) = self.state.as_mut() {
             #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
             if Self::poll_browser_exit(state, event_loop) {
@@ -1941,7 +1997,17 @@ impl ApplicationHandler for App {
             // the window is focused. Presentation-only, never part of the sim.
             crate::app::input::cursor::reassert_cursor_confinement(state);
             // Captures keep their sealed input; they never ask for an IME.
-            if self.shell_capture.is_none() && self.hidden_run.is_none() {
+            // The browser's composed text waits with the window events a
+            // tick on the simulation worker holds, so it cannot overtake a
+            // key pressed before it ([`Self::release_held_events`]).
+            if self.shell_capture.is_none()
+                && self.hidden_run.is_none()
+                && !(cfg!(all(
+                    feature = "wasm-threads",
+                    target_arch = "wasm32",
+                    target_os = "unknown"
+                )) && state.match_state.sim_runtime.is_lent())
+            {
                 crate::app::input::ime::sync(state);
             }
             Self::update_saved_seed_browser_scroll(state, false);

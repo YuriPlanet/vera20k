@@ -70,7 +70,7 @@ fn store(attacker_type: &str, attacker_owner: &str) -> EntityStore {
     let mut victim = live(GameEntity::test_default(2, "DLPH", "Soviet", 11, 10));
     let mut cloak = CloakRuntime::new(0);
     cloak.establish_unlimbo_fully_cloaked();
-    victim.cloak = Some(cloak);
+    victim.cloak = Some(Box::new(cloak));
     store.insert(victim);
     store
 }

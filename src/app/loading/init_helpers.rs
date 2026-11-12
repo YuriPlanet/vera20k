@@ -587,6 +587,22 @@ pub(crate) fn prepare_presentation_manifest(
     }
 }
 
+/// Read the mod's `veraui.ini` (loose in the game or mod folder, or in a mod
+/// MIX) for the match being loaded. The match lays the player's own file
+/// over it and reports what either refuses (`presentation::player_layout`).
+fn read_match_layouts(asset_manager: &AssetManager) -> Option<crate::rules::ini_parser::IniFile> {
+    let (bytes, source) = asset_manager.get_with_source_ref(crate::ui::match_layout::FILE_NAME)?;
+    log::info!(
+        "Interface layout file {} found in {source}",
+        crate::ui::match_layout::FILE_NAME
+    );
+    // `LoadFromStraw` drops a last line that has no line break.
+    let mut complete = Vec::with_capacity(bytes.len() + 1);
+    complete.extend_from_slice(bytes);
+    complete.push(b'\n');
+    crate::rules::ini_parser::IniFile::from_bytes(&complete).ok()
+}
+
 /// Complete the common presentation preparation after the caller's world is
 /// ready. Fresh loading builds terrain/entity/overlay parts at its existing
 /// milestones, then finishes here after its post-map tail; saved loading can
@@ -594,25 +610,6 @@ pub(crate) fn prepare_presentation_manifest(
 /// No simulation state, HVA metadata, AI registry or overlay frame is written.
 /// Optional missing assets retain the ordinary fresh-load fallback policy;
 /// all returned resources belong to the incoming world, never the outgoing one.
-/// Read the game folder's `veraui.ini` (loose, or in a mod MIX) for the match
-/// being loaded. Every line it refuses is logged here; the match tells the
-/// player once (`input::messages::post_layout_problem`).
-fn read_match_layouts(asset_manager: &AssetManager) -> crate::ui::match_layout::MatchLayoutFile {
-    use crate::ui::match_layout::{FILE_NAME, MatchLayoutFile};
-    let Some((bytes, source)) = asset_manager.get_with_source_ref(FILE_NAME) else {
-        return MatchLayoutFile::none();
-    };
-    let layouts = MatchLayoutFile::from_bytes(bytes);
-    log::info!(
-        "Interface layouts read from {FILE_NAME} ({source}), {} line(s) refused",
-        layouts.problems().len()
-    );
-    for problem in layouts.problems() {
-        log::warn!("{FILE_NAME} {problem}");
-    }
-    layouts
-}
-
 #[expect(
     clippy::too_many_arguments,
     reason = "combines prepared world projections without owning gameplay"
@@ -641,7 +638,7 @@ pub(crate) fn finish_presentation_assets(
         }
     }
     let sidebar_cameo_atlas = build_sidebar_cameo_atlas(gpu, batch, asset_manager, Some(rules));
-    let match_layouts = read_match_layouts(asset_manager);
+    let match_layout_ini = read_match_layouts(asset_manager);
     #[cfg(feature = "phobos")]
     let uimd_bytes = asset_manager.get_ref("UIMD.INI");
     #[cfg(feature = "phobos")]
@@ -771,7 +768,7 @@ pub(crate) fn finish_presentation_assets(
         bridge_atlas: overlays.bridge_atlas,
         sidebar_cameo_atlas,
         sidebar_chrome,
-        match_layouts,
+        match_layout_ini,
         #[cfg(feature = "phobos")]
         sw_sidebar_ui,
         #[cfg(feature = "phobos")]

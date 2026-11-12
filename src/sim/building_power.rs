@@ -62,6 +62,14 @@ impl GameEntity {
         self.building_online.online
     }
 
+    /// Ares BuildingExt `TogglePower_HasPower` (`+0x51`) clear: the last
+    /// GoOffline is still in force. TechnoClass_DrawExtras_PowerOff
+    /// (10049FE0, hook `0x6F526C`) draws the power-off marker from it.
+    #[cfg(feature = "ares")]
+    pub fn ares_toggled_off(&self) -> bool {
+        self.building_online.ares_toggled_off()
+    }
+
     /// Phobos `TechnoExt::IsActive` (`src/Ext/Techno/Body.cpp`) plus the power
     /// plant enhancer loops' `HasPower` (Building+660) gate. Temporal
     /// targeting and warping are both covered by `is_warped_out`.
@@ -192,16 +200,36 @@ impl Simulation {
         effects: FrameEffects<'_>,
     ) {
         for id in self.substrate.take_ares_temporal_factory_refresh() {
-            let Some(entity) = self.substrate.entities.get(id) else {
-                continue;
-            };
-            let owner = entity.owner();
-            if let Some(category) = self
-                .object_type(entity.type_ref(), rules)
-                .and_then(crate::sim::production::factory_category_for_building)
-            {
-                crate::sim::production::update_factory_queue(self, rules, owner, category, effects);
-            }
+            self.ares_update_factory_queues(id, rules, effects);
+        }
+    }
+
+    /// BuildingExt::UpdateFactoryQueues `10013250`: a building's owner runs
+    /// `HouseClass::Update_FactoriesQueues @ 0x00509140` for the building's
+    /// `Factory=` type and `Naval=`, BuildCat DontCare; a building with no
+    /// `Factory=` or no longer stored does nothing. Callers: the temporal
+    /// refresh above, and Ares Activate `1004CCB0` / Deactivate `1004CDC0`
+    /// on a Building's transition (`Simulation::techno_reactivate`,
+    /// `Simulation::techno_deactivate`).
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_update_factory_queues(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        if entity.category() != EntityCategory::Structure {
+            return;
+        }
+        let owner = entity.owner();
+        if let Some(category) = self
+            .object_type(entity.type_ref(), rules)
+            .and_then(crate::sim::production::factory_category_for_building)
+        {
+            crate::sim::production::update_factory_queue(self, rules, owner, category, effects);
         }
     }
 }

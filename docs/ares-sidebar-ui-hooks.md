@@ -42,11 +42,14 @@ vanilla behaviour in every row marked Ported.
   16), `Slot%d.ColorScheme`, `.Tooltip`, `.DisplayColor` and the `Observer.*` keys.
   Effect: the lobby offers `Count` colours chosen by scheme name, random colours are
   drawn from `Count`, the observer takes colour `Count`, and `SessionClass` maps a
-  colour slot to a `[Colors]` scheme by name. Why open: the engine fixes eight colours
-  (`HOUSE_COLOR_COUNT`, `src/skirmish_launch.rs`) through the skirmish shell, LAN and
-  WOL rows, session persistence and loading, and `SkirmishColorMode` maps a priority
-  to a scheme entry by table, not by name. With no uimd.ini `[Colors]` section Ares'
-  defaults equal the engine's eight colours and every colour row below holds.
+  colour slot to a `[Colors]` scheme by name. Why open: no uimd.ini reader exists, and
+  the engine's own list differs from Ares' numbering. VERA's lobbies list up to thirty
+  colours from the rules' `[SkirmishColors]` ([lobby player colours](skirmish-colors.md)):
+  the first eight keep priorities 0..=7, the observer keeps 8, the others take 9..=30,
+  and a random colour stays in the first eight while one is free. Ares numbers its
+  slots 0..`Count`-1, gives the observer `Count` and draws a random colour from all of
+  them. With no uimd.ini `[Colors]` section Ares' defaults equal the engine's first
+  eight colours and every colour row below holds for them.
 
 ## Dispositions
 

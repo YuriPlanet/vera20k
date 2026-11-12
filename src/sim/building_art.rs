@@ -36,7 +36,7 @@ pub(crate) use storage::BuildingStorage;
 /// (Building+55C), their effect-replay marks (+5B0), the damaged-art flag
 /// (+6E6), its StorageClass art, the Stuff flag (+6EA) and the
 /// OnConstructionComplete guard (+6E4).
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BuildingArt {
     /// Building+5FC, initialized to -1 by43B768/43B7BF. This is the
     /// WallTower upgrade image variant, not Techno's gunner turret index.
@@ -78,7 +78,7 @@ pub struct BuildingArt {
 /// Inputs to native BuildingClass::UpdateAnimation's relight at 00450A47.
 /// Retain the pre-Techno values across save/load because the next render uses
 /// them; the gameplay owners remain the entity's live tint and flash state.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BuildingTintSample {
     frame: u32,
     flashed: bool,
@@ -134,6 +134,28 @@ impl BuildingArt {
             airstrike: airstrike.clone(),
             airstrike_active,
         });
+    }
+
+    /// Whether [`Self::capture_tint_sample`] with these inputs would leave
+    /// what the draw reads as it is. The draw reads the sample's frame only
+    /// under an Iron Curtain or an airstrike mark (`presentation::lighting`,
+    /// `effect_light`), so a sample without either that agrees on the rest
+    /// is current whatever frame it holds.
+    pub(crate) fn tint_sample_is_current(
+        &self,
+        flashed: bool,
+        invulnerability: Option<&crate::sim::superweapon::invulnerability::InvulnerabilityState>,
+        airstrike: &crate::sim::superweapon::airstrike_tint::AirstrikeTintState,
+        airstrike_active: bool,
+    ) -> bool {
+        invulnerability.is_none()
+            && !airstrike_active
+            && self.tint_sample.as_ref().is_some_and(|sample| {
+                sample.flashed == flashed
+                    && sample.invulnerability.is_none()
+                    && !sample.airstrike_active
+                    && sample.airstrike == *airstrike
+            })
     }
 
     pub fn tint_sample(&self) -> Option<&BuildingTintSample> {
@@ -240,17 +262,8 @@ impl crate::sim::world::ObjectSubstrate {
     /// (`0x0043FE56`) steps either tint stage or the flash.
     pub(crate) fn relight_building_anims(&mut self, id: u64, frame: u32) {
         let airstrike_active = self.airstrike_tint_active(id);
-        if let Some(entity) = self.entities.get_mut(id)
-            && entity.category() == crate::map::entities::EntityCategory::Structure
-        {
-            entity.building_art.capture_tint_sample(
-                frame,
-                entity.flashing.flashed(),
-                entity.invulnerability.as_ref(),
-                &entity.airstrike_tint,
-                airstrike_active,
-            );
-        }
+        self.entities
+            .capture_building_tint_sample(id, frame, airstrike_active);
     }
 
     /// Building vt+0x148 `Flash` (`0x00456E00`): the Techno body
@@ -278,6 +291,16 @@ impl Default for BuildingArt {
             free_units_done: false,
             tint_sample: None,
         }
+    }
+}
+
+/// An object that is not a Building never writes its art, and keeps none
+/// (`GameEntity::building_art`).
+impl crate::util::sparse::SparseDefault for BuildingArt {
+    fn sparse_default() -> &'static Self {
+        static DEFAULT: std::sync::LazyLock<BuildingArt> =
+            std::sync::LazyLock::new(BuildingArt::default);
+        &DEFAULT
     }
 }
 
@@ -1764,6 +1787,16 @@ mod slot_tests {
         );
         assert_eq!(sim.anim(replaced).unwrap().world_coord().x, 768);
         assert_eq!(sim.anim(replaced).unwrap().world_coord().y, 1024);
+        assert_eq!(sim.anim(replaced).unwrap().runtime().frame_timer, timer);
+        // SetHeight5F5FA0 re-enters BuildingMark43F738 without Unlimbo.
+        // Move the retained slot after PlaceDown without restarting it.
+        let old_z = sim.anim(replaced).unwrap().world_coord().z;
+        sim.set_object_height(id, 96, &rules, None, FrameEffects::default());
+        assert_eq!(sim.anim(replaced).unwrap().world_coord().z, old_z + 96);
+        assert_eq!(
+            sim.entities().get(id).unwrap().building_art.anim_slots[3],
+            Some(replaced)
+        );
         assert_eq!(sim.anim(replaced).unwrap().runtime().frame_timer, timer);
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "", 0);

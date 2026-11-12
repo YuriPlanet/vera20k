@@ -6,7 +6,8 @@
 //! Move/destruction walk includes those new births, as the original does.
 
 use super::spark::{SparkMotionStep, resolve_collision};
-use super::spark_world::{SparkCollisionWorld, constructor_ground_height};
+use super::spark_world::{SparkCollisionWorld, SparkWorldError, constructor_ground_height};
+use super::system_ai::SparkSystemTickError;
 use super::wind::{GAS_WIND_DX, GAS_WIND_DY};
 use super::{Particle, ParticleSystem};
 use crate::rules::particle_type::{ParticleBehavesLike, ParticleTypeId};
@@ -88,7 +89,11 @@ pub(super) fn tick_system(
             continue;
         };
         if rules.particle_type(p.type_id).behaves_like == ParticleBehavesLike::Gas {
-            tick_particle(&mut p, sim, rules, owner_house, owner_entity, context);
+            if let Err(error) =
+                tick_particle(&mut p, sim, rules, owner_house, owner_entity, context)
+            {
+                super::system_ai::retire_refused(&mut p, &error);
+            }
             super::system_ai::finish_lifetime(&mut p);
         } else {
             super::system_ai::tick_particle(&mut p, sim, rules, owner_house, owner_entity);
@@ -140,7 +145,8 @@ pub(super) fn tick_system(
 
 /// Complete Gas body; the dispatcher separately owns its word-EC tail.
 /// Shared Spark query/reflection owners implement the identical bridge,
-/// ground/contact, building/wall and slope-matrix dependency.
+/// ground/contact, building/wall and slope-matrix dependency. An `Err` is a
+/// cell VERA's query refuses; the caller retires the particle.
 pub(super) fn tick_particle(
     p: &mut Particle,
     sim: &mut Simulation,
@@ -148,7 +154,7 @@ pub(super) fn tick_particle(
     owner_house: Option<InternedId>,
     owner: Option<u64>,
     context: UninitContext<'_>,
-) {
+) -> Result<(), SparkSystemTickError> {
     if sim.session.binary_frame() & 1 == 0 {
         if sim.particle_rng().next_raw_abs_modulo(8) == 0 {
             let x_axis = sim.particle_rng().next_raw_abs_modulo(2) == 0;
@@ -188,15 +194,13 @@ pub(super) fn tick_particle(
                 persistent_velocity: p.motion,
                 probe_velocity: p.motion,
             };
-            let facts = SparkCollisionWorld::new(sim, rules)
-                .and_then(|world| world.query(motion))
-                .expect("Gas collision requires supported live cell facts");
-            let collision = resolve_collision(motion, facts).expect("finite Gas slope reflection");
+            let facts = SparkCollisionWorld::new(sim, rules)?.query(motion)?;
+            let collision = resolve_collision(motion, facts)?;
             if let Some(vector) = collision.transient_reflection {
                 p.motion = vector;
             }
         }
-        let height = p.coords.z.wrapping_sub(ground(sim, p.coords));
+        let height = p.coords.z.wrapping_sub(ground(sim, p.coords)?);
         p.drift_z = if height > 5 {
             p.drift_z.wrapping_sub(1).max(-5)
         } else {
@@ -219,6 +223,7 @@ pub(super) fn tick_particle(
             p.animation_state = 0;
         }
     }
+    Ok(())
 }
 
 /// `owner` is the system's owner (`+0xE0`); only Ares reads it here.
@@ -466,26 +471,28 @@ fn damage_in_range(
     }
 }
 
-fn ground(sim: &Simulation, coords: IVec3) -> i32 {
-    constructor_ground_height(sim, coords.x, coords.y)
-        .expect("Gas movement requires supported ground")
-        .unwrap_or(0)
+fn ground(sim: &Simulation, coords: IVec3) -> Result<i32, SparkWorldError> {
+    Ok(constructor_ground_height(sim, coords.x, coords.y)?.unwrap_or(0))
 }
 
-pub(super) fn move_gas(p: &mut Particle, sim: &Simulation, rules: &RuleSet) {
+pub(super) fn move_gas(
+    p: &mut Particle,
+    sim: &Simulation,
+    rules: &RuleSet,
+) -> Result<(), SparkWorldError> {
     let pt = rules.particle_type(p.type_id);
     let frame = sim.session.binary_frame() as i32;
     let mut coords = p.coords;
+    // gamemd divides by `10 / WindEffect` (zero above 10) and indexes its
+    // eight-entry tables with `[General] WindDirection` unchecked. VERA gives
+    // either value no wind, as Smoke does.
+    let wind = usize::try_from(rules.general.wind_direction())
+        .ok()
+        .filter(|&i| i < GAS_WIND_DX.len());
     if pt.wind_effect > 0
-        && frame
-            .checked_rem(10 / pt.wind_effect)
-            .expect("native Gas wind requires a nonzero divisor")
-            == 0
+        && frame.checked_rem(10 / pt.wind_effect) == Some(0)
+        && let Some(wind) = wind
     {
-        let wind = usize::try_from(rules.general.wind_direction())
-            .ok()
-            .filter(|&i| i < GAS_WIND_DX.len())
-            .expect("native Gas wind table requires WindDirection in 0..7");
         coords.x = coords.x.wrapping_add(GAS_WIND_DX[wind]);
         coords.y = coords.y.wrapping_add(GAS_WIND_DY[wind]);
     }
@@ -498,14 +505,15 @@ pub(super) fn move_gas(p: &mut Particle, sim: &Simulation, rules: &RuleSet) {
             X87::load_i32(coords.y),
             X87::load_f32(p.motion[1]),
         ));
-        let floor = ground(sim, coords).wrapping_add(5);
+        let floor = ground(sim, coords)?.wrapping_add(5);
         if coords.z > floor {
             coords.z = coords.z.wrapping_sub(coords.z.wrapping_sub(floor).min(2));
         }
         coords = offset(coords, IVec3::new(p.drift_x, p.drift_y, p.drift_z));
-        coords.z = coords.z.max(ground(sim, coords).wrapping_add(5));
+        coords.z = coords.z.max(ground(sim, coords)?.wrapping_add(5));
     }
     p.coords = coords;
+    Ok(())
 }
 
 fn offset(coords: IVec3, delta: IVec3) -> IVec3 {

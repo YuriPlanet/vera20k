@@ -33,6 +33,7 @@ pub mod houses;
 pub(crate) mod iso_tile_flood;
 pub mod lat;
 pub mod lighting;
+pub mod map_export;
 pub mod map_file;
 pub mod overlay;
 pub(crate) mod overlay_mark;

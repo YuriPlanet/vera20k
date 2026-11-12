@@ -673,11 +673,8 @@ fn fourth_base_unit_survival_reaches_the_production_defeat_gate() {
         .spawn_object_limbo_at_height("TANK", "house0", 10, 10, 0, 0, &rules)
         .unwrap();
     sim.check_defeat(Some(&rules), None);
-    assert_eq!(
-        sim.houses[&owner].is_defeated(),
-        !crate::rules::ARES_ENABLED
-    );
-    if crate::rules::ARES_ENABLED {
+    assert_eq!(sim.houses[&owner].is_defeated(), !crate::rules::ARES_BUILD);
+    if crate::rules::ARES_BUILD {
         sim.uninit_with_rules(extra_mcv, &rules);
         sim.flush_pending_delete();
         sim.check_defeat(Some(&rules), None);
@@ -701,7 +698,7 @@ fn explicit_keep_alive_false_reaches_both_production_mode_arms() {
         sim.check_defeat(Some(&rules), None);
         assert_eq!(
             sim.houses[&houses[0]].is_defeated(),
-            crate::rules::ARES_ENABLED
+            crate::rules::ARES_BUILD
         );
     }
 }
@@ -856,7 +853,8 @@ fn native_blowup_subsets_corpus() {
                     .entities
                     .get_mut(controller)
                     .unwrap()
-                    .capture_manager = Some(CaptureManagerState::with_nodes_for_test(&nodes));
+                    .capture_manager =
+                    Some(Box::new(CaptureManagerState::with_nodes_for_test(&nodes)));
             }
         }
         let subset = match input["subset"].as_str().unwrap() {
@@ -978,7 +976,8 @@ fn native_blowup_all_corpus() {
                     .entities
                     .get_mut(controller)
                     .unwrap()
-                    .capture_manager = Some(CaptureManagerState::with_nodes_for_test(&nodes));
+                    .capture_manager =
+                    Some(Box::new(CaptureManagerState::with_nodes_for_test(&nodes)));
             }
         }
         let mut warpers = Vec::new();

@@ -665,15 +665,19 @@ impl MinimapRenderer {
                 if let Some(terrain) = &self.native_radar_terrain {
                     self.compositor.refresh_terrain(queue, terrain);
                     if self.uploaded_visibility != Some(visibility) {
-                        let shown = match local_owner.filter(|_| !full_visibility) {
+                        // The plane's flags, gathered from its shared chunks.
+                        let plane = local_owner.filter(|_| !full_visibility).map(|owner| {
+                            fog.by_owner().get(&owner).map(|plane| {
+                                (plane.cells_raw(), (plane.width(), plane.height()))
+                            })
+                        });
+                        let shown = match &plane {
                             None => RadarVisibility::Revealed,
-                            Some(owner) => fog.by_owner().get(&owner).map_or(
-                                RadarVisibility::Shrouded,
-                                |plane| RadarVisibility::Plane {
-                                    flags: plane.cells_raw(),
-                                    size: (plane.width(), plane.height()),
-                                },
-                            ),
+                            Some(None) => RadarVisibility::Shrouded,
+                            Some(Some((flags, size))) => RadarVisibility::Plane {
+                                flags,
+                                size: *size,
+                            },
                         };
                         self.compositor.set_visibility(device, queue, shown);
                         self.uploaded_visibility = Some(visibility);

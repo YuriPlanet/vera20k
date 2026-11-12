@@ -628,7 +628,7 @@ pub(crate) fn build_control_group_status_instances(
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .presentation()
             .map(|runtime| &runtime.simulation),
         state.rules(),
     ) else {
@@ -843,7 +843,7 @@ pub(crate) fn build_building_status_instances(
     body_opportunities: &BTreeSet<u64>,
 ) -> BuildingStatusTextInstances {
     let (Some(runtime), Some(rules), Some(csf)) = (
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.presentation(),
         state.rules(),
         state.process_assets.csf.as_ref(),
     ) else {
@@ -949,6 +949,7 @@ pub(crate) fn self_heal_pip(
 /// (`TechnoClass::DrawExtras 0x006F52D8..0x006F532B`): a cycle of
 /// `SpeedNormalize(14) / 4` frames (at least 2) spread over frames 0..=6,
 /// both signed IDIVs.
+#[cfg_attr(feature = "ares", allow(dead_code))]
 fn repair_wrench_frame(frame: i32, options: &crate::sim::game_options::GameOptions) -> i32 {
     let cycle = (options.speed_normalize(14) / 4).max(2);
     frame % cycle * 6 / (cycle - 1)
@@ -987,6 +988,10 @@ pub(crate) struct TechnoExtras {
     pub bomb_clock: Option<SpriteInstance>,
     ///6F5253..5345: WRENCH/MOUSEPAL N1 prefix, before rank and Building lines.
     pub wrench: Option<SpriteInstance>,
+    /// Ares 10049FE0 (hook 0x6F526C): the POWEROFF/MOUSEPAL marker drawn
+    /// after the wrench, with the same material.
+    #[cfg(feature = "ares")]
+    pub power_off: Option<SpriteInstance>,
     pub rank: Option<SpriteInstance>,
     pub background: Option<SpriteInstance>,
     /// Phobos mobile shield PIPBRD/E00, before the shield and health fills.
@@ -1337,7 +1342,7 @@ fn phobos_insignia_draw<'a>(
 /// a building warping out (+0x270, +0x271) and shows it to a player not
 /// allied with the owner only while the building is uncloaked and
 /// `[General] EnemyWrench=` holds; an observer (no viewer) sees it. The
-/// power-off marker the hook also draws is not ported.
+/// hook's power-off marker is [`power_off_marker_admitted`].
 fn repair_wrench_admitted(
     sim: &crate::sim::world::Simulation,
     entity: &crate::sim::game_entity::GameEntity,
@@ -1360,6 +1365,38 @@ fn repair_wrench_admitted(
     #[cfg(not(feature = "ares"))]
     let _ = (sim, rules, local_owner);
     repairing
+}
+
+/// Ares TechnoClass_DrawExtras_PowerOff (10049FE0, hook 0x6F526C): the
+/// POWEROFF.SHP marker over a building whose last power toggle switched it
+/// off (BuildingExt `TogglePower_HasPower` +0x51, written by GoOffline
+/// `0x452393` and GoOnline `0x452287`), shown when its owner is the player's
+/// (HouseClass::IsHumanPlayer `0x50B6F0`) or the player is an observer.
+#[cfg(feature = "ares")]
+fn power_off_marker_admitted(
+    sim: &crate::sim::world::Simulation,
+    entity: &crate::sim::game_entity::GameEntity,
+) -> bool {
+    let session = sim.session();
+    entity.category() == EntityCategory::Structure
+        && entity.ares_toggled_off()
+        && (sim.house_is_human_player(entity.owner())
+            || session
+                .current_house()
+                .is_some_and(|player| session.is_observer_house(player)))
+}
+
+/// The Ares hook's frame for both markers (10049FE0): the shape's own frame
+/// count spread over a cycle of `SpeedNormalize(14) / 4` frames (at least
+/// 2), where the stock wrench spreads frames 0..=6 over the cycle less one.
+#[cfg(feature = "ares")]
+fn ares_status_marker_frame(
+    frame: i32,
+    options: &crate::sim::game_options::GameOptions,
+    frames: usize,
+) -> i32 {
+    let cycle = (options.speed_normalize(14) / 4).max(2);
+    (frames as i32).wrapping_mul(frame % cycle) / cycle
 }
 
 /// One Techno DrawExtras6F5190 parent: clock, wrench, rank, then health6F64A0.
@@ -1404,7 +1441,16 @@ pub(crate) fn techno_extras_for_parent(
                 .and_then(|name| sim.interner().get(name))
                 .is_some_and(|viewer| sim.bomb_seen_by(entity.stable_id(), viewer)));
     let repairing = repair_wrench_admitted(sim, entity, rules, local_owner);
-    if (bomb_visible || repairing)
+    // Ares 10049FE0 replaces the wrench block (hook 0x6F526C, resuming at
+    // 0x6F5347): each marker needs its loaded SHP, and the power-off marker
+    // joins the wrench behind the same shroud test.
+    #[cfg(feature = "ares")]
+    let repairing = repairing && overlay.repair_wrench().is_some();
+    #[cfg(feature = "ares")]
+    let power_off = overlay.power_off().is_some() && power_off_marker_admitted(sim, entity);
+    #[cfg(not(feature = "ares"))]
+    let power_off = false;
+    if (bomb_visible || repairing || power_off)
         && (viewport.ignore_visibility
             || local_owner
                 .and_then(|name| sim.interner().get(name))
@@ -1430,8 +1476,10 @@ pub(crate) fn techno_extras_for_parent(
             crate::sim::movement::ground_pose::object_get_coords(entity, sim.resolved_terrain())
         };
         let point = crate::util::lepton::absolute_leptons_to_screen(render.x, render.y, render.z);
-        let prefix = |shape: &crate::render::selection_overlay::CenteredShapeStrip, frame| {
-            let mut instance = shape.instance(frame, point, 0.0)?;
+        let prefix = |shape: &crate::render::selection_overlay::CenteredShapeStrip,
+                      frame,
+                      shift: f32| {
+            let mut instance = shape.instance(frame, (point.0 + shift, point.1 + shift), 0.0)?;
             // Init52C1D8 MOUSEPAL N1; E00/493DF0 consumes A with zero
             // row offsets and performs opaque packed stores, bypassing Z.
             instance.palette_light = crate::render::palette_light::PaletteLight::plain(1, 1000);
@@ -1461,16 +1509,34 @@ pub(crate) fn techno_extras_for_parent(
                 sim.bomb_clock_frame(entity.stable_id(), rules, shape.frame_count())
             && let Ok(frame) = usize::try_from(frame)
         {
-            strip.bomb_clock = prefix(shape, frame);
+            strip.bomb_clock = prefix(shape, frame, 0.0);
         }
-        if repairing
-            && let Some(shape) = overlay.repair_wrench()
-            && let Ok(frame) = usize::try_from(repair_wrench_frame(
-                sim.session().binary_frame() as i32,
-                &sim.session().game_options(),
+        let binary_frame = sim.session().binary_frame() as i32;
+        let options = sim.session().game_options();
+        if repairing && let Some(shape) = overlay.repair_wrench() {
+            #[cfg(feature = "ares")]
+            let frame = ares_status_marker_frame(binary_frame, options, shape.frame_count());
+            #[cfg(not(feature = "ares"))]
+            let frame = repair_wrench_frame(binary_frame, options);
+            // With a power-off marker shown, 10049FE0 moves the wrench 7
+            // pixels up and left.
+            let shift = if power_off { -7.0 } else { 0.0 };
+            if let Ok(frame) = usize::try_from(frame) {
+                strip.wrench = prefix(shape, frame, shift);
+            }
+        }
+        // 10049FE0 draws the marker after the wrench, 18 pixels down and
+        // right of the point when the wrench shows.
+        #[cfg(feature = "ares")]
+        if power_off
+            && let Some(shape) = overlay.power_off()
+            && let Ok(frame) = usize::try_from(ares_status_marker_frame(
+                binary_frame,
+                options,
+                shape.frame_count(),
             ))
         {
-            strip.wrench = prefix(shape, frame);
+            strip.power_off = prefix(shape, frame, if repairing { 18.0 } else { 0.0 });
         }
     }
     let Some(observer) = admitted_techno_observer(sim, entity, local_owner, rules) else {
@@ -1798,9 +1864,10 @@ pub(crate) fn techno_extras_for_parent(
                 SelfHealPip::Units => rules.general.self_heal_unit_frames,
             };
             let frame = sim.session().binary_frame() as i32;
-            let remainder = frame.checked_rem(period).unwrap_or_else(|| {
-                panic!("native self-heal marker IDIV fault at 0070A549/0070A5B5: frame={frame} period={period}")
-            });
+            // A zero period traps in gamemd (IDIV at 0x0070A549 / 0x0070A5B5)
+            // and never heals in VERA, so the marker stays on its steady
+            // frame.
+            let remainder = frame.checked_rem(period).unwrap_or(i32::MAX);
             let selector = u8::from(remainder <= 5 && entity.health.current() < object.strength);
             let (offset_x, offset_y) = self_heal_pip_offset(entity.category());
             strip.self_heal = instance(shape, arm.frame(), (sx + offset_x, sy + offset_y), 0.0004)
@@ -1838,6 +1905,81 @@ pub(super) fn passenger_pip_filler_count(size: f64) -> i32 {
         X87::load_i32(1),
     );
     X87::ftol_i32_low_masked(size_minus_one)
+}
+
+/// TechnoExt::GetPassengerPips (Ares.dll 10044C90): the GetPipMax frames of
+/// the passenger row and its GapAfter (1 for a `Gunner=` type). A tunnel
+/// building shows its owner's network up to MaxCap (read unsigned): an
+/// infantryman's `Pip=`, anything else frame 4, and no gap. Otherwise
+/// AddPassengerPips (10042670) recurses down the passenger chain before
+/// writing, so the last passenger takes the first pips: its own frame (an
+/// infantryman's `Pip=`, a vehicle 5, or 4 in a UnitAbsorb/InfantryAbsorb
+/// building, anything else 1), then `Size - 1` frame-3 pips, clipped to the
+/// pips left. `Passengers.BySize=no` and absorbers give every passenger one
+/// pip; the size is truncated by the DLL's CRT conversion (`100772B0`).
+#[cfg(feature = "ares")]
+fn ares_passenger_pip_frames(
+    sim: &crate::sim::world::Simulation,
+    entity: &crate::sim::game_entity::GameEntity,
+    object: &crate::rules::object_type::ObjectType,
+    rules: &RuleSet,
+) -> (Vec<usize>, usize) {
+    use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF64Bits};
+
+    let max = usize::try_from(object.pip_max(rules)).unwrap_or(0);
+    let pip_of = |id: u64| {
+        let passenger = sim.entities().get(id)?;
+        let kind = sim.interner().object_type(passenger.type_ref(), rules)?;
+        Some((passenger.category(), kind))
+    };
+    let mut unit_frame = 5;
+    let mut by_size = object.ares_passengers_by_size();
+    if entity.category() == EntityCategory::Structure {
+        if object.absorbs_passengers() {
+            unit_frame = 4;
+            by_size = false;
+        }
+        if let Some((max_cap, members)) = sim.ares_tunnel_pip_contents(entity.stable_id(), rules) {
+            let count = max.min(max_cap as u32 as usize);
+            let mut frames = vec![0; count];
+            for (frame, &member) in frames.iter_mut().zip(members) {
+                *frame = match pip_of(member) {
+                    Some((EntityCategory::Infantry, kind)) => kind.pip() as usize,
+                    _ => 4,
+                };
+            }
+            return (frames, 0);
+        }
+    }
+    let mut frames = vec![0; max];
+    let mut next = 0;
+    let passengers = entity
+        .passenger_role
+        .cargo()
+        .map_or(&[][..], |cargo| cargo.passengers());
+    for &id in passengers.iter().rev() {
+        let Some((category, kind)) = pip_of(id) else {
+            continue;
+        };
+        let frame = match category {
+            EntityCategory::Infantry => kind.pip() as usize,
+            EntityCategory::Unit => unit_frame,
+            _ => 1,
+        };
+        let size = if by_size {
+            X87::fistp_i32_masked(X87::load_f64(NativeF64Bits::from_bits(kind.size.to_bits())))
+        } else {
+            1
+        };
+        let free = max - next;
+        let count = usize::try_from(size).unwrap_or(0).min(free);
+        if count > 0 {
+            frames[next] = frame;
+            frames[next + 1..next + count].fill(3);
+            next += count;
+        }
+    }
+    (frames, usize::from(object.gunner))
 }
 
 /// Building6F682C/mobile6F6A58 ->709A90 after shared health/tail admission.
@@ -1911,7 +2053,25 @@ pub(crate) fn scale_pip_draws(
     }
     //709D1D tests positive Passengers before the non-passenger PipScale arms.
     //GetPipMax716290 remains the shared type query, never cargo-vector length.
-    if object.passengers > 0 {
+    // Ares TechnoClass_DrawPipscale_Passengers (1004A280, hook 0x709D38)
+    // replaces this arm up to 0x70A4EC: a PipScale=Passengers type draws the
+    // GetPipMax frames of GetPassengerPips, stepping once more after the
+    // first GapAfter pips; any other PipScale resumes at the other scale
+    // arms (0x70A083).
+    #[cfg(feature = "ares")]
+    if object.passengers > 0 && object.pip_scale == crate::rules::object_type::PipScale::Passengers
+    {
+        let (frames, gap_after) = ares_passenger_pip_frames(sim, entity, object, rules);
+        pips.extend(frames.into_iter().enumerate().map(|(slot, frame)| {
+            pip(
+                slot + usize::from(gap_after != 0 && slot >= gap_after),
+                frame,
+                row_y,
+            )
+        }));
+        return pips;
+    }
+    if object.passengers > 0 && !rules.ares() {
         let slots = usize::try_from(object.pip_max(rules)).unwrap_or(0);
         let row_start = pips.len();
         pips.extend((0..slots).map(|slot| {
@@ -2258,6 +2418,54 @@ mod tests {
         };
         assert_eq!(shown(""), [true, true]);
         assert_eq!(shown("EnemyWrench=no\n"), [true, false]);
+    }
+
+    /// Ares TechnoClass_DrawExtras_PowerOff (10049FE0, hook 0x6F526C): the
+    /// player sees the power-off marker over its own building after the
+    /// power toggle switches it off, not over the computer's switched-off
+    /// one, and no longer once its building is back on.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_power_off_marker_follows_the_players_toggle() {
+        use crate::rules::ruleset::RuleSet;
+        use crate::sim::command::Command;
+        let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+            "[BuildingTypes]\n0=PLANT\n[PLANT]\nStrength=750\nPower=-50\n",
+        ))
+        .unwrap();
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+        let player = sim.interner().get("Americans").unwrap();
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(player));
+        let own = sim
+            .spawn_object("PLANT", "Americans", 8, 8, 0, &rules)
+            .unwrap();
+        let theirs = sim
+            .spawn_object("PLANT", "Russians", 14, 14, 0, &rules)
+            .unwrap();
+        let mut toggle = |owner: &str, entity_id, on| {
+            assert!(sim.apply_command(
+                owner,
+                &Command::SetBuildingOnLine { entity_id, on },
+                Some(&rules)
+            ));
+        };
+        toggle("Americans", own, false);
+        toggle("Russians", theirs, false);
+        let shown = |sim: &crate::sim::world::Simulation| {
+            [own, theirs]
+                .map(|id| super::power_off_marker_admitted(sim, sim.entities().get(id).unwrap()))
+        };
+        assert_eq!(shown(&sim), [true, false]);
+        assert!(sim.apply_command(
+            "Americans",
+            &Command::SetBuildingOnLine {
+                entity_id: own,
+                on: true
+            },
+            Some(&rules)
+        ));
+        assert_eq!(shown(&sim), [false, false]);
     }
 
     /// Phobos `DrawShieldBar_Pip`: the shield type's own frames first, then the

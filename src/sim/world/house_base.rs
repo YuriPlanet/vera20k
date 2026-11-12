@@ -362,8 +362,14 @@ impl Simulation {
             };
             let (side, difficulty, tech_level) =
                 (house.side_index(), house.difficulty(), house.tech_level());
-            if crate::sim::base_plan_generation::preflight_recalc(rules, &country, side, difficulty)
-                .is_err()
+            if crate::sim::base_plan_generation::preflight_recalc(
+                rules,
+                &country,
+                side,
+                difficulty,
+                self.session.game_options().super_weapons,
+            )
+            .is_err()
             {
                 return false;
             }
@@ -680,7 +686,7 @@ impl Simulation {
         //correction; their shared Dummy order is preserved.
         let seed = self.house_random_cell_in_zone(house, 0)?;
         let terrain = self.resolved_terrain.as_ref()?;
-        let zones = self.zone_grid.as_ref()?;
+        let zones = self.zone_grid.as_deref()?;
         let native_cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
         let current_cell = (
             i32::from(crate::util::lepton::lepton_to_cell_packed(current.x)),
@@ -1338,7 +1344,7 @@ mod tests {
                     zone["group"].as_u64().unwrap() as crate::sim::pathfinding::zone_map::ZoneId;
             }
         }
-        sim.zone_grid = Some(zones);
+        sim.zone_grid = Some(zones.into());
         // Zone construction can stamp the same Dummy. Native replay starts
         // its ordinary-return chain AFTER that constructor, with these fields.
         terrain.stamp_dummy_cell_requested_coord(-7, 1);

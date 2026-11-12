@@ -144,6 +144,9 @@ Commands and their payloads:
 | `ladder` | `{names:[name]}` |
 
 HostOptions is `{launch,map_metadata,vacancies,observer_row,cooperative_difficulty,seed}`.
+A slot's `color_index` is 0 to 7 for the original colours, 8 for an observer and 9 to 30
+for the game's [extra lobby colours](skirmish-colors.md); the lobby passes 0 to 255 on
+unchanged.
 Generated maps add `random_map:{start_staging,preview:{source_sha256,byte_length}}`.
 Cooperative rooms add `cooperative_campaign`, the host's campaign record as the game's
 `C0` text (at most 512 bytes, starting `C0,`); a guest applies it before the options
@@ -526,6 +529,9 @@ otherwise on the next public-channel join.
 A session that still joins a game room from another version, through a buddy's game or
 its name, makes every member hear a `chat` line from the notice sender naming both
 versions.
+The same line, with both full `version` agreement strings, goes to the room once when
+a member's `ready` or `map_status` names another build of the host's version, since
+such a room cannot start.
 
 Each `join` of the public channel gives the joining session one `chat` line from the
 notice sender after its `joined`. The line says how many players are online: in the
@@ -683,7 +689,9 @@ every 4 OS, from Corporal (32 points) at 18 to Five-Star General (1501) at 46, a
 Commander in Chief (2001) for the running season's number 1 from OS 46. Its `rank` is
 their place this season, 0 when unranked. One lookup fills both of the game's tables: its
 ladder table from `records`, and its high-score table, whose points pick each player's
-badge, from `high_scores`. A lobby from before badges sends no `high_scores`, and the game
+badge, from `high_scores`. Until the operator starts the first season no one has a rating,
+and `high_scores` gives every name asked for the Colonel's 251 points with `rank` 0; a
+lobby from before that sends none then. A lobby from before badges sends no `high_scores`, and the game
 then shows none; one from before `os` leaves it out, and the game shows the rounded OS.
 After a ranked game each of its players hears from `VERA20k` how it counted: their new OS,
 their place in the season and the badge the game brought them, such as `Ranked game won:

@@ -1,7 +1,7 @@
 //! Hit testing, hover targets, status-help keys, and action application for the skirmish shell.
 
 use crate::map::scenario_menu::MapMenuEntry;
-use crate::skirmish_launch::{LaunchCountry, SKIRMISH_PLAYER_SLOT_COUNT};
+use crate::skirmish_launch::LaunchCountry;
 
 use super::super::layout::{
     ChooseMapModalButton, ChooseMapModalLayout, ColorComboId, DropdownMetrics,
@@ -76,7 +76,7 @@ pub fn hovered_shell_control(
             return Some(SkirmishHoverTarget::Trackbar(id));
         }
     }
-    for slot in 0..SKIRMISH_PLAYER_SLOT_COUNT {
+    for slot in 0..layout.shown_rows {
         let row = state.slot_row(slot);
         if !player_row_visible(state, maps, row) {
             continue;
@@ -94,7 +94,7 @@ pub fn hovered_shell_control(
             }
         }
     }
-    for slot in 1..SKIRMISH_PLAYER_SLOT_COUNT {
+    for slot in 1..layout.shown_rows {
         let row = state.slot_row(slot);
         if !player_row_visible(state, maps, row) {
             continue;
@@ -162,6 +162,9 @@ pub fn status_help_key_for_hover(target: SkirmishHoverTarget) -> Option<&'static
         }
         SkirmishHoverTarget::OwnerDrawButton(OwnerDrawButton::LoadSetup) => {
             Some("VERA:LoadSetupHelp")
+        }
+        SkirmishHoverTarget::OwnerDrawButton(OwnerDrawButton::TeamStarts) => {
+            Some("VERA:TeamStartsHelp")
         }
         SkirmishHoverTarget::OwnerDrawButton(OwnerDrawButton::Back0x5c0) => {
             Some("STT:SkirmishButtonBack")
@@ -259,6 +262,8 @@ pub fn status_help_key_for_choose_map_hover(target: ChooseMapHoverTarget) -> Opt
         ChooseMapHoverTarget::Button(ChooseMapModalButton::Cancel0x5c0) => {
             Some("STT:ScenarioButtonCancel")
         }
+        // VERA's button has no status help.
+        ChooseMapHoverTarget::Button(ChooseMapModalButton::Favorite) => None,
     }
 }
 
@@ -281,6 +286,8 @@ pub fn status_help_key_for_random_map_setup(control: RandomMapSetupControl) -> &
         C::Delete0x6c4 => "STT:GenerateButtonDeleteMap",
         C::Cancel0x5c0 => "STT:GenerateButtonCancel",
         C::AdvancedToggle => "VERA:RandomMapAdvancedHelp",
+        C::ExportMap => "VERA:RandomMapExportHelp",
+        C::FairStartsToggle => "VERA:RandomMapFairStartsHelp",
         C::Advanced(super::super::layout::AdvancedField::PlateauSize) => {
             "VERA:RandomMapPlateauSizeHelp"
         }
@@ -329,6 +336,17 @@ fn status_help_key_for_side_item(country: SkirmishCountryChoice) -> Option<&'sta
     }
 }
 
+/// The lobby colour after `color` in list order, wrapping to the first.
+fn next_lobby_color(state: &SkirmishShellState, color: usize) -> usize {
+    usize::from(
+        state
+            .lobby_colors
+            .next_lobby_priority(i32::try_from(color).unwrap_or(-1)),
+    )
+}
+
+/// gamemd names its eight colours and the observer's (`STT:PlayerColor*`);
+/// VERA's extra colours show their swatch and no status line.
 fn status_help_key_for_color_item(item: SkirmishComboItem) -> Option<&'static str> {
     match item {
         SkirmishComboItem::ColorSentinel(-2) => Some("STT:PlayerColorRandom"),
@@ -359,6 +377,7 @@ pub fn action_for_owner_draw_button(button: OwnerDrawButton) -> SkirmishShellAct
         OwnerDrawButton::ChooseMap0x5aa => SkirmishShellAction::ChooseMap,
         OwnerDrawButton::SaveSetup => SkirmishShellAction::SaveSetup,
         OwnerDrawButton::LoadSetup => SkirmishShellAction::LoadSetup,
+        OwnerDrawButton::TeamStarts => SkirmishShellAction::TeamStarts,
         OwnerDrawButton::Back0x5c0 => SkirmishShellAction::BackOrExit,
     }
 }
@@ -379,6 +398,9 @@ pub fn hit_test_owner_draw_button(
     }
     if layout.load_setup_button.contains(x, y) {
         return Some(OwnerDrawButton::LoadSetup);
+    }
+    if layout.team_starts_button.contains(x, y) {
+        return Some(OwnerDrawButton::TeamStarts);
     }
     if layout.back_button.contains(x, y) {
         return Some(OwnerDrawButton::Back0x5c0);
@@ -423,6 +445,7 @@ pub fn apply_action(
         // The app owns the saved setups.
         SkirmishShellAction::SaveSetup => SkirmishShellAction::SaveSetup,
         SkirmishShellAction::LoadSetup => SkirmishShellAction::LoadSetup,
+        SkirmishShellAction::TeamStarts => SkirmishShellAction::TeamStarts,
         SkirmishShellAction::SelectMap(idx) => {
             accept_selected_map(state, maps, idx);
             SkirmishShellAction::None
@@ -430,12 +453,13 @@ pub fn apply_action(
         SkirmishShellAction::SelectColor(target) => {
             match target {
                 ColorComboId::Player => {
-                    state.player_color_index = (state.player_color_index + 1) % 8;
+                    state.player_color_index = next_lobby_color(state, state.player_color_index);
                 }
                 ColorComboId::Ai(idx) => {
                     let visible = player_row_visible(state, maps, idx + 1);
-                    if visible && let Some(opponent) = state.opponents.get_mut(idx) {
-                        opponent.color_index = (opponent.color_index + 1) % 8;
+                    if visible && let Some(current) = state.opponents.get(idx) {
+                        let next = next_lobby_color(state, current.color_index);
+                        state.opponents[idx].color_index = next;
                     }
                 }
             }

@@ -24,8 +24,6 @@
 //! holds it. A network visit's mode follows from the service it visits
 //! (`NetworkReturnContext`), so the visit stores no copy either.
 
-use crate::sim::command_queue::MultiplayerChecksumHistory;
-use crate::sim::command_queue::{ChecksumMismatch, FrameChecksumState, FrameInfo};
 use crate::skirmish_launch::{
     NETWORK_PLAYER_SLOT_COUNT, SkirmishAiSlot, SkirmishLaunchOptions, SkirmishLaunchSession,
     SkirmishLocalSlot,
@@ -340,12 +338,13 @@ pub(crate) struct MatchSession {
     offline_player_name: Option<String>,
     network: Option<NetworkSession>,
     host: bool,
-    /// Process-lifetime checksum history and comparison timer. Launch/load
-    /// retain this owner; only Queue_AI_Multiplayer's reset branch clears it.
-    frame_checksums: FrameChecksumState,
     /// Process byte B07788, set by the first ReadMultiPlayerSettings call.
     /// It survives dialog, match and saved-game transitions.
     multiplayer_settings_initialized: bool,
+    /// How many colours the loaded rules list for a lobby, refreshed before
+    /// each setup dialog. A room with no more players than this keeps every
+    /// colour to one player.
+    lobby_color_count: usize,
     /// LatencyFudge `0xA8DB9C`, a zero-initialized process global. LAN
     /// start (`0x005DD2E4`/`0x005DD4A4`) writes 0, WOL Start Game Now
     /// (`0x007950C9..0x0079510B`) 1 or 2, and EVENT_LATENCYFUDGE
@@ -416,8 +415,8 @@ impl Default for MatchSession {
             offline_player_name: None,
             network: None,
             host: false,
-            frame_checksums: FrameChecksumState::new(),
             multiplayer_settings_initialized: false,
+            lobby_color_count: crate::skirmish_launch::HOUSE_COLOR_COUNT,
             latency_fudge: 0,
             pause_event_limiters: PauseEventLimiters::default(),
         }
@@ -430,6 +429,13 @@ impl MatchSession {
     /// PortPool key. Keep this shared stream effect at its process lifetime.
     /// Port allocation and firewall detection consume the resulting default
     /// only in transport services, outside the shell implementation.
+    pub(crate) fn set_lobby_colors(
+        &mut self,
+        colors: crate::rules::skirmish_colors::SkirmishColorMode,
+    ) {
+        self.lobby_color_count = colors.lobby_color_count();
+    }
+
     pub(crate) fn prepare_multiplayer_settings(&mut self, main: &crate::sim::rng::MainRngDraws) {
         if !self.multiplayer_settings_initialized {
             let _port_pool_default = 4096 + main.ranged(0, 32768);
@@ -972,6 +978,7 @@ impl MatchSession {
         observer: bool,
         policy: PeerChoicePolicy<'_>,
     ) -> anyhow::Result<PeerChoicesChange> {
+        let listed_colors = self.lobby_color_count;
         let Some(NetworkSession {
             phase:
                 NetworkPhase::Setup {
@@ -991,6 +998,7 @@ impl MatchSession {
             choices,
             observer,
             policy,
+            listed_colors,
         ))
     }
 
@@ -1040,7 +1048,7 @@ impl MatchSession {
         else {
             return false;
         };
-        network_color_in_use(launch, inactive_ai_options, color)
+        network_color_in_use(launch, inactive_ai_options, color, self.lobby_color_count)
     }
 
     pub(crate) fn network_row_choices(&self, row: u8) -> Option<SkirmishLocalSlot> {
@@ -2956,33 +2964,6 @@ impl MatchSession {
         self.offline_player_name = None;
     }
 
-    /// Store one multiplayer frame's checksum at `history[frame & 0xFF]`.
-    ///
-    /// On frame 0 `Queue_AI_Multiplayer` stores the value (`0x006476A5`), then
-    /// takes `0x006476B1 -> 0x00647825` and zeroes all 256 slots
-    /// (`0x00647879`), so frame 0's own slot ends at 0. The same reset also
-    /// runs while `[0x00A8B8B8]` is set; that flag belongs to the network
-    /// timing service of a later stage and VERA has no writer for it yet.
-    pub(crate) fn record_frame_checksum(&mut self, frame: u32, checksum: u32) {
-        self.frame_checksums.record_frame_checksum(frame, checksum);
-    }
-
-    /// Execute_DoList64C668..64C6F2 checks the grace timer before comparing
-    /// an on-time FRAMEINFO against history[(event frame - delay) &255]. The
-    /// queue owns on-time/House admission; this owner stores and compares the
-    /// process checksum state. Source: original gamemd.exe instructions.
-    pub(crate) fn compare_frame_info(
-        &self,
-        info: FrameInfo,
-        current_frame: i32,
-    ) -> Result<bool, ChecksumMismatch> {
-        self.frame_checksums.compare_frame_info(info, current_frame)
-    }
-
-    pub(crate) fn checksum_history(&self) -> &MultiplayerChecksumHistory {
-        self.frame_checksums.checksum_history()
-    }
-
     /// Whether this client owns the match setup: it reads the seed and fixes
     /// the participant list. Every offline session is its own host.
     pub(crate) fn host(&self) -> bool {
@@ -3097,6 +3078,7 @@ pub(crate) enum PeerChoicePolicy<'a> {
 
 /// Shared69B600/5E9720 collision checks; caller selects the native country/team policy.
 /// A Quick Match host seats the matchbot's guest through it too.
+/// `listed_colors` is how many colours the lobby lists.
 pub(crate) fn apply_peer_choices(
     launch: &mut SkirmishLaunchSession,
     inactive_ai_options: &[NetworkAiOptions; NETWORK_PLAYER_SLOT_COUNT],
@@ -3104,6 +3086,7 @@ pub(crate) fn apply_peer_choices(
     choices: SkirmishLocalSlot,
     observer: bool,
     policy: PeerChoicePolicy<'_>,
+    listed_colors: usize,
 ) -> PeerChoicesChange {
     let mut change = PeerChoicesChange::default();
     let current = launch.humans[index].slot.clone();
@@ -3133,8 +3116,9 @@ pub(crate) fn apply_peer_choices(
     let native_color = |slot: &SkirmishLocalSlot| (!slot.color_random).then_some(slot.color_index);
     if native_color(&choices) != native_color(&current) {
         // 0x69B600: every node of the session and every AI row.
-        let taken = native_color(&choices)
-            .is_some_and(|color| network_color_in_use(launch, inactive_ai_options, color));
+        let taken = native_color(&choices).is_some_and(|color| {
+            network_color_in_use(launch, inactive_ai_options, color, listed_colors)
+        });
         slot.color_random = choices.color_random || taken;
         if !slot.color_random {
             slot.color_index = choices.color_index;
@@ -3168,12 +3152,15 @@ pub(crate) fn apply_peer_choices(
     change
 }
 
+/// `listed_colors` is how many colours the lobby lists: a room with more
+/// players than that has to share, so nothing counts as taken there.
 fn network_color_in_use(
     launch: &SkirmishLaunchSession,
     inactive: &[NetworkAiOptions; NETWORK_PLAYER_SLOT_COUNT],
     color: u8,
+    listed_colors: usize,
 ) -> bool {
-    if launch.humans.len() + launch.opponents.len() > 8 {
+    if launch.humans.len() + launch.opponents.len() > listed_colors {
         return false;
     }
     launch
@@ -3319,7 +3306,6 @@ fn admit_network_start_roster(launch: &SkirmishLaunchSession) -> anyhow::Result<
 #[cfg(test)]
 mod tests {
     use super::{MatchSession, NetworkRoom, SessionMode};
-    use crate::net::lockstep::{ChecksumMismatch, FrameInfo, FrameInfoCompareGate};
 
     pub(super) fn network_fixture() -> crate::skirmish_launch::SkirmishLaunchSession {
         let profile: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
@@ -4768,106 +4754,6 @@ mod tests {
         ] {
             assert_eq!(mode.command_queue_route(), route, "{mode:?}");
         }
-    }
-
-    #[test]
-    fn frame_zero_resets_the_checksum_ring_and_launches_do_not() {
-        let mut session = MatchSession::default();
-        assert_eq!(session.frame_checksums.compare_gate(), None);
-        session.record_frame_checksum(0x1_05, 0xdead_beef);
-        assert_eq!(session.checksum_history().get(0x05), 0xdead_beef);
-        assert_eq!(session.checksum_history().get(0x2_05), 0xdead_beef);
-        assert_eq!(
-            session.frame_checksums.compare_gate(),
-            Some(FrameInfoCompareGate::new(0x1_05, 0))
-        );
-        session.begin_offline(SessionMode::Skirmish, Some("Commander".to_owned()));
-        assert_eq!(session.checksum_history().get(0x05), 0xdead_beef);
-        assert_eq!(
-            session.frame_checksums.compare_gate(),
-            Some(FrameInfoCompareGate::new(0x1_05, 0))
-        );
-
-        session.record_frame_checksum(0, 0x1234_5678);
-        assert_eq!(session.checksum_history().get(0), 0);
-        assert_eq!(session.checksum_history().get(0x05), 0);
-        assert_eq!(
-            session.frame_checksums.compare_gate(),
-            Some(FrameInfoCompareGate::new(0, 256))
-        );
-        session.record_frame_checksum(1, 0x1234_5678);
-        assert_eq!(session.checksum_history().get(1), 0x1234_5678);
-    }
-
-    #[test]
-    fn frame_info_comparison_starts_at_frame_256_and_reads_current_checksum() {
-        let mut session = MatchSession::default();
-        session.record_frame_checksum(0, 1);
-        session.record_frame_checksum(255, 0x1122_3344);
-        let info = |frame, checksum| FrameInfo {
-            house_id: 2,
-            event_frame: frame,
-            checksum,
-            timing_word: 0,
-            delay: 0,
-        };
-        assert_eq!(session.compare_frame_info(info(255, 0), 255), Ok(false));
-
-        session.record_frame_checksum(256, 0x5566_7788);
-        assert_eq!(
-            session.compare_frame_info(info(256, 0x5566_7788), 256),
-            Ok(true)
-        );
-        assert_eq!(
-            session.compare_frame_info(info(256, 0x99), 256),
-            Err(ChecksumMismatch {
-                house_id: 2,
-                event_frame: 256,
-                delay: 0,
-                history_index: 0,
-                local_checksum: 0x5566_7788,
-                remote_checksum: 0x99,
-            })
-        );
-    }
-
-    #[test]
-    fn first_nonzero_frame_opens_comparison_without_startup_grace() {
-        let mut session = MatchSession::default();
-        session.record_frame_checksum(73, 0x1234_5678);
-        let info = FrameInfo {
-            house_id: 1,
-            event_frame: 73,
-            checksum: 0x1234_5678,
-            timing_word: 0,
-            delay: 0,
-        };
-        assert_eq!(session.compare_frame_info(info, 73), Ok(true));
-    }
-
-    #[test]
-    fn nonzero_checksum_restart_uses_frame_plus_256_as_timer_period() {
-        let mut session = MatchSession::default();
-        session.record_frame_checksum(100, 0x1234_5678);
-        session.frame_checksums.reset_frame_checksum_history(100);
-        assert_eq!(session.checksum_history().get(100), 0);
-        assert_eq!(
-            session.frame_checksums.compare_gate(),
-            Some(FrameInfoCompareGate::new(100, 356))
-        );
-        let info = |frame, checksum| FrameInfo {
-            house_id: 1,
-            event_frame: frame,
-            checksum,
-            timing_word: 0,
-            delay: 0,
-        };
-        assert_eq!(session.compare_frame_info(info(455, 1), 455), Ok(false));
-        session.record_frame_checksum(456, 0x8765_4321);
-        assert_eq!(
-            session.compare_frame_info(info(456, 0x8765_4321), 456),
-            Ok(true)
-        );
     }
 
     #[test]

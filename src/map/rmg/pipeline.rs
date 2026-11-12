@@ -96,6 +96,10 @@ pub struct PipelineInputs<'a> {
     pub width: i32,
     /// `MaxTrees` (`MapSeed+0x2FC`; 0 disables trees).
     pub max_trees: i32,
+    /// VERA extension: Fair Starts evens the ore near each start after the
+    /// last stage and measures the result; `seed` starts its own stream.
+    pub fair_starts: bool,
+    pub seed: u16,
     /// The presence the urban pass reads (`MapSeed+0x60`).
     pub urban_presence: i32,
     /// VERA extension: the opted-in Buildings value the urban pass fills the
@@ -138,6 +142,8 @@ pub struct PipelineOutput {
     pub unfilled_start_slots: usize,
     /// Urban buildings and foots, emitted after `structures`.
     pub urban_areas: Vec<urban_areas::UrbanObject>,
+    /// VERA extension: what the map offers each start, under Fair Starts.
+    pub fairness: Option<super::fairness::FairnessReport>,
 }
 
 /// Run the whole deterministic pipeline in place over `grid`/`scratch`, drawing
@@ -472,6 +478,7 @@ pub fn run_pipeline(
             objects: &mut urban_area_objects,
             trace: &mut construction_trace,
             entity_base: structures.len() + tech_placements.len(),
+            trees: &mut terrain,
         };
         urban_areas::run(&mut ctx, &args, &mut output);
     }
@@ -558,6 +565,23 @@ pub fn run_pipeline(
     lat_fixup::run(grid, inputs.ids);
     observe(Stage::RecalcFinal, grid, &waypoints, &terrain);
 
+    // ---- VERA: Fair Starts, after every native stage and draw -------------
+    let fairness = inputs.fair_starts.then(|| {
+        let starts: Vec<(i32, i32)> = waypoints
+            .iter()
+            .map(|&(_, x, y)| (i32::from(x), i32::from(y)))
+            .collect();
+        let mut ctx = super::fairness::FairCtx {
+            grid: &mut *grid,
+            scratch: &*scratch,
+            ids: inputs.ids,
+            map_w,
+            local_rect,
+        };
+        super::fairness::equalize_ore(&mut ctx, &starts, inputs.seed);
+        super::fairness::measure(&ctx, &starts, inputs.num_players, unfilled_start_slots)
+    });
+
     // ---- Collect outputs for the emitter ----------------------------------
     structures.extend(
         tech_placements
@@ -572,6 +596,7 @@ pub fn run_pipeline(
         construction_trace,
         unfilled_start_slots,
         urban_areas: urban_area_objects,
+        fairness,
     }
 }
 

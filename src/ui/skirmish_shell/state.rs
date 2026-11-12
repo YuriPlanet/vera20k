@@ -9,6 +9,7 @@ mod player_name;
 mod random_map_setup;
 mod saved_seed_browser;
 mod saved_setup;
+mod team_starts;
 mod trackbars;
 
 #[cfg(test)]
@@ -38,7 +39,7 @@ pub use opponent_scroll::{
 pub use choose_map::{
     ChooseMapContext, ChooseMapListPress, ChooseMapModalState, ChooseMapPrompt,
     ChooseMapPromptAnswer, ChooseMapPromptButton, ChooseMapPromptKind, ChooseMapSelection,
-    ONLINE_MAPS_ROW, SEARCH_MAX_CHARS, ai_rows_beyond_limit_occupied,
+    FAVORITES_ROW, ONLINE_MAPS_ROW, SEARCH_MAX_CHARS, favorite_key, ai_rows_beyond_limit_occupied,
 };
 pub(crate) use player_name::CountryMenuCatalog;
 pub use player_name::{
@@ -50,7 +51,8 @@ pub use player_name::{
     handle_player_name_home, handle_player_name_left, handle_player_name_right,
     handle_player_name_tab, initialize_rows_for_selected_map, insert_player_name_text,
     player_name_caret_prefix, player_name_edit_rect_hit, player_row_visible,
-    repair_teams_for_selected_mode, set_status_help_text, update_player_name_scroll_for_caret,
+    repair_teams_for_selected_mode, selected_player_rows, set_status_help_text,
+    update_player_name_scroll_for_caret,
 };
 pub use random_map_setup::{
     ADVANCED_RANGE, AcceptOutcome, MainRngRanged, PLAYERS_RANGE, RandomMapSetupModalState,
@@ -61,6 +63,7 @@ pub use saved_seed_browser::{
     SavedSeedDescriptionEdit, SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose,
 };
 pub use saved_setup::{SkirmishSavedSetup, SkirmishSetupComputer, SkirmishSetupSeat};
+pub use team_starts::apply_team_starts;
 pub use trackbars::{
     SkirmishTrackbarBounds, handle_option_mouse_down, handle_option_mouse_move,
     handle_option_mouse_up, handle_option_mouse_wheel, trackbar_visual_value,
@@ -82,6 +85,8 @@ pub enum OwnerDrawButton {
     /// VERA's Save Setup and Load Setup ([`SkirmishSavedSetup`]).
     SaveSetup,
     LoadSetup,
+    /// VERA's Team Starts ([`apply_team_starts`]).
+    TeamStarts,
     Back0x5c0,
 }
 
@@ -93,6 +98,7 @@ pub enum SkirmishShellAction {
     ChooseMap,
     SaveSetup,
     LoadSetup,
+    TeamStarts,
     SelectColor(ColorComboId),
     SelectMap(usize),
 }

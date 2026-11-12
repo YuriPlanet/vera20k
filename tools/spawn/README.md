@@ -32,7 +32,11 @@ directories (docs/spawn.md). Nothing here is used by ordinary play.
   ACT seconds into the match (source 1; the others ACT+BOUND). Logs:
   `OUT/pN/browser.log` (console), `OUT/pN/events.jsonl` (lifecycle events,
   whose `match-ended` carries `network_quality`), `OUT/gateway.log`. Exit
-  status 0 means every page ended its match and exited.
+  status 0 means every page ended its match and exited. A `--threads`
+  package is served cross-origin isolated and starts its worker pool;
+  `SIM_THREAD=1|always`, or one value per source (`always,0`), turns on its
+  pages' simulation worker (`set_simulation_thread`, docs/sim-thread.md
+  "The browser"); it is off by default.
 
 Clients never show a window: `run.sh` sets `VERA20K_SPAWN_HIDDEN_WINDOW=1`,
 which (for `-SPAWN` launches only) creates the window invisible, keeps the
@@ -77,9 +81,12 @@ BIN=$(ls -t target/owned-worktrees/*/fast/vera20k | head -n 1)
 
 A launcher can copy `version`, `rules_digest` and `map.source_sha256` into
 `[Settings] ExpectedVersion`, `ExpectedRulesDigest`, `ExpectedMapDigest`.
-`rules_digest` is Battle's. `[Settings] GameMode` selects a stock `MPModesMD.ini`
-row (default 1), and the digest covers that row's INI, so another mode takes its
-digest from the report's `game_modes`. A mod chosen in `config.toml`
+`rules_digest` is Battle's. `[Settings] GameMode` selects an `MPModesMD.ini` row
+by id (default 1): a network launch takes a stock row, and a one-human launch any
+row of the `MPModesMD.ini` the game loaded, or row 1 when the id has none, so a
+mod's own modes start too. The digest covers that row's
+INI, so another mode takes its digest from the report's `game_modes`, which lists
+the stock rows. A mod chosen in `config.toml`
 (`[paths] mod`, [modding guide](../../docs/modding.md)) is read by the probe as by
 the launch, so its rules and its other files are in the digest; `--mod <folder>` and
 `--no-mod` choose for both. A launch whose mod cannot be used fails, with the reason in its result.

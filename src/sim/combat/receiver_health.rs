@@ -286,6 +286,7 @@ pub(super) fn commit_receiver_health(
         building_no_c4,
         rules.general.condition_red,
         attacker_id != RAD_NO_ATTACKER,
+        rules.ares(),
     );
     #[cfg(any(test, feature = "test-support"))]
     let reached_exact_zero = host.reached_exact_zero;

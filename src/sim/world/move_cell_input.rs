@@ -139,6 +139,14 @@ impl Simulation {
             .entities
             .get(id)
             .ok_or("What_Action receiver disappeared")?;
+        // Ares hooks at the head of each class What_Action over a Cell (Unit
+        // `0x007404B9`, Infantry `0x0051F808`, Aircraft `0x00417F83`, Building
+        // `0x00447548`; Ares.dll `1004CF30`, `1004CC10`, `1004CAE0`,
+        // `1004CB50`): a Deactivated (`+0x1C8`) object answers 0.
+        #[cfg(feature = "ares")]
+        if entity.deactivated.is_offline() {
+            return Ok(MoveAction::None);
+        }
         if entity.category() == EntityCategory::Structure {
             return self.building_cell_move_action(viewer, id, cell, query, rules, registry);
         }
@@ -421,7 +429,7 @@ impl Simulation {
             false,
         )?;
         let (Some(zones), Some(bounds), Some(height)) = (
-            self.zone_grid.as_ref(),
+            self.zone_grid.as_deref(),
             self.playfield_bounds,
             self.playfield_size_height(),
         ) else {
@@ -1088,7 +1096,7 @@ impl Simulation {
             .resolved_terrain
             .as_ref()
             .ok_or("Move click needs map cells")?;
-        let zones = self.zone_grid.as_ref().ok_or("Move click needs zones")?;
+        let zones = self.zone_grid.as_deref().ok_or("Move click needs zones")?;
         let bounds = self
             .playfield_bounds
             .ok_or("Move click needs the playfield")?;

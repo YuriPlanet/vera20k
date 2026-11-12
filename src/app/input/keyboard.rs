@@ -46,6 +46,16 @@ pub(crate) fn in_game_key_edge(
     {
         state.match_state.input.keys_held.remove(&edge.physical);
     }
+    // The Formation Line key comes up whoever owns the edge, as above; so
+    // does the ferry's waypoint key.
+    if !edge.state.is_pressed() {
+        crate::app::input::ferry::via_key_edge(state, edge.physical, false);
+        state
+            .match_state
+            .input
+            .formation_line
+            .release_key(edge.physical);
+    }
     // Native chat owns its edit keys before game-local chords or hotkeys.
     if crate::app::input::chat::key_edge(state, &edge) {
         if !edge.state.is_pressed() {
@@ -75,6 +85,18 @@ pub(crate) fn in_game_key_edge(
     if locked && is_escape {
         resolution = hotkeys::HotkeyResolution::Command(hotkeys::HotkeyCommand::Options);
     }
+    // VERA ferry: while its drop click is armed, the Planning Mode key marks
+    // the clicks that add waypoints and does not open Planning Mode.
+    if state.match_state.input.ferry.armed()
+        && !locked
+        && !paused_at_event
+        && resolution == hotkeys::HotkeyResolution::Command(hotkeys::HotkeyCommand::PlanningMode)
+    {
+        if edge.state.is_pressed() {
+            crate::app::input::ferry::via_key_edge(state, edge.physical, true);
+        }
+        return;
+    }
     let owned_planning_release =
         !edge.state.is_pressed() && state.match_state.input.planning.owns_key(edge.physical);
     if owned_planning_release || !locked || is_escape {
@@ -93,6 +115,20 @@ pub(crate) fn in_game_key_edge(
                 edge.state,
                 edge.repeat,
             );
+        // VERA formation line: its key is held, not run.
+        if edge.state.is_pressed()
+            && !consumed
+            && !locked
+            && !paused_at_event
+            && resolution
+                == hotkeys::HotkeyResolution::Command(hotkeys::HotkeyCommand::FormationLine)
+        {
+            state
+                .match_state
+                .input
+                .formation_line
+                .press_key(edge.physical);
+        }
         if edge.state.is_pressed() && !edge.repeat && !consumed {
             crate::app::input::dispatch::handle_hotkey_pressed(state, resolution, edge.physical);
         }
@@ -184,7 +220,8 @@ fn localized(state: &AppState, key: &str, parameter: Option<u8>) -> String {
 pub(crate) fn open(state: &mut AppState, parent: KeyboardParent) {
     if parent == KeyboardParent::GameControls {
         // BBB52C sets state4/result1;4E1D9A applies+writes before dispatcher48CA03.
-        crate::app::persistence::options::accept_in_game_options(state);
+        // VERA's Game Controls is a page of the in-game menu, which applies and
+        // writes its controls as it closes for this state.
         App::enter_in_game_menu_state(state, crate::ui::pause_menu::InGameMenuState::Keyboard);
     }
     // Phobos registers `FireTacticalSW1..10` and `ToggleSWSidebar` only when
@@ -309,10 +346,11 @@ pub(crate) fn commit_close(state: &mut AppState, exit: KeyboardExit) {
     }
     match dialog.parent {
         KeyboardParent::Launcher => App::open_launcher_options_dialog(state),
-        // State_Machine 0x0048CA0D writes state 5 after A3 returns; BBB is
-        // recreated, and its init reads the Options values A3 left untouched.
+        // State_Machine 0x0048CA0D writes state 5 after A3 returns, where
+        // gamemd recreates BBB. VERA's Game Controls is the in-game menu's
+        // page, so the menu is what comes back.
         KeyboardParent::GameControls => {
-            App::enter_in_game_menu_state(state, crate::ui::pause_menu::InGameMenuState::Options)
+            App::enter_in_game_menu_state(state, crate::ui::pause_menu::InGameMenuState::Menu)
         }
     }
     state.platform.window.request_redraw();

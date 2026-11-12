@@ -295,6 +295,8 @@ fn status_instances<'a>(
     let ObjectExtrasRun::Status {
         bomb_clock,
         wrench,
+        #[cfg(feature = "ares")]
+        power_off,
         rank,
         background,
         shield_background,
@@ -311,11 +313,16 @@ fn status_instances<'a>(
     else {
         unreachable!("only a status run has status instances");
     };
+    #[cfg(feature = "ares")]
+    let power_off = *power_off;
+    #[cfg(not(feature = "ares"))]
+    let power_off = None;
     let mut first = u32::MAX;
     let mut last = 0;
     for index in [
         *bomb_clock,
         *wrench,
+        power_off,
         *rank,
         *background,
         *shield_background,
@@ -356,6 +363,8 @@ fn draw_status_prefix<'a>(
     let ObjectExtrasRun::Status {
         bomb_clock,
         wrench,
+        #[cfg(feature = "ares")]
+        power_off,
         rank,
         background,
         shield_background,
@@ -372,6 +381,11 @@ fn draw_status_prefix<'a>(
     }
     if let (Some(index), Some(shape)) = (wrench, overlay.repair_wrench()) {
         //6F5340: MOUSEPAL N1, E00/493DF0 consumes A and bypasses Z.
+        batch.draw_passthrough_range(pass, shape.texture(), buffer, *index, 1);
+    }
+    // Ares 10049FE0 draws POWEROFF.SHP after the wrench with the same flags.
+    #[cfg(feature = "ares")]
+    if let (Some(index), Some(shape)) = (power_off, overlay.power_off()) {
         batch.draw_passthrough_range(pass, shape.texture(), buffer, *index, 1);
     }
     if let (Some(index), Some(shape)) = (rank, overlay.pips()) {
@@ -564,6 +578,8 @@ fn rank_run_end(runs: &[ObjectExtrasRun], start: usize) -> usize {
     let ObjectExtrasRun::Status {
         bomb_clock: None,
         wrench: None,
+        #[cfg(feature = "ares")]
+            power_off: None,
         rank: Some(first),
         background: None,
         shield_background: None,
@@ -589,6 +605,8 @@ fn rank_run_end(runs: &[ObjectExtrasRun], start: usize) -> usize {
     while let Some(ObjectExtrasRun::Status {
         bomb_clock: None,
         wrench: None,
+        #[cfg(feature = "ares")]
+            power_off: None,
         rank: Some(index),
         background: None,
         shield_background: None,

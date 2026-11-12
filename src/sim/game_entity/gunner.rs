@@ -57,13 +57,14 @@ impl GameEntity {
     /// TechnoClass_SwitchGunner 10042480 reads indices from 18 on).
     /// Charge types retain both words; out-of-range signed modes select mode0.
     /// This changes no timer, attachment or RNG state.
-    pub(crate) fn set_gunner_weapon(&mut self, mode: i32, object: &ObjectType) {
+    /// `ares` is [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
+    pub(crate) fn set_gunner_weapon(&mut self, mode: i32, object: &ObjectType, ares: bool) {
         if object.gunner_turrets.is_charge_turret() {
             return;
         }
-        // Installed SwitchGunner hook10042480 validates against WeaponCount;
-        // the default build retains the original eighteen-record boundary.
-        let limit = if cfg!(feature = "ares") {
+        // SwitchGunner hook10042480 validates against WeaponCount when Ares
+        // plays; stock retains the original eighteen-record boundary.
+        let limit = if ares {
             object.weapon_count
         } else {
             WEAPON_SLOT_COUNT as i32
@@ -80,26 +81,32 @@ impl GameEntity {
         self.rearm_timer.start(frame, duration);
     }
 
+    /// Whether [`Self::update_charge_turret`] runs for `object`'s type: a
+    /// charge turret with turrets, not a Gattling. Others keep their index.
+    pub(crate) fn charges_turret(object: &ObjectType) -> bool {
+        object.gunner_turrets.is_charge_turret() && object.turret_count > 0 && !object.is_gattling
+    }
+
     /// TechnoAI6FA4FB..6FA5BE, after target validity and before missions.
     /// The signed wrapping product precedes IDIV, then the result is clamped.
     /// Only drawing reads this index; no weapon, timer or RNG is changed.
     pub(crate) fn update_charge_turret(&mut self, frame: i32, object: &ObjectType) {
-        if !object.gunner_turrets.is_charge_turret()
-            || object.turret_count <= 0
-            || object.is_gattling
-        {
+        if !Self::charges_turret(object) {
             return;
         }
-        let selection = &mut self.turret_selection;
-        selection.current_turret_index = if selection.charge_turret_delay <= 0 {
+        let rearm_remaining = self.rearm_timer.remaining(frame);
+        let selection = &self.turret_selection;
+        let index = if selection.charge_turret_delay <= 0 {
             0
         } else {
-            (object
-                .turret_count
-                .wrapping_mul(self.rearm_timer.remaining(frame))
-                / selection.charge_turret_delay)
+            (object.turret_count.wrapping_mul(rearm_remaining) / selection.charge_turret_delay)
                 .clamp(0, object.turret_count - 1)
         };
+        // The index sits in the record's seldom part: an unchanged index
+        // writes nothing, so a presentation frame keeps sharing that part.
+        if selection.current_turret_index != index {
+            self.turret_selection.current_turret_index = index;
+        }
     }
 
     /// Raw native state for component oracle inputs; production uses the

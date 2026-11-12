@@ -84,7 +84,7 @@ pub(super) fn execute_object_navigation(state: &mut AppState, direction: ObjectD
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation)
     else {
         return;
@@ -224,7 +224,7 @@ pub(super) fn execute_combatant_selection(state: &mut AppState) {
     if state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_none_or(|rt| !selection_navigation_allowed(&rt.simulation))
     {
         return;
@@ -238,7 +238,7 @@ pub(super) fn execute_combatant_selection(state: &mut AppState) {
         let Some(sim) = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)
         else {
             return;
@@ -272,7 +272,7 @@ pub(super) fn execute_combatant_selection(state: &mut AppState) {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation),
         state.rules(),
         &state.match_state.input.selection_order,
@@ -479,7 +479,7 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
     if state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_none_or(|rt| !selection_navigation_allowed(&rt.simulation))
     {
         return;
@@ -488,7 +488,7 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|runtime| &runtime.simulation),
         state.rules(),
         &state.match_state.input.selection_order,
@@ -506,7 +506,7 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
         Vec::new()
     };
     let result = {
-        let runtime = state.match_state.sim_runtime.as_ref().unwrap();
+        let runtime = state.match_state.sim_runtime.runtime().unwrap();
         let rules = &runtime.resources.rules;
         let input = &mut state.match_state.input;
         category_selection(
@@ -535,13 +535,13 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation),
         state.rules(),
         &state.match_state.input.selection_order,
         state.match_state.input.selection_order_pending,
     );
-    let sim = &state.match_state.sim_runtime.as_ref().unwrap().simulation;
+    let sim = &state.match_state.sim_runtime.runtime().unwrap().simulation;
     let rules = state.rules().unwrap();
     let mixed = selected.iter().any(|id| {
         entity_navigation_category(sim, rules, *id, kind)

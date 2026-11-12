@@ -108,6 +108,11 @@ pub struct CampaignLoadingMetadata {
     background_name_640: String,
     background_name_800: String,
     background_palette_name: String,
+    /// Ares `LoadScreenText.Color` of the MISSION section, the colour scheme
+    /// name INIClass_ReadScenario_CacheSP (1002F680, hook 0x686D7F) looks up
+    /// for the campaign loading text.
+    #[cfg(feature = "ares")]
+    load_text_color: String,
 }
 
 impl CampaignLoadingMetadata {
@@ -127,6 +132,31 @@ impl CampaignLoadingMetadata {
         self.background_name_640.clear();
         self.background_name_800.clear();
         self.background_palette_name.clear();
+
+        // Ares 1002F680 (hook 0x686D7F, after MISSIONMD is read) defaults the
+        // key by the file name's first three letters, case-blind, and reads
+        // it into its 0x800 buffer whether or not the section exists.
+        #[cfg(feature = "ares")]
+        {
+            let prefix = |name: &str| {
+                filename
+                    .get(..3)
+                    .is_some_and(|head| head.eq_ignore_ascii_case(name))
+            };
+            let default = if prefix("SOV") {
+                "SovietLoad"
+            } else if prefix("YUR") {
+                "YuriLoad"
+            } else if prefix("TUT") {
+                "LightGrey"
+            } else {
+                "AlliedLoad"
+            };
+            self.load_text_color = ini.section(filename).map_or_else(
+                || default.to_owned(),
+                |section| section.read_string("LoadScreenText.Color", default, 0x800),
+            );
+        }
 
         let Some(section) = ini.section(filename) else {
             return;
@@ -191,6 +221,13 @@ impl CampaignLoadingMetadata {
     /// The native reader provides only `LS800BkgdPal`; both art widths use it.
     pub fn background_palette_name(&self) -> &str {
         &self.background_palette_name
+    }
+
+    /// The colour scheme name Ares 1002F680 finds (shade count 1, case-blind)
+    /// for SideExt::CurrentLoadTextColor; a name no scheme has leaves it -1.
+    #[cfg(feature = "ares")]
+    pub fn load_text_color(&self) -> &str {
+        &self.load_text_color
     }
 }
 
@@ -324,6 +361,8 @@ mod tests {
                 background_name_640: "Prior".into(),
                 background_name_800: "Prior".into(),
                 background_palette_name: "Prior".into(),
+                #[cfg(feature = "ares")]
+                load_text_color: String::new(),
             };
             let filename = row["filename"].as_str().unwrap();
             let mut text = String::new();
@@ -386,5 +425,24 @@ mod tests {
             metadata.apply_ini(&mission, row["filename"].as_str().unwrap());
             assert_fields(&metadata, row);
         }
+    }
+
+    /// Ares INIClass_ReadScenario_CacheSP (1002F680, hook 0x686D7F): the
+    /// MISSION section's `LoadScreenText.Color`, else a default by the file
+    /// name's first three letters, also when the section is absent.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_campaign_load_text_color_defaults_by_the_scenario_prefix() {
+        let ini = IniFile::from_str("[sov01.map]\nLoadScreenText.Color=Gold\n");
+        let color = |filename: &str| {
+            let mut metadata = CampaignLoadingMetadata::default();
+            metadata.apply_ini(&ini, filename);
+            metadata.load_text_color().to_owned()
+        };
+        assert_eq!(color("sov01.map"), "Gold");
+        assert_eq!(color("sov02.map"), "SovietLoad");
+        assert_eq!(color("Yur01.map"), "YuriLoad");
+        assert_eq!(color("TUT01.MAP"), "LightGrey");
+        assert_eq!(color("all01.map"), "AlliedLoad");
     }
 }

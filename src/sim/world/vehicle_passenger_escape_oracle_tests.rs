@@ -99,7 +99,7 @@ fn world(rules: &RuleSet) -> Simulation {
     sim.session.publish_started();
     sim.overlay_grid = Some(OverlayGrid::new(32, 32));
     sim.bridge_state = Some(bridges);
-    sim.zone_grid = Some(zones);
+    sim.zone_grid = Some(zones.into());
     sim.path_grid = Some(Arc::new(path));
     sim.install_resolved_terrain_for_new_map(terrain);
     let owner = sim.interner.intern("Americans");

@@ -20,7 +20,7 @@ fn interruption(state: &AppState) -> Option<NetworkInterruption> {
     state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .and_then(|rt| rt.simulation.pending_network_interruption())
 }
 
@@ -57,7 +57,7 @@ pub(crate) fn labels(
 /// game server rather than "the other system". A start the relay refused says
 /// why, so the players can do something about it.
 ///
-/// VERA-only: a frame that failed in a network match (`frame_stopped`) is an
+/// VERA-only: a frame that failed (`frame_stopped`, in any match) is an
 /// error, not a desync, so the box says so and points at the log instead of
 /// the checksum box's own out-of-sync text.
 pub(crate) fn vera_body(state: &AppState) -> Option<String> {
@@ -154,7 +154,7 @@ impl NetworkFailureModal {
 pub(crate) fn pending(state: &AppState) -> bool {
     state.frontend.screen == crate::app::GameScreen::InGame
         && (state.match_state.frame_stopped
-            || state.match_state.sim_runtime.as_ref().is_some_and(|rt| {
+            || state.match_state.sim_runtime.runtime().is_some_and(|rt| {
                 rt.simulation.pending_network_failure().is_some()
                     || rt.simulation.pending_network_interruption().is_some()
             }))
@@ -167,7 +167,7 @@ pub(crate) fn show(state: &mut AppState) {
         if let Some(failure) = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .and_then(|rt| rt.simulation.pending_network_failure())
         {
             log::error!("{failure}");
@@ -175,7 +175,7 @@ pub(crate) fn show(state: &mut AppState) {
         if let Some(failure) = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .and_then(|rt| rt.simulation.pending_network_interruption())
         {
             log::error!("{failure}");

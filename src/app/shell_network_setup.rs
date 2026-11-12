@@ -744,7 +744,7 @@ impl App {
             wol::resident_seed(state)
         } else {
             let main = crate::app::state::process_main_draws(
-                state.match_state.sim_runtime.as_ref(),
+                state.match_state.sim_runtime.runtime(),
                 &state.frontend.frontend_main_rng,
             );
             initialize_host_seed(&main, &mut state.frontend.legacy_crt_rng)

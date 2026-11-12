@@ -6,6 +6,7 @@
 //! explicit VERA transport adaptation; application messages remain the native
 //! 455-byte protocol from5DF9E0/5DFE00/5E00B0.
 
+use crate::app::match_runtime::sim_host::SimWrite;
 use std::net::{Ipv4Addr, SocketAddrV4};
 
 use super::AppState;
@@ -1194,6 +1195,20 @@ fn direct(endpoint: SocketAddrV4) -> GlobalDestination {
     }
 }
 
+/// Android: close the lobby's sockets and open new ones on the network the
+/// process is bound to now, then show the emptied game and player lists. A
+/// failed open reports the ports as unavailable, as entering the lobby does.
+#[cfg(target_os = "android")]
+fn reopen_lobby_on_new_network(state: &mut AppState) {
+    close(state);
+    open(state);
+    if state.match_state.lan_service.is_some() {
+        project_games(state);
+        project_players(state);
+    }
+    log::info!("LAN network changed; announcing on the new Wi-Fi network");
+}
+
 pub(crate) fn open(state: &mut AppState) {
     // Deterministic hidden-window capture drivers own explicit service events.
     // Their existing request/response transcript must not race real sockets.
@@ -1652,6 +1667,19 @@ pub(crate) fn poll(state: &mut AppState, now_ms: u64) {
     if !matches!(mode, Some(SessionMode::Lan | SessionMode::Wol)) {
         return;
     }
+    // Android: a Wi-Fi network that appeared, left or changed leaves the
+    // visit's sockets on a network that may be gone. Only the lobby list acts
+    // on it: a room, loading or a match keeps its transport, and the change
+    // waits until the player is back in the lobby.
+    #[cfg(target_os = "android")]
+    if mode == Some(SessionMode::Lan)
+        && state.match_state.live_network.is_none()
+        && state.frontend.shell_route == crate::app::shell_route::ShellRoute::LanLobby
+        && crate::util::lan_network::take_changed()
+    {
+        reopen_lobby_on_new_network(state);
+        return;
+    }
     let now = super::match_runtime::frame_pacer::frame_bucket(now_ms);
     if state.match_state.live_network.is_none()
         && state
@@ -1840,7 +1868,8 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
     {
         //48D7AA..48D7EF: no source or session check precedes the manager.
         let message = crate::net::lan_messages::ingame::BeaconMessage::decode(&incoming.payload)?;
-        if state.match_state.live_network.is_some() && state.match_state.sim_runtime.is_some() {
+        if state.match_state.live_network.is_some() && state.match_state.sim_runtime.is_installed()
+        {
             super::match_runtime::beacons::receive(state, message.record());
         }
         return Ok(());
@@ -1884,9 +1913,10 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
             //ProcessGlobalPackets48D81A uses the active private endpoint;
             //the packet name is irrelevant. This is not a synchronized EXIT.
             let matched = &mut state.match_state;
-            let destroyed = if let (Some(live), Some(runtime)) =
-                (matched.live_network.as_mut(), matched.sim_runtime.as_mut())
-            {
+            let destroyed = if let (Some(live), Some(runtime)) = (
+                matched.live_network.as_mut(),
+                matched.sim_runtime.write_sim(SimWrite::Network),
+            ) {
                 super::match_runtime::network_match::receive_departure(
                     &mut matched.session,
                     &mut runtime.simulation,
@@ -1915,7 +1945,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
             super::input::taunt::receive(state, taunt.byte);
             return Ok(());
         }
-        if let Some(runtime) = &state.match_state.sim_runtime
+        if let Some(runtime) = state.match_state.sim_runtime.runtime()
             && let Some(event) = super::match_runtime::network_match::decode_kick_proposal(
                 &state.match_state.session,
                 &runtime.simulation,
@@ -3273,7 +3303,7 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
     let sim = &state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .ok_or_else(|| anyhow::anyhow!("LAN startup has no constructed world"))?
         .simulation;
     let timing = state
@@ -3407,7 +3437,7 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
     let sim = &mut state
         .match_state
         .sim_runtime
-        .as_mut()
+        .write_sim(SimWrite::Network)
         .expect("constructed world")
         .simulation;
     sim.network_command_queues().install_timing(
@@ -3601,7 +3631,7 @@ fn drain_match_requests(state: &mut AppState) {
                 }
             }
             NetworkLoadingRequest::ProposeKick { target_source } => {
-                if let Some(runtime) = &state.match_state.sim_runtime
+                if let Some(runtime) = state.match_state.sim_runtime.runtime()
                     && let Some(message) = super::match_runtime::network_match::encode_kick_proposal(
                         &state.match_state.session,
                         &runtime.simulation,
@@ -3623,7 +3653,7 @@ fn drain_match_requests(state: &mut AppState) {
                 }
             }
             NetworkLoadingRequest::Disconnect { source_index, .. } => {
-                if let Some(runtime) = &state.match_state.sim_runtime
+                if let Some(runtime) = state.match_state.sim_runtime.runtime()
                     && let Some(house) = super::match_runtime::network_match::source_house(
                         &state.match_state.session,
                         &runtime.simulation,
@@ -5907,7 +5937,7 @@ fn service_transport(state: &mut AppState, now: u32) -> bool {
         if let Some(service) = state.match_state.lan_service.as_mut() {
             LanService::flush_setup_queue(&mut service.pending_setup, &mut *live.global_mut());
         }
-        if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Network) {
             live.service_pending_commands(&mut runtime.simulation.network_command_queues(), now);
         } else {
             live.service_transport(now);

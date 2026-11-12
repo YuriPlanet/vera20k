@@ -945,7 +945,7 @@ mod map_wall_owner_candidate_tests {
             sim.session().lighting(),
         ));
         let mut rt = crate::sim::runtime::SimRuntime::from_simulation(sim);
-        rt.resources.rules = rules;
+        rt.resources_mut().rules = rules;
         let frame = rt
             .advance_frame(
                 &[],
@@ -1497,7 +1497,9 @@ pub struct PresentationLoadAssets {
     pub sidebar_cameo_atlas: Option<SidebarCameoAtlas>,
     pub sidebar_chrome: Option<SidebarChromeSet>,
     /// The game folder's `veraui.ini`, read for this match.
-    pub match_layouts: crate::ui::match_layout::MatchLayoutFile,
+    /// The mod's `veraui.ini`, parsed; the match lays the player's own over
+    /// it (`presentation::player_layout`).
+    pub match_layout_ini: Option<crate::rules::ini_parser::IniFile>,
     #[cfg(feature = "phobos")]
     pub sw_sidebar_ui: crate::rules::phobos_sw_sidebar::SuperWeaponSidebarUi,
     /// Phobos `uimd.ini [Sidebar] CenterPauseMenuBackground`, read from the
@@ -3737,10 +3739,7 @@ fn load_map_first_step(
         .install_team_ai_registry(
             &team_ai_registry,
             team_ai_rules_at_read.as_ref().unwrap_or(&rules),
-        )
-        .map_err(|refused| {
-            anyhow::anyhow!("active YR aimd.ini failed RuleSet resolution: {refused:?}")
-        })?;
+        );
 
                                                         if let (Some(launch), Some(projection)) = (
                                                             match_launch_descriptor.as_ref(),

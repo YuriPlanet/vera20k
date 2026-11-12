@@ -130,7 +130,7 @@ fn separate_zone(sim: &mut Simulation, cell: (u16, u16)) {
         (cell.0 as i16, cell.1 as i16),
     )
     .unwrap();
-    let zones = sim.zone_grid.as_mut().unwrap();
+    let zones = sim.zone_grid.as_deref_mut().unwrap();
     let index = y as usize * 33 + x as usize;
     let topology = zones.base_topology_mut_for_test();
     let cluster = crate::sim::pathfinding::zone_map::ZoneId::try_from(
@@ -186,7 +186,7 @@ fn zone_entry_uses_tag_as_source_for_the_asymmetric_fringe_shortcut() {
     separate_zone(&mut sim, (1, 16));
     let cells = NativeCellQuery::canonical(sim.resolved_terrain.as_ref().unwrap());
     let reaches = |from, to| {
-        sim.zone_grid.as_ref().unwrap().can_reach_native(
+        sim.zone_grid.as_deref().unwrap().can_reach_native(
             &cells,
             ZoneQueryCell::Copied(from),
             ZoneQueryCell::Copied(to),

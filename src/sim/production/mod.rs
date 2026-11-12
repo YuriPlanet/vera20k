@@ -58,7 +58,7 @@ pub use self::production_queue::{
     dispatch_production_changes_for_tests, publish_production_changes_for_tests,
 };
 pub(crate) use self::production_refinery::spawn_building_free_unit;
-pub use self::production_repair::can_repair_building;
+pub use self::production_repair::{buildings_wanting_repair, can_repair_building};
 pub use self::production_repair::{RepairControl, repair_step_cost, toggle_repair};
 pub(crate) use self::production_repair::{engineer_repair, update_repair_and_power};
 #[cfg(any(test, feature = "test-support"))]
@@ -108,8 +108,8 @@ pub(in crate::sim) use self::factory_lifecycle::construct_active_factory_fixture
 #[cfg(any(test, feature = "test-support"))]
 pub(in crate::sim) use self::factory_lifecycle::release_delivered_mobile;
 pub(in crate::sim) use self::factory_lifecycle::{
-    abandon_house_factories, detach_building_production, recalculate_strips,
-    refresh_factory_rates_for_house, step_factories, update_factory_queue,
+    abandon_house_factories, delete_building_factory, detach_building_production,
+    recalculate_strips, refresh_factory_rates_for_house, step_factories, update_factory_queue,
 };
 pub(in crate::sim) use self::production_queue::exit_produced_object;
 pub(crate) use self::production_tech::factory_category_for_building;

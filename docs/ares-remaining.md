@@ -12,17 +12,19 @@ on purpose are in [ares-skipped-hooks.md](ares-skipped-hooks.md).
   `Cloakable=` (native vanilla never did; see [ares-bugfixes.md](ares-bugfixes.md)).
 - INI keys: the restored Ares source reads 684 distinct keys. The engine reads every
   gameplay key among them. The keys still unread are UI and front-end keys (uimd.ini
-  `[UISettings]`, campaign `HoverSound`, the movie list, `SW.TimerVisibility`,
+  `[UISettings]`, campaign `HoverSound`, the movie list,
   `DebugKeysEnabled`, `DirectX.Force`) and the
-  presentation keys `DamageSmokeParticleSystems` / `DamageSparksParticleSystems`. Ares
+  presentation keys `DamageSmokeParticleSystems` / `DamageSparksParticleSystems` and
+  `AlternateTheaterArt` (read by `pType->ID`, which the key scan misses). Ares
   3.0 itself never loads `[RadiationTypes]` or `AttachEffect.Damage`/`.DamageDelay`
   (no reader in the DLL; see [ares-radiation.md](ares-radiation.md) and
   [ares-attach-effect.md](ares-attach-effect.md)). `ares-src/report/ini_coverage.tsv` is
   not exhaustive; use the key scan under Tools.
 - Hooks: Ares 3.0 installs 1448 (`report/hooks.tsv` also lists 234 0.A hooks that 3.0
-  removed). The engine source cites 991; the chain docs give 383 more a disposition
-  (ported elsewhere, equivalent, not applicable, skipped or residual); 74 are
-  untouched, listed at the end. A residual disposition is still a gap: every
+  removed). The engine source cites 1013; the chain docs give 369 more a disposition
+  (ported elsewhere, equivalent, not applicable, skipped or residual); 66 are
+  untouched, listed at the end with `0x5F3D65`, whose address the engine quotes only
+  for the stock destructor. A residual disposition is still a gap: every
   residual in the chain docs is gathered on this page, the gameplay ones under
   [Smaller gameplay residuals](#smaller-gameplay-residuals).
 - Tests at the commit that adds this page (RA2_DIR set to a retail install):
@@ -49,7 +51,7 @@ first; the Ares part is then small. None of them is reachable with retail YR dat
 | Ares feature (keys, hooks) | Needs this stock gamemd logic | Retail |
 |---|---|---|
 | `NoSelfGuardArea` (0x51E748) | The healer's self-GuardArea arm of the infantry input ladder (0x51E710..0x51E748) | Healers never self-guard |
-| Gate placement selling walls (0x440709, 100156F0) | BuildingClass::Unlimbo's Gate/WallTower arms that sell the walls under them | No gate over walls |
+| Gate placement selling walls (0x440709, 100156F0) | The hook's wall test in BuildingClass::Unlimbo's Gate arm; the stock arm is ported with the stock wall ids | A mod `Wall=` overlay stays under a gate |
 | Tunnel entry by an absorber click (0x44351A, 100172F0) | The absorber click that sends radio 0x10 | Ares tunnels are mod-only |
 
 Stock gaps found in passing, with no Ares dependency:
@@ -63,17 +65,16 @@ Stock gaps found in passing, with no Ares dependency:
 | Mechanism | What is missing | Where |
 |---|---|---|
 | `CanMakeStuffUp` | The Rules draws and the 90-frame infantry panic are ported and the written values are saved in `AresMadeUpRules`, but nothing reads them yet: 28 Rules fields with about 110 read sites, many in free functions without a Simulation | [ares-warhead-residuals.md](ares-warhead-residuals.md) |
-| EMP | Tunnel movers; factory, Gap, superweapon, PowersUnit, LaserFence, occupied, undeploy and linked Prism buildings; the bunker test (10062357); a landed Aircraft's Fly Power_Off spin (0x4CFD20) | [ares-emp.md](ares-emp.md) |
+| EMP | Tunnel movers; a landed Aircraft's Fly Power_Off spin (0x4CFD20); a LaserFencePost's fence recalc (0x4533A0, VERA builds no fence sections) | [ares-emp.md](ares-emp.md) |
 | Refinery storage | `[Basic] FillSilos=`, the Weeder store, Removed_From_Game's keepTiberium arm, a fifth tiberium slot, the storage pips (0x44D755, 0x709B4E) and the `Message.SilosNeeded` text (needs a sim-to-client message event) | [ares-tiberium.md](ares-tiberium.md) |
 | Trench traversal | Only a buildings-only selection gets the cursor and click; Ctrl+Alt over a friendly trench keeps its stock answer; `GarrisonedIn` is not kept | [ares-building-hooks.md](ares-building-hooks.md) |
-| Deactivated objects | The deactivated cursor and click arms | [ares-cloak-power.md](ares-cloak-power.md) |
+| Deactivated objects | The deactivated What_Action over an object gates only the hover cursor of the object that owns it; the click paths keep their stock rungs below the ClickedAction refusal | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | Firestorm zones | Recalc writers other than the toggle (an overlay change, trigger action 40) and placing a section during a firestorm keep the old zone class | [ares-firestorm.md](ares-firestorm.md) |
 | `StartInMultiplayer.WithConst` | By the ported chain a human's starting yard is never Grand_Opened (no lights or active anims), and its House's primary centre falls back to the start cell (4FD150 republishes none, 1001ED60 restores the saved cell); compare with the game in a mod that sets it | [ares-combat-sim-hooks.md](ares-combat-sim-hooks.md) |
 | DropPod | A negative count (native loops about 2^32 tries), SetDestination's prologue and Teleporter arm, the Foot's own locomotor answering while the pod flies, a landing past the end of `DropPod=` | [ares-superweapon-types.md](ares-superweapon-types.md) |
 | HunterSeeker | The tube coordinate of a target in a tunnel; the facing conversion may differ by one binary-angle unit | [ares-hunter-seeker.md](ares-hunter-seeker.md) |
 | Terrain fire | Finish_Fire_Death's crumble of a zero-health tree (a lethal hit removes the tree first), the spread runs after the animation step | [ares-combat-sim-hooks.md](ares-combat-sim-hooks.md) |
-| Tunnels | The tunnel pips (10044C90) | [ares-building-hooks.md](ares-building-hooks.md) |
-| Ares ParticleSystemExt | Ares' own Smoke/Spark/Railgun particle simulation with its own random draws | [ares-anim-particles.md](ares-anim-particles.md) |
+| Ares ParticleSystemExt | Ares' own Smoke/Spark/Railgun particle simulation, drawing from the synchronised Scenario stream (a simulation port) | [ares-anim-particles.md](ares-anim-particles.md) |
 
 ## Smaller gameplay residuals
 
@@ -82,10 +83,7 @@ data.
 
 | Residual | Hooks | Where |
 |---|---|---|
-| Activate/Deactivate's factory queue refresh and sound mutex | `0x70FBE0`, `0x70FC90` | [ares-techno-hooks.md](ares-techno-hooks.md) |
-| ShouldDisableCameo's replacement (BuildLimitRemaining less the queue, the AirportBound limit also taking BuildLimit, a usable factory); queue admission keeps the stock CheckBuildLimit | `0x50B370` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
 | Serial AI queues (`AllowParallelAIQueues=no`); the default changes nothing | `0x4502F4`, `0x4CA07A`, the four KickOutUnit hooks (`0x443CCA`, `0x444119`, `0x444131`, `0x44531F`) | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
-| Per-docker airfield reload timers and TechnoType `ReloadRate`; VERA keeps the stock dock reload | `0x44C844` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
 | An upgrade's ProduceCash timer is not started at Put, so the Update hook starts it one frame longer | `0x4409F4` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
 | Flying carriers: spawned aircraft keep their launch Z, and the spawn manager aims them at its cell | `0x414338`, `0x6B783B` | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | Paradrop canopy: the dropped type's own `Parachute.Anim` before the Country's and Side's | `0x5F5ADD` (`10047C80`) | [ares-side-defaults.md](ares-side-defaults.md) |
@@ -102,15 +100,17 @@ data.
 | Expired Flamer/Scorch anims make no SmallFire/LargeFire anims (needs `MapClass::GetRandomCoordsNear`); retail sets neither key | `0x4250C9`, `0x42511B`, `0x42513F` | [ares-anim-particles.md](ares-anim-particles.md) |
 | Dormant on retail data: Doggie, the `DeathAnims=` owner, Mission_Guard's superweapon gate, the ICBM crate's Ares Nuke type, a bullet damage anim's MakeInfantryOwner outside Phobos | `0x51F628`, `0x518CB3`, `0x51ABD7`, `0x5200C1`, `0x51849A`, `0x449716`, `0x6CEEB0`, `0x469C4E` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
 | Superweapon money: charge-drain activation with `Money.Amount` | none | [ares-superweapon-money.md](ares-superweapon-money.md) |
-| UnitDelivery: `Deliver.Buildups`; the placement order and RNG are VERA's, and the delivered facing is 0 where Ares derives it from the cell | none | [ares-unit-delivery.md](ares-unit-delivery.md) |
+| UnitDelivery: `Deliver.Buildups`; the placement order and RNG are VERA's (Ares asks Pathfinding_Find `0x56DC20` once, with a `buildable` argument VERA's finder port does not take) | none | [ares-unit-delivery.md](ares-unit-delivery.md) |
 | AttachEffect: `TemporalHidesAnim` and the airborne half-distance collection | none | [ares-attach-effect.md](ares-attach-effect.md) |
 | Country power plants: a house with no candidate is a fatal error natively (`0x1001DEF6`); VERA splices nothing | none | [ares-country-powerplants.md](ares-country-powerplants.md) |
 | With Phobos too: Phobos `SuperWeaponSidebar.*Houses` keep the 0x80 buffer | `0x4750EC`, `0x475107` | [ares-bugfixes.md](ares-bugfixes.md) |
 
-Input rungs, besides the deactivated actions above
+Input rungs
 ([ares-techno-hooks.md](ares-techno-hooks.md),
 [ares-building-house-hooks.md](ares-building-house-hooks.md)):
-- the heal cursor and action over objects (`0x51E710`, `0x73FDBD`);
+- the heal cursor and action over objects (`0x51E710`, `0x73FDBD`): a healer heals by its
+  warhead's Verses, so a mod's mechanic infantry (Brute Force `CVEngineer`, `REPDRONE`,
+  placed by maps or triggers) shows no heal action over a damaged vehicle;
 - an Ivan entering an allied Grinder without Ctrl (`0x51EB48`; VERA answers IvanBomb);
 - the structure and defense tab hotkeys, the cameo click and the ready-building strip
   asking for a usable factory (`0x535DB6`, `0x535E76`, `0x6AB312`, `0x6A9822`);
@@ -126,19 +126,19 @@ dialog caching ([ares-side-defaults.md](ares-side-defaults.md)).
 ## Presentation and UI not ported
 
 - Unit art: WaterImage and the SHP facings and change-type draws (Ext/Techno/Hooks.Art.cpp),
-  AlphaImage lights (Ext/Techno/Hooks.Alpha.cpp), `NoSpawnAlt` (Ext/TechnoType/Hooks.Art.cpp),
-  the ore-gather anim under EMP, the load-screen colours (Ext/Side/Hooks.cpp). Listed at
-  the end. PCX cameos are ported ([ares-pcx-cameos.md](ares-pcx-cameos.md)), but that doc
-  cites neither of their hooks (`0x6A9A43`, `0x712045`), so both stay in the list.
-- Technos: the radial indicators of non-buildings (`0x41BE80`), the power-off marker
-  (`0x6F526C`), passenger pip frames (`0x709D38`), the damage spark and smoke
+  AlphaImage lights (Ext/Techno/Hooks.Alpha.cpp), the ore-gather anim under EMP. Listed at
+  the end. A `Turret=yes` NoSpawnAlt unit's turret over its WO body (`0x73B6E3`) and
+  `AlternateTheaterArt` (`0x5F9634`, read for Load2DArt `0x5F9070`) are residuals in
+  [ares-techno-hooks.md](ares-techno-hooks.md). PCX cameos are ported
+  ([ares-pcx-cameos.md](ares-pcx-cameos.md)), but that doc cites neither of their hooks
+  (`0x6A9A43`, `0x712045`), so both stay in the list.
+- Technos: the radial indicators of non-buildings (`0x41BE80`), the damage spark and smoke
   particle-system lists (`DamageSparksParticleSystems`, `DamageSmokeParticleSystems`;
   `0x6FAD49`, `0x702894`) and the `Pip=`/`OccupyPip=` colours (`0x4748A0`). See
   [ares-techno-hooks.md](ares-techno-hooks.md) and [ares-bugfixes.md](ares-bugfixes.md).
 - Sidebar and screens: the observer strip art (`0x6AA0CA`, `0x6AA164`;
   [ares-country-presentation.md](ares-country-presentation.md)), the Money superweapon
-  tooltip (`0x6A932B`), `SW.TimerVisibility` (`0x6D49D1`), and the campaign load-screen
-  text colour (`0x686D7F`; [ares-combat-sim-hooks.md](ares-combat-sim-hooks.md)).
+  tooltip (`0x6A932B`).
 - Palettes and draw order: an anim's `CustomPalette` (`0x4232CE`), a ParticleType's
   `Palette` (`0x62D015`) and the Ground layer's per-frame sort (`0x551A30`). See
   [ares-anim-particles.md](ares-anim-particles.md) and [ares-bugfixes.md](ares-bugfixes.md).
@@ -225,8 +225,8 @@ Retail INIs for retail tests: run the repo's `extract-ini` into `ini/` and set `
 
 ## Untouched hooks
 
-These 74 Ares 3.0 hooks have no citation in the engine or in another chain doc (the
-hook script above skips this page). Most are DLL plumbing, unit art and the alpha
+These 67 Ares 3.0 hooks have no citation in the engine or in another chain doc (the
+hook script above skips this page, and counts `0x5F3D65` as cited). Most are DLL plumbing, unit art and the alpha
 lights.
 
 | Hook | Ares.dll | Name | Source |
@@ -284,13 +284,6 @@ lights.
 | `0x4C850B` | `10062120` | Exception_Dialog | `Misc/Debug.cpp` |
 | `0x534A4D` | `10062140` | Theater_Init_ResetLogStatus | `Misc/Debug.cpp` |
 | `0x687C56` | `10062130` | INIClass_ReadScenario_ResetLogStatus | `Misc/Debug.cpp` |
-| `0x55403D` | `1002F850` | LoadProgressMgr_Draw_SkipShadowOnNullString3 | `Ext/Side/Hooks.cpp` |
-| `0x642B36` | `1002F870` | ProgressScreenClass_GetLoadTextColor | `Ext/Side/Hooks.cpp` |
-| `0x642B91` | `1002F870` | ProgressScreenClass_GetSideColor | `Ext/Side/Hooks.cpp` |
-| `0x643BB9` | `1002F890` | ProgressScreenClass_UpdateSingleProgressBar | `Ext/Side/Hooks.cpp` |
-| `0x5F848C` | `100413A0` | ObjectTypeClass_Load3DArt_NoSpawnAlt2 | `Ext/TechnoType/Hooks.Art.cpp` |
-| `0x5F9634` | `100413B0` | ObjectTypeClass_LoadFromINI | `Ext/TechnoType/Hooks.Art.cpp` |
-| `0x73B6E3` | `10041460` | UnitClass_DrawVXL_NoSpawnAlt | `Ext/TechnoType/Hooks.Art.cpp` |
 | `0x69801A` | `1006AF40` | Game_GetGameTypePrefs_MultiEngineer | `Misc/Skirmish.cpp` |
 | `0x699043` | `1006AF00` | GameMode_SaveGameSettings_MultiEngineer | `Misc/Skirmish.cpp` |
 | `0x6AEE6A` | `1006B070` | Skirmish_InitializeDialog_MultiEngineer | `Misc/Skirmish.cpp` |

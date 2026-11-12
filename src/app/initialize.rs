@@ -382,7 +382,9 @@ impl App {
                 .map(|config| config.paths.settings_dir()),
             RetailOptionsLoad::from_settings,
         );
-        let profile_screen = options_load.startup_shell_screen;
+        let profile_screen = crate::app::persistence::options_profile::player_launch_window_size(
+            options_load.startup_shell_screen,
+        );
         let options_profile = options_load.retained_profile;
         personal_rules.set_terrain_deformation(options_profile.terrain_deformation);
         // Before the first CSF load below, which layers this language over it.
@@ -418,9 +420,10 @@ impl App {
         // and the match zoom follows it. A sealed capture keeps its exact,
         // fixed, hidden physical surface.
         let capture = capture_dimensions.is_some();
-        // A player window opens at that size on every launch, as gamemd's
-        // shell does (`WinMain` 006BD9B5, `RetailOptionsLoad`), however large
-        // it was left.
+        // A player window opens at that size on every launch, however large it
+        // was left, as gamemd's shell does (`WinMain` 006BD9B5,
+        // `RetailOptionsLoad`); VERA opens it at 1024x768 where gamemd's shell
+        // is 800x600 (`player_launch_window_size`).
         let inner_size: winit::dpi::Size = if capture {
             PhysicalSize::new(window_width, window_height).into()
         } else {
@@ -1000,7 +1003,7 @@ impl App {
                 live_network: None,
                 lan_service: None,
                 startup: Default::default(),
-                sim_runtime: None,
+                sim_runtime: Default::default(),
                 input: crate::app::input::state::MatchInputState::new(hotkey_bindings),
                 match_presentation: crate::app::presentation::state::MatchPresentationState {
                     sinking_waterlines: Default::default(),
@@ -1014,6 +1017,11 @@ impl App {
                     active_sidebar_tab: SidebarTab::default_active_tab(),
                     sidebar_layout_spec,
                     match_layouts: crate::ui::match_layout::MatchLayoutFile::none(),
+                    mod_layout_ini: None,
+                    player_layout_text: Vec::new(),
+                    layout_edit: None,
+                    added_parts: Default::default(),
+                    added_grid_scroll: Vec::new(),
                     tooltips: startup_tooltips,
                     tooltip_epoch: Instant::now(),
                     // The Constructor `0x005D39D0` (from Session's static
@@ -1028,7 +1036,8 @@ impl App {
                     pause_menu_interaction: Default::default(),
                     pause_menu_template: Default::default(),
                     internet_pause: Default::default(),
-                    display_pause: Default::default(),
+                    options_page: None,
+                    options_page_category: None,
                     abort_secondary: Default::default(),
                     sound_dialog: None,
                     abort_buttons: Default::default(),
@@ -1038,7 +1047,6 @@ impl App {
                     restate_text: String::new(),
                     saved_game_browser: None,
                     in_game_options: startup_in_game_options,
-                    in_game_options_anchor: None,
                     combat_lights: Default::default(),
                     screen_shake: Default::default(),
                     line_trails: Default::default(),

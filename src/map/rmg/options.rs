@@ -37,6 +37,12 @@ pub struct RmgOptions {
     /// original seed generates exactly as before. Saved as `VeraUrban=yes`
     /// only when set.
     pub urban_enabled: bool,
+    /// VERA extension: Fair Starts. The generator tries a few seeds from this
+    /// one, keeps the map whose starts are best spread and best matched in
+    /// ore and building room, and evens the ore near each start to the
+    /// median start's (`fairness`). Saved as `VeraFair=yes` only when set, so
+    /// every original seed generates exactly as before.
+    pub fair_starts: bool,
     pub width: i32,
     pub height: i32,
     pub accessibility: i32,
@@ -69,6 +75,8 @@ impl RmgOptions {
 
 /// VERA's `.SED` key for [`RmgOptions::urban_enabled`].
 const VERA_URBAN_KEY: &str = "VeraUrban";
+/// VERA's `.SED` key for [`RmgOptions::fair_starts`].
+const VERA_FAIR_KEY: &str = "VeraFair";
 
 impl Default for RmgOptions {
     /// The original constructor's defaults (`MapSeedClass` ctor `0x00595680`,
@@ -88,6 +96,7 @@ impl Default for RmgOptions {
             vegetation: 0,
             urban_presence: 0,
             urban_enabled: false,
+            fair_starts: false,
             width: 0,
             height: 0,
             accessibility: 0,
@@ -171,6 +180,7 @@ impl RmgOptions {
         // VERA: written only when set, so a seed without the key has no towns,
         // whatever `self` held.
         self.urban_enabled = section.read_bool(VERA_URBAN_KEY, false);
+        self.fair_starts = section.read_bool(VERA_FAIR_KEY, false);
         #[cfg(feature = "ares")]
         {
             self.urban_areas = section.read_bool(URBAN_AREAS_KEY, self.urban_areas);
@@ -203,6 +213,9 @@ impl RmgOptions {
         let mut values = values;
         if self.urban_enabled {
             values.push((VERA_URBAN_KEY, "yes".to_string()));
+        }
+        if self.fair_starts {
+            values.push((VERA_FAIR_KEY, "yes".to_string()));
         }
         #[cfg(feature = "ares")]
         values.push((
@@ -281,6 +294,22 @@ mod tests {
         assert!(read.urban_enabled);
     }
 
+    /// VERA's Fair Starts key follows the towns key: written only when set.
+    #[test]
+    fn fair_starts_are_saved_only_when_set() {
+        let plain = RmgOptions::default().to_sed_bytes();
+        assert!(!String::from_utf8_lossy(&plain).contains("VeraFair"));
+        let fair = RmgOptions {
+            fair_starts: true,
+            ..RmgOptions::default()
+        };
+        let mut read = RmgOptions::default();
+        read.apply_sed(&IniFile::from_bytes(&fair.to_sed_bytes()).expect("seed INI"));
+        assert!(read.fair_starts);
+        read.apply_sed(&IniFile::from_bytes(&plain).expect("seed INI"));
+        assert!(!read.fair_starts);
+    }
+
     #[test]
     fn the_digest_hashes_the_options_and_not_the_description() {
         let options = RmgOptions {
@@ -338,6 +367,7 @@ mod tests {
             vegetation: -3,
             urban_presence: 900,
             urban_enabled: false,
+            fair_starts: false,
             width: 9,
             height: 9,
             accessibility: 101,
@@ -419,6 +449,7 @@ mod tests {
             vegetation: 70,
             urban_presence: 10,
             urban_enabled: false,
+            fair_starts: false,
             width: 2,
             height: 3,
             accessibility: 60,

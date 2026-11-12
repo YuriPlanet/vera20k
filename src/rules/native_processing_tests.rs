@@ -3,6 +3,44 @@
 use super::*;
 use crate::util::save_codec;
 
+#[cfg(feature = "ares")]
+#[test]
+fn weapon_types_register_before_animation_reads_each_rules_layer() {
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[Animations]\n0=AURA\n1=UNKNOWN\n\
+         [WeaponTypes]\n0=EARLY\n\
+         [EARLY]\nDamage=1\n[LATE]\nDamage=2\n[UNLISTED]\nDamage=3\n",
+    ));
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[WeaponTypes]\n0=LATE\n[LATE]\nDamage=4\n"),
+    );
+    let art = IniFile::from_str("[AURA]\nWeapon=LATE\n[UNKNOWN]\nWeapon=UNLISTED\n");
+    let processed = layers.process_with_fixed_art(&art).unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    assert!(rules.weapon("EARLY").is_some());
+    assert!(rules.weapon("LATE").is_some());
+    assert!(rules.weapon("UNLISTED").is_none());
+    assert_eq!(
+        rules
+            .art()
+            .anim_runtime_config("AURA")
+            .unwrap()
+            .ares_weapon
+            .as_deref(),
+        Some("LATE")
+    );
+    assert!(
+        rules
+            .art()
+            .anim_runtime_config("UNKNOWN")
+            .unwrap()
+            .ares_weapon
+            .is_none()
+    );
+}
+
 #[test]
 fn civilian_type_reads_preserve_physical_layers_save_and_reset() {
     // InfantryType5237A1/52455F: own-ID bool, false only at construction.
@@ -2482,7 +2520,7 @@ fn native_startup_prepass_repeat_and_reset_keep_each_phase_on_one_registry_owner
     assert_eq!(prepass.registry_state().rules_tree_strength, 375);
     assert_eq!(
         prepass_boundaries,
-        if crate::rules::ARES_ENABLED {
+        if crate::rules::ARES_BUILD {
             [1, 2, 3]
         } else {
             [1, 2, 6]
@@ -2494,7 +2532,7 @@ fn native_startup_prepass_repeat_and_reset_keep_each_phase_on_one_registry_owner
             .iter()
             .map(|event| (event.family(), event.native_stored_id()))
             .collect::<Vec<_>>(),
-        if crate::rules::ARES_ENABLED {
+        if crate::rules::ARES_BUILD {
             vec![
                 (NativeTypeConstructorFamily::HouseType, "HOUSE"),
                 (NativeTypeConstructorFamily::AnimType, "PREANIM"),
@@ -4304,7 +4342,7 @@ fn ares_palette_requests_use_retained_names_and_resolve_each_loaded_group() {
         .unwrap();
     assert_eq!(first_name, "first");
     let second = rules.load_extra_building_palette(&assets, "tem", Some("second"));
-    assert_eq!(second.is_some(), crate::rules::ARES_ENABLED);
+    assert_eq!(second.is_some(), crate::rules::ARES_BUILD);
     if let Some((name, palette)) = second {
         assert_eq!(name, "second");
         assert_ne!(palette.to_rgba_bytes(), first.to_rgba_bytes());

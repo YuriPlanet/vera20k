@@ -287,6 +287,16 @@ pub(crate) struct AresSuperWeaponPresentation {
     pub(crate) eva: AresSuperWeaponEva,
     #[serde(default)]
     pub(crate) texts: AresSuperWeaponTexts,
+    /// `SW.TimerVisibility` (Valueable<SuperWeaponAffectedHouse> +0x1E9, 7 from
+    /// the SWTypeExt constructor 10031460): for whom TacticalClass::Draw writes
+    /// the Super's timer line (IsTimerVisible 10032E80, hook `0x6D49D1`).
+    #[serde(default = "all_houses")]
+    pub(crate) timer_visibility: crate::rules::superweapon_targeting::HouseMask,
+}
+
+#[cfg(feature = "ares")]
+fn all_houses() -> crate::rules::superweapon_targeting::HouseMask {
+    crate::rules::superweapon_targeting::HouseMask::ALL
 }
 
 /// Fixed-catalog references. The ordered SWType reader owns initialization and
@@ -396,6 +406,7 @@ impl AresSuperWeaponEva {
         section: &IniSection,
         eva: &crate::rules::sound_ini::EvaRegistry,
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         // SWTypeExt::LoadFromINI10033370 reads these first, in this order,
         // via1000EC10: a fixed-catalog lookup, then none, otherwise retention.
         self.ready = eva.read_rules_reference(
@@ -521,6 +532,7 @@ impl AresSuperWeaponMessages {
     }
 
     fn read_pass(&mut self, section: &IniSection, color_scheme: i32) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         // Load1003380E/24 then Detected..CannotFire (10033839..100338BE) and
         // CsfText::Read10076510: ReadString2048, then copy at most31 bytes
         // without trimming the short copy again.
@@ -595,6 +607,7 @@ impl AresSuperWeaponTexts {
 
     /// LoadFromINI10033370's Text.Preparing, Ready, Hold, Charging, Active.
     fn read_pass(&mut self, section: &IniSection) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         for (key, label) in [
             ("Text.Preparing", &mut self.preparing),
             ("Text.Ready", &mut self.ready),
@@ -621,6 +634,7 @@ impl Default for AresSuperWeaponPresentation {
             messages: AresSuperWeaponMessages::default(),
             eva: AresSuperWeaponEva::default(),
             texts: AresSuperWeaponTexts::default(),
+            timer_visibility: crate::rules::superweapon_targeting::HouseMask::ALL,
         }
     }
 }
@@ -636,6 +650,14 @@ impl AresSuperWeaponPresentation {
         animation: Option<Option<String>>,
         message_color: i32,
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
+        // 10033370 reads SW.TimerVisibility after SW.AllowAI, before the
+        // Money keys; it shares no state with the reads below.
+        if let Some(mask) =
+            crate::rules::superweapon_targeting::HouseMask::read_ares(section, "SW.TimerVisibility")
+        {
+            self.timer_visibility = mask;
+        }
         if let Some(animation) = animation {
             self.animation = Some(animation);
         }
@@ -898,13 +920,14 @@ impl SuperWeaponType {
                 // pulse (a read SW.Range below zero), else the custom action
                 // with the constructor's Attack cursor.
                 #[cfg(feature = "ares")]
-                SuperWeaponKind::SonarPulse => section
-                    .read_list("SW.Range", 0x800)
-                    .and_then(|tokens| tokens.first().copied())
-                    .is_none_or(|width| {
-                        crate::rules::ini_value::parse_leading_f64(width) as f32 >= 0.0
-                    })
-                    .then(|| "Attack".to_string()),
+                SuperWeaponKind::SonarPulse => {
+                    crate::rules::ares_switch::ares_read(|| section.read_list("SW.Range", 0x800))
+                        .and_then(|tokens| tokens.first().copied())
+                        .is_none_or(|width| {
+                            crate::rules::ini_value::parse_leading_f64(width) as f32 >= 0.0
+                        })
+                        .then(|| "Attack".to_string())
+                }
                 // SW_EMPulse::LoadFromINI10071510 writes Action every pass:
                 // none for `EMPulse.TargetSelf`, else the custom action with
                 // Initialize10071440's Attack cursor.
@@ -956,7 +979,9 @@ impl SuperWeaponType {
             #[cfg(feature = "ares")]
             sidebar_pcx: section.read_ares_pcx_filename("SidebarPCX"),
             #[cfg(feature = "ares")]
-            sidebar_palette: section.read_name("SidebarPalette", 2048).map(str::to_owned),
+            sidebar_palette: crate::rules::ares_switch::ares_read(|| {
+                section.read_name("SidebarPalette", 2048).map(str::to_owned)
+            }),
             show_timer: section.read_bool("ShowTimer", false),
             disableable_from_shell: section.read_bool("DisableableFromShell", false),
             // SW_Battery::LoadFromINI1006ECC0 and SW_Firewall's (10071620)
@@ -1037,7 +1062,9 @@ impl SuperWeaponType {
             generic_warhead: (kind == SuperWeaponKind::GenericWarhead).then(|| {
                 GenericWarheadSettings {
                     warhead: None,
-                    damage: section.read_int("SW.Damage", 0),
+                    damage: crate::rules::ares_switch::ares_read(|| {
+                        section.read_int("SW.Damage", 0)
+                    }),
                 }
             }),
         }
@@ -1160,6 +1187,7 @@ impl AresSuperWeaponCharge {
     /// (+0x1E6), Money.DrainAmount/DrainDelay, the ratio (Nullable<double>
     /// 10008CE0), then the SW.InitialReady/VirtualCharge pair.
     pub(super) fn read_pass(&mut self, section: &IniSection) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.unstoppable = section.read_ares_bool("SW.Unstoppable", self.unstoppable);
         self.money_drain_amount =
             section.read_ares_int("Money.DrainAmount", self.money_drain_amount);
@@ -1329,6 +1357,7 @@ impl AresParaDropPlane {
         aircraft: &impl Fn(&str) -> Option<Option<String>>,
         types: &impl Fn(&str) -> Option<Vec<TechnoTypeReference>>,
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         use crate::rules::object_type::ObjectCategory;
         let base = if index == 0 {
             base.to_owned()
@@ -1423,6 +1452,7 @@ impl AresParaDropRules {
         aircraft: impl Fn(&str) -> Option<Option<String>>,
         types: impl Fn(&str) -> Option<Vec<TechnoTypeReference>>,
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let mut read = |owner, base: &str, new_count: usize| {
             let (planes, inserted) = self.try_emplace(owner);
             let current = if inserted { new_count } else { planes.len() };
@@ -1574,6 +1604,7 @@ impl AresDropPodGlobalRules {
         trailer: Option<Option<String>>,
         types: Option<Vec<TechnoTypeReference>>,
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         if trailer.is_some() {
             self.trailer = trailer;
         }
@@ -1641,6 +1672,7 @@ impl AresEMPulseRules {
         pulse_ball: Option<Option<String>>,
         cannons: Option<Vec<String>>,
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.max_count = section.read_ares_int("SW.MaxCount", self.max_count);
         self.linked = section.read_ares_bool("EMPulse.Linked", self.linked);
         self.target_self = section.read_ares_bool("EMPulse.TargetSelf", self.target_self);
@@ -1738,6 +1770,7 @@ impl AresLightningRules {
     /// LoadFromINI10072CF0's reads, in its order; `reads` holds the
     /// processor's resolution of BoltExplosion and the four lists.
     fn read_pass(&mut self, section: &IniSection, reads: AresLightningReads) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.duration = section.read_ares_nullable_int("Lightning.Duration", self.duration);
         self.radar_outage =
             section.read_ares_nullable_int("Lightning.RadarOutage", self.radar_outage);
@@ -1846,6 +1879,7 @@ impl AresDominatorRules {
 
     /// LoadFromINI10070A40's reads, in its order.
     fn read_pass(&mut self, section: &IniSection, anims: [Option<Option<String>>; 3]) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.first_anim_height =
             section.read_ares_int("Dominator.FirstAnimHeight", self.first_anim_height);
         self.second_anim_height =
@@ -1929,6 +1963,7 @@ impl Default for AresSuperWeaponLighting {
 #[cfg(feature = "ares")]
 impl AresSuperWeaponLighting {
     fn read_pass(&mut self, section: &IniSection) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.enabled = section.read_ares_bool("Light.Enabled", self.enabled);
         self.ambient = section.read_ares_nullable_int("Light.Ambient", self.ambient);
         self.red = section.read_ares_nullable_int("Light.Red", self.red);
@@ -2001,6 +2036,7 @@ impl AresChronosphereRules {
 
     /// LoadFromINI 1006EF90's reads, in its order.
     fn read_pass(&mut self, section: &IniSection, blasts: [Option<Option<String>>; 2]) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         for (key, field) in [
             ("Chronosphere.KillOrganic", &mut self.kill_organic),
             ("Chronosphere.KillTeleporters", &mut self.kill_teleporters),
@@ -2117,6 +2153,7 @@ impl AresSuperWeaponLaunch {
         initialized: bool,
         reads: AresHandlerReads,
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let is = |name: &str| kind.is_some_and(|kind| kind.eq_ignore_ascii_case(name));
         if initialized && is("SonarPulse") {
             // SW_SonarPulse::Initialize100756D0.
@@ -2475,6 +2512,7 @@ impl Default for AresSuperWeaponAvailability {
 #[cfg(feature = "ares")]
 impl AresSuperWeaponAvailability {
     pub(crate) fn read_allowance_pass(&mut self, section: &IniSection) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.allow_player = section.read_ares_bool("SW.AllowPlayer", self.allow_player);
         self.allow_ai = section.read_ares_bool("SW.AllowAI", self.allow_ai);
         self.always_granted = section.read_ares_bool("SW.AlwaysGranted", self.always_granted);
@@ -2492,6 +2530,7 @@ impl AresSuperWeaponAvailability {
     }
 
     pub(crate) fn read_shots_pass(&mut self, section: &IniSection) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.shots = section.read_ares_int("SW.Shots", self.shots);
     }
 

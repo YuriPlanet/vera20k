@@ -352,6 +352,24 @@ impl FlightOwnerKind {
 /// Everything the flight kernel reads from or writes to the owner and the map.
 /// Coordinates are world leptons.
 pub(crate) trait JumpjetFlightHost {
+    /// VERA `[JumpjetControls] SmoothFacing=`; off is the original.
+    fn smooth_facing(&self) -> bool {
+        false
+    }
+    /// VERA `[JumpjetControls] LandNearby=` in cells; 0 is the original.
+    fn land_nearby_range(&self) -> i32 {
+        0
+    }
+    /// VERA `LandNearby=`: the owner's id, to settle two Jumpjets heading
+    /// for one cell.
+    fn owner_id(&self) -> u64 {
+        0
+    }
+    /// VERA `LandNearby=`: the lowest id among the other airborne Jumpjets
+    /// whose destination is `cell`.
+    fn landing_cell_claimed_by(&self, _cell: (i16, i16)) -> Option<u64> {
+        None
+    }
     fn binary_frame(&self) -> u32;
     fn trig(&self) -> &TrigTable;
     fn owner_kind(&self) -> FlightOwnerKind;
@@ -764,6 +782,11 @@ pub(crate) fn update_coordinates_and_altitude(
             Some(toward_target) => {
                 flight.facing.snap(toward_target, frame);
             }
+            // VERA `SmoothFacing=` (a deviation from `0x0054D67B`, off by
+            // default): on the ground the body keeps its own heading, so
+            // State 0 hands that heading to the locomotor and the body then
+            // turns with it instead of snapping to a stale one.
+            None if host.smooth_facing() && phase == STATE_GROUND => {}
             None => host.snap_body_facing(flight.facing.current(frame)),
         }
     }
@@ -791,6 +814,10 @@ pub(crate) fn state3_translate(
     let tracker_cell = host.cell_of([location[0], location[1]]);
     if tracker_cell != host.tracker_cell() {
         host.tracker_update(tracker_cell);
+    }
+    // VERA `LandNearby=` (off by default, no native counterpart).
+    if replan_landing_on_approach(runtime, tracker_cell, host) {
+        return STATE_TRANSLATE;
     }
 
     // Desired facing toward the destination (0x0054C081..C0CD).
@@ -1048,6 +1075,89 @@ fn claim_or_scatter(
     }
 }
 
+/// VERA `[JumpjetControls] LandNearby=`: among the cells within the key's
+/// range of `refused`, the one nearest the owner's own cell `here` that the
+/// owner may enter outright (`Can_Enter_Cell` 0), that is neither water nor
+/// beach, has no other object in its air slot and is no other airborne
+/// Jumpjet's destination. Ties go to the lower row, then the lower column.
+fn nearby_landing_cell(
+    refused: (i16, i16),
+    here: (i16, i16),
+    host: &mut impl JumpjetFlightHost,
+) -> Option<(i16, i16)> {
+    let range = host.land_nearby_range();
+    if range <= 0 {
+        return None;
+    }
+    let mut cells: Vec<(i32, i32, i32)> = Vec::new();
+    for dy in -range..=range {
+        for dx in -range..=range {
+            if (dx, dy) != (0, 0) && dx * dx + dy * dy <= range * range {
+                let x = i32::from(refused.0) + dx;
+                let y = i32::from(refused.1) + dy;
+                let (hx, hy) = (x - i32::from(here.0), y - i32::from(here.1));
+                cells.push((hx * hx + hy * hy, y, x));
+            }
+        }
+    }
+    cells.sort_unstable();
+    cells.into_iter().find_map(|(_, y, x)| {
+        let x = i16::try_from(x).ok().filter(|x| *x >= 0)?;
+        let y = i16::try_from(y).ok().filter(|y| *y >= 0)?;
+        let centre = [i32::from(x) * 256 + 128, i32::from(y) * 256 + 128];
+        (host.can_enter_cell((x, y)) == 0
+            && !matches!(host.cell_land_type(centre), 2 | 6)
+            && host.landing_cell_claimed_by((x, y)).is_none()
+            && !host.air_slot_taken_at((x, y)))
+        .then_some((x, y))
+    })
+}
+
+/// VERA `LandNearby=`, on approach: every eighth frame within four cells of
+/// its destination, a Jumpjet on an ordinary move whose landing cell is taken
+/// (`Can_Enter_Cell` 2 or more), or is also the destination of an airborne
+/// Jumpjet with a lower id, picks its landing cell now instead of on arrival.
+/// Answers whether it re-aimed.
+fn replan_landing_on_approach(
+    runtime: &mut JumpjetRuntime,
+    here: (i16, i16),
+    host: &mut impl JumpjetFlightHost,
+) -> bool {
+    if host.land_nearby_range() <= 0
+        || host.binary_frame() % 8 != 0
+        || host.mission_is_seven()
+        || host.has_target()
+    {
+        return false;
+    }
+    let destination = [runtime.destination.x, runtime.destination.y];
+    let dest_cell = host.cell_of(destination);
+    let (dx, dy) = (
+        i32::from(dest_cell.0) - i32::from(here.0),
+        i32::from(dest_cell.1) - i32::from(here.1),
+    );
+    if dest_cell == here
+        || dx * dx + dy * dy > 16
+        || matches!(host.cell_land_type(destination), 2 | 6)
+    {
+        return false;
+    }
+    let taken = host.can_enter_cell(dest_cell) >= 2
+        || host
+            .landing_cell_claimed_by(dest_cell)
+            .is_some_and(|other| other < host.owner_id());
+    if !taken {
+        return false;
+    }
+    match nearby_landing_cell(dest_cell, here, host) {
+        Some(cell) => {
+            host.set_destination_cell(cell, runtime);
+            true
+        }
+        None => false,
+    }
+}
+
 /// `CellClass::GetSubCell @ 0x004810A0`: the infantry sub-cell a coordinate
 /// falls in. Only 0, 2, 3 and 4 are produced — never 1.
 fn sub_cell_of(coord: [i32; 3]) -> i32 {
@@ -1075,7 +1185,14 @@ pub(crate) fn state0_ground(
     }
     let frame = host.binary_frame();
     host.set_speed_fraction(ONE);
-    // Takeoff keeps the body's heading, so the link-time 0x4000 never leaks.
+    // `0x0054B9AA..0x0054B9C1`: the locomotor facing takes the body's
+    // (UpdateFacing). `Process` has already run Update this frame
+    // (`0x0054AEF0`, before this dispatch at `0x0054B046`), and Update copies
+    // the locomotor facing onto the body (`0x0054D67B..0x0054D692`). So the
+    // body first snaps to the locomotor's heading: the link-time `0x4000` on
+    // the first take-off, later the heading of the last flight, whatever
+    // `Do_Turn` (`0x0054B6E0`, body only) wrote on the ground since. VERA's
+    // `SmoothFacing=` skips that copy on the ground (Update, above).
     flight.facing.snap(host.body_facing(), frame);
     flight.current_speed_bits = 0;
     flight.target_speed_bits = 0;
@@ -1277,6 +1394,24 @@ pub(crate) fn state4_descend(
             let refused =
                 !admitted || (!bridge && (answer > 2 || (answer == 2 && !runtime.landing_latched)));
             if refused {
+                // VERA `LandNearby=` (a deviation from `0x0054CA43`'s stop,
+                // off by default): fly to the nearest clear cell and land
+                // there. No RNG draw; with none in range, the original's stop.
+                if let Some(cell) = nearby_landing_cell(dest_cell, here, host) {
+                    host.set_destination_cell(cell, runtime);
+                    if !host.has_installed_jumpjet() {
+                        return runtime.phase;
+                    }
+                    // It leaves for the cruise as State 4's own re-aim does
+                    // (`0x0054C5F9..0x0054C610`): Mark(UP), then `+0x74`
+                    // restored. Below two levels Update's Mark(DOWN)
+                    // (`0x0054D6A6`) has linked it in this cell's list, and
+                    // the cruise moves it with no Mark pair (`0x0054D134`).
+                    let marked = host.marked();
+                    host.mark(false);
+                    host.replace_marked_byte(marked);
+                    return STATE_TRANSLATE;
+                }
                 return host.stop_moving(runtime);
             }
             if !runtime.landing_latched {

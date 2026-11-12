@@ -289,3 +289,38 @@ fn sonar_pulse_marks_affected_enemies_in_range_and_whole_map_pulses_need_no_targ
     assert!(fire(&mut sim, &rules, owner, wide, (0, 0)));
     assert_eq!(sonar(&sim, far), 0);
 }
+
+/// `SW.TimerVisibility` (10033370) through IsTimerVisible (10032E80, hook
+/// 0x6D49D1): the owner sees every timer, another player only those whose
+/// mask has the enemies bit, and an observer those with the allies bit.
+#[test]
+fn ares_timer_visibility_hides_an_owner_only_timer_from_other_players() {
+    let rules = rules(
+        "[SuperWeaponTypes]\n0=Mine\n1=Open\n2=Team\n\
+         [Mine]\nRechargeTime=1\nSW.TimerVisibility=owner\n\
+         [Open]\nRechargeTime=1\n\
+         [Team]\nRechargeTime=1\nSW.TimerVisibility=team\n",
+    );
+    let (mut sim, owner, mine) = scene(&rules, "Mine");
+    let open = sim.interner.get("Open").unwrap();
+    let team = sim.interner.get("Team").unwrap();
+    let enemy = sim.interner.get("Russians").unwrap();
+    let seen = |sim: &Simulation| {
+        [mine, open, team].map(|sw| {
+            ares_timer_visible(
+                sim,
+                &rules,
+                SuperTimerView::for_test(owner, sw, 0, false, 0, 0),
+            )
+        })
+    };
+    sim.session.set_current_house_for_test(Some(owner));
+    assert_eq!(seen(&sim), [true, true, true]);
+    sim.session.set_current_house_for_test(Some(enemy));
+    assert_eq!(seen(&sim), [false, true, false]);
+    sim.session.install_multiplayer_house_identity(
+        crate::skirmish_modes::MpModeClass::Battle,
+        vec![enemy],
+    );
+    assert_eq!(seen(&sim), [false, true, true]);
+}

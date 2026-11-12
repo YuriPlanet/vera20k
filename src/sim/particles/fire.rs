@@ -299,12 +299,9 @@ pub(super) fn tick_system_with(
     }
     let pst = rules.particle_system_type(sys.type_id);
     let frame = sim.session.binary_frame() as i32;
-    let due = |divisor: i32| {
-        frame
-            .checked_rem(divisor)
-            .expect("native Fire spawning requires a valid IDIV")
-            == 0
-    };
+    // gamemd traps on `SpawnFrames=0`; VERA calls that period never due, so
+    // such a system spawns only on the swinging aim's every third frame.
+    let due = |divisor: i32| frame.checked_rem(divisor) == Some(0);
     if !due(pst.spawn_frames) && !(due(3) && swept) {
         return;
     }

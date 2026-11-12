@@ -42,7 +42,7 @@ fn self_destruct_scene() -> Option<(Simulation, RuleSet, InternedId)> {
         &map,
         false,
     );
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     let owner = sim.interner.intern("Russians");
     sim.houses
         .register(HouseState::new(owner, 1, None, false, 0, 10));
@@ -386,5 +386,5 @@ fn retail_all01_return_programs_bind_script37_and_their_locomotor_types() {
         rules.object("ZEP").unwrap().locomotor,
         LocomotorKind::Jumpjet
     );
-    assert!(action_is_ported(37));
+    assert!(action_is_ported(37, crate::rules::ARES_BUILD));
 }

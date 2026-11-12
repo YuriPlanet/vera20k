@@ -623,9 +623,12 @@ impl Simulation {
         if !ordinary && !miner {
             return None;
         }
+        // An actor with no navigation cell (a mod type built without a
+        // locomotor) takes no Guard order, as its Move order is refused.
         let (x, y) = self
             .object_navigation_cell(id, rules)
-            .unwrap_or_else(|cause| panic!("Area Guard input cell: {cause}"));
+            .map_err(|cause| log::warn!("Area Guard input refused for {id}: {cause}"))
+            .ok()?;
         Some(Command::Guard {
             entity_id: id,
             target: Some(combat::TargetKind::Cell(x as u16, y as u16)),
@@ -1345,7 +1348,7 @@ impl Simulation {
     /// path view and the retained base movement-class topology. Zone ID
     /// assignment remains owned by the ordered native repair callback.
     fn refresh_wall_sale_recalc_prefix(
-        world_zone_grid: &mut Option<ZoneGrid>,
+        world_zone_grid: &mut Option<crate::util::shared::Shared<ZoneGrid>>,
         resolved_terrain: &Option<ResolvedTerrainGrid>,
         overlay_grid: &Option<OverlayGrid>,
         tail_grid: &mut Option<PathGrid>,
@@ -1368,7 +1371,7 @@ impl Simulation {
             }
         }
 
-        if let Some(zone_grid) = world_zone_grid.as_mut() {
+        if let Some(zone_grid) = world_zone_grid.as_deref_mut() {
             let _ = zone_grid.refresh_base_cell_attributes_at(terrain, rx, ry);
         }
     }
@@ -1388,7 +1391,7 @@ impl Simulation {
         };
         #[cfg(not(any(test, feature = "test-support")))]
         let _ = sold_cell;
-        let Some(_zone_grid) = self.zone_grid.as_mut() else {
+        let Some(_zone_grid) = self.zone_grid.as_deref_mut() else {
             return;
         };
         #[cfg(any(test, feature = "test-support"))]
@@ -3661,19 +3664,29 @@ impl Simulation {
             .get(entity_id)
             .is_some_and(|actor| actor.category() != EntityCategory::Structure);
         if mission == MissionType::AreaGuard && foot {
-            self.assign_target_represented(entity_id, None, rules, overlay_registry, frame_effects)
-                .unwrap_or_else(|cause| panic!("Area Guard order target: {cause}"));
+            // A refused setter is logged, as the ordinary arm below does
+            // (a mod type built without a locomotor has no coordinate).
+            if let Err(cause) = self.assign_target_represented(
+                entity_id,
+                None,
+                rules,
+                overlay_registry,
+                frame_effects,
+            ) {
+                log::warn!("Area Guard order target for {entity_id} refused: {cause}");
+            }
             // The target token, converted at `0x004C7418` for the
             // destination and again at `0x004C7428` for the archive.
             let post = self.resolve_event_token(target);
-            self.assign_destination_represented(
+            if let Err(cause) = self.assign_destination_represented(
                 entity_id,
                 post.map(Into::into),
                 rules,
                 overlay_registry,
                 frame_effects,
-            )
-            .unwrap_or_else(|cause| panic!("Area Guard order destination: {cause}"));
+            ) {
+                log::warn!("Area Guard order destination for {entity_id} refused: {cause}");
+            }
             // The archive write follows the virtual destination call even
             // when that class setter refuses its request.
             let archive = self.resolve_event_token(target);
@@ -3843,11 +3856,11 @@ mod tests {
                 }));
             spawn_rule_backed_unit(&mut sim, 42, "HARV", &rules);
             sim.substrate.entities.get_mut(42).unwrap().miner =
-                Some(crate::sim::miner::Miner::new(
+                Some(Box::new(crate::sim::miner::Miner::new(
                     crate::sim::miner::MinerKind::War,
                     &crate::sim::miner::MinerConfig::default(),
                     40,
-                ));
+                )));
             sim.substrate
                 .mission_assign_exact(42, harvest, 0)
                 .expect("miner");
@@ -3882,11 +3895,11 @@ mod tests {
         ));
         spawn_rule_backed_unit(&mut sim, 42, "HARV", &rules);
         let miner = sim.substrate.entities.get_mut(42).unwrap();
-        miner.miner = Some(crate::sim::miner::Miner::new(
+        miner.miner = Some(Box::new(crate::sim::miner::Miner::new(
             crate::sim::miner::MinerKind::War,
             &crate::sim::miner::MinerConfig::default(),
             40,
-        ));
+        )));
         miner.health = crate::sim::combat::Health::new(0);
         sim.substrate
             .mission_assign_exact(42, MissionId::from_known(MissionType::Harvest), 0)

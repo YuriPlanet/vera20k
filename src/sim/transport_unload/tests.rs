@@ -142,7 +142,8 @@ impl Fixture {
                 &[],
                 MAP,
                 MAP,
-            ),
+            )
+            .into(),
         );
         Self { sim, rules, grid }
     }
@@ -1525,7 +1526,7 @@ fn ifv_keeps_gunner_weapon_when_every_exit_is_refused() {
         .entities
         .get_mut(fv)
         .expect("ifv")
-        .set_gunner_weapon(1, fx.rules.object("FV").unwrap());
+        .set_gunner_weapon(1, fx.rules.object("FV").unwrap(), crate::rules::ARES_BUILD);
     assert!(fx.apply(Command::UnloadPassengers { transport_id: fv }));
 
     let mut reached_eject = false;

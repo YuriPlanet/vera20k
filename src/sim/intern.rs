@@ -16,6 +16,7 @@ use crate::rules::ruleset::{RuleSet, TypeHandle};
 use crate::sim::type_handle_table::TypeHandleTable;
 use crate::util::lookup_hash::LookupMap;
 use crate::util::native_string::with_ascii_uppercase;
+use crate::util::shared::Shared;
 
 /// Interned string handle — `Copy`, `Eq`, `Ord`, `Hash`. Zero-cost clones.
 #[derive(
@@ -59,12 +60,14 @@ impl fmt::Display for InternedId {
 pub struct StringInterner {
     /// Uppercase-normalized key → ID. Only looked up, never walked, so it
     /// takes the lookup hasher.
-    to_id: LookupMap<String, InternedId>,
+    /// Shared copy-on-write with presentation frames (docs/sim-thread.md);
+    /// [`Self::intern`] writes only for a new string.
+    to_id: Shared<LookupMap<String, InternedId>>,
     /// ID (index) → display string (first-seen casing).
-    to_str: Vec<String>,
+    to_str: Shared<Vec<String>>,
     /// Derived: each id's object handles in the bound rules
     /// ([`Self::bind_types`]). Never serialized; a load binds again.
-    types: TypeHandleTable,
+    types: Shared<TypeHandleTable>,
     /// [`Self::serial`]; never serialized.
     serial: u64,
 }
@@ -78,9 +81,9 @@ impl StringInterner {
     /// Create an empty interner.
     pub fn new() -> Self {
         Self {
-            to_id: LookupMap::default(),
-            to_str: Vec::new(),
-            types: TypeHandleTable::default(),
+            to_id: Shared::default(),
+            to_str: Shared::default(),
+            types: Shared::default(),
             serial: next_interner_serial(),
         }
     }
@@ -96,7 +99,7 @@ impl StringInterner {
     /// Resolve the strings interned so far to their objects in `rules`, so
     /// [`Self::object_type`] answers for them without hashing a name.
     pub fn bind_types(&mut self, rules: &RuleSet) {
-        self.types = TypeHandleTable::build(rules, self);
+        self.types = TypeHandleTable::build(rules, self).into();
     }
 
     /// The object type `id` names in `rules`, as
@@ -222,7 +225,7 @@ impl StringInterner {
     /// compares two clients' interners. Not part of the state hash.
     pub(crate) fn fold_names(&self, hasher: &mut impl std::hash::Hasher) {
         use std::hash::Hash;
-        for name in &self.to_str {
+        for name in self.to_str.iter() {
             name.to_ascii_uppercase().hash(hasher);
         }
     }
@@ -260,9 +263,9 @@ impl<'de> serde::Deserialize<'de> for StringInterner {
             to_id.insert(s.to_ascii_uppercase(), InternedId(i as u32));
         }
         Ok(StringInterner {
-            to_id,
-            to_str: strings,
-            types: TypeHandleTable::default(),
+            to_id: to_id.into(),
+            to_str: strings.into(),
+            types: Shared::default(),
             serial: next_interner_serial(),
         })
     }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::app::match_runtime::sim_host::SimWrite;
 
 /// The random-map seed file the `.SED` launch branch recognises. Written into
 /// VERA's folder for it (`map::source::random_map_dir`), where `map_load`
@@ -503,6 +504,12 @@ impl RandomMapGenerationRetention {
             &generated.start_waypoints,
         );
         self.candidate = Some(generated);
+    }
+
+    /// VERA extension: the generated map the open setup dialog shows, for
+    /// Export Map.
+    pub(super) fn candidate(&self) -> Option<&crate::map::rmg::GeneratedMap> {
+        self.candidate.as_ref()
     }
 
     /// The last Generate's start header (`0x0058B820`'s globals), which a
@@ -1051,6 +1058,56 @@ fn draws_preview(point: crate::map::rmg::build::GenerationPoint) -> bool {
 }
 
 impl App {
+    /// VERA extension: keep the dialog's generated map as `rmap<seed>.yrm` in
+    /// VERA's Maps folder through [`crate::app::map_library::keep_map`],
+    /// never the game folder, so Choose Map lists it at once; a name another
+    /// map holds takes the map's hash suffix. False when there is no map or
+    /// the write fails.
+    fn export_generated_map(state: &mut AppState) -> bool {
+        let Some(generated) = state.frontend.random_map_retention.candidate() else {
+            return false;
+        };
+        let modal = state
+            .frontend
+            .skirmish_shell_state
+            .random_map_setup_modal
+            .as_ref();
+        let seed = modal.map_or(0, |modal| modal.options.seed_u16());
+        // The dialog's own preview becomes the file's Choose Map thumbnail.
+        let preview = modal
+            .and_then(|modal| modal.generated_preview.as_ref())
+            .map(|image| crate::map::map_export::ExportPreview {
+                width: image.width,
+                height: image.height,
+                rgba: &image.rgba,
+            });
+        let players = generated.start_waypoints.len().max(2) as u32;
+        let text = crate::map::map_export::multiplayer_map_text(
+            &generated.map_file,
+            &format!("Random Map {seed}"),
+            2,
+            players,
+            preview,
+            state
+                .frontend
+                .random_map_retention
+                .generated_header()
+                .preview_source_bounds()
+                .as_ref(),
+        );
+        let file = format!("rmap{seed}.yrm");
+        match crate::app::map_library::keep_map(state, &file, text.as_bytes()) {
+            Ok(path) => {
+                log::info!("random map: exported {}", path.display());
+                true
+            }
+            Err(err) => {
+                log::warn!("random map: could not export {file}: {err:#}");
+                false
+            }
+        }
+    }
+
     /// The folder of `RandMap.Sed`, `RandMap.img` and the saved seeds
     /// (`map::source::random_map_dir`), never the game folder.
     pub(super) fn random_map_dir(state: &AppState) -> Option<std::path::PathBuf> {
@@ -1131,7 +1188,7 @@ impl App {
         };
         if map_storage_decision.reinitialize
             && let Some(owner) = native_rules.as_deref_mut()
-            && let Some(runtime) = state.match_state.sim_runtime.as_mut()
+            && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle)
         {
             // The outgoing Simulation can remain resident for shell drawing.
             // Drain its live Rules writes before59A0F0 destroys those Types;
@@ -1179,7 +1236,7 @@ impl App {
                 (
                     urban_catalog,
                     crate::app::state::process_main_draws(
-                        state.match_state.sim_runtime.as_ref(),
+                        state.match_state.sim_runtime.runtime(),
                         &state.frontend.frontend_main_rng,
                     ),
                 )
@@ -1274,7 +1331,7 @@ impl App {
                 let resident_simulation = state
                     .match_state
                     .sim_runtime
-                    .as_mut()
+                    .write_sim(SimWrite::Lifecycle)
                     .map(|runtime| &mut runtime.simulation);
                 let frontend = &mut state.frontend;
                 match frontend
@@ -1450,7 +1507,7 @@ impl App {
         // never sees.
         let resolved_terrain = {
             let mut main = crate::app::state::process_main_draws(
-                state.match_state.sim_runtime.as_ref(),
+                state.match_state.sim_runtime.runtime(),
                 &state.frontend.frontend_main_rng,
             );
             let (manager, _, selector_cache) =
@@ -1731,9 +1788,10 @@ impl App {
         let mut generate_requested = false;
         let mut accept_requested = false;
         let mut open_browser: Option<SavedSeedMode> = None;
+        let mut export_requested = false;
         let mut main =
             crate::ui::skirmish_shell::MainRngRanged(crate::app::state::process_main_draws(
-                state.match_state.sim_runtime.as_ref(),
+                state.match_state.sim_runtime.runtime(),
                 &state.frontend.frontend_main_rng,
             ));
         match released.expect("checked equal to pressed control") {
@@ -1745,6 +1803,8 @@ impl App {
             }
             // The sliders act on press and never arm a release.
             Control::Advanced(_) => {}
+            Control::ExportMap => export_requested = modal.is_enabled(Control::ExportMap),
+            Control::FairStartsToggle => modal.toggle_fair_starts(),
             Control::Generate0x620 => {
                 modal.reroll_derived_for_generate(&settings, &mut main);
                 modal.begin_generate();
@@ -1785,6 +1845,18 @@ impl App {
 
         if let Some(mode) = open_browser {
             Self::open_saved_seed_browser(state, mode);
+            return true;
+        }
+        if export_requested {
+            let exported = Self::export_generated_map(state);
+            if let Some(modal) = state
+                .frontend
+                .skirmish_shell_state
+                .random_map_setup_modal
+                .as_mut()
+            {
+                modal.exported = exported;
+            }
             return true;
         }
         if generate_requested {
@@ -1946,6 +2018,7 @@ mod tests {
             vegetation: 62,
             urban_presence: 2,
             urban_enabled: false,
+            fair_starts: false,
             ..Default::default()
         };
         let prepared = prepare_random_map_generation(
@@ -2011,6 +2084,7 @@ mod tests {
             vegetation: 30,
             urban_presence: 40,
             urban_enabled: false,
+            fair_starts: false,
             seed: 4242,
             ..Default::default()
         };

@@ -166,11 +166,11 @@ impl Veterancy {
         flashing: &mut Flashing,
         elite_flash_timer: i32,
     ) -> Option<Promotion> {
-        let prev = self.rank_cache;
-        let curr = veterancy_level(self.raw);
-        if prev == curr {
+        if !self.rank_changed() {
             return None;
         }
+        let prev = self.rank_cache;
+        let curr = veterancy_level(self.raw);
         self.rank_cache = curr;
         if prev == LEVEL_UNSAMPLED {
             return None;
@@ -183,6 +183,12 @@ impl Veterancy {
             LEVEL_VETERAN => Some(Promotion::Veteran),
             _ => None,
         }
+    }
+
+    /// Whether the rank differs from the cached one: what
+    /// [`Self::sample_promotion`] acts on. Otherwise it changes nothing.
+    pub(crate) fn rank_changed(&self) -> bool {
+        self.rank_cache != veterancy_level(self.raw)
     }
 
     /// Award one kill's experience to its recipient, if the recipient can hold it.
@@ -644,6 +650,13 @@ pub fn self_heal_interval_frames(repair_rate_minutes: f64) -> i32 {
     crate::rules::ruleset::native_minutes_to_frames(repair_rate_minutes)
 }
 
+/// Step 1 of [`self_heal_eligible`], the virtual's ability gate:
+/// `Type->SelfHealing` (`+0xD14`), or a rank that holds `SELF_HEAL`.
+pub fn holds_self_heal(entity: &GameEntity, object: &ObjectType) -> bool {
+    object.self_healing
+        || has_weapon_ability(entity.veterancy.rank_kind(), object, Ability::SelfHeal)
+}
+
 /// The self-heal eligibility virtual, `TechnoClass` vtable slot `0x294` →
 /// `FUN_0070BE80` (slot verified by `read_memory 0x007F4BF4`).
 ///
@@ -655,30 +668,20 @@ pub fn self_heal_interval_frames(repair_rate_minutes: f64) -> i32 {
 ///    per-object timer, so every eligible object pulses on the same frame.
 /// 3. `Health != Type->Strength` and `Health != 0`.
 ///
-/// The native IDIV uses a signed frame and signed low32 period. Native divide
-/// faults remain explicit deterministic faults, never ordinary ineligibility;
-/// tools/spatial_oracle/object_health records five original fault executions.
+/// The native IDIV uses a signed frame and signed low32 period. gamemd traps
+/// at `0x0070BF17` on a zero period (`RepairRate` below 1/900 minute) and on
+/// MIN/-1 (tools/spatial_oracle/object_health records five such executions);
+/// VERA carries on: such a period never pulses.
 pub fn self_heal_eligible(
     entity: &GameEntity,
     object: &ObjectType,
     frame: u32,
     interval_frames: i32,
 ) -> bool {
-    if !object.self_healing {
-        let rank = entity.veterancy.rank_kind();
-        if !has_weapon_ability(rank, object, Ability::SelfHeal) {
-            return false;
-        }
+    if !holds_self_heal(entity, object) {
+        return false;
     }
-    let remainder = (frame as i32)
-        .checked_rem(interval_frames)
-        .unwrap_or_else(|| {
-            panic!(
-                "native self-heal IDIV fault at 0070BF17: frame={} period={interval_frames}",
-                frame as i32
-            )
-        });
-    if remainder != 0 {
+    if (frame as i32).checked_rem(interval_frames) != Some(0) {
         return false;
     }
     let health = entity.health.current();
@@ -713,7 +716,7 @@ pub fn ares_self_heal_amount(
         return 0;
     }
     let rank = entity.veterancy.rank_kind();
-    if !object.self_healing && !has_weapon_ability(rank, object, Ability::SelfHeal) {
+    if !holds_self_heal(entity, object) {
         return 0;
     }
     let ext = object.techno_combat().self_healing();
@@ -1135,8 +1138,7 @@ mod tests {
         let mut per_type = object_with(&[], &[]);
         per_type.self_healing = true;
         assert!(self_heal_eligible(&rookie, &per_type, 28, interval));
-        assert!(
-            std::panic::catch_unwind(|| self_heal_eligible(&rookie, &per_type, 28, 0)).is_err()
-        );
+        // A zero period (gamemd traps at 0x0070BF17) never pulses.
+        assert!(!self_heal_eligible(&rookie, &per_type, 28, 0));
     }
 }

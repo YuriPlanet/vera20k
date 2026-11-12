@@ -212,7 +212,7 @@ fn bomb(sim: &Simulation, id: u64) -> Option<&Bomb> {
     sim.substrate
         .entities
         .get(id)
-        .and_then(|entity| entity.bomb.as_ref())
+        .and_then(|entity| entity.bomb.as_deref())
 }
 
 /// The human Americans send every order, a computer House's unit's too:
@@ -496,7 +496,7 @@ fn native_world(input: &serde_json::Value, rules: &RuleSet) -> NativeWorld {
         if technos[slot]["visible"].as_u64() == Some(1) {
             bomb.seen_by = house_bit(&sim.houses.order(), local);
         }
-        sim.substrate.entities.get_mut(ids[slot]).unwrap().bomb = Some(bomb);
+        sim.substrate.entities.get_mut(ids[slot]).unwrap().bomb = Some(Box::new(bomb));
         sim.bombs.carriers.insert(ids[slot]);
     }
     sim.sound_events.clear_for_test();

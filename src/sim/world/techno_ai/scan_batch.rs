@@ -105,7 +105,7 @@ use crate::util::fixed_math::SimFixed;
 /// This live object pass's answered scans. Every field is serde-skipped:
 /// saves encode `Option<ScanBatch>` as the setting alone, the same bytes the
 /// retired empty struct wrote.
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ScanBatch {
     /// The pass's answers in ascending object id, each until a scan takes
     /// it. Empty between passes, so a save carries only the setting.
@@ -124,7 +124,7 @@ pub(crate) struct ScanBatch {
     used: usize,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct BatchedScan {
     /// The scan the answer is for.
     mask: ScanMission,
@@ -262,13 +262,14 @@ impl Simulation {
         let logic = world.substrate.logic.as_slice();
         let mut answers = crate::sim::parallel::filter_map_indices(logic.len(), |index| {
             let id = logic[index];
-            let entity = world.substrate.entities.get(id)?;
+            let (entity, quiet) = world.substrate.entities.get_and_quiet(id)?;
             let (answer, stamped) = dummy.detached_stamps(|| {
                 let obj = world.entity_object_type(entity, rules)?;
                 if obj.distributed_fire {
                     return None;
                 }
-                let (mask, scan_coord) = world.scan_ahead(id, entity, rules, overlay_registry)?;
+                let (mask, scan_coord) =
+                    world.scan_ahead(id, entity, quiet, rules, overlay_registry)?;
                 let outcome = world.threat_scan(rules, overlay_registry, id, mask, scan_coord);
                 let pick_house = outcome
                     .object()
@@ -339,19 +340,22 @@ impl Simulation {
     /// Arrival_Target_Handler scans ([`Simulation::foot_arrival_step`]) with
     /// no target left, or Passive_Target_Acquire's gate passes with none
     /// held. A held target the drop step would drop is not foreseen: its
-    /// object scans live.
+    /// object scans live. A `quiet` unit is neither frozen nor in a tube
+    /// (`world::quiet_units`).
     fn scan_ahead(
         &self,
         id: u64,
         entity: &GameEntity,
+        quiet: bool,
         rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
     ) -> Option<(ScanMission, Option<[i32; 3]>)> {
-        if entity.ai_frozen()
-            || (matches!(
-                entity.category(),
-                EntityCategory::Unit | EntityCategory::Infantry
-            ) && entity.low_bridge_tube_state.is_some())
+        if !quiet
+            && (entity.ai_frozen()
+                || (matches!(
+                    entity.category(),
+                    EntityCategory::Unit | EntityCategory::Infantry
+                ) && entity.low_bridge_tube_state.is_some()))
         {
             return None;
         }

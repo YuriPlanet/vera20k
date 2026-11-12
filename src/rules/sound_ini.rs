@@ -551,6 +551,7 @@ impl SoundRegistry {
         section: &IniSection,
         key: &str,
     ) -> Option<Option<String>> {
+        let _ares = crate::rules::ares_switch::ares_reads();
         section.read_string_with(key, 2048, None, |current, name| {
             if let Some(entry) = self.get(name) {
                 Some(Some(entry.id.clone()))
@@ -1126,7 +1127,7 @@ impl EvaRegistry {
         };
         if let Some(list) = ini.section("DialogList") {
             // Stock ReadString char[200] (75304D); Ares10063660 uses char[40].
-            let capacity = if crate::rules::ARES_ENABLED { 40 } else { 200 };
+            let capacity = if crate::rules::ARES_BUILD { 40 } else { 200 };
             for key in list.keys() {
                 let Some(name) = list.read_name(key, capacity) else {
                     continue;
@@ -1225,6 +1226,7 @@ impl EvaRegistry {
         key: &str,
         default_event: &str,
     ) -> Option<String> {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let default = self.entry(default_event).map(|entry| entry.name.clone());
         let Some(section) = section else {
             return default;

@@ -7,7 +7,9 @@ use crate::skirmish_launch::{
 };
 use crate::ui::shell::combobox::{ComboPopup, ComboPress};
 
-use super::super::layout::{DropdownMetrics, RectPx, SkirmishShellLayout, combo_face_rect};
+use super::super::layout::{
+    DropdownMetrics, RectPx, SKIRMISH_ROW_COUNT, SkirmishShellLayout, combo_face_rect,
+};
 use super::super::scroll::ScrollModel;
 use super::{
     DropdownScrollDragState, DropdownScrollbarPart, DropdownScrollbarPressState, OpenComboDropdown,
@@ -23,7 +25,7 @@ pub fn combo_rect(
     state: &SkirmishShellState,
     id: SkirmishComboId,
 ) -> Option<RectPx> {
-    let slot = state.row_slot(combo_player_row(id))?;
+    let slot = state.row_slot(combo_player_row(id), layout.shown_rows)?;
     match id {
         SkirmishComboId::AiType(_) => layout.rows.ai_type_combos.get(slot.checked_sub(1)?),
         SkirmishComboId::Side(_) => layout.rows.side_combos.get(slot),
@@ -58,13 +60,32 @@ fn combo_popup(
     if item_count == 0 {
         return None;
     }
-    Some(ComboPopup::new(
-        combo_face_rect(rect, layout.scale),
+    let cap = combo_dropdown_max_visible_rows(id);
+    let mut face = combo_face_rect(rect, layout.scale);
+    // ComboDropWin__WndProc (0x0060D540) narrows a scrolling list by its
+    // scrollbar and cuts each caption at the client width less 0x14
+    // (0x0060DF38). gamemd's Start list never passes its nine rows, so it never
+    // scrolls; VERA's thirty starts would leave the 38 px Start list no width
+    // for a caption. A scrolling Start list grows by the scrollbar instead, so
+    // its rows keep the face's width.
+    if matches!(id, SkirmishComboId::Start(_)) && item_count > cap {
+        face.w += DropdownMetrics::scaled(layout.scale).scrollbar_w;
+    }
+    let mut popup = ComboPopup::new(
+        face,
         layout.scale,
         item_count as usize,
-        combo_dropdown_max_visible_rows(id) as usize,
+        cap as usize,
         top_index,
-    ))
+    );
+    // VERA: on the longer player list a low row's list would run over the
+    // status line or off the screen, so it opens upward instead. gamemd's
+    // eight rows never reach it, and the retail page never flips.
+    if layout.shown_rows > SKIRMISH_ROW_COUNT && popup.rect.y + popup.rect.h > layout.status_help.y
+    {
+        popup.rect.y = face.y - 1 - popup.rect.h;
+    }
+    Some(popup)
 }
 
 pub const fn combo_dropdown_max_visible_rows(id: SkirmishComboId) -> i32 {
@@ -110,8 +131,21 @@ pub(super) fn combo_dropdown_max_top_index(
     ScrollModel::combo(combo_dropdown_max_visible_rows(id)).max_top_index(item_count, visible_rows)
 }
 
-fn normal_color_index(color_index: usize) -> usize {
-    color_index.min(HOUSE_COLOR_COUNT - 1)
+/// A row's colour as the lobby shows it: a listed priority is itself, and
+/// anything else falls back onto YR's eight.
+fn normal_color_index(state: &SkirmishShellState, color_index: usize) -> usize {
+    listed_color_index(state.lobby_colors, color_index)
+}
+
+fn listed_color_index(
+    colors: crate::rules::skirmish_colors::SkirmishColorMode,
+    color_index: usize,
+) -> usize {
+    if i32::try_from(color_index).is_ok_and(|color| colors.is_lobby_priority(color)) {
+        color_index
+    } else {
+        color_index.min(HOUSE_COLOR_COUNT - 1)
+    }
 }
 
 pub fn combo_dropdown_scrollbar_rect(
@@ -263,8 +297,12 @@ pub fn combo_items(
         .collect(),
         SkirmishComboId::Side(_) => state.country_catalog.items().to_vec(),
         SkirmishComboId::Color(row) => available_color_choices(
+            state.lobby_colors,
             selected_color_claim(state, row),
-            (0..HOUSE_COLOR_COUNT)
+            state
+                .lobby_colors
+                .lobby_priorities()
+                .map(usize::from)
                 .filter(|color| color_claimed_by_other_row(state, row, *color).is_some()),
         ),
         SkirmishComboId::Start(row) => {
@@ -329,15 +367,19 @@ pub fn country_choices(rules: &crate::rules::ruleset::RuleSet) -> Vec<SkirmishCo
         .collect()
 }
 /// Shared4E4770/4E48E0 color catalog. A row retains its current claim while
-/// other occupied rows remove those colors from its available entries.
+/// other occupied rows remove those colors from its available entries. The
+/// colours are the priorities `colors` lists: YR's eight, then VERA's extras.
 pub fn available_color_choices(
+    colors: crate::rules::skirmish_colors::SkirmishColorMode,
     selected: Option<usize>,
     claimed: impl IntoIterator<Item = usize>,
 ) -> Vec<SkirmishComboItem> {
     let claimed: Vec<_> = claimed.into_iter().collect();
     std::iter::once(SkirmishComboItem::ColorSentinel(-2))
         .chain(
-            (0..HOUSE_COLOR_COUNT)
+            colors
+                .lobby_priorities()
+                .map(usize::from)
                 .filter(|color| selected == Some(*color) || !claimed.contains(color))
                 .map(SkirmishComboItem::Color),
         )
@@ -397,13 +439,13 @@ pub fn selected_combo_item(
             })
         }),
         SkirmishComboId::Color(0) => Some(if state.player_color_claimed {
-            SkirmishComboItem::Color(normal_color_index(state.player_color_index))
+            SkirmishComboItem::Color(normal_color_index(state, state.player_color_index))
         } else {
             SkirmishComboItem::ColorSentinel(-2)
         }),
         SkirmishComboId::Color(row) => state.opponents.get(row - 1).map(|opponent| {
             if opponent.color_claimed {
-                SkirmishComboItem::Color(normal_color_index(opponent.color_index))
+                SkirmishComboItem::Color(normal_color_index(state, opponent.color_index))
             } else {
                 SkirmishComboItem::ColorSentinel(-2)
             }
@@ -509,14 +551,14 @@ fn start_position_taken_by_other_row(
 fn selected_color_claim(state: &SkirmishShellState, row: usize) -> Option<usize> {
     if row == 0 {
         if state.player_color_claimed {
-            Some(normal_color_index(state.player_color_index))
+            Some(normal_color_index(state, state.player_color_index))
         } else {
             None
         }
     } else {
         state.opponents.get(row - 1).and_then(|opponent| {
             if opponent.color_claimed {
-                Some(normal_color_index(opponent.color_index))
+                Some(normal_color_index(state, opponent.color_index))
             } else {
                 None
             }
@@ -531,7 +573,7 @@ fn color_claimed_by_other_row(
 ) -> Option<usize> {
     if row != 0
         && state.player_color_claimed
-        && normal_color_index(state.player_color_index) == color
+        && normal_color_index(state, state.player_color_index) == color
     {
         return Some(0);
     }
@@ -543,7 +585,7 @@ fn color_claimed_by_other_row(
             let opponent_row = idx + 1;
             if opponent_row != row
                 && opponent.color_claimed
-                && normal_color_index(opponent.color_index) == color
+                && normal_color_index(state, opponent.color_index) == color
             {
                 Some(opponent_row)
             } else {
@@ -560,24 +602,25 @@ fn color_claimed_by_other_row(
 fn evict_other_color_claimants(state: &mut SkirmishShellState, row: usize, color: usize) {
     if row != 0
         && state.player_color_claimed
-        && normal_color_index(state.player_color_index) == color
+        && normal_color_index(state, state.player_color_index) == color
     {
         state.player_color_claimed = false;
     }
+    let colors = state.lobby_colors;
     for (idx, opponent) in state.opponents.iter_mut().enumerate() {
         let opponent_row = idx + 1;
         if opponent_row != row
             && opponent.color_claimed
-            && normal_color_index(opponent.color_index) == color
+            && listed_color_index(colors, opponent.color_index) == color
         {
             opponent.color_claimed = false;
         }
     }
 }
 
-fn combo_hit_order(state: &SkirmishShellState) -> Vec<SkirmishComboId> {
+fn combo_hit_order(state: &SkirmishShellState, shown: usize) -> Vec<SkirmishComboId> {
     let mut ids = Vec::new();
-    for slot in (0..SKIRMISH_PLAYER_SLOT_COUNT).rev() {
+    for slot in (0..shown).rev() {
         let row = state.slot_row(slot);
         ids.push(SkirmishComboId::Team(row));
         ids.push(SkirmishComboId::Start(row));
@@ -599,11 +642,13 @@ fn combo_face_at(
     x: i32,
     y: i32,
 ) -> Option<(SkirmishComboId, RectPx)> {
-    combo_hit_order(state).into_iter().find_map(|id| {
-        let rect = combo_rect(layout, state, id)?;
-        (combo_enabled(state, maps, id) && combo_face_rect(rect, layout.scale).contains(x, y))
-            .then_some((id, rect))
-    })
+    combo_hit_order(state, layout.shown_rows)
+        .into_iter()
+        .find_map(|id| {
+            let rect = combo_rect(layout, state, id)?;
+            (combo_enabled(state, maps, id) && combo_face_rect(rect, layout.scale).contains(x, y))
+                .then_some((id, rect))
+        })
 }
 
 pub(super) fn apply_combo_selection(
@@ -653,13 +698,13 @@ pub(super) fn apply_combo_selection(
             }
         }
         (SkirmishComboId::Color(0), SkirmishComboItem::Color(color)) => {
-            let color = color.min(HOUSE_COLOR_COUNT - 1);
+            let color = normal_color_index(state, color);
             evict_other_color_claimants(state, 0, color);
             state.player_color_index = color;
             state.player_color_claimed = true;
         }
         (SkirmishComboId::Color(row), SkirmishComboItem::Color(color)) => {
-            let color = color.min(HOUSE_COLOR_COUNT - 1);
+            let color = normal_color_index(state, color);
             evict_other_color_claimants(state, row, color);
             if let Some(opponent) = state.opponents.get_mut(row - 1) {
                 opponent.color_index = color;

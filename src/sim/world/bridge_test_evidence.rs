@@ -10,7 +10,7 @@ pub(super) fn navigation_snapshot(
     name: &str,
     points: impl IntoIterator<Item = (u16, u16)>,
 ) -> Value {
-    let zones = sim.zone_grid.as_ref().unwrap();
+    let zones = sim.zone_grid.as_deref().unwrap();
     let mut copied = zones.clone();
     let base = copied.base_topology_mut_for_test();
     let terrain = sim.resolved_terrain.as_ref().unwrap();
@@ -247,7 +247,11 @@ pub fn visit_starting_mtnk_concrete_attack(
     let mut guarding = false;
     let mut shots = 0;
     let mut dispatched = 0;
-    for step in 1..=profile["ticks"].as_u64().unwrap() {
+    // Each AP hit damages the bridge only when the Scenario draw falls under
+    // its 65 damage out of BridgeStrength=1500, and every House's play draws
+    // the same stream, so the second success comes at no fixed shot. Four
+    // profiles' frames bound a run that never collapses the bridge.
+    for step in 1..=4 * profile["ticks"].as_u64().unwrap() {
         let due: Vec<_> = orders
             .iter()
             .filter(|order| order.execute_tick == step - 1)
@@ -351,7 +355,7 @@ pub fn visit_starting_mtnk_concrete_attack(
         visit(label, &mut scene, Some(&output));
     }
     panic!(
-        "normal starting MTNK must reach damage, collapse and settled Guard within the profile bound"
+        "normal starting MTNK must reach damage, collapse and settled Guard within four profiles' frames"
     );
 }
 

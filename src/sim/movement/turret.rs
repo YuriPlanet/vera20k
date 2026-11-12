@@ -347,7 +347,7 @@ mod tests {
         let mut sim = crate::sim::world::Simulation::new();
         sim.interner = crate::sim::intern::test_interner();
         for (mode, turns) in [(0, true), (2, false), (0, true)] {
-            entity.set_gunner_weapon(mode, object);
+            entity.set_gunner_weapon(mode, object, crate::rules::ARES_BUILD);
             assert_eq!(
                 facing_update(&entity, &sim, &rules, &sim.interner, 100)
                     .turret_destination

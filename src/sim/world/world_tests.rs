@@ -1738,7 +1738,7 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
     sim.rebuild_zone_grid_full(&path);
     let ground_zone_before = sim
         .zone_grid
-        .as_ref()
+        .as_deref()
         .and_then(|zones| zones.map_for(crate::rules::locomotor_type::MovementZone::Normal))
         .expect("normal zone map");
     assert_eq!(
@@ -1845,7 +1845,7 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
     );
     assert!(
         sim.zone_grid
-            .as_ref()
+            .as_deref()
             .expect("zone grid")
             .movement_classes_match(sim.resolved_terrain.as_ref().expect("terrain")),
         "ordered wall-sale repair must publish every reduced movement class"
@@ -1853,7 +1853,7 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
     let (zone_ids_ptr, repaired_zone_ids) = {
         let map = sim
             .zone_grid
-            .as_ref()
+            .as_deref()
             .and_then(|zones| zones.map_for(crate::rules::locomotor_type::MovementZone::Normal))
             .expect("normal zone map before frame finalization");
         (
@@ -1868,7 +1868,7 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
     );
     let ground_zone_after = sim
         .zone_grid
-        .as_ref()
+        .as_deref()
         .and_then(|zones| zones.map_for(crate::rules::locomotor_type::MovementZone::Normal))
         .expect("normal zone map");
     assert_eq!(
@@ -2072,7 +2072,7 @@ fn dynamic_navigation_publication_composes_structures_bibs_and_bridges() {
     assert!(grid.cell(3, 1).expect("east bridgehead").transition);
     let normal_zones = sim
         .zone_grid
-        .as_ref()
+        .as_deref()
         .and_then(|zones| zones.map_for(crate::rules::locomotor_type::MovementZone::Normal))
         .expect("normal movement zones");
     assert_ne!(
@@ -3101,7 +3101,7 @@ fn gsi_04_10_zero_occupation_removal_forces_ground_zone_with_same_walkability() 
     sim.rebuild_zone_grid_full(&input_path_grid);
     assert_eq!(
         sim.zone_grid
-            .as_ref()
+            .as_deref()
             .and_then(|zones| zones.map_for(MovementZone::Normal))
             .expect("normal zone map")
             .zone_at(0, 0, MovementLayer::Ground),
@@ -3126,7 +3126,7 @@ fn gsi_04_10_zero_occupation_removal_forces_ground_zone_with_same_walkability() 
     );
     assert_ne!(
         sim.zone_grid
-            .as_ref()
+            .as_deref()
             .and_then(|zones| zones.map_for(MovementZone::Normal))
             .expect("normal zone map")
             .zone_at(0, 0, MovementLayer::Ground),
@@ -3880,7 +3880,7 @@ fn guard_infantry_acquire_return_fire_and_finish_a_duel() {
     crate::sim::arena_fixture::discover(&mut sim, enemy);
     sim.path_grid = Some(std::sync::Arc::new(PathGrid::test_all_passable(12, 3)));
     let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(sim);
-    runtime.resources.rules = rules;
+    runtime.resources_mut().rules = rules;
 
     // The two identical guards both acquire and return fire. A fixed winner
     // was an accidental property of the old globally delayed firing host:
@@ -4038,7 +4038,7 @@ fn sonic_fire_registers_immediately_but_later_techno_fires_before_wave_tail_ai()
     let path = PathGrid::test_all_passable(8, 3);
     sim.path_grid = Some(std::sync::Arc::new(path));
     let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(sim);
-    runtime.resources.rules = rules;
+    runtime.resources_mut().rules = rules;
     let output = runtime
         .advance_frame(
             &[],
@@ -4223,7 +4223,7 @@ fn sonic_cell_fire_wave_damage_selects_level_two_bridge_plane() {
     let path = PathGrid::test_all_passable(8, 1);
     sim.path_grid = Some(std::sync::Arc::new(path));
     let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(sim);
-    runtime.resources.rules = rules;
+    runtime.resources_mut().rules = rules;
     let output = runtime
         .advance_frame(
             &[],
@@ -8237,15 +8237,16 @@ fn repro_second_vehicle_ordered_onto_an_occupied_cell() {
     );
 }
 
-/// Idle objects are handed out mutably only for their own turn, plus an
-/// infantry's frame-end animation clock: the per-frame walks read first and
-/// borrow only what they change. The tanks carry turrets, whose idle return
-/// the facing pass sets every frame. Every hand-out lands in the entity store's
-/// touch logs, whose per-object budget (`TouchLog::note`) a 20k-object world
-/// overran when each walk borrowed every entity, so the blocker plane and
-/// the kept Ground keys rebuilt from every object each tick.
+/// Idle objects stay out of the touch logs. The per-frame walks read first
+/// and borrow only what they change, so an idle object is handed out mutably
+/// only on the frames its Guard handler runs (every 14 to 16 frames here) and
+/// an idle building never: the mission AI counter and a building's tint
+/// sample, which change every frame, are written without a note. The logs'
+/// readers (the blocker plane, the kept Ground keys and the expiry listener
+/// index) re-read every object named, so when each walk borrowed every
+/// entity, a 20k-object world was re-read almost whole every frame.
 #[test]
-fn idle_objects_are_handed_out_only_for_their_own_turn() {
+fn idle_objects_stay_out_of_the_touch_logs() {
     use crate::sim::entity_store::TouchReader;
     use crate::sim::touch_log::Touched;
 
@@ -8289,22 +8290,26 @@ fn idle_objects_are_handed_out_only_for_their_own_turn() {
         .substrate
         .entities
         .take_touched(TouchReader::BlockerPlane);
-    let _ = sim.advance_tick(&[], Some(&rules), Some(&grid), None, 100);
-    let Touched::Ids(ids) = sim
-        .substrate
-        .entities
-        .take_touched(TouchReader::BlockerPlane)
-    else {
-        panic!("an idle tick overflowed the touch log");
-    };
-    // A log drops a repeat of its last id, so this counts the runs of
-    // hand-outs; an object's own turn is one run.
-    let handed_out = |id: u64| ids.iter().filter(|&&noted| noted == id).count();
-    for &id in vehicles.iter().chain(&buildings) {
-        assert!(handed_out(id) <= 1, "idle vehicle or building {id}");
+    let mut ticks = BTreeMap::<u64, usize>::new();
+    for _ in 0..40 {
+        let _ = sim.advance_tick(&[], Some(&rules), Some(&grid), None, 100);
+        let Touched::Ids(ids) = sim
+            .substrate
+            .entities
+            .take_touched(TouchReader::BlockerPlane)
+        else {
+            panic!("an idle tick overflowed the touch log");
+        };
+        for id in ids.into_iter().collect::<BTreeSet<_>>() {
+            *ticks.entry(id).or_default() += 1;
+        }
     }
-    for &id in &infantry {
-        assert!(handed_out(id) <= 2, "idle infantry {id}");
+    let handed_out = |id: u64| ticks.get(&id).copied().unwrap_or(0);
+    for &id in vehicles.iter().chain(&infantry) {
+        assert!(handed_out(id) <= 3, "idle vehicle or infantry {id}");
+    }
+    for &id in &buildings {
+        assert_eq!(handed_out(id), 0, "idle building {id}");
     }
 }
 
@@ -9156,7 +9161,7 @@ fn runtime_frame_call_order_matches_the_app_seam() {
         },
     );
     let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(sim);
-    runtime.resources.rules = rules;
+    runtime.resources_mut().rules = rules;
     runtime.simulation.queue_command(select);
 
     assert!(runtime.simulation.take_due_commands().is_empty());

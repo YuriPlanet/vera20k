@@ -192,24 +192,16 @@ pub(crate) fn build_sidebar_view_with_spec(
     // four tab commands, on the tab buttons and on the two AddCameo/Recalculate
     // transitions, and it never substitutes another strip because the selected
     // one is empty (HasEntries refuses the switch instead).
-    let mut entries: LookupMap<_, _> = collect_build_entries(
-        active_tab.category(),
+    let all_entries = strip_entries(
+        active_tab,
         queue_items,
         build_options,
         ready_buildings,
         armed,
         interner,
         sw_views,
-    )
-    .into_iter()
-    .map(|entry| (entry.identity, entry))
-    .collect();
-    // Each entry draws under its retained cameo's name.
-    let all_entries: Vec<_> = cameo_order
-        .items(active_tab)
-        .iter()
-        .filter_map(|cameo| Some((entries.remove(&cameo.id)?, cameo.key.name())))
-        .collect();
+        cameo_order,
+    );
     let scroll_rows = cameo_order.scroll_row(active_tab);
     let total_items = all_entries.len();
     let columns = layout_spec.columns();
@@ -324,7 +316,6 @@ pub(crate) fn build_sidebar_view_with_spec(
 
     // Cameo grid positioning.
     let grid_top = layout.cameo_grid_top + layout_spec.cameo_inset_y;
-    let row_height = layout_spec.cameo_row_height;
     let visible_rows = layout.side2_tile_count;
     let max_scroll_rows = total_rows.saturating_sub(visible_rows);
     let scroll_rows = scroll_rows.min(max_scroll_rows);
@@ -337,19 +328,150 @@ pub(crate) fn build_sidebar_view_with_spec(
     } else {
         0
     };
-    let items: Vec<SidebarItem> = all_entries
-        .into_iter()
-        .skip(visible_items)
-        .take(max_visible)
+    let items = grid_items(
+        all_entries
+            .into_iter()
+            .skip(visible_items)
+            .take(max_visible),
+        [layout.strip_x + layout_spec.cameo_inset_x, grid_top],
+        columns,
+        layout_spec,
+        cameo_order,
+    );
+
+    SidebarView {
+        panel_rect,
+        layout,
+        credits,
+        power_produced,
+        power_drained,
+        low_power,
+        scroll_rows,
+        max_scroll_rows,
+        tabs,
+        items,
+        added_grids: Vec::new(),
+        repair_button,
+        sell_button,
+        top_buttons,
+        scroll_down_button,
+        scroll_up_button,
+    }
+}
+
+/// One strip's retained entries in its cameo order, each with the name its
+/// cameo draws under.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the strip's inputs are the view builder's own"
+)]
+fn strip_entries<'a>(
+    tab: SidebarTab,
+    queue_items: &[QueueItemView],
+    build_options: &[BuildOption],
+    ready_buildings: &[ReadyBuildingView],
+    armed: Option<&ArmedSidebarEntry>,
+    interner: Option<&crate::sim::intern::StringInterner>,
+    sw_views: &[SuperWeaponView],
+    cameo_order: &'a CameoStrips,
+) -> Vec<(BuildEntry, &'a str)> {
+    let mut entries: LookupMap<_, _> = collect_build_entries(
+        tab.category(),
+        queue_items,
+        build_options,
+        ready_buildings,
+        armed,
+        interner,
+        sw_views,
+    )
+    .into_iter()
+    .map(|entry| (entry.identity, entry))
+    .collect();
+    // Each entry draws under its retained cameo's name.
+    cameo_order
+        .items(tab)
+        .iter()
+        .filter_map(|cameo| Some((entries.remove(&cameo.id)?, cameo.key.name())))
+        .collect()
+}
+
+/// The grids a layout adds beside the sidebar's own, appended to a built
+/// view: each shows one tab's strip from its own scroll row, clamped to the
+/// rows the strip has. The sidebar's own grid, tabs and scroll row are as the
+/// builder left them.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the strip's inputs are the view builder's own"
+)]
+pub(crate) fn append_added_grids(
+    view: &mut SidebarView,
+    layout_spec: SidebarChromeLayoutSpec,
+    grids: &[super::AddedGrid],
+    queue_items: &[QueueItemView],
+    build_options: &[BuildOption],
+    ready_buildings: &[ReadyBuildingView],
+    armed: Option<&ArmedSidebarEntry>,
+    interner: Option<&crate::sim::intern::StringInterner>,
+    sw_views: &[SuperWeaponView],
+    cameo_order: &CameoStrips,
+) {
+    for grid in grids {
+        let (columns, rows) = (grid.columns.max(1), grid.rows);
+        let entries = strip_entries(
+            grid.tab,
+            queue_items,
+            build_options,
+            ready_buildings,
+            armed,
+            interner,
+            sw_views,
+            cameo_order,
+        );
+        let max_scroll_rows = entries.len().div_ceil(columns).saturating_sub(rows);
+        let scroll_rows = grid.scroll_rows.min(max_scroll_rows);
+        let items = grid_items(
+            entries
+                .into_iter()
+                .skip(scroll_rows * columns)
+                .take(rows * columns),
+            grid.origin,
+            columns,
+            layout_spec,
+            cameo_order,
+        );
+        view.added_grids.push(super::AddedGridView {
+            part: grid.part,
+            first: view.items.len(),
+            len: items.len(),
+            rect: Rect {
+                x: grid.origin[0].round(),
+                y: grid.origin[1].round(),
+                w: columns as f32 * layout_spec.cameo_column_pitch,
+                h: rows as f32 * layout_spec.cameo_row_height,
+            },
+            scroll_rows,
+            max_scroll_rows,
+        });
+        view.items.extend(items);
+    }
+}
+
+/// The cameos of one grid: `entries` in rows of `columns`, the first at
+/// `origin`, each `cameo_column_pitch` and `cameo_row_height` on.
+fn grid_items<'a>(
+    entries: impl Iterator<Item = (BuildEntry, &'a str)>,
+    origin: [f32; 2],
+    columns: usize,
+    layout_spec: SidebarChromeLayoutSpec,
+    cameo_order: &CameoStrips,
+) -> Vec<SidebarItem> {
+    entries
         .enumerate()
         .map(|(idx, (entry, display_name))| {
             let row = idx / columns;
             let col = idx % columns;
-            let x = (layout.strip_x
-                + layout_spec.cameo_inset_x
-                + col as f32 * layout_spec.cameo_column_pitch)
-                .round();
-            let y = (grid_top + row as f32 * row_height).round();
+            let x = (origin[0] + col as f32 * layout_spec.cameo_column_pitch).round();
+            let y = (origin[1] + row as f32 * layout_spec.cameo_row_height).round();
             SidebarItem {
                 rect: Rect {
                     x,
@@ -379,25 +501,7 @@ pub(crate) fn build_sidebar_view_with_spec(
                 super_weapon_display: entry.super_weapon_display,
             }
         })
-        .collect();
-
-    SidebarView {
-        panel_rect,
-        layout,
-        credits,
-        power_produced,
-        power_drained,
-        low_power,
-        scroll_rows,
-        max_scroll_rows,
-        tabs,
-        items,
-        repair_button,
-        sell_button,
-        top_buttons,
-        scroll_down_button,
-        scroll_up_button,
-    }
+        .collect()
 }
 
 fn category_is_on_tab(

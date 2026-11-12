@@ -130,11 +130,11 @@ fn scene() -> Option<(SimRuntime, u64)> {
     Some((
         SimRuntime {
             simulation: sim,
-            resources: SimResources {
+            resources: std::sync::Arc::new(SimResources {
                 rules,
                 overlay_registry: registry,
                 terrain_template: Some(terrain),
-            },
+            }),
         },
         yard,
     ))
@@ -153,7 +153,12 @@ fn assert_retained(sim: &Simulation, owner: InternedId, id: u64) {
         (unit.position.rx(), unit.position.ry(), unit.position.z()),
         (0, 0, 0)
     );
-    assert_eq!(unit.body_facing_byte(sim.session().binary_frame()), 0);
+    // 28058fc9d constructs the repacked unit with the yard's DeployFacing
+    // (retail GACNST sets none: 0x80). Residual: gamemd applies it only in a
+    // successful Unlimbo (`TechnoClass::Unlimbo @ 0x006F6CA0` returns at
+    // `0x006F6CB1`'s refusal before its Set_Current), so its kept unit keeps
+    // the constructor's facing; the unit stays in limbo, where none shows.
+    assert_eq!(unit.body_facing_byte(sim.session().binary_frame()), 0x80);
     assert!(!sim.logic_order().contains(&id));
     let tracked = sim.houses.get(&owner).unwrap().tracking();
     assert_eq!(

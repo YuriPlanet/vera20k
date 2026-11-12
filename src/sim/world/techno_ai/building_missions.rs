@@ -104,12 +104,14 @@ use super::ObjectAiCtx;
 use super::target_scan::{can_fire_at, fire_error_at, select_weapon, weapon_at_index};
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::ammo::TechnoAmmo;
 use crate::sim::building_art::requested_damage_state;
 use crate::sim::combat::TargetKind;
 use crate::sim::combat::combat_weapon::{self, WeaponSlot};
 use crate::sim::combat::fire_error::FireError;
 use crate::sim::combat::gattling::{StageCall, is_elite};
 use crate::sim::combat::{BuildingShot, fire_coord};
+use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::StringInterner;
 use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MISSION_STUB_FRAMES, MissionId, MissionType};
@@ -257,7 +259,11 @@ pub(super) fn update_animation(sim: &mut Simulation, id: u64, rules: &RuleSet) {
         crate::sim::production::archive_less_sale(rules.into(), &object.id, entity);
     let now = sim.session.binary_frame() as i32;
     let options = sim.session.game_options();
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+    if let Some(entity) = sim
+        .substrate
+        .entities
+        .get_mut_if(id, |entity| entity.building_body_advances(now, has_turret))
+    {
         entity.advance_building_body(now, archive_less_sale, has_turret, options);
     }
     // 450F9E..451145, between the step and the ready admission, which it
@@ -291,7 +297,10 @@ pub(super) fn apply_queued_body(
     substrate: &mut ObjectSubstrate,
     id: u64,
 ) {
-    if let Some(entity) = substrate.entities.get_mut(id) {
+    if let Some(entity) = substrate
+        .entities
+        .get_mut_if(id, GameEntity::building_body_queued)
+    {
         entity.apply_queued_building_body(session.binary_frame() as i32, session.game_options());
     }
 }
@@ -1198,7 +1207,13 @@ pub(super) fn gattling_idle(
         return;
     };
     let now = session.binary_frame() as i32;
-    let Some(entity) = substrate.entities.get_mut(id) else {
+    let refills = !obj.hospital && !obj.armory();
+    // Only a Gattling type, or an empty count it refills, changes anything.
+    // Ares reloads by its own clock, so there every refilling type is taken.
+    let Some(entity) = substrate.entities.get_mut_if(id, |entity| {
+        obj.is_gattling
+            || (refills && (rules.ares() || entity.ammo().is_some_and(TechnoAmmo::is_empty)))
+    }) else {
         return;
     };
     if obj.is_gattling && entity.gattling.value() > 0 {
@@ -1211,14 +1226,11 @@ pub(super) fn gattling_idle(
     // TechnoClass::Reload (vt+0x424) there instead, with its clock and
     // `ReloadAmount`.
     #[cfg(feature = "ares")]
-    if !obj.hospital && !obj.armory() {
+    if refills {
         entity.reload_techno_ammo(obj, now);
     }
     #[cfg(not(feature = "ares"))]
-    if !obj.hospital
-        && !obj.armory()
-        && let Some(ammo) = entity.ammo_mut()
-    {
+    if refills && let Some(ammo) = entity.ammo_mut() {
         ammo.refill_empty_from_type(obj.ammo);
     }
     if !obj.is_gattling {
@@ -1526,7 +1538,7 @@ pub(super) fn process_delayed_fire(
     ctx: ObjectAiCtx<'_>,
     bridge_state_changed: &mut bool,
 ) {
-    let Some(entity) = sim.substrate.entities.get_mut(id) else {
+    let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
     // Health 0 returned before the call (`0x00440072`).
@@ -1549,7 +1561,13 @@ fn stock_delayed_fire(
     bridge_state_changed: &mut bool,
 ) {
     let now = sim.session.binary_frame() as i32;
-    let Some(entity) = sim.substrate.entities.get_mut(id) else {
+    // Health 0 returned before the call (`0x00440072`), and an unarmed slot
+    // counts nothing.
+    let Some(entity) = sim.substrate.entities.get_mut_if(id, |entity| {
+        !entity.death.is_dying()
+            && entity.health.current() != 0
+            && entity.pending_building_fire.pending().is_some()
+    }) else {
         return;
     };
     let Some(fire) = entity.pending_building_fire.count_down() else {

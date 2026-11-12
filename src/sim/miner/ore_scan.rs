@@ -310,7 +310,7 @@ impl HarvestReach {
         destination: (i16, i16),
     ) -> Option<bool> {
         let bounds = sim.playfield_bounds()?;
-        sim.zone_grid.as_ref()?.can_reach_native(
+        sim.zone_grid.as_deref()?.can_reach_native(
             cells,
             ZoneQueryCell::Copied((self.source.0 as i16, self.source.1 as i16)),
             ZoneQueryCell::Copied(destination),
@@ -456,7 +456,7 @@ mod tests {
             let input = &row["input"];
             let terrain = native::terrain(input);
             let mut sim = Simulation::new();
-            sim.zone_grid = Some(native::zones(&terrain, row));
+            sim.zone_grid = Some(native::zones(&terrain, row).into());
             sim.resolved_terrain = Some(terrain);
             sim.substrate
                 .entities
@@ -483,7 +483,7 @@ mod tests {
             let target = &row["clicked_cell"];
             let answer = sim
                 .zone_grid
-                .as_ref()
+                .as_deref()
                 .unwrap()
                 .can_reach_native(
                     &cells,

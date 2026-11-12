@@ -71,14 +71,14 @@ fn terrain_attack_scene() -> Option<(SimRuntime, u64, u64, u64)> {
         .spawn_object("HTNK", "Russians", 20, 20, 0, &rules)
         .unwrap();
     let registry = TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, false);
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     let owner = sim.interner.get("Russians").unwrap();
     let ty = sim.interner.get("TREE-TEAM").unwrap();
     let team = sim.create_team(ty, Some(owner), &rules).unwrap();
     sim.session.publish_started();
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: SimResources::new(rules),
+        resources: std::sync::Arc::new(SimResources::new(rules)),
     };
     // Formation, recruitment and dispatch use the ordinary Team AI caller.
     for _ in 0..30 {
@@ -734,7 +734,7 @@ fn retail_all01_patrol_scripts_and_rules_use_the_production_readers() {
             .count(),
         27
     );
-    assert!(action_is_ported(16));
+    assert!(action_is_ported(16, crate::rules::ARES_BUILD));
 }
 
 const RULES: &str = "\
@@ -868,7 +868,7 @@ fn script17_replacement_and_next_visit_match_original_controls() {
             save_codec::deserialize(&save_codec::serialize(&sim.team_script_vm).unwrap()).unwrap();
         assert_eq!(restored.team(team), sim.team_script_vm.team(team));
     }
-    assert!(action_is_ported(17));
+    assert!(action_is_ported(17, crate::rules::ARES_BUILD));
 }
 
 #[test]
@@ -902,7 +902,7 @@ fn retail_sov01_script17_uses_the_production_script_registry() {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     let vm = &sim.team_script_vm;
     let mut switches = Vec::new();
     for (name, ordinal) in [
@@ -1359,7 +1359,7 @@ fn retail_all01_script59_inputs_fit_the_existing_ammunition_owner() {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     let programs: Vec<_> = sim
         .team_script_vm
         .scripts
@@ -1394,7 +1394,7 @@ fn retail_all01_script59_inputs_fit_the_existing_ammunition_owner() {
             );
         }
     }
-    assert!(action_is_ported(59));
+    assert!(action_is_ported(59, crate::rules::ARES_BUILD));
 }
 
 /// Advance until `done` holds for the team, at most `frames` frames.
@@ -1501,8 +1501,7 @@ fn the_retail_scatter_script_runs_ported_actions() {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules)
-        .expect("retail AIMD installs");
+    sim.install_team_ai_registry(&registry, &rules);
     let vm = &sim.team_script_vm;
     let scripts: Vec<_> = vm
         .scripts
@@ -1516,7 +1515,11 @@ fn the_retail_scatter_script_runs_ported_actions() {
         .map(|action| action.action_id)
         .collect();
     assert_eq!(actions, [58, 21, 11]);
-    assert!(actions.iter().all(|&action| action_is_ported(action)));
+    assert!(
+        actions
+            .iter()
+            .all(|&action| action_is_ported(action, crate::rules::ARES_BUILD))
+    );
     let running = vm
         .team_types
         .values()
@@ -1810,8 +1813,7 @@ fn the_retail_tech_capture_scripts_run_ported_actions() {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules)
-        .expect("retail AIMD installs");
+    sim.install_team_ai_registry(&registry, &rules);
     let vm = &sim.team_script_vm;
     let capture: Vec<_> = vm
         .scripts
@@ -1830,7 +1832,7 @@ fn the_retail_tech_capture_scripts_run_ported_actions() {
             script
                 .actions
                 .iter()
-                .all(|action| action_is_ported(action.action_id))
+                .all(|action| action_is_ported(action.action_id, crate::rules::ARES_BUILD))
         );
     }
     let running = vm

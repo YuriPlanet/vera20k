@@ -603,6 +603,8 @@ fn native_carrier_spawn_pips_preserve_color_a_z_and_parent_order() {
     );
 }
 
+// Ares GetPassengerPips (10044C90, hook 0x709D38) starts at the cargo tail.
+#[cfg(not(feature = "ares"))]
 #[test]
 #[ignore = "requires retail assets and GPU; original Bio Reactor PIPS cargo-head order and Building pip rows"]
 fn native_bio_reactor_pips_preserve_color_a_z_and_parent_order() {
@@ -939,6 +941,9 @@ fn production_self_heal_status_workload_timing() {
     }
 }
 
+// Ares TechnoClass_DrawExtras_PowerOff (10049FE0, hook 0x6F526C) replaces
+// the wrench frame.
+#[cfg(not(feature = "ares"))]
 #[test]
 #[ignore = "requires retail assets and GPU; original GAPOWR wrench prefix, MOUSEPAL N1 and both Extras visits"]
 fn native_repair_wrenches_preserve_color_a_z_and_parent_order() {
@@ -1617,7 +1622,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     );
                     let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
                     cloak.set_state_for_test(state as i32);
-                    entity.cloak = Some(cloak);
+                    entity.cloak = Some(Box::new(cloak));
                 }
                 if actor["disguised"].as_bool().unwrap_or(false) {
                     let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
@@ -1698,7 +1703,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                         "{} original CountDockedSpawns6B7D50",
                         row["name"]
                     );
-                    entity.spawn_manager = Some(manager);
+                    entity.spawn_manager = Some(Box::new(manager));
                 }
                 if object.passengers > 0 || object.max_number_occupants > 0 {
                     use crate::sim::passenger::{PassengerCargo, PassengerRole};
@@ -2494,6 +2499,8 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                             parent,
                             bomb_clock: None,
                             wrench: None,
+                            #[cfg(feature = "ares")]
+                            power_off: None,
                             rank: *rank,
                             background: *background,
                             shield_background: None,

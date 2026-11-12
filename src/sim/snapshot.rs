@@ -2252,7 +2252,7 @@ impl Simulation {
             // MouseLoad restores Map+68/raw rows before LoadContent67E8CD's
             // hierarchy pass. A user file cannot invent that saved topology
             // from the Cell+4C values which CellLoad has just reset to zero.
-            let zones = self.zone_grid.as_ref().ok_or(
+            let zones = self.zone_grid.as_deref().ok_or(
                 SnapshotRestoreError::MissingMapAuthorityComponent {
                     component: "ZoneGrid",
                 },
@@ -3171,7 +3171,7 @@ mod tests {
         assert!(
             restored
                 .zone_grid
-                .as_ref()
+                .as_deref()
                 .unwrap()
                 .is_native_load_pending()
         );
@@ -3200,7 +3200,7 @@ mod tests {
         assert!(!path.is_walkable(2, 0));
         let normal_zones = restored
             .zone_grid
-            .as_ref()
+            .as_deref()
             .and_then(|zones| zones.map_for(MovementZone::Normal))
             .expect("canonical restored ground zones");
         assert_ne!(
@@ -3235,8 +3235,8 @@ mod tests {
             loaded_authority.len()
         );
         assert_zone_grids_equivalent(
-            sim.zone_grid.as_ref().unwrap(),
-            restored.zone_grid.as_ref().unwrap(),
+            sim.zone_grid.as_deref().unwrap(),
+            restored.zone_grid.as_deref().unwrap(),
         );
         assert_eq!(restored.state_hash(), authoritative_hash);
     }
@@ -3584,7 +3584,7 @@ mod tests {
         let mut header = GameSnapshot::read_header(&bytes).unwrap();
         // Flip every capability bit: the result is a foreign mode for any build.
         header.compatibility = RulesCompatibility::from_capabilities(
-            !crate::rules::ARES_ENABLED,
+            !crate::rules::ARES_BUILD,
             !crate::rules::PHOBOS_ENABLED,
             !crate::rules::NPATCH_ENABLED,
             !crate::rules::VERAX_ENABLED,
@@ -4012,7 +4012,7 @@ mod tests {
                 .as_ref()
                 .expect("overlay authority")
                 .retained_neighbor_counts(),
-            &[0, 7, 255, 4][..]
+            &[0u8, 7, 255, 4][..]
         );
     }
 
@@ -4309,7 +4309,7 @@ mod tests {
             } else {
                 let mut miner = Miner::new(MinerKind::War, &MinerConfig::default(), 40);
                 miner.set_cargo_for_test(cargo);
-                entity.miner = Some(miner);
+                entity.miner = Some(Box::new(miner));
             }
             sim.substrate.entities.insert(entity);
             // Native loading resets Scenario RNG to Seed(0). Keep that
@@ -4345,7 +4345,13 @@ mod tests {
             crate::sim::game_entity::GameEntity::test_default(1, "SMIN", "Americans", 4, 5);
         parent.set_techno_ctor_random_word_for_test(0x1111);
         let slav = sim.intern("SLAV");
-        parent.slave_manager = Some(SlaveManager::new(slav, [Some(2), Some(3)], 500, 25, 7));
+        parent.slave_manager = Some(Box::new(SlaveManager::new(
+            slav,
+            [Some(2), Some(3)],
+            500,
+            25,
+            7,
+        )));
         sim.substrate.entities.insert(parent);
         for (stable_id, word) in [(2, 0x2222), (3, 0x3333)] {
             let mut slave = crate::sim::game_entity::GameEntity::test_default(
@@ -6019,13 +6025,13 @@ mod tests {
             .ai_sell_repair
             .set_was_attacked_by_enemy_for_test(true);
         aircraft.damage_smoke_system_id.set_for_test(Some(2));
-        aircraft.capture_manager = Some(
+        aircraft.capture_manager = Some(Box::new(
             crate::sim::capture_manager::CaptureManagerState::with_victims_for_test(
                 3,
                 false,
                 &[3, 4],
             ),
-        );
+        ));
         aircraft.pending_c4_detonation.set_for_test(Some(
             crate::sim::c4_plant::PendingC4Detonation::new(
                 crate::sim::timer::CdTimer::started(11, 35),
@@ -6600,7 +6606,7 @@ mod tests {
         );
         let mut cloak = CloakRuntime::new(0);
         cloak.establish_unlimbo_fully_cloaked();
-        entity.cloak = Some(cloak);
+        entity.cloak = Some(Box::new(cloak));
         sim.substrate.entities.insert(entity);
         // Native in-scenario load restarts Scenario RNG from Seed0; isolate
         // fog/sensor/cloak persistence on that same post-load cursor.
@@ -7583,7 +7589,7 @@ mod tests {
         manager.set_current_target_for_test(Some(TargetKind::Entity(target)));
         manager.set_queued_target_for_test(Some(TargetKind::Entity(target)));
         manager.set_mode_for_test(SpawnManagerMode::Launching);
-        parent_entity.spawn_manager = Some(manager);
+        parent_entity.spawn_manager = Some(Box::new(manager));
         sim.substrate.entities.insert(parent_entity);
 
         let mut child_entity = GameEntity::test_default(child, "HORNET", "AMERICANS", 2, 1);
@@ -8084,8 +8090,8 @@ mod tests {
             loaded_authority.len()
         );
         assert_zone_grids_equivalent(
-            live.zone_grid.as_ref().unwrap(),
-            restored.zone_grid.as_ref().unwrap(),
+            live.zone_grid.as_deref().unwrap(),
+            restored.zone_grid.as_deref().unwrap(),
         );
         assert_eq!(
             restored.state_hash(),
@@ -8882,7 +8888,7 @@ mod tests {
         assert_ne!(
             restored
                 .zone_grid
-                .as_ref()
+                .as_deref()
                 .and_then(|zones| zones.map_for(MovementZone::Normal))
                 .expect("normal zone map")
                 .zone_at(destroyed_cell.0, destroyed_cell.1, MovementLayer::Ground),
@@ -8965,8 +8971,8 @@ mod tests {
         a.rebuild_zone_grid(&path_a);
         b.rebuild_zone_grid(&path_b);
         assert_zone_grids_equivalent(
-            a.zone_grid.as_ref().expect("zone grid rebuilt"),
-            b.zone_grid.as_ref().expect("zone grid rebuilt"),
+            a.zone_grid.as_deref().expect("zone grid rebuilt"),
+            b.zone_grid.as_deref().expect("zone grid rebuilt"),
         );
         assert_eq!(a.state_hash(), b.state_hash());
     }

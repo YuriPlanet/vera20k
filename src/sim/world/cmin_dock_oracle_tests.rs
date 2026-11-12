@@ -241,9 +241,8 @@ pub(super) fn dress_cmin(s: &mut Scene, input: &Value) {
     if input["latch_27c"] == true {
         // Techno+0x27C, which only the Chronosphere's warp writes in VERA:
         // its payload on the active Teleport.
-        entity
-            .drop_credit
-            .set_warped_by_house_for_test(Some(entity.owner()));
+        let owner = entity.owner();
+        entity.drop_credit.set_warped_by_house_for_test(Some(owner));
         entity
             .locomotor
             .as_mut()
@@ -555,7 +554,7 @@ fn compare_nearby(s: &Scene, events: &[Value], records: &[FreshCallRecord], cont
             [i64::from(movement_zone as i8), i64::from(bridge_aware_zone)],
             "{context}: GetZoneID MovementZone and deck"
         );
-        let scene_zone = s.sim.zone_grid.as_ref().unwrap().get_zone_id_native(
+        let scene_zone = s.sim.zone_grid.as_deref().unwrap().get_zone_id_native(
             s.sim.resolved_terrain.as_ref().unwrap(),
             zone_cell,
             movement_zone,

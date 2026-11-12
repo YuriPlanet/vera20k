@@ -111,6 +111,7 @@ impl AresWarheadRules {
         sparkle: Option<Option<String>>,
         animation: Option<Option<String>>,
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.duration = section.read_ares_int("EMP.Duration", self.duration);
         self.cap = section.read_ares_int("EMP.Cap", self.cap);
         if let Some(sparkle) = sparkle {
@@ -153,6 +154,7 @@ pub(crate) enum HouseSelector {
 #[cfg(any(feature = "ares", feature = "phobos"))]
 impl HouseSelector {
     pub(crate) fn read(self, section: &IniSection, key: &str) -> Self {
+        let _ares = crate::rules::ares_switch::ares_reads();
         const VALUES: [(&str, HouseSelector); 8] = [
             ("default", HouseSelector::Default),
             ("invoker", HouseSelector::Invoker),
@@ -201,6 +203,7 @@ impl Default for KillDriverRules {
 impl KillDriverRules {
     #[cfg(feature = "ares")]
     fn read_pass(&mut self, section: &IniSection) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.enabled = section.read_ares_bool("KillDriver", self.enabled);
         self.kill_below_percent =
             section.read_ares_double_bits("KillDriver.KillBelowPercent", self.kill_below_percent);
@@ -250,6 +253,7 @@ impl Default for WarheadGlobalRules {
 #[cfg(feature = "ares")]
 impl WarheadGlobalRules {
     pub(crate) fn read_before_type_data(&mut self, pass: &crate::rules::ini_parser::IniFile) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         if let Some(section) = pass.section("General") {
             self.damage_air_consider_bridges = section
                 .read_ares_bool("DamageAirConsiderBridges", self.damage_air_consider_bridges);
@@ -424,6 +428,7 @@ impl WarheadCombatRules {
         inf_death_anim: Option<Option<String>>,
         death_weapon_suppress: Option<Vec<crate::rules::superweapon_type::TechnoTypeReference>>,
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.mind_control_permanent =
             section.read_ares_bool("MindControl.Permanent", self.mind_control_permanent);
         self.iron_curtain_duration =
@@ -513,6 +518,7 @@ impl WarheadCombatRules {
         section: &IniSection,
         pre_impact_anim: Option<Option<String>>,
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.nuke_flash_duration =
             section.read_ares_nullable_int("NukeFlash.Duration", self.nuke_flash_duration);
         if let Some(anim) = pre_impact_anim {
@@ -543,6 +549,7 @@ impl WarheadCombatRules {
         section: Option<&IniSection>,
         sounds: &crate::rules::sound_ini::SoundRegistry,
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.die_sound_override =
             section.and_then(|section| sounds.read_ares_reference(section, "DieSound.Override"));
         self.voice_die_override =
@@ -710,6 +717,7 @@ impl IonCannonRules {
         beam: Option<Option<String>>,
         warhead: Option<Option<String>>,
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.enabled = section.read_ares_bool("IonCannon", self.enabled);
         self.rock = section.read_ares_bool("IonCannon.Rock", self.rock);
         self.ripple_radius = section.read_ares_nullable_int("Ripple.Radius", self.ripple_radius);
@@ -880,6 +888,7 @@ impl AttachEffectRules {
     }
     #[cfg(feature = "ares")]
     pub(crate) fn read_pass(&mut self, section: &IniSection, animation: Option<Option<String>>) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         // Exact 10058A59..10058B3A read order. Missing keys retain the live
         // constructor/prior-layer value; existing scalar readers own parsing.
         self.duration = section.read_ares_int("AttachEffect.Duration", self.duration);
@@ -937,7 +946,7 @@ mod tests {
             "[SELF_TEST]\nAttachEffect.Duration=junk\nAttachEffect.InitialDelay=0\nCloakable.Allowed=no\n",
         );
         let kind = rules.object("SELF_TEST").unwrap();
-        if crate::rules::ARES_ENABLED {
+        if crate::rules::ARES_BUILD {
             let effect = kind.self_attach_effect().unwrap();
             assert_eq!(
                 (effect.duration(), effect.delay(), effect.initial_delay()),
@@ -983,7 +992,7 @@ mod tests {
         let rules = read(root.clone(), scenario);
         let changed = read(root.clone(), "[ATTACH_WH]\nAttachEffect.Duration=6\n");
         let cleared = read(root, "[ATTACH_WH]\nAttachEffect.Animation=<none>\n");
-        if crate::rules::ARES_ENABLED {
+        if crate::rules::ARES_BUILD {
             let wh = rules.warhead("ATTACH_WH").unwrap().ares_rules().unwrap();
             assert_eq!(wh.duration(), 7, "existing EMP state remains independent");
             assert!(wh.can_affect_house(true, true, true, false));
@@ -1140,5 +1149,37 @@ mod tests {
         assert_eq!(plain.die_sound_override(), None);
         assert!(rules.ares_warhead_globals().damage_air_consider_bridges());
         assert!(!rules.ares_warhead_globals().iron_curtain_flash());
+    }
+
+    /// `InfDeathAnim` is the only field naming this animation, so nothing else
+    /// puts it in the AnimClass construction-root closure. Mental Omega's GBION
+    /// warheads rely on exactly that shape (`InfDeathAnim=FREEZE` etc. with no
+    /// `InfDeath=`), and an unrooted type makes the constructor refuse with
+    /// `animation type [X] has no bound SHP frame count`, so the kill plays no
+    /// death animation at all.
+    ///
+    /// The assertion reads `ares_combat()`, which only exists in Ares builds.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn inf_death_anim_joins_the_anim_class_construction_roots() {
+        let root = IniFile::from_str(
+            "[Warheads]\n0=DEATH_WH\n\
+             [Animations]\n0=MELTDIEE\n\
+             [DEATH_WH]\nCellSpread=1\nInfDeathAnim=MELTDIEE\n",
+        );
+        let rules = RuleSet::from_processed_rules(&RulesLayerStack::new(root).process().unwrap())
+            .unwrap();
+        assert_eq!(
+            rules
+                .warhead("DEATH_WH")
+                .and_then(|warhead| warhead.ares_combat())
+                .and_then(|combat| combat.inf_death_anim()),
+            Some("MELTDIEE")
+        );
+        assert!(
+            crate::rules::effect_asset_catalog::anim_class_roots(&rules)
+                .contains(&"MELTDIEE".to_string()),
+            "InfDeathAnim must bind its SHP frames or the death anim never builds"
+        );
     }
 }

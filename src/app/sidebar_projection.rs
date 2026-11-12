@@ -99,6 +99,9 @@ pub(crate) struct SidebarViewInputs {
     /// The right strip's superweapons.
     pub(crate) supers: Vec<SuperWeaponView>,
     pub(crate) gadgets: SidebarGadgetState,
+    /// The grids of build pictures the side's layout adds, each with the
+    /// row it is scrolled to.
+    pub(crate) grids: Vec<crate::ui::sidebar::AddedGrid>,
 }
 
 impl PartialEq for SidebarViewInputs {
@@ -112,6 +115,7 @@ impl PartialEq for SidebarViewInputs {
             && self.armed == other.armed
             && self.supers == other.supers
             && self.gadgets == other.gadgets
+            && self.grids == other.grids
     }
 }
 
@@ -476,10 +480,12 @@ impl SidebarProjectionState {
     /// Return the House building-cursor prefix once: before settlement when
     /// Strip has no matching link, or after linked product expiry/unlink.
     /// Source: tools/sidebar_oracle/cameo_order.md, executed abandon orders.
+    /// `ares` is [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
     pub(crate) fn apply_lifecycle_output(
         &mut self,
         output: &LifecycleOutput,
         local_house: Option<InternedId>,
+        ares: bool,
     ) -> Option<LifecycleOutput> {
         match *output {
             LifecycleOutput::ProductionBeginAttempted {
@@ -487,7 +493,7 @@ impl SidebarProjectionState {
                 category,
                 naval,
             } if local_house == Some(owner) => {
-                self.set_prediction_category(category, naval, false);
+                self.set_prediction_category(category, naval, false, ares);
                 None
             }
             LifecycleOutput::SidebarConstructionOption { owner, type_id }
@@ -1005,7 +1011,7 @@ impl SidebarProjectionState {
                 {
                     // Select6AB4E3 marks House5005B0 before the resumed
                     // PRODUCE, including Infantry's Vehicle/Ship fallthrough.
-                    self.set_prediction_category(category, object.naval, true);
+                    self.set_prediction_category(category, object.naval, true, rules.ares());
                     let predicted = self.cameo_strips().request_stage(id).unwrap_or(0);
                     Some((
                         pending_production_smoothed_stage(i32::from(factory.progress), predicted),
@@ -1024,7 +1030,7 @@ impl SidebarProjectionState {
                     if busy || self.prediction_categories.contains(&category) {
                         return;
                     }
-                    self.set_prediction_category(category, object.naval, true);
+                    self.set_prediction_category(category, object.naval, true, rules.ares());
                     let cost = sim.cost_of(owner, object, rules);
                     let available = crate::sim::production::credits_for_owner(
                         sim,
@@ -1070,7 +1076,13 @@ impl SidebarProjectionState {
     /// (1005CBD0, hook 0x5005CC), HouseClass_ClearFactoryCreatedManually
     /// (1005CB30, hook 0x50067C) and HouseClass_SetFactoryCreatedManually2
     /// (1005CBF0, hook 0x5007BE).
-    fn set_prediction_category(&mut self, category: ProductionCategory, naval: bool, set: bool) {
+    fn set_prediction_category(
+        &mut self,
+        category: ProductionCategory,
+        naval: bool,
+        set: bool,
+        ares: bool,
+    ) {
         let mut update = |category| {
             if set {
                 self.prediction_categories.insert(category);
@@ -1079,7 +1091,7 @@ impl SidebarProjectionState {
             }
         };
         update(category);
-        if category == ProductionCategory::Infantry && !crate::rules::ARES_ENABLED {
+        if category == ProductionCategory::Infantry && !ares {
             update(if naval {
                 ProductionCategory::Ship
             } else {
@@ -1179,7 +1191,7 @@ impl SidebarProjectionState {
         //6AC5F0 dispatches the selected native pointer's tab/index. Do not
         //resolve its name again: broad object lookup can select another kind.
         let tab = crate::ui::sidebar::SidebarTab::for_category(category);
-        strips.flash_type_index(tab, type_index, duration, frame, index_of);
+        strips.flash_type_index(tab, type_index, duration, frame, index_of, rules.ares());
     }
 
     pub(crate) fn set_scroll_row(&mut self, tab: crate::ui::sidebar::SidebarTab, row: usize) {
@@ -1635,7 +1647,7 @@ mod tests {
             construction_order,
         };
         let mut absent = SidebarProjectionState::default();
-        absent.apply_lifecycle_output(&link, Some(owner));
+        absent.apply_lifecycle_output(&link, Some(owner), crate::rules::ARES_BUILD);
         assert!(
             absent.factory_links.is_empty(),
             "LinkFactory requires a retained entry"
@@ -1645,7 +1657,7 @@ mod tests {
             projection.cameo_factory(&sim, owner, type_id).is_none(),
             "a later draw/reconciliation cannot retry a failed link from the queue head"
         );
-        projection.apply_lifecycle_output(&link, Some(owner));
+        projection.apply_lifecycle_output(&link, Some(owner), crate::rules::ARES_BUILD);
         assert!(projection.cameo_factory(&sim, owner, type_id).is_some());
     }
 
@@ -1669,6 +1681,7 @@ mod tests {
                     construction_order,
                 },
                 Some(owner),
+                crate::rules::ARES_BUILD,
             );
         }
         let visits = projection.production_factory_visits(&sim);
@@ -1802,6 +1815,7 @@ mod tests {
                 naval: false,
             },
             Some(owner),
+            crate::rules::ARES_BUILD,
         );
         assert!(
             projection
@@ -1815,6 +1829,7 @@ mod tests {
                 naval: false,
             },
             Some(owner),
+            crate::rules::ARES_BUILD,
         );
         assert!(projection.prediction_categories.is_empty());
         assert_eq!(
@@ -1846,8 +1861,11 @@ mod tests {
         );
         let mut unavailable = cameo.clone();
         unavailable.available = false;
-        projection
-            .apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
+        projection.apply_lifecycle_output(
+            &LifecycleOutput::SidebarRecalculated { owner },
+            Some(owner),
+            crate::rules::ARES_BUILD,
+        );
         projection.reconcile_cameos(owner, &[unavailable], 3, &[]);
         assert!(
             projection.cameo_request(e2).is_none(),
@@ -1943,6 +1961,7 @@ mod tests {
                         construction_order: factory as u64,
                     },
                     Some(owner),
+                    crate::rules::ARES_BUILD,
                 );
             }
         }
@@ -1957,6 +1976,7 @@ mod tests {
                 construction_order: target as u64,
             },
             Some(owner),
+            crate::rules::ARES_BUILD,
         );
         for entries in step["after"]["sidebar_entries"]
             .as_object()
@@ -2019,12 +2039,16 @@ mod tests {
         projection.apply_lifecycle_output(
             &LifecycleOutput::SidebarRecalculated { owner: foreign },
             Some(owner),
+            crate::rules::ARES_BUILD,
         );
         projection.reconcile_fixture(owner, &candidates(false), 3);
         assert_eq!(projection.cameo_strips().saved_identities(), before);
 
-        projection
-            .apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
+        projection.apply_lifecycle_output(
+            &LifecycleOutput::SidebarRecalculated { owner },
+            Some(owner),
+            crate::rules::ARES_BUILD,
+        );
         let recalculated = projection.reconcile_fixture(owner, &candidates(false), 3);
         assert!(
             projection
@@ -2070,22 +2094,31 @@ mod tests {
                 .reconcile_fixture(owner, &[candidate(a)], 3)
                 .build_inserted()
         );
-        projection
-            .apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
+        projection.apply_lifecycle_output(
+            &LifecycleOutput::SidebarRecalculated { owner },
+            Some(owner),
+            crate::rules::ARES_BUILD,
+        );
         assert!(
             projection
                 .reconcile_fixture(owner, &[candidate(a), candidate(b)], 3)
                 .build_inserted()
         );
-        projection
-            .apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
+        projection.apply_lifecycle_output(
+            &LifecycleOutput::SidebarRecalculated { owner },
+            Some(owner),
+            crate::rules::ARES_BUILD,
+        );
         assert!(
             !projection
                 .reconcile_fixture(owner, &[candidate(a)], 3)
                 .build_inserted()
         );
-        projection
-            .apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
+        projection.apply_lifecycle_output(
+            &LifecycleOutput::SidebarRecalculated { owner },
+            Some(owner),
+            crate::rules::ARES_BUILD,
+        );
         assert!(
             projection
                 .reconcile_fixture(owner, &[candidate(a), candidate(b)], 3)
@@ -2100,8 +2133,11 @@ mod tests {
                 .build_inserted(),
             "the first refresh after a sim install is the init window"
         );
-        projection
-            .apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
+        projection.apply_lifecycle_output(
+            &LifecycleOutput::SidebarRecalculated { owner },
+            Some(owner),
+            crate::rules::ARES_BUILD,
+        );
         assert!(
             projection
                 .reconcile_fixture(owner, &[candidate(a), candidate(b)], 3)

@@ -187,7 +187,7 @@ pub struct ZoneGrid {
     hierarchy: ZoneHierarchy,
     /// Derived digest of this owner's retained navigation history. Mutable
     /// entry points invalidate it before returning any writable borrow.
-    navigation_history_hash: std::sync::OnceLock<u64>,
+    navigation_history_hash: crate::util::sync::OnceLock<u64>,
     /// Deserialization restores the saved base plane/rows first. Native
     /// LoadContent67E8CD rebuilds the hierarchy only after Cell/object load.
     pending_native_load: bool,
@@ -278,7 +278,7 @@ impl<'de> serde::Deserialize<'de> for ZoneGrid {
         Ok(Self {
             maps,
             hierarchy: ZoneHierarchy::new(empty(), empty(), empty()),
-            navigation_history_hash: std::sync::OnceLock::new(),
+            navigation_history_hash: crate::util::sync::OnceLock::new(),
             pending_native_load: true,
             base_topology: base,
             bridge_records: Vec::new(),
@@ -532,7 +532,7 @@ impl ZoneGrid {
         ZoneGrid {
             maps,
             hierarchy,
-            navigation_history_hash: std::sync::OnceLock::new(),
+            navigation_history_hash: crate::util::sync::OnceLock::new(),
             pending_native_load: false,
             base_topology,
             bridge_records: bridge_records.to_vec(),
@@ -965,6 +965,24 @@ impl ZoneGrid {
     /// without assigning a zone or rebuilding hierarchy. Mutation owners that
     /// have a later native repair callback use this to make the new class/height
     /// visible to earlier ordered neighbor repairs.
+    /// Whether the cell's retained class and level already match `terrain`;
+    /// a shared copy (docs/sim-thread.md) is then left shared.
+    pub(crate) fn base_cell_attributes_current(
+        &self,
+        terrain: &ResolvedTerrainGrid,
+        x: u16,
+        y: u16,
+    ) -> bool {
+        if x >= self.width || y >= self.height {
+            return false;
+        }
+        let index = y as usize * self.width as usize + x as usize;
+        self.base_topology.movement_classes.get(index)
+            == Some(&zone_build::movement_class_for_cell(terrain, x, y))
+            && self.base_topology.levels.get(index)
+                == Some(&terrain.cell(x, y).map_or(0, |cell| cell.level))
+    }
+
     pub(crate) fn refresh_base_cell_attributes_at(
         &mut self,
         terrain: &ResolvedTerrainGrid,
@@ -974,14 +992,12 @@ impl ZoneGrid {
         if x >= self.width || y >= self.height {
             return false;
         }
+        if self.base_cell_attributes_current(terrain, x, y) {
+            return true;
+        }
         let index = y as usize * self.width as usize + x as usize;
         let class = zone_build::movement_class_for_cell(terrain, x, y);
         let level = terrain.cell(x, y).map_or(0, |cell| cell.level);
-        if self.base_topology.movement_classes.get(index) == Some(&class)
-            && self.base_topology.levels.get(index) == Some(&level)
-        {
-            return true;
-        }
         self.invalidate_navigation_history();
         let base = &mut self.base_topology;
         let Some(slot) = base.movement_classes.get_mut(index) else {

@@ -119,7 +119,7 @@ pub(crate) fn top_up(state: &mut AppState) {
     let Some(tick) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|runtime| runtime.simulation.session().tick())
     else {
         return;
@@ -129,7 +129,7 @@ pub(crate) fn top_up(state: &mut AppState) {
         let sim = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|runtime| &runtime.simulation);
         let interned = |name: &str| sim.and_then(|sim| sim.interner().get(name));
         // Split borrow: the repeat set is in `input`, the sim in `sim_runtime`.

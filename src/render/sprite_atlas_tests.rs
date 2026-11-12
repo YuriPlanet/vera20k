@@ -2844,14 +2844,14 @@ fn building_palette_groups_survive_refresh_and_palette_texture_growth() {
             "{name}"
         );
     }
-    if !crate::rules::ARES_ENABLED {
+    if !crate::rules::ARES_BUILD {
         assert_eq!(
             atlas.get(&key("B")).unwrap().source_palette,
             resident_unit_row.expect("the Unit fallback was already resident") + 1,
             "OFF B reuses the existing Unit palette row"
         );
     }
-    let high_type = if crate::rules::ARES_ENABLED {
+    let high_type = if crate::rules::ARES_BUILD {
         "B"
     } else {
         "CELL"
@@ -3002,7 +3002,7 @@ fn building_palette_groups_survive_refresh_and_palette_texture_growth() {
     let second_anim = spawn(&mut sim);
     sim.anims_mut_for_test().set_anim_remap(
         second_anim,
-        if crate::rules::ARES_ENABLED {
+        if crate::rules::ARES_BUILD {
             AnimRemap::ExtraBuildingScheme {
                 house,
                 palette: second_palette,
@@ -3570,5 +3570,148 @@ fn object_pairs_give_each_type_and_owner_once() {
     assert_eq!(
         pairs,
         [("E1", HouseColorIndex(2)), ("E1", HouseColorIndex(5))]
+    );
+}
+
+#[test]
+fn retail_spy_atlas_loads_its_default_disguise_without_a_real_infantryman() {
+    use crate::sim::{house_state::HouseState, world::Simulation};
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
+        return;
+    };
+    let (_, mut assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
+    let theater = crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
+    let mut sim = Simulation::with_seed(3);
+    let owner = sim.intern("Americans");
+    sim.register_house(HouseState::new(owner, 0, None, false, 0, 10));
+    let spy = sim
+        .spawn_object_at_height("SPY", "Americans", 10, 10, 0, 0, &rules)
+        .unwrap();
+    let entity = sim.entities().get(spy).unwrap();
+    let disguise = entity.disguise.as_ref().unwrap();
+    let worn = sim.interner().resolve(disguise.type_id().unwrap());
+    assert_eq!(worn, "E1");
+    assert_eq!(sim.entities().len(), 1);
+    let colors = HouseColorMap::from([("Americans".to_owned(), HouseColorIndex(2))]);
+    let pairs = object_pairs(sim.entities(), &colors, &[], Some(sim.interner()))
+        .map(|(kind, color)| (kind.to_owned(), color))
+        .collect();
+    let mut needed = HashSet::new();
+    let sources = insert_new_object_keys(
+        &mut needed,
+        &pairs,
+        sim.entities(),
+        Some(sim.interner()),
+        &assets,
+        "tem",
+        "TEMPERATE",
+        Some(&rules),
+        Some(rules.art()),
+    );
+    let source = sources
+        .get(&(ShpImageKind::Object, worn.to_owned()))
+        .and_then(Option::as_ref)
+        .expect("the Spy's disguise must load without a real E1");
+    let record = rules
+        .animation_sequence_in_category(crate::rules::object_type::ObjectCategory::Infantry, worn)
+        .unwrap()
+        .infantry_action(0)
+        .unwrap();
+    let frame = crate::sim::animation::resolve_shp_frame(record, 0, 0) as u16;
+    let key = ShpSpriteKey {
+        type_id: worn.into(),
+        frame,
+        house_color: HouseColorIndex(2),
+        ..make_shp_key(worn, 0)
+    };
+    assert!(
+        needed.contains(&key),
+        "the draw-selected disguise frame must be resident"
+    );
+    let sprite = render_shp_key(
+        source,
+        &theater.unit_palette,
+        true,
+        &key,
+        Some(&rules),
+        &mut ShpPalettes::default(),
+    )
+    .expect("physical disguise frame");
+    assert!(sprite.indices().iter().any(|&index| index != 0));
+}
+
+#[test]
+fn spy_atlas_growth_tracks_each_active_disguise_and_its_house_color() {
+    let (mut world, _) = one_object_world("SPY", EntityCategory::Infantry);
+    let owner = crate::sim::intern::test_intern("Americans");
+    let enemy = crate::sim::intern::test_intern("Russians");
+    let e1 = crate::sim::intern::test_intern("E1");
+    let e2 = crate::sim::intern::test_intern("E2");
+    world
+        .get_mut(1)
+        .unwrap()
+        .disguise
+        .as_mut()
+        .unwrap()
+        .acquire(0, Some(e1), Some(owner));
+    let mut second = crate::sim::game_entity::GameEntity::test_default_of_category(
+        2,
+        "SPY",
+        "Americans",
+        6,
+        5,
+        EntityCategory::Infantry,
+    );
+    second.set_is_voxel_for_test(false);
+    second
+        .disguise
+        .as_mut()
+        .unwrap()
+        .acquire(0, Some(e2), Some(enemy));
+    world.insert(second);
+    let interner = crate::sim::intern::test_interner();
+    let colors = HouseColorMap::from([
+        ("Americans".to_owned(), HouseColorIndex(2)),
+        ("Russians".to_owned(), HouseColorIndex(5)),
+    ]);
+    let mut atlas = SpriteAtlas::from_test_entries(Default::default());
+    for kind in ["SPY", "E1"] {
+        atlas
+            .covered_objects
+            .entry(kind.to_owned())
+            .or_default()
+            .insert(HouseColorIndex(2));
+    }
+    let covered = |atlas: &SpriteAtlas, world: &crate::sim::entity_store::EntityStore| {
+        atlas_covers_world(
+            Some(atlas),
+            world,
+            &colors,
+            &[],
+            &HashSet::new(),
+            Some(&interner),
+        )
+    };
+    assert!(
+        !covered(&atlas, &world),
+        "a second Spy's enemy-coloured disguise needs growth"
+    );
+    atlas
+        .covered_objects
+        .entry("E2".to_owned())
+        .or_default()
+        .insert(HouseColorIndex(5));
+    assert!(covered(&atlas, &world));
+    world
+        .get_mut(2)
+        .unwrap()
+        .disguise
+        .as_mut()
+        .unwrap()
+        .clear_unit();
+    atlas.covered_objects.remove("E2");
+    assert!(
+        covered(&atlas, &world),
+        "inactive disguises must not request growth"
     );
 }

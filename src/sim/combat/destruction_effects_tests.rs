@@ -825,7 +825,7 @@ fn a_custom_palette_building_gives_its_destroy_anim_the_palette_scheme() {
         hall,
         [(
             "DESTA".to_string(),
-            crate::rules::ARES_ENABLED.then_some(AnimRemap::House(owner))
+            crate::rules::ARES_BUILD.then_some(AnimRemap::House(owner))
         )]
     );
 }
@@ -1288,7 +1288,7 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
             [&input["max_debris"], &input["min_debris"]].map(|v| v.as_i64().unwrap() as i32)
         );
         assert_eq!(gapowr.foundation.dimensions(), (2, 2));
-        let flagged = |burn: bool, crater: bool, w: u8, h: u8| {
+        let flagged = |burn: bool, crater: bool, w: i32, h: i32| {
             (burn || crater).then_some((burn, crater, w, h))
         };
         assert_eq!(
@@ -1309,8 +1309,8 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
                     flagged(
                         field("burn") == 1,
                         field("crater") == 1,
-                        field("width") as u8,
-                        field("height") as u8,
+                        field("width") as i32,
+                        field("height") as i32,
                     )
                     .map(|flags| (def["name"].as_str().unwrap().to_string(), flags))
                 })
@@ -1865,7 +1865,7 @@ fn palette_binding_missing_file_keeps_destroy_anim_unremapped() {
         remaps,
         [(
             "DESTA",
-            crate::rules::ARES_ENABLED.then_some(crate::sim::anim_class::AnimRemap::House(owner))
+            crate::rules::ARES_BUILD.then_some(crate::sim::anim_class::AnimRemap::House(owner))
         )]
     );
 }
@@ -1940,7 +1940,7 @@ fn palette_binding_failed_request_does_not_shadow_or_inherit_loaded_group() {
                         palette: sim.interner.get("lib").unwrap(),
                     })
                 } else {
-                    crate::rules::ARES_ENABLED.then_some(AnimRemap::House(owner))
+                    crate::rules::ARES_BUILD.then_some(AnimRemap::House(owner))
                 }
             )],
             "{kind}"
@@ -1980,7 +1980,7 @@ fn destroy_anim_retains_each_loaded_palette_and_house_fallback_after_save() {
     rules.bind_effect_assets(&assets, "tem", "TEMPERATE");
     assert_eq!(
         one_group_hash != rules.simulation_config_hash(),
-        crate::rules::ARES_ENABLED
+        crate::rules::ARES_BUILD
     );
     assert!(rules.art().get("FIRST").unwrap().terrain_palette);
 
@@ -1990,13 +1990,13 @@ fn destroy_anim_retains_each_loaded_palette_and_house_fallback_after_save() {
     // case-insensitive after this identity is frozen and later rendered.
     let first = sim.interner.intern("FIRST");
     let lib = sim.interner.intern("lib");
-    let fallback = crate::rules::ARES_ENABLED.then_some(AnimRemap::House(owner));
+    let fallback = crate::rules::ARES_BUILD.then_some(AnimRemap::House(owner));
     let expected = [
         Some(AnimRemap::ExtraBuildingScheme {
             house: owner,
             palette: first,
         }),
-        if crate::rules::ARES_ENABLED {
+        if crate::rules::ARES_BUILD {
             Some(AnimRemap::ExtraBuildingScheme {
                 house: owner,
                 palette: lib,

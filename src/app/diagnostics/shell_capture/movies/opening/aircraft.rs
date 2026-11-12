@@ -13,7 +13,7 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
     let sim = &state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("aircraft runtime absent")?
         .simulation;
     let mut objects = Vec::new();

@@ -157,6 +157,21 @@ fn unit_delivery_zero_deferment_sets_human_area_guard_and_ai_hunt() {
     }
 }
 
+/// PlaceUnits10075A60 puts each payload with DirType (GetCellIndex & 7) << 5,
+/// so the facing follows the X of the chosen cell.
+#[test]
+fn unit_delivery_payload_faces_by_its_cell_index() {
+    let rules = rules("[Delivery]\nSW.Deferment=0\n");
+    for (cell, facing) in [((12, 10), 0x80), ((13, 10), 0xA0)] {
+        let mut sim = world(&rules);
+        fire(&mut sim, &rules, "Americans", cell);
+        let ids = payloads(&sim, "MTNK");
+        let entity = sim.substrate.entities.get(ids[0]).unwrap();
+        assert_eq!((entity.position.rx(), entity.position.ry()), cell);
+        assert_eq!(entity.body_facing_byte(sim.session.binary_frame()), facing);
+    }
+}
+
 #[test]
 fn unit_delivery_duplicate_payloads_find_free_cells_near_blocked_target() {
     let rules = rules("[Delivery]\nSW.Deferment=0\nDeliver.Types=MTNK,MTNK\n");

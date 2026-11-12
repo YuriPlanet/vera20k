@@ -193,13 +193,20 @@ fn retail_inactive_robot_tank_crushes_or_selects_instead_of_attacking() {
         enemy_cursor(&sim, gi, OrderModifier::Normal),
         Some(CursorId::Default)
     );
+    // Ares hook 0x73FD5A (1004CF50): a Deactivated Unit answers
+    // GetDeactivatedAction alone, 0 over another House's object.
+    let (gi_forced, tank_forced) = if cfg!(feature = "ares") {
+        (CursorId::Default, CursorId::Default)
+    } else {
+        (CursorId::Move, CursorId::Select)
+    };
     assert_eq!(
         enemy_cursor(&sim, gi, OrderModifier::ForceFire),
-        Some(CursorId::Move)
+        Some(gi_forced)
     );
     assert_eq!(
         enemy_cursor(&sim, tank, OrderModifier::ForceFire),
-        Some(CursorId::Select)
+        Some(tank_forced)
     );
     let crush = attack_branch_orders(
         &sim,
@@ -222,6 +229,107 @@ fn retail_inactive_robot_tank_crushes_or_selects_instead_of_attacking() {
         &registry,
     );
     assert!(select.select_fallback && select.commands.is_empty());
+}
+
+/// Ares' Deactivated rungs (hooks 0x73FD5A, 0x7404B9, 0x4D74EC, 0x4D7D58;
+/// 1004CF50, 1004CF30, 1004CBC0, 1004CBA0): an offline Robot Tank answers
+/// Select over an own tank and 0 over a Cell, and no click order reaches it.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_deactivated_robot_tank_only_selects_and_takes_no_click() {
+    let Some((retail, registry)) = retail() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let mut sim = arena(rules);
+    sim.spawn_object("NAPOWR", "Russians", 3, 3, 0, rules)
+        .expect("russian power plant");
+    let robot = sim
+        .spawn_object("ROBO", "Americans", 16, 16, 0, rules)
+        .expect("robot tank");
+    let own = sim
+        .spawn_object("MTNK", "Americans", 16, 17, 0, rules)
+        .expect("own tank");
+    let viewer = sim.interner().get("Americans").unwrap();
+    let query = crate::sim::world::CellActionQuery {
+        mouse_over: true,
+        shift: false,
+    };
+    assert_eq!(
+        sim.cell_move_action(viewer, robot, (18, 18), query, rules, Some(&registry)),
+        Ok(crate::sim::world::MoveAction::Move)
+    );
+    sim.entities_mut_for_test()
+        .get_mut(robot)
+        .unwrap()
+        .deactivated
+        .set_for_test(true);
+    assert_eq!(
+        hover_cursor(
+            &sim,
+            rules,
+            &registry,
+            robot,
+            own,
+            crate::app::types::HoverTargetKind::FriendlyUnit,
+            OrderModifier::Normal,
+        ),
+        Some(CursorId::Select)
+    );
+    assert_eq!(
+        sim.cell_move_action(viewer, robot, (18, 18), query, rules, Some(&registry)),
+        Ok(crate::sim::world::MoveAction::None)
+    );
+    assert!(sim.click_order_receivers(&[robot, own], crate::rules::ARES_BUILD) == [own]);
+}
+
+/// SelectBestObjectForAction (0x005353D0) ranks an EMPed object 1 (vt+0x37C),
+/// below an unarmed one. A Deactivated cursor owner decides the whole
+/// release (DetermineAction 0x00692634): 0 over a Cell does nothing and Select
+/// over an own tank selects it, so the engineer beside it is sent nowhere.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_deactivated_cursor_owner_decides_the_release_for_the_selection() {
+    let Some((retail, _registry)) = retail() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let mut sim = arena(rules);
+    sim.spawn_object("NAPOWR", "Russians", 3, 3, 0, rules)
+        .expect("russian power plant");
+    let robot = sim
+        .spawn_object("ROBO", "Americans", 16, 16, 0, rules)
+        .expect("robot tank");
+    let engineer = sim
+        .spawn_object("ENGINEER", "Americans", 15, 16, 0, rules)
+        .expect("engineer");
+    let own = sim
+        .spawn_object("MTNK", "Americans", 16, 17, 0, rules)
+        .expect("own tank");
+    let selection = [engineer, robot];
+    let over_tank = HoverTargetKindWithId {
+        kind: crate::app::types::HoverTargetKind::FriendlyUnit,
+        stable_id: own,
+    };
+    let release = |sim: &Simulation, hover: Option<&HoverTargetKindWithId>| {
+        ares_deactivated_selection_click(sim, rules, &selection, hover, (18, 18))
+    };
+    assert_eq!(release(&sim, None), None, "an active robot");
+    sim.entities_mut_for_test()
+        .get_mut(robot)
+        .unwrap()
+        .deactivated
+        .set_for_test(true);
+    assert_eq!(release(&sim, None), Some(Ok(LeftRelease::Nothing)));
+    assert_eq!(
+        release(&sim, Some(&over_tank)),
+        Some(Ok(LeftRelease::Select))
+    );
+    sim.entities_mut_for_test()
+        .get_mut(robot)
+        .unwrap()
+        .set_emp_remaining_for_test(30);
+    assert_eq!(release(&sim, None), None, "the engineer owns the cursor");
 }
 
 /// A tank being warped out (Temporal, vt+0x1D4) answers 0 over an enemy

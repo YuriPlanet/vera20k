@@ -3104,7 +3104,7 @@ checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 
 [[package]]
 name = "vera20k"
-version = "0.3.0"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3126,6 +3126,7 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "parley",
  "raw-window-handle",
+ "rayon",
  "ring",
  "rodio",
  "rustls",
@@ -3152,7 +3153,7 @@ dependencies = [
 
 [[package]]
 name = "vera20k-android"
-version = "0.3.0"
+version = "0.3.2"
 dependencies = [
  "android-activity",
  "anyhow",
@@ -3165,7 +3166,7 @@ dependencies = [
 
 [[package]]
 name = "vera20k-core"
-version = "0.3.0"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -3190,6 +3191,7 @@ dependencies = [
  "unicode-ident",
  "vera20k-relay-protocol",
  "wasm-bindgen",
+ "wasm_sync",
  "web-time",
 ]
 

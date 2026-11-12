@@ -13,6 +13,7 @@ pub(crate) struct PromotionAbilities {
 impl PromotionAbilities {
     #[cfg(feature = "ares")]
     pub(crate) fn read_pass(&mut self, section: &crate::rules::ini_parser::IniSection) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         // TypeExt1003E4FA/1003E510 -> ReadAbilities100405A0. An absent or
         // empty ReadString2048 keeps the tier. A nonempty value clears all
         // seven bytes before comma-only tokenization and table lookup.
@@ -22,6 +23,7 @@ impl PromotionAbilities {
 
     #[cfg(feature = "ares")]
     fn read_tier(section: &crate::rules::ini_parser::IniSection, key: &str, flags: &mut [bool; 7]) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         const NAMES: [&str; 7] = [
             "empimmune",
             "radimmune",

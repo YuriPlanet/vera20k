@@ -451,8 +451,7 @@ fn retail_superweapon_scripts_run_ported_actions() {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules)
-        .expect("retail AIMD installs");
+    sim.install_team_ai_registry(&registry, &rules);
     let vm = &sim.team_script_vm;
     let scripts: Vec<_> = vm
         .scripts
@@ -468,7 +467,7 @@ fn retail_superweapon_scripts_run_ported_actions() {
     for script in &scripts {
         for action in &script.actions {
             assert!(
-                super::super::actions::action_is_ported(action.action_id),
+                super::super::actions::action_is_ported(action.action_id, crate::rules::ARES_BUILD),
                 "{} runs action {}",
                 sim.interner.resolve(script.id),
                 action.action_id

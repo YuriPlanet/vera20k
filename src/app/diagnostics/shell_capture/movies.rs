@@ -1338,7 +1338,7 @@ impl MoviesCapture {
                     let sim = &state
                         .match_state
                         .sim_runtime
-                        .as_ref()
+                        .runtime()
                         .context("EXIT lost its installed runtime")?
                         .simulation;
                     ensure!(
@@ -1973,7 +1973,7 @@ fn campaign_abort_cleanup_receipt(state: &AppState) -> Result<Value> {
     let sim = &state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("ordinary return unexpectedly discarded the retained campaign runtime")?
         .simulation;
     let mission_counter = sim
@@ -2003,7 +2003,7 @@ fn campaign_abort_cleanup_receipt(state: &AppState) -> Result<Value> {
         "campaign_page_present": state.frontend.campaign.is_some(), "fullscreen_movie_present": state.frontend.fullscreen_movie.is_some(),
         "scenario_exit_present": state.match_state.scenario_exit.is_some(), "scenario_outcome_present": state.match_state.scenario_outcome.is_some(),
         "in_game_menu": format!("{:?}", state.match_state.match_presentation.in_game_menu),
-        "retained_runtime_present": state.match_state.sim_runtime.is_some(), "retained_tick": sim.session().tick(),
+        "retained_runtime_present": state.match_state.sim_runtime.is_installed(), "retained_tick": sim.session().tick(),
         "retained_quit_requested": sim.quit_requested(),
         "retained_scenario_started": sim.session().started(),
         "campaign_mission_counter": mission_counter, "pending_exit_commands": pending_exit_commands,
@@ -2017,7 +2017,7 @@ fn campaign_runtime_receipt(state: &AppState) -> Result<Value> {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .is_some_and(|runtime| runtime.simulation.session().tick() == 0),
         "first live capture passed simulation tick zero"
     );
@@ -2028,7 +2028,7 @@ fn initial_save_receipt(state: &AppState, directory: &Path) -> Result<Value> {
     let runtime = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("initial save has no world")?;
     ensure!(
         runtime.simulation.session().tick() == 1,
@@ -2089,7 +2089,7 @@ fn installed_campaign_runtime_receipt(state: &AppState) -> Result<Value> {
     let runtime = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("first live frame has no runtime")?;
     let sim = &runtime.simulation;
     ensure!(

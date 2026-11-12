@@ -623,7 +623,7 @@ impl Simulation {
             owner: ticking_sound_owner(target),
         });
         if let Some(carrier) = self.substrate.entities.get_mut(target) {
-            carrier.bomb = Some(bomb);
+            carrier.bomb = Some(Box::new(bomb));
         }
         self.bombs.carriers.insert(target);
         // 0x00438FCA: the carrier is seen from the second UpdateAll on.

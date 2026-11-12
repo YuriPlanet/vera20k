@@ -87,6 +87,7 @@ pub(crate) const HAS_HD_MAP_PREVIEWS: bool =
 pub(crate) const HD_MAP_PREVIEWS_LABEL: &str = "VERA:HdMapPreviews";
 pub(crate) const HD_MAP_PREVIEWS_HELP: &str = "VERA:HdMapPreviewsHelp";
 pub(crate) const SHIFT_QUEUE_LABEL: &str = "VERA:ShiftQueue";
+pub(crate) const AUTO_REPAIR_LABEL: &str = "VERA:AutoRepair";
 /// The two category pages retail's string table has no band name for.
 pub(crate) const CONTROLS_LABEL: &str = "VERA:Controls";
 pub(crate) const DEVELOPER_OPTIONS_LABEL: &str = "VERA:DeveloperOptions";
@@ -113,6 +114,7 @@ pub(crate) const CUSTOM_END_GAME_MOVIE_HELP: &str = "VERA:CustomEndGameMovieHelp
 pub(crate) const DETAILED_EVA_TEXT_LABEL: &str = "VERA:DetailedEvaText";
 pub(crate) const DETAILED_EVA_TEXT_HELP: &str = "VERA:DetailedEvaTextHelp";
 pub(crate) const SHIFT_QUEUE_HELP: &str = "VERA:ShiftQueueHelp";
+pub(crate) const AUTO_REPAIR_HELP: &str = "VERA:AutoRepairHelp";
 /// VERA's terrain deformation box (`docs/terrain-deformation.md`).
 pub(crate) const TERRAIN_DEFORMATION_LABEL: &str = "VERA:TerrainDeformation";
 pub(crate) const TERRAIN_DEFORMATION_HELP: &str = "VERA:TerrainDeformationHelp";
@@ -153,6 +155,7 @@ pub(crate) const HAS_SET_WINDOW_SIZE: bool = !cfg!(any(
     target_os = "android"
 ));
 pub(crate) const SET_WINDOW_SIZE_LABEL: &str = "VERA:SetWindowSize";
+pub(crate) const SET_WINDOW_SIZE_HELP: &str = "VERA:SetWindowSizeHelp";
 
 /// A button of the dialog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -165,13 +168,21 @@ pub(crate) enum LauncherButton {
     CheckForUpdates,
     /// The Esc menu's Set Window Size: the window goes back to how a launch opens it.
     SetWindowSize,
+    /// The in-game menu's Keyboard, which opens gamemd's in-game `0xA3`.
+    InGameKeyboard,
+    /// The in-game menu's Sound, which opens gamemd's Sound Controls (`0xB8`)
+    /// and its song list.
+    InGameSound,
 }
 
 impl LauncherButton {
     /// Whether it sits among the page's own controls, rather than being one
     /// of the right-hand column's.
     pub(crate) const fn on_page(self) -> bool {
-        matches!(self, Self::CheckForUpdates | Self::SetWindowSize)
+        matches!(
+            self,
+            Self::CheckForUpdates | Self::SetWindowSize | Self::InGameKeyboard | Self::InGameSound
+        )
     }
 }
 
@@ -625,6 +636,11 @@ pub(crate) enum LauncherTrackbarId {
     /// the level minus [`crate::rules::house_colors::STRENGTH_MIN`], so the
     /// retail strength is position 0 and the strongest is position 9.
     HouseColorStrength,
+    /// The in-game menu's Game Speed, the slider of gamemd's Game Controls
+    /// (`0xBBB` control `0x529`). No main-menu page has it and the profile
+    /// pack leaves it out: the menu sets it up with
+    /// [`OptionsDialogState::set_in_game_controls`] and applies it on close.
+    GameSpeed,
 }
 
 impl LauncherTrackbarId {
@@ -633,6 +649,7 @@ impl LauncherTrackbarId {
             Self::Detail => 1,
             Self::Difficulty => 2,
             Self::Scroll => 6,
+            Self::GameSpeed => crate::ui::shell::game_speed::MAX_POSITION as u8,
             Self::Score | Self::Sound | Self::Voice => 10,
             Self::HouseColorStrength => {
                 crate::rules::house_colors::STRENGTH_MAX - crate::rules::house_colors::STRENGTH_MIN
@@ -644,7 +661,7 @@ impl LauncherTrackbarId {
     /// plaque off (`0x4AC` with 0).
     pub(crate) const fn plaque_reserve(self) -> i32 {
         match self {
-            Self::Detail | Self::Difficulty | Self::Scroll => 0,
+            Self::Detail | Self::Difficulty | Self::Scroll | Self::GameSpeed => 0,
             Self::Score | Self::Sound | Self::Voice | Self::HouseColorStrength => 50,
         }
     }
@@ -678,6 +695,9 @@ pub(crate) enum LauncherCheckboxId {
     /// VERA's own box: Shift + left click on a mobile build cameo queues
     /// several copies instead of gamemd's one. It applies at once.
     ShiftQueue,
+    /// VERA's own box: the player's damaged buildings are sent the Repair
+    /// order by themselves (`app::input::auto_repair`). It applies at once.
+    AutoRepair,
     /// VERA's own box: explosions dent open ground as in Tiberian Sun and a
     /// nuke leaves a crater. Saved; the next game's rules read it, so a match
     /// already running keeps its own.
@@ -780,6 +800,7 @@ pub(crate) enum LauncherOptionsEvent {
     OriginalShapeChanged(bool),
     YrOriginalStyleChanged(bool),
     ShiftQueueChanged(bool),
+    AutoRepairChanged(bool),
     TerrainDeformationChanged(bool),
     MouseWheelZoomChanged(bool),
     RightClickOrdersChanged(bool),
@@ -801,6 +822,10 @@ pub(crate) enum LauncherOptionsEvent {
     ScorePreview(f32),
     SoundPreview(f32),
     VoicePreview(f32),
+    /// The in-game menu's Keyboard and Sound buttons, which that menu routes
+    /// (`app::input::pause_menu`).
+    InGameKeyboardRequested,
+    InGameSoundRequested,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -846,6 +871,7 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) smooth_online_menus: bool,
     pub(crate) hd_map_previews: bool,
     pub(crate) shift_queue: bool,
+    pub(crate) auto_repair: bool,
     pub(crate) terrain_deformation: bool,
     /// The FPS readout's live state when the page opened, then each toggle.
     pub(crate) performance_stats: bool,
@@ -900,6 +926,7 @@ impl Default for LauncherOptionsValues {
             smooth_online_menus: false,
             hd_map_previews: true,
             shift_queue: false,
+            auto_repair: false,
             terrain_deformation: false,
             performance_stats: false,
             show_string_keys: false,
@@ -1000,6 +1027,13 @@ pub(crate) struct OptionsDialogState {
     /// Window Size button names. Set by [`Self::set_launch_window_size`]; zero
     /// until then.
     launch_window_size: (u32, u32),
+    /// The in-game menu's Game Speed slider: its position, and the caption
+    /// and one value name per position. Set by [`Self::set_in_game_controls`].
+    game_speed_position: u8,
+    game_speed_caption: String,
+    game_speed_names: Vec<String>,
+    /// The in-game menu's Sound button caption. Set with the speed.
+    in_game_sound_label: String,
     /// The list that is open, if any.
     open_combo: Option<LauncherComboId>,
     launcher_audio_available: bool,
@@ -1077,6 +1111,10 @@ impl OptionsDialogState {
             languages: Vec::new(),
             language: String::new(),
             launch_window_size: (0, 0),
+            game_speed_position: 0,
+            game_speed_caption: String::new(),
+            game_speed_names: Vec::new(),
+            in_game_sound_label: String::new(),
             open_combo: None,
             launcher_audio_available,
             capture: None,
@@ -1127,6 +1165,13 @@ impl OptionsDialogState {
         !id.is_audio() || self.launcher_audio_available
     }
 
+    /// Whether a button window is enabled: BBB's init disables its Sound
+    /// button without an output device (`0x004E2201..0x004E2223`), and the
+    /// in-game page's Sound button stands for it.
+    pub(crate) const fn button_enabled(&self, id: LauncherButton) -> bool {
+        !matches!(id, LauncherButton::InGameSound) || self.launcher_audio_available
+    }
+
     /// gamemd-derived: the parent snapshot consumed by
     /// `OptionsClass__ApplyFromLauncherDialog @ 0x0055FAA0` maps the six
     /// positions and three normalized checkboxes exactly as below.
@@ -1148,8 +1193,29 @@ impl OptionsDialogState {
         }
     }
 
+    /// Give the in-game menu's Game Speed slider its caption, the name of
+    /// each position's speed and where it stands, and the Sound button its
+    /// caption. A position past the slider's end shows as its first.
+    pub(crate) fn set_in_game_controls(
+        &mut self,
+        speed_caption: String,
+        speed_names: Vec<String>,
+        speed_position: u8,
+        sound_label: String,
+    ) {
+        self.game_speed_caption = speed_caption;
+        self.game_speed_names = speed_names;
+        self.game_speed_position = if speed_position > LauncherTrackbarId::GameSpeed.maximum() {
+            0
+        } else {
+            speed_position
+        };
+        self.in_game_sound_label = sound_label;
+    }
+
     pub(crate) fn trackbar_position(&self, id: LauncherTrackbarId) -> u8 {
         match id {
+            LauncherTrackbarId::GameSpeed => self.game_speed_position,
             LauncherTrackbarId::Detail => self.values.detail_position,
             LauncherTrackbarId::Difficulty => self.values.difficulty_position,
             LauncherTrackbarId::Scroll => self.values.scroll_position,
@@ -1185,6 +1251,7 @@ impl OptionsDialogState {
             return;
         }
         let slot = match id {
+            LauncherTrackbarId::GameSpeed => &mut self.game_speed_position,
             LauncherTrackbarId::Detail => &mut self.values.detail_position,
             LauncherTrackbarId::Difficulty => &mut self.values.difficulty_position,
             LauncherTrackbarId::Scroll => &mut self.values.scroll_position,
@@ -1210,6 +1277,12 @@ impl OptionsDialogState {
             }
             LauncherTrackbarId::Scroll => {
                 self.scroll_caption = self.labels.scroll_tokens[usize::from(position)].clone();
+                self.pending_events
+                    .push(LauncherOptionsEvent::Cue(LauncherCue::GenericClick));
+            }
+            // 61E609..61E6DD: a changed position plays the cue. The speed
+            // itself applies when the menu closes.
+            LauncherTrackbarId::GameSpeed => {
                 self.pending_events
                     .push(LauncherOptionsEvent::Cue(LauncherCue::GenericClick));
             }
@@ -1304,6 +1377,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::OriginalShape => &mut self.values.original_shape,
             LauncherCheckboxId::YrOriginalStyle => &mut self.values.yr_original_style,
             LauncherCheckboxId::ShiftQueue => &mut self.values.shift_queue,
+            LauncherCheckboxId::AutoRepair => &mut self.values.auto_repair,
             LauncherCheckboxId::TerrainDeformation => &mut self.values.terrain_deformation,
             LauncherCheckboxId::MouseWheelZoom => &mut self.values.mouse_wheel_zoom,
             LauncherCheckboxId::RightClickOrders => &mut self.values.right_click_orders,
@@ -1338,6 +1412,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::ShiftQueue => self
                 .pending_events
                 .push(LauncherOptionsEvent::ShiftQueueChanged(checked)),
+            LauncherCheckboxId::AutoRepair => self
+                .pending_events
+                .push(LauncherOptionsEvent::AutoRepairChanged(checked)),
             LauncherCheckboxId::TerrainDeformation => self
                 .pending_events
                 .push(LauncherOptionsEvent::TerrainDeformationChanged(checked)),
@@ -1592,6 +1669,7 @@ impl Category {
                 Setting::Checkbox(Check::TargetLines),
                 Setting::Checkbox(Check::ShowHidden),
                 Setting::Checkbox(Check::ShiftQueue),
+                Setting::Checkbox(Check::AutoRepair),
                 Setting::Checkbox(Check::TerrainDeformation),
                 Setting::Checkbox(Check::CustomEndGameBanner),
                 Setting::Checkbox(Check::CustomEndGameScore),
@@ -1655,6 +1733,62 @@ impl Category {
             Self::Controls => "VERA:ControlsPageHelp",
             Self::Developer if HAS_CHECK_FOR_UPDATES => "VERA:DeveloperPageHelp",
             Self::Developer => "VERA:DeveloperPageHelpBrowser",
+        }
+    }
+
+    /// The category's page on the in-game menu: what a running match can use
+    /// of all the main menu's categories. Controls is the page the menu opens
+    /// on, under the template's own Game Controls button: the settings of
+    /// gamemd's Game Controls (`0xBBB`) with the three volumes of its Sound
+    /// child, so the ones a player reaches for mid-match are one Escape away.
+    /// Game Options and Display Options have a tab each.
+    pub(crate) const fn in_game_settings(self) -> &'static [Setting] {
+        use LauncherCheckboxId as Check;
+        use LauncherComboId as List;
+        use LauncherTrackbarId as Slider;
+        match self {
+            Self::Gameplay => &[
+                Setting::Slider(Slider::Detail),
+                Setting::List(List::HealthBars),
+                Setting::Checkbox(Check::RightClickOrders),
+                Setting::Checkbox(Check::ShiftQueue),
+                Setting::Checkbox(Check::AutoRepair),
+                Setting::Checkbox(Check::MouseWheelZoom),
+                Setting::Checkbox(Check::LockCursor),
+            ],
+            Self::Display => &[
+                Setting::List(List::Zoom),
+                Setting::List(List::Display),
+                Setting::List(List::Sidebar),
+                Setting::List(List::ColorVision),
+                Setting::List(List::Language),
+                Setting::Checkbox(Check::FullScreen),
+                Setting::Checkbox(Check::OriginalShape),
+                Setting::Checkbox(Check::YrOriginalStyle),
+                Setting::Checkbox(Check::HdRadar),
+                Setting::Checkbox(Check::SmoothSidebar),
+                Setting::Checkbox(Check::PerformanceStats),
+            ],
+            Self::Controls => &[
+                Setting::Slider(Slider::GameSpeed),
+                Setting::Slider(Slider::Scroll),
+                Setting::Slider(Slider::Score),
+                Setting::Slider(Slider::Sound),
+                Setting::Slider(Slider::Voice),
+                Setting::Checkbox(Check::TargetLines),
+                Setting::Checkbox(Check::ShowHidden),
+                Setting::Checkbox(Check::Tooltips),
+            ],
+            _ => &[],
+        }
+    }
+
+    /// [`Self::help`] for the page's tab on the in-game menu.
+    pub(crate) const fn in_game_help(self) -> &'static str {
+        match self {
+            Self::Gameplay => "VERA:InGameGameplayHelp",
+            Self::Display => "VERA:InGameDisplayHelp",
+            _ => self.help(),
         }
     }
 }
@@ -2273,6 +2407,7 @@ mod tests {
                 Check::SmoothOnlineMenus,
                 Check::HdMapPreviews,
                 Check::ShiftQueue,
+                Check::AutoRepair,
                 Check::TerrainDeformation,
                 Check::PerformanceStats,
                 Check::ShowStringKeys,

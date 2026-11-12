@@ -271,6 +271,31 @@ fn request_and_ramp_match_original_speed_update() {
     assert_eq!(rows, 336);
 }
 
+/// `HoverAcceleration=0` and `HoverBrake=0` divide to infinity in gamemd
+/// (0x0051617F, 0x005161B7), which its compares turn into the target speed
+/// and a full stop.
+#[test]
+fn zero_hover_time_keys_reach_the_target_at_once() {
+    let rows = vectors();
+    let row = rows
+        .iter()
+        .find(|row| row["input"]["kind"] == "speed")
+        .unwrap();
+    let mut rules = oracle_rules(row["input"]["rules"].as_str().unwrap());
+    rules.general.hover_acceleration = NativeF64Bits::from_bits(0);
+    rules.general.hover_brake = NativeF64Bits::from_bits(0);
+    let mut hover = HoverRuntime {
+        speed_request: NativeF64Bits::ONE,
+        speed_mult: NativeF64Bits::ONE,
+        ..HoverRuntime::default()
+    };
+    hover.ramp_speed(true, &rules);
+    assert_eq!(hover.speed_current, NativeF64Bits::ONE);
+    hover.speed_request = NativeF64Bits::from_bits(0);
+    hover.ramp_speed(true, &rules);
+    assert_eq!(hover.speed_current, NativeF64Bits::from_bits(0));
+}
+
 /// The altitude controller: SetHeight's argument and the spring offset. The
 /// climbing test's answer is the original run's (0x00513DC8 compare); the
 /// ground-ahead lookup that feeds it (`hover_altitude`) is not compared.

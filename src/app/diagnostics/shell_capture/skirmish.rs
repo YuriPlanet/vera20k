@@ -501,7 +501,7 @@ impl SkirmishCapture {
         wanted: impl Fn(&crate::rules::object_type::ObjectType) -> bool,
     ) -> Option<u64> {
         let owner = crate::app::input::commands::preferred_local_owner_name(state)?;
-        let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+        let sim = &state.match_state.sim_runtime.runtime()?.simulation;
         let rules = state.rules()?;
         sim.entities()
             .values_sorted()
@@ -756,8 +756,7 @@ impl SkirmishCapture {
     fn add_second_ai(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         use crate::ui::skirmish_shell::{SkirmishAiRowType, SkirmishComboId, SkirmishComboItem};
         let id = SkirmishComboId::AiType(1);
-        let layout =
-            crate::ui::skirmish_shell::compute_layout(state.render_width(), state.render_height());
+        let layout = crate::app::frontend::shell_layout::skirmish_layout(state);
         let face = crate::ui::skirmish_shell::combo_rect(
             &layout,
             &state.frontend.skirmish_shell_state,
@@ -812,8 +811,7 @@ impl SkirmishCapture {
     /// The route checks the box through the production click.
     fn check_short_game(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         use crate::ui::skirmish_shell::SkirmishCheckboxId;
-        let layout =
-            crate::ui::skirmish_shell::compute_layout(state.render_width(), state.render_height());
+        let layout = crate::app::frontend::shell_layout::skirmish_layout(state);
         let rect = layout
             .checkboxes
             .iter()

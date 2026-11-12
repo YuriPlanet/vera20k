@@ -129,18 +129,23 @@ impl GunnerTurrets {
 
     #[cfg(feature = "ares")]
     fn read_ares_mapping(&mut self, section: &IniSection, weapon_count: i32) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let count = usize::try_from(weapon_count).unwrap_or(0);
         self.extra_turrets
             .resize(count.saturating_sub(WEAPON_SLOT_COUNT), -1);
         self.ui_names.resize(count, None);
         //1003FE80..1003FF20: named aliases precede numbered overrides.
         // Negative weapon/turret values are skipped, never charge-byte writes.
+        // The stock IFV keys (the stock read above), re-parsed.
         for (index_key, weapon_key, default_index) in IFV_TURRET_READS {
-            let weapon = section.read_ares_int(weapon_key, -1);
+            let weapon =
+                crate::rules::ares_switch::not_ares_read(|| section.read_ares_int(weapon_key, -1));
             if weapon < 0 {
                 continue;
             }
-            let turret = section.read_ares_int(index_key, default_index);
+            let turret = crate::rules::ares_switch::not_ares_read(|| {
+                section.read_ares_int(index_key, default_index)
+            });
             if turret >= 0 {
                 self.set_turret(weapon as usize, turret);
             }

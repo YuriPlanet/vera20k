@@ -198,8 +198,8 @@ fn crate_land_type(sim: &Simulation, cell: (i16, i16)) -> u8 {
 /// `VocClass::PlayAt @ 0x007509E0` of one configured crate sound at the
 /// crate centre. Every arm but Reveal plays it only when `HouseClass::
 /// IsControlledByCurrentPlayer @ 0x0050B6F0` admits the actor's house
-/// (`heard_by`): the sim cannot see the local player, so the event carries
-/// the house and the app applies that test. Reveal (`0x0048202D..0x0048203C`)
+/// (`heard_by`): the event carries the collecting house and the app applies
+/// the shared control predicate. Reveal (`0x0048202D..0x0048203C`)
 /// plays it for everyone.
 fn play_crate_sound(
     sound_events: &mut FrameChannel<SimSoundEvent>,
@@ -300,14 +300,14 @@ pub(crate) fn multiplayer_eligible_slot(
             actor.foot_speed.crate_multiplier() == NativeF64Bits::ONE
                 // Ares Speed1@1005F9D0 returns481D52 directly after its
                 // Ext+90 check, bypassing the stock Aircraft(+2C==2) gate.
-                && (crate::rules::ARES_ENABLED || actor.category() != EntityCategory::Aircraft)
+                && (rules.ares() || actor.category() != EntityCategory::Aircraft)
         }
         // `0x00481D0B`: an actor already boosted, or unarmed (`Is_Armed`).
         POWERUP_FIREPOWER => {
             actor.crate_multipliers.crate_firepower() == NativeF64Bits::ONE
                 // Installed Firepower1@1005F940 returns481D52 directly,
                 //bypassing stock Is_Armed just as Speed1 bypasses Aircraft.
-                && (crate::rules::ARES_ENABLED || object.is_some_and(|object| {
+                && (rules.ares() || object.is_some_and(|object| {
                     crate::sim::combat::combat_weapon::is_armed(actor, object, &sim.substrate.entities, rules, &sim.interner)
                 }))
         }
@@ -545,11 +545,19 @@ pub(crate) fn pickup_crate(
                     selection.solo_money,
                     magnitude,
                 );
-                // `0x004824B0..0x004824D4`: in game mode 0 a player-controlled
-                // actor pays `PlayerPtr`; the sim cannot see that house and
-                // pays the actor's owner. Identical whenever the controlled
-                // house is the player's own, the campaign norm.
-                crate::sim::credit_income::add_credits(&mut sim.houses, owner, amount);
+                // PickupCrate4824A7..4824D4: every Money dispatch pays
+                // PlayerPtr in mode0 when IsHumanPlayer50B6F0 admits the
+                // collector, including the random and Unit-fallback routes.
+                // Mode 0 is the campaign alone, so no network peer asks.
+                let recipient =
+                    if !sim.session.game_mode_nonzero() && sim.house_is_human_player(owner) {
+                        sim.session.current_house()
+                    } else {
+                        Some(owner)
+                    };
+                if let Some(recipient) = recipient {
+                    crate::sim::credit_income::add_credits(&mut sim.houses, recipient, amount);
+                }
                 // 4824EF..482529 samples retained ESI after amount/credits;
                 // the independent 483307..483334 animation query follows sound.
                 let center = crate_center(sim, cell, receiver);

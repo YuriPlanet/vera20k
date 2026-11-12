@@ -425,6 +425,7 @@ impl IniSection {
         current: i32,
         find: impl Fn(&str) -> Option<i32>,
     ) -> i32 {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.read_ares_found_index(key, current, find)
     }
 
@@ -440,6 +441,7 @@ impl IniSection {
         current: i32,
         find: impl Fn(&str) -> Option<i32>,
     ) -> i32 {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.read_ares_found_index(key, current, find)
     }
 
@@ -450,6 +452,7 @@ impl IniSection {
         current: i32,
         find: impl Fn(&str) -> Option<i32>,
     ) -> i32 {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let Some(name) = self.read_name(key, 2048) else {
             return current;
         };
@@ -500,7 +503,7 @@ impl IniSection {
                 .iter()
                 .fold(default, |current, raw| apply(current, raw))
         } else {
-            match self.get(key) {
+            match self.value(key) {
                 Some(raw) => apply(default, raw),
                 None => default,
             }
@@ -530,6 +533,7 @@ impl IniSection {
     /// Scanner overflow keeps VERA's deterministic low-32-bit convention;
     /// out-of-range Ares CRT behavior is not claimed equivalent.
     pub fn read_ares_int(&self, key: &str, default: i32) -> i32 {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.read_string_with(key, 2048, default, |current, value| {
             parse_ares_int(value).unwrap_or(current)
         })
@@ -540,6 +544,7 @@ impl IniSection {
     /// Valueable<int> read succeeds. Absent, empty and invalid input keep the
     /// previous value and presence.
     pub fn read_ares_nullable_int(&self, key: &str, current: Option<i32>) -> Option<i32> {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.read_string_with(key, 2048, current, |previous, value| {
             parse_ares_int(value).or(previous)
         })
@@ -553,6 +558,7 @@ impl IniSection {
     /// second slot at its previous value and marks the pair single. A zero-token
     /// scan writes neither slot and leaves the count, so the whole pair retains.
     pub fn read_ares_partial_int_pair(&self, key: &str, current: PartialIntPair) -> PartialIntPair {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.read_string_with(key, 2048, current, |previous, value| {
             let mut fields = [previous.low, previous.high];
             let values = scan_partial_int_fields(value, &mut fields);
@@ -573,6 +579,7 @@ impl IniSection {
     /// the prior coordinate for that malformed-input boundary in Rust.
     #[cfg(feature = "ares")]
     pub(crate) fn read_ares_coord3(&self, key: &str, current: [i32; 3]) -> [i32; 3] {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.read_string_with(key, 2048, current, |previous, value| {
             parse_ares_coord3(value).unwrap_or(previous)
         })
@@ -588,6 +595,7 @@ impl IniSection {
         key: &str,
         current: Option<[i32; 3]>,
     ) -> Option<[i32; 3]> {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.read_string_with(key, 2048, current, |previous, value| {
             parse_ares_coord3(value).or(previous)
         })
@@ -598,6 +606,7 @@ impl IniSection {
     /// 31 bytes; absent or empty keeps it.
     #[cfg(feature = "ares")]
     pub(crate) fn read_ares_csf_label(&self, key: &str, current: &str) -> String {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.read_string_with(key, 2048, current.to_owned(), |_, name| {
             truncate_native_bytes(name, 31).to_owned()
         })
@@ -613,6 +622,7 @@ impl IniSection {
         key: &str,
         current: Option<[u8; 3]>,
     ) -> Option<[u8; 3]> {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.read_string_with(key, 2048, current, |previous, value| {
             parse_ares_color(value).or(previous)
         })
@@ -625,6 +635,7 @@ impl IniSection {
     /// only over the tokens that parsed. An absent key keeps the caller's list;
     /// a present one replaces it, even with no usable token.
     pub fn read_ares_int_list(&self, key: &str) -> Option<Vec<i32>> {
+        let _ares = crate::rules::ares_switch::ares_reads();
         Some(
             self.read_list(key, 2048)?
                 .iter()
@@ -638,6 +649,7 @@ impl IniSection {
     /// unsuccessful scan retains the old field; a percent anywhere scales it.
     /// The shared scanner/percent kernel also serves the stock reader.
     pub fn read_ares_double_bits(&self, key: &str, default: NativeF64Bits) -> NativeF64Bits {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.read_string_with(key, 2048, default, |current, value| {
             parse_ares_double_bits(value).unwrap_or(current)
         })
@@ -648,6 +660,7 @@ impl IniSection {
     /// `Game::F2I(cells * 256.0)`. A failed read keeps the current leptons.
     #[cfg(feature = "ares")]
     pub fn read_ares_leptons(&self, key: &str, current: i32) -> i32 {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.read_string_with(key, 2048, current, |current, value| {
             parse_ares_double_bits(value).map_or(current, |cells| {
                 crate::util::native_x87::X87Chop53::ftol_f64_low_masked(
@@ -662,6 +675,7 @@ impl IniSection {
     /// only a successful parse sets the value and its presence.
     #[cfg(feature = "ares")]
     pub fn read_ares_nullable_leptons(&self, key: &str, current: Option<i32>) -> Option<i32> {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.read_string_with(key, 2048, current, |current, value| {
             parse_ares_double_bits(value)
                 .map(|cells| {
@@ -678,6 +692,7 @@ impl IniSection {
     /// [`Self::read_ares_double_bits`], stored to the float field (`FSTP
     /// dword`). An unsuccessful scan retains the old field.
     pub fn read_ares_float_bits(&self, key: &str, default: NativeF32Bits) -> NativeF32Bits {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.read_string_with(key, 2048, default, |current, value| {
             parse_ares_double_bits(value).map_or(current, |number| {
                 MaskedX87Chop53::store_f32_masked_chop(MaskedX87Chop53::load_f64(number))
@@ -693,6 +708,7 @@ impl IniSection {
         key: &str,
         current: Option<NativeF64Bits>,
     ) -> Option<NativeF64Bits> {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.read_string_with(key, 2048, current, |current, value| {
             parse_ares_double_bits(value).or(current)
         })
@@ -701,6 +717,7 @@ impl IniSection {
     /// Ares TechnoType EMP.Threshold: inair, int TryParse, then a boolean
     /// scratch initialized false. Missing/empty keeps the current field.
     pub fn read_ares_emp_threshold(&self, key: &str, default: i32) -> i32 {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.read_string_with(key, 2048, default, |_, value| {
             if value.eq_ignore_ascii_case("inair") {
                 -1
@@ -733,6 +750,7 @@ impl IniSection {
     /// Ares3.0 1000EBF0 -> 1000FC50 -> 10007860 -> 10076CC0;
     /// tools/spatial_oracle/no_manual_fire.json records executed controls.
     pub fn read_ares_bool(&self, key: &str, default: bool) -> bool {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.read_string_with(key, 2048, default, parse_read_bool)
     }
 
@@ -740,6 +758,7 @@ impl IniSection {
     /// presence; absent, empty and invalid reads retain the previous pair.
     /// `none` parses as false, whereas `<none>` is invalid, not an unset token.
     pub fn read_ares_nullable_bool(&self, key: &str, default: Option<bool>) -> Option<bool> {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.read_string_with(key, 2048, default, |current, raw| {
             read_bool_decision(raw).or(current)
         })
@@ -963,7 +982,7 @@ impl IniSection {
             return String::new();
         };
         strtrim_ascii(truncate_native_bytes(
-            self.get(key).unwrap_or(default),
+            self.value(key).unwrap_or(default),
             payload,
         ))
         .to_string()
@@ -983,7 +1002,7 @@ impl IniSection {
                 .rev()
                 .map(String::as_str)
                 .find(|raw| copy(raw))?,
-            None => self.get(key).filter(|raw| copy(raw))?,
+            None => self.value(key).filter(|raw| copy(raw))?,
         };
         Some(strtrim_ascii(truncate_native_bytes(raw, payload)))
     }
@@ -1003,6 +1022,7 @@ impl IniSection {
     /// Original reader controls: tools/sidebar_oracle/pcx_cameos.json.
     #[cfg(feature = "ares")]
     pub(crate) fn read_ares_pcx_filename(&self, key: &str) -> Option<String> {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.read_name(key, 0x800)
             .map(|name| truncate_native_bytes(name, 0x1f).to_ascii_lowercase())
     }
@@ -1042,7 +1062,7 @@ impl IniSection {
         default: u32,
         mut find_house: impl FnMut(&str) -> Option<usize>,
     ) -> u32 {
-        let capacity = if crate::rules::ARES_ENABLED {
+        let capacity = if crate::rules::ARES_BUILD {
             0x800
         } else {
             0x80
@@ -1446,7 +1466,7 @@ impl IniSection {
     pub fn read_comma_hex_utf16(&self, key: &str, default: &[u16], max_units: usize) -> Vec<u16> {
         let name: Vec<u8> = self.name.chars().map(|character| character as u8).collect();
         read_comma_hex_utf16(
-            self.get(key),
+            self.value(key),
             default,
             max_units,
             crate::assets::mix_hash::crc_engine(&name),
@@ -2360,7 +2380,7 @@ mod tests {
 
     #[test]
     fn read_houses_list_matches_native_exact_lookup_and_default_controls() {
-        let native = crate::test_fixture::json(if crate::rules::ARES_ENABLED {
+        let native = crate::test_fixture::json(if crate::rules::ARES_BUILD {
             "tools/input_oracle/ares_allies_reader.json"
         } else {
             "tools/input_oracle/campaign_start_houses.json"
@@ -2393,7 +2413,7 @@ mod tests {
     #[test]
     fn read_houses_list_matches_extended_native_buffer_controls() {
         let native = crate::test_fixture::json("tools/input_oracle/ares_allies_reader.json");
-        let feature = if crate::rules::ARES_ENABLED {
+        let feature = if crate::rules::ARES_BUILD {
             "ares"
         } else {
             "stock"

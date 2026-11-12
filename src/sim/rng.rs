@@ -5,7 +5,9 @@
 //! inclusive sorted ranged draws, and rejection sampling.
 
 use std::hash::{Hash, Hasher};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use crate::util::sync::Mutex;
 
 use crate::rng_continuation::MapGenRngContinuation;
 use crate::util::native_random;
@@ -124,6 +126,16 @@ pub struct SimRng {
 #[derive(Debug)]
 pub struct MainRng {
     state: Arc<Mutex<SimRng>>,
+}
+
+/// A copy shares the one process cell, as every Main owner does: the
+/// presentation frame of a world draws the same cursor as the world.
+impl Clone for MainRng {
+    fn clone(&self) -> Self {
+        Self {
+            state: Arc::clone(&self.state),
+        }
+    }
 }
 
 impl MainRng {
@@ -586,6 +598,8 @@ impl SimRng {
     /// the cursor a variable amount and desyncs every later consumer that tick.
     /// Returns 0 for `n == 0` (the original would divide-by-zero here; callers
     /// guard with `.max(1)`, so this branch never fires on stock systems).
+    /// A raw `i32::MIN` over `n == u32::MAX` (a divisor of -1, as `MaxEC=-1`
+    /// gives) overflows gamemd's IDIV; this returns the true remainder, 0.
     ///
     /// RESIDUAL: Gas drift (`0x0062BDD3..0x0062BE05`) and the Spark burst
     /// size (`0x0062E8C2..0x0062E8CC`) take the absolute value first
@@ -596,7 +610,9 @@ impl SimRng {
         if n == 0 {
             return 0;
         }
-        ((self.next_u32() as i32) % n as i32).unsigned_abs()
+        (self.next_u32() as i32)
+            .wrapping_rem(n as i32)
+            .unsigned_abs()
     }
 
     /// Raw signed remainder draw: `(next_u32() as i32) % n`, one draw, may be
@@ -606,12 +622,13 @@ impl SimRng {
     /// no absolute value): a negative remainder yields a negative offset, so the
     /// output spans `-(n-1)..=n-1`. Same single-draw cursor advance as
     /// `next_raw_abs_modulo`; the only difference is the sign is preserved.
-    /// Returns 0 for `n == 0`.
+    /// Returns 0 for `n == 0`, and the true remainder 0 where gamemd's IDIV
+    /// overflows (a raw `i32::MIN` over a divisor of -1).
     pub fn next_raw_modulo_signed(&mut self, n: u32) -> i32 {
         if n == 0 {
             return 0;
         }
-        (self.next_u32() as i32) % n as i32
+        (self.next_u32() as i32).wrapping_rem(n as i32)
     }
 
     /// `Randomizer::RandomDouble` (YRpp `Helpers/Randomizer.h`):
@@ -837,6 +854,25 @@ mod tests {
         let mut reference = SimRng::new(1);
         reference.next_u32();
         assert_eq!(a.state(), reference.state());
+    }
+
+    /// A raw `i32::MIN` over a divisor of -1 (`MaxEC=-1`) overflows gamemd's
+    /// IDIV; both helpers return the true remainder, 0, after their one draw.
+    #[test]
+    fn raw_modulo_of_min_by_minus_one_is_zero() {
+        for signed in [false, true] {
+            let mut rng = SimRng::new(1);
+            let (a, b) = (rng.index_a as usize, rng.index_b as usize);
+            rng.state[a] = rng.state[b] ^ 0x8000_0000;
+            let mut twin = rng.clone();
+            if signed {
+                assert_eq!(rng.next_raw_modulo_signed(u32::MAX), 0);
+            } else {
+                assert_eq!(rng.next_raw_abs_modulo(u32::MAX), 0);
+            }
+            assert_eq!(twin.next_u32(), 0x8000_0000);
+            assert_eq!(rng.state(), twin.state());
+        }
     }
 
     #[test]

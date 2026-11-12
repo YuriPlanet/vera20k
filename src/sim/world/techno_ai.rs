@@ -50,6 +50,7 @@ use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::game_entity::GameEntity;
 use crate::sim::houses::Houses;
 use crate::sim::intern::StringInterner;
 use crate::sim::mission::MissionType;
@@ -732,12 +733,32 @@ impl Simulation {
             // Temporal, the tube test and FootClass::AI: a draining Floating
             // Disc re-checks the building under it every 16th frame and drops
             // the link when it has drifted off, then removes a ray left with
-            // no link.
-            crate::sim::credit_income::drain_unit_ai_step(self, id, rules);
+            // no link. A quiet unit drains nothing (`world::quiet_units`).
+            if !self.quiet(id) {
+                crate::sim::credit_income::drain_unit_ai_step(self, id, rules);
+            }
         }
         let Some(entity) = self.substrate.entities.get(id) else {
             return ObjectAiOutcome::default();
         };
+        // A member past its UnInit (`+0x90` clear) that Logic still holds: a
+        // rider killed inside an open-topped transport stays in the vector
+        // until its destructor (`0x005F3D75`). `FootClass::AI @ 0x004DA530`
+        // returns at its IsAlive test (`0x004DA53E`), as do the class bodies
+        // after it (`0x0051BCA4`, `0x007365BB`, `0x00414DA8`).
+        // Residual: `TechnoClass::AI @ 0x006F9E50` runs for it first, up to
+        // its IsAlive test at `0x006FA735` (`0x006FA23C` for a voxel body):
+        // the target-validity drops, the `+0xC4` counter, MissionClass::AI's
+        // sound block, the Slave and Capture manager updates, and the passive
+        // scan, which for a rider on Guard with its scan timer due writes
+        // that timer and draws from the Scenario RNG (`0x00709820`). VERA
+        // runs none of them. Trigger: a transport dies ahead of its rider's
+        // Logic slot with that timer due; effect: the Scenario stream differs
+        // from gamemd's by those draws, every other write lands on an object
+        // freed at this frame's drain; rare; VERA peers stay in step.
+        if !entity.lifecycle.object_alive() {
+            return outcome;
+        }
         // An infantry corpse is no dying object: it keeps IsAlive at Health 0
         // and takes the ordinary visit below (`world::infantry_death`).
         if entity.death.is_dying() {
@@ -766,10 +787,12 @@ impl Simulation {
         // leaf runs later in this same LogicVector slot (the world host owns
         // the mutable movement substrates), so this visit must contribute no
         // mission-counter, queued-mission, cadence, or passive-target work.
+        // A quiet unit holds no tube (`world::quiet_units`).
         if matches!(
             entity.category(),
             EntityCategory::Unit | EntityCategory::Infantry
-        ) && entity.low_bridge_tube_state.is_some()
+        ) && !self.quiet(id)
+            && entity.low_bridge_tube_state.is_some()
         {
             return outcome;
         }
@@ -843,12 +866,12 @@ impl crate::sim::world::ObjectSubstrate {
     /// using the resulting native Mission+AC, including when an order interrupts
     /// Attack. It neither reads nor clears the separate readiness latch+6D2.
     fn aircraft_ammo_after_commence(&mut self, id: u64) {
-        let Some(entity) = self.entities.get_mut(id) else {
-            return;
-        };
-        if entity.category() == EntityCategory::Aircraft
-            && entity.mission.current().raw() != 1
-            && let Some(ammo) = entity.ammo_mut()
+        if let Some(ammo) = self
+            .entities
+            .get_mut_if(id, |entity| {
+                entity.category() == EntityCategory::Aircraft && entity.mission.current().raw() != 1
+            })
+            .and_then(GameEntity::ammo_mut)
         {
             ammo.consume_release(false);
         }
@@ -893,8 +916,9 @@ fn techno_ai_shell(
         sim.update_building_damage_fire(id, rules);
         turret_rotate_sample = sim.sample_building_turret_rotation(id, rules);
     }
-    let temporal_frozen =
-        sim.temporal_ai_prologue(id, rules, ctx, &mut outcome.bridge_state_changed);
+    // A quiet unit is neither warped nor warping (`world::quiet_units`).
+    let temporal_frozen = !sim.quiet(id)
+        && sim.temporal_ai_prologue(id, rules, ctx, &mut outcome.bridge_state_changed);
     // Phobos `ShieldClass::AI_Temporal` pauses recovery during the Temporal
     // prologue; frozen leaves never reach the normal `ShieldClass::AI` at
     // `TechnoClass_AI @ 0x6F9E50+0x5`. The shield owner handles that paused
@@ -907,7 +931,10 @@ fn techno_ai_shell(
     // Unit7363C9..7363DE precedes Hunt/Ready/Foot AI, after the existing
     // Tube, death and Temporal entry gates. Limboed Units have no Logic visit.
     if category == EntityCategory::Unit
-        && let Some(entity) = sim.substrate.entities.get_mut(id)
+        && let Some(entity) = sim
+            .substrate
+            .entities
+            .get_mut_if(id, |entity| entity.unit_firing_counter.counting())
     {
         crate::sim::animation::tick_unit_firing_counter(entity);
     }
@@ -937,10 +964,15 @@ fn techno_ai_shell(
     // Techno6F9F6E..9F precedes veterancy promotion, missions and acquisition for every
     // Techno category. object_ai_visit_one excludes the entry-active Tube leaf
     // before this common owner. Actual health and this retained estimate differ.
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+    let frame = sim.session.binary_frame();
+    if let Some(entity) = sim.substrate.entities.get_mut_if(id, |entity| {
         entity
             .estimated_health
-            .recover(entity.health.current(), sim.session.binary_frame());
+            .recovers(entity.health.current(), frame)
+    }) {
+        entity
+            .estimated_health
+            .recover(entity.health.current(), frame);
     }
     match category {
         EntityCategory::Unit => {
@@ -1274,7 +1306,10 @@ fn veterancy_promotion_step(
     id: u64,
     rules: &RuleSet,
 ) {
-    let Some(entity) = substrate.entities.get_mut(id) else {
+    let Some(entity) = substrate
+        .entities
+        .get_mut_if(id, |entity| entity.veterancy.rank_changed())
+    else {
         return;
     };
     let Some(promotion) = entity
@@ -1429,13 +1464,10 @@ fn house_heal_arm(
         rules.general.self_heal_unit_frames
     };
     // Original6FA7EE/6FA8E2 divides before testing the House count. Missing
-    // keys retain constructor1000; an explicitly invalid IDIV is a fault,
-    // including period0 with no grant and signed MIN/-1 overflow.
+    // keys retain constructor1000. gamemd traps there on an authored period0
+    // (and signed MIN/-1); VERA carries on: such a period is never due.
     let frame = session.binary_frame() as i32;
-    let remainder = frame.checked_rem(interval).unwrap_or_else(|| {
-        panic!("native House self-heal IDIV fault at 006FA7EE/006FA8E2: frame={frame} period={interval}")
-    });
-    if remainder != 0 {
+    if frame.checked_rem(interval) != Some(0) {
         return;
     }
     let owner = entity.owner();
@@ -1514,15 +1546,19 @@ fn self_heal_step(
     );
     #[cfg(not(feature = "ares"))]
     let amount = {
-        let interval = crate::sim::combat::veterancy::self_heal_interval_frames(
-            rules.general.repair_rate_minutes,
-        );
-        i32::from(crate::sim::combat::veterancy::self_heal_eligible(
-            entity,
-            object,
-            session.binary_frame(),
-            interval,
-        ))
+        use crate::sim::combat::veterancy;
+        // The period is an x87 conversion of a rules value, so only an
+        // object past the virtual's ability gate, which answers false
+        // without it, works it out (VERA-only order).
+        i32::from(
+            veterancy::holds_self_heal(entity, object)
+                && veterancy::self_heal_eligible(
+                    entity,
+                    object,
+                    session.binary_frame(),
+                    veterancy::self_heal_interval_frames(rules.general.repair_rate_minutes),
+                ),
+        )
     };
     if amount == 0 {
         return;
@@ -1650,12 +1686,14 @@ fn mission_counter_step(
     ctx: ObjectAiCtx<'_>,
     outcome: &mut ObjectAiOutcome,
 ) -> bool {
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        entity.mission.increment_ai_counter();
-    }
+    sim.substrate.entities.count_mission_ai_visit(id);
     // The sound block (`0x005F3E78..0x005F3F0C`) runs before the fall block
     // (`0x005F3F11`), so a faller its landing kills still plays its sounds.
     sim.object_ai_sounds(id, rules, ctx.effects);
+    // A quiet unit is not falling (`world::quiet_units`).
+    if sim.quiet(id) {
+        return true;
+    }
     match sim.object_ai_fall(id, rules, ctx.overlay_registry, ctx.effects) {
         Ok((landed, changed)) => {
             outcome.landed |= landed;
@@ -1788,6 +1826,9 @@ fn techno_common_steps(
     // this slot; recording final Logic membership would lose early exits.
     sim.record_unit_voice_visit(id);
     berserk_step(sim, id, rules, overlay_registry, effects);
+    // A quiet unit holds its rank, drains nothing and is not drained, does
+    // not rock, recoil or open a door (`world::quiet_units`).
+    let quiet = sim.quiet(id);
     // Techno6F9FA9 follows the voice head and precedes promotion6FA054.
     // Building Update froze this sample before Temporal and its common AI.
     if let Some(sample) = turret_rotate_sample {
@@ -1810,37 +1851,50 @@ fn techno_common_steps(
         }
     }
     #[cfg(not(feature = "ares"))]
-    veterancy_promotion_step(
-        &mut sim.interner,
-        &mut sim.substrate,
-        sim.resolved_terrain.as_ref(),
-        &mut sim.sound_events,
-        id,
-        rules,
-    );
+    if !quiet {
+        veterancy_promotion_step(
+            &mut sim.interner,
+            &mut sim.substrate,
+            sim.resolved_terrain.as_ref(),
+            &mut sim.sound_events,
+            id,
+            rules,
+        );
+    }
     // Ares TechnoClass_Update_Veterancy1004F2E0 (hook6FA054..6FA14B).
     #[cfg(feature = "ares")]
     sim.update_ares_veterancy(id, false, true, rules, effects);
-    crate::sim::credit_income::drain_common_step(sim, id, rules);
+    if !quiet {
+        crate::sim::credit_income::drain_common_step(sim, id, rules);
+    }
     // Techno6FA224..6FA244: only a valid loaded main VXL reaches
     // RockingUpdate70B570 and its immediate Alive guard. This precedes
     // locomotor Process and the Foot parasite tail; no later global update
     // may erase a parasite's direct sideways-angle write.
-    let rocking_type = sim.substrate.entities.get(id).and_then(|entity| {
-        let object = sim.interner.type_handle(entity.type_ref(), rules)?;
-        rules
-            .object_has_loaded_voxel(object)
-            .then(|| rules.object_by_handle(object))
-    });
-    if let Some(object) = rocking_type {
-        let needs_self_damage = sim.substrate.entities.get_mut(id).is_some_and(|entity| {
-            crate::sim::rocking::update(
-                entity,
-                object,
-                rules.general.fallback_coefficient,
-                sim.session.binary_frame(),
-            )
+    let rocking_type = sim
+        .substrate
+        .entities
+        .get(id)
+        .filter(|_| !quiet)
+        .and_then(|entity| {
+            let object = sim.interner.type_handle(entity.type_ref(), rules)?;
+            rules
+                .object_has_loaded_voxel(object)
+                .then(|| rules.object_by_handle(object))
         });
+    if let Some(object) = rocking_type {
+        let needs_self_damage = sim
+            .substrate
+            .entities
+            .get_mut_if(id, crate::sim::rocking::updates)
+            .is_some_and(|entity| {
+                crate::sim::rocking::update(
+                    entity,
+                    object,
+                    rules.general.fallback_coefficient,
+                    sim.session.binary_frame(),
+                )
+            });
         if needs_self_damage {
             // RockingUpdate70BC23..70BCA3 calls the actual receiver with
             // type Strength, Rules C4Warhead, ignore-defenses and arg6=false.
@@ -1867,15 +1921,28 @@ fn techno_common_steps(
     behind_indicator_step(sim, id, rules);
     allied_target_drop_step(sim, id, rules);
     illegal_target_drop_step(sim, id, rules);
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+    // Asked again: the steps since may have written the unit.
+    if !sim.quiet(id)
+        && let Some(entity) = sim
+            .substrate
+            .entities
+            .get_mut_if(id, GameEntity::voxel_recoil_moves)
+    {
         entity.update_voxel_recoil(); // Techno6FA4D1, before ChargeTurret.
     }
     charge_turret_step(&sim.interner, &sim.session, &mut sim.substrate, id, rules);
     //Techno6FA5BE..6FA5D6, before Mission AI: every Techno finishes its own
     //due Door transition here. Gate/Factory mission work observes this change
     //inside the same LogicVector visit; no global phase advances Door clocks.
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        entity.advance_door(sim.session.binary_frame());
+    // Asked again after ChargeTurret, which may write the unit.
+    let frame = sim.session.binary_frame();
+    if !sim.quiet(id)
+        && let Some(entity) = sim
+            .substrate
+            .entities
+            .get_mut_if(id, |entity| entity.door_advances(frame))
+    {
+        entity.advance_door(frame);
     }
     true
 }
@@ -1894,7 +1961,11 @@ fn berserk_step(
     overlay_registry: Option<&OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) {
-    let Some(entity) = sim.substrate.entities.get_mut(id) else {
+    let Some(entity) = sim
+        .substrate
+        .entities
+        .get_mut_if(id, |entity| entity.berserk.is_active())
+    else {
         return;
     };
     if !entity.berserk.count_down() {
@@ -1933,14 +2004,24 @@ fn iron_tint_step(
 ) {
     let frame = session.binary_frame() as i32;
     let airstrike_active = substrate.airstrike_tint_active(id);
-    if let Some(curtain) = substrate
-        .entities
-        .get_mut(id)
-        .and_then(|entity| entity.invulnerability.as_mut())
+    // A quiet unit's curtain is gone or spent (`world::quiet_units`).
+    if !substrate.entities.is_quiet(id)
+        && let Some(curtain) = substrate
+            .entities
+            .get_mut_if(id, |entity| {
+                entity
+                    .invulnerability
+                    .as_ref()
+                    .is_some_and(|curtain| curtain.updates(frame))
+            })
+            .and_then(|entity| entity.invulnerability.as_mut())
     {
         curtain.update_tint(frame, scenario_rng);
     }
-    if let Some(entity) = substrate.entities.get_mut(id) {
+    if let Some(entity) = substrate
+        .entities
+        .get_mut_if(id, |entity| entity.airstrike_tint.updates(airstrike_active))
+    {
         entity
             .airstrike_tint
             .update_tint(frame, airstrike_active, scenario_rng);
@@ -1956,13 +2037,17 @@ fn charge_turret_step(
     id: u64,
     rules: &RuleSet,
 ) {
-    let Some(entity) = substrate.entities.get_mut(id) else {
+    let Some(object) = substrate
+        .entities
+        .get(id)
+        .and_then(|entity| interner.object_type(entity.type_ref(), rules))
+        .filter(|object| GameEntity::charges_turret(object))
+    else {
         return;
     };
-    let Some(object) = interner.object_type(entity.type_ref(), rules) else {
-        return;
-    };
-    entity.update_charge_turret(session.binary_frame() as i32, object);
+    if let Some(entity) = substrate.entities.get_mut(id) {
+        entity.update_charge_turret(session.binary_frame() as i32, object);
+    }
 }
 
 /// `TechnoClass::AI_Update @ 0x006FA472..0x006FA4CB`, after the drain
@@ -2133,6 +2218,11 @@ fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
+    // The target is read before the house only to spare an object without
+    // one the house lookups; neither test writes (VERA-only order).
+    let Some(target) = entity.attack_target.target() else {
+        return;
+    };
     let house = combat_weapon::controlled_transport_house(
         &sim.substrate.entities,
         rules,
@@ -2143,9 +2233,6 @@ fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     if sim.owner_is_human(house) {
         return;
     }
-    let Some(target) = entity.attack_target.target() else {
-        return;
-    };
     let Some(obj) = sim.interner.object_type(entity.type_ref(), rules) else {
         return;
     };
@@ -2167,7 +2254,7 @@ fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     // healer (`0x006F3970(-1) < 0`) keeps an allied target and takes a
     // non-allied one, a cell included, to the drop below (0x006FA39D);
     // anything else keeps the stock test.
-    let drops = if cfg!(feature = "ares") {
+    let drops = if rules.ares() {
         allied
             != (combat_weapon::weapon_damage_value(
                 entity,
@@ -2236,20 +2323,26 @@ fn techno_after_acquisition(
     ctx: ObjectAiCtx<'_>,
     outcome: &mut ObjectAiOutcome,
 ) -> bool {
-    outcome.bridge_state_changed |=
-        sim.bomb_fuse_step(id, rules, ctx.overlay_registry, ctx.effects);
-    if let Err(error) = sim.slave_manager_ai(id, rules, ctx.overlay_registry, ctx.effects) {
-        outcome.frame_error = Some(super::FrameAdvanceError::new(
-            sim.session.tick(),
-            sim.session.binary_frame(),
-            id,
-            error.to_string(),
-        ));
-        return false;
-    }
-    sim.capture_manager_update(id, rules, ctx.overlay_registry, ctx.effects);
-    if !ai_alive(&sim.substrate, id) {
-        return false;
+    // A quiet unit carries no bomb and no manager, is at full strength and
+    // cannot cloak (`world::quiet_units`); each step below would find so.
+    // The mission and scan before may have written it: asked here.
+    let quiet = sim.quiet(id);
+    if !quiet {
+        outcome.bridge_state_changed |=
+            sim.bomb_fuse_step(id, rules, ctx.overlay_registry, ctx.effects);
+        if let Err(error) = sim.slave_manager_ai(id, rules, ctx.overlay_registry, ctx.effects) {
+            outcome.frame_error = Some(super::FrameAdvanceError::new(
+                sim.session.tick(),
+                sim.session.binary_frame(),
+                id,
+                error.to_string(),
+            ));
+            return false;
+        }
+        sim.capture_manager_update(id, rules, ctx.overlay_registry, ctx.effects);
+        if !ai_alive(&sim.substrate, id) {
+            return false;
+        }
     }
     // Ares 3.0 1004B820 (hook 0x6FA743): a crashing or sinking techno skips
     // both pulses, resuming at the cloak tick (0x6FA941).
@@ -2260,7 +2353,7 @@ fn techno_after_acquisition(
         .get(id)
         .is_some_and(|entity| !entity.crash.is_crashing() && !entity.sinking.is_active());
     #[cfg(not(feature = "ares"))]
-    let heals = true;
+    let heals = !quiet;
     if heals {
         self_heal_step(
             &sim.interner,
@@ -2280,17 +2373,25 @@ fn techno_after_acquisition(
             rules,
         );
     }
-    super::techno_ai_cloak::tick_stock_cloak_producer(
-        sim,
-        id,
-        rules,
-        ctx.overlay_registry,
-        ctx.effects,
-    );
-    // A target the Unit's later Fire_At_Target hands its manager waits
-    // until the next visit (Unit73647B/7365E1).
-    crate::sim::spawn_manager::spawn_manager_ai(sim, rules, id, ctx.overlay_registry, ctx.effects);
-    super::techno_ai_cloak::cloak_field_ai_step(sim, id, rules, ctx.overlay_registry);
+    if !quiet {
+        super::techno_ai_cloak::tick_stock_cloak_producer(
+            sim,
+            id,
+            rules,
+            ctx.overlay_registry,
+            ctx.effects,
+        );
+        // A target the Unit's later Fire_At_Target hands its manager waits
+        // until the next visit (Unit73647B/7365E1).
+        crate::sim::spawn_manager::spawn_manager_ai(
+            sim,
+            rules,
+            id,
+            ctx.overlay_registry,
+            ctx.effects,
+        );
+        super::techno_ai_cloak::cloak_field_ai_step(sim, id, rules, ctx.overlay_registry);
+    }
     healer_target_drop_step(sim, id, rules);
     true
 }
@@ -2347,11 +2448,13 @@ fn behind_indicator_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
             .is_some_and(|(rx, ry)| sim.substrate.cell_hides_objects(rx, ry))
     });
     if !hidden {
-        if let Some(anim) = sim
-            .substrate
-            .entities
-            .get_mut(id)
-            .and_then(|entity| entity.take_behind_anim())
+        // A quiet unit holds no Behind anim (`world::quiet_units`).
+        if !sim.quiet(id)
+            && let Some(anim) = sim
+                .substrate
+                .entities
+                .get_mut_if(id, |entity| entity.behind_anim().is_some())
+                .and_then(|entity| entity.take_behind_anim())
         {
             sim.destroy_anim(anim, rules);
         }
@@ -2534,10 +2637,14 @@ fn techno_common_post(sim: &mut Simulation, id: u64, rules: &RuleSet, _effects: 
     // Native6FABBC..C2 skips ONLY the generic Stage block to6FAC31; the
     //shared flash/particle/EMP tail still precedes Building's Gattling code.
     //Do not reset Stage.changed or flash twice when migrating this caller.
-    if let Some(entity) = sim.substrate.entities.get_mut(id)
-        && entity.category() != EntityCategory::Structure
+    // A quiet unit's stage clock stands still (`world::quiet_units`).
+    let now = sim.session.binary_frame() as i32;
+    if !sim.quiet(id)
+        && let Some(entity) = sim.substrate.entities.get_mut_if(id, |entity| {
+            entity.category() != EntityCategory::Structure && entity.native_stage().advances(now)
+        })
     {
-        entity.tick_native_stage(sim.session.binary_frame() as i32);
+        entity.tick_native_stage(now);
     }
     flash_step(&mut sim.substrate, id, sim.session.binary_frame());
 
@@ -2561,7 +2668,10 @@ fn flash_step(substrate: &mut ObjectSubstrate, id: u64, frame: u32) {
     if !ai_alive(substrate, id) {
         return;
     }
-    let Some(entity) = substrate.entities.get_mut(id) else {
+    let Some(entity) = substrate
+        .entities
+        .get_mut_if(id, |entity| entity.flashing.counting())
+    else {
         return;
     };
     let was_flashed = entity.flashing.flashed();
@@ -4919,7 +5029,7 @@ mod tests {
             }
             let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
             cloak.set_state_for_test(2);
-            sim.substrate.entities.get_mut(2).unwrap().cloak = Some(cloak);
+            sim.substrate.entities.get_mut(2).unwrap().cloak = Some(Box::new(cloak));
             sim.substrate
                 .entities
                 .get_mut(1)
@@ -4977,7 +5087,7 @@ mod tests {
             if cloaked {
                 let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
                 cloak.set_state_for_test(2);
-                sim.substrate.entities.get_mut(2).unwrap().cloak = Some(cloak);
+                sim.substrate.entities.get_mut(2).unwrap().cloak = Some(Box::new(cloak));
             }
             let dog = sim.substrate.entities.get_mut(1).unwrap();
             dog.attack_target.set_for_test(Some(TargetKind::Entity(2)));

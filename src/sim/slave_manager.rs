@@ -425,7 +425,11 @@ fn cell_distance(dx: i16, dy: i16) -> i32 {
 
 impl Simulation {
     fn slave_manager(&self, master: u64) -> Option<&SlaveManager> {
-        self.substrate.entities.get(master)?.slave_manager.as_ref()
+        self.substrate
+            .entities
+            .get(master)?
+            .slave_manager
+            .as_deref()
     }
 
     fn now_frame(session: &ScenarioSession) -> i32 {
@@ -487,7 +491,9 @@ impl Simulation {
         let slave_type = self.interner.intern(&slave_type.id);
         let now = Self::now_frame(&self.session);
         if let Some(parent) = self.substrate.entities.get_mut(master) {
-            parent.slave_manager = Some(SlaveManager::new(slave_type, slaves, regen, reload, now));
+            parent.slave_manager = Some(Box::new(SlaveManager::new(
+                slave_type, slaves, regen, reload, now,
+            )));
         }
     }
 
@@ -1081,7 +1087,7 @@ impl Simulation {
             crate::sim::miner::ore_scan::HarvesterKey::KickDelay,
             rules.general.slave_miner_kick_frame_delay,
         );
-        if !(crate::rules::ARES_ENABLED && delay < 0)
+        if !(rules.ares() && delay < 0)
             && delay.wrapping_add(stamp) < Self::now_frame(&self.session)
         {
             let range = crate::sim::miner::ore_scan::scan_cells(
@@ -1240,7 +1246,7 @@ impl Simulation {
         };
         let search = DeployCellSearch::new(owner_cell(owner), seed, foundation);
         let terrain = self.resolved_terrain.as_ref()?;
-        let zone = self.zone_grid.as_ref().and_then(|zones| {
+        let zone = self.zone_grid.as_deref().and_then(|zones| {
             zones.get_zone_id_native(
                 terrain,
                 (search.zone_cell.0 as u16, search.zone_cell.1 as u16),
@@ -1308,7 +1314,7 @@ impl Simulation {
             crate::sim::miner::ore_scan::HarvesterKey::KickDelay,
             rules.general.slave_miner_kick_frame_delay,
         );
-        if crate::rules::ARES_ENABLED && delay < 0
+        if rules.ares() && delay < 0
             || delay.wrapping_add(started) >= Self::now_frame(&self.session)
         {
             return Ok(None);
@@ -1788,6 +1794,7 @@ impl Simulation {
             .get_mut(master)?
             .slave_manager
             .take()
+            .map(|manager| *manager)
     }
 
     /// Ares100458F3..10045953: FreeSlaves, then100038E0 clears every node,
@@ -1825,7 +1832,7 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get_mut(master)
             && entity.slave_manager.is_none()
         {
-            entity.slave_manager = Some(manager);
+            entity.slave_manager = Some(Box::new(manager));
         }
     }
 
@@ -1946,7 +1953,10 @@ impl Simulation {
 
 impl crate::sim::world::ObjectSubstrate {
     fn slave_manager_mut(&mut self, master: u64) -> Option<&mut SlaveManager> {
-        self.entities.get_mut(master)?.slave_manager.as_mut()
+        self.entities
+            .get_mut_if(master, |entity| entity.slave_manager.is_some())?
+            .slave_manager
+            .as_deref_mut()
     }
     fn set_manager_state(&mut self, master: u64, state: ManagerState, frame: i32) {
         if let Some(manager) = self.slave_manager_mut(master) {

@@ -264,6 +264,21 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
         {
             insert(name);
         }
+        // Ares `InfDeathAnim=` replaces the death-table arm with a literal
+        // AnimClass built at the victim's cell, so it is an ordinary
+        // construction root and needs the same physical bounds. Nothing else
+        // names these animations: Mental Omega's GBION warheads set only
+        // `InfDeathAnim` (`FREEZE`, `MELTDIEE`, `PLASMDIE`) with no `InfDeath=`,
+        // and without this root the constructor refuses with
+        // `animation type [X] has no bound SHP frame count` and the kill plays
+        // no death animation at all.
+        #[cfg(feature = "ares")]
+        if let Some(name) = warhead
+            .ares_combat()
+            .and_then(|combat| combat.inf_death_anim())
+        {
+            insert(name);
+        }
     }
     // First activation10062625 may fall back through Type/General, while
     // refresh uses only the explicit Warhead pointer. Bind every configured
@@ -851,7 +866,7 @@ mod tests {
                 row["fixture"]["raw"].as_str().unwrap()
             ));
             let rules = RuleSet::from_ini(&IniFile::from_str(&source)).unwrap();
-            let expected = if crate::rules::ARES_ENABLED {
+            let expected = if crate::rules::ARES_BUILD {
                 row["result"]["reference"].as_str()
             } else {
                 None
@@ -904,7 +919,7 @@ mod tests {
         for name in names {
             assert_eq!(
                 roots.iter().any(|root| root == name),
-                crate::rules::ARES_ENABLED,
+                crate::rules::ARES_BUILD,
                 "{name}"
             );
         }
@@ -913,7 +928,7 @@ mod tests {
         rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
         let mut sim = Simulation::with_seed(17);
         for name in names {
-            let expected = crate::rules::ARES_ENABLED.then_some(6);
+            let expected = crate::rules::ARES_BUILD.then_some(6);
             assert_eq!(
                 rules
                     .art()
@@ -925,7 +940,7 @@ mod tests {
             );
             assert_eq!(
                 rules.art().scheduler_anim_types().contains(name),
-                crate::rules::ARES_ENABLED
+                crate::rules::ARES_BUILD
             );
             let type_name = sim.intern(name);
             let world = AnimWorldCoord {
@@ -944,7 +959,7 @@ mod tests {
             );
             assert_eq!(
                 spawned.is_ok(),
-                crate::rules::ARES_ENABLED,
+                crate::rules::ARES_BUILD,
                 "{name}: {spawned:?}"
             );
         }
@@ -984,7 +999,7 @@ mod tests {
                 .anim_runtime_config("PULSE")
                 .unwrap()
                 .raw_shp_frame_count,
-            crate::rules::ARES_ENABLED.then_some(6),
+            crate::rules::ARES_BUILD.then_some(6),
         );
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
         sim.intern_rule_type_ids(&rules);
@@ -1002,10 +1017,10 @@ mod tests {
             .entities()
             .get(helper)
             .is_some_and(|entity| entity.is_object_alive());
-        assert_eq!(alive, !crate::rules::ARES_ENABLED);
+        assert_eq!(alive, !crate::rules::ARES_BUILD);
         assert_eq!(
             sim.entities().get(victim).unwrap().health.current() < 1000,
-            crate::rules::ARES_ENABLED,
+            crate::rules::ARES_BUILD,
             "the self animation must reach the real death-weapon receiver",
         );
     }

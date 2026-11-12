@@ -271,7 +271,7 @@ pub(crate) fn render_game(
     let selected_building = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .is_some_and(|runtime| {
             runtime
                 .simulation
@@ -337,7 +337,7 @@ pub(crate) fn render_game(
     // the runtime directly for split borrows.
     if let Some(ref mut shroud_buf) = state.match_state.match_presentation.shroud_buffer
         && !state.match_state.sandbox_full_visibility
-        && let (Some(rt), Some(owner)) = (state.match_state.sim_runtime.as_ref(), &local_owner)
+        && let (Some(rt), Some(owner)) = (state.match_state.sim_runtime.presentation(), &local_owner)
     {
         let view = rt.view();
         let owner_id = view.interner().get(owner).unwrap_or_default();
@@ -456,7 +456,7 @@ pub(crate) fn render_game(
         );
     }
     let persistent_lights = persistent_light_start..combat_lights.len();
-    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+    if let Some(runtime) = state.match_state.sim_runtime.presentation() {
         state.renderer.combat_light_renderer.set_spotlight_radius(
             &state.renderer.gpu.queue,
             runtime.resources.rules.general.spotlight.radius,
@@ -526,7 +526,7 @@ pub(crate) fn render_game(
             state.match_state.input.cursor_y,
         )
     });
-    let sim_runtime = state.match_state.sim_runtime.as_ref();
+    let sim_runtime = state.match_state.sim_runtime.presentation();
     let simulation = sim_runtime.map(|runtime| &runtime.simulation);
     let rules = sim_runtime
         .map(|runtime| &runtime.resources.rules)
@@ -566,7 +566,7 @@ pub(crate) fn render_game(
     // once per composite; the owner reads take no Main draw, so they run
     // ahead of the borrow.
     if steps > 0
-        && let Some(runtime) = state.match_state.sim_runtime.as_ref()
+        && let Some(runtime) = state.match_state.sim_runtime.presentation()
     {
         let sim = runtime.view().simulation();
         let rules = &runtime.resources.rules;
@@ -586,13 +586,13 @@ pub(crate) fn render_game(
     // trails, even when this composite ran no Logic. Their shared process
     // Main requests happen here once; GPU uploads only read resolved colors.
     let mut main = crate::app::state::process_main_draws(
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.presentation(),
         &state.frontend.frontend_main_rng,
     );
     let sim = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|runtime| runtime.view().simulation());
     let viewer = local_owner
         .as_deref()
@@ -912,13 +912,46 @@ fn upload_to_gpu(
     // A4 in-game tooltip: built before the pool borrow (it reads &AppState);
     // fill (darken texture) + text (GAME.FNT atlas), drawn after the chat
     // overlay and before the software cursor (O10).
-    let (tooltip_fill, tooltip_border, tooltip_text) =
+    let (mut tooltip_fill, mut tooltip_border, mut tooltip_text) =
         crate::app::input::tooltips::build_tooltip_instances(state);
+    // The layout edit mode's outlines and names share the tooltip's lanes:
+    // over the whole frame, sidebar included.
+    {
+        let (fills, borders, texts) = crate::app::input::layout_edit::instances(state);
+        tooltip_fill.extend(fills);
+        tooltip_border.extend(borders);
+        tooltip_text.extend(texts);
+    }
 
     // TacticalClass::Draw's timer lines, which follow the PixelFX sparkles;
     // built before the pool borrow (they step the Supers' blinks).
-    let (super_timer_fill, super_timer_text) =
+    let (mut super_timer_fill, mut super_timer_text) =
         crate::app::presentation::super_timers::build_super_timer_instances(state);
+    // The buttons and texts the side's layout adds over the battlefield
+    // share the timers' lanes: white boxes, then text, inside its clip.
+    {
+        let theme = crate::app::presentation::sidebar_render::current_sidebar_theme(state);
+        let (boxes, texts) = crate::app::presentation::layout_parts::instances(
+            state,
+            crate::ui::added_parts::Holder::Field,
+            crate::render::sidebar_text::native_radar_outline_color(theme),
+            [
+                state.match_state.input.camera_x,
+                state.match_state.input.camera_y,
+            ],
+        );
+        super_timer_fill.extend(boxes);
+        super_timer_text.extend(texts);
+    }
+    // Their pictures come from the sidebar's atlas and zoom with the frame.
+    let layout_field_art = crate::app::presentation::layout_parts::pictures(
+        state,
+        crate::ui::added_parts::Holder::Field,
+        [
+            state.match_state.input.camera_x,
+            state.match_state.input.camera_y,
+        ],
+    );
 
     // GScreenClass_DrawText's Phobos build description, the tactical view's
     // top-right identity box; empty outside Phobos builds.
@@ -1019,6 +1052,7 @@ fn upload_to_gpu(
 
     // Residual effects keep their existing uploads and pass ownership.
     pool.upload("cell_sparkles", &world.cell_sparkles);
+    pool.upload("layout_field_art", &layout_field_art);
     pool.upload("super_timer_fill", &super_timer_fill);
     pool.upload("super_timer_text", &super_timer_text);
     pool.upload("build_text_fill", &build_text_fill);
@@ -1031,6 +1065,7 @@ fn upload_to_gpu(
         pool.upload_page("beacons", house, beacons);
     }
     pool.upload("drag", &ui.drag);
+    pool.upload("ground_marks", &ui.ground_marks);
     pool.upload("software_cursor", &software_cursor);
     pool.upload("placement", &ui.placement);
     #[cfg(feature = "phobos")]

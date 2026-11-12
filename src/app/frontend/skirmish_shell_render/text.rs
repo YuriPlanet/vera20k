@@ -704,7 +704,7 @@ pub(super) fn build_shell_text_draws(
         scale,
     );
 
-    for (slot, row, opponent) in shell.paged_opponents() {
+    for (slot, row, opponent) in shell.paged_opponents(layout.shown_rows) {
         if !player_row_visible(shell, maps, row) {
             continue;
         }
@@ -817,6 +817,7 @@ fn push_right_panel_text_draws(
     let choose = localized_label(state, "GUI:ChooseMap", "Choose Map");
     let save = tr("VERA:SaveSetup");
     let load = tr("VERA:LoadSetup");
+    let team_starts = tr("VERA:TeamStarts");
     let back = localized_label(state, "GUI:Back", "Back");
     let load_disabled = !crate::app::App::skirmish_setup_saved(state);
 
@@ -846,12 +847,21 @@ fn push_right_panel_text_draws(
             load_disabled,
         ),
         (
+            team_starts.as_str(),
+            layout.team_starts_button,
+            OwnerDrawButton::TeamStarts,
+            false,
+        ),
+        (
             back.as_str(),
             layout.back_button,
             OwnerDrawButton::Back0x5c0,
             false,
         ),
-    ] {
+    ]
+    .into_iter()
+    .filter(|(_, rect, _, _)| rect.w > 0)
+    {
         push_button_label_draw(
             shell_draws,
             state,
@@ -1040,10 +1050,46 @@ pub(super) fn push_random_map_setup_modal_text_draws(
                 RandomMapSetupControl::AdvancedToggle,
             )
         },
+        if modal.exported {
+            (
+                "VERA:RandomMapExported",
+                "Map Exported",
+                layout.export,
+                RandomMapSetupControl::ExportMap,
+            )
+        } else {
+            (
+                "VERA:RandomMapExport",
+                "Export Map",
+                layout.export,
+                RandomMapSetupControl::ExportMap,
+            )
+        },
+        if modal.options.fair_starts {
+            (
+                "VERA:RandomMapFairStartsOn",
+                "Fair Starts: On",
+                layout.fair_starts,
+                RandomMapSetupControl::FairStartsToggle,
+            )
+        } else {
+            (
+                "VERA:RandomMapFairStartsOff",
+                "Fair Starts: Off",
+                layout.fair_starts,
+                RandomMapSetupControl::FairStartsToggle,
+            )
+        },
     ]
     .into_iter()
     .filter(|(_, _, _, control)| {
-        !sliding && (*control != RandomMapSetupControl::AdvancedToggle || modal.extended)
+        let vera = matches!(
+            control,
+            RandomMapSetupControl::AdvancedToggle
+                | RandomMapSetupControl::ExportMap
+                | RandomMapSetupControl::FairStartsToggle
+        );
+        !sliding && (!vera || modal.extended)
     }) {
         push_text_draw(
             out,
@@ -1211,15 +1257,18 @@ pub(super) fn push_choose_map_modal_text_draws(
                 ChooseMapModalButton::Cancel0x5c0,
             ),
             (
-                // VERA: under Online Maps this button stars the map.
-                match modal.favorite_button(state.frontend.scenario_catalog.records()) {
-                    Some(true) => tr("VERA:RemoveFavorite"),
-                    Some(false) => tr("VERA:AddFavorite"),
-                    None if modal.online_maps_selected() => tr("VERA:AddFavorite"),
-                    None => localized_label(state, "GUI:CreateRandomMap", "Create Random Map"),
-                },
+                localized_label(state, "GUI:CreateRandomMap", "Create Random Map"),
                 layout.create_random_map_button,
                 ChooseMapModalButton::CreateRandomMap0x583,
+            ),
+            (
+                // VERA: stars the highlighted map, or takes its star away.
+                match modal.favorite_button(state.frontend.scenario_catalog.records()) {
+                    Some(true) => tr("VERA:RemoveFavorite"),
+                    _ => tr("VERA:AddFavorite"),
+                },
+                layout.favorite_button,
+                ChooseMapModalButton::Favorite,
             ),
         ] {
             let disabled = !modal.button_enabled(button);
@@ -1263,6 +1312,8 @@ pub(super) fn push_choose_map_modal_text_draws(
     {
         let label = if *mode_id == crate::ui::skirmish_shell::ONLINE_MAPS_ROW {
             tr("VERA:OnlineMaps")
+        } else if *mode_id == crate::ui::skirmish_shell::FAVORITES_ROW {
+            tr("VERA:Favorites")
         } else {
             let Some(mode) = mode_by_id(&state.frontend.skirmish_modes, *mode_id) else {
                 continue;
@@ -1303,8 +1354,9 @@ pub(super) fn push_choose_map_modal_text_draws(
                 .records()
                 .get(*record_idx)
                 .map(|record| {
-                    // Starred online maps carry a star.
-                    if modal.is_favorite(record) {
+                    // Starred maps carry a star, except under Favorites,
+                    // where every map is one.
+                    if !modal.favorites_selected() && modal.is_favorite(record) {
                         format!("* {}", record.display_name)
                     } else {
                         record.display_name.clone()
@@ -1331,13 +1383,27 @@ pub(super) fn push_choose_map_modal_text_draws(
             scale.factor(),
         );
     }
-    // VERA: an empty Online Maps list says why, wrapped down the list.
-    if modal.online_maps_selected() && modal.filtered_record_indices.is_empty() {
+    // VERA: an empty Online Maps or Favorites list says why, wrapped down
+    // the list.
+    let empty = if !modal.filtered_record_indices.is_empty() {
+        None
+    } else if modal.online_maps_selected() {
+        Some(crate::app::map_library::empty_online_maps_text(state))
+    } else if modal.favorites_selected() && modal.search.is_empty() {
+        Some(tr(if modal.favorites.is_empty() {
+            "VERA:NoFavorites"
+        } else {
+            "VERA:NoFavoritesHere"
+        }))
+    } else {
+        None
+    };
+    if let Some(empty) = empty {
         let row = geometry.row(0);
         push_text_draw(
             out,
             state,
-            &crate::app::map_library::empty_online_maps_text(state),
+            &empty,
             rect_to_text_rect(RectPx::new(
                 row.x + list_text_inset(scale),
                 row.y,
@@ -1350,33 +1416,76 @@ pub(super) fn push_choose_map_modal_text_draws(
             scale.factor(),
         );
     }
-    // VERA: the search line under the map list; typing anywhere fills it.
-    let search = if modal.search.is_empty() {
-        tr("VERA:MapSearchHint")
+    // VERA: the search box over the map list; typing anywhere fills it. An
+    // empty box says so in the label colour: the disabled red does not read
+    // over the chooser's background.
+    let field = scale.derive_rect(layout.map_search, |rect| {
+        RectPx::new(
+            rect.x + LIST_TEXT_INSET,
+            rect.y,
+            rect.w - LIST_TEXT_INSET,
+            rect.h,
+        )
+    });
+    let hint;
+    let (search, rgb) = if modal.search.is_empty() {
+        hint = tr("VERA:MapSearchHint");
+        (&*hint, SHELL_LABEL_TEXT_RGB)
     } else {
-        tr_fill("VERA:MapSearch", &[("search", &modal.search)])
+        let box_w = scale.base_rect(layout.map_search).w;
+        let (tail, _) = map_search_tail(&state.renderer.bit_font, &modal.search, box_w);
+        (tail, SHELL_LABEL_TEXT_RGB)
     };
-    let list = layout.map_list;
-    let px = |value: f32| (value * scale.factor()).round() as i32;
     push_text_draw(
         out,
         state,
-        &search,
-        rect_to_text_rect(RectPx::new(
-            list.x,
-            list.y + list.h + px(10.0),
-            list.w,
-            px(20.0),
-        )),
-        if modal.search.is_empty() {
-            SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F
-        } else {
-            SHELL_LABEL_TEXT_RGB
-        },
+        search,
+        rect_to_text_rect(field),
+        rgb,
         ShellAlign::V_CENTER,
         SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
         scale.factor(),
     );
+}
+
+/// The search caret's width, in 800x600 numbers like a NewEdit's.
+pub(super) const MAP_SEARCH_CARET_W: i32 = 2;
+
+/// The end of `search` that fits a `box_w` wide search box with the caret
+/// after it, and that text's width: a long search scrolls its start out of
+/// the box. All in 800x600 numbers.
+pub(super) fn map_search_tail<'a>(font: &BitFont, search: &'a str, box_w: i32) -> (&'a str, i32) {
+    let room = box_w - 2 * LIST_TEXT_INSET - MAP_SEARCH_CARET_W;
+    let mut tail = search;
+    loop {
+        let width = font.text_width(tail) as i32;
+        let mut chars = tail.chars();
+        if width <= room || chars.next().is_none() {
+            return (tail, width);
+        }
+        tail = chars.as_str();
+    }
+}
+
+/// Where the search caret goes: after the text, inside the box. `None`
+/// while the box is empty and shows its hint.
+pub(super) fn map_search_caret_rect(
+    font: &BitFont,
+    search: &str,
+    map_search: RectPx,
+    scale: ShellScale,
+) -> Option<RectPx> {
+    if search.is_empty() {
+        return None;
+    }
+    let base = scale.base_rect(map_search);
+    let (_, width) = map_search_tail(font, search, base.w);
+    Some(scale.scale_rect(RectPx::new(
+        base.x + LIST_TEXT_INSET + width,
+        base.y + 2,
+        MAP_SEARCH_CARET_W,
+        base.h - 4,
+    )))
 }
 
 pub(super) fn push_validation_modal_text_draws(
@@ -1953,6 +2062,25 @@ mod tests {
 
         assert_eq!(label.as_ref(), "ab");
         assert!(font.text_width(label.as_ref()) <= 14);
+    }
+
+    /// A search longer than its box keeps its end and the caret inside the
+    /// box; an empty box shows its hint and no caret.
+    #[test]
+    fn a_long_map_search_scrolls_to_keep_its_end_and_caret_in_the_box() {
+        let font = crate::render::bit_font::tests::make_test_font(&[(b'a' as u16, 6)], 4);
+        let field = RectPx::new(338, 119, 196, 17);
+        let long = "a".repeat(40);
+        // 196 less two 2 px insets and the 2 px caret leaves 190: 27 of the
+        // font's 7 px advances.
+        assert_eq!(map_search_tail(&font, &long, field.w), (&long[13..], 189));
+        let caret = map_search_caret_rect(&font, &long, field, ShellScale::RETAIL).unwrap();
+        assert_eq!(caret, RectPx::new(529, 121, 2, 13));
+        assert!(caret.x + caret.w <= field.x + field.w - LIST_TEXT_INSET);
+        assert_eq!(
+            map_search_caret_rect(&font, "", field, ShellScale::RETAIL),
+            None
+        );
     }
 
     /// A map name wider than its row (a file name with no description) used to

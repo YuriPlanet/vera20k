@@ -40,9 +40,9 @@ const FLAG_BRIDGE_BODY: u32 = 0x400;
 const OCCUPATION_INFANTRY_OR_VEHICLE: u8 = 0x3F;
 /// Overlay indices the wall arms compare (`0x0047C8B1`, `0x0047C903`):
 /// GASAND 0, GAWALL 2 and NAWALL 0x1A in the stock `[OverlayTypes]` list.
-const OVERLAY_GASAND: u8 = 0;
-const OVERLAY_GAWALL: u8 = 2;
-const OVERLAY_NAWALL: u8 = 0x1A;
+pub(crate) const OVERLAY_GASAND: u8 = 0;
+pub(crate) const OVERLAY_GAWALL: u8 = 2;
+pub(crate) const OVERLAY_NAWALL: u8 = 0x1A;
 /// The laser fence overlay a `LaserFence=` type may stand on (`0x0047C961`).
 const OVERLAY_LASER_FENCE: u8 = 0x7E;
 /// The overlay data a wall reaches once damaged (`0x0047C8D4`, `0x0047C926`):

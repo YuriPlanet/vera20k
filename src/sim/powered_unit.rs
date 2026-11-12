@@ -289,6 +289,12 @@ impl Simulation {
     /// Deselect (vt+0x150), a Foot's ILocomotion Power_Off, its type's
     /// `DeactivateSound=` where it stands unless it was already offline
     /// (`0x0070FD0E..0x0070FD5D`), and the latch (`0x0070FD62`).
+    ///
+    /// Ares replaces the body (`1004CDC0`, hook `0x70FC90`, resuming at the
+    /// return `0x70FD6E`): the same steps, but no sound while the
+    /// IKnowWhatImDoing mutex (`0xA8E7AC`, the object placement scope) is
+    /// raised, and on the transition the light goes and a Building refreshes
+    /// its factory queues (`10013250`).
     pub(crate) fn techno_deactivate(
         &mut self,
         id: u64,
@@ -323,12 +329,14 @@ impl Simulation {
                 id,
             );
         }
+        let quiet = self.ares_activation_sound_mutex(rules);
         Self::latch_deactivated(
             &self.interner,
             &mut self.substrate,
             &mut self.sound_events,
             id,
             true,
+            quiet,
             rules,
         );
         #[cfg(feature = "ares")]
@@ -339,7 +347,17 @@ impl Simulation {
                 id,
                 crate::sim::world::UninitContext::with_rules(rules).with_effects(effects),
             );
+            // Then a Building's factory queues (`10013250`): an offline
+            // factory no longer serves its production.
+            self.ares_update_factory_queues(id, rules, effects);
         }
+    }
+
+    /// Ares Activate `1004CCB0` and Deactivate `1004CDC0` play the type's
+    /// sound only while IKnowWhatImDoing (`0xA8E7AC`) is clear; stock
+    /// `0x0070FBE0`/`0x0070FC90` have no such test.
+    fn ares_activation_sound_mutex(&self, rules: &RuleSet) -> bool {
+        rules.ares() && self.object_placement_scope_active()
     }
 
     /// Ares TechnoUpdate1004B439..1004B526, ordinary Foot branch. Operator
@@ -446,6 +464,11 @@ impl Simulation {
     /// every family), its type's `ActivateSound=` where it stands if it was
     /// offline (`0x0070FC18..0x0070FC68`), and the latch cleared
     /// (`0x0070FC6D`, `0x0070FC7A`).
+    ///
+    /// Ares replaces the body (`1004CCB0`, hook `0x70FBE0`, resuming at the
+    /// return `0x70FC85`): its vetoes below, then the same steps, no sound
+    /// under the IKnowWhatImDoing mutex, and on the transition the light
+    /// and a Building's factory queue refresh (`10013250`).
     pub(crate) fn techno_reactivate(
         &mut self,
         id: u64,
@@ -496,12 +519,14 @@ impl Simulation {
         {
             locomotor.power_on();
         }
+        let quiet = self.ares_activation_sound_mutex(rules);
         Self::latch_deactivated(
             &self.interner,
             &mut self.substrate,
             &mut self.sound_events,
             id,
             false,
+            quiet,
             rules,
         );
         #[cfg(feature = "ares")]
@@ -509,11 +534,14 @@ impl Simulation {
             // Ares Activate1004CD1E..1004CD85 recreates the light after
             // clearing Deactivated, through the same construction owner.
             self.construct_spotlight(id, rules);
+            // Then a Building's factory queues (`10013250`): a factory back
+            // online resumes a system hold.
+            self.ares_update_factory_queues(id, rules, effects);
         }
     }
 
     /// The two bodies' tails: the type's sound for a change of state, at the
-    /// object's Location, then the latch.
+    /// object's Location, unless `quiet` (the Ares mutex), then the latch.
     /// `TechnoClass::Deactivate @ 0x0070FC90` (`0x0070FD0E..0x0070FD62`) and
     /// `TechnoClass::Reactivate @ 0x0070FBE0` (`0x0070FC18..0x0070FC7A`).
     fn latch_deactivated(
@@ -522,12 +550,14 @@ impl Simulation {
         sound_events: &mut FrameChannel<SimSoundEvent>,
         id: u64,
         deactivated: bool,
+        quiet: bool,
         rules: &RuleSet,
     ) {
         let Some(entity) = substrate.entities.get(id) else {
             return;
         };
         if entity.deactivated.is_offline() != deactivated
+            && !quiet
             && let Some(object) = interner.object_type(entity.type_ref(), rules)
             && let Some(sound) = if deactivated {
                 object.deactivate_sound.clone()

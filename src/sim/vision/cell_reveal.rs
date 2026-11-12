@@ -533,7 +533,7 @@ impl OwnerVisibility {
         let inputs = self.edge_inputs_cache.get_or_init(|| {
             self.ground_flags
                 .iter()
-                .zip(&self.map_cell_edge_cache)
+                .zip(self.map_cell_edge_cache.iter())
                 .map(|(&ground, &cache)| packed_edge_input(ground, cache))
                 .collect()
         });
@@ -852,8 +852,9 @@ impl OwnerVisibility {
     pub(crate) fn hash_map_cell_edge_cache(&self, hasher: &mut impl Hasher) {
         // Every cell's fields, initialized or not: the reveal and edge-frame
         // readers consult `frames` and `fog_open` of uninitialized cells too.
-        crate::util::state_hasher::hash_records(
-            &self.map_cell_edge_cache,
+        crate::util::state_hasher::hash_record_iter(
+            self.map_cell_edge_cache.len(),
+            self.map_cell_edge_cache.iter(),
             hasher,
             MapCellEdgeCache::hash_record,
         );

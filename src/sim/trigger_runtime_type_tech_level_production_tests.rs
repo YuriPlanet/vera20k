@@ -294,7 +294,7 @@ fn retail_production_world(history: &Value) -> Option<(SimRuntime, InternedId)> 
     Some((
         SimRuntime {
             simulation: sim,
-            resources,
+            resources: std::sync::Arc::new(resources),
         },
         owner,
     ))

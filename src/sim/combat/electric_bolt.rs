@@ -170,7 +170,7 @@ pub(crate) fn create(
         z_adjust,
         weapon,
         owner,
-        cfg!(feature = "ares"),
+        rules.ares(),
     );
 }
 

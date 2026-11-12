@@ -47,6 +47,27 @@ pub(crate) const RETAIL_SHELL_SIZE: ScreenSize = ScreenSize {
     width: 800,
     height: 600,
 };
+/// The size VERA opens the player's window at in place of gamemd's 800x600
+/// shell, in logical units. A VERA difference: 800x600 is small on today's
+/// screens. Only the window is larger; the shell's 800x600 art scales to fit
+/// it (`ShellScale`) and a match takes the window's size, as at any size the
+/// player drags it to.
+pub(crate) const VERA_LAUNCH_WINDOW_SIZE: ScreenSize = ScreenSize {
+    width: 1024,
+    height: 768,
+};
+
+/// The size the player's window opens at, and the Esc menu's Set Window Size
+/// button and Full Screen going off return to, for gamemd's startup shell
+/// size: [`VERA_LAUNCH_WINDOW_SIZE`] for the 800x600 shell, while the 640x480
+/// one a player asks for with `AllowModeToggle` stays.
+pub(crate) fn player_launch_window_size(startup_shell_screen: ScreenSize) -> ScreenSize {
+    if startup_shell_screen == RETAIL_SHELL_SIZE {
+        VERA_LAUNCH_WINDOW_SIZE
+    } else {
+        startup_shell_screen
+    }
+}
 
 /// The process-lifetime subset of active-YR `OptionsClass` owned by
 /// `VERA.INI` `[Options]`, `[Video]`, and `[Audio]`.
@@ -181,6 +202,12 @@ pub(crate) struct RetailOptionsProfile {
     /// mobile strip while [`Self::shift_queue`] is on. VERA's own convenience;
     /// gamemd never reads this section. Clamped by [`SHIFT_QUEUE_COUNT_RANGE`].
     pub(crate) shift_queue_count: u32,
+    /// `[VERA] AutoRepair=`: the Options page's Auto Repair box. On, the
+    /// player's own game sends the ordinary Repair order for each of their
+    /// damaged buildings (`app::input::auto_repair`, `docs/auto-repair.md`).
+    /// A local input preference: nothing in the rules or on the network
+    /// changes. Off by default, so buildings wait for the wrench as in gamemd.
+    pub(crate) auto_repair: bool,
     /// `[VERA] TerrainDeformation=`: the Options page's Terrain Deformation
     /// box. Explosions dent open ground as in Tiberian Sun and a nuke leaves a
     /// crater (`docs/terrain-deformation.md`). Unlike the presentation boxes it
@@ -335,6 +362,7 @@ impl Default for RetailOptionsProfile {
             hd_map_previews: true,
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
             shift_queue: false,
+            auto_repair: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
             terrain_deformation: false,
             wol_test_service: false,
@@ -368,7 +396,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 30],
+    pub(crate) vera: [(&'static str, String); 31],
 }
 
 impl RetailOptionsLoad {
@@ -591,6 +619,7 @@ impl RetailOptionsProfile {
             );
             self.terrain_deformation =
                 vera.read_bool("TerrainDeformation", self.terrain_deformation);
+            self.auto_repair = vera.read_bool("AutoRepair", self.auto_repair);
             self.wol_test_service = vera.read_bool("WolTestService", self.wol_test_service);
             self.solo_skirmish = vera.read_bool("SoloSkirmish", self.solo_skirmish);
             self.commander_feedback = vera.read_bool("CommanderFeedback", self.commander_feedback);
@@ -790,6 +819,7 @@ impl RetailOptionsProfile {
                     "TerrainDeformation",
                     format_bool(self.terrain_deformation).to_string(),
                 ),
+                ("AutoRepair", format_bool(self.auto_repair).to_string()),
                 (
                     "ShowStringKeys",
                     format_bool(self.show_string_keys).to_string(),
@@ -1409,6 +1439,32 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
                 load.retained_profile.screen_height
             ),
             (1024, 768)
+        );
+    }
+
+    /// The player's window opens at 1024x768 where gamemd's shell is 800x600,
+    /// with or without a VERA.INI; AllowModeToggle's 640x480 stays.
+    #[test]
+    fn player_window_opens_at_1024x768_in_place_of_the_800x600_shell() {
+        let defaults = RetailStartupOptions::default();
+        let no_file = RetailOptionsLoad::without_settings(&defaults);
+        let game_size = load_snapshot(&defaults, b"[Video]\nScreenWidth=640\nScreenHeight=480\n");
+        for load in [no_file, game_size] {
+            assert_eq!(
+                player_launch_window_size(load.startup_shell_screen),
+                ScreenSize {
+                    width: 1024,
+                    height: 768
+                }
+            );
+        }
+        let toggle = load_snapshot(&defaults, b"[Video]\nAllowModeToggle=yes\n");
+        assert_eq!(
+            player_launch_window_size(toggle.startup_shell_screen),
+            ScreenSize {
+                width: 640,
+                height: 480
+            }
         );
     }
 

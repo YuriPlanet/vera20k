@@ -335,7 +335,7 @@ fn hover(state: &AppState) -> Option<Hover> {
     if target.cell == (0, 0) {
         return None;
     }
-    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     let owner = crate::app::input::commands::preferred_local_owner_name(state)?;
     let object = target
         .tracker_hit

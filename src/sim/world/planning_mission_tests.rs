@@ -308,7 +308,7 @@ fn retail_rate_one_plans_replay_with_the_same_publication_order_and_state() {
         Some((
             SimRuntime {
                 simulation: sim,
-                resources,
+                resources: std::sync::Arc::new(resources),
             },
             owner,
         ))
@@ -830,7 +830,7 @@ fn retail_planned_and_ordinary_harvest_extracts_ore_after_walking() {
                 harvest_dispatched,
                 "Harvest must reach the mission owner, planning={planning}"
             );
-            let harvests = dock_owner == Some("Americans") || crate::rules::ARES_ENABLED;
+            let harvests = dock_owner == Some("Americans") || crate::rules::ARES_BUILD;
             assert_eq!(
                 !actor.miner.as_ref().unwrap().cargo().is_empty(),
                 harvests,

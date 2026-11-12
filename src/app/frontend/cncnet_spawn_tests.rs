@@ -292,7 +292,7 @@ fn cncnet_country_indices_respect_the_compiled_capability_and_identity_width() {
     for index in [10, 11, i32::from(u16::MAX)] {
         let text = SKIRMISH.replacen("Side=0", &format!("Side={index}"), 1);
         let result = SpawnRequest::parse(&text);
-        if crate::rules::ARES_ENABLED {
+        if crate::rules::ARES_BUILD {
             let SpawnGame::Skirmish(session) = result.unwrap().game else {
                 panic!("Battle Country identity");
             };
@@ -312,7 +312,7 @@ fn cncnet_country_indices_respect_the_compiled_capability_and_identity_width() {
     }
     assert_eq!(
         SpawnRequest::parse("[Settings]\nIsSinglePlayer=Yes\nSide=10\n").is_ok(),
-        crate::rules::ARES_ENABLED,
+        crate::rules::ARES_BUILD,
         "campaign Side has its own byte-wide adapter identity in Ares builds"
     );
 }
@@ -850,11 +850,58 @@ fn one_human_spawn_admits_thirty_houses_and_unlisted_modes() {
     assert_eq!(full.opponents.len(), 29);
     assert!(full.house_roster_is_consistent());
     assert!(SpawnRequest::parse(&one_human(1, 30)).is_err());
-    let SpawnGame::Skirmish(coop) = SpawnRequest::parse(&one_human(3, 2)).unwrap().game else {
+    let SpawnGame::Skirmish(coop) = SpawnRequest::parse(&one_human(3, 2))
+        .and_then(|request| request.admit_loaded_modes(&[]))
+        .unwrap()
+        .game
+    else {
         panic!("one human stays a skirmish")
     };
     assert_eq!(coop.mode.override_file, "MPCoopMD.ini");
     assert_eq!(coop.opponents.len(), 2);
+}
+
+/// Spawner.cpp's `MPGameModeClass::Get(GameMode)`, else `Get(1)`, over the
+/// roster the game loaded: a mod's own row starts offline, and an id the
+/// roster lacks takes row 1 or is refused when that is missing too.
+#[test]
+fn offline_game_mode_takes_the_loaded_rows_with_the_spawner_fallback() {
+    let modded = crate::skirmish_modes::parse_mpmodes_ini(&IniFile::from_str(
+        "[Battle]\n24=NOSTR:Brute Doomsday,STT:ModeBattle,bfBrute.ini,standard,true\n",
+    ));
+    let admitted = |mode: i32, modes: &[crate::skirmish_modes::SkirmishGameMode]| {
+        let mut request = SpawnRequest::parse(&one_human(mode, 1))?;
+        // `read` resolved the client map beside the launch file.
+        let SpawnGame::Skirmish(session) = &mut request.game else {
+            panic!("one human stays a skirmish")
+        };
+        session.selected_map_file = Some("/client/spawnmap.ini".into());
+        request
+            .admit_loaded_modes(modes)
+            .map(|request| match request.game {
+                SpawnGame::Skirmish(session) => {
+                    assert_eq!(
+                        session.selected_map_file.as_deref(),
+                        Some("/client/spawnmap.ini")
+                    );
+                    session.mode
+                }
+                _ => panic!("one human stays a skirmish"),
+            })
+    };
+    let brute = admitted(24, &modded).unwrap();
+    assert_eq!(
+        (brute.id, brute.override_file.as_str()),
+        (24, "bfBrute.ini")
+    );
+    assert!(admitted(1, &modded).is_err(), "no row 1 to fall back on");
+    let stock = crate::skirmish_modes::stock_skirmish_modes();
+    assert_eq!(
+        admitted(24, &stock).unwrap().override_file,
+        "MPBattleMD.ini"
+    );
+    // Network launches keep the stock rows.
+    assert!(SpawnRequest::parse(&in_mode(24, network_spawn(2, 0, ""))).is_err());
 }
 
 #[test]

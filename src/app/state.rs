@@ -331,7 +331,7 @@ impl AppState {
     /// hold `&mut` app fields keep the `sim_runtime` field chain and call
     /// `rt.view()` directly for split borrows.
     pub(crate) fn sim_view(&self) -> Option<crate::sim::runtime::SimView<'_>> {
-        self.match_state.sim_runtime.as_ref().map(|rt| rt.view())
+        self.match_state.sim_runtime.runtime().map(|rt| rt.view())
     }
 
     /// Current terrain authority, replaced together with the running world on
@@ -341,7 +341,7 @@ impl AppState {
     ) -> Option<&crate::map::resolved_terrain::ResolvedTerrainGrid> {
         self.match_state
             .sim_runtime
-            .as_ref()?
+            .runtime()?
             .simulation
             .resolved_terrain()
     }
@@ -353,7 +353,7 @@ impl AppState {
     pub(crate) fn overlay_registry(&self) -> Option<&OverlayTypeRegistry> {
         self.match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.resources.overlay_registry)
             .or(self.frontend.shell_preview_overlay_registry.as_ref())
     }
@@ -365,9 +365,17 @@ impl AppState {
     pub(crate) fn rules(&self) -> Option<&crate::rules::ruleset::RuleSet> {
         self.match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.resources.rules)
             .or(self.frontend.frontend_rules.as_ref())
+    }
+
+    /// The colours a lobby lists under the loaded rules; YR's eight before
+    /// any rules load.
+    pub(crate) fn lobby_colors(&self) -> crate::rules::skirmish_colors::SkirmishColorMode {
+        self.rules()
+            .map(crate::rules::ruleset::RuleSet::skirmish_colors)
+            .unwrap_or_default()
     }
 }
 
@@ -377,7 +385,7 @@ impl AppState {
     pub(crate) fn terrain_template(&self) -> Option<&ResolvedTerrainGrid> {
         self.match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .and_then(|rt| rt.resources.terrain_template.as_ref())
     }
 }

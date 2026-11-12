@@ -299,6 +299,7 @@ impl BuildingTypeExtRules {
         art: &IniSection,
         references: BuildingTypeExtReferences,
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         // The art keys come first, from the type's Image= section: the
         // Point2D reader 1000FAE0 and the Facing32 reader 1000FBF0.
         self.dock_unload_cell = read_point(art, "DockUnloadCell", self.dock_unload_cell);
@@ -424,6 +425,7 @@ impl BuildingTypeExtRules {
         section: Option<&IniSection>,
         sounds: &crate::rules::sound_ini::SoundRegistry,
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let read = |key| section.and_then(|section| sounds.read_ares_reference(section, key));
         self.sounds = ["GateDownSound", "GateUpSound", "SlamSound"].map(read);
     }
@@ -696,6 +698,7 @@ impl BuildingGlobalRules {
     /// `1002AB60`'s `[General] ReturnStructures` and `Degrade.*` reads and
     /// `[CombatDamage] AlliedSolidTransparency`, before the types.
     pub(crate) fn read_before_type_data(&mut self, pass: &crate::rules::ini_parser::IniFile) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         if let Some(section) = pass.section("General") {
             self.return_structures =
                 section.read_ares_bool("ReturnStructures", self.return_structures);
@@ -722,6 +725,7 @@ impl BuildingGlobalRules {
     /// of the list reads `Passengers` (ReadInteger) and `MaxSize`
     /// (ReadDouble) from its own section when the pass has one (`10009340`).
     fn read_tunnel_types(&mut self, pass: &crate::rules::ini_parser::IniFile) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let list = pass.section_or_empty("TunnelTypes");
         for key in list.keys() {
             if let Some(name) = list.read_name(key, 0x20)
@@ -761,6 +765,7 @@ impl BuildingGlobalRules {
     /// `1002A800`'s `[General]` engineer reads, ahead of `HSBuilding`, and
     /// its later TogglePower keys.
     pub(crate) fn read_after_type_data(&mut self, pass: &crate::rules::ini_parser::IniFile) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         if let Some(section) = pass.section("General") {
             self.engineer_damage =
                 section.read_ares_double_bits("EngineerDamage", self.engineer_damage);
@@ -785,6 +790,7 @@ impl BuildingGlobalRules {
 /// one-value read stores an uninitialized second word natively; VERA keeps
 /// the previous point there, as it does for the coordinate reader.
 fn read_point(section: &IniSection, key: &str, current: [i32; 2]) -> [i32; 2] {
+    let _ares = crate::rules::ares_switch::ares_reads();
     let pair = section.read_ares_partial_int_pair(
         key,
         crate::rules::ini_value::PartialIntPair {

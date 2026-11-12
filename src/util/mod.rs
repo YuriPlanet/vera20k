@@ -10,11 +10,14 @@
 pub mod base64;
 #[cfg(target_os = "android")]
 pub mod app_icon;
+#[cfg(target_os = "android")]
+pub mod lan_network;
 pub(crate) mod bit_span;
 pub mod case_insensitive_path;
 pub mod config;
 pub mod direction;
 pub mod direction_tables;
+pub mod device_identity;
 pub mod fixed_math;
 pub mod flh_transform;
 pub mod fnv;
@@ -46,7 +49,9 @@ pub mod retail_trig;
 pub mod save_codec;
 pub(crate) mod sha1;
 pub mod sha256;
+pub mod shared;
 pub mod single_instance;
+pub mod sparse;
 pub mod version;
 // Portable state hashing; `rules` and `sim` both fold identities through it.
 pub(crate) mod state_hasher;
@@ -60,6 +65,7 @@ pub mod native_affine;
 
 // Platform services retain the standard-library types on native targets.
 pub mod file_system;
+pub mod sync;
 pub mod time;
 
 pub mod debug_checks;

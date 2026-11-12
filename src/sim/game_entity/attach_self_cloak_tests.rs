@@ -67,7 +67,7 @@ fn self_cloak_reaches_normal_ai_and_restores_the_initial_and_repeat_waits() {
     );
     assert!(entity.stealth_ability.active(false));
     assert_eq!(
-        entity.cloak.unwrap().state(),
+        entity.cloak.as_deref().unwrap().state(),
         1,
         "the existing cloak AI consumes the new ability"
     );
@@ -91,7 +91,7 @@ fn self_cloak_reaches_normal_ai_and_restores_the_initial_and_repeat_waits() {
     );
     assert!(!entity.stealth_ability.active(false));
     assert_eq!(
-        entity.cloak.unwrap().state(),
+        entity.cloak.as_deref().unwrap().state(),
         3,
         "losing ability must continue the existing uncloak clock"
     );
@@ -163,7 +163,13 @@ fn temporary_cloak_keeps_permanent_crate_eligibility_and_respects_type_prohibiti
     hit(&mut sim, &rules, blocked);
     visit(&mut sim, &rules, blocked, 100);
     assert_eq!(
-        sim.entities().get(blocked).unwrap().cloak.unwrap().state(),
+        sim.entities()
+            .get(blocked)
+            .unwrap()
+            .cloak
+            .as_deref()
+            .unwrap()
+            .state(),
         0
     );
     assert_eq!(

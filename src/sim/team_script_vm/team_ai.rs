@@ -101,6 +101,7 @@ pub(super) fn center_sample(
 pub(super) fn center_of(
     samples: &[CenterSample],
     focus: Option<[i32; 2]>,
+    ares: bool,
 ) -> Option<([i32; 2], Option<u64>)> {
     let mut sum = [0i32; 2];
     let mut count = 0i32;
@@ -116,7 +117,7 @@ pub(super) fn center_of(
             continue;
         }
         let distance = focus.map_or(0, |focus| {
-            crate::util::native_coord::squared_xy_distance(sample.xy, focus)
+            crate::util::native_coord::squared_xy_distance(sample.xy, focus, ares)
         });
         if closest_distance == 0 || distance < closest_distance {
             closest_distance = distance;
@@ -421,7 +422,7 @@ impl Simulation {
             })
             .collect();
         let head = team.members.first().map(|member| member.id);
-        let (zone, closest) = match center_of(&samples, focus) {
+        let (zone, closest) = match center_of(&samples, focus, rules.ares()) {
             None => (None, None),
             Some((mean, closest)) => {
                 // CalcCenter6EB331 selects Map565730's Cell before CanEnter.

@@ -23,6 +23,8 @@ use crate::map::terrain::TilePlacement;
 use crate::map::theater::TileKey;
 use crate::render::batch::SpriteInstance;
 use crate::ui::sidebar::SidebarView;
+#[path = "ferry_lines.rs"]
+mod ferry_lines;
 #[path = "planning_lines.rs"]
 mod planning_lines;
 
@@ -71,6 +73,10 @@ pub(super) struct UiInstances {
     /// The frame `software_cursor` was built from, whose texture draws it.
     pub software_cursor_draw: Option<crate::app::presentation::ui_overlays::SoftwareCursorDraw>,
     pub drag: Vec<SpriteInstance>,
+    /// World-surface stores that lie on the ground: drawn before the
+    /// buildings and objects, which cover them (the VERA formation line's
+    /// dots and ferry's circles).
+    pub ground_marks: Vec<SpriteInstance>,
     pub placement: Vec<SpriteInstance>,
     /// Phobos placement preview artwork, drawn after the PLACE cells.
     #[cfg(feature = "phobos")]
@@ -204,7 +210,7 @@ pub(super) fn build_world_instances(
             state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .presentation()
                 .and_then(|rt| rt.view().resolved_terrain()),
             terrain_buffer,
         )
@@ -220,7 +226,7 @@ pub(super) fn build_world_instances(
     let display_order = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|rt| {
             super::draw_plan_lowering::NativeDisplayOrder::from_display(rt.view().display_layers())
         })
@@ -268,7 +274,7 @@ pub(super) fn build_world_instances(
     // building or infantry, or Bullet. A building's voxel turret remains
     // owned by the building display call, in the same contiguous Ground
     // parent instead of an atlas-level tie.
-    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+    if let Some(runtime) = state.match_state.sim_runtime.presentation() {
         let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
         let shp_inputs = instances::shp_inputs(state, local_owner.as_deref());
         let mut units = instances::unit_visitor(state, &display_order);
@@ -304,7 +310,7 @@ pub(super) fn build_world_instances(
         }
     }
     let mut particle_draws = state.diagnostic_presentation_ms().map(|_| Vec::new());
-    let display_inputs = state.match_state.sim_runtime.as_ref().map(|runtime| {
+    let display_inputs = state.match_state.sim_runtime.presentation().map(|runtime| {
         let presentation = &state.match_state.match_presentation;
         let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
         let local_owner = crate::app::input::commands::preferred_local_owner_name(state)
@@ -388,7 +394,7 @@ pub(super) fn build_world_instances(
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .presentation()
             .map(|rt| &rt.simulation),
         state
             .match_state
@@ -477,14 +483,14 @@ pub(super) fn build_world_instances(
         }
     }
     instances::build_weapon_wave_instances(state, &mut planned_objects, &display_order);
-    if let Some(rt) = state.match_state.sim_runtime.as_ref() {
+    if let Some(rt) = state.match_state.sim_runtime.presentation() {
         instances::assign_tether_redraws(&rt.simulation, &mut planned_objects);
     }
     // VERA's translucent fog lifts the A buffer's near-black concealment, so
     // live enemy objects the local viewer cannot see leave the draw plan fully
     // (body, shadow, attached anim parts and extras) instead of showing through
     // the fog. Terrain, overlays and revealed map art stay visible.
-    if let Some(rt) = state.match_state.sim_runtime.as_ref() {
+    if let Some(rt) = state.match_state.sim_runtime.presentation() {
         let sim = &rt.simulation;
         if let Some(viewer) = instances::translucent_fog_viewer(state, sim) {
             let rules = &rt.resources.rules;
@@ -684,7 +690,7 @@ fn build_smudge_instances(state: &AppState, sw: f32, sh: f32) -> Vec<SpriteInsta
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .presentation()
             .map(|rt| &rt.simulation),
         state.rules(),
     ) {
@@ -805,7 +811,7 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
             state.overlay_registry(),
             state.rules(),
         );
-        let runtime = state.match_state.sim_runtime.as_ref();
+        let runtime = state.match_state.sim_runtime.presentation();
         let presentation = &mut state.match_state.match_presentation;
         if let (Some(minimap), Some(grid)) = (
             presentation.minimap.as_mut(),
@@ -840,7 +846,7 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
     let presentation = &mut state.match_state.match_presentation;
     if let (Some(minimap), Some(runtime)) = (
         presentation.minimap.as_mut(),
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.presentation(),
     ) {
         let transaction = super::minimap_transaction::present_minimap_frame(minimap, |minimap| {
             // F10 cone: render-feed reads go through SimView getters. The
@@ -903,7 +909,24 @@ pub(super) fn build_ui_instances(
         ),
         None => Vec::new(),
     };
-
+    // VERA formation line: its dots, in world pixels, in the Move action
+    // line's colour from the palette those lines read. They lie on the
+    // ground, with the ferry's circles.
+    let mut ground_marks = Vec::new();
+    if let (Some(path), Some(palette)) = (
+        state.match_state.input.formation_line.path(),
+        state
+            .match_state
+            .match_presentation
+            .surface_palette(state.process_assets.manager()),
+    ) {
+        ground_marks.extend(
+            crate::render::selection_overlay::SelectionOverlay::build_formation_dots(
+                &path.dots(),
+                crate::app::presentation::target_lines::move_action_line_color(palette),
+            ),
+        );
+    }
     let placement_preview = build_placement_preview(state);
 
     let input = &state.match_state.input;
@@ -923,7 +946,7 @@ pub(super) fn build_ui_instances(
     // attachment, distorting dash spacing and node borders at fractional zoom.
     let mut designations = std::collections::HashMap::new();
     if !state.match_state.input.planning.active()
-        && let Some(runtime) = state.match_state.sim_runtime.as_ref()
+        && let Some(runtime) = state.match_state.sim_runtime.presentation()
     {
         let sim = &runtime.simulation;
         for (id, entity) in sim.entities().iter_sorted() {
@@ -957,14 +980,16 @@ pub(super) fn build_ui_instances(
             tactical_line_calls.push(TacticalLineCall::Designation { id, coords, style });
         }
     };
+    ground_marks.extend(ferry_lines::build_rings(state, view));
     let (mut target_line, planning_highlights) = planning_lines::build(state, view, wall_ms);
+    target_line.extend(ferry_lines::build_paths(state, view, wall_ms));
     let action_lines = crate::app::presentation::target_lines::build_target_line_instances(
         &state.match_state.match_presentation.target_lines,
         state.match_state.input.planning.active(),
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .presentation()
             .map(|rt| &rt.simulation),
         state.rules(),
         state
@@ -987,7 +1012,7 @@ pub(super) fn build_ui_instances(
             state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .presentation()
                 .map(|rt| &rt.simulation),
             state.rules(),
             &cursor.selected,
@@ -1000,6 +1025,7 @@ pub(super) fn build_ui_instances(
         software_cursor,
         software_cursor_draw,
         drag,
+        ground_marks,
         placement: placement_preview.cells,
         #[cfg(feature = "phobos")]
         placement_ghost: placement_preview.ghost,
@@ -1039,7 +1065,7 @@ pub(crate) fn tactical_world_viewport(
 fn build_beacon_instances(state: &AppState) -> Vec<Vec<SpriteInstance>> {
     let (Some(art), Some(runtime)) = (
         state.match_state.match_presentation.beacon_art.as_ref(),
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.presentation(),
     ) else {
         return Vec::new();
     };
@@ -1254,6 +1280,16 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         .as_ref()
         .map(|v| build_sidebar_chrome_instances(state, v))
         .unwrap_or_default();
+    // The pictures of the buttons the side's layout adds to the sidebar draw
+    // over its own pictures, from the same atlas.
+    chrome.extend(crate::app::presentation::layout_parts::pictures(
+        state,
+        crate::ui::added_parts::Holder::Side,
+        [
+            state.match_state.input.camera_x,
+            state.match_state.input.camera_y,
+        ],
+    ));
     // The bottom bar draws into a surface of its own.
     let mut command_bar = view
         .as_ref()
@@ -1364,6 +1400,19 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
             ),
         );
     }
+    // The buttons and texts the side's layout adds to the sidebar. A
+    // button's box rides the white lane of the cameo's hover outline: over
+    // the chrome and the cameos, under the text.
+    let (layout_boxes, layout_texts) = crate::app::presentation::layout_parts::instances(
+        state,
+        crate::ui::added_parts::Holder::Side,
+        ready_tint,
+        [
+            state.match_state.input.camera_x,
+            state.match_state.input.camera_y,
+        ],
+    );
+    text_layers.status.extend(layout_texts);
     state.renderer.bit_font.set_raster(frame_raster);
 
     // Preserve the pixels actually drawn online for a possible pre-due loss.
@@ -1397,7 +1446,11 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         smooth_chrome,
         smooth_command_bar,
         cameo: cameo_layers.cameo,
-        cameo_hover: cameo_layers.hover,
+        cameo_hover: {
+            let mut hover = cameo_layers.hover;
+            hover.extend(layout_boxes);
+            hover
+        },
         unavailable: cameo_layers.unavailable,
         flash: cameo_layers.flash,
         gclock: cameo_layers.gclock,

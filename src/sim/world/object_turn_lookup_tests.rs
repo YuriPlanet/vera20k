@@ -45,6 +45,73 @@ fn a_turn_finds_its_own_object_without_the_id_index() {
     );
 }
 
+/// A tank's turn writes none of the state only a Building holds, so its
+/// record keeps no art or damage fires, before a save and after a load. The
+/// power plant's own turn stores its art, which loads back as saved.
+#[test]
+fn a_tanks_turn_and_a_load_store_no_building_state() {
+    use crate::util::save_codec;
+    let (mut sim, rules, tank, plant) = scene();
+    for id in [tank, plant] {
+        sim.advance_live_object_turn(id, &rules, techno_ai::ObjectAiCtx::default())
+            .unwrap();
+    }
+    let reloaded = |id| {
+        let entity = sim.substrate.entities.get(id).unwrap();
+        let bytes = save_codec::serialize(entity).unwrap();
+        let loaded: crate::sim::game_entity::GameEntity = save_codec::deserialize(&bytes).unwrap();
+        (entity, loaded)
+    };
+    let (tank, loaded_tank) = reloaded(tank);
+    for tank in [tank, &loaded_tank] {
+        assert!(!tank.building_art.is_stored());
+        assert!(!tank.damage_fires.is_stored());
+    }
+    let (plant, loaded_plant) = reloaded(plant);
+    assert!(plant.building_art.is_stored());
+    assert_eq!(*loaded_plant.building_art, *plant.building_art);
+}
+
+/// The record a turn walks stays small: state most objects lack sits
+/// behind a pointer, and state a turn does not read each step is the seldom
+/// part. A new field that pushes either past its ceiling belongs behind a
+/// pointer or in the other part.
+#[cfg(all(
+    target_pointer_width = "64",
+    not(any(feature = "ares", feature = "phobos", feature = "debug-tools"))
+))]
+#[test]
+fn the_object_record_stays_under_its_ceiling() {
+    use crate::sim::game_entity::{GameEntity, Seldom};
+    let (main, seldom) = (
+        std::mem::size_of::<GameEntity>(),
+        std::mem::size_of::<Seldom>(),
+    );
+    assert!(
+        main <= 1440 && seldom <= 816,
+        "GameEntity is {main} bytes and Seldom {seldom}"
+    );
+}
+
+/// A presentation frame holds a copy of a resting tank's record. The tank's
+/// next turns write only the main part, so the seldom part is never copied:
+/// the frame and the live record still share it.
+#[test]
+fn a_resting_tanks_turn_leaves_the_seldom_part_shared() {
+    let (mut sim, rules, tank, _) = scene();
+    for _ in 0..3 {
+        sim.advance_live_object_turn(tank, &rules, techno_ai::ObjectAiCtx::default())
+            .unwrap();
+    }
+    let frame = sim.substrate.entities.get(tank).unwrap().clone();
+    for _ in 0..3 {
+        sim.advance_live_object_turn(tank, &rules, techno_ai::ObjectAiCtx::default())
+            .unwrap();
+    }
+    let live = sim.substrate.entities.get(tank).unwrap();
+    assert!(live.shares_seldom_with(&frame));
+}
+
 /// The sound owner's view of a turn: what was delivered, and whose looping
 /// sound was updated.
 #[derive(Default)]
@@ -119,5 +186,104 @@ fn a_buildings_turn_keeps_its_deliveries_and_takes_no_foot_tail() {
     assert!(
         tail <= 12,
         "the building looked itself up {tail} times after its AI"
+    );
+}
+
+/// A tank and an infantryman that hold no target take their fire visits
+/// without a receiver transaction. Each visit still delivers the smudge
+/// grid's pending dirt, as the commit of an empty transaction did, and the
+/// infantryman's clears his firing latch.
+#[test]
+fn a_fire_visit_without_a_target_keeps_its_deliveries() {
+    use crate::sim::combat::world_fire::FireVisit;
+    let rules = RuleSet::from_ini(&clear_ground_ini(
+        "[VehicleTypes]\n0=MTNK\n[InfantryTypes]\n0=E1\n\
+         [MTNK]\nStrength=300\nSpeed=6\n[E1]\nStrength=125\nSpeed=4\n",
+    ))
+    .unwrap();
+    let mut sim = rival_arena(&rules, 0x0B2);
+    let tank = sim
+        .spawn_object("MTNK", "Americans", 10, 10, 0, &rules)
+        .expect("tank");
+    let man = sim
+        .spawn_object("E1", "Americans", 14, 14, 0, &rules)
+        .expect("infantryman");
+    sim.resolve_type_handles(&rules);
+    sim.substrate
+        .entities
+        .get_mut(man)
+        .unwrap()
+        .mission_leaf
+        .set_foot_firing_sequence(1);
+    for (visit, cell) in [
+        (FireVisit::UnitTarget(tank), (3, 4)),
+        (FireVisit::InfantryTarget(man), (5, 6)),
+    ] {
+        let mut smudges = crate::sim::smudge_grid::SmudgeGrid::new(32, 32);
+        smudges.test_force_set(cell.0, cell.1, Default::default());
+        sim.smudge_grid = Some(smudges);
+        sim.dirty_cells.clear_tactical_for_test();
+        let receipt = sim.commit_fire_visit(
+            visit,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+        assert!(!receipt.bridge_state_changed && !receipt.structure_destroyed);
+        assert!(sim.smudge_grid.as_mut().unwrap().drain_dirty().is_empty());
+        assert!(sim.dirty_cells.tactical_for_test().contains(&cell));
+    }
+    let man = sim.substrate.entities.get(man).unwrap();
+    assert_eq!(man.mission_leaf.foot_firing_sequence_latch(), 0);
+}
+
+/// Idle turns hand their object out for writing only when a timer comes
+/// due (a mission handler re-arming its clock): each hand-out copies an
+/// object a presentation frame still shares, so a step that writes nothing
+/// must not take one.
+#[test]
+fn an_idle_turn_hands_its_object_out_only_on_a_due_timer() {
+    let (mut sim, rules, tank, plant) = scene();
+    let mut turn = |sim: &mut Simulation, id| {
+        let before = sim.substrate.entities.hand_outs();
+        sim.advance_live_object_turn(id, &rules, techno_ai::ObjectAiCtx::default())
+            .unwrap();
+        sim.substrate.entities.hand_outs() - before
+    };
+    let mut frame = |sim: &mut Simulation| {
+        let next = sim.session.binary_frame() + 1;
+        sim.session.set_binary_frame_for_test(next);
+    };
+    // Let construction, first missions and timers settle.
+    for _ in 0..40 {
+        turn(&mut sim, tank);
+        turn(&mut sim, plant);
+        frame(&mut sim);
+    }
+    let mut handed_out = [0u64; 2];
+    let mut writing_turns = [0u32; 2];
+    for _ in 0..60 {
+        for (slot, id) in [tank, plant].into_iter().enumerate() {
+            let count = turn(&mut sim, id);
+            handed_out[slot] += count;
+            writing_turns[slot] += u32::from(count != 0);
+        }
+        frame(&mut sim);
+    }
+    // A presentation frame's copy of the power plant stays shared across
+    // its turn: its light sample is rewritten only when the draw would read
+    // something else.
+    let mut copied = 0;
+    for _ in 0..20 {
+        let shown = sim.substrate.entities.clone();
+        turn(&mut sim, plant);
+        copied += u32::from(!sim.substrate.entities.shares_entity_with(&shown, plant));
+        frame(&mut sim);
+    }
+    assert!(copied <= 2, "the power plant was copied in {copied} of 20 turns");
+    assert!(
+        writing_turns[0] <= 6 && writing_turns[1] <= 6,
+        "turns of 60 that handed the object out (tank, plant): {writing_turns:?}, \
+         hand-outs {handed_out:?}"
     );
 }

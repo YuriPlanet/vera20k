@@ -98,13 +98,16 @@ fn stock_bio_reactor_pips_follow_boarding_cargo_head_departure_and_selection() {
         return;
     };
     let rules = &retail.rules;
+    // Ares GetPassengerPips (10044C90, hook 0x709D38) gives the cargo tail
+    // the first pip, where the stock absorber arm starts at the head.
+    #[cfg_attr(not(feature = "ares"), allow(unused_mut))]
+    let mut two = native_frames(&["YENGINEER", "INIT"]);
+    #[cfg(feature = "ares")]
+    two[..2].reverse();
     let expected: BTreeMap<Vec<&str>, Vec<usize>> = [
         (vec![], native_frames(&[])),
         (vec!["INIT"], native_frames(&["INIT"])),
-        (
-            vec!["YENGINEER", "INIT"],
-            native_frames(&["YENGINEER", "INIT"]),
-        ),
+        (vec!["YENGINEER", "INIT"], two),
     ]
     .into();
     let empty = &expected[&Vec::<&str>::new()];

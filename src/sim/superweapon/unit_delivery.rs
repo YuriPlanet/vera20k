@@ -371,10 +371,14 @@ fn place(
             let [x, y, z] = super::deck_coords(sim, cell);
             let on_bridge =
                 super::cell_grid::cell_has_bridge_flag(sim, cell.0 as i16, cell.1 as i16);
+            // PlaceUnits10075A60 puts with the DirType (GetCellIndex & 7) << 5;
+            // the index (Y << 9) + X keeps X's low three bits (Cell+0x24).
+            let facing = ((cell.0 & 7) << 5) as u8;
             if sim
                 .reveal_finished_object_at_coord(
                     id,
                     DriveCoord { x, y, z },
+                    facing,
                     on_bridge,
                     rules,
                     registry,

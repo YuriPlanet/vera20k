@@ -64,7 +64,7 @@ fn browser_admission_rejects_other_build_capability() {
     // Any other capability combination must be refused; flip every bit so this
     // stays a foreign mode as capabilities are added.
     let other_capability = crate::rules::compatibility::RulesCompatibility::from_capabilities(
-        !crate::rules::ARES_ENABLED,
+        !crate::rules::ARES_BUILD,
         !crate::rules::PHOBOS_ENABLED,
         !crate::rules::NPATCH_ENABLED,
         !crate::rules::VERAX_ENABLED,
@@ -83,7 +83,10 @@ fn browser_admission_rejects_other_build_capability() {
         "keep readable metadata in browser ordering"
     );
     assert!(!entries[0].0.header.is_compatible());
-    assert!(!repository.has_browser_entry());
+    assert!(
+        repository.has_browser_entry(),
+        "Load stays enabled to list the other build's save"
+    );
 }
 
 #[test]
@@ -136,7 +139,10 @@ fn browser_admission_keeps_empty_descriptions_and_uses_file_time() {
         crate::map::rmg::saved_seeds::system_time_to_file_time(modified)
     );
     repository.delete(&path).unwrap();
-    assert!(!repository.has_browser_entry());
+    assert!(
+        repository.has_browser_entry(),
+        "the other build's save is still there to list and delete"
+    );
     assert_eq!(repository.browser_entries().len(), 1);
     std::fs::remove_dir_all(directory).unwrap();
 }

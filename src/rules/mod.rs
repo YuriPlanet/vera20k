@@ -153,8 +153,12 @@ pub mod phobos_sw_sidebar;
 pub mod phobos_warhead_anim;
 pub mod phobos_radiation;
 pub mod phobos_shields;
-/// Whether this binary includes the supported Ares extensions. INIs cannot change it.
-pub const ARES_ENABLED: bool = cfg!(feature = "ares");
+/// Whether this binary compiles the supported Ares extensions. Whether Ares
+/// plays in a game is the per-game switch [`ruleset::RuleSet::ares`], decided
+/// from the game's data by [`ares_switch`]; this gates only what still forks
+/// at build time: Rules loading before that answer exists, launch and network
+/// identity, and the `cfg(feature = "ares")` sites not yet converted.
+pub const ARES_BUILD: bool = cfg!(feature = "ares");
 /// Whether this binary includes the supported Phobos extensions. INIs cannot change it.
 pub const PHOBOS_ENABLED: bool = cfg!(feature = "phobos");
 /// Whether this binary includes supported NPatch behavior. INIs cannot change it.
@@ -165,6 +169,7 @@ pub const VERAX_ENABLED: bool = cfg!(feature = "verax");
 /// Whether this binary includes the NPBUG bug-fix extension. INIs cannot
 /// change it; builds without the feature keep every native path.
 pub const NPBUG_ENABLED: bool = cfg!(feature = "npbug");
+pub(crate) mod ares_switch;
 pub(crate) mod ares_prerequisites;
 pub(crate) mod ares_armor;
 pub(crate) mod ares_emp;
@@ -213,6 +218,8 @@ pub mod alpha_image_assets;
 pub mod country_loading;
 #[cfg(test)]
 mod ares_manual_control_tests;
+#[cfg(test)]
+mod ares_switch_tests;
 #[cfg(test)]
 mod ares_type_selection_tests;
 pub mod compatibility;
@@ -294,6 +301,7 @@ pub mod terrain_rules;
 pub mod tiberium_type;
 pub mod voxel_anim_type;
 pub mod voxel_asset_catalog;
+mod voxel_model_plan;
 pub mod voxel_frame_catalog;
 pub mod warhead_type;
 #[cfg(all(test, not(feature = "ares")))]

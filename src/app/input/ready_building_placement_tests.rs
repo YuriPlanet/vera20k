@@ -131,7 +131,7 @@ fn roundtrip_fixture_save(fixture: &mut Fixture, label: &str) {
             overlay_registry: fixture.overlays.clone(),
             terrain_template: Some(terrain),
             ..crate::sim::runtime::SimResources::empty()
-        },
+        }.into(),
     };
     let prepared = crate::app::persistence::PreparedLoad::from_repository(
         crate::app::persistence::LoadPreparationView::from_runtime(
@@ -200,7 +200,7 @@ fn paid_ready_fixture() -> Option<Fixture> {
             )
             .expect("ordinary paid production frame");
         for fact in output.lifecycle_outputs {
-            projection.apply_lifecycle_output(&fact, Some(owner));
+            projection.apply_lifecycle_output(&fact, Some(owner), crate::rules::ARES_BUILD);
         }
         if production::ready_buildings_for_owner(&sim, &rules, "Americans").len() == 2 {
             break;
@@ -1097,9 +1097,10 @@ fn consume_lifecycle_output(
     output: &LifecycleOutput,
     local_house: Option<InternedId>,
 ) -> bool {
-    if let Some(cursor_clear) = fixture
-        .projection
-        .apply_lifecycle_output(output, local_house)
+    if let Some(cursor_clear) =
+        fixture
+            .projection
+            .apply_lifecycle_output(output, local_house, crate::rules::ARES_BUILD)
     {
         fixture
             .input
@@ -2870,6 +2871,7 @@ fn unlinked_abandon_clears_current_before_product_expiry() {
             construction_order: pill_order,
         },
         Some(owner),
+        crate::rules::ARES_BUILD,
     );
     production::object_find_factory(&fixture.sim, &fixture.rules, power_product, false, false)
         .expect("the real completed product finds its healthy builder");
@@ -2911,9 +2913,10 @@ fn unlinked_abandon_clears_current_before_product_expiry() {
         .unwrap();
     let mut clears = 0;
     for (index, output) in frame.lifecycle_outputs.iter().enumerate() {
-        if let Some(cursor_clear) = fixture
-            .projection
-            .apply_lifecycle_output(output, Some(owner))
+        if let Some(cursor_clear) =
+            fixture
+                .projection
+                .apply_lifecycle_output(output, Some(owner), crate::rules::ARES_BUILD)
         {
             clears += 1;
             fixture

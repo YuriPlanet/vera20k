@@ -468,6 +468,15 @@ impl AssetManager {
         &self.ini_roots
     }
 
+    /// Whether startup mounted Ares's `ares.mix` from the installation or the
+    /// mod. It makes Ares play in every game (`rules::ares_switch`).
+    #[cfg(feature = "ares")]
+    pub fn ships_ares(&self) -> bool {
+        self.archives
+            .iter()
+            .any(|archive| archive_name_matches(&archive.name, "ares.mix"))
+    }
+
     /// Read-only INI tooling without a complete retail installation. No game
     /// archives are implicitly registered; the probe may explicitly use the
     /// existing load_all_disk_mixes widening. Not a gameplay constructor.
@@ -555,26 +564,17 @@ impl AssetManager {
     ) -> Result<Self, AssetError> {
         let mut manager = Self::from_roots(ra2_dir, mod_dir)?;
 
-        // WinMain registers the YR language archive before the RA2 fallback.
-        manager.mount_startup_archive("langmd.mix", false, &mut policy)?;
-        manager.mount_startup_archive("language.mix", false, &mut policy)?;
-
-        // Init_Base_Mix_Files probes all expansion slots in descending order.
-        for index in (0..=99).rev() {
-            manager.mount_startup_archive(
-                &format!("expandmd{index:02}.mix"),
-                false,
-                &mut policy,
-            )?;
-        }
-
-        for name in MASTER_ARCHIVES {
-            manager.mount_startup_archive(name, true, &mut policy)?;
-        }
-
-        for name in ["cachemd.mix", "cache.mix", "localmd.mix", "local.mix"] {
-            manager.mount_startup_archive(name, true, &mut policy)?;
-        }
+        // WinMain registers the YR language archive before the RA2 fallback,
+        // and Init_Game later runs Init_Base_Mix_Files (0x0052BB64). Ares's
+        // Expand_MIX_Reorg (hook 0x006BD7E3, before the LANGMD.MIX constructor
+        // call at 0x006BD7EF) runs Init_Base_Mix_Files there instead, and
+        // Expand_MIX_Deorg (0x0052BB64) skips Init_Game's call, so expansions
+        // and the masters resolve ahead of LANGMD.MIX and LANGUAGE.MIX.
+        #[cfg(not(feature = "ares"))]
+        manager.mount_language_archives(&mut policy)?;
+        manager.mount_base_mix_files(&mut policy)?;
+        #[cfg(feature = "ares")]
+        manager.mount_language_archives(&mut policy)?;
 
         // AudioSystem__Init uses exactly one archive: the MD archive when
         // present, otherwise the base archive.
@@ -583,6 +583,14 @@ impl AssetManager {
         }
 
         manager.select_audio_pair();
+
+        // Init_External_Cache_Local_Mixes @ 0x00530000 (Init_Game call at
+        // 0x0052C307, after Init_Base_Mix_Files at 0x0052BB64 and before
+        // Init_Mix_Files at 0x0052C59C): every `ECACHE*.MIX`, then every
+        // `ELOCAL*.MIX`, registered as listed. A missing or unreadable one is
+        // skipped (MixFileClass__Constructor @ 0x005B3C20 leaves it unlinked).
+        manager.mount_wildcard_archives(None, "ecache")?;
+        manager.mount_wildcard_archives(None, "elocal")?;
 
         // Init_Mix_Files constructs only these named core archives. Optional
         // constructors are allowed to fail exactly where retail does not gate
@@ -1483,6 +1491,40 @@ impl AssetManager {
         }
     }
 
+    /// WinMain's LANGMD.MIX, then the RA2 LANGUAGE.MIX fallback.
+    fn mount_language_archives(
+        &mut self,
+        policy: &mut StartupArchivePolicy<'_>,
+    ) -> Result<(), AssetError> {
+        self.mount_startup_archive("langmd.mix", false, policy)?;
+        self.mount_startup_archive("language.mix", false, policy)?;
+        Ok(())
+    }
+
+    /// Init_Base_Mix_Files 0x005301A0: every expansion slot in descending
+    /// order, then the masters and their cache and local archives.
+    fn mount_base_mix_files(
+        &mut self,
+        policy: &mut StartupArchivePolicy<'_>,
+    ) -> Result<(), AssetError> {
+        for index in (0..=99).rev() {
+            self.mount_startup_archive(&format!("expandmd{index:02}.mix"), false, policy)?;
+        }
+        // Ares Load_Bootstrap_AresMIX (hook 0x0053029E, Ares::InitOwnResources)
+        // constructs ares.mix once the expansion probe ends, before the
+        // RA2MD.MIX constructor call at 0x005302AA, so it resolves after every
+        // expansion and ahead of the masters. A missing file is skipped.
+        #[cfg(feature = "ares")]
+        self.mount_startup_archive("ares.mix", false, policy)?;
+        for name in MASTER_ARCHIVES {
+            self.mount_startup_archive(name, true, policy)?;
+        }
+        for name in ["cachemd.mix", "cache.mix", "localmd.mix", "local.mix"] {
+            self.mount_startup_archive(name, true, policy)?;
+        }
+        Ok(())
+    }
+
     fn mount_startup_archive(
         &mut self,
         name: &str,
@@ -2279,6 +2321,37 @@ mod tests {
         assert_eq!(original.get_ref("rulesmd.ini"), Some(&b"game rules"[..]));
         assert_eq!(original.get_ref("unit.shp"), Some(&b"game unit"[..]));
         assert_eq!(original.get_ref("new.vxl"), None);
+    }
+
+    #[test]
+    fn startup_mounts_ecache_then_elocal_archives_between_expansions_and_core() {
+        let install = audio_test_install("ecache-elocal");
+        install.write_mix("expandmd01.mix", "shared.shp", b"expansion");
+        install.write_mix("ECACHE01.MIX", "shared.shp", b"ecache one");
+        install.write_mix("ecachemd02.mix", "cache.shp", b"ecache two");
+        install.write_mix("elocal99.mix", "cache.shp", b"elocal");
+        let mod_dir = TestDirectory::new("ecache-elocal-mod");
+        mod_dir.write_mix("ecachemod.mix", "mod.vxl", b"mod model");
+
+        let stock = MediaArchiveMode::STOCK_DIGITAL;
+        let manager = AssetManager::with_mod(install.path(), Some(mod_dir.path()), stock).unwrap();
+        // An expansion archive is registered first and keeps a shared name.
+        assert_eq!(manager.get_ref("shared.shp"), Some(&b"expansion"[..]));
+        // ECACHE before ELOCAL, each family in listing order; a mod folder's
+        // archives list with the installation's.
+        assert_eq!(manager.get_ref("cache.shp"), Some(&b"ecache two"[..]));
+        assert_eq!(manager.get_ref("mod.vxl"), Some(&b"mod model"[..]));
+        let names = manager.loaded_archive_names();
+        let at = |name: &str| {
+            names
+                .iter()
+                .position(|loaded| loaded.eq_ignore_ascii_case(name))
+                .unwrap_or_else(|| panic!("{name} is registered: {names:?}"))
+        };
+        assert!(at("expandmd01.mix") < at("ECACHE01.MIX"));
+        assert!(at("ECACHE01.MIX") < at("ecachemd02.mix"));
+        assert!(at("ecachemod.mix") < at("elocal99.mix"));
+        assert!(at("elocal99.mix") < at("conqmd.mix"));
     }
 
     #[test]

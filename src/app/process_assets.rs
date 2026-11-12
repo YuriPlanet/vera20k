@@ -403,6 +403,11 @@ impl ProcessAssets {
                 bytes.extend_from_slice(digest.as_bytes());
             }
         }
+        // Whether Ares plays (`rules::ares_switch`) follows these sources and
+        // the map, which the map agreement covers, and whether `ares.mix`
+        // ships. A build without Ares never plays it and keeps the old bytes.
+        #[cfg(feature = "ares")]
+        bytes.push(u8::from(assets.ships_ares()));
         // VERA: with a mod in use, its other files too (art, maps, archives),
         // so players whose copies of a mod differ never start a match. Without
         // a mod the digest is what it was before mods.

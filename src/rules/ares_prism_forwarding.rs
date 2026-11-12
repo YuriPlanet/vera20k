@@ -100,6 +100,7 @@ impl PrismForwardingRules {
         prism_type: Option<&str>,
         targets: Option<Vec<String>>,
     ) -> bool {
+        let _ares = crate::rules::ares_switch::ares_reads();
         if !self.initialized {
             self.initialized = true;
             if prism_type == Some(type_id) {

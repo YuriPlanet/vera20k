@@ -743,11 +743,11 @@ fn retail_disk_attack_delivers_without_ordinary_bullet_fire() {
     );
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: SimResources {
+        resources: std::sync::Arc::new(SimResources {
             rules,
             overlay_registry: registry,
             ..SimResources::empty()
-        },
+        }),
     };
     let mut commands = vec![command];
     for frame in 0..300 {
@@ -827,11 +827,11 @@ fn ares_disk_hit_flashes_and_plays_the_enabled_damage_anim() {
         );
         let mut runtime = SimRuntime {
             simulation: sim,
-            resources: SimResources {
+            resources: std::sync::Arc::new(SimResources {
                 rules,
                 overlay_registry: registry,
                 ..SimResources::empty()
-            },
+            }),
         };
         let mut commands = vec![command];
         let mut flashed = false;
