@@ -650,7 +650,7 @@ pub(crate) fn build_control_group_status_instances(
         hovered_entity_id,
         local_owner_id,
         state.match_state.sandbox_full_visibility,
-        &state.match_state.match_presentation.house_color_map,
+        &state.match_state.match_presentation.effective_house_color_map(),
         &rules.house_color_ramps,
         &state.renderer.bit_font,
         [
@@ -862,7 +862,7 @@ pub(crate) fn build_building_status_instances(
         sim,
         body_opportunities,
         current_house,
-        &state.match_state.match_presentation.house_color_map,
+        &state.match_state.match_presentation.effective_house_color_map(),
         &rules.house_color_ramps,
         &state.renderer.bit_font,
         csf,

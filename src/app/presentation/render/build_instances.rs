@@ -331,7 +331,7 @@ pub(super) fn build_world_instances(
             detail_level: presentation.in_game_options.detail_level,
             lighting: presentation.lighting.grid(),
             retained_anim_intensities: Some(presentation.lighting.anim_intensities()),
-            house_colors: &presentation.house_color_map,
+            house_colors: presentation.effective_house_color_map(),
             hidden_super_anims: &presentation.hidden_super_anims,
             show_hidden: presentation.in_game_options.show_hidden,
             local_owner,
@@ -860,7 +860,10 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
                     view.entities(),
                     view.logic_order(),
                     view.houses(),
-                    &presentation.house_color_map,
+                    presentation
+                        .relation_color_map
+                        .as_ref()
+                        .unwrap_or(&presentation.house_color_map),
                     view.session().tick(),
                     view.session().binary_frame(),
                     local_owner
@@ -880,6 +883,7 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
                         .beacon_art
                         .as_ref()
                         .map(|art| (art, beacon_draws.as_slice())),
+                    presentation.relation_color_generation,
                 ),
             )
         });
@@ -996,7 +1000,7 @@ pub(super) fn build_ui_instances(
             .match_state
             .match_presentation
             .surface_palette(state.process_assets.manager()),
-        &state.match_state.match_presentation.house_color_map,
+        &state.match_state.match_presentation.effective_house_color_map(),
         wall_ms,
         view,
         if interleave_enabled {
@@ -1016,7 +1020,7 @@ pub(super) fn build_ui_instances(
                 .map(|rt| &rt.simulation),
             state.rules(),
             &cursor.selected,
-            &state.match_state.match_presentation.house_color_map,
+            &state.match_state.match_presentation.effective_house_color_map(),
             preferred_local_owner(state).as_deref(),
             view,
         );
@@ -1169,14 +1173,12 @@ fn build_placement_ghost(
     let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
     let remap_house = local_owner
         .as_deref()
-        .and_then(|owner| {
+        .map(|owner| {
             state
                 .match_state
                 .match_presentation
-                .house_color_map
-                .get(owner)
-        })
-        .copied();
+                .effective_house_color(owner)
+        });
     let translucency = object
         .placement_preview_translucency()
         .unwrap_or(globals.translucency);

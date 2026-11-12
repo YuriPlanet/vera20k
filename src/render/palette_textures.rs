@@ -22,7 +22,9 @@
 
 use crate::assets::pal_file::Palette;
 use crate::render::gpu::GpuContext;
-use crate::rules::house_colors::{HouseColorIndex, HouseColorRamps, NO_REMAP};
+use crate::rules::house_colors::{
+    HouseColorIndex, HouseColorRamps, NO_REMAP, RELATION_ALLY, RELATION_ENEMY, RELATION_SELF,
+};
 
 /// Rows of the per-house ramp texture: row 0 is the no-remap fallback and
 /// row `hc + 1` holds `[Colors]` entry `hc`, so every `u8` entry below
@@ -277,6 +279,22 @@ fn build_house_ramp_bytes(
         let ramp = ramps.ramp(house);
         for (i, c) in ramp.iter().enumerate() {
             let off: usize = row_start + i * 4;
+            out[off] = c.r;
+            out[off + 1] = c.g;
+            out[off + 2] = c.b;
+            out[off + 3] = 255;
+        }
+    }
+    // VERA relation-colour rows are always present (rows 249/250/251 = index
+    // + 1) so the "relation colours" toggle's self/ally/enemy bands exist on
+    // every map, independent of which houses are active. They are written even
+    // when no house currently uses them, matching how `house_color_to_remap_row`
+    // routes `RELATION_*` indices to these rows.
+    for relation in [RELATION_SELF, RELATION_ALLY, RELATION_ENEMY] {
+        let row: usize = relation.0 as usize + 1;
+        let row_start: usize = row * row_bytes;
+        for (j, c) in ramps.ramp(relation).iter().enumerate() {
+            let off: usize = row_start + j * 4;
             out[off] = c.r;
             out[off + 1] = c.g;
             out[off + 2] = c.b;

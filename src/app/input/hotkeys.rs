@@ -25,7 +25,7 @@ const VK_DELETE: u16 = 0x2e;
 /// Rotate Primary I.
 /// Retail `KEYBOARDMD.INI` binds none of these keys but F, which is its
 /// Follow; [`HotkeyBindings::move_follow_off_formation_key`] moves that.
-const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 9] = [
+const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 10] = [
     (HotkeyCommand::PerformanceStats, CTRL_BIT | ALT_BIT | 0x46),
     (HotkeyCommand::LockCursor, CTRL_BIT | ALT_BIT | 0x4c),
     (HotkeyCommand::FullScreen, ALT_BIT | 0x0d),
@@ -35,6 +35,7 @@ const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 9] = [
     (HotkeyCommand::FormationLock, 0x4f),
     (HotkeyCommand::Ferry, 0x4a),
     (HotkeyCommand::RotatePrimary, 0x49),
+    (HotkeyCommand::RelationColors, ALT_BIT | 0x41),
 ];
 /// F: Formation Line's default key and retail Follow's.
 const FORMATION_LINE_KEY: u16 = 0x46;
@@ -127,6 +128,11 @@ pub(crate) enum HotkeyCommand {
     /// In a match: the selected factories of one kind take turns being the
     /// primary (`input::primary_rotation`). It comes with a default key.
     RotatePrimary,
+    /// VERA: toggle "relation colours" — recolour every house by its diplomatic
+    /// relation to the local observer (self = blue, ally = green, enemy = red,
+    /// neutral unchanged) to tell players apart in large melee matches. Pure
+    /// presentation; works in a match only.
+    RelationColors,
     /// VeraX: load the selection into nearby transports. Registered in the
     /// `vera20k` keyboard category with the Ctrl+D default.
     AutoLoad,

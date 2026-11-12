@@ -2191,6 +2191,31 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         HotkeyCommand::RotatePrimary => {
             crate::app::input::primary_rotation::hotkey_pressed(state);
         }
+        // VERA: toggle relation colours — recolour every house by its diplomatic
+        // relation to the local observer (self = blue, ally = green, enemy = red,
+        // neutral unchanged) to tell players apart in large melee matches. Pure
+        // presentation: it never touches the simulation, so it cannot affect
+        // determinism, networking, or replays.
+        HotkeyCommand::RelationColors => {
+            let local_owner = state.match_state.local_player_owner().map(str::to_string);
+            let toggle = !state.match_state.match_presentation.relation_colors;
+            state.match_state.match_presentation.relation_colors = toggle;
+            if let Some(sim) = state
+                .match_state
+                .sim_runtime
+                .presentation()
+                .map(|rt| &rt.simulation)
+            {
+                state
+                    .match_state
+                    .match_presentation
+                    .rebuild_relation_color_map(sim, local_owner.as_deref());
+                // Beacons are baked per-house at load; rebuild them so they
+                // follow the toggle (self = blue, ally = green, enemy = red).
+                state.match_state.match_presentation.beacon_art =
+                    crate::app::loading::transitions::build_beacon_art(state);
+            }
+        }
     }
 }
 

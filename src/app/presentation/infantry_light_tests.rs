@@ -193,6 +193,7 @@ fn assert_shp_light(
             ignore_visibility: true,
             lighting: light,
             house_colors: &colors,
+            relation_color_map: None,
             building_zshape: false,
         },
         &mut draws,

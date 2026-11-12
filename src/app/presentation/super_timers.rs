@@ -440,14 +440,12 @@ pub(crate) fn build_super_timer_instances(
     let schemes = rules.color_schemes.as_slice();
     let house_rgb = |house: Option<InternedId>| {
         let color = house
-            .and_then(|house| {
+            .map(|house| {
                 state
                     .match_state
                     .match_presentation
-                    .house_color_map
-                    .get(sim.interner().resolve(house))
+                    .effective_house_color(sim.interner().resolve(house))
             })
-            .copied()
             .unwrap_or(NO_REMAP);
         house_text_rgb(schemes, color)
     };

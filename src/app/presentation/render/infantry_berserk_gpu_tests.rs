@@ -597,6 +597,7 @@ fn render_original_body_pixels(
                         ignore_visibility: true,
                         lighting: &light_grid,
                         house_colors: &house_colors,
+                        relation_color_map: None,
                         building_zshape: false,
                     },
                     &mut objects,

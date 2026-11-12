@@ -276,6 +276,7 @@ fn present(
                     &overlay_colors,
                     view.resolved_terrain(),
                     None,
+                    0,
                 ))
             },
         )

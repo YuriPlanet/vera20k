@@ -220,6 +220,7 @@ fn gate_piece(
         ignore_visibility: true,
         lighting: &lighting,
         house_colors: colors,
+        relation_color_map: None,
         building_zshape: true,
     };
     let order = NativeDisplayOrder::from_display(runtime.simulation.display_layers());

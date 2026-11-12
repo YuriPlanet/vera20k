@@ -2748,7 +2748,10 @@ fn finish_simulation_frame(
                 LifecycleOutput::LaserCreated(birth) => {
                     let runtime = state.match_state.sim_runtime.runtime();
                     let presentation = &mut state.match_state.match_presentation;
-                    let colors = &presentation.house_color_map;
+                    let colors = presentation
+                        .relation_color_map
+                        .as_ref()
+                        .unwrap_or(&presentation.house_color_map);
                     presentation
                         .lasers
                         .create(birth, |owner| house_laser_rgb(runtime, colors, owner));
@@ -2763,7 +2766,10 @@ fn finish_simulation_frame(
                 LifecycleOutput::RadiationBeamCreated(birth) => {
                     let runtime = state.match_state.sim_runtime.runtime();
                     let presentation = &mut state.match_state.match_presentation;
-                    let colors = &presentation.house_color_map;
+                    let colors = presentation
+                        .relation_color_map
+                        .as_ref()
+                        .unwrap_or(&presentation.house_color_map);
                     presentation
                         .radiation_beams
                         .create(birth, |owner, kind| match kind {
@@ -2889,13 +2895,13 @@ fn finish_simulation_frame(
                     !sprite_atlas::atlas_covers_anim_remaps(
                         state.match_state.match_presentation.sprite_atlas.as_ref(),
                         &runtime.simulation,
-                        &state.match_state.match_presentation.house_color_map,
+                        &state.match_state.match_presentation.effective_house_color_map(),
                     ) || !sprite_atlas::atlas_covers_sprite_keys(
                         state.match_state.match_presentation.sprite_atlas.as_ref(),
                         &sprite_atlas::collect_fogged_sprite_keys(
                             &runtime.simulation,
                             &runtime.resources.rules,
-                            &state.match_state.match_presentation.house_color_map,
+                            &state.match_state.match_presentation.effective_house_color_map(),
                         ),
                         Some(&runtime.resources.rules),
                     )
@@ -3139,7 +3145,10 @@ pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
             sim: &rt.simulation,
             rules: Some(&rt.resources.rules),
             asset_manager,
-            house_colors: &presentation.house_color_map,
+            house_colors: presentation
+                .relation_color_map
+                .as_ref()
+                .unwrap_or(&presentation.house_color_map),
             theater_name: &presentation.theater_name,
             theater_ext: &presentation.theater_ext,
             max_texture_dimension_2d: state.renderer.gpu.device.limits().max_texture_dimension_2d,
