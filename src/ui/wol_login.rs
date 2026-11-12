@@ -288,6 +288,8 @@ pub(crate) struct WolLoginState {
     pub(crate) forget_enabled: bool,
     pub(crate) login_enabled: bool,
     pub(crate) focused_control: u16,
+    /// Android: a tap focused an edit, so the soft keyboard may show.
+    pub(crate) ime_armed: bool,
     pub(crate) buttons: ShellButtonInteraction<u16>,
     /// The nickname combo's open list.
     pub(crate) popup: ComboPopupInteraction<()>,
@@ -355,6 +357,7 @@ impl WolLoginState {
             forget_enabled: !globals.nickname.is_empty(),
             login_enabled: login_ok(&globals.nickname, &globals.password),
             focused_control: NICKNAME,
+            ime_armed: false,
             buttons: ShellButtonInteraction::default(),
             popup: ComboPopupInteraction::default(),
             remembered: None,
@@ -402,6 +405,7 @@ impl WolLoginState {
             forget_enabled: false,
             login_enabled: false,
             focused_control: NICKNAME,
+            ime_armed: false,
             buttons: ShellButtonInteraction::default(),
             popup: ComboPopupInteraction::default(),
             remembered: remembered.map(str::to_owned),
@@ -469,6 +473,12 @@ impl WolLoginState {
         };
         if control != FORM_REMEMBER {
             form.press(Some(control));
+            // Android: a tap on a field asks for the soft keyboard.
+            #[cfg(target_os = "android")]
+            {
+                self.ime_armed = true;
+                crate::util::android_ime::request_show();
+            }
             return (false, None);
         }
         if !on_box {
@@ -493,6 +503,7 @@ impl WolLoginState {
         self.focused_control = control;
         self.nickname.focused = control == NICKNAME;
         self.password.focused = control == PASSWORD;
+        self.ime_armed = true;
     }
 
     pub(crate) fn caret_visible(&self, now: Instant) -> bool {
