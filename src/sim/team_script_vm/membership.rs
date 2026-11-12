@@ -38,11 +38,14 @@
 use crate::map::entities::EntityCategory;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::game_entity::GameEntity;
 use crate::sim::movement::ground_pose::position_world_xy;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
 
-use super::{TeamMember, TeamRules, member_type_identity, script_action_at};
+use super::{
+    TeamMember, TeamMemberTypeIdentity, TeamRules, member_type_identity, script_action_at,
+};
 
 /// `Recruit`'s penalty on a candidate outside the team's group, added to
 /// the squared distance (`0x006EABFA`).
@@ -66,6 +69,43 @@ pub(super) struct RecruitCandidate {
     /// It passes the search's own tests: for a unit, the team's house's and
     /// of the entry's type.
     pub(super) matches: bool,
+}
+
+/// The walks of a house's objects one team's recruit loop shares between its
+/// short TaskForce entries of a class in one update (`TeamClass::AI`'s loop,
+/// `0x006E927A`); see [`Simulation::team_recruit`].
+#[derive(Debug, Default)]
+pub(super) struct RecruitWalks(Vec<RecruitWalk>);
+
+/// One walk of a house's objects of one class.
+#[derive(Debug)]
+struct RecruitWalk {
+    class: EntityCategory,
+    /// The ids the store listed for the house and class: the walk holds
+    /// while it lists exactly these.
+    owned: Vec<u64>,
+    /// Those of a TaskForce type, in the same order.
+    typed: Vec<u64>,
+}
+
+impl RecruitWalks {
+    /// The ids of a TaskForce type the walk of `class` found, while the
+    /// store still lists `owned` for it.
+    fn typed(&self, class: EntityCategory, owned: &[u64]) -> Option<&[u64]> {
+        self.0
+            .iter()
+            .find(|walk| walk.class == class && walk.owned == owned)
+            .map(|walk| walk.typed.as_slice())
+    }
+
+    fn keep(&mut self, class: EntityCategory, owned: &[u64], typed: Vec<u64>) {
+        self.0.retain(|walk| walk.class != class);
+        self.0.push(RecruitWalk {
+            class,
+            owned: owned.to_vec(),
+            typed,
+        });
+    }
 }
 
 /// `Recruit`'s search (`0x006EAB86..0x006EAE19`) over one class array in
@@ -499,11 +539,14 @@ impl Simulation {
     /// when strictly nearer, or the best is still -1. A unit must also be
     /// the team's house's and of the entry's own type; an infantryman or an
     /// aircraft may be of any entry's type. The winner loses its target
-    /// (`vt+0x3C8`) and joins ([`Self::team_add_member`]).
-    pub(crate) fn team_recruit(
+    /// (`vt+0x3C8`) and joins ([`Self::team_add_member`]). `walks` carries
+    /// the walk of the house's objects to the team's later short entries in
+    /// the same update.
+    pub(super) fn team_recruit(
         &mut self,
         team_id: u64,
         slot: usize,
+        walks: &mut RecruitWalks,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
@@ -553,20 +596,27 @@ impl Simulation {
         // (`0x006EA610`) refuses an infantryman or aircraft of no entry's
         // type, also before any write. VERA reads such an object's type and
         // nothing more.
+        //
+        // A later short entry of the class in the same update weighs only
+        // the objects of a TaskForce type this walk found (`walks`), each
+        // read afresh, while the store lists the same objects for the house.
+        // Only `convert_techno_type` and `store_techno_type` write an object's
+        // type, and nothing a recruit reaches (`Add_Member`, the old team's
+        // `Remove_Member` and its idle mode) calls them, so no other object
+        // can have become one of a TaskForce type in between.
         let entities = &self.substrate.entities;
-        let candidates = entities
-            .owned_ids(team.owner, class)
-            .iter()
-            .filter_map(|&id| entities.get(id).map(|entity| (id, entity)))
-            .filter(|(_, entity)| {
-                let member_type = member_type_identity(entity);
-                if class == EntityCategory::Unit {
-                    member_type == entry.member_type
-                } else {
-                    entries.iter().any(|entry| entry.member_type == member_type)
-                }
-            })
-            .map(|(id, entity)| RecruitCandidate {
+        let owned = entities.owned_ids(team.owner, class);
+        let of_task_force_type = |member_type: TeamMemberTypeIdentity| {
+            entries.iter().any(|entry| entry.member_type == member_type)
+        };
+        let weigh = |id: u64, entity: &GameEntity| {
+            let member_type = member_type_identity(entity);
+            let weighed = if class == EntityCategory::Unit {
+                member_type == entry.member_type
+            } else {
+                of_task_force_type(member_type)
+            };
+            weighed.then(|| RecruitCandidate {
                 id,
                 xy: position_world_xy(&entity.position),
                 // gamemd.exe Recruit6EAA90 reads Techno+214, including
@@ -576,15 +626,55 @@ impl Simulation {
                 // weighed is the team's house's, and a unit of the entry's
                 // type.
                 matches: true,
-            });
-        let winner = recruit_pick(
-            candidates,
-            origin,
-            group,
-            recruiter,
-            |id| self.team_can_add(team_id, id, false, rules).is_some(),
-            rules.ares(),
-        );
+            })
+        };
+        let can_add = |id| self.team_can_add(team_id, id, false, rules).is_some();
+        let winner = if let Some(typed) = walks.typed(class, owned) {
+            debug_assert!(
+                !crate::sim::touch_log::live_read_check_enabled()
+                    || typed.iter().copied().eq(entities
+                        .values()
+                        .filter(|entity| {
+                            entity.owner() == team.owner
+                                && entity.category() == class
+                                && of_task_force_type(member_type_identity(entity))
+                        })
+                        .map(GameEntity::stable_id)),
+                "a recruit walk outlived a change of its objects' types"
+            );
+            recruit_pick(
+                typed.iter().filter_map(|&id| weigh(id, entities.get(id)?)),
+                origin,
+                group,
+                recruiter,
+                can_add,
+                rules.ares(),
+            )
+        } else {
+            // Kept only when a later entry of the class may search again.
+            let later = entries[slot + 1..]
+                .iter()
+                .any(|later| EntityCategory::from(later.member_type.category) == class);
+            let mut typed = Vec::new();
+            let winner = recruit_pick(
+                owned.iter().filter_map(|&id| {
+                    let entity = entities.get(id)?;
+                    if later && of_task_force_type(member_type_identity(entity)) {
+                        typed.push(id);
+                    }
+                    weigh(id, entity)
+                }),
+                origin,
+                group,
+                recruiter,
+                can_add,
+                rules.ares(),
+            );
+            if later {
+                walks.keep(class, owned, typed);
+            }
+            winner
+        };
         let Some(winner) = winner else {
             return false;
         };
