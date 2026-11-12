@@ -173,10 +173,18 @@ pub(super) fn deploy_yard_maker(
             brain.census.base_cell,
         );
         let home = brain.census.base_cell;
-        let exposed = !space.ground_at(cell).buildable();
-        let far = home.is_some_and(|home| {
+        let ground = space.ground_at(cell);
+        // Only the enemy's own ground, or open contested ground away from home,
+        // moves a maker. An enemy at the gate makes the cells around the base
+        // Contested, and reading that as "flee" sent the house's own MCV
+        // shuffling around its own walls under fire — the wishlist's
+        // "主基地车会收缩".
+        let beyond_the_line = home.is_some_and(|home| {
             cell_distance(cell, home) > EXPAND_MIN_CELLS * EXPAND_MIN_CELLS * 4
         });
+        let exposed = matches!(ground, super::terrain::Ground::Enemy)
+            || (matches!(ground, super::terrain::Ground::Contested) && beyond_the_line);
+        let far = beyond_the_line;
         // The one line that says why a maker is not coming home, on a term: a
         // report of "the captured MCV never arrived" needs to distinguish "it was
         // never asked", "it was asked and refused" and "it is walking".

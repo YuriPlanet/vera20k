@@ -1338,10 +1338,24 @@ pub(super) fn sell_hard_to_hold(
         if super::expand::makes_a_yard(rules, ty) {
             continue;
         }
+        // A Construction Yard is never sold and never packed while it is the
+        // house's only one, whatever its cell reads as. An enemy at the gate
+        // makes every cell near it Contested, and reading that as "cannot be
+        // held" is how a base packs itself up under fire — the wishlist's
+        // "主基地车会收缩".
+        if ty.construction_yard
+            && (brain.census.yards <= 1 || brain.census.base_cell == Some(unit.cell))
+        {
+            continue;
+        }
         let far = squared_distance(home, unit.cell) > HOLDLESS_CELLS * HOLDLESS_CELLS;
         let hurt = unit.health_permille <= HOLDLESS_HEALTH as u16;
-        let exposed = !space.ground_at(unit.cell).buildable();
-        if !(far || hurt || exposed) {
+        // "Exposed" alone is not a reason. A building inside the house's own
+        // walls is defensible while an enemy is at the gate, and selling it then
+        // is the windfall the enemy was after. Only a building that is also out
+        // of reach counts, and it still has to be far or hurt to go.
+        let abandoned = far && !space.ground_at(unit.cell).buildable();
+        if !(far || hurt) {
             continue;
         }
         // A captured yard is not sold, it is packed. It is the one building that
@@ -1360,7 +1374,7 @@ pub(super) fn sell_hard_to_hold(
             return;
         }
         log::info!(
-            "auto play: sell {} at {:?} (far={far} hurt={hurt} exposed={exposed})",
+            "auto play: sell {} at {:?} (far={far} hurt={hurt} abandoned={abandoned})",
             ty.id,
             unit.cell
         );
