@@ -57,9 +57,11 @@ use crate::rules::sound_ini::{
 use crate::sim::snapshot::scenario_resources::SavedStaticSound;
 use crate::util::native_x87::X87Chop53;
 
+mod clip_cache;
 mod observation;
 mod playback;
 mod sample_queue;
+use clip_cache::ClipCache;
 use playback::{PlaybackControl, PlaylistCursor, RingSource};
 use sample_queue::SampleQueue;
 #[cfg(test)]
@@ -665,10 +667,12 @@ impl LoadedSampleIndices {
 
 /// Decoded audio ready for rodio playback.
 /// Holds interleaved f32 stereo samples, sample rate, and channel count.
+/// A clone shares the samples, so every start of a clip the [`ClipCache`]
+/// keeps plays one decode.
 #[derive(Clone)]
 pub(crate) struct DecodedAudio {
     /// Interleaved stereo f32 samples (L, R, L, R, ...).
-    pub(crate) samples: Vec<f32>,
+    pub(crate) samples: Arc<[f32]>,
     pub(crate) sample_rate: u32,
     /// Always 2 (stereo) — we upmix mono sources for consistency.
     pub(crate) channels: u16,
@@ -687,8 +691,9 @@ impl DecodedAudio {
     fn append(&mut self, other: DecodedAudio) {
         let layout = (self.native_channels, self.native_sample_bytes);
         let chained = playback::chained_samples(&other, layout);
-        self.samples
-            .extend_from_slice(chained.as_deref().unwrap_or(&other.samples));
+        let mut samples = self.samples.to_vec();
+        samples.extend_from_slice(chained.as_deref().unwrap_or(&other.samples));
+        self.samples = samples.into();
     }
 }
 
@@ -1113,6 +1118,7 @@ struct PendingSampleService<'a> {
     registry: &'a SoundRegistry,
     assets: &'a AssetManager,
     audio_index: Option<&'a crate::assets::audio_bag::AudioIndex>,
+    clips: &'a mut ClipCache,
     rng: &'a mut PlaybackDraws,
     observer: Option<&'a mut PcmObserver>,
 }
@@ -1159,21 +1165,21 @@ impl PlaybackService for PendingSampleService<'_> {
             return true;
         }
         let Some(entry) = self.registry.get(&pending.key) else {
-            pending.prepared =
-                load_sfx(&pending.key, self.assets, self.audio_index).map(|decoded| {
-                    ResolvedPlayback {
-                        decoded,
-                        observed_samples: self
-                            .observer
-                            .as_ref()
-                            .is_some_and(|observer| observer.contains(pending.token))
-                            .then(|| vec![pending.key.clone()]),
-                    }
+            pending.prepared = self
+                .clips
+                .load(&pending.key, self.assets, self.audio_index)
+                .map(|decoded| ResolvedPlayback {
+                    decoded,
+                    observed_samples: self
+                        .observer
+                        .as_ref()
+                        .is_some_and(|observer| observer.contains(pending.token))
+                        .then(|| vec![pending.key.clone()]),
                 });
             return pending.prepared.is_some();
         };
         pending.load_entry_samples(entry, plays_attack, self.rng, |name| {
-            load_sfx(name, self.assets, self.audio_index)
+            self.clips.load(name, self.assets, self.audio_index)
         })
     }
 
@@ -1249,6 +1255,8 @@ pub struct SfxPlayer {
     pending: BTreeMap<EventId, PendingPlayback>,
     /// Started outputs, keyed by the arbiter event holding the channel.
     live: BTreeMap<EventId, LiveSfxOutput>,
+    /// The decoded samples every start and announcement loads through.
+    clips: ClipCache,
     /// Presentation diagnostics only; absent in ordinary play. It never
     /// supplies an arbiter, sample-selection or simulation decision.
     pcm_observer: Option<PcmObserver>,
@@ -1392,6 +1400,7 @@ impl SfxPlayer {
             next_coordinate_request: 1,
             pending: BTreeMap::new(),
             live: BTreeMap::new(),
+            clips: ClipCache::default(),
             pcm_observer: None,
             now_ms: 0,
             vox: VoxQueue::new(),
@@ -2220,7 +2229,7 @@ impl SfxPlayer {
         };
         // Vox75295C plays the column's physical filename directly. It does
         // not resolve a Voc entry or consume Main sample-selection draws.
-        let Some(decoded) = load_sfx(sample, assets, audio_index) else {
+        let Some(decoded) = self.clips.load(sample, assets, audio_index) else {
             log::debug!("EVA {} has no sample {}", node.event, sample);
             return;
         };
@@ -2257,7 +2266,8 @@ impl SfxPlayer {
         );
         let channels = NonZero::new(decoded.channels)?;
         let sample_rate = NonZero::new(decoded.sample_rate)?;
-        let source = SamplesBuffer::new(channels, sample_rate, decoded.samples);
+        // rodio 0.22.2 `SamplesBuffer::new` takes its samples only as a `Vec`.
+        let source = SamplesBuffer::new(channels, sample_rate, decoded.samples.to_vec());
         let player: Player = Player::connect_new(self._device.mixer());
         let output = LiveSfxOutput::new(player, gain, initial_volume);
         output.player.append(source);
@@ -2385,6 +2395,7 @@ impl SfxPlayer {
                 registry,
                 assets,
                 audio_index,
+                clips: &mut self.clips,
                 rng,
                 observer: self.pcm_observer.as_mut(),
             },
@@ -2468,8 +2479,7 @@ impl SfxPlayer {
             output.control = Some(control);
             output.player.append(source);
         } else if let Some(resolved) = pending.prepared.take() {
-            let mut decoded = resolved.decoded;
-            apply_pan(&mut decoded.samples, pan);
+            let decoded = resolved.decoded;
             let (Some(channels), Some(rate)) = (
                 NonZero::new(decoded.channels),
                 NonZero::new(decoded.sample_rate),
@@ -2477,12 +2487,16 @@ impl SfxPlayer {
                 self.arbiter.stop(event);
                 return;
             };
+            // The pan goes into this start's own copy; the cached clip stays
+            // as decoded.
+            let mut samples = decoded.samples.to_vec();
+            apply_pan(&mut samples, pan);
             if let Some(observer) = &mut self.pcm_observer {
-                observer.samples(token, resolved.observed_samples, decoded.samples.len());
+                observer.samples(token, resolved.observed_samples, samples.len());
             }
             output
                 .player
-                .append(SamplesBuffer::new(channels, rate, decoded.samples));
+                .append(SamplesBuffer::new(channels, rate, samples));
         } else {
             self.arbiter.stop(event);
             return;
@@ -2962,41 +2976,44 @@ fn resolve_entry_playback_pass(
     )
 }
 
-/// Load a sound effect file and decode it to interleaved f32 stereo samples.
-///
-/// Resolution order:
-/// 1. Try the selected audio.bag index (most voice/EVA sounds live here)
-/// 2. Try MIX asset lookup by exact name
-/// 3. Try MIX asset lookup with .wav extension appended
-///
-/// Supports .wav (raw PCM), .aud (IMA ADPCM), and audio.bag formats.
+/// A sample decoded from its file bytes, without the [`ClipCache`]: what
+/// [`ClipCache::load`] gives for a name it has not kept.
+#[cfg(test)]
 fn load_sfx(
     filename: &str,
     assets: &AssetManager,
     audio_index: Option<&crate::assets::audio_bag::AudioIndex>,
 ) -> Option<DecodedAudio> {
-    // Try the selected audio.bag index first (voices, EVA announcements).
-    if let Some(index) = audio_index
-        && let Some((entry, data)) = index.get(filename)
-        && let Some(bag_audio) = crate::assets::audio_bag::decode_bag_audio(entry, data)
-    {
-        // Convert i16 → f32 stereo.
-        let mut stereo = Vec::new();
-        upmix_i16_to_f32_stereo(&mut stereo, &bag_audio.samples_i16, bag_audio.channels);
-        return Some(DecodedAudio {
-            samples: stereo,
-            sample_rate: bag_audio.sample_rate,
-            channels: 2,
-            native_channels: bag_audio.channels,
-            native_sample_bytes: if entry.is_16bit() || entry.is_ima_adpcm() {
-                2
-            } else {
-                1
-            },
-        });
-    }
+    ClipCache::default().load(filename, assets, audio_index)
+}
 
-    // Try MIX asset lookup (exact name, then with .wav extension).
+/// Decode a sample from the selected audio.bag index (sound effects, voices
+/// and EVA announcements) to interleaved f32 stereo.
+fn decode_index_clip(
+    filename: &str,
+    index: &crate::assets::audio_bag::AudioIndex,
+) -> Option<DecodedAudio> {
+    let (entry, data) = index.get(filename)?;
+    let bag_audio = crate::assets::audio_bag::decode_bag_audio(entry, data)?;
+    let mut stereo = Vec::new();
+    upmix_i16_to_f32_stereo(&mut stereo, &bag_audio.samples_i16, bag_audio.channels);
+    Some(DecodedAudio {
+        samples: stereo.into(),
+        sample_rate: bag_audio.sample_rate,
+        channels: 2,
+        native_channels: bag_audio.channels,
+        native_sample_bytes: if entry.is_16bit() || entry.is_ima_adpcm() {
+            2
+        } else {
+            1
+        },
+    })
+}
+
+/// Decode a sample the audio index lacks from the MIX archives or loose
+/// files: the exact name, then with `.wav` appended; `.wav` (PCM or IMA
+/// ADPCM) or `.aud`.
+fn decode_archive_clip(filename: &str, assets: &AssetManager) -> Option<DecodedAudio> {
     let exact_name = format!("{}.wav", filename);
     let data: &[u8] = assets
         .get_ref(filename)
@@ -3017,7 +3034,7 @@ fn load_sfx(
     let mut stereo = Vec::new();
     upmix_i16_to_f32_stereo(&mut stereo, &samples, 1);
     Some(DecodedAudio {
-        samples: stereo,
+        samples: stereo.into(),
         sample_rate: header.sample_rate as u32,
         channels: 2,
         native_channels: 1,
@@ -3065,7 +3082,7 @@ pub(crate) fn decode_wav(data: &[u8], filename: &str) -> Option<DecodedAudio> {
     let mut samples = Vec::new();
     upmix_i16_to_f32_stereo(&mut samples, &pcm, wav.channels);
     Some(DecodedAudio {
-        samples,
+        samples: samples.into(),
         sample_rate: wav.sample_rate,
         channels: 2,
         native_channels: wav.channels,
@@ -3618,7 +3635,7 @@ mod tests {
 
     fn clip(value: f32, frames: usize, sample_rate: u32) -> DecodedAudio {
         DecodedAudio {
-            samples: vec![value; frames * 2],
+            samples: vec![value; frames * 2].into(),
             sample_rate,
             channels: 2,
             native_channels: 1,
@@ -3637,7 +3654,7 @@ mod tests {
             _ => unreachable!(),
         })
         .expect("resolved");
-        assert_eq!(resolved.decoded.samples, vec![0.1, 0.1, 0.1, 0.1, 0.3, 0.3]);
+        assert_eq!(*resolved.decoded.samples, [0.1, 0.1, 0.1, 0.1, 0.3, 0.3]);
         assert_eq!(resolved.decoded.sample_rate, 22050 * 110 / 100);
         assert_eq!(rng.requests, vec![(0, 50)]);
 
@@ -3649,7 +3666,7 @@ mod tests {
             _ => Some(clip(0.2, 1, 11025)),
         })
         .expect("resolved");
-        assert_eq!(resolved.decoded.samples, vec![0.1, 0.1, 0.2, 0.2, 0.2, 0.2]);
+        assert_eq!(*resolved.decoded.samples, [0.1, 0.1, 0.2, 0.2, 0.2, 0.2]);
         assert_eq!(resolved.decoded.sample_rate, 22050 * 110 / 100);
 
         // Nothing loadable resolves to nothing.
@@ -3675,7 +3692,7 @@ mod tests {
 
     fn test_decoded_audio() -> DecodedAudio {
         DecodedAudio {
-            samples: vec![0.0, 0.0],
+            samples: vec![0.0, 0.0].into(),
             sample_rate: 22_050,
             channels: 2,
             native_channels: 1,

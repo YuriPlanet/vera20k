@@ -137,7 +137,8 @@ fn fixture_clip(name: &str) -> Option<DecodedAudio> {
             let value = f32::from(i16::from_le_bytes(*pair)) / 32768.0;
             [value, value]
         })
-        .collect();
+        .collect::<Vec<_>>()
+        .into();
     Some(DecodedAudio {
         samples,
         sample_rate: clip["rate"].as_u64().unwrap() as u32,
@@ -1807,7 +1808,7 @@ fn retail_gattling_registry_and_all_executed_pcm_clips_match_native() {
             (2, 1, 2)
         );
         assert_eq!(
-            mono_bytes(decoded.samples.into_iter()),
+            mono_bytes(decoded.samples.iter().copied()),
             bytes_from_hex(clip["pcm_hex"].as_str().unwrap()),
             "{name}: every original decoded PCM byte"
         );
