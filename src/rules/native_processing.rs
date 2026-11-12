@@ -226,7 +226,6 @@ struct RulesLayer {
 pub struct RulesLayerStack {
     layers: Vec<RulesLayer>,
     /// The installed game or its mod ships `ares.mix` (`rules::ares_switch`).
-    #[cfg(feature = "ares")]
     ships_ares: bool,
 }
 
@@ -237,11 +236,11 @@ impl RulesLayerStack {
                 kind: RulesLayerKind::RulesMd,
                 ini: rulesmd,
             }],
-            // A test build's fixture stacks stand for the Ares game the Ares
-            // tests mean, as `ares.mix` would; the game's owner sets this from
-            // the installed archives (`NativeRulesProcessOwner::startup_layers`).
-            #[cfg(feature = "ares")]
-            ships_ares: cfg!(any(test, feature = "test-support")),
+            // The game's owner sets this from the installed archives
+            // (`NativeRulesProcessOwner::startup_layers`). Until the `ares`
+            // feature is deleted, an `ares` test build's fixture stacks stand
+            // for the Ares game its Ares tests mean, as `ares.mix` would.
+            ships_ares: cfg!(all(feature = "ares", any(test, feature = "test-support"))),
         }
     }
 
@@ -249,7 +248,6 @@ impl RulesLayerStack {
     /// `ares.mix` (or not), which makes Ares play whatever these layers hold
     /// (`rules::ares_switch`). Set once while the stack is built, before any
     /// Process pass reads it.
-    #[cfg(feature = "ares")]
     pub fn with_ares_mix(mut self, ships_ares: bool) -> Self {
         self.ships_ares = ships_ares;
         self
@@ -453,7 +451,6 @@ impl RulesLayerStack {
             if kind == RulesLayerKind::Scenario
                 && let Some(after_map) = after_map.take()
             {
-                #[cfg(feature = "ares")]
                 let ares_inputs = crate::rules::ares_switch::AresInputs::from_passes(
                     &processor.ares_reads,
                     self.ships_ares,
@@ -463,7 +460,6 @@ impl RulesLayerStack {
                     ini,
                     content_hash: self.content_hash_for_layers(index + 1),
                     native_type_construction_trace,
-                    #[cfg(feature = "ares")]
                     ares_inputs,
                 };
                 let rules = match RuleSet::from_processed_rules(&prefix) {
@@ -489,7 +485,6 @@ impl RulesLayerStack {
             processor.init_overlay_theater();
             processor.init_anim_theater();
         }
-        #[cfg(feature = "ares")]
         let ares_inputs = crate::rules::ares_switch::AresInputs::from_passes(
             &processor.ares_reads,
             self.ships_ares,
@@ -500,7 +495,6 @@ impl RulesLayerStack {
                 ini,
                 content_hash: self.content_hash(),
                 native_type_construction_trace,
-                #[cfg(feature = "ares")]
                 ares_inputs,
             },
             after_map_result,
@@ -798,12 +792,10 @@ pub struct ProcessedRulesLayers {
     native_type_construction_trace: NativeTypeConstructionTrace,
     /// What the passes give the per-game Ares switch; saved with the rules,
     /// so a loaded game projects the same answer.
-    #[cfg(feature = "ares")]
     ares_inputs: crate::rules::ares_switch::AresInputs,
 }
 
 impl ProcessedRulesLayers {
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_inputs(&self) -> &crate::rules::ares_switch::AresInputs {
         &self.ares_inputs
     }
@@ -6526,7 +6518,6 @@ struct RulesPassProcessor {
     /// What this Process call's passes read, for the per-game Ares switch
     /// (`rules::ares_switch`). Not retained with the registry: each scenario
     /// Process reads every one of its layers again.
-    #[cfg(feature = "ares")]
     ares_reads: crate::rules::ares_switch::KeyReads,
 }
 
@@ -6626,7 +6617,6 @@ impl RulesPassProcessor {
             ordinary: None,
             powerups: registry_state.rules_powerups,
             native_type_construction_events: Vec::new(),
-            #[cfg(feature = "ares")]
             ares_reads: Default::default(),
         }
     }
@@ -6641,16 +6631,11 @@ impl RulesPassProcessor {
         primary_rules: bool,
         fixed_sounds: &SoundRegistry,
     ) -> Result<(), RulesError> {
-        #[cfg(feature = "ares")]
-        {
-            let (result, reads) = crate::rules::ares_switch::record(|| {
-                self.process_pass(pass, fixed_art, fixed_eva, primary_rules, fixed_sounds)
-            });
-            self.ares_reads.absorb(reads);
-            result
-        }
-        #[cfg(not(feature = "ares"))]
-        self.process_pass(pass, fixed_art, fixed_eva, primary_rules, fixed_sounds)
+        let (result, reads) = crate::rules::ares_switch::record(|| {
+            self.process_pass(pass, fixed_art, fixed_eva, primary_rules, fixed_sounds)
+        });
+        self.ares_reads.absorb(reads);
+        result
     }
 
     fn process_pass(

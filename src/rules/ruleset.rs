@@ -4974,7 +4974,6 @@ pub struct RuleSet {
     emp_sparkles: Option<String>,
     /// Whether Ares plays in this game, decided once from its Rules layers
     /// and `ares.mix` by `rules::ares_switch`. Read through [`Self::ares`].
-    #[cfg(feature = "ares")]
     ares: bool,
     #[cfg(feature = "ares")]
     ares_global_controls: crate::rules::native_processing::AresGlobalControls,
@@ -5442,15 +5441,10 @@ impl RuleSet {
     /// lookups are recorded, so the per-game Ares switch it stores
     /// ([`Self::ares`]) also counts the keys only these readers read.
     pub fn from_processed_rules(processed: &ProcessedRulesLayers) -> Result<Self, RulesError> {
-        #[cfg(feature = "ares")]
-        {
-            let (rules, reads) = crate::rules::ares_switch::record(|| Self::project(processed));
-            let mut rules = rules?;
-            rules.ares = processed.ares_inputs().decide(&reads);
-            Ok(rules)
-        }
-        #[cfg(not(feature = "ares"))]
-        Self::project(processed)
+        let (rules, reads) = crate::rules::ares_switch::record(|| Self::project(processed));
+        let mut rules = rules?;
+        rules.ares = crate::rules::ares_switch::LIVE && processed.ares_inputs().decide(&reads);
+        Ok(rules)
     }
 
     fn project(processed: &ProcessedRulesLayers) -> Result<Self, RulesError> {
@@ -7380,7 +7374,6 @@ impl RuleSet {
             ares_armors: processed.ares_armors().cloned(),
             emp_sparkles: None,
             // Decided by `from_processed_rules` once its readers ran.
-            #[cfg(feature = "ares")]
             ares: false,
             #[cfg(feature = "ares")]
             ares_global_controls: processed.ares_global_controls().clone(),
@@ -8318,14 +8311,11 @@ impl RuleSet {
 
     /// Whether Ares plays in this game: its Rules layers or map hold an Ares
     /// key, or the game ships `ares.mix` (`rules::ares_switch`). Sim and
-    /// presentation read this one answer. Always false without the `ares`
-    /// build feature.
+    /// presentation read this one answer. A release build keeps it off until
+    /// the `ares` feature is gone (`ares_switch::LIVE`).
     #[inline]
     pub fn ares(&self) -> bool {
-        #[cfg(feature = "ares")]
-        return self.ares;
-        #[cfg(not(feature = "ares"))]
-        false
+        self.ares
     }
 
     /// Resolve one retained palette request. Ares715857->715876 removes
@@ -8722,12 +8712,14 @@ impl RuleSet {
         // the selected INIs contain no extension keys.
         b"rules-build-compatibility-v1".hash(&mut hasher);
         crate::rules::ARES_BUILD.hash(&mut hasher);
+        // The game's Ares switch: two peers or a replay with the same layers
+        // but another `ares.mix` answer play different games. Folded only
+        // when Ares plays, so a stock game's hash stays as it was.
+        if self.ares {
+            b"ares-plays-v1".hash(&mut hasher);
+        }
         #[cfg(feature = "ares")]
         {
-            // The game's Ares switch: two peers or a replay with the same
-            // layers but another `ares.mix` answer play different games.
-            b"ares-plays-v1".hash(&mut hasher);
-            self.ares.hash(&mut hasher);
             b"ares-global-controls-v1".hash(&mut hasher);
             self.ares_global_controls.hash(&mut hasher);
             b"ares-factory-owners-v1".hash(&mut hasher);

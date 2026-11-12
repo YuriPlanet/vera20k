@@ -469,8 +469,8 @@ impl AssetManager {
     }
 
     /// Whether startup mounted Ares's `ares.mix` from the installation or the
-    /// mod. It makes Ares play in every game (`rules::ares_switch`).
-    #[cfg(feature = "ares")]
+    /// mod. It makes Ares play in every game (`rules::ares_switch`). A build
+    /// without the `ares` feature does not mount it yet.
     pub fn ships_ares(&self) -> bool {
         self.archives
             .iter()

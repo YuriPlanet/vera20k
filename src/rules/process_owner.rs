@@ -124,7 +124,6 @@ struct NativeRulesSourceSnapshot {
     personal_rules: PersonalRules,
     /// Startup mounted `ares.mix`: Ares plays in every game this process
     /// loads (`rules::ares_switch`).
-    #[cfg(feature = "ares")]
     ships_ares: bool,
 }
 
@@ -384,11 +383,10 @@ impl NativeRulesProcessOwner {
                 fixed_sounds,
                 fixed_eva,
                 personal_rules,
-                // A test build's fixture owners stand for the Ares game, as
-                // `RulesLayerStack::new` says; the game's startup sets it
-                // (`RetailRulesSources::into_owner`).
-                #[cfg(feature = "ares")]
-                ships_ares: cfg!(any(test, feature = "test-support")),
+                // The game's startup sets it (`RetailRulesSources::into_owner`);
+                // an `ares` test build's fixture owners stand for the Ares
+                // game, as `RulesLayerStack::new` says.
+                ships_ares: cfg!(all(feature = "ares", any(test, feature = "test-support"))),
             },
             registry: Some(NativeRulesRegistryOwner::BeforeReset(cold_trace)),
         })
@@ -396,7 +394,6 @@ impl NativeRulesProcessOwner {
 
     /// Record whether startup mounted `ares.mix` (`AssetManager::ships_ares`),
     /// before any Process call reads its layers.
-    #[cfg(feature = "ares")]
     pub fn with_ares_mix(mut self, ships_ares: bool) -> Self {
         self.sources.ships_ares = ships_ares;
         self
@@ -1278,10 +1275,8 @@ impl NativeRulesProcessOwner {
     }
 
     fn startup_layers(&self, langrule: Option<&IniFile>) -> RulesLayerStack {
-        let layers = RulesLayerStack::new(self.scenario_root().into_owned());
-        #[cfg(feature = "ares")]
-        let layers = layers.with_ares_mix(self.sources.ships_ares);
-        let mut layers = layers;
+        let mut layers = RulesLayerStack::new(self.scenario_root().into_owned())
+            .with_ares_mix(self.sources.ships_ares);
         if let Some(langrule) = langrule {
             layers.push(RulesLayerKind::LangRule, langrule.clone());
         }
