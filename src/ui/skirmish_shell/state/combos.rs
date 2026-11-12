@@ -7,7 +7,9 @@ use crate::skirmish_launch::{
 };
 use crate::ui::shell::combobox::{ComboPopup, ComboPress};
 
-use super::super::layout::{DropdownMetrics, RectPx, SkirmishShellLayout, combo_face_rect};
+use super::super::layout::{
+    DropdownMetrics, RectPx, SKIRMISH_ROW_COUNT, SkirmishShellLayout, combo_face_rect,
+};
 use super::super::scroll::ScrollModel;
 use super::{
     DropdownScrollDragState, DropdownScrollbarPart, DropdownScrollbarPressState, OpenComboDropdown,
@@ -23,7 +25,7 @@ pub fn combo_rect(
     state: &SkirmishShellState,
     id: SkirmishComboId,
 ) -> Option<RectPx> {
-    let slot = state.row_slot(combo_player_row(id))?;
+    let slot = state.row_slot(combo_player_row(id), layout.shown_rows)?;
     match id {
         SkirmishComboId::AiType(_) => layout.rows.ai_type_combos.get(slot.checked_sub(1)?),
         SkirmishComboId::Side(_) => layout.rows.side_combos.get(slot),
@@ -69,13 +71,21 @@ fn combo_popup(
     if matches!(id, SkirmishComboId::Start(_)) && item_count > cap {
         face.w += DropdownMetrics::scaled(layout.scale).scrollbar_w;
     }
-    Some(ComboPopup::new(
+    let mut popup = ComboPopup::new(
         face,
         layout.scale,
         item_count as usize,
         cap as usize,
         top_index,
-    ))
+    );
+    // VERA: on the longer player list a low row's list would run over the
+    // status line or off the screen, so it opens upward instead. gamemd's
+    // eight rows never reach it, and the retail page never flips.
+    if layout.shown_rows > SKIRMISH_ROW_COUNT && popup.rect.y + popup.rect.h > layout.status_help.y
+    {
+        popup.rect.y = face.y - 1 - popup.rect.h;
+    }
+    Some(popup)
 }
 
 pub const fn combo_dropdown_max_visible_rows(id: SkirmishComboId) -> i32 {
@@ -608,9 +618,9 @@ fn evict_other_color_claimants(state: &mut SkirmishShellState, row: usize, color
     }
 }
 
-fn combo_hit_order(state: &SkirmishShellState) -> Vec<SkirmishComboId> {
+fn combo_hit_order(state: &SkirmishShellState, shown: usize) -> Vec<SkirmishComboId> {
     let mut ids = Vec::new();
-    for slot in (0..SKIRMISH_PLAYER_SLOT_COUNT).rev() {
+    for slot in (0..shown).rev() {
         let row = state.slot_row(slot);
         ids.push(SkirmishComboId::Team(row));
         ids.push(SkirmishComboId::Start(row));
@@ -632,11 +642,13 @@ fn combo_face_at(
     x: i32,
     y: i32,
 ) -> Option<(SkirmishComboId, RectPx)> {
-    combo_hit_order(state).into_iter().find_map(|id| {
-        let rect = combo_rect(layout, state, id)?;
-        (combo_enabled(state, maps, id) && combo_face_rect(rect, layout.scale).contains(x, y))
-            .then_some((id, rect))
-    })
+    combo_hit_order(state, layout.shown_rows)
+        .into_iter()
+        .find_map(|id| {
+            let rect = combo_rect(layout, state, id)?;
+            (combo_enabled(state, maps, id) && combo_face_rect(rect, layout.scale).contains(x, y))
+                .then_some((id, rect))
+        })
 }
 
 pub(super) fn apply_combo_selection(

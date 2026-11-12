@@ -100,13 +100,28 @@ pub(crate) fn menu_page_layout(state: &AppState, spec: &MenuPageSpec) -> MenuPag
     }
 }
 
-/// The skirmish dialog `0x102`, the page behind its modals.
+/// The skirmish dialog `0x102`, the page behind its modals, for the selected
+/// map's player rows: VERA's longer list past eight. The unscaled 640x480
+/// page has no room for it under its options, so there a longer list takes
+/// the scaled 800x600 page every other window size already gets.
 pub(crate) fn skirmish_layout(state: &AppState) -> SkirmishShellLayout {
+    use crate::ui::skirmish_shell::{
+        SKIRMISH_ROW_COUNT, compute_layout_for_rows, compute_responsive_layout_for_rows,
+        selected_player_rows,
+    };
     let (width, height) = (state.render_width(), state.render_height());
-    if fills_window(state) {
-        crate::ui::skirmish_shell::compute_responsive_layout(width, height)
+    let rows = selected_player_rows(
+        &state.frontend.skirmish_shell_state,
+        state.frontend.scenario_catalog.shell_maps(),
+    );
+    let layout = compute_layout_for_rows(width, height, rows);
+    if fills_window(state)
+        || (layout.shown_rows > SKIRMISH_ROW_COUNT
+            && layout.authored_width() < crate::ui::shell::geom::SHELL_BASE_W)
+    {
+        compute_responsive_layout_for_rows(width, height, rows)
     } else {
-        crate::ui::skirmish_shell::compute_layout(width, height)
+        layout
     }
 }
 

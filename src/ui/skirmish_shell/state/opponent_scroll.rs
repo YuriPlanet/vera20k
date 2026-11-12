@@ -1,28 +1,28 @@
-//! VERA's scrollbar beside the computer rows of a map with more than eight
-//! starts, up to thirty. The player's own row stays first; the seven retail
-//! rows under it show seven of the map's computer rows from
+//! VERA's scrollbar beside the computer rows of a map with more starts than
+//! the page shows rows ([`shown_player_rows`]), up to thirty. The player's own
+//! row stays first; the rows under it show the map's computer rows from
 //! [`SkirmishShellState::first_opponent`]. It is the shared list scrollbar
 //! (`0x0061C690`) with its capture and arrow repeat, a row a step. The wheel
 //! moves it too, a row a notch: no retail control on the page takes the wheel.
 
 use crate::map::scenario_menu::MapMenuEntry;
-use crate::skirmish_launch::SKIRMISH_PLAYER_SLOT_COUNT;
 use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
 use crate::util::time::Instant;
 
-use super::super::layout::{RectPx, SkirmishShellLayout};
+use super::super::layout::{RectPx, SkirmishShellLayout, shown_player_rows};
 use super::SkirmishShellState;
 use super::player_name::{last_first_opponent, selected_player_rows};
 
 /// The scrollbar on a map with more than eight starts: the shared list over
-/// the map's computer rows, seven of them showing.
+/// the map's computer rows, all but the player's shown rows showing.
 pub fn opponent_scroll_geometry(
     layout: &SkirmishShellLayout,
     state: &SkirmishShellState,
     maps: &[MapMenuEntry],
 ) -> Option<ShellListGeometry> {
     let rows = selected_player_rows(state, maps);
-    if rows <= SKIRMISH_PLAYER_SLOT_COUNT {
+    let shown = shown_player_rows(rows);
+    if rows <= shown {
         return None;
     }
     let metrics = ListMetrics::scaled(layout.scale);
@@ -31,7 +31,7 @@ pub fn opponent_scroll_geometry(
     Some(ShellListGeometry::with_visible_rows(
         outer,
         rows - 1,
-        SKIRMISH_PLAYER_SLOT_COUNT - 1,
+        shown - 1,
         state.first_opponent,
         metrics,
     ))

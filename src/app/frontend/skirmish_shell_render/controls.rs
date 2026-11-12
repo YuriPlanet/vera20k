@@ -894,7 +894,7 @@ pub(super) fn push_combo_instances(
         layout.scale,
     );
 
-    for (slot, row, opponent) in shell.paged_opponents() {
+    for (slot, row, opponent) in shell.paged_opponents(layout.shown_rows) {
         if !player_row_visible(shell, maps, row) {
             continue;
         }
