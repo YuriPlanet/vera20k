@@ -3118,11 +3118,13 @@ pub(crate) fn update_building_placement_preview(state: &mut AppState) {
         );
 }
 
-/// Start growing the entity atlases after entities spawn, die, change type or
-/// owner, or leave the display ([`EntityAtlasGrowth::start`]). The rasters run
-/// on workers; [`publish_entity_atlas_growth`] completes them. Reuses the
-/// process asset manager instead of creating a new one (avoids re-opening all
-/// MIX archives from disk).
+/// Admit the voxel models and grow the SHP atlas after entities spawn, die,
+/// change type or owner, or leave the display. A new voxel model's pictures
+/// are drawn the first time a frame shows them
+/// ([`crate::render::unit_atlas::admit_world_models`]); the SHP raster runs on
+/// a worker ([`EntityAtlasGrowth::start`]) and [`publish_entity_atlas_growth`]
+/// completes it. Reuses the process asset manager instead of creating a new
+/// one (avoids re-opening all MIX archives from disk).
 ///
 /// [`EntityAtlasGrowth::start`]: crate::render::entity_atlas_growth::EntityAtlasGrowth::start
 pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
@@ -3134,6 +3136,14 @@ pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
         return;
     };
     let presentation = &mut state.match_state.match_presentation;
+    crate::render::unit_atlas::admit_world_models(
+        &mut presentation.unit_atlas,
+        rt.simulation.entities(),
+        asset_manager,
+        Some(&rt.resources.rules),
+        Some(rt.simulation.interner()),
+        state.renderer.gpu.device.limits().max_texture_dimension_2d,
+    );
     presentation.atlas_growth.start(
         &crate::render::entity_atlas_growth::GrowthSource {
             sim: &rt.simulation,
@@ -3144,7 +3154,6 @@ pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
             theater_ext: &presentation.theater_ext,
             max_texture_dimension_2d: state.renderer.gpu.device.limits().max_texture_dimension_2d,
         },
-        presentation.unit_atlas.as_ref(),
         presentation.sprite_atlas.as_ref(),
     );
 }
@@ -3160,7 +3169,6 @@ pub(crate) fn publish_entity_atlas_growth(state: &mut AppState, wait: bool) {
             &gpu.device,
             &gpu.queue,
             &state.renderer.batch_renderer,
-            &mut presentation.unit_atlas,
             &mut presentation.sprite_atlas,
             wait,
         ) {

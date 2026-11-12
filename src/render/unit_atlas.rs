@@ -1,15 +1,18 @@
-//! Unit sprite atlas — pre-renders voxel models into a packed GPU texture.
+//! Unit sprite atlas — voxel pictures drawn on first use into packed GPU
+//! texture pages.
 //!
-//! At map load time, all VXL-rendered entities are identified by (type_id, facing).
-//! Each unique combination is rendered once via the software rasterizer, then all
-//! resulting sprites are shelf-packed into lossless GPU texture pages. During the
-//! render loop, unit SpriteInstances reference UV regions within one page while
-//! the app layer preserves the original flat draw order across page changes.
-//!
-//! This retains the proven TileAtlas pre-render/cache approach while paging only
-//! the texture storage and ordered draw submission needed for lossless capacity.
-//! A voxel model that first appears mid-match has only its own sprites rendered,
-//! appended to a growth page (`atlas_growth`); resident pages are not repacked.
+//! The original renders a voxel image the first time a draw asks for it and
+//! keeps it: `TechnoClass::Draw @ 0x00706640` renders a cache miss
+//! (`0x00706ED0`), stores the image in its type's cache (`0x006C89E0`), and
+//! later hits blit the stored copy (`0x00707480`). Nothing is drawn ahead.
+//! This atlas does the same with its pictures: map load and each new voxel
+//! model mid-match only admit the model ([`admit_world_models`]), with its
+//! parsed files, HVA frame counts and the keys it can draw. The first
+//! [`UnitAtlas::get`] of a key rasterizes it on the software rasterizer and
+//! shelf-places it on a page; [`UnitAtlas::upload`] writes it before the
+//! frame draws. A picture never moves once placed. Unit SpriteInstances
+//! reference UV regions within one page while the app layer preserves the
+//! original flat draw order across page changes.
 //!
 //! ## Dependency rules
 //! - Part of render/ — depends on assets/ (VXL/HVA/Palette), render/batch (GPU upload),
@@ -18,6 +21,7 @@
 
 use crate::util::lookup_hash::LookupMap;
 use crate::util::time::Instant;
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 #[path = "unit_shadow_cache.rs"]
@@ -29,14 +33,14 @@ use crate::assets::hva_file::HvaFile;
 use crate::assets::vpl_file::VplFile;
 use crate::assets::vxl_file::VxlFile;
 use crate::map::voxel_pose::VxlSlopeBlend;
-use crate::render::atlas_growth::{self, GrowthShelf, SPRITE_PADDING};
+use crate::render::atlas_growth::{self, GrowthShelf, ShelfCursor};
 use crate::render::batch::{BatchRenderer, BatchTexture};
 use crate::render::vxl_raster::{self, VxlRenderParams, VxlSprite};
 use crate::rules::ruleset::RuleSet;
 
-/// Edge of a growth page. One byte per texel makes it 64 MB, room for the
-/// every-slope sprite set of a few new vehicle types.
-const GROWTH_PAGE_SIZE: u32 = 8192;
+/// Edge of a page. One byte per texel makes it 16 MB, room for the pictures
+/// a usual match draws; a page opens when the last one is full.
+const PAGE_SIZE: u32 = 4096;
 /// Body/composite facing quantization step: 8 = 32 buckets (11.25° per bucket).
 ///
 /// This is not an atlas-size compromise — it is the renderer's real resolution. The
@@ -44,7 +48,7 @@ const GROWTH_PAGE_SIZE: u32 = 8192;
 /// only 32 distinct body orientations exist. Baking finer buckets would store up to 8
 /// byte-identical copies of every sprite.
 const UNIT_FACING_STEP: u8 = 8;
-/// Number of pre-rendered facing directions for body/composite sprites.
+/// Number of facing directions body/composite sprites are drawn at.
 ///
 /// `u16` for arithmetic headroom against the step; `bucket * step` stays below 256, so
 /// the facing derived from a bucket is still a byte.
@@ -61,7 +65,7 @@ pub(crate) const GROUNDED_SHADOW_FRAME_FLAG: u32 = 0x8000_0000;
 /// body, so turrets step through the same 32 orientations however smoothly the
 /// simulation rotates them.
 const TURRET_FACING_STEP: u8 = 8;
-/// Number of pre-rendered facing directions for turret/barrel sprites.
+/// Number of facing directions turret/barrel sprites are drawn at.
 const TURRET_FACING_BUCKETS: u16 = crate::render::vxl_raster::VOXEL_FACING_STEPS as u16;
 
 // VxlLayer lives in rules::voxel_frame_catalog — re-exported here for convenience.
@@ -113,7 +117,7 @@ pub struct UnitSpriteKey {
     /// ramps, 9-12 = corner tilt at NW/NE/SE/SW (alias of 5-8 in gamemd.exe),
     /// 13-16 = edge tilt at NW/NE/SE/SW. The consumer in app/presentation/instances/units.rs
     /// clamps any value ≥ 17 to 0 before constructing this key. Different
-    /// slopes produce distinct pre-rendered sprites with tilted models.
+    /// slopes produce distinct sprites with tilted models.
     pub slope_type: u8,
     /// A barrel's pitch step, `d32 - 8` of the unit's barrel elevation
     /// (`TechnoClass+0x370`); 0 for every other layer.
@@ -165,8 +169,8 @@ pub struct UnitAtlasPage {
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
 pub(crate) struct UnitAtlasStatistics {
     pub resident_sprite_count: usize,
-    /// Last non-no-op build's rasterized sprites, including shadow sprites;
-    /// this is not the number successfully admitted to pages.
+    /// Sprites rasterized on first use since the atlas was made, including
+    /// shadow sprites; this is not the number successfully admitted to pages.
     pub last_build_rasterized_sprite_count: u32,
     pub pages: Vec<UnitAtlasPageStatistics>,
     pub total_texel_payload_bytes: u64,
@@ -182,45 +186,78 @@ pub(crate) struct UnitAtlasPageStatistics {
     pub texel_payload_bytes: u64,
 }
 
-/// A paged GPU texture atlas containing pre-rendered unit voxel sprites.
+/// A paged GPU texture atlas of unit voxel pictures, each drawn the first
+/// time a draw asks for it.
 ///
-/// Created once at map load and queried per-frame to build unit
-/// SpriteInstances. A refresh appends the sprites of newly seen voxel models to
-/// growth pages without touching the rest.
+/// Made at map load, or with the world's first voxel model, and queried
+/// per-frame to build unit SpriteInstances. Draws hold it shared, so the
+/// pictures they draw live behind a `RefCell` until [`Self::upload`].
 pub struct UnitAtlas {
-    /// Lossless texture pages containing all unit sprites.
+    /// Texture pages, created by [`Self::upload`] as first-use draws open them.
     pub pages: Vec<UnitAtlasPage>,
-    /// Lookup: (type_id, facing, frame) → UV rectangle + offset data. Every
-    /// drawn unit piece looks its sprite up here.
-    entries: LookupMap<UnitSpriteKey, UnitSpriteEntry>,
     /// HVA frame counts per (type_id, layer, turret_index). Missing entries have 1 frame.
     /// A draw takes its HVA frame as `Foot+0x538` modulo the model's count.
     pub frame_counts: BTreeMap<(smol_str::SmolStr, VxlLayer, i32), u32>,
+    /// The pictures drawn so far, where they sit, and the keys still to draw.
+    resident: RefCell<Resident>,
+    /// First eligible composed-body mask for each supported shadow key, with
+    /// the image cache's flush count when it was composed: a flush frees it
+    /// natively, so an older mask is composed again. Pictures never move, so
+    /// an uploaded mask stays where it was written.
+    shadow_masks: RefCell<HashMap<UnitSpriteKey, (u32, Vec<u8>)>>,
+    /// Voxel models admitted so far. Every key derives from a model, so
+    /// coverage is checked per model, never per key.
+    covered: UnitAtlasDemand,
+    /// Each admitted model's parsed files, by the model id its keys carry.
+    models: HashMap<smol_str::SmolStr, UnitModel>,
+    /// `VOXELS.VPL`, read when the first model is admitted; None draws with
+    /// the rasterizer's fallback N·L shading.
+    vpl: Option<VplFile>,
+    /// The device's 2D texture limit, which bounds pages and pictures.
+    max_texture_dim: u32,
+}
+
+/// [`UnitAtlas::resident`]: the CPU side of every picture.
+#[derive(Default)]
+struct Resident {
+    /// Lookup: (type_id, facing, frame) → UV rectangle + offset data. Every
+    /// drawn unit piece looks its sprite up here.
+    entries: LookupMap<UnitSpriteKey, UnitSpriteEntry>,
     /// Palette indices of every resident sprite; native shadow masks are
     /// composed from them.
     rendered_cache: Vec<CachedUnitSprite>,
     /// Each resident sprite's index in `rendered_cache`, by key and by atlas
-    /// placement, so shadow composition ([`Self::stamp_shadow_part`],
-    /// [`Self::masked_shadow`]) finds its source without walking every
+    /// placement, so shadow composition ([`UnitAtlas::stamp_shadow_part`],
+    /// [`UnitAtlas::masked_shadow`]) finds its source without walking every
     /// sprite. The cache is the truth: it only grows, through
-    /// [`Self::append_sprites`], or is replaced whole by
-    /// [`Self::set_rendered_cache`], and both keep this index.
+    /// [`Resident::place`], which keeps this index.
     rendered_index: RenderedIndex,
-    /// How many sprites the last build or refresh rendered.
-    pub rendered: u32,
-    /// First eligible composed-body mask for each supported shadow key, with
-    /// the image cache's flush count when it was composed: a flush frees it
-    /// natively, so an older mask is composed again. Pages are never
-    /// repacked, so an uploaded mask stays where it was written.
-    shadow_masks: std::cell::RefCell<HashMap<UnitSpriteKey, (u32, Vec<u8>)>>,
     /// Each resident sprite's native pool size
     /// ([`crate::render::voxel_image_cache::sprite_pool_bytes`]).
     pool_bytes: HashMap<UnitSpriteKey, u32>,
-    /// Voxel models whose sprites have been collected. Every key derives from
-    /// a model, so coverage is checked per model, never per key.
-    covered: UnitAtlasDemand,
-    /// Page refreshes append to; created when the first refresh needs room.
-    growth: Option<GrowthShelf>,
+    /// Keys an admitted model draws that no draw has asked for yet. A key
+    /// leaves when it is drawn, or fails to draw, and never returns.
+    undrawn: HashSet<UnitSpriteKey>,
+    /// Each model's last rasterized pose, which its other parts of that pose
+    /// share ([`UnitModel::render`]).
+    poses: HashMap<smol_str::SmolStr, Option<PoseParts>>,
+    /// The page first-use draws place on, and its free space.
+    shelf: Option<GrowthShelf>,
+    /// Every page's size, including those [`UnitAtlas::upload`] has not
+    /// created yet.
+    page_sizes: Vec<[u32; 2]>,
+    /// Texels placed since the last upload, in the order they were placed.
+    uploads: Vec<PendingTexels>,
+    /// Sprites rasterized so far.
+    rendered: u32,
+}
+
+/// One rectangle of texels waiting for [`UnitAtlas::upload`].
+struct PendingTexels {
+    page: usize,
+    origin: [u32; 2],
+    size: [u32; 2],
+    texels: Vec<u8>,
 }
 
 /// The voxel models a world can draw: vehicle types seeded as ground units
@@ -278,10 +315,10 @@ fn world_voxel_models<'a>(
     })
 }
 
-/// Whether `atlas` — None while no unit atlas exists — already holds every
-/// voxel model the world draws, so no refresh is needed. This runs on every
-/// tick with a spawn, death or Limbo, so it asks once for each model and
-/// stops at the first miss.
+/// Whether `atlas` — None while no unit atlas exists — has admitted every
+/// voxel model the world draws, so no admission is needed. This runs on
+/// every tick with a spawn, death or Limbo, so it asks once for each model
+/// and stops at the first miss.
 pub fn atlas_covers_world(
     atlas: Option<&UnitAtlas>,
     entities: &crate::sim::entity_store::EntityStore,
@@ -352,19 +389,95 @@ impl UnitAtlasDemand {
 }
 
 impl UnitAtlas {
-    /// The pool bytes `key`'s image takes when the original caches it.
+    /// The pool bytes `key`'s image takes when the original caches it,
+    /// drawing it first if no draw has asked for it yet.
     pub(crate) fn pool_bytes(&self, key: &UnitSpriteKey) -> Option<u32> {
-        self.pool_bytes.get(key).copied()
+        self.get(key)?;
+        self.resident.borrow().pool_bytes.get(key).copied()
     }
 
-    /// Look up the atlas entry for a given key.
-    pub fn get(&self, key: &UnitSpriteKey) -> Option<&UnitSpriteEntry> {
-        self.entries.get(key)
+    /// The atlas entry for `key`, its picture drawn the first time any draw
+    /// asks for it: `TechnoClass::Draw @ 0x00706640` renders a cache miss
+    /// (`0x00706ED0`) and stores it (`0x006C89E0`) for later hits to blit
+    /// (`0x00707480`). None for a key no admitted model draws, or whose
+    /// picture fails to draw. A picture drawn here reaches its page at the
+    /// next [`Self::upload`].
+    pub fn get(&self, key: &UnitSpriteKey) -> Option<UnitSpriteEntry> {
+        let resident = self.resident.borrow().entries.get(key).copied();
+        if resident.is_some() {
+            return resident;
+        }
+        self.draw_first_use(key)
     }
 
-    /// Number of unique sprites in the atlas.
+    /// Rasterize `key` on its first request and place it, with the legacy
+    /// shadow companion that is drawn beside a shadow template; a request for
+    /// the companion draws its template.
+    fn draw_first_use(&self, key: &UnitSpriteKey) -> Option<UnitSpriteEntry> {
+        let drawn = if key.layer == VxlLayer::Shadow && key.frame == LEGACY_SHADOW_FRAME {
+            UnitSpriteKey {
+                frame: 0,
+                ..key.clone()
+            }
+        } else {
+            key.clone()
+        };
+        let mut resident = self.resident.borrow_mut();
+        if !resident.undrawn.remove(&drawn) {
+            return None;
+        }
+        let model = self.models.get(&drawn.type_id)?;
+        let pose = resident.poses.entry(drawn.type_id.clone()).or_default();
+        let Some(RenderedKey {
+            sprite,
+            legacy_shadow,
+        }) = render_unit_key(model, &drawn, self.vpl.as_ref(), pose)
+        else {
+            log::debug!("VXL {} produced no sprite for {drawn:?}", drawn.type_id);
+            return None;
+        };
+        for sprite in legacy_shadow.into_iter().chain([sprite]) {
+            resident.place(sprite, self.max_texture_dim);
+        }
+        resident.entries.get(key).copied()
+    }
+
+    /// Create the pages first-use draws opened and write the pictures drawn
+    /// since the last upload. A frame calls this after building its objects
+    /// and before drawing them; the queue writes land before its draws.
+    pub(crate) fn upload(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+    ) {
+        let resident = self.resident.get_mut();
+        for &[width, height] in resident
+            .page_sizes
+            .get(self.pages.len()..)
+            .unwrap_or_default()
+        {
+            let texture = batch.create_blank_unit_atlas_texture(device, width, height);
+            self.pages.push(UnitAtlasPage { texture });
+        }
+        for texels in resident.uploads.drain(..) {
+            let Some(page) = self.pages.get(texels.page) else {
+                continue;
+            };
+            atlas_growth::write_texels(
+                queue,
+                page.texture.view.texture(),
+                texels.origin,
+                texels.size,
+                1,
+                &texels.texels,
+            );
+        }
+    }
+
+    /// Number of pictures drawn so far.
     pub fn sprite_count(&self) -> usize {
-        self.entries.len()
+        self.resident.borrow().entries.len()
     }
 
     /// Derive capture evidence from the actual resources. No simulation state
@@ -405,9 +518,10 @@ impl UnitAtlas {
                 texel_payload_bytes,
             });
         }
+        let resident = self.resident.borrow();
         Ok(UnitAtlasStatistics {
-            resident_sprite_count: self.entries.len(),
-            last_build_rasterized_sprite_count: self.rendered,
+            resident_sprite_count: resident.entries.len(),
+            last_build_rasterized_sprite_count: resident.rendered,
             pages,
             total_texel_payload_bytes,
         })
@@ -428,92 +542,23 @@ impl UnitAtlas {
         self.page(page).map(|atlas_page| &atlas_page.texture)
     }
 
-    fn new(pages: Vec<UnitAtlasPage>, entries: LookupMap<UnitSpriteKey, UnitSpriteEntry>) -> Self {
+    /// An atlas with no model admitted and no picture drawn, whose pages and
+    /// pictures stay within the device's `max_texture_dim`.
+    fn new(max_texture_dim: u32) -> Self {
         Self {
-            pages,
-            entries,
+            pages: Vec::new(),
             frame_counts: BTreeMap::new(),
-            rendered_cache: Vec::new(),
-            rendered_index: RenderedIndex::default(),
-            rendered: 0,
-            shadow_masks: Default::default(),
-            pool_bytes: HashMap::new(),
+            resident: RefCell::default(),
+            shadow_masks: RefCell::default(),
             covered: UnitAtlasDemand::default(),
-            growth: None,
-        }
-    }
-
-    /// Place sprites rendered after the map-load pack on growth pages and
-    /// upload the rows they fill, one write per page.
-    fn append_sprites(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        batch: &BatchRenderer,
-        sprites: Vec<CachedUnitSprite>,
-    ) {
-        let (sprites, malformed): (Vec<_>, Vec<_>) = sprites
-            .into_iter()
-            .partition(|sprite| sprite.pixels.len() == (sprite.width * sprite.height) as usize);
-        for sprite in malformed {
-            log::warn!(
-                "{} VXL sprite has {} pixels for {}x{}",
-                sprite.key.type_id,
-                sprite.pixels.len(),
-                sprite.width,
-                sprite.height,
-            );
-        }
-        let max_dim = device.limits().max_texture_dimension_2d;
-        let pages = &mut self.pages;
-        let (placed, unplaced) = atlas_growth::place_on_growth_pages(
-            &mut self.growth,
-            sprites,
-            |sprite| [sprite.width, sprite.height],
-            max_dim,
-            |[width, height]| {
-                let size = [width, height].map(|side| GROWTH_PAGE_SIZE.max(side).min(max_dim));
-                let texture = batch.create_blank_unit_atlas_texture(device, size[0], size[1]);
-                pages.push(UnitAtlasPage { texture });
-                let page = pages.len() - 1;
-                log::info!("Unit atlas growth page {page} ({}x{})", size[0], size[1]);
-                (page, size)
-            },
-        );
-        for group in placed {
-            let texture = &self.pages[group.page].texture;
-            let rects: Vec<_> = group
-                .sprites
-                .iter()
-                .map(|(origin, sprite)| (*origin, [sprite.width, sprite.height]))
-                .collect();
-            atlas_growth::write_band(queue, texture.view.texture(), 1, &rects, |i| {
-                group.sprites[i].1.pixels.as_slice()
-            });
-            let page_size = [texture.width, texture.height];
-            for (origin, sprite) in group.sprites {
-                let entry = unit_entry(&sprite, origin, group.page, page_size);
-                if let Some(old) = self.entries.insert(sprite.key.clone(), entry) {
-                    self.rendered_index.by_place.remove(&sprite_place(&old));
-                }
-                self.pool_bytes
-                    .insert(sprite.key.clone(), sprite.pool_bytes);
-                self.rendered_cache.push(sprite);
-                self.index_rendered(self.rendered_cache.len() - 1);
-            }
-        }
-        for sprite in unplaced {
-            log::warn!(
-                "{} VXL sprite ({}x{}) exceeds the texture limit {max_dim}",
-                sprite.key.type_id,
-                sprite.width,
-                sprite.height,
-            );
+            models: HashMap::new(),
+            vpl: None,
+            max_texture_dim,
         }
     }
 }
 
-/// [`UnitAtlas::rendered_index`]: the first resident sprite of each key, and
+/// [`Resident::rendered_index`]: the first resident sprite of each key, and
 /// of each placement its key's entry currently names.
 #[derive(Default)]
 struct RenderedIndex {
@@ -532,14 +577,76 @@ fn sprite_place(entry: &UnitSpriteEntry) -> SpritePlace {
     )
 }
 
-impl UnitAtlas {
-    /// Replace the resident sprites' pixels whole and index them.
-    fn set_rendered_cache(&mut self, rendered: Vec<CachedUnitSprite>) {
-        self.rendered_cache = rendered;
-        self.rendered_index = RenderedIndex::default();
-        for index in 0..self.rendered_cache.len() {
-            self.index_rendered(index);
+impl Resident {
+    /// Place a rasterized sprite on the open page, opening another when it
+    /// is full, and stage its texels for the next upload. A sprite larger
+    /// than the texture limit, or whose pixels do not fill it, is counted
+    /// and left out.
+    fn place(&mut self, sprite: CachedUnitSprite, max_dim: u32) {
+        self.rendered = self.rendered.saturating_add(1);
+        let [width, height] = [sprite.width, sprite.height];
+        if sprite.pixels.len() != width as usize * height as usize {
+            log::warn!(
+                "{} VXL sprite has {} pixels for {width}x{height}",
+                sprite.key.type_id,
+                sprite.pixels.len(),
+            );
+            return;
         }
+        let spot = self
+            .shelf
+            .as_mut()
+            .and_then(|open| Some((open.page, open.shelf.place(width, height)?)));
+        let (page, origin) = match spot {
+            Some(spot) => spot,
+            None => {
+                let size = [width, height].map(|side| PAGE_SIZE.max(side).min(max_dim));
+                let mut shelf = ShelfCursor::new(size[0], size[1]);
+                let Some(origin) = shelf.place(width, height) else {
+                    log::warn!(
+                        "{} VXL sprite ({width}x{height}) exceeds the texture limit {max_dim}",
+                        sprite.key.type_id,
+                    );
+                    return;
+                };
+                let page = self.page_sizes.len();
+                log::info!("Unit atlas page {page} ({}x{})", size[0], size[1]);
+                self.page_sizes.push(size);
+                self.shelf = Some(GrowthShelf { page, shelf });
+                (page, origin)
+            }
+        };
+        let entry = unit_entry(&sprite, origin, page, self.page_sizes[page]);
+        self.uploads.push(PendingTexels {
+            page,
+            origin,
+            size: [width, height],
+            texels: sprite.pixels.clone(),
+        });
+        if let Some(old) = self.entries.insert(sprite.key.clone(), entry) {
+            self.rendered_index.by_place.remove(&sprite_place(&old));
+        }
+        self.pool_bytes
+            .insert(sprite.key.clone(), sprite.pool_bytes);
+        self.rendered_cache.push(sprite);
+        self.index_rendered(self.rendered_cache.len() - 1);
+    }
+
+    /// Stage `texels` over the picture `entry` names, written after every
+    /// picture placed before it.
+    fn restage(&mut self, entry: &UnitSpriteEntry, texels: Vec<u8>) {
+        let Some(&[page_width, page_height]) = self.page_sizes.get(entry.page) else {
+            return;
+        };
+        self.uploads.push(PendingTexels {
+            page: entry.page,
+            origin: [
+                (entry.uv_origin[0] * page_width as f32).round() as u32,
+                (entry.uv_origin[1] * page_height as f32).round() as u32,
+            ],
+            size: entry.pixel_size.map(|side| side as u32),
+            texels,
+        });
     }
 
     /// Index `rendered_cache[index]` under its key and its key's placement,
@@ -657,7 +764,7 @@ fn render_unit_key(
     })
 }
 
-/// Intermediate rendered sprite before atlas packing (temporary, during build).
+/// A rendered sprite before it is placed on a page.
 struct RenderedSprite {
     key: UnitSpriteKey,
     sprite: VxlSprite,
@@ -666,7 +773,7 @@ struct RenderedSprite {
 
 /// Cached rendered unit sprite — palette indices only, depth buffer stripped.
 /// Depth is only used during VXL compositing (body+turret+barrel merge),
-/// not after packing. One byte per pixel (palette index, post-VPL).
+/// not after placement. One byte per pixel (palette index, post-VPL).
 struct CachedUnitSprite {
     key: UnitSpriteKey,
     /// Palette-index pixels (1 byte each, width × height total).
@@ -680,9 +787,8 @@ struct CachedUnitSprite {
     ///truncating. Source: the same model/key/HVA geometry as these pixels.
     shadow_center: Option<[f32; 2]>,
     /// The pool bytes the original's image cache takes for these pixels
-    /// ([`crate::render::voxel_image_cache::sprite_pool_bytes`]). Counted
-    /// where the sprite is rasterized, so live growth scans no pixels on the
-    /// frame that publishes it.
+    /// ([`crate::render::voxel_image_cache::sprite_pool_bytes`]), counted
+    /// once where the sprite is rasterized.
     pool_bytes: u32,
 }
 
@@ -856,8 +962,8 @@ type UnitFrameCounts = BTreeMap<(smol_str::SmolStr, VxlLayer, i32), u32>;
 /// Every unit sprite key the voxel models in `demand` can draw, with their
 /// HVA frame counts.
 ///
-/// Ground vehicles get all 17 slope variants (0-16) pre-rendered so that no
-/// atlas rebuild is needed when they drive onto any populated ramp.
+/// Ground vehicles get keys on all 17 slopes (0-16), so a draw on any ramp
+/// finds its picture.
 fn needed_unit_keys(
     demand: &UnitAtlasDemand,
     asset_manager: &AssetManager,
@@ -896,363 +1002,80 @@ fn needed_unit_keys(
     (needed, frame_counts)
 }
 
-/// Caller-owned upload state. Resident GPU pages never enter a raster worker.
-/// It completes into the atlas it was prepared against, which stays in use
-/// while the raster runs.
-pub(crate) struct UnitAtlasUpload {
-    started: Instant,
-    frame_counts: UnitFrameCounts,
-    missing: UnitAtlasDemand,
-}
-
-/// Owned display inputs derived from the scene; no scene state is copied.
-pub(crate) struct UnitRasterWork {
-    models: Vec<(UnitModel, Vec<UnitSpriteKey>)>,
-    vpl: Option<VplFile>,
-    failed: BTreeMap<String, usize>,
-}
-
-pub(crate) struct UnitRasterOutput {
-    rendered: Vec<CachedUnitSprite>,
-}
-
-/// Build or refresh the unit sprite atlas for every voxel model in the world.
-///
-/// Without an `existing` atlas every model's sprites are rendered and
-/// shelf-packed into new pages. With one, only the models it has not collected
-/// yet are rendered, and their sprites are appended to a growth page; the
-/// resident pages are not touched and the rasterizer only runs for the new
-/// models. Sprites come from the CPU replay of the native visibility writes
-/// (`PreparedDraw::render_cpu`), each model's poses spread over the cores.
-///
-/// Returns `None` only when no prior atlas exists and no voxel sprite can be
-/// produced. The synchronous composition of [`prepare_unit_atlas`], the
-/// raster and [`UnitAtlasUpload::finish`]; live growth runs the raster on a
-/// worker instead ([`crate::render::entity_atlas_growth`]).
-pub fn build_unit_atlas(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    batch: &BatchRenderer,
+/// Admit the world's voxel models that `atlas` lacks, making the atlas with
+/// the first one: each model's parsed files, HVA frame counts and the keys it
+/// draws. Nothing is drawn here; the first [`UnitAtlas::get`] of a key draws
+/// its picture, as gamemd draws an image on its first cache miss. Map load
+/// and every tick whose world may hold a new model call this; a covered
+/// world costs one check per model.
+pub(crate) fn admit_world_models(
+    atlas: &mut Option<UnitAtlas>,
     entities: &crate::sim::entity_store::EntityStore,
     asset_manager: &AssetManager,
     rules: Option<&RuleSet>,
-    existing: Option<UnitAtlas>,
     interner: Option<&crate::sim::intern::StringInterner>,
-) -> Option<UnitAtlas> {
-    let (work, upload) =
-        prepare_unit_atlas(entities, asset_manager, rules, existing.as_ref(), interner);
-    let mut atlas = existing;
-    upload.finish(device, queue, batch, work.render(), &mut atlas);
-    atlas
-}
-
-/// Freeze the physical source choices in their established model/key order.
-/// CPU raster scheduling may change; asset resolution and simulation do not.
-/// `existing` is the atlas the upload will complete into.
-pub(crate) fn prepare_unit_atlas(
-    entities: &crate::sim::entity_store::EntityStore,
-    asset_manager: &AssetManager,
-    rules: Option<&RuleSet>,
-    existing: Option<&UnitAtlas>,
-    interner: Option<&crate::sim::intern::StringInterner>,
-) -> (UnitRasterWork, UnitAtlasUpload) {
+    max_texture_dim: u32,
+) {
+    if atlas_covers_world(atlas.as_ref(), entities, rules, interner) {
+        return;
+    }
     let started = Instant::now();
-    // Step 1: the voxel models the atlas has not collected yet — every one at
-    // map load — and the keys they draw with. For turret units, separate
-    // Body/Turret/Barrel entries per facing; for the rest a single Composite
-    // entry per facing. Multi-frame HVA units get entries for each frame.
-    let demand = UnitAtlasDemand::of_world(entities, rules, interner);
-    let missing = match existing {
-        Some(atlas) => demand.without(&atlas.covered),
-        None => demand,
-    };
-    if missing.is_empty() {
-        log::info!("No new voxel models — keeping the current unit atlas");
-        return (
-            UnitRasterWork {
-                models: Vec::new(),
-                vpl: None,
-                failed: BTreeMap::new(),
-            },
-            UnitAtlasUpload {
-                started,
-                frame_counts: BTreeMap::new(),
-                missing,
-            },
-        );
-    }
-    let (needed, frame_counts) = needed_unit_keys(&missing, asset_manager, rules);
-    // A type seeded as an aircraft after its ground variant (or the reverse)
-    // shares its flat keys with the resident ones.
-    let mut new_keys: Vec<UnitSpriteKey> = needed
-        .into_iter()
-        .filter(|key| existing.is_none_or(|atlas| !atlas.entries.contains_key(key)))
-        .collect();
-    // By model, then pose: each model is parsed once, and each pose's body,
-    // turret and barrel are rasterized once for its three part keys.
-    new_keys.sort_unstable_by(|a, b| {
-        (
-            &a.type_id,
-            a.frame,
-            a.facing,
-            a.slope_type,
-            a.turret_index,
-            a.layer,
-            a.barrel_pitch,
-        )
-            .cmp(&(
-                &b.type_id,
-                b.frame,
-                b.facing,
-                b.slope_type,
-                b.turret_index,
-                b.layer,
-                b.barrel_pitch,
-            ))
+    let atlas = atlas.get_or_insert_with(|| UnitAtlas {
+        vpl: load_vpl(asset_manager),
+        ..UnitAtlas::new(max_texture_dim)
     });
-    log::info!(
-        "Unit atlas: {} new sprites to render for {} new voxel models",
-        new_keys.len(),
-        missing.len(),
-    );
-
-    let mut models = Vec::new();
-    let mut failed = BTreeMap::new();
-    let mut vpl = None;
-    if !new_keys.is_empty() {
-        // Load VPL file for Blinn-Phong lighting lookup (optional).
-        vpl =
-            asset_manager
-                .get_ref("VOXELS.VPL")
-                .and_then(|data| match VplFile::from_bytes(data) {
-                    Ok(v) => {
-                        log::info!("Loaded VOXELS.VPL ({} lighting sections)", v.num_sections);
-                        Some(v)
-                    }
-                    Err(e) => {
-                        log::warn!(
-                            "Failed to parse VOXELS.VPL: {} — using fallback N·L shading",
-                            e
-                        );
-                        None
-                    }
-                });
-
-        for type_keys in new_keys.chunk_by(|a, b| a.type_id == b.type_id) {
-            let type_id = type_keys[0].type_id.as_str();
-            if let Some(model) = UnitModel::load(asset_manager, type_id, rules) {
-                models.push((model, type_keys.to_vec()));
-            } else {
-                *failed.entry(type_id.to_string()).or_default() += type_keys.len();
-            }
-        }
+    // For turret units, separate Body/Turret/Barrel keys per facing; for the
+    // rest a single Composite key per facing. Multi-frame HVA units get keys
+    // for each frame.
+    let missing = UnitAtlasDemand::of_world(entities, rules, interner).without(&atlas.covered);
+    let (needed, frame_counts) = needed_unit_keys(&missing, asset_manager, rules);
+    let mut by_model: BTreeMap<smol_str::SmolStr, Vec<UnitSpriteKey>> = BTreeMap::new();
+    for key in needed {
+        by_model.entry(key.type_id.clone()).or_default().push(key);
     }
-    (
-        UnitRasterWork {
-            models,
-            vpl,
-            failed,
-        },
-        UnitAtlasUpload {
-            started,
-            frame_counts,
-            missing,
-        },
-    )
-}
-/// Which logical cores a voxel raster may fill with its workers.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum RasterCores {
-    /// Map load: no match is running yet, so every core draws.
-    All,
-    /// Live growth: a match is running, so one core stays with it.
-    BesideMatch,
-}
-
-impl RasterCores {
-    /// Worker threads on a machine with `cores` logical cores; never none.
-    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-    fn workers(self, cores: usize) -> usize {
-        match self {
-            Self::All => cores,
-            Self::BesideMatch => cores.saturating_sub(1),
-        }
-        .max(1)
-    }
-}
-
-impl UnitRasterWork {
-    /// Pure CPU work: all physical files and type metadata were resolved by
-    /// prepare_unit_atlas. It owns no simulation, asset manager or GPU handles.
-    pub(crate) fn render(self) -> UnitRasterOutput {
-        self.render_cancellable(&std::sync::atomic::AtomicBool::new(false), RasterCores::All)
-    }
-
-    /// Rasterize on a worker thread, which sends the output once and ends.
-    /// Setting `cancelled` stops it between models and poses; the receiver
-    /// may be dropped at any time. Map load and live growth share it, and
-    /// `cores` says which of the two is asking.
-    pub(crate) fn spawn(
-        self,
-        cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
-        cores: RasterCores,
-    ) -> std::io::Result<std::sync::mpsc::Receiver<UnitRasterOutput>> {
-        let (sender, receiver) = std::sync::mpsc::channel();
-        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-        {
-            let _ = sender.send(self.render_cancellable(&cancelled, cores));
-        }
-        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-        std::thread::Builder::new()
-            .name("voxel-atlas-raster".into())
-            .spawn(move || {
-                let _ = sender.send(self.render_cancellable(&cancelled, cores));
-            })?;
-        Ok(receiver)
-    }
-
-    pub(crate) fn render_cancellable(
-        self,
-        cancelled: &std::sync::atomic::AtomicBool,
-        cores: RasterCores,
-    ) -> UnitRasterOutput {
-        let mut rendered = Vec::new();
-        let mut failed = self.failed;
-        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-        let workers = cores.workers(std::thread::available_parallelism().map_or(1, |n| n.get()));
-        // The browser draws on its one thread.
-        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-        let _ = cores;
-        for (model, type_keys) in self.models {
-            if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
-                break;
-            }
-            let poses: Vec<&[UnitSpriteKey]> = type_keys
-                .chunk_by(|a, b| {
-                    (a.frame, a.facing, a.slope_type) == (b.frame, b.facing, b.slope_type)
-                })
-                .collect();
-            let (model, vpl) = (&model, self.vpl.as_ref());
-            #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-            let results: Vec<Option<RenderedKey>> = {
-                let mut pose = None;
-                poses
-                    .iter()
-                    .flat_map(|keys| keys.iter())
-                    .take_while(|_| !cancelled.load(std::sync::atomic::Ordering::Relaxed))
-                    .map(|key| render_unit_key(model, key, vpl, &mut pose))
-                    .collect()
+    let resident = atlas.resident.get_mut();
+    let mut admitted = 0;
+    for (type_id, keys) in by_model {
+        if !atlas.models.contains_key(&type_id) {
+            let Some(model) = UnitModel::load(asset_manager, &type_id, rules) else {
+                log::warn!(
+                    "No voxel model for {type_id}: its {} pictures stay undrawn",
+                    keys.len()
+                );
+                continue;
             };
-            #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-            let results: Vec<Option<RenderedKey>> = std::thread::scope(|scope| {
-                let jobs: Vec<_> = poses
-                    .chunks(poses.len().div_ceil(workers))
-                    .map(|chunk| {
-                        scope.spawn(move || {
-                            let mut pose = None;
-                            chunk
-                                .iter()
-                                .flat_map(|keys| keys.iter())
-                                .take_while(|_| {
-                                    !cancelled.load(std::sync::atomic::Ordering::Relaxed)
-                                })
-                                .map(|key| render_unit_key(model, key, vpl, &mut pose))
-                                .collect::<Vec<_>>()
-                        })
-                    })
-                    .collect();
-                jobs.into_iter()
-                    .flat_map(|job| job.join().expect("VXL render worker panicked"))
-                    .collect()
-            });
-            for (key, result) in type_keys.iter().zip(results) {
-                match result {
-                    Some(RenderedKey {
-                        sprite,
-                        legacy_shadow,
-                    }) => {
-                        rendered.extend(legacy_shadow);
-                        rendered.push(sprite);
-                    }
-                    None => *failed.entry(key.type_id.to_string()).or_default() += 1,
-                }
+            atlas.models.insert(type_id, model);
+        }
+        // A type seeded as an aircraft after its ground variant (or the
+        // reverse) shares its flat keys with the resident ones.
+        for key in keys {
+            if !resident.entries.contains_key(&key) && resident.undrawn.insert(key) {
+                admitted += 1;
             }
         }
-        log::info!("VXL render: {} sprites", rendered.len());
-        for (type_id, count) in failed {
-            log::warn!("Failed to render {count} VXL sprites for {type_id}");
-        }
-        UnitRasterOutput { rendered }
     }
+    log::info!(
+        "Unit atlas: {} new voxel models admitted in {:.1} ms; {admitted} pictures drawn on first use",
+        missing.len(),
+        started.elapsed().as_secs_f64() * 1000.0,
+    );
+    atlas.frame_counts.extend(frame_counts);
+    atlas.covered.extend(missing);
 }
-impl UnitAtlasUpload {
-    /// Main-thread completion of the same atlas owner used by map loading and
-    /// live growth: append to `atlas`, or pack a new one when there is none.
-    /// `atlas` must be the one this upload was prepared against. CPU workers
-    /// never expose partially uploaded resources. Whether `atlas` now covers
-    /// this upload's models; it is left as it was when it does not.
-    pub(crate) fn finish(
-        self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        batch: &BatchRenderer,
-        output: UnitRasterOutput,
-        atlas: &mut Option<UnitAtlas>,
-    ) -> bool {
-        let Self {
-            started,
-            frame_counts,
-            missing,
-        } = self;
-        if missing.is_empty() {
-            return false;
+
+/// `VOXELS.VPL`'s lighting sections; None, with a warning, draws with the
+/// rasterizer's fallback N·L shading.
+fn load_vpl(asset_manager: &AssetManager) -> Option<VplFile> {
+    let data = asset_manager.get_ref("VOXELS.VPL")?;
+    match VplFile::from_bytes(data) {
+        Ok(vpl) => {
+            log::info!("Loaded VOXELS.VPL ({} lighting sections)", vpl.num_sections);
+            Some(vpl)
         }
-        let rendered = output.rendered;
-        // Step 3: shelf-pack into new pages at map load; afterwards append to a
-        // growth page so resident sprites are never repacked or re-uploaded.
-        let added = rendered.len();
-        let atlas = match atlas {
-            Some(atlas) => {
-                atlas.append_sprites(device, queue, batch, rendered);
-                atlas
-            }
-            None if rendered.is_empty() => {
-                log::warn!("No unit sprites rendered");
-                return false;
-            }
-            None => match pack_sprites_on_device(device, queue, batch, &rendered) {
-                Ok(mut packed) => {
-                    packed.pool_bytes = rendered
-                        .iter()
-                        .map(|sprite| (sprite.key.clone(), sprite.pool_bytes))
-                        .collect();
-                    packed.set_rendered_cache(rendered);
-                    atlas.insert(packed)
-                }
-                Err(err) => {
-                    log::error!("Unit atlas packing failed: {err}");
-                    return false;
-                }
-            },
-        };
-        atlas.frame_counts.extend(frame_counts);
-        atlas.covered.extend(missing);
-        atlas.rendered = u32::try_from(added).unwrap_or(u32::MAX);
-        let page_dimensions = atlas
-            .pages
-            .iter()
-            .map(|page| format!("{}x{}", page.texture.width, page.texture.height))
-            .collect::<Vec<_>>()
-            .join(", ");
-        log::info!(
-            "Unit atlas: {} sprites added in {:.1} ms; {} sprites across {} page(s): {}",
-            added,
-            started.elapsed().as_secs_f64() * 1000.0,
-            atlas.sprite_count(),
-            atlas.page_count(),
-            page_dimensions,
-        );
-        true
+        Err(err) => {
+            log::warn!("Failed to parse VOXELS.VPL: {err} — using fallback N·L shading");
+            None
+        }
     }
 }
 
@@ -2148,186 +1971,6 @@ fn facing_config_for_layer(layer: VxlLayer) -> (u8, u16) {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct UnitAtlasPlacement {
-    sprite_index: usize,
-    page: usize,
-    x: u32,
-    y: u32,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct UnitAtlasPackPlan {
-    page_width: u32,
-    page_heights: Vec<u32>,
-    placements: Vec<UnitAtlasPlacement>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum UnitAtlasPackError {
-    ZeroTextureLimit,
-    SpriteExceedsTextureLimit {
-        sprite_index: usize,
-        width: u32,
-        height: u32,
-        limit: u32,
-    },
-    InvalidPixelCount {
-        sprite_index: usize,
-        expected: usize,
-        actual: usize,
-    },
-}
-
-impl std::fmt::Display for UnitAtlasPackError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::ZeroTextureLimit => write!(formatter, "GPU reports a zero 2D texture limit"),
-            Self::SpriteExceedsTextureLimit {
-                sprite_index,
-                width,
-                height,
-                limit,
-            } => write!(
-                formatter,
-                "sprite {sprite_index} is {width}x{height}, exceeding GPU limit {limit}"
-            ),
-            Self::InvalidPixelCount {
-                sprite_index,
-                expected,
-                actual,
-            } => write!(
-                formatter,
-                "sprite {sprite_index} has {actual} pixels; expected {expected}"
-            ),
-        }
-    }
-}
-
-/// Build a GPU-independent, lossless page-placement plan.
-fn plan_sprite_pages(
-    dimensions: &[(u32, u32)],
-    max_texture_dim: u32,
-) -> Result<UnitAtlasPackPlan, UnitAtlasPackError> {
-    if max_texture_dim == 0 {
-        return Err(UnitAtlasPackError::ZeroTextureLimit);
-    }
-    for (sprite_index, &(width, height)) in dimensions.iter().enumerate() {
-        if width > max_texture_dim || height > max_texture_dim {
-            return Err(UnitAtlasPackError::SpriteExceedsTextureLimit {
-                sprite_index,
-                width,
-                height,
-                limit: max_texture_dim,
-            });
-        }
-    }
-
-    let sizes: Vec<[u32; 2]> = dimensions
-        .iter()
-        .map(|&(width, height)| [width, height])
-        .collect();
-    let plan = atlas_growth::plan_initial_shelves(
-        &sizes,
-        atlas_growth::InitialShelfPolicy {
-            padding: SPRITE_PADDING,
-            max_dim: max_texture_dim,
-            split_pages: true,
-        },
-    );
-    Ok(UnitAtlasPackPlan {
-        page_width: plan.width,
-        page_heights: plan.page_heights,
-        placements: plan
-            .placements
-            .into_iter()
-            .map(|placed| UnitAtlasPlacement {
-                sprite_index: placed.index,
-                page: placed.page,
-                x: placed.origin[0],
-                y: placed.origin[1],
-            })
-            .collect(),
-    })
-}
-
-/// Shelf-pack cached sprites into lossless GPU texture pages.
-fn pack_sprites_on_device(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    batch: &BatchRenderer,
-    sprites: &[CachedUnitSprite],
-) -> Result<UnitAtlas, UnitAtlasPackError> {
-    let max_texture_dim: u32 = device.limits().max_texture_dimension_2d;
-    let plan = plan_cached_sprite_pages(sprites, max_texture_dim)?;
-    if plan.page_heights.len() > 1 {
-        log::info!(
-            "Unit atlas split into {} pages (GPU texture limit {})",
-            plan.page_heights.len(),
-            max_texture_dim,
-        );
-    }
-
-    let mut pages = Vec::with_capacity(plan.page_heights.len());
-    let mut entries =
-        LookupMap::with_capacity_and_hasher(plan.placements.len(), Default::default());
-    for (page_index, &page_height) in plan.page_heights.iter().enumerate() {
-        let mut pixels = vec![0u8; (plan.page_width * page_height) as usize];
-        for placement in plan
-            .placements
-            .iter()
-            .filter(|placement| placement.page == page_index)
-        {
-            let rs = &sprites[placement.sprite_index];
-            let expected_pixels = (rs.width * rs.height) as usize;
-            if rs.pixels.len() != expected_pixels {
-                return Err(UnitAtlasPackError::InvalidPixelCount {
-                    sprite_index: placement.sprite_index,
-                    expected: expected_pixels,
-                    actual: rs.pixels.len(),
-                });
-            }
-            for y in 0..rs.height {
-                let src_start = (y * rs.width) as usize;
-                let src_end = src_start + rs.width as usize;
-                let dst_start = ((placement.y + y) * plan.page_width + placement.x) as usize;
-                let dst_end = dst_start + rs.width as usize;
-                pixels[dst_start..dst_end].copy_from_slice(&rs.pixels[src_start..src_end]);
-            }
-            entries.insert(
-                rs.key.clone(),
-                unit_entry(
-                    rs,
-                    [placement.x, placement.y],
-                    page_index,
-                    [plan.page_width, page_height],
-                ),
-            );
-        }
-        let texture = batch.create_unit_atlas_texture_on_device(
-            device,
-            queue,
-            plan.page_width,
-            page_height,
-            &pixels,
-        );
-        pages.push(UnitAtlasPage { texture });
-    }
-
-    Ok(UnitAtlas::new(pages, entries))
-}
-
-fn plan_cached_sprite_pages(
-    sprites: &[CachedUnitSprite],
-    max_texture_dim: u32,
-) -> Result<UnitAtlasPackPlan, UnitAtlasPackError> {
-    let dimensions = sprites
-        .iter()
-        .map(|sprite| (sprite.width, sprite.height))
-        .collect::<Vec<_>>();
-    plan_sprite_pages(&dimensions, max_texture_dim)
-}
-
 // Tests extracted to unit_atlas_tests.rs to stay under 600 lines.
 #[cfg(test)]
 #[path = "unit_atlas_tests.rs"]
@@ -2335,11 +1978,52 @@ mod tests;
 
 #[cfg(test)]
 impl UnitAtlas {
+    /// An atlas holding these pages, with no picture on them.
     pub(crate) fn from_test_pages(pages: Vec<UnitAtlasPage>) -> Self {
-        Self::new(pages, LookupMap::default())
+        let atlas = Self {
+            pages,
+            ..Self::new(8192)
+        };
+        atlas.resident.borrow_mut().page_sizes = atlas
+            .pages
+            .iter()
+            .map(|page| [page.texture.width, page.texture.height])
+            .collect();
+        atlas
     }
 
+    /// An atlas whose pictures sit at these entries, with no pages.
     pub(crate) fn from_test_entries(entries: HashMap<UnitSpriteKey, UnitSpriteEntry>) -> Self {
-        Self::new(Vec::new(), entries.into_iter().collect())
+        let atlas = Self::new(8192);
+        atlas.resident.borrow_mut().entries = entries.into_iter().collect();
+        atlas
+    }
+
+    /// An atlas with these sprites placed as first-use draws place them,
+    /// staged for the next [`Self::upload`].
+    fn from_test_sprites(sprites: Vec<CachedUnitSprite>) -> Self {
+        let atlas = Self::new(8192);
+        for sprite in sprites {
+            atlas.place_test_sprite(sprite);
+        }
+        atlas
+    }
+
+    /// Place `sprite` as a first-use draw does.
+    fn place_test_sprite(&self, sprite: CachedUnitSprite) {
+        self.resident
+            .borrow_mut()
+            .place(sprite, self.max_texture_dim);
+    }
+
+    /// Every key the admitted models draw, drawn yet or not.
+    pub(crate) fn admitted_keys(&self) -> HashSet<UnitSpriteKey> {
+        let resident = self.resident.borrow();
+        resident
+            .entries
+            .keys()
+            .chain(&resident.undrawn)
+            .cloned()
+            .collect()
     }
 }
