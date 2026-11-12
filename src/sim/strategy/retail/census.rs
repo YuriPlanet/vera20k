@@ -119,6 +119,17 @@ pub(super) struct Line {
     pub(super) ready: Option<InternedId>,
 }
 
+/// Whether the house is defending what it holds or looking for the enemy.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum Posture {
+    /// Hold the held ground and the ground behind it; do not go looking.
+    #[default]
+    Turtle,
+    /// Every opponent can erase the base and this house cannot answer in kind,
+    /// so waiting only feeds the charge: go before the superweapon finishes.
+    Race,
+}
+
 impl Line {
     /// The factory is working: something is on the line, in the queue, or
     /// finished and not yet taken.
@@ -383,6 +394,15 @@ pub(super) struct Census {
     pub(super) lines: [Line; 6],
     pub(super) units: Vec<Unit>,
     pub(super) enemies: Vec<EnemyEntity>,
+    /// Visible enemy buildings that carry an offensive superweapon, and how many
+    /// enemy houses that is spread across. Read as a pair: a count alone says
+    /// nothing, because a mod decides how many houses there are.
+    pub(super) enemy_strike_sites: usize,
+    /// The house's own buildings that carry an offensive superweapon. What makes
+    /// a defensive posture a *choice* rather than a surrender.
+    pub(super) own_strike_sites: usize,
+    /// Houses this one is at war with.
+    pub(super) enemy_houses: usize,
     /// Neutral and civilian buildings: nobody's, so they are in no enemy list,
     /// but they are ground the army walks into. What may be shot out of the way
     /// is decided where the walking happens.
@@ -437,6 +457,41 @@ impl Census {
     /// house to call itself short in one place and served in another.
     pub(super) fn harvesters_served(&self) -> bool {
         self.harvesters >= super::build::HARVESTERS_PER_REFINERY * self.refineries.max(1)
+    }
+
+    /// Whether the house should be defending what it holds rather than looking
+    /// for the enemy.
+    ///
+    /// The reading is two ratios and no constants, because both the number of
+    /// houses and the number of superweapons a mod hands them are the mod's
+    /// decision:
+    ///
+    /// - **their coverage** — strike sites per enemy house. Twenty-nine sites
+    ///   against twenty-nine houses is one each, which is exactly the same war
+    ///   as one site against one house, and a fixed threshold cannot tell those
+    ///   apart.
+    /// - **ours** — strike sites per yard, which is the only denominator the
+    ///   house owns.
+    ///
+    /// A house that cannot be out-waited does not wait. When every opponent can
+    /// erase the base and this house cannot answer in kind, a defensive posture
+    /// only feeds the charge: the strike lands on a base that never moved. So
+    /// that one case is `Race` — push before the superweapon finishes — and
+    /// everything else is `Turtle`: hold what is held, do not go looking.
+    ///
+    /// Read through the fog. A site that has not been seen is not counted, so
+    /// an unseen enemy cannot be proved to have one; the unknown therefore
+    /// resolves toward the defensive side, because a push is the step that
+    /// cannot be taken back.
+    pub(super) fn posture(&self) -> Posture {
+        let theirs =
+            f64::from(self.enemy_strike_sites as u32) / f64::from(self.enemy_houses.max(1) as u32);
+        let ours = f64::from(self.own_strike_sites as u32) / f64::from(self.yards.max(1) as u32);
+        if theirs >= 1.0 && ours < 1.0 {
+            Posture::Race
+        } else {
+            Posture::Turtle
+        }
     }
 }
 
@@ -543,6 +598,9 @@ impl Census {
         self.tiers = [[0; 3]; 5];
         self.threat = [0; ROLES.len()];
         self.able = [0; ROLES.len()];
+        self.enemy_strike_sites = 0;
+        self.own_strike_sites = 0;
+        self.enemy_houses = obs.enemy_house_count();
 
         for entity in obs.own_entities() {
             let Some(ty) = obs.object_type(rules, entity.type_id) else {
@@ -581,6 +639,9 @@ impl Census {
             }
             if ty.category == ObjectCategory::Building {
                 self.home_cells.push(entity.cell);
+                if super::build::grants_a_strike(rules, ty) {
+                    self.own_strike_sites += 1;
+                }
                 self.base_cell.get_or_insert(entity.cell);
                 if traits.repairs_units {
                     self.repair_cell.get_or_insert(entity.cell);
@@ -652,6 +713,12 @@ impl Census {
                 && let Some(role) = counter(ty)
             {
                 self.threat[role.index()] += 1;
+            }
+            // The strike sites are the one enemy building count that changes a
+            // posture: a base that can be erased from across the map cannot be
+            // out-waited, and a base that cannot is worth defending.
+            if ty.category == ObjectCategory::Building && super::build::grants_a_strike(rules, ty) {
+                self.enemy_strike_sites += 1;
             }
             self.enemies.push(enemy);
         }

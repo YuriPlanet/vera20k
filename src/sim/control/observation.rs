@@ -770,6 +770,31 @@ impl<'a> Observation<'a> {
         !allied(self.sim.interner().resolve(owner))
     }
 
+    /// How many houses this house is at war with: alive, not itself, not an
+    /// ally, not a `MultiplayPassive=` bystander.
+    ///
+    /// The denominator a superweapon reading needs. A count of strike sites says
+    /// nothing by itself — twenty-nine of them across twenty-nine houses is one
+    /// per opponent, and one against one house is the same war — so any rule
+    /// that compares the two divides by this. It is read from the houses rather
+    /// than fixed, because a mod decides how many there are.
+    pub fn enemy_house_count(&self) -> usize {
+        let allied = crate::map::houses::ally_test(
+            self.sim.house_alliances.as_map(),
+            self.sim.interner().resolve(self.house),
+        );
+        self.sim
+            .houses()
+            .iter()
+            .filter(|(house, state)| {
+                **house != self.house
+                    && !state.is_defeated()
+                    && !state.multiplay_passive()
+                    && !allied(self.sim.interner().resolve(**house))
+            })
+            .count()
+    }
+
     /// The object `entity_id` is shooting at, when it has one.
     ///
     /// The native mission AI picks it (`TechnoClass::Greatest_Threat` behind

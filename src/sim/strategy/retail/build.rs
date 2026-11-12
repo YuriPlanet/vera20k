@@ -795,7 +795,7 @@ pub(super) fn tech_building<'r>(
 /// [GACSPH] SuperWeapon=ChronoSphereSpecial, [NAMISL] NukeSilo=yes -- so the
 /// rules answer which building this house may put up, and no name list has
 /// to.
-fn grants_a_strike(rules: &RuleSet, ty: &ObjectType) -> bool {
+pub(super) fn grants_a_strike(rules: &RuleSet, ty: &ObjectType) -> bool {
     ty.nuke_silo
         || [ty.super_weapon.as_deref(), ty.super_weapon2.as_deref()]
             .into_iter()
