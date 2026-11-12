@@ -113,13 +113,15 @@
 //! many passes as the expansions of those ahead of it fill budgets. A
 //! re-path's expansions are those of all its cell searches, the retries
 //! after a failed corridor search included (up to five; see `zone_search`).
-//! The budget binds only when a frame's urgency-2 re-paths flood: in the
-//! match bench's jams one routes round thousands of moving friendlies, often
-//! expanding 40,000 cells, and a pass of a few hundred held its frame for up
-//! to a tenth of a second. A Foot it leaves out stands as one the cap leaves
-//! out does: there the jammed Foots find their detours later, so fewer reach
-//! combat. A re-path past the budget does not start, or stops searching, once
-//! the ones before it have made the budget's expansions.
+//! The budget binds whenever a frame's jams ask for long detours: in the
+//! match bench's jams one re-path routes round thousands of moving
+//! friendlies, often expanding 40,000 cells, and before the budget a pass of
+//! a few hundred held its frame for up to a tenth of a second; in sim-bench's
+//! 20,000-unit march it cuts their expansions by about a third. A Foot it
+//! leaves out stands as one the cap leaves out does: there the jammed Foots
+//! find their detours later, so fewer reach combat. A re-path past the
+//! budget does not start, or stops searching, once the ones before it have
+//! made the budget's expansions.
 //!
 //! A code-2 re-path searches at the urgency its ladder asked when the Foot
 //! registered it, the frame native searched: 2 once the Foot's latched
@@ -186,8 +188,8 @@ use crate::sim::world::{EntryFacts, Simulation};
 const SEARCHES_PER_PASS: usize = 256;
 
 /// The expansions a pass's urgency-2 re-paths make before it starts no more
-/// of them; see the module docs. Four cell searches at A*'s limit fit.
-const URGENCY2_STEPS_PER_PASS: u64 = 4 * crate::sim::pathfinding::MAX_SEARCH_NODES as u64;
+/// of them; see the module docs. One cell search at A*'s limit fits.
+const URGENCY2_STEPS_PER_PASS: u64 = crate::sim::pathfinding::MAX_SEARCH_NODES as u64;
 
 /// Passes whose durations the batch keeps for its mean and peak.
 const PASS_WINDOW: usize = 64;
@@ -320,8 +322,9 @@ pub(crate) struct PathBatch {
     /// in between.
     #[serde(skip)]
     ready: BTreeMap<u64, ReadySlot>,
-    /// The last pass's kept cell and blocker entry facts, emptied before
-    /// each pass's searches.
+    /// The kept cell and blocker entry facts of the last pass, or of the
+    /// last search a Foot ran at its own turn, emptied before each
+    /// ([`Simulation::empty_entry_facts`]).
     #[serde(skip)]
     entry_facts: EntryFacts,
     /// Answers Find_Path used, by [`WaitingRequest`].
@@ -818,6 +821,28 @@ impl Simulation {
             .flat_map(|batch| batch.pending.iter().map(|&(id, _)| id))
     }
 
+    /// Empty the batch's entry-fact tables ([`EntryFacts`]) before a batch of
+    /// core searches, or one a Foot runs at its own turn, reads the world:
+    /// until the world changes, the searches keep the facts they read there
+    /// ([`Self::entry_facts`]). Nothing while batching is off.
+    pub(super) fn empty_entry_facts(&mut self) {
+        let (Some(terrain), Some(batch)) =
+            (self.resolved_terrain.as_ref(), self.path_batch.as_mut())
+        else {
+            return;
+        };
+        batch
+            .entry_facts
+            .reset(terrain.cells().len(), self.substrate.entities.slot_count());
+    }
+
+    /// The tables a core search keeps its entry facts in, emptied by
+    /// [`Self::empty_entry_facts`] since the world last changed; `None`
+    /// while batching is off.
+    pub(super) fn entry_facts(&self) -> Option<&EntryFacts> {
+        Some(&self.path_batch.as_ref()?.entry_facts)
+    }
+
     /// The end of the live object pass: its answers expire.
     pub(crate) fn finish_batched_path_searches(&mut self) {
         if let Some(batch) = self.path_batch.as_mut() {
@@ -852,21 +877,10 @@ impl Simulation {
         );
         // Every search reads the same world, so a cell's or blocker's entry
         // facts are read once a batch and shared.
-        let cells = self
-            .resolved_terrain
-            .as_ref()
-            .expect("checked by the caller")
-            .cells()
-            .len();
-        let slots = self.substrate.entities.slot_count();
-        self.path_batch
-            .as_mut()
-            .expect("batching is on")
-            .entry_facts
-            .reset(cells, slots);
+        self.empty_entry_facts();
         let sim = &*self;
         let counts = sim.movement_pass_cache.current_blocker_plane();
-        let facts = &sim.path_batch.as_ref().expect("batching is on").entry_facts;
+        let facts = sim.entry_facts().expect("batching is on");
         let dummy = sim
             .resolved_terrain
             .as_ref()
