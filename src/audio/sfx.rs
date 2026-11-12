@@ -1243,6 +1243,9 @@ impl PlaybackService for PendingSampleService<'_> {
 pub struct SfxPlayer {
     /// rodio mixer device sink — must be kept alive or all audio stops.
     _device: SfxOutput,
+    /// Set by the stream's error callback when the device goes away.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    health: crate::audio::output_health::OutputHealth,
     /// The decision half: channel pool, `Priority=`, `Limit=`, pre-delay,
     /// looping leash, ramps and the many-sounds limiter.
     arbiter: SoundArbiter,
@@ -1352,7 +1355,9 @@ fn sfx_buffer_frames(sample_rate: u32, supported: &rodio::cpal::SupportedBufferS
 /// Open the default output with [`sfx_buffer_frames`], falling back to
 /// rodio's own default sink when the device refuses that period.
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-fn open_sfx_sink() -> Result<SfxOutput, rodio::DeviceSinkError> {
+fn open_sfx_sink(
+    health: &crate::audio::output_health::OutputHealth,
+) -> Result<SfxOutput, rodio::DeviceSinkError> {
     use rodio::cpal::traits::{DeviceTrait, HostTrait};
 
     let low_latency = rodio::cpal::default_host()
@@ -1363,6 +1368,7 @@ fn open_sfx_sink() -> Result<SfxOutput, rodio::DeviceSinkError> {
             DeviceSinkBuilder::from_device(device)
                 .ok()?
                 .with_buffer_size(rodio::cpal::BufferSize::Fixed(frames))
+                .with_error_callback(health.callback("SFX"))
                 .open_stream()
                 .inspect(|_| {
                     log::info!(
@@ -1375,7 +1381,14 @@ fn open_sfx_sink() -> Result<SfxOutput, rodio::DeviceSinkError> {
         });
     match low_latency {
         Some(sink) => Ok(sink),
-        None => DeviceSinkBuilder::open_default_sink(),
+        // With no usable default device, rodio's own opener tries every other.
+        None => DeviceSinkBuilder::from_default_device()
+            .and_then(|builder| {
+                builder
+                    .with_error_callback(health.callback("SFX"))
+                    .open_sink_or_fallback()
+            })
+            .or_else(|_| DeviceSinkBuilder::open_default_sink()),
     }
 }
 
@@ -1389,12 +1402,20 @@ fn open_sfx_sink() -> Result<SfxOutput, String> {
 impl SfxPlayer {
     /// Create a new SfxPlayer. Returns None if audio output cannot be opened.
     pub fn new() -> Option<Self> {
-        let device = open_sfx_sink()
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        let health = crate::audio::output_health::OutputHealth::default();
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        let opened = open_sfx_sink(&health);
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        let opened = open_sfx_sink();
+        let device = opened
             .map_err(|e| log::error!("Failed to initialize SFX audio: {}", e))
             .ok()?;
 
         Some(Self {
             _device: device,
+            #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+            health,
             arbiter: SoundArbiter::new(0),
             coordinate_requests: Vec::with_capacity(MAX_COORDINATE_REQUESTS),
             next_coordinate_request: 1,
@@ -2325,8 +2346,32 @@ impl SfxPlayer {
     /// PCM quarter refill is driven by the continuous source.
     pub(crate) fn service_device_outputs(&mut self, now_ms: u64) {
         self.now_ms = now_ms;
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        self.reopen_lost_output(now_ms);
         self.report_finished_outputs();
         self.tick_stream_volumes(now_ms);
+    }
+
+    /// VERA-only: when the device went away, open the default device again.
+    /// Sounds on the dead stream would never finish, so they are stopped the
+    /// way a world change stops them; sounds asked for from here on are heard.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    fn reopen_lost_output(&mut self, now_ms: u64) {
+        if !self.health.reopen_due(now_ms) {
+            return;
+        }
+        let health = crate::audio::output_health::OutputHealth::default();
+        let Ok(device) = open_sfx_sink(&health) else {
+            return;
+        };
+        log::info!("SFX output reopened on the default device");
+        self.clear_sound_pool();
+        self.stop_eva_stream();
+        if let Some(output) = self.taunt_player.take() {
+            output.player.stop();
+        }
+        self._device = device;
+        self.health = health;
     }
 
     fn tick_stream_volumes(&mut self, now_ms: u64) {

@@ -125,6 +125,11 @@ impl Source for MusicStream {
 pub struct MusicPlayer {
     /// rodio mixer device sink — must be kept alive or all audio stops.
     _device: MusicOutput,
+    /// Set by the stream's error callback when the device goes away.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    health: crate::audio::output_health::OutputHealth,
+    /// The track was playing on a device that went away: it reads as finished.
+    track_cut: bool,
     current_player: Option<Player>,
     volume: f64,
     /// The Theme stream's own `+0x10` interp (`stream+0x14 -> +0x10`), built
@@ -140,12 +145,55 @@ pub struct MusicPlayer {
     paused: bool,
 }
 
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+fn open_music_sink(
+    health: &crate::audio::output_health::OutputHealth,
+) -> Result<MixerDeviceSink, rodio::DeviceSinkError> {
+    // With no usable default device, rodio's own opener tries every other.
+    DeviceSinkBuilder::from_default_device()
+        .and_then(|builder| {
+            builder
+                .with_error_callback(health.callback("Music"))
+                .open_sink_or_fallback()
+        })
+        .or_else(|_| DeviceSinkBuilder::open_default_sink())
+}
+
 impl MusicPlayer {
+    /// VERA-only: when the device went away, open the default device again.
+    /// The track on the dead stream reads as finished, so Theme plays on with
+    /// its next one.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    fn reopen_lost_output(&mut self, now_ms: u64) {
+        if !self.health.reopen_due(now_ms) {
+            return;
+        }
+        let health = crate::audio::output_health::OutputHealth::default();
+        let Ok(device) = open_music_sink(&health) else {
+            return;
+        };
+        log::info!("Music output reopened on the default device");
+        self.cut_track();
+        #[cfg(test)]
+        let device = MusicOutput::Device(device);
+        self._device = device;
+        self.health = health;
+    }
+
+    fn cut_track(&mut self) {
+        if let Some(player) = self.current_player.as_ref() {
+            player.stop();
+            self.track_cut = true;
+        }
+    }
+
     /// Create a physical music output. Theme construction never depends on
     /// this succeeding.
     pub fn new() -> Option<Self> {
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-        let device = DeviceSinkBuilder::open_default_sink()
+        let health = crate::audio::output_health::OutputHealth::default();
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        let device = open_music_sink(&health)
             .map_err(|error| log::error!("Failed to initialize music audio: {error}"))
             .ok()?;
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
@@ -154,12 +202,21 @@ impl MusicPlayer {
             .ok()?;
         #[cfg(test)]
         let device = MusicOutput::Device(device);
-        Some(Self::with_output(device))
+        #[allow(unused_mut)]
+        let mut player = Self::with_output(device);
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        {
+            player.health = health;
+        }
+        Some(player)
     }
 
     fn with_output(device: MusicOutput) -> Self {
         Self {
             _device: device,
+            #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+            health: Default::default(),
+            track_cut: false,
             current_player: None,
             volume: DEFAULT_SCORE_VOLUME,
             own: VolumeInterp::new(VOLUME_SCALE, 0),
@@ -176,7 +233,7 @@ impl MusicPlayer {
 
     pub(crate) fn state(&self) -> MusicOutputState {
         match self.current_player.as_ref() {
-            Some(player) if player.empty() => MusicOutputState::Finished,
+            Some(player) if player.empty() || self.track_cut => MusicOutputState::Finished,
             Some(_) if self.own.moving() => MusicOutputState::Ramping,
             Some(_) => MusicOutputState::Playing,
             None => MusicOutputState::Idle,
@@ -190,6 +247,7 @@ impl MusicPlayer {
         if let Some(player) = self.current_player.take() {
             player.stop();
         }
+        self.track_cut = false;
         // `StreamPlayer__PlayFile`: `SetTargetImmediate(+0x10, 0x4000)`.
         self.own.set_target_immediate(VOLUME_SCALE);
         self.own.tick(0);
@@ -264,6 +322,8 @@ impl MusicPlayer {
     }
 
     pub(crate) fn tick_stream_volume(&mut self, now_ms: u64) {
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        self.reopen_lost_output(now_ms);
         if self.own.tick(now_ms) {
             self.apply_effective_volume();
         }
@@ -334,6 +394,19 @@ mod tests {
         player.tick_stream_volume(1_501);
         assert_eq!(player.own.value(), VOLUME_SCALE / 2);
         player.tick_stream_volume(2_002);
+        assert_eq!(player.state(), MusicOutputState::Playing);
+    }
+
+    /// A dead stream never pulls the track's last sample, so the cut itself
+    /// must read as the end for Theme to play its next track.
+    #[test]
+    fn a_track_cut_by_a_lost_device_reads_as_finished_until_the_next_one() {
+        let (mut player, _output) = MusicPlayer::offline_for_test();
+        let silence = || PreparedTrack::decoded("Silence".into(), vec![0.0; 44_100], 22_050);
+        assert!(player.submit(silence()));
+        player.cut_track();
+        assert_eq!(player.state(), MusicOutputState::Finished);
+        assert!(player.submit(silence()));
         assert_eq!(player.state(), MusicOutputState::Playing);
     }
 
