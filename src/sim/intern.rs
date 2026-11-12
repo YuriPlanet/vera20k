@@ -65,9 +65,9 @@ pub struct StringInterner {
     to_id: Shared<LookupMap<String, InternedId>>,
     /// ID (index) → display string (first-seen casing).
     to_str: Shared<Vec<String>>,
-    /// Derived: each id's object and projectile handles in the bound rules
-    /// ([`Self::bind_types`], [`Self::cover_types`]). Never serialized; a
-    /// load binds again.
+    /// Derived: each id's object, projectile and warhead handles in the
+    /// bound rules ([`Self::bind_types`], [`Self::cover_types`]). Never
+    /// serialized; a load binds again.
     types: Shared<TypeHandleTable>,
     /// [`Self::serial`]; never serialized.
     serial: u64,
@@ -124,6 +124,18 @@ impl StringInterner {
         rules: &'r RuleSet,
     ) -> Option<&'r crate::rules::projectile_type::ProjectileType> {
         self.types.projectile(self, id, rules)
+    }
+
+    /// The warhead `id` names in `rules`, as
+    /// `rules.warhead(self.resolve(id))` answers, through the bound handles
+    /// where they apply.
+    #[inline]
+    pub fn warhead_type<'r>(
+        &self,
+        id: InternedId,
+        rules: &'r RuleSet,
+    ) -> Option<&'r crate::rules::warhead_type::WarheadType> {
+        self.types.warhead(self, id, rules)
     }
 
     /// The object type `id` names in `rules`, as

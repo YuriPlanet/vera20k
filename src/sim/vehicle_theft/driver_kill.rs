@@ -77,7 +77,7 @@ impl Simulation {
                 target.ares_self_heal_combat.start(frame, delay);
             }
         }
-        let Some(warhead) = rules.warhead(self.interner.resolve(event.warhead_ref)) else {
+        let Some(warhead) = self.interner.warhead_type(event.warhead_ref, rules) else {
             return;
         };
         let Some(settings) = warhead.ares_rules() else {

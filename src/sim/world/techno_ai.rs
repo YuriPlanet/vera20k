@@ -387,8 +387,9 @@ impl Simulation {
         #[cfg(feature = "ares")]
         if let Some(bullet) = self.projectiles.get(id)
             && let Some(anim) = bullet.awaited_anim().filter(|_| bullet.awaiting_anim())
-            && rules
-                .warhead(self.interner.resolve(bullet.payload().warhead))
+            && self
+                .interner
+                .warhead_type(bullet.payload().warhead, rules)
                 .and_then(|warhead| warhead.ares_rules())
                 .is_some_and(|ares| ares.combat().pre_impact_anim_moves())
             && let Some(at) = self.anim_absolute_coord(anim)

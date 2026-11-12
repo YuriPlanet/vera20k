@@ -302,7 +302,7 @@ fn shield_stage(
     }
     let target = sim.substrate.entities.get(event.target_id)?;
     let target_type = sim.interner.object_type(target.type_ref(), rules)?;
-    let warhead = rules.warhead(sim.interner.resolve(event.warhead_ref))?;
+    let warhead = sim.interner.warhead_type(event.warhead_ref, rules)?;
     let frame = sim.session.binary_frame() as i32;
 
     let mut state = target.shield.clone()?;
