@@ -337,7 +337,8 @@ fn an_unloading_factory_takes_over_its_products_draw() {
             PlannedObjectInstance::building(parent(factory), Vec::new()),
             PlannedObjectInstance::object(parent(product), Vec::new()),
         ];
-        crate::app::presentation::instances::assign_tether_redraws(&sim, &mut planned);
+        let frame = crate::app::presentation::frame::PresentationFrame::capture(&sim);
+        crate::app::presentation::instances::assign_tether_redraws(&frame, &mut planned);
         let expected: Vec<u64> = if unload { vec![product] } else { Vec::new() };
         assert_eq!(planned[0].tether_redraws, expected, "unload {unload}");
         assert_eq!(planned[1].drawn_by_tether, unload, "unload {unload}");

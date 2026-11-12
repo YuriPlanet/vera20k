@@ -12,23 +12,28 @@
 
 use std::collections::HashMap;
 
+use crate::app::presentation::instances::TetherDraw;
 use crate::app::presentation::render_pose::RenderPose;
+use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
-use crate::sim::runtime::SimRuntime;
+use crate::sim::world::Simulation;
 
 /// One Display member's draw record.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct ObjectDraw {
+#[derive(Clone, Debug)]
+pub(crate) struct ObjectRecord {
     pub(crate) id: u64,
     /// [`RenderPose::read`] at the committed binary frame.
     pub(crate) pose: RenderPose,
+    /// Its tether redraws (`instances::tether_redraw`).
+    pub(crate) tether: TetherDraw,
 }
 
-impl ObjectDraw {
-    fn capture(entity: &GameEntity, binary_frame: u32) -> Self {
+impl ObjectRecord {
+    fn capture(entity: &GameEntity, entities: &EntityStore, binary_frame: u32) -> Self {
         Self {
             id: entity.stable_id(),
             pose: RenderPose::read(entity, binary_frame),
+            tether: crate::app::presentation::instances::tether_draw(entity, entities),
         }
     }
 }
@@ -37,22 +42,21 @@ impl ObjectDraw {
 #[derive(Debug, Default)]
 pub(crate) struct PresentationFrame {
     binary_frame: u32,
-    objects: Vec<ObjectDraw>,
+    objects: Vec<ObjectRecord>,
     /// Stable id -> index into `objects`. Only looked up, never iterated.
     slots: HashMap<u64, u32>,
 }
 
 impl PresentationFrame {
-    /// The records of `runtime`'s Display members, in Display order.
-    pub(crate) fn capture(runtime: &SimRuntime) -> Self {
-        let view = runtime.view();
-        let binary_frame = view.session().binary_frame();
-        let entities = view.entities();
-        let objects: Vec<ObjectDraw> = view
+    /// The records of `sim`'s Display members, in Display order.
+    pub(crate) fn capture(sim: &Simulation) -> Self {
+        let binary_frame = sim.session().binary_frame();
+        let entities = sim.entities();
+        let objects: Vec<ObjectRecord> = sim
             .display_layers()
             .members_in_order()
             .filter_map(|(_, id)| entities.get(id))
-            .map(|entity| ObjectDraw::capture(entity, binary_frame))
+            .map(|entity| ObjectRecord::capture(entity, entities, binary_frame))
             .collect();
         let slots = objects
             .iter()
@@ -66,7 +70,7 @@ impl PresentationFrame {
         }
     }
 
-    pub(crate) fn object(&self, id: u64) -> Option<&ObjectDraw> {
+    pub(crate) fn object(&self, id: u64) -> Option<&ObjectRecord> {
         self.slots
             .get(&id)
             .and_then(|slot| self.objects.get(*slot as usize))

@@ -483,8 +483,8 @@ pub(super) fn build_world_instances(
         }
     }
     instances::build_weapon_wave_instances(state, &mut planned_objects, &display_order);
-    if let Some(rt) = state.match_state.sim_runtime.presentation() {
-        instances::assign_tether_redraws(&rt.simulation, &mut planned_objects);
+    if let Some(frame) = state.match_state.sim_runtime.frame() {
+        instances::assign_tether_redraws(frame, &mut planned_objects);
     }
     // VERA's translucent fog lifts the A buffer's near-black concealment, so
     // live enemy objects the local viewer cannot see leave the draw plan fully

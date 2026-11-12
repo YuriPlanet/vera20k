@@ -306,7 +306,9 @@ impl SimHost {
             return;
         };
         if self.frame.is_none() || self.frame_stale {
-            self.frame = Some(std::sync::Arc::new(PresentationFrame::capture(runtime)));
+            self.frame = Some(std::sync::Arc::new(PresentationFrame::capture(
+                &runtime.simulation,
+            )));
             self.frame_stale = false;
         }
     }
