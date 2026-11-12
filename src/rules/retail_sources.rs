@@ -264,9 +264,10 @@ impl RetailRulesSources {
                 self.artmd.source.logical_name,
             ],
             self.personal_rules,
+            self.ships_ares,
         )
         .map_err(|error| format!("Native rules cold startup failed: {error}"))?;
-        Ok(owner.with_ares_mix(self.ships_ares))
+        Ok(owner)
     }
 
     pub fn into_startup(

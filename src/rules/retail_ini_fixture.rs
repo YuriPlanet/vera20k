@@ -293,9 +293,11 @@ pub fn retail_audio_index() -> Option<&'static crate::assets::asset_manager::Loa
 /// [`AudioDefinitions::select`]: crate::rules::audio_sources::AudioDefinitions::select
 pub fn retail_audio_definitions() -> Option<&'static crate::rules::audio_sources::AudioDefinitions>
 {
-    static DEFINITIONS: std::sync::OnceLock<Option<crate::rules::audio_sources::AudioDefinitions>> =
-        std::sync::OnceLock::new();
-    DEFINITIONS
+    // One for each Rules-reading mode (`ares_switch::ares_way`).
+    static DEFINITIONS: [std::sync::OnceLock<
+        Option<crate::rules::audio_sources::AudioDefinitions>,
+    >; 2] = [std::sync::OnceLock::new(), std::sync::OnceLock::new()];
+    DEFINITIONS[usize::from(crate::rules::ares_switch::ares_way())]
         .get_or_init(|| {
             let (_, assets) = retail_assets()?;
             Some(crate::rules::audio_sources::AudioDefinitions::select(
@@ -420,13 +422,13 @@ pub fn retail_rules_owner(
     })
     .expect("selected retail startup sources");
     // No fixture reads the shell compatibility projection `into_startup` also
-    // derives. In a build with Ares the fixture game ships `ares.mix`, as the
-    // synthetic fixtures do (`RulesLayerStack::new`); a test of the retail
-    // install itself says `with_ares_mix(false)`.
-    let owner = sources.into_owner(sounds, eva).expect("cold startup");
-    #[cfg(feature = "ares")]
-    let owner = owner.with_ares_mix(true);
-    owner
+    // derives. The fixture game ships `ares.mix` when its thread reads the
+    // Ares way, as the synthetic fixtures do (`ares_switch::ares_way`); a
+    // test of the retail install itself says `with_ares_mix(false)`.
+    sources
+        .into_owner(sounds, eva)
+        .expect("cold startup")
+        .with_ares_mix(crate::rules::ares_switch::ares_way())
 }
 
 /// Bounded stock Hills/Battle fixture through the app's source-selection order.

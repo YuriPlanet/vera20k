@@ -5437,10 +5437,14 @@ impl RuleSet {
         Self::from_processed_rules(&layers.process()?)
     }
 
-    /// Project processed Rules into the game's rules. The projection's reader
-    /// lookups are recorded, so the per-game Ares switch it stores
+    /// Project processed Rules into the game's rules, the Ares way when their
+    /// registry reads that way (`ares_switch::ares_way`). The projection's
+    /// reader lookups are recorded, so the per-game Ares switch it stores
     /// ([`Self::ares`]) also counts the keys only these readers read.
     pub fn from_processed_rules(processed: &ProcessedRulesLayers) -> Result<Self, RulesError> {
+        let _ares_way = crate::rules::ares_switch::read_ares_way(
+            processed.native_registry_state().reads_ares_way(),
+        );
         let (rules, reads) = crate::rules::ares_switch::record(|| Self::project(processed));
         let mut rules = rules?;
         rules.ares = crate::rules::ares_switch::LIVE && processed.ares_inputs().decide(&reads);
@@ -6753,8 +6757,10 @@ impl RuleSet {
     /// where the game passes the scenario's rules.
     #[cfg(any(test, feature = "test-support"))]
     pub fn empty_for_test() -> &'static RuleSet {
-        static EMPTY: std::sync::OnceLock<RuleSet> = std::sync::OnceLock::new();
-        EMPTY.get_or_init(|| {
+        // One for each Rules-reading mode (`ares_switch::ares_way`).
+        static EMPTY: [std::sync::OnceLock<RuleSet>; 2] =
+            [std::sync::OnceLock::new(), std::sync::OnceLock::new()];
+        EMPTY[usize::from(crate::rules::ares_switch::ares_way())].get_or_init(|| {
             RuleSet::from_ini(&IniFile::from_str("")).expect("an empty rules INI reads")
         })
     }

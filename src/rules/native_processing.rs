@@ -237,17 +237,17 @@ impl RulesLayerStack {
                 ini: rulesmd,
             }],
             // The game's owner sets this from the installed archives
-            // (`NativeRulesProcessOwner::startup_layers`). Until the `ares`
-            // feature is deleted, an `ares` test build's fixture stacks stand
-            // for the Ares game its Ares tests mean, as `ares.mix` would.
-            ships_ares: cfg!(all(feature = "ares", any(test, feature = "test-support"))),
+            // (`NativeRulesProcessOwner::startup_layers`); a fixture stack
+            // stands for the game its thread's mode says (`ares_switch::ares_way`).
+            ships_ares: crate::rules::ares_switch::ares_way(),
         }
     }
 
     /// Build the stack for a game whose install or mod ships Ares's
     /// `ares.mix` (or not), which makes Ares play whatever these layers hold
-    /// (`rules::ares_switch`). Set once while the stack is built, before any
-    /// Process pass reads it.
+    /// (`rules::ares_switch`); a stack processed from a fresh registry also
+    /// reads its layers the Ares way. Set once while the stack is built,
+    /// before any Process pass reads it.
     pub fn with_ares_mix(mut self, ships_ares: bool) -> Self {
         self.ships_ares = ships_ares;
         self
@@ -306,7 +306,7 @@ impl RulesLayerStack {
     ) -> Result<ProcessedRulesLayers, RulesError> {
         self.process_with_fixed_art_and_registry_state(
             fixed_art,
-            NativeRulesRegistryState::default(),
+            NativeRulesRegistryState::new(self.ships_ares),
         )
     }
 
@@ -416,6 +416,7 @@ impl RulesLayerStack {
                     theater,
                 ),
             };
+        let _ares_way = crate::rules::ares_switch::read_ares_way(registry_state.reads_ares_way);
         let mut processor = RulesPassProcessor::with_registry_state(registry_state);
         processor.image_theater = theater;
         let mut after_map_result = None;
@@ -563,6 +564,7 @@ fn process_native_rules_cold_start_inner(
     fixed_eva: &EvaRegistry,
     fixed_sounds: &SoundRegistry,
 ) -> Result<(NativeTypeConstructionTrace, [usize; 5]), RulesError> {
+    let _ares_way = crate::rules::ares_switch::read_ares_way(registry_state.reads_ares_way);
     let mut processor = RulesPassProcessor::with_registry_state(registry_state);
     // Load_Game_Rules52D0FF calls Colors66D3A0 on the selected root before
     // ColorAdd52D111 and AudioVisual52D132, even without LANGRULE.INI.
@@ -636,6 +638,7 @@ pub(crate) fn process_native_campaign_rules_prepass(
     fixed_eva: &EvaRegistry,
     fixed_sounds: &SoundRegistry,
 ) -> Result<NativeTypeConstructionTrace, NativeRulesProcessingFailure> {
+    let _ares_way = crate::rules::ares_switch::read_ares_way(registry_state.reads_ares_way);
     let mut processor = RulesPassProcessor::with_registry_state(registry_state);
     if let Some(ini) = scenario_named_ini
         && let Err(error) = processor.apply_pass(ini, fixed_art, fixed_eva, false, fixed_sounds)
@@ -656,6 +659,7 @@ fn process_native_noncampaign_rules_prepass_inner(
     registry_state: NativeRulesRegistryState,
     selected_rules_root: &IniFile,
 ) -> (NativeTypeConstructionTrace, [usize; 3]) {
+    let _ares_way = crate::rules::ares_switch::read_ares_way(registry_state.reads_ares_way);
     let mut processor = RulesPassProcessor::with_registry_state(registry_state);
     processor.allocate_explicit_family(
         selected_rules_root,
@@ -681,6 +685,7 @@ pub(crate) fn read_native_multiplayer_country(
     settings: &IniFile,
     current: i32,
 ) -> (i32, NativeTypeConstructionTrace) {
+    let _ares_way = crate::rules::ares_switch::read_ares_way(registry.reads_ares_way);
     let mut processor = RulesPassProcessor::with_registry_state(registry);
     processor.allocate_explicit_family(root, "Countries", RulesTypeFamily::Country, 0x20);
     let name = settings
@@ -710,6 +715,7 @@ pub(crate) fn refresh_native_multiplayer_country_bodies(
     registry: NativeRulesRegistryState,
     root: &IniFile,
 ) -> NativeTypeConstructionTrace {
+    let _ares_way = crate::rules::ares_switch::read_ares_way(registry.reads_ares_way);
     let mut processor = RulesPassProcessor::with_registry_state(registry);
     processor.process_house_family(root, true);
     processor.finish().1
@@ -1169,9 +1175,9 @@ impl ProcessedRulesLayers {
             return Err(RulesError::InvalidSavedState("invalid voxel model plan"));
         }
         let families = &registry.families;
-        if registry.ares_armors.is_some() != crate::rules::ARES_BUILD {
+        if registry.ares_armors.is_some() != registry.reads_ares_way {
             return Err(RulesError::InvalidSavedState(
-                "saved armor capability differs from build",
+                "saved armor catalog differs from the saved Ares mode",
             ));
         }
         if let Some(armors) = &registry.ares_armors {
@@ -4479,6 +4485,10 @@ pub(crate) struct NativeRulesRegistryState {
     rules_threat_coefficient_defaults: super::threat_coefficients::ThreatCoefficients,
     /// Build capability is retained with the Rules owner, never selected by INI.
     compatibility: RulesCompatibility,
+    /// Whether this registry's Rules are read the Ares way
+    /// (`ares_switch::ares_way`): fixed when the registry starts, from
+    /// whether the game ships `ares.mix`, and opened by every Process call.
+    reads_ares_way: bool,
     /// Ares Clear/AddDefaults rebuilds these at a destructive scenario reset;
     /// ordinary Process passes and saves retain the reached list reads.
     ares_prerequisites: Option<GenericPrerequisites>,
@@ -4609,14 +4619,27 @@ pub(crate) struct NativeRulesRegistryState {
 }
 
 impl Default for NativeRulesRegistryState {
+    /// A fresh registry in its thread's mode (`ares_switch::ares_way`).
     fn default() -> Self {
+        Self::new(crate::rules::ares_switch::ares_way())
+    }
+}
+
+impl NativeRulesRegistryState {
+    /// A fresh RulesClass and empty Type registries, read the Ares way
+    /// (Ares' generic prerequisites and armor catalog with them) or the stock
+    /// way for the rest of the process. A build that does not let Ares turn on
+    /// reads the stock way.
+    pub(crate) fn new(ares_way: bool) -> Self {
+        let ares_way = ares_way && crate::rules::ares_switch::LIVE;
         // RulesClass constructor values; `GeneralRules::default` owns them.
         let general = crate::rules::ruleset::GeneralRules::default();
         Self {
             rules_threat_coefficient_defaults: general.threat_coefficient_defaults(),
             compatibility: RulesCompatibility::default(),
-            ares_prerequisites: crate::rules::ARES_BUILD.then(GenericPrerequisites::default),
-            ares_armors: crate::rules::ARES_BUILD.then(ArmorCatalog::default),
+            reads_ares_way: ares_way,
+            ares_prerequisites: ares_way.then(GenericPrerequisites::default),
+            ares_armors: ares_way.then(ArmorCatalog::default),
             phobos_radiation_types: crate::rules::PHOBOS_ENABLED
                 .then(RadiationTypeCatalog::with_default),
             phobos_shield_types: crate::rules::PHOBOS_ENABLED.then(ShieldTypeCatalog::default),
@@ -4712,6 +4735,12 @@ impl Default for NativeRulesRegistryState {
 }
 
 impl NativeRulesRegistryState {
+    /// Whether this registry's Rules are read the Ares way
+    /// (`ares_switch::ares_way`).
+    pub(crate) fn reads_ares_way(&self) -> bool {
+        self.reads_ares_way
+    }
+
     /// Input to the existing read-only RMG source projection. Other domains
     /// retain its prior default-based policy; the process-global tables start
     /// with the same retained inputs as a real Reset6686C0.
@@ -4727,7 +4756,7 @@ impl NativeRulesRegistryState {
                 heal_crate_sound: self.rules_crate.heal_crate_sound.clone(),
                 ..CrateRules::default()
             },
-            ..Self::default()
+            ..Self::new(self.reads_ares_way)
         }
     }
 
@@ -4849,9 +4878,9 @@ impl NativeRulesRegistryState {
     }
 
     fn validate_prerequisites(&self) -> Result<(), RulesError> {
-        if self.ares_prerequisites.is_some() != crate::rules::ARES_BUILD {
+        if self.ares_prerequisites.is_some() != self.reads_ares_way {
             return Err(RulesError::InvalidSavedState(
-                "saved prerequisite catalog does not match the compiled capability",
+                "saved prerequisite catalog does not match the saved Ares mode",
             ));
         }
         let building_count = self
@@ -5082,6 +5111,7 @@ impl NativeRulesRegistryState {
     /// Numeric-ID history is intentionally not represented here and therefore
     /// cannot be rewound by this operation.
     pub(crate) fn destructive_reset(self) -> Self {
+        let ares_way = self.reads_ares_way;
         // RulesClass::Reset6686C0 deletes Overlay/Anim types but has no
         // Tiberium deletion loop. PointerExpired722140 drops their bindings;
         // scalar fields, body history and Tiberium array identity survive.
@@ -5153,7 +5183,7 @@ impl NativeRulesRegistryState {
             // slot after recreation; they are not swizzled Type pointers.
             rules_powerups: self.rules_powerups,
             rules_missile_spawn: self.rules_missile_spawn.without_type_references(),
-            ..Self::default()
+            ..Self::new(ares_way)
         }
     }
 }
@@ -6421,6 +6451,8 @@ struct RulesPassProcessor {
     rules_threat_coefficient_defaults: super::threat_coefficients::ThreatCoefficients,
     image_theater: ImageTheater,
     compatibility: RulesCompatibility,
+    /// The registry's mode, which its Process call opens (`ares_switch::ares_way`).
+    reads_ares_way: bool,
     ares_prerequisites: Option<GenericPrerequisites>,
     /// Ordered Ares armor registry; Process retains it, destructive reset rebuilds it.
     ares_armors: Option<ArmorCatalog>,
@@ -6535,6 +6567,7 @@ impl RulesPassProcessor {
             rules_threat_coefficient_defaults: registry_state.rules_threat_coefficient_defaults,
             image_theater: ImageTheater::Uninitialized,
             compatibility: registry_state.compatibility,
+            reads_ares_way: registry_state.reads_ares_way,
             ares_prerequisites: registry_state.ares_prerequisites,
             ares_armors: registry_state.ares_armors,
             phobos_radiation_types: registry_state.phobos_radiation_types,
@@ -11108,6 +11141,7 @@ impl RulesPassProcessor {
                 registry_state: NativeRulesRegistryState {
                     rules_threat_coefficient_defaults: self.rules_threat_coefficient_defaults,
                     compatibility: self.compatibility,
+                    reads_ares_way: self.reads_ares_way,
                     ares_prerequisites: self.ares_prerequisites,
                     ares_armors: self.ares_armors,
                     phobos_radiation_types: self.phobos_radiation_types,

@@ -33,18 +33,24 @@
 //! map. The shell's and the map stage's projections answer for their own
 //! layers.
 //!
+//! How Rules are read follows the game too. Ares.dll replaces some stock
+//! reads (list capacities, the `[WeaponTypes]` pre-allocation, the generic
+//! prerequisites and armors) and adds its own; a game that ships `ares.mix`
+//! has its Rules processed and projected the Ares way ([`ares_way`]), any
+//! other game the stock way. Ares readers that only fill Ares' own state run
+//! in both, so a key-only Ares mod is still found. The mode belongs to the
+//! retained Rules registry, and each Process call and projection opens it
+//! ([`read_ares_way`]) from there.
+//!
 //! Still decided by the build feature, not this switch, until each moves to
-//! it (AGENTS.md): every `cfg(feature = "ares")` site, mounting `ares.mix`
-//! and the MIX order, the rules agreement's `ares.mix` byte, the INI loader's
-//! Ares syntax and `[#include]`, the Ares list capacities and catalogs of
-//! Rules processing, the `[WeaponTypes]` pre-allocation (retail RULESMD has
-//! that list, so its read is not an Ares key here), and the spawn and network
-//! launch paths. An Ares reader still behind the feature is missing from a
-//! build without it and notes no key there, so a test build without the
-//! feature turns Ares on only through the readers already moved or
-//! `with_ares_mix`.
+//! it (AGENTS.md): every `cfg(feature = "ares")` site outside Rules
+//! processing and projection, mounting `ares.mix` and the MIX order, the
+//! rules agreement's `ares.mix` byte, the INI loader's Ares syntax and
+//! `[#include]`, and the spawn and network launch paths. A game turned on by
+//! its keys alone, without `ares.mix`, still reads its Rules the stock way
+//! until loading reads them again the Ares way.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Whether this build lets the switch turn on: a build with the `ares`
@@ -54,6 +60,45 @@ use std::collections::{BTreeMap, BTreeSet};
 /// already moved with the switch on in every build. The PR that deletes the
 /// feature deletes this constant.
 pub(crate) const LIVE: bool = cfg!(any(feature = "ares", test, feature = "test-support"));
+
+/// The mode a thread starts in. An `ares` test build's tests read the Ares
+/// way unless they say otherwise, so its Ares tests keep reading as Ares.dll
+/// does; every other thread starts reading the stock way. The PR that deletes
+/// the feature deletes this constant.
+const ARES_FIXTURES: bool = cfg!(all(feature = "ares", any(test, feature = "test-support")));
+
+/// Whether the Rules reads on this thread follow Ares.dll: its list
+/// capacities, type pre-allocations and replacement readers. Each Process
+/// call and RuleSet projection sets it from the retained Rules registry
+/// ([`read_ares_way`]); Ares readers that only fill Ares state do not ask.
+/// A fixture built without saying (a fresh registry, a `RulesLayerStack`, a
+/// cold-started owner) stands for a game that ships `ares.mix` exactly when
+/// its thread reads the Ares way, so an Ares test opens [`read_ares_way`]
+/// first.
+pub(crate) fn ares_way() -> bool {
+    ARES_WAY.get()
+}
+
+/// Reads the Rules on this thread the Ares way (or not) while it lives, and
+/// restores the outer mode when it drops.
+#[must_use = "the scope ends when the guard drops"]
+pub(crate) struct AresWay {
+    outer: bool,
+}
+
+/// Open a Rules-reading scope in the given mode (see [`ares_way`]). A build
+/// that does not let Ares turn on ([`LIVE`]) always reads the stock way.
+pub(crate) fn read_ares_way(on: bool) -> AresWay {
+    AresWay {
+        outer: ARES_WAY.replace(on && LIVE),
+    }
+}
+
+impl Drop for AresWay {
+    fn drop(&mut self) {
+        ARES_WAY.set(self.outer);
+    }
+}
 
 /// Marks the reads made while it lives as an Ares reader's. Every Ares reader
 /// body that reads through the stock readers opens one; the `read_ares_*`
@@ -69,7 +114,6 @@ pub(crate) fn ares_reads() -> AresReads {
 
 /// One Ares read written inline in a stock reader (a struct field or a call
 /// argument), marked as [`ares_reads`] marks a body.
-#[cfg(feature = "ares")]
 pub(crate) fn ares_read<T>(read: impl FnOnce() -> T) -> T {
     let _ares = ares_reads();
     read()
@@ -96,7 +140,6 @@ pub(crate) fn not_ares_reads() -> NotAresReads {
 }
 
 /// One read written inline, marked as [`not_ares_reads`] marks a body.
-#[cfg(any(feature = "ares", feature = "phobos"))]
 pub(crate) fn not_ares_read<T>(read: impl FnOnce() -> T) -> T {
     let _not_ares = not_ares_reads();
     read()
@@ -119,6 +162,7 @@ struct Recorder {
 
 thread_local! {
     static RECORDER: RefCell<Recorder> = RefCell::default();
+    static ARES_WAY: Cell<bool> = const { Cell::new(ARES_FIXTURES) };
 }
 
 /// A reader found `key` in `section`. Called by the INI store's reader

@@ -316,7 +316,10 @@ impl NativeScenarioRulesLoad {
 }
 
 impl NativeRulesProcessOwner {
-    /// Enter native cold startup from the already-selected INI snapshots.
+    /// Enter native cold startup from the already-selected INI snapshots, for
+    /// a game that ships `ares.mix` when its thread reads the Ares way
+    /// (`ares_switch::ares_way`); the game's startup says it itself
+    /// (`RetailRulesSources::into_owner`).
     ///
     /// gamemd provenance: `Load_Game_Rules @ 0x0052CD70` followed by
     /// `Init_Game @ 0x0052BA60`.
@@ -335,11 +338,15 @@ impl NativeRulesProcessOwner {
             fixed_eva,
             ["RULESMD.INI".into(), "ARTMD.INI".into()],
             PersonalRules::default(),
+            crate::rules::ares_switch::ares_way(),
         )
     }
 
     /// Preserve the selector's actual logical names beside the frozen inputs.
     /// These diagnostic labels do not alter Rules processing or saved state.
+    /// `ships_ares`: startup mounted `ares.mix` (`AssetManager::ships_ares`),
+    /// so Ares plays and the registry reads every Rules pass the Ares way
+    /// (`rules::ares_switch`).
     pub(crate) fn from_named_cold_start_sources(
         selected_rules_root: IniFile,
         langrule: Option<NativeLangRuleSource>,
@@ -348,6 +355,7 @@ impl NativeRulesProcessOwner {
         fixed_eva: Arc<EvaRegistry>,
         rules_art_names: [String; 2],
         personal_rules: PersonalRules,
+        ships_ares: bool,
     ) -> Result<Self, RulesError> {
         let movies = crate::rules::movies::MovieRegistry::from_art(&fixed_art);
         if let Some(NativeLangRuleSource::SelectionFailed(error)) = langrule.as_ref() {
@@ -366,7 +374,7 @@ impl NativeRulesProcessOwner {
             None | Some(NativeLangRuleRead::Absent | NativeLangRuleRead::SelectionFailed) => None,
         };
         let cold_trace = process_native_rules_cold_start(
-            NativeRulesRegistryState::default(),
+            NativeRulesRegistryState::new(ships_ares),
             &selected_rules_root,
             &fixed_art,
             startup_langrule.as_ref(),
@@ -383,20 +391,32 @@ impl NativeRulesProcessOwner {
                 fixed_sounds,
                 fixed_eva,
                 personal_rules,
-                // The game's startup sets it (`RetailRulesSources::into_owner`);
-                // an `ares` test build's fixture owners stand for the Ares
-                // game, as `RulesLayerStack::new` says.
-                ships_ares: cfg!(all(feature = "ares", any(test, feature = "test-support"))),
+                ships_ares,
             },
             registry: Some(NativeRulesRegistryOwner::BeforeReset(cold_trace)),
         })
     }
 
-    /// Record whether startup mounted `ares.mix` (`AssetManager::ships_ares`),
-    /// before any Process call reads its layers.
-    pub fn with_ares_mix(mut self, ships_ares: bool) -> Self {
-        self.sources.ships_ares = ships_ares;
-        self
+    /// The same cold start for a game that ships `ares.mix` (or not): it
+    /// plays Ares and reads its Rules the Ares way. Call it on a fresh owner,
+    /// before any later Process call, which the cold start it redoes drops.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_ares_mix(self, ships_ares: bool) -> Self {
+        if ships_ares == self.sources.ships_ares {
+            return self;
+        }
+        let sources = self.sources;
+        Self::from_named_cold_start_sources(
+            sources.selected_rules_root,
+            sources.langrule,
+            sources.fixed_art,
+            sources.fixed_sounds,
+            sources.fixed_eva,
+            sources.rules_art_names,
+            sources.personal_rules,
+            ships_ares,
+        )
+        .expect("the same sources cold-started once already")
     }
 
     /// Session6980C0/475540 against the retained process INI. This mutates the
@@ -851,7 +871,7 @@ impl NativeRulesProcessOwner {
         self.startup_layers(langrule.as_ref())
             .process_with_fixed_art_and_registry_state_recovering(
                 &self.sources.fixed_art,
-                NativeRulesRegistryState::default(),
+                NativeRulesRegistryState::new(self.sources.ships_ares),
                 RulesProcessContext::Ordinary,
                 &self.sources.fixed_eva,
                 &self.sources.fixed_sounds,
