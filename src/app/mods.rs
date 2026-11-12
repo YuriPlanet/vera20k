@@ -478,7 +478,8 @@ pub(crate) fn open_folder(paths: &PathsConfig) -> Result<(), PathBuf> {
 /// A name that file managers and tools leave in folders, never a mod's own.
 fn left_by_a_system(name: &str) -> bool {
     name.starts_with('.')
-        || ["Thumbs.db", "desktop.ini"]
+        // `__MACOSX`: what a zip made on a Mac leaves when Windows unpacks it.
+        || ["Thumbs.db", "desktop.ini", "__MACOSX"]
             .iter()
             .any(|left| name.eq_ignore_ascii_case(left))
 }
@@ -1101,7 +1102,7 @@ mod tests {
         let mods = root.join("Mods");
         std::fs::remove_dir_all(mods.join("Winter War")).unwrap();
         prepare_folder(&mods);
-        std::fs::write(mods.join(".DS_Store"), "x").unwrap();
+        std::fs::create_dir_all(mods.join("__MACOSX")).unwrap();
         let hint = none_installed_hint(&installed(&paths)).expect("an empty Mods folder");
         assert!(hint.starts_with("No mods yet."), "{hint}");
         assert_eq!(hint.contains("Start menu"), cfg!(windows), "{hint}");
