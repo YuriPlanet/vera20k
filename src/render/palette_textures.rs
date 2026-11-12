@@ -396,13 +396,25 @@ mod tests {
     #[test]
     fn build_house_ramp_skips_no_remap() {
         // NO_REMAP houses must not write a per-house row (they sample row 0).
+        // The three relation rows are written for every build, so they are the
+        // only rows past 0 allowed to hold colour.
         let pal: Palette = dummy_palette();
         let ramps = test_ramps();
         let bytes: Vec<u8> = build_house_ramp_bytes(&pal, &ramps, &[NO_REMAP]);
-        // Every row past row 0 stays zero.
         let row_bytes: usize = (RAMP_SIZE * 4) as usize;
-        for byte in bytes.iter().skip(row_bytes) {
-            assert_eq!(*byte, 0, "NO_REMAP wrote a per-house row");
+        let relation_rows = [
+            RELATION_SELF.0 as usize + 1,
+            RELATION_ALLY.0 as usize + 1,
+            RELATION_ENEMY.0 as usize + 1,
+        ];
+        for row in 1..HOUSE_RAMP_ROWS as usize {
+            if relation_rows.contains(&row) {
+                continue;
+            }
+            let start = row * row_bytes;
+            for byte in &bytes[start..start + row_bytes] {
+                assert_eq!(*byte, 0, "NO_REMAP wrote a per-house row");
+            }
         }
     }
 }
