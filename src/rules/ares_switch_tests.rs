@@ -9,15 +9,10 @@ use crate::rules::retail_ini_fixture::{retail_assets, retail_rules_owner};
 use crate::rules::ruleset::RuleSet;
 
 /// The retail install as it is. The retail fixtures ship `ares.mix` in a
-/// build with Ares; the retail archives do not.
+/// build with the `ares` feature; the retail archives do not.
 fn installed(assets: &AssetManager) -> NativeRulesProcessOwner {
-    let owner = retail_rules_owner(assets);
-    #[cfg(feature = "ares")]
-    let owner = {
-        assert!(!assets.ships_ares());
-        owner.with_ares_mix(false)
-    };
-    owner
+    assert!(!assets.ships_ares());
+    retail_rules_owner(assets).with_ares_mix(false)
 }
 
 fn skirmish(owner: &mut NativeRulesProcessOwner, mode: Option<&IniFile>, map: &IniFile) -> RuleSet {
@@ -113,13 +108,20 @@ fn a_maps_ares_key_turns_ares_on() {
 }
 
 /// `ares.mix` mounted at startup (Load_Bootstrap_AresMIX, hook 0x0053029E)
-/// turns Ares on for retail rules.
-#[cfg(feature = "ares")]
+/// turns Ares on for retail rules in every test build, and the switch is
+/// part of the game's configuration, so a replay or a peer with the other
+/// answer is refused.
 #[test]
 fn ares_mix_turns_ares_on() {
     let Some((_, assets)) = retail_assets() else {
         return;
     };
+    let stock = skirmish(&mut installed(&assets), None, &IniFile::empty());
     let mut owner = retail_rules_owner(&assets).with_ares_mix(true);
-    assert!(skirmish(&mut owner, None, &IniFile::empty()).ares());
+    let ares = skirmish(&mut owner, None, &IniFile::empty());
+    assert!(ares.ares());
+    assert_ne!(
+        ares.simulation_config_hash(),
+        stock.simulation_config_hash()
+    );
 }

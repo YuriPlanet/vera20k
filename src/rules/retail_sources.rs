@@ -207,7 +207,6 @@ pub struct RetailRulesSources {
     pub artmd: SelectedIni,
     personal_rules: PersonalRules,
     /// Startup mounted `ares.mix` (`AssetManager::ships_ares`).
-    #[cfg(feature = "ares")]
     ships_ares: bool,
 }
 
@@ -227,7 +226,6 @@ impl RetailRulesSources {
             langrule_selection_failure,
             artmd,
             personal_rules: PersonalRules::default(),
-            #[cfg(feature = "ares")]
             ships_ares: assets.ships_ares(),
         })
     }
@@ -268,9 +266,7 @@ impl RetailRulesSources {
             self.personal_rules,
         )
         .map_err(|error| format!("Native rules cold startup failed: {error}"))?;
-        #[cfg(feature = "ares")]
-        let owner = owner.with_ares_mix(self.ships_ares);
-        Ok(owner)
+        Ok(owner.with_ares_mix(self.ships_ares))
     }
 
     pub fn into_startup(

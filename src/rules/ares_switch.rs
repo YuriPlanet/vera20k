@@ -9,8 +9,10 @@
 //! reads in that section, or when the installed game or the mod ships
 //! `ares.mix` (Ares mounts it from `Load_Bootstrap_AresMIX`, hook
 //! `0x0053029E`). Retail data holds neither, so a retail game plays as
-//! gamemd. A build without the `ares` feature records nothing and keeps Ares
-//! off.
+//! gamemd. Every build carries the decision, but until the last Ares code
+//! leaves the `ares` build feature only a build with that feature or a test
+//! build lets it turn on ([`LIVE`]): the release build keeps Ares off, so a
+//! player never gets half of Ares.
 //!
 //! Which keys count comes from the readers, not from a list. Every reader
 //! lookup of a present key (`IniSection`'s reader path in `ini_parser.rs`)
@@ -31,17 +33,27 @@
 //! map. The shell's and the map stage's projections answer for their own
 //! layers.
 //!
-//! Still decided by the build feature, not this switch (the follow-up
-//! conversions move them): every `cfg(feature = "ares")` site, the INI
-//! loader's Ares syntax and `[#include]`, the Ares list capacities and
-//! catalogs of Rules processing, the `[WeaponTypes]` pre-allocation (retail
-//! RULESMD has that list, so its read is not an Ares key here), the MIX order
-//! and the spawn and network launch paths.
+//! Still decided by the build feature, not this switch, until each moves to
+//! it (AGENTS.md): every `cfg(feature = "ares")` site, mounting `ares.mix`
+//! and the MIX order, the rules agreement's `ares.mix` byte, the INI loader's
+//! Ares syntax and `[#include]`, the Ares list capacities and catalogs of
+//! Rules processing, the `[WeaponTypes]` pre-allocation (retail RULESMD has
+//! that list, so its read is not an Ares key here), and the spawn and network
+//! launch paths. An Ares reader still behind the feature is missing from a
+//! build without it and notes no key there, so a test build without the
+//! feature turns Ares on only through the readers already moved or
+//! `with_ares_mix`.
 
-#[cfg(feature = "ares")]
 use std::cell::RefCell;
-#[cfg(feature = "ares")]
 use std::collections::{BTreeMap, BTreeSet};
+
+/// Whether this build lets the switch turn on: a build with the `ares`
+/// feature, or a test build. Until every Ares reader and path has left that
+/// feature, a build without it (the release build) records nothing and keeps
+/// Ares off, so a player never gets half of Ares, while tests run the code
+/// already moved with the switch on in every build. The PR that deletes the
+/// feature deletes this constant.
+pub(crate) const LIVE: bool = cfg!(any(feature = "ares", test, feature = "test-support"));
 
 /// Marks the reads made while it lives as an Ares reader's. Every Ares reader
 /// body that reads through the stock readers opens one; the `read_ares_*`
@@ -49,10 +61,8 @@ use std::collections::{BTreeMap, BTreeSet};
 #[must_use = "the scope ends when the guard drops"]
 pub(crate) struct AresReads(());
 
-/// Open an Ares reader scope (see [`AresReads`]). Without the `ares` feature
-/// it does nothing.
+/// Open an Ares reader scope (see [`AresReads`]).
 pub(crate) fn ares_reads() -> AresReads {
-    #[cfg(feature = "ares")]
     RECORDER.with_borrow_mut(|recorder| recorder.ares_depth += 1);
     AresReads(())
 }
@@ -67,7 +77,6 @@ pub(crate) fn ares_read<T>(read: impl FnOnce() -> T) -> T {
 
 impl Drop for AresReads {
     fn drop(&mut self) {
-        #[cfg(feature = "ares")]
         RECORDER.with_borrow_mut(|recorder| recorder.ares_depth -= 1);
     }
 }
@@ -80,10 +89,8 @@ impl Drop for AresReads {
 #[must_use = "the scope ends when the guard drops"]
 pub(crate) struct NotAresReads(());
 
-/// Open a not-Ares reader scope (see [`NotAresReads`]). Without the `ares`
-/// feature it does nothing.
+/// Open a not-Ares reader scope (see [`NotAresReads`]).
 pub(crate) fn not_ares_reads() -> NotAresReads {
-    #[cfg(feature = "ares")]
     RECORDER.with_borrow_mut(|recorder| recorder.not_ares_depth += 1);
     NotAresReads(())
 }
@@ -97,12 +104,10 @@ pub(crate) fn not_ares_read<T>(read: impl FnOnce() -> T) -> T {
 
 impl Drop for NotAresReads {
     fn drop(&mut self) {
-        #[cfg(feature = "ares")]
         RECORDER.with_borrow_mut(|recorder| recorder.not_ares_depth -= 1);
     }
 }
 
-#[cfg(feature = "ares")]
 #[derive(Default)]
 struct Recorder {
     ares_depth: u32,
@@ -112,15 +117,16 @@ struct Recorder {
     active: Option<KeyReads>,
 }
 
-#[cfg(feature = "ares")]
 thread_local! {
     static RECORDER: RefCell<Recorder> = RefCell::default();
 }
 
 /// A reader found `key` in `section`. Called by the INI store's reader
 /// lookups only.
-#[cfg(feature = "ares")]
 pub(crate) fn note_found(section: &str, key: &str) {
+    if !LIVE {
+        return;
+    }
     RECORDER.with_borrow_mut(|recorder| {
         let ares = recorder.ares_depth > 0 && recorder.not_ares_depth == 0;
         if let Some(reads) = recorder.active.as_mut() {
@@ -130,7 +136,6 @@ pub(crate) fn note_found(section: &str, key: &str) {
 }
 
 /// The present keys one recorded run's readers found, split by who asked.
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, Default)]
 pub(crate) struct KeyReads {
     ares: SectionKeys,
@@ -138,10 +143,8 @@ pub(crate) struct KeyReads {
 }
 
 /// Found keys by section name.
-#[cfg(feature = "ares")]
 type SectionKeys = BTreeMap<String, BTreeSet<String>>;
 
-#[cfg(feature = "ares")]
 impl KeyReads {
     fn note(&mut self, ares: bool, section: &str, key: &str) {
         let map = if ares {
@@ -186,7 +189,6 @@ impl KeyReads {
 
 /// Run `run` with its reader lookups recorded on this thread. A run inside
 /// another keeps its reads to itself.
-#[cfg(feature = "ares")]
 pub(crate) fn record<T>(run: impl FnOnce() -> T) -> (T, KeyReads) {
     let outer = RECORDER.with_borrow_mut(|recorder| recorder.active.replace(KeyReads::default()));
     let result = run();
@@ -198,7 +200,6 @@ pub(crate) fn record<T>(run: impl FnOnce() -> T) -> (T, KeyReads) {
 
 /// The Ares inputs a processed Rules result carries to its projections: the
 /// Ares-only keys its passes found and whether the game ships `ares.mix`.
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct AresInputs {
     /// `(section, key)` pairs only an Ares reader of the passes found.
@@ -206,7 +207,6 @@ pub(crate) struct AresInputs {
     ships_ares: bool,
 }
 
-#[cfg(feature = "ares")]
 impl AresInputs {
     pub(crate) fn from_passes(reads: &KeyReads, ships_ares: bool) -> Self {
         Self {

@@ -309,7 +309,6 @@ impl IniSection {
     /// and walks use [`Self::get`] and are not reads.
     fn value(&self, key: &str) -> Option<&str> {
         let value = self.get(key);
-        #[cfg(feature = "ares")]
         if value.is_some() {
             crate::rules::ares_switch::note_found(&self.name, key);
         }
@@ -338,7 +337,6 @@ impl IniSection {
     /// [`Self::value`] notes them).
     fn projected_values(&self, key: &str) -> Option<&[String]> {
         let values = self.projected_values.get(key).map(Vec::as_slice);
-        #[cfg(feature = "ares")]
         if values.is_some() {
             crate::rules::ares_switch::note_found(&self.name, key);
         }
