@@ -459,6 +459,19 @@ pub(in crate::app) struct OrdinaryWeldingScene {
     pub first_repair_health: i32,
 }
 
+/// The WeldingSys's sparks: ParticleClass children, or under Ares the Spark
+/// records the system keeps itself (hooks 0x62DF05, 0x62FD60).
+fn welding_has_children(system: &crate::sim::particles::ParticleSystem) -> bool {
+    #[cfg(feature = "ares")]
+    if system
+        .ares()
+        .is_some_and(|ares| !ares.particles().is_empty())
+    {
+        return true;
+    }
+    !system.particles().is_empty()
+}
+
 pub(in crate::app) fn ordinary_welding_children(rules: &RuleSet) -> OrdinaryWeldingScene {
     let (mut sim, ifv, tank) = repair_ifv(rules);
     // No Ctrl: the actual normal-click producer uses the existing friendly
@@ -511,7 +524,7 @@ pub(in crate::app) fn ordinary_welding_children(rules: &RuleSet) -> OrdinaryWeld
         if sim
             .particle_systems()
             .get(first_system)
-            .is_some_and(|system| !system.particles().is_empty())
+            .is_some_and(welding_has_children)
         {
             break;
         }
@@ -522,7 +535,7 @@ pub(in crate::app) fn ordinary_welding_children(rules: &RuleSet) -> OrdinaryWeld
         .get(first_system)
         .expect("the first system still lives");
     assert!(
-        !system.particles().is_empty(),
+        welding_has_children(system),
         "ordinary Logic must create real Welding children"
     );
     assert_eq!(
@@ -562,7 +575,7 @@ fn retail_engineer_ifv_plain_repair_click_reaches_attack_mission_and_heals() {
             Some(system) => {
                 drained_after_emission |= system.spark_spawn_frames() <= 0
                     && system.done_spawning()
-                    && !system.particles().is_empty();
+                    && welding_has_children(system);
             }
             None => retired = true,
         }

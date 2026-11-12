@@ -214,8 +214,8 @@ Supported extensions:
   ported, presentation, equivalent or not applicable, including the Find-only
   type-list readers (a list name no registry holds is dropped).
 - [Anim and particle extensions](ares-anim-particles.md): `Damage.Delay`, the anim
-  `Weapon`, `SpawnsParticle.Range*` and gas `DamageRange`. Ares' own particle-system
-  simulation remains outside this chain.
+  `Weapon`, `SpawnsParticle.Range*`, gas `DamageRange` and ParticleSystemExt, Ares'
+  own Smoke, Spark and Railgun simulation and its after-Air draw.
 - [Remaining Techno hooks](ares-techno-hooks.md) and
   [Building, House, Infantry and SWType hooks](ares-building-house-hooks.md): per-hook
   dispositions, including healers, gap and spotlight hooks, rank immunities, the

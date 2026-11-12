@@ -27,6 +27,8 @@ use glam::IVec3;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+#[cfg(feature = "ares")]
+pub mod ares_system;
 pub mod fire;
 pub mod gas;
 pub mod railgun;
@@ -38,6 +40,8 @@ pub mod spawn;
 pub mod system_ai;
 pub mod wind;
 
+#[cfg(all(test, feature = "ares"))]
+mod ares_gas_tests;
 #[cfg(test)]
 mod fire_native_tests;
 #[cfg(test)]
@@ -46,12 +50,11 @@ mod gas_native_tests;
 mod native_fixture;
 #[cfg(test)]
 mod native_identity_tests;
-#[cfg(test)]
+// Ares simulates this Railgun system itself (hooks 0x62DF05, 0x62FD60).
+#[cfg(all(test, not(feature = "ares")))]
 mod railgun_native_tests;
 #[cfg(test)]
 mod virus_tests;
-#[cfg(all(test, feature = "ares"))]
-mod ares_gas_tests;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParticleSystem {
@@ -107,6 +110,11 @@ pub struct ParticleSystem {
     owner_fire_link: bool,
     alive: bool,
     in_limbo: bool,
+    /// Ares 3.0 ParticleSystemExt (`ares_system`): present for a system Ares
+    /// simulates itself, from the constructor hook `0x62DF05` on.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares: Option<Box<ares_system::AresParticleSystemExt>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -566,6 +574,23 @@ impl ParticleSystem {
         &self.particles
     }
 
+    /// The Ares records of a system Ares simulates ([`ares_system`]).
+    #[cfg(feature = "ares")]
+    pub fn ares(&self) -> Option<&ares_system::AresParticleSystemExt> {
+        self.ares.as_deref()
+    }
+
+    /// No ParticleClass child (`+0xCC`) and, under Ares 3.0
+    /// (`ExtData::Update @ 10026C70`), no record of its own either: the
+    /// emptiness the AI tail retires a done system on.
+    pub(crate) fn holds_no_particles(&self) -> bool {
+        #[cfg(feature = "ares")]
+        if self.ares.as_ref().is_some_and(|ext| !ext.is_empty()) {
+            return false;
+        }
+        self.particles.is_empty()
+    }
+
     pub const fn lifetime(&self) -> i32 {
         self.lifetime
     }
@@ -712,6 +737,8 @@ impl ParticleSystem {
             owner_fire_link: false,
             alive: true,
             in_limbo: false,
+            #[cfg(feature = "ares")]
+            ares: None,
         }
     }
 }

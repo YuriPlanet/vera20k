@@ -21,7 +21,7 @@ on purpose are in [ares-skipped-hooks.md](ares-skipped-hooks.md).
   [ares-attach-effect.md](ares-attach-effect.md)). `ares-src/report/ini_coverage.tsv` is
   not exhaustive; use the key scan under Tools.
 - Hooks: Ares 3.0 installs 1448 (`report/hooks.tsv` also lists 234 0.A hooks that 3.0
-  removed). The engine source cites 1013; the chain docs give 369 more a disposition
+  removed). The engine source cites 1021; the chain docs give 361 more a disposition
   (ported elsewhere, equivalent, not applicable, skipped or residual); 66 are
   untouched, listed at the end with `0x5F3D65`, whose address the engine quotes only
   for the stock destructor. A residual disposition is still a gap: every
@@ -74,7 +74,6 @@ Stock gaps found in passing, with no Ares dependency:
 | DropPod | A negative count (native loops about 2^32 tries), SetDestination's prologue and Teleporter arm, the Foot's own locomotor answering while the pod flies, a landing past the end of `DropPod=` | [ares-superweapon-types.md](ares-superweapon-types.md) |
 | HunterSeeker | The tube coordinate of a target in a tunnel; the facing conversion may differ by one binary-angle unit | [ares-hunter-seeker.md](ares-hunter-seeker.md) |
 | Terrain fire | Finish_Fire_Death's crumble of a zero-health tree (a lethal hit removes the tree first), the spread runs after the animation step | [ares-combat-sim-hooks.md](ares-combat-sim-hooks.md) |
-| Ares ParticleSystemExt | Ares' own Smoke/Spark/Railgun particle simulation, drawing from the synchronised Scenario stream (a simulation port) | [ares-anim-particles.md](ares-anim-particles.md) |
 
 ## Smaller gameplay residuals
 
