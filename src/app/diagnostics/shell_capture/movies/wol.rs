@@ -2376,8 +2376,12 @@ impl WolCapture {
                         state.renderer.gpu.config.width as i32,
                         state.renderer.gpu.config.height as i32,
                     );
-                    let create =
-                        crate::ui::shell::modal::wol_create_game_layout(width, height, false);
+                    // VERA's online box puts OK a row lower.
+                    let create = crate::ui::shell::modal::wol_create_game_layout(
+                        width,
+                        height,
+                        Self::lobby(state)?.ui.is_modern(),
+                    );
                     if self.target.clan() {
                         // 0x78DF35: the clan box is enabled by the squad id.
                         ensure!(
@@ -2536,12 +2540,13 @@ impl WolCapture {
                         .rules()
                         .and_then(|rules| rules.trigger_house_type_index("French"))
                         .map(|index| i32::from(index.0));
-                    let sides = crate::ui::multiplayer_setup::SetupColumn::Country.control(0);
+                    let view = setup_view(state)?;
                     ensure!(
-                        setup_view(state)?.combo(sides).is_some_and(|combo| {
-                            !combo.choices.is_empty()
-                                && combo.choices.iter().all(|item| Some(item.value) != french)
-                        }),
+                        row_combo(&view, crate::ui::multiplayer_setup::SetupColumn::Country, 0)
+                            .is_some_and(|(_, combo)| {
+                                !combo.choices.is_empty()
+                                    && combo.choices.iter().all(|item| Some(item.value) != french)
+                            }),
                         "France stayed in the host's Side list"
                     );
                     self.event(frame, "C2 Game Options: No France toggled");
@@ -5351,6 +5356,20 @@ fn setup_view(state: &AppState) -> Result<crate::ui::multiplayer_setup::SetupVie
     setup::view(state).context("C2/C9 view")
 }
 
+/// Row `row`'s combo in `column` and the page row it stands on: VERA's room
+/// lists its rows under team headers, so a page row is not a seat.
+fn row_combo(
+    view: &crate::ui::multiplayer_setup::SetupView,
+    column: crate::ui::multiplayer_setup::SetupColumn,
+    row: u8,
+) -> Option<(usize, &crate::ui::multiplayer_setup::SetupCombo)> {
+    view.combos.iter().find_map(|combo| {
+        crate::ui::multiplayer_setup::SetupColumn::decode(combo.id)
+            .filter(|(candidate, _)| *candidate == column && combo.row == row)
+            .map(|(_, page_row)| (page_row, combo))
+    })
+}
+
 /// The joined game's host options again, naming a version of its map this
 /// guest cannot verify (another digest).
 fn unverified_host_options(state: &AppState) -> Result<NetworkSetupEvent> {
@@ -5972,7 +5991,14 @@ impl WolCapture {
         let view = setup_view(state)?;
         let accepted = human
             .raw_slot_index
-            .and_then(|row| view.row_icons[usize::from(row)].as_ref())
+            .and_then(|row| {
+                row_combo(
+                    &view,
+                    crate::ui::multiplayer_setup::SetupColumn::Player,
+                    row,
+                )
+            })
+            .and_then(|(page_row, _)| view.row_icons[page_row].as_ref())
             .is_some_and(|icon| icon.accepted);
         ensure!(
             human.raw_slot_index == Some(1)
@@ -6114,9 +6140,9 @@ impl WolCapture {
                     "the guest takes the open spectator row {first:?}: \
                      {observer:?}, then {second:?} {requests:?}"
                 );
-                // The room lists only who is in it: the host, then the
-                // spectator, whom the host's menu kicks. Nobody adds an AI
-                // while anyone watches.
+                // The room lists the host, the seat the guest left, then the
+                // spectator, whom the host's menu seats again or kicks.
+                // Nobody adds an AI while anyone watches.
                 let listed: Vec<_> = setup_view(state)?
                     .combos
                     .iter()
@@ -6130,14 +6156,37 @@ impl WolCapture {
                         (combo.row, values)
                     })
                     .collect();
+                let seat = crate::ui::multiplayer_setup::GIVE_SEAT;
+                let spectator = first.context("spectator row")?;
                 ensure!(
-                    listed == [(0, vec![0]), (first.context("spectator row")?, vec![0, 2])],
+                    listed == [(0, vec![0]), (1, vec![2]), (spectator, vec![0, seat, 2])],
                     "the room lists {listed:?}"
                 );
                 self.event(
                     frame,
-                    json!({"spectator rows": [first, second], "guest observes": first, "listed": [0, first]}),
+                    json!({"spectator rows": [first, second], "guest observes": first, "listed": [0, 1, first]}),
                 );
+                // The host's Seat puts the spectator back in the free seat,
+                // as the guest's own side pick would.
+                let control = row_combo(&setup_view(state)?, SetupColumn::Player, spectator)
+                    .map(|(_, combo)| combo.id)
+                    .context("the spectator's Player list")?;
+                crate::app::shell_network_setup::apply_action(
+                    state,
+                    crate::ui::multiplayer_setup::SetupAction::Select {
+                        control,
+                        value: seat,
+                    },
+                );
+                let requests = setup_requests(state);
+                let (_, player) = guest(state).context("guest")?;
+                ensure!(
+                    !player.is_observer()
+                        && player.raw_slot_index == Some(1)
+                        && requests.contains(&NetworkSetupRequest::PublishOptions),
+                    "the host's Seat: {player:?} {requests:?}"
+                );
+                self.event(frame, json!({"host seats the spectator": {"row": 1}}));
             }
             WolTarget::ClanLockout | WolTarget::ClanNoStart | WolTarget::ClanChooseMap => {
                 return self.clan_room(state, frame);

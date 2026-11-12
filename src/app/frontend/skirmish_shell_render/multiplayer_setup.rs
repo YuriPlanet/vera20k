@@ -271,21 +271,83 @@ pub(crate) fn render_multiplayer_setup(
                     text: SHELL_CONTROL_TEXT_DEPTH,
                 },
             ));
-            texts.push(text(
-                &crate::i18n::tr_fill(
+            // Header rows are no players, so a grouped list counts pages.
+            let page_line = if view.grouped {
+                crate::i18n::tr_fill(
+                    "VERA:PageOf",
+                    &[
+                        ("page", &(view.first_row / page_rows + 1)),
+                        ("pages", &view.row_count.div_ceil(page_rows)),
+                    ],
+                )
+            } else {
+                crate::i18n::tr_fill(
                     "VERA:RosterPage",
                     &[
                         ("first", &(view.first_row + 1)),
                         ("last", &(view.first_row + page_rows).min(view.row_count)),
                         ("total", &view.row_count),
                     ],
-                ),
+                )
+            };
+            texts.push(text(
+                &page_line,
                 layout.roster_page_label,
                 ShellAlign::H_CENTER | ShellAlign::V_CENTER,
                 SHELL_LABEL_TEXT_RGB,
                 SHELL_CONTROL_TEXT_DEPTH,
             ));
         }
+        // VERA's header rows: the caption where the players' names stand,
+        // then Join (or Watch) drawn as the roster's Previous and Next.
+        let mut header_buttons = Vec::new();
+        for (row, header) in view.headers.iter().enumerate() {
+            let Some(header) = header else {
+                continue;
+            };
+            texts.push(text(
+                &header.caption,
+                crate::ui::skirmish_shell::combo_text_rect(layout.combos[row][0], scale),
+                ShellAlign::V_CENTER,
+                SHELL_LABEL_TEXT_RGB,
+                SHELL_CONTROL_TEXT_DEPTH,
+            ));
+            let Some(caption) = &header.join else {
+                continue;
+            };
+            let id = team_join(row);
+            let rect = layout.control_rect(id).expect("header button rect");
+            let enabled = view.enabled(id);
+            let pressed = enabled && ui.buttons.is_pressed(id);
+            header_buttons.push(ModalButton {
+                rect,
+                pressed,
+                enabled,
+            });
+            texts.push(text(
+                caption,
+                crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed),
+                ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+                if enabled {
+                    SHELL_LABEL_TEXT_RGB
+                } else {
+                    SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F
+                },
+                SHELL_CONTROL_TEXT_DEPTH,
+            ));
+        }
+        controls.extend(shell_paint::paint_modal_sprites(
+            None,
+            type3_button_frames(atlas),
+            RectPx::new(0, 0, 0, 0),
+            &header_buttons,
+            scale,
+            shell_paint::ModalDepths {
+                background: SHELL_CONTROL_DEPTH,
+                button: SHELL_CONTROL_DEPTH,
+                text: SHELL_CONTROL_TEXT_DEPTH,
+            },
+        ));
         for combo in view.combos.iter().filter(|combo| combo.visible) {
             let Some(rect) = layout.control_rect(combo.id) else {
                 continue;

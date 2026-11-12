@@ -32,6 +32,36 @@ pub(crate) const MAP_OFFER_LEAVE: u16 = 0x7F05;
 /// VERA-only combos of the rows past the resource's eight, one block of
 /// 0x20 ids per column.
 const ROOM_ROW_COMBOS: u16 = 0x7F20;
+/// VERA's Player list items past gamemd's 0..7: the host moves a seated
+/// guest to the spectators, or a spectator into a free seat.
+pub(crate) const MOVE_TO_SPECTATORS: i32 = 8;
+pub(crate) const GIVE_SEAT: i32 = 9;
+/// VERA-only header rows ([`SetupHeader`]): each one's Join (or Watch)
+/// button and the host's Add AI list, by the row on the page.
+const TEAM_JOIN: u16 = 0x7FC0;
+const TEAM_ADD_AI: u16 = 0x7FD0;
+
+/// The Join button of the header on page row `row`.
+pub(crate) fn team_join(row: usize) -> u16 {
+    TEAM_JOIN + row as u16
+}
+/// The host's Add AI list on the header on page row `row`.
+pub(crate) fn team_add_ai(row: usize) -> u16 {
+    TEAM_ADD_AI + row as u16
+}
+fn page_row(id: u16, first: u16) -> Option<usize> {
+    id.checked_sub(first)
+        .map(usize::from)
+        .filter(|row| *row < MODERN_SETUP_ROWS)
+}
+/// The page row of a header's Join button.
+pub(crate) fn team_join_row(id: u16) -> Option<usize> {
+    page_row(id, TEAM_JOIN)
+}
+/// The page row of a header's Add AI list.
+pub(crate) fn team_add_ai_row(id: u16) -> Option<usize> {
+    page_row(id, TEAM_ADD_AI)
+}
 pub(crate) const START: u16 = 0x588;
 pub(crate) const ACCEPT: u16 = 0x59F;
 pub(crate) const BACK: u16 = 2;
@@ -427,6 +457,30 @@ pub(crate) struct SetupRowIcon {
     pub(crate) host: bool,
     pub(crate) accepted: bool,
 }
+
+/// The rows a header row of VERA's room starts, in a mode with teams.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SetupGroup {
+    /// The players on one team, by its number (0 is Team A).
+    Team(u8),
+    /// The players on no team.
+    NoTeam,
+    /// The seats no one holds, then the host's Add slot row.
+    OpenSeats,
+    Spectators,
+}
+
+/// A header row of VERA's room: its caption in the Player column, then a
+/// Join button (Watch on the spectators' header) and, for the host, an Add
+/// AI list among the combos.
+#[derive(Debug, Clone)]
+pub(crate) struct SetupHeader {
+    pub(crate) group: SetupGroup,
+    pub(crate) caption: String,
+    /// The button's caption; `None` shows no button.
+    pub(crate) join: Option<String>,
+    pub(crate) join_enabled: bool,
+}
 #[derive(Debug, Clone)]
 pub(crate) struct SetupView {
     pub(crate) first_row: usize,
@@ -447,6 +501,11 @@ pub(crate) struct SetupView {
     pub(crate) room_checks: [bool; 6],
     /// Indexed by the row on the page, up to [`SetupDialog::rows_per_page`].
     pub(crate) row_icons: [Option<SetupRowIcon>; MODERN_SETUP_ROWS],
+    /// VERA's header rows, by the row on the page.
+    pub(crate) headers: [Option<SetupHeader>; MODERN_SETUP_ROWS],
+    /// The rows are grouped under headers, which [`Self::row_count`]
+    /// counts too.
+    pub(crate) grouped: bool,
     /// C2/C9 ping statics; always empty on BC/BD.
     pub(crate) ping_icons: [Option<u8>; MODERN_SETUP_ROWS],
     /// VERA's Game Options popup is open over the room.
@@ -469,6 +528,13 @@ impl SetupView {
     pub(crate) fn combo(&self, id: u16) -> Option<&SetupCombo> {
         self.combos.iter().find(|combo| combo.id == id)
     }
+    /// The header whose Join button is `id`, while it shows one.
+    pub(crate) fn header_button(&self, id: u16) -> Option<&SetupHeader> {
+        self.headers
+            .get(team_join_row(id)?)?
+            .as_ref()
+            .filter(|header| header.join.is_some())
+    }
     pub(crate) fn enabled(&self, id: u16) -> bool {
         if matches!(
             id,
@@ -489,6 +555,9 @@ impl SetupView {
             ACCEPT => !self.host && self.accept_enabled,
             0x54E if self.short_game_locked => false,
             id if CHECKBOXES.contains(&id) || ROOM_CHECKBOXES.contains(&id) => self.host,
+            id if team_join_row(id).is_some() => self
+                .header_button(id)
+                .is_some_and(|header| header.join_enabled),
             id => {
                 self.combo(id)
                     .is_some_and(|combo| combo.visible && combo.enabled)
@@ -517,6 +586,10 @@ pub(crate) enum SetupAction {
     Trackbar {
         control: u16,
         value: i32,
+    },
+    /// A header's Join, or the spectators' Watch, in VERA's room.
+    Join {
+        control: u16,
     },
     Chat(Vec<u16>),
     /// C2/C9 0x3ED sends the chat edit's text as an action message.
@@ -661,12 +734,15 @@ impl MultiplayerSetupState {
         let combo = view
             .combo(id)
             .filter(|combo| combo.visible && combo.enabled)?;
-        let (column, _) = SetupColumn::decode(id)?;
-        // VERA's room shows its Player menu whole, with no scrollbar.
-        let cap = if view.dialog.modern && column == SetupColumn::Player {
-            0
-        } else {
-            column.visible_rows()
+        // VERA's room shows its Player and Add AI menus whole, with no
+        // scrollbar.
+        let cap = match SetupColumn::decode(id) {
+            Some((SetupColumn::Player, _)) if view.dialog.modern => 0,
+            Some((column, _)) => column.visible_rows(),
+            None => {
+                team_add_ai_row(id)?;
+                0
+            }
         };
         Some(ComboPopup::new(
             layout.control_rect(id)?,
@@ -970,6 +1046,26 @@ impl MultiplayerSetupLayout {
         if let Some((column, row)) = SetupColumn::decode(id) {
             return Some(self.combos[row][column as usize]);
         }
+        if let Some(row) = team_join_row(id) {
+            // Over the Side column, the size of the MNBTTN art as Previous
+            // and Next under the roster.
+            let side = self.combos[row][SetupColumn::Country as usize];
+            return Some(self.page.scale.derive_rect(side, |mut rect| {
+                rect.w = ROSTER_BUTTON_W;
+                rect.h = ROSTER_BUTTON_H;
+                rect
+            }));
+        }
+        if let Some(row) = team_add_ai_row(id) {
+            // Over the Colour, Start and Team columns.
+            let [_, _, color, _, team] = self.combos[row];
+            return Some(RectPx::new(
+                color.x,
+                color.y,
+                team.x + team.w - color.x,
+                color.h,
+            ));
+        }
         if let Some(index) = CHECKBOXES.iter().position(|candidate| *candidate == id) {
             return Some(self.checkboxes[index]);
         }
@@ -1039,6 +1135,11 @@ impl MultiplayerSetupLayout {
                 CHECKBOXES
                     .into_iter()
                     .filter(|_| self.game_options.is_none()),
+            )
+            .chain(
+                (0..MODERN_SETUP_ROWS)
+                    .map(team_join)
+                    .filter(|id| view.header_button(*id).is_some()),
             )
             .chain([CHAT, CHAT_LOG])
             .chain(
@@ -1273,6 +1374,8 @@ mod tests {
             checks: [false; 5],
             room_checks: [false; 6],
             row_icons: std::array::from_fn(|_| None),
+            headers: std::array::from_fn(|_| None),
+            grouped: false,
             ping_icons: [None; MODERN_SETUP_ROWS],
             options_open: true,
             map_offer_open: false,

@@ -738,3 +738,6 @@ to that team, as their own team choice would, and publishes the options. A game 
 ignores the event leaves the teams to the host. The host alone hears why nothing moves:
 a Quick Match room, a mode without teams, AI players, fewer than two players, or teams
 already as even as they can be. Anyone else typing `/balance` hears that only the host can.
+The host can also move a player by hand: to another team, into a free seat or to the
+spectators. The host's game publishes the options as it does after `/balance`, with no new
+field, and the moved player's game tells them in chat.

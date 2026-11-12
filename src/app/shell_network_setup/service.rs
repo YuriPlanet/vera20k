@@ -504,6 +504,9 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 local_map.as_deref(),
                 map_changed,
             )?;
+            if !dialog.host {
+                tell_moved(state, mode_changed);
+            }
             // 0x5E542B..0x5E5466: a changed mode's +9C/+20, then +7C.
             if mode_changed {
                 super::cooperative::mode_entered(state)?;
@@ -946,21 +949,49 @@ fn accept_peer_choices(
     )
 }
 
-/// Moves participant `index` to `team`: a guest's row as its own `R` would,
-/// the host's as the host's own team combo edit does (`actions::select`).
+/// `/balance`'s move of participant `index` to `team`.
 fn move_team(state: &mut AppState, index: usize, team: u8) -> anyhow::Result<PeerChoicesChange> {
+    move_player(state, index, LaunchTeam::Team(team), false)
+}
+
+/// The host moves participant `index` to `team`, and to the spectators or
+/// into a seat as `observer` says: a guest's row as the guest's own `R`
+/// would (LAN's Type18 receiver in a LAN room), the host's own as its own
+/// Team list does (`actions::select`). `/balance` and VERA's room headers
+/// and row lists move players through it.
+pub(super) fn move_player(
+    state: &mut AppState,
+    index: usize,
+    team: LaunchTeam,
+    observer: bool,
+) -> anyhow::Result<PeerChoicesChange> {
     let launch = state
         .match_state
         .session
         .network_setup()
         .ok_or_else(|| anyhow::anyhow!("no network setup"))?;
-    let human = &launch.humans[index];
+    let human = launch
+        .humans
+        .get(index)
+        .ok_or_else(|| anyhow::anyhow!("unknown participant"))?;
     let mut choices = human.slot.clone();
-    choices.team = LaunchTeam::Team(team);
+    choices.team = team;
     if index != launch.local_player_index {
-        return accept_peer_choices(state, index, choices, false);
+        if super::dialog(state).wol() {
+            return accept_peer_choices(state, index, choices, observer);
+        }
+        return state
+            .match_state
+            .session
+            .accept_lan_peer_choices(index, choices, observer);
     }
-    let row = human.raw_slot_index.expect("moves name seated rows");
+    anyhow::ensure!(
+        observer == human.is_observer(),
+        "the host does not move itself between playing and watching"
+    );
+    let row = human
+        .raw_slot_index
+        .ok_or_else(|| anyhow::anyhow!("moves name seated rows"))?;
     state
         .match_state
         .session
@@ -972,23 +1003,86 @@ fn move_team(state: &mut AppState, index: usize, team: u8) -> anyhow::Result<Pee
 }
 
 /// 0x5EC9F0's advertisement 0x78F000, 0x77DB90's slot names, then 0x5E32D0's
-/// options and the repaint 0x783C80, for what accepted choices changed.
-fn publish_choices(state: &mut AppState, change: PeerChoicesChange) {
+/// options and the repaint 0x783C80, for what accepted choices changed. A
+/// LAN room has no advertisement.
+pub(super) fn publish_choices(state: &mut AppState, change: PeerChoicesChange) {
+    let wol = super::dialog(state).wol();
     let protocol = state
         .frontend
         .network_setup_protocol
         .as_mut()
         .expect("setup owns protocol");
     if change.roster {
-        protocol.requests.extend([
-            NetworkSetupRequest::Advertise,
-            NetworkSetupRequest::PublishRoster,
-        ]);
+        if wol {
+            protocol.requests.push(NetworkSetupRequest::Advertise);
+        }
+        protocol.requests.push(NetworkSetupRequest::PublishRoster);
     }
     if change.options {
         protocol.requests.push(NetworkSetupRequest::PublishOptions);
     }
     state.platform.window.request_redraw();
+}
+
+/// VERA's room tells a guest in its own chat when the host's options move
+/// it to another team, to the spectators or into a seat: the host's Team
+/// list, row list or `/balance`. Where the guest asked to be is its own
+/// move (`actions::commit_row`), and a new mode may reset every team, so
+/// neither is told.
+fn tell_moved(state: &mut AppState, mode_changed: bool) {
+    let several = state.match_state.session.network_several_observers();
+    let Some(launch) = state.match_state.session.network_setup() else {
+        return;
+    };
+    let local = launch.local_player();
+    let place = (local.slot.team, local.is_observer());
+    // Online the user list names the host; on LAN its admission does, and
+    // VERA's rooms seat it first.
+    let host_name = state
+        .frontend
+        .network_setup_protocol
+        .as_ref()
+        .and_then(|protocol| protocol.wol_host.clone())
+        .or_else(|| crate::app::lan_service::admitted_host_name(state))
+        .or_else(|| {
+            launch
+                .humans
+                .iter()
+                .find(|human| human.raw_slot_index == Some(0))
+                .map(|human| human.name.clone())
+        })
+        .unwrap_or_default();
+    let Some(protocol) = state.frontend.network_setup_protocol.as_mut() else {
+        return;
+    };
+    let Some(moved) = protocol
+        .host_placed(place)
+        .filter(|_| several && !mode_changed)
+    else {
+        return;
+    };
+    let name: &dyn std::fmt::Display = &host_name;
+    let text = match moved {
+        HostMove::Team(team) => crate::i18n::tr_fill(
+            "VERA:HostMovedYouToTeam",
+            &[
+                ("name", name),
+                ("letter", &super::view::team_letter(state, team)),
+            ],
+        ),
+        HostMove::OffTeam => crate::i18n::tr_fill("VERA:HostMovedYouOffTeam", &[("name", name)]),
+        HostMove::Spectators => {
+            crate::i18n::tr_fill("VERA:HostMovedYouToSpectators", &[("name", name)])
+        }
+        HostMove::Seat => crate::i18n::tr_fill("VERA:HostGaveYouSeat", &[("name", name)]),
+    };
+    crate::app::shell_lan::append_chat(
+        state,
+        LanChatLine {
+            text: text.encode_utf16().collect(),
+            color: u32::MAX,
+        },
+    );
 }
 
 /// Verify through the existing map owner before the transport queues Type13.

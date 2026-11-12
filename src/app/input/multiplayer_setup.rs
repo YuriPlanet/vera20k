@@ -455,6 +455,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                 GAME_OPTIONS_OK => Some(SetupAction::GameOptions { open: false }),
                 MAP_OFFER_DOWNLOAD => Some(SetupAction::MapOffer { download: true }),
                 MAP_OFFER_LEAVE => Some(SetupAction::MapOffer { download: false }),
+                control if team_join_row(control).is_some() => Some(SetupAction::Join { control }),
                 _ => None,
             };
         }
