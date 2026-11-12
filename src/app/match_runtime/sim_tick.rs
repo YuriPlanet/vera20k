@@ -2923,6 +2923,11 @@ fn finish_simulation_frame(
         }
     }
 
+    // VERA relation colours follow the frame's alliances: an alliance made or
+    // broken recolours that house before the atlas check below.
+    if frame_committed && state.match_state.match_presentation.relation_colors {
+        state.match_state.refresh_relation_colors();
+    }
     // AnimClass producers can install a new palette after construction without
     // changing any entity identity. Unit deploy Anim+D4 (739C1A/739DFE) is one
     // such producer: its first ordinary draw needs the selected-scheme atlas
@@ -2937,13 +2942,19 @@ fn finish_simulation_frame(
                     !sprite_atlas::atlas_covers_anim_remaps(
                         state.match_state.match_presentation.sprite_atlas.as_ref(),
                         &runtime.simulation,
-                        &state.match_state.match_presentation.effective_house_color_map(),
+                        state
+                            .match_state
+                            .match_presentation
+                            .effective_house_color_map(),
                     ) || !sprite_atlas::atlas_covers_sprite_keys(
                         state.match_state.match_presentation.sprite_atlas.as_ref(),
                         &sprite_atlas::collect_fogged_sprite_keys(
                             &runtime.simulation,
                             &runtime.resources.rules,
-                            &state.match_state.match_presentation.effective_house_color_map(),
+                            state
+                                .match_state
+                                .match_presentation
+                                .effective_house_color_map(),
                         ),
                         Some(&runtime.resources.rules),
                     )

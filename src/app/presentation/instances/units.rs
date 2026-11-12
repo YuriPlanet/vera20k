@@ -640,13 +640,13 @@ pub(crate) fn unit_visitor<'a>(
                     .and_then(|state| state.house())
                     .map(|id| sim.interner().resolve(id))
                     .unwrap_or(owner_str);
-                // VERA relation colours: when the toggle is on, this resolves to
-                // the owner's relation band (self/ally/enemy) or NO_REMAP for
-                // neutral/passive houses; otherwise the normal player colour.
                 let hc: HouseColorIndex = state
                     .match_state
                     .match_presentation
-                    .effective_house_color(remap_owner);
+                    .effective_house_color_map()
+                    .get(remap_owner)
+                    .copied()
+                    .unwrap_or_default();
                 // The cargo is in limbo inside its Carryall, whose admission the
                 // Display member already passed; only its own DrawState applies.
                 let draw_decision = match carried {

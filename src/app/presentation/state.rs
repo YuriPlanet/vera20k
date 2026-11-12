@@ -11,7 +11,6 @@ use crate::util::time::Instant;
 use std::collections::{BTreeMap, HashMap};
 
 use crate::map::houses::{HouseColorMap, HouseRoster};
-use crate::rules::house_colors::{HouseColorIndex, NO_REMAP, RELATION_ALLY, RELATION_ENEMY, RELATION_SELF};
 use crate::map::overlay::TerrainObject;
 use crate::map::terrain::TerrainGrid;
 use crate::render::bridge_atlas::BridgeAtlas;
@@ -23,6 +22,7 @@ use crate::render::sidebar_chrome::SidebarChromeSet;
 use crate::render::sprite_atlas::SpriteAtlas;
 use crate::render::tile_atlas::TileAtlas;
 use crate::render::unit_atlas::UnitAtlas;
+use crate::rules::house_colors::{RELATION_ALLY, RELATION_ENEMY, RELATION_SELF};
 use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarTab};
 
 pub(crate) struct MatchPresentationState {
@@ -70,16 +70,16 @@ pub(crate) struct MatchPresentationState {
     pub(crate) house_color_map: HouseColorMap,
     pub(crate) house_roster: HouseRoster,
     /// VERA "relation colours" toggle: when on, `relation_color_map` overrides
-    /// each owner's player colour with its diplomatic relation to the local
-    /// observer (self = blue, ally = green, enemy = red; neutral/passive stay
-    /// `NO_REMAP`). Presentation only — never simulation input, so it cannot
-    /// affect determinism, networking, or replays.
+    /// each owner's player colour with its relation to the local house (self
+    /// = blue, ally = green, enemy = red; passive houses keep their colour).
+    /// Presentation only — never simulation input, so it cannot affect
+    /// determinism, networking, or replays.
     pub(crate) relation_colors: bool,
     /// Owner name → effective house-colour index under the relation-colours
-    /// toggle. `None` while the toggle is off, so colour sites fall back to
-    /// `house_color_map` unchanged. Neutral/passive owners map to `NO_REMAP`.
+    /// toggle ([`relation_house_colors`]). `None` while the toggle is off or
+    /// there is no local house, so colour sites use `house_color_map`.
     pub(crate) relation_color_map: Option<HouseColorMap>,
-    /// Bumped every time `relation_color_map` is (re)built, so cached renderers
+    /// Bumped every time `relation_color_map` changes, so cached renderers
     /// (e.g. the minimap) can detect a relation-colours change and repaint even
     /// when the simulation is paused and nothing else would trigger a redraw.
     pub(crate) relation_color_generation: u64,
@@ -298,79 +298,99 @@ impl MatchPresentationState {
         Some(self.surface_palette.get_or_init(|| palette))
     }
 
-    /// Resolve the effective house-colour index for `owner` under the
-    /// relation-colours toggle. With the toggle off (or an unmapped owner) this
-    /// returns the normal `house_color_map` entry; with it on it returns the
-    /// relation band (self/ally/enemy) or `NO_REMAP` for neutral/passive houses.
-    pub(crate) fn effective_house_color(&self, owner: &str) -> HouseColorIndex {
-        if let Some(map) = &self.relation_color_map {
-            if let Some(&index) = map.get(owner) {
-                return index;
-            }
-        }
-        self.house_color_map.get(owner).copied().unwrap_or(NO_REMAP)
-    }
-
-    /// Borrow the house-colour map that display sites should consult under the
-    /// relation-colours toggle. When the toggle is off (or no local observer) the
-    /// override is `None` and this returns the original `house_color_map`, so
-    /// every colour site falls back to the unmodified per-player colours at zero
-    /// cost. When on, it returns the prebuilt `relation_color_map`, which already
-    /// maps every owner to self/ally/enemy/`NO_REMAP`.
+    /// The house colours drawing reads: the relation colours while that
+    /// toggle has a map, else each owner's player colour.
     pub(crate) fn effective_house_color_map(&self) -> &HouseColorMap {
         self.relation_color_map
             .as_ref()
             .unwrap_or(&self.house_color_map)
     }
 
-    /// Rebuild the relation-colour override map from the live simulation and the
-    /// local observer. Called whenever the toggle flips or the scenario's houses
-    /// change. Neutral/passive houses keep `NO_REMAP`; the local observer's own
-    /// house becomes blue, its allies green, everyone else red. With the toggle
-    /// off the map is cleared so every colour site uses `house_color_map`.
+    /// Bring the relation colours up to date with `sim`, as `local_owner`
+    /// sees it: when the toggle flips and after each committed frame, so an
+    /// alliance made or broken recolours that house. The generation moves
+    /// only when a colour changes.
     pub(crate) fn rebuild_relation_color_map(
         &mut self,
         sim: &crate::sim::world::Simulation,
         local_owner: Option<&str>,
     ) {
-        if !self.relation_colors {
-            self.relation_color_map = None;
+        let map = if self.relation_colors {
+            relation_house_colors(sim, &self.house_color_map, local_owner)
+        } else {
+            None
+        };
+        if map != self.relation_color_map {
+            self.relation_color_map = map;
             self.relation_color_generation = self.relation_color_generation.wrapping_add(1);
-            return;
         }
-        let interner = sim.interner();
-        let alliances = sim.house_alliances().as_map();
-        let mut map: HouseColorMap = HashMap::new();
-        for owner in self.house_color_map.keys() {
-            let owner_id = interner.get(owner.as_str());
-            let neutral = owner_id.is_none_or(|id| {
-                sim.houses().get(&id).is_some_and(|h| h.multiplay_passive())
-                    || owner.eq_ignore_ascii_case("Neutral")
-            });
-            if neutral {
-                map.insert(owner.clone(), NO_REMAP);
-                continue;
-            }
-            match local_owner {
-                Some(local) if owner.eq_ignore_ascii_case(local) => {
-                    map.insert(owner.clone(), RELATION_SELF);
-                }
-                Some(local)
-                    if crate::map::houses::is_allied_with(alliances, local, owner.as_str()) =>
-                {
-                    map.insert(owner.clone(), RELATION_ALLY);
-                }
-                Some(_) => {
-                    map.insert(owner.clone(), RELATION_ENEMY);
-                }
-                None => {
-                    // No local observer (spectator): keep original colours to
-                    // avoid recolouring the whole field uniformly.
-                    map.insert(owner.clone(), NO_REMAP);
-                }
-            }
+    }
+}
+
+/// Each owner's colour under the relation-colours toggle, as `local_owner`
+/// sees the houses: its own blue, its allies green, everyone else red.
+/// Passive houses (civilians, tech buildings) and owners the world does not
+/// know keep their own colour. `None` without a local house: an observer's
+/// houses keep their player colours.
+pub(crate) fn relation_house_colors(
+    sim: &crate::sim::world::Simulation,
+    house_colors: &HouseColorMap,
+    local_owner: Option<&str>,
+) -> Option<HouseColorMap> {
+    let local = local_owner?;
+    let allied = crate::map::houses::ally_test(sim.house_alliances().as_map(), local);
+    Some(
+        house_colors
+            .iter()
+            .map(|(owner, &color)| {
+                let passive = sim.interner().get(owner.as_str()).is_none_or(|id| {
+                    sim.houses()
+                        .get(&id)
+                        .is_some_and(|house| house.multiplay_passive())
+                }) || owner.eq_ignore_ascii_case("Neutral");
+                let color = if passive {
+                    color
+                } else if owner.eq_ignore_ascii_case(local) {
+                    RELATION_SELF
+                } else if allied(owner.as_str()) {
+                    RELATION_ALLY
+                } else {
+                    RELATION_ENEMY
+                };
+                (owner.clone(), color)
+            })
+            .collect(),
+    )
+}
+
+#[cfg(test)]
+mod relation_colour_tests {
+    use super::*;
+    use crate::rules::house_colors::HouseColorIndex;
+    use crate::sim::house_state::HouseState;
+    use crate::sim::world::Simulation;
+
+    /// Passive houses keep their own colour, and an observer, with no house
+    /// of its own, sees every player colour unchanged.
+    #[test]
+    fn relation_colours_spare_passive_houses_and_observers() {
+        let mut sim = Simulation::with_seed(1);
+        let mut colors = HouseColorMap::new();
+        for (index, name) in ["Player", "Friend", "Foe", "Civ"].into_iter().enumerate() {
+            let id = sim.intern(name);
+            let mut house = HouseState::new(id, index as i32, None, true, 0, 10);
+            house.set_multiplay_passive_for_test(name == "Civ");
+            sim.register_house(house);
+            colors.insert(name.to_owned(), HouseColorIndex(index as u8 + 3));
         }
-        self.relation_color_map = Some(map);
-        self.relation_color_generation = self.relation_color_generation.wrapping_add(1);
+        sim.house_alliances_mut_for_test()
+            .insert("PLAYER".into(), ["FRIEND".into()].into());
+
+        let seen = relation_house_colors(&sim, &colors, Some("Player")).unwrap();
+        assert_eq!(seen["Player"], RELATION_SELF);
+        assert_eq!(seen["Friend"], RELATION_ALLY);
+        assert_eq!(seen["Foe"], RELATION_ENEMY);
+        assert_eq!(seen["Civ"], colors["Civ"]);
+        assert_eq!(relation_house_colors(&sim, &colors, None), None);
     }
 }

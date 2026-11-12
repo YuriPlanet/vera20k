@@ -1187,13 +1187,16 @@ fn build_placement_ghost(
     let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
     // The placement ghost is a building of the local player's, so it follows
     // the relation colours like the finished building will.
-    let remap_house = local_owner.as_deref().and_then(|owner| {
-        state
-            .match_state
-            .match_presentation
-            .effective_house_color_map()
-            .get(owner)
-    }).copied();
+    let remap_house = local_owner
+        .as_deref()
+        .and_then(|owner| {
+            state
+                .match_state
+                .match_presentation
+                .effective_house_color_map()
+                .get(owner)
+        })
+        .copied();
     let translucency = object
         .placement_preview_translucency()
         .unwrap_or(globals.translucency);

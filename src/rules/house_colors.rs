@@ -41,9 +41,8 @@ pub const RELATION_SELF: HouseColorIndex = HouseColorIndex(248);
 pub const RELATION_ALLY: HouseColorIndex = HouseColorIndex(249);
 pub const RELATION_ENEMY: HouseColorIndex = HouseColorIndex(250);
 
-/// Fixed HSV (hue, saturation, value) for the three relation bands — a
-/// retail-style saturated sweep, matching the Warcraft III / StarCraft II
-/// "alliance colours" reading: self = blue, ally = green, enemy = red.
+/// Fixed HSV (hue, saturation, value) for the three relation bands, a
+/// retail-style saturated sweep: self = blue, ally = green, enemy = red.
 ///
 /// Hue is on the engine's 0..=255 scale and `hsv_to_rgb` walks six sextants of
 /// 42.5 each (`region = h * 6 / 255`). A sextant's *first* step is its pure

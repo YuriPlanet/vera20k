@@ -2198,20 +2198,9 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         // who is who. Pure presentation: it never touches the simulation, so it
         // cannot affect determinism, networking, or replays.
         HotkeyCommand::RelationColors => {
-            let local_owner = state.match_state.local_player_owner().map(str::to_string);
-            let toggle = !state.match_state.match_presentation.relation_colors;
-            state.match_state.match_presentation.relation_colors = toggle;
-            if let Some(sim) = state
-                .match_state
-                .sim_runtime
-                .presentation()
-                .map(|rt| &rt.simulation)
-            {
-                state
-                    .match_state
-                    .match_presentation
-                    .rebuild_relation_color_map(sim, local_owner.as_deref());
-            }
+            let presentation = &mut state.match_state.match_presentation;
+            presentation.relation_colors = !presentation.relation_colors;
+            state.match_state.refresh_relation_colors();
         }
     }
 }

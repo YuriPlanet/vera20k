@@ -51,11 +51,6 @@ pub(crate) struct ShpInputs<'a> {
     pub ignore_visibility: bool,
     pub lighting: &'a crate::map::lighting::CellLightGrid,
     pub house_colors: &'a crate::map::houses::HouseColorMap,
-    /// Local-only relation-color override (self/ally/enemy/neutral). When
-    /// `Some`, remap-owner lookups prefer this map over `house_colors`. Pure
-    /// presentation: never touches the simulation. `None` is the zero-cost
-    /// original path (verified off / spectator with no local owner).
-    pub relation_color_map: Option<&'a crate::map::houses::HouseColorMap>,
     pub building_zshape: bool,
 }
 
@@ -117,8 +112,7 @@ pub(crate) fn shp_inputs<'a>(
         local_owner,
         ignore_visibility: state.match_state.sandbox_full_visibility,
         lighting: presentation.lighting.grid(),
-        house_colors: &presentation.house_color_map,
-        relation_color_map: presentation.relation_color_map.as_ref(),
+        house_colors: presentation.effective_house_color_map(),
         building_zshape: presentation.building_zshape.is_some(),
     })
 }
@@ -281,9 +275,9 @@ pub(crate) fn shp_visitor<'a>(
         }
         let pos = &entity.position;
         let hc: HouseColorIndex = input
-            .relation_color_map
-            .or(Some(input.house_colors))
-            .and_then(|m| m.get(remap_owner).copied())
+            .house_colors
+            .get(remap_owner)
+            .copied()
             .unwrap_or(crate::rules::house_colors::NO_REMAP);
         let Some(draw_decision) = tactical_entity_admission(
             super::helpers::TacticalEntityPurpose::Drawing,
@@ -1589,7 +1583,10 @@ pub(crate) fn build_building_anim_instances(
         let house_color = state
             .match_state
             .match_presentation
-            .effective_house_color(owner);
+            .effective_house_color_map()
+            .get(owner)
+            .copied()
+            .unwrap_or(crate::rules::house_colors::NO_REMAP);
         let mut observer = building.seen.observer;
         observer.drawn_voxel = Some(false);
         // Preserve the existing slot material selector. The parent's
