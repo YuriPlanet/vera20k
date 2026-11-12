@@ -191,6 +191,17 @@ pub(crate) fn enqueue_selected(
     };
     let type_interned = sim.interner.intern(type_id);
     let building = obj.category == ObjectCategory::Building;
+    // A docked aircraft past the airfield's pads is refused at the producer.
+    //
+    // `check_build_limit` was consulted only by the queue arm of
+    /// `FactoryRegistry::enqueue`, so it bounded the *queue* and never the
+    /// *start*: a house with an idle aircraft line started one more every time,
+    /// finished it, and started another — the wishlist's "超出机场容量上限造
+    ///战机，无视了UI最大上限". The check belongs at BeginProduction, which is
+    /// where this is.
+    if obj.category == ObjectCategory::Aircraft && check_build_limit(sim, rules, owner_id, obj) {
+        return false;
+    }
     #[cfg(feature = "phobos")]
     let building_production_queue = rules.general.building_production_queue;
     #[cfg(not(feature = "phobos"))]

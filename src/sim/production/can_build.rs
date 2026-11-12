@@ -732,7 +732,24 @@ pub(crate) fn check_build_limit(
                 .count_total(owner, strip, type_id)
         })
     };
-    if obj.category == ObjectCategory::Aircraft && obj.airport_bound {
+    // The pad check asks the native list, not the type's own flag.
+    //
+    // `[General] PadAircraft=` is what gamemd reads to decide which aircraft
+    // need a dock, and `[ORCA]` in the retail rules carries no `AirportBound=`
+    // at all — so a check gated on that flag silently did not apply to the
+    // Harrier, and the house built them past the airfield's capacity: the
+    // wishlist's "超出机场容量上限造战机，无视了UI最大上限".
+    //
+    // The two readings agree for a mod that sets the flag and disagree only when
+    // the flag is missing, which is exactly the case that has to be covered.
+    // Either is enough to make the type a docked aircraft.
+    let pad_bound = obj.airport_bound
+        || rules
+            .general
+            .pad_aircraft_types
+            .iter()
+            .any(|name| name == &obj.id);
+    if obj.category == ObjectCategory::Aircraft && pad_bound {
         let pads = rules
             .general
             .pad_aircraft_types
