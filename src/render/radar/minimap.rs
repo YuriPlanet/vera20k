@@ -143,6 +143,9 @@ pub struct MinimapRenderer {
     /// Last local owner used for fog-aware refresh.
     last_visibility_owner: Option<InternedId>,
     last_radar_terrain_dirty_generation: u64,
+    /// Last relation-colours generation painted, so a toggle while paused still
+    /// forces a minimap repaint (see `MatchPresentationState::relation_color_generation`).
+    last_relation_color_generation: u64,
     /// The drained simulation radar marks this minimap has not uploaded yet.
     radar_terrain_backlog: RadarTerrainBacklog,
     pub(super) playfield_bounds: Option<PlayfieldBounds>,
@@ -237,6 +240,7 @@ impl MinimapRenderer {
             last_fog_generation: u64::MAX,
             last_visibility_owner: None,
             last_radar_terrain_dirty_generation: u64::MAX,
+            last_relation_color_generation: u64::MAX,
             radar_terrain_backlog: RadarTerrainBacklog::default(),
             playfield_bounds,
             installed_playfield_authority: Some(PlayfieldAuthorityStamp {
@@ -439,6 +443,7 @@ impl MinimapRenderer {
             &crate::render::beacon_art::BeaconArt,
             &[crate::render::beacon_art::BeaconDraw],
         )>,
+        relation_color_generation: u64,
     ) -> Option<u64> {
         let fog_generation = if full_visibility {
             0
@@ -450,6 +455,7 @@ impl MinimapRenderer {
             && fog_generation == self.last_fog_generation
             && visibility_owner == self.last_visibility_owner
             && self.radar_terrain_backlog.generation() == self.last_radar_terrain_dirty_generation
+            && relation_color_generation == self.last_relation_color_generation
         {
             return None;
         }
@@ -689,6 +695,7 @@ impl MinimapRenderer {
         );
         self.last_sim_tick = sim_tick;
         (self.last_fog_generation, self.last_visibility_owner) = (fog_generation, visibility_owner);
+        self.last_relation_color_generation = relation_color_generation;
         consumed_radar_terrain_generation
     }
 

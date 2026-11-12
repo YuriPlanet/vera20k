@@ -31,12 +31,64 @@ pub struct HouseColorIndex(pub u8);
 /// Used for Neutral, Special, Civilian buildings that have no player color.
 pub const NO_REMAP: HouseColorIndex = HouseColorIndex(255);
 
+/// VERA's "relation colours" toggle recolours every house the local observer
+/// sees by its diplomatic relation instead of its chosen player colour. These
+/// three sentinel `[Colors]`-entry slots carry the fixed self/ally/enemy bands;
+/// they sit far above any real scheme entry (a `HouseColorIndex` is a `u8` and
+/// `NO_REMAP` is 255) so they never collide with map colours. Neutral/passive
+/// houses keep `NO_REMAP` and render unchanged.
+pub const RELATION_SELF: HouseColorIndex = HouseColorIndex(248);
+pub const RELATION_ALLY: HouseColorIndex = HouseColorIndex(249);
+pub const RELATION_ENEMY: HouseColorIndex = HouseColorIndex(250);
+
+/// Fixed HSV (hue, saturation, value) for the three relation bands, a
+/// retail-style saturated sweep: self = blue, ally = green, enemy = red.
+///
+/// Hue is on the engine's 0..=255 scale and `hsv_to_rgb` walks six sextants of
+/// 42.5 each (`region = h * 6 / 255`). A sextant's *first* step is its pure
+/// primary and its last step is the next primary, so pure red, green and blue
+/// sit at h = 0, 85 and 170. Anything inside a sextant blends two primaries:
+/// h = 191 is 44% of the way from blue to magenta and reads violet, which is
+/// exactly the "my purple army turned blue-purple" bug this pins down. Keep
+/// these on the sextant starts.
+const RELATION_HUES: [[u8; 3]; 3] = [
+    [170, 230, 255], // RELATION_SELF: blue
+    [85, 230, 255],  // RELATION_ALLY: green
+    [0, 230, 255],   // RELATION_ENEMY: red
+];
+
+/// Build the three fixed relation bands once; they never depend on the map's
+/// `[Colors]` list so the toggle works on every scenario.
+fn build_relation_ramps() -> [[Color; RAMP_SIZE]; 3] {
+    RELATION_HUES.map(|hsv| build_scheme_ramp(hsv))
+}
+
+/// The fixed HSV of a relation band, for call sites that colour from a scheme
+/// (`house_text_rgb`) rather than from a ramp. `None` for every ordinary entry.
+fn relation_hue(index: HouseColorIndex) -> Option<[u8; 3]> {
+    if index == RELATION_SELF {
+        Some(RELATION_HUES[0])
+    } else if index == RELATION_ALLY {
+        Some(RELATION_HUES[1])
+    } else if index == RELATION_ENEMY {
+        Some(RELATION_HUES[2])
+    } else {
+        None
+    }
+}
+
 /// The colour gamemd prints a house's text in: `HSV_To_RGB` of its colour
 /// scheme's base HSV (scheme `+0x308`, its `[Colors]` entry), as
 /// Fancy_Text_Print_Wide (`0x004A61C0`) does for the timer lines and the
 /// score dialog for its rows (`0x005C9E0C`). White for an entry `[Colors]`
 /// lacks.
 pub fn house_text_rgb(schemes: &[ColorSchemeEntry], color: HouseColorIndex) -> [u8; 3] {
+    // Relation bands are fixed and have no `[Colors]` entry to read, so they
+    // colour their own text rather than falling through to the white a missing
+    // entry gives.
+    if let Some(hsv) = relation_hue(color) {
+        return hsv_to_rgb(hsv);
+    }
     crate::rules::color_scheme::scheme_hsv_by_entry(schemes, usize::from(color.0))
         .map_or([0xFF; 3], hsv_to_rgb)
 }
@@ -201,6 +253,9 @@ pub struct HouseColorRamps {
     ramps: Vec<[Color; RAMP_SIZE]>,
     /// VERA's presentation strength, [`STRENGTH_RETAIL`] until set.
     strength: u8,
+    /// VERA relation-colour bands (self/ally/enemy), always present so the
+    /// "relation colours" toggle works on any map regardless of its `[Colors]`.
+    relation_ramps: [[Color; RAMP_SIZE]; 3],
 }
 
 impl Default for HouseColorRamps {
@@ -209,6 +264,7 @@ impl Default for HouseColorRamps {
             schemes: Vec::new(),
             ramps: Vec::new(),
             strength: STRENGTH_RETAIL,
+            relation_ramps: build_relation_ramps(),
         }
     }
 }
@@ -224,6 +280,7 @@ impl HouseColorRamps {
                 .map(|s| boosted_scheme_ramp(s.hsv, strength))
                 .collect(),
             strength,
+            relation_ramps: build_relation_ramps(),
         }
     }
 
@@ -246,8 +303,18 @@ impl HouseColorRamps {
     }
 
     /// Ramp for a house color index. `NO_REMAP` or an out-of-range index falls back to the default
-    /// scheme (or a flat ramp if the scheme list is empty).
+    /// scheme (or a flat ramp if the scheme list is empty). The three `RELATION_*` sentinels return
+    /// VERA's fixed relation bands; they take priority over the scheme lookup.
     pub fn ramp(&self, index: HouseColorIndex) -> &[Color; RAMP_SIZE] {
+        if index == RELATION_SELF {
+            return &self.relation_ramps[0];
+        }
+        if index == RELATION_ALLY {
+            return &self.relation_ramps[1];
+        }
+        if index == RELATION_ENEMY {
+            return &self.relation_ramps[2];
+        }
         if index != NO_REMAP
             && let Some(r) = self.ramps.get(index.0 as usize)
         {
@@ -446,5 +513,86 @@ mod tests {
             table.ramp(HouseColorIndex(0)),
             &boosted_scheme_ramp([0, 230, 255], STRENGTH_MAX)
         );
+    }
+
+    /// Relation-colour bands: the three fixed indices must stay inside the GPU
+    /// ramp texture (row = index + 1, the texture is 256 rows tall) and must
+    /// resolve to three visually distinct, correctly-hued bands (self = blue,
+    /// ally = green, enemy = red). Pure-presentation invariant for the Alt+A
+    /// "relation colours" toggle.
+    #[test]
+    fn relation_color_bands_are_distinct_and_in_range() {
+        // Rows are addressed as `index + 1`; the texture has 256 rows (0..=255).
+        for index in [RELATION_SELF, RELATION_ALLY, RELATION_ENEMY] {
+            assert!(
+                (index.0 as usize) + 1 < 256,
+                "relation index {} must fit in the ramp texture",
+                index.0
+            );
+        }
+        let ramps = build_relation_ramps();
+        let [self_r, ally_r, enemy_r] = &ramps;
+        assert_ne!(self_r, ally_r, "self and ally bands must differ");
+        assert_ne!(self_r, enemy_r, "self and enemy bands must differ");
+        assert_ne!(ally_r, enemy_r, "ally and enemy bands must differ");
+        // Shade 0 must read as the pure primary, not a blend toward the next
+        // one: h = 191 put 162 of red beside 250 of blue in the "blue" band
+        // and turned a purple player's army blue-violet. Retail's own shade 0
+        // keeps a little of both other channels (blue is 77/77/250), so pin
+        // their share of the primary instead of an absolute byte.
+        for (name, ramp, primary) in [
+            ("self", self_r, 2usize),
+            ("ally", ally_r, 1),
+            ("enemy", enemy_r, 0),
+        ] {
+            let channels = [ramp[0].r, ramp[0].g, ramp[0].b];
+            let strongest = channels[primary];
+            assert!(strongest >= 150, "{name} band's own channel is bright");
+            for (channel, &value) in channels.iter().enumerate() {
+                if channel != primary {
+                    assert!(
+                        u32::from(value) * 100 <= u32::from(strongest) * 45,
+                        "{name} band mixes {value} of channel {channel} into {strongest} of \
+                         its primary"
+                    );
+                }
+            }
+        }
+    }
+
+    /// `HouseColorRamps::ramp` must return the relation band for the three fixed
+    /// relation indices even with an empty `[Colors]` list, so the toggle works
+    /// on every scenario without depending on the scenario's house colours.
+    #[test]
+    fn ramp_resolves_relation_indices_without_scenario_colors() {
+        let table = HouseColorRamps::default();
+        assert_eq!(table.ramp(RELATION_SELF), &build_relation_ramps()[0]);
+        assert_eq!(table.ramp(RELATION_ALLY), &build_relation_ramps()[1]);
+        assert_eq!(table.ramp(RELATION_ENEMY), &build_relation_ramps()[2]);
+    }
+
+    /// Text colouring reads a `[Colors]` entry, which the relation bands do not
+    /// have: `house_text_rgb` must give each band its own hue instead of the
+    /// white a missing entry falls back to (messages, sidebar names, timers).
+    #[test]
+    fn relation_indices_colour_their_text() {
+        let schemes: Vec<ColorSchemeEntry> = Vec::new();
+        for (index, name) in [
+            (RELATION_SELF, "self"),
+            (RELATION_ALLY, "ally"),
+            (RELATION_ENEMY, "enemy"),
+        ] {
+            let rgb = house_text_rgb(&schemes, index);
+            assert_ne!(rgb, [0xFF; 3], "{name} must not fall back to white");
+            assert_eq!(rgb, hsv_to_rgb(relation_hue(index).unwrap()));
+        }
+        let [self_rgb, ally_rgb, enemy_rgb] = [
+            house_text_rgb(&schemes, RELATION_SELF),
+            house_text_rgb(&schemes, RELATION_ALLY),
+            house_text_rgb(&schemes, RELATION_ENEMY),
+        ];
+        assert!(self_rgb[2] >= self_rgb[0] && self_rgb[2] >= self_rgb[1]);
+        assert!(ally_rgb[1] >= ally_rgb[0] && ally_rgb[1] >= ally_rgb[2]);
+        assert!(enemy_rgb[0] >= enemy_rgb[1] && enemy_rgb[0] >= enemy_rgb[2]);
     }
 }

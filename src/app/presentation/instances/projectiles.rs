@@ -85,7 +85,7 @@ pub(crate) fn projectile_visitor<'a>(
     let axis = super::helpers::depth_axis(state);
     // Bullet468090's FirersPalette arm (`0x004683A1..0x004683D1`): the
     // retained +114 House's scheme, else the local player's.
-    let house_colors = &state.match_state.match_presentation.house_color_map;
+    let house_colors = state.match_state.match_presentation.effective_house_color_map();
     let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
     let local_scheme = local_owner
         .as_deref()

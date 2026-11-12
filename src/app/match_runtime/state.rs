@@ -200,6 +200,16 @@ impl MatchState {
             .runtime()
             .and_then(|runtime| scenario_local_owner(&runtime.simulation))
     }
+
+    /// Bring VERA's relation colours up to date with the world, as the local
+    /// house sees it.
+    pub(crate) fn refresh_relation_colors(&mut self) {
+        if let Some(runtime) = self.sim_runtime.runtime() {
+            let sim = &runtime.simulation;
+            self.match_presentation
+                .rebuild_relation_color_map(sim, scenario_local_owner(sim));
+        }
+    }
 }
 
 fn multiplayer_pause_reached(
