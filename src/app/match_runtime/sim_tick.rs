@@ -1489,6 +1489,57 @@ pub(crate) fn finish_threaded_frame(state: &mut AppState) {
     }
 }
 
+/// A pass that finds a tick still on the simulation thread
+/// (docs/sim-thread.md): it admits no frame, as a pass the pacer does not
+/// admit, and takes nothing from the world, reading the frame published for
+/// the tick. The camera takes the steps its own clock owes, so scrolling
+/// keeps the picture rate however long the tick takes, and the per-pass
+/// presentation services run.
+pub(crate) fn service_beside_tick(state: &mut AppState) {
+    if state.frontend.screen != GameScreen::InGame {
+        return;
+    }
+    let replaying = state.match_state.match_diagnostics.is_replay_playback();
+    let scenario_paused = state
+        .match_state
+        .sim_runtime
+        .runtime()
+        .is_some_and(|rt| rt.simulation.session().scenario_paused());
+    let decision = decide_runtime_pass(RuntimePassInputs {
+        exact_step: false,
+        window_active: state.platform.window_active,
+        focus_frozen: state.focus_freeze_active(),
+        startup_admitted: state.match_state.startup.admits_ordinary_tick(),
+        frame_stepping: false,
+        paused: state.match_state.paused(),
+        scenario_paused: scenario_paused && !replaying,
+        menu_open: state.match_state.match_presentation.in_game_menu.is_open(),
+        session_mode: state.match_state.session_mode(),
+        pacer_timing_admits: false,
+        network_wait: state.match_state.network_wait.waiting(),
+        network_dialog_open: state.match_state.network_wait.dialog_open(),
+    });
+    let scroll_steps = crate::app::input::camera::take_scroll_steps(
+        &mut state.match_state.input,
+        decision.camera_scroll,
+        decision.frames_running,
+        false,
+    );
+    if let Some(request) =
+        crate::app::input::camera::sample_mouse_scroll(state, decision.scroll_input, scroll_steps)
+    {
+        crate::app::input::camera::commit_camera_scroll(state, request);
+    }
+    // A held key release has not reached the keys yet: an arrow it lets go
+    // must not keep scrolling until the tick is back.
+    let keyboard_steps = if state.platform.window_events_held {
+        0
+    } else {
+        scroll_steps
+    };
+    after_simulation_pass(state, decision, false, keyboard_steps, replaying);
+}
+
 /// Move the simulation's pending radar-terrain marks into the minimap's
 /// backlog. Without a minimap they stay with the simulation.
 pub(crate) fn drain_radar_terrain_marks(match_state: &mut super::state::MatchState) {

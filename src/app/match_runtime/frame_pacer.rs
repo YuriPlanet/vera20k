@@ -839,6 +839,12 @@ impl LocalFramePacer {
             .max(MIN_RENDER_STANDING)
     }
 
+    /// Frames a service completed without a draw judging them, such as the
+    /// one a simulation-thread tick's end wakes (docs/sim-thread.md).
+    pub(crate) fn count_frames_without_present(&mut self, completed_frames: u32) {
+        self.frames_since_present = self.frames_since_present.saturating_add(completed_frames);
+    }
+
     pub(crate) fn render_deferred(&self) -> bool {
         self.render_deferred
     }

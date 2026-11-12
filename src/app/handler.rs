@@ -644,22 +644,31 @@ impl ApplicationHandler for App {
                 _ => state.platform.redraw_gate.note_input(),
             }
         }
-        // docs/sim-thread.md, "The browser": an event may write the world,
-        // which the browser's main thread cannot take back from a tick still
-        // on the simulation worker. Every event but a redraw waits, in order,
-        // for the pass that finds the tick back ([`Self::release_held_events`]).
-        #[cfg(all(
+        // docs/sim-thread.md: an event may write the world, which takes it
+        // back from a tick still on the simulation thread. The browser's main
+        // thread cannot wait for that, and on desktop the wait would hold the
+        // picture. Every event but a redraw waits, in order, for the pass that
+        // finds the tick back ([`Self::release_held_events`]). On desktop,
+        // pointer motion with nothing held ahead of it goes on, so the cursor
+        // keeps following the hand; a motion that writes the world waits there
+        // for the tick instead.
+        let pointer_motion = !cfg!(all(
             feature = "wasm-threads",
             target_arch = "wasm32",
             target_os = "unknown"
-        ))]
+        )) && matches!(event, WindowEvent::CursorMoved { .. })
+            && self.held_window_events.is_empty();
         if !matches!(event, WindowEvent::RedrawRequested)
+            && !pointer_motion
             && self
                 .state
                 .as_ref()
                 .is_some_and(|state| state.match_state.sim_runtime.is_lent())
         {
             self.held_window_events.push((_id, event));
+            if let Some(state) = self.state.as_mut() {
+                state.platform.window_events_held = true;
+            }
             return;
         }
         let shell_capture_active = self.shell_capture.is_some();
@@ -1900,11 +1909,6 @@ impl ApplicationHandler for App {
             }
             WindowEvent::Ime(ime) => crate::app::input::ime::event(state, ime),
             WindowEvent::RedrawRequested => {
-                #[cfg(all(
-                    feature = "wasm-threads",
-                    target_arch = "wasm32",
-                    target_os = "unknown"
-                ))]
                 let state = {
                     self.release_held_events(event_loop);
                     let Some(state) = self.state.as_mut() else {
@@ -1962,12 +1966,33 @@ impl ApplicationHandler for App {
             // final admission. Ordinary input starts only with the full state.
             return;
         }
-        #[cfg(all(
-            feature = "wasm-threads",
-            target_arch = "wasm32",
-            target_os = "unknown"
-        ))]
+        // A tick on the simulation thread has ended (its wake brought this
+        // call): finish it, replay the window events it held, then service
+        // the match at once, so the next tick leaves without waiting for a
+        // redraw. Captures and hidden runs service only with their pictures.
+        self.install_sim_wake();
+        let tick_back = self.shell_capture.is_none()
+            && self.hidden_run.is_none()
+            && self.state.as_mut().is_some_and(|state| {
+                state.match_state.sim_runtime.is_lent()
+                    && state.match_state.sim_runtime.pass_may_run(false)
+            });
         self.release_held_events(event_loop);
+        if tick_back
+            && let Some(state) = self.state.as_mut()
+            && !state.platform.window_hidden
+        {
+            let pass = Self::service_match_runtime(state, event_loop, true, true, false);
+            if pass.quit_requested {
+                return;
+            }
+            // Its frames count toward the online picture's limit, as the
+            // render pass's own do (`defer_online_render`).
+            state
+                .platform
+                .frame_pacer
+                .count_frames_without_present(pass.completed_frames);
+        }
         let shell_scroll_wake = if let Some(state) = self.state.as_mut() {
             #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
             if Self::poll_browser_exit(state, event_loop) {
@@ -1985,7 +2010,8 @@ impl ApplicationHandler for App {
             // Captures keep their sealed input; they never ask for an IME.
             // The browser's composed text waits with the window events a
             // tick on the simulation worker holds, so it cannot overtake a
-            // key pressed before it ([`Self::release_held_events`]).
+            // key pressed before it ([`Self::release_held_events`]). Desktop
+            // composition arrives as window events, which wait already.
             if self.shell_capture.is_none()
                 && self.hidden_run.is_none()
                 && !(cfg!(all(
@@ -2051,7 +2077,8 @@ impl ApplicationHandler for App {
         {
             let state = self.state.as_mut().expect("checked initialized app");
             let wake = if Self::match_runs_while_hidden(state) {
-                if Self::service_match_runtime(state, event_loop, true, true).quit_requested {
+                if Self::service_match_runtime(state, event_loop, true, true, false).quit_requested
+                {
                     return;
                 }
                 let service = Instant::now() + crate::app::match_runtime::frame_pacer::SERVICE_WAKE;
@@ -2199,7 +2226,9 @@ impl ApplicationHandler for App {
                     // edge reaches first. macOS stops presenting to an occluded
                     // layer, so this loop cannot ride on redraws; it wakes at
                     // half the pacer bucket to hold the cadence.
-                    if Self::service_match_runtime(state, event_loop, true, true).quit_requested {
+                    if Self::service_match_runtime(state, event_loop, true, true, false)
+                        .quit_requested
+                    {
                         return;
                     }
                     event_loop.set_control_flow(ControlFlow::WaitUntil(

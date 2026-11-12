@@ -99,6 +99,11 @@ pub(crate) struct PlatformState {
     /// Whether the next visible pass must draw, or may only service the
     /// match because the presented picture still stands. Presentation-only.
     pub(crate) redraw_gate: crate::app::match_runtime::redraw_gate::RedrawGate,
+    /// Window events wait for a tick still on the simulation thread
+    /// (`App::release_held_events`). While they do, the keys they would
+    /// release still read as held, so passes beside the tick queue no
+    /// keyboard scroll. Presentation-only.
+    pub(crate) window_events_held: bool,
     /// Loaded GameConfig — missing config.toml falls back to the executable
     /// root; `None` only when config loading or executable-root discovery
     /// fails. Set once at process start from `GameConfig::load()`; not
@@ -181,6 +186,7 @@ impl PlatformState {
             attention_requested: false,
             frame_pacer: LocalFramePacer::new(),
             redraw_gate: crate::app::match_runtime::redraw_gate::RedrawGate::from_environment(),
+            window_events_held: false,
             game_config,
             capture_client_size,
             capture_presentation: CapturePresentation::default(),

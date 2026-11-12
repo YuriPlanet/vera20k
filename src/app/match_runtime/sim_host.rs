@@ -12,9 +12,11 @@
 //! [`SimHost::take_job_result`]. Back home, the frame is dropped and reads
 //! see the live world again, so a tick that is not lent copies nothing.
 //!
-//! The browser's main thread may never wait: there the host collects a job
-//! only when it has ended ([`SimHost::pass_may_run`]), and the simulation
-//! thread is a Web Worker (`web::sim_worker`).
+//! A frame-loop pass never waits for a lent job: the host collects it only
+//! once it has ended ([`SimHost::pass_may_run`]), and the simulation thread
+//! wakes the event loop when it ends ([`SimHost::set_wake`]). The browser's
+//! main thread may never wait at all, and its simulation thread is a Web
+//! Worker (`web::sim_worker`).
 //!
 //! Reads take [`SimHost::runtime`]. A write names its route with
 //! [`SimWrite`], so every place that changes the simulation outside
@@ -36,6 +38,8 @@ pub(crate) type SimJobResult = Box<dyn Any + Send>;
 /// Work the simulation thread runs on the lent runtime.
 pub(crate) type SimJob = Box<dyn FnOnce(&mut SimRuntime) -> SimJobResult + Send>;
 type Returned = (SimRuntime, std::thread::Result<SimJobResult>);
+/// Wakes the frame loop once a lent job has ended.
+pub(crate) type SimWake = Arc<dyn Fn() + Send + Sync>;
 
 /// Why a caller writes the simulation. Each route is a family of writes that
 /// a later phase handles the same way when the simulation runs elsewhere.
@@ -88,6 +92,9 @@ pub(crate) struct SimHost {
     /// until one has come back in this scenario.
     lend_cost: Option<Duration>,
     copy_cost: Duration,
+    /// Called by the simulation thread when a job ends, so the frame loop
+    /// finishes it without waiting for its next redraw.
+    wake: Option<SimWake>,
     /// Global B04474 and its comparison timer (`FrameChecksumState`):
     /// process state that launch and load retain, written and compared only
     /// inside a multiplayer tick.
@@ -131,14 +138,16 @@ impl SimHost {
         sim_thread_available()
     }
 
-    /// The start of a frame-loop pass: whether it may go on. The browser's
-    /// main thread traps if it waits on another thread, so in the threaded
-    /// browser build a pass goes on only once a lent tick has ended; until
-    /// then it draws the frame published for the tick, and the next pass
-    /// asks again. There this also starts the simulation worker for the
-    /// first scenario that can use it. Elsewhere a pass always goes on, and
-    /// waits for the tick (`sim_tick::finish_threaded_frame`).
-    pub(crate) fn pass_may_run(&mut self) -> bool {
+    /// The start of a frame-loop pass: whether it may go on. A pass goes on
+    /// only once a lent tick has ended; until then it draws the frame
+    /// published for the tick, and the pass the tick's end wakes
+    /// ([`Self::set_wake`]) finishes it. With `wait`, a desktop pass goes on
+    /// anyway and waits for the tick (`sim_tick::finish_threaded_frame`), for
+    /// runs whose pictures must each follow a finished tick. The browser's
+    /// main thread traps if it waits on another thread, so there `wait`
+    /// changes nothing; there this also starts the simulation worker for the
+    /// first scenario that can use it.
+    pub(crate) fn pass_may_run(&mut self, wait: bool) -> bool {
         #[cfg(all(
             feature = "wasm-threads",
             target_arch = "wasm32",
@@ -152,7 +161,18 @@ impl SimHost {
         {
             self.worker = Some(SimWorker::spawn());
         }
-        self.job_ended() || !BROWSER_THREADS
+        self.job_ended() || (wait && !BROWSER_THREADS)
+    }
+
+    /// Have the simulation thread call `wake` whenever a lent job ends.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn set_wake(&mut self, wake: SimWake) {
+        self.wake = Some(wake);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn has_wake(&self) -> bool {
+        self.wake.is_some()
     }
 
     /// Whether no lent job is still running, without waiting for one. An
@@ -200,7 +220,7 @@ impl SimHost {
         self.worker
             .get_or_insert_with(SimWorker::spawn)
             .jobs
-            .put(Some((runtime, job)));
+            .put(Some((runtime, job, self.wake.clone())));
         self.lent = true;
         true
     }
@@ -325,8 +345,8 @@ const EARLY_RETURN_REPORT_JOBS: u32 = 1024;
 /// The simulation thread: runs each lent job and sends the runtime back.
 /// It ends when the host drops it.
 struct SimWorker {
-    /// The next job; `None` ends the thread.
-    jobs: Arc<Handoff<Option<(SimRuntime, SimJob)>>>,
+    /// The next job and who to wake when it ends; `None` ends the thread.
+    jobs: Arc<Handoff<Option<LentJob>>>,
     returned: Arc<Handoff<Returned>>,
     /// Browser: set by the Web Worker once it runs, which can take a moment
     /// after [`Self::spawn`] or never happen.
@@ -419,11 +439,16 @@ impl Drop for SimWorker {
     }
 }
 
+type LentJob = (SimRuntime, SimJob, Option<SimWake>);
+
 /// The simulation thread's loop.
-fn run_jobs(jobs: &Handoff<Option<(SimRuntime, SimJob)>>, returned: &Handoff<Returned>) {
-    while let Some((mut runtime, job)) = jobs.wait() {
+fn run_jobs(jobs: &Handoff<Option<LentJob>>, returned: &Handoff<Returned>) {
+    while let Some((mut runtime, job, wake)) = jobs.wait() {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| job(&mut runtime)));
         returned.put((runtime, result));
+        if let Some(wake) = wake {
+            wake();
+        }
     }
 }
 
@@ -612,6 +637,32 @@ mod tests {
         let result = host.take_job_result().unwrap();
         assert_eq!(*result.downcast::<u32>().unwrap(), 41);
         assert_eq!(host.runtime().unwrap().simulation.session().tick(), 8);
+        assert_eq!((host.lent_jobs, host.early_returns), (1, 0));
+    }
+
+    #[test]
+    fn a_pass_goes_on_only_once_the_job_ended_and_its_end_wakes_the_loop() {
+        let mut host = SimHost::default();
+        host.install(Some(SimRuntime::from_simulation(Simulation::new())));
+        let woken = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let counter = Arc::clone(&woken);
+        host.set_wake(Arc::new(move || {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }));
+        let (go, wait) = std::sync::mpsc::channel::<()>();
+        assert!(host.lend(Box::new(move |_| {
+            wait.recv().unwrap();
+            Box::new(())
+        })));
+        // Running: a pass passes beside it, unless it is told to wait.
+        assert!(!host.pass_may_run(false));
+        assert_eq!(woken.load(std::sync::atomic::Ordering::SeqCst), 0);
+        go.send(()).unwrap();
+        while woken.load(std::sync::atomic::Ordering::SeqCst) == 0 {
+            std::thread::yield_now();
+        }
+        assert!(host.pass_may_run(false));
+        assert!(host.take_job_result().is_some());
         assert_eq!((host.lent_jobs, host.early_returns), (1, 0));
     }
 
