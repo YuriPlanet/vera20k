@@ -149,9 +149,27 @@ pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::
         .multiplayer_setup
         .as_ref()
         .filter(|ui| {
-            routed && ui.focused_control == CHAT && ui.open_box.is_none() && ui.map_offer.is_none()
+            routed
+                && ui.focused_control == CHAT
+                && ui.open_box.is_none()
+                && ui.map_offer.is_none()
+                // Android: the window always allows an input method, so wait
+                // for a tap on the chat edit.
+                && (!cfg!(target_os = "android") || ui.ime_armed)
         })
         .map(|_| layout(state).chat)
+}
+
+/// The chat edit's text and caret, for seeding Android's input method.
+pub(crate) fn ime_text(state: &AppState) -> Option<(String, usize)> {
+    let ui = state.frontend.multiplayer_setup.as_ref()?;
+    if ui.focused_control != CHAT {
+        return None;
+    }
+    Some((
+        String::from_utf16_lossy(&ui.chat.edit.units),
+        ui.chat.edit.caret,
+    ))
 }
 
 pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
@@ -359,6 +377,22 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     };
     let layout = layout(state);
     let (x, y) = state.match_state.input.cursor_px();
+    // Android: a tap inside the chat edit arms the soft keyboard, before the
+    // log/list gizmos take it, and a tap with text in it sends, as Enter does.
+    #[cfg(target_os = "android")]
+    if pressed && layout.chat.contains(x, y) {
+        let mut send = false;
+        if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
+            send = ui.focused_control == CHAT && !ui.chat.edit.units.is_empty();
+            ui.focused_control = CHAT;
+            ui.ime_armed = true;
+        }
+        crate::util::android_ime::request_show();
+        if send {
+            key_press(state, Some(KeyCode::Enter), None);
+            return;
+        }
+    }
     let over = layout
         .control_at(&view, x, y)
         .filter(|id| view.enabled(*id));

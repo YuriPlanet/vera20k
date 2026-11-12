@@ -705,6 +705,8 @@ pub(crate) struct MultiplayerSetupState {
     pub(crate) statics: SkirmishStatics,
     pub(crate) shown: bool,
     pub(crate) focused_control: u16,
+    /// Android: a tap focused the chat edit, so the soft keyboard may show.
+    pub(crate) ime_armed: bool,
     focus_started: Instant,
     accept_flash_started: Option<Instant>,
     /// The box open over VERA's room; it takes the room's input.
@@ -732,6 +734,7 @@ impl Default for MultiplayerSetupState {
             statics: SkirmishStatics::default(),
             shown: false,
             focused_control: CHAT,
+            ime_armed: false,
             focus_started: Instant::now(),
             accept_flash_started: None,
             open_box: None,

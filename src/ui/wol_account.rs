@@ -629,7 +629,10 @@ impl WolAccountForm {
     pub(crate) fn focused_edit_mut(&mut self) -> Option<&mut SavedSeedDescriptionEdit> {
         Some(&mut self.fields.get_mut(self.focused)?.edit)
     }
-
+    /// The focused field's edit, for seeding Android's input method.
+    pub(crate) fn focused_edit(&self) -> Option<&SavedSeedDescriptionEdit> {
+        Some(&self.fields.get(self.focused)?.edit)
+    }
     /// The remembered sign-in's placeholder gives way to a typed password,
     /// to another username or to an unticked Remember password.
     fn drop_placeholder(&mut self) {

@@ -54,6 +54,12 @@ pub(crate) enum ImeTarget {
     WolLobbyChat,
     SetupChat,
     LanLobbyChat,
+    /// Android only: the LAN lobby's name box, which otherwise takes plain key
+    /// text (`app::shell_lan::ime_name_rect`).
+    LanLobbyName,
+    /// Android only: the online login page's focused edit, whether the legacy
+    /// nickname/password page or the VERA Online sign-in form.
+    WolLoginField,
 }
 
 /// Process-local input-method state. Presentation-only: never serialized or
@@ -69,6 +75,20 @@ pub(crate) struct ImeState {
     cursor: usize,
     /// The area last handed to `Window::set_ime_cursor_area`.
     area: Option<RectPx>,
+    /// Android: the buffer last read from the input method (`util::android_ime`).
+    #[cfg(target_os = "android")]
+    android_text: String,
+    /// Android: the edit that buffer was seeded from.
+    #[cfg(target_os = "android")]
+    android_target: Option<ImeTarget>,
+    /// Android: frames left to re-assert the seeded text while the platform
+    /// still reports the previous edit's.
+    #[cfg(target_os = "android")]
+    android_reseed: u8,
+    /// Android: the platform's buffer has echoed the seed at least once, so a
+    /// difference from here on is the player's typing.
+    #[cfg(target_os = "android")]
+    android_synced: bool,
 }
 
 impl ImeState {
@@ -110,6 +130,14 @@ fn target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
             crate::app::shell_lan::ime_chat_rect(state),
         ),
         (
+            ImeTarget::LanLobbyName,
+            crate::app::shell_lan::ime_name_rect(state),
+        ),
+        (
+            ImeTarget::WolLoginField,
+            crate::app::shell_wol::login::ime_rect(state),
+        ),
+        (
             ImeTarget::SetupChat,
             crate::app::input::multiplayer_setup::ime_chat_rect(state),
         ),
@@ -135,6 +163,7 @@ pub(crate) fn sync(state: &mut AppState) {
     let platform = &mut state.platform;
     let ime = &mut platform.ime;
     if ime.target != target {
+        log::info!("IME target {target:?}");
         ime.cancel();
         ime.target = target;
     }
@@ -147,8 +176,7 @@ pub(crate) fn sync(state: &mut AppState) {
     }
     if let Some((_, rect)) = found
         && ime.area != Some(rect)
-    {
-        ime.area = Some(rect);
+    {        ime.area = Some(rect);
         platform.window.set_ime_cursor_area(
             PhysicalPosition::new(rect.x, rect.y),
             PhysicalSize::new(rect.w.max(1) as u32, rect.h.max(1) as u32),
@@ -159,6 +187,139 @@ pub(crate) fn sync(state: &mut AppState) {
     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
     if ime.allowed {
         crate::web::ime::keep_focus();
+    }
+    #[cfg(target_os = "android")]
+    android::sync(state, target);
+    #[cfg(target_os = "android")]
+    crate::app::shell_lan::take_touch_send(state);
+}
+
+/// Android: whether the soft keyboard is up, which keeps the frame loop polling
+/// (the input method's commits do not wake winit, winit#4673).
+pub(crate) fn keyboard_active(state: &AppState) -> bool {
+    state.platform.ime.allowed
+}
+
+/// Android: the input method edits its own buffer (`util::android_ime`), so
+/// seed it from the focused edit and turn each change into committed text.
+#[cfg(target_os = "android")]
+mod android {
+    use super::*;
+
+    /// The focused edit's text and caret, whichever screen owns it.
+    fn seed(state: &AppState, focused: ImeTarget) -> Option<(String, usize)> {
+        match focused {
+            ImeTarget::LanLobbyChat | ImeTarget::LanLobbyName => {
+                crate::app::shell_lan::ime_edit_text(state)
+            }
+            ImeTarget::WolLoginField => crate::app::shell_wol::login::ime_text(state),
+            ImeTarget::InGameChat => crate::app::input::messages::ime_edit_state(state),
+            ImeTarget::SetupChat => crate::app::input::multiplayer_setup::ime_text(state),
+            _ => None,
+        }
+    }
+
+    pub(super) fn sync(state: &mut AppState, target: Option<ImeTarget>) {
+        let Some(focused) = target else {
+            // Hide once, on the way out: re-issuing it every idle frame fights
+            // the next edit's show request.
+            let was_editing = state.platform.ime.android_target.take().is_some();
+            if was_editing {
+                crate::util::android_ime::hide();
+            }
+            let ime = &mut state.platform.ime;
+            ime.android_text.clear();
+            ime.android_reseed = 0;
+            ime.android_synced = false;
+            return;
+        };
+        let Some((text, cursor)) = seed(state, focused) else {
+            return;
+        };
+        // A tap on an edit asks for the keyboard again, with the edit's text:
+        // the player may have collapsed the keyboard with its own hide button,
+        // which the engine never sees.
+        if crate::util::android_ime::take_show_request() {
+            crate::util::android_ime::set_state(&text, cursor);
+            let ime = &mut state.platform.ime;
+            ime.android_text = text;
+            ime.android_target = Some(focused);
+            ime.android_reseed = 8;
+            ime.android_synced = false;
+            crate::util::android_ime::show();
+            return;
+        }
+        if state.platform.ime.android_target != Some(focused) {
+            crate::util::android_ime::set_state(&text, cursor);
+            let ime = &mut state.platform.ime;
+            ime.android_text = text;
+            ime.android_target = Some(focused);
+            ime.android_reseed = 8;
+            ime.android_synced = false;
+            crate::util::android_ime::show();
+            return;
+        }
+        // The platform keeps the previous edit's text for a while after the
+        // seed, and its soft keyboard may ignore the first show request after
+        // the previous edit closed. Re-assert both until it echoes the seed;
+        // text it still reports afterwards is stale, adopted as the baseline so
+        // an old message is never typed into the new edit.
+        if !state.platform.ime.android_synced {
+            let current = crate::util::android_ime::state();
+            if current.text == state.platform.ime.android_text {
+                state.platform.ime.android_synced = true;
+                return;
+            }
+            if state.platform.ime.android_reseed > 0 {
+                state.platform.ime.android_reseed -= 1;
+                crate::util::android_ime::set_state(&state.platform.ime.android_text, cursor);
+                crate::util::android_ime::show();
+                return;
+            }
+            state.platform.ime.android_text = current.text;
+            state.platform.ime.android_synced = true;
+            return;
+        }
+        let current = crate::util::android_ime::state();
+        if current.text == state.platform.ime.android_text {
+            return;
+        }
+        let (removed, inserted) =
+            crate::util::android_ime::edit_of(&state.platform.ime.android_text, &current.text);
+        state.platform.ime.android_text = current.text;
+        for _ in 0..removed {
+            backspace(state, focused);
+        }
+        if !inserted.is_empty() {
+            commit(state, &inserted);
+        }
+    }
+
+    /// One Backspace, through the screen's own key path.
+    fn backspace(state: &mut AppState, focused: ImeTarget) {
+        match focused {
+            ImeTarget::LanLobbyChat | ImeTarget::LanLobbyName => {
+                crate::app::shell_lan::key_press(
+                    state,
+                    Some(winit::keyboard::KeyCode::Backspace),
+                    None,
+                );
+            }
+            ImeTarget::WolLoginField => {
+                crate::app::shell_wol::login::key_press(
+                    state,
+                    Some(winit::keyboard::KeyCode::Backspace),
+                    None,
+                );
+            }
+            ImeTarget::InGameChat => crate::app::input::chat::backspace(state),
+            ImeTarget::SetupChat => crate::app::input::multiplayer_setup::key_press(
+                state,
+                Some(winit::keyboard::KeyCode::Backspace),
+                None,
+            ),
+            _ => {}
+        }
     }
 }
 
@@ -190,7 +351,14 @@ pub(crate) fn event(state: &mut AppState, event: Ime) {
 fn commit(state: &mut AppState, text: &str) {
     match target(state).map(|(target, _)| target) {
         Some(ImeTarget::InGameChat) => crate::app::input::chat::commit_text(state, text),
+        Some(ImeTarget::SetupChat) => {
+            crate::app::input::multiplayer_setup::key_press(state, None, Some(text))
+        }
         Some(ImeTarget::LanLobbyChat) => crate::app::shell_lan::key_press(state, None, Some(text)),
+        Some(ImeTarget::LanLobbyName) => crate::app::shell_lan::key_press(state, None, Some(text)),
+        Some(ImeTarget::WolLoginField) => {
+            crate::app::shell_wol::login::key_press(state, None, Some(text))
+        }
         Some(ImeTarget::SetupChat) => {
             crate::app::input::multiplayer_setup::key_press(state, None, Some(text))
         }

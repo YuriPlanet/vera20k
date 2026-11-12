@@ -380,6 +380,13 @@ pub(crate) struct LanLobbyState {
     pub(crate) player_list: LanListState,
     pub(crate) buttons: ShellButtonInteraction<u16>,
     pub(crate) focused_control: u16,
+    /// Android: the player tapped an edit in this visit, so the soft keyboard
+    /// should show. Entering the lobby focuses the chat box as native does,
+    /// which must not summon a keyboard by itself.
+    pub(crate) ime_armed: bool,
+    /// Android: a tap on the focused chat box asked to send, because a soft
+    /// keyboard's Enter is an editor action the platform never hands the game.
+    pub(crate) touch_send: bool,
     pub(crate) observer: bool,
     pub(crate) enabled: bool,
     /// Projected native membership gate<=0; no membership authority lives here.
@@ -413,6 +420,8 @@ impl LanLobbyState {
             player_list: LanListState::default(),
             buttons: ShellButtonInteraction::default(),
             focused_control: CHAT,
+            ime_armed: false,
+            touch_send: false,
             observer,
             enabled: true,
             selection_enabled: true,

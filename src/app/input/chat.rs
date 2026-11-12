@@ -161,14 +161,64 @@ pub(crate) fn commit_text(state: &mut AppState, text: &str) {
 /// A right press or release (key 2 or `0x802`) ends an open edit; the game
 /// still handles the click.
 pub(crate) fn right_button(state: &mut AppState) {
+    // Android: the long press that opened this edit also carries the mapper's
+    // right click, which would end it at once.
+    #[cfg(target_os = "android")]
+    if TOUCH_OPENED_AT.with(|at| {
+        at.borrow()
+            .is_some_and(|at| at.elapsed() < crate::util::time::Duration::from_millis(400))
+    }) {
+        return;
+    }
     if state.match_state.match_presentation.message_list.editing() {
         apply_input(state, EditKey::RightClick);
     }
 }
 
+/// Android: when the lane's long press opened the edit, so the right click it
+/// came with is dropped. Thread-local, like the rest of the input state.
+#[cfg(target_os = "android")]
+thread_local! {
+    static TOUCH_OPENED_AT: std::cell::RefCell<Option<crate::util::time::Instant>> =
+        const { std::cell::RefCell::new(None) };
+}
+
 /// The chat branch `0x0055E519..0x0055E5B4`: the prefix is `TXT_FROM` with
 /// the player's House UI name, in the player's colour; overflow is on and
 /// no sound plays. The cursor character 0 draws no caret.
+/// Android: the message lane's long press opens the chat as Enter does, to the
+/// listeners (`ChatTarget::Listeners`). Returns whether the edit opened.
+#[cfg(target_os = "android")]
+pub(crate) fn open_touch_edit(state: &mut AppState) -> bool {
+    if state.match_state.match_presentation.message_list.editing() {
+        return false;
+    }
+    let opened = open_edit(state, ChatTarget::Listeners);
+    if opened {
+        TOUCH_OPENED_AT.with(|at| *at.borrow_mut() = Some(crate::util::time::Instant::now()));
+    }
+    opened
+}
+
+/// Android: one Backspace in the open chat edit.
+#[cfg(target_os = "android")]
+pub(crate) fn backspace(state: &mut AppState) {
+    if state.match_state.match_presentation.message_list.editing() {
+        apply_input(state, EditKey::Delete);
+    }
+}
+
+/// Android: a tap on the message lane while the edit is open sends it, as
+/// Enter does; returns whether it did.
+#[cfg(target_os = "android")]
+pub(crate) fn send_touch(state: &mut AppState) -> bool {
+    if !state.match_state.match_presentation.message_list.editing() {
+        return false;
+    }
+    apply_input(state, EditKey::Enter);
+    true
+}
+
 fn open_edit(state: &mut AppState, target: ChatTarget) -> bool {
     let Some(local) = local_house(state) else {
         return false;

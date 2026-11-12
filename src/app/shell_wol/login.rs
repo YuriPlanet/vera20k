@@ -253,7 +253,55 @@ pub(super) fn update_geometry(state: &mut AppState) {
     }
 }
 
-pub(super) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
+/// Android: the focused edit as an IME target, once a tap has armed the
+/// keyboard (`app::input::ime`). The VERA Online page's sign-in form and the
+/// legacy nickname/password page share the one target.
+pub(crate) fn ime_rect(
+    state: &AppState,
+) -> Option<crate::ui::shell::geom::RectPx> {
+    if shell_transition::blocks_shell_input(state) {
+        return None;
+    }
+    let login = state.frontend.wol.as_ref()?.login()?;
+    if !login.ime_armed {
+        return None;
+    }
+    // The account popups cover the page, so they come first.
+    if let Some(popup) = login.account.as_ref() {
+        let layout = account_form_layout(state)?;
+        return layout.fields.get(popup.focused).map(|(_, edit)| *edit);
+    }
+    if let Some(form) = login.form.as_ref() {
+        let layout = login_layout(state);
+        let online = layout.online?;
+        return online.fields.get(form.focused).map(|(_, edit)| *edit);
+    }
+    let layout = login_layout(state);
+    match login.focused_control {
+        NICKNAME => Some(layout.nickname_text_rect()),
+        PASSWORD => Some(layout.password),
+        _ => None,
+    }
+}
+
+/// The focused edit's text and caret, for seeding Android's input method.
+pub(crate) fn ime_text(state: &AppState) -> Option<(String, usize)> {
+    let login = state.frontend.wol.as_ref()?.login()?;
+    let edit = if let Some(popup) = login.account.as_ref() {
+        popup.focused_edit()?
+    } else if let Some(form) = login.form.as_ref() {
+        form.focused_edit()?
+    } else {
+        match login.focused_control {
+            NICKNAME => &login.nickname,
+            PASSWORD => &login.password,
+            _ => return None,
+        }
+    };
+    Some((String::from_utf16_lossy(&edit.units), edit.caret))
+}
+
+pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
     let reverse = state.platform.live_modifiers.shift_key();
     let key = match code {
         Some(KeyCode::Backspace) => Some(WolEditKey::Backspace),
@@ -400,10 +448,15 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
                     }
                 }
                 login.focus(NICKNAME);
+                // Android: the tap asks for the soft keyboard.
+                #[cfg(target_os = "android")]
+                crate::util::android_ime::request_show();
                 Press::Nothing
             }
             Some(PASSWORD) => {
                 login.focus(PASSWORD);
+                #[cfg(target_os = "android")]
+                crate::util::android_ime::request_show();
                 Press::Nothing
             }
             Some(REMEMBER) => {
@@ -458,10 +511,20 @@ fn account_mouse(
                 .release(over)
                 .and_then(|control| form.activate(control));
             (Press::Nothing, action)
-        } else if form.press(over) {
-            (Press::Button, None)
         } else {
-            (Press::Nothing, None)
+            // Android: a tap on a field asks for the soft keyboard. `press`
+            // returns true only for OK and Cancel, so a field press has to be
+            // recognised from the control id.
+            #[cfg(target_os = "android")]
+            if over.is_some_and(|id| id >= crate::ui::wol_account::FIRST_FIELD) {
+                login.ime_armed = true;
+                crate::util::android_ime::request_show();
+            }
+            if form.press(over) {
+                (Press::Button, None)
+            } else {
+                (Press::Nothing, None)
+            }
         })
     })
     .flatten()

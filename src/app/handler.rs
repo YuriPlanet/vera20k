@@ -12,6 +12,7 @@ use super::{
     KeyEventExtModifierSupplement, MouseButton, MouseScrollDelta, PhysicalKey, PhysicalSize,
     ShellKey, WindowEvent, WindowId,
 };
+use winit::event::ElementState;
 use crate::ui::pause_menu::InGameMenuState;
 
 /// Active YR's launcher parent ignores IDCANCEL. Taking only an immutable
@@ -716,6 +717,39 @@ impl ApplicationHandler for App {
                 );
                 // The pointer is the finger's until a real mouse moves again.
                 state.match_state.input.cursor_from_touch = true;
+                #[cfg(target_os = "android")]
+                {
+                    let right = output.events.iter().flatten().any(|event| {
+                        matches!(
+                            event,
+                            WindowEvent::MouseInput {
+                                state: ElementState::Pressed,
+                                button: MouseButton::Right,
+                                ..
+                            }
+                        )
+                    });
+                    let inside = crate::app::input::messages::lane_contains_window_px(
+                        state,
+                        touch.location.x as i32,
+                        touch.location.y as i32,
+                    );
+                    if in_game && right && inside {
+                        crate::app::input::chat::open_touch_edit(state);
+                        return;
+                    }
+                    // Android: once the chat edit is open, a fresh tap on the
+                    // lane sends it, standing in for the keyboard's Enter. The
+                    // finger that opened the edit must not: its lift would
+                    // send an empty line and close the edit at once.
+                    if in_game
+                        && inside
+                        && matches!(touch.phase, winit::event::TouchPhase::Started)
+                        && crate::app::input::chat::send_touch(state)
+                    {
+                        return;
+                    }
+                }
                 if let Some((dx, dy)) = output.pan
                     && in_game
                 {
@@ -2101,7 +2135,16 @@ impl ApplicationHandler for App {
             } else {
                 shell_scroll_wake
             };
-            event_loop.set_control_flow(wake.map_or(ControlFlow::Wait, ControlFlow::WaitUntil));
+            // Android's input method commits text without waking winit
+            // (winit#4673), so keep polling while its keyboard is up.
+            let flow = if cfg!(target_os = "android")
+                && crate::app::input::ime::keyboard_active(state)
+            {
+                ControlFlow::Poll
+            } else {
+                wake.map_or(ControlFlow::Wait, ControlFlow::WaitUntil)
+            };
+            event_loop.set_control_flow(flow);
             return;
         }
         if self.shell_capture.is_some() || self.hidden_run.is_some() {
