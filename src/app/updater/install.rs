@@ -193,12 +193,7 @@ fn replace_app_image(image: &Path, download: &Path) -> Result<Command> {
         let _ = std::fs::remove_file(&staged);
     }
     replaced.with_context(|| format!("cannot replace {}", image.display()))?;
-    // The new image's runtime names its own mount; inherited values would
-    // point at this process's.
-    let mut start = Command::new(image);
-    for variable in ["APPDIR", "APPIMAGE", "ARGV0", "OWD"] {
-        start.env_remove(variable);
-    }
+    let start = crate::app::app_bundle::app_image_start(image);
     Ok(after_exit(&start, None))
 }
 

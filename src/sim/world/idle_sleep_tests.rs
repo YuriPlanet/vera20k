@@ -150,6 +150,7 @@ fn a_blackout_wakes_a_sleeper_as_it_starts_and_as_it_ends() {
             .entities
             .get(1)
             .unwrap()
+            .building
             .building_last_operational
             .is_operational();
         assert_eq!(

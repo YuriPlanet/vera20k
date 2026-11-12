@@ -394,7 +394,7 @@ impl<'a> FireSubject<'a> {
                 .as_infantry()
                 .map_or(-1, |leaf| leaf.doing()),
             effective_mission: firer.mission.effective().raw(),
-            delayed_fire_counter: firer.pending_building_fire.remaining_ticks(),
+            delayed_fire_counter: firer.building.pending_building_fire.remaining_ticks(),
             building_has_turret: class == FirerClass::Building
                 && firer
                     .building_upgrades()

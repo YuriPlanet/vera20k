@@ -2534,7 +2534,7 @@ mod tests {
             5,
             false,
         );
-        ge.bunker_runtime = Some(BunkerRuntime::idle());
+        ge.building.bunker_runtime = Some(BunkerRuntime::idle());
         sim.substrate.entities.insert(ge);
     }
 
@@ -3033,6 +3033,7 @@ mod tests {
                 .entities
                 .get(2)
                 .unwrap()
+                .building
                 .bunker_runtime
                 .unwrap()
         };

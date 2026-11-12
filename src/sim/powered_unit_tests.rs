@@ -477,6 +477,7 @@ fn a_captured_center_counts_for_its_captor_only_at_its_next_edge() {
             .entities
             .get(center)
             .unwrap()
+            .building
             .building_last_operational
             .is_operational()
     };
@@ -746,6 +747,7 @@ fn robot_tank_state_is_saved_and_hashed() {
         .entities
         .get_mut(center)
         .unwrap()
+        .building
         .building_powered_center
         .set_for_test(true);
     seen.push(sim.state_hash());
@@ -772,6 +774,7 @@ fn robot_tank_state_is_saved_and_hashed() {
             .entities
             .get(center)
             .unwrap()
+            .building
             .building_powered_center
             .is_counted()
     );

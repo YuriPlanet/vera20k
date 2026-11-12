@@ -83,7 +83,7 @@ impl super::object_health::ObjectHealthHost for ReceiverHealthHost<'_, '_, '_> {
             return false;
         }
         let rules = self.rules;
-        let Some(warhead) = rules.warhead(self.world.interner.resolve(event.warhead_ref)) else {
+        let Some(warhead) = self.world.interner.warhead_type(event.warhead_ref, rules) else {
             return false;
         };
         let (Some(attacker), Some(victim), Some(strength)) = (

@@ -434,7 +434,7 @@ fn stock_installed_tank_bunker_self_click_is_inert_but_its_tank_can_deploy() {
                 .is_none_or(|cargo| cargo.is_empty())
         );
         assert_eq!(
-            serde_json::to_value(b.bunker_runtime).unwrap()["state"],
+            serde_json::to_value(b.building.bunker_runtime).unwrap()["state"],
             "Occupied"
         );
         assert!(!t.in_limbo() && t.in_playfield() && !t.selection.is_selected());

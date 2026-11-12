@@ -73,7 +73,7 @@ impl Simulation {
             return;
         };
         if entity.category() == crate::map::entities::EntityCategory::Structure
-            && !entity.building_has_engineer.is_set()
+            && !entity.building.building_has_engineer.is_set()
             && self
                 .interner
                 .object_type(entity.type_ref(), rules)
@@ -91,7 +91,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return;
         };
-        entity.building_has_engineer.set = false;
+        entity.building.building_has_engineer.set = false;
         self.set_building_stuff_enabled(id, false, rules);
     }
 
@@ -104,7 +104,7 @@ impl Simulation {
         if entity.category() != crate::map::entities::EntityCategory::Structure {
             return;
         }
-        entity.building_has_engineer.set = true;
+        entity.building.building_has_engineer.set = true;
         if self
             .interner
             .object_type(entity.type_ref(), rules)
@@ -295,6 +295,7 @@ mod tests {
             !sim.entities()
                 .get(id)
                 .unwrap()
+                .building
                 .building_has_engineer
                 .is_set()
         );
@@ -310,6 +311,7 @@ mod tests {
             sim.entities()
                 .get(id)
                 .unwrap()
+                .building
                 .building_has_engineer
                 .is_set()
         );
@@ -331,6 +333,7 @@ mod tests {
                 .entities()
                 .get(id)
                 .unwrap()
+                .building
                 .building_has_engineer
                 .is_set()
         );

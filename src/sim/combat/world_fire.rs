@@ -1690,7 +1690,7 @@ pub(super) fn emit_admitted_fire(
         .substrate
         .entities
         .get(snap.stable_id)
-        .map_or(0, |entity| entity.prism_support_count.count());
+        .map_or(0, |entity| entity.building.prism_support_count.count());
     let warhead = selected.warhead;
     let damage_stages = fire_damage_stages(world, rules, snap, obj, is_garrison);
     let base_damage =
@@ -2457,7 +2457,7 @@ pub(super) fn emit_admitted_fire(
             .projectiles
             .get(bullet_id)
             .and_then(|bullet| bullet.payload().projectile_type())
-            .and_then(|type_id| rules.projectile(world.interner.resolve(type_id)))
+            .and_then(|type_id| world.interner.projectile_type(type_id, rules))
         {
             world.projectiles.init_scalable(bullet_id, kind);
         }

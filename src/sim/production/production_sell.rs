@@ -430,7 +430,7 @@ pub(crate) fn sell_back(
                 // Get_Mission (`vt+0x184`): the current mission, else the
                 // queued one.
                 entity.mission.effective().known() == Some(MissionType::Selling),
-                entity.pending_c4_detonation.pending().is_some(),
+                entity.building.pending_c4_detonation.pending().is_some(),
             ))
         })
     else {
@@ -793,7 +793,7 @@ pub(crate) fn sell_stage_one(
             // 0x44A8A2): the building remembers that its survivors are out
             // (NoSurvivor), so its death during the pack-up spawns none.
             #[cfg(feature = "ares")]
-            building.no_survivor.mark();
+            building.building.no_survivor.mark();
             building.begin_building_pack_up_stage_two(&mut status, now);
         }
         building.mission.set_handler_state(status);

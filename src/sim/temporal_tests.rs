@@ -1761,7 +1761,7 @@ fn erasing_a_bunkered_tank_clears_its_bunker() {
     let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 11, 10);
     let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 12, 10);
     if let Some(building) = sim.substrate.entities.get_mut(bunker) {
-        building.bunker_runtime = Some(BunkerRuntime::idle());
+        building.building.bunker_runtime = Some(BunkerRuntime::idle());
     }
     // Occupied walls, as UpdateBunker's install leaves them.
     crate::sim::docking::bunker_link::install_bunker_link(&mut sim, bunker, tank, &rules);
@@ -1782,7 +1782,10 @@ fn erasing_a_bunkered_tank_clears_its_bunker() {
     let building = entity(&sim, bunker);
     assert_eq!(building.bunker.occupant(), None);
     assert_eq!(
-        building.bunker_runtime.map(|runtime| runtime.state()),
+        building
+            .building
+            .bunker_runtime
+            .map(|runtime| runtime.state()),
         Some(BunkerState::Idle)
     );
     assert_eq!(
@@ -2070,7 +2073,7 @@ fn a_warped_object_runs_none_of_its_ai_phases() {
     {
         let building = sim.substrate.entities.get_mut(plant).unwrap();
         building.health.set_for_test(300);
-        building.repairing.set_for_test(true);
+        building.building.repairing.set_for_test(true);
     }
     let americans = sim.interner.get("Americans").unwrap();
     sim.houses
@@ -3342,4 +3345,21 @@ fn ares_temporal_update_frees_the_targets_radar_jammer() {
         crate::sim::world::FrameEffects::default(),
     );
     assert!(entity(&sim, target).radar_jam.is_default());
+}
+
+/// A tank with no head of its own that is neither warped out nor warping in
+/// costs the prologue one lookup, and its turn goes on.
+#[test]
+fn an_untouched_tank_costs_the_prologue_one_lookup() {
+    let rules = rules();
+    let mut sim = sim(1);
+    let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
+    let before = sim.substrate.entities.lookups().0;
+    assert!(!sim.temporal_ai_prologue(
+        tank,
+        &rules,
+        crate::sim::world::ObjectAiCtx::default(),
+        &mut false,
+    ));
+    assert_eq!(sim.substrate.entities.lookups().0 - before, 1);
 }

@@ -8058,12 +8058,17 @@ impl RuleSet {
     /// Look up a warhead by ID (case-insensitive, gamemd parity).
     pub fn warhead(&self, id: &str) -> Option<&WarheadType> {
         self.warhead_handle(id)
-            .map(|handle| &self.warhead_types[handle.0 as usize])
+            .map(|handle| self.warhead_by_handle(handle))
     }
 
     /// The handle of the warhead [`Self::warhead`] answers for `id`.
-    fn warhead_handle(&self, id: &str) -> Option<WarheadHandle> {
+    pub(crate) fn warhead_handle(&self, id: &str) -> Option<WarheadHandle> {
         Self::lookup_ci(&self.warheads, id).copied()
+    }
+
+    /// The warhead `handle` names in this set, which made it.
+    pub(crate) fn warhead_by_handle(&self, handle: WarheadHandle) -> &WarheadType {
+        &self.warhead_types[handle.0 as usize]
     }
 
     /// The warhead [`Self::warhead`] answers for `id`, to rewrite. Its
@@ -8093,9 +8098,7 @@ impl RuleSet {
             weapon.id,
             parts.warhead
         );
-        parts
-            .warhead
-            .map(|handle| &self.warhead_types[handle.0 as usize])
+        parts.warhead.map(|handle| self.warhead_by_handle(handle))
     }
 
     /// Phobos `[InsigniaTypes]` catalog.
@@ -8223,12 +8226,17 @@ impl RuleSet {
     /// Look up a projectile by ID (case-insensitive, gamemd parity).
     pub fn projectile(&self, id: &str) -> Option<&ProjectileType> {
         self.projectile_handle(id)
-            .map(|handle| &self.projectile_types[handle.0 as usize])
+            .map(|handle| self.projectile_by_handle(handle))
     }
 
     /// The handle of the projectile [`Self::projectile`] answers for `id`.
-    fn projectile_handle(&self, id: &str) -> Option<ProjectileHandle> {
+    pub(crate) fn projectile_handle(&self, id: &str) -> Option<ProjectileHandle> {
         Self::lookup_ci(&self.projectiles, id).copied()
+    }
+
+    /// The projectile `handle` names in this set, which made it.
+    pub(crate) fn projectile_by_handle(&self, handle: ProjectileHandle) -> &ProjectileType {
+        &self.projectile_types[handle.0 as usize]
     }
 
     /// The projectile [`Self::projectile`] answers for `id`, to rewrite. Its

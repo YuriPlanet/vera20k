@@ -3269,17 +3269,32 @@ impl Simulation {
     }
 
     /// The kind of the object `stable_id` names, or `None` when no store
-    /// holds it. Object IDs are unique across stores, so the probe order
-    /// ([`ObjectKind::ALL`]) is only a cost: entities first, as most Logic
-    /// slots are, and particles last, as finding one walks the systems.
+    /// holds it. Object IDs are unique across stores, so the probe order is
+    /// only a cost: entities and anims first, as most Logic slots are; then
+    /// the store the Logic list noted at the id's registration (a bullet's
+    /// every visit, and its retirement until it leaves Logic, ask here);
+    /// then the other stores in [`ObjectKind::ALL`]'s order, with particles
+    /// last, as finding one walks the systems. VERA-only: gamemd's objects
+    /// carry their class in their vtable.
     pub(crate) fn classify_object(&self, stable_id: u64) -> Option<ObjectKind> {
+        const COMMON: [ObjectKind; 2] = [ObjectKind::Entity, ObjectKind::Anim];
+        let holds = |kind| self.object_store_holds(kind, stable_id);
+        if let Some(kind) = COMMON.into_iter().find(|&kind| holds(kind)) {
+            return Some(kind);
+        }
+        if let Some(kind) = self.substrate.logic.kind_of(stable_id)
+            && holds(kind)
+        {
+            return Some(kind);
+        }
         ObjectKind::ALL
             .into_iter()
-            .find(|&kind| self.object_store_holds(kind, stable_id))
+            .filter(|kind| !COMMON.contains(kind))
+            .find(|&kind| holds(kind))
     }
 
     /// Whether `kind`'s store holds `stable_id`.
-    fn object_store_holds(&self, kind: ObjectKind, stable_id: u64) -> bool {
+    pub(super) fn object_store_holds(&self, kind: ObjectKind, stable_id: u64) -> bool {
         match kind {
             ObjectKind::Entity => self.substrate.entities.contains(stable_id),
             ObjectKind::Anim => self.substrate.anims.contains_key(stable_id),
@@ -3424,7 +3439,7 @@ impl Simulation {
         if !kind.joins_logic() {
             return false;
         }
-        if self.substrate.logic.try_push(stable_id).is_err() {
+        if self.substrate.logic.try_push(stable_id, kind).is_err() {
             return false;
         }
         #[cfg(any(test, feature = "test-support"))]
@@ -4981,6 +4996,7 @@ impl Simulation {
         }
         listener.radio_contacts.iter_live().for_each(&mut name);
         listener
+            .building
             .tesla_charge
             .chargers()
             .iter()
@@ -5017,13 +5033,14 @@ impl Simulation {
             listener.damage_smoke_system_id.system(),
             listener.ammo().and_then(|ammo| ammo.dock()),
             listener
+                .building
                 .pending_c4_detonation
                 .pending()
                 .and_then(|pending| pending.source_entity_id()),
             listener.lift.target(),
             listener.lift.source(),
             listener.drop_credit.manipulated_by(),
-            listener.building_light.light(),
+            listener.building.building_light.light(),
         ]
         .into_iter()
         .flatten()
@@ -5602,6 +5619,7 @@ impl Simulation {
         let clear_passenger_role =
             hull_gone && listener.passenger_role.inside_transport_id() == Some(expired_id);
         let clear_c4_source = listener
+            .building
             .pending_c4_detonation
             .pending()
             .as_ref()
@@ -5612,7 +5630,11 @@ impl Simulation {
         let expire_mega_pointer = listener.mega_mission.references(expired_id);
         // Building44EA77 removes a charger for either control, irrespective
         // of the base target exemptions. Only later AI changes the weapon latch.
-        let clear_tesla_charger = listener.tesla_charge.chargers().contains(&expired_id);
+        let clear_tesla_charger = listener
+            .building
+            .tesla_charge
+            .chargers()
+            .contains(&expired_id);
         // BuildingPointerExpired44EAB8..44EB02 removes a matching Occupant
         // only inside ScenarioInit(A8E7AC), after inherited Techno cleanup.
         // It neither depends on removed/control nor rewrites the fire cursor.
@@ -5626,7 +5648,7 @@ impl Simulation {
         // BuildingPointerExpired44E932..44E93A clears its owned child for
         // either control, before that storage is physically removed.
         let clear_spotlight = listener.category() == EntityCategory::Structure
-            && listener.building_light.light() == Some(expired_id);
+            && listener.building.building_light.light() == Some(expired_id);
         if !(clear_suspended_target
             || clear_fire_system
             || clear_spark_system
@@ -5703,7 +5725,7 @@ impl Simulation {
             listener.passenger_role.clear_carrier_relation();
         }
         if clear_c4_source {
-            listener.pending_c4_detonation.forget_source();
+            listener.building.pending_c4_detonation.forget_source();
         }
         if expire_mega_pointer {
             listener
@@ -5711,10 +5733,10 @@ impl Simulation {
                 .pointer_expired(expired_id, expired_get_coords_cell);
         }
         if clear_tesla_charger {
-            listener.tesla_charge.pointer_expired(expired_id);
+            listener.building.tesla_charge.pointer_expired(expired_id);
         }
         if clear_spotlight {
-            listener.building_light.take();
+            listener.building.building_light.take();
         }
         if clear_occupant {
             listener
@@ -6211,7 +6233,7 @@ impl Simulation {
                 .projectiles
                 .get(expired_id)
                 .and_then(|bullet| bullet.payload().projectile_type())
-                .and_then(|type_id| context.rules().projectile(self.interner.resolve(type_id)))
+                .and_then(|type_id| self.interner.projectile_type(type_id, context.rules()))
                 .is_some_and(|kind| kind.scalable)
             && self.projectiles.scalable_enrolled(expired_id);
         #[cfg(any(test, feature = "test-support"))]

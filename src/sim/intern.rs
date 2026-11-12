@@ -65,8 +65,9 @@ pub struct StringInterner {
     to_id: Shared<LookupMap<String, InternedId>>,
     /// ID (index) → display string (first-seen casing).
     to_str: Shared<Vec<String>>,
-    /// Derived: each id's object handles in the bound rules
-    /// ([`Self::bind_types`]). Never serialized; a load binds again.
+    /// Derived: each id's object, projectile and warhead handles in the
+    /// bound rules ([`Self::bind_types`], [`Self::cover_types`]). Never
+    /// serialized; a load binds again.
     types: Shared<TypeHandleTable>,
     /// [`Self::serial`]; never serialized.
     serial: u64,
@@ -100,6 +101,41 @@ impl StringInterner {
     /// [`Self::object_type`] answers for them without hashing a name.
     pub fn bind_types(&mut self, rules: &RuleSet) {
         self.types = TypeHandleTable::build(rules, self).into();
+    }
+
+    /// Bind the strings interned since [`Self::bind_types`] as well, when
+    /// `rules` is the set it bound; nothing when none are new.
+    pub fn cover_types(&mut self, rules: &RuleSet) {
+        if !self.types.lags(self, rules) {
+            return;
+        }
+        let mut types = std::mem::take(&mut self.types);
+        types.cover(rules, self);
+        self.types = types;
+    }
+
+    /// The projectile type `id` names in `rules`, as
+    /// `rules.projectile(self.resolve(id))` answers, through the bound
+    /// handles where they apply.
+    #[inline]
+    pub fn projectile_type<'r>(
+        &self,
+        id: InternedId,
+        rules: &'r RuleSet,
+    ) -> Option<&'r crate::rules::projectile_type::ProjectileType> {
+        self.types.projectile(self, id, rules)
+    }
+
+    /// The warhead `id` names in `rules`, as
+    /// `rules.warhead(self.resolve(id))` answers, through the bound handles
+    /// where they apply.
+    #[inline]
+    pub fn warhead_type<'r>(
+        &self,
+        id: InternedId,
+        rules: &'r RuleSet,
+    ) -> Option<&'r crate::rules::warhead_type::WarheadType> {
+        self.types.warhead(self, id, rules)
     }
 
     /// The object type `id` names in `rules`, as

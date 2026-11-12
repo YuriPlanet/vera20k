@@ -2087,7 +2087,7 @@ impl Simulation {
             .entities
             .get(building_id)
             .and_then(|building| {
-                let pending = building.pending_c4_detonation.pending()?;
+                let pending = building.building.pending_c4_detonation.pending()?;
                 let object = self.interner.object_type(building.type_ref(), rules)?;
                 Some((
                     pending,
@@ -2112,7 +2112,7 @@ impl Simulation {
                 frame_effects,
             );
             if let Some(hut) = self.substrate.entities.get_mut(building_id) {
-                hut.pending_c4_detonation.cancel();
+                hut.building.pending_c4_detonation.cancel();
             }
             return changed;
         }

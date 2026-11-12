@@ -48,7 +48,7 @@ pub(super) fn emit_projectile_shrapnel(
     let Some(parent_projectile) = detonation
         .payload
         .projectile_type()
-        .and_then(|kind| rules.projectile(world.interner.resolve(kind)))
+        .and_then(|kind| world.interner.projectile_type(kind, rules))
     else {
         return;
     };

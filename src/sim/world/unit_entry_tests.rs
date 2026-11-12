@@ -66,7 +66,7 @@ fn a_closed_gate_asks_its_own_house_about_the_mover() {
     gate.set_owner_for_test(sim.intern("Russians"));
     gate.set_type_ref_for_test(sim.intern("GATE"));
     gate.set_category_for_test(EntityCategory::Structure);
-    gate.building_gate = Some(Default::default());
+    gate.building.building_gate = Some(Default::default());
     sim.substrate.entities.insert(gate);
     sim.substrate.occupancy.add(
         11,
@@ -711,7 +711,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
                 }
                 if node["gate"].as_bool().unwrap_or(false) {
                     let opened = node["open"].as_bool().unwrap_or(false);
-                    blocker.building_gate = Some(Default::default());
+                    blocker.building.building_gate = Some(Default::default());
                     if opened {
                         crate::sim::mission::authority::queue_entity_mission_deferred(
                             &mut blocker,

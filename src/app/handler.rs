@@ -1039,6 +1039,8 @@ impl ApplicationHandler for App {
                 if active {
                     crate::app::input::cursor::refresh_pointer_in_client(state);
                     crate::app::input::cursor::apply_cursor_confinement(state);
+                    // Back from the folder, perhaps with a new mod in it.
+                    Self::refresh_mods_page(state);
                 }
                 if !active {
                     // Give the arrow back at once: a backgrounded window may
@@ -1627,6 +1629,7 @@ impl ApplicationHandler for App {
                         Self::handle_menu_page_mouse_move(state);
                     }
                     ScreenPage::MovieList => Self::handle_movie_list_mouse_move(state),
+                    ScreenPage::Mods => Self::handle_mods_mouse_move(state),
                     ScreenPage::Campaign => Self::handle_campaign_mouse_move(state),
                     ScreenPage::LoadSavedGame => Self::handle_load_saved_game_mouse_move(state),
                     ScreenPage::Wol => Self::handle_wol_mouse_move(state),
@@ -1733,6 +1736,13 @@ impl ApplicationHandler for App {
                             Self::handle_movie_list_mouse_down(state);
                         } else {
                             Self::handle_movie_list_mouse_up(state);
+                        }
+                    }
+                    ScreenPage::Mods if left => {
+                        if pressed {
+                            Self::handle_mods_mouse_down(state);
+                        } else {
+                            Self::handle_mods_mouse_up(state);
                         }
                     }
                     ScreenPage::Campaign if left => {
@@ -1863,6 +1873,10 @@ impl ApplicationHandler for App {
                 if matches!(screen, ScreenPage::NetworkSetup | ScreenPage::Skirmish)
                     && crate::app::frontend::preview_zoom::is_open(state)
                 {
+                    return;
+                }
+                if screen == ScreenPage::Mods {
+                    Self::handle_mods_wheel(state, lines);
                     return;
                 }
                 if screen == ScreenPage::Skirmish
@@ -2009,6 +2023,7 @@ impl ApplicationHandler for App {
                     .flatten(),
                 crate::app::input::sound::poll_scroll_repeat(state),
                 Self::poll_movie_list_scroll(state),
+                Self::poll_mods_scroll(state),
                 Self::poll_choose_map_scroll(state),
                 Self::poll_skirmish_opponent_scroll(state),
                 // Captures replay sealed input; they never read the library.

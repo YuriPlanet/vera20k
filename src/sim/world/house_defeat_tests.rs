@@ -1411,6 +1411,7 @@ fn ares_blowup_returns_a_captured_tech_building_to_its_passive_owner() {
                 .entities
                 .get(oil)
                 .unwrap()
+                .building
                 .building_has_engineer
                 .is_set()
         );
@@ -1431,7 +1432,7 @@ fn ares_blowup_returns_a_captured_tech_building_to_its_passive_owner() {
         if let Some(building) = building {
             assert_eq!(building.owner(), houses[1]);
             assert_eq!(building.health.current(), 1000);
-            assert!(!building.building_has_engineer.is_set());
+            assert!(!building.building.building_has_engineer.is_set());
             assert!(!building.building_art.stuff_enabled());
         }
     }

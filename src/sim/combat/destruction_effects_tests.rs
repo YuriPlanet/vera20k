@@ -1756,6 +1756,7 @@ fn a_nuclear_reactor_outlives_its_killing_blow_and_sends_a_second_crew_round() {
                 .entities
                 .get(reactor)
                 .unwrap()
+                .building
                 .no_survivor
                 .is_set()
         );
@@ -1786,6 +1787,7 @@ fn an_ignore_defenses_kill_leaves_a_reactor_no_survivor_in_either_round() {
                 .entities
                 .get(reactor)
                 .unwrap()
+                .building
                 .no_survivor
                 .is_set()
         );

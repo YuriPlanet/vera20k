@@ -414,6 +414,9 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/scenario_bootstrap.rs", 5),
                 ("sim/scenario_session.rs", 5),
                 ("sim/snapshot.rs", 2),
+                // Ares IsTimerVisible (10032E80): whether the local player
+                // sees a Super's timer line; only the timer drawing asks.
+                ("sim/superweapon/ares_presentation.rs", 1),
                 ("sim/superweapon/lightning_storm.rs", 1),
                 ("sim/superweapon/psychic_reveal.rs", 1),
                 ("sim/team_script_vm/actions.rs", 1),
@@ -452,6 +455,8 @@ fn engine_per_client_reads_have_pinned_callers() {
             &[
                 ("sim/scenario_session.rs", 1),
                 ("sim/score.rs", 1),
+                // IsTimerVisible's observer case, as for `current_house`.
+                ("sim/superweapon/ares_presentation.rs", 1),
                 ("sim/superweapon/mod.rs", 1),
                 ("sim/world/house_defeat.rs", 2),
             ],
@@ -1391,6 +1396,12 @@ fn composition_root_slots_are_owner_types() {
             "GameEntity",
             "mission_leaf",
             "an enum of owner leaves, built once at entity construction; only fixtures replace it",
+        ),
+        (
+            "GameEntity",
+            "building",
+            "a Building's own fields stored apart from the record every turn reads; each \
+             keeps its visibility and owning module, so the slot opens nothing that was closed",
         ),
     ];
     let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");

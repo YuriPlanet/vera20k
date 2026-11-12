@@ -641,7 +641,7 @@ impl Simulation {
                         .substrate
                         .entities
                         .get(stable_id)
-                        .and_then(|entity| entity.building_light.light())
+                        .and_then(|entity| entity.building.building_light.light())
                     {
                         sim.set_spotlight_behavior(
                             light,

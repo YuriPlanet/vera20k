@@ -809,12 +809,17 @@ impl ScanContext<'_> {
     /// allied ones (`HouseClass::IsAlliedWith @ 0x004F9A50`,
     /// `0x006F9D3D..0x006F9D5A`).
     fn house_gates_admit(&self, candidate: &GameEntity) -> bool {
+        self.house_gates_admit_owner(candidate.owner())
+    }
+
+    /// [`Self::house_gates_admit`] for any object `owner` owns.
+    fn house_gates_admit_owner(&self, owner: InternedId) -> bool {
         if self.attacker.scan_mission.only_target_house_enemy()
-            && self.standing.enemy() != Some(candidate.owner())
+            && self.standing.enemy() != Some(owner)
         {
             return false;
         }
-        self.mask & 0x4000 == 0 || self.is_ally(candidate)
+        self.mask & 0x4000 == 0 || self.is_ally_owner(owner)
     }
 
     /// The controller's house asks about `candidate` (`0x006F7FF4`,
@@ -849,7 +854,12 @@ impl ScanContext<'_> {
     /// walk's post-walk test (`0x006F8B5F..0x006F8BE0`): a non-ally, or an
     /// ally for a scanner that scans or attacks allies.
     fn offers(&self, candidate: &GameEntity) -> bool {
-        !self.is_ally(candidate) || self.scans_allies() || self.attacks_allies()
+        self.offers_owner(candidate.owner())
+    }
+
+    /// [`Self::offers`] for any object `owner` owns.
+    fn offers_owner(&self, owner: InternedId) -> bool {
+        !self.is_ally_owner(owner) || self.scans_allies() || self.attacks_allies()
     }
 
     /// The cell walk's arms (`0x006F8A30..0x006F8B3C`): whether it stops at
@@ -1853,7 +1863,9 @@ fn scanner_mask<'r>(
 /// lists, while its airborne pre-pass uses the shared retained-bucket query. A hunting
 /// object scans at each run of its Hunt handler (`0x004D5350`) while it
 /// holds no target, so at charter scale the cost is one N-pass per targetless
-/// hunter per handler run — not per tick, and not per ring.
+/// hunter per handler run — not per tick, and not per ring. The pass reads
+/// the store's id and owner columns, and loads only the records of the
+/// objects [`flat_walk_admits`] passes.
 fn global_list_scan(ctx: &ScanContext<'_>, flags: u32, zone: Option<u32>) -> Option<u64> {
     let mut best: Option<u64> = None;
     // `local_50 = -1` on the ring path; the same strictly-greater keep, so a
@@ -1891,7 +1903,14 @@ fn global_list_scan(ctx: &ScanContext<'_>, flags: u32, zone: Option<u32>) -> Opt
     walk.zone = zone;
     // `MOV EBP,[ESP+0x74] @ 0x006F9C76`, `PUSH EBP @ 0x006F9D64`.
     walk.reference = ThreatReference::Coords(ctx.scan_coord);
-    let candidates: Vec<&GameEntity> = ctx.entities.values().collect();
+    // VERA-only: the gates before Evaluate_Candidate ask only an object's id
+    // and owner, so they run on the store's columns and the walk loads the
+    // records of only the objects they pass: the same objects, in the same
+    // order, as the walk over every record.
+    let candidates: Vec<&GameEntity> = ctx
+        .entities
+        .values_of_owners(|id, owner| flat_walk_admits(ctx, id, owner))
+        .collect();
     for (candidate, score) in candidates.iter().zip(flat_scores(ctx, walk, &candidates)) {
         if let Some(score) = score {
             keep(candidate, score);
@@ -1913,10 +1932,10 @@ thread_local! {
 }
 
 /// The flat walk's score of each object in `candidates`, in order
-/// ([`flat_score`]).
+/// ([`evaluate_candidate`]).
 ///
-/// VERA-only: a mask-0 scan (a Hunt) scores every object on the map, so a
-/// long list is scored side by side on the worker pool, results in list
+/// VERA-only: a mask-0 scan (a Hunt) scores every object on the map that
+/// [`flat_walk_admits`] passes, so a long list is scored side by side on the worker pool, results in list
 /// order: the walk keeps exactly what the one-by-one walk keeps. A score
 /// reads nothing the walk changes except the shared Dummy, which a
 /// candidate's cell lookups can stamp and a later candidate's read, and the
@@ -1944,7 +1963,8 @@ fn flat_scores(
         let dummy = terrain.shared_cell_dummy();
         let scored = crate::sim::parallel::map_with(candidates, ctx.clone(), |ctx, candidate| {
             let draws = ctx.scenario_draws.get();
-            let (score, stamped) = dummy.detached_stamps(|| flat_score(ctx, walk, candidate));
+            let (score, stamped) =
+                dummy.detached_stamps(|| evaluate_candidate(ctx, walk, candidate));
             let drew = ctx.scenario_draws.get() != draws;
             (score, stamped, drew, ctx.met_idle_disguise.replace(false))
         });
@@ -1963,7 +1983,7 @@ fn flat_scores(
                         return Some(score);
                     }
                     let (score, stamped) =
-                        dummy.detached_stamps(|| flat_score(ctx, walk, candidate));
+                        dummy.detached_stamps(|| evaluate_candidate(ctx, walk, candidate));
                     (!stamped).then_some(score)
                 })
                 .collect();
@@ -1979,17 +1999,17 @@ fn flat_scores(
     }
     candidates
         .iter()
-        .map(|candidate| flat_score(ctx, walk, candidate))
+        .map(|candidate| evaluate_candidate(ctx, walk, candidate))
         .collect()
 }
 
-/// One object's score in the flat walk: `None` for an object the walk's
-/// gates or [`evaluate_candidate`] refuse.
-fn flat_score(ctx: &ScanContext<'_>, walk: WalkArgs, candidate: &GameEntity) -> Option<i32> {
+/// The flat walk's gates before Evaluate_Candidate, which ask only an
+/// object's id and owner.
+fn flat_walk_admits(ctx: &ScanContext<'_>, id: u64, owner: InternedId) -> bool {
     // `0x006F9C92..0x006F9D0D`: a healer and a computer engineer also look
     // at allies.
-    if !ctx.offers(candidate) {
-        return None;
+    if !ctx.offers_owner(owner) {
+        return false;
     }
     // `CMP [EDI+0x94],0x2 ; JNZ @ 0x006F9D13`: only objects the display last
     // submitted to its Ground layer. Airborne aircraft are left to the
@@ -1997,15 +2017,12 @@ fn flat_score(ctx: &ScanContext<'_>, walk: WalkArgs, candidate: &GameEntity) -> 
     // VERA-internal: with no world (walk unit tests) there is no display and
     // the gate is off.
     if let Some(world) = ctx.fire_world
-        && world.display_layers().layer_of(candidate.stable_id())
+        && world.display_layers().layer_of(id)
             != Some(crate::sim::world::display_layers::DisplayLayer::GROUND)
     {
-        return None;
+        return false;
     }
-    if !ctx.house_gates_admit(candidate) {
-        return None;
-    }
-    evaluate_candidate(ctx, walk, candidate)
+    ctx.house_gates_admit_owner(owner)
 }
 
 /// `TechnoClass::Scan_Cell_For_Target @ 0x006F8960`, narrowed to the armed
@@ -3034,6 +3051,54 @@ mod tests {
 
     use crate::sim::combat::threat_posed::live_threat_posed;
     use crate::sim::intern::test_interner;
+
+    /// A Hunt's flat walk loads and scores only the objects its id and owner
+    /// gates pass ([`flat_walk_admits`]): 300 of the hunter's own conscripts
+    /// leave a one-object list, too short to score side by side, and the
+    /// enemy tank is still the pick.
+    #[test]
+    fn a_hunt_walk_scores_only_what_its_owner_gates_pass() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let rules = &retail.rules;
+        let mut sim = crate::sim::arena_fixture::rival_arena_with_size(rules, 1, 64);
+        sim.intern_rule_type_ids(rules);
+        sim.resolve_type_handles(rules);
+        let rhino = sim
+            .spawn_object("HTNK", "Russians", 18, 16, 64, rules)
+            .expect("rhino");
+        let tank = sim
+            .spawn_object("MTNK", "Americans", 16, 16, 64, rules)
+            .expect("tank");
+        for index in 0..300u16 {
+            sim.spawn_object(
+                "E2",
+                "Russians",
+                20 + index % 30,
+                30 + index / 30,
+                64,
+                rules,
+            )
+            .expect("conscript");
+        }
+        let walks = FLAT_WALKS_SIDE_BY_SIDE.get();
+        let pick = sim
+            .greatest_threat_represented(
+                rules,
+                None,
+                rhino,
+                crate::sim::combat::threat_range::ScanMission::Hunt,
+                None,
+            )
+            .and_then(crate::sim::combat::TargetKind::object_id);
+        assert_eq!(pick, Some(tank));
+        assert_eq!(
+            FLAT_WALKS_SIDE_BY_SIDE.get(),
+            walks,
+            "the walk scored the conscripts"
+        );
+    }
 
     #[test]
     fn occupied_scan_bound_matches_original_override_slice() {
