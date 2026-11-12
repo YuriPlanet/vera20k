@@ -204,6 +204,33 @@ fn place_finished(
             continue;
         };
         brain.stranded_sites.remove(&type_id);
+        // A structure that is worth more than the wall around it does not go
+        // where the enemy's guns already reach: the wishlist's "important
+        // buildings must not stand at the very front". A wall segment is
+        // exempt — it is placed by its own plan, and the ring it closes is
+        // drawn around buildings the house already has.
+        //
+        // The reading is `terrain::Space`, the same vocabulary `expand` uses
+        // for a second base, so "the front" means one thing in this brain.
+        let is_wall = obs.object_type(rules, type_id).is_some_and(|ty| ty.wall);
+        if !is_wall {
+            let space = super::terrain::Space::read(
+                obs,
+                rules,
+                &brain.census.home_cells,
+                brain.census.base_cell,
+            );
+            if !space.ground_at(cell).buildable() {
+                let next = (attempt + 1) % PLACEMENT_ATTEMPTS;
+                brain.site_attempts.insert(type_id, next);
+                log::info!(
+                    "auto play: {} refused {cell:?}, the enemy's reach is there (attempt {attempt})",
+                    obs.object_type(rules, type_id)
+                        .map_or("?", |ty| ty.id.as_str())
+                );
+                continue;
+            }
+        }
         log::debug!(
             "auto play: place {} at {cell:?} (attempt {attempt})",
             obs.object_type(rules, type_id)
