@@ -2005,7 +2005,12 @@ fn iron_tint_step(
     id: u64,
 ) {
     let frame = session.binary_frame() as i32;
-    let airstrike_active = substrate.airstrike_tint_active(id);
+    // UpdateAirstrikeTint70E920 admits only a building, and another class's
+    // stage never leaves 0 (`AirstrikeTintState::update_tint`), so the step
+    // passes it by the category column without reading its record
+    // (VERA-only; the same results).
+    let building = substrate.entities.category_of(id) == Some(EntityCategory::Structure);
+    let airstrike_active = building && substrate.airstrike_tint_active(id);
     // A quiet unit's curtain is gone or spent (`world::quiet_units`).
     if !substrate.entities.is_quiet(id)
         && let Some(curtain) = substrate
@@ -2020,9 +2025,10 @@ fn iron_tint_step(
     {
         curtain.update_tint(frame, scenario_rng);
     }
-    if let Some(entity) = substrate
-        .entities
-        .get_mut_if(id, |entity| entity.airstrike_tint.updates(airstrike_active))
+    if building
+        && let Some(entity) = substrate
+            .entities
+            .get_mut_if(id, |entity| entity.airstrike_tint.updates(airstrike_active))
     {
         entity
             .airstrike_tint
@@ -3315,6 +3321,29 @@ mod tests {
             .spawn_object("TEST", "Americans", 7, 5, 0, &rules)
             .unwrap();
         (sim, rules, first, second)
+    }
+
+    /// A tank's tint step reads no airstrike state: UpdateAirstrikeTint70E920
+    /// admits only a building, so the step passes the tank by its category
+    /// column. The quiet mark and the curtain gate take the other two lookups.
+    #[test]
+    fn a_tanks_tint_step_skips_the_airstrike_tint() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_battle_rules().map(|r| r.rules)
+        else {
+            return;
+        };
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+        let tank = sim
+            .spawn_object("MTNK", "Americans", 5, 5, 0, &rules)
+            .unwrap();
+        let before = sim.substrate.entities.lookups().0;
+        iron_tint_step(
+            &sim.session,
+            &mut sim.scenario_rng,
+            &mut sim.substrate,
+            tank,
+        );
+        assert_eq!(sim.substrate.entities.lookups().0 - before, 3);
     }
 
     #[test]

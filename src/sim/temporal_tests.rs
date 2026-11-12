@@ -3346,3 +3346,20 @@ fn ares_temporal_update_frees_the_targets_radar_jammer() {
     );
     assert!(entity(&sim, target).radar_jam.is_default());
 }
+
+/// A tank with no head of its own that is neither warped out nor warping in
+/// costs the prologue one lookup, and its turn goes on.
+#[test]
+fn an_untouched_tank_costs_the_prologue_one_lookup() {
+    let rules = rules();
+    let mut sim = sim(1);
+    let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
+    let before = sim.substrate.entities.lookups().0;
+    assert!(!sim.temporal_ai_prologue(
+        tank,
+        &rules,
+        crate::sim::world::ObjectAiCtx::default(),
+        &mut false,
+    ));
+    assert_eq!(sim.substrate.entities.lookups().0 - before, 1);
+}
