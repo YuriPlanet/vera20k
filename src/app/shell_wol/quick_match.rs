@@ -970,7 +970,7 @@ fn build_host_options(
         false,
         PeerChoicePolicy::Wol {
             countries: None,
-            teams: crate::skirmish_launch::NATIVE_TEAMS,
+            teams: None,
         },
         crate::skirmish_launch::HOUSE_COLOR_COUNT,
     );

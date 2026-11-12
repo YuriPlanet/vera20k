@@ -859,9 +859,10 @@ impl MatchSession {
     /// each field is checked against the session: the country by the mode
     /// (`+0x1C`, here `countries` for Cooperative, else any; the current one,
     /// else the mode's `+0x28` Random), a colour or start already held
-    /// becomes Random (`0x0069B600`, `0x005E9720`), a team outside 0..3, or
-    /// in a VERA room with Teams set outside its teams, takes the mode
-    /// default (`+0x34`/`+0x2C`). No sound, text or reply.
+    /// becomes Random (`0x0069B600`, `0x005E9720`), a team outside 0..3
+    /// takes the mode default (`+0x34`/`+0x2C`). In a VERA room with Teams
+    /// set, a pick outside its teams is no team instead, and the room seats
+    /// the player on its smallest team. No sound, text or reply.
     pub(crate) fn accept_network_peer_choices(
         &mut self,
         index: usize,
@@ -881,9 +882,7 @@ impl MatchSession {
         let Some(row) = human.raw_slot_index else {
             return Ok(PeerChoicesChange::default());
         };
-        let teams = self
-            .network_teams()
-            .unwrap_or(crate::skirmish_launch::NATIVE_TEAMS);
+        let teams = self.network_teams();
         let mut change = self.accept_peer_choices(
             index,
             row,
@@ -2030,12 +2029,26 @@ impl MatchSession {
 
     /// The host sets a VERA room's Teams: Off, or a count in
     /// [`crate::skirmish_launch::ROOM_TEAMS`]. Every seated player then has
-    /// one of its teams. Off also turns Balance automatically off.
+    /// one of its teams. Off also turns Balance automatically off, and takes
+    /// the room back to gamemd's A to D: a player or AI on a team past D gets
+    /// the mode's default, as a guest's pick past D does.
     pub(crate) fn set_network_teams(&mut self, teams: Option<u8>) -> anyhow::Result<()> {
         anyhow::ensure!(self.host, "only the host sets the room's teams");
-        let options = &mut self.editable_network_setup()?.options;
-        options.teams = teams.filter(|teams| crate::skirmish_launch::ROOM_TEAMS.contains(teams));
-        options.auto_balance &= options.teams.is_some();
+        let launch = self.editable_network_setup()?;
+        let teams = teams.filter(|teams| crate::skirmish_launch::ROOM_TEAMS.contains(teams));
+        launch.options.teams = teams;
+        launch.options.auto_balance &= teams.is_some();
+        if teams.is_none() {
+            let default = mode_default_team(&launch.mode);
+            let humans = launch.humans.iter_mut().map(|human| &mut human.slot.team);
+            for team in humans.chain(launch.opponents.iter_mut().map(|ai| &mut ai.team)) {
+                if matches!(*team, LaunchTeam::Team(letter) if letter >= crate::skirmish_launch::NATIVE_TEAMS)
+                {
+                    *team = default;
+                }
+            }
+            launch.rebuild_house_roster();
+        }
         self.keep_players_on_teams().map(|_| ())
     }
 
@@ -3441,14 +3454,24 @@ fn host_extra_row(
     capacity < limit
 }
 
+/// Mode `+0x2C` (`0x5D5DC0`): the team a pick outside the Team list takes,
+/// Team 0 when the mode must ally, else none.
+fn mode_default_team(mode: &crate::skirmish_launch::SkirmishLaunchMode) -> LaunchTeam {
+    if mode.must_ally {
+        LaunchTeam::Team(0)
+    } else {
+        LaunchTeam::None
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(crate) enum PeerChoicePolicy<'a> {
     Lan,
-    /// `teams`: how many teams the Team list holds, gamemd's A to D
-    /// ([`crate::skirmish_launch::NATIVE_TEAMS`]) or a VERA room's Teams.
+    /// `teams`: a VERA room's Teams count while it is set
+    /// ([`MatchSession::network_teams`]); without it, gamemd's A to D.
     Wol {
         countries: Option<&'a [crate::skirmish_launch::LaunchCountry]>,
-        teams: u8,
+        teams: Option<u8>,
     },
 }
 
@@ -3512,17 +3535,24 @@ pub(crate) fn apply_peer_choices(
         change.options = true;
     }
     if choices.team != current.team {
-        // Mode +0x34 (0x5D5DE0) admits only 0..3, a VERA room with Teams
-        // set its own teams; +0x2C (0x5D5DC0) is Team 0 under MustAlly,
-        // else none.
-        use crate::skirmish_launch::LaunchTeam;
-        slot.team = match (policy, choices.team) {
-            (PeerChoicePolicy::Lan, _) => choices.team,
-            (PeerChoicePolicy::Wol { teams, .. }, LaunchTeam::Team(team)) if team < teams => {
-                choices.team
-            }
-            _ if launch.mode.must_ally => LaunchTeam::Team(0),
-            _ => LaunchTeam::None,
+        // Mode +0x34 (0x5D5DE0) admits only 0..3; +0x2C (0x5D5DC0) is
+        // Team 0 under MustAlly, else none. A VERA room with Teams set admits
+        // its own teams and leaves any other pick on no team, which
+        // `keep_players_on_teams` seats on the smallest team.
+        slot.team = match policy {
+            PeerChoicePolicy::Lan => choices.team,
+            PeerChoicePolicy::Wol {
+                teams: Some(teams), ..
+            } => match choices.team {
+                LaunchTeam::Team(team) if team < teams => choices.team,
+                _ => LaunchTeam::None,
+            },
+            PeerChoicePolicy::Wol { teams: None, .. } => match choices.team {
+                LaunchTeam::Team(team) if team < crate::skirmish_launch::NATIVE_TEAMS => {
+                    choices.team
+                }
+                _ => mode_default_team(&launch.mode),
+            },
         };
         change.options = true;
     }
@@ -4200,10 +4230,10 @@ mod tests {
     }
 
     /// A VERA room has up to 15 teams, A to O, and a guest's online pick
-    /// past gamemd's D stays.
+    /// past gamemd's D stays until Teams goes Off, back to A to D.
     #[test]
-    fn a_vera_room_guest_may_pick_a_team_past_d() {
-        use crate::skirmish_launch::LaunchTeam::Team;
+    fn a_vera_room_keeps_a_guest_past_d_until_teams_is_off() {
+        use crate::skirmish_launch::LaunchTeam::{self, Team};
         let mut session = vera_room();
         session.set_network_teams(Some(15)).unwrap();
         assert_eq!(teams(&session), [Team(0), Team(1)]);
@@ -4214,6 +4244,29 @@ mod tests {
             .accept_network_peer_choices(1, pick, false, None)
             .unwrap();
         assert_eq!(teams(&session), [Team(0), Team(14)]);
+        session.set_network_teams(None).unwrap();
+        assert_eq!(teams(&session), [Team(0), LaunchTeam::None]);
+    }
+
+    /// In a mode that must ally, a player who watched and is seated again
+    /// joins the team with the fewest players, not Team A.
+    #[test]
+    fn a_vera_team_game_seats_a_returning_player_on_the_smallest_team() {
+        use crate::skirmish_launch::LaunchTeam::{self, Team};
+        let mut session = vera_room();
+        session.editable_network_setup().unwrap().mode.must_ally = true;
+        session.set_network_teams(Some(2)).unwrap();
+        newcomer(&mut session);
+        let mut pick = session.network_setup().unwrap().humans[1].slot.clone();
+        session
+            .accept_network_peer_choices(1, pick.clone(), true, None)
+            .unwrap();
+        // The host's Seat, as the join queue's, asks for no team.
+        pick.team = LaunchTeam::None;
+        session
+            .accept_network_peer_choices(1, pick, false, None)
+            .unwrap();
+        assert_eq!(teams(&session), [Team(0), Team(1), Team(0)]);
     }
 
     #[test]
