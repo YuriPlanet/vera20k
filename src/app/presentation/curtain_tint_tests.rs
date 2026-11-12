@@ -682,8 +682,14 @@ fn airstrike_tint_uses_the_strike_owner_types_laser_target_color() {
     target.airstrike.set_test_link(Some(1));
     sim.entities_mut_for_test().insert(owner);
     sim.entities_mut_for_test().insert(target);
-    let word =
-        |sim: &Simulation| shp_colour_word(sim.entities().get(2).unwrap(), sim, &rules, || false);
+    let word = |sim: &Simulation| {
+        shp_colour_word(
+            &crate::app::presentation::frame::ObjectRecord::of_test_sim(sim, &rules, 2),
+            sim,
+            &rules,
+            || false,
+        )
+    };
     assert_eq!(word(&sim), 0xF800);
     sim.entities_mut_for_test()
         .get_mut(1)

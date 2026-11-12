@@ -1504,7 +1504,11 @@ mod tests {
             .find_map(|instance| instance.anim())
             .expect("MAIN animation");
         assert_eq!(
-            super::attach_effect_draw_offset(&sim, &rules, sim.anim(anim).unwrap()),
+            super::attach_effect_draw_offset(
+                &crate::app::presentation::frame::PresentationFrame::of_test(&sim, &rules),
+                &rules,
+                sim.anim(anim).unwrap()
+            ),
             [14.0, 7.0],
             "the unconditional rule and the OTHER rule add"
         );
@@ -1522,7 +1526,11 @@ mod tests {
             )
             .expect("free anim");
         assert_eq!(
-            super::attach_effect_draw_offset(&sim, &rules, sim.anim(free).unwrap()),
+            super::attach_effect_draw_offset(
+                &crate::app::presentation::frame::PresentationFrame::of_test(&sim, &rules),
+                &rules,
+                sim.anim(free).unwrap()
+            ),
             [0.0, 0.0],
             "a free animation carries no effect offset"
         );

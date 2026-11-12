@@ -1568,8 +1568,7 @@ fn repair_wrench_admitted(
     rules: Option<&RuleSet>,
     local_owner: Option<&str>,
 ) -> bool {
-    let repairing =
-        entity.category() == EntityCategory::Structure && entity.repairing.is_on();
+    let repairing = entity.category() == EntityCategory::Structure && entity.repairing.is_on();
     #[cfg(feature = "ares")]
     let repairing = repairing
         && !entity.is_warped_out()
@@ -2627,9 +2626,10 @@ mod tests {
                 sim.entities_mut_for_test().get_mut(id).unwrap(),
                 true,
             );
-            let entity = sim.entities().get(id).unwrap();
+            let record =
+                crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &rules, id);
             ["Americans", "Russians"].map(|viewer| {
-                super::repair_wrench_admitted(&sim, entity, Some(&rules), Some(viewer))
+                super::repair_wrench_admitted(&sim, &record, Some(&rules), Some(viewer))
             })
         };
         assert_eq!(shown(""), [true, true]);
@@ -2669,8 +2669,12 @@ mod tests {
         toggle("Americans", own, false);
         toggle("Russians", theirs, false);
         let shown = |sim: &crate::sim::world::Simulation| {
-            [own, theirs]
-                .map(|id| super::power_off_marker_admitted(sim, sim.entities().get(id).unwrap()))
+            [own, theirs].map(|id| {
+                super::power_off_marker_admitted(
+                    sim,
+                    &crate::app::presentation::frame::ObjectRecord::of_test_sim(sim, &rules, id),
+                )
+            })
         };
         assert_eq!(shown(&sim), [true, false]);
         assert!(sim.apply_command(

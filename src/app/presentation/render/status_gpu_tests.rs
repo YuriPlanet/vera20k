@@ -324,9 +324,11 @@ fn a_selected_mobile_shield_background_keeps_its_pipbrd_binding() {
     let (x, y) = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
     let mut cam = camera(size);
     cam.camera_pos = [x - 64.0, y - 60.0];
+    let record =
+        crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &retail.rules, id);
     let strip = techno_extras_for_parent(
         &sim,
-        entity,
+        &record,
         Some(&retail.rules),
         &overlay,
         None,
