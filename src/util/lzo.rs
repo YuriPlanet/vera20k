@@ -248,10 +248,19 @@ pub fn decompress_chunks(data: &[u8], maximum_output: usize) -> Result<Vec<u8>, 
 /// bytes native writes.
 pub fn compress_chunks(data: &[u8], block_size: usize) -> Vec<u8> {
     let mut out = Vec::with_capacity(data.len() / 2 + 16);
-    // A block's stream must fit the frame's 16-bit length even when nothing
-    // in it repeats (its bytes, a run header and the end marker).
+    // A block's stream must fit the frame's 16-bit length. As one literal
+    // run it does whatever the block holds (its bytes, a run header and the
+    // end marker). With matches it can grow past the block, where short
+    // matches from far back cost as much as the bytes they stand for; the
+    // literal run is then written when it is shorter.
     for block in data.chunks(block_size.clamp(1, 0xFE00)) {
-        let stream = lzo1x_stream(block);
+        let mut stream = lzo1x_stream(block, true);
+        if stream.len() > block.len() {
+            let literal = lzo1x_stream(block, false);
+            if literal.len() < stream.len() {
+                stream = literal;
+            }
+        }
         out.extend_from_slice(&(stream.len() as u16).to_le_bytes());
         out.extend_from_slice(&(block.len() as u16).to_le_bytes());
         out.extend_from_slice(&stream);
@@ -269,7 +278,8 @@ fn write_vle(out: &mut Vec<u8>, mut extra: usize) {
     out.push(extra as u8);
 }
 
-/// One LZO1X stream of `block`, then the end marker.
+/// One LZO1X stream of `block`, then the end marker; without
+/// `search_matches`, the block as one literal run.
 ///
 /// A greedy search over a table of the last place each three-byte group was
 /// seen. Each instruction is one [`lzo1x_decompress`] reads:
@@ -279,11 +289,12 @@ fn write_vle(out: &mut Vec<u8>, mut extra: usize) {
 ///   bits; four or more are a run `count - 3` (to 18) or `0` with its
 ///   extension.
 /// - A match of 3..=8 bytes within 2048 is M2 (`cmd >= 64`); any other is
-///   M3 (`32..64`), whose distance reaches 16384, past any block here.
+///   M3 (`32..64`), whose distance reaches 16384; nothing farther back is
+///   matched.
 ///
 /// A run of four or more is always followed by a match or the end marker,
 /// never by a `cmd < 16`, which the decoder would read as an M1 match.
-fn lzo1x_stream(block: &[u8]) -> Vec<u8> {
+fn lzo1x_stream(block: &[u8], search_matches: bool) -> Vec<u8> {
     const HASH_BITS: u32 = 13;
     const MIN_MATCH: usize = 3;
     const MAX_DISTANCE: usize = 16384;
@@ -300,7 +311,7 @@ fn lzo1x_stream(block: &[u8]) -> Vec<u8> {
     let mut literals_from = 0;
     let mut at = 0;
 
-    let mut write_literals = |out: &mut Vec<u8>, state_at: &mut Option<usize>, run: &[u8]| {
+    let write_literals = |out: &mut Vec<u8>, state_at: &mut Option<usize>, run: &[u8]| {
         let count = run.len();
         if count == 0 {
             return;
@@ -318,7 +329,7 @@ fn lzo1x_stream(block: &[u8]) -> Vec<u8> {
         *state_at = None;
     };
 
-    while at + MIN_MATCH <= block.len() {
+    while search_matches && at + MIN_MATCH <= block.len() {
         let slot = hash(at);
         let candidate = seen[slot];
         seen[slot] = at;
@@ -525,6 +536,30 @@ mod tests {
                 data.len()
             );
         }
+    }
+
+    /// A full-size block of three-byte repeats from more than 2048 bytes
+    /// back, each before four new bytes: those matches cost as much as the
+    /// bytes they stand for, yet the block still fits its frame's 16-bit
+    /// length and decodes back.
+    #[test]
+    fn a_block_of_costly_matches_still_fits_its_frame() {
+        let mut state = 0x2545_F491u32;
+        let mut noise = || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state as u8
+        };
+        let mut data: Vec<u8> = (0..4096).map(|_| noise()).collect();
+        while data.len() < 0xFE00 {
+            let from = data.len() - 2100;
+            data.extend_from_within(from..from + 3);
+            data.extend((0..4).map(|_| noise()));
+        }
+        data.truncate(0xFE00);
+        let chunks = compress_chunks(&data, 0xFE00);
+        assert_eq!(decompress_chunks(&chunks, data.len()).ok(), Some(data));
     }
 
     #[test]
