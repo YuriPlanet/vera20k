@@ -548,8 +548,9 @@ pub(crate) fn pickup_crate(
                 // PickupCrate4824A7..4824D4: every Money dispatch pays
                 // PlayerPtr in mode0 when IsHumanPlayer50B6F0 admits the
                 // collector, including the random and Unit-fallback routes.
+                // Mode 0 is the campaign alone, so no network peer asks.
                 let recipient =
-                    if sim.house_is_human_player(owner) && !sim.session.game_mode_nonzero() {
+                    if !sim.session.game_mode_nonzero() && sim.house_is_human_player(owner) {
                         sim.session.current_house()
                     } else {
                         Some(owner)
