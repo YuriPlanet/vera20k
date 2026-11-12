@@ -553,6 +553,7 @@ fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass
     let now = sim.session.binary_frame() as i32;
     let entity = sim.substrate.entities.get_mut(source).unwrap();
     entity
+        .building
         .pending_building_fire
         .set_for_test(Some(PendingBuildingFire::new(
             1,
@@ -673,6 +674,7 @@ fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass
             .entities
             .get(source)
             .unwrap()
+            .building
             .pending_building_fire
             .pending()
             .is_none()
@@ -871,6 +873,7 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
         );
         let entity = sim.substrate.entities.get_mut(source).unwrap();
         entity
+            .building
             .pending_building_fire
             .set_for_test(Some(PendingBuildingFire::new(
                 1,

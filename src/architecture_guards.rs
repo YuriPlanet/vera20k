@@ -1392,6 +1392,12 @@ fn composition_root_slots_are_owner_types() {
             "mission_leaf",
             "an enum of owner leaves, built once at entity construction; only fixtures replace it",
         ),
+        (
+            "GameEntity",
+            "building",
+            "a Building's own fields stored apart from the record every turn reads; each \
+             keeps its visibility and owning module, so the slot opens nothing that was closed",
+        ),
     ];
     let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let files = source_files(&src_root);

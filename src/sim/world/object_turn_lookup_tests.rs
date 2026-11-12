@@ -46,8 +46,9 @@ fn a_turn_finds_its_own_object_without_the_id_index() {
 }
 
 /// A tank's turn writes none of the state only a Building holds, so its
-/// record keeps no art or damage fires, before a save and after a load. The
-/// power plant's own turn stores its art, which loads back as saved.
+/// record keeps no building part, art or damage fires, before a save and
+/// after a load. The power plant stores its part and its art, which load
+/// back as saved.
 #[test]
 fn a_tanks_turn_and_a_load_store_no_building_state() {
     use crate::util::save_codec;
@@ -64,10 +65,13 @@ fn a_tanks_turn_and_a_load_store_no_building_state() {
     };
     let (tank, loaded_tank) = reloaded(tank);
     for tank in [tank, &loaded_tank] {
+        assert!(!tank.building.is_stored());
         assert!(!tank.building_art.is_stored());
         assert!(!tank.damage_fires.is_stored());
     }
     let (plant, loaded_plant) = reloaded(plant);
+    assert!(plant.building.is_stored());
+    assert_eq!(*loaded_plant.building, *plant.building);
     assert!(plant.building_art.is_stored());
     assert_eq!(*loaded_plant.building_art, *plant.building_art);
 }
@@ -88,7 +92,7 @@ fn the_object_record_stays_under_its_ceiling() {
         std::mem::size_of::<Seldom>(),
     );
     assert!(
-        main <= 1440 && seldom <= 816,
+        main <= 1208 && seldom <= 816,
         "GameEntity is {main} bytes and Seldom {seldom}"
     );
 }

@@ -6853,8 +6853,8 @@ impl Simulation {
         if category == EntityCategory::Structure
             && let Some(entity) = self.substrate.entities.get_mut(stable_id)
         {
-            entity.has_been_captured.mark();
-            entity.repairing.stop_on_capture();
+            entity.building.has_been_captured.mark();
+            entity.building.repairing.stop_on_capture();
         }
         // `0x00448C6E..0x00448C94`, after the owner swap: the old house
         // records the building it lost (House+54E0), and the new house

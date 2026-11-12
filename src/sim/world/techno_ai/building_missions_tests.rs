@@ -398,7 +398,7 @@ fn mission_attack_matches_the_original() {
         );
         let delayed = &row["delayed_fire"];
         assert_eq!(
-            entity.pending_building_fire.pending(),
+            entity.building.pending_building_fire.pending(),
             (delayed[0] == 1).then(|| PendingBuildingFire::new(
                 delayed[2].as_i64().unwrap() as i32,
                 DelayedFire::Weapon(WeaponSlot::Primary)
@@ -504,7 +504,13 @@ fn enter_idle_mode_matches_the_unlimbo_rows() {
         let building = sim
             .spawn_object_limbo_at_height("DEF", "Americans", 7, 7, 0, 0, &rules)
             .unwrap();
-        let before = sim.substrate.entities.get(building).unwrap().mission.clone();
+        let before = sim
+            .substrate
+            .entities
+            .get(building)
+            .unwrap()
+            .mission
+            .clone();
         assert_eq!(before.current(), MissionId::NONE, "{name}");
         assert_eq!(before.queued(), MissionId::NONE, "{name}");
         let initial = input["args"][0] != 0;
@@ -1693,7 +1699,7 @@ fn retail_dustbowl_tesla_coil_charges_before_each_shot() {
     };
     let armed = |scenario: &crate::headless_scenario::HeadlessScenario| {
         let entity = scenario.sim().substrate.entities.get(coil).unwrap();
-        entity.pending_building_fire.pending().is_some()
+        entity.building.pending_building_fire.pending().is_some()
     };
     // The coil's drain reaches its House at Added_To_Game (`0x00502B48` ->
     // `0x0044E880` -> `0x005018C0`), the plant's output only at the House's
@@ -1825,6 +1831,7 @@ fn retail_dustbowl_prism_towers_forward_their_charge() {
             .entities
             .get(id)
             .unwrap()
+            .building
             .pending_building_fire
             .pending()
             .map(|pending| pending.fire)
@@ -1874,7 +1881,7 @@ fn retail_dustbowl_prism_towers_forward_their_charge() {
                         crate::sim::timer::CdTimer::started(binary_frame, 45),
                         "the downtime starts on the beam's frame"
                     );
-                    assert_eq!(entity.prism_support_count.count(), 0);
+                    assert_eq!(entity.building.prism_support_count.count(), 0);
                     beams.push((frame, id));
                 }
                 _ => {}
@@ -1904,7 +1911,7 @@ fn retail_dustbowl_prism_towers_forward_their_charge() {
             shot = Some((frame, health - after));
             let entity = scenario.sim().substrate.entities.get(master).unwrap();
             assert_eq!(
-                entity.prism_support_count.count(),
+                entity.building.prism_support_count.count(),
                 0,
                 "the bonus restarts the count"
             );

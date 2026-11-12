@@ -207,6 +207,7 @@ fn a_sale_past_its_survivors_leaves_none_for_its_death() {
             .entities
             .get(shed)
             .unwrap()
+            .building
             .no_survivor
             .is_set()
     );
@@ -228,6 +229,7 @@ fn a_vehicle_charges_a_coil() {
             .entities
             .get(coil)
             .unwrap()
+            .building
             .tesla_charge
             .chargers(),
         &[tank]

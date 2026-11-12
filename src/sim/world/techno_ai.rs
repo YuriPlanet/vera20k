@@ -1121,6 +1121,7 @@ fn techno_ai_shell(
                 sim.clear_building_damage_fire_slots(id, rules);
                 let ready = sim.substrate.entities.get(id).is_some_and(|entity| {
                     entity
+                        .building
                         .pending_c4_detonation
                         .pending()
                         .is_none_or(|pending| {

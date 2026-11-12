@@ -295,7 +295,7 @@ impl SlotScene {
             plant.building_ready_latch(),
             plant.building_online(),
             sim.building_operational_state(self.plant, &self.scene.runtime.resources.rules),
-            plant.building_last_operational,
+            plant.building.building_last_operational,
             slot.and_then(|id| sim.anim(id)).map(|anim| anim.runtime())
         );
     }
@@ -497,7 +497,7 @@ impl SlotScene {
         assert_eq!(plant.temporal.chain_head(), None);
         // The sample is a transparent saved bool; its accessor is core-private.
         assert_eq!(
-            serde_json::to_value(plant.building_last_operational).unwrap(),
+            serde_json::to_value(plant.building.building_last_operational).unwrap(),
             serde_json::Value::Bool(false)
         );
         assert_eq!(
@@ -520,6 +520,7 @@ impl SlotScene {
                 sim.entities()
                     .get(self.plant)
                     .unwrap()
+                    .building
                     .building_last_operational
             )
             .unwrap(),

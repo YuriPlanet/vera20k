@@ -201,6 +201,7 @@ fn ares_emp_lifts_a_gap_generators_gap_until_expiry() {
         sim.entities()
             .get(gap)
             .unwrap()
+            .building
             .gap_generator
             .viewers()
             .values()
@@ -282,6 +283,7 @@ fn ares_emp_on_a_robot_control_center_takes_its_robots_offline() {
         sim.entities()
             .get(center)
             .unwrap()
+            .building
             .building_powered_center
             .is_counted()
     };
@@ -337,6 +339,7 @@ fn ares_emp_takes_a_charging_prism_supporter_out_of_its_network() {
         sim.entities()
             .get(supporter)
             .unwrap()
+            .building
             .pending_building_fire
             .pending()
             .is_none()

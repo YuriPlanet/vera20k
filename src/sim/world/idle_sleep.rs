@@ -321,8 +321,8 @@ impl Simulation {
             && !entity.temporal.is_warping_someone()
             && entity.bomb.is_none()
             && !entity.constructing_or_selling()
-            && entity.pending_c4_detonation.pending().is_none()
-            && entity.pending_building_fire.pending().is_none()
+            && entity.building.pending_c4_detonation.pending().is_none()
+            && entity.building.pending_building_fire.pending().is_none()
             && entity.capture_manager.is_none()
             && entity.spawn_manager.is_none()
             && entity.slave_manager.is_none()
@@ -331,10 +331,10 @@ impl Simulation {
             && entity.passenger_role.occupants().is_empty()
             && !entity.berserk.is_active()
             && !entity.deactivated.is_offline()
-            && entity.tesla_charge.chargers().is_empty()
+            && entity.building.tesla_charge.chargers().is_empty()
             && entity.drain.draining_me().is_none()
             && entity.drain.target().is_none()
-            && !entity.repairing.is_on()
+            && !entity.building.repairing.is_on()
             && entity.parasite.eater().is_none()
             && entity.pending_entry().is_none()
             && !self.object_custom_sounds.contains_key(&id)
@@ -346,7 +346,7 @@ impl Simulation {
                 &self.interner,
             )
             && self.building_operational_state(id, rules)
-                == Some(entity.building_last_operational.is_operational());
+                == Some(entity.building.building_last_operational.is_operational());
         if !idle {
             return None;
         }

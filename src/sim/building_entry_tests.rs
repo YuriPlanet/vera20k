@@ -238,7 +238,7 @@ fn tank_bunker_seek(sim: &mut Simulation, rules: &RuleSet, id: u64) -> bool {
 fn install_state(sim: &Simulation, bunker: u64) -> (BunkerState, Option<u64>) {
     let building = entity(sim, bunker);
     (
-        building.bunker_runtime.unwrap().state(),
+        building.building.bunker_runtime.unwrap().state(),
         building.radio_contacts.slot(0),
     )
 }

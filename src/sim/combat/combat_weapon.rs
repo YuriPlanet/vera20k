@@ -1076,7 +1076,7 @@ pub fn attacker_facts(entity: &GameEntity, obj: &ObjectType) -> AttackerFacts {
         drain_target_active: entity.drain.target().is_some(),
         // `MissionClass::GetCurrentMission @ 0x005B3040`: current, else queued.
         mission_is_unload: entity.mission.effective().known() == Some(MissionType::Unload),
-        is_overpowered_building: entity.tesla_charge.is_overpowered(),
+        is_overpowered_building: entity.building.tesla_charge.is_overpowered(),
         aircraft_spawn_collision: false,
         ammo: entity.ammo().map_or(-1, |ammo| ammo.current()),
     }

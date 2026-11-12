@@ -143,7 +143,7 @@ impl Simulation {
         else {
             return;
         };
-        if building.building_powered_center.is_counted() == operational {
+        if building.building.building_powered_center.is_counted() == operational {
             return;
         }
         let owner = building.owner();
@@ -151,6 +151,7 @@ impl Simulation {
             .entities
             .get_mut(id)
             .expect("same building")
+            .building
             .building_powered_center
             .counted = operational;
         if operational {
@@ -173,7 +174,7 @@ impl Simulation {
             return;
         };
         if building.category() != EntityCategory::Structure
-            || !building.building_powered_center.is_counted()
+            || !building.building.building_powered_center.is_counted()
         {
             return;
         }
@@ -185,6 +186,7 @@ impl Simulation {
             .entities
             .get_mut(id)
             .expect("same building")
+            .building
             .building_powered_center
             .counted = false;
         self.house_lost_powered_center(owner, unit_type, rules, effects);

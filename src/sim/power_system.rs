@@ -532,7 +532,7 @@ pub(crate) fn building_power_drain(
         return 0;
     };
     let mut drain = native_building_power_drain(object.power);
-    if entity.gap_generator.supercharged() {
+    if entity.building.gap_generator.supercharged() {
         drain = drain.wrapping_add(object.extra_power.drain());
     }
     let upgrades = entity.building_upgrades();

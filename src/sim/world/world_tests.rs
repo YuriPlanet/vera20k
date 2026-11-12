@@ -3000,7 +3000,11 @@ fn gsi_04_15_active_tube_leaf_preempts_unit_and_infantry_mission_host() {
                     sim.substrate
                         .entities
                         .get(2)
-                        .is_some_and(|building| building.pending_c4_detonation.pending().is_none()),
+                        .is_some_and(|building| building
+                            .building
+                            .pending_c4_detonation
+                            .pending()
+                            .is_none()),
                     "Tube final returns before Mission_Enter; no C4 claim is made"
                 );
             }
@@ -7270,7 +7274,7 @@ fn combat_death_after_its_repair_visit_is_freed_at_end_of_tick() {
     bld.type_facts
         .set_foundation_for_test("1x1".to_string().into());
     bld.health = Health::new(50);
-    bld.repairing.set_for_test(true);
+    bld.building.repairing.set_for_test(true);
     sim.interner = crate::sim::intern::test_interner();
     let russia = sim.interner.intern("Russia");
     sim.houses

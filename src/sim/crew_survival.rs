@@ -291,7 +291,7 @@ impl Simulation {
         if !object.crewed {
             return None;
         }
-        let captured = entity.has_been_captured.is_set();
+        let captured = entity.building.has_been_captured.is_set();
         let yard = object.factory_type() == Some(FactoryType::BuildingType);
         let house = houses.get(&entity.owner())?;
         #[cfg(feature = "ares")]
@@ -349,7 +349,7 @@ impl Simulation {
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return 0;
         };
-        if entity.no_survivor.is_set() || !object.crewed {
+        if entity.building.no_survivor.is_set() || !object.crewed {
             return 0;
         }
         let Some(house) = self.houses.get(&entity.owner()) else {
@@ -370,7 +370,7 @@ impl Simulation {
         if divisor == 0 || (side_divisor.is_some() && divisor < 0) {
             return 0;
         }
-        let divisor = if entity.has_been_captured.is_set() {
+        let divisor = if entity.building.has_been_captured.is_set() {
             divisor.wrapping_add(divisor)
         } else {
             divisor
@@ -412,11 +412,12 @@ impl Simulation {
         };
         let owner = entity.owner();
         let origin = (entity.position.rx(), entity.position.ry());
-        let captured = entity.has_been_captured.is_set();
+        let captured = entity.building.has_been_captured.is_set();
         let cells = foundation_cells(origin.0, origin.1, &object.foundation);
         // C4AppliedBy (+0x540); the pointer-expiry broadcast clears it when
         // the planter leaves play.
         let c4_source = entity
+            .building
             .pending_c4_detonation
             .pending()
             .and_then(|pending| pending.source_entity_id());
@@ -589,7 +590,7 @@ impl Simulation {
             return 0;
         };
         // `0x00442F2A`, `0x0044A4CA`.
-        let no_survivor = building.no_survivor.is_set();
+        let no_survivor = building.building.no_survivor.is_set();
         let absorbs = self
             .object_type(building.type_ref(), rules)
             .is_some_and(|object| object.absorbs_passengers());

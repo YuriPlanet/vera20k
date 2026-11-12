@@ -165,6 +165,7 @@ fn gap_operational_actual_placement_waits_for_build_up_and_next_building_turn() 
             .entities
             .get(id)
             .unwrap()
+            .building
             .building_last_operational
             .is_operational()
     );
@@ -3658,6 +3659,7 @@ fn sell_back_admits_by_control_buildup_and_firestorm_wall() {
         .entities
         .get_mut(1)
         .unwrap()
+        .building
         .pending_c4_detonation
         .set_for_test(Some(PendingC4Detonation::new(
             crate::sim::timer::CdTimer::started(0, 100),

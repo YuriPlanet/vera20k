@@ -162,7 +162,7 @@ fn zero_health_building_ai_matches_original_terminal_gate() {
             .health
             .set(input["health"].as_i64().unwrap() as i32);
         if let Some(timer) = input["timer_override"].as_array() {
-            building.pending_c4_detonation.set_for_test(Some(
+            building.building.pending_c4_detonation.set_for_test(Some(
                 crate::sim::c4_plant::PendingC4Detonation::new(
                     crate::sim::timer::CdTimer::from_raw(
                         timer[0].as_i64().unwrap() as i32,
