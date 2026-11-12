@@ -2539,7 +2539,7 @@ mod tests {
     /// A room reopened after its game keeps VERA's room options, as it keeps
     /// the native checkboxes.
     #[test]
-    fn a_reopened_room_keeps_its_bans_bridges_and_allying() {
+    fn a_reopened_room_keeps_its_bans_bridges_allying_and_teams() {
         use crate::map::skirmish_scenarios::{SkirmishScenarioRecord, SkirmishScenarioSource};
         let mut owner = runtime(
             MultiplayerSetupSnapshot::from_global_defaults(defaults(), SetupProfile::Skirmish),
@@ -2577,6 +2577,8 @@ mod tests {
                 stolen_tech: true,
                 ..Default::default()
             },
+            teams: Some(3),
+            auto_balance: false,
         };
         assert_ne!(launch.options.room_options(), room);
         launch.options.set_room_options(room);

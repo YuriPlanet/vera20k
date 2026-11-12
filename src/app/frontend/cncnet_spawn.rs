@@ -751,6 +751,9 @@ fn skirmish(
         harvester_truce: boolean(settings, "HarvesterTruce", false)?,
         ally_change_allowed: boolean(settings, "AlliesAllowed", false)?,
         bans: Default::default(),
+        teams: None,
+        auto_balance: false,
+        queue: Vec::new(),
     };
     let mut session = SkirmishLaunchSession {
         mode,

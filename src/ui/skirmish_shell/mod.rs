@@ -46,6 +46,7 @@ pub use state::{
     SavedSeedDescriptionEdit, SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose,
     SetupCombo, SetupComboItem, SkirmishAiRowType, SkirmishComboId, SkirmishComboItem,
     SkirmishCountryChoice, SkirmishHoverTarget, SkirmishSavedSetup, SkirmishSetupComputer, apply_team_starts,
+    starts_by_team,
     SkirmishSetupSeat, SkirmishShellAction, SkirmishShellDialog, SkirmishShellOpponent,
     SkirmishShellState, SkirmishShellUiSound, SkirmishTrackbarBounds,
     SkirmishValidationModalState, accept_selected_map, action_for_owner_draw_button,

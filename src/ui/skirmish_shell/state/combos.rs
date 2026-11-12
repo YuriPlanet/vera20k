@@ -403,14 +403,9 @@ pub fn available_start_choices(
 }
 /// Shared4E5B60 team catalog; mode default team decides whether None is listed.
 pub fn team_choices(must_ally: bool) -> Vec<SkirmishComboItem> {
-    let values: &[i32] = if must_ally {
-        &[0, 1, 2, 3]
-    } else {
-        &[-2, 0, 1, 2, 3]
-    };
-    values
-        .iter()
-        .copied()
+    let none = (!must_ally).then_some(-2);
+    none.into_iter()
+        .chain(0..i32::from(crate::skirmish_launch::NATIVE_TEAMS))
         .map(SkirmishComboItem::Team)
         .collect()
 }
