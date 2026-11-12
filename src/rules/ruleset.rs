@@ -51,6 +51,14 @@ use crate::util::lookup_hash::LookupMap;
 use crate::util::native_random::unit_draw_threshold;
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
 
+#[cfg(any(test, feature = "test-support"))]
+thread_local! {
+    /// Test builds only: this thread's [`RuleSet::object`] calls, for checks
+    /// of what a draw looks up by name ([`RuleSet::type_name_lookups`]). The
+    /// bound handle's debug cross-check calls `type_handle` and is not counted.
+    static TYPE_NAME_LOOKUPS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
 #[cfg(test)]
 #[path = "building_damage_sound_tests.rs"]
 mod building_damage_sound_tests;
@@ -7510,6 +7518,13 @@ impl RuleSet {
         ))
     }
 
+    /// Test builds only: how many times this thread has looked a type's
+    /// record up by name ([`Self::object`]).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn type_name_lookups() -> u64 {
+        TYPE_NAME_LOOKUPS.with(std::cell::Cell::get)
+    }
+
     /// Resolve a type name to its handle, case-insensitively (engine parity).
     pub fn type_handle(&self, id: &str) -> Option<TypeHandle> {
         // The keys are uppercase, so a name without a lowercase letter is its
@@ -7578,6 +7593,8 @@ impl RuleSet {
 
     /// Look up a game object by ID (case-insensitive, engine parity).
     pub fn object(&self, id: &str) -> Option<&ObjectType> {
+        #[cfg(any(test, feature = "test-support"))]
+        TYPE_NAME_LOOKUPS.with(|count| count.set(count.get() + 1));
         self.type_handle(id).map(|h| self.object_by_handle(h))
     }
 
