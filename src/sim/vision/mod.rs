@@ -120,6 +120,18 @@ const PUBLISHED_FLAGS: u8 = FLAG_REVEALED
 /// the raw effective radius; the independent border traversal clamps to11.
 pub const MAX_SIGHT_RANGE: u16 = 10;
 
+/// The radius cap a reveal walk admits. Retail `MapClass::RevealArea` looks up
+/// its spiral in a fixed table and so stops at 10; Ares 0.6 swaps that walk for
+/// a `CellSpreadEnumerator` (`Helpers/Enumerators.h`) whose enumeration runs to
+/// its own `Max` of `0x100`, letting `Sight > 10` light an octagonal field
+/// (`Ares-Docs/new/sight.html`). Under `ares` the reveal callers therefore
+/// clamp to the enumerator's `Max` instead of 10; without it they keep retail.
+pub(crate) const REVEAL_RADIUS_MAX: u16 = if cfg!(feature = "ares") {
+    0x100
+} else {
+    MAX_SIGHT_RANGE
+};
+
 /// World height of one terrain level, in leptons. Same retail value the
 /// coordinate-Z evaluator uses (`util::lepton::LEPTONS_PER_LEVEL`); kept local
 /// because the reveal kernel's input is a height, not a bridge or range query.
@@ -2345,7 +2357,7 @@ pub(crate) fn sight_admission(
     let cells = collect_reveal_cells(
         rx,
         ry,
-        geometry.radius.clamp(0, i32::from(MAX_SIGHT_RANGE)) as u16,
+        geometry.radius.clamp(0, i32::from(REVEAL_RADIUS_MAX)) as u16,
         height_leptons,
         config.reveal_by_height,
         height_grid,
@@ -2639,6 +2651,52 @@ pub(crate) fn collect_reveal_cells(
             crate::map::playfield::size_diamond_contains(size_w, size_h, (x as i16, y as i16))
         })
     };
+    // Ares 0.6 lets Sight exceed the retail lookup table's 10. Its reveal walk
+    // (`MapRevealer::RevealImpl`) iterates a `CellSpreadEnumerator` and keeps an
+    // offset when `|dx| <= spread` and `dx*dx + dy*dy < (spread+1)*(spread+1)`,
+    // which lights an octagonal field instead of the retail diamond. The LOS
+    // check degrades to the offset's sign relation (no `REVEAL_MIRROR` entry
+    // exists past 10) and, unlike the retail spiral, the enumerator's offsets
+    // are already Z-shifted through `Base()`.
+    #[cfg(feature = "ares")]
+    if range > MAX_SIGHT_RANGE {
+        let spread = usize::from(range).min(0x100); // CellSpreadEnumerator::Max
+        let limit_sqr = (spread as i64 + 1) * (spread as i64 + 1);
+        let spread_i = spread as i32;
+        for (dx, dy) in crate::sim::cell_rect::cell_spread_offsets(spread) {
+            let dx = i32::from(dx);
+            let dy = i32::from(dy);
+            if dx.abs() > spread_i {
+                continue;
+            }
+            let mag_sqr = i64::from(dx) * i64::from(dx) + i64::from(dy) * i64::from(dy);
+            if mag_sqr >= limit_sqr {
+                continue;
+            }
+            let rx = cx + dx;
+            let ry = cy + dy;
+            if !(on_map(rx, ry) && rx >= 0 && rx < w && ry >= 0 && ry < h) {
+                continue;
+            }
+            if reveal_by_height && let Some(levels) = height_grid {
+                // Ares `MapRevealer::CheckLevel`: obstruction is the offset's
+                // sign relation (sgn(-dx), sgn(-dy)) back toward the viewer.
+                let rel_x = if dx < 0 { 1 } else { -1 };
+                let rel_y = if dy < 0 { 1 } else { -1 };
+                let obs_x = rx + rel_x;
+                let obs_y = ry + rel_y;
+                if obs_x >= 0 && obs_x < w && obs_y >= 0 && obs_y < h {
+                    let obs_level =
+                        i32::from(levels.level(obs_x as u16, obs_y as u16, width) as i8);
+                    if viewer_level + 3 < obs_level {
+                        continue; // terrain blocks LOS
+                    }
+                }
+            }
+            cells.push((rx as u16, ry as u16));
+        }
+        return cells;
+    }
 
     for i in 0..spiral_end {
         let (dx, dy) = REVEAL_SPIRAL[i];
