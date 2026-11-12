@@ -63,6 +63,16 @@ fn line_vehicle_floor(rules: &RuleSet, obs: &Observation<'_>) -> Option<i32> {
 /// line unit's price is as far as it goes ([`unit_ceiling`]).
 const RICH_CREDITS: i32 = 4_000;
 
+/// How many line vehicles in hand make a house rich enough that the infantry
+/// ceiling stops applying, in vehicles.
+///
+/// The ceiling's reason is that the wallet has to reach one vehicle's price.
+/// Six is "several times over": the house could buy a line vehicle and still
+/// have the price of five more, so there is nothing left for the ceiling to
+/// protect. Read against the line vehicle's own price rather than as a
+/// constant, because the two sides' tanks cost different amounts.
+const RICH_VEHICLES: i32 = 6;
+
 /// The share of the fighting army that has to be infantry, in percent.
 ///
 /// Infantry is the cheapest way to hold ground and the only answer to another
@@ -156,11 +166,30 @@ pub(super) fn fill_lines(
     let saving_for_the_tank = budget.free < vehicle_floor;
     let a_soldier_would_reset_the_saving =
         saving_for_the_tank && budget.free >= vehicle_floor - INFANTRY_MIN_CREDITS;
-    // Read for the log line and for the "save versus spend" note above; it is
-    // deliberately not part of the predicate any more.
-    let vehicle_affordable = budget.free >= vehicle_floor && budget.free < RICH_CREDITS;
-    let _ = vehicle_affordable;
-    let barracks_holds = infantry_full && !a_soldier_would_reset_the_saving;
+    // A house holding many vehicles' worth of credits is not saving for a
+    // vehicle, it is rich, and the ceiling has no work to do.
+    //
+    // The ceiling exists for one reason: a soldier costs a tenth of a tank, so
+    // a barracks with the wallet to itself spends every credit the house earns
+    // and the price of a vehicle is never reached. That reason is void once the
+    // wallet already holds the price several times over — and past that point
+    // the ceiling is pure lost output, because the war factory cannot absorb
+    // the money on its own.
+    //
+    // Measured at `--credits 100000`, Arena.mmx seed 0x5EED, 30000 ticks:
+    // `infantry=72 / fighters=87` — 83% of the army was infantry, so the
+    // 55% ceiling had stopped the barracks long before; the vehicle line was
+    // one factory building one unit at a time; and 38306 credits sat unspent
+    // at the end of the match while income ran at 180 a minute. The army the
+    // money could have bought was never bought.
+    //
+    // `RICH_VEHICLES` is the same intent the fixed `RICH_CREDITS` above
+    // carries, read against the price that matters instead of a constant: six
+    // line vehicles in hand. At 2000 credits of free cash (the ordinary match)
+    // this is false, so the ceiling keeps its documented behaviour; at 100000
+    // it is true from the first frame and the barracks keeps working.
+    let rich = budget.free >= vehicle_floor.saturating_mul(RICH_VEHICLES);
+    let barracks_holds = infantry_full && !rich && !a_soldier_would_reset_the_saving;
     let order = if infantry_short {
         [
             ProductionCategory::Infantry,
@@ -1420,5 +1449,90 @@ mod tests {
         );
         // And quiet is a window, not a death sentence: the front moves.
         assert!(sunk.may_buy(ENGINEER_QUIET_FRAMES));
+    }
+
+    /// A rich house keeps the barracks working past the infantry ceiling.
+    ///
+    /// The ceiling protects the wallet's climb to a vehicle's price. A house
+    /// already holding many vehicles' worth of credits has no climb left to
+    /// protect, and stopping the barracks then is lost output the war factory
+    /// cannot make up: measured at `--credits 100000`, 30000 ticks, 83% of the
+    /// army was infantry with 38306 credits unspent at the end.
+    #[test]
+    fn a_rich_wallet_keeps_the_barracks_turning_past_the_ceiling() {
+        let Some((mut sim, rules)) = arena(0xA17) else {
+            return;
+        };
+        let owner = sim.interner.intern("Americans");
+        for (name, cell) in [
+            ("GACNST", (16u16, 16u16)),
+            ("GAPOWR", (12, 16)),
+            ("GAPILE", (20, 16)),
+            ("GAWEAP", (24, 16)),
+        ] {
+            sim.spawn_object(name, "Americans", cell.0, cell.1, 255, &rules)
+                .unwrap_or_else(|| panic!("{name}"));
+        }
+        // Fifty of sixty fighters are infantry: past the 55% ceiling. Built as
+        // a ledger rather than as 50 objects: what the ceiling reads is
+        // `census.tiers`, and spawning that many soldiers is a fixture the map
+        // does not have room for.
+        let mut brain = RetailBrain::new(0xA17);
+        brain.census = ledger(&rules, &sim, owner);
+        brain.census.fighters = 60;
+        brain.census.tiers[Slot::Infantry.index()] = [50, 0, 0];
+        brain.census.tiers[Slot::Vehicle.index()] = [10, 0, 0];
+        assert!(infantry_above_ceiling(&brain.census), "past the ceiling");
+
+        let obs = Observation::new(&sim, owner);
+        let floor = line_vehicle_floor(&rules, &obs).expect("the side has a line vehicle");
+        let queued = |sim: &Simulation, out: &Outbox| -> Vec<String> {
+            out.intents
+                .iter()
+                .filter_map(|intent| match intent {
+                    Intent::QueueProduction { type_id } => {
+                        Some(sim.interner().resolve(*type_id).to_string())
+                    }
+                    _ => None,
+                })
+                .collect()
+        };
+
+        // Ordinariness: a wallet that cannot buy several vehicles still holds.
+        let ordinary = Budget {
+            committed: 0,
+            free: floor,
+            income: None,
+        };
+        let mut out = Outbox::default();
+        fill_lines(&mut brain, &rules, &obs, &ordinary, &mut out);
+        let ordinary_queued = queued(&sim, &out);
+        assert!(
+            ordinary_queued.iter().all(
+                |name| rules.object(name).expect("a type").category != ObjectCategory::Infantry
+            ),
+            "a wallet of one vehicle's price still saves: {ordinary_queued:?}"
+        );
+
+        // Riches: the same army and the same ceiling, and the barracks fires.
+        let mut brain = RetailBrain::new(0xA17);
+        brain.census = ledger(&rules, &sim, owner);
+        brain.census.fighters = 60;
+        brain.census.tiers[Slot::Infantry.index()] = [50, 0, 0];
+        brain.census.tiers[Slot::Vehicle.index()] = [10, 0, 0];
+        let mut out = Outbox::default();
+        let rich = Budget {
+            committed: 0,
+            free: floor.saturating_mul(RICH_VEHICLES),
+            income: None,
+        };
+        fill_lines(&mut brain, &rules, &obs, &rich, &mut out);
+        let rich_queued = queued(&sim, &out);
+        assert!(
+            rich_queued.iter().any(
+                |name| rules.object(name).expect("a type").category == ObjectCategory::Infantry
+            ),
+            "a rich house does not idle its barracks: {rich_queued:?}"
+        );
     }
 }
