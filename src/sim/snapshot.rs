@@ -2691,7 +2691,7 @@ mod tests {
             sim.add_entity_occupancy(stable_id);
             sim.substrate
                 .logic
-                .try_push(stable_id)
+                .try_push(stable_id, crate::sim::world::ObjectKind::Entity)
                 .expect("fixture LogicClass registration");
         }
 
@@ -4913,7 +4913,7 @@ mod tests {
             sim.substrate.entities.insert(entity);
             sim.substrate
                 .logic
-                .try_push(stable_id)
+                .try_push(stable_id, crate::sim::world::ObjectKind::Entity)
                 .expect("owner Logic registration");
         }
 
@@ -5932,7 +5932,7 @@ mod tests {
         sim.substrate.entities.insert(entity);
         sim.substrate
             .logic
-            .try_push(entity_id)
+            .try_push(entity_id, crate::sim::world::ObjectKind::Entity)
             .expect("active TubeMovement fixture enters LogicClass order");
         // Native in-scenario load restarts Scenario RNG from Seed0; isolate
         // TubeMovement persistence on that same post-load cursor.
@@ -8617,7 +8617,7 @@ mod tests {
         sim.substrate.entities.insert(off_cell_member);
         sim.substrate
             .logic
-            .try_push(1)
+            .try_push(1, crate::sim::world::ObjectKind::Entity)
             .expect("logic fixture append");
 
         let mut marked_non_member = GameEntity::test_default(2, "MTNK", "Americans", 6, 6);

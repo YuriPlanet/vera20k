@@ -274,7 +274,7 @@ impl FiredBullet {
         // types have ROT=0; Execute96's ChemMissile has ROT=4 and requires it.
         let velocity = if payload
             .projectile_type()
-            .and_then(|id| rules.projectile(world.interner.resolve(id)))
+            .and_then(|id| world.interner.projectile_type(id, rules))
             .is_some_and(|projectile| projectile.rot > 0)
         {
             crate::sim::projectile::launch::bullet_fire_homing_velocity(velocity)
@@ -402,7 +402,7 @@ fn admit_bullet(
     let projectile_type = bullet
         .payload
         .projectile_type()
-        .and_then(|id| rules.projectile(world.interner.resolve(id)));
+        .and_then(|id| world.interner.projectile_type(id, rules));
     let delivery = classify_projectile_type(
         projectile_type.unwrap_or_else(|| missing_projectile_fallback()),
         bullet.max_speed,
@@ -474,7 +474,7 @@ impl Simulation {
         let payload = bullet.payload();
         let flak_scatter = payload
             .projectile_type()
-            .and_then(|id| rules.projectile(self.interner.resolve(id)))
+            .and_then(|id| self.interner.projectile_type(id, rules))
             .is_some_and(|kind| kind.flak_scatter);
         let Some(weapon) = payload
             .installed_weapon()
@@ -523,7 +523,7 @@ impl Simulation {
         let projectile_type = bullet
             .payload()
             .projectile_type()
-            .and_then(|id| rules.projectile(self.interner.resolve(id)));
+            .and_then(|id| self.interner.projectile_type(id, rules));
         let owner = self.substrate.entities.get(bullet.source_id());
         let point =
             |coord: ProjectileCoord| (i64::from(coord.x), i64::from(coord.y), i64::from(coord.z));

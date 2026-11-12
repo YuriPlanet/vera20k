@@ -1424,7 +1424,11 @@ impl Fixture {
             })
         );
         let mut in_logic = GameSnapshot::load_unchecked(&bytes).unwrap().sim;
-        in_logic.substrate.logic.try_push(first).unwrap();
+        in_logic
+            .substrate
+            .logic
+            .try_push(first, super::ObjectKind::Smudge)
+            .unwrap();
         assert_eq!(
             in_logic.restore_after_snapshot_load(),
             Err(SnapshotRestoreError::InactiveLogicIdentity {

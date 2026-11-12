@@ -3269,17 +3269,32 @@ impl Simulation {
     }
 
     /// The kind of the object `stable_id` names, or `None` when no store
-    /// holds it. Object IDs are unique across stores, so the probe order
-    /// ([`ObjectKind::ALL`]) is only a cost: entities first, as most Logic
-    /// slots are, and particles last, as finding one walks the systems.
+    /// holds it. Object IDs are unique across stores, so the probe order is
+    /// only a cost: entities and anims first, as most Logic slots are; then
+    /// the store the Logic list noted at the id's registration (a bullet's
+    /// every visit, and its retirement until it leaves Logic, ask here);
+    /// then the other stores in [`ObjectKind::ALL`]'s order, with particles
+    /// last, as finding one walks the systems. VERA-only: gamemd's objects
+    /// carry their class in their vtable.
     pub(crate) fn classify_object(&self, stable_id: u64) -> Option<ObjectKind> {
+        const COMMON: [ObjectKind; 2] = [ObjectKind::Entity, ObjectKind::Anim];
+        let holds = |kind| self.object_store_holds(kind, stable_id);
+        if let Some(kind) = COMMON.into_iter().find(|&kind| holds(kind)) {
+            return Some(kind);
+        }
+        if let Some(kind) = self.substrate.logic.kind_of(stable_id)
+            && holds(kind)
+        {
+            return Some(kind);
+        }
         ObjectKind::ALL
             .into_iter()
-            .find(|&kind| self.object_store_holds(kind, stable_id))
+            .filter(|kind| !COMMON.contains(kind))
+            .find(|&kind| holds(kind))
     }
 
     /// Whether `kind`'s store holds `stable_id`.
-    fn object_store_holds(&self, kind: ObjectKind, stable_id: u64) -> bool {
+    pub(super) fn object_store_holds(&self, kind: ObjectKind, stable_id: u64) -> bool {
         match kind {
             ObjectKind::Entity => self.substrate.entities.contains(stable_id),
             ObjectKind::Anim => self.substrate.anims.contains_key(stable_id),
@@ -3424,7 +3439,7 @@ impl Simulation {
         if !kind.joins_logic() {
             return false;
         }
-        if self.substrate.logic.try_push(stable_id).is_err() {
+        if self.substrate.logic.try_push(stable_id, kind).is_err() {
             return false;
         }
         #[cfg(any(test, feature = "test-support"))]
@@ -6218,7 +6233,7 @@ impl Simulation {
                 .projectiles
                 .get(expired_id)
                 .and_then(|bullet| bullet.payload().projectile_type())
-                .and_then(|type_id| context.rules().projectile(self.interner.resolve(type_id)))
+                .and_then(|type_id| self.interner.projectile_type(type_id, context.rules()))
                 .is_some_and(|kind| kind.scalable)
             && self.projectiles.scalable_enrolled(expired_id);
         #[cfg(any(test, feature = "test-support"))]

@@ -5570,7 +5570,7 @@ impl Simulation {
         let firers_palette = projectile
             .payload()
             .projectile_type()
-            .and_then(|id| rules.projectile(interner.resolve(id)))
+            .and_then(|id| interner.projectile_type(id, rules))
             .is_some_and(|kind| kind.firers_palette);
         let house = firers_palette
             .then(|| substrate.entities.get(source_id))
@@ -5627,7 +5627,7 @@ impl Simulation {
             let inviso = projectile
                 .payload
                 .projectile_type()
-                .and_then(|id| rules.projectile(self.interner.resolve(id)))
+                .and_then(|id| self.interner.projectile_type(id, rules))
                 .is_some_and(|kind| kind.inviso);
             let placement = projectile.initial_target_position;
             self.admit_projectile(stable_id, projectile);
@@ -5686,6 +5686,13 @@ impl Simulation {
                 self.classify_object(id)
                     .is_some_and(|kind| self.logic_membership_flag(id, kind)),
                 "logic order id {id} is missing or not membership-flagged",
+            );
+            debug_assert!(
+                self.substrate
+                    .logic
+                    .kind_of(id)
+                    .is_none_or(|kind| self.object_store_holds(kind, id)),
+                "logic order id {id} notes a kind whose store does not hold it",
             );
         }
         let mut flagged = 0;
@@ -7406,6 +7413,7 @@ impl Simulation {
         }
         for id in self.substrate.logic.snapshot() {
             if let Some(kind) = self.classify_object(id).filter(|kind| kind.joins_logic()) {
+                self.substrate.logic.note_kind(id, kind);
                 Self::set_logic_membership_flag(
                     &mut self.terrain_objects,
                     &mut self.substrate,

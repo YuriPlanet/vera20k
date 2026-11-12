@@ -415,7 +415,7 @@ impl Simulation {
             .projectiles
             .get(id)
             .and_then(|projectile| projectile.payload().projectile_type())
-            .and_then(|type_id| rules.projectile(self.interner.resolve(type_id)));
+            .and_then(|type_id| self.interner.projectile_type(type_id, rules));
         let trailer = projectile_type.and_then(|kind| {
             self.projectiles
                 .trailer(&head, kind, self.session.binary_frame())
@@ -5650,7 +5650,10 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
     /// store, so a fixture entity has to be a scheduler member or the walk skips
     /// it and every assertion passes vacuously.
     fn register_in_logic(sim: &mut Simulation, id: u64) {
-        sim.substrate.logic.try_push(id).expect("logic slot");
+        sim.substrate
+            .logic
+            .try_push(id, ObjectKind::Entity)
+            .expect("logic slot");
         sim.substrate
             .entities
             .get_mut(id)
