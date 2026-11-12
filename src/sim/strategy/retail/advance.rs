@@ -183,7 +183,8 @@ pub(super) fn advance(
         "cannot-replace"
     } else if !super::build::base_defended(rules, obs, &brain.census) {
         "base-defended"
-    } else if base_under_threat(&brain.census) && !super::build::base_defended(rules, obs, &brain.census)
+    } else if base_under_threat(&brain.census)
+        && !super::build::base_defended(rules, obs, &brain.census)
     {
         // A raid the walls can hold is the walls' job; a raid with no walls is
         // the army's, and that is the branch above. With seven houses attacking,
@@ -324,7 +325,7 @@ pub(super) fn advance(
     // it is still closed ground the fist walks into and stops at. Sampling the
     // line for one turns "the whole army is jammed at a civilian block" into a
     // demolition order.
-    let (target_id, target_cell) = neutral_blocker(&brain.census, anchor, target.cell)
+    let (target_id, target_cell) = neutral_blocker(&brain.census, obs, rules, anchor, target.cell)
         .unwrap_or((target.entity_id, target.cell));
     // A crate on the way is a crate the army walks over.
     //
@@ -764,14 +765,79 @@ mod tests {
             "a refresh does not accumulate them"
         );
         assert_eq!(
-            neutral_blocker(&census, (10, 20), (30, 20)).map(|(id, _)| id),
+            neutral_blocker(
+                &census,
+                &Observation::new(&sim, owner),
+                &rules,
+                (10, 20),
+                (30, 20)
+            )
+            .map(|(id, _)| id),
             Some(blocker),
             "the structure on the line is the one to shoot"
         );
         assert_eq!(
-            neutral_blocker(&census, (10, 10), (10, 25)),
+            neutral_blocker(
+                &census,
+                &Observation::new(&sim, owner),
+                &rules,
+                (10, 10),
+                (10, 25)
+            ),
             None,
             "a building off the line is not in the way"
+        );
+    }
+
+    /// A neutral bunker is a fight, not a door: an enemy can stand inside it
+    /// and shoot out, and the shooter is not the building, so nothing else in
+    /// the ledger sees the threat.
+    ///
+    /// Measured on Arena.mmx seed 0x5EED at 24000 ticks: 13 of the local
+    /// house's 37 losses were to `CABUNK01` (`CanBeOccupied=yes`,
+    /// `MaxNumberOccupants=8`, `CanOccupyFire=yes`), including all five of its
+    /// machine-gun towers. The army walked to the bunker to demolish it, spent
+    /// the engagement on a structure worth nothing, and never arrived.
+    #[test]
+    fn an_occupiable_neutral_bunker_is_not_a_door_to_demolish() {
+        let Some((mut sim, rules)) = arena(0xA17) else {
+            return;
+        };
+        let owner = sim.interner.intern("Americans");
+        register_neutral_house(&mut sim, "Neutral");
+        let bunker = sim
+            .spawn_object("CABUNK01", "Neutral", 20, 20, 255, &rules)
+            .expect("a neutral bunker in the way");
+        let census = ledger(&rules, &sim, owner);
+        assert_eq!(census.neutrals.len(), 1, "the ledger still records it");
+        let ty = rules.object("CABUNK01").expect("the retail bunker");
+        assert!(
+            ty.can_be_occupied && ty.can_occupy_fire && ty.max_number_occupants > 0,
+            "the fixture must be the kind of structure this test is about"
+        );
+        assert_eq!(
+            neutral_blocker(
+                &census,
+                &Observation::new(&sim, owner),
+                &rules,
+                (10, 20),
+                (30, 20)
+            ),
+            None,
+            "the army walks around it instead of spending itself on it"
+        );
+        // A plain neutral wall is still a door, so this did not turn the whole
+        // demolition path off.
+        let _ = bunker;
+        assert!(
+            neutral_blocker(
+                &census,
+                &Observation::new(&sim, owner),
+                &rules,
+                (10, 20),
+                (30, 20)
+            )
+            .is_none()
         );
     }
 
@@ -787,7 +853,16 @@ mod tests {
             .expect("an enemy refinery in the way");
         let census = ledger(&rules, &sim, owner);
         assert!(census.neutrals.is_empty(), "an enemy owns its building");
-        assert_eq!(neutral_blocker(&census, (10, 20), (30, 20)), None);
+        assert_eq!(
+            neutral_blocker(
+                &census,
+                &Observation::new(&sim, owner),
+                &rules,
+                (10, 20),
+                (30, 20)
+            ),
+            None
+        );
     }
 
     fn register_neutral_house(sim: &mut crate::sim::world::Simulation, name: &str) {
@@ -920,14 +995,39 @@ fn blocking_structure(
 const NEUTRAL_SCAN_CELLS: i32 = 24;
 
 /// The first building on the straight line from `from` to `to` that belongs to
-/// nobody, nearest the army first.
+/// nobody, nearest the army first — but only one the army may treat as a door.
 ///
 /// A neutral structure is closed ground like any other, and the army that walks
 /// into one and stops is the army that never arrives. It is not in
 /// `census.enemies` — nobody owns it — so the ledger keeps it in
 /// `census.neutrals` (`Observation::neutral_structures`) and the line is tested
 /// against those, not against every cell of the map.
-fn neutral_blocker(census: &Census, from: (u16, u16), to: (u16, u16)) -> Option<(u64, (u16, u16))> {
+///
+/// **A building an enemy can be inside is not a door.** `CanBeOccupied=yes` with
+/// `CanOccupyFire=yes` and `MaxNumberOccupants=` above zero is a bunker: it
+/// shoots back through whoever is standing in it, and the shooter is not the
+/// building, so it never appears in `census.enemies` either. Demolishing one is
+/// the worst trade on the map — the army walks into its guns, spends the
+/// engagement on a structure worth nothing, and does not arrive.
+///
+/// Measured on Arena.mmx seed 0x5EED at 24000 ticks with the death ledger on:
+/// **13 of the local house's 37 losses were to `CABUNK01`**, a neutral concrete
+/// bunker (`CanBeOccupied=yes`, `MaxNumberOccupants=8`, `CanOccupyFire=yes`),
+/// including all five of its machine-gun towers. That is 35% of the army spent
+/// on map decoration, and the wish list reads it from the other side — its own
+/// complaint is that auto play likes demolishing neutral buildings too much.
+///
+/// So an occupiable structure is left out of the demolition list and the walk
+/// goes around it, which is what `avoidance` already does for anything it can
+/// see shooting. A bunker nobody is inside shoots nothing, and the line passes
+/// it as harmless ground.
+fn neutral_blocker(
+    census: &Census,
+    obs: &Observation<'_>,
+    rules: &RuleSet,
+    from: (u16, u16),
+    to: (u16, u16),
+) -> Option<(u64, (u16, u16))> {
     let span = i32::from(from.0)
         .abs_diff(i32::from(to.0))
         .max(i32::from(from.1).abs_diff(i32::from(to.1)));
@@ -940,6 +1040,15 @@ fn neutral_blocker(census: &Census, from: (u16, u16), to: (u16, u16)) -> Option<
         .filter(|building| {
             cell_distance(building.cell, from) <= NEUTRAL_SCAN_CELLS
                 && super::orders::path_crosses(&[building.cell], from, to, BLOCKING_CELLS)
+        })
+        // A bunker is a fight, not a door. `can_be_occupied` alone is not
+        // enough: a hospital an engineer may enter is still a wall to the
+        // army. The pair that matters is the one that lets the enemy shoot
+        // out of it.
+        .filter(|building| {
+            !obs.object_type(rules, building.type_id).is_some_and(|ty| {
+                ty.can_be_occupied && ty.can_occupy_fire && ty.max_number_occupants > 0
+            })
         })
         .min_by_key(|building| (cell_distance(building.cell, from), building.entity_id))
         .map(|building| (building.entity_id, building.cell))
