@@ -21,7 +21,7 @@ on purpose are in [ares-skipped-hooks.md](ares-skipped-hooks.md).
   [ares-attach-effect.md](ares-attach-effect.md)). `ares-src/report/ini_coverage.tsv` is
   not exhaustive; use the key scan under Tools.
 - Hooks: Ares 3.0 installs 1448 (`report/hooks.tsv` also lists 234 0.A hooks that 3.0
-  removed). The engine source cites 1013; the chain docs give 369 more a disposition
+  removed). The engine source cites 1021; the chain docs give 361 more a disposition
   (ported elsewhere, equivalent, not applicable, skipped or residual); 66 are
   untouched, listed at the end with `0x5F3D65`, whose address the engine quotes only
   for the stock destructor. A residual disposition is still a gap: every
@@ -74,7 +74,6 @@ Stock gaps found in passing, with no Ares dependency:
 | DropPod | A negative count (native loops about 2^32 tries), SetDestination's prologue and Teleporter arm, the Foot's own locomotor answering while the pod flies, a landing past the end of `DropPod=` | [ares-superweapon-types.md](ares-superweapon-types.md) |
 | HunterSeeker | The tube coordinate of a target in a tunnel; the facing conversion may differ by one binary-angle unit | [ares-hunter-seeker.md](ares-hunter-seeker.md) |
 | Terrain fire | Finish_Fire_Death's crumble of a zero-health tree (a lethal hit removes the tree first), the spread runs after the animation step | [ares-combat-sim-hooks.md](ares-combat-sim-hooks.md) |
-| Ares ParticleSystemExt | Ares' own Smoke/Spark/Railgun particle simulation, drawing from the synchronised Scenario stream (a simulation port) | [ares-anim-particles.md](ares-anim-particles.md) |
 
 ## Smaller gameplay residuals
 
@@ -100,7 +99,6 @@ data.
 | Expired Flamer/Scorch anims make no SmallFire/LargeFire anims (needs `MapClass::GetRandomCoordsNear`); retail sets neither key | `0x4250C9`, `0x42511B`, `0x42513F` | [ares-anim-particles.md](ares-anim-particles.md) |
 | Dormant on retail data: Doggie, the `DeathAnims=` owner, Mission_Guard's superweapon gate, the ICBM crate's Ares Nuke type, a bullet damage anim's MakeInfantryOwner outside Phobos | `0x51F628`, `0x518CB3`, `0x51ABD7`, `0x5200C1`, `0x51849A`, `0x449716`, `0x6CEEB0`, `0x469C4E` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
 | Superweapon money: charge-drain activation with `Money.Amount` | none | [ares-superweapon-money.md](ares-superweapon-money.md) |
-| UnitDelivery: `Deliver.Buildups`; the placement order and RNG are VERA's (Ares asks Pathfinding_Find `0x56DC20` once, with a `buildable` argument VERA's finder port does not take) | none | [ares-unit-delivery.md](ares-unit-delivery.md) |
 | AttachEffect: `TemporalHidesAnim` and the airborne half-distance collection | none | [ares-attach-effect.md](ares-attach-effect.md) |
 | Country power plants: a house with no candidate is a fatal error natively (`0x1001DEF6`); VERA splices nothing | none | [ares-country-powerplants.md](ares-country-powerplants.md) |
 | With Phobos too: Phobos `SuperWeaponSidebar.*Houses` keep the 0x80 buffer | `0x4750EC`, `0x475107` | [ares-bugfixes.md](ares-bugfixes.md) |
@@ -108,9 +106,6 @@ data.
 Input rungs
 ([ares-techno-hooks.md](ares-techno-hooks.md),
 [ares-building-house-hooks.md](ares-building-house-hooks.md)):
-- the heal cursor and action over objects (`0x51E710`, `0x73FDBD`): a healer heals by its
-  warhead's Verses, so a mod's mechanic infantry (Brute Force `CVEngineer`, `REPDRONE`,
-  placed by maps or triggers) shows no heal action over a damaged vehicle;
 - an Ivan entering an allied Grinder without Ctrl (`0x51EB48`; VERA answers IvanBomb);
 - the structure and defense tab hotkeys, the cameo click and the ready-building strip
   asking for a usable factory (`0x535DB6`, `0x535E76`, `0x6AB312`, `0x6A9822`);

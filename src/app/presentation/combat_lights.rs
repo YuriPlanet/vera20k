@@ -58,12 +58,26 @@ pub(crate) fn particle_system_light(
     system: &crate::sim::particles::ParticleSystem,
     kind: &crate::rules::particle_system_type::ParticleSystemType,
     detail: &mut DetailState,
+    ares: bool,
 ) -> Option<CombatLightDrawRecord> {
-    if !kind.one_frame_light || kind.light_size <= 0 || system.particles().is_empty() {
-        return None;
-    }
     let count =
         i32::try_from(system.particles().len()).expect("native particle vector count fits i32");
+    // Ares 3.0 ParticleSystemClass_Draw (Ares.dll 10029050, hook 0x62E2AD on
+    // the count read, resuming at 0x62E2B3): its Spark/Railgun records count
+    // too, and `ParticleCap=0` counts nothing instead of dividing by zero.
+    // `ares` is [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
+    let count = if !ares {
+        count
+    } else if kind.particle_cap == 0 {
+        0
+    } else {
+        count.saturating_add(system.ares().map_or(0, |ext| {
+            i32::try_from(ext.particles().len()).unwrap_or(i32::MAX)
+        }))
+    };
+    if !kind.one_frame_light || kind.light_size <= 0 || count <= 0 {
+        return None;
+    }
     let base_size =
         system_light_base_size(count, kind.particle_cap as i32, kind.light_size).ok()?;
     CombatLight {
