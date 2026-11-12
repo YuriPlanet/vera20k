@@ -175,13 +175,63 @@ pub(super) fn captures(
         })
         .map(|entity| entity.cell)
         .collect();
+    // What can see a spy coming. The retail rules mark no `Detector=` key on any
+    // type, and the dog's own section (`[DOG] NotHuman=yes`, `Natural=yes`)
+    // carries nothing about spies either: the reveal is engine behaviour, and the
+    // only retail-marked pair for it is the dog's. A unit whose weapon warhead
+    // mind-controls is on the list for the worse reason — a spy that is taken is
+    // a spy the enemy now owns.
+    let watchers: Vec<(u16, u16)> = obs
+        .enemy_entities()
+        .filter(|entity| {
+            obs.object_type(rules, entity.type_id).is_some_and(|ty| {
+                super::census::Traits::of(rules, ty).scout || mind_controls(rules, ty)
+            })
+        })
+        .map(|entity| entity.cell)
+        .collect();
     let spy_targets: Vec<(EnemyEntity, u8)> = obs
         .spyable_buildings(rules)
         .filter_map(|target| {
             let ty = obs.object_type(rules, target.type_id)?;
+            // A class the house has already unlocked is not worth a second spy:
+            // one barracks infiltration gives veteran infantry for the match,
+            // one war factory gives veteran vehicles, one lab gives the tech.
+            // The walk is spent on money, power, radar and the superweapon
+            // instead, where the effect is per building.
+            if !spy_class_open(rules, ty, &brain.infiltrated) {
+                return None;
+            }
             Some((target, infiltration_value(rules, ty)))
         })
+        .filter(|(target, _)| !spy_route_blocked(obs, rules, target.cell, &watchers))
         .collect();
+    // The receipts from spies already sent. A spy that reached its building is
+    // gone from the ledger, and that disappearance is the only signal there is:
+    // the infiltration itself lives in Ares' building extension data, which this
+    // brain does not read. A spy that died on the way is indistinguishable from
+    // one that landed, so a class can be marked done by a spy that never
+    // arrived — the cost is one missed unlock, never a wasted walk.
+    if !brain.spy_errand.is_empty() {
+        let alive: std::collections::BTreeSet<u64> = brain
+            .census
+            .units
+            .iter()
+            .map(|unit| unit.entity_id)
+            .collect();
+        let done: Vec<(u64, u8)> = brain
+            .spy_errand
+            .iter()
+            .filter(|(unit, _)| !alive.contains(*unit))
+            .map(|(unit, code)| (*unit, *code))
+            .collect();
+        for (unit, _) in &done {
+            brain.spy_errand.remove(unit);
+        }
+        for (_, code) in done {
+            brain.infiltrated.insert(code);
+        }
+    }
     let mut issued = 0;
     for unit in &brain.census.units {
         if issued >= FORCE_ORDERS_PER_FRAME {
@@ -265,6 +315,17 @@ pub(super) fn captures(
                 target: target.entity_id,
             },
         );
+        // A spy that walks into a barracks, a war factory or a lab has bought
+        // the unlock, and the walk is not worth repeating. Remember which class
+        // this one was sent to: the unit is consumed on arrival, so its
+        // disappearance is the receipt.
+        if ty.agent
+            && let Some(code) = obs
+                .object_type(rules, target.type_id)
+                .and_then(|target_ty| spy_class_code(rules, target_ty))
+        {
+            brain.spy_errand.insert(unit.entity_id, code);
+        }
         issued += 1;
     }
 }
@@ -1274,6 +1335,66 @@ pub(super) fn sell_hard_to_hold(
 
 /// How many frames between two sales.
 const SALE_GAP_FRAMES: u64 = 60;
+
+/// Whether a type's weapon carries a mind-control warhead.
+///
+/// The warhead query the wishlist asked for: `Primary=`/`Secondary=` name a
+/// weapon, the weapon names a warhead, and the warhead carries the flags. Retail
+/// marks nothing at unit level for this — a Yuri clone and a rifleman differ only
+/// in what their weapons point at — so this is the only place the answer exists.
+pub(super) fn mind_controls(rules: &RuleSet, ty: &ObjectType) -> bool {
+    (0..2).any(|slot| {
+        ty.weapon_at(slot)
+            .and_then(|name| rules.weapon(name))
+            .and_then(|weapon| weapon.warhead.as_deref())
+            .and_then(|name| rules.warhead(name))
+            .is_some_and(|warhead| warhead.mind_control)
+    })
+}
+
+/// The infiltration classes that unlock something once per match: a barracks
+/// gives veteran infantry, a war factory veteran vehicles, a lab the other
+/// side's tech. Any one of them is enough; a second spy into the same class
+/// buys nothing.
+fn spy_class_code(rules: &RuleSet, ty: &ObjectType) -> Option<u8> {
+    if rules.build_barracks_types.iter().any(|name| *name == ty.id) {
+        Some(1)
+    } else if rules.build_weapons_types.iter().any(|name| *name == ty.id) {
+        Some(2)
+    } else if rules.build_tech_types.iter().any(|name| *name == ty.id) {
+        Some(3)
+    } else {
+        None
+    }
+}
+
+/// Whether this class is still worth a spy.
+fn spy_class_open(
+    rules: &RuleSet,
+    ty: &ObjectType,
+    taken: &std::collections::BTreeSet<u8>,
+) -> bool {
+    spy_class_code(rules, ty).is_none_or(|code| !taken.contains(&code))
+}
+
+/// Whether an enemy can see or take a spy on its way to `cell`.
+///
+/// A spy is revealed before it arrives, and a spy taken by mind control is worse
+/// than one shot: it walks into the enemy's own base afterwards.
+fn spy_route_blocked(
+    obs: &Observation<'_>,
+    rules: &RuleSet,
+    cell: (u16, u16),
+    watchers: &[(u16, u16)],
+) -> bool {
+    watchers
+        .iter()
+        .any(|watcher| squared_distance(*watcher, cell) <= SPY_WATCH_CELLS * SPY_WATCH_CELLS)
+}
+
+/// How near a spy's target a watcher may stand before the walk is refused, in
+/// cells: the reveal range plus a step, since the spy is seen on approach.
+const SPY_WATCH_CELLS: i32 = 6;
 
 /// How near a crate has to be for it to be a detour, in cells.
 ///

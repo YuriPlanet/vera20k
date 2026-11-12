@@ -337,6 +337,13 @@ pub struct RetailBrain {
     /// base that lost its ground can qualify a dozen buildings in one frame and
     /// a dozen refunds at once is a windfall the wishlist did not ask for.
     pub(super) sale_at: u64,
+    /// Infiltration classes the house has already unlocked: a barracks, a war
+    /// factory, a lab. One of each is the whole unlock, and a second spy buys
+    /// nothing.
+    pub(super) infiltrated: std::collections::BTreeSet<u8>,
+    /// Which infiltration class each spy already sent was walking to, by unit.
+    /// The unit is consumed on arrival, so its disappearance is the receipt.
+    pub(super) spy_errand: std::collections::BTreeMap<u64, u8>,
     /// The structure the fist committed to, and the frame the commitment may be
     /// re-made: `(entity, until)`. Seven bases make "the nearest structure" a
     /// different answer every time the army moves, and an army that re-picks
@@ -422,6 +429,8 @@ impl RetailBrain {
             capturable_last: BTreeSet::new(),
             push_gate: "none",
             sale_at: 0,
+            infiltrated: std::collections::BTreeSet::new(),
+            spy_errand: std::collections::BTreeMap::new(),
             push_target: None,
             issued: [0; 5],
             last_tick: 0,
