@@ -643,7 +643,7 @@ pub(crate) fn unit_visitor<'a>(
                 let hc: HouseColorIndex = state
                     .match_state
                     .match_presentation
-                    .house_color_map
+                    .effective_house_color_map()
                     .get(remap_owner)
                     .copied()
                     .unwrap_or_default();

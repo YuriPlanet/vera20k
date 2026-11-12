@@ -444,7 +444,7 @@ pub(crate) fn build_super_timer_instances(
                 state
                     .match_state
                     .match_presentation
-                    .house_color_map
+                    .effective_house_color_map()
                     .get(sim.interner().resolve(house))
             })
             .copied()

@@ -341,7 +341,7 @@ pub(super) fn build_world_instances(
                 detail_level: presentation.in_game_options.detail_level,
                 lighting: presentation.lighting.grid(),
                 retained_anim_intensities: Some(presentation.lighting.anim_intensities()),
-                house_colors: &presentation.house_color_map,
+                house_colors: presentation.effective_house_color_map(),
                 hidden_super_anims: &presentation.hidden_super_anims,
                 show_hidden: presentation.in_game_options.show_hidden,
                 local_owner,
@@ -871,7 +871,10 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
                     frame,
                     view.logic_order(),
                     view.houses(),
-                    &presentation.house_color_map,
+                    presentation
+                        .relation_color_map
+                        .as_ref()
+                        .unwrap_or(&presentation.house_color_map),
                     view.session().tick(),
                     view.session().binary_frame(),
                     local_owner
@@ -891,6 +894,7 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
                         .beacon_art
                         .as_ref()
                         .map(|art| (art, beacon_draws.as_slice())),
+                    presentation.relation_color_generation,
                 ),
             )
         });
@@ -1181,13 +1185,15 @@ fn build_placement_ghost(
         return Vec::new();
     };
     let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
+    // The placement ghost is a building of the local player's, so it follows
+    // the relation colours like the finished building will.
     let remap_house = local_owner
         .as_deref()
         .and_then(|owner| {
             state
                 .match_state
                 .match_presentation
-                .house_color_map
+                .effective_house_color_map()
                 .get(owner)
         })
         .copied();

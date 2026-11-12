@@ -175,7 +175,7 @@ pub(crate) fn voxel_anim_visitor<'a>(
             piece,
             kind,
             sim,
-            &presentation.house_color_map,
+            presentation.effective_house_color_map(),
             presentation.lighting.grid(),
         );
         if let Some(object) = voxel_anim_draw_instance(

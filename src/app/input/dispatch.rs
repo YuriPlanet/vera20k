@@ -2191,6 +2191,17 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         HotkeyCommand::RotatePrimary => {
             crate::app::input::primary_rotation::hotkey_pressed(state);
         }
+        // VERA: toggle relation colours — recolour the world's units and
+        // buildings, the minimap dots and the super-weapon timers by each
+        // house's relation to the local observer (self = blue, ally = green,
+        // enemy = red, neutral unchanged), so a player in a large melee can tell
+        // who is who. Pure presentation: it never touches the simulation, so it
+        // cannot affect determinism, networking, or replays.
+        HotkeyCommand::RelationColors => {
+            let presentation = &mut state.match_state.match_presentation;
+            presentation.relation_colors = !presentation.relation_colors;
+            state.match_state.refresh_relation_colors();
+        }
     }
 }
 

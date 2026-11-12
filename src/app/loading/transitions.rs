@@ -295,6 +295,9 @@ pub(crate) fn install_world_presentation(
     state.match_state.match_presentation.overlay_names = assets.overlay_names;
     state.match_state.match_presentation.overlay_radar_colors = assets.overlay_radar_colors;
     state.match_state.match_presentation.house_color_map = assets.house_color_map;
+    // VERA relation colours start each scenario off, in the player colours.
+    state.match_state.match_presentation.relation_colors = false;
+    state.match_state.match_presentation.relation_color_map = None;
     state.match_state.match_presentation.house_roster = map.house_roster;
     state.process_assets.csf = assets.csf;
     state.match_state.match_presentation.theater_name = map.theater_name;

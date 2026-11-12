@@ -112,7 +112,7 @@ pub(crate) fn shp_inputs<'a>(
         local_owner,
         ignore_visibility: state.match_state.sandbox_full_visibility,
         lighting: presentation.lighting.grid(),
-        house_colors: &presentation.house_color_map,
+        house_colors: presentation.effective_house_color_map(),
         building_zshape: presentation.building_zshape.is_some(),
     })
 }
@@ -1583,7 +1583,7 @@ pub(crate) fn build_building_anim_instances(
         let house_color = state
             .match_state
             .match_presentation
-            .house_color_map
+            .effective_house_color_map()
             .get(owner)
             .copied()
             .unwrap_or(crate::rules::house_colors::NO_REMAP);
