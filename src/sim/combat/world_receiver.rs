@@ -3747,7 +3747,7 @@ fn ares_damage_occupants(
     let subject_to_trenches = current
         .payload
         .projectile_type()
-        .and_then(|id| rules.projectile(world.interner.resolve(id)))
+        .and_then(|id| world.interner.projectile_type(id, rules))
         .is_none_or(|projectile| projectile.bullet_type_ext.subject_to_trenches);
     if subject_to_trenches && world.scenario_rng.random_double() >= pass_through {
         return false;
@@ -4395,7 +4395,7 @@ pub(crate) fn commit_projectile_detonations_inline(
         let projectile_type = detonation
             .payload
             .projectile_type()
-            .and_then(|projectile| rules.projectile(world.interner.resolve(projectile)));
+            .and_then(|projectile| world.interner.projectile_type(projectile, rules));
         // A death weapon and a Phobos instant AttachEffect shot both skip the
         // BulletClass cluster loop and its draws.
         let single_detonation = matches!(
@@ -4501,7 +4501,7 @@ pub(crate) fn commit_projectile_detonations_inline(
             let inviso = live_tail
                 .payload
                 .projectile_type()
-                .and_then(|id| rules.projectile(world.interner.resolve(id)))
+                .and_then(|id| world.interner.projectile_type(id, rules))
                 .is_some_and(|kind| kind.inviso);
             emit_detonation_anim(
                 world,

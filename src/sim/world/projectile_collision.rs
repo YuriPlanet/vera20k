@@ -163,7 +163,7 @@ impl ProjectileCollisionWorld<'_> {
             || projectile
                 .payload()
                 .projectile_type()
-                .and_then(|id| self.rules.projectile(self.interner.resolve(id)))
+                .and_then(|id| self.interner.projectile_type(id, self.rules))
                 .is_some_and(|kind| kind.bullet_type_ext.ignores_firestorm)
         {
             return false;

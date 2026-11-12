@@ -2457,7 +2457,7 @@ pub(super) fn emit_admitted_fire(
             .projectiles
             .get(bullet_id)
             .and_then(|bullet| bullet.payload().projectile_type())
-            .and_then(|type_id| rules.projectile(world.interner.resolve(type_id)))
+            .and_then(|type_id| world.interner.projectile_type(type_id, rules))
         {
             world.projectiles.init_scalable(bullet_id, kind);
         }

@@ -393,7 +393,8 @@ macro_rules! object_kinds {
         }
 
         impl ObjectKind {
-            /// Every kind, in [`Simulation::classify_object`]'s probe order.
+            /// Every kind, in the order [`Simulation::classify_object`] probes
+            /// the stores it has not already asked.
             ///
             /// [`Simulation::classify_object`]: super::Simulation::classify_object
             pub(crate) const ALL: [Self; [$(ObjectKind::$kind),+].len()] = [$(Self::$kind),+];
