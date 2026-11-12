@@ -177,7 +177,24 @@ pub(super) fn deploy_yard_maker(
         let far = home.is_some_and(|home| {
             cell_distance(cell, home) > EXPAND_MIN_CELLS * EXPAND_MIN_CELLS * 4
         });
-        if (exposed || far) && obs.destination(entity_id).is_none() {
+        // The one line that says why a maker is not coming home, on a term: a
+        // report of "the captured MCV never arrived" needs to distinguish "it was
+        // never asked", "it was asked and refused" and "it is walking".
+        if obs.tick() % 600 == 0 {
+            log::info!(
+                "auto play: maker at {cell:?} home={home:?} exposed={exposed} far={far} dest={:?}",
+                obs.destination(entity_id)
+            );
+        }
+        // Re-aim whenever the current walk leads further from home, not only when
+        // the maker stands still: a maker whose last order sent it outward is
+        // already walking, and "it has a destination" would leave it walking
+        // away for the rest of the match.
+        let dest = obs.destination(entity_id);
+        let walking_away = dest.is_some_and(|(dx, dy)| {
+            home.is_some_and(|home| cell_distance((dx, dy), home) > cell_distance(cell, home))
+        });
+        if (exposed || far) && (dest.is_none() || walking_away) {
             let Some(target) =
                 super::census::rally_near(obs, home.unwrap_or(cell), &brain.census.home_cells)
             else {
