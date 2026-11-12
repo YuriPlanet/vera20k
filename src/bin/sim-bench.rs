@@ -65,9 +65,9 @@
 //! --client-timing --frame-profile`. The map's `MaxPlayers=30` lets the
 //! lobby seat them all.
 //!
-//! `--presentation-frame` keeps a copy of the world after every frame, as the
-//! client's simulation thread does for drawing (docs/sim-thread.md), and
-//! counts the copy and the drop of the previous one in the frame's time.
+//! `--presentation-frame` brings the copy of the world without its objects
+//! up to date after every frame, as the client's simulation host does for
+//! drawing (docs/sim-thread.md), and counts it in the frame's time.
 //!
 //! Idle objects sleep as in a real match (`sim::world::idle_sleep`):
 //! `--no-sleep` runs every turn, which must give the same hashes, and
@@ -76,7 +76,11 @@
 //!
 //! The simulation batches its path searches and target scans as a real
 //! match does; `--serial-paths` searches and `--serial-scans` scans in native
-//! order instead.
+//! order instead. The `path_batch` line sums the batch's passes over the
+//! measured frames ([`PathBatchStats`]): registrations waiting and answered,
+//! the ones the cap or a re-path budget left for a later pass, and the
+//! cells the searches expanded, with the code-2 re-paths' share at each
+//! urgency.
 //!
 //! Beside each frame's wall time, the CSV's `cpu_ms` column and the
 //! `main_thread_cpu_*` line give the main thread's CPU time (Unix only). On a
@@ -113,6 +117,7 @@ use vera20k_core::map::source::load_map_ini_by_name_or_path_with_assets;
 use vera20k_core::map::waypoints::skirmish_player_capacity;
 use vera20k_core::sim::command::{Command, CommandEnvelope};
 use vera20k_core::sim::intern::InternedId;
+use vera20k_core::sim::movement::PathBatchStats;
 use vera20k_core::sim::runtime::SimRuntime;
 use vera20k_core::sim::scenario_session::ScenarioGameMode;
 
@@ -508,6 +513,39 @@ struct Bench<'a> {
     /// `--presentation-frame`: whether each frame keeps a copy of the world.
     keep_frame: bool,
     frame: Option<SimRuntime>,
+    paths: PathTotals,
+}
+
+/// The path batch's passes summed over the completed frames; no passes while
+/// the simulation searches serially.
+#[derive(Clone, Copy, Default)]
+struct PathTotals {
+    passes: u64,
+    waiting: u64,
+    answered: u64,
+    left_out: u64,
+    /// Passes that left any registration for a later one.
+    left_out_passes: u64,
+    peak_left_out: u32,
+    steps: u64,
+    urgency2_steps: u64,
+    urgency1_steps: u64,
+    peak_pass_ms: f64,
+}
+
+impl PathTotals {
+    fn add(&mut self, pass: PathBatchStats) {
+        self.passes += 1;
+        self.waiting += u64::from(pass.waiting);
+        self.answered += u64::from(pass.answered);
+        self.left_out += u64::from(pass.left_out);
+        self.left_out_passes += u64::from(pass.left_out > 0);
+        self.peak_left_out = self.peak_left_out.max(pass.left_out);
+        self.steps += pass.steps;
+        self.urgency2_steps += pass.urgency2_steps;
+        self.urgency1_steps += pass.urgency1_steps;
+        self.peak_pass_ms = self.peak_pass_ms.max(pass.last_ms);
+    }
 }
 
 impl Frames for Bench<'_> {
@@ -525,9 +563,13 @@ impl Frames for Bench<'_> {
             .advance_frame_for_tooling(commands, self.tick_ms)
             .map_err(|error| error.to_string())?;
         if self.keep_frame {
-            // As the client's simulation host does: the new copy replaces
-            // the previous tick's, inside the frame's time.
-            self.frame = Some(self.runtime.clone());
+            // As the client's simulation host does when it lends a tick: the
+            // world without its objects, with the local player's fog, replaces
+            // the previous tick's copy, inside the frame's time. The objects'
+            // draw records are the client's and are not counted here.
+            let viewer = self.runtime.simulation.session().current_house();
+            let reuse = self.frame.take().map(|frame| frame.simulation);
+            self.frame = Some(self.runtime.presentation_copy(viewer, reuse));
         }
         Ok(checksum)
     }
@@ -537,6 +579,9 @@ impl Frames for Bench<'_> {
     }
 
     fn completed(&mut self, tick: u64, times: &[Duration]) {
+        if let Some(pass) = self.runtime.simulation.path_batch_stats() {
+            self.paths.add(pass);
+        }
         if matches!(self.plan, Plan::March(_)) || (tick + 1) % PROGRESS_EVERY != 0 {
             return;
         }
@@ -728,8 +773,14 @@ fn main() -> Result<(), String> {
     if !args.serial_scans {
         scenario.runtime.simulation.batch_target_scans();
     }
-    scenario.runtime.simulation.sleep_idle_objects(!args.no_sleep);
-    scenario.runtime.simulation.check_idle_sleep(args.sleep_check);
+    scenario
+        .runtime
+        .simulation
+        .sleep_idle_objects(!args.no_sleep);
+    scenario
+        .runtime
+        .simulation
+        .check_idle_sleep(args.sleep_check);
     scenario
         .runtime
         .simulation
@@ -796,18 +847,23 @@ fn main() -> Result<(), String> {
     #[cfg(feature = "telemetry")]
     runtime.simulation.set_frame_profiling(args.frame_profile);
     // A failed frame still reports the frames before it, then fails the run.
-    let (measured, frames) = run_frames(
-        &mut Bench {
+    let (measured, frames, paths) = {
+        let mut bench = Bench {
             runtime: &mut *runtime,
             plan: &mut plan,
             tick_ms,
             keep_frame: args.presentation_frame,
             frame: None,
-        },
-        ticks,
-        args.hash_every,
-        args.frame_hashes.is_some(),
-    );
+            paths: PathTotals::default(),
+        };
+        let (measured, frames) = run_frames(
+            &mut bench,
+            ticks,
+            args.hash_every,
+            args.frame_hashes.is_some(),
+        );
+        (measured, frames, bench.paths)
+    };
     let live_at_end = runtime.simulation.entities().len();
     let csv_written = args.csv.as_ref().map_or(Ok(()), |path| {
         std::fs::write(path, csv(&measured)).map_err(|error| format!("{}: {error}", path.display()))
@@ -817,6 +873,23 @@ fn main() -> Result<(), String> {
             .map_err(|error| format!("{}: {error}", path.display()))
     });
     report(&mut std::io::stdout().lock(), &measured, warmup).map_err(|error| error.to_string())?;
+    if paths.passes > 0 {
+        println!(
+            "path_batch passes={} waiting={} answered={} left_out={} left_out_passes={} \
+             peak_left_out={} steps={} urgency2_steps={} urgency1_steps={} \
+             peak_pass_ms={:.2}",
+            paths.passes,
+            paths.waiting,
+            paths.answered,
+            paths.left_out,
+            paths.left_out_passes,
+            paths.peak_left_out,
+            paths.steps,
+            paths.urgency2_steps,
+            paths.urgency1_steps,
+            paths.peak_pass_ms,
+        );
+    }
     #[cfg(feature = "telemetry")]
     if args.frame_profile {
         print_frame_profile(runtime);

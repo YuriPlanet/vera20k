@@ -320,7 +320,7 @@ impl Simulation {
                     .entities
                     .get(*building)
                     .is_some_and(|center| {
-                        center.building_powered_center.is_counted()
+                        center.building.building_powered_center.is_counted()
                             && center.emp_remaining() <= 0
                             && self
                                 .object_type(center.type_ref(), rules)

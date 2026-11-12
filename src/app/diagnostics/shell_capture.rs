@@ -43,6 +43,12 @@ const CHECKPOINT_MOVIE_LIST_0X129_SELECTED: &str = "movie-list-0x129-selected";
 const CHECKPOINT_MOVIE_LIST_0X129_FULL: &str = "movie-list-0x129-full";
 const CHECKPOINT_MOVIE_LIST_0X129_FULL_DOWN2: &str = "movie-list-0x129-full-down2";
 const CHECKPOINT_MOVIE_LIST_0X129_BACK_FIRST_FRAME: &str = "movie-list-0x129-back-first-frame";
+/// VERA's Mods page (`ui::mods_shell`), settled, with what the run plays
+/// selected. `--mod <folder>` before `--shell-capture` gives the run a mod.
+const CHECKPOINT_MODS_STEADY: &str = "mods-steady";
+/// The same after a press on a row the run does not play and on Use This
+/// Mod: the restart question over the page.
+const CHECKPOINT_MODS_RESTART_QUESTION: &str = "mods-restart-question";
 const CHECKPOINT_CAMPAIGN_0X94_STEADY: &str = "campaign-0x94-steady";
 const CHECKPOINT_CAMPAIGN_0X94_SLIDER_LEFT: &str = "campaign-0x94-slider-left";
 const CHECKPOINT_CAMPAIGN_0X94_SLIDER_RIGHT: &str = "campaign-0x94-slider-right";
@@ -219,6 +225,10 @@ pub enum ShellCaptureCheckpoint {
     /// Back on the movie list: the first frame after its teardown slide,
     /// which must already be the recreated `0x101`'s entry slide at tick 0.
     MovieList0x129BackFirstFrame,
+    /// Main Menu -> Options -> Mods: VERA's Mods page settled.
+    ModsSteady,
+    /// The Mods page's restart question, after a row and Use This Mod.
+    ModsRestartQuestion,
     /// Single Player -> New Campaign: campaign selection `0x94` settled.
     Campaign0x94Steady,
     /// The same after a press on the difficulty slider's left or right end.
@@ -609,6 +619,8 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_MOVIE_LIST_0X129_FULL => Ok(Self::MovieList0x129Full),
             CHECKPOINT_MOVIE_LIST_0X129_FULL_DOWN2 => Ok(Self::MovieList0x129FullDown2),
             CHECKPOINT_MOVIE_LIST_0X129_BACK_FIRST_FRAME => Ok(Self::MovieList0x129BackFirstFrame),
+            CHECKPOINT_MODS_STEADY => Ok(Self::ModsSteady),
+            CHECKPOINT_MODS_RESTART_QUESTION => Ok(Self::ModsRestartQuestion),
             CHECKPOINT_CAMPAIGN_0X94_STEADY => Ok(Self::Campaign0x94Steady),
             CHECKPOINT_CAMPAIGN_0X94_SLIDER_LEFT => Ok(Self::Campaign0x94SliderLeft),
             CHECKPOINT_CAMPAIGN_0X94_SLIDER_RIGHT => Ok(Self::Campaign0x94SliderRight),
@@ -789,6 +801,8 @@ impl ShellCaptureCheckpoint {
             Self::MovieList0x129Full => CHECKPOINT_MOVIE_LIST_0X129_FULL,
             Self::MovieList0x129FullDown2 => CHECKPOINT_MOVIE_LIST_0X129_FULL_DOWN2,
             Self::MovieList0x129BackFirstFrame => CHECKPOINT_MOVIE_LIST_0X129_BACK_FIRST_FRAME,
+            Self::ModsSteady => CHECKPOINT_MODS_STEADY,
+            Self::ModsRestartQuestion => CHECKPOINT_MODS_RESTART_QUESTION,
             Self::Campaign0x94Steady => CHECKPOINT_CAMPAIGN_0X94_STEADY,
             Self::Campaign0x94SliderLeft => CHECKPOINT_CAMPAIGN_0X94_SLIDER_LEFT,
             Self::Campaign0x94SliderRight => CHECKPOINT_CAMPAIGN_0X94_SLIDER_RIGHT,
@@ -1016,6 +1030,8 @@ impl ShellCaptureCheckpoint {
             Self::MovieList0x129Full => movies::MoviesTarget::FullList { down_presses: 0 },
             Self::MovieList0x129FullDown2 => movies::MoviesTarget::FullList { down_presses: 2 },
             Self::MovieList0x129BackFirstFrame => movies::MoviesTarget::ListBackFirstFrame,
+            Self::ModsSteady => movies::MoviesTarget::Mods { ask: false },
+            Self::ModsRestartQuestion => movies::MoviesTarget::Mods { ask: true },
             Self::Campaign0x94Steady => movies::MoviesTarget::Campaign0x94 {
                 press: None,
                 hold_over: None,
@@ -1306,6 +1322,7 @@ impl ShellCaptureRequest {
                             | movies::WolTarget::ModernPlayerCard
                             | movies::WolTarget::ModernChangeCountry
                             | movies::WolTarget::ModernRoomOptions
+                            | movies::WolTarget::ModernTeams
                             | movies::WolTarget::ModernSpectators
                             | movies::WolTarget::ModernOptions
                             | movies::WolTarget::ModernChatTranslation

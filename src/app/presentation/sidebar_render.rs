@@ -258,24 +258,25 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
             .replace_view(None);
         return;
     };
+    // What the sidebar reads of the objects is the frame's
+    // (`presentation::frame`), captured for the local player.
+    state.match_state.sim_runtime.ensure_frame();
     let inputs = {
         let match_state = &mut state.match_state;
-        let Some(runtime) = match_state.sim_runtime.presentation() else {
+        let (Some(_), Some(inputs)) = (
+            match_state.sim_runtime.presentation(),
+            match_state
+                .sim_runtime
+                .frame()
+                .and_then(|frame| frame.scene.ui.sidebar()),
+        ) else {
             match_state
                 .match_presentation
                 .sidebar_projection
                 .replace_view(None);
             return;
         };
-        match_state
-            .match_presentation
-            .sidebar_projection
-            .sim_inputs(
-                &runtime.simulation,
-                &runtime.resources.rules,
-                &owner_name,
-                reuse_sim_inputs,
-            )
+        std::sync::Arc::clone(inputs)
     };
 
     let runtime = state
@@ -285,15 +286,25 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         .expect("sidebar runtime");
     let (sim, rules) = (&runtime.simulation, &runtime.resources.rules);
     let owner = sim.interner().get(&owner_name).unwrap_or_default();
-    let seed_additions = state
+    // A scenario's first projection seeds its strips from every building's
+    // construction options (`UpdateConstructionOptions`), once: a query of
+    // the live world, which waits for a pass that holds it.
+    let seed_additions = if state
         .match_state
         .match_presentation
         .sidebar_projection
         .needs_cameo_seed(owner)
-        .then(|| {
-            production::initial_construction_options(sim, state.rules().expect("sidebar rules"))
-        })
-        .unwrap_or_default();
+    {
+        if state.match_state.sim_runtime.is_lent() {
+            return;
+        }
+        let Some(live) = state.match_state.sim_runtime.runtime() else {
+            return;
+        };
+        production::initial_construction_options(&live.simulation, &live.resources.rules)
+    } else {
+        Vec::new()
+    };
     // Phobos adds a superweapon to the left sidebar first and skips its right
     // sidebar cameo (`SidebarClass_AddCameo` returns false once accepted).
     #[cfg(feature = "phobos")]
@@ -585,7 +596,10 @@ fn build_view(
     }
     // The rebuilt view takes its drawn cameo state from the same projection
     // write as every later frame, so it is never built from other rules.
-    if let Some(runtime) = state.match_state.sim_runtime.presentation() {
+    if let (Some(runtime), Some(frame)) = (
+        state.match_state.sim_runtime.presentation(),
+        state.match_state.sim_runtime.frame(),
+    ) {
         let sim = &runtime.simulation;
         let armed_building = inputs
             .armed
@@ -599,6 +613,7 @@ fn build_view(
             .apply_cameo_draw_state(
                 &mut view,
                 sim,
+                frame,
                 &runtime.resources.rules,
                 owner,
                 armed_building,
@@ -621,8 +636,13 @@ pub(crate) fn refresh_sidebar_cameo_draw_state(state: &mut AppState) {
     let Some(owner_name) = preferred_local_owner_name(state) else {
         return;
     };
+    // The entries' availability is the frame's (`presentation::frame`).
+    state.match_state.sim_runtime.ensure_frame();
     let AppState { match_state, .. } = state;
-    let Some(runtime) = match_state.sim_runtime.presentation() else {
+    let (Some(runtime), Some(frame)) = (
+        match_state.sim_runtime.presentation(),
+        match_state.sim_runtime.frame(),
+    ) else {
         return;
     };
     let sim = &runtime.simulation;
@@ -636,7 +656,7 @@ pub(crate) fn refresh_sidebar_cameo_draw_state(state: &mut AppState) {
     match_state
         .match_presentation
         .sidebar_projection
-        .refresh_cameo_draw_state(sim, &runtime.resources.rules, owner, armed_building);
+        .refresh_cameo_draw_state(sim, frame, &runtime.resources.rules, owner, armed_building);
 }
 
 // ---------------------------------------------------------------------------
@@ -741,18 +761,18 @@ pub(crate) fn minimap_camera_target(
     let rect = active_minimap_screen_rect(state);
     let (cursor_x, cursor_y) = sidebar_cursor(state);
     let minimap = state.match_state.match_presentation.minimap.as_ref()?;
+    // Input may run before any render: the frame of the current world.
+    let frame = state.match_state.sim_runtime.frame()?;
     let runtime = state.match_state.sim_runtime.presentation();
     let native_facts = runtime.and_then(|runtime| {
         let view = runtime.view();
         Some((
-            view.simulation(),
-            &runtime.resources.rules,
             view.resolved_terrain()?,
             view.simulation().map_size_diamond()?,
         ))
     });
     let (tactical_w, tactical_h) = crate::app::input::camera::tactical_viewport_size(state);
-    native_facts.and_then(|(simulation, rules, terrain, map_size)| {
+    native_facts.and_then(|(terrain, map_size)| {
         minimap.native_click_target_in_rect(
             cursor_x,
             cursor_y,
@@ -761,8 +781,7 @@ pub(crate) fn minimap_camera_target(
             rect.y,
             rect.w,
             rect.h,
-            simulation,
-            rules,
+            frame,
             terrain,
             map_size,
             (tactical_w as i32, tactical_h as i32),
@@ -776,7 +795,8 @@ pub(crate) fn minimap_input_target(
     state: &AppState,
 ) -> Option<crate::render::radar::NativeRadarInputTarget> {
     let rect = active_minimap_screen_rect(state);
-    let runtime = state.match_state.sim_runtime.presentation()?;
+    // Input may run before any render: the frame of the current world.
+    let frame = state.match_state.sim_runtime.frame()?;
     state
         .match_state
         .match_presentation
@@ -786,8 +806,7 @@ pub(crate) fn minimap_input_target(
             sidebar_cursor(state),
             sidebar_cursor_centre(state),
             [rect.x, rect.y, rect.w, rect.h],
-            &runtime.simulation,
-            &runtime.resources.rules,
+            frame,
         )
 }
 
@@ -1413,5 +1432,171 @@ mod tests {
                 row["name"]
             );
         }
+    }
+}
+
+/// What the sidebar, the house UI and the sounds read of the world's
+/// objects, captured into the presentation frame
+/// (`presentation::frame_scene::SceneFrame`) for its local player.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct UiFrame {
+    /// `Simulation::theoretical_power_for_owner` of the local player, the
+    /// power bar's fit.
+    theoretical_power: i32,
+    /// The local player's sidebar inputs
+    /// ([`crate::app::sidebar_projection::SidebarSimInputs::derive`]).
+    sidebar: Option<std::sync::Arc<crate::app::sidebar_projection::SidebarSimInputs>>,
+    /// `production::cameo_draw_state` of each of those build options' types:
+    /// what `StripClass::Draw` asks of every entry it draws.
+    cameo_draw: std::collections::HashMap<
+        crate::sim::intern::InternedId,
+        crate::sim::production::CameoDrawState,
+    >,
+    /// Each live bomb's ticking loop, in carrier order
+    /// (`Simulation::bomb_carriers`).
+    bomb_ticks: Vec<BombTick>,
+    /// `Simulation::looping_sound_owner_coord` of each ticking-bomb owner and
+    /// each object that is not a Unit, Infantry or Aircraft: the owners whose
+    /// loops the frame tail re-drives from their coordinate.
+    sound_owner_coords: std::collections::HashMap<u64, crate::sim::anim_class::AnimWorldCoord>,
+    /// The objects and terrain objects that stand for their own sound
+    /// handles (`Simulation::object_sound_owner_alive`).
+    standing_sound_objects: std::collections::HashSet<u64>,
+}
+
+/// One live bomb's ticking loop (`BombListClass::UpdateAll @ 0x00438BF0`'s
+/// ticking pass).
+#[derive(Clone, Debug)]
+pub(crate) struct BombTick {
+    /// Its loop's owner (`sim::bomb::ticking_sound_owner`).
+    pub(crate) owner: u64,
+    /// `Simulation::bomb_ticking_sound`.
+    pub(crate) sound: Option<String>,
+    /// `Simulation::bomb_ticking_coord`.
+    pub(crate) coord: Option<crate::sim::anim_class::AnimWorldCoord>,
+}
+
+impl UiFrame {
+    pub(crate) fn capture(at: &crate::app::presentation::frame::Capture<'_>) -> Self {
+        use crate::map::entities::EntityCategory::{Aircraft, Infantry, Unit};
+        let (sim, rules) = (at.sim, at.rules());
+        let sidebar = at.observer.map(|owner| {
+            std::sync::Arc::new(crate::app::sidebar_projection::SidebarSimInputs::derive(
+                sim, rules, owner,
+            ))
+        });
+        let cameo_draw = match (&sidebar, at.observer_id) {
+            (Some(inputs), Some(owner)) => inputs
+                .build_options
+                .iter()
+                .filter_map(|option| {
+                    let object = rules.object(sim.interner().resolve(option.type_id))?;
+                    Some((
+                        option.type_id,
+                        production::cameo_draw_state(sim, rules, owner, object),
+                    ))
+                })
+                .collect(),
+            _ => Default::default(),
+        };
+        let bomb_ticks: Vec<BombTick> = sim
+            .bomb_carriers()
+            .iter()
+            .map(|&carrier| BombTick {
+                owner: crate::sim::bomb::ticking_sound_owner(carrier),
+                sound: sim.bomb_ticking_sound(carrier).map(str::to_owned),
+                coord: sim.bomb_ticking_coord(carrier),
+            })
+            .collect();
+        // Every object's sound questions, asked in parallel.
+        let object_sounds = sim.entities().par_filter_map(|id, entity| {
+            let coord = (!matches!(entity.category(), Unit | Infantry | Aircraft))
+                .then(|| sim.looping_sound_owner_coord(id))
+                .flatten();
+            let stands = sim.object_sound_owner_alive(crate::sim::world::ambient_sound_owner(id))
+                == Some(true);
+            (coord.is_some() || stands).then_some((id, coord, stands))
+        });
+        let sound_owner_coords = bomb_ticks
+            .iter()
+            .filter_map(|tick| Some((tick.owner, sim.looping_sound_owner_coord(tick.owner)?)))
+            .chain(
+                object_sounds
+                    .iter()
+                    .filter_map(|&(id, coord, _)| Some((id, coord?))),
+            )
+            .collect();
+        let standing_sound_objects = object_sounds
+            .iter()
+            .filter(|&&(_, _, stands)| stands)
+            .map(|&(id, _, _)| id)
+            .chain(
+                sim.terrain_objects()
+                    .objects()
+                    .keys()
+                    .copied()
+                    .filter(|&object| {
+                        sim.object_sound_owner_alive(crate::sim::world::ambient_sound_owner(object))
+                            == Some(true)
+                    }),
+            )
+            .collect();
+        Self {
+            theoretical_power: at
+                .observer
+                .map_or(0, |owner| sim.theoretical_power_for_owner(rules, owner)),
+            sidebar,
+            cameo_draw,
+            bomb_ticks,
+            sound_owner_coords,
+            standing_sound_objects,
+        }
+    }
+
+    /// `Simulation::theoretical_power_for_owner` of the local player.
+    pub(crate) fn theoretical_power(&self) -> i32 {
+        self.theoretical_power
+    }
+
+    /// The local player's sidebar inputs; `None` without a local player.
+    pub(crate) fn sidebar(
+        &self,
+    ) -> Option<&std::sync::Arc<crate::app::sidebar_projection::SidebarSimInputs>> {
+        self.sidebar.as_ref()
+    }
+
+    /// `production::cameo_draw_state` of the local player's type `type_id`;
+    /// unavailable for a type no rules list builds.
+    pub(crate) fn cameo_draw_state(
+        &self,
+        type_id: crate::sim::intern::InternedId,
+    ) -> crate::sim::production::CameoDrawState {
+        self.cameo_draw
+            .get(&type_id)
+            .copied()
+            .unwrap_or(crate::sim::production::CameoDrawState {
+                enabled: false,
+                at_build_limit: false,
+            })
+    }
+
+    pub(crate) fn bomb_ticks(&self) -> &[BombTick] {
+        &self.bomb_ticks
+    }
+
+    /// `Simulation::looping_sound_owner_coord` of `owner`, for a bomb's or an
+    /// object's loop; an Anim's is the frame's
+    /// ([`crate::app::presentation::frame::PresentationFrame::anim_coord`]).
+    pub(crate) fn sound_owner_coord(
+        &self,
+        owner: u64,
+    ) -> Option<crate::sim::anim_class::AnimWorldCoord> {
+        self.sound_owner_coords.get(&owner).copied()
+    }
+
+    /// Whether `object` stands for its own sound handles
+    /// (`Simulation::object_sound_owner_alive`).
+    pub(crate) fn sound_object_stands(&self, object: u64) -> bool {
+        self.standing_sound_objects.contains(&object)
     }
 }

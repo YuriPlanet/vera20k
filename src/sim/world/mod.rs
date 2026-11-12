@@ -20,6 +20,7 @@ pub mod bridge_orchestrator;
 #[cfg(any(test, feature = "test-support"))]
 pub mod bridge_test_evidence;
 mod building_after_destruction;
+
 #[cfg(test)]
 mod building_after_destruction_tests;
 pub(crate) mod building_anim;
@@ -115,6 +116,7 @@ mod move_cell_input;
 pub use move_cell_input::{CellActionQuery, MoveAction};
 mod move_sound;
 mod object_sound;
+pub use object_sound::{ambient_sound_owner, object_sound_object};
 mod turret_rotate_sound;
 pub(crate) use move_sound::MoveSoundState;
 pub(crate) use playfield_membership::PlayfieldMembership;
@@ -133,8 +135,10 @@ mod playfield_membership;
 mod rally_cell_input;
 mod rocket_flight;
 pub use frame_error::FrameAdvanceError;
+pub use world_orders::AresHeal;
 pub(crate) use world_orders::CapturedInfantryType;
 pub use world_orders::EngineerBuildingAction;
+pub use world_orders::HealArmKeys;
 #[cfg(feature = "ares")]
 pub use world_orders::InfiltrateAction;
 pub use world_orders::UnitRepairAction;
@@ -175,8 +179,8 @@ pub(crate) use techno_ai::{can_fire_at, weapon_at_index};
 mod command_schedule;
 mod planning;
 pub use planning::{
-    PlanningAppendMessage, PlanningBadgeKind, PlanningDrawSegment, PlanningPressRefusal,
-    PlanningSelectionCheck,
+    PlanningAppendMessage, PlanningBadgeKind, PlanningDrawGraph, PlanningDrawNode,
+    PlanningDrawSegment, PlanningPressRefusal, PlanningSelectionCheck,
 };
 mod selection_voice;
 pub(crate) mod techno_ai_cloak;
@@ -1389,9 +1393,11 @@ where
 }
 
 /// The game simulation - owns all authoritative game state.
-/// `Clone` serves exactly one copy: the presentation frame a tick publishes
-/// for drawing when it goes to the simulation thread (docs/sim-thread.md).
-/// No authority is copied: gameplay owns the one live world.
+/// `Clone` serves exactly one copy, through [`Simulation::presentation_copy`]:
+/// the world without its objects that drawing reads beside the presentation
+/// frame's records while a tick runs on the simulation thread
+/// (docs/sim-thread.md). No authority is copied: gameplay owns the one live
+/// world.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Simulation {
     /// String interner for owner/type_ref — zero-cost ID clones instead of heap Strings.
@@ -1658,9 +1664,7 @@ pub struct Simulation {
     /// Retained native navigation base plane/raw movement rows plus the live
     /// derived hierarchy. ZoneGrid saves only its own retained base state;
     /// LoadContent67E8CD rebuilds hierarchy after bound Cell/object restoration.
-    /// Shared copy-on-write with the presentation frame (`util::shared`):
-    /// it changes only when walls, bridges or terrain do.
-    pub(crate) zone_grid: Option<crate::util::shared::Shared<ZoneGrid>>,
+    pub(crate) zone_grid: Option<ZoneGrid>,
     /// Canonical dynamic navigation projection. Every reader reads it at its
     /// point of use; a republish replaces the `Arc` without mutating readers'
     /// shared copies.
@@ -1936,7 +1940,7 @@ pub(crate) struct SimulationAreaDamageCellPrelude<'a> {
     binary_frame: u32,
     spread_enabled: bool,
     dirty_cells: &'a mut crate::sim::dirty_cells::DirtyCells,
-    zone_grid: &'a mut Option<crate::util::shared::Shared<ZoneGrid>>,
+    zone_grid: &'a mut Option<ZoneGrid>,
     path_grid: &'a mut Option<Arc<PathGrid>>,
     bridge_state: Option<&'a BridgeRuntimeState>,
     playfield_bounds: Option<PlayfieldBounds>,
@@ -2028,7 +2032,7 @@ pub(crate) fn simulation_area_damage_cell_prelude<'a>(
     binary_frame: u32,
     spread_enabled: bool,
     dirty_cells: &'a mut crate::sim::dirty_cells::DirtyCells,
-    zone_grid: &'a mut Option<crate::util::shared::Shared<ZoneGrid>>,
+    zone_grid: &'a mut Option<ZoneGrid>,
     path_grid: &'a mut Option<Arc<PathGrid>>,
     bridge_state: Option<&'a BridgeRuntimeState>,
     playfield_bounds: Option<PlayfieldBounds>,
@@ -2054,7 +2058,7 @@ pub(crate) fn simulation_area_damage_cell_prelude<'a>(
 }
 
 pub(crate) fn repair_wall_damage_navigation_authorities(
-    zone_grid: &mut Option<crate::util::shared::Shared<ZoneGrid>>,
+    zone_grid: &mut Option<ZoneGrid>,
     path_grid: &mut Option<Arc<PathGrid>>,
     terrain: &ResolvedTerrainGrid,
     overlays: &OverlayGrid,
@@ -2103,7 +2107,7 @@ pub(crate) fn repair_wall_damage_navigation_authorities(
 /// (`0x0056D5A0`), then IncrementalRebuildZoneGraphAroundCell (`0x00584550`).
 /// A missing zone grid, or one whose bridge inputs changed, is built whole.
 pub(crate) fn repair_zone_after_recalc(
-    zone_grid: &mut Option<crate::util::shared::Shared<ZoneGrid>>,
+    zone_grid: &mut Option<ZoneGrid>,
     path_grid: &PathGrid,
     terrain: &ResolvedTerrainGrid,
     bridge_state: Option<&BridgeRuntimeState>,
@@ -2116,12 +2120,12 @@ pub(crate) fn repair_zone_after_recalc(
         .unwrap_or(&[]);
     let bridge_geometry = bridge_state.and_then(BridgeRuntimeState::native_zone_source_size);
     if zone_grid
-        .as_deref()
+        .as_ref()
         .is_some_and(|zones| !zones.bridge_inputs_match(bridge_records, bridge_geometry))
     {
         *zone_grid = None;
     }
-    if let Some(zone_grid) = zone_grid.as_deref_mut() {
+    if let Some(zone_grid) = zone_grid.as_mut() {
         let _ = zone_grid.refresh_base_cell_attributes_at(terrain, cell.0, cell.1);
         let _ = repair_zone_cell(
             zone_grid,
@@ -2133,14 +2137,16 @@ pub(crate) fn repair_zone_after_recalc(
             bridge_records,
         );
     } else {
-        *zone_grid = Some(ZoneGrid::build_with_native_map_context(
-            path_grid,
-            terrain,
-            bridge_records,
-            bridge_geometry,
-            playfield_bounds,
-        )
-        .into());
+        *zone_grid = Some(
+            ZoneGrid::build_with_native_map_context(
+                path_grid,
+                terrain,
+                bridge_records,
+                bridge_geometry,
+                playfield_bounds,
+            )
+            .into(),
+        );
     }
 }
 
@@ -2148,7 +2154,7 @@ pub(crate) fn repair_zone_after_recalc(
 /// Native Cell expiry7258D0 has no Techno listener broadcast.
 pub(crate) struct SimulationWallRuntimeHost<'a> {
     pub(crate) dirty_cells: &'a mut crate::sim::dirty_cells::DirtyCells,
-    pub(crate) zone_grid: &'a mut Option<crate::util::shared::Shared<ZoneGrid>>,
+    pub(crate) zone_grid: &'a mut Option<ZoneGrid>,
     pub(crate) path_grid: &'a mut Option<Arc<PathGrid>>,
     pub(crate) bridge_state: Option<&'a BridgeRuntimeState>,
     pub(crate) playfield_bounds: Option<PlayfieldBounds>,
@@ -3700,7 +3706,7 @@ impl Simulation {
     }
 
     pub fn zone_grid(&self) -> Option<&ZoneGrid> {
-        self.zone_grid.as_deref()
+        self.zone_grid.as_ref()
     }
 
     pub fn resolved_terrain(&self) -> Option<&ResolvedTerrainGrid> {
@@ -4467,11 +4473,19 @@ impl Simulation {
     }
 
     /// Bind a successful fresh or saved scenario to the retained process Main
-    /// cell, moving its staged cursor into that same identity.
+    /// cell: its staged cursor moves into the process cell, and the
+    /// simulation continues from that cursor in a cell of its own.
     /// App orchestration must first cancel the outgoing playback callbacks.
+    ///
+    /// Residual (sim-scale deviation, docs/sim-thread.md): gamemd's one Main
+    /// RNG serves the logic's sounds and the interface alike; here the
+    /// simulation thread and the app each draw their own copy from the
+    /// install on. Main is outside saves and the state hash, so only which
+    /// random voice or variation plays can differ from gamemd.
     pub fn install_fresh_process_main(&mut self, process: &MainRng) {
         let staged = std::mem::replace(&mut self.main_rng, process.shared_owner());
         process.install_from(staged);
+        self.main_rng = process.detached_copy();
     }
 
     /// Install the process MapGen cursor prepared by the bootstrap owner.
@@ -4815,8 +4829,9 @@ impl Simulation {
     // and MoveSound. Local selection calls the domain operation; it must not
     // create a seeded copy that loses loading or live-consumer continuation.
 
-    /// Process Main886B88, shared by native command voices, Voc and Theme.
-    /// Draws remain outside Scenario/hash/save state; no copied audio cursor.
+    /// This simulation's Main886B88 cell, which the sounds the tick plays
+    /// draw from (the app draws its own: `install_fresh_process_main`).
+    /// Draws remain outside Scenario/hash/save state.
     pub fn presentation_main_draws(&self) -> crate::sim::rng::MainRngDraws {
         self.main_rng.draws()
     }
@@ -4835,6 +4850,69 @@ impl Simulation {
     /// The entity store. Read access for systems above sim/.
     pub fn entities(&self) -> &EntityStore {
         &self.substrate.entities
+    }
+
+    /// The copy of the world drawing reads while this one ticks elsewhere
+    /// (docs/sim-thread.md). It shares no storage with this world:
+    ///
+    /// - it holds no objects (its entity store is [`EntityStore::detached`];
+    ///   the presentation frame holds their draw records), and none of the
+    ///   state only gameplay reads (the zone and path grids, the team script
+    ///   VM, the movement pass's kept products, the reveal pass's answers);
+    /// - its fog is only what `viewer`, the local player, sees
+    ///   ([`FogState::presentation_copy`]);
+    /// - its terrain, overlays, smudges, terrain objects, interner and
+    ///   occupation grids are `reuse`'s, the last copy, brought up to this
+    ///   world by copying only what changed since (`util::synced`); without
+    ///   `reuse` they are copied whole;
+    /// - its Dummy cell and its Main RNG are its own.
+    pub fn presentation_copy(
+        &mut self,
+        viewer: Option<InternedId>,
+        reuse: Option<Simulation>,
+    ) -> Simulation {
+        // What the copy leaves out.
+        let fog = std::mem::take(&mut self.fog);
+        let entities = std::mem::replace(&mut self.substrate.entities, EntityStore::detached());
+        let zone_grid = self.zone_grid.take();
+        let path_grid = self.path_grid.take();
+        let team_script_vm = std::mem::take(&mut self.team_script_vm);
+        let movement_pass_cache = std::mem::take(&mut self.movement_pass_cache);
+        let reveal_viewers = std::mem::take(&mut self.reveal_viewers);
+        #[cfg(any(test, feature = "test-support"))]
+        let test_recorders = (
+            std::mem::take(&mut self.lifecycle_test_events),
+            std::mem::take(&mut self.frame_step_trace),
+            std::mem::take(&mut self.house_ai_activation_order_test_trace),
+        );
+        // What it syncs.
+        let mut synced = SyncedWorld::take(self);
+        let mut copy = self.clone();
+        let mut theirs =
+            reuse.map_or_else(SyncedWorld::default, |mut old| SyncedWorld::take(&mut old));
+        synced.sync_into(&mut theirs);
+        synced.put(self);
+        theirs.put(&mut copy);
+        copy.fog = fog.presentation_copy(viewer);
+        copy.house_alliances = self.house_alliances.detached();
+        copy.main_rng = self.main_rng.detached_copy();
+        copy.shared_cell_dummy = copy.shared_cell_dummy.fork_query_identity();
+        self.fog = fog;
+        self.substrate.entities = entities;
+        self.zone_grid = zone_grid;
+        self.path_grid = path_grid;
+        self.team_script_vm = team_script_vm;
+        self.movement_pass_cache = movement_pass_cache;
+        self.reveal_viewers = reveal_viewers;
+        #[cfg(any(test, feature = "test-support"))]
+        {
+            (
+                self.lifecycle_test_events,
+                self.frame_step_trace,
+                self.house_ai_activation_order_test_trace,
+            ) = test_recorders;
+        }
+        copy
     }
 
     /// The live terrain objects and their indexes. Read access for systems
@@ -5570,7 +5648,7 @@ impl Simulation {
         let firers_palette = projectile
             .payload()
             .projectile_type()
-            .and_then(|id| rules.projectile(interner.resolve(id)))
+            .and_then(|id| interner.projectile_type(id, rules))
             .is_some_and(|kind| kind.firers_palette);
         let house = firers_palette
             .then(|| substrate.entities.get(source_id))
@@ -5627,7 +5705,7 @@ impl Simulation {
             let inviso = projectile
                 .payload
                 .projectile_type()
-                .and_then(|id| rules.projectile(self.interner.resolve(id)))
+                .and_then(|id| self.interner.projectile_type(id, rules))
                 .is_some_and(|kind| kind.inviso);
             let placement = projectile.initial_target_position;
             self.admit_projectile(stable_id, projectile);
@@ -5686,6 +5764,13 @@ impl Simulation {
                 self.classify_object(id)
                     .is_some_and(|kind| self.logic_membership_flag(id, kind)),
                 "logic order id {id} is missing or not membership-flagged",
+            );
+            debug_assert!(
+                self.substrate
+                    .logic
+                    .kind_of(id)
+                    .is_none_or(|kind| self.object_store_holds(kind, id)),
+                "logic order id {id} notes a kind whose store does not hold it",
             );
         }
         let mut flagged = 0;
@@ -6853,8 +6938,8 @@ impl Simulation {
         if category == EntityCategory::Structure
             && let Some(entity) = self.substrate.entities.get_mut(stable_id)
         {
-            entity.has_been_captured.mark();
-            entity.repairing.stop_on_capture();
+            entity.building.has_been_captured.mark();
+            entity.building.repairing.stop_on_capture();
         }
         // `0x00448C6E..0x00448C94`, after the owner swap: the old house
         // records the building it lost (House+54E0), and the new house
@@ -7406,6 +7491,7 @@ impl Simulation {
         }
         for id in self.substrate.logic.snapshot() {
             if let Some(kind) = self.classify_object(id).filter(|kind| kind.joins_logic()) {
+                self.substrate.logic.note_kind(id, kind);
                 Self::set_logic_membership_flag(
                     &mut self.terrain_objects,
                     &mut self.substrate,
@@ -8397,3 +8483,81 @@ mod radiation_overlap_tests;
 
 #[cfg(test)]
 mod building_occupant_storage_tests;
+
+/// The parts of the world its presentation copy takes only where they changed
+/// ([`Simulation::presentation_copy`]).
+#[derive(Default)]
+struct SyncedWorld {
+    terrain: Option<ResolvedTerrainGrid>,
+    overlays: Option<crate::sim::overlay_grid::OverlayGrid>,
+    smudges: Option<crate::sim::smudge_grid::SmudgeGrid>,
+    terrain_objects: crate::sim::terrain_object::TerrainObjectStore,
+    interner: crate::sim::intern::StringInterner,
+    occupancy: OccupancyGrid,
+    raw_cell_occupation: crate::sim::occupancy::RawCellOccupationGrid,
+    hidden_occupation: crate::sim::occupancy::HiddenOccupationGrid,
+    air_slots: crate::sim::occupancy::AirSlotGrid,
+}
+
+impl SyncedWorld {
+    fn take(sim: &mut Simulation) -> Self {
+        Self {
+            terrain: sim.resolved_terrain.take(),
+            overlays: sim.overlay_grid.take(),
+            smudges: sim.smudge_grid.take(),
+            terrain_objects: std::mem::take(&mut sim.terrain_objects),
+            interner: std::mem::take(&mut sim.interner),
+            occupancy: std::mem::take(&mut sim.substrate.occupancy),
+            raw_cell_occupation: std::mem::take(&mut sim.substrate.raw_cell_occupation),
+            hidden_occupation: std::mem::take(&mut sim.substrate.hidden_occupation),
+            air_slots: std::mem::take(&mut sim.substrate.air_slots),
+        }
+    }
+
+    fn put(self, sim: &mut Simulation) {
+        sim.resolved_terrain = self.terrain;
+        sim.overlay_grid = self.overlays;
+        sim.smudge_grid = self.smudges;
+        sim.terrain_objects = self.terrain_objects;
+        sim.interner = self.interner;
+        sim.substrate.occupancy = self.occupancy;
+        sim.substrate.raw_cell_occupation = self.raw_cell_occupation;
+        sim.substrate.hidden_occupation = self.hidden_occupation;
+        sim.substrate.air_slots = self.air_slots;
+    }
+
+    /// Bring `mirror` up to these parts; an absent part leaves none.
+    fn sync_into(&mut self, mirror: &mut Self) {
+        fn sync_option<T: Clone>(
+            own: &mut Option<T>,
+            copy: &mut Option<T>,
+            sync: impl FnOnce(&mut T, &mut T),
+        ) {
+            match own {
+                // A first copy starts whole; the sync then marks it as the
+                // one later syncs bring up to date.
+                Some(own) => sync(own, copy.get_or_insert_with(|| own.clone())),
+                None => *copy = None,
+            }
+        }
+        sync_option(
+            &mut self.terrain,
+            &mut mirror.terrain,
+            ResolvedTerrainGrid::sync_into,
+        );
+        sync_option(&mut self.overlays, &mut mirror.overlays, |own, copy| {
+            own.sync_into(copy)
+        });
+        sync_option(&mut self.smudges, &mut mirror.smudges, |own, copy| {
+            own.sync_into(copy)
+        });
+        self.terrain_objects.sync_into(&mut mirror.terrain_objects);
+        self.interner.sync_into(&mut mirror.interner);
+        self.occupancy.sync_into(&mut mirror.occupancy);
+        self.raw_cell_occupation
+            .sync_into(&mut mirror.raw_cell_occupation);
+        self.hidden_occupation
+            .sync_into(&mut mirror.hidden_occupation);
+        self.air_slots.sync_into(&mut mirror.air_slots);
+    }
+}

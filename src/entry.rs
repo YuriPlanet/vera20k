@@ -234,6 +234,7 @@ fn run_with(
         }
     };
     app.set_mod_switch(mod_switch);
+    app.set_sim_wake(event_loop.create_proxy());
     // A panic skips `exiting`, where the match replay is saved. winit stops
     // its loop and hands the panic back here (macOS and Windows catch it in
     // their callbacks; elsewhere it unwinds straight out), with `app` intact.
@@ -259,7 +260,8 @@ fn run_with(
 }
 
 /// Flush the log, report a failed launch, and turn the status into the process
-/// result. A non-zero `-SPAWN` status ends the process here.
+/// result. A non-zero `-SPAWN` status ends the process here. A copy that shut
+/// down in the ordinary way starts the next one when the Mods page asked.
 pub fn finish(result: Result<i32>) -> Result<()> {
     if let Err(error) = &result {
         log::error!("VERA20k exited with an error: {error:#}");
@@ -267,7 +269,11 @@ pub fn finish(result: Result<i32>) -> Result<()> {
     log::logger().flush();
     // docs/spawn.md: a `-SPAWN` launch exits with its result's status.
     match result? {
-        0 => Ok(()),
+        0 => {
+            // The Mods page's restart: this copy is done, the next may start.
+            crate::app::restart::start_again_if_asked();
+            Ok(())
+        }
         status => std::process::exit(status),
     }
 }

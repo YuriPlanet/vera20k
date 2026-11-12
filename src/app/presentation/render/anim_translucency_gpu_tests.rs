@@ -252,6 +252,9 @@ fn retail_smkpuff_effect_builder_matches_original_translucency() {
                 build_display_effect_instances(
                     &DisplayEffectInputs {
                         sim: &sim,
+                        frame: &crate::app::presentation::frame::PresentationFrame::of_test(
+                            &sim, &rules,
+                        ),
                         rules: &rules,
                         camera: view_camera,
                         render_size: size,

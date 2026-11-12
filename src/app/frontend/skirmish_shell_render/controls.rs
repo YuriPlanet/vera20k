@@ -1424,16 +1424,20 @@ mod tests {
             .expect("FF has its sliders");
             windows.extend(internet.sliders.map(|rect| (true, rect)));
             use crate::ui::multiplayer_setup::{
-                DIFFICULTY, MultiplayerSetupLayout, SetupDialog, SetupFlavor,
+                DIFFICULTY, MultiplayerSetupLayout, SetupDialog, SetupFlavor, TEAM_COUNT,
             };
+            // gamemd's setup dialogs and VERA's room; only the room paints
+            // its Teams count.
             for dialog in [SetupFlavor::Lan, SetupFlavor::Wol]
                 .into_iter()
                 .flat_map(|flavor| {
-                    [false, true].map(|host| SetupDialog {
-                        host,
-                        flavor,
-                        modern: false,
-                    })
+                    [(false, false), (true, false), (false, true), (true, true)].map(
+                        |(host, modern)| SetupDialog {
+                            host,
+                            flavor,
+                            modern,
+                        },
+                    )
                 })
             {
                 let layout =
@@ -1441,6 +1445,8 @@ mod tests {
                 windows.extend(
                     layout
                         .trackbars
+                        .into_iter()
+                        .filter(|(id, _)| dialog.modern || *id != TEAM_COUNT)
                         .map(|(id, rect)| (id != DIFFICULTY, layout.page.scale.base_rect(rect))),
                 );
             }

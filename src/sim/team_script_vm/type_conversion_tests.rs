@@ -202,6 +202,7 @@ fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_a
         .entities()
         .get(foot_id)
         .unwrap()
+        .building
         .building_light
         .light()
         .unwrap();
@@ -284,6 +285,7 @@ fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_a
             .entities()
             .get(foot_id)
             .unwrap()
+            .building
             .building_light
             .light(),
         Some(light_id)
@@ -299,6 +301,7 @@ fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_a
             .entities()
             .get(foot_id)
             .unwrap()
+            .building
             .building_light
             .light()
             .is_none()
@@ -313,6 +316,7 @@ fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_a
         .entities()
         .get(foot_id)
         .unwrap()
+        .building
         .building_light
         .light()
         .unwrap();
@@ -346,6 +350,7 @@ fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_a
             .entities()
             .get(fresh)
             .unwrap()
+            .building
             .building_light
             .light()
             .is_some(),
@@ -383,6 +388,7 @@ fn default_build_keeps_script68_inert_without_type_or_count_writes() {
         sim.entities()
             .get(foot)
             .unwrap()
+            .building
             .building_light
             .light()
             .is_none(),

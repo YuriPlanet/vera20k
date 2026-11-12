@@ -224,6 +224,49 @@ pub const PLAYERS_RANGE: TrackbarRange =
 pub const EXTENDED_PLAYERS_RANGE: TrackbarRange =
     TrackbarRange::new(2, crate::map::rmg::MAX_PLAYERS, 1);
 
+/// VERA extension: a ready-made option set the Presets button applies in one
+/// press. Each sets the players, landform, size, resources, the seven
+/// Advanced values (`advanced`, by [`AdvancedField::row`]) and Fair Starts;
+/// the theater changes only where the preset is about it. The seed, time
+/// and description stay the player's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RandomMapPreset {
+    /// Two players on open inland ground with matched starts.
+    Duel,
+    /// Thirty players on the largest size, little water.
+    Brawl,
+    /// Four players in a city that covers the map.
+    CityWar,
+    /// Four players across an archipelago.
+    Islands,
+}
+
+impl RandomMapPreset {
+    pub const ALL: [Self; 4] = [Self::Duel, Self::Brawl, Self::CityWar, Self::Islands];
+
+    /// The button caption while this preset stands.
+    pub const fn label(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Duel => ("VERA:RandomMapPresetDuel", "1v1 Duel"),
+            Self::Brawl => ("VERA:RandomMapPresetBrawl", "30-Player Brawl"),
+            Self::CityWar => ("VERA:RandomMapPresetCity", "City War"),
+            Self::Islands => ("VERA:RandomMapPresetIslands", "Islands"),
+        }
+    }
+
+    /// Players, landform (`map_type`), size, resources, theater and the
+    /// Advanced values: water, hills, buildings, vegetation, ore fields,
+    /// plateau size, accessibility.
+    const fn values(self) -> (i32, i32, i32, i32, Option<i32>, [i32; 7]) {
+        match self {
+            Self::Duel => (2, 3, 1, 1, None, [10, 25, 0, 40, 60, 50, 80]),
+            Self::Brawl => (30, 3, 7, 2, None, [5, 20, 0, 30, 70, 50, 90]),
+            Self::CityWar => (4, 3, 2, 1, Some(2), [5, 10, 100, 20, 50, 60, 90]),
+            Self::Islands => (4, 0, 2, 2, Some(0), [60, 20, 0, 50, 60, 50, 50]),
+        }
+    }
+}
+
 /// The Create Random Map dialog.
 #[derive(Debug, Clone)]
 pub struct RandomMapSetupModalState {
@@ -270,6 +313,9 @@ pub struct RandomMapSetupModalState {
     /// VERA extension: the generated map on show was written as a map file;
     /// Export Map rests until the next Generate.
     pub exported: bool,
+    /// VERA extension: the preset the options still stand at; any edit of
+    /// theirs clears it.
+    pub preset: Option<RandomMapPreset>,
 }
 
 /// The Advanced sliders' range, the fields' own clamp (`RmgOptions::normalize`).
@@ -333,6 +379,7 @@ impl RandomMapSetupModalState {
             advanced_values: None,
             advanced_hold: None,
             exported: false,
+            preset: None,
         };
         modal.normalize_options();
         modal
@@ -393,7 +440,9 @@ impl RandomMapSetupModalState {
             C::Advanced(AdvancedField::PlateauSize) => {
                 self.extended && matches!(self.options.map_type, 3 | 4)
             }
-            C::AdvancedToggle | C::Advanced(_) | C::FairStartsToggle => self.extended,
+            C::AdvancedToggle | C::Advanced(_) | C::FairStartsToggle | C::PresetCycle => {
+                self.extended
+            }
             C::ExportMap => self.extended && self.generated && !self.exported,
             _ => true,
         }
@@ -544,6 +593,44 @@ impl RandomMapSetupModalState {
         self.normalize_options();
         self.generated = false;
         self.generated_preview = None;
+        self.preset = None;
+    }
+
+    /// VERA extension: apply the preset after the one that stands (the first
+    /// when none does), as one option edit. The Advanced values are set as
+    /// the player's own, so Generate keeps them over the landform's rolls.
+    pub fn cycle_preset(&mut self) {
+        if !self.extended {
+            return;
+        }
+        let next = match self.preset {
+            Some(current) => {
+                let at = RandomMapPreset::ALL
+                    .iter()
+                    .position(|preset| *preset == current)
+                    .unwrap_or(0);
+                RandomMapPreset::ALL[(at + 1) % RandomMapPreset::ALL.len()]
+            }
+            None => RandomMapPreset::ALL[0],
+        };
+        let (players, map_type, size, resources, theater, advanced) = next.values();
+        self.options.num_players = players;
+        self.options.map_type = map_type;
+        self.options.width = size;
+        self.options.height = size;
+        self.options.resources = resources;
+        if let Some(theater) = theater {
+            self.options.theater = theater;
+        }
+        for field in AdvancedField::ALL {
+            *advanced_field_mut(&mut self.options, field) = advanced[field.row()];
+        }
+        self.advanced_values = Some(advanced);
+        self.options.urban_enabled = advanced[AdvancedField::Buildings.row()] > 0;
+        self.options.fair_starts = true;
+        self.open_combo = None;
+        self.on_option_changed();
+        self.preset = Some(next);
     }
 
     /// VERA: Load hands its seed over. The sliders let go of the values the
@@ -554,6 +641,7 @@ impl RandomMapSetupModalState {
         self.normalize_options();
         self.advanced_values = None;
         self.advanced_hold = None;
+        self.preset = None;
     }
 
     /// Surprise Me: randomize the option subset and invalidate the result.
@@ -567,6 +655,7 @@ impl RandomMapSetupModalState {
         // fields are random again.
         self.advanced_values = None;
         self.options.urban_enabled = false;
+        self.preset = None;
         #[cfg(not(feature = "ares"))]
         randomize(&mut self.options, settings, rng, description);
         #[cfg(feature = "ares")]
@@ -627,6 +716,7 @@ impl RandomMapSetupModalState {
         }
         self.options.fair_starts = !self.options.fair_starts;
         self.generated = false;
+        self.preset = None;
     }
 
     /// Switch the option rows between the original controls and the
@@ -902,6 +992,29 @@ mod tests {
         offline.toggle_fair_starts();
         assert!(offline.options.fair_starts);
         assert!(!offline.generated, "the shown map no longer matches");
+
+        // Presets: offline only, one press sets the whole option set, the
+        // presses go round, and a player's own edit lets the preset go.
+        network.cycle_preset();
+        assert_eq!(network.preset, None);
+        offline.cycle_preset();
+        assert_eq!(offline.preset, Some(RandomMapPreset::Duel));
+        assert_eq!(offline.options.num_players, 2);
+        offline.cycle_preset();
+        offline.cycle_preset();
+        assert_eq!(offline.preset, Some(RandomMapPreset::CityWar));
+        assert!(offline.options.urban_enabled && offline.options.fair_starts);
+        assert_eq!(
+            (offline.options.urban_presence, offline.options.theater),
+            (100, 2)
+        );
+        assert_eq!(offline.advanced_value(AdvancedField::Buildings), 100);
+        offline.cycle_preset();
+        offline.cycle_preset();
+        assert_eq!(offline.preset, Some(RandomMapPreset::Duel), "round again");
+        assert!(!offline.options.urban_enabled);
+        offline.set_num_players(3);
+        assert_eq!(offline.preset, None);
         let plateau = RandomMapSetupControl::Advanced(AdvancedField::PlateauSize);
         offline.set_map_type(1);
         assert!(

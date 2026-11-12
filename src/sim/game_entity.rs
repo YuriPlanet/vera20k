@@ -96,14 +96,13 @@ pub(crate) struct ObjectGroupCopy {
 /// (for example `building_art`, `veterancy`); other code reads it through
 /// getters and changes it through that module's functions.
 ///
-/// Every object's turn walks this record, and an object written while a
-/// presentation frame shares it is copied (docs/sim-thread.md). The record
-/// therefore holds only what a turn reads each step. State read less often is
-/// the [`Seldom`] part, stored apart and copied only when it is written
-/// itself. Large state that few objects hold sits behind a pointer: a
-/// [`Sparse`] for a Building's art and damage fires, a `Box` for a manager
-/// only some types construct. A new field goes in this record only if an
-/// object's own turn reads or writes it each step; otherwise in `Seldom`.
+/// Every object's turn walks this record, so it holds only what a turn reads
+/// each step. State read less often is the [`Seldom`] part, stored apart.
+/// State that few objects hold sits behind a pointer: a [`Sparse`] for a
+/// Building's own state ([`BuildingPart`]), its art and its damage fires, a
+/// `Box` for a manager only some types construct. A new field goes in this
+/// record only if an object's own turn reads or writes it each step;
+/// otherwise in `Seldom`. A `BuildingClass` field goes in `BuildingPart`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GameEntity {
     // --- Always present (every entity has these) ---
@@ -118,17 +117,9 @@ pub struct GameEntity {
     /// constructor remains zero and only the feature-gated EMP producer writes it.
     #[serde(default)]
     emp: emp::EmpState,
-    /// Building+6F4, constructor43B9B5 null; startup68C1B5 assigns a type
-    /// pointer and Load453FB0 swizzles it. Stock capture never rerolls the
-    /// reward; Ares's Place roll also writes it (`sim::secret_lab`).
-    secret_lab_fallback: Option<(crate::rules::object_type::ObjectCategory, InternedId)>,
     /// One native Techno stage clock. Class receivers mutate through this
     /// owner; animation, miner and buildup components carry no competing copy.
     stage: crate::sim::stage::StageClass,
-    /// Building-owned upgrade count and installed type identities. Original
-    /// 4409E2 consumes the temporary Building and retains only its type here.
-    #[serde(default)]
-    building_upgrades: crate::sim::building_upgrades::BuildingUpgrades,
     /// World position in isometric cell coordinates + cached screen position.
     pub position: Position,
     /// The body heading, `TechnoClass+0x388` (PrimaryFacing), and its only
@@ -180,8 +171,6 @@ pub struct GameEntity {
     /// it.
     #[serde(default)]
     pub flashing: crate::sim::flashing::Flashing,
-    /// Building43FB20 operational edge and Techno6FB170/6FB470 deposit latch.
-    pub(crate) gap_generator: crate::sim::world::GapGeneratorRuntime,
 
     // --- Render model (mutually exclusive) ---
     /// True = VXL/HVA model, false = SHP sprite; effective art metadata is
@@ -194,11 +183,6 @@ pub struct GameEntity {
     /// [`Deactivation`]: crate::sim::powered_unit::Deactivation
     #[serde(default)]
     pub deactivated: crate::sim::powered_unit::Deactivation,
-    /// A building's repair byte (`BuildingClass+0x6E8`), a [`RepairByte`]
-    /// that `production::production_repair` owns.
-    ///
-    /// [`RepairByte`]: crate::sim::production::RepairByte
-    pub repairing: crate::sim::production::RepairByte,
     /// Independent, serialized ObjectClass lifecycle facts, an
     /// [`ObjectLifecycle`] that `world::lifecycle` owns.
     #[serde(default)]
@@ -252,18 +236,6 @@ pub struct GameEntity {
     /// The object's target (`TechnoClass+0x2B4`), a [`TarCom`] that the class
     /// target setter (`mission::concrete_effects`) writes.
     pub attack_target: TarCom,
-    /// A building's delayed fire: a delayed shot, or a Prism support beam. A
-    /// [`BuildingDelayedFire`] that `techno_ai::building_missions` owns.
-    ///
-    /// [`BuildingDelayedFire`]: crate::sim::world::BuildingDelayedFire
-    #[serde(default)]
-    pub pending_building_fire: crate::sim::world::BuildingDelayedFire,
-    /// The Prism master's recruited supporters (`BuildingClass+0x664`), a
-    /// [`PrismSupport`] that `techno_ai::building_missions` owns.
-    ///
-    /// [`PrismSupport`]: crate::sim::world::PrismSupport
-    #[serde(default)]
-    pub prism_support_count: crate::sim::world::PrismSupport,
     /// The turret heading, `TechnoClass+0x3A0` (SecondaryFacing), a
     /// [`FacingClass`] that moves only through its own methods. VERA keeps
     /// one for a `Turret=yes` unit and every aircraft: construction installs
@@ -297,32 +269,16 @@ pub struct GameEntity {
     pub gattling: crate::sim::combat::gattling::GattlingState,
     /// Optional presentation-only native recoil, owned by voxel_recoil.
     voxel_recoil: Option<Box<voxel_recoil::VoxelRecoil>>,
-    /// Sole native Building+534/+538 body state; construction/sale use the
-    /// existing private StageClass and MissionLeaf ready byte.
-    building_body: Option<crate::sim::building_construction::BuildingBody>,
-    /// Building `+0x544`, a [`PowerHealthSample`] that `sim::power_system`
-    /// owns; a Building's alone is live.
-    ///
-    /// [`PowerHealthSample`]: crate::sim::power_system::PowerHealthSample
-    building_power_health_sample: crate::sim::power_system::PowerHealthSample,
-    /// Sale route metadata, never a second mission, ready byte or timer.
-    building_sale: Option<crate::sim::building_construction::BuildingDown>,
-    /// The wait before the building's computer factory tries its finished
-    /// object again, an [`AiPlacementTimer`] that `production::factory_ai`
-    /// owns.
-    ///
-    /// [`AiPlacementTimer`]: crate::sim::production::AiPlacementTimer
+    /// The state only a Building has, a [`BuildingPart`] kept out of line
+    /// and only once written: by a Building, or by an Ares spotlight carrier.
     #[serde(default)]
-    pub(crate) ai_placement_timer: crate::sim::production::AiPlacementTimer,
+    pub building: Sparse<BuildingPart>,
     /// The Building's animation art: its AnimClass slots, their replay
     /// marks, the damaged-art flag, its StorageClass art, the Stuff flag and
     /// the Grand_Opening guard. `sim::building_art` owns it. Out of line,
     /// and kept only once written, which only a Building does.
     #[serde(default)]
     pub building_art: Sparse<crate::sim::building_art::BuildingArt>,
-    /// Independent Building+660, owned by sim::building_power.
-    #[serde(default)]
-    pub(crate) building_online: crate::sim::building_power::BuildingOnline,
     /// Per-instance Deliver.BaseNormal override, not a mutation of its type.
     #[serde(default)]
     unit_delivery_no_base: bool,
@@ -337,40 +293,6 @@ pub struct GameEntity {
     /// the grid. Only written with [`Self::ares_super_weapon`].
     #[serde(default)]
     ares_super_target: Option<(u16, u16)>,
-    /// Building+66C charger pointers and +661 weapon latch, owned by
-    /// `sim::tesla_charging` independently of House power accounting.
-    #[serde(default)]
-    pub(crate) tesla_charge: crate::sim::tesla_charging::BuildingCharge,
-    /// The last operational sample (`BuildingClass+0x6C8`), a
-    /// [`LastOperational`] that `world::gap_generator` owns.
-    ///
-    /// [`LastOperational`]: crate::sim::world::LastOperational
-    #[serde(default)]
-    pub building_last_operational: crate::sim::world::LastOperational,
-    /// Building+53C, a signed index: constructor43B783 starts at zero,
-    /// InitManagers442C5C installs the owner's Country index, and damage44298B
-    /// records an attacker's House index. Sale44A1EF writes -1 before its
-    /// live callbacks; RecordKill70304D/7033C3 then suppress BuildingsLost.
-    building_loss_index: i32,
-    /// A `PowersUnit=` building's share in its house's powered centers
-    /// (`BuildingClass+0x662`), a [`PoweredCenter`] that `sim::powered_unit`
-    /// owns.
-    ///
-    /// [`PoweredCenter`]: crate::sim::powered_unit::PoweredCenter
-    #[serde(default)]
-    pub(crate) building_powered_center: crate::sim::powered_unit::PoweredCenter,
-    /// HasEngineer (`BuildingClass+0x6CC`), a [`HasEngineer`] that
-    /// `sim::building_art` owns.
-    ///
-    /// [`HasEngineer`]: crate::sim::building_art::HasEngineer
-    #[serde(default)]
-    pub(crate) building_has_engineer: crate::sim::building_art::HasEngineer,
-    /// The `HasSpotlight=` fact and the owned BuildingLight, a
-    /// [`BuildingLight`] that `world::lifecycle` owns.
-    ///
-    /// [`BuildingLight`]: crate::sim::world::BuildingLight
-    #[serde(default)]
-    pub(crate) building_light: crate::sim::world::BuildingLight,
     /// The damage-fire transition cache and its eight AnimClass slots
     /// (`BuildingClass+0x5E8`, `+0x5C8..+0x5E4`), a [`DamageFires`] that
     /// `sim::anim_class` owns. Out of line, and kept only once written,
@@ -482,51 +404,16 @@ pub struct GameEntity {
     /// `+0x11C` Transporter, `+0x82` InOpenToppedTransport), a
     /// [`PassengerRole`] that `sim::passenger` owns.
     pub passenger_role: PassengerRole,
-    /// Shared Building C4/PostMortem detonation latch: the marker `+0x6DF`
-    /// with its C4Timer (`+0x528`) and C4AppliedBy (`+0x540`). The C4 plant
-    /// (`sim::c4_plant`) owns one producer; qualifying delayed-death receiver
-    /// results own the other. The Building LogicVector visit consumes expiry
-    /// synchronously (`Simulation::tick_pending_building_detonation`) and
-    /// keeps the marker, except a bridge repair hut's, which clears it.
-    /// IronCurtain/ForceShield entry cancels it. A [`C4Detonation`] that
-    /// `sim::c4_plant` owns.
-    ///
-    /// [`C4Detonation`]: crate::sim::c4_plant::C4Detonation
-    #[serde(default)]
-    pub(crate) pending_c4_detonation: crate::sim::c4_plant::C4Detonation,
-    /// A building's HasBeenCaptured byte (`BuildingClass+0x6E3`), a
-    /// [`HasBeenCaptured`] that `crew_survival` owns.
-    ///
-    /// [`HasBeenCaptured`]: crate::sim::crew_survival::HasBeenCaptured
-    #[serde(default)]
-    pub(crate) has_been_captured: crate::sim::crew_survival::HasBeenCaptured,
-    /// A building's NoSurvivor byte (`BuildingClass+0x6E0`), a
-    /// [`NoSurvivor`] that `crew_survival` owns.
-    ///
-    /// [`NoSurvivor`]: crate::sim::crew_survival::NoSurvivor
-    #[serde(default)]
-    pub(crate) no_survivor: crate::sim::crew_survival::NoSurvivor,
     /// Both ends of the tank-bunker reciprocal link, a [`BunkerLinks`] that
     /// `docking::bunker_link` owns.
     ///
     /// [`BunkerLinks`]: crate::sim::docking::bunker_link::BunkerLinks
     #[serde(default)]
     pub bunker: crate::sim::docking::bunker_link::BunkerLinks,
-    /// Runtime state for `Gate=yes` building passability.
-    ///
-    /// Native gate passability4525F0 accepts only mission `0x18` plus stable-open helper
-    /// state. Opening and closing gates are still blockers for the same check.
-    #[serde(default)]
-    pub(crate) building_gate: Option<BuildingGateRuntime>,
     /// Shared Techno+350 door. Gate/factory/Unit consumers mutate it only
     /// through this entity's DoorClass operations.
     #[serde(default)]
     door: crate::sim::door::DoorClass,
-    /// Tank-bunker install state machine. `Some` on `Bunker=yes` buildings from
-    /// spawn (state `Idle` when empty); its presence marks the entity as a tank
-    /// bunker. Drives entry admission → install.
-    #[serde(default)]
-    pub bunker_runtime: Option<crate::sim::docking::bunker_install::BunkerRuntime>,
     /// The Behind indicator Anim (`TechnoClass+0x12C`) that
     /// `game_entity::behind_indicator` owns.
     behind_anim: Option<crate::sim::anim_class::AnimId>,
@@ -573,15 +460,149 @@ pub struct GameEntity {
     #[serde(default)]
     pub(crate) cached_spatial_threat: crate::sim::house_threat::SpatialThreat,
     /// The state this object's turn does not read each step, stored apart.
-    seldom: crate::util::shared::Shared<Seldom>,
+    seldom: Box<Seldom>,
+}
+
+/// The `BuildingClass` state. A [`Sparse`] in [`GameEntity::building`] holds
+/// it, so a unit's record carries one empty pointer and a Building reaches its
+/// own state through that pointer. An unwritten part reads as its default,
+/// which is what a unit holds; the one exception is the light an Ares
+/// spotlight carrier keeps in `building_light`. Each field keeps its owning
+/// module and visibility. Write a field only when its value changes, so a
+/// unit's part stays unwritten.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct BuildingPart {
+    /// Building+6F4, constructor43B9B5 null; startup68C1B5 assigns a type
+    /// pointer and Load453FB0 swizzles it. Stock capture never rerolls the
+    /// reward; Ares's Place roll also writes it (`sim::secret_lab`).
+    secret_lab_fallback: Option<(crate::rules::object_type::ObjectCategory, InternedId)>,
+    /// Building-owned upgrade count and installed type identities. Original
+    /// 4409E2 consumes the temporary Building and retains only its type here.
+    #[serde(default)]
+    building_upgrades: crate::sim::building_upgrades::BuildingUpgrades,
+    /// Building43FB20 operational edge and Techno6FB170/6FB470 deposit latch.
+    pub(crate) gap_generator: crate::sim::world::GapGeneratorRuntime,
+    /// A building's repair byte (`BuildingClass+0x6E8`), a [`RepairByte`]
+    /// that `production::production_repair` owns.
+    ///
+    /// [`RepairByte`]: crate::sim::production::RepairByte
+    pub repairing: crate::sim::production::RepairByte,
+    /// A building's delayed fire: a delayed shot, or a Prism support beam. A
+    /// [`BuildingDelayedFire`] that `techno_ai::building_missions` owns.
+    ///
+    /// [`BuildingDelayedFire`]: crate::sim::world::BuildingDelayedFire
+    #[serde(default)]
+    pub pending_building_fire: crate::sim::world::BuildingDelayedFire,
+    /// The Prism master's recruited supporters (`BuildingClass+0x664`), a
+    /// [`PrismSupport`] that `techno_ai::building_missions` owns.
+    ///
+    /// [`PrismSupport`]: crate::sim::world::PrismSupport
+    #[serde(default)]
+    pub prism_support_count: crate::sim::world::PrismSupport,
+    /// Sole native Building+534/+538 body state; construction/sale use the
+    /// existing private StageClass and MissionLeaf ready byte.
+    building_body: Option<crate::sim::building_construction::BuildingBody>,
+    /// Building `+0x544`, a [`PowerHealthSample`] that `sim::power_system`
+    /// owns; a Building's alone is live.
+    ///
+    /// [`PowerHealthSample`]: crate::sim::power_system::PowerHealthSample
+    building_power_health_sample: crate::sim::power_system::PowerHealthSample,
+    /// Sale route metadata, never a second mission, ready byte or timer.
+    building_sale: Option<crate::sim::building_construction::BuildingDown>,
+    /// The wait before the building's computer factory tries its finished
+    /// object again, an [`AiPlacementTimer`] that `production::factory_ai`
+    /// owns.
+    ///
+    /// [`AiPlacementTimer`]: crate::sim::production::AiPlacementTimer
+    #[serde(default)]
+    pub(crate) ai_placement_timer: crate::sim::production::AiPlacementTimer,
+    /// Independent Building+660, owned by sim::building_power.
+    #[serde(default)]
+    pub(crate) building_online: crate::sim::building_power::BuildingOnline,
+    /// Building+66C charger pointers and +661 weapon latch, owned by
+    /// `sim::tesla_charging` independently of House power accounting.
+    #[serde(default)]
+    pub(crate) tesla_charge: crate::sim::tesla_charging::BuildingCharge,
+    /// The last operational sample (`BuildingClass+0x6C8`), a
+    /// [`LastOperational`] that `world::gap_generator` owns.
+    ///
+    /// [`LastOperational`]: crate::sim::world::LastOperational
+    #[serde(default)]
+    pub building_last_operational: crate::sim::world::LastOperational,
+    /// Building+53C, a signed index: constructor43B783 starts at zero,
+    /// InitManagers442C5C installs the owner's Country index, and damage44298B
+    /// records an attacker's House index. Sale44A1EF writes -1 before its
+    /// live callbacks; RecordKill70304D/7033C3 then suppress BuildingsLost.
+    building_loss_index: i32,
+    /// A `PowersUnit=` building's share in its house's powered centers
+    /// (`BuildingClass+0x662`), a [`PoweredCenter`] that `sim::powered_unit`
+    /// owns.
+    ///
+    /// [`PoweredCenter`]: crate::sim::powered_unit::PoweredCenter
+    #[serde(default)]
+    pub(crate) building_powered_center: crate::sim::powered_unit::PoweredCenter,
+    /// HasEngineer (`BuildingClass+0x6CC`), a [`HasEngineer`] that
+    /// `sim::building_art` owns.
+    ///
+    /// [`HasEngineer`]: crate::sim::building_art::HasEngineer
+    #[serde(default)]
+    pub(crate) building_has_engineer: crate::sim::building_art::HasEngineer,
+    /// The `HasSpotlight=` fact and the owned BuildingLight, a
+    /// [`BuildingLight`] that `world::lifecycle` owns.
+    ///
+    /// [`BuildingLight`]: crate::sim::world::BuildingLight
+    #[serde(default)]
+    pub(crate) building_light: crate::sim::world::BuildingLight,
+    /// Shared Building C4/PostMortem detonation latch: the marker `+0x6DF`
+    /// with its C4Timer (`+0x528`) and C4AppliedBy (`+0x540`). The C4 plant
+    /// (`sim::c4_plant`) owns one producer; qualifying delayed-death receiver
+    /// results own the other. The Building LogicVector visit consumes expiry
+    /// synchronously (`Simulation::tick_pending_building_detonation`) and
+    /// keeps the marker, except a bridge repair hut's, which clears it.
+    /// IronCurtain/ForceShield entry cancels it. A [`C4Detonation`] that
+    /// `sim::c4_plant` owns.
+    ///
+    /// [`C4Detonation`]: crate::sim::c4_plant::C4Detonation
+    #[serde(default)]
+    pub(crate) pending_c4_detonation: crate::sim::c4_plant::C4Detonation,
+    /// A building's HasBeenCaptured byte (`BuildingClass+0x6E3`), a
+    /// [`HasBeenCaptured`] that `crew_survival` owns.
+    ///
+    /// [`HasBeenCaptured`]: crate::sim::crew_survival::HasBeenCaptured
+    #[serde(default)]
+    pub(crate) has_been_captured: crate::sim::crew_survival::HasBeenCaptured,
+    /// A building's NoSurvivor byte (`BuildingClass+0x6E0`), a
+    /// [`NoSurvivor`] that `crew_survival` owns.
+    ///
+    /// [`NoSurvivor`]: crate::sim::crew_survival::NoSurvivor
+    #[serde(default)]
+    pub(crate) no_survivor: crate::sim::crew_survival::NoSurvivor,
+    /// Runtime state for `Gate=yes` building passability.
+    ///
+    /// Native gate passability4525F0 accepts only mission `0x18` plus stable-open helper
+    /// state. Opening and closing gates are still blockers for the same check.
+    #[serde(default)]
+    pub(crate) building_gate: Option<BuildingGateRuntime>,
+    /// Tank-bunker install state machine. `Some` on `Bunker=yes` buildings from
+    /// spawn (state `Idle` when empty); its presence marks the entity as a tank
+    /// bunker. Drives entry admission → install.
+    #[serde(default)]
+    pub bunker_runtime: Option<crate::sim::docking::bunker_install::BunkerRuntime>,
+}
+
+impl crate::util::sparse::SparseDefault for BuildingPart {
+    fn sparse_default() -> &'static Self {
+        static DEFAULT: std::sync::LazyLock<BuildingPart> =
+            std::sync::LazyLock::new(BuildingPart::default);
+        &DEFAULT
+    }
 }
 
 /// The part of an object's record its own turn does not read each step:
 /// state read on orders, on events, by other objects or when drawing. It is
-/// stored apart from [`GameEntity`] and shared with a presentation frame
-/// until written, so a turn that writes only the main part copies only that
-/// (docs/sim-thread.md). `GameEntity` derefs to it, so a field here reads and
-/// writes as `entity.field`; a write copies this part if a frame shares it.
+/// stored apart from [`GameEntity`], so a turn's walk of the main part stays
+/// small. `GameEntity` derefs to it, so a field here reads and writes as
+/// `entity.field`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Seldom {
     /// Bounded optional observations; absent from saves and normal builds.
@@ -1075,15 +1096,6 @@ pub struct Seldom {
     /// [`UnloadKeep`]: crate::sim::transport_unload::UnloadKeep
     #[serde(default)]
     pub(crate) transport_unload_keep_count: crate::sim::transport_unload::UnloadKeep,
-}
-
-impl GameEntity {
-    /// Whether this record's seldom part is still the one `other` holds:
-    /// nothing has written it since one was copied from the other.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn shares_seldom_with(&self, other: &Self) -> bool {
-        self.seldom.shares_storage_with(&other.seldom)
-    }
 }
 
 impl std::ops::Deref for GameEntity {
@@ -1668,7 +1680,7 @@ impl GameEntity {
     }
 
     pub fn building_upgrades(&self) -> &crate::sim::building_upgrades::BuildingUpgrades {
-        &self.building_upgrades
+        &self.building.building_upgrades
     }
 
     pub(crate) fn advance_building_upgrade_level(
@@ -1676,15 +1688,17 @@ impl GameEntity {
         capacity: i32,
         wall_tower: bool,
     ) -> bool {
-        self.building_upgrades.power_up(capacity, wall_tower)
+        self.building
+            .building_upgrades
+            .power_up(capacity, wall_tower)
     }
 
     pub(crate) fn commit_building_upgrade_type(&mut self, type_id: InternedId) {
-        self.building_upgrades.commit_type(type_id);
+        self.building.building_upgrades.commit_type(type_id);
     }
 
     pub(crate) fn remove_building_upgrade_level(&mut self, removed_turret: bool) -> Option<usize> {
-        self.building_upgrades.power_down(removed_turret)
+        self.building.building_upgrades.power_down(removed_turret)
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -1693,7 +1707,7 @@ impl GameEntity {
         count: i8,
         types: [Option<InternedId>; 3],
     ) {
-        self.building_upgrades =
+        self.building.building_upgrades =
             crate::sim::building_upgrades::BuildingUpgrades::fixture(count, types);
     }
 
@@ -1885,23 +1899,23 @@ impl GameEntity {
         self.original_factory_country = country;
     }
 
-    pub(crate) const fn building_loss_index(&self) -> i32 {
-        self.building_loss_index
+    pub(crate) fn building_loss_index(&self) -> i32 {
+        self.building.building_loss_index
     }
 
     /// Building InitManagers' retained Country index (442C5C).
     pub(crate) fn initialize_building_loss_index(&mut self, country_index: i32) {
-        self.building_loss_index = country_index;
+        self.building.building_loss_index = country_index;
     }
 
     /// Building ReceiveDamage's nonnull source House index (44298B).
     pub(crate) fn record_building_damage_house_index(&mut self, house_index: i32) {
-        self.building_loss_index = house_index;
+        self.building.building_loss_index = house_index;
     }
 
     /// The sale's accounting gate precedes its live destruction callbacks.
     pub(crate) fn suppress_building_sale_loss(&mut self) {
-        self.building_loss_index = -1;
+        self.building.building_loss_index = -1;
     }
 
     /// Indexed type identity, established by construction/decoding and changed
@@ -1913,14 +1927,14 @@ impl GameEntity {
     pub(crate) fn secret_lab_fallback(
         &self,
     ) -> Option<(crate::rules::object_type::ObjectCategory, InternedId)> {
-        self.secret_lab_fallback
+        self.building.secret_lab_fallback
     }
 
     pub(in crate::sim) fn assign_secret_lab_fallback(
         &mut self,
         production: (crate::rules::object_type::ObjectCategory, InternedId),
     ) {
-        self.secret_lab_fallback = Some(production);
+        self.building.secret_lab_fallback = Some(production);
     }
 
     #[cfg(feature = "ares")]
@@ -2303,9 +2317,7 @@ impl GameEntity {
         Self {
             stable_id,
             emp: Default::default(),
-            secret_lab_fallback: None,
             stage: crate::sim::stage::StageClass::constructed(construction_frame as i32),
-            building_upgrades: crate::sim::building_upgrades::BuildingUpgrades::default(),
             position: Position::new(rx, ry, z, None, init_sub_x, init_sub_y),
             // The Unlimbo direction; the class constructor supplies the rate.
             body_facing: crate::sim::movement::FacingClass::new(u16::from(facing) << 8, 0),
@@ -2322,10 +2334,8 @@ impl GameEntity {
             category,
             veterancy: crate::sim::combat::veterancy::Veterancy::new(veterancy),
             flashing: Default::default(),
-            gap_generator: crate::sim::world::GapGeneratorRuntime::default(),
             is_voxel,
             deactivated: Default::default(),
-            repairing: Default::default(),
             lifecycle: ObjectLifecycle::default(),
             in_playfield: Default::default(),
             foot_air: foot_air::FootAirState::new(stable_id),
@@ -2338,28 +2348,22 @@ impl GameEntity {
             ),
             lift: Default::default(),
             attack_target: TarCom::default(),
-            pending_building_fire: Default::default(),
-            prism_support_count: Default::default(),
             barrel_facing: None,
             turret_rotation_latch: Default::default(),
             last_fire_frame: Default::default(),
             gattling: Default::default(),
             voxel_recoil: None,
-            building_body: (category == EntityCategory::Structure).then(Default::default),
-            building_power_health_sample: Default::default(),
-            building_sale: None,
-            ai_placement_timer: Default::default(),
+            building: {
+                let mut building = Sparse::<BuildingPart>::default();
+                if category == EntityCategory::Structure {
+                    building.building_body = Some(Default::default());
+                }
+                building
+            },
             building_art: Default::default(),
-            building_online: Default::default(),
             unit_delivery_no_base: false,
             ares_super_weapon: None,
             ares_super_target: None,
-            tesla_charge: Default::default(),
-            building_last_operational: Default::default(),
-            building_loss_index: 0,
-            building_powered_center: Default::default(),
-            building_has_engineer: Default::default(),
-            building_light: Default::default(),
             damage_fires: Default::default(),
             on_bridge: Default::default(),
             animation: None,
@@ -2383,13 +2387,8 @@ impl GameEntity {
             crash: crate::sim::world::CrashLatch::default(),
             sinking: crate::sim::world::SinkingState::default(),
             passenger_role: PassengerRole::default(),
-            pending_c4_detonation: Default::default(),
-            has_been_captured: Default::default(),
-            no_survivor: Default::default(),
             bunker: Default::default(),
-            building_gate: None,
             door: crate::sim::door::DoorClass::at_frame(construction_frame),
-            bunker_runtime: None,
             behind_anim: None,
             infantry: if category == EntityCategory::Infantry {
                 Some(crate::sim::infantry::InfantryRuntime::new())
@@ -2405,7 +2404,7 @@ impl GameEntity {
             parasite: crate::sim::combat::parasite::FootParasite::new(construction_frame),
             cached_spatial_threat: Default::default(),
             turret_anim_frame: Default::default(),
-            seldom: crate::util::shared::Shared::new(Seldom {
+            seldom: Box::new(Seldom {
                 tracking_facts: Default::default(),
                 house_tracking_latches: Default::default(),
                 #[cfg(feature = "phobos")]
@@ -2990,7 +2989,8 @@ impl GameEntity {
 
     /// Native Building+534 is0, independent of mission status and ready byte.
     pub fn in_construction_bstate(&self) -> bool {
-        self.building_body
+        self.building
+            .building_body
             .as_ref()
             .is_some_and(|body| body.state() == 0)
     }
@@ -2999,6 +2999,7 @@ impl GameEntity {
     pub(crate) fn building_health_sample_changes(&self) -> bool {
         self.category == EntityCategory::Structure
             && self
+                .building
                 .building_power_health_sample
                 .differs(self.health.current())
     }
@@ -3008,6 +3009,7 @@ impl GameEntity {
     pub fn sample_building_health_for_power(&mut self) -> bool {
         self.category == EntityCategory::Structure
             && self
+                .building
                 .building_power_health_sample
                 .sample(self.health.current())
     }
@@ -3015,13 +3017,13 @@ impl GameEntity {
     /// A Building's reset at a successful ordinary Unlimbo (`0x00440D2D`).
     pub(crate) fn reset_building_health_sample_at_unlimbo(&mut self) {
         if self.category == EntityCategory::Structure {
-            self.building_power_health_sample.reset();
+            self.building.building_power_health_sample.reset();
         }
     }
 
     pub fn building_power_health_sample(&self) -> Option<i32> {
         (self.category == EntityCategory::Structure)
-            .then_some(self.building_power_health_sample.get())
+            .then_some(self.building.building_power_health_sample.get())
     }
 
     pub(crate) fn hash_building_health_sample(&self, hasher: &mut impl std::hash::Hasher) {

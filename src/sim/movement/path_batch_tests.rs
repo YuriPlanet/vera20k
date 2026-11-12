@@ -252,7 +252,7 @@ fn an_answer_for_another_request_is_not_used() {
 
 /// A code-2 re-path a capped pass leaves out keeps the urgency it registered
 /// at while its Foot registers it again, and loses it when a pass finds no
-/// registration at all. The kept urgencies are saved and hashed.
+/// registration at all. The kept urgencies and the turn are saved and hashed.
 #[test]
 fn a_left_out_code2_repath_keeps_its_urgency() {
     let rules = rules();
@@ -267,10 +267,10 @@ fn a_left_out_code2_repath_keeps_its_urgency() {
                 &sim.overlay_grid,
                 &sim.substrate.entities,
                 id,
-                WaitingRequest::NoQueue
+                CODE2
             ));
         }
-        sim.path_batch.as_mut().unwrap().next_turn = others.start;
+        sim.path_batch.as_mut().unwrap().next_repath[1] = others.start;
         sim.answer_batched_path_searches(&rules, None);
         sim.finish_batched_path_searches();
     };
@@ -329,10 +329,18 @@ fn a_left_out_code2_repath_keeps_its_urgency() {
         restored.path_batch.as_ref().unwrap().left_out_code2,
         BTreeMap::from([(tank, 1), (infantry, 1)])
     );
+    assert_eq!(
+        restored.path_batch.as_ref().unwrap().next_repath,
+        [0, tank],
+        "the turn resumes at the tank"
+    );
     let hash = sim.state_hash();
     let kept = std::mem::take(&mut sim.path_batch.as_mut().unwrap().left_out_code2);
     assert_ne!(sim.state_hash(), hash, "the kept urgencies are hashed");
     sim.path_batch.as_mut().unwrap().left_out_code2 = kept;
+    sim.path_batch.as_mut().unwrap().next_repath = [0; 2];
+    assert_ne!(sim.state_hash(), hash, "the turn is hashed");
+    sim.path_batch.as_mut().unwrap().next_repath = [0, tank];
 
     leave_out(&mut sim);
     assert_eq!(
@@ -357,8 +365,8 @@ fn a_left_out_code2_repath_keeps_its_urgency() {
 
 /// A tank, then an infantryman, blocked with code 2 behind a tank that
 /// cannot move registers a re-path at urgency 1. Then a full turn of other
-/// registrations goes first every frame: its blockage timer runs out as it
-/// waits, and once the pass answers it, its own ladder (Drive's, then
+/// urgency-1 re-paths goes first every frame: its blockage timer runs out as
+/// it waits, and once the pass answers it, its own ladder (Drive's, then
 /// Walk's) takes the answer, searched at the urgency 1 it first asked at.
 #[test]
 fn a_ladder_left_out_past_its_blockage_timer_takes_its_first_urgency() {
@@ -416,10 +424,10 @@ fn a_ladder_left_out_past_its_blockage_timer_takes_its_first_urgency() {
                     &sim.overlay_grid,
                     &sim.substrate.entities,
                     id,
-                    WaitingRequest::NoQueue
+                    CODE2
                 ));
             }
-            sim.path_batch.as_mut().unwrap().next_turn = others.start;
+            sim.path_batch.as_mut().unwrap().next_repath[1] = others.start;
             sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
             let batch = sim.path_batch.as_ref().unwrap();
             assert!(!batch.answered.contains(&mover), "{follower} waits");
@@ -1151,8 +1159,8 @@ fn a_drive_reentry_answer_runs_the_new_route_straight() {
 }
 
 /// Over the cap a pass takes the registrations from the next turn on,
-/// wrapping round to the lowest ids, and moves the turn past the last one
-/// taken; under it a pass takes them all and keeps the turn.
+/// wrapping round to the lowest ids, and moves the turn to the first one it
+/// leaves out; under it a pass takes them all and keeps the turn.
 #[test]
 fn a_capped_pass_takes_its_turn_round_the_ids() {
     let pending = |ids: &[u64]| -> Vec<(u64, WaitingRequest)> {
@@ -1160,19 +1168,26 @@ fn a_capped_pass_takes_its_turn_round_the_ids() {
             .map(|&id| (id, WaitingRequest::NoQueue))
             .collect()
     };
-    let ids = |turn: Vec<(u64, WaitingRequest)>| -> Vec<u64> {
-        turn.into_iter().map(|(id, _)| id).collect()
+    let ids = |turn: (Vec<(u64, WaitingRequest)>, Vec<(u64, WaitingRequest)>)| {
+        let ids = |turn: Vec<(u64, WaitingRequest)>| -> Vec<u64> {
+            turn.into_iter().map(|(id, _)| id).collect()
+        };
+        (ids(turn.0), ids(turn.1))
     };
     let mut next = 5;
-    assert_eq!(ids(take_turn(pending(&[2, 4, 6]), &mut next, 3)), [2, 4, 6]);
+    let turn = take_turn(pending(&[2, 4, 6]), &mut next, 3);
+    assert_eq!(ids(turn), (vec![6, 2, 4], vec![]));
     assert_eq!(next, 5, "a pass under the cap keeps the turn");
     let five = [2, 4, 6, 8, 10];
-    assert_eq!(ids(take_turn(pending(&five), &mut next, 3)), [6, 8, 10]);
-    assert_eq!(next, 11);
-    assert_eq!(ids(take_turn(pending(&five), &mut next, 3)), [2, 4, 6]);
-    assert_eq!(next, 7);
-    assert_eq!(ids(take_turn(pending(&five), &mut next, 3)), [2, 8, 10]);
-    assert_eq!(next, 3);
+    let turn = take_turn(pending(&five), &mut next, 3);
+    assert_eq!(ids(turn), (vec![6, 8, 10], vec![2, 4]));
+    assert_eq!(next, 2);
+    let turn = take_turn(pending(&five), &mut next, 3);
+    assert_eq!(ids(turn), (vec![2, 4, 6], vec![8, 10]));
+    assert_eq!(next, 8);
+    let turn = take_turn(pending(&five), &mut next, 3);
+    assert_eq!(ids(turn), (vec![8, 10, 2], vec![4, 6]));
+    assert_eq!(next, 4);
 }
 
 /// A pass answers at most [`SEARCHES_PER_PASS`] registrations. A Foot it
@@ -1269,8 +1284,8 @@ fn eight_ladders(rules: &RuleSet) -> (Simulation, Vec<u64>) {
     (sim, ladders)
 }
 
-/// Registers an urgency-2 re-path for each of `ids`.
-fn register(sim: &mut Simulation, ids: &[u64]) {
+/// Registers `request` for each of `ids`.
+fn register_as(sim: &mut Simulation, ids: &[u64], request: WaitingRequest) {
     for &id in ids {
         assert!(crate::sim::world::Simulation::defer_path_search(
             &mut sim.path_batch,
@@ -1278,18 +1293,35 @@ fn register(sim: &mut Simulation, ids: &[u64]) {
             &sim.overlay_grid,
             &sim.substrate.entities,
             id,
-            URGENT
+            request
         ));
     }
 }
 
-/// A pass answers its urgency-2 re-paths in their turn's order while the
-/// ones before stay under its budget of expansions; the rest register again
-/// at urgency 2 and go first at the next pass. Which ones it answers does not
-/// depend on the threads (one worker takes the re-paths past the budget only
-/// after it is spent, and skips them).
+/// Registers an urgency-2 re-path for each of `ids`.
+fn register(sim: &mut Simulation, ids: &[u64]) {
+    register_as(sim, ids, URGENT);
+}
+
+/// A pass answers its code-2 re-paths at each urgency in their turn's order
+/// while the ones before stay under the turn's budget of expansions; the
+/// rest register again at their urgency, and the next pass starts the turn
+/// at the first of them. Which ones it answers does not depend on the
+/// threads (one worker takes the re-paths past the budget only after it is
+/// spent, and skips them).
 #[test]
-fn a_pass_answers_urgency2_repaths_within_its_budget() {
+fn a_pass_answers_each_urgencys_repaths_within_its_budget() {
+    for (repath, other) in [(URGENT, CODE2), (CODE2, URGENT)] {
+        answers_repaths_within_the_budget(repath, other);
+    }
+}
+
+/// [`a_pass_answers_each_urgencys_repaths_within_its_budget`] for code-2
+/// re-paths `repath`, whose Foots ask `other` when they register again.
+fn answers_repaths_within_the_budget(repath: WaitingRequest, other: WaitingRequest) {
+    let WaitingRequest::Code2Ladder { urgency } = repath else {
+        unreachable!("a code-2 re-path");
+    };
     let rules = rules();
     let run = |threads: usize| {
         let pool = rayon::ThreadPoolBuilder::new()
@@ -1300,7 +1332,7 @@ fn a_pass_answers_urgency2_repaths_within_its_budget() {
             let (mut sim, ladders) = eight_ladders(&rules);
             // Without a budget every re-path is answered; alone, each makes
             // the expansions it makes in the batch.
-            register(&mut sim, &ladders);
+            register_as(&mut sim, &ladders, repath);
             sim.answer_path_searches_within(&rules, None, u64::MAX);
             assert_eq!(sim.path_batch.as_ref().unwrap().answered, ladders);
             let grid = sim.path_grid_snapshot().unwrap();
@@ -1311,7 +1343,7 @@ fn a_pass_answers_urgency2_repaths_within_its_budget() {
                 .map(|&id| {
                     let before = search_steps();
                     let answer = dummy.detached(|| {
-                        sim.batched_search(id, URGENT, &rules, None, &grid, counts, None, None)
+                        sim.batched_search(id, repath, &rules, None, &grid, counts, None, None)
                     });
                     (answer, search_steps() - before)
                 })
@@ -1325,7 +1357,7 @@ fn a_pass_answers_urgency2_repaths_within_its_budget() {
 
             // The first two stay under the budget and the third reaches it.
             sim.finish_batched_path_searches();
-            register(&mut sim, &ladders);
+            register_as(&mut sim, &ladders, repath);
             let budget = alone[0].1 + alone[1].1 + 1;
             sim.answer_path_searches_within(&rules, None, budget);
             let batch = sim.path_batch.as_ref().unwrap();
@@ -1341,19 +1373,19 @@ fn a_pass_answers_urgency2_repaths_within_its_budget() {
                         &sim.overlay_grid,
                         &sim.substrate.entities,
                         id,
-                        CODE2
+                        other
                     ),
                     "{id} registers again"
                 );
                 let pending = &sim.path_batch.as_ref().unwrap().pending;
-                assert_eq!(pending.last(), Some(&(id, URGENT)), "{id} keeps urgency 2");
+                assert_eq!(pending.last(), Some(&(id, repath)), "{id} keeps {urgency}");
             }
 
-            // The next pass takes the left-out ones first, ahead of a lower
-            // id that registers anew, and answers the first whatever its
+            // The next pass starts the turn at the first one left out, ahead
+            // of a lower id that registers anew, and answers it whatever its
             // budget.
             sim.finish_batched_path_searches();
-            register(&mut sim, &ladders[..1]);
+            register_as(&mut sim, &ladders[..1], repath);
             sim.answer_path_searches_within(&rules, None, 1);
             let batch = sim.path_batch.as_ref().unwrap();
             assert_eq!(batch.answered, [ladders[3]]);
@@ -1362,8 +1394,8 @@ fn a_pass_answers_urgency2_repaths_within_its_budget() {
                 .iter()
                 .map(|(&id, &u)| (id, u))
                 .collect();
-            let mut expected: Vec<_> = ladders[4..].iter().map(|&id| (id, 2)).collect();
-            expected.insert(0, (ladders[0], 2));
+            let mut expected: Vec<_> = ladders[4..].iter().map(|&id| (id, urgency)).collect();
+            expected.insert(0, (ladders[0], urgency));
             assert_eq!(waiting, expected);
             (
                 ladders,
@@ -1374,7 +1406,7 @@ fn a_pass_answers_urgency2_repaths_within_its_budget() {
             )
         })
     };
-    assert_eq!(run(1), run(4));
+    assert_eq!(run(1), run(4), "urgency {urgency}");
 }
 
 /// With a budget of one expansion a pass answers only the first urgency-2
@@ -1468,46 +1500,94 @@ fn a_repath_past_the_budget_stops_or_does_not_start() {
     );
 }
 
-/// Urgency-2 re-paths take their own turn: when the budget and the cap both
-/// bind, the cap's turn still moves past the registrations it took.
+/// Code-2 re-paths take a turn of their own at each urgency: when its budget
+/// and the cap both bind, the cap's turn still moves past the registrations
+/// it took, and the cap takes none of the re-paths.
 #[test]
-fn the_urgency2_budget_leaves_the_caps_turn_alone() {
+fn each_urgencys_repaths_leave_the_caps_turn_alone() {
+    let rules = rules();
+    for repath in [URGENT, CODE2] {
+        let WaitingRequest::Code2Ladder { urgency } = repath else {
+            unreachable!("a code-2 re-path");
+        };
+        let (mut sim, ladders) = eight_ladders(&rules);
+        let cap = SEARCHES_PER_PASS as u64;
+        // Ids no object holds: each search finds no request to answer.
+        let (first, end) = (1_000_000, 1_000_000 + cap + 10);
+        let ids: Vec<u64> = (first..end).collect();
+        register_as(&mut sim, &ids, WaitingRequest::NoQueue);
+        register_as(&mut sim, &ladders, repath);
+        sim.answer_path_searches_within(&rules, None, 1);
+        let batch = sim.path_batch.as_ref().unwrap();
+        assert_eq!(batch.next_turn, first + cap, "urgency {urgency}");
+        let answered: Vec<u64> = std::iter::once(ladders[0])
+            .chain(first..first + cap)
+            .collect();
+        assert_eq!(batch.answered, answered, "urgency {urgency}");
+        let waiting: Vec<_> = ladders[1..].iter().map(|&id| (id, urgency)).collect();
+        assert_eq!(
+            batch.left_out_code2.clone().into_iter().collect::<Vec<_>>(),
+            waiting
+        );
+    }
+}
+
+/// Four Foots at each urgency that ask a re-path at every pass, with budgets
+/// that answer one a pass, are each answered once in four passes, one at
+/// each urgency a pass: each urgency's turn has its own budget and resumes
+/// at the first re-path its budget cut, not at a lower id cut after it.
+#[test]
+fn repaths_asked_every_pass_take_the_budget_in_turn() {
     let rules = rules();
     let (mut sim, ladders) = eight_ladders(&rules);
-    let cap = SEARCHES_PER_PASS as u64;
-    // Ids no object holds: each search finds no request to answer.
-    let (first, end) = (1_000_000, 1_000_000 + cap + 10);
-    for id in first..end {
-        assert!(crate::sim::world::Simulation::defer_path_search(
-            &mut sim.path_batch,
-            &sim.resolved_terrain,
-            &sim.overlay_grid,
-            &sim.substrate.entities,
-            id,
-            WaitingRequest::NoQueue
-        ));
+    let (urgent, side) = ladders.split_at(4);
+    for pass in 0..4 {
+        register_as(&mut sim, urgent, URGENT);
+        register_as(&mut sim, side, CODE2);
+        sim.answer_path_searches_within(&rules, None, 1);
+        let answered = &sim.path_batch.as_ref().unwrap().answered;
+        assert_eq!(answered, &[urgent[pass], side[pass]], "pass {pass}");
+        sim.finish_batched_path_searches();
     }
-    for &id in &ladders {
-        assert!(crate::sim::world::Simulation::defer_path_search(
-            &mut sim.path_batch,
-            &sim.resolved_terrain,
-            &sim.overlay_grid,
-            &sim.substrate.entities,
-            id,
-            URGENT
-        ));
+}
+
+/// The tank's route from its own Find_Path at urgency 2. With batching on,
+/// the search keeps the entry facts it reads.
+fn own_route(sim: &mut Simulation, rules: &RuleSet, tank: u64) -> Vec<u8> {
+    let request = sim.code2_ladder_request(tank, 2).unwrap();
+    sim.foot_find_path(&request, rules, None, FrameEffects::default())
+        .expect("Find_Path runs");
+    if let Some(facts) = sim.entry_facts() {
+        assert!(!facts.is_empty(), "the search kept the facts it read");
     }
-    sim.answer_path_searches_within(&rules, None, 1);
-    let batch = sim.path_batch.as_ref().unwrap();
-    assert_eq!(batch.next_turn, first + cap);
-    let answered: Vec<u64> = std::iter::once(ladders[0])
-        .chain(first..first + cap)
-        .collect();
-    assert_eq!(batch.answered, answered);
-    assert_eq!(
-        batch.left_out_code2.keys().copied().collect::<Vec<_>>(),
-        ladders[1..]
-    );
+    let tank = sim.substrate.entities.get(tank).unwrap();
+    tank.navigation.path_replay().directions().to_vec()
+}
+
+/// A Foot's own search, which no pass answered, keeps the entry facts it
+/// reads in the batch's tables, and its next search empties them first:
+/// after a hut lands on the tank's route, it finds the route it finds with
+/// batching off. Debug builds compare every kept fact with the world.
+#[test]
+fn a_foots_own_search_keeps_the_entry_facts_it_reads() {
+    let rules = rules();
+    let routes = |batched: bool| {
+        let (mut sim, [tank, _]) = jam(&rules);
+        if batched {
+            sim.batch_path_searches();
+        }
+        let first = own_route(&mut sim, &rules, tank);
+        // A hut on the route's second cell, which the search read as clear.
+        let (x, y) = first[..2].iter().fold((10, 10), |(x, y), &step| {
+            let (dx, dy) = crate::util::direction::DIRECTION_DELTAS[usize::from(step)];
+            (x + dx, y + dy)
+        });
+        spawn(&mut sim, &rules, "HUT", (x as u16, y as u16));
+        (first, own_route(&mut sim, &rules, tank))
+    };
+    let serial = routes(false);
+    assert_ne!(serial.0, serial.1, "the hut moves the route");
+    assert_eq!(routes(true), serial);
 }
 
 /// However the registrations change between passes, a Foot registered at
@@ -1534,6 +1614,7 @@ fn a_foot_registered_every_pass_gets_its_turn_within_one_sweep() {
             }
             let pending = ids.into_iter().map(|id| (id, WaitingRequest::NoQueue));
             if take_turn(pending.collect(), &mut next, limit)
+                .0
                 .iter()
                 .any(|&(id, _)| id == foot)
             {

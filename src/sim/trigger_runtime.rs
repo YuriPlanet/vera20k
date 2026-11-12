@@ -3033,7 +3033,7 @@ impl Simulation {
                     //are asymmetric; do not reverse these endpoints.
                     let source_bridge = cells.flags(cells.lookup(attached)) & 0x100 != 0;
                     let movement_zone = self.object_type(entity.type_ref(), rules)?.movement_zone;
-                    self.zone_grid.as_deref()?.can_reach_native(
+                    self.zone_grid.as_ref()?.can_reach_native(
                         &cells,
                         crate::sim::pathfinding::zone_map::ZoneQueryCell::Copied(attached),
                         crate::sim::pathfinding::zone_map::ZoneQueryCell::Copied(destination),
@@ -4198,7 +4198,7 @@ impl Simulation {
                             self.object_type(e.type_ref(), rules)
                                 .is_some_and(|o| o.has_spotlight)
                         })
-                        .and_then(|e| e.building_light.light());
+                        .and_then(|e| e.building.building_light.light());
                     if let Some(light) = light
                         && self.tag_contains_live_trigger(TagAttachment::Object(id), live)
                     {

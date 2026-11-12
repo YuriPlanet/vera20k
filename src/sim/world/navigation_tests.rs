@@ -26,7 +26,7 @@ fn native_bridge_record_geometry_changes_rebuild_and_restore_navigation() {
         cell.base_ground_walk_blocked = true;
     }
     let reachable = |sim: &Simulation| {
-        sim.zone_grid.as_deref().unwrap().can_reach(
+        sim.zone_grid.as_ref().unwrap().can_reach(
             MovementZone::Normal,
             (5, 5),
             MovementLayer::Ground,
@@ -422,7 +422,7 @@ fn structure_changes_publish_footprint_cells_without_rebuilding_zones() {
     let open = sim.path_grid_snapshot().unwrap();
     let zone_storage = |sim: &Simulation| {
         sim.zone_grid
-            .as_deref()
+            .as_ref()
             .and_then(|zones| zones.map_for(MovementZone::Normal))
             .unwrap()
             .zone_ids_slice()

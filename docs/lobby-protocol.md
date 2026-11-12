@@ -142,6 +142,7 @@ Commands and their payloads:
 | `add_buddy` / `remove_buddy` / `locate` | `{name}` |
 | `kick` | `{name,keep_out?}` |
 | `ladder` | `{names:[name]}` |
+| `balance` | `{}` |
 
 HostOptions is `{launch,map_metadata,vacancies,observer_row,cooperative_difficulty,seed}`.
 A slot's `color_index` is 0 to 7 for the original colours, 8 for an observer and 9 to 30
@@ -154,7 +155,24 @@ that carry it. Other modes omit the field.
 `start_staging` is the canonical 37-number native `W` record, bounded to512bytes;
 `staging_digest` is its lowercase SHA-256, or the empty string for authored maps.
 `launch` is the existing serde representation of `SkirmishLaunchSession` (including
-its human rows, AI rows and launch options). `map_metadata` is
+its human rows, AI rows and launch options). `launch.options.teams`, a VERA room's
+Teams count, is an optional integer from 2 to 15 that the game leaves out while Teams
+is Off. A lobby from before it refuses options that carry
+it with 400 `invalid_options`; the host's game then turns Teams Off, says so in the
+room and sends its options again without it. Options that name a player no longer in
+the room return 409 `player_not_in_room` instead, which leaves Teams as it is. A game
+from before Teams cannot read a host's options while Teams is set and shows its
+invalid-update line, in a room that cannot start anyway, since its players' versions
+differ. `launch.options.auto_balance`, the host's Balance automatically, is `true` or
+left out while it is off; the game sends it only with a Teams count. A lobby from before
+it refuses it in the same way, and the host's game then turns Balance automatically off
+first, then Teams if the lobby still refuses. `launch.options.queue`, a VERA room's join
+queue, lists by name the room's spectators (humans with the `Observer` role) who wait
+for a seat, first first, each once and at most 30; the game leaves it out while nobody
+waits, and the host's game seats the first when a seat frees. A lobby from before it
+refuses it in the same way; the host's game then stops queueing in that room, says so
+and sends its options again, before it turns off Balance automatically and then Teams
+if the lobby still refuses. `map_metadata` is
 `{display_name,player_capacity,official,byte_length,digest,source_sha256,effective_digest}`. The legacy
 INI `digest` remains distinct from lowercase SHA-256 over the physical map bytes;
 online `map_digest` agreements compare `source_sha256`. `effective_digest` and
@@ -689,7 +707,9 @@ every 4 OS, from Corporal (32 points) at 18 to Five-Star General (1501) at 46, a
 Commander in Chief (2001) for the running season's number 1 from OS 46. Its `rank` is
 their place this season, 0 when unranked. One lookup fills both of the game's tables: its
 ladder table from `records`, and its high-score table, whose points pick each player's
-badge, from `high_scores`. Until the operator starts the first season no one has a rating,
+badge, from `high_scores`. The game draws those badges in the lobby's player list and
+beside each name in VERA's game rooms, and the help under the pointer on a name adds
+the rank and OS. Until the operator starts the first season no one has a rating,
 and `high_scores` gives every name asked for the Colonel's 251 points with `rank` 0; a
 lobby from before that sends none then. A lobby from before badges sends no `high_scores`, and the game
 then shows none; one from before `os` leaves it out, and the game shows the rounded OS.
@@ -731,10 +751,23 @@ notice sender each time it changes: each side's chance to win, such as
 `Team A 54%, Team B 46%. Ranked.` (a free-for-all names its players), or `Unranked:` and
 why. Quick Match and Cooperative rooms get none. In a game room the host's chat line
 `/balance` is a command, not chat.
-The room hears the two teams with the most even odds, weighing each player by their OS,
-keeping as many players on their teams as it can, and the host's game gets a `balance` event with
-every playing human's `team` (0 to 3 for A to D). The host's game moves each named player
-to that team, as their own team choice would, and publishes the options. A game that
-ignores the event leaves the teams to the host. The host alone hears why nothing moves:
-a Quick Match room, a mode without teams, AI players, fewer than two players, or teams
-already as even as they can be. Anyone else typing `/balance` hears that only the host can.
+The room hears its playing humans split into its Teams count (`launch.options.teams`),
+or into two teams without one, weighing each player by their OS, and the host's game gets
+a `balance` event with every playing human's `team` (0 for A, 1 for B and so on). Two
+teams get the most even odds, keeping as many players on their teams as it can. Three or
+more take loser picks: from the strongest player down, each joins the
+team with the least OS so far among those below the players over the teams, rounded up;
+each team then keeps the letter most of its players have, and teams as even as the picks
+stay as they are. The host's game moves each named player to that team, as their own team
+choice would, and publishes the options. A game that ignores the event leaves the teams
+to the host. The host alone hears why nothing moves: a Quick Match room, a mode without
+teams, AI players, fewer than two players, or teams already as even as they can be.
+Anyone else typing `/balance` hears that only the host can. The host's Balance button
+sends `/balance` in the room's chat. With Balance automatically on, the host's game sends
+the `balance` command 5 seconds after who plays or the Teams count last changed, and
+refuses its own Start Game until the answer comes; the lobby balances as for `/balance`
+but says nothing when nothing moves, and refuses the command from anyone but the host
+with 403 `forbidden`.
+The host can also move a player by hand: to another team, into a free seat or to the
+spectators. The host's game publishes the options as it does after `/balance`, with no new
+field, and the moved player's game tells them in chat.

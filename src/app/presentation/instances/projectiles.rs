@@ -70,6 +70,7 @@ pub(crate) fn projectile_visitor<'a>(
     order: &'a NativeDisplayOrder,
 ) -> Option<impl FnMut(&mut Vec<PlannedObjectInstance>, u64) + 'a> {
     let rt = state.match_state.sim_runtime.presentation()?;
+    let frame = state.match_state.sim_runtime.frame()?;
     let atlas = state.match_state.match_presentation.sprite_atlas.as_ref();
     let assets = state.process_assets.manager();
     let sim = &rt.simulation;
@@ -125,6 +126,7 @@ pub(crate) fn projectile_visitor<'a>(
             && !state.match_state.sandbox_full_visibility
             && super::helpers::translucent_fog_conceals_bullet(
                 sim,
+                frame,
                 projectile,
                 [position.x, position.y, position.z],
                 local_owner.as_deref(),
@@ -306,7 +308,7 @@ pub(crate) fn projectile_draw_instance_for_frame(
     }
     let frame = crate::sim::projectile::projectile_shp_frame(projectile, kind, logic_frame);
     let entry = atlas?.projectile_sprite(type_id, kind, frame, scheme)?;
-    let (ground_z, structural) = super::foot_depth::floor_probe(terrain, position.x, position.y);
+    let (ground_z, structural) = super::foot_depth::floor_probe(terrain, position.x, position.y)?;
     let geometry = geometry(
         position,
         ground_z,

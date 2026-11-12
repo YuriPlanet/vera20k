@@ -33,13 +33,18 @@ const _: () = assert!(RETAIL_SIDE.is_power_of_two() && SIDE.is_power_of_two());
 pub(crate) struct CellMap<V> {
     /// Dense cells per side: [`RETAIL_SIDE`], or [`SIDE`] once grown.
     side: usize,
-    /// Shared copy-on-write with the presentation frame (docs/sim-thread.md):
-    /// a write copies only its own row.
-    strips: Vec<Option<std::sync::Arc<[Option<V>]>>>,
+    /// One column each; the presentation copy takes only the columns written
+    /// since its last sync ([`Self::sync_into`], docs/sim-thread.md).
+    strips: Vec<Option<Box<[Option<V>]>>>,
     /// One bit per slot, set while the slot holds a value.
     filled: Vec<u64>,
     filled_count: usize,
     outside: BTreeMap<(u16, u16), V>,
+    /// One bit per strip written since the last sync.
+    changed: Vec<u64>,
+    /// The layout or `outside` changed since the last sync.
+    reshaped: bool,
+    mark: crate::util::synced::SyncMark,
 }
 
 impl<V> Default for CellMap<V> {
@@ -50,8 +55,21 @@ impl<V> Default for CellMap<V> {
             filled: Vec::new(),
             filled_count: 0,
             outside: BTreeMap::new(),
+            changed: Vec::new(),
+            reshaped: true,
+            mark: crate::util::synced::SyncMark::new(),
         }
     }
+}
+
+/// Mark strip `strip` written since the last sync.
+#[inline]
+fn note_strip(changed: &mut Vec<u64>, strip: usize) {
+    let word = strip / 64;
+    if word >= changed.len() {
+        changed.resize(word + 1, 0);
+    }
+    changed[word] |= 1 << (strip % 64);
 }
 
 /// Whether `key` lies in the largest dense array rather than `outside`.
@@ -82,8 +100,8 @@ impl<V: Clone> CellMap<V> {
         self.filled_count + self.outside.len()
     }
 
-    /// Slots per strip: one column of the dense array, so a write shared
-    /// with a presentation frame copies only that column.
+    /// Slots per strip: one column of the dense array, so a sync copies only
+    /// the columns written since the last.
     fn strip_slots(&self) -> usize {
         self.side
     }
@@ -121,13 +139,40 @@ impl<V: Clone> CellMap<V> {
 
     fn slot_mut(&mut self, slot: usize) -> Option<&mut Option<V>> {
         let (strip, offset) = self.strip_and_offset(slot);
-        let strip = std::sync::Arc::make_mut(self.strips.get_mut(strip)?.as_mut()?);
-        Some(&mut strip[offset])
+        let slots = self.strips.get_mut(strip)?.as_mut()?;
+        note_strip(&mut self.changed, strip);
+        Some(&mut slots[offset])
+    }
+
+    /// Bring `mirror`, the presentation copy, up to this map: the strips
+    /// written since the last sync into it, or all of it when it is another
+    /// copy or the layout changed.
+    pub(crate) fn sync_into(&mut self, mirror: &mut Self) {
+        if self.reshaped || !self.mark.knows(&mirror.mark) {
+            mirror.side = self.side;
+            mirror.strips.clone_from(&self.strips);
+            mirror.outside.clone_from(&self.outside);
+        } else {
+            for (word, bits) in self.changed.iter().enumerate() {
+                let mut bits = *bits;
+                while bits != 0 {
+                    let strip = word * 64 + bits.trailing_zeros() as usize;
+                    bits &= bits - 1;
+                    mirror.strips[strip].clone_from(&self.strips[strip]);
+                }
+            }
+        }
+        mirror.filled.clone_from(&self.filled);
+        mirror.filled_count = self.filled_count;
+        self.changed.iter_mut().for_each(|word| *word = 0);
+        self.reshaped = false;
+        self.mark.synced(&mirror.mark);
     }
 
     /// Relay the dense storage out at the largest side. Runs once, on the
     /// first key of an extended map's array beyond the retail side.
     fn grow(&mut self) {
+        self.reshaped = true;
         let old_side = std::mem::replace(&mut self.side, SIDE);
         let old_strips = std::mem::take(&mut self.strips);
         self.filled = Vec::new();
@@ -171,6 +216,7 @@ impl<V: Clone> CellMap<V> {
         make: impl FnOnce() -> V,
     ) -> &mut V {
         if !is_dense(key) {
+            self.reshaped = true;
             return self.outside.entry(key).or_insert_with(make);
         }
         if self.slot_of(key).is_none() {
@@ -182,10 +228,11 @@ impl<V: Clone> CellMap<V> {
         if self.strips.is_empty() {
             self.strips.resize_with(self.side, || None);
             self.filled = vec![0; self.side * self.side / 64];
+            self.reshaped = true;
         }
-        let strip = std::sync::Arc::make_mut(
-            self.strips[strip].get_or_insert_with(|| (0..strip_slots).map(|_| None).collect()),
-        );
+        note_strip(&mut self.changed, strip);
+        let strip =
+            self.strips[strip].get_or_insert_with(|| (0..strip_slots).map(|_| None).collect());
         let value = &mut strip[offset];
         let was_filled = value.is_some();
         let value = value.get_or_insert_with(make);
@@ -207,6 +254,7 @@ impl<V: Clone> CellMap<V> {
             return if is_dense(*key) {
                 None
             } else {
+                self.reshaped = true;
                 self.outside.remove(key)
             };
         };
@@ -236,11 +284,12 @@ impl<V: Clone> CellMap<V> {
     /// Mutable entries in ascending `(x, y)` order.
     fn iter_mut(&mut self) -> impl Iterator<Item = ((u16, u16), &mut V)> + '_ {
         let (side, side_shift, strip_slots) = (self.side, self.side_shift(), self.strip_slots());
+        self.reshaped = true;
         let inside = self
             .strips
             .iter_mut()
             .enumerate()
-            .filter_map(|(strip, slots)| Some((strip, std::sync::Arc::make_mut(slots.as_mut()?))))
+            .filter_map(|(strip, slots)| Some((strip, &mut **slots.as_mut()?)))
             .flat_map(move |(strip, slots)| {
                 slots
                     .iter_mut()

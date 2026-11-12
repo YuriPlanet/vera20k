@@ -2143,14 +2143,16 @@ fn disguise_inputs(
     let sim = &runtime.simulation;
     let draw = if entity.category() == crate::map::entities::EntityCategory::Unit {
         let local = crate::app::input::commands::preferred_local_owner_name(state);
-        let local_id = local.as_deref().and_then(|name| sim.interner().get(name));
-        let mut observer = instances::observer_draw_context(
-            sim,
-            entity,
-            local.as_deref(),
-            local_id,
-            state.rules(),
-        );
+        // The record the draw reads (`presentation::frame`).
+        let frame = state
+            .match_state
+            .sim_runtime
+            .frame()
+            .context("presentation frame absent")?;
+        let entity = frame
+            .object(entity.stable_id())
+            .context("disguised object has no record")?;
+        let mut observer = entity.seen.observer;
         let chosen = instances::drawn_model_id(
             entity,
             sim.interner(),
@@ -2217,6 +2219,7 @@ fn prism_observation(entity: &crate::sim::game_entity::GameEntity, frame: i32) -
         return Value::Null;
     }
     let pending = entity
+        .building
         .pending_building_fire
         .pending()
         .map(|pending| match pending.fire() {
@@ -2225,7 +2228,7 @@ fn prism_observation(entity: &crate::sim::game_entity::GameEntity, frame: i32) -
             DelayedFire::SupportBeam { to } => json!({"mode": 2,
             "payload": {"to": [to.x, to.y, to.z]}, "remaining": pending.remaining_ticks()}),
         });
-    json!({"support_count": entity.prism_support_count, "pending": pending,
+    json!({"support_count": entity.building.prism_support_count, "pending": pending,
         "rearm": {"start": entity.rearm_timer.start_frame(),
                   "duration": entity.rearm_timer.duration(),
                   "remaining": entity.rearm_timer.remaining(frame)}})
@@ -4153,7 +4156,7 @@ impl TacticalCaptureSession {
                     "construction_control": entity.building_construction_control(),
                     "stage": entity.native_stage(), "ready_latch": entity.building_ready_latch(),
                     "actually_placed": entity.building_art.actually_placed(),
-                    "last_operational": entity.building_last_operational,
+                    "last_operational": entity.building.building_last_operational,
                     "animation_slots": slots,
                     "voxel_gun": {
                         "facing": entity.body_facing_current(sim.session().binary_frame()),

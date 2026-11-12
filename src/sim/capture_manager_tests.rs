@@ -2038,6 +2038,7 @@ fn selling_a_psychic_tower_frees_its_captives() {
             .entities
             .get(tower)
             .unwrap()
+            .building
             .building_last_operational
             .is_operational()
     );

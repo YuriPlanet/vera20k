@@ -156,6 +156,7 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
         .set_side_index_for_test(input["side"].as_i64().unwrap() as i32);
     let building = sim.substrate.entities.get_mut(refinery).unwrap();
     building
+        .building
         .has_been_captured
         .set_for_test(input["captured"] == true);
     building

@@ -4,8 +4,7 @@
 //! before choosing an SHP or voxel rasterizer. Keep that decision in
 //! one CPU descriptor so the two atlas paths cannot disagree.
 
-use crate::sim::game_entity::GameEntity;
-
+use crate::render::snapshot::SnapshotObject;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ObserverDrawContext {
     /// The observer's house considers the object's real owner allied.
@@ -282,7 +281,7 @@ impl DrawState {
 
     /// Adapt simulation-owned producers without inventing missing native fields.
     pub fn for_entity(
-        entity: &GameEntity,
+        entity: &impl crate::render::snapshot::SnapshotObject,
         current_frame: u32,
         remap_row: u32,
         observer: ObserverDrawContext,
@@ -300,7 +299,7 @@ impl DrawState {
     /// draw as at stage zero and fade through their own `+0x178`
     /// ([`building_slot_anim_ramp`]).
     pub(crate) fn for_building_slot_anims(
-        building: &GameEntity,
+        building: &impl crate::render::snapshot::SnapshotObject,
         current_frame: u32,
         remap_row: u32,
         observer: ObserverDrawContext,
@@ -326,7 +325,7 @@ impl DrawState {
     }
 
     fn entity_decision(
-        entity: &GameEntity,
+        entity: &impl crate::render::snapshot::SnapshotObject,
         current_frame: u32,
         remap_row: u32,
         observer: ObserverDrawContext,
@@ -337,28 +336,15 @@ impl DrawState {
         } else {
             (false, false)
         };
-        let character = entity.visual_character(
-            observer.cloaking_stages,
-            observer.invisible,
-            entity.discovery.owned_by_current_house(),
-            crate::sim::cloak_disguise::VisualCharacterQuery::screen(
-                true,
-                observer.observer_present,
-                observer.detects_cloak,
-                observer.owner_is_mutually_allied,
-                observer.is_campaign,
-                false,
-            ),
-        );
+        // `GameEntity::visual_character`'s screen answer, captured for the
+        // local player's context (`app::presentation::frame::Seen`).
+        let character = entity.visual_character();
         let voxel = observer.drawn_voxel.unwrap_or(entity.is_voxel());
         Self::resolve(
             DrawStateInput {
                 cloak: Some(CloakDrawInput {
                     character,
-                    progress: entity
-                        .cloak
-                        .as_ref()
-                        .map_or(0, |cloak| cloak.depth() as i32),
+                    progress: entity.cloak_depth(),
                     native_offset_words: if character == 4 && voxel {
                         entity.native_cloak_offset_words()
                     } else {
@@ -377,11 +363,11 @@ impl DrawState {
     }
 
     pub(crate) fn disguise_input(
-        entity: &GameEntity,
+        entity: &impl crate::render::snapshot::SnapshotObject,
         current_frame: u32,
         observer: ObserverDrawContext,
     ) -> Option<DisguiseDrawInput> {
-        entity.disguise.as_ref().map(|disguise| DisguiseDrawInput {
+        entity.disguise().map(|disguise| DisguiseDrawInput {
             active: disguise.is_disguised(),
             owner_is_current_player: observer.disguise_owner_visible,
             cell_present: observer.disguise_cell_present,
@@ -394,7 +380,7 @@ impl DrawState {
     }
 
     pub(crate) fn draws_disguise(
-        entity: &GameEntity,
+        entity: &impl crate::render::snapshot::SnapshotObject,
         current_frame: u32,
         observer: ObserverDrawContext,
     ) -> bool {
@@ -412,7 +398,10 @@ impl DrawState {
 /// and the simulation never stores it. Residual: native writes it only when
 /// the stage changes, so a sensor gained or lost while the stage holds at 15
 /// reaches the anims at the next write; this follows it at once.
-pub(crate) fn building_slot_anim_ramp(building: &GameEntity, building_visual_state: u8) -> u8 {
+pub(crate) fn building_slot_anim_ramp(
+    building: &impl crate::render::snapshot::SnapshotObject,
+    building_visual_state: u8,
+) -> u8 {
     match building.building_cloak_stage() {
         15 if building_visual_state == 5 => 16,
         stage => stage,
@@ -475,6 +464,7 @@ fn opacity_for_selector_bits(bits: u8) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::presentation::frame::ObjectRecord;
     use crate::map::entities::EntityCategory;
     use crate::sim::combat::Health;
     use crate::sim::game_entity::GameEntity;
@@ -606,12 +596,37 @@ mod tests {
         building.set_category_for_test(EntityCategory::Structure);
         building.temporal = crate::sim::temporal::TemporalState::warped_by_for_test(9);
         assert!(building.is_warped_out());
+        let building = ObjectRecord::of_test(&building);
         let body = DrawState::for_entity(&building, 0, 3, ObserverDrawContext::default()).state;
         assert_eq!((body.fx_flags, body.fx_params[0]), (FX_WARP, 0.5));
         let anims =
             DrawState::for_building_slot_anims(&building, 0, 3, ObserverDrawContext::default())
                 .state;
         assert_eq!((anims.fx_flags, anims.fx_params[0]), (0, 1.0));
+    }
+
+    /// The record of `entity`, an enemy's, captured for a local player whose
+    /// sensor covers its cell (`TechnoClass::IsSensorVisibleToPlayer`), the
+    /// observer the capture asks.
+    fn sensed_by_the_player(entity: &GameEntity) -> ObjectRecord {
+        let mut sim = crate::sim::world::Simulation::new();
+        *sim.interner_mut_for_test() = crate::sim::intern::test_interner();
+        let viewer = sim.interner_mut_for_test().intern("SENSING-PLAYER");
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(viewer));
+        *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(8, 8);
+        let [x, y] = crate::sim::movement::ground_pose::object_center_xy(entity);
+        let cell = |v| crate::util::lepton::lepton_to_cell(v) as u16;
+        sim.fog_mut_for_test()
+            .increment_sensor_at(viewer, cell(x), cell(y));
+        sim.entities_mut_for_test().insert(entity.clone());
+        crate::app::presentation::frame::PresentationFrame::of_test(
+            &sim,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+        )
+        .object(entity.stable_id())
+        .cloned()
+        .expect("the building has a record")
     }
 
     /// A fading building's body follows its GetVisualState (`0x004544A0`)
@@ -624,17 +639,19 @@ mod tests {
         let mut building = entity();
         building.set_category_for_test(EntityCategory::Structure);
         let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
-        let sensed = ObserverDrawContext {
-            detects_cloak: true,
-            ..ObserverDrawContext::default()
-        };
-        for (stage, observer, body_visible, ramp) in [
-            (11, ObserverDrawContext::default(), false, 11),
-            (15, ObserverDrawContext::default(), false, 16),
-            (15, sensed, true, 15),
+        let observer = ObserverDrawContext::default();
+        for (stage, sensed, body_visible, ramp) in [
+            (11, false, false, 11),
+            (15, false, false, 16),
+            (15, true, true, 15),
         ] {
             cloak.set_building_stage_for_test(stage);
             building.cloak = Some(Box::new(cloak));
+            let building = if sensed {
+                sensed_by_the_player(&building)
+            } else {
+                ObjectRecord::of_test(&building)
+            };
             let body = DrawState::for_entity(&building, 0, 3, observer);
             let anims = DrawState::for_building_slot_anims(&building, 0, 3, observer);
             assert_eq!(body.visible, body_visible, "stage {stage} body");
@@ -657,7 +674,13 @@ mod tests {
             2,
             4,
         )));
-        let state = DrawState::for_entity(&entity, 45, 3, ObserverDrawContext::default()).state;
+        let state = DrawState::for_entity(
+            &ObjectRecord::of_test(&entity),
+            45,
+            3,
+            ObserverDrawContext::default(),
+        )
+        .state;
         assert_eq!(state.fx_flags, FX_WARP);
         assert_eq!(state.fx_params[0], 0.5);
     }

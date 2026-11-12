@@ -57,27 +57,7 @@ pub(super) fn tick_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules:
         }
         let pst = rules.particle_system_type(sys.type_id);
         if pst.laser {
-            // `0x0062F890..0x0062F940`: LaserDraw from Location to the target
-            // coordinate, width 1, `LaserColor` inside and black outside,
-            // fading from 0.5.
-            let point = |coord: IVec3| {
-                crate::sim::projectile::ProjectileCoord::new(coord.x, coord.y, coord.z)
-            };
-            let birth = crate::sim::combat::laser::construct(
-                &sim.session,
-                &mut sim.lifecycle_outputs,
-                point(sys.coords),
-                point(sys.target_coords),
-                0,
-                LASER_DURATION,
-                crate::sim::combat::laser::LaserColor::Explicit {
-                    inner: pst.laser_color,
-                    outer: [0; 3],
-                    spread: [0; 3],
-                },
-                NativeF32Bits::POSITIVE_ZERO,
-            );
-            birth.fade_start = LASER_FADE_START;
+            draw_laser(sim, pst, sys.coords, sys.target_coords);
         }
         sys.mark_done_spawning();
     }
@@ -87,6 +67,57 @@ pub(super) fn tick_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules:
             sys.stable_id
         );
     }
+}
+
+/// `0x0062F890..0x0062F940`: LaserDraw from Location to the target
+/// coordinate, width 1, `LaserColor` inside and black outside, fading from
+/// 0.5 over 10 frames. Ares' UpdateRailgun (`100277AC..10027851`) passes the
+/// same arguments.
+pub(super) fn draw_laser(
+    sim: &mut Simulation,
+    pst: &crate::rules::particle_system_type::ParticleSystemType,
+    from: IVec3,
+    to: IVec3,
+) {
+    let point =
+        |coord: IVec3| crate::sim::projectile::ProjectileCoord::new(coord.x, coord.y, coord.z);
+    let birth = crate::sim::combat::laser::construct(
+        &sim.session,
+        &mut sim.lifecycle_outputs,
+        point(from),
+        point(to),
+        0,
+        LASER_DURATION,
+        crate::sim::combat::laser::LaserColor::Explicit {
+            inner: pst.laser_color,
+            outer: [0; 3],
+            spread: [0; 3],
+        },
+        NativeF32Bits::POSITIVE_ZERO,
+    );
+    birth.fade_start = LASER_FADE_START;
+}
+
+/// `0x0062F38D..0x0062F3BB` (and Ares' UpdateRailgun at `10027088`, `100270A7`):
+/// Identity, RotateZ(azimuth) (`0x005AF1A0`), RotateX(elevation)
+/// (`0x005AEF60`). Each rotation reads the table sine and cosine of its float
+/// angle.
+pub(super) fn rail_rotation(
+    azimuth: NativeF32Bits,
+    elevation: NativeF32Bits,
+) -> Result<Mat4, NativeX87Error> {
+    let trig = TrigTable::embedded();
+    let sin_cos = |angle: NativeF32Bits| -> Result<(f32, f32), NativeX87Error> {
+        let angle = Fpu::load_f32(angle)?;
+        Ok((
+            to_f32(Fpu::store_f32(trig.sin_from_table(angle))?),
+            to_f32(Fpu::store_f32(trig.cos_from_table(angle))?),
+        ))
+    };
+    let (sin, cos) = sin_cos(azimuth)?;
+    let matrix = crate::util::native_affine::rotate_z(Mat4::IDENTITY, sin, cos);
+    let (sin, cos) = sin_cos(elevation)?;
+    Ok(crate::util::native_affine::rotate_x(matrix, sin, cos))
 }
 
 /// The spawn half of `AI_Railgun` (`0x0062F25E..0x0062F87C`).
@@ -149,20 +180,8 @@ fn lay_spiral(
     if delta[1] < 0 {
         azimuth = NativeF32Bits::from_bits(azimuth.bits() ^ 0x8000_0000);
     }
-    // 62F38D..62F3BB: Identity, RotateZ(azimuth), RotateX(elevation). Each
-    // rotation reads the table sine and cosine of its float angle.
+    let matrix = rail_rotation(azimuth, elevation)?;
     let trig = TrigTable::embedded();
-    let sin_cos = |angle: NativeF32Bits| -> Result<(f32, f32), NativeX87Error> {
-        let angle = Fpu::load_f32(angle)?;
-        Ok((
-            to_f32(Fpu::store_f32(trig.sin_from_table(angle))?),
-            to_f32(Fpu::store_f32(trig.cos_from_table(angle))?),
-        ))
-    };
-    let (sin, cos) = sin_cos(azimuth)?;
-    let matrix = crate::util::native_affine::rotate_z(Mat4::IDENTITY, sin, cos);
-    let (sin, cos) = sin_cos(elevation)?;
-    let matrix = crate::util::native_affine::rotate_x(matrix, sin, cos);
 
     let count_f32 = Fpu::store_f32(Fpu::load_i32(count))?;
     let scale = Fpu::load_f64(RANDOM_RANGED_UNIT_SCALE)?;

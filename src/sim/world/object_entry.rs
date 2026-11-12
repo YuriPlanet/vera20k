@@ -48,8 +48,8 @@ struct EntryReadContext<'a> {
     sim: &'a Simulation,
     rules: &'a RuleSet,
     registry: Option<&'a crate::rules::overlay_types::OverlayTypeRegistry>,
-    /// A path batch's kept cell and blocker facts; `None` reads the world at
-    /// each ask.
+    /// A path search's kept cell and blocker facts ([`EntryFacts`]); `None`
+    /// reads the world at each ask.
     facts: Option<&'a EntryFacts>,
 }
 
@@ -72,7 +72,7 @@ impl<'a> EntryReadContext<'a> {
         }
     }
 
-    /// Real cell `index`'s [`PlainCell`], read through the batch's `facts`.
+    /// Real cell `index`'s [`PlainCell`], read through the kept `facts`.
     fn plain_cell(&self, facts: &EntryFacts, index: usize) -> PlainCell {
         facts.plain(index, || {
             facts.cell(
@@ -123,7 +123,7 @@ impl<'a> EntryReadContext<'a> {
     }
 }
 
-/// The cell one +1AC ask is about: a batch's kept facts of a real cell, or a
+/// The cell one +1AC ask is about: a search's kept facts of a real cell, or a
 /// cell read from the world at each use. The shared Dummy is always read at
 /// each use, because lookups off the map stamp it.
 #[derive(Clone, Copy)]
@@ -230,7 +230,7 @@ impl EntryCell {
     }
 }
 
-/// The Foot4D9C60 prelude's reads: a real cell's kept facts in a batch,
+/// The Foot4D9C60 prelude's reads: a real cell's kept facts in a search,
 /// otherwise the world, whose lookups off the map stamp the Dummy.
 struct PreludeReads<'a> {
     sim: &'a Simulation,
@@ -839,8 +839,8 @@ impl FootEntryReceiver<'_> {
 
 impl Simulation {
     /// The live Infantry or Unit receiver `id`, for repeated +1AC queries
-    /// against one unchanged world (a Find_Path search), reading a path
-    /// batch's kept `facts` when it has them.
+    /// against one unchanged world (a Find_Path search), reading kept
+    /// `facts` ([`EntryFacts`]) when it has them.
     pub(crate) fn foot_entry_receiver<'a>(
         &'a self,
         id: u64,
@@ -896,16 +896,16 @@ fn classify_foot_entry<'a>(
 }
 
 /// VERA-only: [`full_foot_entry`]'s answer to a compass step at a known
-/// height between two real cells of a path batch when neither cell has a
-/// structural bridge (`0x100`) or tube, the target holds no raw occupation,
-/// listed object, wall or crate, lies in the playfield and is at the path's
-/// height, and the mover is Infantry or an unrestricted Unit. Every test of
-/// the full body then passes the step through to the land row: the tube
-/// tests find no tube on the target or on the backstep (the source), the
-/// Foot4D9C60 prelude admits a level step from a flat cell and selects the
-/// ground list and ground raw byte, the object walk finds nothing, and both
-/// tails answer 0 for a clear raw byte. So the answer is 0, or 7 for a zero
-/// row (a tethered Infantry skips the row and answers 0), read from both
+/// height between two real cells of a search that keeps facts when neither
+/// cell has a structural bridge (`0x100`) or tube, the target holds no raw
+/// occupation, listed object, wall or crate, lies in the playfield and is at
+/// the path's height, and the mover is Infantry or an unrestricted Unit.
+/// Every test of the full body then passes the step through to the land row:
+/// the tube tests find no tube on the target or on the backstep (the source),
+/// the Foot4D9C60 prelude admits a level step from a flat cell and selects
+/// the ground list and ground raw byte, the object walk finds nothing, and
+/// both tails answer 0 for a clear raw byte. So the answer is 0, or 7 for a
+/// zero row (a tethered Infantry skips the row and answers 0), read from both
 /// cells' [`PlainCell`]s instead of their facts: a search's flood asks this
 /// of most cells it reaches. `None` for any other ask, which the full body
 /// answers.

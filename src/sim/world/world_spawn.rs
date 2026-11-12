@@ -641,7 +641,7 @@ impl Simulation {
                         .substrate
                         .entities
                         .get(stable_id)
-                        .and_then(|entity| entity.building_light.light())
+                        .and_then(|entity| entity.building.building_light.light())
                     {
                         sim.set_spotlight_behavior(
                             light,
@@ -1434,73 +1434,16 @@ impl Simulation {
         )
     }
 
-    /// Ground-delivery search for an already-constructed object. Aircraft
-    /// first need ground suitability; their own +1AC only checks shroud.
-    /// Ares 4f1d9299, UnitDeliveryStateMachine::PlaceUnits uses Track/Normal
-    /// for this search, then the usual class admission at Put. Final Unlimbo
-    /// still performs fresh admission.
+    /// Put a UnitDelivery payload (Ares PlaceUnits `10075A60`), retaining the
+    /// normal entry, Unlimbo, sensor, tracking and discovery owners. Ares
+    /// supplies GetCoordsWithBridge and sets OnBridge before Put; the class
+    /// query's local plane is not that store. `facing` is the DirType Put
+    /// receives. 3.0 reads no `Deliver.Buildups` (SW+0x4A8, default true), so a
+    /// building, which the caller has given a queued Construction, builds up
+    /// through the ordinary Unlimbo and is then DiscoveredBy its owner with
+    /// its ready byte (`+0x6DD`) set.
     #[cfg(feature = "ares")]
-    pub(crate) fn constructed_object_can_enter_at(
-        &self,
-        stable_id: u64,
-        cell: (u16, u16),
-        rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    ) -> bool {
-        if self
-            .substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(|entity| entity.category() == EntityCategory::Aircraft)
-        {
-            use crate::rules::locomotor_type::{MovementZone, SpeedType};
-            use crate::sim::cell_rect::{CellPassabilityArgs, CellRef, check_cell_passability};
-
-            let Some(target) = self
-                .resolved_terrain
-                .as_ref()
-                .and_then(|terrain| terrain.cell(cell.0, cell.1))
-            else {
-                return false;
-            };
-            if !check_cell_passability(
-                &CellRef::Real(target),
-                CellPassabilityArgs {
-                    speed_type: SpeedType::Track,
-                    ignore_infantry: false,
-                    ignore_vehicles: false,
-                    zone: None,
-                    movement_zone: MovementZone::Normal,
-                    level: None,
-                    is_bridge: false,
-                },
-                &self.cell_passability_map(),
-            )
-            .admits()
-            {
-                return false;
-            }
-        }
-        let position = RevealPosition::new(
-            cell.0,
-            cell.1,
-            self.terrain_cell_level(cell.0, cell.1).unwrap_or(0),
-            None,
-            SimFixed::from_num(128),
-            SimFixed::from_num(128),
-        );
-        self.constructor_unlimbo_placement(stable_id, position, rules, registry)
-            != PlacementEvidence::RejectedEarly
-    }
-
-    /// Place a delivered object standing complete, retaining the normal entry,
-    /// Unlimbo, sensor, tracking and discovery owners. A delivery is not paid
-    /// construction and must not leave a building waiting on a buildup.
-    /// Ares PlaceUnits supplies GetCoordsWithBridge and explicitly sets
-    /// OnBridge before Put; the class query's local plane is not that store.
-    /// `facing` is the DirType Put receives.
-    #[cfg(feature = "ares")]
-    pub(crate) fn reveal_finished_object_at_coord(
+    pub(crate) fn reveal_delivered_object_at_coord(
         &mut self,
         stable_id: u64,
         coord: crate::sim::components::DriveCoord,
@@ -1515,18 +1458,33 @@ impl Simulation {
         if let Some(locomotor) = entity.locomotor.as_mut() {
             locomotor.store_ground_layer(on_bridge);
         }
-        let result = self.with_buildup_bypass(|sim| {
-            sim.reveal_constructed_object_at_coord_with_overlay_context(
-                stable_id,
-                coord,
-                facing,
-                PlacementEvidence::EvaluateMark,
-                rules,
-                registry,
-                effects,
+        let result = self.reveal_constructed_object_at_coord_with_overlay_context(
+            stable_id,
+            coord,
+            facing,
+            PlacementEvidence::EvaluateMark,
+            rules,
+            registry,
+            effects,
+        )?;
+        let Some((owner, building)) = self.substrate.entities.get(result).map(|entity| {
+            (
+                entity.owner(),
+                entity.category() == EntityCategory::Structure,
             )
-        })?;
-        self.substrate.ready_finished_spawn_adapter(result);
+        }) else {
+            return Some(result);
+        };
+        if building {
+            self.discover_techno(
+                result,
+                owner,
+                super::lifecycle::UninitContext::new(rules, registry).with_effects(effects),
+            );
+            if let Some(entity) = self.substrate.entities.get_mut(result) {
+                entity.mission_leaf.set_building_ready_latch(1);
+            }
+        }
         Some(result)
     }
 
@@ -3319,9 +3277,9 @@ impl Simulation {
 }
 
 impl crate::sim::world::ObjectSubstrate {
-    /// The explicit finished-object adapters (diagnostic spawn and supported
-    /// Ares delivery) bypass buildup and request a ready building. This is
-    /// their retained adapter contract, not a native Unlimbo or map-reader
+    /// The explicit finished-object adapter (diagnostic spawn) bypasses
+    /// buildup and requests a ready building. This is
+    /// its retained adapter contract, not a native Unlimbo or map-reader
     /// write. Authored campaign structures never enter this adapter.
     fn ready_finished_spawn_adapter(&mut self, stable_id: u64) {
         if let Some(entity) = self

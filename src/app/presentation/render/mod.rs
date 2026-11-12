@@ -216,6 +216,8 @@ pub(crate) fn render_game(
         crate::app::radar_movie::end_radar_sound_loop(state);
     }
     let (sw, sh) = (state.render_width() as f32, state.render_height() as f32);
+    // What this picture draws of the world (`presentation::frame`).
+    state.match_state.sim_runtime.ensure_frame();
 
     // Trigger action 0x28 mutates scroll/radar authority inside the committed
     // sim frame. Install and clamp it before constructing any world instances,
@@ -268,17 +270,12 @@ pub(crate) fn render_game(
     }
     let world_camera = state.renderer.batch_renderer.camera_uniform();
 
-    let selected_building = state
-        .match_state
-        .sim_runtime
-        .presentation()
-        .is_some_and(|runtime| {
-            runtime
-                .simulation
-                .entities()
-                .values_of_category(crate::map::entities::EntityCategory::Structure)
-                .any(|entity| entity.selection.is_selected())
-        });
+    let selected_building = state.match_state.sim_runtime.frame().is_some_and(|frame| {
+        frame.objects().any(|entity| {
+            entity.category() == crate::map::entities::EntityCategory::Structure
+                && entity.selection.is_selected()
+        })
+    });
     // FileSystem52BE61..52BFCE's PALETTE.PAL plain N53 Convert is shared
     // by Bolt and the selected Building's15/12 bracket colors.
     let surface_palette = (selected_building
@@ -311,13 +308,8 @@ pub(crate) fn render_game(
     // The selection in order and the cursor's pick each walk every object;
     // the draw reads them once (TacticalPick 6DA380 runs once per frame).
     let cursor_targets = crate::app::input::cursor::CursorTargets::read(state);
-    let mut world = build_instances::build_world_instances(
-        state,
-        vsw,
-        vsh,
-        bracket_palette,
-        cursor_targets.hover,
-    );
+    let mut world =
+        build_instances::build_world_instances(state, vsw, vsh, bracket_palette, &cursor_targets);
     for layer in &mut world.object_layers {
         object_extras::defer_health_to_frame(layer, world_camera.camera_pos, z);
     }
@@ -337,7 +329,8 @@ pub(crate) fn render_game(
     // the runtime directly for split borrows.
     if let Some(ref mut shroud_buf) = state.match_state.match_presentation.shroud_buffer
         && !state.match_state.sandbox_full_visibility
-        && let (Some(rt), Some(owner)) = (state.match_state.sim_runtime.presentation(), &local_owner)
+        && let (Some(rt), Some(owner)) =
+            (state.match_state.sim_runtime.presentation(), &local_owner)
     {
         let view = rt.view();
         let owner_id = view.interner().get(owner).unwrap_or_default();
@@ -548,6 +541,7 @@ pub(crate) fn render_game(
     let match_presentation = &mut state.match_state.match_presentation;
     let radials = crate::app::presentation::radial_indicators::build(
         simulation,
+        state.match_state.sim_runtime.frame(),
         rules,
         &cursor_targets.selected,
         armed_super_weapon.as_deref(),
@@ -585,10 +579,7 @@ pub(crate) fn render_game(
     // Tactical6D4669 LaserDraw550240 precedes6D466E EBolt, then6D4673
     // trails, even when this composite ran no Logic. Their shared process
     // Main requests happen here once; GPU uploads only read resolved colors.
-    let mut main = crate::app::state::process_main_draws(
-        state.match_state.sim_runtime.presentation(),
-        &state.frontend.frontend_main_rng,
-    );
+    let mut main = crate::app::state::process_main_draws(&state.frontend.frontend_main_rng);
     let sim = state
         .match_state
         .sim_runtime
@@ -638,9 +629,13 @@ pub(crate) fn render_game(
                 let Some(sim) = sim else {
                     return true;
                 };
-                if let Some(bullet) = owner.and_then(|id| sim.projectiles().get(id)) {
+                if let (Some(bullet), Some(frame)) = (
+                    owner.and_then(|id| sim.projectiles().get(id)),
+                    state.match_state.sim_runtime.frame(),
+                ) {
                     return !crate::app::presentation::instances::translucent_fog_conceals_bullet(
                         sim,
+                        frame,
                         bullet,
                         [coord.x, coord.y, coord.z],
                         local_owner.as_deref(),

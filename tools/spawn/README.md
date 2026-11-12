@@ -88,8 +88,8 @@ mod's own modes start too. The digest covers that row's
 INI, so another mode takes its digest from the report's `game_modes`, which lists
 the stock rows. A mod chosen in `config.toml`
 (`[paths] mod`, [modding guide](../../docs/modding.md)) is read by the probe as by
-the launch, so its rules are in the digest; `--mod <folder>` and `--no-mod` choose
-for both. A launch whose mod cannot be used fails, with the reason in its result.
+the launch, so its rules and its other files are in the digest; `--mod <folder>` and
+`--no-mod` choose for both. A launch whose mod cannot be used fails, with the reason in its result.
 Cooperative plays one mission: the launcher
 writes its enemy AI houses, and no next mission or progress follows.
 

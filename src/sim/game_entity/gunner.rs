@@ -102,8 +102,7 @@ impl GameEntity {
             (object.turret_count.wrapping_mul(rearm_remaining) / selection.charge_turret_delay)
                 .clamp(0, object.turret_count - 1)
         };
-        // The index sits in the record's seldom part: an unchanged index
-        // writes nothing, so a presentation frame keeps sharing that part.
+        // An unchanged index writes nothing.
         if selection.current_turret_index != index {
             self.turret_selection.current_turret_index = index;
         }

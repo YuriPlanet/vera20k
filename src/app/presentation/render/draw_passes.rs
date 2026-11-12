@@ -360,7 +360,15 @@ pub(super) fn dispatch_draw_passes(
     view: &wgpu::TextureView,
     data: &DrawPassData<'_>,
 ) {
-    // The posed voxel images the world draws sample.
+    // The voxel pictures this frame drew on first use, and the posed voxel
+    // images the world draws sample.
+    if let Some(atlas) = state.match_state.match_presentation.unit_atlas.as_mut() {
+        atlas.upload(
+            &state.renderer.gpu.device,
+            &state.renderer.gpu.queue,
+            &state.renderer.batch_renderer,
+        );
+    }
     state.renderer.vxl_pose_frame_cache.borrow_mut().encode(
         &state.renderer.gpu.device,
         &state.renderer.gpu.queue,

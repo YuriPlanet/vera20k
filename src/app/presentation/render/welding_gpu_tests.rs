@@ -1,6 +1,7 @@
 //! Whole original System/Particle bodies share one native destination in these
 //! controls. The positive route uses actual retained GROUND2 -> AIR3 lowering;
 //! reversing those two replays is an explicit component-order negative control.
+#![cfg_attr(feature = "ares", allow(dead_code, unused_imports))]
 
 use super::super::draw_plan_lowering::{
     NativeDisplayOrder, ObjectBodyDraw, PlannedObjectInstance, lower_object_instances,
@@ -20,6 +21,9 @@ use crate::rules::ruleset::DetailRules;
 use crate::sim::projectile::ProjectileCoord;
 use crate::sim::world::display_layers::{DisplayLayer, DisplayLayers};
 
+// Ares simulates WeldingSys itself (hooks 0x62DF05, 0x62FD60) and builds no
+// ParticleClass children for this stock draw path.
+#[cfg(not(feature = "ares"))]
 #[test]
 #[ignore = "requires retail assets and GPU; ordinary Engineer IFV children through the canonical builder, Detail traversal and shared composition"]
 fn ordinary_repair_children_reach_the_actual_effect_builder_and_gpu_without_mutating_simulation() {
@@ -143,6 +147,7 @@ fn ordinary_repair_children_reach_the_actual_effect_builder_and_gpu_without_muta
         build_display_effect_instances(
             &DisplayEffectInputs {
                 sim: &sim,
+                frame: &crate::app::presentation::frame::PresentationFrame::of_test(&sim, &rules),
                 rules: &rules,
                 camera: view_camera,
                 render_size: size,

@@ -239,6 +239,8 @@ fn overlay_display_identity(
 /// platform windows and unrelated presentation resources are not draw inputs.
 pub(crate) struct DisplayEffectInputs<'a> {
     pub sim: &'a crate::sim::world::Simulation,
+    /// The objects drawing reads (`presentation::frame`).
+    pub frame: &'a crate::app::presentation::frame::PresentationFrame,
     pub rules: &'a crate::rules::ruleset::RuleSet,
     pub camera: [f32; 2],
     pub render_size: [u32; 2],
@@ -285,7 +287,7 @@ struct AnimDrawPoint {
 /// Tactical6D2140 projection gate. Whole-slot controls:
 /// spatial_oracle/building_anim_detail.json.
 fn anim_draw_point(
-    sim: &crate::sim::world::Simulation,
+    frame: &crate::app::presentation::frame::PresentationFrame,
     anim: &crate::sim::anim_class::AnimObject,
     id: u64,
     camera: [f32; 2],
@@ -297,12 +299,9 @@ fn anim_draw_point(
     // AnimGetCoords422BE0 resolves owner-relative coordinates. Admission
     // uses the same painted point as the existing body emitter, without
     // image offsets or the parent Building's viewport/body visibility.
-    let anim_coord = sim.anim_absolute_coord(id)?;
+    let anim_coord = frame.anim_coord(id)?;
     let (center_x, mut center_y, rx, ry, _, mut lift_px) = anim_world_render_coords(anim_coord);
-    if let Some(building) = anim
-        .building_slot()
-        .and_then(|(id, _)| sim.entities().get(id))
-    {
+    if let Some(building) = anim.building_slot().and_then(|(id, _)| frame.object(id)) {
         let correction = crate::render::locomotor_visual::building_terrain_correction(i32::from(
             building.position.z() as i8,
         ));
@@ -324,12 +323,13 @@ fn anim_draw_point(
 /// never consume.
 pub(super) fn slot_anim_admissible(
     sim: &crate::sim::world::Simulation,
+    frame: &crate::app::presentation::frame::PresentationFrame,
     id: u64,
     camera: [f32; 2],
     viewport: [f32; 2],
 ) -> bool {
     sim.anim(id).is_some_and(|anim| {
-        anim.is_building_anim() && anim_draw_point(sim, anim, id, camera, viewport).is_some()
+        anim.is_building_anim() && anim_draw_point(frame, anim, id, camera, viewport).is_some()
     })
 }
 
@@ -394,7 +394,7 @@ pub(crate) fn build_display_effect_instances(
     for &stable_id in sim.display_layers().ordered_ids() {
         // One ID namespace (`Simulation::allocate_stable_id`): most members
         // are entities, drawn already, so spare them the lookups below.
-        if sim.entities().contains(stable_id) {
+        if input.frame.contains(stable_id) {
             continue;
         }
         // An id names one kind of object, so the order of these tests picks
@@ -403,7 +403,7 @@ pub(crate) fn build_display_effect_instances(
             if sim.terrain_objects().objects().contains_key(&stable_id) {
                 continue;
             }
-            if let Some(light) = sim.building_spotlight(stable_id, local_owner, input.rules) {
+            if let Some(&light) = input.frame.scene.spotlights.get(&stable_id) {
                 super::particles::build_spotlight_instance(
                     input,
                     stable_id,
@@ -454,7 +454,13 @@ pub(crate) fn build_display_effect_instances(
             cell: (rx, ry),
             lift_px,
             drawn_coord,
-        }) = anim_draw_point(sim, anim, stable_id, input.camera, projection_viewport)
+        }) = anim_draw_point(
+            input.frame,
+            anim,
+            stable_id,
+            input.camera,
+            projection_viewport,
+        )
         else {
             continue;
         };
@@ -470,9 +476,7 @@ pub(crate) fn build_display_effect_instances(
                 // `AnimClass::AI` rewrites a PsiWarning anim's hidden byte
                 // every frame from the local player's detection.
                 hidden: match config.is_some_and(|config| config.psi_warning) {
-                    true => !local_owner.is_some_and(|viewer| {
-                        sim.psi_warning_detected_by(viewer, anim, input.rules)
-                    }),
+                    true => !input.frame.scene.psi_warnings_detected.contains(&stable_id),
                     // ... and the `[General] Behind=` anim's from the local
                     // Show Hidden option (`0x00423B62..0x00423B88`).
                     false
@@ -599,7 +603,7 @@ pub(crate) fn build_display_effect_instances(
         // admission point keep the anim's own coordinate.
         #[cfg(feature = "phobos")]
         let (center_x, center_y) = {
-            let offset = attach_effect_draw_offset(sim, input.rules, anim);
+            let offset = attach_effect_draw_offset(input.frame, input.rules, anim);
             (center_x + offset[0], center_y + offset[1])
         };
         debug_assert!(!anim.terrain_attached() || anim.use_cell_drawer());
@@ -659,6 +663,8 @@ pub(crate) fn build_display_effect_instances(
             );
         }
     }
+    // Ares hook 0x6D9427: its particle records after the Air layer.
+    super::particles::build_ares_particle_draws(input, &context, ground_objects);
     observations
 }
 
@@ -763,14 +769,14 @@ fn parachute_canopy_owner(
 /// for every other animation. Read only.
 #[cfg(feature = "phobos")]
 fn attach_effect_draw_offset(
-    sim: &crate::sim::world::Simulation,
+    frame: &crate::app::presentation::frame::PresentationFrame,
     rules: &crate::rules::ruleset::RuleSet,
     anim: &crate::sim::anim_class::AnimObject,
 ) -> [f32; 2] {
     let Some(owner) = anim.owner_entity() else {
         return [0.0, 0.0];
     };
-    let Some(entity) = sim.entities().get(owner) else {
+    let Some(entity) = frame.object(owner) else {
         return [0.0, 0.0];
     };
     let list = entity.phobos_attach_effects();
@@ -1401,6 +1407,10 @@ pub(crate) fn build_weapon_wave_instances(
     ]
     .map(|value| value.floor() as i32);
     #[cfg(feature = "ares")]
+    let Some(frame) = state.match_state.sim_runtime.frame() else {
+        return;
+    };
+    #[cfg(feature = "ares")]
     let blend = {
         let rules = &state
             .match_state
@@ -1411,7 +1421,7 @@ pub(crate) fn build_weapon_wave_instances(
             .rules;
         let colors = &state.match_state.match_presentation.house_color_map;
         move |wave: &crate::sim::wave::Wave| {
-            crate::app::presentation::fire_effects::ares_wave_blend(sim, rules, colors, wave)
+            crate::app::presentation::fire_effects::ares_wave_blend(sim, frame, rules, colors, wave)
         }
     };
     #[cfg(not(feature = "ares"))]
@@ -1494,7 +1504,11 @@ mod tests {
             .find_map(|instance| instance.anim())
             .expect("MAIN animation");
         assert_eq!(
-            super::attach_effect_draw_offset(&sim, &rules, sim.anim(anim).unwrap()),
+            super::attach_effect_draw_offset(
+                &crate::app::presentation::frame::PresentationFrame::of_test(&sim, &rules),
+                &rules,
+                sim.anim(anim).unwrap()
+            ),
             [14.0, 7.0],
             "the unconditional rule and the OTHER rule add"
         );
@@ -1512,7 +1526,11 @@ mod tests {
             )
             .expect("free anim");
         assert_eq!(
-            super::attach_effect_draw_offset(&sim, &rules, sim.anim(free).unwrap()),
+            super::attach_effect_draw_offset(
+                &crate::app::presentation::frame::PresentationFrame::of_test(&sim, &rules),
+                &rules,
+                sim.anim(free).unwrap()
+            ),
             [0.0, 0.0],
             "a free animation carries no effect offset"
         );

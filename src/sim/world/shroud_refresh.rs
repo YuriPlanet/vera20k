@@ -726,7 +726,7 @@ impl Simulation {
         let target_zone = {
             let (Some(terrain), Some(zones)) = (
                 context.terrain().or(self.resolved_terrain.as_ref()),
-                self.zone_grid.as_deref(),
+                self.zone_grid.as_ref(),
             ) else {
                 return false;
             };
@@ -764,7 +764,7 @@ impl Simulation {
             let half_level = {
                 let (Some(terrain), Some(zones)) = (
                     context.terrain().or(self.resolved_terrain.as_ref()),
-                    self.zone_grid.as_deref(),
+                    self.zone_grid.as_ref(),
                 ) else {
                     return false;
                 };
@@ -2723,7 +2723,12 @@ impl Simulation {
         let outcome = walks.journaled.then(|| {
             let entities = &self.substrate.entities;
             let outcome = self.fog.end_journal(|id, viewer| {
-                let deposit = entities.get(id)?.gap_generator.viewers().get(&viewer)?;
+                let deposit = entities
+                    .get(id)?
+                    .building
+                    .gap_generator
+                    .viewers()
+                    .get(&viewer)?;
                 Some((deposit.active(), deposit.radius()))
             });
             if let Some(maps) = &walks.maps {

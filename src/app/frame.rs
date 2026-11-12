@@ -36,7 +36,7 @@ pub(super) struct RuntimeServiceResult {
     /// Offset selected for this service's draw: normal Input result, the
     /// paused render-before-Input snapshot, or the last presented freeze value.
     pub(super) screen_shake_offset: Option<[i32; 2]>,
-    completed_frames: u32,
+    pub(super) completed_frames: u32,
     last_frame_completed: bool,
 }
 
@@ -130,15 +130,9 @@ impl App {
         }
     }
 
-    /// docs/sim-thread.md, "The browser": once a pass finds back the tick
-    /// that held the window events, finish that tick and replay them in
-    /// order, so they act on its world before the pass services the next
-    /// frame.
-    #[cfg(all(
-        feature = "wasm-threads",
-        target_arch = "wasm32",
-        target_os = "unknown"
-    ))]
+    /// docs/sim-thread.md: once a pass finds back the tick that held the
+    /// window events, finish that tick and replay them in order, so they act
+    /// on its world before the pass services the next frame.
     pub(super) fn release_held_events(&mut self, event_loop: &ActiveEventLoop) {
         if self.held_window_events.is_empty() {
             return;
@@ -146,10 +140,11 @@ impl App {
         let Some(state) = self.state.as_mut() else {
             return;
         };
-        if !state.match_state.sim_runtime.pass_may_run() {
+        if !state.match_state.sim_runtime.pass_may_run(false) {
             return;
         }
         sim_tick::finish_threaded_frame(state);
+        state.platform.window_events_held = false;
         for (window, event) in std::mem::take(&mut self.held_window_events) {
             winit::application::ApplicationHandler::window_event(self, event_loop, window, event);
         }
@@ -162,20 +157,27 @@ impl App {
     /// hidden-window service loop in `about_to_wait`, so the world keeps the
     /// same cadence whether or not a frame is drawn. Returns quit state and
     /// the pre-Logic Main_Tick admission for its later consumers.
+    /// `wait_for_tick` makes a desktop pass wait for a tick still on the
+    /// simulation thread instead of passing beside it, for captures whose
+    /// pictures must each follow a finished tick.
     pub(super) fn service_match_runtime(
         state: &mut AppState,
         event_loop: &ActiveEventLoop,
         simulation_allowed: bool,
         catch_up_allowed: bool,
+        wait_for_tick: bool,
     ) -> RuntimeServiceResult {
         if state.persistence.pending_load.is_some() {
             return RuntimeServiceResult::default();
         }
-        // The browser does not wait for a tick still on its simulation
-        // worker (docs/sim-thread.md, "The browser"). This pass services
-        // nothing and draws the frame published for that tick: no Input, so
-        // the screen shake stands as last presented.
-        if !state.match_state.sim_runtime.pass_may_run() {
+        // No pass waits for a tick still on the simulation thread
+        // (docs/sim-thread.md). This one admits no frame and takes nothing
+        // from the world: the camera and the presentation services run as in
+        // a pass the pacer does not admit, and it draws the frame published
+        // for that tick. No Input, so the screen shake stands as last
+        // presented. The tick's end wakes the pass that finishes it.
+        if !state.match_state.sim_runtime.pass_may_run(wait_for_tick) {
+            sim_tick::service_beside_tick(state);
             return RuntimeServiceResult {
                 screen_shake_offset: (state.frontend.screen == GameScreen::InGame).then(|| {
                     state
@@ -245,7 +247,7 @@ impl App {
                     started.elapsed(),
                 )
                 // A tick is running beside this thread: draw. Another pass
-                // would only wait for it.
+                // would only find it running; its end wakes the next one.
                 || state.match_state.sim_runtime.is_lent()
             {
                 break;
@@ -911,6 +913,7 @@ impl App {
             event_loop,
             hidden_run.is_none() && !shell_capture_owns_simulation,
             catch_up_allowed,
+            shell_capture.is_some() || hidden_run.is_some(),
         );
         if runtime_pass.quit_requested {
             return Ok(FrameRenderOutcome::Unavailable);
@@ -1188,6 +1191,17 @@ impl App {
                                 &output.texture,
                             )? {
                                 presented_shell = PresentedShell::MovieList;
+                            } else {
+                                Self::render_shell_error(state, &mut encoder, &view)?;
+                            }
+                        }
+                        ScreenPage::Mods => {
+                            if crate::app::frontend::mods_render::render_mods_page(
+                                state,
+                                &mut encoder,
+                                &output.texture,
+                            )? {
+                                presented_shell = PresentedShell::Mods;
                             } else {
                                 Self::render_shell_error(state, &mut encoder, &view)?;
                             }

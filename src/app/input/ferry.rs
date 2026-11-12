@@ -402,6 +402,10 @@ pub(crate) struct FerryState {
     pending_via: Vec<Cell>,
     routes: Vec<FerryRoute>,
     boarders: Vec<Boarder>,
+    /// [`selected_transports`] and [`armed_preview`] as last answered with
+    /// the world home (`sim_host::home_answer`): the draw asks them.
+    transports_seen: std::cell::RefCell<Vec<u64>>,
+    preview_seen: std::cell::RefCell<Option<(Vec<Cell>, Cell, bool)>>,
 }
 
 impl FerryState {
@@ -848,6 +852,14 @@ fn board_orders(
 
 /// The selected transports a ferry order can take.
 fn selected_transports(state: &AppState) -> Vec<u64> {
+    crate::app::match_runtime::sim_host::home_answer(
+        &state.match_state.sim_runtime,
+        &state.match_state.input.ferry.transports_seen,
+        || find_selected_transports(state),
+    )
+}
+
+fn find_selected_transports(state: &AppState) -> Vec<u64> {
     let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         return Vec::new();
     };
@@ -1048,6 +1060,14 @@ fn armed_preview(state: &AppState) -> Option<(Vec<Cell>, Cell, bool)> {
     if !state.match_state.input.ferry.armed() {
         return None;
     }
+    crate::app::match_runtime::sim_host::home_answer(
+        &state.match_state.sim_runtime,
+        &state.match_state.input.ferry.preview_seen,
+        || find_armed_preview(state),
+    )
+}
+
+fn find_armed_preview(state: &AppState) -> Option<(Vec<Cell>, Cell, bool)> {
     let transports = selected_transports(state);
     let runtime = state.match_state.sim_runtime.runtime()?;
     let sim = &runtime.simulation;
@@ -1107,8 +1127,9 @@ pub(crate) struct FerryRing {
 }
 
 /// The routes that show their marks: only a selected transport's.
+/// Drawing reads the objects from the presentation frame.
 fn shown_routes(state: &AppState) -> Vec<&FerryRoute> {
-    let entities = state.sim_view().map(|view| view.simulation().entities());
+    let frame = state.match_state.sim_runtime.frame();
     state
         .match_state
         .input
@@ -1116,8 +1137,8 @@ fn shown_routes(state: &AppState) -> Vec<&FerryRoute> {
         .routes
         .iter()
         .filter(|route| {
-            entities
-                .and_then(|entities| entities.get(route.transport))
+            frame
+                .and_then(|frame| frame.object(route.transport))
                 .is_some_and(|entity| entity.selection.is_selected())
         })
         .collect()
@@ -1152,11 +1173,10 @@ pub(crate) fn waypoint_paths(state: &AppState) -> Vec<FerryPath> {
     let ferry = &state.match_state.input.ferry;
     if ferry.armed
         && !ferry.pending_via.is_empty()
-        && let Some(view) = state.sim_view()
+        && let Some(frame) = state.match_state.sim_runtime.frame()
     {
-        let entities = view.simulation().entities();
         for id in selected_transports(state) {
-            if let Some(entity) = entities.get(id) {
+            if let Some(entity) = frame.object(id) {
                 let pickup = (entity.position.rx(), entity.position.ry());
                 paths.push(FerryPath {
                     cells: std::iter::once(pickup)

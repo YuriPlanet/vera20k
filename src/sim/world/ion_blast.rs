@@ -139,7 +139,7 @@ impl Simulation {
         blast: &IonBlast,
         rules: &'r RuleSet,
     ) -> Option<&'r crate::rules::ares_warhead::IonCannonRules> {
-        let warhead = rules.warhead(self.interner.resolve(blast.ares_warhead?))?;
+        let warhead = self.interner.warhead_type(blast.ares_warhead?, rules)?;
         Some(warhead.ares_combat()?.ion_cannon())
     }
 

@@ -95,10 +95,16 @@ Every `HasSpotlight=` Techno gets its BuildingLight at TechnoClass::Unlimbo
   orders the receiver filter already withholds; when the cursor owner is
   Deactivated, its answer decides the whole release, so no object receives
   an order (`ares_deactivated_selection_click`). SelectBestObjectForAction
-  ranks an EMPed object 1. The heal actions (0x51E710, 0x73FDBD) are not
-  ported: a healer keeps the stock Heal cursor where Ares shows
-  InfantryHeal/UnitRepair and heals by Verses, which a mod's mechanic
-  infantry reaches (Brute Force `CVEngineer`, `REPDRONE`).
+  ranks an EMPed object 1.
+- The heal arms: a Unit's (1004E5A0, hook 0x73FDBD) replaces the stock arm
+  in `Simulation::unit_repair_action`, an Infantryman's (1004E2E0, hook
+  0x51E710) is `Simulation::ares_infantry_heal_action`. Both heal any damaged
+  ally the selected weapon's Verses reach, answer Select under Alt, and set
+  InfantryHeal/UnitRepair; the click sends the same Attack
+  (`healer_object_action`). The Infantryman over itself still takes the stock
+  self arm at 0x51E748, which VERA does not port (NoSelfGuardArea). The arms
+  follow the game's Ares switch (`RuleSet::ares`) in every build; their
+  cursors go through the Ares cursor owner, still built only with the feature.
 - Init_1's capture manager and parasite for any weapon slot and the
   parasite slot hooks (0x629804, 0x62A020, 0x62A7B1); the gunner temporal
   swap (0x74642C, 0x74653C); Hover DeployToLand (0x513EAA, 0x514A21,
@@ -357,14 +363,14 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 | Hook | Name | Ares.dll | Disposition |
 |---|---|---|---|
 | `51C913` | InfantryClass_CanFire_Heal | `1004E270` | ported: medic fires on any damaged Techno |
-| `51E710` | InfantryClass_GetActionOnObject_Heal | `1004E2E0` | residual: heal cursor/action over objects (input rungs) |
+| `51E710` | InfantryClass_GetActionOnObject_Heal | `1004E2E0` | ported: `Simulation::ares_infantry_heal_action` (see Residuals for the self arm) |
 | `520731` | InfantryClass_UpdateFiringState_Heal | `1004E420` | ported: medic keeps any damaged Techno target |
 | `6F7FC5` | TechnoClass_CanAutoTargetObject_Heal | `1004E490` | ported: healing vehicle takes any damaged ally |
 | `6F8EE3` | TechnoClass_FindTargetType_Heal | `1004E4A0` | ported: healer target classes 0x403C |
 | `6F8F1F` | TechnoClass_FindTargetType_Heal | `1004E4A0` | ported: healer target classes 0x403C |
 | `6FA361` | TechnoClass_Update_LoseTarget | `1004E4C0` | ported: computer healer keeps allies, drops enemies |
 | `736E8E` | UnitClass_UpdateFiringState_Heal | `1004E6E0` | ported: healing Unit keeps any damaged Techno target |
-| `73FDBD` | UnitClass_GetActionOnObject_Heal | `1004E5A0` | residual: GRepair cursor/action over objects (input rungs) |
+| `73FDBD` | UnitClass_GetActionOnObject_Heal | `1004E5A0` | ported: `Simulation::unit_repair_action` (Ares arm) |
 | `741113` | UnitClass_CanFire_Heal | `1004E540` | ported: healing Unit fires on any damaged Techno |
 
 ### Hooks.Spotlights.cpp

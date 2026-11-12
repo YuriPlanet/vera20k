@@ -407,6 +407,31 @@ impl Simulation {
     /// next ingress without retaining a second membership list.
     /// Native731060 stores parameter-1; digit0 registers parameter10.
     pub fn projected_control_groups(&self) -> [Vec<u64>; 10] {
+        self.project_control_groups(
+            self.substrate
+                .entities
+                .iter_sorted()
+                .map(|(_, entity)| entity),
+        )
+    }
+
+    /// [`Self::projected_control_groups`] of the stored objects among `ids`
+    /// alone, for a reader that only ever asks about those: each object's
+    /// group follows from its own state and the queue, not from the others.
+    pub fn projected_control_groups_of(
+        &self,
+        ids: impl IntoIterator<Item = u64>,
+    ) -> [Vec<u64>; 10] {
+        self.project_control_groups(
+            ids.into_iter()
+                .filter_map(|id| self.substrate.entities.get(id)),
+        )
+    }
+
+    fn project_control_groups<'a>(
+        &'a self,
+        entities: impl Iterator<Item = &'a crate::sim::game_entity::GameEntity>,
+    ) -> [Vec<u64>; 10] {
         // The queued assignments, in queue order; usually none. Each object's
         // group follows from its own stored group and these alone.
         let assignments: Vec<(i32, std::collections::HashSet<u64>)> = self
@@ -419,7 +444,7 @@ impl Simulation {
             })
             .collect();
         let mut slots = std::array::from_fn(|_| Vec::new());
-        for (_, entity) in self.substrate.entities.iter_sorted() {
+        for entity in entities {
             let group =
                 assignments
                     .iter()
@@ -938,7 +963,7 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) {
         let (Some(terrain), Some(zones)) =
-            (self.resolved_terrain.as_ref(), self.zone_grid.as_deref())
+            (self.resolved_terrain.as_ref(), self.zone_grid.as_ref())
         else {
             return;
         };
@@ -1061,8 +1086,7 @@ impl Simulation {
             };
             let jumpjet = self.substrate.entities.get(id).is_some_and(|entity| {
                 entity.locomotor.as_ref().is_some_and(|locomotor| {
-                    locomotor.active_kind()
-                        == crate::rules::locomotor_type::LocomotorKind::Jumpjet
+                    locomotor.active_kind() == crate::rules::locomotor_type::LocomotorKind::Jumpjet
                 })
             });
             if !jumpjet {
@@ -1084,8 +1108,12 @@ impl Simulation {
                 }
                 cells.sort_unstable();
                 let free = cells.into_iter().find_map(|(_, dy, dx)| {
-                    let x = i16::try_from(i32::from(from.0) + dx).ok().filter(|x| *x >= 0)?;
-                    let y = i16::try_from(i32::from(from.1) + dy).ok().filter(|y| *y >= 0)?;
+                    let x = i16::try_from(i32::from(from.0) + dx)
+                        .ok()
+                        .filter(|x| *x >= 0)?;
+                    let y = i16::try_from(i32::from(from.1) + dy)
+                        .ok()
+                        .filter(|y| *y >= 0)?;
                     let clear = self
                         .mover_can_enter(
                             id,

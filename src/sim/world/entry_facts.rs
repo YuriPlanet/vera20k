@@ -1,15 +1,18 @@
-//! VERA-only: the facts a path batch's Can_Enter_Cell asks share, copied once
-//! per batch. A batch's searches ([`crate::sim::movement::path_batch`]) all
-//! read one unchanged world, and in a jam each real cell is asked about ~36
-//! times a batch and each blocker read ~42 times, every time from scattered
-//! terrain, occupancy and entity records. The first ask copies what Infantry
-//! `0x0051BF90` / Unit `0x0073F0A0` read of the cell or blocker into a dense
-//! table and later asks read the copy; searches asking at once never wait
-//! for one another ([`EntryFacts::cell`]). The world stays the source of truth:
-//! the tables are emptied before each batch, never saved or hashed, and debug
-//! builds compare every reuse with a fresh read. Asks outside a batch read
-//! the world directly. A batch asks about a few thousand of the map's cells,
-//! so the tables mark what they keep and the reset empties only those.
+//! VERA-only: the facts a path search's Can_Enter_Cell asks share, copied once
+//! per batch of searches. A batch's searches
+//! ([`crate::sim::movement::path_batch`]) all read one unchanged world, and in
+//! a jam each real cell is asked about ~36 times a batch and each blocker read
+//! ~42 times, every time from scattered terrain, occupancy and entity records.
+//! The first ask copies what Infantry `0x0051BF90` / Unit `0x0073F0A0` read of
+//! the cell or blocker into a dense table and later asks read the copy;
+//! searches asking at once never wait for one another ([`EntryFacts::cell`]).
+//! A core search a Foot runs at its own turn, after its Mark0, reads one
+//! unchanged world too, so it keeps facts in the same tables, a batch of one.
+//! The world stays the source of truth: the tables are emptied before each
+//! batch and each such search, never saved or hashed, and debug builds compare
+//! every reuse with a fresh read. Other asks read the world directly. A batch
+//! asks about a few thousand of the map's cells, so the tables mark what they
+//! keep and the reset empties only those.
 
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
@@ -130,7 +133,7 @@ impl EntryFacts {
             |facts| {
                 debug_assert!(
                     !crate::sim::touch_log::live_read_check_enabled() || *facts == read(),
-                    "real cell {index} changed during a path batch"
+                    "real cell {index} changed during a path search"
                 );
                 see(facts)
             },
@@ -153,7 +156,7 @@ impl EntryFacts {
         };
         debug_assert!(
             !crate::sim::touch_log::live_read_check_enabled() || cell == read(),
-            "real cell {index} changed during a path batch"
+            "real cell {index} changed during a path search"
         );
         cell
     }
@@ -169,7 +172,7 @@ impl EntryFacts {
             |&facts| {
                 debug_assert!(
                     !crate::sim::touch_log::live_read_check_enabled() || facts == read(),
-                    "the entity in slot {slot} changed during a path batch"
+                    "the entity in slot {slot} changed during a path search"
                 );
                 facts
             },
@@ -441,6 +444,20 @@ impl EntryFacts {
             sim.substrate.entities.slot_count(),
         );
         facts
+    }
+}
+
+#[cfg(test)]
+impl EntryFacts {
+    /// Whether no ask has kept a fact since the last reset.
+    pub(crate) fn is_empty(&self) -> bool {
+        [
+            &self.cells_claimed,
+            &self.plain_kept,
+            &self.blockers_claimed,
+        ]
+        .iter()
+        .all(|kept| kept.0.iter().all(|word| word.load(Ordering::Relaxed) == 0))
     }
 }
 

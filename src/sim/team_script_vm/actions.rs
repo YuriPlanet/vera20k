@@ -2123,7 +2123,7 @@ impl Simulation {
             (leader_location.y / 256) as u16,
         );
         let terrain = self.resolved_terrain.as_ref()?;
-        let zone = self.zone_grid.as_deref()?.get_zone_id_native(
+        let zone = self.zone_grid.as_ref()?.get_zone_id_native(
             terrain,
             leader_cell,
             object.movement_zone,
@@ -2239,6 +2239,13 @@ impl Simulation {
             if !in_playfield {
                 for member in members {
                     self.team_member_set_destination(member, None, rules, registry, frame_effects);
+                }
+            } else {
+                // Every visit of an infantry member in the playfield sets the
+                // byte again (`InfantryClass::AI @ 0x0051BE3E`); a sleeping
+                // one must take that visit (`world::idle_sleep`).
+                for member in members {
+                    self.substrate.entities.wake(member);
                 }
             }
         }

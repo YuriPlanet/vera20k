@@ -189,6 +189,16 @@ pub(crate) fn movie_list_layout(
     }
 }
 
+/// VERA's Mods page, behind the Mods button of Options.
+pub(crate) fn mods_layout(state: &AppState) -> crate::ui::mods_shell::ModsLayout {
+    let (width, height) = shell_screen_size(state);
+    if fills_window(state) {
+        crate::ui::mods_shell::compute_responsive_layout(width, height)
+    } else {
+        crate::ui::mods_shell::compute_layout(width, height)
+    }
+}
+
 /// End-of-match score screen `0x108`.
 pub(crate) fn score_layout(state: &AppState) -> crate::ui::score_shell::ScoreLayout {
     let (width, height) = shell_screen_size(state);

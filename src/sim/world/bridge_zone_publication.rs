@@ -31,7 +31,7 @@ impl LivePublication<'_> {
             .ok_or("repair has no live path owner")?;
         let zones = sim
             .zone_grid
-            .as_deref_mut()
+            .as_mut()
             .ok_or("repair has no live zone owner")?;
         zones.rebuild_base_connectivity_preserving_hierarchy(
             path,
@@ -53,7 +53,7 @@ impl LivePublication<'_> {
             .ok_or("repair has no bridge record owner")?;
         let zones = sim
             .zone_grid
-            .as_deref_mut()
+            .as_mut()
             .ok_or("repair has no live zone owner")?;
         let path = sim
             .path_grid
@@ -90,7 +90,7 @@ impl ZoneBatchHost for LivePublication<'_> {
         let zones = self
             .sim
             .zone_grid
-            .as_deref_mut()
+            .as_mut()
             .ok_or("zone batch has no live zone owner")?;
         let (base, hierarchy) = zones.base_and_hierarchy_mut();
         hierarchy.levels_mut()[0]
@@ -111,7 +111,7 @@ impl ZoneBatchHost for LivePublication<'_> {
     ) -> Result<crate::sim::pathfinding::zone_map::ZoneId, String> {
         self.sim
             .zone_grid
-            .as_deref()
+            .as_ref()
             .and_then(|zones| zones.hierarchy_zone_at_native(0, (coord.0 as u16, coord.1 as u16)))
             .ok_or_else(|| "zone batch has no native fine-zone storage".into())
     }
@@ -128,7 +128,7 @@ impl ZoneBatchHost for LivePublication<'_> {
             .ok_or("zone batch has no bridge record owner")?;
         let zones = sim
             .zone_grid
-            .as_deref_mut()
+            .as_mut()
             .ok_or("zone batch has no live zone owner")?;
         repair_zone_hierarchy_around_cell(
             zones,
@@ -155,7 +155,7 @@ mod tests {
     ) -> Vec<Vec<Vec<(crate::sim::pathfinding::zone_map::ZoneId, u8)>>> {
         let hierarchy = sim
             .zone_grid
-            .as_deref()
+            .as_ref()
             .unwrap()
             .hierarchy_for(MovementZone::Normal)
             .unwrap();

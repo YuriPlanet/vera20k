@@ -18,6 +18,7 @@
 //! GAME.FNT atlas. The native shape path is `ShapeTextPrinter::PrintShape`
 //! with `BlitterFlags::None` (no canvas-half centering).
 
+use crate::app::presentation::frame::ObjectRecord;
 use crate::app::presentation::ui_overlays::{
     BuildingBarGeometry, StatusTextOverlayInstances, StatusViewport, foot_select_bracket,
     health_bar_drawable,
@@ -31,7 +32,6 @@ use crate::rules::digital_display::{
     DigitalDisplayType, DigitalInfoType, DigitalTextAlign, DigitalVerticalAnchor,
 };
 use crate::rules::ruleset::RuleSet;
-use crate::sim::game_entity::GameEntity;
 use crate::sim::world::Simulation;
 
 /// Text height `DigitalDisplayTypeClass::DisplayText` uses for its Top anchor.
@@ -66,7 +66,7 @@ impl DigitalDisplayInstances {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn digital_display_instances(
     sim: &Simulation,
-    entity: &GameEntity,
+    entity: &ObjectRecord,
     rules: &RuleSet,
     overlay: &SelectionOverlay,
     font: &BitFont,
@@ -91,7 +91,7 @@ pub(crate) fn digital_display_instances(
     }
     // `TechnoExt::ProcessDigitalDisplays` is called from DrawHealthBar, so the
     // stock health-bar admission is the only lifecycle gate here.
-    if !health_bar_drawable(sim, entity, hovered_id, local_owner, Some(rules)) {
+    if !health_bar_drawable(sim, entity, hovered_id, local_owner) {
         return out;
     }
     let is_building = entity.category() == EntityCategory::Structure;
@@ -109,9 +109,11 @@ pub(crate) fn digital_display_instances(
             frame as u32,
         );
     let owner = entity.owner();
-    let (sx, sy) = screen_point(sim, entity);
+    let (sx, sy) = screen_point(entity);
+    // Captured for the frame's local player, `local_owner`.
+    let values = entity.hud.digital_values();
 
-    for index in indices {
+    for (slot, index) in indices.enumerate() {
         let display = &rules.digital_display_types().types()[index];
         // `DigitalDisplayTypeClass::CanShow`.
         if observer {
@@ -147,15 +149,8 @@ pub(crate) fn digital_display_instances(
             }
         }
 
-        let Some((mut value, mut maximum)) = crate::sim::digital_display::values_for_display(
-            sim,
-            entity,
-            object,
-            rules,
-            display.info_type,
-            display.info_index,
-            viewer,
-        ) else {
+        // `sim::digital_display::values_for_display`, captured.
+        let Some(&Some((mut value, mut maximum))) = values.get(slot) else {
             continue;
         };
         if value < 0 || maximum <= 0 {
@@ -176,7 +171,7 @@ pub(crate) fn digital_display_instances(
             )
             .is_some_and(|(shield, ty)| !shield.broken_non_respawning(ty));
         let mut position = if is_building {
-            building_bracket(sim, entity, object, rules, display.anchor_building)
+            building_bracket(entity, object, rules, display.anchor_building)
         } else {
             foot_bracket(sx, sy, is_infantry, display)
         };
@@ -249,9 +244,8 @@ pub(crate) fn digital_display_instances(
     out
 }
 
-fn screen_point(sim: &Simulation, entity: &GameEntity) -> (f32, f32) {
-    let coord =
-        crate::sim::movement::ground_pose::object_get_coords(entity, sim.resolved_terrain());
+fn screen_point(entity: &ObjectRecord) -> (f32, f32) {
+    let coord = entity.hud.get_coords;
     crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z)
 }
 
@@ -268,13 +262,12 @@ fn foot_bracket(sx: f32, sy: f32, is_infantry: bool, display: &DigitalDisplayTyp
 /// `TechnoExt::GetBuildingSelectBracketPosition`: project `Dimension2`
 /// (foundation edge plus ART Height), then apply the hexagon vertex.
 pub(crate) fn building_bracket(
-    sim: &Simulation,
-    entity: &GameEntity,
+    entity: &ObjectRecord,
     object: &crate::rules::object_type::ObjectType,
     rules: &RuleSet,
     anchor: BuildingSelectBracketPosition,
 ) -> (f32, f32) {
-    let (sx, sy) = screen_point(sim, entity);
+    let (sx, sy) = screen_point(entity);
     let geometry = BuildingBarGeometry::new(rules, object);
     let (foundation_width, foundation_height) = object.foundation.dimensions();
     let length_w = i32::from(foundation_width) * 7 + i32::from(foundation_width) / 2;

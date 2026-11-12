@@ -114,7 +114,7 @@ fn a_growth_that_changes_no_atlas_is_not_published() {
     growth.grow_sprites_for_test(work, empty_upload(false));
     // Captures publish waiting and restart growths after each publish, so a
     // growth that changed nothing must not count or it restarts for ever.
-    assert!(!growth.publish(&gpu.device, &gpu.queue, &batch, &mut None, &mut None, true));
+    assert!(!growth.publish(&gpu.device, &gpu.queue, &batch, &mut None, true));
     assert_eq!(growth.published(), 0);
     assert!(!growth.running());
 }
@@ -1243,7 +1243,7 @@ fn infantry_nonempty_shadow_is_uploaded_and_selected_from_the_second_half() {
     let selected = embedded_shp_shadow_piece(
         &atlas,
         rules.object("RAWGI"),
-        world.values().next().unwrap(),
+        &crate::app::presentation::frame::ObjectRecord::of_test(world.values().next().unwrap()),
         None,
         &key,
         body,

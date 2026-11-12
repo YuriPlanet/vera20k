@@ -1495,7 +1495,7 @@ mod tests {
                 .as_ref()
                 .is_some_and(|cloak| cloak.is_fully_cloaked())
         );
-        let world = crate::app::presentation::instances::entity_screen_position(
+        let world = crate::render::locomotor_visual::screen_position(
             sim.entities().get(entity_id).unwrap(),
         );
 

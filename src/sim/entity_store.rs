@@ -53,10 +53,10 @@ pub struct EntityStore {
     /// The stored ids in ascending order, one per slot. A removed entity's
     /// slot keeps its id, with no entity, until [`Self::compact`].
     ids: Vec<u64>,
-    /// The entity of each slot. Boxed: an entity is about 2.5 KB, so insert,
+    /// The entity of each slot. Boxed: an entity is about 2.2 KB, so insert,
     /// remove and compaction move pointers, not entities. serde writes a
     /// `Box<T>` as its `T`.
-    entities: Vec<Option<crate::util::shared::Shared<GameEntity>>>,
+    entities: Vec<Option<Box<GameEntity>>>,
     /// stable_id -> slot, for every slot that holds an entity. Only looked
     /// up, never iterated, so its order cannot reach a result.
     slot_of: LookupMap<u64, u32>,
@@ -151,6 +151,10 @@ pub struct EntityStore {
     /// change every frame and no reader derives from
     /// ([`Self::count_mission_ai_visit`], [`Self::capture_building_tint_sample`]).
     touched: TouchLogs<{ TouchReader::COUNT }>,
+    /// The empty stand-in of a presentation copy of the world
+    /// ([`Self::detached`]), whose objects are in the presentation frame
+    /// instead. Debug builds refuse reads of it.
+    detached: bool,
 }
 
 /// One slot's sleep mark (sim-scale; results unchanged). An idle object's
@@ -213,6 +217,7 @@ impl Clone for EntityStore {
             airborne: self.airborne.clone(),
             anim_holders: self.anim_holders.clone(),
             touched: TouchLogs::everything(),
+            detached: self.detached,
         }
     }
 }
@@ -269,6 +274,15 @@ impl EntityStore {
         if let Some(slot) = self.slot(stable_id) {
             let cell = &mut self.sleep[slot as usize];
             cell.owed = cell.owed.wrapping_add(1);
+        }
+    }
+
+    /// Drop the visits `stable_id` is owed without settling them: the sleep
+    /// check's, which counts one only to hash the skipped turn
+    /// (`world::idle_sleep`).
+    pub(crate) fn forget_owed(&mut self, stable_id: u64) {
+        if let Some(slot) = self.slot(stable_id) {
+            self.sleep[slot as usize].owed = 0;
         }
     }
 
@@ -345,27 +359,11 @@ impl EntityStore {
         if cell.owed == 0 {
             return;
         }
-        // Through the shared handle, as the per-visit step does: waking does
-        // not copy an entity a presentation frame still shares.
+        // Through a shared reference, as the per-visit step does: waking is
+        // not a hand-out.
         if let Some(entity) = self.entities[slot].as_deref() {
             entity.settle_sleep(cell.owed);
         }
-    }
-
-    /// Whether `stable_id`'s entity is still the one `other`, a copy of this
-    /// store, shares (test builds only): false once a write has copied it.
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn shares_entity_with(&self, other: &Self, stable_id: u64) -> bool {
-        fn entity(
-            store: &EntityStore,
-            stable_id: u64,
-        ) -> Option<&crate::util::shared::Shared<GameEntity>> {
-            let slot = *store.slot_of.get(&stable_id)? as usize;
-            store.entities[slot].as_ref()
-        }
-        entity(self, stable_id)
-            .zip(entity(other, stable_id))
-            .is_some_and(|(mine, theirs)| mine.shares_storage_with(theirs))
     }
 
     /// How many mutable hand-outs the store has made (test builds only).
@@ -405,7 +403,28 @@ impl EntityStore {
             airborne: BTreeSet::new(),
             anim_holders: BTreeSet::new(),
             touched: TouchLogs::everything(),
+            detached: false,
         }
+    }
+
+    /// The empty store a presentation copy of the world holds in place of
+    /// the objects (`Simulation::presentation_copy`): drawing reads them
+    /// from its presentation frame. Debug builds panic on a read of it, so a
+    /// reader still reaching for the world's objects shows up in any draw.
+    pub(crate) fn detached() -> Self {
+        Self {
+            detached: true,
+            ..Self::new()
+        }
+    }
+
+    /// Debug builds: refuse a read of a [`Self::detached`] store.
+    #[inline]
+    fn check_attached(&self) {
+        debug_assert!(
+            !self.detached,
+            "read of the objects of a presentation copy of the world: read the presentation frame's records instead"
+        );
     }
 
     /// Insert an entity, replacing one of the same id (rare — stable_ids are
@@ -437,7 +456,7 @@ impl EntityStore {
         }
         self.anim_holders
             .extend(entity.held_anims().map(|anim| (anim, id)));
-        let entity = Some(crate::util::shared::Shared::new(entity));
+        let entity = Some(Box::new(entity));
         if let Some(&slot) = self.slot_of.get(&id) {
             self.entities[slot as usize] = entity;
             self.owners[slot as usize] = owner;
@@ -506,9 +525,7 @@ impl EntityStore {
         self.wake_slot(slot);
         self.slot_of.remove(&stable_id);
         self.refocus();
-        let removed = self.entities[slot]
-            .take()
-            .map(crate::util::shared::Shared::into_inner);
+        let removed = self.entities[slot].take().map(|entity| *entity);
         if let Some(entity) = &removed {
             self.unlist_owned(stable_id, (entity.owner(), entity.category()));
             if let Some(entry) = airborne_entry(entity) {
@@ -593,6 +610,7 @@ impl EntityStore {
     /// live-read check).
     #[inline]
     fn slot(&self, stable_id: u64) -> Option<u32> {
+        self.check_attached();
         #[cfg(any(test, feature = "test-support"))]
         self.lookups[0].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if self.focus.0 != stable_id {
@@ -610,6 +628,7 @@ impl EntityStore {
 
     /// The stored entities in ascending stable_id order, with their ids.
     fn stored(&self) -> Stored<'_> {
+        self.check_attached();
         Stored {
             ids: self.ids.iter(),
             entities: self.entities.iter(),
@@ -707,8 +726,8 @@ impl EntityStore {
         admit: impl FnOnce(&GameEntity) -> bool,
     ) -> Option<&mut GameEntity> {
         let slot = self.slot(stable_id)? as usize;
-        // Read through the shared handle: a mutable one copies an entity a
-        // presentation frame still shares, admitted or not.
+        // Read through a shared reference: only an admitted entity is
+        // handed out and noted in the touch logs.
         if !admit(self.entities[slot].as_deref()?) {
             return None;
         }
@@ -722,8 +741,8 @@ impl EntityStore {
     /// techno steps it every frame, and no product derived from the logs
     /// reads it. No-op if the entity is absent.
     pub(crate) fn count_mission_ai_visit(&mut self, stable_id: u64) {
-        // Through the shared handle: the counter steps without a mutable
-        // hand-out, which would copy an entity a presentation frame shares.
+        // Through a shared reference: the counter steps without a mutable
+        // hand-out, which would wake the object and note it in the logs.
         if let Some(entity) = self.get(stable_id) {
             entity.mission.count_ai_visit();
         }
@@ -743,8 +762,7 @@ impl EntityStore {
         airstrike_active: bool,
     ) {
         // Read first: a building whose sample already says what the draw
-        // would read is not handed out, which would copy it every frame
-        // under a presentation frame.
+        // would read is not handed out.
         if self.get(stable_id).is_none_or(|entity| {
             entity.category() != EntityCategory::Structure
                 || entity.building_art.tint_sample_is_current(
@@ -782,11 +800,13 @@ impl EntityStore {
 
     /// Number of entities in the store.
     pub fn len(&self) -> usize {
+        self.check_attached();
         self.slot_of.len()
     }
 
     /// Whether the store is empty.
     pub fn is_empty(&self) -> bool {
+        self.check_attached();
         self.slot_of.is_empty()
     }
 
@@ -807,6 +827,7 @@ impl EntityStore {
     /// ascending stable_id order, chosen by the category column without
     /// loading an entity.
     pub(crate) fn ids_of_categories(&self, keep: impl Fn(EntityCategory) -> bool) -> Vec<u64> {
+        self.check_attached();
         self.ids
             .iter()
             .zip(&self.categories)
@@ -833,7 +854,7 @@ impl EntityStore {
     /// `pick`'s answers for the stored entities it answers, in ascending
     /// stable_id order. `pick` runs on worker threads
     /// ([`crate::sim::parallel`]), so it only reads.
-    pub(crate) fn par_filter_map<'a, R: Send>(
+    pub fn par_filter_map<'a, R: Send>(
         &'a self,
         pick: impl Fn(u64, &'a GameEntity) -> Option<R> + Sync,
     ) -> Vec<R> {
@@ -919,11 +940,34 @@ impl EntityStore {
         &self,
         category: EntityCategory,
     ) -> impl Iterator<Item = &GameEntity> {
+        self.check_attached();
         self.categories
             .iter()
             .zip(&self.entities)
             .filter(move |&(&stored, _)| stored == category)
             .filter_map(|(_, entity)| entity.as_deref())
+    }
+
+    /// The entities `keep` selects by id and owner, in stable_id order,
+    /// chosen from the id and owner columns without loading the others.
+    /// Debug builds check each owner against its entity (the live-read
+    /// check).
+    pub(crate) fn values_of_owners(
+        &self,
+        keep: impl Fn(u64, InternedId) -> bool,
+    ) -> impl Iterator<Item = &GameEntity> {
+        self.ids
+            .iter()
+            .zip(&self.owners)
+            .zip(&self.entities)
+            .filter_map(move |((&id, &owner), entity)| {
+                let entity = entity.as_deref()?;
+                debug_assert!(
+                    !crate::sim::touch_log::live_read_check_enabled() || entity.owner() == owner,
+                    "the owner column disagrees with entity {id}"
+                );
+                keep(id, owner).then_some(entity)
+            })
     }
 
     /// Iterate all entities mutably in stable_id order.
@@ -1184,7 +1228,7 @@ impl EntityStore {
 /// empty slots. Its length is exact, so a collect allocates once.
 struct Stored<'a> {
     ids: std::slice::Iter<'a, u64>,
-    entities: std::slice::Iter<'a, Option<crate::util::shared::Shared<GameEntity>>>,
+    entities: std::slice::Iter<'a, Option<Box<GameEntity>>>,
     /// Stored entities not yet yielded from either end.
     remaining: usize,
 }
@@ -1256,9 +1300,7 @@ impl<'de> serde::Deserialize<'de> for EntityStore {
             store.owners.push(entity.owner());
             store.categories.push(entity.category());
             store.sleep.push(SleepCell::default());
-            store
-                .entities
-                .push(Some(crate::util::shared::Shared::new(*entity)));
+            store.entities.push(Some(entity));
         }
         store.refocus();
         store.rebuild_class_registries();
@@ -1286,32 +1328,18 @@ mod tests {
     use super::*;
     use crate::sim::game_entity::GameEntity;
 
-    /// An AI visit steps the counter without handing the entity out, so a
-    /// presentation copy keeps sharing it; a refused `get_mut_if` copies
-    /// nothing either, and a real write does.
+    /// An AI visit steps the counter without handing the entity out, and a
+    /// refused `get_mut_if` hands nothing out either.
     #[test]
-    fn an_ai_visit_leaves_a_shared_entity_shared() {
+    fn an_ai_visit_hands_nothing_out() {
         let mut store = EntityStore::new();
         store.insert(GameEntity::test_default(7, "MTNK", "Americans", 5, 5));
-        let shared = |store: &EntityStore, frame: &EntityStore| {
-            store.entities[0]
-                .as_ref()
-                .unwrap()
-                .shares_storage_with(frame.entities[0].as_ref().unwrap())
-        };
-        let frame = store.clone();
         let handed_out = store.hand_outs();
         store.count_mission_ai_visit(7);
         store.count_mission_ai_visit(7);
         assert!(store.get_mut_if(7, |_| false).is_none());
-        assert!(shared(&store, &frame), "the frame's copy is still shared");
         assert_eq!(store.hand_outs(), handed_out);
         assert_eq!(store.get(7).unwrap().mission.ai_counter(), 2);
-
-        store.get_mut(7).unwrap().mission.clear_ai_counter();
-        assert!(!shared(&store, &frame), "a real write copies it");
-        assert_eq!(store.get(7).unwrap().mission.ai_counter(), 0);
-        assert_eq!(frame.get(7).unwrap().mission.ai_counter(), 2);
     }
 
     /// Populated original412B40 ->4137A0 controls. Buckets hold opaque

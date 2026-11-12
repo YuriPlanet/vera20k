@@ -1,4 +1,6 @@
 use super::*;
+use crate::app::presentation::frame::PresentationFrame;
+use crate::sim::game_entity::GameEntity;
 use serde_json::Value;
 
 pub(super) fn rally_native() -> &'static Value {
@@ -294,6 +296,8 @@ fn simulation_fixture_for_type(
             let mut target =
                 GameEntity::test_default(target_id, "MTNK", owner, tx as u16, ty as u16);
             target.position.put_location(DriveCoord { x, y, z });
+            target.set_type_ref_for_test(sim.intern("MTNK"));
+            target.set_owner_for_test(sim.intern(owner));
             sim.entities_mut_for_test().insert(target);
             entity.set_archive_target(Some(TargetKind::Entity(target_id)));
         } else {
@@ -349,6 +353,7 @@ fn native_rally_gates_foundation_ground_bridge_and_object_target_through_product
         };
         let mut actual = build_factory_rally_line_instances(
             Some(&sim),
+            Some(&PresentationFrame::of_test(&sim, &rules)),
             Some(&rules),
             &selected_for_row(row),
             &HouseColorMap::new(),
@@ -470,6 +475,7 @@ fn retail_gapile_house_color_and_production_crop_match_original_rally_and_no_tar
         };
         let actual = build_factory_rally_line_instances(
             Some(&sim),
+            Some(&PresentationFrame::of_test(&sim, rules)),
             Some(rules),
             &[id],
             &colors,
@@ -498,6 +504,7 @@ fn presentation_target_query_does_not_stamp_simulation_dummy_cell() {
     let before = canonical.dummy().snapshot().coord;
     let _ = build_factory_rally_line_instances(
         Some(&sim),
+        Some(&PresentationFrame::of_test(&sim, &rules)),
         Some(&rules),
         &[10],
         &HouseColorMap::new(),
@@ -849,6 +856,7 @@ fn production_rally_workload_timing() {
         let mut samples = Vec::new();
         for sample in 0..22 {
             sim.session_mut_for_test().set_binary_frame_for_test(sample);
+            let presentation = PresentationFrame::of_test(&sim, &rules);
             let begin = Instant::now();
             let selected = crate::app::input::dispatch::selected_stable_ids_in_order(
                 Some(&sim),
@@ -859,6 +867,7 @@ fn production_rally_workload_timing() {
             let selection_ms = begin.elapsed().as_secs_f64() * 1000.;
             let actual = build_factory_rally_line_instances(
                 Some(&sim),
+                Some(&presentation),
                 Some(&rules),
                 &selected,
                 &colors,
@@ -941,11 +950,15 @@ fn production_rally_workload_timing() {
                 frame.wrapping_sub(DURATION_TICKS as u32)
             });
             assert_eq!(line_state.is_selected_action_active(frame), active);
+            let presentation = rules
+                .as_ref()
+                .map(|rules| PresentationFrame::of_test(&sim, rules));
             let begin = Instant::now();
             let actual = build_target_line_instances(
                 &line_state,
                 false,
                 Some(&sim),
+                presentation.as_ref(),
                 rules.as_ref(),
                 Some(&palette),
                 &HouseColorMap::new(),

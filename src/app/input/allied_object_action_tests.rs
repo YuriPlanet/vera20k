@@ -75,9 +75,8 @@ fn object_pair(rules: &RuleSet, actor_kind: &str, relation: &str) -> (Simulation
 }
 
 fn picked_target(sim: &Simulation, target: u64) -> HoverTargetKindWithId {
-    let (x, y) = crate::app::presentation::instances::entity_screen_position(
-        sim.entities().get(target).unwrap(),
-    );
+    let (x, y) =
+        crate::render::locomotor_visual::screen_position(sim.entities().get(target).unwrap());
     let hover =
         crate::app::input::entity_pick::hover_target_at_point(sim, x, y, "Americans", false)
             .expect("revealed ordinary tank is picked");

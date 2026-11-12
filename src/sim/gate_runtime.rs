@@ -189,6 +189,7 @@ pub(crate) fn mission_open(sim: &mut Simulation, id: u64, rules: &RuleSet) -> i3
             if phase == DoorPhase::OpenStable {
                 entity.mission.set_handler_state(2);
                 entity
+                    .building
                     .building_gate
                     .get_or_insert_with(Default::default)
                     .hold_timer
@@ -212,6 +213,7 @@ pub(crate) fn mission_open(sim: &mut Simulation, id: u64, rules: &RuleSet) -> i3
             };
             entity.mission.set_handler_state(1);
             entity
+                .building
                 .building_gate
                 .get_or_insert_with(Default::default)
                 .hold_timer
@@ -250,7 +252,10 @@ pub(crate) fn mission_open(sim: &mut Simulation, id: u64, rules: &RuleSet) -> i3
         2 => {
             let obstructed = footprint_has_other_object(sim, id, &object.foundation);
             let entity = sim.substrate.entities.get_mut(id).unwrap();
-            let gate = entity.building_gate.get_or_insert_with(Default::default);
+            let gate = entity
+                .building
+                .building_gate
+                .get_or_insert_with(Default::default);
             if obstructed {
                 //44E69F: reseed; never decrement/reanchor on a read.
                 gate.hold_timer.arm(now, hold_ticks);
@@ -399,7 +404,7 @@ mod tests {
             other => panic!("unknown native phase {other}"),
         }
         let hold = &row["initial"]["hold"];
-        gate.building_gate = Some(BuildingGateRuntime {
+        gate.building.building_gate = Some(BuildingGateRuntime {
             hold_timer: MissionTimer::armed(
                 hold[0].as_i64().unwrap() as u32,
                 hold[1].as_i64().unwrap() as u32,
@@ -515,7 +520,7 @@ mod tests {
             native["door"],
             "{context}: Door timer"
         );
-        let hold = entity.building_gate.unwrap().hold_timer;
+        let hold = entity.building.building_gate.unwrap().hold_timer;
         // Native+610 is a separate nominal value, but every Gate writer
         // seeds it identically with60C and no retained read mutates either.
         assert_eq!(
@@ -678,11 +683,14 @@ mod tests {
                 entity.door_timer_fields(),
                 "{name}: Door clock"
             );
-            assert_eq!(restored.building_gate, entity.building_gate, "{name}: hold");
-            let initial_hold = entity.building_gate;
+            assert_eq!(
+                restored.building.building_gate, entity.building.building_gate,
+                "{name}: hold"
+            );
+            let initial_hold = entity.building.building_gate;
             let serialized = serde_json::to_value(entity).unwrap();
             assert_eq!(
-                serialized["building_gate"]
+                serialized["building"]["building_gate"]
                     .as_object()
                     .unwrap()
                     .keys()
@@ -697,13 +705,19 @@ mod tests {
                 .entities
                 .get_mut(GATE)
                 .unwrap()
+                .building
                 .building_gate
                 .as_mut()
                 .unwrap()
                 .hold_timer;
             timer.set_start_frame_for_test(timer.start_frame().wrapping_add(1));
             assert_ne!(sim.state_hash(), hash, "{name}: hold anchor in world hash");
-            sim.substrate.entities.get_mut(GATE).unwrap().building_gate = initial_hold;
+            sim.substrate
+                .entities
+                .get_mut(GATE)
+                .unwrap()
+                .building
+                .building_gate = initial_hold;
             assert_eq!(sim.state_hash(), hash, "{name}: restored hold");
             let frame = sim.session.binary_frame();
             sim.substrate
@@ -734,7 +748,7 @@ mod tests {
             10,
             EntityCategory::Structure,
         );
-        gate.building_gate = Some(BuildingGateRuntime::default());
+        gate.building.building_gate = Some(BuildingGateRuntime::default());
         sim.substrate.entities.insert(gate);
         sim.interner = test_interner();
         sim.substrate.occupancy.add(

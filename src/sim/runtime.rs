@@ -57,8 +57,9 @@ impl SimResources {
 #[derive(Clone)]
 pub struct SimRuntime {
     pub simulation: Simulation,
-    /// Shared with the presentation frame copies of this runtime
-    /// (docs/sim-thread.md); writes go through [`Self::resources_mut`].
+    /// Immutable once a match is loaded: the presentation copy of the world
+    /// holds them too (docs/sim-thread.md); writes go through
+    /// [`Self::resources_mut`].
     pub resources: std::sync::Arc<SimResources>,
 }
 
@@ -69,8 +70,8 @@ const _: () = {
 };
 
 impl SimRuntime {
-    /// The bound resources for a write. Only a published presentation frame
-    /// shares them, and the host drops its frame before any such write.
+    /// The bound resources for a write. Only the presentation copy of the
+    /// world holds them too, and the host drops it before any such write.
     pub fn resources_mut(&mut self) -> &mut SimResources {
         std::sync::Arc::get_mut(&mut self.resources)
             .expect("resources are shared only with a presentation frame the host drops first")
@@ -82,6 +83,21 @@ impl SimRuntime {
         Self {
             simulation,
             resources: std::sync::Arc::new(SimResources::empty()),
+        }
+    }
+
+    /// The world without its objects, for drawing while this runtime ticks
+    /// elsewhere ([`Simulation::presentation_copy`], `reuse` the last one).
+    /// It holds the same immutable resources: the rules and the terrain
+    /// template, which nothing writes once a match is loaded.
+    pub fn presentation_copy(
+        &mut self,
+        viewer: Option<crate::sim::intern::InternedId>,
+        reuse: Option<Simulation>,
+    ) -> SimRuntime {
+        SimRuntime {
+            simulation: self.simulation.presentation_copy(viewer, reuse),
+            resources: self.resources.clone(),
         }
     }
 

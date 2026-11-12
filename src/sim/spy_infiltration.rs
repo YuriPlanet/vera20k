@@ -401,6 +401,7 @@ impl Simulation {
                 && let Some(building) = self.substrate.entities.get_mut(building_id)
             {
                 building
+                    .building
                     .pending_c4_detonation
                     .arm_sabotage(frame as i32, delay);
             }

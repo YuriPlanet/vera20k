@@ -1,6 +1,7 @@
 //! A building's sale as `BuildingClass::DrawIt @ 0x0043D290` draws it, read
 //! through a retail GAWEAP's production sale.
 use super::*;
+use crate::app::presentation::frame::ObjectRecord;
 use crate::app::presentation::render::draw_plan_lowering::{NativeDisplayOrder, ObjectTexture};
 use crate::sim::building_construction::BuildingUp;
 use crate::sim::command::{Command, CommandEnvelope};
@@ -33,8 +34,8 @@ fn a_sale_hides_slot_anims_in_its_build_down_and_drops_the_zshape_move() {
             (
                 building.building_down(),
                 building.in_construction_bstate(),
-                slot_anims_hidden_by_sale(building),
-                building_zshape_point_move(building, art),
+                slot_anims_hidden_by_sale(&ObjectRecord::of_test_sim(sim, rules, factory)),
+                building_zshape_point_move(&ObjectRecord::of_test_sim(sim, rules, factory), art),
             )
         })
     };
@@ -200,8 +201,10 @@ fn gate_piece(
     use std::cell::RefCell;
     let lighting = CellLightGrid::new();
     let voxel_images = RefCell::new(VoxelImageCache::default());
+    let presented = crate::app::presentation::frame::PresentationFrame::capture(runtime);
     let input = ShpInputs {
         runtime,
+        frame: &presented,
         atlas: Some(atlas),
         overlay_atlas: None,
         unit_atlas: None,

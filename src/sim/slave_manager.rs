@@ -1246,7 +1246,7 @@ impl Simulation {
         };
         let search = DeployCellSearch::new(owner_cell(owner), seed, foundation);
         let terrain = self.resolved_terrain.as_ref()?;
-        let zone = self.zone_grid.as_deref().and_then(|zones| {
+        let zone = self.zone_grid.as_ref().and_then(|zones| {
             zones.get_zone_id_native(
                 terrain,
                 (search.zone_cell.0 as u16, search.zone_cell.1 as u16),

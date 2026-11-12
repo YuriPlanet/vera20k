@@ -1244,7 +1244,7 @@ fn restore_object_references(
                 reason: "charging intent belongs to a Foot",
             });
         }
-        if !entity.tesla_charge.is_default()
+        if !entity.building.tesla_charge.is_default()
             && entity.category() != crate::map::entities::EntityCategory::Structure
         {
             return Err(SnapshotRestoreError::InvalidTeslaChargingState {
@@ -1253,7 +1253,7 @@ fn restore_object_references(
             });
         }
         let mut seen_chargers = BTreeSet::new();
-        for &charger in entity.tesla_charge.chargers() {
+        for &charger in entity.building.tesla_charge.chargers() {
             require_resolved_reference(
                 entity_ids.contains(&charger),
                 "EntityStore",
@@ -1758,12 +1758,13 @@ fn restore_object_references(
     // A deliberate weak identity: C4 kill credit may outlive its attacker.
     for entity in sim.substrate.entities.values_mut() {
         if entity
+            .building
             .pending_c4_detonation
             .pending()
             .and_then(|pending| pending.source_entity_id())
             .is_some_and(|id| !entity_ids.contains(&id))
         {
-            entity.pending_c4_detonation.forget_source();
+            entity.building.pending_c4_detonation.forget_source();
         }
     }
 
@@ -2252,7 +2253,7 @@ impl Simulation {
             // MouseLoad restores Map+68/raw rows before LoadContent67E8CD's
             // hierarchy pass. A user file cannot invent that saved topology
             // from the Cell+4C values which CellLoad has just reset to zero.
-            let zones = self.zone_grid.as_deref().ok_or(
+            let zones = self.zone_grid.as_ref().ok_or(
                 SnapshotRestoreError::MissingMapAuthorityComponent {
                     component: "ZoneGrid",
                 },
@@ -2690,7 +2691,7 @@ mod tests {
             sim.add_entity_occupancy(stable_id);
             sim.substrate
                 .logic
-                .try_push(stable_id)
+                .try_push(stable_id, crate::sim::world::ObjectKind::Entity)
                 .expect("fixture LogicClass registration");
         }
 
@@ -3171,7 +3172,7 @@ mod tests {
         assert!(
             restored
                 .zone_grid
-                .as_deref()
+                .as_ref()
                 .unwrap()
                 .is_native_load_pending()
         );
@@ -3200,7 +3201,7 @@ mod tests {
         assert!(!path.is_walkable(2, 0));
         let normal_zones = restored
             .zone_grid
-            .as_deref()
+            .as_ref()
             .and_then(|zones| zones.map_for(MovementZone::Normal))
             .expect("canonical restored ground zones");
         assert_ne!(
@@ -3235,8 +3236,8 @@ mod tests {
             loaded_authority.len()
         );
         assert_zone_grids_equivalent(
-            sim.zone_grid.as_deref().unwrap(),
-            restored.zone_grid.as_deref().unwrap(),
+            sim.zone_grid.as_ref().unwrap(),
+            restored.zone_grid.as_ref().unwrap(),
         );
         assert_eq!(restored.state_hash(), authoritative_hash);
     }
@@ -4912,7 +4913,7 @@ mod tests {
             sim.substrate.entities.insert(entity);
             sim.substrate
                 .logic
-                .try_push(stable_id)
+                .try_push(stable_id, crate::sim::world::ObjectKind::Entity)
                 .expect("owner Logic registration");
         }
 
@@ -5187,7 +5188,10 @@ mod tests {
             .paused = true;
         let building = sim.substrate.entities.get_mut(id).unwrap();
         building.building_art.anim_effect_replay_mut_for_test()[16] = true;
-        building.building_last_operational.set_for_test(true);
+        building
+            .building
+            .building_last_operational
+            .set_for_test(true);
         building.building_art.set_stuff_enabled_for_test(false);
         building
             .building_art
@@ -5248,6 +5252,7 @@ mod tests {
                 .entities()
                 .get(id)
                 .unwrap()
+                .building
                 .building_last_operational
                 .is_operational()
         );
@@ -5457,6 +5462,7 @@ mod tests {
             .entities
             .get_mut(1)
             .expect("Tesla Coil")
+            .building
             .pending_building_fire
             .set_for_test(Some(shot));
         let with_latch = sim.state_hash();
@@ -5468,8 +5474,11 @@ mod tests {
             },
         );
         let supporter = sim.substrate.entities.get_mut(2).expect("second tower");
-        supporter.pending_building_fire.set_for_test(Some(beam));
-        supporter.prism_support_count.set_for_test(3);
+        supporter
+            .building
+            .pending_building_fire
+            .set_for_test(Some(beam));
+        supporter.building.prism_support_count.set_for_test(3);
         let with_beam = sim.state_hash();
         assert_ne!(with_beam, with_latch);
 
@@ -5479,14 +5488,32 @@ mod tests {
             .sim;
         let entities = &restored.substrate.entities;
         assert_eq!(
-            entities.get(1).unwrap().pending_building_fire.pending(),
+            entities
+                .get(1)
+                .unwrap()
+                .building
+                .pending_building_fire
+                .pending(),
             Some(shot)
         );
         assert_eq!(
-            entities.get(2).unwrap().pending_building_fire.pending(),
+            entities
+                .get(2)
+                .unwrap()
+                .building
+                .pending_building_fire
+                .pending(),
             Some(beam)
         );
-        assert_eq!(entities.get(2).unwrap().prism_support_count.count(), 3);
+        assert_eq!(
+            entities
+                .get(2)
+                .unwrap()
+                .building
+                .prism_support_count
+                .count(),
+            3
+        );
         assert_eq!(restored.state_hash(), with_beam);
     }
 
@@ -5905,7 +5932,7 @@ mod tests {
         sim.substrate.entities.insert(entity);
         sim.substrate
             .logic
-            .try_push(entity_id)
+            .try_push(entity_id, crate::sim::world::ObjectKind::Entity)
             .expect("active TubeMovement fixture enters LogicClass order");
         // Native in-scenario load restarts Scenario RNG from Seed0; isolate
         // TubeMovement persistence on that same post-load cursor.
@@ -6032,7 +6059,7 @@ mod tests {
                 &[3, 4],
             ),
         ));
-        aircraft.pending_c4_detonation.set_for_test(Some(
+        aircraft.building.pending_c4_detonation.set_for_test(Some(
             crate::sim::c4_plant::PendingC4Detonation::new(
                 crate::sim::timer::CdTimer::started(11, 35),
                 Some(3),
@@ -6249,7 +6276,7 @@ mod tests {
         assert!(entity.ai_sell_repair.was_attacked_by_enemy());
         assert_eq!(entity.damage_smoke_system_id.system(), Some(2));
         assert_eq!(
-            entity.pending_c4_detonation.pending(),
+            entity.building.pending_c4_detonation.pending(),
             Some(crate::sim::c4_plant::PendingC4Detonation::new(
                 crate::sim::timer::CdTimer::started(11, 35),
                 Some(3)
@@ -7049,7 +7076,7 @@ mod tests {
         let mut entity = GameEntity::test_default(entity_id, "MTNK", "AMERICANS", 5, 6);
         entity.set_owner_for_test(owner);
         entity.set_type_ref_for_test(type_ref);
-        entity.pending_c4_detonation.set_for_test(Some(
+        entity.building.pending_c4_detonation.set_for_test(Some(
             crate::sim::c4_plant::PendingC4Detonation::new(
                 crate::sim::timer::CdTimer::from_raw(-1, 0),
                 Some(999),
@@ -7116,6 +7143,7 @@ mod tests {
                 .entities
                 .get(entity_id)
                 .expect("entity")
+                .building
                 .pending_c4_detonation
                 .pending()
                 .and_then(|pending| pending.source_entity_id()),
@@ -7154,7 +7182,7 @@ mod tests {
         let mut sim = Simulation::new();
         let entity_id = sim.substrate.allocate_stable_id();
         let mut entity = GameEntity::test_default(entity_id, "MTNK", "AMERICANS", 5, 6);
-        entity.pending_c4_detonation.set_for_test(Some(
+        entity.building.pending_c4_detonation.set_for_test(Some(
             crate::sim::c4_plant::PendingC4Detonation::new(
                 crate::sim::timer::CdTimer::from_raw(-1, 0),
                 Some(999),
@@ -7187,6 +7215,7 @@ mod tests {
                 .entities
                 .get(entity_id)
                 .expect("entity")
+                .building
                 .pending_c4_detonation
                 .pending()
                 .and_then(|pending| pending.source_entity_id()),
@@ -7560,8 +7589,10 @@ mod tests {
         let target = sim.substrate.allocate_stable_id();
 
         let mut parent_entity = GameEntity::test_default(parent, "CARRIER", "AMERICANS", 1, 1);
-        parent_entity.pending_c4_detonation.set_for_test(Some(
-            crate::sim::c4_plant::PendingC4Detonation::new(
+        parent_entity
+            .building
+            .pending_c4_detonation
+            .set_for_test(Some(crate::sim::c4_plant::PendingC4Detonation::new(
                 crate::sim::timer::CdTimer::from_raw(-1, 0),
                 Some(9_999),
             ),
@@ -7730,6 +7761,7 @@ mod tests {
                     .entities
                     .get(ids.parent)
                     .unwrap()
+                    .building
                     .pending_c4_detonation
                     .pending()
                     .and_then(|pending| pending.source_entity_id()),
@@ -8090,8 +8122,8 @@ mod tests {
             loaded_authority.len()
         );
         assert_zone_grids_equivalent(
-            live.zone_grid.as_deref().unwrap(),
-            restored.zone_grid.as_deref().unwrap(),
+            live.zone_grid.as_ref().unwrap(),
+            restored.zone_grid.as_ref().unwrap(),
         );
         assert_eq!(
             restored.state_hash(),
@@ -8585,7 +8617,7 @@ mod tests {
         sim.substrate.entities.insert(off_cell_member);
         sim.substrate
             .logic
-            .try_push(1)
+            .try_push(1, crate::sim::world::ObjectKind::Entity)
             .expect("logic fixture append");
 
         let mut marked_non_member = GameEntity::test_default(2, "MTNK", "Americans", 6, 6);
@@ -8888,7 +8920,7 @@ mod tests {
         assert_ne!(
             restored
                 .zone_grid
-                .as_deref()
+                .as_ref()
                 .and_then(|zones| zones.map_for(MovementZone::Normal))
                 .expect("normal zone map")
                 .zone_at(destroyed_cell.0, destroyed_cell.1, MovementLayer::Ground),
@@ -8971,8 +9003,8 @@ mod tests {
         a.rebuild_zone_grid(&path_a);
         b.rebuild_zone_grid(&path_b);
         assert_zone_grids_equivalent(
-            a.zone_grid.as_deref().expect("zone grid rebuilt"),
-            b.zone_grid.as_deref().expect("zone grid rebuilt"),
+            a.zone_grid.as_ref().expect("zone grid rebuilt"),
+            b.zone_grid.as_ref().expect("zone grid rebuilt"),
         );
         assert_eq!(a.state_hash(), b.state_hash());
     }

@@ -29,6 +29,7 @@ fn render(
     build_display_effect_instances(
         &DisplayEffectInputs {
             sim,
+            frame: &crate::app::presentation::frame::PresentationFrame::of_test(sim, rules),
             rules,
             camera: [center.0 - 80., center.1 - 60.],
             render_size: [160, 120],

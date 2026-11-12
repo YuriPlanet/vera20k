@@ -376,6 +376,18 @@ pub(super) fn run(state: &mut AppState) {
 /// `WOL:MatchingServerUnavailable`. Both boxes end the runner with 0; only
 /// the first clears the away text (`0x0079FD66`).
 pub(super) fn lobbies_listed(state: &mut AppState, lobbies: &[WolChannel]) {
+    // VERA: Quick Match pairs players who agreed on nothing, so it plays the
+    // original game. With a mod in use the pre-match check would refuse any
+    // opponent without the same mod; say so here, and what to do, and end
+    // the runner.
+    if state.frontend.mods.active.is_some() {
+        lobby::quick_match_box(
+            state,
+            "VERA:QuickMatchNoMod",
+            lobby::QuickMatchBoxThen::Return,
+        );
+        return;
+    }
     let prefix = if quick_coop(state) {
         QUICK_COOP_PREFIX
     } else {
@@ -956,7 +968,10 @@ fn build_host_options(
         1,
         guest_seat,
         false,
-        PeerChoicePolicy::Wol { countries: None },
+        PeerChoicePolicy::Wol {
+            countries: None,
+            teams: None,
+        },
         crate::skirmish_launch::HOUSE_COLOR_COUNT,
     );
     draw_random_picks(&mut launch.humans, countries, pairing.seed)?;

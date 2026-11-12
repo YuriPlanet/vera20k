@@ -711,7 +711,6 @@ fn evaluate_resolved_building_placement(
         let Some(obj) = obj else {
             return Err(BuildingPlacementError::NotBuilding);
         };
-        let (width, height) = obj.foundation.dimensions();
         if obj.category != ObjectCategory::Building {
             return Err(BuildingPlacementError::NotBuilding);
         }
@@ -767,39 +766,11 @@ fn evaluate_resolved_building_placement(
                 BuildingPlacementError::BlockedTerrain
             });
         }
+        // The cursor's preview asks this on every pass while a building is
+        // armed, so a refusal here is ordinary play, not a fault to log.
         if in_build_area {
             Ok(())
         } else {
-            let providers: Vec<String> = sim
-                .substrate
-                .entities
-                .values()
-                .filter(|e| {
-                    e.category() == EntityCategory::Structure
-                        && sim.interner.resolve(e.owner()).eq_ignore_ascii_case(owner)
-                })
-                .map(|e| {
-                    let type_str = sim.interner.resolve(e.type_ref());
-                    let bn = rules.object(type_str).is_some_and(|o| o.base_normal);
-                    format!(
-                        "{}@({},{}) bn={}",
-                        type_str,
-                        e.position.rx(),
-                        e.position.ry(),
-                        bn
-                    )
-                })
-                .collect();
-            log::warn!(
-                "Placement rejected: ({},{}) {}x{} outside build area for {} adj={} providers=[{}]",
-                rx,
-                ry,
-                width,
-                height,
-                owner,
-                obj.adjacent,
-                providers.join(", "),
-            );
             Err(BuildingPlacementError::OutOfBuildArea)
         }
     })()

@@ -79,7 +79,7 @@ pub(super) fn emit(world: &mut Simulation, rules: &RuleSet, detonation: &Project
     let Some(parent_type_id) = parent_payload.projectile_type() else {
         return;
     };
-    let Some(parent_type) = rules.projectile(world.interner.resolve(parent_type_id)) else {
+    let Some(parent_type) = world.interner.projectile_type(parent_type_id, rules) else {
         return;
     };
     if !(parent_type.airburst || parent_type.splits()) {

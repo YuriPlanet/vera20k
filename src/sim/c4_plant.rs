@@ -342,7 +342,7 @@ impl Simulation {
                 frame,
             );
         if !refused {
-            if target.pending_c4_detonation.pending().is_some() {
+            if target.building.pending_c4_detonation.pending().is_some() {
                 self.assign_null_destination(id, rules, registry, effects);
                 Self::rearm_c4_planter(
                     &self.interner,
@@ -360,7 +360,10 @@ impl Simulation {
             let (flash, fuse) = (rules.c4_flash_frames(), rules.c4_delay_frames());
             self.substrate.flash_building(building, flash, frame);
             if let Some(target) = self.substrate.entities.get_mut(building) {
-                target.pending_c4_detonation.plant(frame as i32, fuse, id);
+                target
+                    .building
+                    .pending_c4_detonation
+                    .plant(frame as i32, fuse, id);
             }
         }
         if let Some(infantry) = self.substrate.entities.get_mut(id) {
@@ -421,11 +424,14 @@ impl Simulation {
                 infantry.navigation.stop_moving();
             }
             crate::sim::combat::world_fire::start_uncloaking_to_fire(self, rules, id);
-        } else if target.pending_c4_detonation.pending().is_none() {
+        } else if target.building.pending_c4_detonation.pending().is_none() {
             let fuse = rules.c4_delay_frames();
             self.substrate.flash_building(building, fuse / 2, frame);
             if let Some(target) = self.substrate.entities.get_mut(building) {
-                target.pending_c4_detonation.plant(frame as i32, fuse, id);
+                target
+                    .building
+                    .pending_c4_detonation
+                    .plant(frame as i32, fuse, id);
             }
             let context = UninitContext::new(rules, registry).with_effects(effects);
             self.dispatch_object_tag_event(building, 1, Some(id), None, context);

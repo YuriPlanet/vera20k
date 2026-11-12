@@ -1513,9 +1513,12 @@ impl BatchRenderer {
 
     /// Create a single-channel R8Uint atlas texture from byte data.
     ///
-    /// Used for voxel sprite atlases where each byte is a palette index
-    /// (post-VPL, pre-house-remap). Sampled in shader via `textureLoad` (no
-    /// filtering, integer coords).
+    /// Tests fill unit atlas pages with it: each byte is a palette index
+    /// (post-VPL, pre-house-remap), sampled in the shader via `textureLoad`
+    /// (no filtering, integer coords). The game's pages start blank
+    /// ([`Self::create_blank_unit_atlas_texture`]) and take each picture when
+    /// it is first drawn.
+    #[cfg(test)]
     pub(crate) fn create_unit_atlas_texture_on_device(
         &self,
         device: &wgpu::Device,

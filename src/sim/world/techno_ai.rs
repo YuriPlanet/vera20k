@@ -30,6 +30,7 @@ pub(crate) use foot_patrol::PatrolPost;
 mod mission_handlers;
 mod scan_batch;
 mod target_scan;
+pub(super) use target_scan::passive_block_acts;
 pub(crate) use mission_handlers::dispatch_foot_mission;
 pub(crate) use mission_handlers::enter_idle_mode;
 pub(crate) use mission_handlers::foot_enter_idle_mode_selection;
@@ -387,8 +388,9 @@ impl Simulation {
         #[cfg(feature = "ares")]
         if let Some(bullet) = self.projectiles.get(id)
             && let Some(anim) = bullet.awaited_anim().filter(|_| bullet.awaiting_anim())
-            && rules
-                .warhead(self.interner.resolve(bullet.payload().warhead))
+            && self
+                .interner
+                .warhead_type(bullet.payload().warhead, rules)
                 .and_then(|warhead| warhead.ares_rules())
                 .is_some_and(|ares| ares.combat().pre_impact_anim_moves())
             && let Some(at) = self.anim_absolute_coord(anim)
@@ -415,7 +417,7 @@ impl Simulation {
             .projectiles
             .get(id)
             .and_then(|projectile| projectile.payload().projectile_type())
-            .and_then(|type_id| rules.projectile(self.interner.resolve(type_id)));
+            .and_then(|type_id| self.interner.projectile_type(type_id, rules));
         let trailer = projectile_type.and_then(|kind| {
             self.projectiles
                 .trailer(&head, kind, self.session.binary_frame())
@@ -1121,6 +1123,7 @@ fn techno_ai_shell(
                 sim.clear_building_damage_fire_slots(id, rules);
                 let ready = sim.substrate.entities.get(id).is_some_and(|entity| {
                     entity
+                        .building
                         .pending_c4_detonation
                         .pending()
                         .is_none_or(|pending| {
@@ -2003,7 +2006,12 @@ fn iron_tint_step(
     id: u64,
 ) {
     let frame = session.binary_frame() as i32;
-    let airstrike_active = substrate.airstrike_tint_active(id);
+    // UpdateAirstrikeTint70E920 admits only a building, and another class's
+    // stage never leaves 0 (`AirstrikeTintState::update_tint`), so the step
+    // passes it by the category column without reading its record
+    // (VERA-only; the same results).
+    let building = substrate.entities.category_of(id) == Some(EntityCategory::Structure);
+    let airstrike_active = building && substrate.airstrike_tint_active(id);
     // A quiet unit's curtain is gone or spent (`world::quiet_units`).
     if !substrate.entities.is_quiet(id)
         && let Some(curtain) = substrate
@@ -2018,9 +2026,10 @@ fn iron_tint_step(
     {
         curtain.update_tint(frame, scenario_rng);
     }
-    if let Some(entity) = substrate
-        .entities
-        .get_mut_if(id, |entity| entity.airstrike_tint.updates(airstrike_active))
+    if building
+        && let Some(entity) = substrate
+            .entities
+            .get_mut_if(id, |entity| entity.airstrike_tint.updates(airstrike_active))
     {
         entity
             .airstrike_tint
@@ -3313,6 +3322,29 @@ mod tests {
             .spawn_object("TEST", "Americans", 7, 5, 0, &rules)
             .unwrap();
         (sim, rules, first, second)
+    }
+
+    /// A tank's tint step reads no airstrike state: UpdateAirstrikeTint70E920
+    /// admits only a building, so the step passes the tank by its category
+    /// column. The quiet mark and the curtain gate take the other two lookups.
+    #[test]
+    fn a_tanks_tint_step_skips_the_airstrike_tint() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_battle_rules().map(|r| r.rules)
+        else {
+            return;
+        };
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+        let tank = sim
+            .spawn_object("MTNK", "Americans", 5, 5, 0, &rules)
+            .unwrap();
+        let before = sim.substrate.entities.lookups().0;
+        iron_tint_step(
+            &sim.session,
+            &mut sim.scenario_rng,
+            &mut sim.substrate,
+            tank,
+        );
+        assert_eq!(sim.substrate.entities.lookups().0 - before, 3);
     }
 
     #[test]
@@ -5649,7 +5681,10 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
     /// store, so a fixture entity has to be a scheduler member or the walk skips
     /// it and every assertion passes vacuously.
     fn register_in_logic(sim: &mut Simulation, id: u64) {
-        sim.substrate.logic.try_push(id).expect("logic slot");
+        sim.substrate
+            .logic
+            .try_push(id, ObjectKind::Entity)
+            .expect("logic slot");
         sim.substrate
             .entities
             .get_mut(id)

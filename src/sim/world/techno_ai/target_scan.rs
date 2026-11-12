@@ -330,6 +330,11 @@ pub(super) fn targeting_slot(
     if !entity.passive_scan.timer().due(now) {
         return TargetingSlot::Skip;
     }
+    targeting_slot_when_due(entity)
+}
+
+/// [`targeting_slot`] once the targeting timer has run out.
+fn targeting_slot_when_due(entity: &crate::sim::game_entity::GameEntity) -> TargetingSlot {
     if entity.mega_mission.is_attack_move() {
         return TargetingSlot::ArrivalHandler;
     }
@@ -341,6 +346,28 @@ pub(super) fn targeting_slot(
         return TargetingSlot::Skip;
     }
     TargetingSlot::PassiveAcquire
+}
+
+/// Whether the passive block acts for `id` when its targeting timer runs out:
+/// an attack-mover's arrival handler, or a scan [`passive_acquire_gate`]
+/// admits. On Guard and Area Guard every term reads `id`'s own state and
+/// type and its owner's control, so it holds while those stay as they are
+/// (`world::idle_sleep`).
+pub(in crate::sim::world) fn passive_block_acts(
+    sim: &Simulation,
+    id: u64,
+    rules: &RuleSet,
+) -> bool {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return false;
+    };
+    match targeting_slot_when_due(entity) {
+        TargetingSlot::Skip => false,
+        TargetingSlot::ArrivalHandler => true,
+        TargetingSlot::PassiveAcquire => {
+            passive_acquire_gate(sim, id, rules, entity.passive_acquire_mission())
+        }
+    }
 }
 
 /// `TechnoClass::Passive_Target_Acquire @ 0x00709480`: false unless
@@ -917,7 +944,7 @@ impl Simulation {
             self.resolved_terrain.as_ref(),
             self.playfield_bounds.is_some(),
             mask,
-            self.zone_grid.as_deref(),
+            self.zone_grid.as_ref(),
             crate::sim::combat::line_of_fire::LineOfFireInputs {
                 overlay_grid: self.overlay_grid.as_ref(),
                 overlay_registry,

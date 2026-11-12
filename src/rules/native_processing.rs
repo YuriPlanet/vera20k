@@ -245,11 +245,14 @@ impl RulesLayerStack {
         }
     }
 
-    /// Whether the installed game or its mod ships Ares's `ares.mix`, which
-    /// makes Ares play whatever these layers hold (`rules::ares_switch`).
+    /// Build the stack for a game whose install or mod ships Ares's
+    /// `ares.mix` (or not), which makes Ares play whatever these layers hold
+    /// (`rules::ares_switch`). Set once while the stack is built, before any
+    /// Process pass reads it.
     #[cfg(feature = "ares")]
-    pub fn set_ships_ares(&mut self, ships_ares: bool) {
+    pub fn with_ares_mix(mut self, ships_ares: bool) -> Self {
         self.ships_ares = ships_ares;
+        self
     }
 
     pub fn push(&mut self, kind: RulesLayerKind, ini: IniFile) {

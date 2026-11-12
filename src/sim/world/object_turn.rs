@@ -138,9 +138,8 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: super::FrameEffects<'_>,
     ) -> Result<bool, String> {
-        use crate::map::cell_index::NativeCellIdentity;
         use crate::sim::mission::MissionType;
-        use crate::sim::movement::{ScatterFlags, locomotor::MovementLayer};
+        use crate::sim::movement::ScatterFlags;
 
         let Some(infantry) = self.substrate.entities.get(stable_id) else {
             return Ok(false);
@@ -158,18 +157,8 @@ impl Simulation {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return Ok(false);
         };
-        // The caller reads physical Object+9C, not virtual+4C navigation/bridge XY.
         let coord = movement::ground_pose::position_world_coord(&infantry.position);
-        let cell = terrain.native_cell_identity(((coord.x / 256) as i16, (coord.y / 256) as i16));
-        let NativeCellIdentity::Real(index) = cell else {
-            return Ok(false);
-        };
-        let c = &terrain.cells()[index];
-        let Some(building_id) =
-            self.substrate
-                .occupancy
-                .first_building_on_layer(c.rx, c.ry, MovementLayer::Ground)
-        else {
+        let Some(building_id) = self.ground_building_in_cell(infantry) else {
             return Ok(false);
         };
         let Some(building) = self.substrate.entities.get(building_id) else {
@@ -232,6 +221,28 @@ impl Simulation {
             registry,
             effects,
         )
+    }
+
+    /// The first ground Building in the cell under `infantry`'s physical
+    /// location (Object+9C, not the virtual+4C navigation or bridge XY), which
+    /// [`Self::scatter_idle_infantry_from_building`] scatters it out of. A
+    /// sleeping infantryman is woken by one (`world::idle_sleep`).
+    pub(super) fn ground_building_in_cell(
+        &self,
+        infantry: &crate::sim::game_entity::GameEntity,
+    ) -> Option<u64> {
+        use crate::map::cell_index::NativeCellIdentity;
+        use crate::sim::movement::locomotor::MovementLayer;
+        let terrain = self.resolved_terrain.as_ref()?;
+        let coord = movement::ground_pose::position_world_coord(&infantry.position);
+        let cell = terrain.native_cell_identity(((coord.x / 256) as i16, (coord.y / 256) as i16));
+        let NativeCellIdentity::Real(index) = cell else {
+            return None;
+        };
+        let c = &terrain.cells()[index];
+        self.substrate
+            .occupancy
+            .first_building_on_layer(c.rx, c.ry, MovementLayer::Ground)
     }
 
     /// FootClass::AI's one call of the active locomotor's Process
@@ -900,6 +911,11 @@ impl Simulation {
         // Its garrisonable civilian buildings walk the Houses for the
         // Civilian-side one once between them (`CivilianSideHouse`).
         self.civilian_house_memo.begin();
+        // A projectile's or warhead's name is first interned when something
+        // fires it; bind the names interned since last frame, so a bullet's
+        // visits and hits find its types through handles (VERA-only, answers
+        // unchanged).
+        self.interner.cover_types(rules);
         let walked = self.try_for_each_live_object::<super::FrameAdvanceError>(|sim, stable_id| {
             #[cfg(feature = "debug-tools")]
             let debug_before = sim

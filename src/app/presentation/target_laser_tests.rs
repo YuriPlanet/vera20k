@@ -4,6 +4,7 @@
 //! (`0x0073D415..0x0073D43A`) draws the laser while it runs.
 
 use super::*;
+use crate::app::presentation::frame::PresentationFrame;
 use crate::render::surface_line::{SurfaceDraw, SurfaceLineViewport};
 use crate::sim::command::Command;
 
@@ -77,7 +78,9 @@ fn first_shot(
         if entity.last_fire_frame.frame() >= 0 {
             return entity.last_fire_frame.frame() as u32;
         }
-        assert!(target_laser_draws(entity, sim, rules, || Some(&palette), view()).is_empty());
+        let frame = PresentationFrame::of_test(sim, rules);
+        let record = frame.object(firer).unwrap();
+        assert!(target_laser_draws(record, sim, rules, || Some(&palette), view()).is_empty());
     }
     panic!("{shooter}'s {firer} never fired");
 }
@@ -100,11 +103,13 @@ fn the_players_apocalypse_marks_its_target_for_fourteen_frames() {
     let shot = first_shot(&mut sim, rules, "Americans", apoc, rhino);
     let palette = palette();
     let entity = sim.entities().get(apoc).unwrap();
+    let presentation = PresentationFrame::of_test(&sim, rules);
+    let record = presentation.object(apoc).unwrap();
     // The first render after the shot reads the committed frame.
     assert_eq!(sim.session().binary_frame(), shot + 1);
-    let at = |frame| target_laser_draws_at(entity, &sim, rules, || Some(&palette), view(), frame);
+    let at = |frame| target_laser_draws_at(record, &sim, rules, || Some(&palette), view(), frame);
     assert_eq!(
-        target_laser_draws(entity, &sim, rules, || Some(&palette), view()),
+        target_laser_draws(record, &sim, rules, || Some(&palette), view()),
         at(shot + 1)
     );
 
@@ -148,9 +153,10 @@ fn the_players_apocalypse_marks_its_target_for_fourteen_frames() {
         .unwrap()
         .attack_target
         .set_for_test(None);
-    let entity = sim.entities().get(apoc).unwrap();
+    let presentation = PresentationFrame::of_test(&sim, rules);
+    let record = presentation.object(apoc).unwrap();
     assert!(
-        target_laser_draws_at(entity, &sim, rules, || Some(&palette), view(), shot + 1).is_empty(),
+        target_laser_draws_at(record, &sim, rules, || Some(&palette), view(), shot + 1).is_empty(),
         "6FF960 needs a Target"
     );
 }
@@ -169,8 +175,10 @@ fn neither_a_computer_apocalypse_nor_the_players_rhino_draws_a_laser() {
         first_shot(&mut sim, rules, shooter, firer, target);
         let entity = sim.entities().get(firer).unwrap();
         assert!(entity.attack_target.target().is_some());
+        let presentation = PresentationFrame::of_test(&sim, rules);
+        let record = presentation.object(firer).unwrap();
         assert!(
-            target_laser_draws(entity, &sim, rules, || Some(&palette), view()).is_empty(),
+            target_laser_draws(record, &sim, rules, || Some(&palette), view()).is_empty(),
             "{shooter}'s {kind}"
         );
     }

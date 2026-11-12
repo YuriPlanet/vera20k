@@ -129,6 +129,7 @@ impl Simulation {
                 .entities
                 .get_mut(id)
                 .unwrap()
+                .building
                 .tesla_charge
                 .overpowered = true;
         }
@@ -138,11 +139,17 @@ impl Simulation {
     /// chargers, then sample +661.
     fn sample_tesla_charge(substrate: &mut ObjectSubstrate, power_states: &PowerStates, id: u64) {
         let building = substrate.entities.get(id).unwrap();
-        let count = building.tesla_charge.chargers.len();
+        let count = building.building.tesla_charge.chargers.len();
         // Reverse stable removal is native's order; no temporary list or
         // unconditional mutable store access is needed for unchanged chargers.
         for index in (0..count).rev() {
-            let charger = substrate.entities.get(id).unwrap().tesla_charge.chargers[index];
+            let charger = substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .building
+                .tesla_charge
+                .chargers[index];
             if !substrate
                 .entities
                 .get(charger)
@@ -152,13 +159,14 @@ impl Simulation {
                     .entities
                     .get_mut(id)
                     .unwrap()
+                    .building
                     .tesla_charge
                     .chargers
                     .remove(index);
             }
         }
         let building = substrate.entities.get(id).unwrap();
-        let count = building.tesla_charge.chargers.len();
+        let count = building.building.tesla_charge.chargers.len();
         let overpowered = count >= 3
             || (count >= 1
                 && building.building_online()
@@ -169,11 +177,12 @@ impl Simulation {
                         X87::load_f64(NativeF64Bits::ONE),
                     ) == MaskedX87Ordering::Equal
                 }));
-        if building.tesla_charge.overpowered != overpowered {
+        if building.building.tesla_charge.overpowered != overpowered {
             substrate
                 .entities
                 .get_mut(id)
                 .unwrap()
+                .building
                 .tesla_charge
                 .overpowered = overpowered;
         }
@@ -290,6 +299,7 @@ impl crate::sim::world::ObjectSubstrate {
         self.entities
             .get_mut(target)
             .expect("the admitted building remains present")
+            .building
             .tesla_charge
             .refresh(source);
     }

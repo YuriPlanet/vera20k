@@ -290,21 +290,14 @@ impl Bomb {
     /// last stage's index. `None` where native divides by zero.
     #[cfg(feature = "ares")]
     fn ares_clock_frame(&self, frame: i32, frames: i32, delay: i32, rate: i32) -> Option<i32> {
-        if frames < 2 {
-            return Some(0);
-        }
-        if self.death_bomb {
-            return Some(frames - 1);
-        }
-        let elapsed = frame.wrapping_sub(self.start_frame);
-        let stages = frames / 2;
-        let last = stages - 1;
-        if rate < 1 {
-            return Some(elapsed.checked_div(delay / (stages * 2))?.min(last));
-        }
-        let stage = elapsed.checked_div(delay / stages)?.min(last);
-        let blink = frame.checked_rem(rate.wrapping_mul(2))? >= rate;
-        Some(stage.wrapping_mul(2) + i32::from(blink))
+        ares_clock_frame(
+            self.start_frame,
+            self.death_bomb,
+            frame,
+            frames,
+            delay,
+            rate,
+        )
     }
 
     /// `BombClass::GetClockFrame @ 0x00438A00`: the clock art's frame, the
@@ -672,7 +665,10 @@ impl Simulation {
             log::warn!("IvanBomb bullet without attached WeaponType.");
             return;
         };
-        let Some(warhead) = rules.warhead(self.interner.resolve(detonation.payload.warhead)) else {
+        let Some(warhead) = self
+            .interner
+            .warhead_type(detonation.payload.warhead, rules)
+        else {
             return;
         };
         if warhead.cell_spread_f64 < 0.5 {
@@ -741,30 +737,39 @@ impl Simulation {
     /// weapon's `IvanBomb.Delay`/`IvanBomb.FlickerRate` over the Rules ones.
     /// `None` without a bomb or where native divides by zero.
     pub fn bomb_clock_frame(&self, carrier: u64, rules: &RuleSet, frames: usize) -> Option<i32> {
-        let bomb = self.substrate.entities.get(carrier)?.bomb.as_ref()?;
         let frame = self.session.binary_frame() as i32;
-        let (delay, rate) = (
-            rules.combat_damage.ivan_timed_delay,
-            rules.combat_damage.ivan_icon_flicker_rate,
-        );
         #[cfg(feature = "ares")]
         {
-            let settings = bomb.ares_settings(&self.interner, rules);
-            // TechnoClass_DrawExtras reads the SHP header's frame count, a
-            // short.
-            let frames = i32::from(i16::try_from(frames).unwrap_or(i16::MAX));
-            bomb.ares_clock_frame(
-                frame,
-                frames,
-                settings.delay.unwrap_or(delay),
-                settings.flicker_rate.unwrap_or(rate),
-            )
+            self.bomb_clock(carrier, rules)?.frame(frame, frames)
         }
         #[cfg(not(feature = "ares"))]
         {
             let _ = frames;
-            bomb.clock_frame(frame, delay, rate)
+            let bomb = self.substrate.entities.get(carrier)?.bomb.as_ref()?;
+            bomb.clock_frame(
+                frame,
+                rules.combat_damage.ivan_timed_delay,
+                rules.combat_damage.ivan_icon_flicker_rate,
+            )
         }
+    }
+
+    /// The Ares clock of the carrier's bomb, with the planting weapon's
+    /// `IvanBomb.Delay`/`IvanBomb.FlickerRate` over the Rules ones.
+    #[cfg(feature = "ares")]
+    pub fn bomb_clock(&self, carrier: u64, rules: &RuleSet) -> Option<BombClock> {
+        let bomb = self.substrate.entities.get(carrier)?.bomb.as_ref()?;
+        let settings = bomb.ares_settings(&self.interner, rules);
+        Some(BombClock {
+            start_frame: bomb.start_frame,
+            death_bomb: bomb.death_bomb,
+            delay: settings
+                .delay
+                .unwrap_or(rules.combat_damage.ivan_timed_delay),
+            rate: settings
+                .flicker_rate
+                .unwrap_or(rules.combat_damage.ivan_icon_flicker_rate),
+        })
     }
 
     /// The carrier bomb's Ares `IvanBomb.Image` candidates, in pass order
@@ -1224,6 +1229,62 @@ impl BombBlast {
 #[cfg(test)]
 #[path = "bomb_tests.rs"]
 mod tests;
+
+/// [`Bomb::ares_clock_frame`] of a bomb started at `start_frame`.
+#[cfg(feature = "ares")]
+fn ares_clock_frame(
+    start_frame: i32,
+    death_bomb: bool,
+    frame: i32,
+    frames: i32,
+    delay: i32,
+    rate: i32,
+) -> Option<i32> {
+    if frames < 2 {
+        return Some(0);
+    }
+    if death_bomb {
+        return Some(frames - 1);
+    }
+    let elapsed = frame.wrapping_sub(start_frame);
+    let stages = frames / 2;
+    let last = stages - 1;
+    if rate < 1 {
+        return Some(elapsed.checked_div(delay / (stages * 2))?.min(last));
+    }
+    let stage = elapsed.checked_div(delay / stages)?.min(last);
+    let blink = frame.checked_rem(rate.wrapping_mul(2))? >= rate;
+    Some(stage.wrapping_mul(2) + i32::from(blink))
+}
+
+/// What the Ares clock frame of a carrier's bomb reads beside its art's frame
+/// count ([`Simulation::bomb_clock`]), for a draw that knows the count.
+#[cfg(feature = "ares")]
+#[derive(Clone, Copy, Debug)]
+pub struct BombClock {
+    start_frame: i32,
+    death_bomb: bool,
+    delay: i32,
+    rate: i32,
+}
+
+#[cfg(feature = "ares")]
+impl BombClock {
+    /// [`Simulation::bomb_clock_frame`] at `binary_frame` with `frames`.
+    pub fn frame(self, binary_frame: i32, frames: usize) -> Option<i32> {
+        // TechnoClass_DrawExtras reads the SHP header's frame count, a
+        // short.
+        let frames = i32::from(i16::try_from(frames).unwrap_or(i16::MAX));
+        ares_clock_frame(
+            self.start_frame,
+            self.death_bomb,
+            binary_frame,
+            frames,
+            self.delay,
+            self.rate,
+        )
+    }
+}
 
 #[cfg(test)]
 #[path = "bomb_detonate_tests.rs"]

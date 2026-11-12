@@ -641,6 +641,7 @@ pub(super) fn push_random_map_setup_modal_control_instances(
         (layout.advanced, RandomMapSetupControl::AdvancedToggle),
         (layout.export, RandomMapSetupControl::ExportMap),
         (layout.fair_starts, RandomMapSetupControl::FairStartsToggle),
+        (layout.preset, RandomMapSetupControl::PresetCycle),
     ]
     .into_iter()
     .filter(|(_, control)| {
@@ -649,6 +650,7 @@ pub(super) fn push_random_map_setup_modal_control_instances(
             RandomMapSetupControl::AdvancedToggle
                 | RandomMapSetupControl::ExportMap
                 | RandomMapSetupControl::FairStartsToggle
+                | RandomMapSetupControl::PresetCycle
         );
         steady && (!vera || modal.extended)
     }) {

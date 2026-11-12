@@ -1109,7 +1109,7 @@ impl Simulation {
     ) -> bool {
         use crate::sim::cell_rect::{CellPassabilityArgs, CellRef, check_cell_passability};
         let (Some(terrain), Some(zones)) =
-            (self.resolved_terrain.as_ref(), self.zone_grid.as_deref())
+            (self.resolved_terrain.as_ref(), self.zone_grid.as_ref())
         else {
             return false;
         };
@@ -1369,8 +1369,9 @@ impl Simulation {
         else {
             return;
         };
-        let sonic = rules
-            .warhead(self.interner.resolve(warhead))
+        let sonic = self
+            .interner
+            .warhead_type(warhead, rules)
             .is_some_and(|w| w.sonic);
         if sonic {
             self.parasite_exit_unit(eater, rules, effects);

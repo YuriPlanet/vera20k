@@ -359,7 +359,7 @@ fn native_controls_cover_heap_ties_head_admission_and_binary32_costs() {
                 row["name"]
             );
         }
-        sim.zone_grid.as_deref_mut().unwrap().set_hierarchy(graph);
+        sim.zone_grid.as_mut().unwrap().set_hierarchy(graph);
         let result = sim
             .estimate_zone_cost(
                 id,
@@ -425,7 +425,7 @@ fn physical_fv_candidate_and_fallback_costs_match_four_native_bridge_states() {
                 row["name"]
             );
         }
-        sim.zone_grid.as_deref_mut().unwrap().set_hierarchy(graph);
+        sim.zone_grid.as_mut().unwrap().set_hierarchy(graph);
         let actual = sim
             .estimate_zone_cost(
                 id,

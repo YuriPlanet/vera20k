@@ -39,21 +39,7 @@ pub(crate) fn apply_foot_radiation(
     if !radiation_enabled(world) {
         return None;
     }
-    // Phobos `UseGlobalRadApplicationDelay`: when false, each bound type's
-    // own `RadApplicationDelay` gates its sites below, so the shared gate is
-    // skipped entirely (native's `!UseGlobalRadApplicationDelay` arm).
-    #[cfg(feature = "phobos")]
-    let delay_admitted = !rules.radiation.use_global_rad_application_delay
-        || world
-            .session
-            .binary_frame()
-            .is_multiple_of(rules.radiation.application_delay as u32);
-    #[cfg(not(feature = "phobos"))]
-    let delay_admitted = world
-        .session
-        .binary_frame()
-        .is_multiple_of(rules.radiation.application_delay as u32);
-    if !delay_admitted {
+    if !radiation_delay_admits(world, rules) {
         return None;
     }
     let entity = world.substrate.entities.get(stable_id)?;
@@ -82,14 +68,7 @@ pub(crate) fn apply_foot_radiation(
     {
         return None;
     }
-    // GetCoords -> signed /256 -> packed CellStruct -> Map5657A0. Use the
-    // canonical cell identity, including stride aliases and dummy stamping.
-    let coord = object_get_coords(world, stable_id)?;
-    let cell = crate::sim::cell_rect::get_cellclass_fallback(
-        world.resolved_terrain.as_ref(),
-        coord.x / 256,
-        coord.y / 256,
-    );
+    let cell = foot_radiation_cell(world, stable_id)?;
     #[cfg(not(feature = "phobos"))]
     {
         let crate::sim::cell_rect::CellRef::Real(cell) = cell else {
@@ -98,9 +77,7 @@ pub(crate) fn apply_foot_radiation(
         // FootClass::AI @ 0x004DA5EB..0x004DA629 reads the retained
         // Cell487CB0 total once and makes one direct receiver call. Site
         // membership is irrelevant, including residual F0 after site deletion.
-        let level = world
-            .radiation
-            .damaging_level((cell.rx, cell.ry), rules.radiation.level_max);
+        let level = cell_radiation_level(world, rules, cell);
         if level <= 0 {
             return None;
         }
@@ -533,8 +510,8 @@ pub(crate) fn warhead_is_malicious(
     event: &EntityDamageEvent,
 ) -> bool {
     #[cfg(feature = "ares")]
-    if let Some(combat) = rules
-        .warhead(interner.resolve(event.warhead_ref))
+    if let Some(combat) = interner
+        .warhead_type(event.warhead_ref, rules)
         .and_then(WarheadType::ares_combat)
     {
         return combat.malicious();
@@ -1181,7 +1158,7 @@ pub(crate) fn commit_terrain(
 ) -> (DeathEffects, Vec<UnderAttackEvent>) {
     let mut effects = DeathEffects::default();
     let mut under_attack_events = Vec::new();
-    let Some(warhead) = rules.warhead(world.interner.resolve(event.warhead_ref)) else {
+    let Some(warhead) = world.interner.warhead_type(event.warhead_ref, rules) else {
         return (effects, under_attack_events);
     };
     let mut packet = event.damage;
@@ -1489,7 +1466,7 @@ pub(crate) fn commit_entities(
         // otherwise-immutable resolver is entered.
         #[cfg(feature = "phobos")]
         let shield_receipt = {
-            let warhead = rules.warhead(world.interner.resolve(event.warhead_ref));
+            let warhead = world.interner.warhead_type(event.warhead_ref, rules);
             let target = world.substrate.entities.get(target_id);
             match (target, warhead) {
                 (Some(target), Some(_)) => {
@@ -1512,8 +1489,9 @@ pub(crate) fn commit_entities(
         if shield_receipt
             .as_ref()
             .is_some_and(|receipt| receipt.shield_damage_positive)
-            && rules
-                .warhead(world.interner.resolve(event.warhead_ref))
+            && world
+                .interner
+                .warhead_type(event.warhead_ref, rules)
                 .is_some_and(|warhead| rules.decloak_damaged_targets_for(warhead))
         {
             // Phobos `ShieldClass::ReceiveDamage` (`ShieldClass.cpp:249..255`)
@@ -1546,8 +1524,9 @@ pub(crate) fn commit_entities(
         let receiver_ae_armor = {
             if !event.receiver_flags.ignore_defenses
                 && post_shield_input >= 0
-                && rules
-                    .warhead(world.interner.resolve(event.warhead_ref))
+                && world
+                    .interner
+                    .warhead_type(event.warhead_ref, rules)
                     .is_some()
             {
                 let source_house = event.source_house.or_else(|| {
@@ -1729,6 +1708,7 @@ pub(crate) fn commit_entities(
             // uncredited, while a later sourced lethal hit captures anew.
             target.kill_record.clear();
             target
+                .building
                 .pending_c4_detonation
                 .arm_post_mortem(current_frame, duration_frames);
             // PostMortem's restore (`0x00701F60`, `0x00701F67`).
@@ -1889,8 +1869,9 @@ pub(crate) fn commit_entities(
         // reaches `Uncloak(false)`, and a missing extension skips it.
         #[cfg(feature = "phobos")]
         let uncloak_after_damage = uncloak_after_damage
-            && rules
-                .warhead(world.interner.resolve(event.warhead_ref))
+            && world
+                .interner
+                .warhead_type(event.warhead_ref, rules)
                 .is_some_and(|warhead| rules.decloak_damaged_targets_for(warhead));
 
         // `0x0070281D`, in its native slot: after the `ToProtect` response
@@ -1975,8 +1956,9 @@ pub(crate) fn commit_entities(
             // warhead leaves the admitted object in place. The admission
             // before it only reads.
             #[cfg(feature = "ares")]
-            let prevent_scatter = rules
-                .warhead(world.interner.resolve(event.warhead_ref))
+            let prevent_scatter = world
+                .interner
+                .warhead_type(event.warhead_ref, rules)
                 .and_then(WarheadType::ares_combat)
                 .is_some_and(|combat| combat.prevent_scatter());
             #[cfg(not(feature = "ares"))]
@@ -2043,7 +2025,7 @@ pub(crate) fn commit_entities(
                         .entities
                         .get(target_id)
                         .is_some_and(|building| {
-                            !building.pending_c4_detonation.has_time_left(frame)
+                            !building.building.pending_c4_detonation.has_time_left(frame)
                         });
                 if callbacks_enabled(world) && !outlives {
                     world.apply_fatal_lifecycle_stage(
@@ -2463,7 +2445,7 @@ pub(crate) fn handle_death(
                 let killing_combat = damage_events
                     .iter()
                     .rfind(|event| event.target_id == dead_id)
-                    .and_then(|event| rules.warhead(world.interner.resolve(event.warhead_ref)))
+                    .and_then(|event| world.interner.warhead_type(event.warhead_ref, rules))
                     .and_then(WarheadType::ares_combat);
                 // Ares TechnoClass_ReceiveDamage_OverrideVoiceDie (1004ADA0,
                 // hook 0x702185) and _OverrideDieSound (1004AD60, hook
@@ -2769,7 +2751,7 @@ fn finish_concrete_death(
     let unit_lost_suppressed = damage_events
         .iter()
         .rfind(|event| event.target_id == dead_id)
-        .and_then(|event| rules.warhead(world.interner.resolve(event.warhead_ref)))
+        .and_then(|event| world.interner.warhead_type(event.warhead_ref, rules))
         .and_then(WarheadType::ares_combat)
         .is_some_and(|combat| combat.unit_lost_suppress());
     #[cfg(not(feature = "ares"))]
@@ -2794,8 +2776,9 @@ fn finish_concrete_death(
         .iter()
         .rfind(|event| event.target_id == dead_id)
         .and_then(|event| {
-            rules
-                .warhead(world.interner.resolve(event.warhead_ref))
+            world
+                .interner
+                .warhead_type(event.warhead_ref, rules)
                 .map(|wh| (wh, event.damage))
         });
     // The killing call's concrete receiver booleans: IgnoreDefenses (arg5)
@@ -3166,7 +3149,7 @@ fn finish_concrete_death(
             .substrate
             .entities
             .get(dead_id)
-            .is_some_and(|building| building.pending_c4_detonation.has_time_left(frame))
+            .is_some_and(|building| building.building.pending_c4_detonation.has_time_left(frame))
     {
         effects.immediate_uninit_ids.push(dead_id);
     }
@@ -3302,7 +3285,9 @@ fn run_special_detonation_arm(
         SpecialDetonationAction::Locomotor => {
             // 0x004694CB..0x00469700: the bullet's strength (+0x6C) and the
             // warhead's Locomotor= class (+0x15C).
-            let Some(warhead) = rules.warhead(world.interner.resolve(detonation.payload.warhead))
+            let Some(warhead) = world
+                .interner
+                .warhead_type(detonation.payload.warhead, rules)
             else {
                 return;
             };
@@ -3746,7 +3731,7 @@ fn ares_damage_occupants(
     let subject_to_trenches = current
         .payload
         .projectile_type()
-        .and_then(|id| rules.projectile(world.interner.resolve(id)))
+        .and_then(|id| world.interner.projectile_type(id, rules))
         .is_none_or(|projectile| projectile.bullet_type_ext.subject_to_trenches);
     if subject_to_trenches && world.scenario_rng.random_double() >= pass_through {
         return false;
@@ -4382,7 +4367,9 @@ pub(crate) fn commit_projectile_detonations_inline(
     for request in projectile_detonations {
         let current = world.projectiles.current_detonation(*request);
         let detonation = &current;
-        let Some(warhead) = rules.warhead(world.interner.resolve(detonation.payload.warhead))
+        let Some(warhead) = world
+            .interner
+            .warhead_type(detonation.payload.warhead, rules)
         else {
             log::warn!(
                 "Projectile {} dropped: missing serialized warhead {}",
@@ -4394,7 +4381,7 @@ pub(crate) fn commit_projectile_detonations_inline(
         let projectile_type = detonation
             .payload
             .projectile_type()
-            .and_then(|projectile| rules.projectile(world.interner.resolve(projectile)));
+            .and_then(|projectile| world.interner.projectile_type(projectile, rules));
         // A death weapon and a Phobos instant AttachEffect shot both skip the
         // BulletClass cluster loop and its draws.
         let single_detonation = matches!(
@@ -4500,7 +4487,7 @@ pub(crate) fn commit_projectile_detonations_inline(
             let inviso = live_tail
                 .payload
                 .projectile_type()
-                .and_then(|id| rules.projectile(world.interner.resolve(id)))
+                .and_then(|id| world.interner.projectile_type(id, rules))
                 .is_some_and(|kind| kind.inviso);
             emit_detonation_anim(
                 world,
@@ -4648,6 +4635,66 @@ pub(super) fn fog_enabled(_world: &Simulation) -> bool {
         return fixture.fog_enabled;
     }
     true
+}
+
+/// [`apply_foot_radiation`]'s shared application gate: the frame is a
+/// multiple of `[Radiation] RadApplicationDelay=`. Phobos
+/// `UseGlobalRadApplicationDelay`: when false, each bound type's own
+/// `RadApplicationDelay` gates its sites instead, so the shared gate is
+/// skipped entirely (native's `!UseGlobalRadApplicationDelay` arm).
+fn radiation_delay_admits(world: &Simulation, rules: &RuleSet) -> bool {
+    let shared = world
+        .session
+        .binary_frame()
+        .is_multiple_of(rules.radiation.application_delay as u32);
+    #[cfg(feature = "phobos")]
+    return !rules.radiation.use_global_rad_application_delay || shared;
+    #[cfg(not(feature = "phobos"))]
+    shared
+}
+
+/// The cell [`apply_foot_radiation`] reads (`0x004DA5EB`): GetCoords ->
+/// signed /256 -> packed CellStruct -> Map5657A0, through the canonical cell
+/// identity, including stride aliases and dummy stamping.
+fn foot_radiation_cell(
+    world: &Simulation,
+    stable_id: u64,
+) -> Option<crate::sim::cell_rect::CellRef<'_>> {
+    let coord = object_get_coords(world, stable_id)?;
+    Some(crate::sim::cell_rect::get_cellclass_fallback(
+        world.resolved_terrain.as_ref(),
+        coord.x / 256,
+        coord.y / 256,
+    ))
+}
+
+/// The retained Cell487CB0 total [`apply_foot_radiation`] reads once
+/// (`0x004DA5EB..0x004DA629`); site membership is irrelevant.
+#[cfg(not(feature = "phobos"))]
+fn cell_radiation_level(
+    world: &Simulation,
+    rules: &RuleSet,
+    cell: &crate::map::resolved_terrain::ResolvedTerrainCell,
+) -> i32 {
+    world
+        .radiation
+        .damaging_level((cell.rx, cell.ry), rules.radiation.level_max)
+}
+
+/// Whether [`apply_foot_radiation`] would find radiation at `stable_id` on
+/// this frame (without the Phobos capability): its application frame, and a
+/// positive level in its cell. A sleeping Foot is woken by it
+/// (`world::idle_sleep`); the immunity terms it leaves out only wake one
+/// that would have ignored it.
+#[cfg(not(feature = "phobos"))]
+pub(crate) fn radiation_reaches_foot(world: &Simulation, rules: &RuleSet, stable_id: u64) -> bool {
+    radiation_enabled(world)
+        && radiation_delay_admits(world, rules)
+        && matches!(
+            foot_radiation_cell(world, stable_id),
+            Some(crate::sim::cell_rect::CellRef::Real(cell))
+                if cell_radiation_level(world, rules, cell) > 0
+        )
 }
 
 #[inline]

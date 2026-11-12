@@ -1094,7 +1094,7 @@ fn unit_docking(
         let retained_zone = |foot: &crate::sim::game_entity::GameEntity| {
             let (x, y) = foot.navigation.neighbor_state().cell();
             sim.zone_grid
-                .as_deref()
+                .as_ref()
                 .zip(sim.resolved_terrain.as_ref())
                 .and_then(|(zones, terrain)| {
                     zones.get_zone_id_native(terrain, (x as u16, y as u16), movement_zone, false)
@@ -2534,7 +2534,7 @@ mod tests {
             5,
             false,
         );
-        ge.bunker_runtime = Some(BunkerRuntime::idle());
+        ge.building.bunker_runtime = Some(BunkerRuntime::idle());
         sim.substrate.entities.insert(ge);
     }
 
@@ -3033,6 +3033,7 @@ mod tests {
                 .entities
                 .get(2)
                 .unwrap()
+                .building
                 .bunker_runtime
                 .unwrap()
         };

@@ -8,9 +8,10 @@ const OWNER: &str = "Americans";
 
 fn frames(sim: &Simulation, rules: &RuleSet, transport: u64, hover: Option<u64>) -> Vec<usize> {
     let hash = sim.state_hash();
+    let frame = crate::app::presentation::frame::PresentationFrame::of_test(sim, rules);
     let result = super::ui_overlays::scale_pip_draws(
         sim,
-        sim.entities().get(transport).unwrap(),
+        frame.object(transport).unwrap(),
         hover,
         Some(OWNER),
         rules,
@@ -404,16 +405,12 @@ fn ares_passenger_pips_clip_an_overfull_hold_and_step_once_after_the_gunner() {
             },
             Some(&rules)
         ));
-        super::ui_overlays::scale_pip_draws(
-            &sim,
-            sim.entities().get(carrier).unwrap(),
-            None,
-            Some(OWNER),
-            &rules,
-        )
-        .into_iter()
-        .map(|pip| (pip.frame, pip.offset_pixels[0]))
-        .collect::<Vec<_>>()
+        let record =
+            crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &rules, carrier);
+        super::ui_overlays::scale_pip_draws(&sim, &record, None, Some(OWNER), &rules)
+            .into_iter()
+            .map(|pip| (pip.frame, pip.offset_pixels[0]))
+            .collect::<Vec<_>>()
     };
     assert_eq!(draws(""), [(5, 0), (3, 4), (3, 8)]);
     assert_eq!(draws("Gunner=yes\n"), [(5, 0), (3, 8), (3, 12)]);

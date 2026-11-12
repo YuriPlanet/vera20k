@@ -276,7 +276,7 @@ impl Simulation {
     ) {
         {
             let (Some(zones), Some(path), Some(terrain)) = (
-                self.zone_grid.as_deref_mut(),
+                self.zone_grid.as_mut(),
                 self.path_grid.as_deref(),
                 self.resolved_terrain.as_ref(),
             ) else {
@@ -775,7 +775,7 @@ impl Simulation {
         if projectile
             .payload()
             .projectile_type()
-            .and_then(|id| rules.projectile(self.interner.resolve(id)))
+            .and_then(|id| self.interner.projectile_type(id, rules))
             .is_some_and(|kind| kind.bullet_type_ext.ignores_firestorm)
         {
             return;
@@ -1153,7 +1153,7 @@ impl crate::sim::pathfinding::zone_incremental::ZoneBatchHost for FirestormZoneB
         let zones = self
             .sim
             .zone_grid
-            .as_deref_mut()
+            .as_mut()
             .ok_or("firestorm zone batch has no zones")?;
         let (base, hierarchy) = zones.base_and_hierarchy_mut();
         hierarchy.levels_mut()[0]
@@ -1179,7 +1179,7 @@ impl crate::sim::pathfinding::zone_incremental::ZoneBatchHost for FirestormZoneB
     ) -> Result<crate::sim::pathfinding::zone_map::ZoneId, String> {
         self.sim
             .zone_grid
-            .as_deref()
+            .as_ref()
             .and_then(|zones| zones.hierarchy_zone_at_native(0, (coord.0 as u16, coord.1 as u16)))
             .ok_or_else(|| "firestorm zone batch has no native fine-zone storage".into())
     }
@@ -1197,7 +1197,7 @@ impl crate::sim::pathfinding::zone_incremental::ZoneBatchHost for FirestormZoneB
             .map_or(&[][..], |bridges| bridges.endpoint_records());
         let zones = sim
             .zone_grid
-            .as_deref_mut()
+            .as_mut()
             .ok_or("firestorm zone batch has no zones")?;
         crate::sim::pathfinding::zone_incremental::repair_zone_hierarchy_around_cell(
             zones, coord, bounds, terrain, records,

@@ -148,7 +148,7 @@ pub(crate) struct SidebarSimInputs {
 }
 
 impl SidebarSimInputs {
-    fn derive(sim: &Simulation, rules: &RuleSet, owner: &str) -> Self {
+    pub(crate) fn derive(sim: &Simulation, rules: &RuleSet, owner: &str) -> Self {
         use crate::sim::production;
         let (power_produced, power_drained) =
             production::power_balance_for_owner(sim, rules, owner);
@@ -613,6 +613,7 @@ impl SidebarProjectionState {
         &self,
         view: &mut SidebarView,
         sim: &crate::sim::world::Simulation,
+        frame: &crate::app::presentation::frame::PresentationFrame,
         rules: &crate::rules::ruleset::RuleSet,
         owner: InternedId,
         armed_building: Option<InternedId>,
@@ -705,7 +706,8 @@ impl SidebarProjectionState {
                     request: pending
                         .iter()
                         .find_map(|(id, state)| (*id == type_id).then_some(*state)),
-                    draw: crate::sim::production::cameo_draw_state(sim, rules, owner, object),
+                    // `production::cameo_draw_state`, captured with the frame.
+                    draw: frame.scene.ui.cameo_draw_state(type_id),
                     strip_blocks: object.category
                         == crate::rules::object_type::ObjectCategory::Building
                         && busy[tab.tab_index()],
@@ -724,6 +726,7 @@ impl SidebarProjectionState {
     pub(crate) fn refresh_cameo_draw_state(
         &mut self,
         sim: &crate::sim::world::Simulation,
+        frame: &crate::app::presentation::frame::PresentationFrame,
         rules: &crate::rules::ruleset::RuleSet,
         owner: InternedId,
         armed_building: Option<InternedId>,
@@ -732,7 +735,7 @@ impl SidebarProjectionState {
             return;
         };
         self.view_basis = None;
-        self.apply_cameo_draw_state(&mut view, sim, rules, owner, armed_building);
+        self.apply_cameo_draw_state(&mut view, sim, frame, rules, owner, armed_building);
         self.current_view = Some(view);
         // Committed frames only; the world revision moves with them anyway.
         self.view_revision = self.view_revision.wrapping_add(1);
@@ -864,6 +867,7 @@ impl SidebarProjectionState {
     pub(crate) fn ready_building_tabs(
         &self,
         sim: &crate::sim::world::Simulation,
+        frame: &crate::app::presentation::frame::PresentationFrame,
         owner: InternedId,
     ) -> [bool; 2] {
         use crate::map::entities::EntityCategory;
@@ -883,7 +887,7 @@ impl SidebarProjectionState {
                 self.cameo_factory(sim, owner, type_id)
                     .and_then(|factory| factory.complete_object())
                     .and_then(|object| object.entity_id)
-                    .and_then(|id| sim.entities().get(id))
+                    .and_then(|id| frame.object(id))
                     .is_some_and(|object| object.category() == EntityCategory::Structure)
             })
         })

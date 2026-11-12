@@ -12,26 +12,35 @@
 //!   of its own comes due;
 //! - nothing has been handed it for writing since (`EntityStore` wakes it on
 //!   every mutable hand-out, settling the owed counters first);
-//! - nothing it reads outside itself has changed: its owner's power (the
-//!   note compared at each visit), its cell's hidden state (the Mark owners
-//!   wake every object) and the client's pending voice set.
+//! - nothing it reads outside itself has changed: the client's pending voice
+//!   set and its cell's hidden state (the Mark owners wake every object); a
+//!   building's owner's power (the note compared at each visit); a ground
+//!   building in an infantryman's cell, and radiation there on the frames it
+//!   applies (both read at each visit); and nothing it writes outside itself
+//!   has been undone: its team's leaving-map byte, which an infantryman sets
+//!   every visit (`Assign_Mission_Target`, the one writer that clears it,
+//!   wakes the members).
 //!
 //! The sleeper keeps its Logic slot, so the pass's cursor and its
 //! removal-closes-the-gap rule are unchanged, and the world work each turn
 //! ends with (the sound prefix, pending overlay Recalcs) still runs at its
 //! slot. The state hash and the save form read a sleeper as settled.
 //!
-//! This slice marks only plain buildings: no weapon, factory, super weapon,
-//! occupants or sound of their own, at full health, on Guard. Everything else
-//! stays awake. Builds with the Ares or Phobos capability mark nothing: their
-//! per-visit steps are not sorted yet. A campaign marks nothing either
-//! (`TechnoClass` vt+0x4A0's shroud prelude runs every visit there).
+//! It marks plain buildings (no weapon, factory, super weapon, occupants or
+//! sound of their own, at full health, on Guard) and standing infantry (on
+//! Guard or Area Guard, at full health, standing ready with no target,
+//! order or fear). Everything else stays awake. Builds with the Ares or
+//! Phobos capability mark nothing: their per-visit steps are not sorted yet.
+//! A campaign marks nothing either (`TechnoClass` vt+0x4A0's shroud prelude
+//! runs every visit there).
 //!
 //! [`Simulation::check_idle_sleep`] runs every turn the pass would skip and
-//! panics if it changed anything but the owed counters.
+//! panics if it changed anything but the owed counters: the object, the
+//! state hash, or the Scenario or Main stream.
 
 use super::{FrameEffects, Simulation};
 use crate::map::entities::EntityCategory;
+use crate::rules::object_type::ObjectType;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
@@ -62,7 +71,10 @@ pub(super) enum SleepVisit {
 /// A sleeper's state before a checked turn.
 pub(super) struct SleepCheck {
     expected: serde_json::Value,
+    /// The state hash's parts with the visit counted.
+    hash: [(&'static str, u64); 30],
     scenario_rng: u64,
+    main_rng: u64,
     logic_len: usize,
     entities: usize,
 }
@@ -94,8 +106,8 @@ impl Simulation {
     }
 
     /// Run every turn sleeping would skip and panic if it changed anything
-    /// but the owed counters, drew from the Scenario stream or changed the
-    /// Logic list.
+    /// but the owed counters: the object, the state hash's parts, the
+    /// Scenario or Main stream, or the Logic list.
     pub fn check_idle_sleep(&mut self, on: bool) {
         self.idle_sleep.check = on;
     }
@@ -127,11 +139,15 @@ impl Simulation {
         let frame = self.session.binary_frame();
         let sleeps_on = frame < wake_at
             && !self.unit_voice_visit_interest.contains(&id)
-            && self
-                .substrate
-                .entities
-                .owner_of(id)
-                .is_some_and(|owner| self.power_note(owner) == note);
+            && match self.substrate.entities.category_of(id) {
+                Some(EntityCategory::Structure) => self
+                    .substrate
+                    .entities
+                    .owner_of(id)
+                    .is_some_and(|owner| self.power_note(owner) == note),
+                Some(EntityCategory::Infantry) => !self.infantry_disturbed(id, rules),
+                _ => false,
+            };
         if !sleeps_on {
             self.substrate.entities.wake(id);
             return SleepVisit::Awake;
@@ -143,6 +159,11 @@ impl Simulation {
             self.substrate
                 .entities
                 .fit_to_sleep(id, frame.wrapping_sub(1));
+            // The state hash folds owed visits, so with this one counted it
+            // is the hash the turn must leave.
+            self.substrate.entities.owe_visit(id);
+            let hash = self.state_hash_owners();
+            self.substrate.entities.forget_owed(id);
             let expected = self
                 .substrate
                 .entities
@@ -152,7 +173,9 @@ impl Simulation {
             expected.settle_sleep(1);
             return SleepVisit::Check(Box::new(SleepCheck {
                 expected: serde_json::to_value(&expected).expect("an entity serializes"),
+                hash,
                 scenario_rng: self.scenario_rng.state(),
+                main_rng: self.main_rng.state(),
                 logic_len: self.substrate.logic.len(),
                 entities: self.substrate.entities.len(),
             }));
@@ -196,10 +219,22 @@ impl Simulation {
             "idle sleep: {name:?} {id} drew from the Scenario stream on frame {frame}"
         );
         assert_eq!(
+            self.main_rng.state(),
+            check.main_rng,
+            "idle sleep: {name:?} {id} drew from the Main stream on frame {frame}"
+        );
+        assert_eq!(
             (self.substrate.logic.len(), self.substrate.entities.len()),
             (check.logic_len, check.entities),
             "idle sleep: {name:?} {id} changed the object lists on frame {frame}"
         );
+        let hash = self.state_hash_owners();
+        let changed: Vec<&str> = hash
+            .iter()
+            .zip(&check.hash)
+            .filter(|(after, before)| after != before)
+            .map(|((owner, _), _)| *owner)
+            .collect();
         if after.as_ref() != Some(&check.expected) {
             let differing: Vec<String> = match (&after, &check.expected) {
                 (Some(serde_json::Value::Object(after)), serde_json::Value::Object(before)) => {
@@ -213,17 +248,24 @@ impl Simulation {
             };
             panic!("idle sleep: {name:?} {id} changed on frame {frame}: {differing:#?}");
         }
+        assert!(
+            changed.is_empty(),
+            "idle sleep: {name:?} {id} changed the state hash's {changed:?} on frame {frame}"
+        );
     }
 
     /// `id`'s full turn is over: mark it asleep if its next turns can change
     /// nothing until a timer of its own.
     pub(super) fn sleep_after_turn(&mut self, id: u64, rules: &RuleSet) {
-        if !self.idle_sleep.on
-            || self.substrate.entities.category_of(id) != Some(EntityCategory::Structure)
-        {
+        if !self.idle_sleep.on {
             return;
         }
-        let Some((wake_at, note)) = self.building_sleep(id, rules) else {
+        let sleep = match self.substrate.entities.category_of(id) {
+            Some(EntityCategory::Structure) => self.building_sleep(id, rules),
+            Some(EntityCategory::Infantry) => self.infantry_sleep(id, rules),
+            _ => return,
+        };
+        let Some((wake_at, note)) = sleep else {
             self.substrate.entities.unfit_to_sleep(id);
             return;
         };
@@ -321,8 +363,8 @@ impl Simulation {
             && !entity.temporal.is_warping_someone()
             && entity.bomb.is_none()
             && !entity.constructing_or_selling()
-            && entity.pending_c4_detonation.pending().is_none()
-            && entity.pending_building_fire.pending().is_none()
+            && entity.building.pending_c4_detonation.pending().is_none()
+            && entity.building.pending_building_fire.pending().is_none()
             && entity.capture_manager.is_none()
             && entity.spawn_manager.is_none()
             && entity.slave_manager.is_none()
@@ -331,10 +373,10 @@ impl Simulation {
             && entity.passenger_role.occupants().is_empty()
             && !entity.berserk.is_active()
             && !entity.deactivated.is_offline()
-            && entity.tesla_charge.chargers().is_empty()
+            && entity.building.tesla_charge.chargers().is_empty()
             && entity.drain.draining_me().is_none()
             && entity.drain.target().is_none()
-            && !entity.repairing.is_on()
+            && !entity.building.repairing.is_on()
             && entity.parasite.eater().is_none()
             && entity.pending_entry().is_none()
             && !self.object_custom_sounds.contains_key(&id)
@@ -346,7 +388,7 @@ impl Simulation {
                 &self.interner,
             )
             && self.building_operational_state(id, rules)
-                == Some(entity.building_last_operational.is_operational());
+                == Some(entity.building.building_last_operational.is_operational());
         if !idle {
             return None;
         }
@@ -359,4 +401,134 @@ impl Simulation {
         // The turn at `now` has run; sleeping starts with the next frame.
         (wake_at > now.saturating_add(1)).then_some((wake_at, self.power_note(entity.owner())))
     }
+
+    /// Something outside sleeping infantryman `id` that its next turn would
+    /// act on: a ground building in its cell, which InfantryClass::AI
+    /// scatters it out of (`0x0051BCB2..0x0051BDCF`), or radiation there on a
+    /// frame FootClass::AI applies it (`0x004DA554..0x004DA629`).
+    fn infantry_disturbed(&self, id: u64, rules: &RuleSet) -> bool {
+        // With the Phobos capability nothing sleeps.
+        #[cfg(feature = "phobos")]
+        let radiation = {
+            let _ = rules;
+            true
+        };
+        #[cfg(not(feature = "phobos"))]
+        let radiation = crate::sim::combat::world_receiver::radiation_reaches_foot(self, rules, id);
+        radiation
+            || self
+                .substrate
+                .entities
+                .get(id)
+                .is_none_or(|entity| self.ground_building_in_cell(entity).is_some())
+    }
+
+    /// The frame standing infantryman `id` may sleep until, or `None` to
+    /// stay awake. The note is unused: what it reads outside itself is
+    /// checked at each visit ([`Self::infantry_disturbed`]).
+    fn infantry_sleep(&self, id: u64, rules: &RuleSet) -> Option<(u32, u8)> {
+        use crate::sim::movement::infantry_action::{DO_GUARD, DO_READY};
+        if cfg!(any(feature = "ares", feature = "phobos")) || !self.session.game_mode_nonzero() {
+            return None;
+        }
+        let entity = self.substrate.entities.get(id)?;
+        let object = self.interner.object_type(entity.type_ref(), rules)?;
+        let now = self.session.binary_frame();
+        let infantry = entity.infantry.as_ref()?;
+        let leaf = entity.mission_leaf.as_infantry()?;
+        let health = entity.health.current();
+        let idle = infantry_rests(entity, object)
+            && matches!(
+                entity.mission.current().known(),
+                Some(MissionType::Guard | MissionType::AreaGuard)
+            )
+            && entity.mission.queued() == MissionId::NONE
+            && entity.estimated_health
+                == crate::sim::estimated_health::EstimatedHealth::from_raw(health)
+            // Standing ready, not lying down, firing, fidgeting or afraid
+            // (InfantryClass::AI's fear and sequencer, `0x0051BF0B`,
+            // `0x0051BF6A`).
+            && matches!(leaf.doing(), DO_READY | DO_GUARD)
+            && leaf.firing_sequence_latch() == 0
+            && infantry.fear_level() == 0
+            && !infantry.is_prone()
+            && !infantry.is_psycho()
+            && entity.slave.owner().is_none()
+            && !entity.mega_mission.is_attack_move()
+            && !crate::sim::movement::motion_query::is_moving_now(
+                entity,
+                crate::sim::movement::SpeedRules::new(rules, &self.interner, &self.houses),
+                now,
+            )
+            && entity.ion_blast_lift_pixels() == 0
+            && entity.flashing.frames() == 0
+            && entity.emp_remaining() == 0
+            && !entity.ai_frozen()
+            && !entity.temporal.is_warping_someone()
+            && !entity.berserk.is_active()
+            && !entity.deactivated.is_offline()
+            && entity.airstrike_link().is_none()
+            && entity.invulnerability.is_none()
+            && !self.object_custom_sounds.contains_key(&id)
+            && self.ground_building_in_cell(entity).is_none();
+        if !idle {
+            return None;
+        }
+        // `MissionClass::AI @ 0x005B3060`'s dispatch timer: the Guard and
+        // Area Guard handlers run when it is out, the idle fidget
+        // (`InfantryClass::UpdateIdleAction @ 0x0051CDB0`) inside them.
+        let mut frames =
+            u32::try_from(entity.mission.dispatch_timer().remaining_if_pending(now)?).ok()?;
+        // The passive block of `TechnoClass::AI_Update` (`0x006FA65A`) scans
+        // when its targeting timer runs out, if it would act at all.
+        if super::techno_ai::passive_block_acts(self, id, rules) {
+            let timer = entity.passive_scan.timer();
+            if timer.due(now) {
+                return None;
+            }
+            frames = frames.min(timer.remaining(now));
+        }
+        // FootClass::AI's idle Scatter (`0x004DADF5`) on frames with the low
+        // six bits set, and radiation on its application frames, read the
+        // terrain and the cell: the first runs, the second is read at each
+        // visit ([`Self::infantry_disturbed`]).
+        let scatter = (now | 0x3F).wrapping_add(if now & 0x3F == 0x3F { 64 } else { 0 });
+        let wake_at = now.checked_add(frames.min(SLEEP_CAP_FRAMES))?.min(scatter);
+        // The turn at `now` has run; sleeping starts with the next frame.
+        (wake_at > now.saturating_add(1)).then_some((wake_at, 0))
+    }
+}
+
+/// What a sleeping infantryman's turn finds off in its own state and type,
+/// as [`super::quiet_units::rests`] does for a Unit: no target or order, no
+/// idle frames, at Strength, nothing attached, no clock running.
+fn infantry_rests(entity: &crate::sim::game_entity::GameEntity, object: &ObjectType) -> bool {
+    object.idle_rate == 0
+        && entity.attack_target.target().is_none()
+        && entity.navigation.nav_com().is_none()
+        && !entity.navigation.destination_setter_owed()
+        && entity.health.current() == object.strength
+        && !entity.move_sound.is_active()
+        && entity.lifecycle.object_alive()
+        && !entity.lifecycle.in_limbo()
+        && !entity.death.is_dying()
+        && !entity.is_warped_out()
+        && !entity.is_warping_in()
+        // The tube tests return before the AI counter.
+        && entity.low_bridge_tube_state.is_none()
+        && entity.drain.is_idle()
+        && !entity.veterancy.rank_changed()
+        && !crate::sim::rocking::updates(entity)
+        && entity.behind_anim().is_none()
+        && !entity.is_falling_down()
+        && !entity.falling_edge_pending()
+        && entity.bomb.is_none()
+        && entity.slave_manager.is_none()
+        && entity.capture_manager.is_none()
+        && entity.spawn_manager.is_none()
+        && entity.cloak.is_none()
+        && entity.native_stage().rests()
+        && entity.mission_leaf.foot_idle_entry_latch() == 0
+        && entity.pending_entry().is_none()
+        && entity.parasite.eater().is_none()
 }

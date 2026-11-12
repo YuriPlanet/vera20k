@@ -95,11 +95,11 @@ pub struct OverlayGrid {
     width: u16,
     height: u16,
     /// Shared copy-on-write in chunks with the presentation frame.
-    cells: crate::util::shared::ChunkedVec<OverlayCell>,
+    cells: crate::util::synced::ChunkedVec<OverlayCell>,
     /// Retained wall and Foot contribution to CellClass+0x122, one byte per
     /// cell. It is the sole wall authority, even when all zero: final wall
     /// identities are never scanned as a substitute.
-    retained_neighbor_counts: crate::util::shared::ChunkedVec<u8>,
+    retained_neighbor_counts: crate::util::synced::ChunkedVec<u8>,
     #[serde(skip, default)]
     foot_neighbor_changes: crate::sim::cell_neighbors::NeighborCountChanges,
     /// Cells mutated this tick — drained by Simulation's end-of-frame finalizer
@@ -150,8 +150,8 @@ impl OverlayGrid {
         Self {
             width,
             height,
-            cells: crate::util::shared::ChunkedVec::filled(OverlayCell::default(), count),
-            retained_neighbor_counts: crate::util::shared::ChunkedVec::filled(0u8, count),
+            cells: crate::util::synced::ChunkedVec::filled(OverlayCell::default(), count),
+            retained_neighbor_counts: crate::util::synced::ChunkedVec::filled(0u8, count),
             foot_neighbor_changes: Default::default(),
             dirty_cells: Vec::new(),
             #[cfg(test)]
@@ -320,7 +320,7 @@ impl OverlayGrid {
 
     /// Read cell at (rx, ry). Returns default (no overlay) for out-of-bounds.
     /// Every cell in row-major order (`ry * width + rx`).
-    pub(crate) fn cells(&self) -> &crate::util::shared::ChunkedVec<OverlayCell> {
+    pub(crate) fn cells(&self) -> &crate::util::synced::ChunkedVec<OverlayCell> {
         &self.cells
     }
 
@@ -392,7 +392,7 @@ impl OverlayGrid {
 
     /// Read the retained wall and Foot contribution plane. All-zero is
     /// authoritative and must not fall back to a final-identity scan.
-    pub(crate) fn retained_neighbor_counts(&self) -> &crate::util::shared::ChunkedVec<u8> {
+    pub(crate) fn retained_neighbor_counts(&self) -> &crate::util::synced::ChunkedVec<u8> {
         &self.retained_neighbor_counts
     }
 
@@ -2127,6 +2127,44 @@ pub(crate) fn test_wall_overlays(
         recalc_overlay_passability(&mut overlays, terrain, &registry, x, y);
     }
     overlays
+}
+
+impl OverlayGrid {
+    /// Bring `mirror`, the presentation copy of the world's grid, up to
+    /// this one (docs/sim-thread.md): the chunks written since the last
+    /// sync, and the small fields whole.
+    pub(crate) fn sync_into(&mut self, mirror: &mut Self) {
+        let Self {
+            width,
+            height,
+            cells,
+            retained_neighbor_counts,
+            foot_neighbor_changes,
+            dirty_cells,
+            #[cfg(test)]
+            mutation_epoch,
+            wall_plane_epoch,
+            removed_render_cells,
+            synchronous_navigation_cells,
+        } = self;
+        mirror.width = *width;
+        mirror.height = *height;
+        cells.sync_into(&mut mirror.cells);
+        retained_neighbor_counts.sync_into(&mut mirror.retained_neighbor_counts);
+        mirror
+            .foot_neighbor_changes
+            .clone_from(foot_neighbor_changes);
+        mirror.dirty_cells.clone_from(dirty_cells);
+        #[cfg(test)]
+        {
+            mirror.mutation_epoch = *mutation_epoch;
+        }
+        mirror.wall_plane_epoch = *wall_plane_epoch;
+        mirror.removed_render_cells.clone_from(removed_render_cells);
+        mirror
+            .synchronous_navigation_cells
+            .clone_from(synchronous_navigation_cells);
+    }
 }
 
 #[cfg(test)]

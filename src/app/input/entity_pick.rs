@@ -149,7 +149,12 @@ impl PickSource for PresentedWorld<'_> {
     }
     fn conceals(&self, entity: &crate::sim::game_entity::GameEntity) -> bool {
         self.translucent_viewer.is_some_and(|viewer| {
-            crate::app::presentation::instances::translucent_fog_conceals(self.sim, viewer, entity)
+            crate::app::presentation::instances::translucent_fog_conceals(
+                self.sim,
+                viewer,
+                &entity.position,
+                entity.owner(),
+            )
         })
     }
     fn owner_is_human_player(&self, owner: InternedId) -> Option<bool> {
@@ -1365,18 +1370,18 @@ pub(crate) fn pick_object_at_point<'a>(
         let Some(entity) = entities.get(stable_id) else {
             continue;
         };
-        if !pick_admits_object(entity, fog, player)
-            || source.conceals(entity)
-            || source.invisible_in_game_building(entity)
-        {
-            continue;
-        }
         // Native6DA380 tests lifecycle/cloak after the clicked Cell gate;
         // it does not repeat a raw anchor-cell shroud or discovery test.
+        // VERA-only order: the distance test comes first, and only an
+        // object that would become the nearest asks the admission tests.
+        // They only read, so the winner is the same.
         let (sx, sy) = source.screen_position(entity);
         let distance = pick_distance_sq(sx - world_x, sy - world_y) as i32;
         if distance < PICK_DISTANCE_THRESHOLD as i32
             && best.is_none_or(|(_, best_distance)| distance < best_distance)
+            && pick_admits_object(entity, fog, player)
+            && !source.conceals(entity)
+            && !source.invisible_in_game_building(entity)
         {
             best = Some((entity.stable_id(), distance));
         }
@@ -1543,6 +1548,13 @@ mod tests {
         let second = sim
             .spawn_object("VISIBLE", "Player", 20, 20, 0, &rules)
             .unwrap();
+        // The frame's records answer for its local player.
+        let player = sim.interner().get("Player");
+        sim.session_mut_for_test()
+            .set_current_house_for_test(player);
+        let frame = |sim: &Simulation| {
+            crate::app::presentation::frame::PresentationFrame::of_test(sim, &rules)
+        };
         let point = |sim: &Simulation, id| {
             crate::render::locomotor_visual::screen_position(sim.entities().get(id).unwrap())
         };
@@ -1560,10 +1572,9 @@ mod tests {
         );
         assert!(!health_bar_drawable(
             &sim,
-            sim.entities().get(second).unwrap(),
+            frame(&sim).object(second).unwrap(),
             health_hover_target(pick(&sim, second)),
             Some("Player"),
-            Some(&rules),
         ));
         sim.entities_mut_for_test()
             .get_mut(first)
@@ -1573,10 +1584,9 @@ mod tests {
         assert!(
             health_bar_drawable(
                 &sim,
-                sim.entities().get(first).unwrap(),
+                frame(&sim).object(first).unwrap(),
                 health_hover_target(pick(&sim, first)),
                 Some("Player"),
-                Some(&rules),
             ),
             "the lock removes hover, not selected health bars"
         );
@@ -1621,6 +1631,55 @@ mod tests {
         entity.lifecycle.set_in_limbo_for_test(false);
         entity.selection.set_selected_for_test(selected);
         entity
+    }
+
+    /// The pick asks its admission tests only of an object near enough to
+    /// win; an object far from the point costs only its distance.
+    #[test]
+    fn a_pick_asks_admission_only_near_the_point() {
+        use crate::sim::world::Simulation;
+
+        #[derive(Clone, Copy)]
+        struct Counting<'a> {
+            sim: &'a Simulation,
+            asked: &'a std::cell::Cell<u32>,
+        }
+        impl PickSource for Counting<'_> {
+            fn entities(&self) -> &EntityStore {
+                self.sim.entities()
+            }
+            fn conceals(&self, _entity: &GameEntity) -> bool {
+                self.asked.set(self.asked.get() + 1);
+                false
+            }
+        }
+
+        let mut sim = Simulation::new();
+        let viewer = sim.intern("viewer");
+        let typ = sim.intern("INIT");
+        for (id, rx) in [(1, 10), (2, 30), (3, 50)] {
+            sim.entities_mut_for_test().insert(item83_entity(
+                id,
+                rx,
+                10,
+                viewer,
+                typ,
+                EntityCategory::Infantry,
+                false,
+            ));
+        }
+        let asked = std::cell::Cell::new(0);
+        let source = Counting {
+            sim: &sim,
+            asked: &asked,
+        };
+        let (x, y) =
+            crate::render::locomotor_visual::screen_position(sim.entities().get(1).unwrap());
+        assert_eq!(
+            pick_object_at_point(source, &[1, 2, 3], None, None, x, y, None),
+            Some(CellObjectMember::Entity(1))
+        );
+        assert_eq!(asked.get(), 1);
     }
 
     #[test]
@@ -1932,12 +1991,19 @@ mod tests {
             sim.resubmit_entity_display_for_test(id);
         }
         let all: Vec<u64> = cases.iter().map(|case| case.0).collect();
+        let frame = crate::app::presentation::frame::PresentationFrame::of_test(
+            &sim,
+            RuleSet::empty_for_test(),
+        );
         for (id, _, owner, retail, translucent) in cases {
             let entity = sim.entities().get(id).unwrap();
-            assert_eq!(!translucent_fog_conceals(&sim, viewer, entity), translucent);
+            assert_eq!(
+                !translucent_fog_conceals(&sim, viewer, &entity.position, entity.owner()),
+                translucent
+            );
             let screen_selected = tactical_entity_admission(
                 TacticalEntityPurpose::ScreenSelection,
-                entity,
+                frame.object(id).unwrap(),
                 sim.interner().resolve(owner),
                 Some("Americans"),
                 Some(viewer),
@@ -2146,7 +2212,7 @@ mod tests {
             let mut cloak = CloakRuntime::new(0);
             cloak.set_state_for_test(cloak_state);
             entity.cloak = Some(Box::new(cloak));
-            let world = crate::app::presentation::instances::entity_screen_position(&entity);
+            let world = crate::render::locomotor_visual::screen_position(&entity);
             sim.entities_mut_for_test().insert(entity);
             sim.resubmit_entity_display_for_test(1);
             let order = crate::app::presentation::instances::tactical_entity_encounter_order(&sim);

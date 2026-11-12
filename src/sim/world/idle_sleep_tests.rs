@@ -150,6 +150,7 @@ fn a_blackout_wakes_a_sleeper_as_it_starts_and_as_it_ends() {
             .entities
             .get(1)
             .unwrap()
+            .building
             .building_last_operational
             .is_operational();
         assert_eq!(
@@ -160,4 +161,160 @@ fn a_blackout_wakes_a_sleeper_as_it_starts_and_as_it_ends() {
     }
     assert!(went_dark, "the blackout stopped the plant");
     assert!(asleep.idle_sleep_counts().1 > 60);
+}
+
+/// A skirmish with one retail GI (Americans, a human player's) standing on
+/// Guard on open ground, sleeping on or off.
+fn standing_gi(rules: &RuleSet, sleep: bool) -> (Simulation, u64) {
+    let mut sim = crate::sim::arena_fixture::rival_arena_with_size(rules, 0x51EE_9000_0002, 32);
+    sim.intern_rule_type_ids(rules);
+    sim.resolve_type_handles(rules);
+    sim.session_mut_for_test()
+        .set_game_mode(ScenarioGameMode::Skirmish);
+    // A house left without buildings loses on the first frame.
+    for (house, cell) in [("Americans", 4), ("Russians", 26)] {
+        sim.spawn_object("GAPOWR", house, cell, cell, 0, rules)
+            .expect("a plant spawns");
+    }
+    let id = sim
+        .spawn_object("E1", "Americans", 16, 16, 0, rules)
+        .expect("the GI spawns");
+    sim.sleep_idle_objects(sleep);
+    (sim, id)
+}
+
+fn frame(sim: &mut Simulation, rules: &RuleSet) {
+    let commands = sim.take_due_commands();
+    sim.advance_app_frame(
+        &commands,
+        rules,
+        None,
+        33,
+        super::TickLane::Ordinary,
+        super::FrameEffects::default(),
+    )
+    .expect("an ordinary frame");
+}
+
+/// Run a sleeping GI and an awake twin, doing `event` to both before frame
+/// `at`, and compare them hash by hash.
+fn gi_twins(rules: &RuleSet, frames: u32, at: u32, event: impl Fn(&mut Simulation, u64)) {
+    let (mut asleep, id) = standing_gi(rules, true);
+    let (mut awake, _) = standing_gi(rules, false);
+    let mut slept = 0;
+    for n in 0..frames {
+        if n == at {
+            event(&mut asleep, id);
+            event(&mut awake, id);
+        }
+        frame(&mut asleep, rules);
+        frame(&mut awake, rules);
+        slept += u32::from(asleep.substrate.entities.sleeps_until(id).is_some());
+        assert_eq!(
+            asleep.state_hash(),
+            awake.state_hash(),
+            "the twins differ after frame {n}"
+        );
+    }
+    // Most frames before the event find the GI asleep.
+    assert!(slept > at.min(frames) / 2, "the GI slept {slept} frames");
+}
+
+/// The GI's passive scan (every targeting delay, one Scenario draw) and its
+/// Guard handler (one draw, the idle fidget's draws) both wake it.
+#[test]
+fn a_sleeping_gi_matches_its_awake_twin_hash_by_hash() {
+    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    gi_twins(&fixture.rules, 400, u32::MAX, |_, _| {});
+}
+
+/// A building placed over a sleeping GI is no write to it, and one that
+/// cannot hide things (`CanHideThings=False`, a retail civilian prop) wakes
+/// nothing as it is marked: the visit sees it and wakes the GI, so it
+/// scatters out on the same frame.
+#[test]
+fn a_building_in_a_sleeping_gis_cell_wakes_it() {
+    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &fixture.rules;
+    // Map placement, as a scenario's own buildings: it takes no Can_Place.
+    gi_twins(rules, 300, 150, |sim, gi| {
+        sim.spawn_from_map(
+            &[MapEntity {
+                owner: "Americans".to_string(),
+                type_id: "CAMSC01".to_string(),
+                health: 256,
+                cell_x: 16,
+                cell_y: 16,
+                facing: 64,
+                category: EntityCategory::Structure,
+                sub_cell: 0,
+                veterancy: Some(0),
+                high: false,
+                mission: None,
+                trigger_tag: None,
+                recruitable_a: true,
+                recruitable_b: true,
+                group: -1,
+                follows: None,
+                structure_columns: Default::default(),
+                structure_ai_sellable: false,
+                structure_ai_repairable: false,
+                structure_online: true,
+            }],
+            Some(rules),
+        );
+        let gi = sim.substrate.entities.get(gi).unwrap();
+        let prop = sim
+            .ground_building_in_cell(gi)
+            .expect("the prop stands over the GI");
+        assert!(
+            sim.substrate
+                .entities
+                .get(prop)
+                .unwrap()
+                .type_facts
+                .building_hidden_occupancy()
+                .is_none_or(|profile| !profile.can_hide_things),
+            "the prop hides nothing"
+        );
+    });
+}
+
+/// Radiation in a sleeping GI's cell is no write to it: the visit on an
+/// application frame sees it and wakes it.
+#[test]
+fn radiation_in_a_sleeping_gis_cell_wakes_it() {
+    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &fixture.rules;
+    gi_twins(rules, 200, 88, |sim, gi| {
+        let now = sim.session.binary_frame();
+        // The GI sleeps through the next frame radiation applies on.
+        let pulse = now.next_multiple_of(rules.radiation.application_delay as u32);
+        if let Some((wake_at, _)) = sim.substrate.entities.sleeps_until(gi) {
+            assert!(wake_at > pulse, "the GI wakes at {wake_at}, before {pulse}");
+        }
+        let theater = sim.session.theater();
+        sim.radiation.apply_detonation(
+            crate::sim::radiation::RadDetonation {
+                rx: 16,
+                ry: 16,
+                rad_level: 500,
+                spread: 2,
+                rad_type: None,
+                firing_house: None,
+                invoker: None,
+            },
+            now,
+            &theater,
+            rules,
+            sim.resolved_terrain.as_ref(),
+            &mut sim.lighting_sources,
+        );
+    });
 }

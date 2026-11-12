@@ -239,6 +239,7 @@ fn is_menu(page: ScreenPage) -> bool {
         | ScreenPage::SinglePlayer
         | ScreenPage::MoviesAndCredits
         | ScreenPage::MovieList
+        | ScreenPage::Mods
         | ScreenPage::Campaign
         | ScreenPage::LoadSavedGame
         | ScreenPage::Wol

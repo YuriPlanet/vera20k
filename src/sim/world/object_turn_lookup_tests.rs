@@ -46,8 +46,9 @@ fn a_turn_finds_its_own_object_without_the_id_index() {
 }
 
 /// A tank's turn writes none of the state only a Building holds, so its
-/// record keeps no art or damage fires, before a save and after a load. The
-/// power plant's own turn stores its art, which loads back as saved.
+/// record keeps no building part, art or damage fires, before a save and
+/// after a load. The power plant stores its part and its art, which load
+/// back as saved.
 #[test]
 fn a_tanks_turn_and_a_load_store_no_building_state() {
     use crate::util::save_codec;
@@ -64,10 +65,13 @@ fn a_tanks_turn_and_a_load_store_no_building_state() {
     };
     let (tank, loaded_tank) = reloaded(tank);
     for tank in [tank, &loaded_tank] {
+        assert!(!tank.building.is_stored());
         assert!(!tank.building_art.is_stored());
         assert!(!tank.damage_fires.is_stored());
     }
     let (plant, loaded_plant) = reloaded(plant);
+    assert!(plant.building.is_stored());
+    assert_eq!(*loaded_plant.building, *plant.building);
     assert!(plant.building_art.is_stored());
     assert_eq!(*loaded_plant.building_art, *plant.building_art);
 }
@@ -88,28 +92,9 @@ fn the_object_record_stays_under_its_ceiling() {
         std::mem::size_of::<Seldom>(),
     );
     assert!(
-        main <= 1440 && seldom <= 816,
+        main <= 1208 && seldom <= 816,
         "GameEntity is {main} bytes and Seldom {seldom}"
     );
-}
-
-/// A presentation frame holds a copy of a resting tank's record. The tank's
-/// next turns write only the main part, so the seldom part is never copied:
-/// the frame and the live record still share it.
-#[test]
-fn a_resting_tanks_turn_leaves_the_seldom_part_shared() {
-    let (mut sim, rules, tank, _) = scene();
-    for _ in 0..3 {
-        sim.advance_live_object_turn(tank, &rules, techno_ai::ObjectAiCtx::default())
-            .unwrap();
-    }
-    let frame = sim.substrate.entities.get(tank).unwrap().clone();
-    for _ in 0..3 {
-        sim.advance_live_object_turn(tank, &rules, techno_ai::ObjectAiCtx::default())
-            .unwrap();
-    }
-    let live = sim.substrate.entities.get(tank).unwrap();
-    assert!(live.shares_seldom_with(&frame));
 }
 
 /// The sound owner's view of a turn: what was delivered, and whose looping
@@ -270,17 +255,6 @@ fn an_idle_turn_hands_its_object_out_only_on_a_due_timer() {
         }
         frame(&mut sim);
     }
-    // A presentation frame's copy of the power plant stays shared across
-    // its turn: its light sample is rewritten only when the draw would read
-    // something else.
-    let mut copied = 0;
-    for _ in 0..20 {
-        let shown = sim.substrate.entities.clone();
-        turn(&mut sim, plant);
-        copied += u32::from(!sim.substrate.entities.shares_entity_with(&shown, plant));
-        frame(&mut sim);
-    }
-    assert!(copied <= 2, "the power plant was copied in {copied} of 20 turns");
     assert!(
         writing_turns[0] <= 6 && writing_turns[1] <= 6,
         "turns of 60 that handed the object out (tank, plant): {writing_turns:?}, \

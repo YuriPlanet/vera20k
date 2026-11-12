@@ -380,16 +380,19 @@ impl SoundPlaybackInputs<'_> {
 pub(crate) fn update_power_bar_anim(state: &mut AppState, wall_ms: u64) {
     let owner_name = preferred_local_owner_name(state);
     let bar_height_px = power_bar_budget_px(state);
+    // The theoretical total walks the house's buildings: the frame's answer.
+    state.match_state.sim_runtime.ensure_frame();
 
     let anim = &mut state.match_state.match_presentation.power_bar_anim;
     match (
         state.match_state.sim_runtime.presentation(),
+        state.match_state.sim_runtime.frame(),
         owner_name.as_deref(),
     ) {
-        (Some(runtime), Some(owner)) => {
+        (Some(runtime), Some(frame), Some(owner)) => {
             let sim = &runtime.simulation;
             let rules = &runtime.resources.rules;
-            let theoretical_total = || sim.theoretical_power_for_owner(rules, owner);
+            let theoretical_total = || frame.scene.ui.theoretical_power();
             anim.fit_strip(bar_height_px, theoretical_total);
             let (produced, drained) = production::power_balance_for_owner(sim, rules, owner);
             anim.update(produced, drained, theoretical_total, wall_ms);
@@ -503,11 +506,15 @@ fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
     let events = state.match_state.match_audio.sound_events.drain();
     let listener = sound_listener(state);
     let local_owner = preferred_local_owner_name(state);
+    // The bombs' and owners' coordinates are the frame's
+    // (`presentation::frame`).
+    state.match_state.sim_runtime.ensure_frame();
     let sim = state
         .match_state
         .sim_runtime
         .presentation()
         .map(|rt| &rt.simulation);
+    let frame = state.match_state.sim_runtime.frame();
     let (Some(sfx), Some(assets), Some(catalog)) = (
         &mut state.audio.sfx_player,
         state.process_assets.manager(),
@@ -541,19 +548,20 @@ fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
     // the owner loop below re-drives it through `bomb_ticking_coord`.
     // `BombClass::Load @ 0x00438B40` retains that cue. The ticking pass reads
     // it at 0x00438C7C and skips -1 at 0x00438C7F.
-    if let Some(sim) = sim {
-        for &carrier in sim.bomb_carriers() {
-            let owner = crate::sim::bomb::ticking_sound_owner(carrier);
+    if let Some(frame) = frame {
+        for tick in frame.scene.ui.bomb_ticks() {
+            let owner = tick.owner;
             if sfx.loop_handle_sound_id(owner).is_some() {
                 continue;
             }
-            let Some(sound_id) = sim
-                .bomb_ticking_sound(carrier)
+            let Some(sound_id) = tick
+                .sound
+                .as_deref()
                 .filter(|sound_id| registry.get(sound_id).is_some())
             else {
                 continue;
             };
-            let Some(world) = sim.bomb_ticking_coord(carrier) else {
+            let Some(world) = tick.coord else {
                 continue;
             };
             let (rx, ry, sub_x, sub_y, _) = world.to_cell_sub_z();
@@ -584,7 +592,7 @@ fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
     // `SoundEvent::UpdateState @ 0x004057DC` reaps a stopped event on its next
     // pass because the owner no longer names it.
     for owner in sfx.looping_owners() {
-        let Some(sim) = sim else {
+        let Some(frame) = frame else {
             sfx.stop_animation_sound(owner);
             continue;
         };
@@ -596,8 +604,8 @@ fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
         // `ObjectClass::AI` replays an object's `+0x3C`/`+0x50` handles with
         // `VocClass::PlayAt` on each visit (the sim's `AnimationStarted`);
         // 750D40 never runs on them.
-        if let Some(alive) = sim.object_sound_owner_alive(owner) {
-            if !alive {
+        if let Some(object) = crate::sim::world::object_sound_object(owner) {
+            if !frame.scene.ui.sound_object_stands(object) {
                 sfx.stop_animation_sound(owner);
             }
             continue;
@@ -612,14 +620,19 @@ fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
         // AI visit. A tail poll could overwrite that position or restart a
         // loop after a later callback. Turret and Anim stay separate.
         if crate::sim::combat::gattling::gattling_sound_techno(owner).is_some()
-            || sim.entities().get(owner).is_some_and(|entity| {
+            || frame.object(owner).is_some_and(|entity| {
                 use crate::map::entities::EntityCategory::{Aircraft, Infantry, Unit};
                 matches!(entity.category(), Unit | Infantry | Aircraft)
             })
         {
             continue;
         }
-        let Some(world) = sim.looping_sound_owner_coord(owner) else {
+        let Some(world) = frame
+            .scene
+            .ui
+            .sound_owner_coord(owner)
+            .or_else(|| frame.anim_coord(owner))
+        else {
             // The owner object is gone. Native's `ObjectClass` uninit path
             // releases or stops its handle before the pointer can dangle.
             // Anim Destroy emits release, removing the owner handle while

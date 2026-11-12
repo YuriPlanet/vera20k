@@ -83,6 +83,24 @@ pub enum UnitRepairAction {
     Move,
 }
 
+/// What DetermineAction holds besides the target when it asks a healer's
+/// object action: the ForceMove binding (`InputManagerClass::IsKeyPressed`
+/// on `0x00A8EBF8`/`0x00A8EBFC`) and a GuardArea base action (0x1A, Ctrl+Alt).
+/// Only Ares' heal arms read them (Ares.dll `1004E5A0`, `1004E2E0`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct HealArmKeys {
+    pub force_move: bool,
+    pub guard_area: bool,
+}
+
+/// Ares' `InfantryClass_GetActionOnObject_Heal @ 1004E2E0` (hook
+/// `0x0051E710`) answer: Heal (0x1B) with the InfantryHeal (0x5A) cursor
+/// over an Organic or Infantry target, else UnitRepair (0x5B).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AresHeal {
+    pub organic: bool,
+}
+
 /// What a class's `What_Action_OnObject` entry rows make of an object the
 /// actor might enter: a building or a passenger carrier
 /// ([`Simulation::entry_click_action`]).
@@ -403,11 +421,16 @@ impl Simulation {
     /// and ClickedAction witnesses: spatial_oracle/bunker_attack_action.json
     /// repair_rows (Steam gamemd). This is producer-side admission;
     /// a delivered Attack event must not repeat it after cargo/health changes.
+    ///
+    /// With `ares`, hook `0x0073FDBD` (UnitClass_GetActionOnObject_Heal,
+    /// Ares.dll `1004E5A0`) replaces the arm from its vehicle test to
+    /// `0x0073FE43` ([`Self::ares_unit_heal_arm`]).
     pub fn unit_repair_action(
         &self,
         actor_id: u64,
         target_id: u64,
         issuing_house: InternedId,
+        keys: HealArmKeys,
         rules: &RuleSet,
     ) -> Option<UnitRepairAction> {
         let actor = self.substrate.entities.get(actor_id)?;
@@ -433,6 +456,21 @@ impl Simulation {
         {
             return Some(UnitRepairAction::Move);
         }
+        if rules.ares() {
+            return self.ares_unit_heal_arm(actor_id, target_id, keys, rules);
+        }
+        self.vanilla_unit_heal_arm(actor_id, target_id, target, target_type, rules)
+    }
+
+    /// The stock arm from the target's vehicle test (`0x0073FDBD..0x0073FE43`).
+    fn vanilla_unit_heal_arm(
+        &self,
+        actor_id: u64,
+        target_id: u64,
+        target: &crate::sim::game_entity::GameEntity,
+        target_type: &crate::rules::object_type::ObjectType,
+        rules: &RuleSet,
+    ) -> Option<UnitRepairAction> {
         // The target's vt+80 (`0x0073FDBD`); every GameEntity is a Techno
         // (vt+7C).
         let vehicle = crate::sim::combat::vehicle_like(
@@ -461,30 +499,171 @@ impl Simulation {
             return (target.category() != EntityCategory::Structure)
                 .then_some(UnitRepairAction::Select);
         }
-        if target.category() == EntityCategory::Aircraft {
-            //73FDE1..73FE06: a grounded aircraft on a building is excluded.
-            let coord = crate::sim::movement::ground_pose::position_world_coord(&target.position);
-            let cell = self.resolved_terrain.as_ref().and_then(|terrain| {
-                let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
-                match cells.lookup_world(coord.x, coord.y) {
-                    crate::map::cell_index::NativeCellIdentity::Real(index) => {
-                        let cell = &terrain.cells()[index];
-                        Some((cell.rx, cell.ry))
-                    }
-                    crate::map::cell_index::NativeCellIdentity::Dummy => None,
-                }
-            });
-            if cell.is_some_and(|(rx, ry)| {
-                self.substrate
-                    .occupancy
-                    .first_building_on_layer(rx, ry, MovementLayer::Ground)
-                    .is_some()
-            }) {
-                return None;
-            }
+        //73FDE1..73FE06: a grounded aircraft on a building is excluded.
+        if self.aircraft_rests_on_building(target) {
+            return None;
         }
         // Rules+16F8 is the fixed 1.0 threshold, not an INI condition key.
         (!target.health.is_full(target_type.strength)).then_some(UnitRepairAction::Repair)
+    }
+
+    /// `0x0073FDE1..0x0073FE06`: an Aircraft (WhatAmI 2) whose GetCoords
+    /// cell holds a building.
+    fn aircraft_rests_on_building(&self, target: &crate::sim::game_entity::GameEntity) -> bool {
+        if target.category() != EntityCategory::Aircraft {
+            return false;
+        }
+        let coord = crate::sim::movement::ground_pose::position_world_coord(&target.position);
+        let cell = self.resolved_terrain.as_ref().and_then(|terrain| {
+            let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
+            match cells.lookup_world(coord.x, coord.y) {
+                crate::map::cell_index::NativeCellIdentity::Real(index) => {
+                    let cell = &terrain.cells()[index];
+                    Some((cell.rx, cell.ry))
+                }
+                crate::map::cell_index::NativeCellIdentity::Dummy => None,
+            }
+        });
+        cell.is_some_and(|(rx, ry)| {
+            self.substrate
+                .occupancy
+                .first_building_on_layer(rx, ry, MovementLayer::Ground)
+                .is_some()
+        })
+    }
+
+    /// Ares' heal arms (`1004E5A0`, `1004E2E0`): the Verses of the warhead of
+    /// the weapon the healer would pick against `target_id` (SelectWeapon,
+    /// GetWeapon) for the target's armor
+    /// (`WarheadTypeExt::ExtData::GetVerses`) is above 0.
+    fn ares_heal_verses_positive(&self, actor_id: u64, target_id: u64, rules: &RuleSet) -> bool {
+        let (Some(actor), Some(target)) = (
+            self.substrate.entities.get(actor_id),
+            self.substrate.entities.get(target_id),
+        ) else {
+            return false;
+        };
+        let (Some(actor_type), Some(target_type)) = (
+            self.object_type(actor.type_ref(), rules),
+            self.object_type(target.type_ref(), rules),
+        ) else {
+            return false;
+        };
+        let cells = self
+            .resolved_terrain
+            .as_ref()
+            .map(crate::map::resolved_terrain::NativeCellQuery::isolated);
+        combat::combat_weapon::select_weapon_index_against_in_query(
+            rules,
+            actor,
+            actor_type,
+            &combat::combat_weapon::attacker_facts(actor, actor_type),
+            Some(&combat::TargetKind::Entity(target_id)),
+            self,
+            &self.interner,
+            cells.as_ref(),
+            Some(&self.house_alliances),
+        )
+        .and_then(|index| {
+            combat::combat_weapon::get_weapon(
+                actor,
+                actor_type,
+                index,
+                &self.substrate.entities,
+                rules,
+                &self.interner,
+            )
+        })
+        .and_then(|weapon| rules.weapon_warhead(weapon))
+        .is_some_and(|warhead| {
+            f64::from_bits(
+                warhead
+                    .interaction(target_type.armor_id())
+                    .multiplier()
+                    .bits(),
+            ) > 0.0
+        })
+    }
+
+    /// Ares `UnitClass_GetActionOnObject_Heal @ 1004E5A0` (hook
+    /// `0x0073FDBD`, after the stock ally test), resuming at `0x0073FE48`,
+    /// `0x0073FE3B` (Select) or `0x0073FE08` (GRepair 0x1D with the
+    /// UnitRepair or InfantryHeal cursor, which the cursor owner sets). A
+    /// GuardArea base action keeps its own path; the unit itself, a held
+    /// ForceMove key, a target at full health (`GetHealthPercentage` against
+    /// Rules+16F8, 1.0), a grounded aircraft on a building and a warhead
+    /// whose Verses for the target's armor is not above 0 answer Select. Any
+    /// other damaged ally is repaired, building or not.
+    fn ares_unit_heal_arm(
+        &self,
+        actor_id: u64,
+        target_id: u64,
+        keys: HealArmKeys,
+        rules: &RuleSet,
+    ) -> Option<UnitRepairAction> {
+        if keys.guard_area {
+            return None;
+        }
+        let select = Some(UnitRepairAction::Select);
+        if target_id == actor_id || keys.force_move {
+            return select;
+        }
+        let target = self.substrate.entities.get(target_id)?;
+        let target_type = self.object_type(target.type_ref(), rules)?;
+        if target.health.is_full(target_type.strength)
+            || self.aircraft_rests_on_building(target)
+            || !self.ares_heal_verses_positive(actor_id, target_id, rules)
+        {
+            return select;
+        }
+        Some(UnitRepairAction::Repair)
+    }
+
+    /// Ares `InfantryClass_GetActionOnObject_Heal @ 1004E2E0` (hook
+    /// `0x0051E710`), reached when a human player's Infantry whose
+    /// `GetWeaponDamageValue(-1)` is negative points at an object of an
+    /// allied house (`InfantryClass::What_Action_OnObject` before
+    /// `0x0051E710`): Heal (0x1B) over a damaged Techno, unless a ForceMove
+    /// key is held, when the Verses of the weapon it would pick is above 0
+    /// for the target's armor (`0x0051E739`). Infantry ClickedAction
+    /// (`0x0051F190`) turns Heal into Attack. None goes on with the stock
+    /// rows; the infantryman itself takes the stock self arm at `0x0051E748`,
+    /// which VERA does not port.
+    pub fn ares_infantry_heal_action(
+        &self,
+        actor_id: u64,
+        target_id: u64,
+        issuing_house: InternedId,
+        keys: HealArmKeys,
+        rules: &RuleSet,
+    ) -> Option<AresHeal> {
+        let actor = self.substrate.entities.get(actor_id)?;
+        let actor_type = self.object_type(actor.type_ref(), rules)?;
+        let target = self.substrate.entities.get(target_id)?;
+        let target_type = self.object_type(target.type_ref(), rules)?;
+        if actor.category() != EntityCategory::Infantry
+            || target_id == actor_id
+            || actor.owner() != issuing_house
+            || !self.house_is_human_player(actor.owner())
+            || combat::combat_weapon::weapon_damage_value(
+                actor,
+                actor_type,
+                &self.substrate.entities,
+                rules,
+                &self.interner,
+            ) >= 0
+            || !self
+                .house_alliances
+                .is_allied(&self.interner, actor.owner(), target.owner())
+            || keys.force_move
+            || target.health.is_full(target_type.strength)
+            || !self.ares_heal_verses_positive(actor_id, target_id, rules)
+        {
+            return None;
+        }
+        Some(AresHeal {
+            organic: target_type.organic || target.category() == EntityCategory::Infantry,
+        })
     }
 
     /// `UnitClass::What_Action_OnObject`'s building arm
@@ -2087,7 +2266,7 @@ impl Simulation {
             .entities
             .get(building_id)
             .and_then(|building| {
-                let pending = building.pending_c4_detonation.pending()?;
+                let pending = building.building.pending_c4_detonation.pending()?;
                 let object = self.interner.object_type(building.type_ref(), rules)?;
                 Some((
                     pending,
@@ -2112,7 +2291,7 @@ impl Simulation {
                 frame_effects,
             );
             if let Some(hut) = self.substrate.entities.get_mut(building_id) {
-                hut.pending_c4_detonation.cancel();
+                hut.building.pending_c4_detonation.cancel();
             }
             return changed;
         }

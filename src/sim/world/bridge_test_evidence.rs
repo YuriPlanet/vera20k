@@ -10,7 +10,7 @@ pub(super) fn navigation_snapshot(
     name: &str,
     points: impl IntoIterator<Item = (u16, u16)>,
 ) -> Value {
-    let zones = sim.zone_grid.as_deref().unwrap();
+    let zones = sim.zone_grid.as_ref().unwrap();
     let mut copied = zones.clone();
     let base = copied.base_topology_mut_for_test();
     let terrain = sim.resolved_terrain.as_ref().unwrap();

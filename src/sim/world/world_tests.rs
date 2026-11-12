@@ -1738,7 +1738,7 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
     sim.rebuild_zone_grid_full(&path);
     let ground_zone_before = sim
         .zone_grid
-        .as_deref()
+        .as_ref()
         .and_then(|zones| zones.map_for(crate::rules::locomotor_type::MovementZone::Normal))
         .expect("normal zone map");
     assert_eq!(
@@ -1845,7 +1845,7 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
     );
     assert!(
         sim.zone_grid
-            .as_deref()
+            .as_ref()
             .expect("zone grid")
             .movement_classes_match(sim.resolved_terrain.as_ref().expect("terrain")),
         "ordered wall-sale repair must publish every reduced movement class"
@@ -1853,7 +1853,7 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
     let (zone_ids_ptr, repaired_zone_ids) = {
         let map = sim
             .zone_grid
-            .as_deref()
+            .as_ref()
             .and_then(|zones| zones.map_for(crate::rules::locomotor_type::MovementZone::Normal))
             .expect("normal zone map before frame finalization");
         (
@@ -1868,7 +1868,7 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
     );
     let ground_zone_after = sim
         .zone_grid
-        .as_deref()
+        .as_ref()
         .and_then(|zones| zones.map_for(crate::rules::locomotor_type::MovementZone::Normal))
         .expect("normal zone map");
     assert_eq!(
@@ -2072,7 +2072,7 @@ fn dynamic_navigation_publication_composes_structures_bibs_and_bridges() {
     assert!(grid.cell(3, 1).expect("east bridgehead").transition);
     let normal_zones = sim
         .zone_grid
-        .as_deref()
+        .as_ref()
         .and_then(|zones| zones.map_for(crate::rules::locomotor_type::MovementZone::Normal))
         .expect("normal movement zones");
     assert_ne!(
@@ -3000,7 +3000,11 @@ fn gsi_04_15_active_tube_leaf_preempts_unit_and_infantry_mission_host() {
                     sim.substrate
                         .entities
                         .get(2)
-                        .is_some_and(|building| building.pending_c4_detonation.pending().is_none()),
+                        .is_some_and(|building| building
+                            .building
+                            .pending_c4_detonation
+                            .pending()
+                            .is_none()),
                     "Tube final returns before Mission_Enter; no C4 claim is made"
                 );
             }
@@ -3101,7 +3105,7 @@ fn gsi_04_10_zero_occupation_removal_forces_ground_zone_with_same_walkability() 
     sim.rebuild_zone_grid_full(&input_path_grid);
     assert_eq!(
         sim.zone_grid
-            .as_deref()
+            .as_ref()
             .and_then(|zones| zones.map_for(MovementZone::Normal))
             .expect("normal zone map")
             .zone_at(0, 0, MovementLayer::Ground),
@@ -3126,7 +3130,7 @@ fn gsi_04_10_zero_occupation_removal_forces_ground_zone_with_same_walkability() 
     );
     assert_ne!(
         sim.zone_grid
-            .as_deref()
+            .as_ref()
             .and_then(|zones| zones.map_for(MovementZone::Normal))
             .expect("normal zone map")
             .zone_at(0, 0, MovementLayer::Ground),
@@ -7270,7 +7274,7 @@ fn combat_death_after_its_repair_visit_is_freed_at_end_of_tick() {
     bld.type_facts
         .set_foundation_for_test("1x1".to_string().into());
     bld.health = Health::new(50);
-    bld.repairing.set_for_test(true);
+    bld.building.repairing.set_for_test(true);
     sim.interner = crate::sim::intern::test_interner();
     let russia = sim.interner.intern("Russia");
     sim.houses

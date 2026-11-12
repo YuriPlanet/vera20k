@@ -1151,7 +1151,7 @@ fn a_strike_destroying_a_wall_publishes_navigation_and_radar_inline() {
     assert!(!sim.path_grid().unwrap().is_walkable(5, 5));
     let ground_zone = |sim: &Simulation| {
         sim.zone_grid
-            .as_deref()
+            .as_ref()
             .and_then(|zones| zones.map_for(crate::rules::locomotor_type::MovementZone::Normal))
             .expect("normal zone map")
             .zone_at(5, 5, MovementLayer::Ground)

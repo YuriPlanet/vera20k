@@ -35,6 +35,7 @@ pub(crate) fn body_palette_light(
 ///
 /// The caller supplies its frame's isolated query; drawing never stamps the
 /// simulation's shared fallback Cell. Native controls: tools/unit_light.json.
+/// Captured into each object's presentation record (`presentation::frame`).
 pub(crate) fn body_extra_light(
     entity: &crate::sim::game_entity::GameEntity,
     rules: &RuleSet,
@@ -294,7 +295,7 @@ fn tint_bucket(
 ///
 /// Read only: no simulation state, timer, RNG or detach is written.
 pub(crate) fn shield_tint(
-    entity: &crate::sim::game_entity::GameEntity,
+    entity: &crate::app::presentation::frame::ObjectRecord,
     simulation: &Simulation,
     rules: &RuleSet,
 ) -> (u16, i32) {
@@ -330,7 +331,7 @@ pub(crate) fn shield_tint(
 /// objects as Owner, an ally's as Allies and anyone else's as Enemies.
 #[cfg(feature = "phobos")]
 fn viewer_bucket(
-    entity: &crate::sim::game_entity::GameEntity,
+    entity: &crate::app::presentation::frame::ObjectRecord,
     simulation: &Simulation,
 ) -> crate::rules::phobos_shields::AffectedHouse {
     let owner = entity.owner();
@@ -364,7 +365,7 @@ fn viewer_bucket(
 /// not yet.
 #[cfg(feature = "phobos")]
 pub(crate) fn attach_effect_tint(
-    entity: &crate::sim::game_entity::GameEntity,
+    entity: &crate::app::presentation::frame::ObjectRecord,
     simulation: &Simulation,
     rules: &RuleSet,
 ) -> (u16, i32) {
@@ -434,7 +435,7 @@ pub(crate) fn attach_effect_tint(
 /// The custom tint `TechnoExt::UpdateTintValues` aggregates from every owner:
 /// Phobos shields and AttachEffects today.
 pub(crate) fn custom_tint(
-    entity: &crate::sim::game_entity::GameEntity,
+    entity: &crate::app::presentation::frame::ObjectRecord,
     simulation: &Simulation,
     rules: &RuleSet,
 ) -> (u16, i32) {
@@ -480,7 +481,7 @@ pub(crate) enum TechnoDraw {
 /// Airstrike manager that targets it. GetEffectTintIntensity
 /// applies Iron then Airstrike stages, each with its own cap.
 pub(crate) fn techno_effect_light(
-    entity: &crate::sim::game_entity::GameEntity,
+    entity: &crate::app::presentation::frame::ObjectRecord,
     tint: [f32; 3],
     light: crate::render::palette_light::PaletteLight,
     sim: &Simulation,
@@ -497,7 +498,7 @@ pub(crate) fn techno_effect_light(
         tint,
         light,
         sim.session().binary_frame(),
-        sim.airstrike_tint_active(entity.stable_id()),
+        entity.place.airstrike_tint_active,
         custom,
         curtain_extra,
         draw,
@@ -515,7 +516,7 @@ pub(crate) fn techno_effect_light(
 /// `0x0043FE56`).
 ///
 pub(crate) fn building_anim_light(
-    building: &crate::sim::game_entity::GameEntity,
+    building: &crate::app::presentation::frame::ObjectRecord,
     tint: [f32; 3],
     light: crate::render::palette_light::PaletteLight,
     sim: &Simulation,
@@ -551,7 +552,7 @@ pub(crate) fn building_anim_light(
             tint,
             light,
             sim.session().binary_frame().wrapping_sub(1),
-            sim.airstrike_tint_active(building.stable_id()),
+            building.place.airstrike_tint_active,
             custom,
             curtain_extra,
             TechnoDraw::Shape,
@@ -561,7 +562,7 @@ pub(crate) fn building_anim_light(
 }
 
 fn techno_effect_light_at(
-    entity: &crate::sim::game_entity::GameEntity,
+    entity: &crate::app::presentation::frame::ObjectRecord,
     tint: [f32; 3],
     light: crate::render::palette_light::PaletteLight,
     frame: u32,
@@ -691,7 +692,7 @@ fn effect_light(
 /// berserk_color.json::mtnk (physical stock Image-resolved GTNK/DarkRed).
 /// No simulation state, timer, RNG or detach is written here.
 pub(crate) fn unit_voxel_effect_light(
-    entity: &crate::sim::game_entity::GameEntity,
+    entity: &crate::app::presentation::frame::ObjectRecord,
     tint: [f32; 3],
     light: crate::render::palette_light::PaletteLight,
     rules: Option<&RuleSet>,
@@ -737,7 +738,7 @@ pub(crate) fn unit_voxel_effect_light(
             DeactivateDim::Emp
         } else if !entity.deactivated.is_offline() {
             return (tint, light);
-        } else if rules.is_some_and(|rules| !sim.ares_is_operated(entity.stable_id(), rules)) {
+        } else if rules.is_some() && !entity.place.ares_operated {
             DeactivateDim::Operator
         } else {
             DeactivateDim::Powered
@@ -803,7 +804,7 @@ fn with_intensity(
 /// Any nonnull Airstrike pointer (`+0x294`) ORs LaserTargetColor too,
 /// independently of its manager target and of the Force Shield colour.
 pub(crate) fn shp_colour_word(
-    entity: &crate::sim::game_entity::GameEntity,
+    entity: &crate::app::presentation::frame::ObjectRecord,
     sim: &Simulation,
     rules: &RuleSet,
     shrouded: impl FnOnce() -> bool,
@@ -849,7 +850,7 @@ pub(crate) fn shp_colour_word(
         #[cfg(feature = "phobos")]
         let word = rules
             .color_add
-            .phobos_word(sim.airstrike_laser_target_color(entity.stable_id(), rules));
+            .phobos_word(entity.place.airstrike_laser_target_color);
         #[cfg(not(feature = "phobos"))]
         let word = rules
             .color_add

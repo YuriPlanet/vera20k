@@ -13,7 +13,7 @@ use crate::rules::smudge_type::SmudgeTypeRegistry;
 use crate::sim::occupancy::OccupancyGrid;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::rng::SimRng;
-use crate::util::shared::{ChunkedVec, Shared};
+use crate::util::synced::{ChunkedVec, Synced};
 use std::collections::BTreeMap;
 use std::hash::Hash;
 
@@ -143,7 +143,7 @@ pub struct SmudgeGrid {
     cells: ChunkedVec<SmudgeCell>,
     /// Generic Object/SmudgeClass vector membership lasts through UnInit.
     /// Never joins Logic; scalar destruction removes only the object.
-    objects: Shared<BTreeMap<u64, SmudgeObject>>,
+    objects: Synced<BTreeMap<u64, SmudgeObject>>,
     /// Cells mutated this tick — drained per tick by the render-update path.
     /// Not part of game state; never serialized.
     #[serde(skip, default)]
@@ -157,7 +157,7 @@ impl SmudgeGrid {
             width,
             height,
             cells: ChunkedVec::filled(SmudgeCell::default(), count),
-            objects: Shared::default(),
+            objects: Synced::default(),
             dirty_cells: Vec::new(),
         }
     }
@@ -927,6 +927,25 @@ pub(crate) mod oracle_fixture {
             "{}",
             row["input"]
         );
+    }
+}
+
+impl SmudgeGrid {
+    /// Bring `mirror`, the presentation copy of the world's grid, up to
+    /// this one (docs/sim-thread.md).
+    pub(crate) fn sync_into(&mut self, mirror: &mut Self) {
+        let Self {
+            width,
+            height,
+            cells,
+            objects,
+            dirty_cells,
+        } = self;
+        mirror.width = *width;
+        mirror.height = *height;
+        cells.sync_into(&mut mirror.cells);
+        objects.sync_into(&mut mirror.objects);
+        mirror.dirty_cells.clone_from(dirty_cells);
     }
 }
 

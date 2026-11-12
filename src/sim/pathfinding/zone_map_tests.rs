@@ -417,7 +417,7 @@ fn gsi_04_06_simulation_rebuild_initializes_zone_grid() {
 
     let normal = sim
         .zone_grid
-        .as_deref()
+        .as_ref()
         .and_then(|zones| zones.map_for(MovementZone::Normal))
         .unwrap();
     assert_eq!(normal.zone_at(0, 0, MovementLayer::Ground), 2);
@@ -472,7 +472,7 @@ fn gsi_04_06_simulation_detects_class_only_change_with_identical_pathgrid() {
     sim.rebuild_zone_grid(&path_grid);
     assert_ne!(
         sim.zone_grid
-            .as_deref()
+            .as_ref()
             .unwrap()
             .map_for(MovementZone::Normal)
             .unwrap()
@@ -484,7 +484,7 @@ fn gsi_04_06_simulation_detects_class_only_change_with_identical_pathgrid() {
         zone_class::CRUSHABLE;
     sim.rebuild_zone_grid(&path_grid);
 
-    let zones = sim.zone_grid.as_deref().unwrap();
+    let zones = sim.zone_grid.as_ref().unwrap();
     assert_eq!(
         zones
             .map_for(MovementZone::Normal)

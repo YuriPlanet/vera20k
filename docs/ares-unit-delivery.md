@@ -1,7 +1,9 @@
 # Optional Ares UnitDelivery
 
 Requires an explicit `--features ares` build. Default builds do not read or execute
-these extensions; see [build capability](ares.md).
+these extensions; see [build capability](ares.md). Within such a build a delivery
+also needs the game's Ares switch (`RuleSet::ares`) on, as the rest of the Ares
+superweapon framework is still gated by the build feature alone.
 
 ```ini
 [SuperWeaponTypes]
@@ -88,17 +90,28 @@ request remains frozen if a provider is later lost. A valid launch with no legal
 placement consumes its charge and has no retry queue. One-time grants are consumed
 at acceptance; their queued effect still completes once.
 
-Placement retains the contribution's deterministic ring selector, using VERA's
-portable hasher over stable simulation inputs. This is a VERA adaptation, not a
-claim of Ares's exact placement order or RNG stream. Each payload is put with Ares' DirType
-(GetCellIndex & 7) << 5 of its cell (10075A60), so its facing follows the cell's X. Existing
-constructors, infantry placement and Scatter retain their own simulation RNG draws. Full-map
-search cost for large blocked payloads has not been profiled; no 20,000-unit
-performance claim is made for this extension.
+Placement follows PlaceUnits (`10075A60`): each payload, in `Deliver.Types` order,
+asks MapClass::NearByLocation (Find_Nearby_Passable_Cell `0x56DC20`) once from the
+target less half its extent. A building searches with its foundation (height with
+its bib) as Track/Normal with the occupancy test (Ares' `buildable`), or Float
+without it; a Foot type with its own SpeedType and MovementZone, an Aircraft as
+Track/Normal, both 1x1. No zone, overlay, height or burrow test, no bridge cell and
+no target cell, so the pick is the frame-counter modulo and draws no RNG; a
+PlaceAnywhere building takes the anchor. One Put at the cell's coordinate, with
+Ares' DirType (GetCellIndex & 7) << 5 of the cell, so the facing follows its X; a
+refused Put UnInits the payload. Constructors, infantry placement and Scatter keep
+their own simulation RNG draws.
+
+3.0 reads no `Deliver.Buildups` (SW+0x4A8, default true): a building queues
+Construction before its Put and builds up, is DiscoveredBy its owner and has its
+ready byte (`+0x6DD`) set. A payload that is not powered (IsPowered `100454F0`) or
+needs an absent operator (IsOperated `10045440`) is Deactivated, and a building's
+house rechecks its tech tree.
 
 The common [money](ares-superweapon-money.md) and
 [targeting/presentation](ares-generic-warhead.md) owners also serve UnitDelivery.
-Its default automatic mode remains ParaDrop. Deliver.Buildups and the documented
-placement/RNG differences remain outside this port. The implementation and
+Its default automatic mode remains ParaDrop. The mission a Foot payload takes is
+queued after its Put (AreaGuard for a human, Hunt for the computer), where Ares
+queues Guard or Hunt before it. The implementation and
 synthetic regression scenes do not establish full Mental Omega compatibility or
 executable Ares parity.

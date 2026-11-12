@@ -27,6 +27,7 @@ fn overflowed_authored_spotlight_motion_keeps_its_last_pose_and_cleanup() {
             .entities
             .get(p)
             .unwrap()
+            .building
             .building_light
             .light()
             .unwrap();
@@ -60,6 +61,7 @@ fn a_fogged_building_draws_no_spotlight() {
         .entities
         .get(p)
         .unwrap()
+        .building
         .building_light
         .light()
         .unwrap();
@@ -107,7 +109,7 @@ fn parent_id(sim: &mut Simulation, category: EntityCategory, id: u64) -> u64 {
         crate::util::fixed_math::SimFixed::from_num(128),
         crate::util::fixed_math::SimFixed::ZERO,
     );
-    e.building_light.stamp(true);
+    e.building.building_light.stamp(true);
     e.lifecycle.set_in_limbo_for_test(false);
     sim.substrate.entities.insert(e);
     sim.set_next_stable_object_id_for_test(sim.next_stable_object_id().max(id + 1));
@@ -196,6 +198,7 @@ fn shared_ids_logic_snapshot_and_parent_limbo_retire_the_independent_child() {
         .entities
         .get(p)
         .unwrap()
+        .building
         .building_light
         .light()
         .unwrap();
@@ -222,6 +225,7 @@ fn shared_ids_logic_snapshot_and_parent_limbo_retire_the_independent_child() {
             .entities
             .get(p)
             .unwrap()
+            .building
             .building_light
             .light(),
         None
@@ -268,6 +272,7 @@ fn spotlight_action52_counts_only_matching_live_trigger_buildings_and_keeps_full
             .entities
             .get(first)
             .unwrap()
+            .building
             .building_light
             .light()
             .unwrap();
@@ -276,6 +281,7 @@ fn spotlight_action52_counts_only_matching_live_trigger_buildings_and_keeps_full
             .entities
             .get(second)
             .unwrap()
+            .building
             .building_light
             .light()
             .unwrap();
@@ -305,6 +311,7 @@ fn spotlight_event35_uses_child_ground_lists_mode_gate_and_synchronous_tag_actio
             .entities
             .get(p)
             .unwrap()
+            .building
             .building_light
             .light()
             .unwrap();
@@ -377,6 +384,7 @@ fn spotlight_cone_geometry_matches_original_before_projection() {
             .entities
             .get(p)
             .unwrap()
+            .building
             .building_light
             .light()
             .unwrap();
@@ -408,6 +416,7 @@ fn spotlight_real_building_unlimbo_registers_the_child_and_limbo_cleans_both_own
         .entities
         .get(p)
         .unwrap()
+        .building
         .building_light
         .light()
         .expect("successful Building Unlimbo constructs its child");
@@ -442,6 +451,7 @@ fn spotlight_real_building_unlimbo_registers_the_child_and_limbo_cleans_both_own
             .entities
             .get(p)
             .unwrap()
+            .building
             .building_light
             .light(),
         None
@@ -455,6 +465,7 @@ fn spotlight_real_building_unlimbo_registers_the_child_and_limbo_cleans_both_own
         .entities
         .get(q)
         .unwrap()
+        .building
         .building_light
         .light()
         .unwrap();
@@ -475,6 +486,7 @@ fn spotlight_tracking_selects_first_nearest_enemy_and_expiry_clears_the_pointer(
         .entities
         .get(p)
         .unwrap()
+        .building
         .building_light
         .light()
         .unwrap();
@@ -558,6 +570,7 @@ fn ares_spotlighted_technos_get_their_light_at_unlimbo() {
                 .entities
                 .get(parent)
                 .unwrap()
+                .building
                 .building_light
                 .light()
                 .is_some(),

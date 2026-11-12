@@ -453,6 +453,7 @@ fn retail_planned_tanya_plants_c4_and_continues_to_the_next_waypoint() {
         sim.entities()
             .get(target)
             .unwrap()
+            .building
             .pending_c4_detonation
             .pending()
             .is_none()
@@ -476,7 +477,7 @@ fn retail_planned_tanya_plants_c4_and_continues_to_the_next_waypoint() {
         if let Some(charge) = sim
             .entities()
             .get(target)
-            .and_then(|entity| entity.pending_c4_detonation.pending())
+            .and_then(|entity| entity.building.pending_c4_detonation.pending())
         {
             assert_eq!(charge.source_entity_id(), Some(tanya));
             planted = true;
