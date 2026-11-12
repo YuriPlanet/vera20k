@@ -286,14 +286,20 @@ fn deploy_second_yard(
         return;
     }
     if cell != target
-        && !super::orders::issue(brain, out, rules, obs, entity_id, Goal::Move { cell: target })
+        && !super::orders::issue(
+            brain,
+            out,
+            rules,
+            obs,
+            entity_id,
+            Goal::Move { cell: target },
+        )
     {
         // The walk was refused: that ground is not reachable, so the house
         // picks another patch instead of asking for the same one every frame.
         brain.expansion_probe = None;
     }
 }
-
 
 /// The nearest cell a second yard may be deployed on: away from the house's own
 /// base, on ground a unit can stand on, and a cell a yard of this type fits on.
@@ -331,11 +337,17 @@ pub(super) fn expansion_site(
         brain.expansion_probe = Some((tick, None));
         return None;
     };
-    let found = search_expansion_site(rules, obs, home, &brain.census.home_cells, yard, &admits);
+    let found = search_expansion_site(
+        rules,
+        obs,
+        home,
+        &brain.census.home_cells,
+        yard,
+        &admits,
+        &super::terrain::Space::read(obs, rules, &brain.census.home_cells, brain.census.base_cell),
+    );
     if found.is_some() {
-        log::info!(
-            "auto play: second base site at {found:?}",
-        );
+        log::info!("auto play: second base site at {found:?}",);
     }
     brain.expansion_probe = Some((tick, found));
     found
@@ -368,6 +380,7 @@ fn search_expansion_site(
     home_cells: &[(u16, u16)],
     yard: &ObjectType,
     admits: &dyn Fn((u16, u16)) -> bool,
+    space: &super::terrain::Space,
 ) -> Option<(u16, u16)> {
     let (width, height) = obs.map_extent();
     // No map, no expansion: the headless harness and the fixtures run without
@@ -397,6 +410,15 @@ fn search_expansion_site(
                 }
                 // And the ground has to take a yard.
                 if !admits((rx, ry)) {
+                    continue;
+                }
+                // And it has to be ground the house can keep. A second yard
+                // inside the enemy's reach is a yard they destroy for free,
+                // and one inside their base is a yard they never let stand —
+                // the wishlist's "new buildings appear in the enemy's face".
+                // Read through the shared map reading rather than a second
+                // distance rule of this file's own.
+                if !space.ground_at((rx, ry)).buildable() {
                     continue;
                 }
                 return Some((rx, ry));
@@ -484,7 +506,6 @@ mod tests {
     use crate::sim::strategy::retail::RetailBrain;
     use crate::sim::world::Simulation;
 
-
     /// The maker belongs to the yard it becomes: an American house's maker
     /// deploys into the Allied yard and a Russian house's into the Soviet
     /// one, and the yard's own country list is the rules' answer.
@@ -496,22 +517,24 @@ mod tests {
         let mut sim = crate::sim::world::Simulation::new();
         let american = sim.interner.intern("Americans");
         let russian = sim.interner.intern("Russians");
-        sim.houses.register(crate::sim::house_state::HouseState::new(
-            american,
-            0,
-            Some(american),
-            true,
-            0,
-            10,
-        ));
-        sim.houses.register(crate::sim::house_state::HouseState::new(
-            russian,
-            0,
-            Some(russian),
-            false,
-            0,
-            10,
-        ));
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                american,
+                0,
+                Some(american),
+                true,
+                0,
+                10,
+            ));
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                russian,
+                0,
+                Some(russian),
+                false,
+                0,
+                10,
+            ));
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         let allied = rules.object("AMCV").expect("the Allied maker");

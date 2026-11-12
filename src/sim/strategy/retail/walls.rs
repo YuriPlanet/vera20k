@@ -654,7 +654,6 @@ pub(super) fn queue_segment(
 mod tests {
     use super::*;
 
-
     /// The plan asks the placement's own question about a cell.
     ///
     /// Every wall the plan had queued was refused at the same two cells, and

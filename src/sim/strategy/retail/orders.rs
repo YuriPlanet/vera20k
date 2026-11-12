@@ -1213,7 +1213,11 @@ pub(super) fn crates(
     // The crates, nearest the house first: the box closest to home is the
     // one a player sends for first, and the one further out is a walk only
     // worth it once the near one is taken.
-    let anchor = brain.census.rally.or(brain.census.base_cell).unwrap_or((0, 0));
+    let anchor = brain
+        .census
+        .rally
+        .or(brain.census.base_cell)
+        .unwrap_or((0, 0));
     let mut crates = cells;
     crates.sort_by_key(|cell| (squared_distance(anchor, *cell), *cell));
     let mut sent: BTreeSet<u64> = BTreeSet::new();
@@ -1228,8 +1232,7 @@ pub(super) fn crates(
         // the map for it is a house that is not fighting: measured, sending a
         // fighter thirty cells for a box turned a win into a timeout.
         let reachable = |unit: &(u64, (u16, u16), MovementZone, bool), range: i32| {
-            squared_distance(unit.1, cell) <= range * range
-                && obs.can_reach(unit.2, unit.1, cell)
+            squared_distance(unit.1, cell) <= range * range && obs.can_reach(unit.2, unit.1, cell)
         };
         let picked = idle
             .iter()

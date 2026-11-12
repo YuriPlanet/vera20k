@@ -114,6 +114,7 @@ pub(super) mod orders;
 pub(super) mod pilots;
 pub(super) mod plan;
 pub(super) mod squads;
+pub(super) mod terrain;
 pub(super) mod threats;
 pub(super) mod tracked;
 pub(super) mod walls;

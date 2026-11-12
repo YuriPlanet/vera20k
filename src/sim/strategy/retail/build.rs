@@ -1250,22 +1250,24 @@ mod tests {
         let mut sim = crate::sim::world::Simulation::new();
         let american = sim.interner.intern("Americans");
         let russian = sim.interner.intern("Russians");
-        sim.houses.register(crate::sim::house_state::HouseState::new(
-            american,
-            0,
-            Some(american),
-            true,
-            0,
-            10,
-        ));
-        sim.houses.register(crate::sim::house_state::HouseState::new(
-            russian,
-            0,
-            Some(russian),
-            false,
-            0,
-            10,
-        ));
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                american,
+                0,
+                Some(american),
+                true,
+                0,
+                10,
+            ));
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                russian,
+                0,
+                Some(russian),
+                false,
+                0,
+                10,
+            ));
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         let gi = rules.object("E1").expect("the GI");
@@ -1281,10 +1283,7 @@ mod tests {
             house_owns(&rules, &obs, gi),
             "the GI is the American house's own"
         );
-        assert!(
-            !house_owns(&rules, &obs, cona),
-            "and the conscript is not"
-        );
+        assert!(!house_owns(&rules, &obs, cona), "and the conscript is not");
 
         let obs = Observation::new(&sim, russian);
         assert!(
@@ -1308,10 +1307,7 @@ mod tests {
             "the weather controller is a strike"
         );
         let plant = rules.object("GAPOWR").expect("the plant");
-        assert!(
-            !grants_a_strike(&rules, plant),
-            "a power plant is not"
-        );
+        assert!(!grants_a_strike(&rules, plant), "a power plant is not");
         let lab = rules.object("GATECH").expect("the lab");
         assert!(!grants_a_strike(&rules, lab), "and neither is the lab");
     }
