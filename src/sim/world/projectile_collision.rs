@@ -193,8 +193,8 @@ impl ProjectileCollisionWorld<'_> {
         location: ProjectileCoord,
     ) -> ImpactLadderWorld {
         let em_effect = self
-            .rules
-            .warhead(self.interner.resolve(projectile.payload().warhead))
+            .interner
+            .warhead_type(projectile.payload().warhead, self.rules)
             .is_some_and(|warhead| warhead.em_effect);
         let target = match projectile.target() {
             ProjectileTarget::Entity(id) => self.entities.get(id).map(|target| {

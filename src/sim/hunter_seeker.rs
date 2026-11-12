@@ -481,7 +481,7 @@ impl crate::sim::world::Simulation {
                 force_create: false,
                 flags: 0,
             });
-        if let Some(warhead_type) = rules.warhead(self.interner.resolve(warhead)) {
+        if let Some(warhead_type) = self.interner.warhead_type(warhead, rules) {
             let _ = crate::sim::combat::world_receiver::apply_area_damage(
                 self,
                 rules,
