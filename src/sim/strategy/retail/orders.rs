@@ -1198,7 +1198,7 @@ pub(super) fn crates(
     // A crate is a bonus and not a job, and the unit that takes it is one
     // with nothing else to do: not a unit the push owns, not a unit that is
     // already walking somewhere, not a unit that is fighting.
-    let idle: Vec<(u64, (u16, u16), MovementZone, bool)> = brain
+    let idle: Vec<(u64, (u16, u16), MovementZone, bool, i32)> = brain
         .census
         .units
         .iter()
@@ -1224,10 +1224,10 @@ pub(super) fn crates(
                 )
         })
         .filter_map(|unit| {
-            let zone = obs
-                .object_type(rules, unit.type_id)
-                .map_or(MovementZone::Infantry, |ty| ty.movement_zone);
-            Some((unit.entity_id, unit.cell, zone, unit.traits.scout))
+            let ty = obs.object_type(rules, unit.type_id);
+            let zone = ty.map_or(MovementZone::Infantry, |ty| ty.movement_zone);
+            let speed = ty.map_or(0, |ty| i32::from(ty.speed));
+            Some((unit.entity_id, unit.cell, zone, unit.traits.scout, speed))
         })
         .collect();
     if idle.is_empty() {
@@ -1254,16 +1254,30 @@ pub(super) fn crates(
         // crate across the map is a walk, and the house that walks across
         // the map for it is a house that is not fighting: measured, sending a
         // fighter thirty cells for a box turned a win into a timeout.
-        let reachable = |unit: &(u64, (u16, u16), MovementZone, bool), range: i32| {
+        let reachable = |unit: &(u64, (u16, u16), MovementZone, bool, i32), range: i32| {
             squared_distance(unit.1, cell) <= range * range && obs.can_reach(unit.2, unit.1, cell)
+        };
+        // The soonest arrival, not the nearest body. The walk is the entire cost
+        // of a crate, so the question is who gets there first per unit of army
+        // taken off the line — a dog four cells out beats a Grizzly one cell
+        // out, and a fast IFV beats both a slow one and a rifleman. Distance
+        // over the type's own `Speed=` is that comparison in one integer, and it
+        // is scale-free: a mod that doubles every speed changes nothing here.
+        //
+        // The detour range itself stays as it was. Measured, a *fighter* sent
+        // thirty cells for a box turned a win into a timeout, and that is a
+        // statement about the range, not about which unit takes it.
+        let arrival = |unit: &(u64, (u16, u16), MovementZone, bool, i32)| {
+            let speed = unit.4.max(1);
+            squared_distance(unit.1, cell) / speed
         };
         let picked = idle
             .iter()
-            .filter(|(id, _, _, _)| !sent.contains(id))
+            .filter(|(id, _, _, _, _)| !sent.contains(id))
             .filter(|unit| reachable(unit, CRATE_SEEK_CELLS))
-            .min_by_key(|(id, from, _, _)| (squared_distance(*from, cell), *id))
+            .min_by_key(|unit| (arrival(unit), unit.0))
             .copied();
-        let Some((id, from, zone, _)) = picked else {
+        let Some((id, from, zone, _, _)) = picked else {
             continue;
         };
         sent.insert(id);
