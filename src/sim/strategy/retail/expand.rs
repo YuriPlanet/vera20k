@@ -390,7 +390,13 @@ fn deploy_second_yard(
     // passes that takes a yard is ground it can take, and a maker that walks
     // past a dozen of them and keeps looking for the one it was told about
     // never deploys at all.
+    //
+    // The ground also has to be *ours* to build on. The caller's flee arranges
+    // that, but a maker that stopped running one cell later must not deploy
+    // there anyway: that is the wishlist's "占领敌方MCV 收缩后又原地展开".
+    let space = super::terrain::Space::read(obs, rules, &brain.census.home_cells, Some(home));
     if cell_distance(cell, home) >= EXPAND_MIN_CELLS
+        && space.ground_at(cell).buildable()
         && obs.deploy_site_admits(rules, entity_id, yard)
     {
         super::orders::issue(brain, out, rules, obs, entity_id, Goal::Deploy);
