@@ -727,12 +727,45 @@ pub(super) fn defense_building<'r>(
     rules: &'r RuleSet,
     obs: &Observation<'_>,
 ) -> Option<(&'r ObjectType, InternedId)> {
-    if let Some(found) = first_buildable(rules, obs, base_defenses(rules, obs)) {
+    // The `[AI]` list is the native answer, and its order is not a priority: for
+    // the Americans it names the pillbox and the prism tower both, and taking the
+    // first buildable one bought a pillbox every time for a whole match — the
+    // wishlist's "光棱塔 never appears". A prism tower costs 1500 against a
+    // pillbox's 200 and needs `RADAR`, so the dear one is the one the tech level
+    // is asking for; the pillbox is the answer before the radar stands and the
+    // fallback when nothing better is buildable.
+    //
+    // `CanBuild` has already filtered by prerequisite and owner, so "buildable"
+    // here means the house has the tree for it: the escalation is the tech, not
+    // a guess about it.
+    let listed = base_defenses(rules, obs);
+    if let Some(found) = dearest_buildable(rules, obs, listed) {
         return Some(found);
     }
     class_types(rules, obs, ObjectCategory::Building)
         .filter(|(ty, _)| ty.weapon_at(0).is_some())
-        .min_by_key(|(ty, _)| (obs.cost_of(rules, ty), ty.id.clone()))
+        .max_by_key(|(ty, _)| (obs.cost_of(rules, ty), ty.id.clone()))
+}
+
+/// The dearer of the listed types the house can build, when any is buildable.
+///
+/// The same admission `first_buildable` applies — `CanBuild` and the house's own
+/// country — and only the choice differs: the tech level decides which tower the
+/// base wants, not the order the `[AI]` list happens to name them in.
+fn dearest_buildable<'r>(
+    rules: &'r RuleSet,
+    obs: &Observation<'_>,
+    names: &[String],
+) -> Option<(&'r ObjectType, InternedId)> {
+    names
+        .iter()
+        .filter_map(|name| {
+            let ty = rules.object(name)?;
+            let type_id = obs.type_id(name)?;
+            (obs.can_build(rules, ty, true) != CanBuild::No && house_owns(rules, obs, ty))
+                .then_some((ty, type_id))
+        })
+        .max_by_key(|(ty, _)| obs.cost_of(rules, ty))
 }
 
 /// How many defensive structures the house has: the `[AI]` list's types, or
