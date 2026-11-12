@@ -839,3 +839,29 @@ fn ares_deactivated_infantry_only_counts_fear_down_and_never_scatters() {
     assert!(draws(&mut sim, online), "an active one scatters");
     assert!(!draws(&mut sim, offline));
 }
+
+/// Ares Deactivate `1004CDC0` (hook `0x70FC90`) plays `DeactivateSound=`
+/// only while IKnowWhatImDoing (`0xA8E7AC`, VERA's object placement scope)
+/// is clear; stock `0x0070FC90` has no such test.
+#[test]
+fn deactivate_sound_waits_for_the_ares_placement_mutex() {
+    let Some(rules) = retail_rules() else {
+        return;
+    };
+    let (mut sim, _grid) = arena(&rules);
+    let tanks = [
+        spawn(&mut sim, &rules, "ROBO", "Americans", 12, 14),
+        spawn(&mut sim, &rules, "ROBO", "Americans", 15, 14),
+    ];
+    sim.sound_events.take_for_test();
+    sim.with_object_placement_scope(|sim| {
+        sim.techno_deactivate(tanks[0], &rules, FrameEffects::default())
+    });
+    sim.techno_deactivate(tanks[1], &rules, FrameEffects::default());
+    let events = sim.sound_events.take_for_test();
+    assert!(tanks.iter().all(|&id| offline(&sim, id)));
+    assert_eq!(
+        sounds(&events, "RobotTankOffline"),
+        if cfg!(feature = "ares") { 1 } else { 2 }
+    );
+}

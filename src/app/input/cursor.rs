@@ -848,6 +848,25 @@ pub(super) fn capability_cursor_for_hover(
 ) -> CursorFeedbackKind {
     use super::context_order::OrderModifier;
     use crate::map::entities::EntityCategory;
+    // Ares hooks at the head of each class What_Action over an object: a
+    // Deactivated cursor owner answers GetDeactivatedAction alone.
+    #[cfg(feature = "ares")]
+    if let (Some(actor), Some(rules)) = (best_id, rules)
+        && let Some(action) = super::context_order::ares_deactivated_action(
+            sim,
+            rules,
+            selected,
+            actor,
+            hover.stable_id,
+        )
+    {
+        use super::context_order::AresDeactivatedAction;
+        return match action {
+            AresDeactivatedAction::Detonate => CursorFeedbackKind::Detonate,
+            AresDeactivatedAction::Select => CursorFeedbackKind::Select,
+            AresDeactivatedAction::None => CursorFeedbackKind::Default,
+        };
+    }
     // Ares 3.0 100171B0 (hook 0x44725F): Building What_Action answers Enter
     // before Techno What_Action when the building's occupants may traverse
     // into the hovered one (canTraverseTo 10011690).
@@ -1596,8 +1615,8 @@ pub(crate) enum ActionDistanceTarget {
 /// cell centre at height 0 when a cell was supplied, else to the target
 /// object's GetCoords.
 ///
-/// RESIDUAL: score 1 is never given. VERA has no producer for EMP (`+0x504`)
-/// or a Unit's death-frame counter (`+0x6D8`); see `techno_ai_cloak`.
+/// RESIDUAL: score 1 comes from the EMP counter (`+0x504`) alone; VERA has no
+/// producer for a Unit's death-frame counter (`+0x6D8`); see `techno_ai_cloak`.
 pub(crate) fn select_best_for_action(
     sim: &crate::sim::world::Simulation,
     selected: &[u64],
@@ -1636,6 +1655,8 @@ pub(crate) fn select_best_for_action(
         let obj = rules.and_then(|r| sim.interner().object_type(entity.type_ref(), r));
         let priority = if entity.berserk.is_active() {
             0
+        } else if entity.emp_remaining() > 0 {
+            1
         } else if !obj.zip(rules).is_some_and(|(obj, rules)| {
             is_armed(entity, obj, sim.entities(), rules, sim.interner())
         }) {

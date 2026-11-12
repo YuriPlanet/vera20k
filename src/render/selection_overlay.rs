@@ -63,6 +63,10 @@ pub struct SelectionOverlay {
     talk_bubble: Option<CenteredShapeStrip>,
     /// WRENCH.SHP, the repairing building's wrench.
     repair_wrench: Option<CenteredShapeStrip>,
+    /// POWEROFF.SHP, which only Ares draws (TechnoClass_DrawExtras_PowerOff
+    /// 10049FE0, hook 0x6F526C).
+    #[cfg(feature = "ares")]
+    power_off: Option<CenteredShapeStrip>,
     /// Full PIPS: health, rank, raw garrison Pip values and self-heal.
     /// Native LoadPipAssets 5F76B0 binds AC147C; both use Convert 87F6C4.
     pips: Option<CenteredShapeStrip>,
@@ -440,6 +444,19 @@ impl SelectionOverlay {
                 "mousepal.pal",
             )
         });
+        // POWEROFF.SHP by name (0x0045E970, beside WRENCH.SHP); Ares draws
+        // it through the same MOUSEPAL Convert.
+        #[cfg(feature = "ares")]
+        let power_off = assets.and_then(|assets| {
+            CenteredShapeStrip::from_assets_on_device(
+                device,
+                queue,
+                batch,
+                assets,
+                "poweroff.shp",
+                "mousepal.pal",
+            )
+        });
         // Original 5F76B0 /52BF26..52BFC1: one PIPS.SHP/PALETTE.PAL
         // resource serves health6F66BA/6F6A4A, rank70AA4F and self-heal70A6BB.
         // Keep every frame's native origin and original index plane.
@@ -465,6 +482,8 @@ impl SelectionOverlay {
             bomb_clock,
             talk_bubble,
             repair_wrench,
+            #[cfg(feature = "ares")]
+            power_off,
             pips,
             #[cfg(feature = "phobos")]
             digital_shapes: Vec::new(),
@@ -629,6 +648,12 @@ impl SelectionOverlay {
     /// The repair wrench art (WRENCH.SHP), when the assets have it.
     pub fn repair_wrench(&self) -> Option<&CenteredShapeStrip> {
         self.repair_wrench.as_ref()
+    }
+
+    /// The power-off marker art (POWEROFF.SHP), when the assets have it.
+    #[cfg(feature = "ares")]
+    pub fn power_off(&self) -> Option<&CenteredShapeStrip> {
+        self.power_off.as_ref()
     }
 
     /// Physical PIPS.SHP shared by health, rank14/15/19 and self-heal13/20.

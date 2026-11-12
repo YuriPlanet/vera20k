@@ -2105,6 +2105,11 @@ fn hash_entity_owed(entity: &GameEntity, frame: u32, owed_visits: u32, hasher: &
         entity.sensor_array_counter.hash(hasher);
     }
     #[cfg(feature = "ares")]
+    if !entity.ares_dock_reload_timers.is_empty() {
+        b"ares-dock-reload-timers-v1".hash(hasher);
+        entity.ares_dock_reload_timers.hash(hasher);
+    }
+    #[cfg(feature = "ares")]
     if !entity.ares_firestorm_wall.is_zero() {
         b"ares-firestorm-wall-frame-v1".hash(hasher);
         entity.ares_firestorm_wall.hash(hasher);

@@ -478,7 +478,12 @@ fn record_last_built_enforces_map_authored_negative_limit() {
         super::can_build::can_build(&sim, rules, owner, e2, true, true),
         super::can_build::CanBuild::Yes
     );
-    assert!(!super::can_build::check_build_limit(&sim, rules, owner, e2));
+    // Ares 10024F80 (hook 0x50B370) also wants a usable factory, and this
+    // house owns none.
+    assert_eq!(
+        super::can_build::check_build_limit(&sim, rules, owner, e2),
+        crate::rules::ARES_ENABLED
+    );
 
     let product = sim
         .construct_object_limbo_at_height(

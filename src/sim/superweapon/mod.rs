@@ -26,6 +26,8 @@ mod ares_charge_tests;
 mod ares_common_keys_tests;
 #[cfg(feature = "ares")]
 mod ares_presentation;
+#[cfg(feature = "ares")]
+pub use ares_presentation::ares_timer_visible;
 #[cfg(all(test, feature = "ares"))]
 mod ares_stock_types_tests;
 #[cfg(all(test, feature = "ares"))]
@@ -2336,18 +2338,26 @@ fn finish_ares_launch(
     }
 }
 
+/// One House pass's provider facts (`provider_supers`).
+#[derive(Default)]
+struct SuperProviders {
+    /// A live provider building (stock found flag; Ares Available).
+    provided: std::collections::BTreeSet<InternedId>,
+    /// A provider that powers it, before the low-power pass: stock reads its
+    /// online byte `+0x660` (`0x0050B020`); Ares GetSuperWeaponStatuses
+    /// `10038F10` (PowerSourced) also wants it not under EMP (vt+0x37C) and
+    /// operated (`10062F50`).
+    online: std::collections::BTreeSet<InternedId>,
+    /// Ares Charging, which only the Ares hold pass reads: such a provider
+    /// that is not warped out (vt+0x1D4) and whose current and queued
+    /// missions are neither Construction nor Selling.
+    charging: std::collections::BTreeSet<InternedId>,
+}
+
 /// Shared provider facts for one reached House pass. Source authority is the
 /// retained House building list and the existing457630/457690 provider readers.
-fn provider_supers(
-    sim: &Simulation,
-    rules: &RuleSet,
-    owner: InternedId,
-) -> (
-    std::collections::BTreeSet<InternedId>,
-    std::collections::BTreeSet<InternedId>,
-) {
-    let mut provided = std::collections::BTreeSet::new();
-    let mut online = std::collections::BTreeSet::new();
+fn provider_supers(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> SuperProviders {
+    let mut providers = SuperProviders::default();
     // Ares GetSuperWeaponStatuses10038F10: the observer House has none; an
     // available `SW.AlwaysGranted` type is Available, PowerSourced and
     // Charging without a provider (the low-power pass still holds a powered
@@ -2357,7 +2367,7 @@ fn provider_supers(
     #[cfg(feature = "ares")]
     {
         if sim.session.is_observer_house(owner) {
-            return (provided, online);
+            return providers;
         }
         for name in &rules.super_weapon_order {
             if rules
@@ -2366,22 +2376,45 @@ fn provider_supers(
                 && super_weapon_available(sim, rules, owner, name)
                 && let Some(id) = sim.interner.get(name)
             {
-                provided.insert(id);
-                online.insert(id);
+                providers.provided.insert(id);
+                providers.online.insert(id);
+                providers.charging.insert(id);
             }
         }
     }
     for building in owned_live_buildings(sim, owner) {
+        // 10038F10 asks the building's power once: HasPower, not under EMP
+        // and NoOperatorRequired or operated (10062F50).
+        #[cfg(feature = "ares")]
+        let powered = building.building_online()
+            && building.emp_remaining() <= 0
+            && sim.ares_is_operated(building.stable_id(), rules);
+        #[cfg(not(feature = "ares"))]
+        let powered = building.building_online();
+        #[cfg(feature = "ares")]
+        let charging = powered && !building.is_warped_out() && {
+            use crate::sim::mission::MissionType::{Construction, Selling};
+            ![
+                building.mission.current().known(),
+                building.mission.queued().known(),
+            ]
+            .iter()
+            .any(|mission| matches!(mission, Some(Construction | Selling)))
+        };
         for name in provided_supers(sim, rules, building) {
             if let Some(id) = sim.interner.get(name) {
-                provided.insert(id);
-                if building.building_online() {
-                    online.insert(id);
+                providers.provided.insert(id);
+                if powered {
+                    providers.online.insert(id);
+                }
+                #[cfg(feature = "ares")]
+                if charging {
+                    providers.charging.insert(id);
                 }
             }
         }
     }
-    (provided, online)
+    providers
 }
 
 /// House50AF10: hold/release or revoke existing Supers. Reached only at the
@@ -2398,7 +2431,7 @@ pub(crate) fn update_owned_supers(sim: &mut Simulation, rules: &RuleSet, owner: 
         .power_states
         .get(&owner)
         .is_some_and(|state| state.low_power());
-    let (provided, online) = provider_supers(sim, rules, owner);
+    let providers = provider_supers(sim, rules, owner);
     for type_id in house_super_order(sim, rules, owner) {
         let Some(sw) = rules.super_weapon(sim.interner.resolve(type_id)) else {
             continue;
@@ -2415,8 +2448,9 @@ pub(crate) fn update_owned_supers(sim: &mut Simulation, rules: &RuleSet, owner: 
                 sw,
                 defeated,
                 allowed,
-                provided.contains(&type_id),
-                !low_power && online.contains(&type_id),
+                providers.provided.contains(&type_id),
+                !low_power && providers.online.contains(&type_id),
+                providers.charging.contains(&type_id),
             );
             // Ares Lose10035610 and SetOnHold10035750 deactivate a draining
             // charge-drain type's new type.
@@ -2488,7 +2522,8 @@ pub(super) enum SuperHold {
 
 /// The hold pass's decision for one retained instance: `allowed` is the shell
 /// option, `provided` a live provider building, `powered_online` an online
-/// provider while the House is not low on power.
+/// provider while the House is not low on power, `charging` the Ares
+/// Charging status (`SuperProviders::charging`).
 pub(super) fn super_hold(
     instance: &SuperWeaponInstance,
     sw: &SuperWeaponType,
@@ -2496,6 +2531,7 @@ pub(super) fn super_hold(
     allowed: bool,
     provided: bool,
     powered_online: bool,
+    charging: bool,
 ) -> SuperHold {
     if !instance.is_active {
         SuperHold::Unchanged
@@ -2505,6 +2541,16 @@ pub(super) fn super_hold(
         SuperHold::Unchanged
     } else if defeated || !allowed || !provided {
         SuperHold::Deactivate
+    } else if crate::rules::ARES_ENABLED {
+        // Ares HouseClass_UpdateSuperWeaponsOwned10039450 (hook50AF10
+        // replaces the whole pass): an IsPowered (+0xE6) type is held
+        // without PowerSourced (low power clears it), any other type without
+        // Charging, so an EMPed or building-up provider holds it too.
+        SuperHold::Suspend(if sw.is_powered {
+            !powered_online
+        } else {
+            !charging
+        })
     } else if powered_online {
         SuperHold::Suspend(false)
     } else if sw.is_powered {
@@ -2530,10 +2576,9 @@ pub(crate) fn grant_provided_supers(sim: &mut Simulation, rules: &RuleSet, owner
         .power_states
         .get(&owner)
         .is_some_and(|state| state.low_power());
-    #[cfg_attr(not(feature = "ares"), allow(unused_variables))]
-    let (provided, online) = provider_supers(sim, rules, owner);
+    let providers = provider_supers(sim, rules, owner);
     for type_id in house_super_order(sim, rules, owner) {
-        if !provided.contains(&type_id) {
+        if !providers.provided.contains(&type_id) {
             continue;
         }
         let Some(sw) = rules.super_weapon(sim.interner.resolve(type_id)) else {
@@ -2546,7 +2591,7 @@ pub(crate) fn grant_provided_supers(sim: &mut Simulation, rules: &RuleSet, owner
         // provider (or SW.AlwaysGranted), withdrawn on low power only for an
         // IsPowered type.
         #[cfg(feature = "ares")]
-        let low_power = !(online.contains(&type_id) && !(low_power && sw.is_powered));
+        let low_power = !(providers.online.contains(&type_id) && !(low_power && sw.is_powered));
         grant_super(
             &sim.interner,
             &sim.session,

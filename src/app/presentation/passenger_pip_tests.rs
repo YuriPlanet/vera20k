@@ -363,3 +363,59 @@ fn shared_harvester_scale_matches_native_independent_ore_and_gem_counts() {
         );
     }
 }
+
+/// Ares TechnoClass_DrawPipscale_Passengers (1004A280, hook 0x709D38) and
+/// GetPassengerPips (10044C90): a hold over GetPipMax clips its pips where
+/// the stock arm draws none, a `Gunner=` type leaves one empty step after
+/// its first pip, and `Passengers.BySize=no` gives a passenger one pip.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_passenger_pips_clip_an_overfull_hold_and_step_once_after_the_gunner() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::passenger::{PassengerCargo, PassengerRole};
+
+    let draws = |carrier_keys: &str| {
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=CARRIER\n1=TANK\n\
+             [CARRIER]\nStrength=100\nArmor=heavy\nSpeed=4\nPassengers=3\n\
+             PipScale=Passengers\nSizeLimit=4\n{carrier_keys}\
+             [TANK]\nStrength=100\nArmor=heavy\nSpeed=4\nSize=4\n"
+        )))
+        .expect("carrier and passenger rules");
+        let mut sim = Simulation::new();
+        crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let carrier = sim
+            .spawn_object("CARRIER", OWNER, 16, 16, 64, &rules)
+            .unwrap();
+        let tank = sim.spawn_object("TANK", OWNER, 16, 15, 64, &rules).unwrap();
+        let mut cargo = PassengerCargo::new(3, 4.0);
+        cargo.board_forced_chain(&[(tank, 4.0)]);
+        sim.entities_mut_for_test()
+            .get_mut(carrier)
+            .unwrap()
+            .passenger_role = PassengerRole::transport(cargo);
+        assert!(sim.apply_command(
+            OWNER,
+            &Command::Select {
+                entity_ids: vec![carrier],
+                additive: false,
+            },
+            Some(&rules)
+        ));
+        super::ui_overlays::scale_pip_draws(
+            &sim,
+            sim.entities().get(carrier).unwrap(),
+            None,
+            Some(OWNER),
+            &rules,
+        )
+        .into_iter()
+        .map(|pip| (pip.frame, pip.offset_pixels[0]))
+        .collect::<Vec<_>>()
+    };
+    assert_eq!(draws(""), [(5, 0), (3, 4), (3, 8)]);
+    assert_eq!(draws("Gunner=yes\n"), [(5, 0), (3, 8), (3, 12)]);
+    assert_eq!(draws("Passengers.BySize=no\n"), [(5, 0), (0, 4), (0, 8)]);
+}

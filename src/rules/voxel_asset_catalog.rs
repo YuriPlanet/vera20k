@@ -402,6 +402,46 @@ mod tests {
         assert_eq!(twice.simulation_config_hash(), hash);
     }
 
+    /// Ares ObjectTypeClass_Load3DArt_NoSpawnAlt1 (10041280, hook 0x5F8277):
+    /// a NoSpawnAlt unit whose <Image>WO pair is missing fails its whole
+    /// voxel load, where the stock loader treats the WO pair as optional.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_no_spawn_alt_unit_needs_its_wo_pair() {
+        use crate::rules::native_processing::RulesLayerStack;
+        let Some((_, retail)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let has_main = |with_wo: bool| {
+            let directory = crate::map::source::test_support::TestDirectory::new(if with_wo {
+                "ares-no-spawn-alt-wo"
+            } else {
+                "ares-no-spawn-alt-missing-wo"
+            });
+            for extension in ["VXL", "HVA"] {
+                let bytes = retail.get_ref(&format!("MTNK.{extension}")).unwrap();
+                std::fs::write(directory.path().join(format!("MTNK.{extension}")), bytes).unwrap();
+                if with_wo {
+                    std::fs::write(directory.path().join(format!("MTNKWO.{extension}")), bytes)
+                        .unwrap();
+                }
+            }
+            let assets = AssetManager::from_loose_root_for_test(directory.path());
+            let processed = RulesLayerStack::new(IniFile::from_str(
+                "[VehicleTypes]\n0=SOURCE\n[SOURCE]\nImage=MTNK\nNoSpawnAlt=yes\n",
+            ))
+            .process_with_fixed_art(&IniFile::from_str("[MTNK]\nVoxel=yes\n"))
+            .unwrap();
+            let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+            rules.bind_effect_assets(&assets, "TEM", "TEMPERATE");
+            rules
+                .loaded_voxel_model("SOURCE")
+                .is_some_and(|model| model.main().is_some())
+        };
+        assert!(has_main(true));
+        assert!(!has_main(false));
+    }
+
     #[test]
     fn shared_voxel_slots_keep_missing_guns_but_never_follow_retired_generations() {
         use crate::rules::native_processing::{NativeRulesRegistryState, RulesLayerStack};
@@ -425,6 +465,16 @@ mod tests {
                 retail.get_ref(&format!("MTNK.{extension}")).unwrap(),
             )
             .unwrap();
+            // Ares ObjectTypeClass_Load3DArt_NoSpawnAlt1 (10041280, hook
+            // 0x5F8277): SOURCE's NoSpawnAlt=yes needs its <Image>WO pair.
+            #[cfg(feature = "ares")]
+            for image in ["MTNK", "ALT"] {
+                std::fs::write(
+                    directory.path().join(format!("{image}WO.{extension}")),
+                    retail.get_ref(&format!("MTNK.{extension}")).unwrap(),
+                )
+                .unwrap();
+            }
         }
         let assets = AssetManager::from_loose_root_for_test(directory.path());
         let art = IniFile::from_str("[MTNK]\nVoxel=yes\n[ALT]\nVoxel=yes\n[MISSING]\nVoxel=yes\n");

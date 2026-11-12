@@ -163,6 +163,20 @@ impl Simulation {
             .is_some_and(|entity| !self.ares_tunnels.members(entity.owner(), tunnel).is_empty())
     }
 
+    /// The tunnel arm of TechnoExt::GetPassengerPips (`10044C90`): for a
+    /// tunnel `building`, its type's MaxCap and the members of its owner's
+    /// network of that type, in entry order.
+    pub fn ares_tunnel_pip_contents(
+        &self,
+        building: u64,
+        rules: &RuleSet,
+    ) -> Option<(i32, &[u64])> {
+        let tunnel = self.ares_tunnel_type(building, rules)?;
+        let owner = self.substrate.entities.get(building)?.owner();
+        let max_cap = rules.ares_building_globals().tunnel_max_cap(tunnel)?;
+        Some((max_cap, self.ares_tunnels.members(owner, tunnel)))
+    }
+
     /// `TunnelData::CanEnterTunnel @ 100097D0`: `foot` asks `building`
     /// CAN_LOAD (RadioCommand QueryCanEnter) and, on ROGER, enters `house`'s
     /// network of type `tunnel`. Answers whether it went in.

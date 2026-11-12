@@ -1498,11 +1498,13 @@ impl Simulation {
     /// construction and must not leave a building waiting on a buildup.
     /// Ares PlaceUnits supplies GetCoordsWithBridge and explicitly sets
     /// OnBridge before Put; the class query's local plane is not that store.
+    /// `facing` is the DirType Put receives.
     #[cfg(feature = "ares")]
     pub(crate) fn reveal_finished_object_at_coord(
         &mut self,
         stable_id: u64,
         coord: crate::sim::components::DriveCoord,
+        facing: u8,
         on_bridge: bool,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
@@ -1517,7 +1519,7 @@ impl Simulation {
             sim.reveal_constructed_object_at_coord_with_overlay_context(
                 stable_id,
                 coord,
-                0,
+                facing,
                 PlacementEvidence::EvaluateMark,
                 rules,
                 registry,
@@ -3231,6 +3233,10 @@ impl Simulation {
             self.transfer_factory_country(sid, new_sid);
         }
         self.transfer_slave_manager(sid, new_sid, false, rules, overlay_registry, frame_effects);
+        // Ares hook 0x44A04C (10053D60), right after that handover: the unit
+        // takes the building's EMP counter and sparkle.
+        #[cfg(feature = "ares")]
+        self.copy_ares_emp_to_undeployed(sid, new_sid, rules);
         // BuildingClass::Mission_Selling 0x0044A0D4..0x0044A115: the unit
         // takes the building's voice handle and latch.
         self.move_unit_voice(sid, new_sid);

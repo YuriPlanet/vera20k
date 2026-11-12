@@ -360,6 +360,24 @@ impl VoxelModelPlan {
         let success = self.and(present, valid);
         let mut failed = self.not(success);
         let indexed = input.unit && input.turret_count > 0 && !input.gattling;
+        // Ares ObjectTypeClass_Load3DArt_NoSpawnAlt1 (10041280, hook
+        // 0x5F8277, resuming at the stock Turret test 0x5F8287): a unit
+        // type's NoSpawnAlt loads <Image>WO into TechnoTypeExt's own slot
+        // whatever its Turret=, and a missing or unreadable pair fails the
+        // whole load (LoadVoxel 1003F4E0 with missingOk false). The unit draw
+        // reads that pair by name (`unit_atlas_variants`), so only the
+        // outcome joins the failure flag here.
+        #[cfg(feature = "ares")]
+        if input.unit && input.no_spawn_alt {
+            let image = format!("{}WO", input.image);
+            let present = self.probe(LibraryKind::Vxl, &image, false);
+            let vxl_valid = self.probe(LibraryKind::Vxl, &image, true);
+            let hva_valid = self.probe(LibraryKind::Hva, &image, true);
+            let valid = self.and(vxl_valid, hva_valid);
+            let loaded = self.and(present, valid);
+            let bad = self.not(loaded);
+            failed = self.or(failed, bad);
+        }
         if input.unit && !input.turret {
             //5F82C4: APC is an exact stored-ID comparison; W precedes WO.
             if input.apc {
@@ -367,7 +385,10 @@ impl VoxelModelPlan {
                     self.optional_pair(&mut slots.auxiliary, &format!("{}W", input.image), 1, true);
                 failed = self.or(failed, e);
             }
-            if input.no_spawn_alt {
+            // Ares ObjectTypeClass_Load3DArt_NoSpawnAlt2 (100413A0, hook
+            // 0x5F848C) skips this stock WO load to the barrel tests at
+            // 0x5F8844; the pair is loaded above instead.
+            if input.no_spawn_alt && !cfg!(feature = "ares") {
                 let e = self.optional_pair(
                     &mut slots.auxiliary,
                     &format!("{}WO", input.image),

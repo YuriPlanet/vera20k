@@ -85,12 +85,20 @@ Every `HasSpotlight=` Techno gets its BuildingLight at TechnoClass::Unlimbo
 
 ## Residuals
 
-- Deactivated cursor and click actions (eleven `Hooks.Deactivated.cpp`
-  hooks: None over cells, GetDeactivatedAction 10044AD0 over objects, the
-  ClickedAction refusals) and the heal actions (0x51E710, 0x73FDBD): VERA's
-  cursor and order rungs have no single per-class What_Action entry to gate.
-  Effect: a deactivated selection still shows and sends its stock actions,
-  which IsControllable already refuses for most orders.
+- Deactivated cursor and click actions (`Hooks.Deactivated.cpp`): the cell
+  What_Action answers 0 at its one entry (`Simulation::cell_move_action`),
+  the ClickedAction refusals drop a Deactivated object from the click's
+  receivers (`Simulation::click_order_receivers`), and GetDeactivatedAction
+  10044AD0 decides the hover cursor of the object that owns it
+  (`capability_cursor_for_hover`). The click paths over an object have no
+  single per-class What_Action entry; they keep their stock rungs, whose
+  orders the receiver filter already withholds; when the cursor owner is
+  Deactivated, its answer decides the whole release, so no object receives
+  an order (`ares_deactivated_selection_click`). SelectBestObjectForAction
+  ranks an EMPed object 1. The heal actions (0x51E710, 0x73FDBD) are not
+  ported: a healer keeps the stock Heal cursor where Ares shows
+  InfantryHeal/UnitRepair and heals by Verses, which a mod's mechanic
+  infantry reaches (Brute Force `CVEngineer`, `REPDRONE`).
 - Init_1's capture manager and parasite for any weapon slot and the
   parasite slot hooks (0x629804, 0x62A020, 0x62A7B1); the gunner temporal
   swap (0x74642C, 0x74653C); Hover DeployToLand (0x513EAA, 0x514A21,
@@ -99,14 +107,11 @@ Every `HasSpotlight=` Techno gets its BuildingLight at TechnoClass::Unlimbo
   (0x4D9A83); the infantry DamageSparks parse order (0x5240BD).
 - Dormant in retail: flying carriers (0x414338, 0x6B783B).
 - Presentation and audio: the radial indicators of non-buildings
-  (0x41BE80; the building GetSensorRange override 0x4566B0 is ported), the
-  power-off marker (0x6F526C, whose wrench gate is ported in
-  `app/presentation/ui_overlays.rs`), passenger pips (0x709D38), damage
+  (0x41BE80; the building GetSensorRange override 0x4566B0 is ported), damage
   spark and smoke particle-system lists (0x6FAD49, 0x702894), move sounds
   (0x4DAA68, 0x7101CF). The airstrike voices (0x41D5AE, 0x41D940) are
   ported in `sim/airstrike.rs`.
-- Activate/Deactivate's factory queue refresh and sound mutex, and the
-  AttachEffect anim hiding of the Temporal hook.
+- The AttachEffect anim hiding of the Temporal hook.
 - `SuperGapRadiusInCells` multiples of 256: the stock What_Action
   (`0x004472AA`) still reads the char, VERA the int.
 
@@ -142,8 +147,15 @@ InfantryElectrocuted=         ; Find only; unset: ELECTRO, else AnimTypes[1]
 - `sim/world/disk_laser.rs`: a disk laser's hit flashes its warhead and, with
   `DiskLaserAnimEnabled`, plays its damage animation (`1004CFF0`, hook
   `0x4A76ED`).
-- `app/presentation/ui_overlays.rs`: `EnemyWrench` and the warp tests of the
-  repair wrench (`10049FE0`, hook `0x6F526C`).
+- `app/presentation/ui_overlays.rs`: `EnemyWrench`, the warp tests, frame
+  and offset of the repair wrench, and the power-off marker over a building
+  whose owner switched it off, for that player and observers (`10049FE0`,
+  hook `0x6F526C`; it covers buildings only, not deactivated units). The
+  passenger pips (`1004A280`, hook `0x709D38`) take TechnoExt::GetPassengerPips
+  (`10044C90`): only a `PipScale=Passengers` type, the last passenger first,
+  each clipped to the pips left, one gap step after a Gunner's first pip,
+  `Passengers.BySize`, and a tunnel's network; another PipScale draws its own
+  scale instead.
 
 ### Not covered
 
@@ -229,7 +241,7 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 | `6F3283` | TechnoClass_CanScatter_KillDriver | `10049F90` | ported earlier |
 | `6F407D` | TechnoClass_Init_1 | `1004A530` | ported earlier: Temporal slot; capture manager and parasite of any slot are residual |
 | `6F4103` | TechnoClass_Init_2 | `1004A870` | equivalent: skips the stock managers; Init_1 replaces them |
-| `6F526C` | TechnoClass_DrawExtras_PowerOff | `10049FE0` | ported in part: the wrench gate (`app/presentation/ui_overlays.rs`); residual: the power-off marker (presentation) |
+| `6F526C` | TechnoClass_DrawExtras_PowerOff | `10049FE0` | ported: the wrench gate, frame and offset and the power-off marker (`app/presentation/ui_overlays.rs`) |
 | `6F6A58` | TechnoClass_DrawHealthBar_HidePips_KillDriver | `1004A260` | ported earlier |
 | `6F6AC9` | TechnoClass_Remove | `1004B140` | ported earlier |
 | `6F826E` | TechnoClass_CanAutoTargetObject_CivilianEnemy | `10049D00` | ported earlier |
@@ -261,7 +273,7 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 | `7087EB` | TechnoClass_ShouldRetaliate_KillDriver | `1004B2D0` | ported earlier |
 | `7090A8` | TechnoClass_SelectFiringVoice | `1004B1D0` | ported: `sim::world::selection_voice` |
 | `7091D6` | TechnoClass_CanPassiveAquire_KillDriver | `10049F70` | ported earlier |
-| `709D38` | TechnoClass_DrawPipscale_Passengers | `1004A280` | residual: passenger pip frames (presentation) |
+| `709D38` | TechnoClass_DrawPipscale_Passengers | `1004A280` | ported: `scale_pip_draws` with GetPassengerPips `10044C90` (`app/presentation/ui_overlays.rs`) |
 | `70BE80` | TechnoClass_ShouldSelfHealOneStep | `1004B2F0` | ported earlier |
 | `70DEBA` | TechnoClass_UpdateGattling_Cycle | `1004B6C0` | ported earlier |
 | `70E2B0` | TechnoClass_IronCurtain | `1004A880` | ported earlier |
@@ -303,24 +315,24 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 
 | Hook | Name | Ares.dll | Disposition |
 |---|---|---|---|
-| `417CCB` | AircraftClass_GetActionOnObject_Deactivated | `1004CB00` | residual: deactivated cursor/click actions (input rungs) |
-| `417F83` | AircraftClass_GetActionOnCell_Deactivated | `1004CAE0` | residual: deactivated cursor/click actions (input rungs) |
-| `4436F7` | BuildingClass_ActionOnCell_Deactivated | `1004CB30` | residual: deactivated cursor/click actions (input rungs) |
-| `447218` | BuildingClass_GetActionOnObject_Deactivated | `1004CB70` | residual: deactivated cursor/click actions (input rungs) |
-| `447548` | BuildingClass_GetActionOnCell_Deactivated | `1004CB50` | residual: deactivated cursor/click actions (input rungs) |
-| `4D74EC` | FootClass_ActionOnObject_Deactivated | `1004CBC0` | residual: deactivated cursor/click actions (input rungs) |
-| `4D7D58` | FootClass_ActionOnCell_Deactivated | `1004CBA0` | residual: deactivated cursor/click actions (input rungs) |
+| `417CCB` | AircraftClass_GetActionOnObject_Deactivated | `1004CB00` | ported: deactivated rungs (see Residuals) |
+| `417F83` | AircraftClass_GetActionOnCell_Deactivated | `1004CAE0` | ported: deactivated rungs (see Residuals) |
+| `4436F7` | BuildingClass_ActionOnCell_Deactivated | `1004CB30` | ported: deactivated rungs (see Residuals) |
+| `447218` | BuildingClass_GetActionOnObject_Deactivated | `1004CB70` | ported: deactivated rungs (see Residuals) |
+| `447548` | BuildingClass_GetActionOnCell_Deactivated | `1004CB50` | ported: deactivated rungs (see Residuals) |
+| `4D74EC` | FootClass_ActionOnObject_Deactivated | `1004CBC0` | ported: deactivated rungs (see Residuals) |
+| `4D7D58` | FootClass_ActionOnCell_Deactivated | `1004CBA0` | ported: deactivated rungs (see Residuals) |
 | `51D0DD` | InfantryClass_Scatter | `1004CC60` | ported earlier |
-| `51E440` | InfantryClass_GetActionOnObject_Deactivated | `1004CC30` | residual: deactivated cursor/click actions (input rungs) |
-| `51F808` | InfantryClass_GetActionOnCell_Deactivated | `1004CC10` | residual: deactivated cursor/click actions (input rungs) |
+| `51E440` | InfantryClass_GetActionOnObject_Deactivated | `1004CC30` | ported: deactivated rungs (see Residuals) |
+| `51F808` | InfantryClass_GetActionOnCell_Deactivated | `1004CC10` | ported: deactivated rungs (see Residuals) |
 | `5200B3` | InfantryClass_UpdatePanic | `1004CC80` | ported earlier |
-| `70FBE0` | TechnoClass_Activate | `1004CCB0` | ported earlier: factory queue refresh and sound mutex residual |
-| `70FC90` | TechnoClass_Deactivate | `1004CDC0` | ported earlier: factory queue refresh and sound mutex residual |
+| `70FBE0` | TechnoClass_Activate | `1004CCB0` | ported: `Simulation::techno_reactivate`, with the factory queue refresh and the sound mutex |
+| `70FC90` | TechnoClass_Deactivate | `1004CDC0` | ported: `Simulation::techno_deactivate`, with the factory queue refresh and the sound mutex |
 | `736135` | UnitClass_Update_Deactivated | `1004CFD0` | ported earlier |
 | `73C143` | UnitClass_DrawVXL_Deactivated | `1004CEA0` | ported earlier |
 | `73DBF9` | UnitClass_Mi_Unload_Decactivated | `1004CF80` | ported earlier |
-| `73FD5A` | UnitClass_GetActionOnObject_Deactivated | `1004CF50` | residual: deactivated cursor/click actions (input rungs) |
-| `7404B9` | UnitClass_GetActionOnCell_Deactivated | `1004CF30` | residual: deactivated cursor/click actions (input rungs) |
+| `73FD5A` | UnitClass_GetActionOnObject_Deactivated | `1004CF50` | ported: deactivated rungs (see Residuals) |
+| `7404B9` | UnitClass_GetActionOnCell_Deactivated | `1004CF30` | ported: deactivated rungs (see Residuals) |
 
 ### Hooks.Gap.cpp
 
@@ -377,6 +389,10 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 | Hook | Name | Ares.dll | Disposition |
 |---|---|---|---|
 | `5F8084` | ObjectTypeClass_UnloadTurretArt | `100423B0` | equivalent: no 18-slot voxel bound to free |
+| `5F8277` | ObjectTypeClass_Load3DArt_NoSpawnAlt1 | `10041280` | ported: a unit's NoSpawnAlt `<Image>WO` pair is required, whatever its `Turret=` (`rules::voxel_model_plan`) |
+| `5F848C` | ObjectTypeClass_Load3DArt_NoSpawnAlt2 | `100413A0` | ported: skips the stock WO load into the turret slot (`rules::voxel_model_plan`) |
+| `73B6E3` | UnitClass_DrawVXL_NoSpawnAlt | `10041460` | equivalent: the unit draw reads the `{type}WO` pair by name in every build (`voxel_frame_catalog::unit_atlas_variants`); residual: a `Turret=yes` NoSpawnAlt unit draws that body without its turret, where Ares draws the turret over it (retail and Brute Force have no such type) |
+| `5F9634` | ObjectTypeClass_LoadFromINI | `100413B0` | residual: reads `AlternateTheaterArt` (unread), whose only consumer is Load2DArt (`10041040`, hook `0x5F9070`, not ported: VERA runs the stock SHP image load); retail and Brute Force never set it |
 | `5F865F` | ObjectTypeClass_Load3DArt_Turrets | `10042220` | equivalent: turret voxel enumeration has no 18 bound |
 | `5F887B` | ObjectTypeClass_Load3DArt_Barrels | `10042090` | equivalent: barrel voxel enumeration has no 18 bound |
 | `70DC70` | TechnoClass_SwitchGunner | `10042480` | ported earlier |
