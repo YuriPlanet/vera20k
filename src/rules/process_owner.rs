@@ -1278,9 +1278,10 @@ impl NativeRulesProcessOwner {
     }
 
     fn startup_layers(&self, langrule: Option<&IniFile>) -> RulesLayerStack {
-        let mut layers = RulesLayerStack::new(self.scenario_root().into_owned());
+        let layers = RulesLayerStack::new(self.scenario_root().into_owned());
         #[cfg(feature = "ares")]
-        layers.set_ships_ares(self.sources.ships_ares);
+        let layers = layers.with_ares_mix(self.sources.ships_ares);
+        let mut layers = layers;
         if let Some(langrule) = langrule {
             layers.push(RulesLayerKind::LangRule, langrule.clone());
         }
