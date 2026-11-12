@@ -464,6 +464,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                 TEAMS => Some(SetupAction::OpenBox(Some(RoomBox::Teams))),
                 GAME_OPTIONS_OK => Some(SetupAction::OpenBox(None)),
                 TEAM_STARTS => Some(SetupAction::TeamStarts),
+                TEAM_COLORS => Some(SetupAction::TeamColors),
                 BALANCE => Some(SetupAction::Balance),
                 MAP_OFFER_DOWNLOAD => Some(SetupAction::MapOffer { download: true }),
                 MAP_OFFER_LEAVE => Some(SetupAction::MapOffer { download: false }),

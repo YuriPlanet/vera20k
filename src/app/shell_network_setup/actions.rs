@@ -24,6 +24,7 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
                 | SetupAction::Trackbar { .. }
                 | SetupAction::Join { .. }
                 | SetupAction::TeamStarts
+                | SetupAction::TeamColors
                 | SetupAction::Balance
         )
     {
@@ -108,6 +109,7 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
             Ok(())
         }
         SetupAction::TeamStarts => team_starts(state),
+        SetupAction::TeamColors => team_colors(state),
         SetupAction::Balance => {
             if super::view(state).is_some_and(|current| current.enabled(BALANCE)) {
                 super::teams::balance(state);
@@ -453,6 +455,17 @@ fn team_starts(state: &mut AppState) -> anyhow::Result<()> {
     let current = super::view(state).ok_or_else(|| anyhow::anyhow!("no setup"))?;
     anyhow::ensure!(current.enabled(TEAM_STARTS), "Team Starts is not offered");
     if super::teams::team_starts(state, false)? {
+        host_option_edited(state)?;
+        queue(state, NetworkSetupRequest::PublishOptions);
+    }
+    Ok(())
+}
+
+/// The host's Team Colors in the Teams box: every player's colour by team.
+fn team_colors(state: &mut AppState) -> anyhow::Result<()> {
+    let current = super::view(state).ok_or_else(|| anyhow::anyhow!("no setup"))?;
+    anyhow::ensure!(current.enabled(TEAM_COLORS), "Team Colors is not offered");
+    if super::teams::team_colors(state)? {
         host_option_edited(state)?;
         queue(state, NetworkSetupRequest::PublishOptions);
     }

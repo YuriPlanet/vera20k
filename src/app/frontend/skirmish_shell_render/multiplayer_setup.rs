@@ -746,6 +746,11 @@ pub(crate) fn render_multiplayer_setup(
                     layout.team_starts,
                     crate::i18n::tr("VERA:TeamStarts"),
                 ));
+                buttons.push(button(
+                    TEAM_COLORS,
+                    layout.team_colors,
+                    crate::i18n::tr("VERA:TeamColors"),
+                ));
                 if let Some(rect) = layout.balance {
                     buttons.push(button(BALANCE, rect, crate::i18n::tr("VERA:Balance")));
                 }

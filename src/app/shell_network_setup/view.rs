@@ -797,6 +797,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             .filter(|_| dialog.modern),
         teams_enabled: host && grouped,
         team_starts_enabled: host && teams.is_some() && local_map_index(state).is_some(),
+        team_colors_enabled: host && teams.is_some(),
         balance_enabled: host && grouped && dialog.wol(),
         auto_balance,
         auto_balance_enabled: host && teams.is_some() && dialog.wol(),

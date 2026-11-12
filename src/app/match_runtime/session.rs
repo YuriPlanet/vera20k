@@ -72,6 +72,15 @@ pub(crate) enum NetworkVacancy {
     Waiting,
 }
 
+/// What the host's Teams box gives a seated row in a VERA room
+/// ([`MatchSession::set_network_seat_picks`]): Team Starts' start or Team
+/// Colors' colour.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SeatPick {
+    Start(crate::skirmish_launch::LaunchStartPosition),
+    Color(u8),
+}
+
 /// A received5E8EA0 row binding. Human indices refer to the already-admitted
 /// source vector; a display packet never creates a participant or endpoint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2172,29 +2181,42 @@ impl MatchSession {
         Ok(moved)
     }
 
-    /// The host's Team Starts in a VERA room with Teams set: the start of
-    /// each row named, a person's or an AI's.
-    pub(crate) fn set_network_starts(
+    /// The host's Team Starts and Team Colors in a VERA room with Teams
+    /// set: a start or a colour for each row named, a person's or an AI's.
+    pub(crate) fn set_network_seat_picks(
         &mut self,
-        starts: &[(u8, crate::skirmish_launch::LaunchStartPosition)],
+        picks: &[(u8, SeatPick)],
     ) -> anyhow::Result<()> {
-        anyhow::ensure!(self.host, "only the host gives out starts");
+        anyhow::ensure!(self.host, "only the host gives out starts and colours");
         let launch = self.editable_network_setup()?;
-        for &(row, start) in starts {
-            if let Some(human) = launch
+        for &(row, pick) in picks {
+            let (start, color, random) = if let Some(human) = launch
                 .humans
                 .iter_mut()
                 .find(|human| human.raw_slot_index == Some(row) && !human.is_observer())
             {
-                human.slot.start_position = start;
+                let slot = &mut human.slot;
+                (
+                    &mut slot.start_position,
+                    &mut slot.color_index,
+                    &mut slot.color_random,
+                )
             } else if let Some(ai) = launch
                 .opponents
                 .iter_mut()
                 .find(|ai| ai.raw_slot_index == row)
             {
-                ai.start_position = start;
+                (
+                    &mut ai.start_position,
+                    &mut ai.color_index,
+                    &mut ai.color_random,
+                )
             } else {
-                anyhow::bail!("row {row} has no player for a start");
+                anyhow::bail!("row {row} has no player");
+            };
+            match pick {
+                SeatPick::Start(pick) => *start = pick,
+                SeatPick::Color(pick) => (*color, *random) = (pick, false),
             }
         }
         launch.rebuild_house_roster();

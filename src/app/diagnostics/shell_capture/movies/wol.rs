@@ -155,6 +155,7 @@ pub enum WolTarget {
     ModernRoomOptions,
     /// VERA's C2 again, whose Teams box sets two teams: the Alamo's two
     /// seats make one a team, the host on Team A and the guest on Team B.
+    /// Team Colors then gives Team A a warm colour and Team B a cool one.
     ModernTeams,
     /// VERA's C2 opens two spectator rows past its players and the stand-in
     /// guest moves to the first; the host seats them, the join queue seats
@@ -2606,7 +2607,33 @@ impl WolCapture {
                         .flatten()
                         .map(|header| header.caption.as_str())
                         .collect();
-                    self.event(frame, json!({ "C2 Teams": captions }));
+                    // Team Colors gives the host on Team A YR's Orange and
+                    // the guest on Team B its Blue: warm against cool.
+                    let rect = crate::app::input::multiplayer_setup::layout(state)
+                        .control_rect(crate::ui::multiplayer_setup::TEAM_COLORS)
+                        .context("Team Colors")?;
+                    setup_click(state, rect);
+                    let colors: Vec<(String, Option<u8>)> = state
+                        .match_state
+                        .session
+                        .network_setup()
+                        .context("room setup")?
+                        .humans
+                        .iter()
+                        .map(|human| {
+                            let random = human.slot.color_random;
+                            let color = (!random).then_some(human.slot.color_index);
+                            (human.name.clone(), color)
+                        })
+                        .collect();
+                    ensure!(
+                        colors == [("Tester".into(), Some(4)), ("Natasha".into(), Some(2))],
+                        "Team Colors gave {colors:?}"
+                    );
+                    self.event(
+                        frame,
+                        json!({ "C2 Teams": captions, "Team Colors": colors }),
+                    );
                 }
                 MoviesCapture::restore_neutral_pointer(state);
                 crate::app::input::multiplayer_setup::cursor_moved(state);
