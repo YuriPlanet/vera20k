@@ -395,7 +395,10 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                     y,
                 );
                 cue = press.cue().map(LauncherCue::from);
-            } else if CHECKBOXES.contains(&control) || ROOM_CHECKBOXES.contains(&control) {
+            } else if CHECKBOXES.contains(&control)
+                || ROOM_CHECKBOXES.contains(&control)
+                || control == AUTO_BALANCE
+            {
                 if crate::ui::skirmish_shell::checkbox_icon_rect(
                     layout.control_rect(control).expect("checkbox rect"),
                     layout.page.scale,
@@ -455,6 +458,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                 TEAMS => Some(SetupAction::OpenBox(Some(RoomBox::Teams))),
                 GAME_OPTIONS_OK => Some(SetupAction::OpenBox(None)),
                 TEAM_STARTS => Some(SetupAction::TeamStarts),
+                BALANCE => Some(SetupAction::Balance),
                 MAP_OFFER_DOWNLOAD => Some(SetupAction::MapOffer { download: true }),
                 MAP_OFFER_LEAVE => Some(SetupAction::MapOffer { download: false }),
                 control if team_join_row(control).is_some() => Some(SetupAction::Join { control }),

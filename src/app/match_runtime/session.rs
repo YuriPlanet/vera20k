@@ -1905,12 +1905,31 @@ impl MatchSession {
 
     /// The host sets a VERA room's Teams: Off, or a count in
     /// [`crate::skirmish_launch::ROOM_TEAMS`]. Every seated player then has
-    /// one of its teams.
+    /// one of its teams. Off also turns Balance automatically off.
     pub(crate) fn set_network_teams(&mut self, teams: Option<u8>) -> anyhow::Result<()> {
         anyhow::ensure!(self.host, "only the host sets the room's teams");
-        self.editable_network_setup()?.options.teams =
-            teams.filter(|teams| crate::skirmish_launch::ROOM_TEAMS.contains(teams));
+        let options = &mut self.editable_network_setup()?.options;
+        options.teams = teams.filter(|teams| crate::skirmish_launch::ROOM_TEAMS.contains(teams));
+        options.auto_balance &= options.teams.is_some();
         self.keep_players_on_teams().map(|_| ())
+    }
+
+    /// Whether a VERA room with Teams set balances itself: the host's
+    /// Balance automatically. While it does, nobody picks a team.
+    pub(crate) fn network_auto_balance(&self) -> bool {
+        self.network_teams().is_some()
+            && self
+                .network_setup()
+                .is_some_and(|launch| launch.options.auto_balance)
+    }
+
+    /// The host turns Balance automatically on or off; it stays off while
+    /// Teams is Off.
+    pub(crate) fn set_network_auto_balance(&mut self, on: bool) -> anyhow::Result<()> {
+        anyhow::ensure!(self.host, "only the host sets how the room balances");
+        let teams = self.network_teams().is_some();
+        self.editable_network_setup()?.options.auto_balance = on && teams;
+        Ok(())
     }
 
     /// How many players each team of a VERA room with Teams set seats: the
@@ -1943,11 +1962,12 @@ impl MatchSession {
     }
 
     /// A guest's own team pick in a VERA room with Teams set: no team, a
-    /// team past the room's count or a full team it is not on leaves it
-    /// where it is, and a spectator taking a seat then joins the team with
-    /// the fewest players. The host's moves (`service::move_player`) skip
-    /// this. Returns whether it changed the pick, so the host republishes
-    /// the room and the guest's own row shows its team again.
+    /// team past the room's count, a full team it is not on or, while the
+    /// room balances itself, any other team leaves it where it is, and a
+    /// spectator taking a seat then joins the team with the fewest players.
+    /// The host's moves (`service::move_player`) skip this. Returns whether it
+    /// changed the pick, so the host republishes the room and the guest's own
+    /// row shows its team again.
     pub(crate) fn admit_network_team(&self, index: usize, choices: &mut SkirmishLocalSlot) -> bool {
         let Some(teams) = self.network_teams() else {
             return false;
@@ -1960,10 +1980,12 @@ impl MatchSession {
         };
         let seated = !human.is_observer();
         let picked = choices.team;
+        let open = !self.network_auto_balance();
         let admitted = match picked {
             LaunchTeam::Team(team) => {
                 team < teams
-                    && (seated && human.slot.team == picked || !self.network_team_full(team))
+                    && (seated && human.slot.team == picked
+                        || open && !self.network_team_full(team))
             }
             LaunchTeam::None => false,
         };
@@ -3985,6 +4007,23 @@ mod tests {
             .accept_network_peer_choices(1, pick, false, None)
             .unwrap();
         assert_eq!(teams(&session), [Team(0), Team(0), Team(0)]);
+    }
+
+    #[test]
+    fn a_vera_room_that_balances_itself_takes_no_team_picks() {
+        use crate::skirmish_launch::LaunchTeam::Team;
+        let mut session = vera_room();
+        session.set_network_teams(Some(2)).unwrap();
+        session.set_network_auto_balance(true).unwrap();
+        assert_eq!(teams(&session), [Team(0), Team(1)]);
+        let mut pick = session.network_setup().unwrap().humans[1].slot.clone();
+        pick.team = Team(0);
+        assert!(session.admit_network_team(1, &mut pick));
+        assert_eq!(pick.team, Team(1));
+        // Teams Off turns it off, and without Teams it stays off.
+        session.set_network_teams(None).unwrap();
+        session.set_network_auto_balance(true).unwrap();
+        assert!(!session.network_auto_balance());
     }
 
     #[test]

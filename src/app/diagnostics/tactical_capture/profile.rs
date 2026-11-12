@@ -619,6 +619,7 @@ impl TacticalOptions {
             ally_change_allowed: self.ally_change_allowed,
             bans: Default::default(),
             teams: None,
+            auto_balance: false,
         }
     }
 }

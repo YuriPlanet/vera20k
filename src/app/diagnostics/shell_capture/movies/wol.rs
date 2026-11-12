@@ -2564,7 +2564,9 @@ impl WolCapture {
                     self.event(frame, "C2 Game Options: No France toggled");
                 }
                 if self.target == WolTarget::ModernTeams {
-                    use crate::ui::multiplayer_setup::{RoomBox, SetupAction, TEAM_COUNT, TEAMS};
+                    use crate::ui::multiplayer_setup::{
+                        BALANCE, RoomBox, SetupAction, SetupColumn, TEAM_COUNT, TEAMS,
+                    };
                     setup_button(state, TEAMS)?;
                     ensure!(
                         setup_view(state)?.open_box == Some(RoomBox::Teams),
@@ -2584,7 +2586,18 @@ impl WolCapture {
                             && (0..2).all(|team| session.network_team_players(team) == 1),
                         "the Teams box did not seat the two players on two teams"
                     );
+                    // Online, Teams turns Balance automatically on: the box
+                    // shows Balance and its tick, and the Team lists close.
                     let view = setup_view(state)?;
+                    let team_list = row_combo(&view, SetupColumn::Team, 0)
+                        .is_some_and(|(_, combo)| combo.enabled);
+                    ensure!(
+                        session.network_auto_balance()
+                            && view.auto_balance
+                            && view.enabled(BALANCE)
+                            && !team_list,
+                        "setting Teams online did not turn Balance automatically on"
+                    );
                     let captions: Vec<&str> = view
                         .headers
                         .iter()

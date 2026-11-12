@@ -34,6 +34,9 @@ pub(crate) const MAP_OFFER_LEAVE: u16 = 0x7F05;
 pub(crate) const TEAMS: u16 = 0x7F0C;
 pub(crate) const TEAM_COUNT: u16 = 0x7F0D;
 pub(crate) const TEAM_STARTS: u16 = 0x7F0E;
+/// VERA-only, online: the Teams box's Balance and Balance automatically.
+pub(crate) const BALANCE: u16 = 0x7F0F;
+pub(crate) const AUTO_BALANCE: u16 = 0x7F10;
 /// VERA-only combos of the rows past the resource's eight, one block of
 /// 0x20 ids per column.
 const ROOM_ROW_COMBOS: u16 = 0x7F20;
@@ -548,6 +551,12 @@ pub(crate) struct SetupView {
     pub(crate) teams_enabled: bool,
     /// Team Starts: Teams is set and the map has starts to give.
     pub(crate) team_starts_enabled: bool,
+    /// Online, the host's Balance: the room's mode seats players on teams.
+    pub(crate) balance_enabled: bool,
+    /// Online, Balance automatically's tick, and whether the host can
+    /// change it: Teams is set.
+    pub(crate) auto_balance: bool,
+    pub(crate) auto_balance_enabled: bool,
     /// VERA's missing-map offer is open over the room.
     pub(crate) map_offer_open: bool,
     pub(crate) mode_label: String,
@@ -589,6 +598,8 @@ impl SetupView {
             START | CHOOSE_MAP => self.host,
             TEAMS => self.teams_enabled,
             TEAM_STARTS => self.team_starts_enabled,
+            BALANCE => self.balance_enabled,
+            AUTO_BALANCE => self.auto_balance_enabled,
             PAGE => self.dialog.wol(),
             PREVIOUS_ROWS => self.first_row > 0,
             NEXT_ROWS => self.first_row + self.dialog.rows_per_page() < self.row_count,
@@ -642,6 +653,8 @@ pub(crate) enum SetupAction {
     OpenBox(Option<RoomBox>),
     /// The host's Team Starts in the Teams box.
     TeamStarts,
+    /// The host's Balance in the Teams box, online.
+    Balance,
     /// The missing-map offer's answer: download the room's map, or leave.
     MapOffer {
         download: bool,
@@ -844,9 +857,12 @@ pub(crate) struct MultiplayerSetupLayout {
     /// [`ROOM_CHECKBOXES`], placed only in [`Self::game_options`].
     pub(crate) room_checkboxes: [RectPx; 6],
     /// The Teams box shares [`Self::game_options`]' box and OK: the Teams
-    /// count's label and Team Starts, placed only with it.
+    /// count's label and Team Starts, placed only with it, and online
+    /// Balance and Balance automatically.
     pub(crate) teams_label: RectPx,
     pub(crate) team_starts: RectPx,
+    pub(crate) balance: Option<RectPx>,
+    pub(crate) auto_balance: Option<RectPx>,
     pub(crate) trackbars: [(u16, RectPx); 5],
     pub(crate) labels: Vec<(&'static str, RectPx)>,
     pub(crate) option_labels: [(&'static str, RectPx); 3],
@@ -985,6 +1001,8 @@ impl MultiplayerSetupLayout {
             room_checkboxes: [RectPx::new(0, 0, 0, 0); 6],
             teams_label: RectPx::new(0, 0, 0, 0),
             team_starts: RectPx::new(0, 0, 0, 0),
+            balance: None,
+            auto_balance: None,
             trackbars: [
                 (SPEED, rect(404, option_y[0], 129, 21)),
                 (CREDITS, rect(404, credit_y, 129, 21)),
@@ -1021,13 +1039,13 @@ impl MultiplayerSetupLayout {
             )),
         };
         if dialog.modern {
-            layout.move_options_into_popup();
+            layout.move_options_into_popup(dialog.wol());
         }
         layout
     }
     /// VERA's room: the options go into Game Options, and the roster's
     /// navigation moves under its [`MODERN_SETUP_ROWS`] rows.
-    fn move_options_into_popup(&mut self) {
+    fn move_options_into_popup(&mut self, online: bool) {
         let scale = self.page.scale;
         let base = |x, y, w, h| scale.scale_rect(RectPx::new(x, y, w, h));
         // Where the shell's menu boxes sit on the 800x600 page, at resource
@@ -1051,6 +1069,12 @@ impl MultiplayerSetupLayout {
         }
         self.teams_label = popup(24, 32, 185, 17);
         self.team_starts = popup(215, 62, 124, 24);
+        // Online, Balance under Team Starts and Balance automatically under
+        // it, as the right column's checkboxes in Game Options.
+        if online {
+            self.balance = Some(popup(215, 92, 124, 24));
+            self.auto_balance = Some(popup(215, 124, 226, 17));
+        }
         // Two columns of six under the trackbars, the left one over the art:
         // the native five and Destroyable Bridges, then In-game Allying and
         // the four bans.
@@ -1149,6 +1173,8 @@ impl MultiplayerSetupLayout {
             NO_PREVIEW => self.no_preview,
             GAME_OPTIONS_OK => self.game_options.map(|popup| popup.ok),
             TEAM_STARTS => self.game_options.map(|_| self.team_starts),
+            BALANCE => self.game_options.and(self.balance),
+            AUTO_BALANCE => self.game_options.and(self.auto_balance),
             MAP_OFFER_DOWNLOAD => Some(self.map_offer.ok),
             MAP_OFFER_LEAVE => Some(self.map_offer.cancel),
             _ => self.page.button_rect(id),
@@ -1174,9 +1200,15 @@ impl MultiplayerSetupLayout {
                     .find(hit);
             }
             Some(RoomBox::Teams) => {
-                return [TEAM_COUNT, TEAM_STARTS, GAME_OPTIONS_OK]
-                    .into_iter()
-                    .find(hit);
+                return [
+                    TEAM_COUNT,
+                    TEAM_STARTS,
+                    BALANCE,
+                    AUTO_BALANCE,
+                    GAME_OPTIONS_OK,
+                ]
+                .into_iter()
+                .find(hit);
             }
             None => {}
         }
@@ -1447,6 +1479,9 @@ mod tests {
             open_box: Some(RoomBox::GameOptions),
             teams_enabled: true,
             team_starts_enabled: true,
+            balance_enabled: true,
+            auto_balance: true,
+            auto_balance_enabled: true,
             map_offer_open: false,
             mode_label: String::new(),
             map_label: String::new(),
@@ -1467,6 +1502,20 @@ mod tests {
         assert_eq!(popup_layout.control_at(&view, x, y), Some(TEAM_COUNT));
         let (x, y) = center(popup_layout.control_rect(TEAM_STARTS).unwrap());
         assert_eq!(popup_layout.control_at(&view, x, y), Some(TEAM_STARTS));
+        // Online, Balance and Balance automatically sit in the box under it;
+        // a LAN room has neither.
+        for id in [BALANCE, AUTO_BALANCE] {
+            let rect = popup_layout.control_rect(id).unwrap();
+            assert!(
+                rect.x >= popup.dialog.x + 215
+                    && rect.x + rect.w <= popup.dialog.x + popup.dialog.w
+            );
+            let (x, y) = center(rect);
+            assert_eq!(popup_layout.control_at(&view, x, y), Some(id));
+        }
+        let lan =
+            MultiplayerSetupLayout::new(dialog(true, SetupFlavor::Lan, true), 800, 600, false);
+        assert_eq!(lan.control_rect(BALANCE), None);
         view.open_box = None;
         // VERA's missing-map offer takes every press until it is answered.
         view.map_offer_open = true;

@@ -19,7 +19,7 @@ pub(crate) use service::{
     refuse_local_acceptance, service_event, set_network_map_progress,
 };
 mod teams;
-pub(crate) use teams::lobby_refused_teams;
+pub(crate) use teams::{balance_answered, lobby_refused_teams};
 pub(crate) mod view;
 mod wol;
 pub(crate) use actions::{
@@ -106,6 +106,12 @@ pub(crate) enum NetworkSetupRequest {
     },
     /// `0078F000`: channel mode/topic/limit advertisement of this game.
     Advertise,
+    /// VERA's room: the host's Balance sends `/balance` as typed, and
+    /// Balance automatically the lobby's quiet `balance` command
+    /// (`teams::poll_balance`).
+    Balance {
+        automatic: bool,
+    },
     /// C2 0x497 and timer 0x14AF8: one ping request per channel user
     /// (API2+0x18, 1000 ms timeout).
     RequestPings,
@@ -197,6 +203,13 @@ pub(crate) struct NetworkSetupProtocol {
     /// (`service::tell_moved`).
     seat_place: Option<SeatPlace>,
     asked_place: Option<SeatPlace>,
+    /// VERA's room Balance automatically (`teams::poll_balance`): the Teams
+    /// count, who played and whether there was anything to balance when it
+    /// last looked, when the next balance is due, and whether one waits for
+    /// the lobby's answer.
+    balance_roster: Option<(u8, Vec<String>, bool)>,
+    balance_due: Option<Instant>,
+    balance_sent: bool,
     requests: Vec<NetworkSetupRequest>,
 }
 
@@ -419,6 +432,9 @@ impl NetworkSetupProtocol {
             cooperative_rematch_seat: false,
             seat_place: None,
             asked_place: None,
+            balance_roster: None,
+            balance_due: None,
+            balance_sent: false,
             requests: if wol_host {
                 // C2 0x497: advertisement 78F000, then one ping per user.
                 vec![

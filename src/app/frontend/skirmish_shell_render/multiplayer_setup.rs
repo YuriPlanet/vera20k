@@ -727,6 +727,9 @@ pub(crate) fn render_multiplayer_setup(
                     layout.team_starts,
                     crate::i18n::tr("VERA:TeamStarts"),
                 ));
+                if let Some(rect) = layout.balance {
+                    buttons.push(button(BALANCE, rect, crate::i18n::tr("VERA:Balance")));
+                }
             }
             let (buttons, labels): (Vec<_>, Vec<_>) = buttons.into_iter().unzip();
             let draw = shell_paint::paint_modal_shp(
@@ -770,6 +773,27 @@ pub(crate) fn render_multiplayer_setup(
                             bar,
                             super::wol_lobby::POPUP_DEPTHS.text,
                         );
+                    }
+                    if let (Some(rect), Some(atlas)) = (
+                        layout.auto_balance,
+                        state.frontend.skirmish_shell_chrome.as_ref(),
+                    ) {
+                        paint_control(
+                            &mut overlay.controls,
+                            &atlas.control_chrome(),
+                            ControlPaint::Checkbox {
+                                rect,
+                                checked: view.auto_balance,
+                            },
+                            scale,
+                        );
+                        overlay.texts.push(text(
+                            &crate::i18n::tr("VERA:BalanceAutomatically"),
+                            crate::ui::skirmish_shell::checkbox_text_rect(rect, scale),
+                            ShellAlign::V_CENTER,
+                            SHELL_LABEL_TEXT_RGB,
+                            super::wol_lobby::POPUP_DEPTHS.text,
+                        ));
                     }
                 }
             }

@@ -24,6 +24,7 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
                 | SetupAction::Trackbar { .. }
                 | SetupAction::Join { .. }
                 | SetupAction::TeamStarts
+                | SetupAction::Balance
         )
     {
         return;
@@ -107,6 +108,12 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
             Ok(())
         }
         SetupAction::TeamStarts => team_starts(state),
+        SetupAction::Balance => {
+            if super::view(state).is_some_and(|current| current.enabled(BALANCE)) {
+                super::teams::balance(state);
+            }
+            Ok(())
+        }
         SetupAction::MapOffer { download } => {
             let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
                 return;
@@ -163,6 +170,10 @@ pub(super) fn queue(state: &mut AppState, request: NetworkSetupRequest) {
 fn toggle(state: &mut AppState, control: u16) -> anyhow::Result<()> {
     let current = super::view(state).ok_or_else(|| anyhow::anyhow!("no setup"))?;
     anyhow::ensure!(current.enabled(control), "disabled checkbox");
+    if control == AUTO_BALANCE {
+        return super::teams::set_auto_balance(state, !current.auto_balance)
+            .and_then(|()| host_option_edited(state));
+    }
     let mut options = state
         .match_state
         .session

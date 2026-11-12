@@ -2578,6 +2578,7 @@ mod tests {
                 ..Default::default()
             },
             teams: Some(3),
+            auto_balance: false,
         };
         assert_ne!(launch.options.room_options(), room);
         launch.options.set_room_options(room);

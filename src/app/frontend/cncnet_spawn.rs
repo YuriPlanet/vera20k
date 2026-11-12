@@ -752,6 +752,7 @@ fn skirmish(
         ally_change_allowed: boolean(settings, "AlliesAllowed", false)?,
         bans: Default::default(),
         teams: None,
+        auto_balance: false,
     };
     let mut session = SkirmishLaunchSession {
         mode,

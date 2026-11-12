@@ -47,6 +47,18 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         message(state, "TXT_ONLY_ONE", &[]);
         return Ok(());
     }
+    // VERA's room waits for a balance of Balance automatically.
+    if wol && super::super::teams::balance_waiting(state) {
+        let text = crate::i18n::tr("VERA:BalanceWaiting");
+        crate::app::shell_lan::append_chat(
+            state,
+            crate::ui::lan_shell::LanChatLine {
+                text: text.encode_utf16().collect(),
+                color: u32::MAX,
+            },
+        );
+        return Ok(());
+    }
     // C2 0x790698: WOL forbids AI players in a game with observers.
     if wol && humans < launch.humans.len() as i32 && launch.ai_player_count != 0 {
         message(state, "TXT_NO_AI_OBSERVATION", &[]);

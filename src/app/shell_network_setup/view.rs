@@ -160,6 +160,9 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let grouped = several && session.network_team_room();
     let teams = session.network_teams();
     let team_seats = session.network_team_seats();
+    // While the room balances itself, nobody picks a team: the Team lists and
+    // the headers' Join close for everyone, the host too.
+    let auto_balance = session.network_auto_balance();
     let listed = if several {
         listed_rows(
             session,
@@ -254,10 +257,13 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                             .then(|| (crate::i18n::tr("VERA:Watch"), true)),
                     ),
                 };
+                let closed = auto_balance && group != SetupGroup::Spectators;
                 headers[visible_row] = Some(SetupHeader {
                     group,
                     caption,
-                    join_enabled: button.as_ref().is_some_and(|(_, enabled)| *enabled) && !starting,
+                    join_enabled: button.as_ref().is_some_and(|(_, enabled)| *enabled)
+                        && !starting
+                        && !closed,
                     join: button.map(|(label, _)| label),
                 });
                 // The host's Add AI fills the first free seat on this team,
@@ -618,7 +624,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 enabled: (editable
                     || switching && column == SetupColumn::Country
                     || host_moves && column == SetupColumn::Team)
-                    && (column != SetupColumn::Team || mode.allies_allowed),
+                    && (column != SetupColumn::Team || mode.allies_allowed && !auto_balance),
                 visible: visible
                     && !bare
                     && (column == SetupColumn::Country || !observer)
@@ -744,6 +750,9 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             .filter(|_| dialog.modern),
         teams_enabled: host && grouped,
         team_starts_enabled: host && teams.is_some() && local_map_index(state).is_some(),
+        balance_enabled: host && grouped && dialog.wol(),
+        auto_balance,
+        auto_balance_enabled: host && teams.is_some() && dialog.wol(),
         map_offer_open: state
             .frontend
             .multiplayer_setup

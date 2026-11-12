@@ -1686,13 +1686,20 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     auto_accept(state);
     point_out_briefing(state);
     let pings = super::wol::poll(state);
+    let balance = super::teams::poll_balance(state);
     let go = poll_go(state);
     let offer = poll_preview_offer(state);
     // A direct spawn's LAN service renews setup leases and waits for its
     // peers before GO; keep the frame loop servicing it.
     let direct = (super::external(state) && !super::dialog(state).wol())
         .then(|| Instant::now() + std::time::Duration::from_millis(16));
-    pings.into_iter().chain(go).chain(offer).chain(direct).min()
+    pings
+        .into_iter()
+        .chain(balance)
+        .chain(go)
+        .chain(offer)
+        .chain(direct)
+        .min()
 }
 
 /// VERA's game room (`SetupDialog::modern`) presses Accept for a guest

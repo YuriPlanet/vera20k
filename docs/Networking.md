@@ -243,6 +243,16 @@ that cannot start, since its players' versions differ. A lobby from before Teams
 refuses the field; the host's game then turns Teams Off, says so and sends its options
 again without it.
 
+Online, the host's Balance automatically travels the same way, as
+`launch.options.auto_balance`; setting a Teams count turns it on. While it is on, every
+game in the room closes the Team lists and the headers' Join, and the host's game asks
+the lobby to balance 5 seconds after who plays or the Teams count last changed, holding
+its Start Game until the answer comes. An older guest cannot read those options either,
+as with Teams. A lobby from before Balance automatically refuses the field; the host's
+game turns it off, says so and sends its options again, and a rollback past Teams then
+turns Teams Off too. The lobby decides each player's team, as for `/balance`; the host's
+game applies it.
+
 ## Native behavior and deliberate bounds
 
 The following native scheduling/reliability details apply to LAN and legacy routing;

@@ -431,6 +431,12 @@ pub struct SkirmishLaunchOptions {
     /// match does not. Left out while Off, as the bans are.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub teams: Option<u8>,
+    /// VERA's room Balance automatically: with Teams set online, the
+    /// host's game has the lobby balance the teams after each change of who
+    /// plays, and nobody picks a team. Only the room reads it. Left out while
+    /// off; LAN never sets it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub auto_balance: bool,
 }
 
 /// The Teams counts a VERA room offers besides Off.
@@ -460,6 +466,7 @@ impl Default for SkirmishLaunchOptions {
             ally_change_allowed: defaults.ally_change_allowed,
             bans: RoomBans::default(),
             teams: None,
+            auto_balance: false,
         }
     }
 }
@@ -494,6 +501,7 @@ impl SkirmishLaunchOptions {
             ally_change_allowed: options.ally_change_allowed,
             bans: options.bans,
             teams: None,
+            auto_balance: false,
         }
     }
 
@@ -524,9 +532,9 @@ impl SkirmishLaunchOptions {
 }
 
 /// The options VERA's game room adds to gamemd's: Destroyable Bridges,
-/// In-game Allying, the bans and Teams. LAN carries them beside the native
-/// options text, which has no field for them, and the room keeps them for
-/// its next game.
+/// In-game Allying, the bans, Teams and Balance automatically. LAN carries
+/// them beside the native options text, which has no field for them, and the
+/// room keeps them for its next game.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RoomOptions {
@@ -538,6 +546,9 @@ pub struct RoomOptions {
     /// build differs.
     #[serde(skip)]
     pub teams: Option<u8>,
+    /// Online only, so LAN never carries it.
+    #[serde(skip)]
+    pub auto_balance: bool,
 }
 
 impl SkirmishLaunchOptions {
@@ -547,6 +558,7 @@ impl SkirmishLaunchOptions {
             ally_change_allowed: self.ally_change_allowed,
             bans: self.bans,
             teams: self.teams,
+            auto_balance: self.auto_balance,
         }
     }
 
@@ -555,6 +567,7 @@ impl SkirmishLaunchOptions {
         self.ally_change_allowed = room.ally_change_allowed;
         self.bans = room.bans;
         self.teams = room.teams;
+        self.auto_balance = room.auto_balance;
     }
 }
 

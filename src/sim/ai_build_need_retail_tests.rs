@@ -76,6 +76,7 @@ fn stock_scene(root: &std::path::Path) -> HeadlessScenario {
         ally_change_allowed: true,
         bans: Default::default(),
         teams: None,
+        auto_balance: false,
     };
     load_session(root, "XMP03T4.MAP", 0x1234_5678, launch).expect("stock Battle loads")
 }
