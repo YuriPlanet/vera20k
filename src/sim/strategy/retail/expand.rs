@@ -339,6 +339,37 @@ fn deploy_second_yard(
     // away from the first base. The same probe the purchase gate asked, so the
     // maker walks to ground the house already knows about.
     let Some(target) = expansion_site(brain, rules, obs, yard, Some(entity_id)) else {
+        // No ground for a second yard. The maker still has to leave the
+        // factory: a vehicle standing in the doorway holds the whole vehicle
+        // line, so "nowhere to expand" must not mean "stand where it was made"
+        // — that is the wishlist's "the MCV sits in the war factory".
+        //
+        // It walks to the rally cell the retreat already uses, which is a cell
+        // *beside* the base rather than inside it. The maker is not spent: the
+        // next frame asks the search again, and a house that finds ground later
+        // still deploys.
+        if obs.destination(entity_id).is_some() {
+            return;
+        }
+        let Some(home) = brain.census.base_cell else {
+            return;
+        };
+        let Some(rally) = super::census::rally_near(obs, home, &brain.census.home_cells) else {
+            return;
+        };
+        if rally == cell {
+            return;
+        }
+        if !super::orders::issue(
+            brain,
+            out,
+            rules,
+            obs,
+            entity_id,
+            Goal::Move { cell: rally },
+        ) {
+            brain.expansion_probe = None;
+        }
         return;
     };
     // A maker already walking is a maker whose cell has been chosen: the
