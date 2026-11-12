@@ -202,6 +202,9 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         .match_state
         .session
         .apply_network_ai_preparation(preparation.declared_count, preparation.opponents)?;
+    // VERA's room with Teams set gives each player still on a Random start
+    // one by team before the assignment's farthest free start would.
+    super::super::teams::team_starts(state, true)?;
     let launch = state
         .match_state
         .session

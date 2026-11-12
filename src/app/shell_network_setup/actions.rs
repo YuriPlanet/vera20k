@@ -23,6 +23,7 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
                 | SetupAction::Toggle { .. }
                 | SetupAction::Trackbar { .. }
                 | SetupAction::Join { .. }
+                | SetupAction::TeamStarts
         )
     {
         return;
@@ -99,12 +100,13 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
             }
             Ok(())
         }
-        SetupAction::GameOptions { open } => {
+        SetupAction::OpenBox(open) => {
             if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
-                ui.show_options(open);
+                ui.show_box(open);
             }
             Ok(())
         }
+        SetupAction::TeamStarts => team_starts(state),
         SetupAction::MapOffer { download } => {
             let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
                 return;
@@ -219,6 +221,18 @@ fn trackbar(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()
             .frontend
             .multiplayer_shell_runtime
             .set_cooperative_difficulty(value);
+    } else if control == TEAM_COUNT {
+        // 1 is Off.
+        let teams = u8::try_from(value).ok().filter(|teams| *teams >= 2);
+        if state
+            .match_state
+            .session
+            .network_setup()
+            .is_some_and(|launch| launch.options.teams == teams)
+        {
+            return Ok(());
+        }
+        return super::teams::set_teams(state, teams).and_then(|()| host_option_edited(state));
     } else {
         let mut options = state
             .match_state
@@ -419,6 +433,17 @@ fn commit_row(
             slot,
             observer,
         });
+    }
+    Ok(())
+}
+
+/// The host's Team Starts in the Teams box: every player's start by team.
+fn team_starts(state: &mut AppState) -> anyhow::Result<()> {
+    let current = super::view(state).ok_or_else(|| anyhow::anyhow!("no setup"))?;
+    anyhow::ensure!(current.enabled(TEAM_STARTS), "Team Starts is not offered");
+    if super::teams::team_starts(state, false)? {
+        host_option_edited(state)?;
+        queue(state, NetworkSetupRequest::PublishOptions);
     }
     Ok(())
 }

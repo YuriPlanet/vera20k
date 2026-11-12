@@ -18,6 +18,8 @@ pub(crate) use service::{
     fail_go_handoff, invalidate_network_agreement, poll, prepare_lan_guest_handoff,
     refuse_local_acceptance, service_event, set_network_map_progress,
 };
+mod teams;
+pub(crate) use teams::lobby_refused_teams;
 pub(crate) mod view;
 mod wol;
 pub(crate) use actions::{

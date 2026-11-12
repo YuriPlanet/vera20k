@@ -1322,6 +1322,7 @@ impl ShellCaptureRequest {
                             | movies::WolTarget::ModernPlayerCard
                             | movies::WolTarget::ModernChangeCountry
                             | movies::WolTarget::ModernRoomOptions
+                            | movies::WolTarget::ModernTeams
                             | movies::WolTarget::ModernSpectators
                             | movies::WolTarget::ModernOptions
                             | movies::WolTarget::ModernChatTranslation

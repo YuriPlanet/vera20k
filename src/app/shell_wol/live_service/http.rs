@@ -333,6 +333,8 @@ enum RequestFailure {
         code: u32,
     },
     AlreadyFinished,
+    /// 400 `invalid_options` ([`CommandFailure::InvalidOptions`]).
+    InvalidOptions,
     /// 426 `upgrade_required` (docs/lobby-protocol.md), with the lobby's
     /// message when it is one short line of plain text.
     UpgradeRequired(Option<String>),
@@ -430,6 +432,9 @@ pub(super) enum CommandFailure {
     Retryable,
     Rejected(u32),
     AlreadyFinished,
+    /// 400 `invalid_options`: the lobby cannot take the room's options, as
+    /// one from before a field they carry (`launch.options.teams`) does.
+    InvalidOptions,
 }
 
 impl CommandFailure {
@@ -471,6 +476,7 @@ impl RequestFailure {
                 code: 0x8004_0070,
             },
             Some("unknown_match") if status == 409 => Self::AlreadyFinished,
+            Some("invalid_options") if status == 400 => Self::InvalidOptions,
             Some("maintenance") if status == 503 => {
                 Self::Maintenance(plain_message(value.as_ref()))
             }
@@ -541,6 +547,7 @@ impl RequestFailure {
         match self {
             Self::AlreadyFinished if operation == "finish" => CommandFailure::AlreadyFinished,
             Self::ChannelRejected { code, .. } => CommandFailure::Rejected(*code),
+            Self::InvalidOptions => CommandFailure::InvalidOptions,
             _ if matches!(self.status(), 0 | 429 | 500..=599) => CommandFailure::Retryable,
             _ => CommandFailure::Rejected(0x8000_4005),
         }
@@ -550,6 +557,7 @@ impl RequestFailure {
         match self {
             Self::Status(status) | Self::ChannelRejected { status, .. } => *status,
             Self::LostCursor | Self::AlreadyFinished => 409,
+            Self::InvalidOptions => 400,
             Self::UpgradeRequired(_) => 426,
             Self::Maintenance(_) | Self::Full(_) => 503,
             Self::Account { status, .. } => *status,
@@ -1467,6 +1475,17 @@ mod tests {
         );
         assert_eq!(
             finished.command_failure("create"),
+            CommandFailure::Rejected(0x8000_4005)
+        );
+        // Options a lobby cannot take, apart from a player who has left.
+        let options = RequestFailure::response(400, br#"{"error":{"code":"invalid_options"}}"#);
+        assert_eq!(
+            options.command_failure("options"),
+            CommandFailure::InvalidOptions
+        );
+        let left = RequestFailure::response(409, br#"{"error":{"code":"player_not_in_room"}}"#);
+        assert_eq!(
+            left.command_failure("options"),
             CommandFailure::Rejected(0x8000_4005)
         );
     }

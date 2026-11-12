@@ -751,6 +751,7 @@ fn skirmish(
         harvester_truce: boolean(settings, "HarvesterTruce", false)?,
         ally_change_allowed: boolean(settings, "AlliesAllowed", false)?,
         bans: Default::default(),
+        teams: None,
     };
     let mut session = SkirmishLaunchSession {
         mode,

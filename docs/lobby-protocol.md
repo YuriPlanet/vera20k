@@ -154,7 +154,15 @@ that carry it. Other modes omit the field.
 `start_staging` is the canonical 37-number native `W` record, bounded to512bytes;
 `staging_digest` is its lowercase SHA-256, or the empty string for authored maps.
 `launch` is the existing serde representation of `SkirmishLaunchSession` (including
-its human rows, AI rows and launch options). `map_metadata` is
+its human rows, AI rows and launch options). `launch.options.teams`, a VERA room's
+Teams count, is an optional integer from 2 to 15 (the game offers 2 to 4) that the
+game leaves out while Teams is Off. A lobby from before it refuses options that carry
+it with 400 `invalid_options`; the host's game then turns Teams Off, says so in the
+room and sends its options again without it. Options that name a player no longer in
+the room return 409 `player_not_in_room` instead, which leaves Teams as it is. A game
+from before Teams cannot read a host's options while Teams is set and shows its
+invalid-update line, in a room that cannot start anyway, since its players' versions
+differ. `map_metadata` is
 `{display_name,player_capacity,official,byte_length,digest,source_sha256,effective_digest}`. The legacy
 INI `digest` remains distinct from lowercase SHA-256 over the physical map bytes;
 online `map_digest` agreements compare `source_sha256`. `effective_digest` and

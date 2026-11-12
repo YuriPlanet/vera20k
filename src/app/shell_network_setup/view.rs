@@ -155,14 +155,18 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     // The host keeps at least two seats.
     let may_remove = seats.filter(|row| !removed(row)).count() > 2;
     let ai_allowed = !watched && mode.class.lists_in_skirmish();
-    // In a mode with teams, VERA's rooms group their rows under headers.
-    let grouped = several && mode.allies_allowed && !clan_room && !cooperative;
+    // In a mode with teams, VERA's rooms group their rows under headers:
+    // with Teams set, one for each of its teams.
+    let grouped = several && session.network_team_room();
+    let teams = session.network_teams();
+    let team_seats = session.network_team_seats();
     let listed = if several {
         listed_rows(
             session,
             visible_limit,
             add_slot,
             grouped.then(|| skirmish_shell::team_choices(mode.must_ally)),
+            teams,
         )
     } else {
         Vec::new()
@@ -216,18 +220,32 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                             !host
                         }
                 };
-                let join = || (crate::i18n::tr("VERA:Join"), seated || seat_free);
+                // A full team's Join is greyed; the host still moves anyone.
+                let join =
+                    |open: bool| (crate::i18n::tr("VERA:Join"), open && (seated || seat_free));
                 let (caption, button) = match group {
                     SetupGroup::Team(team) => (
-                        crate::i18n::tr_fill(
-                            "VERA:TeamGroup",
-                            &[("letter", &team_letter(state, team)), ("count", &count)],
-                        ),
-                        joins(LaunchTeam::Team(team)).then(join),
+                        match team_seats {
+                            Some(seats) => crate::i18n::tr_fill(
+                                "VERA:TeamSeatsGroup",
+                                &[
+                                    ("letter", &team_letter(state, team)),
+                                    ("count", &count),
+                                    ("seats", &seats),
+                                ],
+                            ),
+                            None => crate::i18n::tr_fill(
+                                "VERA:TeamGroup",
+                                &[("letter", &team_letter(state, team)), ("count", &count)],
+                            ),
+                        },
+                        joins(LaunchTeam::Team(team))
+                            .then(|| join(!session.network_team_full(team))),
                     ),
                     SetupGroup::NoTeam => (
                         fill("VERA:NoTeamGroup"),
-                        (!mode.must_ally && joins(LaunchTeam::None)).then(join),
+                        (!mode.must_ally && teams.is_none() && joins(LaunchTeam::None))
+                            .then(|| join(true)),
                     ),
                     SetupGroup::OpenSeats => (fill("VERA:OpenSeatsGroup"), None),
                     SetupGroup::Spectators => (
@@ -242,8 +260,11 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                     join_enabled: button.as_ref().is_some_and(|(_, enabled)| *enabled) && !starting,
                     join: button.map(|(label, _)| label),
                 });
-                // The host's Add AI fills the first free seat on this team.
-                if let (SetupGroup::Team(_), Some(seat)) = (group, ai_seat) {
+                // The host's Add AI fills the first free seat on this team,
+                // while the team has one.
+                if let (SetupGroup::Team(team), Some(seat)) = (group, ai_seat)
+                    && !session.network_team_full(team)
+                {
                     let item = |value: i32, text: String| SetupChoice {
                         value,
                         text,
@@ -561,7 +582,19 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 choice
             })
             .collect::<Vec<_>>();
-        let teams = skirmish_shell::team_choices(mode.must_ally)
+        // With Teams set, the room's teams only; a guest's own list leaves
+        // out the full ones it is not on.
+        let team_items = match teams {
+            Some(count) => (0..count)
+                .filter(|team| {
+                    host || choices.team == LaunchTeam::Team(*team)
+                        || !session.network_team_full(*team)
+                })
+                .map(|team| SkirmishComboItem::Team(i32::from(team)))
+                .collect(),
+            None => skirmish_shell::team_choices(mode.must_ally),
+        };
+        let team_items = team_items
             .into_iter()
             .map(|item| choice(state, item))
             .collect::<Vec<_>>();
@@ -576,7 +609,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 },
                 starts,
             ),
-            (SetupColumn::Team, team, teams),
+            (SetupColumn::Team, team, team_items),
         ] {
             let selected = choices.iter().position(|item| item.value == value);
             combos.push(SetupCombo {
@@ -648,6 +681,14 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             enabled: host,
             visible: cooperative,
         },
+        // The Teams box's count: 1 is Off, then the teams.
+        SetupTrackbar {
+            id: TEAM_COUNT,
+            value: options.teams.map_or(1, i32::from),
+            range: TrackbarRange::new(1, i32::from(*crate::skirmish_launch::ROOM_TEAMS.end()), 1),
+            enabled: host && grouped,
+            visible: dialog.modern && host,
+        },
     ];
     // 7A0E50 from 5EA3E0: rows without a node show no ping image.
     let ping_icons = std::array::from_fn(|position| {
@@ -695,12 +736,14 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         row_icons,
         headers,
         grouped,
-        options_open: dialog.modern
-            && state
-                .frontend
-                .multiplayer_setup
-                .as_ref()
-                .is_some_and(|ui| ui.options_open),
+        open_box: state
+            .frontend
+            .multiplayer_setup
+            .as_ref()
+            .and_then(|ui| ui.open_box)
+            .filter(|_| dialog.modern),
+        teams_enabled: host && grouped,
+        team_starts_enabled: host && teams.is_some() && local_map_index(state).is_some(),
         map_offer_open: state
             .frontend
             .multiplayer_setup
@@ -734,13 +777,15 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
 /// VERA's room list: its seats, the host's Add slot row, then the
 /// spectators. In a mode with teams (`teams`, the Team list's items) a
 /// header for each team in use and for the list's next free letter goes
-/// over its players, then come the players on no team, the free seats with
+/// over its players (with Teams set, `fixed`, one for each of its teams,
+/// empty or not), then come the players on no team, the free seats with
 /// the Add slot row, and the spectators, each group under its header.
 fn listed_rows(
     session: &MatchSession,
     visible_limit: usize,
     add_slot: Option<u8>,
     teams: Option<Vec<SkirmishComboItem>>,
+    fixed: Option<u8>,
 ) -> Vec<Listed> {
     let Some(launch) = session.network_setup() else {
         return Vec::new();
@@ -781,29 +826,35 @@ fn listed_rows(
             .map_or(LaunchTeam::None, |slot| slot.team)
     };
     let (players, free): (Vec<u8>, Vec<u8>) = seated.partition(held);
-    let mut teams: Vec<u8> = players
-        .iter()
-        .filter_map(|row| match team_of(row) {
-            LaunchTeam::Team(team) => Some(team),
-            LaunchTeam::None => None,
-        })
-        .collect();
-    let next = choices.into_iter().find_map(|item| match item {
-        SkirmishComboItem::Team(team) => {
-            u8::try_from(team).ok().filter(|team| !teams.contains(team))
+    let teams: Vec<u8> = match fixed {
+        Some(count) => (0..count).collect(),
+        None => {
+            let mut teams: Vec<u8> = players
+                .iter()
+                .filter_map(|row| match team_of(row) {
+                    LaunchTeam::Team(team) => Some(team),
+                    LaunchTeam::None => None,
+                })
+                .collect();
+            let next = choices.into_iter().find_map(|item| match item {
+                SkirmishComboItem::Team(team) => {
+                    u8::try_from(team).ok().filter(|team| !teams.contains(team))
+                }
+                _ => None,
+            });
+            teams.extend(next);
+            teams.sort_unstable();
+            teams.dedup();
+            teams
         }
-        _ => None,
-    });
-    teams.extend(next);
-    teams.sort_unstable();
-    teams.dedup();
+    };
     let mut listed = Vec::new();
     // A header, how many players it counts, then its rows.
     let mut group = |header, count: usize, rows: Vec<u8>| {
         listed.push(Listed::Header(header, count));
         listed.extend(rows.into_iter().map(Listed::Row));
     };
-    for team in teams {
+    for &team in &teams {
         let members: Vec<u8> = players
             .iter()
             .copied()
@@ -814,7 +865,7 @@ fn listed_rows(
     let loners: Vec<u8> = players
         .iter()
         .copied()
-        .filter(|row| team_of(row) == LaunchTeam::None)
+        .filter(|row| !matches!(team_of(row), LaunchTeam::Team(team) if teams.contains(&team)))
         .collect();
     if !loners.is_empty() {
         group(SetupGroup::NoTeam, loners.len(), loners);
@@ -885,7 +936,7 @@ mod tests {
         let limit = usize::from(session.network_player_row_limit());
         let teams = || Some(skirmish_shell::team_choices(false));
         assert_eq!(
-            listed_rows(&session, limit, None, teams()),
+            listed_rows(&session, limit, None, teams(), None),
             [
                 Header(Team(0), 1),
                 Row(0),
@@ -903,7 +954,7 @@ mod tests {
             .accept_network_peer_choices(1, guest, true, None)
             .unwrap();
         assert_eq!(
-            listed_rows(&session, limit, None, teams()),
+            listed_rows(&session, limit, None, teams(), None),
             [
                 Header(Team(0), 1),
                 Row(0),
@@ -918,8 +969,33 @@ mod tests {
         );
         // A mode without teams lists its rows as before.
         assert_eq!(
-            listed_rows(&session, limit, None, None),
+            listed_rows(&session, limit, None, None, None),
             [Row(0), Row(1), Row(2), Row(3), Row(4)]
+        );
+    }
+
+    /// With Teams set, each of its teams has a header, an empty one too.
+    #[test]
+    fn a_room_with_teams_set_lists_every_team() {
+        use Listed::{Header, Row};
+        use SetupGroup::{OpenSeats, Spectators, Team};
+        let mut session = vera_room();
+        session.set_network_teams(Some(3)).unwrap();
+        let limit = usize::from(session.network_player_row_limit());
+        let teams = Some(skirmish_shell::team_choices(false));
+        assert_eq!(
+            listed_rows(&session, limit, None, teams, session.network_teams()),
+            [
+                Header(Team(0), 1),
+                Row(0),
+                Header(Team(1), 1),
+                Row(1),
+                Header(Team(2), 0),
+                Header(OpenSeats, 2),
+                Row(2),
+                Row(3),
+                Header(Spectators, 0),
+            ]
         );
     }
 }

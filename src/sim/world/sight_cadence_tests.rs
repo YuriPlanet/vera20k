@@ -718,6 +718,7 @@ fn retail_goldst_initial_scenario() -> crate::headless_scenario::HeadlessScenari
         harvester_truce: false,
         ally_change_allowed: true,
         bans: Default::default(),
+        teams: None,
     };
     let scenario =
         crate::headless_scenario::load_session(&retail, "GoldSt.mmx", 0x1234_5678, session)

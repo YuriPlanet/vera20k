@@ -153,6 +153,9 @@ pub enum WolTarget {
     ModernChangeCountry,
     /// The same, then OK: VERA's C2, whose Game Options toggles Crates.
     ModernRoomOptions,
+    /// VERA's C2 again, whose Teams box sets two teams: the Alamo's two
+    /// seats make one a team, the host on Team A and the guest on Team B.
+    ModernTeams,
     /// VERA's C2 opens two spectator rows past its players and the stand-in
     /// guest moves to the first.
     ModernSpectators,
@@ -542,6 +545,7 @@ impl WolTarget {
                     | Self::ModernPlayerCard
                     | Self::ModernChangeCountry
                     | Self::ModernRoomOptions
+                    | Self::ModernTeams
                     | Self::ModernSpectators
                     | Self::ModernOptions
                     | Self::ModernChatTranslation
@@ -728,6 +732,7 @@ pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-modern-player-card", WolTarget::ModernPlayerCard),
     ("wol-modern-change-country", WolTarget::ModernChangeCountry),
     ("wol-modern-room-options", WolTarget::ModernRoomOptions),
+    ("wol-modern-teams", WolTarget::ModernTeams),
     ("wol-modern-spectators", WolTarget::ModernSpectators),
     ("wol-test-service-create", WolTarget::TestServiceCreate),
     ("wol-test-service-join", WolTarget::TestServiceJoin),
@@ -1128,6 +1133,7 @@ impl WolCapture {
                     | WolTarget::ModernPlayerCard
                     | WolTarget::ModernChangeCountry
                     | WolTarget::ModernRoomOptions
+                    | WolTarget::ModernTeams
                     | WolTarget::ModernSpectators
                     | WolTarget::ModernOptions
                     | WolTarget::ModernChatTranslation
@@ -2165,6 +2171,7 @@ impl WolCapture {
                                     | WolTarget::ModernPlayerCard
                                     | WolTarget::ModernChangeCountry
                                     | WolTarget::ModernRoomOptions
+                                    | WolTarget::ModernTeams
                                     | WolTarget::ModernSpectators
                                     | WolTarget::ModernOptions
                                     | WolTarget::ModernChatTranslation
@@ -2359,6 +2366,7 @@ impl WolCapture {
                     self.target,
                     WolTarget::TestServiceCreate
                         | WolTarget::ModernRoomOptions
+                        | WolTarget::ModernTeams
                         | WolTarget::ModernSpectators
                         | WolTarget::SetupPage
                         | WolTarget::GuestChoices
@@ -2507,7 +2515,11 @@ impl WolCapture {
                     use crate::ui::multiplayer_setup::GAME_OPTIONS;
                     setup_button(state, GAME_OPTIONS)?;
                     let crates = setup_view(state)?.checks[2];
-                    ensure!(setup_view(state)?.options_open, "Game Options did not open");
+                    ensure!(
+                        setup_view(state)?.open_box
+                            == Some(crate::ui::multiplayer_setup::RoomBox::GameOptions),
+                        "Game Options did not open"
+                    );
                     let layout = crate::app::input::multiplayer_setup::layout(state);
                     setup_click(
                         state,
@@ -2550,6 +2562,36 @@ impl WolCapture {
                         "France stayed in the host's Side list"
                     );
                     self.event(frame, "C2 Game Options: No France toggled");
+                }
+                if self.target == WolTarget::ModernTeams {
+                    use crate::ui::multiplayer_setup::{RoomBox, SetupAction, TEAM_COUNT, TEAMS};
+                    setup_button(state, TEAMS)?;
+                    ensure!(
+                        setup_view(state)?.open_box == Some(RoomBox::Teams),
+                        "Teams did not open"
+                    );
+                    crate::app::shell_network_setup::apply_action(
+                        state,
+                        SetupAction::Trackbar {
+                            control: TEAM_COUNT,
+                            value: 2,
+                        },
+                    );
+                    let session = &state.match_state.session;
+                    ensure!(
+                        session.network_teams() == Some(2)
+                            && session.network_team_seats() == Some(1)
+                            && (0..2).all(|team| session.network_team_players(team) == 1),
+                        "the Teams box did not seat the two players on two teams"
+                    );
+                    let view = setup_view(state)?;
+                    let captions: Vec<&str> = view
+                        .headers
+                        .iter()
+                        .flatten()
+                        .map(|header| header.caption.as_str())
+                        .collect();
+                    self.event(frame, json!({ "C2 Teams": captions }));
                 }
                 MoviesCapture::restore_neutral_pointer(state);
                 crate::app::input::multiplayer_setup::cursor_moved(state);

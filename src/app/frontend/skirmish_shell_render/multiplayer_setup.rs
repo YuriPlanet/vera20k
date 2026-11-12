@@ -430,11 +430,9 @@ pub(crate) fn render_multiplayer_setup(
                 SHELL_CONTROL_TEXT_DEPTH,
             );
         }
-        for bar in view
-            .trackbars
-            .iter()
-            .filter(|bar| bar.visible && !OPTION_TRACKBARS.contains(&bar.id))
-        {
+        for bar in view.trackbars.iter().filter(|bar| {
+            bar.visible && !OPTION_TRACKBARS.contains(&bar.id) && bar.id != TEAM_COUNT
+        }) {
             push_trackbar(
                 &mut controls,
                 &mut texts,
@@ -691,21 +689,46 @@ pub(crate) fn render_multiplayer_setup(
                 }
             }
         }
-        // VERA's Game Options over the room, on the box art the online
-        // lobby's popups use: the box and OK first, then its controls.
-        if view.options_open
+        // VERA's Game Options and Teams over the room, on the box art the
+        // online lobby's popups use: the box and its buttons first, then its
+        // controls.
+        if let Some(open) = view.open_box
             && let Some(popup) = layout.game_options
         {
-            let pressed = ui.buttons.is_pressed(GAME_OPTIONS_OK);
-            let ok = PaintLabel {
-                text: localized_label(state, "GUI:OK", "GUI:OK").into(),
-                rect: crate::app::frontend::shell_pass::owner_draw_button_label_rect(
-                    popup.ok, pressed,
-                ),
-                align: ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-                rgb: SHELL_LABEL_TEXT_RGB,
-                path_a_reveal: None,
+            let button = |id: u16, rect: RectPx, text: String| {
+                let pressed = ui.buttons.is_pressed(id);
+                let enabled = view.enabled(id);
+                let label = PaintLabel {
+                    text: text.into(),
+                    rect: crate::app::frontend::shell_pass::owner_draw_button_label_rect(
+                        rect, pressed,
+                    ),
+                    align: ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+                    rgb: super::text::button_label_color_for_disabled(!enabled),
+                    path_a_reveal: None,
+                };
+                (
+                    ModalButton {
+                        rect,
+                        pressed,
+                        enabled,
+                    },
+                    label,
+                )
             };
+            let mut buttons = vec![button(
+                GAME_OPTIONS_OK,
+                popup.ok,
+                localized_label(state, "GUI:OK", "GUI:OK"),
+            )];
+            if open == RoomBox::Teams {
+                buttons.push(button(
+                    TEAM_STARTS,
+                    layout.team_starts,
+                    crate::i18n::tr("VERA:TeamStarts"),
+                ));
+            }
+            let (buttons, labels): (Vec<_>, Vec<_>) = buttons.into_iter().unzip();
             let draw = shell_paint::paint_modal_shp(
                 font,
                 atlas
@@ -713,25 +736,43 @@ pub(crate) fn render_multiplayer_setup(
                     .or_else(|| atlas.mode_two_dialog_background(None)),
                 type3_button_frames(atlas),
                 popup.dialog,
-                &[ModalButton {
-                    rect: popup.ok,
-                    pressed,
-                    enabled: true,
-                }],
-                &[ok],
+                &buttons,
+                &labels,
                 scale,
                 super::wol_lobby::POPUP_DEPTHS,
             );
             overlay.controls.extend(draw.sprites);
             overlay.texts.extend(draw.text);
-            push_option_controls(
-                &mut overlay.controls,
-                &mut overlay.texts,
-                state,
-                &view,
-                &layout,
-                super::wol_lobby::POPUP_DEPTHS.text,
-            );
+            match open {
+                RoomBox::GameOptions => push_option_controls(
+                    &mut overlay.controls,
+                    &mut overlay.texts,
+                    state,
+                    &view,
+                    &layout,
+                    super::wol_lobby::POPUP_DEPTHS.text,
+                ),
+                RoomBox::Teams => {
+                    overlay.texts.push(text(
+                        &crate::i18n::tr("VERA:Teams"),
+                        layout.teams_label,
+                        ShellAlign::NONE,
+                        SHELL_LABEL_TEXT_RGB,
+                        super::wol_lobby::POPUP_DEPTHS.text,
+                    ));
+                    if let Some(bar) = view.trackbars.iter().find(|bar| bar.id == TEAM_COUNT) {
+                        push_trackbar(
+                            &mut overlay.controls,
+                            &mut overlay.texts,
+                            state,
+                            &view,
+                            &layout,
+                            bar,
+                            super::wol_lobby::POPUP_DEPTHS.text,
+                        );
+                    }
+                }
+            }
         }
         // VERA asks a guest before downloading a map it does not have, then
         // shows the download, on the art of VERA's other online-service boxes.
@@ -1035,6 +1076,8 @@ fn push_trackbar(
                 .trackbar_bounds
                 .credits_from_visual_position(bar.value)
                 .to_string(),
+            // 1 is Teams Off.
+            TEAM_COUNT if bar.value < 2 => crate::i18n::tr("VERA:TeamsOff"),
             _ => bar.range.stepped(bar.value).to_string(),
         };
         texts.push(shell_text::draw_in_rect_scaled(

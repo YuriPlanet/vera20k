@@ -232,6 +232,17 @@ kick, while its departure removes the admitted participant and endpoint.
 In VERA's rooms the host's own kick also keeps that address and name out for five
 minutes: their joins get the VERA-only denial reason 9, shown as the join ban.
 
+A VERA room's Teams count, which only its host sets, travels with the host's options:
+online as `launch.options.teams` ([lobby protocol](lobby-protocol.md)), on LAN as
+`teams` beside VERA's room options in the extended options. With it set, the host
+keeps every seated player on one of the room's teams and refuses a guest's pick of a
+full team, so guests only show what the host sends. A LAN guest from before Teams
+ignores the field and is refused at the build check. Online, an older guest cannot
+read the host's options while Teams is set and says the update was invalid, in a room
+that cannot start, since its players' versions differ. A lobby from before Teams
+refuses the field; the host's game then turns Teams Off, says so and sends its options
+again without it.
+
 ## Native behavior and deliberate bounds
 
 The following native scheduling/reliability details apply to LAN and legacy routing;

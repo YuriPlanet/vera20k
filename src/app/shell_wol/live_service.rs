@@ -2364,6 +2364,16 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                 service.start_preparation = None;
                 fail_start(state, &tr("VERA:SettingsNotPublished"));
             }
+            "options" if failure == http::CommandFailure::InvalidOptions => {
+                // A lobby from before Teams refuses the field: the room goes
+                // on with Teams Off and publishes its options without it.
+                let text = if crate::app::shell_network_setup::lobby_refused_teams(state) {
+                    "VERA:TeamsNotTaken"
+                } else {
+                    "VERA:OnlineRequestRefused"
+                };
+                notice(state, &tr(text));
+            }
             "choices"
                 if service
                     .pending_choices
