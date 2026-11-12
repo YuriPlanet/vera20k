@@ -154,6 +154,22 @@ fn mods_composition<'a>(
                 labels.push(label(listed.title(), text, ShellAlign::NONE));
             }
         }
+        // An empty Mods folder: where a mod goes, across the empty rows
+        // under No mod, one row down.
+        if let Some(hint) = crate::app::mods::none_installed_hint(&page.rows) {
+            let content = geometry.content;
+            let top = geometry.row(2).y;
+            labels.push(label(
+                hint,
+                RectPx::new(
+                    content.x + 4 * ROW_TEXT_INSET,
+                    top,
+                    content.w - 8 * ROW_TEXT_INSET,
+                    (content.y + content.h - top).max(0),
+                ),
+                ShellAlign::NONE,
+            ));
+        }
         if let Some(row) = page.selected.and_then(|selected| page.rows.get(selected)) {
             labels.extend(detail_labels(row, mods.in_use(row), layout));
         }

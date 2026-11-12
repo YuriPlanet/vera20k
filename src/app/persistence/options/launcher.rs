@@ -428,6 +428,7 @@ mod tests {
         fn primary_dropped(&mut self) {}
         fn persist_profile(&mut self) {}
         fn route_keyboard(&mut self) {}
+        fn route_mods(&mut self) {}
         fn reopen_parent(&mut self) {}
     }
 

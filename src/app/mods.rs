@@ -447,6 +447,21 @@ pub(crate) fn installed(paths: &PathsConfig) -> Vec<Listed> {
     std::iter::once(original).chain(mods).collect()
 }
 
+/// What the Mods page says under its one row while `Mods` holds no mod: where
+/// a mod goes. On Windows also the Start menu shortcut to the folder that the
+/// installer makes (`.github/release/windows/vera20k.iss`).
+pub(crate) fn none_installed_hint(rows: &[Listed]) -> Option<String> {
+    if rows.iter().any(|row| row.folder.is_some()) {
+        return None;
+    }
+    let mut text = crate::i18n::tr("VERA:ModsNoneYet");
+    if cfg!(windows) {
+        text.push(' ');
+        text.push_str(&crate::i18n::tr("VERA:ModsNoneYetStartMenu"));
+    }
+    Some(text)
+}
+
 /// Show the `Mods` folder in the system's file manager, made first if it has
 /// gone. Where no file manager could be started, the folder's path, for the
 /// player to find it by hand.
@@ -1075,6 +1090,23 @@ mod tests {
             .keep_choice_in(&root.join("config.toml"), &paths, None)
             .unwrap();
         assert!(original.switch_to().is_none());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A Mods folder with only its README and what a system leaves there
+    /// tells the player where a mod goes; one mod in it, and it says nothing.
+    #[test]
+    fn an_empty_mods_folder_says_where_a_mod_goes() {
+        let (root, paths) = settings("empty");
+        let mods = root.join("Mods");
+        std::fs::remove_dir_all(mods.join("Winter War")).unwrap();
+        prepare_folder(&mods);
+        std::fs::write(mods.join(".DS_Store"), "x").unwrap();
+        let hint = none_installed_hint(&installed(&paths)).expect("an empty Mods folder");
+        assert!(hint.starts_with("No mods yet."), "{hint}");
+        assert_eq!(hint.contains("Start menu"), cfg!(windows), "{hint}");
+        std::fs::create_dir_all(mods.join("Winter War")).unwrap();
+        assert_eq!(none_installed_hint(&installed(&paths)), None);
         std::fs::remove_dir_all(root).unwrap();
     }
 
