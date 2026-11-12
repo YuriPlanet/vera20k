@@ -763,7 +763,7 @@ impl Simulation {
                     house: owner,
                     palette: self.interner.intern(name),
                 })
-            } else if crate::rules::ARES_ENABLED {
+            } else if rules.ares() {
                 Some(crate::sim::anim_class::AnimRemap::House(owner))
             } else {
                 None

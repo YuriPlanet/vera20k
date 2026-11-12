@@ -38,6 +38,7 @@ impl TargetMask {
     /// comma-only list and keep-on-failure rules as [`HouseMask::read_ares`].
     #[cfg(feature = "ares")]
     pub(crate) fn read_ares(section: &IniSection, key: &str) -> Option<Self> {
+        let _ares = crate::rules::ares_switch::ares_reads();
         read_native_mask(section, key, &TARGET_TOKENS).map(Self)
     }
 }
@@ -62,6 +63,7 @@ impl HouseMask {
     /// native comma-only lists replace; absent or unknown keeps the prior.
     #[cfg(feature = "ares")]
     pub(crate) fn read_ares(section: &IniSection, key: &str) -> Option<Self> {
+        let _ares = crate::rules::ares_switch::ares_reads();
         read_native_mask(section, key, &HOUSE_TOKENS).map(Self)
     }
 }
@@ -414,6 +416,7 @@ impl AresSuperWeaponTargetingState {
     /// else keeps the prior value. The Nullable wrappers set their flag only
     /// on a successful read.
     pub(crate) fn read_pass(&mut self, section: &IniSection, type_name: Option<&str>) -> bool {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let initialize = !self.initialized;
         let is =
             |name: &str| type_name.is_some_and(|type_name| type_name.eq_ignore_ascii_case(name));

@@ -441,7 +441,7 @@ fn admit_attacker_fire<'r>(
                         // Ares 3.0 InfantryClass_UpdateFiringState_Uncloak
                         // (1005CDD0, hook 0x52070F): as the Unit's case 9,
                         // only in range (`CanFireAt 0x006F77B0`).
-                        let mut in_range = !crate::rules::ARES_ENABLED;
+                        let mut in_range = !rules.ares();
                         if !in_range {
                             subject(&*world, &mut |s| in_range = s.in_range());
                         }
@@ -775,7 +775,7 @@ fn heal_weapon_drops_target(
         .substrate
         .entities
         .get(id)
-        .filter(|target| cfg!(feature = "ares") || target.category() == class)
+        .filter(|target| rules.ares() || target.category() == class)
     else {
         return true;
     };
@@ -785,7 +785,7 @@ fn heal_weapon_drops_target(
         .map_or(0, |object| object.strength);
     // The infantry hook's IsDamagedTechno asks `ratio < 1.0`, so 0/0 drops
     // there; the unit hook's `ratio >= 1.0` keeps it, as the stock test does.
-    if cfg!(feature = "ares") && class == EntityCategory::Infantry {
+    if rules.ares() && class == EntityCategory::Infantry {
         return target.health.compare_ratio(strength, 1.0)
             != crate::util::native_x87::MaskedX87Ordering::Less;
     }
@@ -2433,7 +2433,7 @@ pub(super) fn emit_admitted_fire(
         // type after the common tail, before the firing counter/scalable.
         if let Some(entity) = world.substrate.entities.get_mut(snap.stable_id)
             && let Some(live_type) = world.interner.object_type(entity.type_ref(), rules)
-            && if cfg!(feature = "ares") {
+            && if rules.ares() {
                 // Ares UnitClass_Fire_Ammo10047B30 replaces7413D3:
                 // positive Weapon Ammo invokes StartReloading directly.
                 weapon.ammo_cost() > 0

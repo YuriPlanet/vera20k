@@ -1243,8 +1243,11 @@ fn scan_docking_type(
         {
             continue;
         }
-        let distance =
-            crate::util::native_coord::squared_xy_distance([own_x, own_y], [centre.x, centre.y]);
+        let distance = crate::util::native_coord::squared_xy_distance(
+            [own_x, own_y],
+            [centre.x, centre.y],
+            rules.ares(),
+        );
         if nearest == -1 || distance < nearest || sim.production.is_primary_factory(sid) {
             found = Some(sid);
             nearest = distance;

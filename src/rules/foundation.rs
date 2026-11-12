@@ -196,6 +196,7 @@ impl Foundation {
     /// Native execution: tools/rules_oracle/ares_foundation.json.
     #[cfg(feature = "ares")]
     pub(crate) fn read_custom_pass(&mut self, art: &crate::rules::ini_parser::IniSection) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         if matches!(self, Self::Custom(_) | Self::InvalidCustom)
             || !art
                 .read_string("Foundation", "", 0x800)

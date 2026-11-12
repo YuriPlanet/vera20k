@@ -1312,7 +1312,7 @@ fn a_super_holds_only_while_no_provider_is_online() {
     assert!(!held(&sim, nuke), "the other silo is online");
     assert_eq!(
         held(&sim, spy_plane),
-        crate::rules::ARES_ENABLED,
+        crate::rules::ARES_BUILD,
         "not IsPowered="
     );
 
@@ -1327,7 +1327,7 @@ fn a_super_holds_only_while_no_provider_is_online() {
     assert!(held(&sim, nuke), "no silo is online");
     assert_eq!(
         held(&sim, spy_plane),
-        crate::rules::ARES_ENABLED,
+        crate::rules::ARES_BUILD,
         "still charging"
     );
 }

@@ -265,12 +265,18 @@ impl Simulation {
 impl crate::sim::world::ObjectSubstrate {
     /// Bullet::Detonate46937A..4693CE. Only the two concrete object classes
     /// are checked here; alliance, range and Overpowerable are not impact gates.
-    pub(crate) fn electric_assault_detonation(&mut self, source: u64, target: Option<u64>) {
+    /// `ares` is [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
+    pub(crate) fn electric_assault_detonation(
+        &mut self,
+        source: u64,
+        target: Option<u64>,
+        ares: bool,
+    ) {
         // Ares 3.0 BulletClass_Fire_Overpower (1005C650, hook 0x4693B0): a
         // Unit owner charges the building too.
         if !self.entities.get(source).is_some_and(|entity| {
             entity.category() == EntityCategory::Infantry
-                || crate::rules::ARES_ENABLED && entity.category() == EntityCategory::Unit
+                || ares && entity.category() == EntityCategory::Unit
         }) {
             return;
         }

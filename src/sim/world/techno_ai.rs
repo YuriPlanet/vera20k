@@ -2254,7 +2254,7 @@ fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     // healer (`0x006F3970(-1) < 0`) keeps an allied target and takes a
     // non-allied one, a cell included, to the drop below (0x006FA39D);
     // anything else keeps the stock test.
-    let drops = if cfg!(feature = "ares") {
+    let drops = if rules.ares() {
         allied
             != (combat_weapon::weapon_damage_value(
                 entity,

@@ -330,6 +330,7 @@ impl MouseCursors {
     /// hotspots (`left`/`center`/`right` @ 10076BC0, `top`/`middle`/`bottom`
     /// @ 10076C40); a token that does not parse keeps its field.
     pub(crate) fn read_pass(&mut self, pass: &IniFile) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let section = pass.section_or_empty("MouseCursors");
         for name in section.keys() {
             self.find_or_allocate(name);
@@ -386,6 +387,7 @@ impl MouseCursors {
     /// entry stores its index, `none`/`<none>` (`IsBlank`) stores -1, and
     /// anything else, like an absent key, keeps `current`.
     pub(crate) fn read(&self, section: &IniSection, key: &str, current: i32) -> i32 {
+        let _ares = crate::rules::ares_switch::ares_reads();
         section.read_ares_mouse_cursor(key, current, |name| self.find(name))
     }
 }
@@ -422,6 +424,7 @@ impl Default for TechnoCursors {
 impl TechnoCursors {
     /// The six TechnoTypeExt reads, in `1003DFB0`'s order.
     pub(crate) fn read_techno_pass(&mut self, section: &IniSection, cursors: &MouseCursors) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.deploy = cursors.read(section, "Cursor.Deploy", self.deploy);
         self.no_deploy = cursors.read(section, "Cursor.NoDeploy", self.no_deploy);
         self.enter = cursors.read(section, "Cursor.Enter", self.enter);
@@ -432,6 +435,7 @@ impl TechnoCursors {
 
     /// BuildingTypeExt `Cursor.Spy` (`1000DD40`).
     pub(crate) fn read_building_pass(&mut self, section: &IniSection, cursors: &MouseCursors) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.spy = cursors.read(section, "Cursor.Spy", self.spy);
     }
 }
@@ -455,6 +459,7 @@ impl Default for WeaponCursors {
 
 impl WeaponCursors {
     pub(crate) fn read_pass(&mut self, section: &IniSection, cursors: &MouseCursors) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.attack = cursors.read(section, "Cursor.Attack", self.attack);
         self.attack_out_of_range =
             cursors.read(section, "Cursor.AttackOutOfRange", self.attack_out_of_range);
@@ -518,6 +523,7 @@ impl SuperWeaponCursors {
     }
 
     pub(crate) fn read_pass(&mut self, section: &IniSection, cursors: &MouseCursors) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.cursor = cursors.read(section, "Cursor", self.cursor);
         self.no_cursor = cursors.read(section, "NoCursor", self.no_cursor);
     }
@@ -528,6 +534,7 @@ mod tests {
     use super::*;
 
     fn pass(text: &str) -> IniFile {
+        let _ares = crate::rules::ares_switch::ares_reads();
         IniFile::from_str(text)
     }
 

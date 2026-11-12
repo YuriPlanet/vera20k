@@ -117,12 +117,16 @@ impl WeaponOffsets {
         //715B3B..715D6E reads each base/elite record in order. The installed
         // Ares10040020 hook replaces that path with its own integer parser.
         #[cfg(feature = "ares")]
-        let read_int = |key: &str, current| art.read_ares_int(key, current);
+        let read_int = |key: &str, current| {
+            crate::rules::ares_switch::not_ares_read(|| art.read_ares_int(key, current))
+        };
         #[cfg(not(feature = "ares"))]
         let read_int = |key: &str, current| art.read_int(key, current);
         #[cfg(feature = "ares")]
         {
-            base.flh = art.read_ares_coord3(&format!("Weapon{}FLH", slot + 1), base.flh);
+            base.flh = crate::rules::ares_switch::not_ares_read(|| {
+                art.read_ares_coord3(&format!("Weapon{}FLH", slot + 1), base.flh)
+            });
         }
         #[cfg(not(feature = "ares"))]
         {
@@ -138,7 +142,9 @@ impl WeaponOffsets {
         );
         #[cfg(feature = "ares")]
         {
-            elite.flh = art.read_ares_coord3(&format!("EliteWeapon{}FLH", slot + 1), base.flh);
+            elite.flh = crate::rules::ares_switch::not_ares_read(|| {
+                art.read_ares_coord3(&format!("EliteWeapon{}FLH", slot + 1), base.flh)
+            });
         }
         #[cfg(not(feature = "ares"))]
         {

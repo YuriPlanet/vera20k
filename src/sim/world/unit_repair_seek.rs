@@ -221,9 +221,7 @@ impl Simulation {
                 effects,
             );
             // 1005CB50 also takes only ROGER; the original any answer.
-            if answer == RadioResponse::None
-                || crate::rules::ARES_ENABLED && answer != RadioResponse::Roger
-            {
+            if answer == RadioResponse::None || rules.ares() && answer != RadioResponse::Roger {
                 continue;
             }
             let (Some(unit), Some(building)) = (

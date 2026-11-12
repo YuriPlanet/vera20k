@@ -866,7 +866,7 @@ mod tests {
                 row["fixture"]["raw"].as_str().unwrap()
             ));
             let rules = RuleSet::from_ini(&IniFile::from_str(&source)).unwrap();
-            let expected = if crate::rules::ARES_ENABLED {
+            let expected = if crate::rules::ARES_BUILD {
                 row["result"]["reference"].as_str()
             } else {
                 None
@@ -919,7 +919,7 @@ mod tests {
         for name in names {
             assert_eq!(
                 roots.iter().any(|root| root == name),
-                crate::rules::ARES_ENABLED,
+                crate::rules::ARES_BUILD,
                 "{name}"
             );
         }
@@ -928,7 +928,7 @@ mod tests {
         rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
         let mut sim = Simulation::with_seed(17);
         for name in names {
-            let expected = crate::rules::ARES_ENABLED.then_some(6);
+            let expected = crate::rules::ARES_BUILD.then_some(6);
             assert_eq!(
                 rules
                     .art()
@@ -940,7 +940,7 @@ mod tests {
             );
             assert_eq!(
                 rules.art().scheduler_anim_types().contains(name),
-                crate::rules::ARES_ENABLED
+                crate::rules::ARES_BUILD
             );
             let type_name = sim.intern(name);
             let world = AnimWorldCoord {
@@ -959,7 +959,7 @@ mod tests {
             );
             assert_eq!(
                 spawned.is_ok(),
-                crate::rules::ARES_ENABLED,
+                crate::rules::ARES_BUILD,
                 "{name}: {spawned:?}"
             );
         }
@@ -999,7 +999,7 @@ mod tests {
                 .anim_runtime_config("PULSE")
                 .unwrap()
                 .raw_shp_frame_count,
-            crate::rules::ARES_ENABLED.then_some(6),
+            crate::rules::ARES_BUILD.then_some(6),
         );
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
         sim.intern_rule_type_ids(&rules);
@@ -1017,10 +1017,10 @@ mod tests {
             .entities()
             .get(helper)
             .is_some_and(|entity| entity.is_object_alive());
-        assert_eq!(alive, !crate::rules::ARES_ENABLED);
+        assert_eq!(alive, !crate::rules::ARES_BUILD);
         assert_eq!(
             sim.entities().get(victim).unwrap().health.current() < 1000,
-            crate::rules::ARES_ENABLED,
+            crate::rules::ARES_BUILD,
             "the self animation must reach the real death-weapon receiver",
         );
     }

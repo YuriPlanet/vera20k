@@ -3077,7 +3077,7 @@ fn gsi_04_07_retaliation_verses_and_healer_gates() {
             verses: "1%",
             ..Default::default()
         }),
-        !crate::rules::ARES_ENABLED,
+        !crate::rules::ARES_BUILD,
     );
     assert!(!retaliates(RetaliationCase {
         verses: "0.005",
@@ -9934,7 +9934,7 @@ fn projectile_shrapnel_fragment_holds_its_weapon_only_in_ares() {
             .iter()
             .map(|fragment| fragment.payload().installed_weapon())
             .collect::<Vec<_>>(),
-        vec![crate::rules::ARES_ENABLED.then_some(child)]
+        vec![crate::rules::ARES_BUILD.then_some(child)]
     );
 }
 

@@ -2399,7 +2399,7 @@ impl ParadropList {
     /// processed rules' ([`RuleSet::from_processed_rules`]).
     fn read_counts(general: &crate::rules::ini_parser::IniSection, key: &str) -> Self {
         #[cfg(feature = "ares")]
-        let counts = general.read_ares_int_list(key);
+        let counts = crate::rules::ares_switch::not_ares_read(|| general.read_ares_int_list(key));
         #[cfg(not(feature = "ares"))]
         let counts = general.read_int_list(key);
         Self {
@@ -3798,8 +3798,9 @@ impl GeneralRules {
         let airstrike_line_color =
             audio_visual.read_phobos_color("AirstrikeLineColor", defaults.airstrike_line_color);
         #[cfg(feature = "phobos")]
-        let airstrike_line_z_adjust =
-            audio_visual.read_ares_int("AirstrikeLineZAdjust", defaults.airstrike_line_z_adjust);
+        let airstrike_line_z_adjust = crate::rules::ares_switch::not_ares_read(|| {
+            audio_visual.read_ares_int("AirstrikeLineZAdjust", defaults.airstrike_line_z_adjust)
+        });
         let Some(general) = ini.section("General") else {
             return Self {
                 message_delay_minutes,
@@ -4442,20 +4443,23 @@ impl GeneralRules {
             #[cfg(feature = "phobos")]
             decloak_damaged_targets: general.read_bool("DecloakDamagedTargets", true),
             #[cfg(feature = "phobos")]
-            rof_random_delay: combat_damage.read_ares_partial_int_pair(
-                "ROF.RandomDelay",
-                crate::rules::ini_value::PartialIntPair {
-                    low: 0,
-                    high: 2,
-                    values: 2,
-                },
-            ),
+            rof_random_delay: crate::rules::ares_switch::not_ares_read(|| {
+                combat_damage.read_ares_partial_int_pair(
+                    "ROF.RandomDelay",
+                    crate::rules::ini_value::PartialIntPair {
+                        low: 0,
+                        high: 2,
+                        values: 2,
+                    },
+                )
+            }),
             // Ares 3.0 Buf_AI (1005B830, hook 0x672B0E): ParseList<int>
             // (1005B030) replaces the original IntVector read.
             #[cfg(feature = "ares")]
-            ai_force_prediction_fudge: ai
-                .read_ares_int_list("AIForcePredictionFudge")
-                .unwrap_or_default(),
+            ai_force_prediction_fudge: crate::rules::ares_switch::not_ares_read(|| {
+                ai.read_ares_int_list("AIForcePredictionFudge")
+            })
+            .unwrap_or_default(),
             #[cfg(not(feature = "ares"))]
             ai_force_prediction_fudge: ai
                 .read_int_list("AIForcePredictionFudge")
@@ -4896,6 +4900,10 @@ pub struct RuleSet {
     /// Immutable projection of NativeRulesRegistryState's ordered armor catalog.
     ares_armors: Option<crate::rules::ares_armor::ArmorCatalog>,
     emp_sparkles: Option<String>,
+    /// Whether Ares plays in this game, decided once from its Rules layers
+    /// and `ares.mix` by `rules::ares_switch`. Read through [`Self::ares`].
+    #[cfg(feature = "ares")]
+    ares: bool,
     #[cfg(feature = "ares")]
     ares_global_controls: crate::rules::native_processing::AresGlobalControls,
     /// Presentation projection of the retained Ares `[MouseCursors]` list.
@@ -5358,7 +5366,22 @@ impl RuleSet {
         Self::from_processed_rules(&layers.process()?)
     }
 
+    /// Project processed Rules into the game's rules. The projection's reader
+    /// lookups are recorded, so the per-game Ares switch it stores
+    /// ([`Self::ares`]) also counts the keys only these readers read.
     pub fn from_processed_rules(processed: &ProcessedRulesLayers) -> Result<Self, RulesError> {
+        #[cfg(feature = "ares")]
+        {
+            let (rules, reads) = crate::rules::ares_switch::record(|| Self::project(processed));
+            let mut rules = rules?;
+            rules.ares = processed.ares_inputs().decide(&reads);
+            Ok(rules)
+        }
+        #[cfg(not(feature = "ares"))]
+        Self::project(processed)
+    }
+
+    fn project(processed: &ProcessedRulesLayers) -> Result<Self, RulesError> {
         processed.validate_saved_state()?;
         let mut rules = Self::from_projected_ini(
             processed,
@@ -7343,6 +7366,9 @@ impl RuleSet {
             ares_prerequisites: None,
             ares_armors: processed.ares_armors().cloned(),
             emp_sparkles: None,
+            // Decided by `from_processed_rules` once its readers ran.
+            #[cfg(feature = "ares")]
+            ares: false,
             #[cfg(feature = "ares")]
             ares_global_controls: processed.ares_global_controls().clone(),
             #[cfg(feature = "ares")]
@@ -8263,6 +8289,18 @@ impl RuleSet {
         self.source_ini_hash
     }
 
+    /// Whether Ares plays in this game: its Rules layers or map hold an Ares
+    /// key, or the game ships `ares.mix` (`rules::ares_switch`). Sim and
+    /// presentation read this one answer. Always false without the `ares`
+    /// build feature.
+    #[inline]
+    pub fn ares(&self) -> bool {
+        #[cfg(feature = "ares")]
+        return self.ares;
+        #[cfg(not(feature = "ares"))]
+        false
+    }
+
     /// Resolve one retained palette request. Ares715857->715876 removes
     /// only the original successful-group limit: a supplied request resolves
     /// its own file; a failed file never inherits another type's group.
@@ -8656,9 +8694,13 @@ impl RuleSet {
         // matches this binary. Include that immutable build identity even if
         // the selected INIs contain no extension keys.
         b"rules-build-compatibility-v1".hash(&mut hasher);
-        crate::rules::ARES_ENABLED.hash(&mut hasher);
+        crate::rules::ARES_BUILD.hash(&mut hasher);
         #[cfg(feature = "ares")]
         {
+            // The game's Ares switch: two peers or a replay with the same
+            // layers but another `ares.mix` answer play different games.
+            b"ares-plays-v1".hash(&mut hasher);
+            self.ares.hash(&mut hasher);
             b"ares-global-controls-v1".hash(&mut hasher);
             self.ares_global_controls.hash(&mut hasher);
             b"ares-factory-owners-v1".hash(&mut hasher);
@@ -12243,7 +12285,7 @@ mod tests {
             RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap()
         };
         let rules = make("Area Guard");
-        let expected = crate::rules::ARES_ENABLED.then_some(MissionType::AreaGuard);
+        let expected = crate::rules::ARES_BUILD.then_some(MissionType::AreaGuard);
         assert_eq!(rules.ares_emp_ai_recover_mission(), expected);
         let retained_hash = rules.simulation_config_hash();
         let mut changed = make("Hunt");
@@ -12254,11 +12296,11 @@ mod tests {
         changed.source_ini_hash = rules.source_ini_hash;
         assert_eq!(
             changed.ares_emp_ai_recover_mission(),
-            crate::rules::ARES_ENABLED.then_some(MissionType::Hunt)
+            crate::rules::ARES_BUILD.then_some(MissionType::Hunt)
         );
         assert_eq!(
             retained_hash == changed.simulation_config_hash(),
-            !crate::rules::ARES_ENABLED
+            !crate::rules::ARES_BUILD
         );
         let fresh = RuleSet::from_processed_rules(
             &RulesLayerStack::new(IniFile::from_str(

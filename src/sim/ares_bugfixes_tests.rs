@@ -106,7 +106,11 @@ fn spawn(sim: &mut Simulation, rules: &RuleSet, kind: &str, owner: &str, rx: u16
 fn a_cloakable_building_or_aircraft_type_seeds_its_stealth() {
     let rules = rules();
     let seeds = |category, kind: &str| {
-        crate::sim::cloak_disguise::type_seeds_stealth(category, rules.object(kind).unwrap())
+        crate::sim::cloak_disguise::type_seeds_stealth(
+            category,
+            rules.object(kind).unwrap(),
+            crate::rules::ARES_BUILD,
+        )
     };
     assert!(seeds(EntityCategory::Structure, "CLKB"));
     assert!(seeds(EntityCategory::Aircraft, "JET"));
@@ -217,7 +221,8 @@ fn a_vehicle_charges_a_coil() {
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4693B0);
     let coil = spawn(&mut sim, &rules, "COIL", "Russians", 10, 10);
     let tank = spawn(&mut sim, &rules, "TANK", "Russians", 13, 10);
-    sim.substrate.electric_assault_detonation(tank, Some(coil));
+    sim.substrate
+        .electric_assault_detonation(tank, Some(coil), crate::rules::ARES_BUILD);
     assert_eq!(
         sim.substrate
             .entities
@@ -364,8 +369,14 @@ fn a_falling_unit_cannot_deploy() {
 #[test]
 fn a_far_squared_distance_clamps() {
     use crate::util::native_coord::squared_xy_distance;
-    assert_eq!(squared_xy_distance([0, 0], [3, 4]), 25);
-    assert_eq!(squared_xy_distance([0, 0], [50_000, 0]), i32::MAX);
+    assert_eq!(
+        squared_xy_distance([0, 0], [3, 4], crate::rules::ARES_BUILD),
+        25
+    );
+    assert_eq!(
+        squared_xy_distance([0, 0], [50_000, 0], crate::rules::ARES_BUILD),
+        i32::MAX
+    );
 }
 
 /// SelectDamageAnimation_FixNegatives (1005D070, hook 0x48A4F9): a negative

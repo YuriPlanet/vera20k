@@ -423,7 +423,7 @@ impl SpawnRequest {
                     "Side",
                     0,
                     0,
-                    if crate::rules::ARES_ENABLED {
+                    if crate::rules::ARES_BUILD {
                         i32::from(u8::MAX)
                     } else {
                         1
@@ -799,7 +799,7 @@ pub(crate) const fn max_spawn_country_index() -> i32 {
     // replacement4E3A6A ->1001E2C0 retains Country+B8 without that cap.
     // The shared launch owner validates allocation again after scenario Rules
     // reset; this early reader only admits its canonical identity width.
-    if crate::rules::ARES_ENABLED {
+    if crate::rules::ARES_BUILD {
         u16::MAX as i32
     } else {
         9

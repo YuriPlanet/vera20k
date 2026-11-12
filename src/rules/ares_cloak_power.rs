@@ -42,6 +42,7 @@ impl CloakPowerTypeRules {
     /// The registry supplies the Find-only BuildingType vector read10010850
     /// of `PoweredBy`: a reached list replaces, a failed read retains.
     pub(crate) fn read_pass(&mut self, section: &IniSection, powered_by: Option<Vec<String>>) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         // Valueable<int>1000A570.
         self.radar_jam_radius = section.read_ares_int("RadarJamRadius", self.radar_jam_radius);
         if let Some(powered_by) = powered_by {
@@ -127,6 +128,7 @@ impl Default for CloakPowerGlobalRules {
 impl CloakPowerGlobalRules {
     /// LoadBeforeTypeData1002AB60: Valueable<double>1000EB00 in AudioVisual.
     pub(crate) fn read_before_type_data(&mut self, pass: &IniFile) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let Some(section) = pass.section("AudioVisual") else {
             return;
         };
@@ -152,6 +154,7 @@ impl CloakPowerGlobalRules {
     /// LoadAfterTypeData1002A800: General's Nullable<int>10008CC0, after
     /// the AudioVisual DecloakSound that the sound binder owns.
     pub(crate) fn read_after_type_data(&mut self, pass: &IniFile) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         if let Some(section) = pass.section("General") {
             self.cloak_height = section.read_ares_nullable_int("CloakHeight", self.cloak_height);
         }

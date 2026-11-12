@@ -3606,7 +3606,7 @@ impl Simulation {
         };
         // Ares 3.0 AnimClass_UpdateBounce_Damage (1005C410, hook 0x4239F0):
         // a negative DamageRadius or a Damage of zero damages nothing.
-        if crate::rules::ARES_ENABLED && (config.damage_radius < 0 || damage == 0) {
+        if rules.ares() && (config.damage_radius < 0 || damage == 0) {
             return false;
         }
         let warhead_ref = self.interner.intern(warhead_name);

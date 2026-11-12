@@ -667,7 +667,7 @@ fn shows_alt_cameo(
     if !has_alternate {
         return false;
     }
-    if crate::rules::ARES_ENABLED {
+    if rules.ares() {
         if obj.category == ObjectCategory::Building && obj.undeploys_into.is_some() {
             return false;
         }
@@ -1325,7 +1325,7 @@ mod tests {
         assert!(shows(&war_factory, "MTNK"));
         assert_eq!(
             shows(&war_factory, "DEST"),
-            !crate::rules::ARES_ENABLED,
+            !crate::rules::ARES_BUILD,
             "stock GetCameo uses the ground spy flag for ships; Ares separates naval gains"
         );
         assert!(!shows(&war_factory, "ORCA"));

@@ -29,11 +29,14 @@ pub(crate) fn interpolate<const N: usize>(
 /// ignored, each difference a 32-bit SUB and the squares and sum 32-bit
 /// IMUL/ADD that wrap. Ares 3.0 AbstractClass_Distance2DSquared_1/2
 /// (1005C1A0, hook 0x5F6515; 1005C240, hook 0x5F6560) square the same
-/// 32-bit differences in 64 bits and clamp the sum to `i32::MAX`.
-pub(crate) fn squared_xy_distance(from: [i32; 2], to: [i32; 2]) -> i32 {
+/// 32-bit differences in 64 bits and clamp the sum to `i32::MAX`, when Ares
+/// plays (`ares`, [`RuleSet::ares`]).
+///
+/// [`RuleSet::ares`]: crate::rules::ruleset::RuleSet::ares
+pub(crate) fn squared_xy_distance(from: [i32; 2], to: [i32; 2], ares: bool) -> i32 {
     let dx = from[0].wrapping_sub(to[0]);
     let dy = from[1].wrapping_sub(to[1]);
-    if cfg!(feature = "ares") {
+    if ares {
         let (dx, dy) = (i64::from(dx), i64::from(dy));
         i32::try_from(dy * dy + dx * dx).unwrap_or(i32::MAX)
     } else {

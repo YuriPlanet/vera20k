@@ -205,8 +205,8 @@ fn direct_reaches(src: (i64, i64, i64), target: (i64, i64, i64), range: i64, pla
 }
 
 /// The `planar` argument of [`direct_reaches`] for `attacker`.
-fn direct_reach_is_planar(attacker: &GameEntity) -> bool {
-    crate::rules::ARES_ENABLED && attacker.category() == EntityCategory::Aircraft
+fn direct_reach_is_planar(attacker: &GameEntity, ares: bool) -> bool {
+    ares && attacker.category() == EntityCategory::Aircraft
 }
 
 /// `0x006F727E..0x006F729F`: an occupied building
@@ -590,7 +590,7 @@ pub(crate) fn compute_range_target(
         src,
         (tx, ty, tz),
         max_range_lep,
-        direct_reach_is_planar(attacker),
+        direct_reach_is_planar(attacker, rules.ares()),
     ) {
         return false;
     }
@@ -1128,7 +1128,7 @@ pub fn mapless_in_range(
         src,
         target,
         range + foundation,
-        direct_reach_is_planar(attacker),
+        direct_reach_is_planar(attacker, rules.ares()),
     )
 }
 

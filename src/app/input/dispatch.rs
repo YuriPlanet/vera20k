@@ -4010,7 +4010,7 @@ fn stop_qualifies(
     id: u64,
 ) -> bool {
     (sim.techno_player_controllable(id, rules) || sim.techno_is_active(id, rules))
-        && !(crate::rules::ARES_ENABLED
+        && !(rules.ares()
             && sim
                 .entities()
                 .get(id)

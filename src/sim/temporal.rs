@@ -354,7 +354,7 @@ impl Simulation {
                     // (1005C600, hook 0x469467) also warps a Foot in the Air
                     // or Top layer.
                     let warpable_layer = layer == DisplayLayer::GROUND
-                        || crate::rules::ARES_ENABLED
+                        || rules.ares()
                             && (layer == DisplayLayer::AIR || layer == DisplayLayer::TOP);
                     if !warpable_layer {
                         return;

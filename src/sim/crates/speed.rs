@@ -50,7 +50,7 @@ pub(crate) fn apply_speed_crate(
         // Original vtable+2C: Unit7F5C70->746E20 returns1,
         // Aircraft7E22A4->41C180 returns2, Infantry7EB058->523340 returns15.
         // RTTI3 is AircraftType7E2868->41CFB0, never a GameEntity/Foot.
-        if !crate::rules::ARES_ENABLED && entity.category() == EntityCategory::Aircraft {
+        if !rules.ares() && entity.category() == EntityCategory::Aircraft {
             continue;
         }
         if entity.foot_speed.accept_speed_crate(multiplier) {
@@ -198,7 +198,7 @@ mod tests {
                     &|_| 0,
                 );
                 let expected = !already_upgraded
-                    && (crate::rules::ARES_ENABLED || category != EntityCategory::Aircraft);
+                    && (crate::rules::ARES_BUILD || category != EntityCategory::Aircraft);
                 let slot = super::super::pickup::multiplayer_eligible_slot(
                     &sim,
                     &rules,

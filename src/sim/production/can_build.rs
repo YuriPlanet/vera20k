@@ -123,7 +123,7 @@ pub fn can_build(
     if status < RequirementStatus::Complete {
         return CanBuild::No;
     }
-    if !crate::rules::ARES_ENABLED && !controlled_by_human {
+    if !rules.ares() && !controlled_by_human {
         return CanBuild::Yes;
     }
     if !bypass_prerequisites && controlled_by_human && !owns_prerequisites(sim, rules, house, obj) {
@@ -178,7 +178,7 @@ pub(crate) fn requirements_met(
     let _ = owner;
     let controlled_by_human = house.is_controlled_by_human(sim.session.game_mode_nonzero());
     let override_on_map = obj.prerequisite_override.iter().any(|&entry| {
-        if crate::rules::ARES_ENABLED {
+        if rules.ares() {
             // Ares3.0 qualification10021FF0 calls
             // HouseOwnsAny100081E0 at100220C0, before its human/AI split.
             prerequisite_on_map(sim, rules, house, entry)
@@ -227,7 +227,7 @@ pub(crate) fn requirements_met(
     let type_tech_level = sim.object_tech_level(obj);
     // Installed qualification100220FE calls10020AD0, the same session-
     //aware human predicate; only its human arm rejects TechLevel=-1.
-    if (type_tech_level == -1 && (!crate::rules::ARES_ENABLED || controlled_by_human))
+    if (type_tech_level == -1 && (!rules.ares() || controlled_by_human))
         || !house.has_stolen_tech_for(obj)
     {
         return RequirementStatus::Incomplete;
@@ -252,7 +252,7 @@ pub(crate) fn requirements_met(
     }
     // Ares disabled-shell predicate10021A00..10021A6A bypasses this
     // skirmish-shell restriction in mode0, before inspecting the Type.
-    if (!crate::rules::ARES_ENABLED || sim.session.game_mode_nonzero())
+    if (!rules.ares() || sim.session.game_mode_nonzero())
         && !sim.session.game_options().super_weapons
         && obj.category == ObjectCategory::Building
         && let Some(super_weapon) = obj.super_weapon.as_deref()
@@ -389,18 +389,18 @@ fn specific_prerequisite_on_map(
         return false;
     };
     let count = buildings_on_map(sim, rules, house, index);
-    if crate::rules::ARES_ENABLED && count > 0 {
+    if rules.ares() && count > 0 {
         // Ares HouseOwnsSpecific100082B0 accepts a positive direct/member
         // count before PowersUpBuilding, including a separately on-map upgrade.
         return true;
     }
     if building_type.building_upgrade().host().is_none() {
-        return !crate::rules::ARES_ENABLED && count != 0;
+        return !rules.ares() && count != 0;
     }
     let Some(type_id) = sim.interner.get(&building_type.id) else {
         return false;
     };
-    if crate::rules::ARES_ENABLED {
+    if rules.ares() {
         // Ares HouseOwnsSpecific100082B0 resolves the declared host, requires
         // its active count>0, then scans every House+6C building of that type. It reads
         // all three installed slots and no HP/limbo/online/Selling/count gate.
@@ -1040,8 +1040,8 @@ fn scan_factories<'a>(
     } in candidates
     {
         if building_factory_type == factory_type
-            && (crate::rules::ARES_ENABLED || !require_online || building.building_online())
-            && (crate::rules::ARES_ENABLED
+            && (rules.ares() || !require_online || building.building_online())
+            && (rules.ares()
                 || !require_can_build
                 || can_build(sim, rules, building.owner(), obj, true, true) == CanBuild::Yes)
             && ownable & get_ownable(building_type, rules, game_mode_nonzero) != 0
@@ -1085,7 +1085,7 @@ fn scan_factories<'a>(
             } else {
                 FactorySearch::Online(id)
             };
-            if primary || (crate::rules::ARES_ENABLED && stop_first) {
+            if primary || (rules.ares() && stop_first) {
                 break;
             }
         }

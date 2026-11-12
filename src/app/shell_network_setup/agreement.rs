@@ -15,7 +15,7 @@ pub(crate) fn version() -> String {
         "{}:{}:{}{}{}{}",
         env!("CARGO_PKG_VERSION"),
         env!("VERA20K_NETWORK_BUILD"),
-        u8::from(crate::rules::ARES_ENABLED),
+        u8::from(crate::rules::ARES_BUILD),
         u8::from(crate::rules::PHOBOS_ENABLED),
         u8::from(crate::rules::NPATCH_ENABLED),
         u8::from(crate::rules::NPBUG_ENABLED)

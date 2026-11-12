@@ -3584,7 +3584,7 @@ mod tests {
         let mut header = GameSnapshot::read_header(&bytes).unwrap();
         // Flip every capability bit: the result is a foreign mode for any build.
         header.compatibility = RulesCompatibility::from_capabilities(
-            !crate::rules::ARES_ENABLED,
+            !crate::rules::ARES_BUILD,
             !crate::rules::PHOBOS_ENABLED,
             !crate::rules::NPATCH_ENABLED,
             !crate::rules::VERAX_ENABLED,

@@ -2652,12 +2652,15 @@ fn finish_simulation_frame(
                 placement_armed,
             );
         }
+        let ares = state
+            .rules()
+            .is_some_and(crate::rules::ruleset::RuleSet::ares);
         for output in drained_lifecycle_outputs {
             if let Some(cursor_clear) = state
                 .match_state
                 .match_presentation
                 .sidebar_projection
-                .apply_lifecycle_output(&output, local_house)
+                .apply_lifecycle_output(&output, local_house, ares)
             {
                 state
                     .match_state

@@ -331,7 +331,7 @@ fn expand_map_ini_with_options(
     strict: bool,
     logical_name: Option<&str>,
 ) -> Result<IniFile> {
-    if !(crate::rules::ARES_ENABLED || crate::rules::PHOBOS_ENABLED) {
+    if !(crate::rules::ARES_BUILD || crate::rules::PHOBOS_ENABLED) {
         return Ok(ini);
     }
     let name = match source {
@@ -1633,15 +1633,15 @@ mod tests {
         assert_eq!(
             effective_network_map_digest(&first.ini, false)
                 != effective_network_map_digest(&second.ini, false),
-            crate::rules::ARES_ENABLED
+            crate::rules::ARES_BUILD
         );
         std::fs::remove_file(root.path().join("child.ini")).unwrap();
         let c = AssetManager::from_loose_root_for_test(root.path());
         assert_eq!(
             load_network_map_ini(root.path(), "Shared.map", &c).is_err(),
-            crate::rules::ARES_ENABLED
+            crate::rules::ARES_BUILD
         );
-        if crate::rules::ARES_ENABLED {
+        if crate::rules::ARES_BUILD {
             root.write("child.ini", SOURCE_TEST_MAP);
             let bytes = b"[#include]\n0=child.ini\n".to_vec();
             let loaded = install_received_map(
@@ -1738,7 +1738,7 @@ mod tests {
         let metadata =
             load_map_ini_by_name_or_path_with_assets(dir.path(), "Arena.map", &assets).unwrap();
         assert_eq!(loaded.map.ini.content_hash(), metadata.ini.content_hash());
-        let ares_include = crate::rules::ARES_ENABLED;
+        let ares_include = crate::rules::ARES_BUILD;
         assert_eq!(
             loaded
                 .map

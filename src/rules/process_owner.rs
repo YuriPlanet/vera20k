@@ -122,6 +122,10 @@ struct NativeRulesSourceSnapshot {
     /// VERA source customization frozen with this process's selected INIs.
     /// Only its Options switches change later, and only scenario roots read them.
     personal_rules: PersonalRules,
+    /// Startup mounted `ares.mix`: Ares plays in every game this process
+    /// loads (`rules::ares_switch`).
+    #[cfg(feature = "ares")]
+    ships_ares: bool,
 }
 
 #[derive(Debug)]
@@ -380,9 +384,22 @@ impl NativeRulesProcessOwner {
                 fixed_sounds,
                 fixed_eva,
                 personal_rules,
+                // A test build's fixture owners stand for the Ares game, as
+                // `RulesLayerStack::new` says; the game's startup sets it
+                // (`RetailRulesSources::into_owner`).
+                #[cfg(feature = "ares")]
+                ships_ares: cfg!(any(test, feature = "test-support")),
             },
             registry: Some(NativeRulesRegistryOwner::BeforeReset(cold_trace)),
         })
+    }
+
+    /// Record whether startup mounted `ares.mix` (`AssetManager::ships_ares`),
+    /// before any Process call reads its layers.
+    #[cfg(feature = "ares")]
+    pub fn with_ares_mix(mut self, ships_ares: bool) -> Self {
+        self.sources.ships_ares = ships_ares;
+        self
     }
 
     /// Session6980C0/475540 against the retained process INI. This mutates the
@@ -1262,6 +1279,8 @@ impl NativeRulesProcessOwner {
 
     fn startup_layers(&self, langrule: Option<&IniFile>) -> RulesLayerStack {
         let mut layers = RulesLayerStack::new(self.scenario_root().into_owned());
+        #[cfg(feature = "ares")]
+        layers.set_ships_ares(self.sources.ships_ares);
         if let Some(langrule) = langrule {
             layers.push(RulesLayerKind::LangRule, langrule.clone());
         }

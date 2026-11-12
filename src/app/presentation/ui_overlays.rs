@@ -2071,7 +2071,7 @@ pub(crate) fn scale_pip_draws(
         }));
         return pips;
     }
-    if object.passengers > 0 && !cfg!(feature = "ares") {
+    if object.passengers > 0 && !rules.ares() {
         let slots = usize::try_from(object.pip_max(rules)).unwrap_or(0);
         let row_start = pips.len();
         pips.extend((0..slots).map(|slot| {
