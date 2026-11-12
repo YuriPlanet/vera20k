@@ -160,6 +160,7 @@ mod tests {
     /// a double.
     #[test]
     fn firestorm_rules_take_rulesmd_find_defaults_then_every_pass_reads_the_keys() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = rules(
             "[Animations]\n0=FSIDLE\n1=FSGRND\n2=BURN\n[Warheads]\n0=FIRE\n\
              [AudioVisual]\nFirestormGroundAnim=none\n\

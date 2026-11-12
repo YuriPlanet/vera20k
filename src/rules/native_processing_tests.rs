@@ -3,9 +3,9 @@
 use super::*;
 use crate::util::save_codec;
 
-#[cfg(feature = "ares")]
 #[test]
 fn weapon_types_register_before_animation_reads_each_rules_layer() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut layers = RulesLayerStack::new(IniFile::from_str(
         "[Animations]\n0=AURA\n1=UNKNOWN\n\
          [WeaponTypes]\n0=EARLY\n\
@@ -373,9 +373,9 @@ fn airburst_retained_flag_changes_effective_rules_hash() {
     );
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn ares_emp_ai_named_mission_reader_matches_native_histories() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let corpus = crate::test_fixture::json("tools/rules_oracle/ares_emp.json");
     for row in corpus["ai_mission_readers"].as_array().unwrap() {
         let mut controls = AresGlobalControls::default();
@@ -4365,9 +4365,9 @@ fn ares_palette_requests_use_retained_names_and_resolve_each_loaded_group() {
 /// over the 1002A360 defaults and two passes: invalid values keep the
 /// earlier read, the CSF label is kept, and InfantryElectrocuted is a
 /// Find-only pointer an unknown later name does not clear.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_general_rules_read_before_and_after_type_data() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::rules::ruleset::RuleSet;
     let defaults = AresGeneralRules::default();
     assert!(defaults.enemy_wrench() && !defaults.team_retaliate);
@@ -4403,9 +4403,9 @@ fn ares_general_rules_read_before_and_after_type_data() {
 /// The InfDeath=5 anim under Ares (InfantryClass_ReceiveDamage_ElectricDeath
 /// 1002C930, hook 0x518744): InfantryElectrocuted, else the registered
 /// `ELECTRO`, else the second AnimType.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_electric_death_takes_infantry_electrocuted_then_electro() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::rules::ruleset::RuleSet;
     let death = |ini: &str| {
         RuleSet::from_ini(&IniFile::from_str(ini))
@@ -4429,9 +4429,9 @@ fn ares_electric_death_takes_infantry_electrocuted_then_electro() {
 /// HouseTypeExt LoadFromINIFile (1001C5D0) reads
 /// `StartInMultiplayer.WithConst` (Valueable<bool>, constructor false) right
 /// before GivesBounty; the parent copy (1001BDC0) does not copy it.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_country_reads_start_in_multiplayer_with_const() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let processed = RulesLayerStack::new(IniFile::from_str(
         "[Countries]\n0=PARENT\n1=CHILD\n2=PLAIN\n\
          [PARENT]\nStartInMultiplayer.WithConst=yes\n\

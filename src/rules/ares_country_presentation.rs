@@ -11,7 +11,6 @@
 //! common block `0x1001C5D0` then reads the weights and `ListIndex`. These
 //! values are GUI/process state, not simulation CRC inputs.
 
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AresCountryPresentation {
     /// `+0x08` `File.Flag=` (PCX, lowercased, at most 31 bytes). `None` is
@@ -37,14 +36,12 @@ pub struct AresCountryPresentation {
     pub ai_random_weight: Option<i32>,
 }
 
-#[cfg(feature = "ares")]
 impl Default for AresCountryPresentation {
     fn default() -> Self {
         Self::for_country_id("")
     }
 }
 
-#[cfg(feature = "ares")]
 impl AresCountryPresentation {
     /// Constructor `0x1001B767..0x1001B908` (`ListIndex` 100, weight 1, AI
     /// weight unset), then `HouseTypeExt::Initialize @ 0x1001C0F0` by stored

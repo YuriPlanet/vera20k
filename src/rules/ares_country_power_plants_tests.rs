@@ -27,6 +27,7 @@ fn plants(rules: &RuleSet, names: &[&str]) -> Vec<i32> {
 
 #[test]
 fn ares_country_power_plants_keep_registered_building_identities() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = processed(&format!(
         "{REGISTRY}[Countries]\n0=Greece\n\
          [Greece]\nAI.PowerPlants=NAAPWR,UNKNOWN,NAPOWR\n"
@@ -42,6 +43,7 @@ fn ares_country_power_plants_keep_registered_building_identities() {
 /// and side 3 has none.
 #[test]
 fn ares_country_without_power_plants_answers_the_side_plants() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = processed(&format!("{REGISTRY}[Countries]\n0=Greece\n[Greece]\n"));
     assert_eq!(
         rules.ares_power_plants("Greece", 0),
@@ -60,6 +62,7 @@ fn ares_country_without_power_plants_answers_the_side_plants() {
 /// inherited one, and it reads on every pass, so a map sets it too.
 #[test]
 fn ares_country_power_plants_follow_the_parent_copy_on_every_pass() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut layers = RulesLayerStack::new(IniFile::from_str(&format!(
         "{REGISTRY}[Countries]\n0=Greece\n1=Rome\n2=Sparta\n\
          [Greece]\nAI.PowerPlants=NAAPWR\n\

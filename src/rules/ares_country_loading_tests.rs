@@ -44,6 +44,7 @@ fn assert_loading(loading: &AresCountryLoading, expected: &Value, label: &str) {
 
 #[test]
 fn ares_country_loading_defaults_match_native_literal_ids_not_registry_ordinals() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut reader = RulesPassProcessor::default();
     // Unknown ID occupies index0 and Arabs index7: neither uses stock ordinal.
     let unknown = reader.find_or_construct(RulesTypeFamily::Country, "EXTRA");
@@ -63,6 +64,7 @@ fn ares_country_loading_defaults_match_native_literal_ids_not_registry_ordinals(
 
 #[test]
 fn ares_country_loading_retained_primary_parent_and_color_match_native_histories() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for history in corpus()["controls"].as_array().unwrap() {
         let label = history["name"].as_str().unwrap();
         let mut reader = RulesPassProcessor::default();
@@ -118,6 +120,7 @@ fn ares_country_loading_retained_primary_parent_and_color_match_native_histories
 
 #[test]
 fn ares_country_loading_production_passes_and_save_keep_gui_without_sim_hash_changes() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let root = IniFile::from_str(
         "[Countries]\n0=PARENT\n1=CHILD\n[Colors]\nFirst=0,0,128\nSecond=120,255,255\n[PARENT]\nFile.LoadScreen=parent.shp\nLoadScreenText.Name=Name:Parent\n[CHILD]\nParentCountry=PARENT\nFile.LoadScreen=child.shp\nLoadScreenText.Name=Name:Child\n",
     );
@@ -159,6 +162,7 @@ fn ares_country_loading_production_passes_and_save_keep_gui_without_sim_hash_cha
 
 #[test]
 fn ares_country_loading_filename_format_matches_native_sprintf() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for control in corpus()["filename_formats"].as_array().unwrap() {
         let mut ini = IniFile::empty();
         let mut section = IniSection::new("CONTROL".into());

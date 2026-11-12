@@ -13,18 +13,13 @@
 //! simulation consumers own House/planned-building evaluation. Neither group
 //! members nor alternate types are recursively expanded here.
 
-#[cfg(feature = "ares")]
 use crate::rules::ini_parser::IniFile;
-#[cfg(feature = "ares")]
 use crate::rules::ini_value::truncate_native_bytes;
 use crate::rules::object_type::ObjectCategory;
-#[cfg(feature = "ares")]
 use crate::rules::prerequisite::parse_prerequisites;
 use crate::rules::prerequisite::{Prerequisite, PrerequisiteGroup};
 
-#[cfg(feature = "ares")]
 const READ_CAPACITY: usize = 0x800;
-#[cfg(feature = "ares")]
 const NAME_PAYLOAD_BYTES: usize = 0x1F;
 
 /// A reached TechnoType identity used by a group's runtime alternate list.
@@ -101,7 +96,6 @@ impl GenericPrerequisites {
 
     /// Native case-insensitive lookup retaining the initial spelling. The
     /// shared prerequisite parser first tries the BuildingType registry.
-    #[cfg(feature = "ares")]
     pub(crate) fn group_entry(&self, token: &str) -> Option<Prerequisite> {
         let index = self
             .groups
@@ -120,7 +114,6 @@ impl GenericPrerequisites {
     /// Missing/empty reads retain their lists; nonempty reads replace them,
     /// including comma-only and all-unknown lists. LoadFromINI10008470 reads
     /// General members, generic members, then General alternate types.
-    #[cfg(feature = "ares")]
     pub(crate) fn apply_pass(
         &mut self,
         pass: &IniFile,
@@ -182,6 +175,6 @@ impl GenericPrerequisites {
     }
 }
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 #[path = "ares_prerequisites_tests.rs"]
 mod tests;

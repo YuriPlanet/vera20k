@@ -29,16 +29,16 @@ fn fixture(patches: &[&str]) -> (RuleSet, NativeRulesRegistryState) {
     (rules, trace.into_registry_state_discarding_events())
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn extended_ifv_selects_weapon_model_and_normal_elite_muzzle() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     // Ares10040020/1003DBC0 -> SwitchGunner10042480 -> GetFLH6F3AD0.
     let (rules, _) = fixture(&[]);
     let object = rules.object("CARRIER").unwrap();
     assert!(object.gunner);
     let mut actor =
         crate::sim::game_entity::GameEntity::test_default(1, "CARRIER", "Americans", 10, 10);
-    actor.set_gunner_weapon(18, object, crate::rules::ARES_BUILD);
+    actor.set_gunner_weapon(18, object, rules.ares());
     assert_eq!(
         (actor.current_weapon_number(), actor.current_turret_index()),
         (18, 18)
@@ -68,13 +68,13 @@ fn extended_ifv_selects_weapon_model_and_normal_elite_muzzle() {
         object.gunner_turrets.weapon_ui_name(18),
         Some("Name:Extended")
     );
-    actor.set_gunner_weapon(20, object, crate::rules::ARES_BUILD);
+    actor.set_gunner_weapon(20, object, rules.ares());
     assert_eq!(actor.current_weapon_number(), 0);
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn extended_ifv_resize_retains_base_and_discards_extra_tail_and_labels() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     // Ares resize10040AF0 and gunner reader1003FE10 have distinct pointer,
     // mapping and label lifetimes. Missing Gunner must retain its earlier byte.
     let (rules, state) = fixture(&[

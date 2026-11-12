@@ -423,12 +423,9 @@ pub fn retail_rules_owner(
     .expect("selected retail startup sources");
     // No fixture reads the shell compatibility projection `into_startup` also
     // derives. The fixture game ships `ares.mix` when its thread reads the
-    // Ares way, as the synthetic fixtures do (`ares_switch::ares_way`); a
-    // test of the retail install itself says `with_ares_mix(false)`.
-    sources
-        .into_owner(sounds, eva)
-        .expect("cold startup")
-        .with_ares_mix(crate::rules::ares_switch::ares_way())
+    // Ares way (`ares_switch::game_ships_ares`); a test of the retail install
+    // itself says `with_ares_mix(false)`.
+    sources.into_owner(sounds, eva).expect("cold startup")
 }
 
 /// Bounded stock Hills/Battle fixture through the app's source-selection order.

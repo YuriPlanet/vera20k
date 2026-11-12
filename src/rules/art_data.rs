@@ -77,17 +77,15 @@ pub struct ArtEntry {
     pub cameo: Option<String>,
     /// Alternate sidebar cameo/image override from `AltCameo=`.
     pub alt_cameo: Option<String>,
-    /// Ares 3.0 TechnoType art read1003E81F..1003E856, from ImageFile.
-    #[cfg(feature = "ares")]
+    /// Ares 3.0 TechnoType art read1003E81F..1003E856, from ImageFile. Read
+    /// in every Rules mode; only Ares' sidebar draws it.
     pub(crate) cameo_pcx: Option<String>,
-    #[cfg(feature = "ares")]
     pub(crate) alt_cameo_pcx: Option<String>,
     /// Ares TechnoTypeExt+0x11C `CameoPalette` (CustomPalette, read from
     /// ImageFile by 1003DFB0 after InitialPayload.Nums): the palette file a
     /// nonempty read names, `~~~` standing for the theater extension.
     /// StripClass_Draw_Main (Ares.dll 1005E390, hook 0x6A9A2A) draws the SHP
     /// cameo with it when it loads, else CAMEO.PAL.
-    #[cfg(feature = "ares")]
     pub(crate) cameo_palette: Option<String>,
     /// Replace 2nd char of filename with theater-specific letter.
     pub new_theater: bool,
@@ -292,7 +290,7 @@ pub struct BuildingAnimVariantConfig {
 }
 
 /// Native-like metadata used by app-side `AnimClass` runtime slices.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AnimTypeRuntimeConfig {
     /// False means the allocated native type has never completed ART ReadINI.
     /// It retains constructor bounds. Only a reached saved type load can
@@ -356,7 +354,6 @@ pub struct AnimTypeRuntimeConfig {
     /// Ares AnimTypeExt+8 `MakeInfantryOwner` (Valueable<OwnerHouseKind>,
     /// constructor Invoker; LoadFromINI 1000A4B0), the House
     /// AnimTypeExt::SetMakeInfOwner (1000A5F0) gives the anim.
-    #[cfg(feature = "ares")]
     pub(crate) ares_make_infantry_owner: crate::rules::ares_warhead::HouseSelector,
     /// Ares AnimTypeExt+0xC `CustomPalette` (CustomPalette, Temperate
     /// mode): the palette file a nonempty read names, `~~~` standing for
@@ -364,7 +361,6 @@ pub struct AnimTypeRuntimeConfig {
     /// MakeInfantryOwner). AnimClass_Draw_SetPalette (Ares.dll 1000ACE0,
     /// hook 0x4232CE) draws the anim with it when it loads; the anim atlas
     /// has no per-type palette, so nothing reads it yet.
-    #[cfg(feature = "ares")]
     pub(crate) ares_custom_palette: Option<String>,
     /// Phobos `CreateUnit=` + `CreateUnit.Owner` (default `Victim`) +
     /// `CreateUnit.RemapAnim` (default no): `Some` when the animation names a
@@ -452,18 +448,15 @@ pub struct AnimTypeRuntimeConfig {
     /// `SpawnsParticle.RangeMaximum` (Valueable<Leptons>, constructor 0;
     /// LoadFromINI 1000A4B0 through 1000A5D0): either nonzero spreads the
     /// SpawnsParticle particles around the anim (`Simulation::anim_middle`).
-    #[cfg(feature = "ares")]
     pub(crate) ares_spawns_particle_range: [i32; 2],
     /// Ares AnimTypeExt+0x24 `Damage.Delay` (Valueable<int>, constructor 0):
     /// above zero, an anim whose `Damage=` is at least 1 delivers its whole
     /// Damage once every this many frames.
-    #[cfg(feature = "ares")]
     pub(crate) ares_damage_delay: i32,
     /// Ares AnimTypeExt+0x20 `Weapon` (Valueable<WeaponTypeClass*>, Find
     /// only, constructor null): the weapon whose bullet the anim's damage
     /// detonates instead of the area damage. The ordered Rules processor
     /// resolves it with the ART body (`AnimTypeReferences`).
-    #[cfg(feature = "ares")]
     pub(crate) ares_weapon: Option<String>,
     /// art.ini `ShouldFogRemove=`, `AnimTypeClass+0x374`.
     /// Constructor default **true**.
@@ -524,6 +517,187 @@ pub struct AnimTypeRuntimeConfig {
     pub report: Option<String>,
     pub start_sound: Option<String>,
     pub stop_sound: Option<String>,
+}
+
+/// Every field folds in declaration order, as the derive did, and the Ares
+/// fields follow only when one is set. Only a read the Ares way sets them, so
+/// a stock game's configuration hash is unchanged.
+impl std::hash::Hash for AnimTypeRuntimeConfig {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let Self {
+            art_body_read,
+            image,
+            alpha_image,
+            start,
+            loop_start,
+            loop_end,
+            end,
+            explicit_end,
+            explicit_loop_end,
+            raw_shp_frame_count,
+            middle_frame,
+            raw_shp_height,
+            loop_count,
+            rate_logic_frames,
+            normalized,
+            tiberium_chain_reaction,
+            is_tiberium,
+            hide_if_no_ore,
+            #[cfg(feature = "phobos")]
+            hide_if_no_ore_threshold,
+            is_animated_tiberium,
+            tiberium_spread_radius,
+            tiberium_spawn_type,
+            make_infantry,
+            #[cfg(feature = "phobos")]
+            phobos_make_infantry_owner,
+            ares_make_infantry_owner,
+            ares_custom_palette,
+            #[cfg(feature = "phobos")]
+            phobos_create_unit,
+            bouncer,
+            spawns,
+            spawn_count,
+            running_frames,
+            damage,
+            warhead,
+            damage_radius,
+            elasticity,
+            min_z_vel,
+            max_xy_vel,
+            is_meteor,
+            is_veins,
+            is_flaming_guy,
+            scorch,
+            crater,
+            force_big_craters,
+            sticky,
+            psi_warning,
+            double_thick,
+            flamer,
+            spawns_particle,
+            num_particles,
+            ares_spawns_particle_range,
+            ares_damage_delay,
+            ares_weapon,
+            should_fog_remove,
+            should_use_cell_drawer,
+            detail_level,
+            next,
+            bounce_anim,
+            expire_anim,
+            trailer_anim,
+            trailer_seperation,
+            random_loop_delay,
+            random_rate_logic_frames,
+            y_draw_offset,
+            z_adjust,
+            y_sort_adjust,
+            layer,
+            flat,
+            tiled,
+            translucency,
+            translucency_detail_level,
+            translucent,
+            alt_palette,
+            use_normal_light,
+            shadow,
+            ping_pong,
+            reverse,
+            report,
+            start_sound,
+            stop_sound,
+        } = self;
+        art_body_read.hash(state);
+        image.hash(state);
+        alpha_image.hash(state);
+        start.hash(state);
+        loop_start.hash(state);
+        loop_end.hash(state);
+        end.hash(state);
+        explicit_end.hash(state);
+        explicit_loop_end.hash(state);
+        raw_shp_frame_count.hash(state);
+        middle_frame.hash(state);
+        raw_shp_height.hash(state);
+        loop_count.hash(state);
+        rate_logic_frames.hash(state);
+        normalized.hash(state);
+        tiberium_chain_reaction.hash(state);
+        is_tiberium.hash(state);
+        hide_if_no_ore.hash(state);
+        #[cfg(feature = "phobos")]
+        hide_if_no_ore_threshold.hash(state);
+        is_animated_tiberium.hash(state);
+        tiberium_spread_radius.hash(state);
+        tiberium_spawn_type.hash(state);
+        make_infantry.hash(state);
+        #[cfg(feature = "phobos")]
+        phobos_make_infantry_owner.hash(state);
+        #[cfg(feature = "phobos")]
+        phobos_create_unit.hash(state);
+        bouncer.hash(state);
+        spawns.hash(state);
+        spawn_count.hash(state);
+        running_frames.hash(state);
+        damage.hash(state);
+        warhead.hash(state);
+        damage_radius.hash(state);
+        elasticity.hash(state);
+        min_z_vel.hash(state);
+        max_xy_vel.hash(state);
+        is_meteor.hash(state);
+        is_veins.hash(state);
+        is_flaming_guy.hash(state);
+        scorch.hash(state);
+        crater.hash(state);
+        force_big_craters.hash(state);
+        sticky.hash(state);
+        psi_warning.hash(state);
+        double_thick.hash(state);
+        flamer.hash(state);
+        spawns_particle.hash(state);
+        num_particles.hash(state);
+        should_fog_remove.hash(state);
+        should_use_cell_drawer.hash(state);
+        detail_level.hash(state);
+        next.hash(state);
+        bounce_anim.hash(state);
+        expire_anim.hash(state);
+        trailer_anim.hash(state);
+        trailer_seperation.hash(state);
+        random_loop_delay.hash(state);
+        random_rate_logic_frames.hash(state);
+        y_draw_offset.hash(state);
+        z_adjust.hash(state);
+        y_sort_adjust.hash(state);
+        layer.hash(state);
+        flat.hash(state);
+        tiled.hash(state);
+        translucency.hash(state);
+        translucency_detail_level.hash(state);
+        translucent.hash(state);
+        alt_palette.hash(state);
+        use_normal_light.hash(state);
+        shadow.hash(state);
+        ping_pong.hash(state);
+        reverse.hash(state);
+        report.hash(state);
+        start_sound.hash(state);
+        stop_sound.hash(state);
+        if *ares_make_infantry_owner != crate::rules::ares_warhead::HouseSelector::Invoker
+            || ares_custom_palette.is_some()
+            || *ares_spawns_particle_range != [0, 0]
+            || *ares_damage_delay != 0
+            || ares_weapon.is_some()
+        {
+            ares_make_infantry_owner.hash(state);
+            ares_custom_palette.hash(state);
+            ares_spawns_particle_range.hash(state);
+            ares_damage_delay.hash(state);
+            ares_weapon.hash(state);
+        }
+    }
 }
 
 /// Failures while binding native AnimType metadata to retail SHP assets.
@@ -762,6 +936,8 @@ pub const fn anim_translucency_source_alpha(draw_bits: u32) -> f32 {
 }
 
 fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
+    // The Ares AnimTypeExt keys are read only for Rules read the Ares way.
+    let ares_way = crate::rules::ares_switch::ares_way();
     // `End=`/`LoopEnd=` stay unresolved until the image loads; `None` marks an
     // absent key.
     let explicit_end = section
@@ -807,13 +983,18 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         phobos_make_infantry_owner: crate::rules::ares_switch::not_ares_read(|| {
             crate::rules::ares_warhead::HouseSelector::Victim.read(section, "MakeInfantryOwner")
         }),
-        #[cfg(feature = "ares")]
-        ares_make_infantry_owner: crate::rules::ares_warhead::HouseSelector::Invoker
-            .read(section, "MakeInfantryOwner"),
-        #[cfg(feature = "ares")]
-        ares_custom_palette: crate::rules::ares_switch::ares_read(|| {
-            section.read_name("CustomPalette", 2048).map(str::to_owned)
-        }),
+        ares_make_infantry_owner: if ares_way {
+            crate::rules::ares_warhead::HouseSelector::Invoker.read(section, "MakeInfantryOwner")
+        } else {
+            crate::rules::ares_warhead::HouseSelector::Invoker
+        },
+        ares_custom_palette: if ares_way {
+            crate::rules::ares_switch::ares_read(|| {
+                section.read_name("CustomPalette", 2048).map(str::to_owned)
+            })
+        } else {
+            None
+        },
         // `CreateUnit` is a `Nullable<TechnoTypeClass*>`: `none` clears it and
         // an authored name is a presence signal here. A name no factory
         // resolves is treated as present (the type itself is not modeled).
@@ -857,14 +1038,19 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         num_particles: section.read_int("NumParticles", 0),
         // AnimTypeExt::LoadFromINIFile (1000A4B0) reads both Leptons through
         // INI_EX's double (1000A6D0: cells * 256), then Damage.Delay.
-        #[cfg(feature = "ares")]
-        ares_spawns_particle_range: [
-            section.read_ares_leptons("SpawnsParticle.RangeMinimum", 0),
-            section.read_ares_leptons("SpawnsParticle.RangeMaximum", 0),
-        ],
-        #[cfg(feature = "ares")]
-        ares_damage_delay: section.read_ares_int("Damage.Delay", 0),
-        #[cfg(feature = "ares")]
+        ares_spawns_particle_range: if ares_way {
+            [
+                section.read_ares_leptons("SpawnsParticle.RangeMinimum", 0),
+                section.read_ares_leptons("SpawnsParticle.RangeMaximum", 0),
+            ]
+        } else {
+            [0, 0]
+        },
+        ares_damage_delay: if ares_way {
+            section.read_ares_int("Damage.Delay", 0)
+        } else {
+            0
+        },
         ares_weapon: None,
         // Both constructor defaults are 1, not 0.
         should_fog_remove: section.read_bool("ShouldFogRemove", true),
@@ -1137,11 +1323,8 @@ impl ArtRegistry {
             let image: Option<String> = section.read_name("Image", 0x40).map(str::to_owned);
             let cameo: Option<String> = section.read_name("Cameo", 0x100).map(str::to_owned);
             let alt_cameo: Option<String> = section.read_name("AltCameo", 0x100).map(str::to_owned);
-            #[cfg(feature = "ares")]
             let cameo_pcx = section.read_ares_pcx_filename("CameoPCX");
-            #[cfg(feature = "ares")]
             let alt_cameo_pcx = section.read_ares_pcx_filename("AltCameoPCX");
-            #[cfg(feature = "ares")]
             let cameo_palette = crate::rules::ares_switch::ares_read(|| {
                 section.read_name("CameoPalette", 2048).map(str::to_owned)
             });
@@ -1322,11 +1505,8 @@ impl ArtRegistry {
                     image,
                     cameo,
                     alt_cameo,
-                    #[cfg(feature = "ares")]
                     cameo_pcx,
-                    #[cfg(feature = "ares")]
                     alt_cameo_pcx,
-                    #[cfg(feature = "ares")]
                     cameo_palette,
                     new_theater,
                     theater,
@@ -2012,7 +2192,6 @@ impl ArtRegistry {
     /// Normal and promoted Ares PCX filenames, including their extensions.
     /// Ares3.0 reads the rules ImageFile section1003E81F..1003E856, without
     /// following the art section's own Image redirect or retrying the type ID.
-    #[cfg(feature = "ares")]
     pub fn resolve_declared_pcx_cameos(
         &self,
         type_id: &str,
@@ -2028,7 +2207,6 @@ impl ArtRegistry {
 
     /// The type's Ares `CameoPalette`, from the same ImageFile section as its
     /// PCX cameos.
-    #[cfg(feature = "ares")]
     pub fn resolve_declared_cameo_palette(&self, type_id: &str, rules_image: &str) -> Option<&str> {
         let resolved = self.resolve_object_art(type_id, rules_image);
         self.get(&resolved.base_art_id)

@@ -396,7 +396,6 @@ fn retail_gapile_house_color_and_production_crop_match_original_rally_and_no_tar
     );
     let selector = match &object.foundation {
         crate::rules::foundation::Foundation::Stock(index) => *index,
-        #[cfg(feature = "ares")]
         _ => panic!("retail fixture must retain a stock foundation"),
     };
     assert_eq!(serde_json::json!(selector), stock["result"]["foundation"]);

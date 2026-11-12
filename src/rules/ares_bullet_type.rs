@@ -155,6 +155,7 @@ mod tests {
     /// the original `0`/`BallisticScatter / 2` and `BallisticScatter`.
     #[test]
     fn ballistic_scatter_bounds_override_each_arm_separately() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let ini = IniFile::from_str(
             "[MIN]\nBallisticScatter.Min=1\nBallisticScatter.Max=bad\n\
              [BOTH]\nBallisticScatter.Min=0.5\nBallisticScatter.Max=2.5\n[NONE]\nArm=1\n",
@@ -174,6 +175,7 @@ mod tests {
     /// unset AroundTarget; an invalid value keeps the current one.
     #[test]
     fn split_keys_read_over_the_constructor_defaults() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let ini = IniFile::from_str(
             "[SET]\nSplits=yes\nRetargetSelf=no\nRetargetAccuracy=0.25\n\
              AirburstSpread=2.5\nAroundTarget=no\n[BAD]\nSplits=maybe\nAroundTarget=x\n",

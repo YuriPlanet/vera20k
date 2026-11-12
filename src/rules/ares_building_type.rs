@@ -162,8 +162,8 @@ pub(crate) struct BuildingTypeExtRules {
     pub(crate) solid_level: i32,
     /// TechnoType `LightningRod=` (`+0xD26`, ctor false), which
     /// `TechnoTypeClass::ReadINI @ 0x00712170` reads with ReadBool for every
-    /// type. Only the Ares storm reads it (of a BuildingType), so only Ares
-    /// builds keep it.
+    /// type. Only the Ares storm reads it (of a BuildingType), so it is kept
+    /// here with the Ares building keys.
     #[serde(default)]
     pub(crate) lightning_rod: bool,
     /// `LightningRod.Modifier` (`+0x60`, Valueable<double>, ctor 1.0): the
@@ -419,7 +419,6 @@ impl BuildingTypeExtRules {
     /// The gate and slam sounds (NullableIdx<VocClass> 1000E9D0, unknown
     /// names retain): GateDownSound and GateUpSound after
     /// Factory.ExplicitOnly, SlamSound after AIBaseNormal.
-    #[cfg(feature = "ares")]
     pub(crate) fn bind_sound_references(
         &mut self,
         section: Option<&IniSection>,
@@ -434,7 +433,6 @@ impl BuildingTypeExtRules {
     /// 100156B0, hook 0x44E61E) or `GateDownSound` (BuildingClass_Mi_Open_
     /// GateDown 10015670, hook 0x44E550): `None` keeps `[AudioVisual]
     /// GateUp`/`GateDown`, `Some(None)` silences it.
-    #[cfg(feature = "ares")]
     pub(crate) fn gate_sound(&self, up: bool) -> Option<Option<&str>> {
         self.sounds[usize::from(up)]
             .as_ref()
@@ -443,7 +441,6 @@ impl BuildingTypeExtRules {
 
     /// `SlamSound` (HouseClass_UnitFromFactory_BuildingSlam, Ares.dll
     /// 10010290, hook 0x4FB2FD): `None` keeps `[AudioVisual] BuildingSlam`.
-    #[cfg(feature = "ares")]
     pub(crate) fn slam_sound(&self) -> Option<Option<&str>> {
         self.sounds[2].as_ref().map(|sound| sound.as_deref())
     }
@@ -832,6 +829,7 @@ mod tests {
     /// strength keeps the current value.
     #[test]
     fn rubble_reads_keep_the_constructor_strengths_and_clear_on_blank() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let mut rules = BuildingTypeExtRules::default();
         let empty = IniFile::from_str("[B]\nStrength=1\n");
         let art = IniFile::empty();
@@ -886,6 +884,7 @@ mod tests {
     /// no number, so it keeps the earlier value.
     #[test]
     fn sell_time_falls_back_to_the_buildup_time() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let general = NativeF64Bits::from_bits(0.06f64.to_bits());
         let art = IniFile::empty();
         let art = art.section_or_empty("B");
@@ -905,6 +904,7 @@ mod tests {
     /// its value on an absent key.
     #[test]
     fn fake_reads_as_a_valueable_bool() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let art = IniFile::empty();
         let art = art.section_or_empty("B");
         let mut rules = BuildingTypeExtRules::default();
@@ -921,6 +921,7 @@ mod tests {
     /// Initialize's `EVA_TechBuildingLost` unless set, `none` silences it.
     #[test]
     fn capture_lines_read_labels_and_bind_the_lost_eva() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let ini = IniFile::from_str(
             "[BuildingTypes]\n0=OIL\n1=LAB\n\
              [OIL]\nMessage.Capture=MSG:0123456789012345678901234567890123\nLostEvaEvent=none\n\
@@ -947,6 +948,7 @@ mod tests {
     /// the AI base reservation both ways.
     #[test]
     fn ai_base_normal_overrides_the_base_reservation_gate() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
             "[AI]\nAIBaseSpacing=3\n[VehicleTypes]\n0=MCV\n[BuildingTypes]\n0=POD\n1=PLAIN\n2=WALLS\n\
              [POD]\nUndeploysInto=MCV\nAIBaseNormal=yes\n[PLAIN]\nAIBaseNormal=no\n\
@@ -967,6 +969,7 @@ mod tests {
     /// test both ways; unset keeps it (a 1x1 `UndeploysInto=` type).
     #[test]
     fn mass_selectable_overrides_the_band_selection_test() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
             "[VehicleTypes]\n0=MCV\n[BuildingTypes]\n0=POD\n1=PLAIN\n2=SHY\n3=BOX\n\
              [POD]\nUndeploysInto=MCV\n[PLAIN]\n\
@@ -985,6 +988,7 @@ mod tests {
     /// the current value (the constructor's 3,1 and 8, east).
     #[test]
     fn dock_unload_art_keys_take_two_values_and_a_32_step_facing() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let mut rules = BuildingTypeExtRules::default();
         assert_eq!(rules.dock_unload_cell, [3, 1]);
         assert_eq!(rules.dock_unload_direction(), 0x4000);
@@ -1012,9 +1016,9 @@ mod tests {
     /// 1000DD40's reads of the keys without a consumer, over the 1000CAE0
     /// defaults, and the gate and slam sounds bound against the fixed
     /// catalog: a Building only, unknown names unset, `none` silent.
-    #[cfg(feature = "ares")]
     #[test]
     fn residual_keys_and_gate_and_slam_sounds_read_with_constructor_defaults() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let mut rules = BuildingTypeExtRules::default();
         assert_eq!(rules.residual, ResidualBuildingTypeRules::default());
         let ini = IniFile::from_str(

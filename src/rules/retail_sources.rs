@@ -226,7 +226,7 @@ impl RetailRulesSources {
             langrule_selection_failure,
             artmd,
             personal_rules: PersonalRules::default(),
-            ships_ares: assets.ships_ares(),
+            ships_ares: crate::rules::ares_switch::game_ships_ares(assets.ships_ares()),
         })
     }
 
