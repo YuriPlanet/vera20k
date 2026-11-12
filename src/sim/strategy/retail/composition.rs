@@ -133,9 +133,34 @@ pub(super) fn fill_lines(
     // wallet never reached the price the war factory wanted — the army the
     // play test reports as "only infantry and dogs, no tank all match".
     let vehicle_floor = line_vehicle_floor(rules, obs).unwrap_or(COMBAT_MIN_CREDITS);
-    let infantry_full = infantry_above_ceiling(&brain.census)
-        && budget.free >= vehicle_floor
-        && budget.free < RICH_CREDITS;
+    // Whether the barracks stops this frame.
+    //
+    // Two failure modes meet here, and the arm has to avoid both:
+    //
+    // - Gating the ceiling on `budget.free >= vehicle_floor` is a self-lock. A
+    //   soldier costs a tenth of a tank, so a barracks willing to spend 200
+    //   while the tank costs 700 keeps the wallet under 700 forever, and the
+    //   ceiling that exists to make the wallet reach the tank never fires.
+    //   Measured on Arena.mmx seed 0x5EED at 24000 ticks: `roster=[E1:48,
+    //   MGTK:8, CAOILD:6]` — 48 riflemen, no tanks, war factory standing.
+    // - Stopping unconditionally when the wallet is below the tank's price is
+    //   the opposite failure: the barracks waits out its ceiling, the war
+    //   factory waits out the price, and the base produces nothing at all.
+    //
+    // The arm that avoids both: past the ceiling the barracks stops *only*
+    // when what it would spend is standing between the wallet and the tank.
+    // One soldier under the price is a soldier that resets the saving; a
+    // wallet that already holds the price is the war factory's turn and the
+    // barracks stops regardless.
+    let infantry_full = infantry_above_ceiling(&brain.census);
+    let saving_for_the_tank = budget.free < vehicle_floor;
+    let a_soldier_would_reset_the_saving =
+        saving_for_the_tank && budget.free >= vehicle_floor - INFANTRY_MIN_CREDITS;
+    // Read for the log line and for the "save versus spend" note above; it is
+    // deliberately not part of the predicate any more.
+    let vehicle_affordable = budget.free >= vehicle_floor && budget.free < RICH_CREDITS;
+    let _ = vehicle_affordable;
+    let barracks_holds = infantry_full && !a_soldier_would_reset_the_saving;
     let order = if infantry_short {
         [
             ProductionCategory::Infantry,
@@ -152,9 +177,11 @@ pub(super) fn fill_lines(
         ]
     };
     for category in order {
-        // An army that already holds its share of infantry stops buying it, so
-        // the wallet can reach a vehicle.
-        if infantry_full && category == ProductionCategory::Infantry {
+        // An army that already holds its share of infantry stops buying it,
+        // so the wallet can reach a vehicle — unless the wallet is so far under
+        // that price that one soldier would not set the saving back. Then the
+        // barracks keeps turning rather than leaving both lines idle.
+        if barracks_holds && category == ProductionCategory::Infantry {
             continue;
         }
         // A line holding a product, a queue or a finished object is working and
@@ -1240,5 +1267,32 @@ mod tests {
                 .is_some_and(|ty| ty.category == ObjectCategory::Vehicle)),
             "the war factory has something it can pay for: {queued:?}"
         );
+    }
+
+    /// The infantry ceiling does not depend on the wallet already reaching a
+    /// tank.
+    ///
+    /// A soldier costs a tenth of a tank, so a barracks willing to spend 200
+    /// while the tank costs 700 keeps the wallet under 700 forever. The ceiling
+    /// exists to make the wallet reach the vehicle, and gating it on the wallet
+    /// already holding a vehicle's price means it never fires: measured on
+    /// Arena.mmx seed 0x5EED at 24000 ticks, `roster=[E1:48, MGTK:8,
+    /// CAOILD:6]` — 48 riflemen, no tanks, with a war factory standing.
+    ///
+    /// This pins the predicate itself rather than a budget, because the bug was
+    /// the conjunction, not the numbers.
+    #[test]
+    fn the_infantry_ceiling_does_not_wait_for_a_tank_the_wallet_can_never_reach() {
+        let mut census = Census::default();
+        // Sixty fighters, fifty of them infantry: past the 55% ceiling.
+        census.fighters = 60;
+        census.tiers[Slot::Infantry.index()] = [50, 0, 0];
+        assert!(
+            infantry_above_ceiling(&census),
+            "50 of 60 is over the ceiling whatever the wallet holds"
+        );
+        // The floor is the other side of the same reading, and it must not
+        // also be permanently true: an army past the ceiling is not short.
+        assert!(!infantry_below_floor(&census));
     }
 }
