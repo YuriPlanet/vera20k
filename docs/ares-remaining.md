@@ -107,9 +107,6 @@ data.
 Input rungs
 ([ares-techno-hooks.md](ares-techno-hooks.md),
 [ares-building-house-hooks.md](ares-building-house-hooks.md)):
-- the heal cursor and action over objects (`0x51E710`, `0x73FDBD`): a healer heals by its
-  warhead's Verses, so a mod's mechanic infantry (Brute Force `CVEngineer`, `REPDRONE`,
-  placed by maps or triggers) shows no heal action over a damaged vehicle;
 - an Ivan entering an allied Grinder without Ctrl (`0x51EB48`; VERA answers IvanBomb);
 - the structure and defense tab hotkeys, the cameo click and the ready-building strip
   asking for a usable factory (`0x535DB6`, `0x535E76`, `0x6AB312`, `0x6A9822`);
