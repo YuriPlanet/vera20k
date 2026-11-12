@@ -43,6 +43,9 @@ pub struct RmgOptions {
     /// median start's (`fairness`). Saved as `VeraFair=yes` only when set, so
     /// every original seed generates exactly as before.
     pub fair_starts: bool,
+    /// VERA extension: the Extras view's choices (`extras`), all off by
+    /// default. Each is saved under its own key only when on.
+    pub extras: super::extras::RmgExtras,
     pub width: i32,
     pub height: i32,
     pub accessibility: i32,
@@ -97,6 +100,7 @@ impl Default for RmgOptions {
             urban_presence: 0,
             urban_enabled: false,
             fair_starts: false,
+            extras: super::extras::RmgExtras::default(),
             width: 0,
             height: 0,
             accessibility: 0,
@@ -181,6 +185,10 @@ impl RmgOptions {
         // whatever `self` held.
         self.urban_enabled = section.read_bool(VERA_URBAN_KEY, false);
         self.fair_starts = section.read_bool(VERA_FAIR_KEY, false);
+        for extra in super::extras::Extra::ALL {
+            let value = section.read_int(extra.key(), 0).clamp(0, 255);
+            self.extras.set(extra, value as u8);
+        }
         #[cfg(feature = "ares")]
         {
             self.urban_areas = section.read_bool(URBAN_AREAS_KEY, self.urban_areas);
@@ -216,6 +224,12 @@ impl RmgOptions {
         }
         if self.fair_starts {
             values.push((VERA_FAIR_KEY, "yes".to_string()));
+        }
+        for extra in super::extras::Extra::ALL {
+            let value = self.extras.get(extra);
+            if value != 0 {
+                values.push((extra.key(), value.to_string()));
+            }
         }
         #[cfg(feature = "ares")]
         values.push((
@@ -261,6 +275,160 @@ impl RmgOptions {
             .fold(0u32, |crc, dword| crc.rotate_left(1).wrapping_add(dword));
         format!("{crc:08X}")
     }
+
+    /// VERA extension: the options as a short text a player can send to
+    /// another, who reads it back with [`Self::from_share_code`] and
+    /// generates the same map. It carries every option, VERA's switches and
+    /// the Extras, not the description: `VR1-` then the bytes below and a
+    /// check byte, in Crockford base 32, five characters to a group.
+    pub fn share_code(&self) -> String {
+        let mut options = self.clone();
+        options.normalize();
+        let byte = |value: i32| value.clamp(0, 255) as u8;
+        let mut flags = u8::from(options.urban_enabled) | u8::from(options.fair_starts) << 1;
+        #[cfg(feature = "ares")]
+        {
+            flags |= u8::from(options.urban_areas) << 2;
+        }
+        let seed = options.seed_u16().to_le_bytes();
+        let mut bytes = vec![
+            byte(options.theater),
+            byte(options.map_type),
+            byte(options.resources),
+            byte(options.time),
+            byte(options.num_players),
+            byte(options.width),
+            byte(options.height),
+            byte(options.ruggedness),
+            byte(options.water_amount),
+            byte(options.tiberium),
+            byte(options.tiberium_layout),
+            byte(options.vegetation),
+            byte(options.urban_presence),
+            byte(options.accessibility),
+            byte(options.region_size),
+            flags,
+            seed[0],
+            seed[1],
+        ];
+        // The Extras last, without the trailing ones that are off, so a code
+        // from before an Extra existed reads as that Extra off.
+        let extras: Vec<u8> = super::extras::Extra::ALL
+            .iter()
+            .map(|&extra| options.extras.get(extra))
+            .collect();
+        let used = extras
+            .iter()
+            .rposition(|&value| value != 0)
+            .map_or(0, |at| at + 1);
+        bytes.extend_from_slice(&extras[..used]);
+        bytes.push(share_check(&bytes));
+
+        let mut code = String::from(SHARE_PREFIX);
+        let (mut bits, mut held, mut written) = (0u32, 0u32, 0usize);
+        let mut push = |code: &mut String, digit: u32| {
+            if written % 5 == 0 {
+                code.push('-');
+            }
+            code.push(SHARE_DIGITS[digit as usize] as char);
+            written += 1;
+        };
+        for byte in bytes {
+            bits = bits << 8 | u32::from(byte);
+            held += 8;
+            while held >= 5 {
+                held -= 5;
+                push(&mut code, bits >> held & 31);
+            }
+        }
+        if held > 0 {
+            push(&mut code, bits << (5 - held) & 31);
+        }
+        code
+    }
+
+    /// Read a [`Self::share_code`] back over `self`, keeping the description.
+    /// Letters may be in either case, `I`/`L` read as `1` and `O` as `0`, and
+    /// dashes and spaces are skipped. `None` for a text that is no code, is
+    /// cut short or fails its check; `self` is then unchanged.
+    pub fn from_share_code(&self, code: &str) -> Option<Self> {
+        let text = code.trim();
+        let body = text
+            .get(..SHARE_PREFIX.len())
+            .filter(|prefix| prefix.eq_ignore_ascii_case(SHARE_PREFIX))?;
+        let body = &text[body.len()..];
+        let (mut bits, mut held) = (0u32, 0u32);
+        let mut bytes = Vec::new();
+        for character in body.chars() {
+            let digit = match character.to_ascii_uppercase() {
+                '-' | ' ' => continue,
+                'I' | 'L' => 1,
+                'O' => 0,
+                upper => SHARE_DIGITS
+                    .iter()
+                    .position(|&digit| digit as char == upper)? as u32,
+            };
+            bits = bits << 5 | digit;
+            held += 5;
+            if held >= 8 {
+                held -= 8;
+                bytes.push((bits >> held & 0xFF) as u8);
+            }
+        }
+        let (&check, bytes) = bytes.split_last()?;
+        if bytes.len() < SHARE_FIXED_BYTES || check != share_check(bytes) {
+            return None;
+        }
+        let field = |at: usize| i32::from(bytes[at]);
+        let mut options = Self {
+            theater: field(0),
+            map_type: field(1),
+            resources: field(2),
+            time: field(3),
+            num_players: field(4),
+            width: field(5),
+            height: field(6),
+            ruggedness: field(7),
+            water_amount: field(8),
+            tiberium: field(9),
+            tiberium_layout: field(10),
+            vegetation: field(11),
+            urban_presence: field(12),
+            accessibility: field(13),
+            region_size: field(14),
+            urban_enabled: bytes[15] & 1 != 0,
+            fair_starts: bytes[15] & 2 != 0,
+            seed: i32::from(u16::from_le_bytes([bytes[16], bytes[17]])),
+            ..self.clone()
+        };
+        #[cfg(feature = "ares")]
+        {
+            options.urban_areas = bytes[15] & 4 != 0;
+        }
+        options.extras = super::extras::RmgExtras::default();
+        for (&extra, &value) in super::extras::Extra::ALL
+            .iter()
+            .zip(&bytes[SHARE_FIXED_BYTES..])
+        {
+            options.extras.set(extra, value);
+        }
+        options.normalize();
+        Some(options)
+    }
+}
+
+/// What a share code starts with: VERA random map, layout 1.
+const SHARE_PREFIX: &str = "VR1";
+/// Crockford's base 32 digits: no `I`, `L`, `O` or `U`.
+const SHARE_DIGITS: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+/// The bytes every share code holds ahead of its Extras.
+const SHARE_FIXED_BYTES: usize = 18;
+
+/// A share code's check byte over its other bytes.
+fn share_check(bytes: &[u8]) -> u8 {
+    bytes
+        .iter()
+        .fold(0x5Au8, |check, &byte| check.rotate_left(3) ^ byte)
 }
 
 #[cfg(test)]
@@ -308,6 +476,76 @@ mod tests {
         assert!(read.fair_starts);
         read.apply_sed(&IniFile::from_bytes(&plain).expect("seed INI"));
         assert!(!read.fair_starts);
+    }
+
+    /// A share code carries every option, VERA's switches and the Extras,
+    /// reads back however it is typed, and refuses a damaged one.
+    #[test]
+    fn a_share_code_reads_back_the_same_options() {
+        use crate::map::rmg::extras::Extra;
+        let mut sent = RmgOptions {
+            theater: 2,
+            map_type: 3,
+            num_players: 30,
+            width: 7,
+            height: 7,
+            water_amount: 5,
+            urban_presence: 100,
+            urban_enabled: true,
+            fair_starts: true,
+            seed: 54321,
+            description: "mine".into(),
+            ..RmgOptions::default()
+        };
+        sent.extras.set(Extra::TownVariant, 4);
+        sent.normalize();
+        let code = sent.share_code();
+        assert!(code.starts_with("VR1-"), "{code}");
+
+        let receiver = RmgOptions {
+            description: "theirs".into(),
+            ..RmgOptions::default()
+        };
+        let read = receiver.from_share_code(&code).expect("a whole code reads");
+        assert_eq!(
+            read,
+            RmgOptions {
+                description: "theirs".into(),
+                ..sent.clone()
+            }
+        );
+        // Lower case, spaces for dashes and stray blanks still read.
+        let typed = format!("  {}  ", code.to_ascii_lowercase().replace('-', " "));
+        assert_eq!(receiver.from_share_code(&typed), Some(read));
+
+        // One changed character fails the check; other texts are no code.
+        let last = code.len() - 1;
+        let swapped = if code.ends_with('0') { "1" } else { "0" };
+        let damaged = format!("{}{swapped}", &code[..last]);
+        assert_eq!(receiver.from_share_code(&damaged), None);
+        assert_eq!(receiver.from_share_code("hello"), None);
+        assert_eq!(receiver.from_share_code("VR1-"), None);
+
+        // Options without Extras give a shorter code that reads as none.
+        let plain = RmgOptions::default();
+        assert!(plain.share_code().len() < code.len());
+        let back = sent.from_share_code(&plain.share_code()).expect("reads");
+        assert!(back.extras.is_default() && !back.fair_starts);
+    }
+
+    /// An Extra is saved under its own key only when on.
+    #[test]
+    fn extras_are_saved_only_when_set() {
+        use crate::map::rmg::extras::Extra;
+        let plain = RmgOptions::default().to_sed_bytes();
+        assert!(!String::from_utf8_lossy(&plain).contains("VeraOreVariant"));
+        let mut varied = RmgOptions::default();
+        varied.extras.set(Extra::OreVariant, 3);
+        let mut read = RmgOptions::default();
+        read.apply_sed(&IniFile::from_bytes(&varied.to_sed_bytes()).expect("seed INI"));
+        assert_eq!(read.extras.get(Extra::OreVariant), 3);
+        read.apply_sed(&IniFile::from_bytes(&plain).expect("seed INI"));
+        assert!(read.extras.is_default());
     }
 
     #[test]
@@ -368,6 +606,7 @@ mod tests {
             urban_presence: 900,
             urban_enabled: false,
             fair_starts: false,
+            extras: Default::default(),
             width: 9,
             height: 9,
             accessibility: 101,
@@ -450,6 +689,7 @@ mod tests {
             urban_presence: 10,
             urban_enabled: false,
             fair_starts: false,
+            extras: Default::default(),
             width: 2,
             height: 3,
             accessibility: 60,

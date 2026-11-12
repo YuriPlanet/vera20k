@@ -406,6 +406,8 @@ fn generate_once(
         max_trees: settings.max_trees,
         fair_starts: options.fair_starts,
         seed: options.seed_u16(),
+        ore_variant: options.extras.get(super::extras::Extra::OreVariant),
+        town_variant: options.extras.get(super::extras::Extra::TownVariant),
         urban_presence,
         urban_fill,
         urban_areas: urban,
@@ -964,6 +966,52 @@ mod tests {
             (1500..3000).contains(&buildings),
             "{buildings} buildings on the largest map"
         );
+    }
+
+    /// VERA extension: an ore variant redraws the ore fields: the starts stay
+    /// the seed's and so does nearly all the ground, each variant gives other
+    /// fields, and a variant repeats.
+    #[test]
+    fn an_ore_variant_redraws_only_the_ore() {
+        use crate::map::rmg::extras::Extra;
+        let (settings, resolved, blocks) = (RmgSettings::default(), resolved(), one_by_one());
+        let objects = GenerationObjects::tech(&[]);
+        let variant = |value: u8| {
+            let mut options = options(1, 0);
+            options.extras.set(Extra::OreVariant, value);
+            generate_map(&options, &settings, &resolved, &blocks, &objects)
+        };
+        let tiles = |map: &GeneratedMap| -> Vec<(i32, u8)> {
+            map.map_file
+                .cells
+                .iter()
+                .map(|cell| (cell.tile_index, cell.z))
+                .collect()
+        };
+        let ore = |map: &GeneratedMap| -> Vec<(u16, u16, u8, u8)> {
+            map.map_file
+                .overlays
+                .iter()
+                .map(|o| (o.rx, o.ry, o.overlay_id, o.frame))
+                .collect()
+        };
+        let (plain, first, second) = (variant(0), variant(1), variant(2));
+        // The stages before the ore are the seed's, so the land, the water
+        // and the starts are; the later ones (hills, ground patches, trees)
+        // draw the stream they drew, but step round ore that has moved.
+        let (ground, same) = (tiles(&first), tiles(&plain));
+        let retiled = ground.iter().zip(&same).filter(|(a, b)| a.0 != b.0).count();
+        let relevelled = ground.iter().zip(&same).filter(|(a, b)| a.1 != b.1).count();
+        assert!(
+            retiled * 4 <= ground.len() && relevelled * 4 <= ground.len(),
+            "{retiled} retiled and {relevelled} relevelled of {} cells",
+            ground.len()
+        );
+        assert_eq!(first.start_waypoints, plain.start_waypoints);
+        assert!(!ore(&plain).is_empty());
+        assert_ne!(ore(&first), ore(&plain));
+        assert_ne!(ore(&first), ore(&second));
+        assert_eq!(ore(&first), ore(&variant(1)));
     }
 
     /// VERA extension: the exported `.yrm` text of a generated map parses

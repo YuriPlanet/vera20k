@@ -402,6 +402,8 @@ pub enum RandomMapSetupControl {
     FairStartsToggle,
     /// VERA: applies the next ready-made option set (offline Skirmish only).
     PresetCycle,
+    /// VERA: a row of the Extras view, top down from 0.
+    ExtrasRow(usize),
     /// Ares' Urban Areas box (`ARES_CHK_RMG_URBAN_AREAS`, Ares' dialog 261).
     #[cfg(feature = "ares")]
     UrbanAreas5000,
@@ -1151,13 +1153,15 @@ pub fn random_map_setup_control_at(
 
 /// [`random_map_setup_control_at`] for a dialog that may show the Advanced
 /// view (VERA): there the sliders take the option rows, and an `extended`
-/// dialog also has the Advanced/Basic toggle.
+/// dialog also has the Advanced/Basic toggle. With `extras` the Advanced
+/// rows are the Extras view's, by row.
 pub fn random_map_setup_control_at_view(
     layout: &RandomMapSetupLayout,
     x: i32,
     y: i32,
     extended: bool,
     advanced: bool,
+    extras: bool,
 ) -> Option<RandomMapSetupControl> {
     if extended && layout.advanced.contains(x, y) {
         return Some(RandomMapSetupControl::AdvancedToggle);
@@ -1178,7 +1182,11 @@ pub fn random_map_setup_control_at_view(
         .into_iter()
         .find(|field| layout.advanced_control_rects[field.row()].contains(x, y))
     {
-        return Some(RandomMapSetupControl::Advanced(field));
+        return Some(if extras {
+            RandomMapSetupControl::ExtrasRow(field.row())
+        } else {
+            RandomMapSetupControl::Advanced(field)
+        });
     }
     // Everything but the option rows hit-tests as in the basic view; Ares'
     // Urban Areas box sits under the seventh slider and is basic-only.
@@ -1863,21 +1871,26 @@ mod tests {
         let water = sliders[AdvancedField::Water.row()];
         let (cx, cy) = (water.x + water.w / 2, water.y + water.h / 2);
         assert_eq!(
-            random_map_setup_control_at_view(&setup, cx, cy, true, true),
+            random_map_setup_control_at_view(&setup, cx, cy, true, true, false),
             Some(RandomMapSetupControl::Advanced(AdvancedField::Water))
         );
         assert_eq!(
-            random_map_setup_control_at_view(&setup, cx, cy, true, false),
+            random_map_setup_control_at_view(&setup, cx, cy, true, true, true),
+            Some(RandomMapSetupControl::ExtrasRow(AdvancedField::Water.row())),
+            "the Extras view takes the sliders' rows"
+        );
+        assert_eq!(
+            random_map_setup_control_at_view(&setup, cx, cy, true, false, false),
             Some(RandomMapSetupControl::MapType0x405),
             "the basic view keeps the original rows"
         );
         let toggle = (setup.advanced.x + 4, setup.advanced.y + 4);
         assert_eq!(
-            random_map_setup_control_at_view(&setup, toggle.0, toggle.1, true, false),
+            random_map_setup_control_at_view(&setup, toggle.0, toggle.1, true, false, false),
             Some(RandomMapSetupControl::AdvancedToggle)
         );
         assert_eq!(
-            random_map_setup_control_at_view(&setup, toggle.0, toggle.1, false, false),
+            random_map_setup_control_at_view(&setup, toggle.0, toggle.1, false, false, false),
             None,
             "network dialogs have no toggle"
         );

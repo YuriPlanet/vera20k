@@ -922,7 +922,41 @@ pub(super) fn push_random_map_setup_modal_text_draws(
     // label reads "Environment" even though the control writes the map type.
     // VERA: the Advanced view labels its sliders and shows each value in the
     // slider's plaque, as the Players slider does.
-    if modal.advanced {
+    // VERA: the Extras view labels its rows and shows each row's value or
+    // tool in the row's face.
+    for (row, entry) in modal.extras_rows().into_iter().enumerate() {
+        use crate::ui::skirmish_shell::ExtrasValue;
+        if modal.extras_row(row).is_none() {
+            continue;
+        }
+        let (key, fallback) = entry.label();
+        push_text_draw(
+            out,
+            state,
+            &localized_label(state, key, fallback),
+            rect_to_text_rect(layout.advanced_label_rects[row]),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::V_CENTER,
+            SHELL_DROPDOWN_TEXT_DEPTH - 0.00008,
+            scale.factor(),
+        );
+        let value = match modal.extras_value(entry) {
+            ExtrasValue::Label(key, fallback) => localized_label(state, key, fallback),
+            ExtrasValue::Number(number) => number.to_string(),
+            ExtrasValue::Page(page, pages) => format!("{page} / {pages}"),
+        };
+        push_text_draw(
+            out,
+            state,
+            &value,
+            rect_to_text_rect(layout.advanced_control_rects[row]),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+            SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
+            scale.factor(),
+        );
+    }
+    if modal.advanced && modal.extras_page.is_none() {
         for field in crate::ui::skirmish_shell::AdvancedField::ALL {
             let (key, fallback) = field.label();
             let color = if modal.is_enabled(RandomMapSetupControl::Advanced(field)) {
@@ -1050,10 +1084,18 @@ pub(super) fn push_random_map_setup_modal_text_draws(
             layout.cancel,
             RandomMapSetupControl::Cancel0x5c0,
         ),
-        if modal.advanced {
+        // The toggle names the view its press shows next.
+        if modal.extras_page.is_some() {
             (
                 "VERA:RandomMapBasic",
                 "Basic",
+                layout.advanced,
+                RandomMapSetupControl::AdvancedToggle,
+            )
+        } else if modal.advanced {
+            (
+                "VERA:RandomMapExtras",
+                "Extras",
                 layout.advanced,
                 RandomMapSetupControl::AdvancedToggle,
             )
@@ -1190,6 +1232,18 @@ pub(super) fn push_random_map_setup_modal_text_draws(
             out,
             state,
             &localized_label(state, "GUI:WorkingPleaseWait", "Working, please wait..."),
+            rect_to_text_rect(layout.progress_text),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::V_CENTER,
+            SHELL_DROPDOWN_TEXT_DEPTH - 0.0001,
+            scale.factor(),
+        );
+    } else if let Some((key, fallback)) = modal.extras_note {
+        // VERA: what the last Extras tool did, where the progress text goes.
+        push_text_draw(
+            out,
+            state,
+            &localized_label(state, key, fallback),
             rect_to_text_rect(layout.progress_text),
             SHELL_LABEL_TEXT_RGB,
             ShellAlign::V_CENTER,

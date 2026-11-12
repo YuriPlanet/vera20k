@@ -50,6 +50,16 @@ pub const LAND_TYPES: usize = super::phases::zones::LAND_TYPES;
 /// The generator's default ground level (`MapSeed+0x30C` = 4).
 const DEFAULT_LEVEL: u8 = 4;
 
+/// Mixed into the map seed for an ore or town variant's own stream.
+const ORE_VARIANT_SALT: u16 = 0x0E57;
+const TOWN_VARIANT_SALT: u16 = 0x70A1;
+
+/// The seed of variant `variant` (1 and up) of a stage: the map seed with a
+/// multiple of the stage's salt, so each variant draws its own stream.
+fn variant_seed(seed: u16, salt: u16, variant: u8) -> u16 {
+    seed ^ salt.wrapping_mul(u16::from(variant))
+}
+
 /// Pre-resolved inputs for one generation run.
 pub struct PipelineInputs<'a> {
     pub ids: &'a TileIds,
@@ -100,6 +110,13 @@ pub struct PipelineInputs<'a> {
     /// last stage and measures the result; `seed` starts its own stream.
     pub fair_starts: bool,
     pub seed: u16,
+    /// VERA extension (`Extra::OreVariant`, `Extra::TownVariant`): not 0
+    /// draws the ore fields, or VERA's towns, from a stream of their own.
+    /// The stage first runs on copies with the map's stream, which leaves
+    /// that stream where the seed's own ore or towns would, so every other
+    /// stage draws what it drew before.
+    pub ore_variant: u8,
+    pub town_variant: u8,
     /// The presence the urban pass reads (`MapSeed+0x60`).
     pub urban_presence: i32,
     /// VERA extension: the opted-in Buildings value the urban pass fills the
@@ -428,16 +445,30 @@ pub fn run_pipeline(
             map_w,
             local_rect,
         };
-        let mut ctx = TiberiumCtx {
-            grid: &mut *grid,
-            scratch: &mut *scratch,
-            ids: inputs.ids,
-            rng: &mut *rng,
-            gauss: &mut *gauss,
-            regions: &regions,
-            waypoints: &outcome.waypoints,
+        let run = |grid: &mut RmgGrid,
+                   scratch: &mut RmgScratch,
+                   rng: &mut RmgRng,
+                   gauss: &mut Gaussian| {
+            let mut ctx = TiberiumCtx {
+                grid,
+                scratch,
+                ids: inputs.ids,
+                rng,
+                gauss,
+                regions: &regions,
+                waypoints: &outcome.waypoints,
+            };
+            tiberium::run(&mut ctx, &args)
         };
-        tiberium::run(&mut ctx, &args)
+        match inputs.ore_variant {
+            0 => run(grid, scratch, rng, gauss),
+            variant => {
+                let (mut dry_grid, mut dry_scratch) = (grid.clone(), scratch.clone());
+                run(&mut dry_grid, &mut dry_scratch, rng, gauss);
+                let mut own_rng = RmgRng::new(variant_seed(inputs.seed, ORE_VARIANT_SALT, variant));
+                run(grid, scratch, &mut own_rng, &mut Gaussian::default())
+            }
+        }
     };
     terrain.extend(tiberium.trees);
     observe(Stage::Tiberium, grid, &waypoints, &terrain);
@@ -456,17 +487,6 @@ pub fn run_pipeline(
             local_rect[2],
             local_rect[3],
         );
-        let mut ctx = urban_areas::UrbanCtx {
-            grid: &mut *grid,
-            scratch: &mut *scratch,
-            ids: inputs.ids,
-            blocks: inputs.blocks,
-            rng: &mut *rng,
-            gauss: &mut *gauss,
-            playfield: &playfield,
-            recalc_rock,
-            inputs: urban_inputs,
-        };
         let args = urban_areas::UrbanArgs {
             urban_presence: inputs.urban_presence,
             map_w,
@@ -474,13 +494,68 @@ pub fn run_pipeline(
             stride: stride as i32,
             vera_fill: inputs.urban_fill,
         };
-        let mut output = urban_areas::UrbanOutput {
-            objects: &mut urban_area_objects,
-            trace: &mut construction_trace,
-            entity_base: structures.len() + tech_placements.len(),
-            trees: &mut terrain,
+        let entity_base = structures.len() + tech_placements.len();
+        let run = |grid: &mut RmgGrid,
+                   scratch: &mut RmgScratch,
+                   rng: &mut RmgRng,
+                   gauss: &mut Gaussian,
+                   objects: &mut Vec<urban_areas::UrbanObject>,
+                   trace: &mut RmgConstructionTrace,
+                   trees: &mut Vec<(String, i16, i16)>| {
+            let mut ctx = urban_areas::UrbanCtx {
+                grid,
+                scratch,
+                ids: inputs.ids,
+                blocks: inputs.blocks,
+                rng,
+                gauss,
+                playfield: &playfield,
+                recalc_rock,
+                inputs: urban_inputs,
+            };
+            let mut output = urban_areas::UrbanOutput {
+                objects,
+                trace,
+                entity_base,
+                trees,
+            };
+            urban_areas::run(&mut ctx, &args, &mut output);
         };
-        urban_areas::run(&mut ctx, &args, &mut output);
+        // The variant is VERA's towns only: Ares' pass keeps the map's stream.
+        match inputs.town_variant {
+            variant if variant != 0 && inputs.urban_fill.is_some() => {
+                let (mut dry_grid, mut dry_scratch) = (grid.clone(), scratch.clone());
+                run(
+                    &mut dry_grid,
+                    &mut dry_scratch,
+                    rng,
+                    gauss,
+                    &mut Vec::new(),
+                    &mut construction_trace.clone(),
+                    &mut Vec::new(),
+                );
+                let mut own_rng =
+                    RmgRng::new(variant_seed(inputs.seed, TOWN_VARIANT_SALT, variant));
+                run(
+                    grid,
+                    scratch,
+                    &mut own_rng,
+                    &mut Gaussian::default(),
+                    &mut urban_area_objects,
+                    &mut construction_trace,
+                    &mut terrain,
+                );
+            }
+            _ => run(
+                grid,
+                scratch,
+                rng,
+                gauss,
+                &mut urban_area_objects,
+                &mut construction_trace,
+                &mut terrain,
+            ),
+        }
     }
     observe(Stage::UrbanAreas, grid, &waypoints, &terrain);
     lat_fixup::run(grid, inputs.ids);

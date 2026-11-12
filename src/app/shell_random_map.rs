@@ -1618,6 +1618,7 @@ impl App {
             y,
             modal.extended,
             modal.advanced,
+            modal.extras_page.is_some(),
         ) {
             // VERA: an Advanced slider acts on press, like the Players one.
             if let crate::ui::skirmish_shell::RandomMapSetupControl::Advanced(field) = control {
@@ -1669,21 +1670,33 @@ impl App {
                     || modal.players_hold.is_some()
                     || modal.advanced_hold.is_some()
             });
-        let (extended, advanced) = state
+        let (extended, advanced, extras) = state
             .frontend
             .skirmish_shell_state
             .random_map_setup_modal
             .as_ref()
-            .map_or((false, false), |modal| (modal.extended, modal.advanced));
+            .map_or((false, false, false), |modal| {
+                (modal.extended, modal.advanced, modal.extras_page.is_some())
+            });
         if !mouse_held {
             let help = crate::ui::skirmish_shell::random_map_setup_control_at_view(
-                &layout, x, y, extended, advanced,
+                &layout, x, y, extended, advanced, extras,
             )
             .map(|control| {
-                Self::localized_status_help_text(
-                    state,
-                    crate::ui::skirmish_shell::status_help_key_for_random_map_setup(control),
-                )
+                // VERA: an Extras row's help is its entry's, not the row's.
+                let key = match control {
+                    crate::ui::skirmish_shell::RandomMapSetupControl::ExtrasRow(row) => state
+                        .frontend
+                        .skirmish_shell_state
+                        .random_map_setup_modal
+                        .as_ref()
+                        .and_then(|modal| modal.extras_row(row))
+                        .map_or("", crate::ui::skirmish_shell::ExtrasRow::help),
+                    control => {
+                        crate::ui::skirmish_shell::status_help_key_for_random_map_setup(control)
+                    }
+                };
+                Self::localized_status_help_text(state, key)
             })
             .unwrap_or_default();
             if let Some(setup) = state
@@ -1771,6 +1784,7 @@ impl App {
             y,
             modal.extended,
             modal.advanced,
+            modal.extras_page.is_some(),
         );
         if pressed.is_none() || pressed != released {
             return layout.dialog.contains(x, y) || pressed.is_some();
@@ -1798,6 +1812,49 @@ impl App {
             Control::ExportMap => export_requested = modal.is_enabled(Control::ExportMap),
             Control::FairStartsToggle => modal.toggle_fair_starts(),
             Control::PresetCycle => modal.cycle_preset(),
+            // VERA: an Extras row steps its choice or turns the page in the
+            // dialog's own state; the share-code tools reach the clipboard.
+            Control::ExtrasRow(row) => {
+                use crate::ui::skirmish_shell::{ExtrasAction, ExtrasOutcome};
+                const NO_CLIPBOARD: (&str, &str) = (
+                    "VERA:RandomMapExtraClipboardFailed",
+                    "The clipboard could not be reached",
+                );
+                // A code read, like a variant choice, generates at once and
+                // without Generate's rolls, as Load does (`0x00596963`).
+                let mut regenerate = false;
+                modal.extras_note = match modal.release_extras_row(row) {
+                    Some(ExtrasOutcome::Tool(ExtrasAction::CopyCode)) => Some(
+                        if crate::app::os_clipboard::set_text(&modal.options.share_code()) {
+                            ("VERA:RandomMapExtraCodeCopied", "Code copied")
+                        } else {
+                            NO_CLIPBOARD
+                        },
+                    ),
+                    Some(ExtrasOutcome::Tool(ExtrasAction::PasteCode)) => {
+                        Some(match crate::app::os_clipboard::text() {
+                            Some(text) if modal.adopt_share_code(&text) => {
+                                regenerate = true;
+                                ("VERA:RandomMapExtraCodeTaken", "Code read")
+                            }
+                            Some(_) => (
+                                "VERA:RandomMapExtraCodeBad",
+                                "The clipboard holds no map code",
+                            ),
+                            None => NO_CLIPBOARD,
+                        })
+                    }
+                    Some(ExtrasOutcome::Regenerate) => {
+                        regenerate = true;
+                        None
+                    }
+                    None => None,
+                };
+                if regenerate {
+                    modal.begin_generate();
+                    generate_requested = true;
+                }
+            }
             Control::Generate0x620 => {
                 modal.reroll_derived_for_generate(&settings, &mut main);
                 modal.begin_generate();

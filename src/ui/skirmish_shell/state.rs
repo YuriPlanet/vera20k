@@ -6,6 +6,7 @@ mod hit_test;
 mod launch;
 mod opponent_scroll;
 mod player_name;
+mod random_map_extras;
 mod random_map_setup;
 mod saved_seed_browser;
 mod saved_setup;
@@ -53,6 +54,9 @@ pub use player_name::{
     player_name_caret_prefix, player_name_edit_rect_hit, player_row_visible,
     repair_teams_for_selected_mode, selected_player_rows, set_status_help_text,
     update_player_name_scroll_for_caret,
+};
+pub use random_map_extras::{
+    EXTRAS_ROWS, ExtrasAction, ExtrasOutcome, ExtrasRow, ExtrasValue, extras_page_count,
 };
 pub use random_map_setup::{
     ADVANCED_RANGE, AcceptOutcome, MainRngRanged, PLAYERS_RANGE, RandomMapPreset,

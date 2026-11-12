@@ -316,6 +316,13 @@ pub struct RandomMapSetupModalState {
     /// VERA extension: the preset the options still stand at; any edit of
     /// theirs clears it.
     pub preset: Option<RandomMapPreset>,
+    /// VERA extension: the Extras page on show (`random_map_extras`), in
+    /// place of the Advanced sliders; `advanced` is set with it.
+    pub extras_page: Option<usize>,
+    /// VERA extension: what the last Extras tool did, shown where the
+    /// progress text goes until the next press: a string-table key and its
+    /// English.
+    pub extras_note: Option<(&'static str, &'static str)>,
 }
 
 /// The Advanced sliders' range, the fields' own clamp (`RmgOptions::normalize`).
@@ -380,6 +387,8 @@ impl RandomMapSetupModalState {
             advanced_hold: None,
             exported: false,
             preset: None,
+            extras_page: None,
+            extras_note: None,
         };
         modal.normalize_options();
         modal
@@ -407,7 +416,20 @@ impl RandomMapSetupModalState {
             // VERA's towns are offline-only, like the Advanced view.
             self.options.urban_enabled = false;
             self.options.fair_starts = false;
+            self.options.extras = Default::default();
         }
+    }
+
+    /// An option edit made by the Extras view.
+    pub(super) fn note_option_edit(&mut self) {
+        self.on_option_changed();
+    }
+
+    /// Hold every Advanced value at what the options hold, as if the player
+    /// had set each slider.
+    pub(super) fn pin_advanced_values(&mut self) {
+        self.advanced_values =
+            Some(AdvancedField::ALL.map(|field| advanced_field(&self.options, field)));
     }
 
     /// The Players slider's range for this dialog.
@@ -443,6 +465,7 @@ impl RandomMapSetupModalState {
             C::AdvancedToggle | C::Advanced(_) | C::FairStartsToggle | C::PresetCycle => {
                 self.extended
             }
+            C::ExtrasRow(row) => self.extended && self.extras_row(row).is_some(),
             C::ExportMap => self.extended && self.generated && !self.exported,
             _ => true,
         }
@@ -719,10 +742,16 @@ impl RandomMapSetupModalState {
         self.preset = None;
     }
 
-    /// Switch the option rows between the original controls and the
-    /// Advanced sliders. Any open list or held slider lets go.
+    /// Step the option rows to their next view: the original controls, the
+    /// Advanced sliders, then the Extras, whose first page shows. Any open
+    /// list or held slider lets go.
     pub fn toggle_advanced(&mut self) {
-        self.advanced = !self.advanced;
+        (self.advanced, self.extras_page) = match (self.advanced, self.extras_page) {
+            (false, _) => (true, None),
+            (true, None) => (true, Some(0)),
+            (true, Some(_)) => (false, None),
+        };
+        self.extras_note = None;
         self.open_combo = None;
         self.players_hold = None;
         self.advanced_hold = None;
@@ -1028,6 +1057,59 @@ mod tests {
         network.toggle_advanced();
         let _ = network;
     }
+
+    /// VERA's Extras view: the toggle steps Basic, Advanced, Extras; a
+    /// variant row steps its value as an option edit and asks for its map at
+    /// once; a share code brings another dialog's options, seed included.
+    #[test]
+    fn the_extras_view_steps_choices_and_takes_share_codes() {
+        use super::super::random_map_extras::{ExtrasAction, ExtrasOutcome, ExtrasRow};
+        use crate::map::rmg::extras::Extra;
+        let mut dialog = opened();
+        assert!(dialog.extras_rows().is_empty(), "no rows outside the view");
+        dialog.toggle_advanced();
+        dialog.toggle_advanced();
+        assert_eq!((dialog.advanced, dialog.extras_page), (true, Some(0)));
+        let rows = dialog.extras_rows();
+        let ore = rows
+            .iter()
+            .position(|row| *row == ExtrasRow::Choice(Extra::OreVariant))
+            .expect("the first page lists the ore variant");
+        dialog.generated = true;
+        assert_eq!(
+            dialog.release_extras_row(ore),
+            Some(ExtrasOutcome::Regenerate),
+            "Generate's seed roll would make another map"
+        );
+        assert_eq!(dialog.options.extras.get(Extra::OreVariant), 1);
+        assert!(!dialog.generated, "a choice is an option edit");
+        let copy = rows
+            .iter()
+            .position(|row| *row == ExtrasRow::Action(ExtrasAction::CopyCode))
+            .expect("the first page has the share tools");
+        assert_eq!(
+            dialog.release_extras_row(copy),
+            Some(ExtrasOutcome::Tool(ExtrasAction::CopyCode))
+        );
+        assert_eq!(dialog.release_extras_row(EXTRAS_ROWS_PAST), None);
+
+        // The receiver takes the sender's options whole and shows the
+        // sender's slider values.
+        dialog.change_advanced(AdvancedField::Water, 37);
+        let code = dialog.options.share_code();
+        let mut receiver = opened();
+        assert!(!receiver.adopt_share_code("not a code"));
+        assert!(receiver.adopt_share_code(&code));
+        assert_eq!(receiver.options.extras.get(Extra::OreVariant), 1);
+        assert_eq!(receiver.options.seed, dialog.options.seed);
+        assert_eq!(receiver.advanced_value(AdvancedField::Water), 37);
+
+        dialog.toggle_advanced();
+        assert_eq!((dialog.advanced, dialog.extras_page), (false, None));
+    }
+
+    /// A row past the view's last.
+    const EXTRAS_ROWS_PAST: usize = 99;
 
     #[test]
     fn gsi_04_02_dialog_open_is_rng_pure_and_generate_reroll_uses_process_main_only() {
