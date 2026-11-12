@@ -26,10 +26,10 @@ dev-overlays = ["vera20k/dev-overlays"]
 # The client, for entry::run_with_loop and the App it drives.
 vera20k = { path = "..", default-features = false }
 # The JNI-facing activity type winit takes from the loader.
-android-activity = { version = "0.6", features = ["native-activity"] }
+android-activity = { version = "0.6", features = ["game-activity"] }
 # Same version and default-feature set as the client's dependency; the Android
 # backend feature must agree with it or winit compiles without a backend.
-winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "android-native-activity"] }
+winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "android-game-activity"] }
 # The folder picker: a Storage Access Framework tree has no filesystem path, so
 # the activity and its ContentResolver are reached through JNI.
 jni = "0.21"
