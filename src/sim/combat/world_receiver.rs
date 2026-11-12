@@ -39,21 +39,7 @@ pub(crate) fn apply_foot_radiation(
     if !radiation_enabled(world) {
         return None;
     }
-    // Phobos `UseGlobalRadApplicationDelay`: when false, each bound type's
-    // own `RadApplicationDelay` gates its sites below, so the shared gate is
-    // skipped entirely (native's `!UseGlobalRadApplicationDelay` arm).
-    #[cfg(feature = "phobos")]
-    let delay_admitted = !rules.radiation.use_global_rad_application_delay
-        || world
-            .session
-            .binary_frame()
-            .is_multiple_of(rules.radiation.application_delay as u32);
-    #[cfg(not(feature = "phobos"))]
-    let delay_admitted = world
-        .session
-        .binary_frame()
-        .is_multiple_of(rules.radiation.application_delay as u32);
-    if !delay_admitted {
+    if !radiation_delay_admits(world, rules) {
         return None;
     }
     let entity = world.substrate.entities.get(stable_id)?;
@@ -82,14 +68,7 @@ pub(crate) fn apply_foot_radiation(
     {
         return None;
     }
-    // GetCoords -> signed /256 -> packed CellStruct -> Map5657A0. Use the
-    // canonical cell identity, including stride aliases and dummy stamping.
-    let coord = object_get_coords(world, stable_id)?;
-    let cell = crate::sim::cell_rect::get_cellclass_fallback(
-        world.resolved_terrain.as_ref(),
-        coord.x / 256,
-        coord.y / 256,
-    );
+    let cell = foot_radiation_cell(world, stable_id)?;
     #[cfg(not(feature = "phobos"))]
     {
         let crate::sim::cell_rect::CellRef::Real(cell) = cell else {
@@ -98,9 +77,7 @@ pub(crate) fn apply_foot_radiation(
         // FootClass::AI @ 0x004DA5EB..0x004DA629 reads the retained
         // Cell487CB0 total once and makes one direct receiver call. Site
         // membership is irrelevant, including residual F0 after site deletion.
-        let level = world
-            .radiation
-            .damaging_level((cell.rx, cell.ry), rules.radiation.level_max);
+        let level = cell_radiation_level(world, rules, cell);
         if level <= 0 {
             return None;
         }
@@ -4658,6 +4635,66 @@ pub(super) fn fog_enabled(_world: &Simulation) -> bool {
         return fixture.fog_enabled;
     }
     true
+}
+
+/// [`apply_foot_radiation`]'s shared application gate: the frame is a
+/// multiple of `[Radiation] RadApplicationDelay=`. Phobos
+/// `UseGlobalRadApplicationDelay`: when false, each bound type's own
+/// `RadApplicationDelay` gates its sites instead, so the shared gate is
+/// skipped entirely (native's `!UseGlobalRadApplicationDelay` arm).
+fn radiation_delay_admits(world: &Simulation, rules: &RuleSet) -> bool {
+    let shared = world
+        .session
+        .binary_frame()
+        .is_multiple_of(rules.radiation.application_delay as u32);
+    #[cfg(feature = "phobos")]
+    return !rules.radiation.use_global_rad_application_delay || shared;
+    #[cfg(not(feature = "phobos"))]
+    shared
+}
+
+/// The cell [`apply_foot_radiation`] reads (`0x004DA5EB`): GetCoords ->
+/// signed /256 -> packed CellStruct -> Map5657A0, through the canonical cell
+/// identity, including stride aliases and dummy stamping.
+fn foot_radiation_cell(
+    world: &Simulation,
+    stable_id: u64,
+) -> Option<crate::sim::cell_rect::CellRef<'_>> {
+    let coord = object_get_coords(world, stable_id)?;
+    Some(crate::sim::cell_rect::get_cellclass_fallback(
+        world.resolved_terrain.as_ref(),
+        coord.x / 256,
+        coord.y / 256,
+    ))
+}
+
+/// The retained Cell487CB0 total [`apply_foot_radiation`] reads once
+/// (`0x004DA5EB..0x004DA629`); site membership is irrelevant.
+#[cfg(not(feature = "phobos"))]
+fn cell_radiation_level(
+    world: &Simulation,
+    rules: &RuleSet,
+    cell: &crate::map::resolved_terrain::ResolvedTerrainCell,
+) -> i32 {
+    world
+        .radiation
+        .damaging_level((cell.rx, cell.ry), rules.radiation.level_max)
+}
+
+/// Whether [`apply_foot_radiation`] would find radiation at `stable_id` on
+/// this frame (without the Phobos capability): its application frame, and a
+/// positive level in its cell. A sleeping Foot is woken by it
+/// (`world::idle_sleep`); the immunity terms it leaves out only wake one
+/// that would have ignored it.
+#[cfg(not(feature = "phobos"))]
+pub(crate) fn radiation_reaches_foot(world: &Simulation, rules: &RuleSet, stable_id: u64) -> bool {
+    radiation_enabled(world)
+        && radiation_delay_admits(world, rules)
+        && matches!(
+            foot_radiation_cell(world, stable_id),
+            Some(crate::sim::cell_rect::CellRef::Real(cell))
+                if cell_radiation_level(world, rules, cell) > 0
+        )
 }
 
 #[inline]

@@ -30,6 +30,7 @@ pub(crate) use foot_patrol::PatrolPost;
 mod mission_handlers;
 mod scan_batch;
 mod target_scan;
+pub(super) use target_scan::passive_block_acts;
 pub(crate) use mission_handlers::dispatch_foot_mission;
 pub(crate) use mission_handlers::enter_idle_mode;
 pub(crate) use mission_handlers::foot_enter_idle_mode_selection;

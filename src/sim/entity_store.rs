@@ -272,6 +272,15 @@ impl EntityStore {
         }
     }
 
+    /// Drop the visits `stable_id` is owed without settling them: the sleep
+    /// check's, which counts one only to hash the skipped turn
+    /// (`world::idle_sleep`).
+    pub(crate) fn forget_owed(&mut self, stable_id: u64) {
+        if let Some(slot) = self.slot(stable_id) {
+            self.sleep[slot as usize].owed = 0;
+        }
+    }
+
     /// The visits sleeping `stable_id` is owed, which its mission counter
     /// does not hold yet ([`GameEntity::settle_sleep`]).
     pub(crate) fn owed_visits(&self, stable_id: u64) -> u32 {
