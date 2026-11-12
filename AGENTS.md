@@ -119,11 +119,13 @@ what they can do, not only in the log.
 Stock play stays as gamemd plays it. An engine extension (Ares, Phobos, NPatch, VeraX)
 is in every build and switches on from the game's data: its keys in the rules or map, or
 a mod that ships it. With retail data the game plays as gamemd. Ares has that switch
-(`RuleSet::ares`): new Ares code reads its own keys or the switch, never
-`cfg(feature = "ares")`, and a PR that touches older `ares`-gated code moves it to the
-switch. The others stay behind their build features until they get one. A VERA feature
-stays off until a player option or an INI key turns it on; a bug gamemd itself has stays
-unless the maintainer asks for an opt-in fix (`npbug`). A change in or beside a
+(`RuleSet::ares`) and belongs in every build, the release build too, never behind a
+build feature: new Ares code reads its own keys or the switch, never
+`cfg(feature = "ares")` or `ARES_BUILD`. The `ares` feature that still gates older code
+is going away: a PR that touches that code moves it to the switch. The others stay
+behind their build features until they get one. A VERA feature stays off until a player
+option or an INI key turns it on; a bug gamemd itself has stays unless the maintainer
+asks for an opt-in fix (`npbug`). A change in or beside a
 [capability](docs/capabilities.md) compiles with it on as well as off
 (`python -m tools.capability_tests build <name>`; `focus <name>` runs its tests).
 
