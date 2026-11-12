@@ -859,8 +859,9 @@ impl MatchSession {
     /// each field is checked against the session: the country by the mode
     /// (`+0x1C`, here `countries` for Cooperative, else any; the current one,
     /// else the mode's `+0x28` Random), a colour or start already held
-    /// becomes Random (`0x0069B600`, `0x005E9720`), a team outside 0..3
-    /// takes the mode default (`+0x34`/`+0x2C`). No sound, text or reply.
+    /// becomes Random (`0x0069B600`, `0x005E9720`), a team outside 0..3, or
+    /// in a VERA room with Teams set outside its teams, takes the mode
+    /// default (`+0x34`/`+0x2C`). No sound, text or reply.
     pub(crate) fn accept_network_peer_choices(
         &mut self,
         index: usize,
@@ -880,12 +881,15 @@ impl MatchSession {
         let Some(row) = human.raw_slot_index else {
             return Ok(PeerChoicesChange::default());
         };
+        let teams = self
+            .network_teams()
+            .unwrap_or(crate::skirmish_launch::NATIVE_TEAMS);
         let mut change = self.accept_peer_choices(
             index,
             row,
             choices,
             observer,
-            PeerChoicePolicy::Wol { countries },
+            PeerChoicePolicy::Wol { countries, teams },
         )?;
         change.options |= self.keep_players_on_teams()?;
         Ok(change)
@@ -3440,8 +3444,11 @@ fn host_extra_row(
 #[derive(Clone, Copy)]
 pub(crate) enum PeerChoicePolicy<'a> {
     Lan,
+    /// `teams`: how many teams the Team list holds, gamemd's A to D
+    /// ([`crate::skirmish_launch::NATIVE_TEAMS`]) or a VERA room's Teams.
     Wol {
         countries: Option<&'a [crate::skirmish_launch::LaunchCountry]>,
+        teams: u8,
     },
 }
 
@@ -3462,7 +3469,7 @@ pub(crate) fn apply_peer_choices(
     let native_country = |slot: &SkirmishLocalSlot| (!slot.country_random).then_some(slot.country);
     let countries = match policy {
         PeerChoicePolicy::Lan => None,
-        PeerChoicePolicy::Wol { countries } => countries,
+        PeerChoicePolicy::Wol { countries, .. } => countries,
     };
     let allowed = |country: Option<crate::skirmish_launch::LaunchCountry>| {
         countries.is_none_or(|list| country.is_none_or(|country| list.contains(&country)))
@@ -3505,12 +3512,15 @@ pub(crate) fn apply_peer_choices(
         change.options = true;
     }
     if choices.team != current.team {
-        // Mode +0x34 (0x5D5DE0) admits only 0..3; +0x2C (0x5D5DC0) is
-        // Team 0 under MustAlly, else none.
+        // Mode +0x34 (0x5D5DE0) admits only 0..3, a VERA room with Teams
+        // set its own teams; +0x2C (0x5D5DC0) is Team 0 under MustAlly,
+        // else none.
         use crate::skirmish_launch::LaunchTeam;
         slot.team = match (policy, choices.team) {
             (PeerChoicePolicy::Lan, _) => choices.team,
-            (_, LaunchTeam::Team(team)) if team <= 3 => choices.team,
+            (PeerChoicePolicy::Wol { teams, .. }, LaunchTeam::Team(team)) if team < teams => {
+                choices.team
+            }
             _ if launch.mode.must_ally => LaunchTeam::Team(0),
             _ => LaunchTeam::None,
         };
@@ -4187,6 +4197,23 @@ mod tests {
             .accept_network_peer_choices(1, pick, false, None)
             .unwrap();
         assert_eq!(teams(&session), [Team(0), Team(0), Team(0)]);
+    }
+
+    /// A VERA room has up to 15 teams, A to O, and a guest's online pick
+    /// past gamemd's D stays.
+    #[test]
+    fn a_vera_room_guest_may_pick_a_team_past_d() {
+        use crate::skirmish_launch::LaunchTeam::Team;
+        let mut session = vera_room();
+        session.set_network_teams(Some(15)).unwrap();
+        assert_eq!(teams(&session), [Team(0), Team(1)]);
+        let mut pick = session.network_setup().unwrap().humans[1].slot.clone();
+        pick.team = Team(14);
+        assert!(!session.admit_network_team(1, &mut pick));
+        session
+            .accept_network_peer_choices(1, pick, false, None)
+            .unwrap();
+        assert_eq!(teams(&session), [Team(0), Team(14)]);
     }
 
     #[test]

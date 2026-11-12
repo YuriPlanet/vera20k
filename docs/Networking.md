@@ -241,7 +241,7 @@ ignores the field and is refused at the build check. Online, an older guest cann
 read the host's options while Teams is set and says the update was invalid, in a room
 that cannot start, since its players' versions differ. A lobby from before Teams
 refuses the field; the host's game then turns Teams Off, says so and sends its options
-again without it.
+again without it. A room has 2 to 15 teams, named A to O.
 
 Online, the host's Balance automatically travels the same way, as
 `launch.options.auto_balance`; setting a Teams count turns it on. While it is on, every

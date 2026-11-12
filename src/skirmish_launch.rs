@@ -445,8 +445,13 @@ pub struct SkirmishLaunchOptions {
     pub queue: Vec<String>,
 }
 
-/// The Teams counts a VERA room offers besides Off.
-pub const ROOM_TEAMS: std::ops::RangeInclusive<u8> = 2..=4;
+/// The Teams counts a VERA room offers besides Off: up to 15, two seats a
+/// team at 30 seats, as the lobby takes them.
+pub const ROOM_TEAMS: std::ops::RangeInclusive<u8> = 2..=15;
+
+/// The teams gamemd's Team list holds, A to D (`team_choices`). Skirmish and
+/// a VERA room with Teams Off keep it.
+pub const NATIVE_TEAMS: u8 = 4;
 
 impl Default for SkirmishLaunchOptions {
     fn default() -> Self {

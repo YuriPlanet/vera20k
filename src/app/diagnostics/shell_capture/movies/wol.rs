@@ -2630,9 +2630,46 @@ impl WolCapture {
                         colors == [("Tester".into(), Some(4)), ("Natasha".into(), Some(2))],
                         "Team Colors gave {colors:?}"
                     );
+                    // Teams goes up to 15: the Team list then runs from A
+                    // to O, and the headers name the teams past D too.
+                    crate::app::shell_network_setup::apply_action(
+                        state,
+                        SetupAction::Trackbar {
+                            control: TEAM_COUNT,
+                            value: 15,
+                        },
+                    );
+                    let wide = setup_view(state)?;
+                    let letters: Vec<&str> = row_combo(&wide, SetupColumn::Team, 0)
+                        .map(|(_, combo)| {
+                            combo
+                                .choices
+                                .iter()
+                                .map(|item| item.text.as_str())
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let wide_captions: Vec<&str> = wide
+                        .headers
+                        .iter()
+                        .flatten()
+                        .map(|header| header.caption.as_str())
+                        .collect();
+                    ensure!(
+                        state.match_state.session.network_teams() == Some(15)
+                            && letters.len() == 15
+                            && letters.first() == Some(&"A")
+                            && letters.last() == Some(&"O")
+                            && wide_captions.contains(&"Team E 0/1"),
+                        "Teams 15 gave the Team list {letters:?} and headers {wide_captions:?}"
+                    );
                     self.event(
                         frame,
-                        json!({ "C2 Teams": captions, "Team Colors": colors }),
+                        json!({
+                            "C2 Teams": captions,
+                            "Team Colors": colors,
+                            "Teams 15": wide_captions,
+                        }),
                     );
                 }
                 MoviesCapture::restore_neutral_pointer(state);

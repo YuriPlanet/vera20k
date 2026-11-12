@@ -156,8 +156,8 @@ that carry it. Other modes omit the field.
 `staging_digest` is its lowercase SHA-256, or the empty string for authored maps.
 `launch` is the existing serde representation of `SkirmishLaunchSession` (including
 its human rows, AI rows and launch options). `launch.options.teams`, a VERA room's
-Teams count, is an optional integer from 2 to 15 (the game offers 2 to 4) that the
-game leaves out while Teams is Off. A lobby from before it refuses options that carry
+Teams count, is an optional integer from 2 to 15 that the game leaves out while Teams
+is Off. A lobby from before it refuses options that carry
 it with 400 `invalid_options`; the host's game then turns Teams Off, says so in the
 room and sends its options again without it. Options that name a player no longer in
 the room return 409 `player_not_in_room` instead, which leaves Teams as it is. A game

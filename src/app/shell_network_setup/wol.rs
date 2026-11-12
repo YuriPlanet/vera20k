@@ -307,7 +307,9 @@ pub(crate) fn balance_teams(state: &mut AppState, teams: &[(String, u8)]) -> any
         return Ok(());
     }
     // Without Teams, the Team list's A to D (`team_choices`).
-    let count = session.network_teams().unwrap_or(4);
+    let count = session
+        .network_teams()
+        .unwrap_or(crate::skirmish_launch::NATIVE_TEAMS);
     let moves = team_moves(launch, teams, count);
     if moves.is_empty() {
         return Ok(());

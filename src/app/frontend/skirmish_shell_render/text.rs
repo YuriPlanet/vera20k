@@ -64,8 +64,23 @@ fn team_label_spec(team: i32) -> (&'static str, &'static str) {
 }
 
 pub(super) fn team_label(state: &AppState, team: i32) -> String {
-    let (key, fallback) = team_label_spec(team);
-    localized_label(state, key, fallback)
+    room_team_label(team).unwrap_or_else(|| {
+        let (key, fallback) = team_label_spec(team);
+        localized_label(state, key, fallback)
+    })
+}
+
+/// A VERA room's teams past gamemd's A to D, as the lobby names them: the
+/// alphabet's next letters.
+fn room_team_label(team: i32) -> Option<String> {
+    let team = u32::try_from(team)
+        .ok()
+        .filter(|team| *team >= u32::from(crate::skirmish_launch::NATIVE_TEAMS))?;
+    Some(
+        char::from_u32(u32::from(b'A') + team)
+            .filter(char::is_ascii_uppercase)
+            .map_or_else(|| (team + 1).to_string(), String::from),
+    )
 }
 
 pub(crate) fn combo_item_label(state: &AppState, item: SkirmishComboItem) -> String {
@@ -1980,6 +1995,14 @@ mod tests {
         assert_eq!(team_label_spec(1), ("LETTER_B", "B"));
         assert_eq!(team_label_spec(2), ("LETTER_C", "C"));
         assert_eq!(team_label_spec(3), ("LETTER_D", "D"));
+    }
+
+    #[test]
+    fn room_teams_past_d_take_the_lobby_letters() {
+        assert_eq!(room_team_label(-2), None);
+        assert_eq!(room_team_label(3), None);
+        assert_eq!(room_team_label(4).as_deref(), Some("E"));
+        assert_eq!(room_team_label(14).as_deref(), Some("O"));
     }
 
     #[test]

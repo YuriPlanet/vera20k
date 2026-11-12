@@ -54,14 +54,9 @@ fn team_value(team: LaunchTeam) -> i32 {
     }
 }
 
-/// A team's letter as the Team list shows it; past D, the alphabet's next.
+/// A team's letter as the Team list shows it.
 pub(super) fn team_letter(state: &AppState, team: u8) -> String {
-    if team <= 3 {
-        return combo_item_label(state, SkirmishComboItem::Team(i32::from(team)));
-    }
-    char::from_u32(u32::from(b'A') + u32::from(team))
-        .filter(char::is_ascii_uppercase)
-        .map_or_else(|| (u32::from(team) + 1).to_string(), String::from)
+    combo_item_label(state, SkirmishComboItem::Team(i32::from(team)))
 }
 
 /// A row of VERA's room list: a seat or spectator row, or a header over

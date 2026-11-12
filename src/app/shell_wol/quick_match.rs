@@ -968,7 +968,10 @@ fn build_host_options(
         1,
         guest_seat,
         false,
-        PeerChoicePolicy::Wol { countries: None },
+        PeerChoicePolicy::Wol {
+            countries: None,
+            teams: crate::skirmish_launch::NATIVE_TEAMS,
+        },
         crate::skirmish_launch::HOUSE_COLOR_COUNT,
     );
     draw_random_picks(&mut launch.humans, countries, pairing.seed)?;
