@@ -21,7 +21,7 @@ fn ring_source(frames: usize, shifts: PlayShifts) -> RingSource {
     let mut draws = PlaybackDraws::new(|low, _| low);
     let loaded = LoadedPlayback::load(entry, &mut draws, |_| {
         Some(DecodedAudio {
-            samples: vec![0.25; frames * 2],
+            samples: vec![0.25; frames * 2].into(),
             sample_rate: 22_050,
             channels: 2,
             native_channels: 1,
