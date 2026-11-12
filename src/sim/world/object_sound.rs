@@ -309,6 +309,9 @@ impl Simulation {
 
     /// `ObjectClass::Set_Custom_Sound @ 0x005F6CB0`.
     fn set_custom_sound(&mut self, object: u64, sound: Option<&str>) {
+        // The object's next visit plays the sound (`ObjectClass::AI
+        // @ 0x005F3E70`); a sleeping one must take it (`world::idle_sleep`).
+        self.substrate.entities.wake(object);
         match sound {
             Some(sound_id) => {
                 self.object_custom_sounds

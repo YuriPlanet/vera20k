@@ -52,7 +52,7 @@ impl Simulation {
         let quiet = self.substrate.entities.get(id).is_some_and(|entity| {
             self.interner
                 .object_type(entity.type_ref(), rules)
-                .is_some_and(|object| rests(entity, object, speed, frame))
+                .is_some_and(|object| rests(entity, object, speed, frame, rules.ares()))
         });
         if quiet {
             self.substrate.entities.set_quiet(id);
@@ -77,7 +77,7 @@ impl Simulation {
             .expect("a quiet unit has its type");
         let speed = SpeedRules::new(rules, &self.interner, &self.houses);
         assert!(
-            rests(entity, object, speed, frame),
+            rests(entity, object, speed, frame, rules.ares()),
             "quiet unit {id} ({}) no longer rests on frame {frame}",
             self.interner.resolve(entity.type_ref())
         );
@@ -96,6 +96,7 @@ pub(crate) fn rests(
     object: &ObjectType,
     speed: SpeedRules<'_>,
     frame: u32,
+    ares: bool,
 ) -> bool {
     entity.category() == EntityCategory::Unit
         // The fire visit (`UnitClass::AI @ 0x007365E1`, `0x007365E8`): no
@@ -150,7 +151,7 @@ pub(crate) fn rests(
         && entity.capture_manager.is_none()
         && entity.spawn_manager.is_none()
         && entity.cloak.is_none()
-        && !super::techno_ai_cloak::cloak_producer_ticks(entity, object)
+        && !super::techno_ai_cloak::cloak_producer_ticks(entity, object, ares)
         // The common stage clock.
         && entity.native_stage().rests()
         // FootClass::AI's idle-entry latch clear.

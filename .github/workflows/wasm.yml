@@ -35,7 +35,6 @@ on:
       - 'src/render/text_engine/fonts.rs'
       - 'src/render/gpu.rs'
       - 'src/render/sprite_atlas*.rs'
-      - 'src/render/unit_atlas.rs'
       - 'src/ui/main_menu_dialogs/options.rs'
       - 'src/app/mod.rs'
       - 'src/app/cncnet.rs'

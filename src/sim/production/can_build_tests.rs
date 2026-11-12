@@ -25,7 +25,7 @@ fn comparable_can_build_rows() -> impl Iterator<Item = Value> {
         // These gamemd controls intentionally differ from Ares100082B0's
         // positive specific count and CountOwnedNow100032F0's tracked
         // alternates. The Ares corpus covers those component boundaries.
-        !crate::rules::ARES_ENABLED
+        !crate::rules::ARES_BUILD
             || (row["proc_alternate"].is_null()
                 && row["name"].as_str() != Some("BuildingType count negative"))
     })
@@ -655,7 +655,7 @@ fn retail_slave_miner_meets_proc_and_docks_limit_harriers() {
     // a usable factory, and this house owns no airfield.
     assert_eq!(
         check_build_limit(&sim, rules, americans, orca),
-        crate::rules::ARES_ENABLED
+        crate::rules::ARES_BUILD
     );
     on_map(&mut sim, americans, EntityCategory::Aircraft, "BEAG", 1);
     assert!(check_build_limit(&sim, rules, americans, orca));

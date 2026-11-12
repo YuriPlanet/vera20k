@@ -143,7 +143,7 @@ impl Simulation {
         else {
             return;
         };
-        if building.building_powered_center.is_counted() == operational {
+        if building.building.building_powered_center.is_counted() == operational {
             return;
         }
         let owner = building.owner();
@@ -151,6 +151,7 @@ impl Simulation {
             .entities
             .get_mut(id)
             .expect("same building")
+            .building
             .building_powered_center
             .counted = operational;
         if operational {
@@ -173,7 +174,7 @@ impl Simulation {
             return;
         };
         if building.category() != EntityCategory::Structure
-            || !building.building_powered_center.is_counted()
+            || !building.building.building_powered_center.is_counted()
         {
             return;
         }
@@ -185,6 +186,7 @@ impl Simulation {
             .entities
             .get_mut(id)
             .expect("same building")
+            .building
             .building_powered_center
             .counted = false;
         self.house_lost_powered_center(owner, unit_type, rules, effects);
@@ -329,7 +331,7 @@ impl Simulation {
                 id,
             );
         }
-        let quiet = self.ares_activation_sound_mutex();
+        let quiet = self.ares_activation_sound_mutex(rules);
         Self::latch_deactivated(
             &self.interner,
             &mut self.substrate,
@@ -356,8 +358,8 @@ impl Simulation {
     /// Ares Activate `1004CCB0` and Deactivate `1004CDC0` play the type's
     /// sound only while IKnowWhatImDoing (`0xA8E7AC`) is clear; stock
     /// `0x0070FBE0`/`0x0070FC90` have no such test.
-    fn ares_activation_sound_mutex(&self) -> bool {
-        crate::rules::ARES_ENABLED && self.object_placement_scope_active()
+    fn ares_activation_sound_mutex(&self, rules: &RuleSet) -> bool {
+        rules.ares() && self.object_placement_scope_active()
     }
 
     /// Ares TechnoUpdate1004B439..1004B526, ordinary Foot branch. Operator
@@ -519,7 +521,7 @@ impl Simulation {
         {
             locomotor.power_on();
         }
-        let quiet = self.ares_activation_sound_mutex();
+        let quiet = self.ares_activation_sound_mutex(rules);
         Self::latch_deactivated(
             &self.interner,
             &mut self.substrate,

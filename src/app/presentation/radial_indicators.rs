@@ -391,6 +391,7 @@ fn push_placement_rings(
         false,
         crate::sim::combat::combat_weapon::fresh_object_current_weapon(object, rules)
             .map(|weapon| weapon.range_leptons),
+        rules.ares(),
     );
     if range <= 0 {
         return;

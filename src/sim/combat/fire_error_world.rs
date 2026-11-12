@@ -48,6 +48,7 @@ pub(crate) struct FireSubject<'a> {
 /// it compares with the target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FirerPart {
+    ares: bool,
     class: FirerClass,
     frame: i32,
     /// Every link to the target unset: [`Self::facts`] sets them.
@@ -87,6 +88,7 @@ impl FirerPart {
         firer.locomotor_target = link(self.locomotor_target);
         firer.temporal = self.temporal_target.map(link);
         FireFacts {
+            ares: self.ares,
             class: self.class,
             frame: self.frame,
             weapon_index,
@@ -392,7 +394,7 @@ impl<'a> FireSubject<'a> {
                 .as_infantry()
                 .map_or(-1, |leaf| leaf.doing()),
             effective_mission: firer.mission.effective().raw(),
-            delayed_fire_counter: firer.pending_building_fire.remaining_ticks(),
+            delayed_fire_counter: firer.building.pending_building_fire.remaining_ticks(),
             building_has_turret: class == FirerClass::Building
                 && firer
                     .building_upgrades()
@@ -423,6 +425,7 @@ impl<'a> FireSubject<'a> {
             ..FirerTypeFacts::default()
         };
         FirerPart {
+            ares: self.rules.ares(),
             class,
             frame: frame as i32,
             firer: firer_facts,

@@ -83,7 +83,7 @@ impl super::object_health::ObjectHealthHost for ReceiverHealthHost<'_, '_, '_> {
             return false;
         }
         let rules = self.rules;
-        let Some(warhead) = rules.warhead(self.world.interner.resolve(event.warhead_ref)) else {
+        let Some(warhead) = self.world.interner.warhead_type(event.warhead_ref, rules) else {
             return false;
         };
         let (Some(attacker), Some(victim), Some(strength)) = (
@@ -286,6 +286,7 @@ pub(super) fn commit_receiver_health(
         building_no_c4,
         rules.general.condition_red,
         attacker_id != RAD_NO_ATTACKER,
+        rules.ares(),
     );
     #[cfg(any(test, feature = "test-support"))]
     let reached_exact_zero = host.reached_exact_zero;

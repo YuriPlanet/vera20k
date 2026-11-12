@@ -1301,7 +1301,7 @@ impl Simulation {
         rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
-        let removed = !crate::rules::ARES_ENABLED || removed;
+        let removed = !rules.ares() || removed;
         let Some(eater) = self
             .substrate
             .entities
@@ -1369,8 +1369,9 @@ impl Simulation {
         else {
             return;
         };
-        let sonic = rules
-            .warhead(self.interner.resolve(warhead))
+        let sonic = self
+            .interner
+            .warhead_type(warhead, rules)
             .is_some_and(|w| w.sonic);
         if sonic {
             self.parasite_exit_unit(eater, rules, effects);

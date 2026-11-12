@@ -385,14 +385,14 @@ impl Simulation {
     /// Deactivated arm (`0x00443414`, `10016F60`), which consumes the click.
     /// The one action they let through, Detonate, is sent by the self-click
     /// producer, which reads the whole selection.
-    pub fn click_order_receivers(&self, selection: &[u64]) -> Vec<u64> {
+    /// `ares` is [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
+    pub fn click_order_receivers(&self, selection: &[u64], ares: bool) -> Vec<u64> {
         selection
             .iter()
             .copied()
             .filter(|&id| {
                 !self.substrate.entities.get(id).is_some_and(|entity| {
-                    entity.berserk.is_active()
-                        || (cfg!(feature = "ares") && entity.deactivated.is_offline())
+                    entity.berserk.is_active() || (ares && entity.deactivated.is_offline())
                 })
             })
             .collect()
@@ -2087,7 +2087,7 @@ impl Simulation {
             .entities
             .get(building_id)
             .and_then(|building| {
-                let pending = building.pending_c4_detonation.pending()?;
+                let pending = building.building.pending_c4_detonation.pending()?;
                 let object = self.interner.object_type(building.type_ref(), rules)?;
                 Some((
                     pending,
@@ -2112,7 +2112,7 @@ impl Simulation {
                 frame_effects,
             );
             if let Some(hut) = self.substrate.entities.get_mut(building_id) {
-                hut.pending_c4_detonation.cancel();
+                hut.building.pending_c4_detonation.cancel();
             }
             return changed;
         }

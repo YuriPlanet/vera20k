@@ -269,6 +269,25 @@ fn main_menu_paint_labels<'a>(
         rgb: SHELL_TEXT_RGB_ENABLED,
         path_a_reveal: None,
     }));
+    // VERA: the mod in use (`app::mods`), on the same line, between the
+    // status help and the right panel. Retail 640x480 has no room there.
+    if version_text.is_some()
+        && let Some(active) = state.frontend.mods.active.as_ref()
+    {
+        // As far from the panel as the status help is from the strip's left.
+        let gap = layout.tooltip_line.x - layout.lower_strip.x;
+        let left = layout.tooltip_line.x + layout.tooltip_line.w;
+        let width = layout.right_panel.top.x - gap - left;
+        if width > 0 {
+            out.push(PaintLabel {
+                text: crate::i18n::tr_fill("VERA:MainMenuMod", &[("mod", &active.title)]).into(),
+                rect: RectPx::new(left, version_rect.y, width, version_rect.h),
+                align: ShellAlign::H_RIGHT,
+                rgb: SHELL_TEXT_RGB_ENABLED,
+                path_a_reveal: None,
+            });
+        }
+    }
     out
 }
 
@@ -955,7 +974,9 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
         ShellMessageBoxPurpose::UpdateOffer(_)
         | ShellMessageBoxPurpose::UpdateProgress
         | ShellMessageBoxPurpose::UpdateCheck => atlas.ra2_dialog_background,
-        ShellMessageBoxPurpose::Notice => atlas.ra2_dialog_background,
+        ShellMessageBoxPurpose::Notice | ShellMessageBoxPurpose::ModRestart(_) => {
+            atlas.ra2_dialog_background
+        }
         _ => None,
     }
     .or_else(|| atlas.mode_two_dialog_background(None));

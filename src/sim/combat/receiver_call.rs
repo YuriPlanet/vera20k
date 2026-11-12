@@ -306,8 +306,8 @@ pub(super) fn apply_building_receive_prelude(
     // when the warhead's AllowDamageOnSelf admits the firer.
     if event.attacker_id == event.target_id
         && !target_type.damage_self
-        && !rules
-            .warhead(interner.resolve(event.warhead_ref))
+        && !interner
+            .warhead_type(event.warhead_ref, rules)
             .is_some_and(|warhead| rules.allow_damage_on_self_for(warhead))
     {
         return BuildingReceivePrelude::ReturnZero;
@@ -357,7 +357,7 @@ pub(super) fn prepare_infantry_receiver(
 ) -> EntityDamageEvent {
     let mut prepared = *event;
     if let Some(target) = entities.get(event.target_id)
-        && let Some(warhead) = rules.warhead(interner.resolve(event.warhead_ref))
+        && let Some(warhead) = interner.warhead_type(event.warhead_ref, rules)
     {
         prepared.damage = if infantry_spared_mutation(target, warhead, terrain) {
             0
@@ -490,7 +490,7 @@ pub(super) fn resolve_receive_damage_with_input(
     // (house_strategy) and the Lift drop crush (locomotor_lift). The tree
     // death's C4 area damage matches native, which returns on the null
     // warhead (DamageArea 489280 at 4892D7).
-    let warhead = rules.warhead(interner.resolve(event.warhead_ref))?;
+    let warhead = interner.warhead_type(event.warhead_ref, rules)?;
     let source = (event.attacker_id != RAD_NO_ATTACKER)
         .then(|| entities.get(event.attacker_id))
         .flatten();
@@ -805,7 +805,7 @@ pub(super) fn postmortem_duration_for_event(
     if state != damage::DamageState::Dead || target.category() != EntityCategory::Structure {
         return None;
     }
-    let warhead = rules.warhead(interner.resolve(event.warhead_ref))?;
+    let warhead = interner.warhead_type(event.warhead_ref, rules)?;
     let object = interner.object_type(target.type_ref(), rules)?;
     (warhead.causes_delay_kill && object.eligible_for_delay_kill)
         .then(|| postmortem_delay_duration(warhead, event.distance_leptons))

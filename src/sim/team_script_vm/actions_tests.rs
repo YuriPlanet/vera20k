@@ -734,7 +734,7 @@ fn retail_all01_patrol_scripts_and_rules_use_the_production_readers() {
             .count(),
         27
     );
-    assert!(action_is_ported(16));
+    assert!(action_is_ported(16, crate::rules::ARES_BUILD));
 }
 
 const RULES: &str = "\
@@ -868,7 +868,7 @@ fn script17_replacement_and_next_visit_match_original_controls() {
             save_codec::deserialize(&save_codec::serialize(&sim.team_script_vm).unwrap()).unwrap();
         assert_eq!(restored.team(team), sim.team_script_vm.team(team));
     }
-    assert!(action_is_ported(17));
+    assert!(action_is_ported(17, crate::rules::ARES_BUILD));
 }
 
 #[test]
@@ -1394,7 +1394,7 @@ fn retail_all01_script59_inputs_fit_the_existing_ammunition_owner() {
             );
         }
     }
-    assert!(action_is_ported(59));
+    assert!(action_is_ported(59, crate::rules::ARES_BUILD));
 }
 
 /// Advance until `done` holds for the team, at most `frames` frames.
@@ -1515,7 +1515,11 @@ fn the_retail_scatter_script_runs_ported_actions() {
         .map(|action| action.action_id)
         .collect();
     assert_eq!(actions, [58, 21, 11]);
-    assert!(actions.iter().all(|&action| action_is_ported(action)));
+    assert!(
+        actions
+            .iter()
+            .all(|&action| action_is_ported(action, crate::rules::ARES_BUILD))
+    );
     let running = vm
         .team_types
         .values()
@@ -1828,7 +1832,7 @@ fn the_retail_tech_capture_scripts_run_ported_actions() {
             script
                 .actions
                 .iter()
-                .all(|action| action_is_ported(action.action_id))
+                .all(|action| action_is_ported(action.action_id, crate::rules::ARES_BUILD))
         );
     }
     let running = vm

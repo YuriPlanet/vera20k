@@ -533,7 +533,7 @@ impl ObjectRecord {
                 offline: entity.deactivated.is_offline(),
             },
             repairing: Repairing {
-                on: entity.repairing.is_on(),
+                on: entity.building.repairing.is_on(),
             },
             lifecycle: entity.lifecycle.clone(),
             locomotor: entity.locomotor.clone(),

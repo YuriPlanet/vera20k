@@ -155,6 +155,7 @@ impl ArmorCatalog {
     ///679A15's hook allocates all keys before reading any defaults.
     #[cfg(feature = "ares")]
     pub(crate) fn read_pass(&mut self, pass: &IniFile) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let section = pass.section_or_empty("ArmorTypes");
         for name in section.keys() {
             if self.find(name).is_none() {
@@ -180,12 +181,16 @@ impl ArmorCatalog {
     /// this read's catalog: an unknown name becomes None0 immediately.
     #[cfg(feature = "ares")]
     pub(crate) fn read_binding(&self, section: &IniSection, current: ArmorId) -> ArmorId {
-        section.read_name("Armor", 32).map_or(current, |name| {
-            self.find(name).unwrap_or_else(|| {
-                log::warn!("Unknown Ares armor {name:?} in [{}]", section.name);
-                ArmorId::NONE
-            })
-        })
+        let _ares = crate::rules::ares_switch::ares_reads();
+        crate::rules::ares_switch::not_ares_read(|| section.read_name("Armor", 32)).map_or(
+            current,
+            |name| {
+                self.find(name).unwrap_or_else(|| {
+                    log::warn!("Unknown Ares armor {name:?} in [{}]", section.name);
+                    ArmorId::NONE
+                })
+            },
+        )
     }
 }
 
@@ -213,6 +218,7 @@ impl AresWarheadVerses {
 
     #[cfg(feature = "ares")]
     pub(crate) fn read_pass(&mut self, section: Option<&IniSection>, catalog: &ArmorCatalog) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         if let Some(tokens) = section.and_then(|section| section.read_list("Verses", 0x800)) {
             for (index, token) in tokens.into_iter().take(11).enumerate() {
                 self.entries[index] = Versus::parse(token);

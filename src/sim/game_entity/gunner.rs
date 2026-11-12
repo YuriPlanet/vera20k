@@ -57,13 +57,14 @@ impl GameEntity {
     /// TechnoClass_SwitchGunner 10042480 reads indices from 18 on).
     /// Charge types retain both words; out-of-range signed modes select mode0.
     /// This changes no timer, attachment or RNG state.
-    pub(crate) fn set_gunner_weapon(&mut self, mode: i32, object: &ObjectType) {
+    /// `ares` is [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
+    pub(crate) fn set_gunner_weapon(&mut self, mode: i32, object: &ObjectType, ares: bool) {
         if object.gunner_turrets.is_charge_turret() {
             return;
         }
-        // Installed SwitchGunner hook10042480 validates against WeaponCount;
-        // the default build retains the original eighteen-record boundary.
-        let limit = if cfg!(feature = "ares") {
+        // SwitchGunner hook10042480 validates against WeaponCount when Ares
+        // plays; stock retains the original eighteen-record boundary.
+        let limit = if ares {
             object.weapon_count
         } else {
             WEAPON_SLOT_COUNT as i32

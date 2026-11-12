@@ -2723,7 +2723,12 @@ impl Simulation {
         let outcome = walks.journaled.then(|| {
             let entities = &self.substrate.entities;
             let outcome = self.fog.end_journal(|id, viewer| {
-                let deposit = entities.get(id)?.gap_generator.viewers().get(&viewer)?;
+                let deposit = entities
+                    .get(id)?
+                    .building
+                    .gap_generator
+                    .viewers()
+                    .get(&viewer)?;
                 Some((deposit.active(), deposit.radius()))
             });
             if let Some(maps) = &walks.maps {

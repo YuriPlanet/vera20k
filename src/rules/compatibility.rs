@@ -52,7 +52,7 @@ pub enum RulesCompatibility {
 impl Default for RulesCompatibility {
     fn default() -> Self {
         Self::from_capabilities(
-            super::ARES_ENABLED,
+            super::ARES_BUILD,
             super::PHOBOS_ENABLED,
             super::NPATCH_ENABLED,
             super::VERAX_ENABLED,

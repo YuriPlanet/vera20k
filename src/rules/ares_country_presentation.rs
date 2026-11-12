@@ -95,6 +95,7 @@ impl AresCountryPresentation {
     /// `0x1001B9DA..0x1001B9F3`). VERA keeps the name; see the docs page's
     /// missing-file residual.
     pub(crate) fn read_primary(&mut self, section: &crate::rules::ini_parser::IniSection) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         use crate::rules::ini_parser::is_native_none_type_name;
         use crate::rules::ini_value::truncate_native_bytes;
         if let Some(flag) = section.read_ares_pcx_filename("File.Flag") {
@@ -123,6 +124,7 @@ impl AresCountryPresentation {
     /// `RandomSelectionWeight`, the optional `AIRandomSelectionWeight`
     /// (`0x10008CC0`), then `ListIndex`.
     pub(crate) fn read_common(&mut self, section: &crate::rules::ini_parser::IniSection) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.random_weight = section.read_ares_int("RandomSelectionWeight", self.random_weight);
         self.ai_random_weight =
             section.read_ares_nullable_int("AIRandomSelectionWeight", self.ai_random_weight);

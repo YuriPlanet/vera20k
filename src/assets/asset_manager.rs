@@ -468,6 +468,15 @@ impl AssetManager {
         &self.ini_roots
     }
 
+    /// Whether startup mounted Ares's `ares.mix` from the installation or the
+    /// mod. It makes Ares play in every game (`rules::ares_switch`).
+    #[cfg(feature = "ares")]
+    pub fn ships_ares(&self) -> bool {
+        self.archives
+            .iter()
+            .any(|archive| archive_name_matches(&archive.name, "ares.mix"))
+    }
+
     /// Read-only INI tooling without a complete retail installation. No game
     /// archives are implicitly registered; the probe may explicitly use the
     /// existing load_all_disk_mixes widening. Not a gameplay constructor.

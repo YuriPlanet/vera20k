@@ -2219,6 +2219,7 @@ fn prism_observation(entity: &crate::sim::game_entity::GameEntity, frame: i32) -
         return Value::Null;
     }
     let pending = entity
+        .building
         .pending_building_fire
         .pending()
         .map(|pending| match pending.fire() {
@@ -2227,7 +2228,7 @@ fn prism_observation(entity: &crate::sim::game_entity::GameEntity, frame: i32) -
             DelayedFire::SupportBeam { to } => json!({"mode": 2,
             "payload": {"to": [to.x, to.y, to.z]}, "remaining": pending.remaining_ticks()}),
         });
-    json!({"support_count": entity.prism_support_count, "pending": pending,
+    json!({"support_count": entity.building.prism_support_count, "pending": pending,
         "rearm": {"start": entity.rearm_timer.start_frame(),
                   "duration": entity.rearm_timer.duration(),
                   "remaining": entity.rearm_timer.remaining(frame)}})
@@ -4155,7 +4156,7 @@ impl TacticalCaptureSession {
                     "construction_control": entity.building_construction_control(),
                     "stage": entity.native_stage(), "ready_latch": entity.building_ready_latch(),
                     "actually_placed": entity.building_art.actually_placed(),
-                    "last_operational": entity.building_last_operational,
+                    "last_operational": entity.building.building_last_operational,
                     "animation_slots": slots,
                     "voxel_gun": {
                         "facing": entity.body_facing_current(sim.session().binary_frame()),

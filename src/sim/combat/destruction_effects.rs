@@ -724,6 +724,7 @@ impl Simulation {
         let frame = self.session.binary_frame() as i32;
         if let Some(building) = self.substrate.entities.get_mut(building_id) {
             building
+                .building
                 .pending_c4_detonation
                 .arm_destruction(frame, if outlives { 0 } else { 8 });
             if outlives {
@@ -763,7 +764,7 @@ impl Simulation {
                     house: owner,
                     palette: self.interner.intern(name),
                 })
-            } else if crate::rules::ARES_ENABLED {
+            } else if rules.ares() {
                 Some(crate::sim::anim_class::AnimRemap::House(owner))
             } else {
                 None
@@ -774,7 +775,7 @@ impl Simulation {
         // `0x00441EFC..0x00441F0B`: after the Health 0 write (`0x00441F00`),
         // the killing call's IgnoreDefenses becomes NoSurvivor.
         if ignore_defenses && let Some(building) = self.substrate.entities.get_mut(building_id) {
-            building.no_survivor.mark();
+            building.building.no_survivor.mark();
         }
     }
 }

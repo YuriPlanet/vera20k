@@ -1230,8 +1230,9 @@ impl Simulation {
         // Phobos `BulletClass_Detonate` uses
         // `pWHExt->MindControl_Anim.Get(ControlledAnimationType)`.
         #[cfg(feature = "phobos")]
-        let ring_anim = rules
-            .warhead(self.interner.resolve(current.payload.warhead))
+        let ring_anim = self
+            .interner
+            .warhead_type(current.payload.warhead, rules)
             .and_then(|warhead| warhead.mind_control_anim.as_deref());
         #[cfg(not(feature = "phobos"))]
         let ring_anim: Option<&str> = None;

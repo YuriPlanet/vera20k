@@ -446,7 +446,7 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
     use crate::render::shroud_buffer::ShroudBuffer;
     use crate::render::tactical_draw_plan::SpriteEncoding;
     use crate::render::terrain_draw_gpu_tests::{Gpu, camera, clear, encoded};
-    use crate::render::unit_atlas::build_unit_atlas;
+    use crate::render::unit_atlas::admit_world_models;
     use crate::sim::command::{Command, CommandEnvelope};
     use crate::sim::world::{FrameEffects, TickLane};
     use crate::util::sha256::sha256_hex;
@@ -601,17 +601,16 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
         &gpu.queue,
         wgpu::TextureFormat::Bgra8UnormSrgb,
     );
-    let atlas = build_unit_atlas(
-        &gpu.device,
-        &gpu.queue,
-        &atlas_batch,
+    let mut atlas = None;
+    admit_world_models(
+        &mut atlas,
         &entities,
         &assets,
         Some(rules),
-        None,
         Some(sim.interner()),
-    )
-    .expect("physical SPYP atlas");
+        gpu.device.limits().max_texture_dimension_2d,
+    );
+    let mut atlas = atlas.expect("physical SPYP atlas");
     assert_eq!(
         atlas.frame_counts[&(smol_str::SmolStr::new("SPYP"), VxlLayer::Composite, 0)],
         hva.frame_count
@@ -677,6 +676,7 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
                     barrel_pitch: 0,
                 })
                 .unwrap();
+            atlas.upload(&gpu.device, &gpu.queue, &atlas_batch);
             let texture = atlas.page_texture(entry.page).unwrap();
             if source_frames.len() < 2 {
                 let indices = gpu.read_uint_texels(

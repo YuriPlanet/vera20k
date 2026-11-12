@@ -1117,7 +1117,7 @@ impl PrismSupport {
 /// `+0x664 = 0`, the Prism support count, after both tails' SetTarget(0).
 fn clear_support_count(substrate: &mut ObjectSubstrate, id: u64) {
     if let Some(entity) = substrate.entities.get_mut(id) {
-        entity.prism_support_count.reset();
+        entity.building.prism_support_count.reset();
     }
 }
 
@@ -1212,8 +1212,7 @@ pub(super) fn gattling_idle(
     // Ares reloads by its own clock, so there every refilling type is taken.
     let Some(entity) = substrate.entities.get_mut_if(id, |entity| {
         obj.is_gattling
-            || (refills
-                && (cfg!(feature = "ares") || entity.ammo().is_some_and(TechnoAmmo::is_empty)))
+            || (refills && (rules.ares() || entity.ammo().is_some_and(TechnoAmmo::is_empty)))
     }) else {
         return;
     };
@@ -1378,7 +1377,7 @@ fn arm_delayed_fire(
     let Some(entity) = sim.substrate.entities.get_mut(id) else {
         return;
     };
-    entity.pending_building_fire.arm(delay, fire);
+    entity.building.pending_building_fire.arm(delay, fire);
     let damaged =
         requested_damage_state(entity.health, obj.strength, rules.general.condition_yellow);
     sim.clear_building_anim_slot(id, ACTIVE_ANIM_SLOT);
@@ -1410,7 +1409,7 @@ fn prism_arm(
     let Some(master) = sim.substrate.entities.get(id) else {
         return;
     };
-    let supporter = (master.prism_support_count.count() < rules.general.prism_support.max)
+    let supporter = (master.building.prism_support_count.count() < rules.general.prism_support.max)
         .then(|| prism_supporter(sim, id, rules, obj))
         .flatten();
     let Some(supporter) = supporter else {
@@ -1425,7 +1424,7 @@ fn prism_arm(
         return;
     };
     if let Some(master) = sim.substrate.entities.get_mut(id) {
-        master.prism_support_count.recruit();
+        master.building.prism_support_count.recruit();
     }
     // `vt+0xB0(out, 0, {0, 0, 0})` (`0x0044B4F6`): the master's weapon-0 FLH.
     let Some(master) = sim.substrate.entities.get(id) else {
@@ -1489,7 +1488,7 @@ fn prism_supporter(
         let admitted = candidate.lifecycle.object_alive()
             && candidate.type_ref() == master.type_ref()
             && candidate.rearm_timer.remaining(now) == 0
-            && candidate.pending_building_fire.remaining_ticks() == 0
+            && candidate.building.pending_building_fire.remaining_ticks() == 0
             && candidate.drain.draining_me().is_none()
             && candidate.mission.effective() != attack
             && candidate_id != id;
@@ -1567,11 +1566,11 @@ fn stock_delayed_fire(
     let Some(entity) = sim.substrate.entities.get_mut_if(id, |entity| {
         !entity.death.is_dying()
             && entity.health.current() != 0
-            && entity.pending_building_fire.pending().is_some()
+            && entity.building.pending_building_fire.pending().is_some()
     }) else {
         return;
     };
-    let Some(fire) = entity.pending_building_fire.count_down() else {
+    let Some(fire) = entity.building.pending_building_fire.count_down() else {
         return;
     };
     match fire {
@@ -1613,7 +1612,7 @@ fn stock_delayed_fire(
                 .entities
                 .get_mut(id)
                 .expect("live support source");
-            entity.prism_support_count.reset();
+            entity.building.prism_support_count.reset();
             entity
                 .rearm_timer
                 .start(now, rules.general.prism_support.delay);
@@ -1820,11 +1819,11 @@ impl crate::sim::world::ObjectSubstrate {
         let Some(entity) = self.entities.get_mut(id) else {
             return ProjectilePayload::UNSCALED;
         };
-        let count = entity.prism_support_count.count();
+        let count = entity.building.prism_support_count.count();
         if count == 0 {
             return ProjectilePayload::UNSCALED;
         }
-        entity.prism_support_count.reset();
+        entity.building.prism_support_count.reset();
         support_multiplier(rules.general.prism_support.modifier, count)
     }
 }

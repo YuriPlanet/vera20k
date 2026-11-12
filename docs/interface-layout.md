@@ -20,7 +20,8 @@ files, or inside the mod's `expandmdNN.mix`. A `veraui.ini` in the
 mod's own file wins. Restart the game after you change it.
 
 The file only changes what you see. Online players don't need the same file, and it
-isn't one of the files a match compares.
+isn't one of the files a match compares. Packed inside an archive it is part of that
+archive, which a match does compare like every other file in a mod's folder.
 
 An older VERA20k doesn't read the file, or skips the keys it doesn't know and tells
 the player. If your mod needs its layout, say so with `Needs=` in the mod's

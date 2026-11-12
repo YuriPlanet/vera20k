@@ -36,7 +36,7 @@ fn stock_emit(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDe
     let Some(kind) = parent
         .payload()
         .projectile_type()
-        .and_then(|id| rules.projectile(world.interner.resolve(id)))
+        .and_then(|id| world.interner.projectile_type(id, rules))
         .filter(|kind| kind.airburst)
     else {
         return;
@@ -145,7 +145,7 @@ fn ares_emit(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDet
     let Some(kind) = parent
         .payload()
         .projectile_type()
-        .and_then(|id| rules.projectile(world.interner.resolve(id)))
+        .and_then(|id| world.interner.projectile_type(id, rules))
         .filter(|kind| kind.airburst_arm())
     else {
         return;

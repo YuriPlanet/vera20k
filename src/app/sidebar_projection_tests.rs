@@ -54,6 +54,7 @@ impl SidebarProjectionState {
             self.apply_lifecycle_output(
                 &LifecycleOutput::SidebarConstructionOption { owner, type_id },
                 Some(owner),
+                crate::rules::ARES_BUILD,
             );
         }
         self.reconcile_cameos(owner, candidates, rows, &additions)
@@ -331,7 +332,7 @@ fn retail_ready_buildings_flash_retained_tabs_and_stop_after_cancel() {
         ));
     }
     for output in sim.take_lifecycle_outputs_for_test() {
-        projection.apply_lifecycle_output(&output, Some(owner));
+        projection.apply_lifecycle_output(&output, Some(owner), crate::rules::ARES_BUILD);
     }
     projection.reconcile_factory_links(&sim, owner);
     assert_eq!(
@@ -664,9 +665,17 @@ fn trigger_cameo_flash_reaches_view_and_survives_projection_save_lifecycle() {
         .find(|item| item.id == CameoId::Object(sim.interner().get("ORCA").unwrap()))
         .unwrap()
         .available = false;
-    loaded.apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
+    loaded.apply_lifecycle_output(
+        &LifecycleOutput::SidebarRecalculated { owner },
+        Some(owner),
+        crate::rules::ARES_BUILD,
+    );
     loaded.reconcile_fixture(owner, &removed, 3);
-    loaded.apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
+    loaded.apply_lifecycle_output(
+        &LifecycleOutput::SidebarRecalculated { owner },
+        Some(owner),
+        crate::rules::ARES_BUILD,
+    );
     loaded.reconcile_fixture(owner, &candidates, 3);
     assert!(
         !view(&sim, &options, &loaded, SidebarTab::Vehicle, 600.)
@@ -728,7 +737,11 @@ fn original_post_removal_scroll_reaches_view_and_hit_test() {
             .iter()
             .any(|name| name.as_str().unwrap() == sim.interner().resolve(id));
     }
-    projection.apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
+    projection.apply_lifecycle_output(
+        &LifecycleOutput::SidebarRecalculated { owner },
+        Some(owner),
+        crate::rules::ARES_BUILD,
+    );
     projection.reconcile_fixture(owner, &candidates, 3);
     let view = view(&sim, &options, &projection, SidebarTab::Vehicle, 430.);
     assert_eq!(view.layout.side2_tile_count, 3);
@@ -940,7 +953,11 @@ fn only_an_accepted_new_object_in_the_same_house_announces_construction_options(
             .build_inserted(),
         "a refresh does not add ordinary entries without a House pass"
     );
-    projection.apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
+    projection.apply_lifecycle_output(
+        &LifecycleOutput::SidebarRecalculated { owner },
+        Some(owner),
+        crate::rules::ARES_BUILD,
+    );
     assert!(
         projection
             .reconcile_fixture(owner, &candidates, 3)
@@ -951,14 +968,22 @@ fn only_an_accepted_new_object_in_the_same_house_announces_construction_options(
             .reconcile_fixture(owner, &candidates, 3)
             .build_inserted()
     );
-    projection.apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
+    projection.apply_lifecycle_output(
+        &LifecycleOutput::SidebarRecalculated { owner },
+        Some(owner),
+        crate::rules::ARES_BUILD,
+    );
     assert!(
         !projection
             .reconcile_fixture(owner, &initial, 3)
             .build_inserted(),
         "removal is silent"
     );
-    projection.apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
+    projection.apply_lifecycle_output(
+        &LifecycleOutput::SidebarRecalculated { owner },
+        Some(owner),
+        crate::rules::ARES_BUILD,
+    );
     assert!(
         projection
             .reconcile_fixture(owner, &candidates, 3)
@@ -1027,9 +1052,14 @@ fn a_warped_factory_keeps_old_infantry_cameos_but_cannot_add_a_new_one() {
         projection.apply_lifecycle_output(
             &LifecycleOutput::SidebarConstructionOption { owner, type_id },
             Some(owner),
+            crate::rules::ARES_BUILD,
         );
     }
-    projection.apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
+    projection.apply_lifecycle_output(
+        &LifecycleOutput::SidebarRecalculated { owner },
+        Some(owner),
+        crate::rules::ARES_BUILD,
+    );
     projection.reconcile_cameos(owner, &candidates, 3, &[]);
     let infantry = projection.cameo_strips().items(SidebarTab::Infantry);
     assert!(
@@ -1058,9 +1088,14 @@ fn a_warped_factory_keeps_old_infantry_cameos_but_cannot_add_a_new_one() {
         projection.apply_lifecycle_output(
             &LifecycleOutput::SidebarConstructionOption { owner, type_id },
             Some(owner),
+            crate::rules::ARES_BUILD,
         );
     }
-    projection.apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
+    projection.apply_lifecycle_output(
+        &LifecycleOutput::SidebarRecalculated { owner },
+        Some(owner),
+        crate::rules::ARES_BUILD,
+    );
     assert!(
         projection
             .reconcile_cameos(owner, &candidates, 3, &[])
@@ -1082,7 +1117,11 @@ fn a_house_recheck_stays_pending_until_the_projection_runs_it() {
     let mut projection = SidebarProjectionState::default();
     let owner = InternedId::default();
     assert!(!projection.cameo_recheck_pending());
-    projection.apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
+    projection.apply_lifecycle_output(
+        &LifecycleOutput::SidebarRecalculated { owner },
+        Some(owner),
+        crate::rules::ARES_BUILD,
+    );
     assert!(projection.cameo_recheck_pending());
     projection.reconcile_cameos(owner, &[], 3, &[]);
     assert!(!projection.cameo_recheck_pending());
@@ -1111,7 +1150,7 @@ fn building_production_darkens_other_cameos_until_cancelled() {
         false,
     ));
     for output in sim.take_lifecycle_outputs_for_test() {
-        projection.apply_lifecycle_output(&output, Some(owner));
+        projection.apply_lifecycle_output(&output, Some(owner), crate::rules::ARES_BUILD);
     }
     projection.reconcile_factory_links(&sim, owner);
     projection.refresh_cameo_draw_state(&sim, &frame_for(&sim, &rules, owner), &rules, owner, None);
@@ -1176,7 +1215,7 @@ fn building_production_darkens_other_cameos_until_cancelled() {
             )
             .unwrap();
         for output in &frame.lifecycle_outputs {
-            projection.apply_lifecycle_output(output, Some(owner));
+            projection.apply_lifecycle_output(output, Some(owner), crate::rules::ARES_BUILD);
         }
         projection.refresh_cameo_draw_state(
             &sim,
@@ -1218,7 +1257,7 @@ fn building_production_darkens_other_cameos_until_cancelled() {
         crate::sim::world::FrameEffects::default(),
     ));
     for output in sim.take_lifecycle_outputs_for_test() {
-        projection.apply_lifecycle_output(&output, Some(owner));
+        projection.apply_lifecycle_output(&output, Some(owner), crate::rules::ARES_BUILD);
     }
     projection.reconcile_factory_links(&sim, owner);
     projection.refresh_cameo_draw_state(&sim, &frame_for(&sim, &rules, owner), &rules, owner, None);
@@ -1344,7 +1383,7 @@ fn busy_strip_draw_matches_native_pending_and_linked_controls() {
             );
         }
         for output in sim.take_lifecycle_outputs_for_test() {
-            projection.apply_lifecycle_output(&output, Some(owner));
+            projection.apply_lifecycle_output(&output, Some(owner), crate::rules::ARES_BUILD);
         }
         projection.reconcile_factory_links(&sim, owner);
         let tab = SidebarTab::all()[control["tab"].as_u64().unwrap() as usize];

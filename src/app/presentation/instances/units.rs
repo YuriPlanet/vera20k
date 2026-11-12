@@ -244,7 +244,7 @@ pub(super) fn cached_part_entry(
     }
     Some(match variant(depth_tested) {
         Some((entry, _)) => (entry, UnitTextureSource::DepthTested(entry.page)),
-        None => (*entry, UnitTextureSource::Stable(entry.page)),
+        None => (entry, UnitTextureSource::Stable(entry.page)),
     })
 }
 
@@ -1650,21 +1650,16 @@ pub(super) fn native_turret_barrel_order<T>(turret_facing: u16, turret: T, barre
 }
 
 /// Look up a unit sprite from the atlas with cascading fallbacks, returning
-/// the key found:
+/// the key found; each lookup draws its picture on first use:
 /// 1. Try the exact key (slope + frame).
 /// 2. Fall back to frame 0 if the requested frame doesn't exist (mismatched HVA counts).
-/// 3. Fall back to slope_type=0 if the tilted sprite isn't in the atlas yet
-///    (unit just moved onto a ramp and the atlas hasn't rebuilt).
-/// 4. Fall back to a level barrel if the pitched one isn't in the atlas.
-///
-/// This prevents units from disappearing during atlas rebuilds.
-fn atlas_get_with_frame_fallback<'a, 'k>(
-    atlas: &'a crate::render::unit_atlas::UnitAtlas,
+/// 3. Fall back to slope_type=0 if the model draws no tilted sprite, such as
+///    a type admitted as an aircraft, which draws on flat ground only.
+/// 4. Fall back to a level barrel if the model draws no pitched one.
+fn atlas_get_with_frame_fallback<'k>(
+    atlas: &crate::render::unit_atlas::UnitAtlas,
     key: &'k UnitSpriteKey,
-) -> Option<(
-    Cow<'k, UnitSpriteKey>,
-    &'a crate::render::unit_atlas::UnitSpriteEntry,
-)> {
+) -> Option<(Cow<'k, UnitSpriteKey>, UnitSpriteEntry)> {
     if let Some(entry) = atlas.get(key) {
         return Some((Cow::Borrowed(key), entry));
     }
@@ -1826,7 +1821,7 @@ fn prepare_unit_shadow(
         .borrow()
         .flushes();
     let pose_cache = state.renderer.vxl_pose_frame_cache.borrow();
-    atlas.prepare_native_shadow_with(&state.renderer.gpu.queue, &key, flushes, |body| {
+    atlas.prepare_native_shadow_with(&key, flushes, |body| {
         pose_cache.stamp_shadow_parts(atlas, &parts, body)
     })
 }
@@ -1959,7 +1954,7 @@ fn emit_unit_shadow_sprite(
     let lookup_key = shadow_lookup_key(key.clone(), native_shadow);
     let Some((drawn, entry)) = [&lookup_key, &key]
         .into_iter()
-        .find_map(|drawn| atlas.get(drawn).map(|entry| (drawn, *entry)))
+        .find_map(|drawn| atlas.get(drawn).map(|entry| (drawn, entry)))
     else {
         return;
     };
@@ -2018,9 +2013,7 @@ fn draw_voxel_shadow(
         .as_ref()
         .and_then(|_| atlas.shadow_pool_bytes(drawn))
         .unwrap_or(0);
-    let size = atlas
-        .get(drawn)
-        .map_or([0; 2], UnitSpriteEntry::native_size);
+    let size = atlas.get(drawn).map_or([0; 2], |entry| entry.native_size());
     images.render_shadow(image, drawer.use_buffer, bytes, size);
 }
 
@@ -2146,11 +2139,7 @@ fn emit_lifted_unit_shadow(
         }),
         &key,
     );
-    let Some(entry) = atlas
-        .get(&key)
-        .filter(|e| e.native_draw_bounds.is_some())
-        .copied()
-    else {
+    let Some(entry) = atlas.get(&key).filter(|e| e.native_draw_bounds.is_some()) else {
         return;
     };
     let (entry, source) = if pose.mask == UnitShadowMask::None {
@@ -2191,7 +2180,7 @@ fn emit_lifted_unit_shadow(
             .flushes();
         let mut cache = state.renderer.vxl_pose_frame_cache.borrow_mut();
         if pose.mask == UnitShadowMask::Retained {
-            if !atlas.prepare_native_shadow_with(&state.renderer.gpu.queue, &key, flushes, |body| {
+            if !atlas.prepare_native_shadow_with(&key, flushes, |body| {
                 cache.stamp_shadow_parts(atlas, &parts, body)
             }) {
                 return;
@@ -2299,7 +2288,6 @@ fn emit_aircraft_shadow_sprite(
     let Some(entry) = atlas
         .get(&key)
         .filter(|entry| entry.native_draw_bounds.is_some())
-        .copied()
     else {
         return;
     };

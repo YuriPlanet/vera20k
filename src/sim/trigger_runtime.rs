@@ -4198,7 +4198,7 @@ impl Simulation {
                             self.object_type(e.type_ref(), rules)
                                 .is_some_and(|o| o.has_spotlight)
                         })
-                        .and_then(|e| e.building_light.light());
+                        .and_then(|e| e.building.building_light.light());
                     if let Some(light) = light
                         && self.tag_contains_live_trigger(TagAttachment::Object(id), live)
                     {

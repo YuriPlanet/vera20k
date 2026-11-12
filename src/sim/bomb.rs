@@ -665,7 +665,10 @@ impl Simulation {
             log::warn!("IvanBomb bullet without attached WeaponType.");
             return;
         };
-        let Some(warhead) = rules.warhead(self.interner.resolve(detonation.payload.warhead)) else {
+        let Some(warhead) = self
+            .interner
+            .warhead_type(detonation.payload.warhead, rules)
+        else {
             return;
         };
         if warhead.cell_spread_f64 < 0.5 {

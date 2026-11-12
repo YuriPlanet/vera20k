@@ -207,21 +207,21 @@ pub fn toggle_repair(
         return false;
     }
     match control {
-        RepairControl::Toggle => entity.repairing.on = !entity.repairing.on,
-        RepairControl::Stop if !entity.repairing.on => return true,
-        RepairControl::Stop => entity.repairing.on = false,
-        RepairControl::Start if entity.repairing.on => return true,
-        RepairControl::Start => entity.repairing.on = true,
+        RepairControl::Toggle => entity.building.repairing.on = !entity.building.repairing.on,
+        RepairControl::Stop if !entity.building.repairing.on => return true,
+        RepairControl::Stop => entity.building.repairing.on = false,
+        RepairControl::Start if entity.building.repairing.on => return true,
+        RepairControl::Start => entity.building.repairing.on = true,
     }
     let owner = entity.owner();
     // The building being repaired is already resolved here; carry its type
     // out so the EVA line can name it without a second lookup.
     let type_id = entity.type_ref();
     let position = entity.position;
-    let sound = if entity.repairing.on && entity.health.current() == strength {
+    let sound = if entity.building.repairing.on && entity.health.current() == strength {
         rules.general.scold_sound.clone()
     } else {
-        if entity.repairing.on {
+        if entity.building.repairing.on {
             // ToggleRepair447082..447091: House50B6F0 admits Building
             // vt+148 Flash(7), before EVA/GenericClick. Reuse the shared
             // disguise/countdown owner, not a separate repair flash timer.
@@ -332,7 +332,11 @@ pub fn buildings_wanting_repair(sim: &Simulation, rules: &RuleSet, owner: Intern
     let owned = entities.owned_ids(owner, EntityCategory::Structure);
     let running: i64 = owned
         .iter()
-        .filter(|&&id| entities.get(id).is_some_and(|entity| entity.repairing.on))
+        .filter(|&&id| {
+            entities
+                .get(id)
+                .is_some_and(|entity| entity.building.repairing.on)
+        })
         .filter_map(|&id| step_cost(id))
         .sum();
     let mut money = i64::from(available_money(&sim.houses, owner)) - running;
@@ -343,7 +347,7 @@ pub fn buildings_wanting_repair(sim: &Simulation, rules: &RuleSet, owner: Intern
             let Some(entity) = entities.get(id) else {
                 return false;
             };
-            if entity.repairing.on
+            if entity.building.repairing.on
                 || entity.constructing_or_selling()
                 || !can_repair_building(sim, rules, id)
             {
@@ -488,11 +492,14 @@ fn auto_repair_start(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
-    if house.repair_start_latch() || entity.repairing.on {
+    if house.repair_start_latch() || entity.building.repairing.on {
         return;
     }
     let controlled = house.is_controlled_by_human(sim.session.game_mode_nonzero());
-    if !(entity.has_been_captured.is_set() || entity.ai_sell_repair.ai_repairable() || controlled) {
+    if !(entity.building.has_been_captured.is_set()
+        || entity.ai_sell_repair.ai_repairable()
+        || controlled)
+    {
         return;
     }
     let delay = house.repair_delay();
@@ -531,7 +538,7 @@ fn repair_step(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
-    if !entity.repairing.on {
+    if !entity.building.repairing.on {
         return;
     }
     let period =
@@ -550,7 +557,7 @@ fn repair_step(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     // no health would drain the house.
     if rules.general.repair_step == 0 {
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
-            entity.repairing.on = false;
+            entity.building.repairing.on = false;
         }
         return;
     }
@@ -569,7 +576,7 @@ fn repair_step(sim: &mut Simulation, rules: &RuleSet, id: u64) {
         #[cfg(not(feature = "ares"))]
         let keeps_repairing = false;
         if !keeps_repairing && let Some(entity) = sim.substrate.entities.get_mut(id) {
-            entity.repairing.on = false;
+            entity.building.repairing.on = false;
         }
         return;
     }
@@ -583,7 +590,7 @@ fn repair_step(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     if entity.health.current() >= strength {
         entity.health.set(strength);
         entity.estimated_health.reset(strength);
-        entity.repairing.on = false;
+        entity.building.repairing.on = false;
     }
     sim.refresh_building_damage_state(id, rules);
     Simulation::retire_damage_smoke_after_heal(&sim.interner, &mut sim.substrate, id, rules);
@@ -618,11 +625,11 @@ mod invalid_rule_tests {
         rules.general.repair_rate_minutes = 0.001;
         let entity = sim.substrate.entities.get_mut(id).unwrap();
         entity.health.set_for_test(50);
-        entity.repairing.set_for_test(true);
+        entity.building.repairing.set_for_test(true);
         repair_step(&mut sim, &rules, id);
         let entity = sim.substrate.entities.get(id).unwrap();
         assert_eq!(entity.health.current(), 50);
-        assert!(entity.repairing.is_on());
+        assert!(entity.building.repairing.is_on());
     }
 
     /// `RepairStep=0` can never finish a repair, so the step switches it off
@@ -635,11 +642,11 @@ mod invalid_rule_tests {
         let money = available_money(&sim.houses, owner);
         let entity = sim.substrate.entities.get_mut(id).unwrap();
         entity.health.set_for_test(50);
-        entity.repairing.set_for_test(true);
+        entity.building.repairing.set_for_test(true);
         repair_step(&mut sim, &rules, id);
         let entity = sim.substrate.entities.get(id).unwrap();
         assert_eq!(entity.health.current(), 50);
-        assert!(!entity.repairing.is_on());
+        assert!(!entity.building.repairing.is_on());
         assert_eq!(available_money(&sim.houses, owner), money);
     }
 }

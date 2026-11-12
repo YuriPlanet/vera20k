@@ -81,6 +81,7 @@ pub(super) fn recruit_pick(
     group: i32,
     recruiter: bool,
     mut can_add: impl FnMut(u64) -> bool,
+    ares: bool,
 ) -> Option<u64> {
     let mut best = -1i32;
     let mut winner = None;
@@ -88,7 +89,7 @@ pub(super) fn recruit_pick(
         if !(group == -2 || candidate.group == group || recruiter) {
             continue;
         }
-        let mut key = crate::util::native_coord::squared_xy_distance(candidate.xy, origin);
+        let mut key = crate::util::native_coord::squared_xy_distance(candidate.xy, origin, ares);
         if candidate.group != group {
             key = key.wrapping_add(OTHER_GROUP_PENALTY);
         }
@@ -576,9 +577,14 @@ impl Simulation {
                 // type.
                 matches: true,
             });
-        let winner = recruit_pick(candidates, origin, group, recruiter, |id| {
-            self.team_can_add(team_id, id, false, rules).is_some()
-        });
+        let winner = recruit_pick(
+            candidates,
+            origin,
+            group,
+            recruiter,
+            |id| self.team_can_add(team_id, id, false, rules).is_some(),
+            rules.ares(),
+        );
         let Some(winner) = winner else {
             return false;
         };

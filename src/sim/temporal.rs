@@ -354,7 +354,7 @@ impl Simulation {
                     // (1005C600, hook 0x469467) also warps a Foot in the Air
                     // or Top layer.
                     let warpable_layer = layer == DisplayLayer::GROUND
-                        || crate::rules::ARES_ENABLED
+                        || rules.ares()
                             && (layer == DisplayLayer::AIR || layer == DisplayLayer::TOP);
                     if !warpable_layer {
                         return;
@@ -1392,14 +1392,23 @@ impl Simulation {
         bridge_state_changed: &mut bool,
     ) -> bool {
         let registry = ctx.overlay_registry;
-        let Some(category) = self
-            .substrate
-            .entities
-            .get(id)
-            .map(|entity| entity.category())
-        else {
+        let Some((category, untouched)) = self.substrate.entities.get(id).map(|entity| {
+            (
+                entity.category(),
+                entity.temporal.head.is_none()
+                    && !entity.is_warped_out()
+                    && !entity.is_warping_in(),
+            )
+        }) else {
             return true;
         };
+        // VERA-only: with no head of its own and neither warped out nor
+        // warping in, nothing below acts (no sparkle, no head Update, no warp
+        // to process) and the object is not frozen, so one read answers it
+        // (the same results).
+        if untouched {
+            return false;
+        }
         // Infantry sparkles before its head's Update; the others after.
         if category == EntityCategory::Infantry {
             self.warp_foot_sparkle(id, rules);

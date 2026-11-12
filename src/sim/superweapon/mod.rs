@@ -2451,6 +2451,7 @@ pub(crate) fn update_owned_supers(sim: &mut Simulation, rules: &RuleSet, owner: 
                 providers.provided.contains(&type_id),
                 !low_power && providers.online.contains(&type_id),
                 providers.charging.contains(&type_id),
+                rules.ares(),
             );
             // Ares Lose10035610 and SetOnHold10035750 deactivate a draining
             // charge-drain type's new type.
@@ -2532,6 +2533,7 @@ pub(super) fn super_hold(
     provided: bool,
     powered_online: bool,
     charging: bool,
+    ares: bool,
 ) -> SuperHold {
     if !instance.is_active {
         SuperHold::Unchanged
@@ -2541,7 +2543,7 @@ pub(super) fn super_hold(
         SuperHold::Unchanged
     } else if defeated || !allowed || !provided {
         SuperHold::Deactivate
-    } else if crate::rules::ARES_ENABLED {
+    } else if ares {
         // Ares HouseClass_UpdateSuperWeaponsOwned10039450 (hook50AF10
         // replaces the whole pass): an IsPowered (+0xE6) type is held
         // without PowerSourced (low power clears it), any other type without

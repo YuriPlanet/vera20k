@@ -3412,7 +3412,7 @@ mod retail_construction_tests {
                 && let Some(pending) = sim
                     .entities()
                     .get(reactor)
-                    .and_then(|reactor| reactor.pending_c4_detonation.pending())
+                    .and_then(|reactor| reactor.building.pending_c4_detonation.pending())
             {
                 planted = Some((frame, pending));
             }

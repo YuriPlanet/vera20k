@@ -605,7 +605,9 @@ impl WarheadType {
         // WarheadTypeClass_LoadFromINI_ListLength (1005C080, hook 0x75D660)
         // reads it through ParseList<int> (1005B030) instead.
         #[cfg(feature = "ares")]
-        let debris_maximums = section.read_ares_int_list("DebrisMaximums");
+        let debris_maximums = crate::rules::ares_switch::not_ares_read(|| {
+            section.read_ares_int_list("DebrisMaximums")
+        });
         #[cfg(not(feature = "ares"))]
         let debris_maximums = section.read_int_list("DebrisMaximums");
         let debris_maximums: Vec<i32> = debris_maximums.unwrap_or_default();

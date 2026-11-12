@@ -144,6 +144,9 @@ pub(crate) const HAS_CHECK_FOR_UPDATES: bool =
     !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
 pub(crate) const CHECK_FOR_UPDATES_LABEL: &str = "VERA:CheckForUpdates";
 pub(crate) const CHECK_FOR_UPDATES_HELP: &str = "VERA:CheckForUpdatesHelp";
+/// The column's Mods button, which opens VERA's Mods page
+/// (`ui::mods_shell`). The browser build has no Mods folder.
+pub(crate) const HAS_MODS: bool = !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
 /// The Esc menu's Set Window Size button. A browser tab's canvas takes its size
 /// from the page and an Android window fills the screen, so those builds have
 /// none.
@@ -832,6 +835,10 @@ pub(crate) enum LauncherOptionsEvent {
 pub(crate) enum LauncherParentResult {
     Back,
     Keyboard,
+    /// VERA's own: the Mods page, a child of the dialog as Keyboard is. The
+    /// profile is written before it opens, since Use This Mod leaves the game
+    /// from there.
+    Mods,
     Terminal,
 }
 

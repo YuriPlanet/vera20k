@@ -231,7 +231,7 @@ impl Simulation {
         if !light.alive
             || light.mode == 0
             || !parent.lifecycle.object_alive()
-            || (parent.category() != EntityCategory::Structure && !cfg!(feature = "ares"))
+            || (parent.category() != EntityCategory::Structure && !rules.ares())
             || (parent.category() == EntityCategory::Structure
                 && self.building_operational_state(parent.stable_id(), rules) != Some(true))
             || viewer.is_some_and(|viewer| self.fog.is_object_fogged(viewer, parent.stable_id()))
@@ -351,6 +351,7 @@ impl Simulation {
         }
         for entity in self.substrate.entities.values() {
             if entity
+                .building
                 .building_light
                 .light()
                 .is_some_and(|id| !self.substrate.spotlights.contains_key(id))
@@ -365,12 +366,13 @@ impl Simulation {
     /// HasSpotlight type (BuildingLightClass::Constructor @ 0x00435820).
     pub(crate) fn construct_spotlight(&mut self, parent_id: u64, rules: &RuleSet) {
         let Some(parent) = self.substrate.entities.get(parent_id).filter(|e| {
-            (e.category() == EntityCategory::Structure
-                || (cfg!(feature = "ares") && e.category().is_foot()))
+            (e.category() == EntityCategory::Structure || (rules.ares() && e.category().is_foot()))
                 && self
                     .entity_object_type(e, rules)
-                    .map_or(e.building_light.spotlight_capable(), |o| o.has_spotlight)
-                && e.building_light.light().is_none()
+                    .map_or(e.building.building_light.spotlight_capable(), |o| {
+                        o.has_spotlight
+                    })
+                && e.building.building_light.light().is_none()
         }) else {
             return;
         };
@@ -414,6 +416,7 @@ impl Simulation {
             .entities
             .get_mut(parent_id)
             .unwrap()
+            .building
             .building_light
             .attach(id);
         Self::submit_object_display(
@@ -449,10 +452,9 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(parent) else {
             return;
         };
-        match entity.building_light.light() {
+        match entity.building.building_light.light() {
             Some(id)
-                if entity.category() == EntityCategory::Structure
-                    && !crate::rules::ARES_ENABLED =>
+                if entity.category() == EntityCategory::Structure && !context.rules().ares() =>
             {
                 self.uninit_with_context(id, context)
             }
@@ -466,8 +468,8 @@ impl Simulation {
         if let Some(id) = self
             .substrate
             .entities
-            .get_mut(parent)
-            .and_then(|e| e.building_light.take())
+            .get_mut_if(parent, |e| e.building.building_light.light().is_some())
+            .and_then(|e| e.building.building_light.take())
         {
             self.destroy_spotlight(id, context);
         }
@@ -492,8 +494,8 @@ impl Simulation {
         // TechnoExt::Spotlight; BuildingLightClass_CTOR (1004EA20, hook
         // 0x435820) set it. The parent's one owned pointer is both fields.
         if let Some(parent) = parent.and_then(|p| self.substrate.entities.get_mut(p)) {
-            if parent.building_light.light() == Some(id) {
-                parent.building_light.take();
+            if parent.building.building_light.light() == Some(id) {
+                parent.building.building_light.take();
             }
         }
     }
@@ -708,7 +710,7 @@ impl Simulation {
         let scan = (light.mode == 1 || lost_target)
             && self.object_has_trigger_tag(parent_id)
             && (self.building_operational_state(parent_id, rules) == Some(true)
-                || (cfg!(feature = "ares") && parent.category().is_foot()));
+                || (rules.ares() && parent.category().is_foot()));
         let coord = light.coord;
         self.substrate.spotlights.objects.insert(id, light);
         if lost_target {
@@ -751,11 +753,12 @@ impl Simulation {
 
 impl crate::sim::world::ObjectSubstrate {
     /// BuildingLightClass::PointerExpired @ 0x00436A00 for every light.
-    pub(super) fn spotlights_pointer_expired(&mut self, id: u64, removed: bool) {
+    /// `ares` is [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
+    pub(super) fn spotlights_pointer_expired(&mut self, id: u64, removed: bool, ares: bool) {
         //436A00 clears the target for either control. Ares1004EBC0 at
         //436A25 skips only the parent clear on DetachAll(false), allowing
         //the beam to reappear after its parent uncloaks. Real removal clears it.
-        let clear_parent = removed || !cfg!(feature = "ares");
+        let clear_parent = removed || !ares;
         for light in self.spotlights.values_mut() {
             if clear_parent && light.parent == Some(id) {
                 light.parent = None;

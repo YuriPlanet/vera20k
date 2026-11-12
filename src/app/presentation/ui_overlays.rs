@@ -134,6 +134,7 @@ impl HudFacts {
                         sim.interner(),
                     )
                     .map(|weapon| weapon.range_leptons),
+                    rules.ares(),
                 )
             }),
             foundation_leptons: entity.type_facts.foundation().dimensions_leptons(),
@@ -1567,7 +1568,8 @@ fn repair_wrench_admitted(
     rules: Option<&RuleSet>,
     local_owner: Option<&str>,
 ) -> bool {
-    let repairing = entity.category() == EntityCategory::Structure && entity.repairing.is_on();
+    let repairing =
+        entity.category() == EntityCategory::Structure && entity.repairing.is_on();
     #[cfg(feature = "ares")]
     let repairing = repairing
         && !entity.is_warped_out()
@@ -2285,7 +2287,7 @@ fn scale_pip_rows(
         }));
         return pips;
     }
-    if object.passengers > 0 && !cfg!(feature = "ares") {
+    if object.passengers > 0 && !rules.ares() {
         let slots = usize::try_from(object.pip_max(rules)).unwrap_or(0);
         let row_start = pips.len();
         pips.extend((0..slots).map(|slot| {

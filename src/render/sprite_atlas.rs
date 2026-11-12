@@ -3994,7 +3994,7 @@ impl<S: AsRef<[RenderedShpSprite]>, P: AsRef<[(usize, [u32; 2])]>> Iterator
 /// Upload the sprites `placed` on a blank index page (sprite index and origin,
 /// shelf by shelf from the top) in bands of whole shelves. A band takes shelves
 /// until its rows reach `band_bytes`, so it holds at least one shelf. Bands
-/// share no row, as [`atlas_growth::write_band`] requires. A band decodes its
+/// share no row, as [`atlas_growth::gather_band`] requires. A band decodes its
 /// sprites' frames as it is gathered, and its staging copy is retired before
 /// the next band is gathered, so the upload holds one band of pixels at a time.
 fn upload_shelves(
@@ -4024,7 +4024,7 @@ fn upload_shelves(
 }
 
 /// Upload sprites placed on rows of an index page that hold no other sprite,
-/// in one [`atlas_growth::write_band`], decoding each frame as it is gathered.
+/// in one [`atlas_growth::gather_band`], decoding each frame as it is gathered.
 fn write_sprite_band<'s>(
     queue: &wgpu::Queue,
     indices: &wgpu::Texture,

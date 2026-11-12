@@ -112,7 +112,7 @@ pub(crate) fn impact(sim: &mut Simulation, rules: &RuleSet, impact: ProjectileNu
         let anim = sim
             .projectiles
             .get(impact.projectile_id())
-            .and_then(|bullet| rules.warhead(sim.interner.resolve(bullet.payload().warhead)))
+            .and_then(|bullet| sim.interner.warhead_type(bullet.payload().warhead, rules))
             .and_then(|warhead| warhead.ares_rules())
             .and_then(|ares| ares.combat().pre_impact_anim())
             .map(str::to_owned);
@@ -170,7 +170,7 @@ pub(crate) fn ares_nuke_ball(
     warhead: InternedId,
     nuke_sw: Option<InternedId>,
 ) -> crate::sim::projectile::AresNukeBall {
-    let warhead = rules.warhead(interner.resolve(warhead));
+    let warhead = interner.warhead_type(warhead, rules);
     let combat = warhead
         .and_then(|warhead| warhead.ares_rules())
         .map(|ares| ares.combat());

@@ -277,6 +277,15 @@ impl EntityStore {
         }
     }
 
+    /// Drop the visits `stable_id` is owed without settling them: the sleep
+    /// check's, which counts one only to hash the skipped turn
+    /// (`world::idle_sleep`).
+    pub(crate) fn forget_owed(&mut self, stable_id: u64) {
+        if let Some(slot) = self.slot(stable_id) {
+            self.sleep[slot as usize].owed = 0;
+        }
+    }
+
     /// The visits sleeping `stable_id` is owed, which its mission counter
     /// does not hold yet ([`GameEntity::settle_sleep`]).
     pub(crate) fn owed_visits(&self, stable_id: u64) -> u32 {
@@ -937,6 +946,28 @@ impl EntityStore {
             .zip(&self.entities)
             .filter(move |&(&stored, _)| stored == category)
             .filter_map(|(_, entity)| entity.as_deref())
+    }
+
+    /// The entities `keep` selects by id and owner, in stable_id order,
+    /// chosen from the id and owner columns without loading the others.
+    /// Debug builds check each owner against its entity (the live-read
+    /// check).
+    pub(crate) fn values_of_owners(
+        &self,
+        keep: impl Fn(u64, InternedId) -> bool,
+    ) -> impl Iterator<Item = &GameEntity> {
+        self.ids
+            .iter()
+            .zip(&self.owners)
+            .zip(&self.entities)
+            .filter_map(move |((&id, &owner), entity)| {
+                let entity = entity.as_deref()?;
+                debug_assert!(
+                    !crate::sim::touch_log::live_read_check_enabled() || entity.owner() == owner,
+                    "the owner column disagrees with entity {id}"
+                );
+                keep(id, owner).then_some(entity)
+            })
     }
 
     /// Iterate all entities mutably in stable_id order.

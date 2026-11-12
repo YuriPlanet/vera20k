@@ -236,7 +236,7 @@ fn calc_center_matches_the_original() {
             .collect();
         let focus = (!row["focus"].is_null()).then(|| xy(&row["focus"]));
         let cell_at = events(row, "cell_at");
-        match center_of(&samples, focus) {
+        match center_of(&samples, focus, crate::rules::ARES_BUILD) {
             None => {
                 assert!(cell_at.is_empty(), "center row {number}: no mean");
                 assert!(row["center"].is_null() && row["closest"].is_null());
@@ -316,6 +316,7 @@ fn recruit_matches_the_original() {
                 asked.push(id);
                 flag(&row["candidates"][id as usize]["can_add"])
             },
+            crate::rules::ARES_BUILD,
         );
         assert_eq!(asked, can_adds, "recruit row {number}: Can_Add calls");
         assert_eq!(winner, added, "recruit row {number}: winner");

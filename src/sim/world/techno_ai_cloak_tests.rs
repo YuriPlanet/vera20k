@@ -441,6 +441,7 @@ fn already_cloaked_object_is_refused_by_can_auto_cloak_step_two() {
             .set_for_test(crate::sim::timer::CdTimer::started(0, 17));
         entity.weapon_burst.complete_shot(4);
         entity
+            .building
             .pending_building_fire
             .set_for_test(Some(PendingBuildingFire::new(
                 7,
@@ -486,7 +487,7 @@ fn already_cloaked_object_is_refused_by_can_auto_cloak_step_two() {
     );
     assert_eq!(entity.weapon_burst.index(), 1);
     assert_eq!(
-        entity.pending_building_fire.pending(),
+        entity.building.pending_building_fire.pending(),
         Some(PendingBuildingFire::new(
             7,
             DelayedFire::Weapon(WeaponSlot::Secondary)

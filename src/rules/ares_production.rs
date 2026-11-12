@@ -64,6 +64,7 @@ impl ProductionTypeRules {
         cloned_at: Option<Vec<String>>,
         cloned_as: Option<Option<TechnoTypeReference>>,
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.cloneable = section.read_ares_bool("Cloneable", self.cloneable);
         if let Some(cloned_at) = cloned_at {
             self.cloned_at = cloned_at;
@@ -93,6 +94,7 @@ impl ProductionTypeRules {
 
     /// BuildingTypeExt reader1000DD40: Valueable<bool>1000EBF0.
     pub(crate) fn read_building_pass(&mut self, section: &IniSection) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.cloning_facility = section.read_ares_bool("CloningFacility", self.cloning_facility);
     }
 

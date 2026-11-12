@@ -1087,7 +1087,7 @@ impl Simulation {
             crate::sim::miner::ore_scan::HarvesterKey::KickDelay,
             rules.general.slave_miner_kick_frame_delay,
         );
-        if !(crate::rules::ARES_ENABLED && delay < 0)
+        if !(rules.ares() && delay < 0)
             && delay.wrapping_add(stamp) < Self::now_frame(&self.session)
         {
             let range = crate::sim::miner::ore_scan::scan_cells(
@@ -1314,7 +1314,7 @@ impl Simulation {
             crate::sim::miner::ore_scan::HarvesterKey::KickDelay,
             rules.general.slave_miner_kick_frame_delay,
         );
-        if crate::rules::ARES_ENABLED && delay < 0
+        if rules.ares() && delay < 0
             || delay.wrapping_add(started) >= Self::now_frame(&self.session)
         {
             return Ok(None);

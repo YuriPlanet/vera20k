@@ -304,11 +304,23 @@ impl IniSection {
         self.entries.get(key).map(String::as_str)
     }
 
+    /// A reader's lookup: the stored text of an exact-case key, noted for the
+    /// per-game Ares switch (`rules::ares_switch`). The store's own merges
+    /// and walks use [`Self::get`] and are not reads.
+    fn value(&self, key: &str) -> Option<&str> {
+        let value = self.get(key);
+        #[cfg(feature = "ares")]
+        if value.is_some() {
+            crate::rules::ares_switch::note_found(&self.name, key);
+        }
+        value
+    }
+
     /// Raw text for a reader whose native default depends on a later asset
     /// binding step. The caller must pass the returned value through the
     /// matching `ini_value` reader rather than interpreting it directly.
     pub(crate) fn raw_value(&self, key: &str) -> Option<&str> {
-        self.get(key)
+        self.value(key)
     }
 
     /// Test builds only: the raw stored text, for tests that inspect storage.
@@ -319,11 +331,18 @@ impl IniSection {
 
     /// Whether the section's reader can find the key, whatever its value.
     pub fn is_present(&self, key: &str) -> bool {
-        self.get(key).is_some()
+        self.value(key).is_some()
     }
 
+    /// The values successive Rules passes gave `key`, for a reader (noted as
+    /// [`Self::value`] notes them).
     fn projected_values(&self, key: &str) -> Option<&[String]> {
-        self.projected_values.get(key).map(Vec::as_slice)
+        let values = self.projected_values.get(key).map(Vec::as_slice);
+        #[cfg(feature = "ares")]
+        if values.is_some() {
+            crate::rules::ares_switch::note_found(&self.name, key);
+        }
+        values
     }
 
     /// The type IDs of a registry section `native_processing` rewrote with

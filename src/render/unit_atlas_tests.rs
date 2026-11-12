@@ -374,111 +374,77 @@ fn test_pad_layer_to_union_bounds() {
     assert_eq!(padded_turret.palette_indices[turret_pix], 200);
 }
 
+/// Admitting a world's voxel models draws no picture. The first lookup of a
+/// key draws it once, as `TechnoClass::Draw @ 0x00706640` renders a cache
+/// miss (`0x00706ED0`) and later hits blit the stored image (`0x00707480`);
+/// the picture is the one the model renders for that key. A key the model
+/// does not draw stays absent and draws nothing.
 #[test]
-fn forced_overflow_plan_keeps_every_sprite_in_bounds() {
-    let dimensions = vec![(6, 4); 4];
-    let plan = plan_sprite_pages(&dimensions, 8).expect("forced overflow must be pageable");
-
-    assert!(plan.page_heights.len() >= 2);
-    assert_eq!(plan.placements.len(), dimensions.len());
-
-    assert!(plan.page_width <= 8);
-    assert!(plan.page_heights.iter().all(|&height| height <= 8));
-
-    let mut seen = vec![false; dimensions.len()];
-    for (placement_index, placement) in plan.placements.iter().enumerate() {
-        let (width, height) = dimensions[placement.sprite_index];
-        assert!(!seen[placement.sprite_index]);
-        seen[placement.sprite_index] = true;
-        assert!(placement.x + width <= plan.page_width);
-        assert!(placement.y + height <= plan.page_heights[placement.page]);
-        for other in plan.placements.iter().skip(placement_index + 1) {
-            if placement.page != other.page {
-                continue;
-            }
-            let (other_width, other_height) = dimensions[other.sprite_index];
-            let separated = placement.x + width <= other.x
-                || other.x + other_width <= placement.x
-                || placement.y + height <= other.y
-                || other.y + other_height <= placement.y;
-            assert!(separated, "page placements must not overlap");
-        }
-
-        let page_width = plan.page_width as f32;
-        let page_height = plan.page_heights[placement.page] as f32;
-        let uv_origin = [
-            placement.x as f32 / page_width,
-            placement.y as f32 / page_height,
-        ];
-        let uv_size = [width as f32 / page_width, height as f32 / page_height];
-        assert!(uv_origin.into_iter().all(f32::is_finite));
-        assert!(uv_size.into_iter().all(f32::is_finite));
-        assert!(uv_origin[0] >= 0.0 && uv_origin[1] >= 0.0);
-        assert!(uv_origin[0] + uv_size[0] <= 1.0);
-        assert!(uv_origin[1] + uv_size[1] <= 1.0);
-    }
-    assert!(seen.into_iter().all(|value| value));
-}
-
-#[test]
-fn incremental_repack_plan_retains_old_unloading_referent() {
-    let make_cached = |type_id: &str| CachedUnitSprite {
-        key: UnitSpriteKey {
-            type_id: type_id.into(),
-            turret_index: 0,
-            facing: 0,
-            layer: VxlLayer::Composite,
-            frame: 0,
-            slope_type: 0,
-            barrel_pitch: 0,
-        },
-        pixels: vec![1; 24],
-        width: 6,
-        height: 4,
-        offset_x: 0.0,
-        offset_y: 0.0,
-        native_draw_bounds: Some([-4, -4, 14, 12]),
-        shadow_center: None,
-        pool_bytes: 0,
+fn admitted_models_draw_each_picture_on_its_first_lookup() {
+    use crate::rules::retail_ini_fixture::{retail_assets, retail_battle_rules};
+    let Some(battle) = retail_battle_rules() else {
+        return;
     };
-    // CMON is CMIN's stock UnloadingClass referent. It may be absent from the
-    // current live-key collector but must remain in the rendered cache.
-    let cached = vec![make_cached("CMON"), make_cached("CMIN")];
-    let plan = plan_cached_sprite_pages(&cached, 8).expect("both cached sprites must repack");
-    let retained = plan
-        .placements
-        .iter()
-        .map(|placement| cached[placement.sprite_index].key.type_id.as_str())
-        .collect::<HashSet<_>>();
+    let (_, assets) = retail_assets().expect("retail assets for the loaded rules");
+    let rules = Some(&battle.rules);
+    let mut entity =
+        crate::sim::game_entity::GameEntity::test_default(1, "HTNK", "Americans", 5, 5);
+    entity.set_category_for_test(crate::map::entities::EntityCategory::Unit);
+    entity.set_is_voxel_for_test(true);
+    let mut world = crate::sim::entity_store::EntityStore::new();
+    world.insert(entity);
+    let interner = crate::sim::intern::test_interner();
 
-    assert_eq!(retained, HashSet::from(["CMON", "CMIN"]));
-}
+    let mut atlas = None;
+    admit_world_models(&mut atlas, &world, &assets, rules, Some(&interner), 8192);
+    let atlas = atlas.expect("a voxel world makes the atlas");
+    assert!(atlas_covers_world(
+        Some(&atlas),
+        &world,
+        rules,
+        Some(&interner)
+    ));
+    let drawn = |atlas: &UnitAtlas| {
+        let statistics = atlas.statistics().unwrap();
+        (
+            statistics.resident_sprite_count,
+            statistics.last_build_rasterized_sprite_count,
+        )
+    };
+    assert_eq!(drawn(&atlas), (0, 0), "admission draws no picture");
 
-#[test]
-fn page_plan_has_no_u8_page_cap() {
-    let dimensions = vec![(8, 8); 257];
-    let plan = plan_sprite_pages(&dimensions, 8).expect("257 pages must remain addressable");
-
-    assert_eq!(plan.page_heights.len(), 257);
+    let key = UnitSpriteKey {
+        type_id: "HTNK".into(),
+        turret_index: 0,
+        facing: 64,
+        layer: VxlLayer::Turret,
+        frame: 0,
+        slope_type: 3,
+        barrel_pitch: 0,
+    };
+    let entry = atlas.get(&key).expect("a Rhino turret on a ramp");
+    assert_eq!(atlas.get(&key), Some(entry), "a hit draws nothing again");
+    assert_eq!(drawn(&atlas), (1, 1));
+    let model = UnitModel::load(&assets, "HTNK", rules).unwrap();
+    let vpl = VplFile::from_bytes(assets.get_ref("VOXELS.VPL").unwrap()).unwrap();
+    let (sprite, bounds) = model.render(&key, Some(&vpl), None, &mut None).unwrap();
+    assert_eq!(entry.native_draw_bounds, bounds);
     assert_eq!(
-        plan.placements.iter().map(|placement| placement.page).max(),
-        Some(256)
+        atlas
+            .resident
+            .borrow()
+            .rendered_by_key(&key)
+            .unwrap()
+            .pixels,
+        sprite.palette_indices
     );
-    assert_eq!(plan.placements.len(), dimensions.len());
-}
 
-#[test]
-fn page_plan_rejects_an_individually_oversized_sprite() {
-    let err = plan_sprite_pages(&[(9, 1)], 8).expect_err("oversized sprite must not be clipped");
-    assert_eq!(
-        err,
-        UnitAtlasPackError::SpriteExceedsTextureLimit {
-            sprite_index: 0,
-            width: 9,
-            height: 1,
-            limit: 8,
-        }
-    );
+    let between_facings = UnitSpriteKey {
+        facing: 4,
+        ..key.clone()
+    };
+    assert_eq!(atlas.get(&between_facings), None);
+    assert_eq!(drawn(&atlas), (1, 1));
 }
 
 #[test]
@@ -1152,12 +1118,4 @@ fn tumble_selects_one_physical_section_for_body_and_shadow() {
             .len(),
         1
     );
-}
-
-#[test]
-fn live_growth_leaves_one_core_to_the_running_match() {
-    // A 2015 laptop: two cores, four threads.
-    assert_eq!(RasterCores::BesideMatch.workers(4), 3);
-    assert_eq!(RasterCores::BesideMatch.workers(1), 1);
-    assert_eq!(RasterCores::All.workers(4), 4);
 }

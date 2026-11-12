@@ -110,7 +110,7 @@ fn ares_no_manual_fire_object_click_keeps_native_movement_fallback() {
                 && case["alt"] == false
                 && row["no_manual_fire_native_reader_value"] == u64::from(setting)
         }) {
-            let expected = if crate::rules::ARES_ENABLED {
+            let expected = if crate::rules::ARES_BUILD {
                 row
             } else {
                 rows.iter()
@@ -160,7 +160,7 @@ fn ares_no_manual_fire_object_click_keeps_native_movement_fallback() {
             }
         }
         let (sim, actor, _) = object_pair(&battle.rules, "MTNK", "enemy");
-        let effective = setting && crate::rules::ARES_ENABLED;
+        let effective = setting && crate::rules::ARES_BUILD;
         let native_cell = rows
             .iter()
             .find(|row| {

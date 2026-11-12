@@ -1510,6 +1510,45 @@ fn the_urgency2_budget_leaves_the_caps_turn_alone() {
     );
 }
 
+/// The tank's route from its own Find_Path at urgency 2. With batching on,
+/// the search keeps the entry facts it reads.
+fn own_route(sim: &mut Simulation, rules: &RuleSet, tank: u64) -> Vec<u8> {
+    let request = sim.code2_ladder_request(tank, 2).unwrap();
+    sim.foot_find_path(&request, rules, None, FrameEffects::default())
+        .expect("Find_Path runs");
+    if let Some(facts) = sim.entry_facts() {
+        assert!(!facts.is_empty(), "the search kept the facts it read");
+    }
+    let tank = sim.substrate.entities.get(tank).unwrap();
+    tank.navigation.path_replay().directions().to_vec()
+}
+
+/// A Foot's own search, which no pass answered, keeps the entry facts it
+/// reads in the batch's tables, and its next search empties them first:
+/// after a hut lands on the tank's route, it finds the route it finds with
+/// batching off. Debug builds compare every kept fact with the world.
+#[test]
+fn a_foots_own_search_keeps_the_entry_facts_it_reads() {
+    let rules = rules();
+    let routes = |batched: bool| {
+        let (mut sim, [tank, _]) = jam(&rules);
+        if batched {
+            sim.batch_path_searches();
+        }
+        let first = own_route(&mut sim, &rules, tank);
+        // A hut on the route's second cell, which the search read as clear.
+        let (x, y) = first[..2].iter().fold((10, 10), |(x, y), &step| {
+            let (dx, dy) = crate::util::direction::DIRECTION_DELTAS[usize::from(step)];
+            (x + dx, y + dy)
+        });
+        spawn(&mut sim, &rules, "HUT", (x as u16, y as u16));
+        (first, own_route(&mut sim, &rules, tank))
+    };
+    let serial = routes(false);
+    assert_ne!(serial.0, serial.1, "the hut moves the route");
+    assert_eq!(routes(true), serial);
+}
+
 /// However the registrations change between passes, a Foot registered at
 /// every pass is taken within one sweep of the ids, from any turn.
 #[test]

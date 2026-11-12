@@ -70,6 +70,17 @@ pub(crate) fn package_path() -> Option<PathBuf> {
     }
 }
 
+/// What starts the AppImage `image` again from a process it is running: the
+/// new image's runtime names its own mount, and inherited values would point
+/// at this process's. For the updater and the Mods page's restart.
+pub(crate) fn app_image_start(image: &Path) -> std::process::Command {
+    let mut start = std::process::Command::new(image);
+    for variable in ["APPDIR", "APPIMAGE", "ARGV0", "OWD"] {
+        start.env_remove(variable);
+    }
+    start
+}
+
 /// Whether `executable` is inside `<name>.app/Contents/MacOS/<executable>`.
 fn in_app_bundle(executable: &Path) -> bool {
     let mut folders = executable.ancestors().skip(1);

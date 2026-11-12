@@ -482,7 +482,7 @@ fn record_last_built_enforces_map_authored_negative_limit() {
     // house owns none.
     assert_eq!(
         super::can_build::check_build_limit(&sim, rules, owner, e2),
-        crate::rules::ARES_ENABLED
+        crate::rules::ARES_BUILD
     );
 
     let product = sim

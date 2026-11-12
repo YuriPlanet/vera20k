@@ -133,7 +133,8 @@ impl Simulation {
 
 /// Whether the dispatch has a port of `action_id`'s handler. Mode-specific
 /// residuals can still refuse a path (Script22 currently admits single player).
-pub(super) const fn action_is_ported(action_id: i32) -> bool {
+/// `ares` is [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
+pub(super) const fn action_is_ported(action_id: i32, ares: bool) -> bool {
     matches!(
         action_id,
         0 | 1
@@ -193,7 +194,7 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 62
             | 63
             | 64
-    ) || (cfg!(feature = "ares") && matches!(action_id, 67 | 68))
+    ) || (ares && matches!(action_id, 67 | 68))
 }
 
 /// A member's NavCom as a team target, for `Distance`.
@@ -287,7 +288,7 @@ impl Simulation {
                 argument: 0,
             },
         );
-        if action.action_id as u32 > 0x40 && !(cfg!(feature = "ares") && action.action_id == 68) {
+        if action.action_id as u32 > 0x40 && !(rules.ares() && action.action_id == 68) {
             return;
         }
         self.team_run_action(team_id, action, first, rules, registry, frame_effects);
@@ -572,7 +573,7 @@ impl Simulation {
                     team.advance_pending = true;
                 }
             }
-            64 | 67 if action.action_id == 64 || cfg!(feature = "ares") => {
+            64 | 67 if action.action_id == 64 || rules.ares() => {
                 //6E9F0D -> each member's vt34C/Foot4DFE00. Cache the next
                 //member before its seek callback; successful entrants leave
                 //the Team via the shared6EA870 owner with no_idle=true.
@@ -1032,7 +1033,7 @@ impl Simulation {
                 }
             }
             action_id => {
-                debug_assert!(!action_is_ported(action_id));
+                debug_assert!(!action_is_ported(action_id, rules.ares()));
                 self.refuse_team_script_action(team_id, action_id);
             }
         }
@@ -2238,6 +2239,13 @@ impl Simulation {
             if !in_playfield {
                 for member in members {
                     self.team_member_set_destination(member, None, rules, registry, frame_effects);
+                }
+            } else {
+                // Every visit of an infantry member in the playfield sets the
+                // byte again (`InfantryClass::AI @ 0x0051BE3E`); a sleeping
+                // one must take that visit (`world::idle_sleep`).
+                for member in members {
+                    self.substrate.entities.wake(member);
                 }
             }
         }
