@@ -2240,6 +2240,13 @@ impl Simulation {
                 for member in members {
                     self.team_member_set_destination(member, None, rules, registry, frame_effects);
                 }
+            } else {
+                // Every visit of an infantry member in the playfield sets the
+                // byte again (`InfantryClass::AI @ 0x0051BE3E`); a sleeping
+                // one must take that visit (`world::idle_sleep`).
+                for member in members {
+                    self.substrate.entities.wake(member);
+                }
             }
         }
     }
