@@ -733,6 +733,43 @@ impl<'a> Observation<'a> {
             })
     }
 
+    /// Whether `entity_id` is still something this house may shoot at.
+    ///
+    /// The question an order door has to ask before it lets an attack stand:
+    /// ownership changes under a running attack, and an engineer, a mind
+    /// control or a capture can turn the thing being shot at into the house's
+    /// own building while the gunner never re-reads it.
+    ///
+    /// True only when the object exists, is alive, is not this house's, is not
+    /// this house's ally's, and does not belong to a `MultiplayPassive=` house
+    /// — the same three exclusions [`Self::enemy_entities`] applies, so an
+    /// order that survives here is one the targeting layer would also have
+    /// offered. Reading it per frame is the point: a cached answer is exactly
+    /// the stale target this exists to catch.
+    pub fn is_hostile(&self, entity_id: u64) -> bool {
+        let Some(entity) = self.sim.entities().get(entity_id) else {
+            return false;
+        };
+        if entity.lifecycle.in_limbo() || entity.health.current() <= 0 {
+            return false;
+        }
+        let owner = entity.owner();
+        if owner == self.house {
+            return false;
+        }
+        let Some(house) = self.sim.houses().get(&owner) else {
+            return false;
+        };
+        if house.multiplay_passive() {
+            return false;
+        }
+        let allied = crate::map::houses::ally_test(
+            self.sim.house_alliances.as_map(),
+            self.sim.interner().resolve(self.house),
+        );
+        !allied(self.sim.interner().resolve(owner))
+    }
+
     /// The object `entity_id` is shooting at, when it has one.
     ///
     /// The native mission AI picks it (`TechnoClass::Greatest_Threat` behind
@@ -740,6 +777,10 @@ impl<'a> Observation<'a> {
     /// reads the choice here rather than picking a second one: the unit is
     /// already aimed at this, and a second opinion is what makes a soldier
     /// turn away from what it is shooting.
+    ///
+    /// It answers *what the gun is pointed at*, not whether that is still an
+    /// enemy: the object can change hands under the order, and
+    /// [`Self::is_hostile`] is the second half of the question.
     pub fn attack_target(&self, entity_id: u64) -> Option<u64> {
         match self.sim.entities().get(entity_id)?.attack_target.target() {
             Some(crate::sim::combat::TargetKind::Entity(id)) => Some(id),

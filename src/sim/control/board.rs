@@ -564,6 +564,15 @@ fn order_stands(
     let obs = Observation::new(sim, owner);
     match *goal {
         Goal::Attack { target } => {
+            // A target this house may no longer shoot is not an order standing:
+            // the object changed hands under the gun, and letting the answer
+            // stay `on that target` is how the army keeps firing at its own
+            // captured building until the last hit point is gone. Asking
+            // `is_hostile` per frame is the whole point — the order has to die
+            // with the enmity it was issued under.
+            if !obs.is_hostile(target) {
+                return None;
+            }
             (obs.attack_target(actor) == Some(target)).then_some("on that target")
         }
         Goal::Move { cell } | Goal::AttackMove { cell } => {
@@ -573,9 +582,9 @@ fn order_stands(
             let entity = sim.entities().get(actor)?;
             let from = (entity.position.rx(), entity.position.ry());
             let steps = from.0.abs_diff(cell.0).max(from.1.abs_diff(cell.1));
-            let live_gun = obs
-                .attack_target(actor)
-                .is_some_and(|target| obs.engage_error(rules, actor, target).is_none());
+            let live_gun = obs.attack_target(actor).is_some_and(|target| {
+                obs.is_hostile(target) && obs.engage_error(rules, actor, target).is_none()
+            });
             (live_gun && steps > REPOSITION_CELLS).then_some("firing on a target")
         }
         _ => None,
@@ -627,7 +636,6 @@ mod tests {
         Some((sim, rules))
     }
 
-
     /// The three switches own three kinds of order, and the abilities switch
     /// owns the superweapon launches alone: a player who takes the missile
     /// back keeps the army, and a player who takes the army back keeps the
@@ -653,7 +661,10 @@ mod tests {
             forces: false,
             abilities: true,
         };
-        assert!(abilities_only.admits(&launch), "the missile is the abilities'");
+        assert!(
+            abilities_only.admits(&launch),
+            "the missile is the abilities'"
+        );
         assert!(!abilities_only.admits(&march), "and not the army's");
         assert!(!abilities_only.admits(&queue), "and not the base's");
 
@@ -663,7 +674,10 @@ mod tests {
             abilities: false,
         };
         assert!(forces_only.admits(&march));
-        assert!(!forces_only.admits(&launch), "the missile stays with the player");
+        assert!(
+            !forces_only.admits(&launch),
+            "the missile stays with the player"
+        );
 
         let build_only = AutoPlayDomains {
             production: true,
@@ -675,8 +689,14 @@ mod tests {
         assert!(!build_only.admits(&launch));
 
         assert!(AutoPlayDomains::ALL.admits(&launch));
-        assert!(!AutoPlayDomains::NONE.any(), "nothing on is a host driving nothing");
-        assert_eq!(AutoPlayDomains::ALL.describe(), "build + forces + abilities");
+        assert!(
+            !AutoPlayDomains::NONE.any(),
+            "nothing on is a host driving nothing"
+        );
+        assert_eq!(
+            AutoPlayDomains::ALL.describe(),
+            "build + forces + abilities"
+        );
         assert_eq!(abilities_only.describe(), "abilities");
         assert_eq!(AutoPlayDomains::NONE.describe(), "paused");
     }
@@ -755,5 +775,63 @@ mod tests {
             None,
             "a different destination is a new order"
         );
+    }
+
+    /// An attack order dies with the enmity it was issued under.
+    ///
+    /// A capture, an engineer or a mind control turns the thing being shot at
+    /// into this house's own building. The gunner never re-reads it, so the
+    /// old answer — "already on that target" — kept the order standing and the
+    /// army kept firing at its own prize until the last hit point.
+    ///
+    /// Measured on Arena.mmx seed 0x5EED at 24000 ticks with the death ledger
+    /// on: 26 of 41 local losses were under `Attack`, and the roster showed
+    /// `CABUNK01:2` — two neutral bunkers the house had taken and was then
+    /// shooting at.
+    #[test]
+    fn an_attack_on_a_building_that_changed_hands_does_not_stand() {
+        let Some((mut sim, rules)) = arena() else {
+            return;
+        };
+        let owner = sim.interner.intern("Americans");
+        let russian = sim.interner.intern("Russians");
+        let tank = sim
+            .spawn_object("MTNK", "Americans", 20, 20, 0, &rules)
+            .expect("a grizzly");
+        let prize = sim
+            .spawn_object("NAREFN", "Russians", 22, 20, 0, &rules)
+            .expect("an enemy refinery");
+        sim.queue_commands([CommandEnvelope::new(
+            owner,
+            sim.session().tick(),
+            Command::Attack {
+                attacker_id: tank,
+                target_id: prize,
+            },
+        )]);
+        sim.advance_tick(&[], Some(&rules), None, None, 2);
+        let obs = Observation::new(&sim, owner);
+        assert_eq!(obs.attack_target(tank), Some(prize), "it is shooting at it");
+        assert!(
+            order_stands(&sim, &rules, owner, tank, &Goal::Attack { target: prize }).is_some(),
+            "while the refinery is the enemy's, the order stands"
+        );
+
+        // The building changes hands: same object, same gun, different side.
+        sim.change_owner_with_rules(
+            prize,
+            owner,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::empty(),
+        );
+        let obs = Observation::new(&sim, owner);
+        assert!(!obs.is_hostile(prize), "it is the house's own now");
+        assert_eq!(
+            order_stands(&sim, &rules, owner, tank, &Goal::Attack { target: prize }),
+            None,
+            "so the order is not lived out and has to be replaced"
+        );
+        let _ = russian;
     }
 }
