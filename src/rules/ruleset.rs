@@ -57,6 +57,9 @@ thread_local! {
     /// of what a draw looks up by name ([`RuleSet::type_name_lookups`]). The
     /// bound handle's debug cross-check calls `type_handle` and is not counted.
     static TYPE_NAME_LOOKUPS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    /// Test builds only: this thread's uppercase copies of a type name made
+    /// to look it up ([`upper_name_key`], [`RuleSet::name_key_copies`]).
+    static NAME_KEY_COPIES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
 #[cfg(test)]
@@ -4698,6 +4701,67 @@ impl TypeWeapons {
     }
 }
 
+/// `id` as the uppercase key the type name indexes hold: the name itself
+/// unless it has a lowercase letter. Retail type names are uppercase, so a
+/// lookup by name rarely copies it.
+fn upper_name_key(id: &str) -> std::borrow::Cow<'_, str> {
+    if id.bytes().any(|byte| byte.is_ascii_lowercase()) {
+        #[cfg(any(test, feature = "test-support"))]
+        NAME_KEY_COPIES.with(|count| count.set(count.get() + 1));
+        std::borrow::Cow::Owned(id.to_ascii_uppercase())
+    } else {
+        std::borrow::Cow::Borrowed(id)
+    }
+}
+
+/// A value for each type name of the four native TechnoType arrays: one
+/// uppercase-keyed [`LookupMap`] per array, so a lookup borrows the name it
+/// is given ([`upper_name_key`]) and hashes it once with the cheap hasher.
+/// Only looked up, never walked.
+#[derive(Clone, Debug)]
+struct CategoryIndex<V>([LookupMap<String, V>; 4]);
+
+impl<V> Default for CategoryIndex<V> {
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
+
+impl<V: Copy> CategoryIndex<V> {
+    fn array(&self, category: ObjectCategory) -> &LookupMap<String, V> {
+        &self.0[Self::slot(category)]
+    }
+
+    fn slot(category: ObjectCategory) -> usize {
+        match category {
+            ObjectCategory::Infantry => 0,
+            ObjectCategory::Vehicle => 1,
+            ObjectCategory::Aircraft => 2,
+            ObjectCategory::Building => 3,
+        }
+    }
+
+    /// The value of `id` in `category`'s array, ignoring ASCII case.
+    fn get(&self, category: ObjectCategory, id: &str) -> Option<V> {
+        self.array(category).get(&*upper_name_key(id)).copied()
+    }
+
+    fn contains(&self, category: ObjectCategory, id: &str) -> bool {
+        self.get(category, id).is_some()
+    }
+
+    fn insert(&mut self, category: ObjectCategory, id: &str, value: V) {
+        self.0[Self::slot(category)].insert(id.to_ascii_uppercase(), value);
+    }
+
+    /// The value of `id`, after giving it `value` if it had none.
+    fn get_or_insert(&mut self, category: ObjectCategory, id: &str, value: V) -> V {
+        *self.0[Self::slot(category)]
+            .entry(id.to_ascii_uppercase())
+            .or_insert(value)
+    }
+}
+
 /// Master container for all game data parsed from rules.ini.
 ///
 /// Name lookups are case-insensitive (matching the engine's find-or-allocate),
@@ -4720,7 +4784,7 @@ pub struct RuleSet {
     /// Per-native-registry identity authority. Unlike the broad lookup above,
     /// this retains distinct types when malformed/custom rules list the same
     /// ID in more than one category.
-    object_category_index: HashMap<(ObjectCategory, String), TypeHandle>,
+    object_category_index: CategoryIndex<TypeHandle>,
     /// Read-only projection of the process owner's global TechnoType array.
     /// Constructor order can interleave categories across lazy allocations
     /// and later Rules passes; it is not TYPE_REGISTRIES order. An absent
@@ -4729,7 +4793,7 @@ pub struct RuleSet {
     native_techno_type_order: Vec<(ObjectCategory, String, Option<TypeHandle>)>,
     /// Case-insensitive identity of each type in the four native TechnoType
     /// registries to its ordered array index (`+0xDF8`).
-    type_array_indices: HashMap<(ObjectCategory, String), i32>,
+    type_array_indices: CategoryIndex<i32>,
     /// All weapons' handles indexed by ID (e.g., "105mm" → its
     /// `weapon_types` index). Built once with the set, never changed.
     weapons: LookupMap<String, WeaponHandle>,
@@ -5408,8 +5472,7 @@ impl RuleSet {
             let key = (category, id.to_ascii_uppercase());
             let object = rules
                 .object_category_index
-                .get(&key)
-                .copied()
+                .get(category, id)
                 .filter(|handle| rules.object_by_handle(*handle).id == id);
             if let Some(object) = object {
                 // TechnoType+634 is retained typed state, not a merged INI
@@ -5424,8 +5487,7 @@ impl RuleSet {
                 .push((category, id.to_owned(), handle));
         }
         for (category, id, coefficients) in processed.techno_threat_coefficients() {
-            let key = (category, id.to_ascii_uppercase());
-            if let Some(handle) = rules.object_category_index.get(&key).copied()
+            if let Some(handle) = rules.object_category_index.get(category, id)
                 && rules.object_by_handle(handle).id == id
             {
                 rules.object_list[handle.0 as usize].project_threat_coefficients(coefficients);
@@ -5520,8 +5582,7 @@ impl RuleSet {
             .filter_map(|alternate| {
                 rules
                     .object_category_index
-                    .get(&(alternate.category(), alternate.id().to_ascii_uppercase()))
-                    .copied()
+                    .get(alternate.category(), alternate.id())
             })
             .collect();
         rules.general.building_types = processed.building_types().clone();
@@ -5582,71 +5643,43 @@ impl RuleSet {
         }
         #[cfg(feature = "ares")]
         for (category, name, enabled, options) in processed.ares_spotlight_states() {
-            if let Some(handle) = rules
-                .object_category_index
-                .get(&(category, name.to_ascii_uppercase()))
-                .copied()
-            {
+            if let Some(handle) = rules.object_category_index.get(category, name) {
                 rules.object_list[handle.0 as usize].bind_ares_spotlight(enabled, options);
             }
         }
         #[cfg(feature = "ares")]
         for (category, name, retained) in processed.super_weapon_techno_states() {
-            if let Some(handle) = rules
-                .object_category_index
-                .get(&(category, name.to_ascii_uppercase()))
-                .copied()
-            {
+            if let Some(handle) = rules.object_category_index.get(category, name) {
                 rules.object_list[handle.0 as usize].bind_super_weapon_techno_rules(retained);
             }
         }
         #[cfg(feature = "ares")]
         for (category, name, group) in processed.selection_group_states() {
-            if let Some(handle) = rules
-                .object_category_index
-                .get(&(category, name.to_ascii_uppercase()))
-                .copied()
-            {
+            if let Some(handle) = rules.object_category_index.get(category, name) {
                 rules.object_list[handle.0 as usize].bind_selection_group(group);
             }
         }
         #[cfg(feature = "ares")]
         for (category, name, driver) in processed.driver_states() {
-            if let Some(handle) = rules
-                .object_category_index
-                .get(&(category, name.to_ascii_uppercase()))
-                .copied()
-            {
+            if let Some(handle) = rules.object_category_index.get(category, name) {
                 rules.object_list[handle.0 as usize].bind_driver_rules(driver);
             }
         }
         #[cfg(feature = "ares")]
         for (category, name, bounty) in processed.bounty_states() {
-            if let Some(handle) = rules
-                .object_category_index
-                .get(&(category, name.to_ascii_uppercase()))
-                .copied()
-            {
+            if let Some(handle) = rules.object_category_index.get(category, name) {
                 rules.object_list[handle.0 as usize].bind_bounty_rules(bounty);
             }
         }
         #[cfg(feature = "ares")]
         for (category, name, crew) in processed.crew_states() {
-            if let Some(handle) = rules
-                .object_category_index
-                .get(&(category, name.to_ascii_uppercase()))
-                .copied()
-            {
+            if let Some(handle) = rules.object_category_index.get(category, name) {
                 rules.object_list[handle.0 as usize].bind_crew_rules(crew);
             }
         }
         #[cfg(feature = "ares")]
         for (category, name, retained) in processed.techno_combat_states() {
-            if let Some(handle) = rules
-                .object_category_index
-                .get(&(category, name.to_ascii_uppercase()))
-                .copied()
-            {
+            if let Some(handle) = rules.object_category_index.get(category, name) {
                 rules.object_list[handle.0 as usize].bind_techno_combat_rules(retained);
             }
         }
@@ -5654,39 +5687,26 @@ impl RuleSet {
         for (name, infiltration) in processed.infiltration_states() {
             if let Some(handle) = rules
                 .object_category_index
-                .get(&(ObjectCategory::Building, name.to_ascii_uppercase()))
-                .copied()
+                .get(ObjectCategory::Building, name)
             {
                 rules.object_list[handle.0 as usize].bind_infiltration_rules(infiltration);
             }
         }
         #[cfg(feature = "ares")]
         for (category, name, veterancy) in processed.veterancy_states() {
-            if let Some(handle) = rules
-                .object_category_index
-                .get(&(category, name.to_ascii_uppercase()))
-                .copied()
-            {
+            if let Some(handle) = rules.object_category_index.get(category, name) {
                 rules.object_list[handle.0 as usize].bind_ares_veterancy(veterancy);
             }
         }
         #[cfg(feature = "ares")]
         {
             for (category, name, production) in processed.production_states() {
-                if let Some(handle) = rules
-                    .object_category_index
-                    .get(&(category, name.to_ascii_uppercase()))
-                    .copied()
-                {
+                if let Some(handle) = rules.object_category_index.get(category, name) {
                     rules.object_list[handle.0 as usize].bind_ares_production(production);
                 }
             }
             for (category, name, cursors) in processed.ares_cursor_states() {
-                if let Some(handle) = rules
-                    .object_category_index
-                    .get(&(category, name.to_ascii_uppercase()))
-                    .copied()
-                {
+                if let Some(handle) = rules.object_category_index.get(category, name) {
                     rules.object_list[handle.0 as usize].bind_ares_cursors(cursors);
                 }
             }
@@ -5713,8 +5733,7 @@ impl RuleSet {
         for (name, academy) in processed.academy_states() {
             if let Some(handle) = rules
                 .object_category_index
-                .get(&(ObjectCategory::Building, name.to_ascii_uppercase()))
-                .copied()
+                .get(ObjectCategory::Building, name)
             {
                 rules.object_list[handle.0 as usize].bind_academy(academy);
             }
@@ -5722,11 +5741,7 @@ impl RuleSet {
         #[cfg(feature = "ares")]
         {
             for (category, name, retained) in processed.cloak_power_states() {
-                if let Some(handle) = rules
-                    .object_category_index
-                    .get(&(category, name.to_ascii_uppercase()))
-                    .copied()
-                {
+                if let Some(handle) = rules.object_category_index.get(category, name) {
                     rules.object_list[handle.0 as usize].bind_cloak_power_rules(retained);
                 }
             }
@@ -5759,11 +5774,7 @@ impl RuleSet {
         }
         for (category, name, armor) in processed.object_armor_states() {
             if let Some(category) = category {
-                if let Some(handle) = rules
-                    .object_category_index
-                    .get(&(category, name.to_ascii_uppercase()))
-                    .copied()
-                {
+                if let Some(handle) = rules.object_category_index.get(category, name) {
                     rules.object_list[handle.0 as usize].bind_armor(armor);
                 }
             } else if let Some(terrain) = rules
@@ -6055,8 +6066,7 @@ impl RuleSet {
             for (name, ext) in processed.building_type_ext_states() {
                 if let Some(handle) = rules
                     .object_category_index
-                    .get(&(ObjectCategory::Building, name.to_ascii_uppercase()))
-                    .copied()
+                    .get(ObjectCategory::Building, name)
                 {
                     let building = &mut rules.object_list[handle.0 as usize];
                     building.bind_building_type_ext(ext);
@@ -6310,10 +6320,7 @@ impl RuleSet {
     /// approved exclusion that retail never reaches.
     pub(crate) fn ids_with_objects(&self, ids: &[String], category: ObjectCategory) -> Vec<String> {
         ids.iter()
-            .filter(|id| {
-                self.object_category_index
-                    .contains_key(&(category, id.to_ascii_uppercase()))
-            })
+            .filter(|id| self.object_category_index.contains(category, id))
             .cloned()
             .collect()
     }
@@ -6325,9 +6332,13 @@ impl RuleSet {
             object.build_const_eligible = false;
         }
         for id in self.build_const_types.clone() {
-            let handle =
-                self.object_category_index[&(ObjectCategory::Building, id.to_ascii_uppercase())];
-            self.object_list[handle.0 as usize].build_const_eligible = true;
+            // `ids_with_objects` kept only ids this index holds.
+            if let Some(handle) = self
+                .object_category_index
+                .get(ObjectCategory::Building, &id)
+            {
+                self.object_list[handle.0 as usize].build_const_eligible = true;
+            }
         }
     }
 
@@ -6578,8 +6589,8 @@ impl RuleSet {
         for object in &mut self.object_list {
             let section = match source {
                 SoundReferenceSource::Processed(processed) => type_array_indices
-                    .get(&(object.category, object.id.to_ascii_uppercase()))
-                    .and_then(|&index| processed.techno_type_read_section(object.category, index)),
+                    .get(object.category, &object.id)
+                    .and_then(|index| processed.techno_type_read_section(object.category, index)),
                 #[cfg(any(test, feature = "test-support"))]
                 SoundReferenceSource::Fixture(ini) => ini.section(&object.id),
             };
@@ -6807,9 +6818,8 @@ impl RuleSet {
         let ini = processed.ini();
         let mut object_list: Vec<ObjectType> = Vec::new();
         let mut object_index: LookupMap<String, TypeHandle> = LookupMap::default();
-        let mut object_category_index: HashMap<(ObjectCategory, String), TypeHandle> =
-            HashMap::new();
-        let mut type_array_indices: HashMap<(ObjectCategory, String), i32> = HashMap::new();
+        let mut object_category_index: CategoryIndex<TypeHandle> = CategoryIndex::default();
+        let mut type_array_indices: CategoryIndex<i32> = CategoryIndex::default();
         let mut infantry_ids: Vec<String> = Vec::new();
         let mut vehicle_ids: Vec<String> = Vec::new();
         let mut aircraft_ids: Vec<String> = Vec::new();
@@ -6994,26 +7004,21 @@ impl RuleSet {
             log::info!("Registry [{}]: {} entries", registry_name, ids.len());
 
             for (registry_index, id) in ids.iter().enumerate() {
-                type_array_indices
-                    .entry((category, id.to_ascii_uppercase()))
-                    .or_insert(registry_index as i32);
+                let array_index =
+                    type_array_indices.get_or_insert(category, id, registry_index as i32);
                 if let Some(section) = ini.section(id) {
                     let mut obj: ObjectType = ObjectType::from_ini_section(id, section, category);
                     if category == ObjectCategory::Building {
-                        obj.base_plan_type_index = type_array_indices
-                            .get(&(category, id.to_ascii_uppercase()))
-                            .copied()
-                            .expect("BuildingType index was registered above");
+                        obj.base_plan_type_index = array_index;
                     }
                     if obj.base_reservation_writer_eligible() {
                         obj.base_reservation_spacing = Some(ai_base_spacing);
                     }
                     let key = id.to_ascii_uppercase();
-                    let category_key = (category, key.clone());
                     // Find-or-allocate is per native type registry. A duplicate
                     // within one registry reuses its slot; the same ID in a
                     // different registry remains a distinct native type.
-                    let handle = match object_category_index.get(&category_key).copied() {
+                    let handle = match object_category_index.get(category, id) {
                         Some(TypeHandle(idx)) => {
                             log::warn!(
                                 "Object '{}' merges onto an existing case-duplicate {:?} type",
@@ -7026,7 +7031,7 @@ impl RuleSet {
                         None => {
                             let handle = TypeHandle(object_list.len() as u32);
                             object_list.push(obj);
-                            object_category_index.insert(category_key, handle);
+                            object_category_index.insert(category, id, handle);
                             handle
                         }
                     };
@@ -7525,15 +7530,16 @@ impl RuleSet {
         TYPE_NAME_LOOKUPS.with(std::cell::Cell::get)
     }
 
+    /// Test builds only: how many uppercase copies of a type name this
+    /// thread has made to look one up ([`upper_name_key`]).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn name_key_copies() -> u64 {
+        NAME_KEY_COPIES.with(std::cell::Cell::get)
+    }
+
     /// Resolve a type name to its handle, case-insensitively (engine parity).
     pub fn type_handle(&self, id: &str) -> Option<TypeHandle> {
-        // The keys are uppercase, so a name without a lowercase letter is its
-        // own key and needs no uppercase copy.
-        if id.bytes().any(|byte| byte.is_ascii_lowercase()) {
-            self.object_index.get(&id.to_ascii_uppercase()).copied()
-        } else {
-            self.object_index.get(id).copied()
-        }
+        self.object_index.get(&*upper_name_key(id)).copied()
     }
 
     /// TAction106's active6DF5D1 and FlashCameo115's6E4150 compare IDs with exact case,
@@ -7733,9 +7739,7 @@ impl RuleSet {
         category: ObjectCategory,
         id: &str,
     ) -> Option<TypeHandle> {
-        self.object_category_index
-            .get(&(category, id.to_ascii_uppercase()))
-            .copied()
+        self.object_category_index.get(category, id)
     }
 
     /// The computer's base defense candidates of a House's side
@@ -7798,9 +7802,7 @@ impl RuleSet {
 
     /// The native array index (`+0xDF8`) of `id` in `category`'s array.
     pub fn type_array_index(&self, category: ObjectCategory, id: &str) -> Option<i32> {
-        self.type_array_indices
-            .get(&(category, id.to_ascii_uppercase()))
-            .copied()
+        self.type_array_indices.get(category, id)
     }
 
     /// Installed Ares Building Find10007E50, shared with BuiltAt's current-pass
@@ -7820,7 +7822,7 @@ impl RuleSet {
     /// by `gamemd.exe 0x004C4EF0`: Infantry, Unit, then Aircraft. BuildingType
     /// is never searched.
     pub(crate) fn task_force_member_object(&self, id: &str) -> Option<&ObjectType> {
-        let key = id.to_ascii_uppercase();
+        let key = upper_name_key(id);
         [
             ObjectCategory::Infantry,
             ObjectCategory::Vehicle,
@@ -7834,7 +7836,7 @@ impl RuleSet {
     /// by `gamemd.exe 0x0041F77D..0x0041F7E4`: Infantry, Unit, Aircraft,
     /// then Building.
     pub(crate) fn ai_trigger_object(&self, id: &str) -> Option<&ObjectType> {
-        let key = id.to_ascii_uppercase();
+        let key = upper_name_key(id);
         [
             ObjectCategory::Infantry,
             ObjectCategory::Vehicle,
@@ -11417,8 +11419,8 @@ impl RuleSet {
         id: &str,
     ) -> bool {
         self.object_category_index
-            .get(&(category, id.to_ascii_uppercase()))
-            .is_some_and(|handle| self.ares_prerequisite_alternates.contains(handle))
+            .get(category, id)
+            .is_some_and(|handle| self.ares_prerequisite_alternates.contains(&handle))
     }
 
     /// Resolve BuildingType FreeUnit, read by Grand_Opening446AA9. The native
@@ -17400,6 +17402,10 @@ Projectile=Invisible
 #[cfg(test)]
 #[path = "map_lighting_tests.rs"]
 mod map_lighting_tests;
+
+#[cfg(test)]
+#[path = "name_lookup_tests.rs"]
+mod name_lookup_tests;
 
 #[cfg(test)]
 #[path = "global_promotion_tests.rs"]
