@@ -297,12 +297,34 @@ pub struct RetailBrain {
     /// never be looked at at all.
     pub(super) avoid_cursor: usize,
     /// The cell the second base's maker was last sent to, and the frame the
-    /// search that found it ran.
-    ///
+    /// search that found it ran.    ///
     /// The search is a walk over the map's ground asking the deploy's own
     /// question cell by cell, and the map is big: the answer is kept between
     /// probes instead of being recomputed every frame the maker stands still.
     pub(super) expansion_probe: Option<(u64, Option<(u16, u16)>)>,
+    /// How many engineers and spies the house has bought, and how many of them
+    /// came to nothing.
+    ///
+    /// A live count is not enough to decide whether to buy another. An engineer
+    /// is consumed the moment it walks into a building, so "how many do I have"
+    /// drops to zero after every success and asks for a replacement that the
+    /// match has already been paid for twice over. Measured on the 1v7 lane in
+    /// v2 (`autoplay/docs/handoff.md`): the policy bought engineers continuously
+    /// and the wishlist records it as 狂造工程师拖垮经济.
+    ///
+    /// The counter is the house's, not the unit's: what matters is the ratio of
+    /// engineers bought to buildings taken. Past [`ENGINEER_WASTE_PATIENCE`]
+    /// failures per success, the house stops buying them for a while — the
+    /// cooldown is the frame the last one was paid for plus the term below.
+    pub(super) engineers: composition::EngineerLedger,
+    /// Buildings that could be captured the last time the capture step looked.
+    ///
+    /// `capturable_buildings` answers "what may be taken", so a building that
+    /// was on this list and is no longer on it either changed hands or was
+    /// destroyed. Pairing that with "and this house owns it now" is the only
+    /// signal the capture line has that an engineer's errand paid off, and the
+    /// engineer's own disappearance cannot tell success from death.
+    pub(super) capturable_last: BTreeSet<u64>,
     /// Why the push did not leave this frame, as the gate that refused it:
     /// `push` when it did. Read by the forty-second census line — the question
     /// "why is the army standing in its yard" is otherwise unanswerable from a
@@ -389,6 +411,8 @@ impl RetailBrain {
             income: plan::IncomeMeter::new(),
             avoid_cursor: 0,
             expansion_probe: None,
+            engineers: composition::EngineerLedger::default(),
+            capturable_last: BTreeSet::new(),
             push_gate: "none",
             push_target: None,
             issued: [0; 5],

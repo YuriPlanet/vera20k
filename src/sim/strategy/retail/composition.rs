@@ -209,6 +209,18 @@ pub(super) fn fill_lines(
             infantry_short,
             vehicle_floor,
         );
+        // A capturer the line starts is booked against the ledger here, at the
+        // one place a unit is actually queued: a `product_for` that returned a
+        // type the wallet could not pay for books nothing, because
+        // `queue_unit` is the same test.
+        if let Some((ty, _)) = wanted
+            && budget.free >= obs.cost_of(rules, ty)
+        {
+            let traits = census::Traits::of(rules, ty);
+            if traits.engineer || traits.spy {
+                brain.engineers.note_bought(obs.tick());
+            }
+        }
         queue_unit(rules, obs, &budget, out, wanted);
     }
 }
@@ -247,6 +259,70 @@ const SPY_WANT: usize = 1;
 /// for the dog the enemy sends at the first.
 const DOG_WANT: usize = 2;
 
+/// Engineers that may come to nothing before the house stops buying them.
+///
+/// An engineer is consumed by success and by failure alike, so a live count
+/// cannot tell the two apart: buy two, take two buildings, and the count reads
+/// zero and asks for two more. That is the wishlist's 狂造工程师拖垮经济 — the
+/// economy dies of a good idea repeated past the point where there is anything
+/// worth taking.
+///
+/// A capture is worth roughly a refinery, so a house that takes one building
+/// every two engineers is doing well and should keep buying. The number here is
+/// the point where the errands are not landing: four bought per building taken.
+const ENGINEER_WASTE_PATIENCE: u32 = 4;
+
+/// How long the house stops buying engineers after that ratio is passed, in
+/// frames: two minutes. Long enough for the front to move and the remaining
+/// neutral buildings to be taken or lost, short enough to try again.
+const ENGINEER_QUIET_FRAMES: u64 = 1_800;
+
+/// What the engineer line has spent, and what it got for it.
+///
+/// The one piece of state this file keeps: a count of units produced is not a
+/// ledger, and the question "is another engineer worth buying" is a ratio of
+/// two totals rather than a reading of the field.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct EngineerLedger {
+    /// Engineers and spies bought, as the queue saw them.
+    pub(super) bought: u32,
+    /// Buildings taken: a capture that landed.
+    pub(super) captured: u32,
+    /// The frame the house stops buying until, once the ratio fails.
+    pub(super) quiet_until: u64,
+}
+
+impl EngineerLedger {
+    /// Whether the house may buy another engineer or spy this frame.
+    ///
+    /// The window is the only gate. The ratio decides whether a purchase
+    /// *enters* a window, not whether the house may ever buy again: a ratio
+    /// that failed stays failed as the count grows, so gating on it directly
+    /// would stop the line for the rest of the match after one bad run. What
+    /// the house does instead is try one more when the window expires — if that
+    /// one lands, the ratio recovers; if not, it waits another window.
+    pub(super) fn may_buy(&self, tick: u64) -> bool {
+        tick >= self.quiet_until
+    }
+
+    /// Record one bought.
+    pub(super) fn note_bought(&mut self, tick: u64) {
+        self.bought = self.bought.saturating_add(1);
+        // Judged after the increment, on the purchase that was just made: one
+        // engineer bought and none taken is not yet a failure, four per
+        // building taken is.
+        let patience_exceeded = self.bought > self.captured.saturating_mul(ENGINEER_WASTE_PATIENCE);
+        if patience_exceeded {
+            self.quiet_until = tick.saturating_add(ENGINEER_QUIET_FRAMES);
+        }
+    }
+
+    /// Record one building taken by a capturer.
+    pub(super) fn note_captured(&mut self) {
+        self.captured = self.captured.saturating_add(1);
+    }
+}
+
 /// The tool this line should make, when the house has fewer than it wants and
 /// can pay for one.
 ///
@@ -260,6 +336,7 @@ fn tool<'r>(
     obs: &Observation<'_>,
     census: &Census,
     credits: i32,
+    ledger: &EngineerLedger,
 ) -> Option<(&'r ObjectType, InternedId)> {
     let engineers = census
         .units
@@ -272,15 +349,22 @@ fn tool<'r>(
     // infantry list can look at the map — a rifleman walks where it is put and
     // sees only what its gun reaches.
     let dogs = census.units.iter().filter(|unit| unit.traits.scout).count();
-    if engineers >= ENGINEER_WANT && spies >= SPY_WANT && dogs >= DOG_WANT {
+    // The live count is what the house has; the ledger is what it has spent.
+    // Both are needed: the count says whether there is a hole, the ledger says
+    // whether filling it has been working.
+    let may_buy_capturers = ledger.may_buy(obs.tick());
+    let want_engineer = engineers < ENGINEER_WANT && may_buy_capturers;
+    let want_spy = spies < SPY_WANT && may_buy_capturers;
+    let want_dog = dogs < DOG_WANT;
+    if !want_engineer && !want_spy && !want_dog {
         return None;
     }
     build::class_types(rules, obs, ObjectCategory::Infantry)
         .map(|(ty, id)| (ty, id, census::Traits::of(rules, ty)))
         .filter(|(_, _, traits)| {
-            (traits.engineer && engineers < ENGINEER_WANT)
-                || (traits.spy && spies < SPY_WANT)
-                || (traits.scout && dogs < DOG_WANT)
+            (traits.engineer && want_engineer)
+                || (traits.spy && want_spy)
+                || (traits.scout && want_dog)
         })
         .filter(|(ty, _, _)| obs.cost_of(rules, ty) <= credits)
         // The dog first. It is the cheapest pair of eyes the house has, it wins
@@ -372,7 +456,7 @@ fn product_for<'r>(
     // outright and refuses a spy for carrying no weapon. Correctly: neither is
     // what the fist is made of. So the want is stated here, in numbers.
     if category == ProductionCategory::Infantry
-        && let Some(found) = tool(rules, obs, &brain.census, budget.free)
+        && let Some(found) = tool(rules, obs, &brain.census, budget.free, &brain.engineers)
     {
         return Some(found);
     }
@@ -1205,7 +1289,7 @@ mod tests {
         );
 
         let obs = Observation::new(&sim, owner);
-        let (ty, _) = tool(&rules, &obs, &census, 100_000)
+        let (ty, _) = tool(&rules, &obs, &census, 100_000, &EngineerLedger::default())
             .expect("the infantry line still has a tool to make");
         assert!(ty.agent, "the tool is a spy, not {}", ty.id);
     }
@@ -1294,5 +1378,47 @@ mod tests {
         // The floor is the other side of the same reading, and it must not
         // also be permanently true: an army past the ceiling is not short.
         assert!(!infantry_below_floor(&census));
+    }
+
+    /// The engineer line stops buying when its errands are not landing.
+    ///
+    /// An engineer is consumed by success and by failure alike, so the live
+    /// count drops to zero after every capture and asks for a replacement the
+    /// match has already paid for. The ledger is the ratio that separates the
+    /// two, and this pins both halves: a house that keeps taking buildings
+    /// keeps buying, and one that spends four engineers per building stops.
+    #[test]
+    fn the_engineer_ledger_stops_a_line_whose_errands_are_not_landing() {
+        let mut ledger = EngineerLedger::default();
+        // Nothing bought: the first engineer is the one that opens the line.
+        assert!(ledger.may_buy(0));
+
+        // Two taken, then two bought: a good rate, so it keeps buying. The
+        // order matters and is the real one — a capture lands before the house
+        // knows it may replace the engineer it spent.
+        ledger.note_captured();
+        ledger.note_captured();
+        ledger.note_bought(0);
+        ledger.note_bought(0);
+        assert!(
+            ledger.may_buy(0),
+            "two engineers for two buildings is the line working"
+        );
+
+        // Eight more bought and none taken: ten bought against two taken
+        // passes four per building, so it goes quiet. The boundary is the
+        // patience itself, so it is pinned rather than guessed at.
+        let mut sunk = ledger;
+        for _ in 0..(ENGINEER_WASTE_PATIENCE as usize * 2) {
+            sunk.note_bought(0);
+        }
+        assert_eq!(sunk.bought, 2 + ENGINEER_WASTE_PATIENCE * 2);
+        assert_eq!(sunk.captured, 2);
+        assert!(
+            !sunk.may_buy(0),
+            "ten bought for two taken is 狂造工程师拖垮经济"
+        );
+        // And quiet is a window, not a death sentence: the front moves.
+        assert!(sunk.may_buy(ENGINEER_QUIET_FRAMES));
     }
 }

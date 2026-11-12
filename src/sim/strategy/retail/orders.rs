@@ -122,6 +122,29 @@ pub(super) fn captures(
         return;
     }
     let engineer_targets: Vec<EnemyEntity> = obs.capturable_buildings(rules).collect();
+    // Book the captures that landed since the last look. A building that was
+    // capturable and is not any more either changed hands or was destroyed, and
+    // the house owning it now is what tells the two apart. Pairing the two
+    // readings is the only way the ratio in `EngineerLedger` learns that an
+    // engineer's errand worked: the unit itself is consumed by success and by
+    // death alike, so its disappearance says nothing.
+    {
+        let now: BTreeSet<u64> = engineer_targets
+            .iter()
+            .map(|target| target.entity_id)
+            .collect();
+        let owned: BTreeSet<u64> = obs.own_entities().map(|unit| unit.entity_id).collect();
+        let landed = brain
+            .capturable_last
+            .iter()
+            .filter(|id| !now.contains(*id))
+            .filter(|id| owned.contains(*id))
+            .count();
+        for _ in 0..landed {
+            brain.engineers.note_captured();
+        }
+        brain.capturable_last = now;
+    }
     // Which of those belong to an enemy, and where that enemy's units stand.
     // `capturable_buildings` is every `Capturable=` building the house can see —
     // the map's own oil derricks and hospitals included — and the nearest of
