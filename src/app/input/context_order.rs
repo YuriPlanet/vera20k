@@ -911,6 +911,59 @@ struct AttackDispatch {
     select_fallback: bool,
 }
 
+/// The keys a healer's object action reads ([`crate::sim::world::HealArmKeys`]):
+/// Alt, the ForceMove binding (held for Ctrl+Alt too), and the admitted
+/// Ctrl+Alt GuardArea base action ([`object_key_action`]).
+pub(super) fn heal_arm_keys(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    actor: u64,
+    target: u64,
+    modifier: OrderModifier,
+    force_move_key: bool,
+) -> crate::sim::world::HealArmKeys {
+    crate::sim::world::HealArmKeys {
+        force_move: matches!(
+            modifier,
+            OrderModifier::ForceMove | OrderModifier::GuardArea
+        ) || (modifier == OrderModifier::AttackMove && force_move_key),
+        guard_area: object_key_action(
+            sim,
+            rules,
+            actor,
+            target,
+            Some(target),
+            modifier,
+            force_move_key,
+        ) == Some(ObjectKeyAction::GuardArea),
+    }
+}
+
+/// A healer's object action: a Unit's repair arm
+/// ([`crate::sim::world::Simulation::unit_repair_action`]) or, with `ares`,
+/// an Infantryman's Heal (`ares_infantry_heal_action`), which its
+/// ClickedAction (`0x0051F190`) sends as the same Attack.
+pub(super) fn healer_object_action(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    actor: u64,
+    target: u64,
+    issuing_house: InternedId,
+    keys: crate::sim::world::HealArmKeys,
+) -> Option<crate::sim::world::UnitRepairAction> {
+    if rules.ares()
+        && sim
+            .entities()
+            .get(actor)
+            .is_some_and(|actor| actor.category() == EntityCategory::Infantry)
+    {
+        return sim
+            .ares_infantry_heal_action(actor, target, issuing_house, keys, rules)
+            .map(|_| crate::sim::world::UnitRepairAction::Repair);
+    }
+    sim.unit_repair_action(actor, target, issuing_house, keys, rules)
+}
+
 /// Unit73FD7C's post-processing precedes the generic friendly selection and
 /// Ctrl attack paths. Selection/keyboard and mission promotion stay with their
 /// existing owners. Shift and one selected object's self action precede
@@ -951,14 +1004,17 @@ fn unit_repair_branch_orders(
     if friendly
         && matches!(modifier, OrderModifier::Normal | OrderModifier::AttackMove)
         && !cursor_owner(sim, rules, current_objects, target.stable_id).is_some_and(|id| {
-            sim.unit_repair_action(id, target.stable_id, issuing_house, rules)
+            let keys = heal_arm_keys(sim, rules, id, target.stable_id, modifier, force_move_key);
+            healer_object_action(sim, rules, id, target.stable_id, issuing_house, keys)
                 == Some(UnitRepairAction::Repair)
         })
     {
         return output;
     }
     for &id in receivers {
-        let Some(action) = sim.unit_repair_action(id, target.stable_id, issuing_house, rules)
+        let keys = heal_arm_keys(sim, rules, id, target.stable_id, modifier, force_move_key);
+        let Some(action) =
+            healer_object_action(sim, rules, id, target.stable_id, issuing_house, keys)
         else {
             continue;
         };
@@ -2087,8 +2143,13 @@ fn berserk_selection_click(
     let action = if action_zero {
         ReleaseAction::Zero
     } else if hover.is_some_and(|target| {
-        sim.unit_repair_action(best_id, target.stable_id, issuing_house, rules)
-            == Some(crate::sim::world::UnitRepairAction::Select)
+        sim.unit_repair_action(
+            best_id,
+            target.stable_id,
+            issuing_house,
+            crate::sim::world::HealArmKeys::default(),
+            rules,
+        ) == Some(crate::sim::world::UnitRepairAction::Select)
     }) {
         ReleaseAction::Select
     } else {

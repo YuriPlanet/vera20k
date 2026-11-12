@@ -3,6 +3,7 @@
 //! 41BEA0, 50E470 and virtual F8=6301E0. Creation controls declare type
 //! arrays and observe Ground578080 / constructor62DC50 as argument sinks;
 //! the Rust lifecycle checks below are not a full native scene comparison.
+#![cfg_attr(feature = "ares", allow(dead_code, unused_imports))]
 use super::*;
 use crate::map::resolved_terrain::{test_flat_cell, test_grid};
 use crate::map::waypoints::Waypoint;
@@ -197,6 +198,9 @@ fn all_five_original_stop_controls_only_mark_alive_same_cell_systems() {
     }
 }
 
+// Ares simulates retail BigGreySmokeSys itself (hooks 0x62DF05, 0x62FD60) and
+// builds no ParticleClass children.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_smoke_stop_keeps_existing_children_and_saved_flag_until_their_shared_retirement() {
     let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {

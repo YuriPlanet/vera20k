@@ -1,6 +1,7 @@
 //! Original constructor, retained-link and uninterrupted Welding AI controls.
 //! The mobile object prefix/poses and admitted birth are declared component
 //! priors; ordinary boarding, friendly input and healing have an app test.
+#![cfg_attr(feature = "ares", allow(dead_code, unused_imports))]
 
 use super::*;
 use crate::sim::game_entity::GameEntity;
@@ -609,6 +610,9 @@ fn assert_logical_state(sim: &Simulation, roles: &Roles, id: u64, expected: &Val
     );
 }
 
+// Ares simulates this Spark system itself (hooks 0x62DF05, 0x62FD60) and
+// builds no ParticleClass children.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn original_welding_live_logic_boundaries_match_rng_ids_children_and_same_pass_link_expiry() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
@@ -735,6 +739,9 @@ fn original_welding_live_logic_boundaries_match_rng_ids_children_and_same_pass_l
 
 /// Rust persistence regression, separate from the original executable's
 /// queue/AI comparison above. Native in-scenario load owns RNG reseeding.
+// Ares simulates this Spark system itself (hooks 0x62DF05, 0x62FD60) and
+// builds no ParticleClass children.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn detached_particle_snapshot_keeps_bodies_and_queue_until_the_common_drain() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
@@ -812,6 +819,9 @@ fn detached_particle_snapshot_keeps_bodies_and_queue_until_the_common_drain() {
 
 /// SystemPointerExpired62FEA4..62FEE2 removes a reference, independently
 /// of UnInit. Its stable vector erase must not destroy the allocated body.
+// Ares simulates this Spark system itself (hooks 0x62DF05, 0x62FD60) and
+// builds no ParticleClass children.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn system_child_reference_expiry_retains_the_live_body_until_common_uninit() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
