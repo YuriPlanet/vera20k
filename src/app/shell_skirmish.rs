@@ -43,6 +43,60 @@ impl App {
             .collect()
     }
 
+    /// VERA's Team Starts: how far a ground unit drives between the selected
+    /// map's `starts`, by start index, or `None` where the page cannot read
+    /// the map's terrain (the random map, or no resident assets or Rules) and
+    /// Team Starts measures straight lines. Pressing the button reads the map
+    /// file and its theater, which makes that theater's archives the active
+    /// ones until a Generate or a match load picks its own.
+    fn selected_map_drive_distances(
+        state: &mut AppState,
+        starts: &[(i32, i32)],
+    ) -> Option<Vec<Vec<Option<u32>>>> {
+        let entry = state
+            .frontend
+            .scenario_catalog
+            .shell_maps()
+            .get(state.frontend.skirmish_shell_state.selected_map_idx)?;
+        if crate::app::frontend::skirmish_shell_render::is_random_map_sentinel_entry(entry) {
+            return None;
+        }
+        let file_name = entry.file_name.clone();
+        let cells = starts
+            .iter()
+            .map(|&(x, y)| Some((u16::try_from(x).ok()?, u16::try_from(y).ok()?)))
+            .collect::<Option<Vec<_>>>()?;
+        let ra2_dir = state.platform.game_config.as_ref()?.paths.ra2_dir.clone();
+        let (assets, rules, _) = state.process_assets.manager_and_rules_with_tile_cache();
+        let (assets, rules) = (assets?, rules?);
+        let map = match crate::map::source::load_map_by_name_or_path_with_assets(
+            &ra2_dir, &file_name, assets,
+        ) {
+            Ok(loaded) => loaded.map,
+            Err(error) => {
+                log::warn!("Team Starts measures straight lines: map {file_name}: {error}");
+                return None;
+            }
+        };
+        let Some(theater) = crate::map::theater::load_theater(assets, &map.header.theater) else {
+            log::warn!(
+                "Team Starts measures straight lines: theater {} unavailable",
+                map.header.theater
+            );
+            return None;
+        };
+        Some(
+            crate::sim::pathfinding::drive_distance::map_drive_distances(
+                &map,
+                &theater,
+                assets,
+                rules.selected_rules_root(),
+                rules.fixed_art(),
+                &cells,
+            ),
+        )
+    }
+
     /// Whether the selected map has a setup for Load Setup.
     pub(crate) fn skirmish_setup_saved(state: &AppState) -> bool {
         state
@@ -334,12 +388,14 @@ impl App {
                 }
             }
             crate::ui::skirmish_shell::SkirmishShellAction::TeamStarts => {
-                let maps = state.frontend.scenario_catalog.shell_maps();
                 let starts = Self::selected_map_start_cells(state);
+                let drive = Self::selected_map_drive_distances(state, &starts);
+                let maps = state.frontend.scenario_catalog.shell_maps();
                 crate::ui::skirmish_shell::apply_team_starts(
                     &mut state.frontend.skirmish_shell_state,
                     maps,
                     &starts,
+                    drive.as_deref(),
                 );
             }
             crate::ui::skirmish_shell::SkirmishShellAction::None

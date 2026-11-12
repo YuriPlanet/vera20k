@@ -2561,7 +2561,7 @@ fn team_starts_seat_allies_together_on_the_page() {
     }
     // West pair (0, 1) and east pair (2, 3).
     let starts = [(10, 10), (10, 30), (90, 10), (90, 30)];
-    apply_team_starts(&mut shell, &maps, &starts);
+    apply_team_starts(&mut shell, &maps, &starts, None);
     let start = |row| match selected_combo_item(&shell, Id::Start(row)) {
         Some(Item::Start(LaunchStartPosition::Position(start))) => Some(start),
         _ => None,
