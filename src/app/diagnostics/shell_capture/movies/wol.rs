@@ -157,7 +157,9 @@ pub enum WolTarget {
     /// seats make one a team, the host on Team A and the guest on Team B.
     ModernTeams,
     /// VERA's C2 opens two spectator rows past its players and the stand-in
-    /// guest moves to the first.
+    /// guest moves to the first; the host seats them, the join queue seats
+    /// them again, and the lobby's answer gives them a badge, which their
+    /// row draws and the status line names under the pointer.
     ModernSpectators,
     /// The same, then Create Game: C2 settled.
     TestServiceCreate,
@@ -4980,9 +4982,18 @@ impl WolCapture {
                         | WolTarget::IngamePageCancel
                 ) || revealed));
         }
+        // The guest's badge help types itself out in the room's own status
+        // line.
+        let room_line = self.target != WolTarget::ModernSpectators
+            || state
+                .frontend
+                .multiplayer_setup
+                .as_ref()
+                .is_some_and(|ui| ui.statics.is_terminal());
         Ok(self.phase == WolPhase::Settle(0)
             && state.frontend.shell_exit.is_none()
             && (backdrop || state.frontend.shell_status_line.is_terminal())
+            && room_line
             && state.frontend.shell_first_paint_slide.is_none())
     }
 
@@ -6289,6 +6300,64 @@ impl WolCapture {
                     "the join queue did not seat the spectator: {seated:?} {requests:?}"
                 );
                 self.event(frame, json!({"join queue seats the spectator": {"row": 1}}));
+                // The lobby's answer gives the guest a Major's badge: the
+                // room draws it in their row, and the help of their name
+                // under the pointer names it, their rank and OS, as the
+                // lobby's player list does.
+                use crate::app::shell_wol::{WolHighScoreRecord, WolLadderRecord};
+                service_event(
+                    state,
+                    WolServiceEvent::Ladder(vec![WolLadderRecord {
+                        name: SERVICE_GUEST.into(),
+                        points: 31,
+                        os_hundredths: 3120,
+                        rank: 5,
+                        ..Default::default()
+                    }]),
+                );
+                service_event(
+                    state,
+                    WolServiceEvent::HighScores(Ok(vec![WolHighScoreRecord {
+                        name: SERVICE_GUEST.into(),
+                        points: 151,
+                        rank: 5,
+                        coop: 0,
+                    }])),
+                );
+                let view = setup_view(state)?;
+                let (page_row, combo) =
+                    row_combo(&view, SetupColumn::Player, 1).context("the guest's name")?;
+                let badge = view
+                    .row_icons
+                    .get(page_row)
+                    .and_then(Option::as_ref)
+                    .and_then(|icon| icon.badge);
+                let rect = crate::app::input::multiplayer_setup::layout(state)
+                    .control_rect(combo.id)
+                    .context("the guest's name")?;
+                set_window_pointer_to_rect_center(state, rect);
+                crate::app::input::multiplayer_setup::cursor_moved(state);
+                let help = setup::view::player_help(state, &view, combo.id);
+                let label = |key: &str| App::csf_label(state, key, key);
+                let expected = crate::i18n::fill(
+                    &label("VERA:PlayerHelp"),
+                    &[
+                        ("name", &SERVICE_GUEST),
+                        ("badge", &label("VERA:LobbyBadgeMajor")),
+                        ("rank", &5),
+                        ("os", &"31.20"),
+                    ],
+                );
+                ensure!(
+                    badge == Some("major.pcx") && help.as_deref() == Some(expected.as_str()),
+                    "the guest's badge {badge:?} and help {help:?}"
+                );
+                self.event(
+                    frame,
+                    json!({"player badge": {"row": 1, "badge": badge, "help": help}}),
+                );
+                self.settle();
+                return Ok(());
             }
             WolTarget::ClanLockout | WolTarget::ClanNoStart | WolTarget::ClanChooseMap => {
                 return self.clan_room(state, frame);

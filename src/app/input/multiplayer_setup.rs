@@ -264,16 +264,22 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
     let over_preview = over.is_none()
         && layout.map_preview.contains(x, y)
         && preview_box_shows(state, &view, &layout);
-    let help = over
-        .or(over_preview.then_some(MAP_PREVIEW))
-        .and_then(|id| tooltip_key(view.dialog, id))
-        .and_then(|key| {
-            state
-                .process_assets
-                .csf
-                .as_ref()
-                .and_then(|csf| csf.get(&key))
-                .map(str::to_owned)
+    // VERA's online room names the badge, rank and OS of the player whose
+    // name is under the pointer.
+    let player =
+        over.and_then(|id| crate::app::shell_network_setup::view::player_help(state, &view, id));
+    let help = player
+        .or_else(|| {
+            over.or(over_preview.then_some(MAP_PREVIEW))
+                .and_then(|id| tooltip_key(view.dialog, id))
+                .and_then(|key| {
+                    state
+                        .process_assets
+                        .csf
+                        .as_ref()
+                        .and_then(|csf| csf.get(&key))
+                        .map(str::to_owned)
+                })
         })
         .unwrap_or_default();
     let help = if over_preview {

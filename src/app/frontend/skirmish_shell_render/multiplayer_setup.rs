@@ -20,13 +20,14 @@ use super::text::{
 use super::{
     SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F,
     SHELL_DROPDOWN_DEPTH, SHELL_DROPDOWN_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB,
-    SHELL_PARENT_BACKGROUND_DEPTH,
+    SHELL_PARENT_BACKGROUND_DEPTH, SHELL_SWATCH_DEPTH,
 };
 use crate::app::AppState;
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::render::batch::SpriteInstance;
 use crate::render::shell_paint::{self, ModalButton, PaintLabel};
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
+use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
 use crate::ui::multiplayer_setup::*;
 use crate::ui::shell::geom::RectPx;
 use crate::util::time::Instant;
@@ -369,9 +370,14 @@ pub(crate) fn render_multiplayer_setup(
             if let Some(item) = selected
                 && item.swatch.is_none()
             {
+                let mut face = crate::ui::skirmish_shell::combo_text_rect(rect, scale);
+                // VERA's online room: the name stops short of its badge.
+                if let Some((_, badge)) = player_badge(atlas, &view, &layout, combo.id) {
+                    face.w = badge.x - face.x;
+                }
                 texts.push(text(
                     &item.text,
-                    crate::ui::skirmish_shell::combo_text_rect(rect, scale),
+                    face,
                     ShellAlign::V_CENTER,
                     super::text::combo_face_text_color(!view.enabled(combo.id)),
                     SHELL_CONTROL_TEXT_DEPTH,
@@ -402,6 +408,19 @@ pub(crate) fn render_multiplayer_setup(
                     layout.acceptance[row],
                     scale,
                     SHELL_CONTROL_DEPTH,
+                );
+            }
+            // VERA's online room: the badge over the name's face, as the
+            // colour list's swatch.
+            if let Some((entry, rect)) =
+                player_badge(atlas, &view, &layout, SetupColumn::Player.control(row))
+            {
+                push_flag_entry_clipped_centered(
+                    &mut controls,
+                    entry,
+                    rect,
+                    scale,
+                    SHELL_SWATCH_DEPTH,
                 );
             }
         }
@@ -966,6 +985,31 @@ pub(crate) fn render_multiplayer_setup(
     )?;
     state.platform.window.request_redraw();
     Ok(())
+}
+
+/// VERA's online room: a Player list's badge ([`SetupRowIcon::badge`]) and
+/// its cell, one badge wide at the right end of the list's face, as far
+/// short of the arrow as the name starts in from the left.
+fn player_badge(
+    atlas: &SkirmishShellChromeAtlas,
+    view: &SetupView,
+    layout: &MultiplayerSetupLayout,
+    control: u16,
+) -> Option<(SkirmishShellChromeEntry, RectPx)> {
+    use crate::ui::skirmish_shell::{COMBO_ARROW_RESERVE_W, COMBO_FACE_H, COMBO_TEXT_LEFT_INSET};
+    let (SetupColumn::Player, row) = SetupColumn::decode(control)? else {
+        return None;
+    };
+    let entry = atlas.wol_badge(view.row_icons.get(row)?.as_ref()?.badge?)?;
+    let width = entry.pixel_size[0].round() as i32;
+    let cell = layout
+        .page
+        .scale
+        .derive_rect(layout.control_rect(control)?, |rect| {
+            let right = rect.x + rect.w - COMBO_ARROW_RESERVE_W - COMBO_TEXT_LEFT_INSET;
+            RectPx::new(right - width, rect.y, width, COMBO_FACE_H)
+        });
+    Some((entry, cell))
 }
 
 /// The game options, in the room or in VERA's Game Options popup: their

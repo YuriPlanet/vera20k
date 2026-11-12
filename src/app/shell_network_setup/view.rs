@@ -6,6 +6,7 @@ use crate::app::frontend::skirmish_shell_render::{
     combo_item_label, flag_pcx_for_side_item_data, side_item_data_for_country,
 };
 use crate::app::match_runtime::session::{MatchSession, NetworkVacancy};
+use crate::app::shell_wol::lobby::player_badge;
 use crate::skirmish_launch::{AiDifficulty, LaunchStartPosition, LaunchTeam};
 use crate::skirmish_modes::{MpModeClass, mode_by_id};
 use crate::ui::multiplayer_setup::*;
@@ -69,6 +70,23 @@ pub(super) fn team_letter(state: &AppState, team: u8) -> String {
 enum Listed {
     Row(u8),
     Header(SetupGroup, usize),
+}
+
+/// VERA's online room: the help under the pointer on the name of a player
+/// with a badge, as the lobby's player list gives it
+/// ([`crate::app::shell_wol::lobby::badge_help`]).
+pub(crate) fn player_help(state: &AppState, view: &SetupView, control: u16) -> Option<String> {
+    let (SetupColumn::Player, row) = SetupColumn::decode(control)? else {
+        return None;
+    };
+    let badge = view.row_icons.get(row)?.as_ref()?.badge?;
+    let row = view.combo(control)?.row;
+    let launch = state.match_state.session.network_setup()?;
+    let human = launch
+        .humans
+        .iter()
+        .find(|human| human.raw_slot_index == Some(row))?;
+    crate::app::shell_wol::lobby::badge_help(state, &human.name, badge)
 }
 
 /// Whether the local player could press Accept (`SetupView::accept_enabled`).
@@ -676,6 +694,11 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 }),
                 accepted: ai.is_some()
                     || human.is_some_and(|(index, _)| session.network_player_ready(index)),
+                // VERA's online room shows each player's badge, as the
+                // lobby's player list does.
+                badge: human
+                    .filter(|_| dialog.modern && dialog.wol())
+                    .and_then(|(_, human)| player_badge(state, &human.name)),
             });
         }
     }

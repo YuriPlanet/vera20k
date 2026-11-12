@@ -707,7 +707,9 @@ every 4 OS, from Corporal (32 points) at 18 to Five-Star General (1501) at 46, a
 Commander in Chief (2001) for the running season's number 1 from OS 46. Its `rank` is
 their place this season, 0 when unranked. One lookup fills both of the game's tables: its
 ladder table from `records`, and its high-score table, whose points pick each player's
-badge, from `high_scores`. Until the operator starts the first season no one has a rating,
+badge, from `high_scores`. The game draws those badges in the lobby's player list and
+beside each name in VERA's game rooms, and the help under the pointer on a name adds
+the rank and OS. Until the operator starts the first season no one has a rating,
 and `high_scores` gives every name asked for the Colonel's 251 points with `rank` 0; a
 lobby from before that sends none then. A lobby from before badges sends no `high_scores`, and the game
 then shows none; one from before `os` leaves it out, and the game shows the rounded OS.

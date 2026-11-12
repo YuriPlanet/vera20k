@@ -484,6 +484,9 @@ pub(crate) struct SetupRowIcon {
     pub(crate) country: Option<String>,
     pub(crate) host: bool,
     pub(crate) accepted: bool,
+    /// VERA's online room: the player's badge
+    /// ([`crate::ui::wol_lobby::badge`]), drawn at the right of their name.
+    pub(crate) badge: Option<&'static str>,
 }
 
 /// The rows a header row of VERA's room starts, in a mode with teams.
