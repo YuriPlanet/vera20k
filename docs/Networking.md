@@ -303,6 +303,12 @@ modern online ordering above is an intentional adaptation.
   online name may be 24 characters, so VERA writes the first 19 bytes of a longer
   name and receivers match a sender by that same prefix (together with its
   endpoint, as before). LAN names are at most 19 and travel unchanged.
+  A LAN name is the saved player name's bytes: gamemd copies them into each packet
+  (`5DC6A6`) and shows them one byte to a character (`735120`), so every player,
+  the sender too, sees the same name, and a name beyond ASCII shows as its bytes.
+  The packet is unchanged. Older builds on Windows sent other bytes for such a
+  name than they used themselves, so a game they hosted could not be joined;
+  different builds meet only in the lobby, where such a name now looks different.
 - A player's colour travels as the number the lobby lists it under: 0 to 7 for
   gamemd's eight, 8 for an observer and 9 to 30 for VERA's
   [extra lobby colours](skirmish-colors.md). The LAN fields and the online slot
