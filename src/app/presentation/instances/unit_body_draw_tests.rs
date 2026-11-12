@@ -182,8 +182,17 @@ fn latch_unloading_image(sim: &mut Simulation, id: u64, image: &str) {
 
 #[test]
 fn the_turret_split_follows_the_drawn_model_not_the_objects_turret() {
-    let rules = RuleSet::from_ini(&IniFile::from_str(
-        "\
+    // The atlas seeds what the voxel catalog binds (`seed_layers_for`): a type
+    // whose Rules section gamemd reads (an empty one never is, 0x00712194)
+    // and whose ART says Voxel=yes, from its files. Each has a one-limb body,
+    // the turreted ones a turret beside it.
+    let art = IniFile::from_str(
+        "[MINER]\nVoxel=yes\n[EMPTY]\nVoxel=yes\n[PLAIN]\nVoxel=yes\n\
+         [GUNNED]\nVoxel=yes\n[JET]\nVoxel=yes\n",
+    );
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(
+            "\
 [VehicleTypes]
 0=MINER
 1=EMPTY
@@ -196,6 +205,7 @@ Harvester=yes
 Turret=yes
 UnloadingClass=EMPTY
 [EMPTY]
+Turret=no
 [PLAIN]
 Harvester=yes
 UnloadingClass=GUNNED
@@ -204,9 +214,25 @@ Turret=yes
 [JET]
 Turret=yes
 ",
-    ))
+        ),
+        &art,
+    )
     .expect("the draw-type rules parse");
+    rules.install_art_fixture(crate::rules::art_data::ArtRegistry::from_ini(&art));
     let directory = TestDirectory::new("unit-body-draw");
+    for model in [
+        "MINER",
+        "MINERTUR",
+        "EMPTY",
+        "PLAIN",
+        "GUNNED",
+        "GUNNEDTUR",
+        "JET",
+    ] {
+        let file = |ext: &str| directory.path().join(format!("{model}.{ext}"));
+        std::fs::write(file("VXL"), crate::assets::vxl_file::minimal_test_vxl()).unwrap();
+        std::fs::write(file("HVA"), crate::assets::hva_file::minimal_test_hva()).unwrap();
+    }
     let assets = AssetManager::from_loose_root_for_test(directory.path());
     let mut sim = Simulation::new();
     let spawn = |sim: &mut Simulation, type_id: &str| {
@@ -835,6 +861,7 @@ fn retail_voxel_bodies_draw_the_sprites_their_model_is_seeded_with() {
     let mut voxel_vehicles = 0;
     let mut aircraft = Vec::new();
     let mut unloading = Vec::new();
+    let mut unbound = Vec::new();
     for type_id in rules.vehicle_ids.iter().chain(&rules.aircraft_ids) {
         let object = rules.object(type_id).expect("a listed type");
         let Some(id) = sim.spawn_object_limbo_at_height(type_id, "Americans", 10, 10, 0, 0, rules)
@@ -846,6 +873,13 @@ fn retail_voxel_bodies_draw_the_sprites_their_model_is_seeded_with() {
             continue;
         }
         let is_aircraft = entity.category() == EntityCategory::Aircraft;
+        // gamemd gives no model to a type it never reads (no Rules section,
+        // 0x00712194) or whose ART lacks Voxel=yes, and draws none; the atlas
+        // seeds nothing for it either.
+        if seed_layers_for(&assets, type_id, Some(rules)).is_empty() {
+            unbound.push(type_id.clone());
+            continue;
+        }
         match body_draw_against_seed(&sim, &assets, rules, id) {
             Ok(Some((model, parts))) => {
                 assert_eq!(&model, type_id);
@@ -873,12 +907,19 @@ fn retail_voxel_bodies_draw_the_sprites_their_model_is_seeded_with() {
         }
     }
     assert_eq!(failures, Vec::<String>::new());
+    // Listed types gamemd gives no model: no Rules section, or no ART section
+    // saying Voxel=yes.
+    assert_eq!(
+        unbound,
+        ["DeathDummy", "YDUM", "VISC_LRG", "VISC_SML", "APACHE"]
+    );
     assert!(
         voxel_vehicles > 40,
         "{voxel_vehicles} retail voxel vehicles"
     );
-    // Every aircraft in this stock Hills/Battle fixture is one body sprite.
-    assert_eq!(aircraft.len(), 12, "{aircraft:?}");
+    // Every aircraft with a model in this stock Hills/Battle fixture is one
+    // body sprite (APACHE has none).
+    assert_eq!(aircraft.len(), 11, "{aircraft:?}");
     assert!(aircraft.iter().all(|(_, parts)| !parts), "{aircraft:?}");
     // The War Miner's HARV has `Turret=yes`; its unloading HORV has none.
     unloading.sort();

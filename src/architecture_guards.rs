@@ -127,6 +127,8 @@ fn raw_ini_walks_have_pinned_production_callers() {
                 ("app/persistence/profile_file.rs", 1),
                 // `ini-get --reader raw` and the presence report.
                 ("asset_tools/verb_ini.rs", 1),
+                // A random map's `.yrm` export copies its sections as stored.
+                ("map/map_export.rs", 1),
                 // `[Colors]` entries copied into the processed registry.
                 ("rules/native_processing.rs", 1),
             ],
@@ -314,6 +316,10 @@ fn engine_platform_and_process_reads_have_pinned_files() {
                 // Switches that only remove debug assertions.
                 "util/debug_checks.rs",
                 "sim/world/master_frame.rs",
+                // The idle-sleep switch for fault reports: sleeping leaves
+                // results unchanged, and the hash and saves read a sleeper as
+                // settled.
+                "sim/world/idle_sleep.rs",
                 // Retail probes that movement_bridge_retail_tests.rs includes
                 // by `#[path]`, which the test-gate scan cannot see.
                 "sim/movement/bridge_restamp_retail_probe.rs",
@@ -396,6 +402,8 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/combat/aircraft_release.rs", 1),
                 ("sim/combat/world_fire.rs", 1),
                 ("sim/combat/world_receiver.rs", 1),
+                // Campaign Money crates pay PlayerPtr (0x004824B0): mode 0 only.
+                ("sim/crates/pickup.rs", 1),
                 ("sim/flashing.rs", 1),
                 ("sim/house_diplomacy.rs", 1),
                 ("sim/miner/ore_scan.rs", 1),
@@ -471,6 +479,9 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/combat/parasite.rs", 2),
                 ("sim/combat/techno_death.rs", 1),
                 ("sim/combat/world_receiver.rs", 2),
+                // Campaign Money crates (0x004824A7): mode 0 only, where it
+                // reads the House's own control flags.
+                ("sim/crates/pickup.rs", 1),
                 ("sim/docking/hospital.rs", 1),
                 ("sim/flashing.rs", 1),
                 ("sim/infantry.rs", 1),
@@ -1813,6 +1824,11 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         ("util/shared.rs", "iter_mut", SHARED),
         ("util/shared.rs", "index_mut", SHARED),
         ("util/sparse.rs", "deref_mut", SPARSE),
+        (
+            "util/sync.rs",
+            "get_mut",
+            "the threaded browser build's stand-in for OnceLock::get_mut, on a cell held exclusively",
+        ),
     ];
     // (file, method, reason): `set`/`set_*` methods whose body stores one
     // parameter. Each stores one native member; the decision to store it
