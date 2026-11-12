@@ -52,6 +52,15 @@ impl Simulation {
                 id,
             );
         }
+        // GoOnline `0x004522DC`, EnableStuff `0x00452441`, DisableStuff
+        // `0x00452503`, ChangeOwner `0x004484EC` and ReadScenarioBuildings
+        // `0x0044FCA4` reconnect a laser fence post once the flag is written,
+        // before the animations (RecalculateWallConnections(0)).
+        self.laser_fence_recalculate(
+            id,
+            false,
+            crate::sim::world::UninitContext::new(rules, Some(rules.overlay_registry())),
+        );
         for (slot, anim_id) in slots.into_iter().enumerate() {
             if self
                 .building_anim_power_flags(id, slot as u8, rules)

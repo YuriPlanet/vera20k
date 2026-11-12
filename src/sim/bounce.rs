@@ -523,11 +523,9 @@ fn quaternion_multiply(
 ///   reaches them: all 36 stock `DebrisTypes=` lines name `TIRE`, so no stock
 ///   section throws `PIECE` or `GASTANK` on death.
 /// - The building/wall arm's first rejection — `type+0x16BF` (`LaserFence=`)
-///   with `building+0x618 >= 8` — is Tiberian Sun legacy. No stock RA2/YR
-///   building authors `LaserFence=`, and the string occurs exactly once in
-///   `rulesmd.ini` — line 3652, a comment describing the neighbouring
-///   `LaserFencePost=` key, which nothing authors either. Do not port it as a
-///   default.
+///   with `building+0x618 >= 8`, an off laser fence section — is answered by
+///   the terrain's `has_bounce_surface` (`world::bounce_terrain`). No stock
+///   RA2/YR building authors `LaserFence=`; mods do.
 ///
 /// Ground/deck queries are delivered by the current
 /// Phase 3 Bounce ground-height comparison and the native cliff controls in
@@ -818,8 +816,7 @@ impl BounceState {
             && terrain.has_bounce_surface(&new_cell);
 
         // The LaserFence-dependent rejection (type+0x16BF and building+0x618
-        // >=8) remains outside this comparison. Its fixtures have that flag
-        // clear; this does not establish universal dormancy.
+        // >=8) is part of `has_bounce_surface`.
         let clamp_to_surface = |state: &mut Self| {
             let clamp_floor = (ground - GROUND_CLAMP_WINDOW_LEPTONS) as f32;
             if clamp_floor < f32_of(state.position[2]) {

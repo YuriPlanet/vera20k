@@ -220,6 +220,13 @@ impl Simulation {
         #[cfg(feature = "ares")]
         self.ares_make_stuff_up_rules(input.rules);
 
+        // Full_Init687C2B..687C44 clears the placement scope around
+        // FUN_00452D40: every laser fence post raises its sections.
+        self.laser_fence_link_scenario_posts(crate::sim::world::UninitContext::new(
+            input.rules,
+            Some(input.overlay_registry),
+        ));
+
         // ReadScenario684ACE → FillInData684F02..684F7F, before restamp
         // and the particle/OreTwinkle tail. Every nonnull House participates;
         // restore never enters this fresh-only owner or repeats its credits.

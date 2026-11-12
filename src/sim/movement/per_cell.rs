@@ -1832,6 +1832,12 @@ impl Simulation {
             id,
             crate::sim::world::UninitContext::new(rules, registry).with_effects(effects),
         );
+        // Foot4D8CA5..4D8D0B: an on laser fence section in the cell burns
+        // the Foot.
+        self.laser_fence_burn_foot(
+            id,
+            crate::sim::world::UninitContext::new(rules, registry).with_effects(effects),
+        );
         // Foot4D8D31..4D8D53: a Foot whose structural deck disappeared
         // takes the same DropAsBomb as BlowUpBridge's deck traversal.
         let deck_gone = self.substrate.entities.get(id).is_some_and(|entity| {

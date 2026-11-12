@@ -80,8 +80,6 @@ Residuals:
 - `SpawnDirection=` keeps whole leptons (the stock reader's representation); Ares adds
   its floats. Trigger: a fractional value; effect: sub-lepton spark directions; neither
   data set authors it.
-- VERA keeps no `LaserFenceFrame` (`+0x618`), so a spark counts a `LaserFence=yes`
-  building as an online section; VERA builds no fence sections yet.
 - Native division traps (a zero `SpawnFrames` period, a zero StateAI period) spawn or
   advance nothing in VERA; a spark or smoke record whose cell VERA cannot evaluate
   (slope type above 20) dies.

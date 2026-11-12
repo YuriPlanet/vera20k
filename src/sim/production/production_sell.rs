@@ -43,8 +43,8 @@
 //! - A malformed upgrade stack whose last type is absent would be
 //!   dereferenced at `0x0044AAD4`. VERA safely leaves its count/types and
 //!   stage unchanged, with no refund; it does not compact sparse slots.
-//! - Dormant in retail data: stage 0's Artillary/TickTank arm, the LaserFencePost
-//!   recalc (`0x004533A0`), the sale's CloakGenerator arm (`Type+0x16C7`,
+//! - Dormant in retail data: stage 0's Artillary/TickTank arm, the sale's
+//!   CloakGenerator arm (`Type+0x16C7`,
 //!   `0x0044A292`) and `BuildingClass::SetTarget`'s computer sale of a
 //!   `TickTank=`/`Artillary=` building (`Type+0x16C4`/`+0x16CA`, which
 //!   queues and commences Selling itself at `0x00443C42`; no retail
@@ -612,7 +612,8 @@ fn qualifying_undeploy(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
 /// `DeploySound=` (`+0x56C`) at the building's Location (after its undeploy
 /// voice `vt+0x36C`, Building459C20/common708E00), a Tank
 /// Bunker's vehicle released (`+0x2E4`, `0x004593A0`), RUN_AWAY to every
-/// contact (`0x0044AB68`) and the damage-fire anims released (`+0x5C8`,
+/// contact (`0x0044AB68`), a laser fence post's sections turned off
+/// (`0x0044AB82`) and the damage-fire anims released (`+0x5C8`,
 /// `0x0044AB87..0x0044ABAA`). With upgrades, refund and scalar-delete a
 /// temporary instance of the last type, then PowerDown and leave stage 0.
 pub fn sell_stage_zero(
@@ -753,6 +754,14 @@ pub fn sell_stage_zero(
         crate::sim::radio::RadioMessage::RunAway,
         rules,
         frame_effects,
+    );
+    //44AB6E..44AB82: a laser fence post turns its sections off
+    // (RecalculateWallConnections(0) sees Selling).
+    sim.laser_fence_recalculate(
+        id,
+        false,
+        crate::sim::world::UninitContext::new(rules, frame_effects.overlay_registry())
+            .with_effects(frame_effects),
     );
     sim.clear_building_damage_fire_slots(id, rules);
 }

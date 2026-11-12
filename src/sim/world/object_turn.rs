@@ -181,32 +181,35 @@ impl Simulation {
         if object.invisible_in_game || (object.gate && building.is_open_gate()) {
             return Ok(false);
         }
-        // Ares 3.0 InfantryClass_Update 10014DB0 (hook 0x51BD4C): an `IsPassable`
-        // building is ignored (0x51BD7D); a `Firestorm.Wall` one takes the
-        // stock FirestormWall branch (0x51BD56) in place of `FirestormWall=`:
-        // only while its owner's firestorm is up does the man scatter.
-        #[cfg(feature = "ares")]
-        if object.building_type_ext().is_passable {
-            return Ok(false);
-        }
-        #[cfg(feature = "ares")]
-        if object.building_type_ext().firestorm_wall {
-            if !self.ares_firestorm.is_active(building.owner()) {
+        if object.laser_fence {
+            // `0x0051BD30..0x0051BD4A`: an off laser fence section (frame 8
+            // or 12) is ignored; an on one makes the man scatter, past the
+            // FirestormWall test and its Ares hook.
+            if building.laser_fence_frame.is_off_frame() {
                 return Ok(false);
             }
-        } else if object.laser_fence {
-            return Ok(false);
-        }
-        // RESIDUAL: specialized fence state. This prefix compares LaserFence+618
-        // with8/12 and reads its owner's Firestorm+1FA. Their runtime
-        // owners are absent. Such types retain the prior no-Scatter behavior
-        // until those separate mechanisms establish the required state.
-        // Stock GAPILE and all ordinary barracks have both type flags false.
-        // (Ares builds own the firestorm arm above; the hook leaves the stock
-        // `FirestormWall=` flag unread.)
-        #[cfg(not(feature = "ares"))]
-        if object.laser_fence || object.firestorm_wall {
-            return Ok(false);
+        } else {
+            // Ares 3.0 InfantryClass_Update 10014DB0 (hook 0x51BD4C): an
+            // `IsPassable` building is ignored (0x51BD7D); a `Firestorm.Wall`
+            // one takes the stock FirestormWall branch (0x51BD56) in place of
+            // `FirestormWall=`: only while its owner's firestorm is up does
+            // the man scatter.
+            #[cfg(feature = "ares")]
+            if object.building_type_ext().is_passable
+                || (object.building_type_ext().firestorm_wall
+                    && !self.ares_firestorm.is_active(building.owner()))
+            {
+                return Ok(false);
+            }
+            // RESIDUAL: the stock FirestormWall branch (`0x0051BD4C`) reads
+            // its owner's Firestorm+1FA, which only Ares sets (the Ares arm
+            // above replaces it): a stock `FirestormWall=` building keeps the
+            // prior no-Scatter behavior. Stock GAPILE and all ordinary
+            // barracks have the flag false.
+            #[cfg(not(feature = "ares"))]
+            if object.firestorm_wall {
+                return Ok(false);
+            }
         }
         let slaves = crate::sim::slave_deposit::SlaveDepositQuery {
             entities: &self.substrate.entities,

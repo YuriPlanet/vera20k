@@ -65,7 +65,7 @@ Stock gaps found in passing, with no Ares dependency:
 | Mechanism | What is missing | Where |
 |---|---|---|
 | `CanMakeStuffUp` | The Rules draws and the 90-frame infantry panic are ported and the written values are saved in `AresMadeUpRules`, but nothing reads them yet: 28 Rules fields with about 110 read sites, many in free functions without a Simulation | [ares-warhead-residuals.md](ares-warhead-residuals.md) |
-| EMP | Tunnel movers; a landed Aircraft's Fly Power_Off spin (0x4CFD20); a LaserFencePost's fence recalc (0x4533A0, VERA builds no fence sections) | [ares-emp.md](ares-emp.md) |
+| EMP | Tunnel movers; a landed Aircraft's Fly Power_Off spin (0x4CFD20) | [ares-emp.md](ares-emp.md) |
 | Refinery storage | `[Basic] FillSilos=`, the Weeder store, Removed_From_Game's keepTiberium arm, a fifth tiberium slot, the storage pips (0x44D755, 0x709B4E) and the `Message.SilosNeeded` text (needs a sim-to-client message event) | [ares-tiberium.md](ares-tiberium.md) |
 | Trench traversal | Only a buildings-only selection gets the cursor and click; Ctrl+Alt over a friendly trench keeps its stock answer; `GarrisonedIn` is not kept | [ares-building-hooks.md](ares-building-hooks.md) |
 | Deactivated objects | The deactivated What_Action over an object gates only the hover cursor of the object that owns it; the click paths keep their stock rungs below the ClickedAction refusal | [ares-techno-hooks.md](ares-techno-hooks.md) |

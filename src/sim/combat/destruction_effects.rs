@@ -57,7 +57,7 @@
 //!   `+0xD4`/`+0xDC`, `0x00441D2F..0x00441D61`) is carried as the anim's
 //!   extra-building-scheme remap (`AnimRemap::ExtraBuildingScheme`).
 //! - Steps with no stock trigger or no VERA state: 2 (radar-spy bits `+0x210`),
-//!   3 and 4 (CloakGenerator, LaserFencePost), 10
+//!   3 (CloakGenerator), 10
 //!   (stored-ore spill; YR never fills building storage), 11 (ShakeScreen, a
 //!   bare `RET`), 14 (`DestroyParticleSystems=` smoke; no stock user).
 //! - Ordinary ground weapon-fire ammo debits remain separate. The shared Ammo
@@ -598,6 +598,17 @@ impl Simulation {
         let owner = entity.owner();
         let selling =
             entity.mission.effective().known() == Some(crate::sim::mission::MissionType::Selling);
+
+        // 4. `0x004416E9..0x00441702`: a laser fence post blows up its
+        // sections (ConnectWalls(1)).
+        if object.laser_fence_post && super::world_receiver::callbacks_enabled(self) {
+            self.laser_fence_connect_walls(
+                building_id,
+                true,
+                crate::sim::world::UninitContext::new(rules, effects.overlay_registry())
+                    .with_effects(effects),
+            );
+        }
 
         // 5. `0x00441702..0x0044172F`: a computer house's `RevealToAll=`
         // building releases its sight for the current house

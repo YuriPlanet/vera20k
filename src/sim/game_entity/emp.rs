@@ -826,8 +826,8 @@ mod receiver {
                 }
                 Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, false);
                 //100627F0 also enables the Stuff of a LaserFencePost (+0x16BE)
-                // type whatever the power; its fence recalc4533A0 has no
-                // VERA port (no fence sections exist).
+                // type whatever the power, which reconnects its fence
+                // (4533A0, `sim::laser_fence`).
                 let fence_post = self
                     .substrate
                     .entities

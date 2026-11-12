@@ -50,8 +50,8 @@ pub(super) fn state_advance_due(p: &super::Particle, max_ec: i32, advance: u8) -
 
 /// Native particle AI and movement have no failure exit: every particle ages
 /// and its system's destroy walk always runs. A particle VERA refuses (a
-/// collision or ground input it does not model, e.g. a `LaserFence=` building
-/// or a slope type above 20 in the cell) is marked here, so that walk retires
+/// collision or ground input it does not model, e.g. a slope type above 20
+/// in the cell) is marked here, so that walk retires
 /// it instead of the system holding it for ever.
 pub(super) fn retire_refused(p: &mut super::Particle, error: &dyn std::fmt::Display) {
     log::warn!(
@@ -349,7 +349,7 @@ where
     for particle in &mut sys.particles {
         // Native `AI_Spark` has no failure exit: every particle ages and the
         // destroy walk below always runs. A VERA-only refusal (a collision
-        // input it does not model, e.g. a `LaserFence=` building in the cell)
+        // input it does not model, e.g. a slope type above 20 in the cell)
         // used to leave the loop here, so nothing in the system aged and it
         // never emptied. The refused particle is retired instead.
         if let Err(error) = tick_particle_with_query(
@@ -807,8 +807,8 @@ SpawnSparkPercentage=1
         assert_eq!(sim.rng_views().scenario, expected_rng.logical_view());
     }
 
-    /// A refused collision query (a `LaserFence=` building under the spark,
-    /// which only a mod sets) must not hold the system open: native
+    /// A refused collision query (a slope type above 20 under the spark,
+    /// which only a mod's map could hold) must not hold the system open: native
     /// `AI_Spark` has no failure exit and always reaches its destroy walk
     /// (`0x0062ECE9`). The particle is retired with no draw.
     #[test]

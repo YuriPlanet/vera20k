@@ -139,8 +139,10 @@ pub(crate) fn recalc_zone_type(
 /// Impassable (6, `0x00483D6B`). The stock arm's FirestormWall= branch
 /// needs `HouseClass::FirestormActive` (`+0x1FA`), which only Ares sets
 /// (its `Firestorm.Wall` sections take that branch: Ares 3.0 10014B70, hook
-/// 0x483D94), so default builds have no caller; the LaserFence branch is
-/// not ported (no retail type is a laser fence).
+/// 0x483D94), so default builds have no caller. The LaserFence branch
+/// changes nothing: the Impassable it stores for an on section
+/// (`0x00483DCA`) is overwritten with Clear when the list walk ends
+/// (`0x00483DD4`).
 #[cfg(feature = "ares")]
 pub(crate) fn recalc_zone_type_with_buildings(
     outside: bool,

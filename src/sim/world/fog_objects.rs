@@ -120,7 +120,7 @@ impl Simulation {
                 self.object_tech_level(object),
             ),
             no_zshape: object.firestorm_wall
-                || (object.laser_fence && matches!(entity.building_body_state(), Some(8 | 12))),
+                || (object.laser_fence && entity.laser_fence_frame.is_off_frame()),
             z_adjust: 0,
         }];
         for anim in slots.into_iter().flatten().filter_map(|id| self.anim(id)) {

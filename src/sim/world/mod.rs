@@ -6590,6 +6590,13 @@ impl Simulation {
             // Original4483A6 clears PrimaryFactory before the old-house
             //teardown.448C69 initializes it after the delegated owner swap.
             self.production.clear_primary_factory(stable_id);
+            //4483AD..4483BB: a laser fence post UnInits the old owner's
+            // sections (ConnectWalls(0)).
+            self.laser_fence_connect_walls(
+                stable_id,
+                false,
+                UninitContext::new(rules, registry).with_effects(effects),
+            );
         }
         // Active YR chain: BuildingClass::ChangeOwner (0x00448260) delegates
         // to TechnoClass::ChangeOwner (0x007014A0), which moves the house
@@ -6964,6 +6971,17 @@ impl Simulation {
             //448CEF: Grand_Opening(1) also runs on an already placed
             //building; its6E4 gate prevents repeating first-opening slots.
             self.grand_opening(stable_id, true, false, rules, None, effects);
+            //448CF5..448D65: outside the placement scope a laser fence post
+            // raises the new owner's sections, then its frame is cleared.
+            if !self.object_placement_scope_active() {
+                self.laser_fence_link_post(
+                    stable_id,
+                    UninitContext::new(rules, registry).with_effects(effects),
+                );
+                if !self.object_placement_scope_active() {
+                    self.laser_fence_clear_post_frame(stable_id, rules);
+                }
+            }
         }
         // `FootClass::ChangeOwner @ 0x004DBF13..0x004DBF32`: a Foot given to
         // a human house leaves its team.

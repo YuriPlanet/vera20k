@@ -2113,6 +2113,10 @@ fn hash_entity_owed(entity: &GameEntity, frame: u32, owed_visits: u32, hasher: &
         b"ares-dock-reload-timers-v1".hash(hasher);
         entity.ares_dock_reload_timers.hash(hasher);
     }
+    if !entity.laser_fence_frame.is_zero() {
+        b"laser-fence-frame-v1".hash(hasher);
+        entity.laser_fence_frame.hash(hasher);
+    }
     #[cfg(feature = "ares")]
     if !entity.ares_firestorm_wall.is_zero() {
         b"ares-firestorm-wall-frame-v1".hash(hasher);

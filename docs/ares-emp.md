@@ -61,8 +61,9 @@ its tech tree and power. VERA reaches those owners:
 - Prism towers: a tower in a forwarding network leaves it at its next
   operational sample (Ares10016950, hook454B3D), as one that goes offline.
 - LaserFencePost: DisableEMPEffect100627F0 also enables its Stuff without
-  power. The fence recalc4533A0 both Stuff bodies call has no VERA port, since
-  VERA builds no fence sections.
+  power. Both Stuff bodies reconnect the post's fence (RecalculateWallConnections
+  4533A0, `sim::laser_fence`): an EMPed post turns its sections off, and its
+  recovery turns them on again, burning what stands in them.
 
 UpdateSparkleAnim10062FD0 draws a building's sparkle with ZAdjust -1024.
 
@@ -464,10 +465,7 @@ leaves unaffected (trigger: an EMP hit on a Tunnel unit in a mod; effect: no
 EMP there). A landed Aircraft's Deactivate reaches Fly's Power_Off
 override4CFD20, whose Random(20, 30) spin and stop are not ported
 (`locomotor_power_off`); the base flag write runs instead, without those two
-scenario draws. A LaserFencePost's fence sections are neither dropped by
-DisableStuff nor rebuilt by EnableStuff (4533A0), since VERA builds none
-(trigger: an EMP hit on a mod's post; effect: no fence to drop; frequency:
-mods with LaserFencePost types). The Super pass still reads only a provider's
+scenario draws. The Super pass still reads only a provider's
 own type, not its upgrades' SuperWeapon keys (the existing residual of
 `superweapon::provided_supers`). Native TypeImmune scanner indices18/19 have synthetic getter evidence,
 but their production configuration meaning is not established; the shared 18-slot

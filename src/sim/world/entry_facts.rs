@@ -386,6 +386,9 @@ pub(super) struct BlockerFacts {
     pub(super) fully_cloaked: bool,
     pub(super) disguised: bool,
     pub(super) open_gate: bool,
+    /// A laser fence frame of 8 or 12 (Unit `0x0073F798`, Infantry
+    /// `0x0051C4B0`).
+    pub(super) laser_fence_off: bool,
     pub(super) bunker_occupied: bool,
     pub(super) foot_occupation: bool,
     pub(super) occupant_slot_a4: bool,
@@ -413,6 +416,7 @@ impl BlockerFacts {
             fully_cloaked: b.cloak.as_ref().is_some_and(|s| s.is_fully_cloaked()),
             disguised: b.disguise.as_ref().is_some_and(|s| s.is_disguised()),
             open_gate: b.is_open_gate(),
+            laser_fence_off: b.laser_fence_frame.is_off_frame(),
             bunker_occupied: b.bunker.occupant().is_some(),
             foot_occupation: b.foot_occupation_enabled(),
             occupant_slot_a4: crate::sim::movement::drive_track::occupant_slot_a4_answers_true(b),

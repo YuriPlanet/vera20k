@@ -338,19 +338,24 @@ impl ProjectileCollisionWorld<'_> {
                         crate::sim::cell_kernel::WallConnectionStep::Return(true)
                     );
                 if let Some(id) = building {
-                    let exempt = self
-                        .entities
-                        .get(id)
-                        .and_then(|object| self.interner.object_type(object.type_ref(), self.rules))
-                        .is_some_and(|kind| {
-                            kind.is_1x1_with_undeploy()
-                                && kind
-                                    .undeploys_into
-                                    .as_deref()
-                                    .is_some_and(|name| self.rules.object(name).is_some())
-                        });
-                    // LaserFence+stage>=8 has no active retail type/data writer.
-                    obstacle &= Some(id) != source && !exempt && !self.allied(source, id);
+                    let entity = self.entities.get(id);
+                    let kind = entity
+                        .and_then(|object| self.interner.object_type(object.type_ref(), self.rules));
+                    let exempt = kind.is_some_and(|kind| {
+                        kind.is_1x1_with_undeploy()
+                            && kind
+                                .undeploys_into
+                                .as_deref()
+                                .is_some_and(|name| self.rules.object(name).is_some())
+                    });
+                    // `0x00467593..0x004675A6`: an off laser fence section
+                    // (frame 8 or more) lets the bullet through.
+                    let fence_off = kind.is_some_and(|kind| kind.laser_fence)
+                        && entity.is_some_and(|object| !object.laser_fence_frame.is_on());
+                    obstacle &= Some(id) != source
+                        && !fence_off
+                        && !exempt
+                        && !self.allied(source, id);
                 }
             }
             if candidate_z < f64::from(floor)

@@ -891,6 +891,10 @@ pub struct Seldom {
     #[cfg(feature = "ares")]
     #[serde(default)]
     pub(crate) ares_dock_reload_timers: crate::sim::docking::airfield_reload::DockReloadTimers,
+    /// A laser fence section's draw frame, or a post's connection bits
+    /// (Building+0x618), owned by `sim::laser_fence`.
+    #[serde(default)]
+    pub(crate) laser_fence_frame: crate::sim::laser_fence::LaserFenceFrame,
     /// A firestorm wall section's FirestormWallFrame (Building+0x61C),
     /// owned by `sim::ares_firestorm`.
     #[cfg(feature = "ares")]
@@ -2479,6 +2483,7 @@ impl GameEntity {
                 sensor_array_counter: Default::default(),
                 #[cfg(feature = "ares")]
                 ares_dock_reload_timers: Default::default(),
+                laser_fence_frame: Default::default(),
                 #[cfg(feature = "ares")]
                 ares_firestorm_wall: Default::default(),
                 #[cfg(feature = "ares")]

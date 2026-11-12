@@ -7820,6 +7820,15 @@ impl RuleSet {
         })
     }
 
+    /// The section every laser fence post raises: the first BuildingType in
+    /// array order with `LaserFence=` (`0x00452E2C..0x00452E52`).
+    pub fn first_laser_fence_type(&self) -> Option<&ObjectType> {
+        self.object_list.iter().find(|object| {
+            object.category == crate::rules::object_type::ObjectCategory::Building
+                && object.laser_fence
+        })
+    }
+
     /// TechnoType virtual `+0x84`, the cost a House pays for `object`.
     ///
     /// `TechnoTypeClass::Cost_Of @ 0x00711F00` (Infantry, Unit and Aircraft

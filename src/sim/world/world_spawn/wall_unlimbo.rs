@@ -276,12 +276,9 @@ impl Simulation {
     /// - `0x004405BC..0x00440770`:
     ///   [`Self::sell_owned_walls_before_building_unlimbo`].
     /// - `0x00440A6D..0x00440B01`: a `LaserFencePost=` type (`+0x16BE`)
-    ///   UnInits (vt+0xF8) the first building of its coordinate's cell
-    ///   (`0x0047C520`) when that is a `LaserFence=` type (`+0x16BF`) of the
-    ///   same house. Its `+0x618 = 0` write (`0x00440A83`), like the
-    ///   LaserFence facing frames at `0x00440A32..0x00440A63`, has no VERA
-    ///   reader: fence sections are not ported (see the residual at
-    ///   `0x00440E2F` in `lifecycle.rs`).
+    ///   clears its frame (`+0x618 = 0`, `0x00440A83`) and UnInits (vt+0xF8)
+    ///   the first building of its coordinate's cell (`0x0047C520`) when
+    ///   that is a `LaserFence=` type (`+0x16BF`) of the same house.
     ///
     /// No RNG draw and no timer write on either arm. Residual: an upgrade
     /// type is consumed before this (`unlimbo_constructed_upgrade`), where
@@ -340,6 +337,7 @@ impl Simulation {
         if !(ty.laser_fence_post && game_active) {
             return;
         }
+        self.laser_fence_clear_post_frame(id, rules);
         let own_fence = self
             .substrate
             .occupancy
@@ -379,13 +377,10 @@ impl Simulation {
     /// only a human's wall and draws no RNG; a wall it refuses stays under
     /// the building.
     ///
-    /// Residual: the Gate arm also calls `0x00453240` on each foundation cell
-    /// whose first building is a `LaserFence=` type of the same house
-    /// (`0x00440725..0x0044075F`). That walks the fence run along the fence's
-    /// facing to its post, reconnects the post (`0x00453060`) or else UnInits
-    /// the fence, and belongs to the fence-section mechanism VERA does not
-    /// have. Until then a Gate placed on its owner's LaserFence building
-    /// shares the cell with it. No retail type is `LaserFence=`.
+    /// The Gate arm also takes down, on each foundation cell whose first
+    /// building is a `LaserFence=` section of the same house, that
+    /// section's run (`0x00440725..0x0044075F`,
+    /// [`Simulation::laser_fence_remove_at_cell`]).
     fn sell_owned_walls_before_building_unlimbo(
         &mut self,
         id: u64,
@@ -444,6 +439,26 @@ impl Simulation {
             if owned {
                 //44065C/440720 ignore House4FCE80's answer; only the cue is suppressed.
                 self.sell_wall_at_cell(&house, x as i16, y as i16, true, rules, registry, effects);
+            }
+            // 0x00440725..0x0044075F: a Gate takes down the run of its
+            // house's laser fence section in the cell.
+            let own_fence = ty.gate
+                && self
+                    .substrate
+                    .occupancy
+                    .first_building_on_layer(x, y, MovementLayer::Ground)
+                    .and_then(|fence| self.substrate.entities.get(fence))
+                    .is_some_and(|fence| {
+                        fence.owner() == owner
+                            && self
+                                .object_type(fence.type_ref(), rules)
+                                .is_some_and(|fence| fence.laser_fence)
+                    });
+            if own_fence {
+                self.laser_fence_remove_at_cell(
+                    (x as i16, y as i16),
+                    UninitContext::new(rules, Some(registry)).with_effects(effects),
+                );
             }
         }
     }

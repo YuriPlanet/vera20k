@@ -1765,12 +1765,9 @@ impl Simulation {
         // 0x00440D07..0x00440D2D above; only House AI reads the marks.
         self.mark_building_base_reservation_with_arg(stable_id, false, context);
         self.light_building_at_unlimbo(stable_id, context);
-        // Residual: 0x00440E02..0x00440E57. A LaserFencePost= building, in
-        // the world and not in limbo outside the placement scope
-        // (0x00A8E7AC), extends fence sections toward the posts in its four
-        // directions (0x00452DC0 with 0, 2, 4, 6) and reconnects
-        // (0x004533A0(1)). VERA has no fence sections: a mod's posts stand
-        // without a fence between them. No retail type is LaserFencePost=.
+        // 0x00440E02..0x00440E57: a live post out of limbo, outside the
+        // placement scope, raises its fence sections and reconnects.
+        self.laser_fence_link_post(stable_id, context);
         self.discover_building_owner_after_unlimbo(stable_id, context);
         // Residual: 0x00440E99..0x00440F5B. A type with NaturalParticleSystem=
         // (Type+0x764) and no system yet (+0x30C) constructs one
@@ -4396,6 +4393,17 @@ impl Simulation {
             &mut self.houses,
             stable_id,
         );
+        // BuildingClass::Limbo @ 0x00445880 `0x00445A12..0x00445A25`, for a
+        // building not already in limbo: a laser fence post UnInits its
+        // sections (ConnectWalls(0)).
+        if self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| !entity.in_limbo())
+        {
+            self.laser_fence_connect_walls(stable_id, false, context);
+        }
         // BuildingClass::Limbo @ 0x00445880 keeps its separate array and
         // disguise removals; Foot's sensor receiver ran in its prelude.
         self.remove_building_sensor_before_limbo(stable_id, context.rules(), context.registry());
@@ -4497,6 +4505,11 @@ impl Simulation {
                 category,
                 context.effects(),
             );
+        }
+        // `0x00445E19..0x00445E32`: outside the placement scope a post's
+        // frame is cleared.
+        if !self.object_placement_scope_active() {
+            self.laser_fence_clear_post_frame(stable_id, rules);
         }
         outcome
     }

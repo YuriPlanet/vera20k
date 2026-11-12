@@ -59,8 +59,9 @@ pub struct BuildingArt {
     /// Building+6EA, constructor43B996 true; distinct from operational6C8.
     /// Its other native writers (ChangeOwner 4484C6, ReadScenarioBuildings
     /// 44FC80, GoOnline 452260, EnableStuff 452410, DisableStuff 452480) also
-    /// share the light/gap/animation owner. Dormant CloakGenerator and
-    /// LaserFencePost tails require their separate mechanisms.
+    /// share the light/gap/animation owner and the laser fence post's
+    /// reconnection. The dormant CloakGenerator tail requires its separate
+    /// mechanism.
     stuff_enabled: bool,
     /// Building+6E4: OnConstructionComplete's one-time allocation guard.
     actually_placed: bool,
@@ -478,6 +479,15 @@ impl Simulation {
         // 0x004466D5..0x0044676C: the light block Unlimbo shares.
         if first_opening {
             self.light_building(id, rules);
+        }
+        // 0x0044676C..0x00446780: a laser fence post reconnects
+        // (RecalculateWallConnections(0)).
+        if first_opening {
+            self.laser_fence_recalculate(
+                id,
+                false,
+                crate::sim::world::UninitContext::new(rules, registry).with_effects(effects),
+            );
         }
         // 0x0044678B..0x004467C3: the sensor arm, last in the first-opening
         // block before the ready latch.
@@ -1310,7 +1320,9 @@ pub fn current_body_frame(
         BodyFrameInput {
             state: entity.building_body_state().unwrap_or(1),
             base_frame: entity.construction_stage_value(),
-            laser_frame: object.laser_fence.then_some(0),
+            laser_frame: object
+                .laser_fence
+                .then_some(entity.laser_fence_frame.frame()),
             firestorm_frame: firestorm_body_frame(entity, object),
             gate_stages: object
                 .gate
@@ -1355,7 +1367,9 @@ pub(crate) fn receiver_body_frame(
                 1
             },
             base_frame: 0,
-            laser_frame: object.laser_fence.then_some(0),
+            laser_frame: object
+                .laser_fence
+                .then_some(entity.laser_fence_frame.frame()),
             firestorm_frame: firestorm_body_frame(entity, object),
             gate_stages: object
                 .gate

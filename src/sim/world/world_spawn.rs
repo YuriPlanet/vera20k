@@ -1521,6 +1521,7 @@ impl Simulation {
         ) {
             return (outcome == RevealOutcome::Consumed).then_some(stable_id);
         }
+        self.laser_fence_section_unlimbo_frame(stable_id, facing, rules);
         let is_infantry = self
             .substrate
             .entities
@@ -2150,6 +2151,14 @@ impl Simulation {
             !scenario_initialization,
         ) {
             return (stable_id, outcome);
+        }
+        if let Some(facing) = self
+            .substrate
+            .entities
+            .get(stable_id)
+            .map(|entity| entity.body_facing_dir(self.session.binary_frame()))
+        {
+            self.laser_fence_section_unlimbo_frame(stable_id, facing, rules);
         }
         let Some((position, placement)) = self.unlimbo_class_entry(
             stable_id,
