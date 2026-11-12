@@ -60,6 +60,7 @@ on:
       - 'src/app/map_library.rs'
       - 'src/app/match_diagnostics.rs'
       - 'src/app/match_runtime/frame_pacer.rs'
+      - 'src/app/match_runtime/sim_host.rs'
       - 'src/app/mods.rs'
       - 'src/app/persistence/**'
       - 'src/app/shell_wol/**'

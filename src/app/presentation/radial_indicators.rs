@@ -316,6 +316,7 @@ fn push_building_indicator(
     let range = object.building_sensor_range(
         entity.gap_supercharged(),
         weapon.map(|weapon| weapon.range_leptons),
+        rules.ares(),
     );
     //456768 reads+660, the existing temporal online query;
     //it does NOT sample4555D0 operational/power or a fog predicate.
@@ -399,6 +400,7 @@ fn push_placement_rings(
         false,
         crate::sim::combat::combat_weapon::fresh_object_current_weapon(object, rules)
             .map(|weapon| weapon.range_leptons),
+        rules.ares(),
     );
     if range <= 0 {
         return;

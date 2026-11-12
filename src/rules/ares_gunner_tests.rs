@@ -38,7 +38,7 @@ fn extended_ifv_selects_weapon_model_and_normal_elite_muzzle() {
     assert!(object.gunner);
     let mut actor =
         crate::sim::game_entity::GameEntity::test_default(1, "CARRIER", "Americans", 10, 10);
-    actor.set_gunner_weapon(18, object);
+    actor.set_gunner_weapon(18, object, crate::rules::ARES_BUILD);
     assert_eq!(
         (actor.current_weapon_number(), actor.current_turret_index()),
         (18, 18)
@@ -68,7 +68,7 @@ fn extended_ifv_selects_weapon_model_and_normal_elite_muzzle() {
         object.gunner_turrets.weapon_ui_name(18),
         Some("Name:Extended")
     );
-    actor.set_gunner_weapon(20, object);
+    actor.set_gunner_weapon(20, object, crate::rules::ARES_BUILD);
     assert_eq!(actor.current_weapon_number(), 0);
 }
 
@@ -113,6 +113,6 @@ fn original_build_keeps_extension_keys_and_slots_inactive() {
     assert_eq!(object.gunner_turrets.turret_for_weapon(18), -1);
     let mut actor =
         crate::sim::game_entity::GameEntity::test_default(1, "CARRIER", "Americans", 10, 10);
-    actor.set_gunner_weapon(18, object);
+    actor.set_gunner_weapon(18, object, crate::rules::ARES_BUILD);
     assert_eq!(actor.current_weapon_number(), 0);
 }

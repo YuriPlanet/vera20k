@@ -2251,7 +2251,7 @@ pub(crate) fn try_queue_context_order(
         // selection's size see every selected object. Orders go only to the
         // objects whose ClickedAction can still send one.
         let current_objects = selected_ids;
-        let selected_ids = sim.click_order_receivers(&current_objects);
+        let selected_ids = sim.click_order_receivers(&current_objects, resources.rules.ares());
 
         let mut selected_units: Vec<u64> = Vec::new();
 
@@ -3367,8 +3367,9 @@ fn formation_units(
     sim: &crate::sim::world::Simulation,
     current_objects: &[u64],
     place: impl Fn(&crate::sim::game_entity::GameEntity) -> (i32, i32),
+    ares: bool,
 ) -> Vec<(u64, (i32, i32))> {
-    sim.click_order_receivers(current_objects)
+    sim.click_order_receivers(current_objects, ares)
         .into_iter()
         .filter_map(|id| {
             let entity = sim.entities().get(id)?;
@@ -3389,7 +3390,13 @@ pub(crate) fn formation_unit_count(state: &AppState) -> usize {
         &state.match_state.input.selection_order,
         state.match_state.input.selection_order_pending,
     );
-    formation_units(&rt.simulation, &current_objects, standing_cell).len()
+    formation_units(
+        &rt.simulation,
+        &current_objects,
+        standing_cell,
+        rt.resources.rules.ares(),
+    )
+    .len()
 }
 
 /// The cell a unit stands on.
@@ -3457,7 +3464,7 @@ pub(crate) fn queue_formation_line(
     let sim = &rt.simulation;
     let owner_id: InternedId = sim.interner().get(&owner).unwrap_or_default();
     let execute_tick = sim.session().tick();
-    let units = formation_units(sim, &current_objects, standing_cell);
+    let units = formation_units(sim, &current_objects, standing_cell, resources.rules.ares());
     if units.len() < 2 {
         return false;
     }
@@ -3546,7 +3553,12 @@ pub(crate) fn toggle_formation_lock(state: &mut AppState) {
         return;
     };
     let sim = &rt.simulation;
-    let units = formation_units(sim, &current_objects, heading_cell);
+    let units = formation_units(
+        sim,
+        &current_objects,
+        heading_cell,
+        rt.resources.rules.ares(),
+    );
     let ids: Vec<u64> = units.iter().map(|&(id, _)| id).collect();
     let locks = &mut state.match_state.input.formation_locks;
     locks.retain(|id| sim.entities().get(id).is_some());
@@ -3719,7 +3731,7 @@ pub(super) fn self_detonates(
     // let Detonate through (0x51F1D8, 0x7388EB, 0x4D74EC: 10056BF0,
     // 10056DA0, 1004CBC0).
     let exits = |entity: &crate::sim::game_entity::GameEntity| {
-        !cfg!(feature = "ares") && (entity.berserk.is_active() || entity.is_warped_out())
+        !rules.ares() && (entity.berserk.is_active() || entity.is_warped_out())
     };
     selected_ids == [target]
         && sim.entities().get(target).is_some_and(|entity| {

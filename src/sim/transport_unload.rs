@@ -1098,7 +1098,7 @@ pub(crate) fn unit_mission_unload(
                 let turreted = sim
                     .object_type(entity.type_ref(), rules)
                     .is_some_and(|obj| {
-                        if crate::rules::ARES_ENABLED {
+                        if rules.ares() {
                             obj.gunner
                         } else {
                             obj.turret_count > 0

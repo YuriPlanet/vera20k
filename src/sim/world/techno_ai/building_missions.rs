@@ -1212,8 +1212,7 @@ pub(super) fn gattling_idle(
     // Ares reloads by its own clock, so there every refilling type is taken.
     let Some(entity) = substrate.entities.get_mut_if(id, |entity| {
         obj.is_gattling
-            || (refills
-                && (cfg!(feature = "ares") || entity.ammo().is_some_and(TechnoAmmo::is_empty)))
+            || (refills && (rules.ares() || entity.ammo().is_some_and(TechnoAmmo::is_empty)))
     }) else {
         return;
     };

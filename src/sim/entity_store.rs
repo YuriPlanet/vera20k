@@ -83,13 +83,15 @@ pub struct EntityStore {
     /// stored entity's category never changes (a replacement comes through
     /// [`Self::insert`], which copies it). Kept and rebuilt as `owners` is.
     categories: Vec<EntityCategory>,
-    /// VERA-only: each slot's sleep mark ([`SleepCell`]), beside the boxed
-    /// entities so the live object pass passes a sleeping object without
-    /// loading it. Every route to a `&mut GameEntity` settles and clears the
-    /// mark first ([`Self::wake_slot`]), so a sleeping entity is one nothing
-    /// has written since its last turn. Kept through compaction as `owners`
-    /// is; a load starts every object awake. Never saved or hashed: the save
-    /// form and the state hash read a sleeping object as settled.
+    /// VERA-only: each slot's sleep mark and quiet flag ([`SleepCell`]),
+    /// beside the boxed entities so the live object pass passes a sleeping
+    /// object without loading it, and a quiet one's turn skips steps without
+    /// reading their state. Every route to a `&mut GameEntity` settles and
+    /// clears both first ([`Self::wake_slot`]), so a sleeping or quiet entity
+    /// is one nothing has written since its last turn. Kept through
+    /// compaction as `owners` is; a load starts every object awake and not
+    /// quiet. Never saved or hashed: the save form and the state hash read a
+    /// sleeping object as settled.
     sleep: Vec<SleepCell>,
     /// VERA-only: the stored ids of each owner's objects of each category,
     /// ascending ([`Self::owned_ids`]), for walks that want one house's
@@ -167,6 +169,10 @@ struct SleepCell {
     /// The frame after the last turn that left the object fit to sleep,
     /// while awake; 0 for none ([`EntityStore::fit_to_sleep`]).
     fit_until: u32,
+    /// The object is quiet (`world::quiet_units`): its last turn left every
+    /// state its quiet turn skips off, and nothing has been handed it for
+    /// writing since. Every mutable hand-out clears it, asleep or awake.
+    quiet: bool,
 }
 
 /// A product derived from the entities that re-derives from the touch log.
@@ -298,17 +304,41 @@ impl EntityStore {
         }
     }
 
+    /// Whether `stable_id` is quiet: its last turn left it so, and nothing
+    /// has been handed it for writing since (`world::quiet_units`).
+    #[inline]
+    pub(crate) fn is_quiet(&self, stable_id: u64) -> bool {
+        self.slot(stable_id)
+            .is_some_and(|slot| self.sleep[slot as usize].quiet)
+    }
+
+    /// `stable_id`'s entity and whether it is quiet, in one lookup.
+    pub(crate) fn get_and_quiet(&self, stable_id: u64) -> Option<(&GameEntity, bool)> {
+        let slot = self.slot(stable_id)? as usize;
+        Some((self.entities[slot].as_deref()?, self.sleep[slot].quiet))
+    }
+
+    /// Mark `stable_id` quiet until its next mutable hand-out.
+    pub(crate) fn set_quiet(&mut self, stable_id: u64) {
+        if let Some(slot) = self.slot(stable_id) {
+            self.sleep[slot as usize].quiet = true;
+        }
+    }
+
     /// How many objects are asleep.
     pub(crate) fn sleeping_count(&self) -> usize {
         self.sleep.iter().filter(|cell| cell.wake_at != 0).count()
     }
 
-    /// Clear `slot`'s sleep mark and give its entity the visits it is owed,
-    /// before anything writes it.
+    /// Clear `slot`'s sleep mark and quiet flag and give its entity the
+    /// visits it is owed, before anything writes it.
     #[inline]
     fn wake_slot(&mut self, slot: usize) {
         let cell = self.sleep[slot];
         if cell.wake_at == 0 {
+            if cell.quiet {
+                self.sleep[slot].quiet = false;
+            }
             return;
         }
         self.sleep[slot] = SleepCell::default();

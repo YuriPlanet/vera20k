@@ -933,7 +933,7 @@ pub fn wave_sine_table<const N: usize>(frequency: NativeF64Bits) -> [i16; N] {
 /// The 500-entry Sonic table at `0x00B46254` (frequency 0.125). WaveClass's
 /// Sonic pixel displacement and AI_Fire's stream wobble (`0x0062FC90`) read it.
 pub fn sonic_wave_table() -> &'static [i16; 500] {
-    static TABLE: std::sync::OnceLock<[i16; 500]> = std::sync::OnceLock::new();
+    static TABLE: crate::util::sync::OnceLock<[i16; 500]> = crate::util::sync::OnceLock::new();
     TABLE.get_or_init(|| wave_sine_table(NativeF64Bits::from_bits(0x3fc0_0000_0000_0000)))
 }
 

@@ -1809,7 +1809,7 @@ fn advance_one_simulation_frame(
     // docs/sim-thread.md: a network frame lent to the simulation thread runs
     // there up to Queue_AI. A restore replays many frames per pass, each
     // waiting for the last, so it stays inline.
-    let queue_handoff = super::sim_host::sim_thread_enabled()
+    let queue_handoff = state.match_state.sim_runtime.thread_enabled()
         && !inline
         && resume == FrameResume::None
         && tick_lane == TickLane::Ordinary
@@ -1840,13 +1840,13 @@ fn advance_one_simulation_frame(
             queue_handoff,
         )
     });
-    // An ordinary frame runs on the simulation thread (off with
-    // `VERA20K_SIM_THREAD=0`); drawing reads its last published frame.
+    // An ordinary frame runs on the simulation thread; drawing reads its last
+    // published frame.
     let threaded = deferred.is_some()
         && !inline
         && resume == FrameResume::None
         && tick_lane == TickLane::Ordinary
-        && super::sim_host::sim_thread_enabled();
+        && state.match_state.sim_runtime.thread_enabled();
     if threaded {
         // The frame published for this tick shows every cell ticked so far;
         // their radar-terrain marks go to the minimap with it, since no draw
@@ -2599,12 +2599,6 @@ fn finish_simulation_frame(
         if let Some(deferred) = deferred {
             deferred.apply(state);
         }
-        // The simulation thread publishes a frame when it takes a tick
-        // (`SimHost::lend`); this is the phase 2 opt-in, a frame after every
-        // tick without the thread.
-        if frame_committed && super::sim_host::presentation_frames_enabled() {
-            state.match_state.sim_runtime.publish_presentation();
-        }
         if frame_committed {
             state
                 .match_state
@@ -2658,12 +2652,15 @@ fn finish_simulation_frame(
                 placement_armed,
             );
         }
+        let ares = state
+            .rules()
+            .is_some_and(crate::rules::ruleset::RuleSet::ares);
         for output in drained_lifecycle_outputs {
             if let Some(cursor_clear) = state
                 .match_state
                 .match_presentation
                 .sidebar_projection
-                .apply_lifecycle_output(&output, local_house)
+                .apply_lifecycle_output(&output, local_house, ares)
             {
                 state
                     .match_state

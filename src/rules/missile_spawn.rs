@@ -218,6 +218,7 @@ impl MissileSpawnParams {
     /// reader overwrites Type with its own AircraftType right after.
     #[cfg(feature = "ares")]
     pub(crate) fn read_ares(&mut self, section: &IniSection, prefix: &str) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let key = |suffix: &str| format!("{prefix}.{suffix}");
         self.pause_frames = section.read_ares_int(&key("PauseFrames"), self.pause_frames);
         self.tilt_frames = section.read_ares_int(&key("TiltFrames"), self.tilt_frames);

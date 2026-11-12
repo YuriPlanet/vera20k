@@ -67,8 +67,16 @@ pub(super) struct SleepCheck {
     entities: usize,
 }
 
+impl IdleSleep {
+    /// Whether idle objects sleep, and units go quiet (`world::quiet_units`).
+    pub(super) fn is_on(&self) -> bool {
+        self.on
+    }
+}
+
 impl Simulation {
-    /// Let idle objects sleep from now on, or wake them all and stop. Real
+    /// Let idle objects sleep from now on, or wake them all and stop: units
+    /// go quiet (`world::quiet_units`) under the same switch. Real
     /// matches, replays and sim-bench turn it on; no result depends on it.
     pub fn sleep_idle_objects(&mut self, on: bool) {
         self.idle_sleep.on = on;
@@ -163,13 +171,7 @@ impl Simulation {
                 .as_ref()
                 .is_some_and(|grid| grid.has_dirty())
         {
-            let _ = super::damage_consequences::DamageConsequences::live_fire(
-                Default::default(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-            )
-            .commit(self, rules, registry, effects);
+            let _ = self.commit_no_fire(rules, registry, effects);
         }
         SleepVisit::Counted
     }

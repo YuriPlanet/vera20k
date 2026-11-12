@@ -2844,14 +2844,14 @@ fn building_palette_groups_survive_refresh_and_palette_texture_growth() {
             "{name}"
         );
     }
-    if !crate::rules::ARES_ENABLED {
+    if !crate::rules::ARES_BUILD {
         assert_eq!(
             atlas.get(&key("B")).unwrap().source_palette,
             resident_unit_row.expect("the Unit fallback was already resident") + 1,
             "OFF B reuses the existing Unit palette row"
         );
     }
-    let high_type = if crate::rules::ARES_ENABLED {
+    let high_type = if crate::rules::ARES_BUILD {
         "B"
     } else {
         "CELL"
@@ -3002,7 +3002,7 @@ fn building_palette_groups_survive_refresh_and_palette_texture_growth() {
     let second_anim = spawn(&mut sim);
     sim.anims_mut_for_test().set_anim_remap(
         second_anim,
-        if crate::rules::ARES_ENABLED {
+        if crate::rules::ARES_BUILD {
             AnimRemap::ExtraBuildingScheme {
                 house,
                 palette: second_palette,

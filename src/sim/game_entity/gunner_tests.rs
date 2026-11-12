@@ -58,7 +58,7 @@ fn replay_selector_events(entity: &mut GameEntity, object: &ObjectType, events: 
     let before_delay = entity.turret_selection.charge_turret_delay;
     for event in events.as_array().unwrap() {
         assert_eq!(event["event"], "set_gunner", "unexpected native event");
-        entity.set_gunner_weapon(int(event, "mode"), object);
+        entity.set_gunner_weapon(int(event, "mode"), object, crate::rules::ARES_BUILD);
     }
     assert_eq!(entity.rearm_timer.timer(), before_timer);
     assert_eq!(entity.turret_selection.charge_turret_delay, before_delay);

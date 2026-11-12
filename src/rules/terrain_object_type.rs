@@ -347,6 +347,7 @@ impl PhobosSpawnsTiberium {
         section: &IniSection,
         mut find_particle: impl FnMut(&str) -> Option<String>,
     ) {
+        let _phobos = crate::rules::ares_switch::not_ares_reads();
         self.tiberium_type = section.read_ares_int("SpawnsTiberium.Type", self.tiberium_type);
         self.range = section.read_ares_int("SpawnsTiberium.Range", self.range);
         self.growth_stage =

@@ -777,9 +777,9 @@ fn ini_directives_production_selection_obeys_build_capability() {
     // for documents without [$Include].
     let options = DirectiveOptions::production();
     assert_eq!(options.phobos, crate::rules::PHOBOS_ENABLED);
-    assert_eq!(options.ares, crate::rules::ARES_ENABLED);
+    assert_eq!(options.ares, crate::rules::ARES_BUILD);
     for (directive, expected) in [
-        ("#include", crate::rules::ARES_ENABLED),
+        ("#include", crate::rules::ARES_BUILD),
         ("$Include", crate::rules::PHOBOS_ENABLED),
     ] {
         let dir = TestDirectory::new("ini-directives-capability");
@@ -800,13 +800,13 @@ fn ini_directives_production_selection_obeys_build_capability() {
         // `[Base]` is authored in the root document, so inheritance resolves
         // even when the included file is not read. A build with neither
         // capability never enters the directive owner.
-        let any_capability = crate::rules::ARES_ENABLED || crate::rules::PHOBOS_ENABLED;
+        let any_capability = crate::rules::ARES_BUILD || crate::rules::PHOBOS_ENABLED;
         assert_eq!(
             text(&selected.ini, "Child", "Inherited").as_deref(),
             any_capability.then_some("parent")
         );
         assert_eq!(text(&selected.ini, "Child", "Own").as_deref(), Some("root"));
-        if !crate::rules::ARES_ENABLED && !crate::rules::PHOBOS_ENABLED {
+        if !crate::rules::ARES_BUILD && !crate::rules::PHOBOS_ENABLED {
             assert_eq!(
                 selected.ini.content_hash(),
                 IniFile::from_str(&root).content_hash()
@@ -989,7 +989,7 @@ fn ini_directives_reach_the_existing_ordered_type_processor_and_fixed_art() {
         .unwrap();
     let (rules, _, art, _) = loaded.into_parts();
     // This fixture uses `[#include]` only, so the Ares capability expands it.
-    let ares_include = crate::rules::ARES_ENABLED;
+    let ares_include = crate::rules::ARES_BUILD;
     if ares_include {
         assert_eq!(rules.object("TEST").unwrap().strength, 100);
     } else {

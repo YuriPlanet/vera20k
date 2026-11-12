@@ -18,7 +18,35 @@ pub const CHECKBOX_ICON_W: i32 = 18;
 pub const CHECKBOX_ICON_H: i32 = 18;
 pub const CHECKBOX_TEXT_LEFT_OFFSET: i32 = 26;
 pub const SKIRMISH_ROW_COUNT: usize = 8;
-pub const SKIRMISH_AI_ROW_COUNT: usize = 7;
+/// VERA: the most player rows the page shows at once. On a map with more
+/// than eight starts the retail eight grow into the room under the options
+/// ([`SkirmishShellLayout::shown_rows`]); the rest scroll.
+pub const SKIRMISH_LONG_ROW_COUNT: usize = 13;
+
+/// VERA: the player rows the page shows for a map admitting `rows`: the
+/// retail eight up to eight starts, then one per start up to
+/// [`SKIRMISH_LONG_ROW_COUNT`].
+pub fn shown_player_rows(rows: usize) -> usize {
+    rows.clamp(SKIRMISH_ROW_COUNT, SKIRMISH_LONG_ROW_COUNT)
+}
+
+/// The `0x102` template's player rows start at y 36 DLU, 16 DLU apart; the
+/// rows VERA adds past the eighth keep the pitch.
+const ROW_TOP_DLU: i32 = 36;
+const ROW_PITCH_DLU: i32 = 16;
+
+/// One control column of the player rows from row `first` on: the template
+/// rect of row `first + index` for each index.
+fn row_column<const N: usize>(first: usize, x: i32, w: i32, h: i32) -> [RectPx; N] {
+    std::array::from_fn(|index| {
+        dlu_rect(
+            x,
+            ROW_TOP_DLU + ROW_PITCH_DLU * (first + index) as i32,
+            w,
+            h,
+        )
+    })
+}
 pub const COMBO_FACE_H: i32 = 24;
 pub const COMBO_DROPDOWN_ROW_H: i32 = 23;
 pub const COMBO_DROPDOWN_SCROLLBAR_W: i32 = 20;
@@ -205,10 +233,11 @@ pub struct SkirmishColumnLabelRects {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SkirmishRowRects {
-    pub ai_type_combos: [RectPx; SKIRMISH_AI_ROW_COUNT],
-    pub side_combos: [RectPx; SKIRMISH_ROW_COUNT],
-    pub start_combos: [RectPx; SKIRMISH_ROW_COUNT],
-    pub team_combos: [RectPx; SKIRMISH_ROW_COUNT],
+    /// Rows 1 on: the player's own row has a name box instead.
+    pub ai_type_combos: [RectPx; SKIRMISH_LONG_ROW_COUNT - 1],
+    pub side_combos: [RectPx; SKIRMISH_LONG_ROW_COUNT],
+    pub start_combos: [RectPx; SKIRMISH_LONG_ROW_COUNT],
+    pub team_combos: [RectPx; SKIRMISH_LONG_ROW_COUNT],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -232,11 +261,15 @@ pub struct SkirmishShellLayout {
     pub map_preview: RectPx,
     pub column_labels: SkirmishColumnLabelRects,
     pub player_name: RectPx,
+    /// Every row slot the page can show; the first [`Self::shown_rows`] show.
     pub rows: SkirmishRowRects,
-    pub color_combos: [RectPx; 8],
-    pub flags: [RectPx; 8],
+    pub color_combos: [RectPx; SKIRMISH_LONG_ROW_COUNT],
+    pub flags: [RectPx; SKIRMISH_LONG_ROW_COUNT],
+    /// The player rows this page shows: the retail eight, or VERA's longer
+    /// list for a map with more than eight starts ([`shown_player_rows`]).
+    pub shown_rows: usize,
     /// VERA's scrollbar for a map with more than eight starts: the list frame
-    /// round it, beside the computer rows ([`opponent_scrollbar_rect`]).
+    /// round it, beside the player rows ([`opponent_scrollbar_rect`]).
     pub opponent_scrollbar: RectPx,
     pub trackbars: SkirmishTrackbarRects,
     pub trackbar_labels: SkirmishTrackbarLabelRects,
@@ -672,7 +705,19 @@ fn back_rect(screen_w: i32, panel: RightPanelRects) -> RectPx {
     )
 }
 
+/// The retail `0x102` page, its eight player rows.
 pub fn compute_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
+    compute_layout_for_rows(screen_w, screen_h, SKIRMISH_ROW_COUNT)
+}
+
+/// The `0x102` page for a map admitting `player_rows` rows: the retail page
+/// up to eight; past eight, VERA's longer list
+/// ([`SkirmishShellLayout::with_rows`]).
+pub fn compute_layout_for_rows(
+    screen_w: u32,
+    screen_h: u32,
+    player_rows: usize,
+) -> SkirmishShellLayout {
     let screen_w = screen_w as i32;
     let screen_h = screen_h as i32;
 
@@ -705,68 +750,15 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
     let mut unit_count_trackbar = child_window(269, 210, 85, 13);
     unit_count_trackbar.y -= 1;
 
-    let color_combos = [
-        dlu_rect(282, 36, 29, 73),
-        dlu_rect(282, 52, 29, 73),
-        dlu_rect(282, 68, 29, 73),
-        dlu_rect(282, 84, 29, 73),
-        dlu_rect(282, 100, 29, 73),
-        dlu_rect(282, 116, 29, 73),
-        dlu_rect(282, 132, 29, 73),
-        dlu_rect(282, 148, 29, 73),
-    ];
-    let flags = [
-        dlu_rect(150, 36, 32, 12),
-        dlu_rect(150, 52, 32, 12),
-        dlu_rect(150, 68, 32, 12),
-        dlu_rect(150, 84, 32, 12),
-        dlu_rect(150, 100, 32, 12),
-        dlu_rect(150, 116, 32, 12),
-        dlu_rect(150, 132, 32, 12),
-        dlu_rect(150, 148, 32, 12),
-    ];
+    let color_combos = row_column(0, 282, 29, 73);
+    let flags = row_column(0, 150, 32, 12);
     let rows = SkirmishRowRects {
-        ai_type_combos: [
-            dlu_rect(39, 52, 100, 74),
-            dlu_rect(39, 68, 100, 74),
-            dlu_rect(39, 84, 100, 74),
-            dlu_rect(39, 100, 100, 74),
-            dlu_rect(39, 116, 100, 74),
-            dlu_rect(39, 132, 100, 74),
-            dlu_rect(39, 148, 100, 74),
-        ],
-        side_combos: [
-            dlu_rect(191, 36, 78, 74),
-            dlu_rect(191, 52, 78, 74),
-            dlu_rect(191, 68, 78, 74),
-            dlu_rect(191, 84, 78, 74),
-            dlu_rect(191, 100, 78, 74),
-            dlu_rect(191, 116, 78, 74),
-            dlu_rect(191, 132, 78, 74),
-            dlu_rect(191, 148, 78, 74),
-        ],
-        start_combos: [
-            dlu_rect(324, 36, 25, 73),
-            dlu_rect(324, 52, 25, 73),
-            dlu_rect(324, 68, 25, 73),
-            dlu_rect(324, 84, 25, 73),
-            dlu_rect(324, 100, 25, 73),
-            dlu_rect(324, 116, 25, 73),
-            dlu_rect(324, 132, 25, 73),
-            dlu_rect(324, 148, 25, 73),
-        ],
-        team_combos: [
-            dlu_rect(364, 36, 25, 73),
-            dlu_rect(364, 52, 25, 73),
-            dlu_rect(364, 68, 25, 73),
-            dlu_rect(364, 84, 25, 73),
-            dlu_rect(364, 100, 25, 73),
-            dlu_rect(364, 116, 25, 73),
-            dlu_rect(364, 132, 25, 73),
-            dlu_rect(364, 148, 25, 73),
-        ],
+        ai_type_combos: row_column(1, 39, 100, 74),
+        side_combos: row_column(0, 191, 78, 74),
+        start_combos: row_column(0, 324, 25, 73),
+        team_combos: row_column(0, 364, 25, 73),
     };
-    let opponent_scrollbar = opponent_scrollbar_rect(&rows);
+    let opponent_scrollbar = opponent_scrollbar_rect(&rows, SKIRMISH_ROW_COUNT);
     let back_button = back_rect(screen_w, panel);
     let team_starts_tile = choose_map_button.translate(0, 3 * SDBTNBKGD_H);
     let team_starts_button = if team_starts_tile.y + team_starts_tile.h <= back_button.y {
@@ -806,6 +798,7 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
         rows,
         color_combos,
         flags,
+        shown_rows: SKIRMISH_ROW_COUNT,
         opponent_scrollbar,
         trackbars: SkirmishTrackbarRects {
             game_speed: child_window(269, 176, 85, 13),
@@ -841,18 +834,50 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
         ],
         status_help: status_help_rect(screen_w, screen_h),
     }
+    .with_rows(player_rows)
+}
+
+impl SkirmishShellLayout {
+    /// VERA: the page for a map admitting `rows` player rows. gamemd's
+    /// `0x102` shows eight; past eight the rows grow one per start, up to
+    /// [`SKIRMISH_LONG_ROW_COUNT`], into the empty room between the options
+    /// and the status line. The options move down by as many rows and the
+    /// scrollbar beside the computer rows grows with them. Eight or fewer
+    /// keep the retail page. On the unscaled template, before any scaling.
+    fn with_rows(mut self, rows: usize) -> Self {
+        let shown = shown_player_rows(rows);
+        let pitch = self.rows.side_combos[1].y - self.rows.side_combos[0].y;
+        let dy = (shown - SKIRMISH_ROW_COUNT) as i32 * pitch;
+        for checkbox in &mut self.checkboxes {
+            *checkbox = translate_checkbox(*checkbox, 0, dy);
+        }
+        for rect in [
+            &mut self.trackbars.game_speed,
+            &mut self.trackbars.credits,
+            &mut self.trackbars.unit_count,
+            &mut self.trackbar_labels.game_speed,
+            &mut self.trackbar_labels.credits,
+            &mut self.trackbar_labels.unit_count,
+        ] {
+            *rect = rect.translate(0, dy);
+        }
+        self.shown_rows = shown;
+        self.opponent_scrollbar = opponent_scrollbar_rect(&self.rows, shown);
+        self
+    }
 }
 
 /// How far right of the Team column VERA's scrollbar frame starts.
 const OPPONENT_SCROLLBAR_GAP: i32 = 12;
 
-/// VERA's scrollbar beside the computer rows (rows 2 to 8), right of Team:
-/// the shared list's frame window round the native scrollbar child
-/// (`0x0061C690`), its outer ring level with the rows' faces. The width is
+/// VERA's scrollbar right of Team, from the player's row to row `shown`: the
+/// shared list's frame window round the native scrollbar child
+/// (`0x0061C690`), its outer ring level with the rows' faces. It scrolls only
+/// the computer rows, but its top is flush with the top row. The width is
 /// the retail scrollbar's; a scaled page takes the scaled scrollbar's.
-fn opponent_scrollbar_rect(rows: &SkirmishRowRects) -> RectPx {
-    let first = rows.team_combos[1];
-    let last = rows.team_combos[SKIRMISH_ROW_COUNT - 1];
+fn opponent_scrollbar_rect(rows: &SkirmishRowRects, shown: usize) -> RectPx {
+    let first = rows.team_combos[0];
+    let last = rows.team_combos[shown - 1];
     let top = first.y + 1;
     let bottom = last.y + COMBO_FACE_H - 1;
     RectPx::new(
@@ -1444,6 +1469,7 @@ impl ScaledRects for SkirmishShellLayout {
             rows: self.rows.scaled_rects(scale),
             color_combos: self.color_combos.scaled_rects(scale),
             flags: self.flags.scaled_rects(scale),
+            shown_rows: self.shown_rows,
             opponent_scrollbar: self.opponent_scrollbar.scaled_rects(scale),
             trackbars: self.trackbars.scaled_rects(scale),
             trackbar_labels: self.trackbar_labels.scaled_rects(scale),
@@ -1529,8 +1555,17 @@ impl ScaledRects for SavedSeedLayout {
 /// The responsive variant of [`compute_layout`]: the verified 800x600 `0x102`
 /// scaled to fit the window, keeping its shape. Identity at the base size.
 pub fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
+    compute_responsive_layout_for_rows(screen_w, screen_h, SKIRMISH_ROW_COUNT)
+}
+
+/// The responsive variant of [`compute_layout_for_rows`].
+pub fn compute_responsive_layout_for_rows(
+    screen_w: u32,
+    screen_h: u32,
+    rows: usize,
+) -> SkirmishShellLayout {
     let scale = ShellScale::from_screen(screen_w as i32, screen_h as i32);
-    compute_layout(SHELL_BASE_W as u32, SHELL_BASE_H as u32).scaled_rects(scale)
+    compute_layout_for_rows(SHELL_BASE_W as u32, SHELL_BASE_H as u32, rows).scaled_rects(scale)
 }
 
 /// The `0x102` common shell on the mapping a page already holds: the retail
@@ -1718,6 +1753,47 @@ mod tests {
         assert_eq!(layout_800.flags, layout_1024.flags);
         assert_eq!(layout_800.color_combos[0], RectPx::new(423, 59, 44, 119));
         assert_eq!(layout_800.flags[0], RectPx::new(225, 59, 48, 20));
+    }
+
+    #[test]
+    fn a_map_past_eight_starts_grows_the_rows_into_the_room_under_the_options() {
+        use super::{COMBO_FACE_H, SKIRMISH_LONG_ROW_COUNT, compute_layout_for_rows};
+        let retail = compute_layout(800, 600);
+        assert_eq!(compute_layout_for_rows(800, 600, 8), retail);
+        let ten = compute_layout_for_rows(800, 600, 10).shown_rows;
+        let thirty = compute_layout_for_rows(800, 600, 30);
+        assert_eq!(
+            (retail.shown_rows, ten, thirty.shown_rows),
+            (8, 10, SKIRMISH_LONG_ROW_COUNT)
+        );
+        // The rows keep the template's pitch; the options move down five rows,
+        // below the thirteenth row and above the status line.
+        let pitch = retail.rows.side_combos[1].y - retail.rows.side_combos[0].y;
+        assert_eq!(
+            thirty.rows.side_combos[12].y,
+            retail.rows.side_combos[7].y + 5 * pitch
+        );
+        let moved = |rect: RectPx| rect.translate(0, 5 * pitch);
+        for (long, short) in thirty.checkboxes.iter().zip(retail.checkboxes) {
+            assert_eq!(long.rect, moved(short.rect));
+        }
+        assert_eq!(
+            thirty.trackbars.unit_count,
+            moved(retail.trackbars.unit_count)
+        );
+        assert_eq!(
+            thirty.trackbar_labels.credits,
+            moved(retail.trackbar_labels.credits)
+        );
+        let last_row_bottom = thirty.rows.side_combos[12].y + COMBO_FACE_H;
+        assert!(last_row_bottom < thirty.trackbars.game_speed.y);
+        let options_bottom = thirty
+            .checkboxes
+            .iter()
+            .map(|c| c.rect.y + c.rect.h)
+            .max()
+            .unwrap();
+        assert!(options_bottom < thirty.status_help.y);
     }
 
     #[test]

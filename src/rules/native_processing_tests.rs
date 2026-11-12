@@ -2520,7 +2520,7 @@ fn native_startup_prepass_repeat_and_reset_keep_each_phase_on_one_registry_owner
     assert_eq!(prepass.registry_state().rules_tree_strength, 375);
     assert_eq!(
         prepass_boundaries,
-        if crate::rules::ARES_ENABLED {
+        if crate::rules::ARES_BUILD {
             [1, 2, 3]
         } else {
             [1, 2, 6]
@@ -2532,7 +2532,7 @@ fn native_startup_prepass_repeat_and_reset_keep_each_phase_on_one_registry_owner
             .iter()
             .map(|event| (event.family(), event.native_stored_id()))
             .collect::<Vec<_>>(),
-        if crate::rules::ARES_ENABLED {
+        if crate::rules::ARES_BUILD {
             vec![
                 (NativeTypeConstructorFamily::HouseType, "HOUSE"),
                 (NativeTypeConstructorFamily::AnimType, "PREANIM"),
@@ -4342,7 +4342,7 @@ fn ares_palette_requests_use_retained_names_and_resolve_each_loaded_group() {
         .unwrap();
     assert_eq!(first_name, "first");
     let second = rules.load_extra_building_palette(&assets, "tem", Some("second"));
-    assert_eq!(second.is_some(), crate::rules::ARES_ENABLED);
+    assert_eq!(second.is_some(), crate::rules::ARES_BUILD);
     if let Some((name, palette)) = second {
         assert_eq!(name, "second");
         assert_ne!(palette.to_rgba_bytes(), first.to_rgba_bytes());

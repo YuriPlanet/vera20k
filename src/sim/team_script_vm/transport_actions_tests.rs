@@ -495,12 +495,12 @@ fn the_retail_transport_scripts_run_ported_actions() {
             assert!(
                 actions
                     .iter()
-                    .all(|action| action_is_ported(action.action_id))
+                    .all(|action| action_is_ported(action.action_id, crate::rules::ARES_BUILD))
             );
         }
         if let Some(action) = actions
             .iter()
-            .find(|action| !action_is_ported(action.action_id))
+            .find(|action| !action_is_ported(action.action_id, crate::rules::ARES_BUILD))
         {
             *first_unported.entry(action.action_id).or_insert(0) += 1;
         }

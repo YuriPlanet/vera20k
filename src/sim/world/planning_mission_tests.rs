@@ -830,7 +830,7 @@ fn retail_planned_and_ordinary_harvest_extracts_ore_after_walking() {
                 harvest_dispatched,
                 "Harvest must reach the mission owner, planning={planning}"
             );
-            let harvests = dock_owner == Some("Americans") || crate::rules::ARES_ENABLED;
+            let harvests = dock_owner == Some("Americans") || crate::rules::ARES_BUILD;
             assert_eq!(
                 !actor.miner.as_ref().unwrap().cargo().is_empty(),
                 harvests,

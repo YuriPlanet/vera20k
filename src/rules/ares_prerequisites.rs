@@ -127,6 +127,7 @@ impl GenericPrerequisites {
         building_index: impl Fn(&str) -> Option<i32>,
         techno: impl Fn(&str) -> Option<(ObjectCategory, String)>,
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let custom = pass.section_or_empty("GenericPrerequisites");
         for name in custom.keys() {
             // Enumerable::FindOrAllocate @ 0x10007FD0 compares the full

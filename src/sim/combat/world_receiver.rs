@@ -1411,7 +1411,7 @@ pub(crate) fn commit_entities(
             && world
                 .unit_war_factory_contact(target_id, rules)
                 .is_some_and(|factory| {
-                    !crate::rules::ARES_ENABLED
+                    !rules.ares()
                         || !world
                             .substrate
                             .entities
@@ -3329,7 +3329,9 @@ fn run_special_detonation_arm(
             );
         }
         SpecialDetonationAction::ElectricAssault => {
-            world.substrate.electric_assault_detonation(owner, object);
+            world
+                .substrate
+                .electric_assault_detonation(owner, object, rules.ares());
         }
         SpecialDetonationAction::Airstrike => {
             world.airstrike_detonation(owner, object, rules, effects);

@@ -42,6 +42,9 @@ mod idle_sleep_tests;
 mod network_commands;
 mod object_entry;
 mod queued_command;
+mod quiet_units;
+#[cfg(test)]
+mod quiet_units_tests;
 mod sinking;
 mod terrain_deformation;
 mod time_warp;
@@ -2485,6 +2488,24 @@ impl Simulation {
         receipt
     }
 
+    /// The commit of a visit that fires nothing: no consequences, but it
+    /// still delivers the overlay grid's pending navigation receipts and the
+    /// smudge grid's dirty cells, as [`Self::commit_fire_visit`] does.
+    pub(crate) fn commit_no_fire(
+        &mut self,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> damage_consequences::DamageCommitReceipt {
+        damage_consequences::DamageConsequences::live_fire(
+            Default::default(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .commit(self, rules, overlay_registry, frame_effects)
+    }
+
     /// Commit a completed Bullet's detonation while its current Logic slot and
     /// physical object are still present. The caller retires the Bullet only
     /// after this transaction returns.
@@ -2561,7 +2582,7 @@ impl Simulation {
     ) -> Option<crate::sim::wave::Wave> {
         // Only Ares (TechnoClass_Fire_OtherWaves 10056E60) creates the TS
         // laser types 1 and 2.
-        debug_assert!(matches!(wave_type, 0 | 3) || (cfg!(feature = "ares") && wave_type < 3));
+        debug_assert!(matches!(wave_type, 0 | 3) || (rules.ares() && wave_type < 3));
         let target = match event.target {
             // FireAt aims at the target's vt+0xA4 (`0x006FE1EE`), including
             // a Building's TargetCoordOffset. Wave AI later reads +58 instead.
@@ -2930,7 +2951,7 @@ impl Simulation {
                     // 0x75F46E): only a weapon whose Warhead is `Wall=yes`
                     // damages the wall.
                     if flags.wall
-                        && (!crate::rules::ARES_ENABLED
+                        && (!rules.ares()
                             || rules
                                 .warhead(warhead_name)
                                 .is_some_and(|warhead| warhead.wall))
@@ -6774,7 +6795,7 @@ impl Simulation {
         // Ares3.0 ChangeOwner7015EB ->1004E7F0 follows the two tracking
         // calls and precedes both the capture stats and owner pointer store.
         // Buildings retain their own existing44936E/449379 recheck tail.
-        if crate::rules::ARES_ENABLED
+        if rules.ares()
             && category != EntityCategory::Structure
             && self
                 .substrate

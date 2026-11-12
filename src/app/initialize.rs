@@ -382,7 +382,9 @@ impl App {
                 .map(|config| config.paths.settings_dir()),
             RetailOptionsLoad::from_settings,
         );
-        let profile_screen = options_load.startup_shell_screen;
+        let profile_screen = crate::app::persistence::options_profile::player_launch_window_size(
+            options_load.startup_shell_screen,
+        );
         let options_profile = options_load.retained_profile;
         personal_rules.set_terrain_deformation(options_profile.terrain_deformation);
         // Before the first CSF load below, which layers this language over it.
@@ -418,9 +420,10 @@ impl App {
         // and the match zoom follows it. A sealed capture keeps its exact,
         // fixed, hidden physical surface.
         let capture = capture_dimensions.is_some();
-        // A player window opens at that size on every launch, as gamemd's
-        // shell does (`WinMain` 006BD9B5, `RetailOptionsLoad`), however large
-        // it was left.
+        // A player window opens at that size on every launch, however large it
+        // was left, as gamemd's shell does (`WinMain` 006BD9B5,
+        // `RetailOptionsLoad`); VERA opens it at 1024x768 where gamemd's shell
+        // is 800x600 (`player_launch_window_size`).
         let inner_size: winit::dpi::Size = if capture {
             PhysicalSize::new(window_width, window_height).into()
         } else {

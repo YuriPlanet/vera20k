@@ -352,7 +352,8 @@ fn retail_berserk_engineer_ifv_keeps_cursor_but_refuses_click() {
     // consumed and the action-line timer starts), but Unit738890 refuses the
     // berserk IFV, so it sends nothing.
     assert!(
-        sim.click_order_receivers(&[ifv]).is_empty(),
+        sim.click_order_receivers(&[ifv], crate::rules::ARES_BUILD)
+            .is_empty(),
         "native Unit738890 refuses berserk clicks"
     );
     let owner = sim.entities().get(ifv).unwrap().owner();
@@ -418,7 +419,10 @@ fn retail_warped_engineer_ifv_repair_click_is_accepted_then_dropped() {
         false,
     );
     assert_eq!(feedback, CursorFeedbackKind::RepairAction(true));
-    assert_eq!(sim.click_order_receivers(&[ifv]), [ifv]);
+    assert_eq!(
+        sim.click_order_receivers(&[ifv], crate::rules::ARES_BUILD),
+        [ifv]
+    );
     let command = repair_click(&sim, rules, ifv, tank);
     assert!(sim.apply_command(OWNER, &command, Some(rules)));
     let attack =

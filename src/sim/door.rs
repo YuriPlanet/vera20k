@@ -108,6 +108,12 @@ impl DoorClass {
         f64::from(done) / f64::from(self.total_ticks)
     }
 
+    /// Whether the door stands open or closed, so [`Self::advances`] is false
+    /// at every frame.
+    pub(crate) fn rests(&self) -> bool {
+        !matches!(self.phase, DoorPhase::Opening | DoorPhase::Closing)
+    }
+
     /// Whether [`Self::advance`] finishes a transition at `frame`: an opening
     /// or closing door whose timer ran out. A stable door keeps its phase.
     pub(crate) fn advances(&self, frame: u32) -> bool {

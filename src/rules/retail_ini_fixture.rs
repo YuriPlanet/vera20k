@@ -420,8 +420,13 @@ pub fn retail_rules_owner(
     })
     .expect("selected retail startup sources");
     // No fixture reads the shell compatibility projection `into_startup` also
-    // derives.
-    sources.into_owner(sounds, eva).expect("cold startup")
+    // derives. In a build with Ares the fixture game ships `ares.mix`, as the
+    // synthetic fixtures do (`RulesLayerStack::new`); a test of the retail
+    // install itself says `with_ares_mix(false)`.
+    let owner = sources.into_owner(sounds, eva).expect("cold startup");
+    #[cfg(feature = "ares")]
+    let owner = owner.with_ares_mix(true);
+    owner
 }
 
 /// Bounded stock Hills/Battle fixture through the app's source-selection order.

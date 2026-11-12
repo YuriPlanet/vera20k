@@ -117,8 +117,7 @@ Done:
   - The tick takes its parts through `tick_parts()`.
 - [x] The checksum history moved from `MatchSession` into the host.
 - [x] Deferred client effects: every frame the simulation thread could take
-  uses them (with the thread off, `VERA20K_DEFERRED_TICK_EFFECTS=1` opts
-  in). In a hidden 1v29 client run, the state
+  uses them. In a hidden 1v29 client run, the state
   hashes at every common tick from 1 to 9000 are identical with and without
   it.
 - [x] The radar terrain updates per changed cell instead of redrawing its
@@ -129,12 +128,9 @@ Done:
 
 ### Phase 2: a presentation frame for the hot draw path
 
-`SimHost::publish_presentation` keeps a copy of the runtime
-(`Arc<SimRuntime>`), and drawing reads it through `SimHost::presentation`.
-The simulation thread publishes one when it takes a tick (phase 4) and
-drops it when the tick is back; `VERA20K_PRESENTATION_FRAME=1` publishes one
-after every tick without the thread, and a rules or lifecycle write drops
-that one first.
+`SimHost::lend` keeps a copy of the runtime (`Arc<SimRuntime>`) when the
+simulation thread takes a tick (phase 4), and drawing reads it through
+`SimHost::presentation` until the tick is back and the copy is dropped.
 
 A plain copy of the world is too slow: 40–60 ms in a 1v7 skirmish on the
 30-start map, about half of it the terrain cells. The copy therefore shares
@@ -199,8 +195,8 @@ that wait shows in play.
 - `finish_simulation_frame`, the frame tail on the main thread.
 
 An ordinary offline frame on the deferred path can be lent to the simulation
-thread instead of run inline. This is the default; `VERA20K_SIM_THREAD=0`
-turns the thread and the deferred effects off. A pass then goes:
+thread instead of run inline. The thread has no switch: every desktop build
+uses it (`sim_host::sim_thread_available`). A pass goes:
 
 1. `finish_threaded_frame`, first thing in the pass: wait for the tick in
    flight, run its tail and hand its radar-terrain marks to the minimap.
@@ -231,7 +227,6 @@ ticks inline as well. In a 1v29 skirmish on the 30-start map the frame costs
 more than a tick until the battle is large, so lending every last frame made
 GameSpeed 0 run 8 to 22% slower there, and far slower when other programs
 kept the simulation thread waiting for a core.
-`VERA20K_SIM_THREAD=always` skips this comparison, to exercise the thread.
 
 Between the dispatch and the next pass nothing on the main thread may take
 the live world: a write waits for the tick, and the tick then did not run
@@ -275,14 +270,14 @@ A pass whose finished tick left an outcome wait, a stopped frame, an open
 menu, a pause or a result to route dispatches nothing: step 2 sees it
 before step 3.
 
-The browser build has no thread and always ticks inline.
+The browser lends ticks only in its multi-threaded package (below).
 
 Residuals:
 
 - The main thread still waits for a lent tick at the start of the next
   pass, so a tick longer than a picture holds the picture rate to the tick
-  rate. Drawing again from the published frame instead needs commands to
-  reach the simulation without taking the world back.
+  rate. The browser draws the published frame again instead, holding
+  window events until the tick is back (below); desktop could do the same.
 - At GameSpeed 0 the tick rate is bounded by the catch-up budget, eight
   frames or eight milliseconds a picture, as before the thread. Running
   those frames back to back on the simulation thread needs each frame's
@@ -295,10 +290,75 @@ Residuals:
   runtime back keeps its result until the next pass, or drops it when a
   scenario is installed.
 
+### The browser
+
+The default browser packages have no threads and tick inline. The
+multi-threaded package (`tools/wasm/build.py --threads`,
+[Wasm guide](wasm.md#multi-threaded-build-experimental)) lends ticks as
+desktop does, but the browser's main thread traps whenever it waits for
+another thread, so three things differ:
+
+- **The thread is a Web Worker** (`web::sim_worker`): a module worker that
+  shares the engine's memory, started the way wasm-bindgen-rayon starts the
+  pool's workers but with the main thread's 8 MiB stack. The pool's workers
+  get wasm-bindgen's 2 MiB, and a Wasm stack that overflows writes over the
+  heap. The first pass of a scenario starts it, and only when the page is
+  cross-origin isolated and `initThreadPool` started the pool: without the
+  pool, rayon runs its work on the main thread, which the worker's parallel
+  work would wait for in vain. Until the worker runs, frames tick inline.
+  It is experimental and off unless the page turns it on:
+  `set_simulation_thread` takes `1` to turn it on, `always` to lend every
+  frame it can take, or `0`. Lending then follows desktop's rules.
+- **No pass waits for the tick.** `SimHost::pass_may_run` asks whether the
+  lent tick has ended. A pass that finds it running services nothing and
+  draws the frame published for it: no Input, so the screen shake stands as
+  last presented. The next animation frame asks again. An ended tick waits
+  in the host, still lent, so the pass that goes on finishes it as desktop
+  does. A tick longer than a picture slows game time, not the picture.
+- **Window events wait** while a tick is out, in order, since an event may
+  write the world (`App::release_held_events`). The first pass that finds
+  the tick back runs its tail, replays them, then services, so input acts at
+  most one tick later than inline. The other routes already leave a lent
+  tick alone: departures, the EXIT check and the radar drain, and network
+  frames hand Queue_AI back to the main thread, so the WebSocket session
+  never leaves it. A write no route covers (a debug tool, a teardown) spins
+  until the tick ends and counts as an early return.
+
+Nothing the draw and a tick can both take waits on the main thread
+(`util::sync`). The Main RNG and the zone grid's precheck memo lock with
+`wasm_sync`'s mutex, which spins there. Once-cells in copy-on-write state
+(`DerivedCache`, the zone grid's cached hash, the terrain's allocation
+caches) and the static tables both read never wait: two threads that fill
+one at once both compute it, and one value is kept. (`wasm_sync`'s own
+once-cell reads the standard library's private state and spins forever on
+the nightly the build uses.) The host and the worker hand each other the
+runtime through a one-slot mailbox on the same mutex, since a standard
+channel's sender can wait on a lock of its own. A panic aborts a Wasm
+worker, so its tick never comes back: the panic hook keeps the message, and
+the main thread panics with it at its next pass, which reports
+`engine-error` to the host. A trap the hook never sees, such as an
+allocation failure, reaches the same place through the worker's script.
+Composed IME text waits with the held window events, so it cannot overtake
+a key pressed before it.
+
+Residuals:
+
+- While the pool runs a tick's parallel work, the simulation worker waits
+  for it, as the main thread did, instead of joining in. The pool keeps one
+  worker per CPU thread but the main one.
+- A pass that finds the tick running pumps no audio and services no network
+  until the next one, at most one tick later. Desktop's pass waits as long.
+- A pool worker's panic during an inline tick still leaves the main thread
+  spinning in rayon, so the tab freezes instead of reporting it.
+
 ## Validation
 
 - `sim-bench --frame-hashes` stays identical before and after every phase:
   1v29 on the 30-start map, and retail `xmp34u4.map` for bridges.
 - Replay determinism tests pass.
+- Browser (multi-threaded package): an offline 1v29 skirmish with
+  `set_simulation_thread("always")` takes no tick back early and accepts
+  input, and `tools/spawn/run.sh browser` with `SIM_THREAD=always,0` and
+  `always` ends without a desync.
 - Before phase 2, measure client draw CPU at 2,000 units. If drawing alone
   exceeds the frame budget, it needs its own work.

@@ -3140,7 +3140,7 @@ impl Simulation {
             position,
             rules,
             overlay_registry,
-            crate::rules::ARES_ENABLED,
+            rules.ares(),
             frame_effects,
         );
         if !matches!(
@@ -3155,7 +3155,7 @@ impl Simulation {
             // the conversion (health, veterancy, archive, attackers) on that
             // limbo unit; VERA stops here. Trigger: a forced Put that still
             // fails (no cell under the yard). Effect: none visible.
-            if !crate::rules::ARES_ENABLED
+            if !rules.ares()
                 && let Some(refund) = failed_unlimbo_refund
                 && let Some(owner) = self
                     .substrate

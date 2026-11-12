@@ -292,7 +292,7 @@ fn cncnet_country_indices_respect_the_compiled_capability_and_identity_width() {
     for index in [10, 11, i32::from(u16::MAX)] {
         let text = SKIRMISH.replacen("Side=0", &format!("Side={index}"), 1);
         let result = SpawnRequest::parse(&text);
-        if crate::rules::ARES_ENABLED {
+        if crate::rules::ARES_BUILD {
             let SpawnGame::Skirmish(session) = result.unwrap().game else {
                 panic!("Battle Country identity");
             };
@@ -312,7 +312,7 @@ fn cncnet_country_indices_respect_the_compiled_capability_and_identity_width() {
     }
     assert_eq!(
         SpawnRequest::parse("[Settings]\nIsSinglePlayer=Yes\nSide=10\n").is_ok(),
-        crate::rules::ARES_ENABLED,
+        crate::rules::ARES_BUILD,
         "campaign Side has its own byte-wide adapter identity in Ares builds"
     );
 }

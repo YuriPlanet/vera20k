@@ -133,7 +133,7 @@ mod window_icon;
 /// this exact title, so `main` hands the same constant to
 /// `util::single_instance::acquire`.
 pub const WINDOW_TITLE: &str = match (
-    crate::rules::ARES_ENABLED,
+    crate::rules::ARES_BUILD,
     crate::rules::PHOBOS_ENABLED,
     crate::rules::NPATCH_ENABLED,
     crate::rules::NPBUG_ENABLED,
@@ -191,6 +191,15 @@ pub struct App {
     /// (`input::touch`). A synthetic `CursorMoved` must not pass for the OS
     /// pointer, which is what clears the touch-parked cursor.
     dispatching_touch: bool,
+    /// docs/sim-thread.md, "The browser": window events that came while a
+    /// tick was on the simulation worker, in order, for the pass that finds
+    /// it back ([`Self::release_held_events`]).
+    #[cfg(all(
+        feature = "wasm-threads",
+        target_arch = "wasm32",
+        target_os = "unknown"
+    ))]
+    held_window_events: Vec<(winit::window::WindowId, winit::event::WindowEvent)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -244,6 +253,12 @@ impl App {
             mod_switch: None,
             ask_for_game_folder: false,
             dispatching_touch: false,
+            #[cfg(all(
+                feature = "wasm-threads",
+                target_arch = "wasm32",
+                target_os = "unknown"
+            ))]
+            held_window_events: Vec::new(),
         }
     }
 
@@ -266,6 +281,12 @@ impl App {
             mod_switch: None,
             ask_for_game_folder: false,
             dispatching_touch: false,
+            #[cfg(all(
+                feature = "wasm-threads",
+                target_arch = "wasm32",
+                target_os = "unknown"
+            ))]
+            held_window_events: Vec::new(),
         }
     }
 
@@ -290,6 +311,12 @@ impl App {
             mod_switch: None,
             ask_for_game_folder: false,
             dispatching_touch: false,
+            #[cfg(all(
+                feature = "wasm-threads",
+                target_arch = "wasm32",
+                target_os = "unknown"
+            ))]
+            held_window_events: Vec::new(),
         }
     }
 
@@ -314,6 +341,12 @@ impl App {
             mod_switch: None,
             ask_for_game_folder: false,
             dispatching_touch: false,
+            #[cfg(all(
+                feature = "wasm-threads",
+                target_arch = "wasm32",
+                target_os = "unknown"
+            ))]
+            held_window_events: Vec::new(),
         }
     }
 

@@ -47,6 +47,7 @@ impl EmpTypeRules {
     }
     #[cfg(feature = "ares")]
     pub(crate) fn read_pass(&mut self, section: &IniSection, sparkle: Option<Option<String>>) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.immune = section.read_ares_nullable_bool("ImmuneToEMP", self.immune);
         self.modifier = section.read_ares_double_bits("EMP.Modifier", self.modifier);
         if let Some(sparkle) = sparkle {
@@ -167,7 +168,7 @@ mod tests {
         layers.push(RulesLayerKind::Scenario, IniFile::from_str(scenario));
         let rules = RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap();
         let object = rules.object("TANK").unwrap();
-        if crate::rules::ARES_ENABLED {
+        if crate::rules::ARES_BUILD {
             let config = object.emp_rules().unwrap();
             assert_eq!(
                 config.modifier(),

@@ -109,6 +109,7 @@ impl AresIvanBomb {
     /// LoadFromINIFile 10055520's reads of these keys, in its order. The
     /// warhead and the two sounds are bound by their own owners.
     pub(crate) fn read(section: &IniSection) -> Self {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let mut bomb = Self::CONSTRUCTED;
         bomb.death_bomb = section.read_ares_bool("IvanBomb.DeathBomb", bomb.death_bomb);
         bomb.death_bomb_on_allies =
@@ -184,6 +185,7 @@ impl AresAbductor {
 
     /// LoadFromINIFile 10055520's reads of these keys, in its order.
     pub(crate) fn read(section: &IniSection) -> Self {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let mut abductor = Self::CONSTRUCTED;
         abductor.abductor = section.read_ares_bool("Abductor", abductor.abductor);
         abductor.change_owner =
@@ -265,6 +267,7 @@ impl AresWeaponVisuals {
     /// vehicle reversal is seeded from this projection's IsMagBeam; native
     /// seeds it from the value after the first pass that read the weapon.
     pub(crate) fn read(section: &IniSection, is_mag_beam: bool) -> Self {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let mut visuals = Self::constructed(is_mag_beam);
         visuals.is_detached_railgun =
             section.read_ares_bool("IsDetachedRailgun", visuals.is_detached_railgun);

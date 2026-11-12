@@ -1470,7 +1470,7 @@ fn full_foot_entry<'a>(
                 // 0x73F7DD): only a building whose owner is allied with the
                 // unit's house has its bib passed over.
                 if bt.bib
-                    && (!crate::rules::ARES_ENABLED || mover.is_ally_of(live, b.owner))
+                    && (!live.rules.ares() || mover.is_ally_of(live, b.owner))
                     && live.sim.substrate.occupancy.first_building_on_layer(
                         (p.0 as u16).wrapping_add(1),
                         p.1 as u16,

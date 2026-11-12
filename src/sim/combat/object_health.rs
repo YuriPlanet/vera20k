@@ -205,6 +205,7 @@ pub(super) fn commit(
     building_no_c4: bool,
     condition_red: f64,
     source_present: bool,
+    ares: bool,
 ) -> DamageState {
     let Some(previous) = host.object().map(|target| target.health.current) else {
         return DamageState::Unaffected;
@@ -387,7 +388,7 @@ pub(super) fn commit(
     // raises 6 and 44 also without an attacker, then 84 and 83 (attacked or
     // destroyed by House / by anybody) on every hit the object survives so
     // far, each only while it is still alive.
-    let source_gate = cfg!(feature = "ares") || source_present;
+    let source_gate = ares || source_present;
     if result != DamageState::Dead && source_gate {
         host.invoke(HealthCallback::Tag {
             kind: 6,

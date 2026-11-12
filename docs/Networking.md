@@ -27,6 +27,9 @@ select Easy, Normal or Hard AI from an open player slot in Battle or Free For Al
 The HTTPS service supplies match-specific relay credentials before the same loading
 and command handoff. Both paths transfer selected authored maps or generated
 seed/preview data and verify build, rules and effective-map agreement before start.
+Whether Ares plays in a match is decided from that same data: the rules, mode
+and map, and, in a build with Ares, whether the game ships `ares.mix`, which the
+rules agreement covers. Released builds have no Ares and always play stock.
 
 Typing `/translate zh` (or `en`, `zh-tw`, `ja`, `ko`, `de`, `fr`, `es`, `pt`, `ru`,
 `ar`, `th`, `tr`, `sv`) in an online chat edit turns on chat translation, saved as `[VERA] TranslateChat=`;

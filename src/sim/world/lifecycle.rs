@@ -1488,7 +1488,7 @@ impl Simulation {
         // locomotor Put and precedes owner discovery4D722F. Declaration
         // membership alone requests the owner's existing House+1FC pass.
         let rules = context.rules();
-        if crate::rules::ARES_ENABLED
+        if context.rules.ares()
             && let Some(owner) = self.substrate.entities.get(stable_id).and_then(|entity| {
                 (entity.category() != EntityCategory::Structure
                     && rules.is_ares_prerequisite_alternate(
@@ -2144,7 +2144,7 @@ impl Simulation {
         // The live owner is read after Tag callbacks, before the conditional
         //1F4 notification; repeated discovery returned before either site.
         let rules = context.rules();
-        if crate::rules::ARES_ENABLED
+        if context.rules.ares()
             && let Some(owner) = self.substrate.entities.get(stable_id).and_then(|entity| {
                 (entity.category() != EntityCategory::Structure
                     && rules.is_ares_prerequisite_alternate(
@@ -6151,8 +6151,11 @@ impl Simulation {
 
         // BuildingLight436A00; Ares1004EBC0 preserves a cloaking parent's
         // link on control0, while the target clear remains unconditional.
-        self.substrate
-            .spotlights_pointer_expired(expired_id, control == PointerExpiryControl::Uninit);
+        self.substrate.spotlights_pointer_expired(
+            expired_id,
+            control == PointerExpiryControl::Uninit,
+            context.rules.ares(),
+        );
 
         #[cfg(any(test, feature = "test-support"))]
         if let Some(smudge) = self
@@ -6377,7 +6380,7 @@ impl Simulation {
                 // 3.0 TechnoClass_PointerGotInvalid_SpawnCloakOwner (1004A910,
                 // hook 0x707B19) skips it for the manager's own owner unless
                 // it is removed, so a cloaking carrier keeps its spawns.
-                if !(cfg!(feature = "ares")
+                if !(context.rules.ares()
                     && control == PointerExpiryControl::DetachAll
                     && expired_id == listener_id)
                 {
@@ -6973,7 +6976,7 @@ impl Simulation {
             // before LeaveTeam/RemoveTracking. Every declared alternate
             // requests a pass, even while another copy remains tracked.
             let rules = context.rules();
-            if crate::rules::ARES_ENABLED
+            if context.rules.ares()
                 && let Some(owner) = self.substrate.entities.get(stable_id).and_then(|entity| {
                     rules
                         .is_ares_prerequisite_alternate(

@@ -579,6 +579,8 @@ impl Default for TargetTypeFacts {
 /// Everything plain one GetFireError call reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) struct FireFacts {
+    /// [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
+    pub ares: bool,
     pub class: FirerClass,
     /// `[0x00A8ED84]`.
     pub frame: i32,
@@ -720,7 +722,7 @@ fn unit(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> Fir
         // Ares 3.0 UnitClass_CanFire_Heal (1004E540, hook 0x741113) replaces
         // the vt+0x80 call: any Techno below the threshold may be healed.
         let vehicle = target.kind.techno_class().is_some_and(|class| {
-            cfg!(feature = "ares")
+            facts.ares
                 || super::vehicle_like(
                     class,
                     facts.target_type.non_vehicle,
@@ -797,7 +799,7 @@ fn infantry(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) ->
     // I2 `0x0051C8FE`: a medic heals only damaged infantry. Ares 3.0
     // InfantryClass_CanFire_Heal (1004E270, hook 0x0051C913): any damaged
     // Techno (GetHealthPercentage below the threshold; 0/0 is not damaged).
-    let healable = if cfg!(feature = "ares") {
+    let healable = if facts.ares {
         target.kind.techno_class().is_some()
             && target.health.compare_ratio(facts.target_type.strength, 1.0)
                 == crate::util::native_x87::MaskedX87Ordering::Less

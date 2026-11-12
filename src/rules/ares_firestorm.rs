@@ -66,6 +66,7 @@ impl FirestormGlobalRules {
     /// defaults first; then `1002A800`'s reads, after the TogglePower keys
     /// and before BountyEnablers.
     pub(crate) fn read_after_type_data(&mut self, pass: &IniFile, references: FirestormReferences) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         if let Some([active, idle, ground, air]) = references.default_anims {
             self.active_anim = active;
             self.idle_anim = idle;
@@ -87,10 +88,13 @@ impl FirestormGlobalRules {
             self.warhead = Some(warhead);
         }
         if let Some(section) = pass.section("General") {
-            self.damage_coefficient = section.read_ares_double_bits(
-                "DamageToFirestormDamageCoefficient",
-                self.damage_coefficient,
-            );
+            // Retail [General] already sets the TS key.
+            self.damage_coefficient = crate::rules::ares_switch::not_ares_read(|| {
+                section.read_ares_double_bits(
+                    "DamageToFirestormDamageCoefficient",
+                    self.damage_coefficient,
+                )
+            });
         }
     }
 

@@ -459,7 +459,7 @@ fn build_skirmish_shell_instances(
             0.00057,
         );
     }
-    for (slot, row, opponent) in shell.paged_opponents() {
+    for (slot, row, opponent) in shell.paged_opponents(layout.shown_rows) {
         if !player_row_visible(shell, maps, row) || !opponent.is_active() {
             continue;
         }

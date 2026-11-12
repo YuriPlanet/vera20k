@@ -300,14 +300,14 @@ pub(crate) fn multiplayer_eligible_slot(
             actor.foot_speed.crate_multiplier() == NativeF64Bits::ONE
                 // Ares Speed1@1005F9D0 returns481D52 directly after its
                 // Ext+90 check, bypassing the stock Aircraft(+2C==2) gate.
-                && (crate::rules::ARES_ENABLED || actor.category() != EntityCategory::Aircraft)
+                && (rules.ares() || actor.category() != EntityCategory::Aircraft)
         }
         // `0x00481D0B`: an actor already boosted, or unarmed (`Is_Armed`).
         POWERUP_FIREPOWER => {
             actor.crate_multipliers.crate_firepower() == NativeF64Bits::ONE
                 // Installed Firepower1@1005F940 returns481D52 directly,
                 //bypassing stock Is_Armed just as Speed1 bypasses Aircraft.
-                && (crate::rules::ARES_ENABLED || object.is_some_and(|object| {
+                && (rules.ares() || object.is_some_and(|object| {
                     crate::sim::combat::combat_weapon::is_armed(actor, object, &sim.substrate.entities, rules, &sim.interner)
                 }))
         }
@@ -548,8 +548,9 @@ pub(crate) fn pickup_crate(
                 // PickupCrate4824A7..4824D4: every Money dispatch pays
                 // PlayerPtr in mode0 when IsHumanPlayer50B6F0 admits the
                 // collector, including the random and Unit-fallback routes.
+                // Mode 0 is the campaign alone, so no network peer asks.
                 let recipient =
-                    if sim.house_is_human_player(owner) && !sim.session.game_mode_nonzero() {
+                    if !sim.session.game_mode_nonzero() && sim.house_is_human_player(owner) {
                         sim.session.current_house()
                     } else {
                         Some(owner)

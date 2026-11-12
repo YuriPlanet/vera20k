@@ -678,6 +678,10 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
+        // A quiet unit is owed no setter (`world::quiet_units`).
+        if self.quiet(id) {
+            return;
+        }
         let Some(actor) = self
             .substrate
             .entities

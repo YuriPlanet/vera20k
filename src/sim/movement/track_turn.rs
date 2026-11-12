@@ -88,8 +88,10 @@ impl Simulation {
         // Drive4B066C..4B06D2 / Ship69FD13..69FD79: a Cell NavCom naming the
         // current cell stops (or takes the next waypoint) and Process returns
         // before the turn observation, Process_Movement and Process_Track.
-        if matches!(entity.navigation.nav_com(), Some(NavTargetRef::Cell { rx, ry })
-            if (rx, ry) == (entity.position.rx(), entity.position.ry()))
+        // A quiet unit has no NavCom (`world::quiet_units`).
+        if !self.quiet(id)
+            && matches!(entity.navigation.nav_com(), Some(NavTargetRef::Cell { rx, ry })
+                if (rx, ry) == (entity.position.rx(), entity.position.ry()))
         {
             self.track_navcom_stop(id, rules, effects);
             return TrackProcessEntry::Return;
@@ -192,8 +194,11 @@ impl Simulation {
         self.complete_pending_order(id, rules, registry, effects);
         if let Some(entity) = self.substrate.entities.get_mut_if(id, |entity| {
             entity.locomotor.as_ref().is_some_and(|loco| {
+                // The speed first: a unit at rest is let go without its
+                // path being read (VERA-only order; every test only reads).
                 TrackFamily::from_kind(loco.active_kind()).is_some_and(|family| {
-                    entity.lifecycle.object_alive()
+                    entity.foot_speed.speed_fraction_is_positive()
+                        && entity.lifecycle.object_alive()
                         && loco.track_destination(family).is_none()
                         && loco.track_head(family).is_none()
                         && entity
@@ -201,7 +206,6 @@ impl Simulation {
                             .path_replay()
                             .remaining_directions()
                             .is_empty()
-                        && entity.foot_speed.speed_fraction_is_positive()
                 })
             })
         }) {

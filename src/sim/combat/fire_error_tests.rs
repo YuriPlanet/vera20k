@@ -209,6 +209,7 @@ fn facts(input: &Value) -> FireFacts {
         }
     });
     FireFacts {
+        ares: crate::rules::ARES_BUILD,
         class,
         frame,
         weapon_index: int(&input["weapon_index"]),
