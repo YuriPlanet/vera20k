@@ -335,3 +335,10 @@ opt-level = "s"
 lto = "fat"
 codegen-units = 1
 strip = true
+
+# The android-activity glue starts its game thread on bionic's 1 MiB default
+# stack; our engine overflows it on the first frame. The fork raises it to
+# 8 MiB until the fix lands upstream:
+# https://github.com/hathlife/android-activity/pull/1
+[patch.crates-io]
+android-activity = { git = "https://github.com/hathlife/android-activity", branch = "rust-native-stack-size-v060" }
