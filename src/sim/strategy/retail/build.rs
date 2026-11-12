@@ -112,6 +112,9 @@ pub(super) fn spend(
 ) {
     place_finished(brain, rules, obs, out);
     build_next(brain, rules, obs, budget, out);
+    // After the structure decision, because `build_next` is the owner that
+    // clears the hold; a reserve set before it would be zeroed by it.
+    hold_for_a_second_base(brain, rules, obs, budget);
 }
 
 /// Place the structures the yard has finished: the click a player makes on
@@ -463,6 +466,52 @@ fn build_next(
         plan::planned_output(rules, obs, &brain.census)
     );
     out.intent(Intent::QueueProduction { type_id });
+}
+
+/// Hold the wallet for a second base, when the house has decided it wants one.
+///
+/// The factories spend everything they are given, so a maker's price is only
+/// reachable if something tells the lines to stop first — the same owner that
+/// already holds money for the tech stage (`yard_reserve`).
+///
+/// Measured on Arena.mmx seed 0x5EED with the death ledger on: the wallet
+/// peaked at 4550 before any harvester existed and then ran between 400 and
+/// 2400 for the whole match, so `harvesters_served` and the maker's price were
+/// never true on the same frame — three `second base site` lines and no maker
+/// in any roster, for 24k ticks.
+///
+/// The hold is set from the precondition half of the purchase question rather
+/// than all of it: a house that is saving for a maker is exactly a house whose
+/// wallet has not reached one, so asking the whole predicate would never
+/// reserve anything.
+fn hold_for_a_second_base(
+    brain: &mut RetailBrain,
+    rules: &RuleSet,
+    obs: &Observation<'_>,
+    budget: &Budget,
+) {
+    let worth = super::expand::expansion_is_worth_saving_for(brain, rules, obs);
+    let needed = super::expand::expansion_price(rules, obs);
+    // One line every forty seconds while the house is *not* saving, because
+    // "it never buys a maker" has to be answerable from the log the client
+    // already writes: which of the preconditions refused, and what the wallet
+    // and the price were on that frame.
+    if !worth && obs.tick() % 600 == 0 {
+        log::info!(
+            "auto play: no second base - yard={} maker={} yards={} harv={} ref={} price={} credits={}",
+            super::expand::yard_stands(&brain.census),
+            super::expand::owns_yard_maker(&brain.census),
+            brain.census.yards,
+            brain.census.harvesters,
+            brain.census.refineries,
+            needed,
+            budget.free
+        );
+    }
+    if !worth {
+        return;
+    }
+    brain.yard_reserve = needed.saturating_sub(budget.free).max(0);
 }
 
 /// The structure to start now.

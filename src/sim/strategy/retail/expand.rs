@@ -39,6 +39,15 @@ use super::plan::Budget;
 /// the first structure that follows it out of the new yard.
 pub(super) const EXPAND_MIN_CREDITS: i32 = 4_000;
 
+/// The first structure a new yard is expected to buy, held back with the maker.
+///
+/// A yard with no power plant beside it is a building that produces nothing, so
+/// the maker's price alone is not the cost of a second base. It is a *small*
+/// hold, though: the plant can be paid for out of the next few hundred credits
+/// the house earns, and holding the full price of one alongside the maker is
+/// what kept the wallet short of both.
+const EXPAND_FIRST_STRUCTURE: i32 = 200;
+
 /// How far from the base it already has the second one is built, in cells: near
 /// enough to walk to and to defend, far enough that the two bases do not become
 /// one crowded block — which is the shape the placement sweep is built to
@@ -201,18 +210,10 @@ pub(super) fn wants_a_maker(
     obs: &Observation<'_>,
     budget: &Budget,
 ) -> bool {
-    if !yard_stands(&brain.census) || owns_yard_maker(&brain.census) {
-        return false;
-    }
-    // One expansion at a time. A second yard is a second set of `BaseNormal=`
-    // anchors for the placement sweep and a second perimeter for the walls, and
-    // two of those half-started are worse than one finished.
-    if brain.census.yards > 1 {
-        return false;
-    }
-    // Income first: a bay with no truck at it is the dearest structure in the
-    // base, and a maker is dearer than a bay.
-    if !brain.census.harvesters_served() {
+    // The same precondition the saving uses, so the house that is holding money
+    // for a maker is exactly the house allowed to buy one. Two different tests
+    // here is how the wallet and the purchase miss each other.
+    if !expansion_is_worth_saving_for(brain, rules, obs) {
         return false;
     }
     // And ground to put it on. A maker that cannot deploy is a maker the
@@ -227,7 +228,69 @@ pub(super) fn wants_a_maker(
     if obs.map_extent().0 > 0 && expansion_site(brain, rules, obs, yard, None).is_none() {
         return false;
     }
-    budget.free >= EXPAND_MIN_CREDITS
+    // The wallet, against what the maker costs rather than a fixed 4000.
+    //
+    // The fixed floor was a second self-lock of the same shape as the infantry
+    // ceiling's: measured on Arena.mmx seed 0x5EED, the wallet peaked at 4550
+    // on tick 3600 — before any harvester existed — and then ran between 400
+    // and 2400 for the whole match, because the factories spend everything they
+    // are given. So `harvesters_served` and `free >= 4000` were never true on
+    // the same frame, and the house never bought a maker at all: three
+    // `second base site` lines and no maker in any roster.
+    //
+    // The maker's own price is the real question. And the house does not wait
+    // for the wallet to reach it on its own: `build::spend` holds the
+    // difference back (`yard_reserve`) the moment the precondition above
+    // answers true, so the wallet fills instead of being spent by the lines.
+    budget.free >= expansion_price(rules, obs)
+}
+
+/// Whether a second base is wanted at all, ignoring the wallet.
+///
+/// The half of [`wants_a_maker`] that answers "would the house buy a maker if
+/// it had the money". It exists because the reserve and the purchase ask
+/// opposite halves of the same question: `build::spend` holds money back when
+/// the house *is* saving, and `wants_a_maker` buys when the saving is
+/// finished. One predicate for both would be a house that never saves because
+/// it never has enough.
+pub(super) fn expansion_is_worth_saving_for(
+    brain: &RetailBrain,
+    rules: &RuleSet,
+    obs: &Observation<'_>,
+) -> bool {
+    if !yard_stands(&brain.census) || owns_yard_maker(&brain.census) {
+        return false;
+    }
+    if brain.census.yards > 1 {
+        return false;
+    }
+    // The first base has to exist, and that is the whole test.
+    //
+    // An earlier arm also asked `harvesters_served` and then "one truck and one
+    // bay", and the log says why neither worked: `harv=0 ref=0` holds for the
+    // first ~1800 frames while the wallet falls from 10000 to 5000, so every
+    // frame with money in it was a frame where the precondition refused. By the
+    // time a truck existed the factories had spent the opening, and the price
+    // was never reached again.
+    //
+    // A second base is bought out of the opening's own credits or not at all,
+    // and holding part of them back is exactly what `yard_reserve` is for. The
+    // manufactory gate (`ExpansionNeeds`) is the real question: `AMCV` carries
+    // `Prerequisite=GAWEAP,GADEPT`, so a house without a service depot cannot
+    // buy one whatever it holds, and `expansion_site` already refuses when the
+    // rules offer no maker.
+    yard_type(rules, obs).is_some()
+}
+
+/// What a second base costs before it produces anything: the maker plus the
+/// first structure that follows it out of the new yard.
+pub(super) fn expansion_price(rules: &RuleSet, obs: &Observation<'_>) -> i32 {
+    let maker = super::build::all_class_types(rules, obs, ObjectCategory::Vehicle)
+        .filter(|(ty, _)| makes_a_yard(rules, ty))
+        .map(|(ty, _)| obs.cost_of(rules, ty))
+        .min()
+        .unwrap_or(EXPAND_MIN_CREDITS);
+    (maker + EXPAND_FIRST_STRUCTURE).max(EXPAND_MIN_CREDITS / 2)
 }
 
 /// The yard type the house's maker deploys into, when the house has one.
