@@ -47,10 +47,14 @@ use crate::util::fixed_math::SIM_ZERO;
 /// Cell reach the same decision owner used by Walk, Drive/Ship and bridge
 /// repair. The raw code drives admission and cost at 0x00429F5A..FED; a
 /// code 2 is priced by the chain over the live cell lists
-/// ([`Simulation::astar_code2_chain_jams`]).
+/// ([`Simulation::astar_code2_chain`]).
 struct FootSearchEntry<'a> {
     sim: &'a Simulation,
     receiver: Result<crate::sim::world::FootEntryReceiver<'a>, String>,
+    /// The batch's kept code-2 chains
+    /// ([`crate::sim::world::EntryFacts::code2_chain`]); none for a search
+    /// at the Foot's own turn, whose world no other search shares.
+    chains: Option<&'a crate::sim::world::EntryFacts>,
     threat_coefficient: crate::util::native_x87::NativeF64Bits,
     markers: super::path_markers::DeferredBridgeMarkerSearch<'a>,
     /// The mover, when Mark0 has not lifted it ([`MoverLift::Emulated`]):
@@ -159,7 +163,18 @@ impl crate::sim::pathfinding::SearchFootEntry for FootSearchEntry<'_> {
             .hierarchy_house_threat(padded_index)
     }
     fn code2_chain_jams(&self, cell: (u16, u16), layer: MovementLayer) -> Result<bool, String> {
-        self.sim.astar_code2_chain_jams(cell, layer, self.unlisted)
+        let walk = || self.sim.astar_code2_chain(cell, layer, self.unlisted);
+        // The kept answers go by real cell index, which on a regular terrain
+        // belongs to the cell at `cell` alone.
+        let index = self
+            .sim
+            .resolved_terrain
+            .as_ref()
+            .and_then(|terrain| terrain.regular_cell_index((cell.0 as i16, cell.1 as i16)));
+        match self.chains.zip(index) {
+            Some((chains, index)) => chains.code2_chain(index, layer, self.unlisted, walk),
+            None => walk().map(|chain| chain.jams),
+        }
     }
     fn prepare_search_markers(
         &self,
@@ -210,6 +225,28 @@ impl crate::sim::pathfinding::SearchFootEntry for FootSearchEntry<'_> {
     }
 }
 
+/// What one walk of the code-2 chain read ([`Simulation::astar_code2_chain`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Code2Chain {
+    /// Whether the traffic ahead jams.
+    pub(crate) jams: bool,
+    /// The [`Self::name_bit`] of each object the walk followed: the first of
+    /// each list it read, after the mover it skips.
+    pub(crate) named: u64,
+    /// Whether every search whose mover the walk did not follow walks the
+    /// same: no list it read began with the mover it skips, and no lookup
+    /// fell off the map, which stamps the shared Dummy.
+    pub(crate) shared: bool,
+}
+
+impl Code2Chain {
+    /// Object `id`'s bit in [`Self::named`], one of 62: a mover whose bit is
+    /// clear is not in the chain.
+    pub(crate) fn name_bit(id: u64) -> u64 {
+        1 << (id % 62)
+    }
+}
+
 impl Simulation {
     /// The urgency-0 code-2 chain of `AStar_compute_edge_cost @ 0x00429830`
     /// (`0x00429886..0x00429984`): whether the traffic ahead of `cell`'s
@@ -229,42 +266,57 @@ impl Simulation {
     /// After [`CODE2_CHAIN_MAX_HOPS`] Foots it jams, without testing the list
     /// the last one heads for. The lists skip `unlisted`, a mover Mark0 has
     /// not lifted yet ([`MoverLift::Emulated`]).
-    pub(crate) fn astar_code2_chain_jams(
+    pub(crate) fn astar_code2_chain(
         &self,
         cell: (u16, u16),
         layer: MovementLayer,
         unlisted: Option<u64>,
-    ) -> Result<bool, String> {
+    ) -> Result<Code2Chain, String> {
         let terrain = self
             .resolved_terrain
             .as_ref()
             .ok_or("the code-2 chain requires map cells")?;
         let frame = self.session.binary_frame();
+        let mut chain = Code2Chain {
+            jams: true,
+            named: 0,
+            shared: true,
+        };
+        let clears = |chain: Code2Chain| -> Result<Code2Chain, String> {
+            Ok(Code2Chain {
+                jams: false,
+                ..chain
+            })
+        };
         let mut list = Some((cell, layer));
         for _ in 0..CODE2_CHAIN_MAX_HOPS {
             let Some(object) = list.and_then(|(cell, layer)| {
                 self.cell_objects(cell, layer).find(|object| {
-                    !matches!(*object, CellObjectMember::Entity(id) if Some(id) == unlisted)
+                    let mover =
+                        matches!(*object, CellObjectMember::Entity(id) if Some(id) == unlisted);
+                    chain.shared &= !mover;
+                    !mover
                 })
             }) else {
-                return Ok(false);
+                return clears(chain);
             };
             // A terrain object is no Foot.
             let CellObjectMember::Entity(id) = object else {
-                return Ok(true);
+                return Ok(chain);
             };
+            chain.named |= Code2Chain::name_bit(id);
             let foot = self
                 .substrate
                 .entities
                 .get(id)
                 .ok_or("a cell list names a retired object")?;
             if !foot.category().is_foot() {
-                return Ok(true);
+                return Ok(chain);
             }
             let direction = if !foot.foot_speed.speed_fraction_is_positive() {
                 let Some(&word) = foot.navigation.path_replay().remaining_directions().first()
                 else {
-                    return Ok(false);
+                    return clears(chain);
                 };
                 word & 7
             } else {
@@ -278,7 +330,11 @@ impl Simulation {
             ));
             let level = |cell| i32::from(terrain.native_cell_ground_fields(cell).0 as i8);
             let bridge = terrain.native_cell_flags(next) & 0x100 != 0
-                && (foot.on_bridge() || level(terrain.native_cell_identity(own)) - level(next) > 2);
+                && (foot.on_bridge() || {
+                    let own_cell = terrain.native_cell_identity(own);
+                    chain.shared &= matches!(own_cell, NativeCellIdentity::Real(_));
+                    level(own_cell) - level(next) > 2
+                });
             list = match next {
                 NativeCellIdentity::Real(_) => {
                     let (x, y) = terrain.native_cell_coord(next);
@@ -289,10 +345,13 @@ impl Simulation {
                     };
                     Some(((x as u16, y as u16), layer))
                 }
-                NativeCellIdentity::Dummy => None,
+                NativeCellIdentity::Dummy => {
+                    chain.shared = false;
+                    None
+                }
             };
         }
-        Ok(true)
+        Ok(chain)
     }
 }
 
@@ -642,7 +701,8 @@ impl Simulation {
                 //The search reads one unchanged world after Mark0, as a path
                 //batch's searches read theirs, so it keeps the entry facts it
                 //reads the same way (VERA-only; the answers are the same).
-                self.empty_entry_facts();
+                //It walks its code-2 chains itself.
+                self.empty_entry_facts(false);
                 let counts = self.movement_pass_cache.current_blocker_plane();
                 //The track_fresh_response oracle substitutes the whole AStar
                 //core 0x4CBBA0 for a CoreNull row, so no +1AC call happens
@@ -949,6 +1009,7 @@ impl Simulation {
             sim: self,
             markers: marker_search,
             receiver: self.foot_entry_receiver(id, rules, registry, facts),
+            chains: facts.filter(|_| lift == MoverLift::Emulated),
             threat_coefficient: self.foot_path_threat_coefficient(id),
             unlisted,
             own_cell: unlisted.map(|_| (own_cell.0 as i16, own_cell.1 as i16)),

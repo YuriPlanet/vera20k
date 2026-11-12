@@ -115,12 +115,40 @@ fn the_jam_chains_run_through_the_movers() {
     let (sim, movers) = jam(&rules);
     for (mover, y) in movers.into_iter().zip([10, 14]) {
         let jams = |unlisted| {
-            sim.astar_code2_chain_jams((11, y), MovementLayer::Ground, unlisted)
+            sim.astar_code2_chain((11, y), MovementLayer::Ground, unlisted)
                 .unwrap()
+                .jams
         };
         assert!(jams(None), "row {y}: the chain runs back through the mover");
         assert!(!jams(Some(mover)), "row {y}: without the mover it clears");
     }
+}
+
+/// In the tank's row the tank's own walk skips it and clears, so it is not
+/// kept; the infantryman's runs through the tank and jams, so it is, and the
+/// tank still walks its own.
+#[test]
+fn a_kept_chain_answers_a_mover_it_runs_through_by_its_own_walk() {
+    let rules = rules();
+    let (sim, [tank, infantryman]) = jam(&rules);
+    let facts = EntryFacts::fitted(&sim);
+    let terrain = sim.resolved_terrain.as_ref().unwrap();
+    let index = terrain.regular_cell_index((11, 10)).unwrap();
+    let ask = |mover| {
+        facts
+            .code2_chain(index, MovementLayer::Ground, Some(mover), || {
+                sim.astar_code2_chain((11, 10), MovementLayer::Ground, Some(mover))
+            })
+            .unwrap()
+    };
+    assert!(!ask(tank), "the tank's own walk skips it and clears");
+    assert!(
+        facts.is_empty(),
+        "a walk that skipped its mover is not kept"
+    );
+    assert!(ask(infantryman), "the chain runs through the tank");
+    assert!(!facts.is_empty(), "the infantryman's walk is kept");
+    assert!(!ask(tank), "the tank still walks its own");
 }
 
 /// A batched answer is the search Find_Path makes itself on the same world:
