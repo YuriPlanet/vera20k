@@ -465,6 +465,76 @@ fn record_the_kill(
 }
 
 impl crate::sim::world::Simulation {
+    /// Record one loss in the victim house's death log: what died, what killed
+    /// it, the mission it was under and the strength it died at.
+    ///
+    /// VERA-only diagnostics. `losses` counts a category and says nothing about
+    /// how the object died, which is why every reading of "why is this army
+    /// weak" has been indirect (`autoplay/docs/excluded.md`, 2026-11-04, names
+    /// that gap first). This is the missing partition.
+    ///
+    /// Not every native kill path carries a branch this can hang from, so the
+    /// log is a lower bound on losses, not a partition of them: `record_loss`
+    /// stays the authority for how many died. Written only on a terminal
+    /// callback, so a live ChangeOwner (a capture, a mind-control handover)
+    /// books no death - the object is still standing and still counted.
+    fn note_death_for_diagnostics(
+        &mut self,
+        victim_id: u64,
+        source: KillSource,
+        callback: KillCallback,
+        rules: &RuleSet,
+    ) {
+        if callback != KillCallback::Terminal {
+            return;
+        }
+        let Some(victim) = self.substrate.entities.get(victim_id) else {
+            return;
+        };
+        let victim_type = victim.type_ref();
+        let victim_owner = victim.owner();
+        let mission = victim.mission.current();
+        let health_permille = self
+            .substrate
+            .entities
+            .get(victim_id)
+            .and_then(|victim| {
+                self.interner
+                    .object_type(victim.type_ref(), rules)
+                    .map(|object| (victim.health.current(), object.strength))
+            })
+            .map_or(0, |(current, strength)| {
+                if strength <= 0 {
+                    0
+                } else {
+                    (i64::from(current.max(0)) * 1000 / i64::from(strength)) as i32
+                }
+            });
+        // The killer's *type*, not only its house: "lost a tank to a dog" and
+        // "lost a tank to a tank" are different readings with the same owner.
+        let killer_type = match source {
+            KillSource::Techno(Some(killer)) => self
+                .substrate
+                .entities
+                .get(killer)
+                .map(crate::sim::game_entity::GameEntity::type_ref),
+            KillSource::Techno(None) | KillSource::House(_) => None,
+        };
+        let tick = u64::from(self.session.binary_frame());
+        let Some(house) = self.houses.get_mut(&victim_owner) else {
+            return;
+        };
+        house
+            .tracking_mut()
+            .record_death(crate::sim::house_tracking::DeathRecord {
+                tick,
+                victim_type,
+                killer_type,
+                mission,
+                health_permille,
+            });
+    }
+
     /// Original virtual E0/E4 world entry, including Unit744720's E0 prefix.
     /// Base702D40/703230 captures CostOf after the Unit callbacks and before
     /// its own Tag callbacks; later owner/rank/Tag reads remain live.
@@ -557,6 +627,10 @@ impl crate::sim::world::Simulation {
         }
         #[cfg(not(feature = "ares"))]
         let _ = promote_now;
+        // VERA-only: what this loss was, for the diagnostics that read it.
+        // Observation only - no branch above or below consults it, so it
+        // cannot reach the simulation, its hash or a multiplayer checksum.
+        self.note_death_for_diagnostics(victim_id, source, callback, rules);
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(
             crate::sim::world::LifecycleTestEvent::RecordKillBookkeeping {

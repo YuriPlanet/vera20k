@@ -933,7 +933,94 @@ fn main() -> Result<(), String> {
             );
         }
     }
+    // How the losses happened. `losses` only ever said how many, so every
+    // reading of "why is this army weak" has been indirect; this is the
+    // partition. Printed for both sides, because a loss only means something
+    // next to what took it. Re-borrowed here: `sim` above is held across the
+    // frame loop's mutable borrow of the runtime.
+    report_deaths(&scenario.runtime.simulation, local, &enemies);
     Ok(())
+}
+
+/// Print each side's losses by (what died, what killed it), then how the
+/// victim's own mission was split.
+///
+/// Two readings that a single `lost` total cannot give:
+///
+/// - the pair table answers "did the army die to what it was built to fight,
+///   or to something it could not answer" - a tank lost to infantry reads
+///   apart from one lost to a defence tower;
+/// - the mission split answers "did it die moving, fighting, or standing
+///   still", which separates a bad engagement from a bad approach from a
+///   unit that was never given anything to do.
+///
+/// The health split is the third: a loss at full strength is a one-shot (a
+/// superweapon, a crush, a collapsing bridge), not a firefight it lost.
+fn report_deaths(sim: &Simulation, local: InternedId, enemies: &[InternedId]) {
+    for house in std::iter::once(local).chain(enemies.iter().copied()) {
+        let Some(state) = sim.houses().get(&house) else {
+            continue;
+        };
+        let tracking = state.tracking();
+        let name = sim.interner().resolve(house);
+        let total: i32 = tracking.deaths_by_pair().values().sum();
+        if total == 0 {
+            println!("deaths {name}: none");
+            continue;
+        }
+        println!("deaths {name}: {total}");
+        // Most frequent pair first: the shape of the problem is in the head.
+        let mut pairs: Vec<_> = tracking
+            .deaths_by_pair()
+            .iter()
+            .map(|(&(victim, killer), &count)| (count, victim, killer))
+            .collect();
+        pairs.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+        for (count, victim, killer) in pairs {
+            println!(
+                "  {count:>4}x {} <- {}",
+                sim.interner().resolve(victim),
+                killer.map_or("<no attacker>".to_owned(), |killer| {
+                    sim.interner().resolve(killer).to_owned()
+                })
+            );
+        }
+        // The row detail is a capped window; say so rather than implying it is
+        // the whole match.
+        let rows = tracking.deaths();
+        if rows.len() < total as usize {
+            println!(
+                "  (mission and health splits cover the last {} of {total})",
+                rows.len()
+            );
+        }
+        let mut by_mission: std::collections::BTreeMap<i32, i32> =
+            std::collections::BTreeMap::new();
+        let mut one_shot = 0;
+        let mut worn_down = 0;
+        for record in rows {
+            *by_mission.entry(record.mission.raw()).or_insert(0) += 1;
+            if record.health_permille >= 1000 {
+                one_shot += 1;
+            } else {
+                worn_down += 1;
+            }
+        }
+        let missions: Vec<String> = by_mission
+            .iter()
+            .map(|(mission, count)| {
+                let label = vera20k_core::sim::mission::MissionId::from_raw(*mission)
+                    .known()
+                    .map_or_else(
+                        || format!("MissionId({mission})"),
+                        |known| format!("{known:?}"),
+                    );
+                format!("{label}={count}")
+            })
+            .collect();
+        println!("  under: {}", missions.join(" "));
+        println!("  at full strength: {one_shot}, worn down: {worn_down}");
+    }
 }
 
 fn is_defeated(sim: &Simulation, house: InternedId) -> bool {

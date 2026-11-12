@@ -143,6 +143,36 @@ use crate::sim::intern::InternedId;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
 
+/// How many death rows a house keeps in detail. A 24k-tick match with heavy
+/// attrition can lose several hundred objects; the per-pair totals stay exact
+/// at any size, so this only bounds the row detail a reader can walk.
+pub const DEATH_LOG_CAPACITY: usize = 512;
+
+/// The frame a loss happened at and what the victim was doing.
+///
+/// The mission is the victim's own `MissionCom::current()` at the instant of
+/// the kill, which is the only place a policy's intent survives: a unit that
+/// died under `Move` was walking somewhere, one under `Guard` was holding, and
+/// one under `Attack` was fighting. `health_ratio` is what was left at the
+/// kill, so a loss at full health is a one-shot (a superweapon, a crush, a
+/// bridge collapse) rather than a lost firefight.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeathRecord {
+    /// The tick the kill landed on.
+    pub tick: u64,
+    /// The victim's type, so a reader can separate "lost my tanks" from
+    /// "lost my infantry" without a second lookup.
+    pub victim_type: InternedId,
+    /// The killer's type, `None` when nothing can be credited (a crush, a
+    /// superweapon with no launcher left, a destructor that books nothing).
+    pub killer_type: Option<InternedId>,
+    /// The victim's mission when it died.
+    pub mission: crate::sim::mission::MissionId,
+    /// The victim's health at the kill, in tenths of a percent, so a loss at
+    /// full strength (1000) reads apart from one worn down (0..999).
+    pub health_permille: i32,
+}
+
 #[cfg(feature = "phobos")]
 mod phobos;
 #[cfg(feature = "phobos")]
@@ -504,6 +534,27 @@ pub struct HouseTracking {
     /// most of the work and never landed the last hit.
     #[serde(default)]
     damage_value: BTreeMap<InternedId, i64>,
+    /// How this house's objects died, one row per loss.
+    ///
+    /// VERA-only: gamemd keeps no such ledger. `losses` above counts how many
+    /// died per category and nothing else, so every reading of "why is this
+    /// army weak" has been indirect - a total that cannot separate a unit
+    /// walking into a defence tower from one caught by a superweapon
+    /// (`autoplay/docs/excluded.md`, 2026-11-04, is the first place that gap
+    /// is named, and it stayed open). This records the four facts that
+    /// separate those cases.
+    ///
+    /// Analytic and observational only: written by the kill commit, read by
+    /// diagnostics, never consulted by the simulation, so it cannot affect
+    /// determinism, the hash or a multiplayer checksum. Bounded by
+    /// [`DEATH_LOG_CAPACITY`] so a long match cannot grow it without limit;
+    /// the counts stay exact, only the row detail stops.
+    #[serde(default)]
+    deaths: Vec<DeathRecord>,
+    /// Totals per (victim type, killer type) pair, independent of the capped
+    /// row ring, and the side that shows a shape even when `deaths` is full.
+    #[serde(default)]
+    deaths_by_pair: BTreeMap<(InternedId, Option<InternedId>), i32>,
     /// `HouseClass+0x158`, the on-map objects whose type is a
     /// `ResourceGatherer=`.
     #[serde(default)]
@@ -852,6 +903,39 @@ impl HouseTracking {
     /// Credits of damage this house's objects have dealt, by attacker type.
     pub fn damage_value(&self) -> &BTreeMap<InternedId, i64> {
         &self.damage_value
+    }
+
+    /// Record one of this house's objects dying, and what killed it.
+    ///
+    /// Called from the kill commit, which is the one place that already holds
+    /// the victim, its killer and the tick. The per-pair total is exact
+    /// forever; the row detail stops at [`DEATH_LOG_CAPACITY`] so a long match
+    /// cannot grow it without bound.
+    pub(crate) fn record_death(&mut self, record: DeathRecord) {
+        // The per-pair total is the exact count and is never capped.
+        *self
+            .deaths_by_pair
+            .entry((record.victim_type, record.killer_type))
+            .or_insert(0) += 1;
+        if self.deaths.len() < DEATH_LOG_CAPACITY {
+            self.deaths.push(record);
+            return;
+        }
+        // Full: drop the oldest row, keeping the most recent window. A reader
+        // that needs the whole match reads `deaths_by_pair`, which is exact.
+        self.deaths.remove(0);
+        self.deaths.push(record);
+    }
+
+    /// The house's losses in detail, oldest first.
+    pub fn deaths(&self) -> &[DeathRecord] {
+        &self.deaths
+    }
+
+    /// Losses as (victim type, killer type) -> count, exact at any match
+    /// length.
+    pub fn deaths_by_pair(&self) -> &BTreeMap<(InternedId, Option<InternedId>), i32> {
+        &self.deaths_by_pair
     }
 
     pub(crate) fn active_total(&self) -> i32 {

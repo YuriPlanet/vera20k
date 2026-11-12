@@ -3,6 +3,7 @@
 //! per-house kill-table aggregation is not newly certified by these tests.
 
 use super::*;
+use crate::map::entities::EntityCategory;
 use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
 use crate::sim::game_entity::GameEntity;
 use crate::sim::rng::SimRng;
@@ -501,4 +502,105 @@ fn saved_live_statistics_preserve_terminal_score_and_rng_continuation() {
     );
     assert_eq!(restored.rng_state(), sim.rng_state());
     assert_eq!(restored.state_hash(), sim.state_hash());
+}
+
+/// A lethal kill is written to the victim house's death log with all four
+/// facts: who died, what killed it, the mission it was under, and the
+/// strength it died at.
+///
+/// This is the reading `losses` could never give - a count of three deaths
+/// does not say whether they were a tank lost to a dog, a squad caught at full
+/// strength by a superweapon, or a column that died while walking. Every one
+/// of those has wanted a different fix.
+#[test]
+fn a_lethal_kill_records_what_died_and_what_killed_it() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n0=E1\n[VehicleTypes]\n0=MTNK\n\
+         [E1]\nCost=200\nStrength=100\n[MTNK]\nCost=700\nStrength=300\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::new();
+    let owner = sim.interner.intern("Americans");
+    sim.houses
+        .register(HouseState::new(owner, 0, None, true, 0, 10));
+    let (e1, mtnk) = (sim.interner.intern("E1"), sim.interner.intern("MTNK"));
+
+    let mut victim = GameEntity::test_default(1, "MTNK", "Americans", 10, 10);
+    victim.set_owner_for_test(owner);
+    victim.set_type_ref_for_test(mtnk);
+    victim.set_category_for_test(EntityCategory::Unit);
+    // Worn down, and walking somewhere when it died: a firefight lost during
+    // an approach, not a one-shot and not a unit that never got an order.
+    victim.health.set_for_test(150);
+    victim.mission.set_current_for_test(
+        crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Move),
+        0,
+    );
+    sim.substrate.entities.insert(victim);
+    let mut killer = GameEntity::test_default(2, "E1", "Russians", 11, 10);
+    killer.set_owner_for_test(sim.interner.intern("Russians"));
+    killer.set_type_ref_for_test(e1);
+    killer.set_category_for_test(EntityCategory::Infantry);
+    sim.substrate.entities.insert(killer);
+
+    sim.record_the_kill(
+        1,
+        crate::sim::combat::KillSource::Techno(Some(2)),
+        crate::sim::combat::KillCallback::Terminal,
+        crate::sim::world::UninitContext::with_rules(&rules),
+    );
+
+    let deaths = sim.houses[&owner].tracking().deaths();
+    assert_eq!(deaths.len(), 1, "one row per loss");
+    let record = deaths[0];
+    assert_eq!(record.victim_type, mtnk);
+    assert_eq!(record.killer_type, Some(e1), "the type, not only the house");
+    assert_eq!(
+        record.mission.known(),
+        Some(crate::sim::mission::MissionType::Move),
+        "what it was doing when it died"
+    );
+    assert_eq!(record.health_permille, 500, "150 of 300 strength");
+    let expected: std::collections::BTreeMap<_, _> = [((mtnk, Some(e1)), 1)].into_iter().collect();
+    assert_eq!(
+        sim.houses[&owner].tracking().deaths_by_pair(),
+        &expected,
+        "the exact total, independent of the row window"
+    );
+}
+
+/// A live handover is not a death: ChangeOwner, a capture and a mind-control
+/// transfer all call the same kill entry, but the object is still standing and
+/// is still counted. Recording them as losses would make an engineer capture
+/// look like a battle where both sides lost a building.
+#[test]
+fn a_live_handover_books_no_death() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=GAPOWR\n[GAPOWR]\nCost=800\nStrength=750\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::new();
+    let owner = sim.interner.intern("Americans");
+    sim.houses
+        .register(HouseState::new(owner, 0, None, true, 0, 10));
+    let gappwr = sim.interner.intern("GAPOWR");
+    let mut victim = GameEntity::test_default(1, "GAPOWR", "Americans", 10, 10);
+    victim.set_owner_for_test(owner);
+    victim.set_type_ref_for_test(gappwr);
+    victim.set_category_for_test(EntityCategory::Structure);
+    victim.health.set_for_test(750);
+    sim.substrate.entities.insert(victim);
+
+    sim.record_the_kill(
+        1,
+        crate::sim::combat::KillSource::Techno(None),
+        crate::sim::combat::KillCallback::OwnerChange,
+        crate::sim::world::UninitContext::with_rules(&rules),
+    );
+
+    assert!(
+        sim.houses[&owner].tracking().deaths().is_empty(),
+        "the building changed hands, it did not die"
+    );
+    assert!(sim.houses[&owner].tracking().deaths_by_pair().is_empty());
 }
