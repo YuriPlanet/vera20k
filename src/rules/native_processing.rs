@@ -1153,6 +1153,16 @@ impl ProcessedRulesLayers {
                 "saved Rules require a different compiled extension capability",
             ));
         }
+        // The release build reads only the stock way and a build with the
+        // `ares` feature only the Ares way: neither restores Rules read the
+        // other way.
+        if crate::rules::ares_switch::reading_mode(registry.reads_ares_way)
+            != registry.reads_ares_way
+        {
+            return Err(RulesError::InvalidSavedState(
+                "saved Rules were read in a way this build never reads",
+            ));
+        }
         // Only a read the Ares way fills these SuperWeaponType fields.
         if !registry.reads_ares_way
             && registry.families.values().flatten().any(|member| {
@@ -1372,13 +1382,14 @@ impl ProcessedRulesLayers {
         let particle_count = families.get(&RulesTypeFamily::Particle).map_or(0, Vec::len);
         if families.values().flatten().any(|member| {
             !member.building_foundation.valid()
-                // Only a read the Ares way installs a custom foundation.
+                // Only a read the Ares way installs a custom foundation or
+                // weapon slots past the eighteen.
                 || (!registry.reads_ares_way
-                    && matches!(
+                    && (matches!(
                         member.building_foundation,
                         crate::rules::foundation::Foundation::Custom(_)
                             | crate::rules::foundation::Foundation::InvalidCustom
-                    ))
+                    ) || member.weapon_slots.has_extension_slots()))
                 || member
                     .weapon
                     .projectile
@@ -5960,6 +5971,11 @@ impl WeaponSlots {
 
     pub(crate) fn base(&self) -> Vec<Option<String>> {
         self.base.iter().chain(&self.extra_base).cloned().collect()
+    }
+
+    /// Whether the Ares extension slots past the eighteen hold anything.
+    fn has_extension_slots(&self) -> bool {
+        !self.extra_base.is_empty() || !self.extra_elite.is_empty()
     }
 
     pub(crate) fn elite(&self) -> Vec<Option<String>> {

@@ -2775,6 +2775,39 @@ fn techno_weapon_bank_uses_effective_native_gates_and_elite_slot_order() {
     );
 }
 
+/// Only a read the Ares way grows the weapon arrays past the eighteen (Ares
+/// loader 10040020), and a build restores only Rules read a way it reads: a
+/// saved stock registry holding extension slots is refused before projection.
+#[test]
+fn saved_rules_refuse_ares_weapon_slots_and_modes_this_build_never_reads() {
+    let processed = RulesLayerStack::new(IniFile::from_str(
+        "[VehicleTypes]\n0=UNIT\n[UNIT]\nPrimary=GUN\n",
+    ))
+    .process()
+    .unwrap();
+    let mut saved = serde_json::to_value(processed).unwrap();
+    let registry = &mut saved["native_type_construction_trace"]["registry_state"];
+    registry["reads_ares_way"] = false.into();
+    registry["ares_armors"] = serde_json::Value::Null;
+    registry["ares_prerequisites"] = serde_json::Value::Null;
+    let validate = |saved: &serde_json::Value| {
+        serde_json::from_value::<ProcessedRulesLayers>(saved.clone())
+            .unwrap()
+            .validate_saved_state()
+    };
+    // A build with the `ares` feature reads only the Ares way.
+    assert_eq!(
+        validate(&saved).is_ok(),
+        !crate::rules::ares_switch::reading_mode(false)
+    );
+    saved["native_type_construction_trace"]["registry_state"]["families"]["Vehicle"][0]["weapon_slots"]
+        ["extra_base"] = serde_json::json!(["GUN"]);
+    assert!(matches!(
+        validate(&saved),
+        Err(crate::rules::error::RulesError::InvalidSavedState(_))
+    ));
+}
+
 /// TiberiumRead721B20..721C1E, RulesRead66BC37..66BC51 and Process668F65:
 /// retain read-time Color/list answers while later passes add Colors and admit
 /// the late-created Debris types' ART bodies. A Type reset keeps the Rules scalar.
