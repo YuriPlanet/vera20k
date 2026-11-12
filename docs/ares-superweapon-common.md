@@ -47,6 +47,11 @@ reader `0x10033370` and its hooks); no Ares DLL is loaded.
 - `SW.AlwaysGranted` grants an available type without a provider building
   (`0x10038F10`); the availability gates still apply. Grants under low power hold
   only `IsPowered=yes` types.
+- The House Super pass is Ares's (hook `0x50AF10`, `0x10039450`): a provider
+  powers its Supers only online, not under EMP and operated, and charges them
+  only when also not warped out and not building up or selling (`0x10038F10`).
+  An `IsPowered=yes` type is held without a powering provider or on low power,
+  any other type without a charging one, which the stock pass never holds.
 - `SW.CreateRadarEvent` adds the type-13 radar event to a new type's launch
   (`0x10032ED0`).
 - `SW.Group` selects the types Ares's script action 55 fires (`0x10039EF0`): the

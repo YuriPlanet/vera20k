@@ -65,7 +65,9 @@ fn cameo_draw_state_darkens_where_draw_does_not_decide_retention() {
     assert!(strip_refusal(&sim, &rules, owner, plain).is_none());
     let offline = cameo_draw_state(&sim, &rules, owner, plain);
     assert!(!offline.enabled);
-    assert!(!offline.at_build_limit);
+    // Ares hook 0x50B370 (10024F80) also answers at-limit without a usable
+    // factory.
+    assert_eq!(offline.at_build_limit, crate::rules::ARES_ENABLED);
     // The same live query clears the overlay when the yard is back online.
     sim.substrate
         .entities

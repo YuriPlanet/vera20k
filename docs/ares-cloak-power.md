@@ -38,6 +38,9 @@ DeactivateDimOperator=0.65 ; ... while missing its Operator
 - `sim/powered_by.rs`: PoweredUnitClass `1006A6F0` with EnableEMPEffect2
   `10062980` and DisableEMPEffect2 `10062650`; IsPowered `100454F0` is the
   shared veto of Activate, the operator update and the Unit spark block.
+- `sim/powered_unit.rs`: Activate `1004CCB0` and Deactivate `1004CDC0` skip
+  the type's sound under IKnowWhatImDoing and refresh a Building's factory
+  queues on the transition (`10013250`).
 - `sim/radar_jammer.rs`: JammerClass `10068500` and its Unjam/UnjamAll; the
   radar and SpySat scans skip a jammed or EMPed provider (`10024550`,
   `10024620`).
@@ -54,10 +57,9 @@ DeactivateDimOperator=0.65 ; ... while missing its Operator
   `[AudioVisual]StealthSpeakDelay`/`SubterraneanSpeakDelay`: the radar
   tracker has no EVA channel. The keys are read; no line plays.
 - The sonar pulse's TechnoExt SonarTimer term of CloakDisallowed.
-- Deactivated cursor actions (`10044AD0` and the What_Action hooks, and
-  the Deactivated arm of Building ClickedAction `10016F60`, hook
-  `0x443414`, whose trench arm is ported), the Activate/Deactivate
-  factory-queue refresh and the sound mutex.
+- The deactivated cursor and click actions (`10044AD0`, the What_Action
+  hooks and the Deactivated arm of Building ClickedAction `10016F60`) are
+  in [ares-techno-hooks.md](ares-techno-hooks.md).
 - Prism-forwarded jammer retention on capture. (PoweredBy's team liberation,
   silent reselection and the spawn/slave manager updates of EnableEMPEffect2
   `10062980`, DisableEMPEffect2 `10062650` and updateSpawnManager `10063070`

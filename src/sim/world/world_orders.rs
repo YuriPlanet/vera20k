@@ -377,16 +377,23 @@ impl Simulation {
     /// though Unit's healer arm `0x0073FD7C` still answers Repair). The event
     /// queues the mission and sets the target, which the next frozen AI frame
     /// drops (`Simulation::temporal_ai_prologue`); the queued mission waits.
+    ///
+    /// With `ares` a Deactivated (`+0x1C8`) object is refused as well: Foot
+    /// ClickedAction_Object and _Cell (hooks `0x004D74EC`, `0x004D7D58`;
+    /// Ares.dll `1004CBC0`, `1004CBA0`), Building Active_Click_With_Cell
+    /// (`0x004436F7`, `1004CB30`) and Building ClickedAction_Object's
+    /// Deactivated arm (`0x00443414`, `10016F60`), which consumes the click.
+    /// The one action they let through, Detonate, is sent by the self-click
+    /// producer, which reads the whole selection.
     pub fn click_order_receivers(&self, selection: &[u64]) -> Vec<u64> {
         selection
             .iter()
             .copied()
             .filter(|&id| {
-                !self
-                    .substrate
-                    .entities
-                    .get(id)
-                    .is_some_and(|entity| entity.berserk.is_active())
+                !self.substrate.entities.get(id).is_some_and(|entity| {
+                    entity.berserk.is_active()
+                        || (cfg!(feature = "ares") && entity.deactivated.is_offline())
+                })
             })
             .collect()
     }

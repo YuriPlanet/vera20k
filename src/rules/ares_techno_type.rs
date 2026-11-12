@@ -674,10 +674,14 @@ impl TechnoCombatGlobalRules {
     }
 }
 
-/// TechnoTypeExt+0x458..+0x468, the reload amounts and the out-of-ammo
-/// weapon.
+/// TechnoTypeExt+0x448..+0x468, the dock reload rate, the reload amounts and
+/// the out-of-ammo weapon.
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct AmmoTypeRules {
+    /// `ReloadRate` (Nullable<double> +0x448, minutes), unset: Rules
+    /// `ReloadRate`.
+    #[serde(default)]
+    reload_rate: Option<NativeF64Bits>,
     /// `ReloadAmount` (+0x458, 1).
     reload_amount: i32,
     /// `EmptyReloadAmount` (Nullable +0x45C/+0x460, unset).
@@ -691,6 +695,7 @@ pub(crate) struct AmmoTypeRules {
 impl Default for AmmoTypeRules {
     fn default() -> Self {
         Self {
+            reload_rate: None,
             reload_amount: 1,
             empty_reload_amount: None,
             no_ammo_amount: 0,
@@ -700,6 +705,14 @@ impl Default for AmmoTypeRules {
 }
 
 impl AmmoTypeRules {
+    /// The minutes between a docked aircraft's reloads at its airfield
+    /// (BuildingClass_MissionRepair_Reload, Ares.dll 10014190, hook
+    /// 0x44C844): `ReloadRate`, else `[General] ReloadRate`.
+    pub(crate) fn reload_rate(&self, general: f64) -> f64 {
+        self.reload_rate
+            .map_or(general, |rate| f64::from_bits(rate.bits()))
+    }
+
     /// The rounds one `TechnoClass::Reload` adds (TechnoClass_Reload_
     /// ReloadAmount, Ares.dll 10047A70, hook 0x6FB05B): `ReloadAmount`, or
     /// `EmptyReloadAmount` when set and the count is zero.
@@ -1031,8 +1044,8 @@ impl AresTechnoTypeRules {
         if let Some(warhead) = resolve("CrushDamage.Warhead", TypeRef::Warhead) {
             combat.crush_damage_warhead = Some(warhead);
         }
-        // After ReloadRate.
         let ammo = &mut self.ammo;
+        ammo.reload_rate = section.read_ares_nullable_double_bits("ReloadRate", ammo.reload_rate);
         ammo.reload_amount = section.read_ares_int("ReloadAmount", ammo.reload_amount);
         ammo.empty_reload_amount =
             section.read_ares_nullable_int("EmptyReloadAmount", ammo.empty_reload_amount);
@@ -1171,8 +1184,12 @@ impl AresTechnoTypeRules {
     pub(crate) fn dig_effects(&self, dig_in: bool) -> [Option<Option<&str>>; 2] {
         let slot = usize::from(!dig_in);
         [
-            self.residual.dig_sounds[slot].as_ref().map(|sound| sound.as_deref()),
-            self.residual.dig_anims[slot].as_ref().map(|anim| anim.as_deref()),
+            self.residual.dig_sounds[slot]
+                .as_ref()
+                .map(|sound| sound.as_deref()),
+            self.residual.dig_anims[slot]
+                .as_ref()
+                .map(|anim| anim.as_deref()),
         ]
     }
 

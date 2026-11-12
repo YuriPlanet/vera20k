@@ -75,7 +75,9 @@ pub(crate) trait ReloadHost {
 }
 
 /// One visit of the arm with `[General] ReloadRate=` `reload_rate`
-/// (minutes) and the frames it returns.
+/// (minutes) and the frames it returns. Ares replaces it
+/// ([`ares_reload_visit`]).
+#[cfg_attr(feature = "ares", allow(dead_code))]
 pub(crate) fn reload_visit(reload_rate: f64, host: &mut impl ReloadHost) -> i32 {
     use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF64Bits};
     let enter = MissionId::from_known(MissionType::Enter);
@@ -116,7 +118,113 @@ pub(crate) fn reload_visit(reload_rate: f64, host: &mut impl ReloadHost) -> i32 
     3
 }
 
-/// [`reload_visit`] for airfield `dock`.
+/// Ares' per-docker timers (BuildingExt DockReloadTimers): for each radio
+/// slot, the frame its docker next reloads, -1 once it was released. Ares
+/// grows the vector to the slot count before each visit; a slot it never
+/// wrote reads 0 here.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub(crate) struct DockReloadTimers {
+    frames: Vec<i32>,
+}
+
+#[cfg(feature = "ares")]
+impl DockReloadTimers {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.frames.is_empty()
+    }
+
+    fn get(&self, slot: usize) -> i32 {
+        self.frames.get(slot).copied().unwrap_or(0)
+    }
+
+    fn set(&mut self, slot: usize, frame: i32) {
+        if self.frames.len() <= slot {
+            self.frames.resize(slot + 1, 0);
+        }
+        self.frames[slot] = frame;
+    }
+}
+
+/// What Ares' replacement reads besides the stock arm's.
+#[cfg(feature = "ares")]
+pub(crate) trait AresReloadHost: ReloadHost {
+    /// `Unsorted::CurrentFrame`.
+    fn frame(&mut self) -> i32;
+    /// The contact type's `ReloadRate`, else `[General] ReloadRate`
+    /// (minutes).
+    fn reload_rate(&mut self, contact: u64) -> f64;
+    /// The airfield's DockReloadTimers.
+    fn timers(&mut self) -> &mut DockReloadTimers;
+}
+
+/// With `ares`, hook `0x0044C844` (BuildingClass_MissionRepair_Reload,
+/// Ares.dll `10014190`) replaces the arm up to `0x0044C968` and makes each
+/// docker independent: a serviced contact off Sleep has its timer cleared
+/// and Sleep queued; asleep, it waits for its own timer, which then moves
+/// `ftol(ReloadRate x 900)` frames on (the contact type's rate, else
+/// Rules'), and only a timer that fell due this very frame sends RELOAD and
+/// REPAIR. A released contact's timer becomes -1. The airfield is visited
+/// again next frame (1) while it serviced any contact, else it queues Guard
+/// and returns 3.
+#[cfg(feature = "ares")]
+pub(crate) fn ares_reload_visit(host: &mut impl AresReloadHost) -> i32 {
+    use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF64Bits};
+    let enter = MissionId::from_known(MissionType::Enter);
+    let sleep = MissionId::from_known(MissionType::Sleep);
+    let mut serviced = false;
+    let mut slot = 0;
+    while slot < host.capacity() {
+        if let Some(contact) = host.contact(slot) {
+            let mut release =
+                host.roger(contact, RadioMessage::QueryReloaded) && host.full_strength(contact);
+            if !release {
+                let mission = host.mission(contact);
+                if mission == enter || !host.roger(contact, RadioMessage::NeedToMove) {
+                    slot += 1;
+                    continue;
+                }
+                serviced = true;
+                if mission != sleep {
+                    host.timers().set(slot, 0);
+                    host.queue_sleep(contact);
+                    slot += 1;
+                    continue;
+                }
+                let now = host.frame();
+                let due = host.timers().get(slot);
+                if due > now {
+                    slot += 1;
+                    continue;
+                }
+                let minutes = X87::load_f64(NativeF64Bits::from_bits(
+                    host.reload_rate(contact).to_bits(),
+                ));
+                let frames = X87::ftol_i32_low_masked(X87::mul(minutes, X87::load_i32(900)));
+                host.timers().set(slot, now.wrapping_add(frames));
+                if due != now {
+                    slot += 1;
+                    continue;
+                }
+                release = !host.roger(contact, RadioMessage::Reload)
+                    && !host.roger(contact, RadioMessage::RepairTick);
+            }
+            if release {
+                host.release(contact);
+                host.timers().set(slot, -1);
+            }
+        }
+        slot += 1;
+    }
+    if serviced {
+        return 1;
+    }
+    host.queue_guard();
+    3
+}
+
+/// [`reload_visit`] (with `ares`, [`ares_reload_visit`]) for airfield `dock`.
 pub(crate) fn mission_reload(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -124,16 +232,19 @@ pub(crate) fn mission_reload(
     registry: Option<&OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) -> i32 {
-    reload_visit(
-        rules.general.reload_rate,
-        &mut WorldReload {
-            sim,
-            rules,
-            dock,
-            registry,
-            effects,
-        },
-    )
+    let mut host = WorldReload {
+        sim,
+        rules,
+        dock,
+        registry,
+        effects,
+        #[cfg(feature = "ares")]
+        detached_timers: DockReloadTimers::default(),
+    };
+    #[cfg(feature = "ares")]
+    return ares_reload_visit(&mut host);
+    #[cfg(not(feature = "ares"))]
+    reload_visit(rules.general.reload_rate, &mut host)
 }
 
 struct WorldReload<'a> {
@@ -142,6 +253,35 @@ struct WorldReload<'a> {
     dock: u64,
     registry: Option<&'a OverlayTypeRegistry>,
     effects: FrameEffects<'a>,
+    /// Stands in for the timers of a dock that is no longer in the store.
+    #[cfg(feature = "ares")]
+    detached_timers: DockReloadTimers,
+}
+
+#[cfg(feature = "ares")]
+impl AresReloadHost for WorldReload<'_> {
+    fn frame(&mut self) -> i32 {
+        self.sim.session.binary_frame() as i32
+    }
+
+    fn reload_rate(&mut self, contact: u64) -> f64 {
+        let general = self.rules.general.reload_rate;
+        self.sim
+            .substrate
+            .entities
+            .get(contact)
+            .and_then(|entity| self.sim.object_type(entity.type_ref(), self.rules))
+            .map_or(general, |object| {
+                object.techno_combat().ammo().reload_rate(general)
+            })
+    }
+
+    fn timers(&mut self) -> &mut DockReloadTimers {
+        match self.sim.substrate.entities.get_mut(self.dock) {
+            Some(building) => &mut building.ares_dock_reload_timers,
+            None => &mut self.detached_timers,
+        }
+    }
 }
 
 impl ReloadHost for WorldReload<'_> {

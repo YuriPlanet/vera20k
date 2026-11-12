@@ -13,13 +13,16 @@ use crate::sim::world::{SimSoundEvent, Simulation};
 use std::sync::Arc;
 
 /// The Grizzly's and the Destroyer's guns fire one EMP shell each; the
-/// warhead's `Malicious=no` keeps the damage path's own warnings quiet.
+/// warhead's `Malicious=no` keeps the damage path's own warnings quiet. The
+/// building tests (`emp_building_tests.rs`) also take the Cloning Vats (not
+/// prone by type) and a Flak Cannon made a LaserFencePost.
 const PATCH: &str = "[MTNK]\nPrimary=EMPGun\n[DEST]\nPrimary=EMPGun\n\
      [EMPGun]\nDamage=1\nROF=1000\nRange=6\nProjectile=Invisible\nSpeed=100\nWarhead=EMPWH\n\
      [EMPWH]\nCellSpread=2\nMalicious=no\nEMP.Duration=150\n\
-     [E1]\nImmuneToEMP=no\n[V3]\nImmuneToEMP=yes\n";
+     [E1]\nImmuneToEMP=no\n[V3]\nImmuneToEMP=yes\n\
+     [NACLON]\nImmuneToEMP=no\n[NASAM]\nLaserFencePost=yes\n";
 
-fn rules() -> Option<RuleSet> {
+pub(super) fn rules() -> Option<RuleSet> {
     let rules = crate::test_fixture::once_per_process("ares emp victims", || {
         crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&IniFile::from_str(
             PATCH,
@@ -31,7 +34,7 @@ fn rules() -> Option<RuleSet> {
 
 /// The rival arena (human Americans, computer Russians), every cell seen by
 /// the Americans, commands executing on the next frame.
-fn scene(rules: &RuleSet, water: bool) -> (Simulation, Arc<PathGrid>) {
+pub(super) fn scene(rules: &RuleSet, water: bool) -> (Simulation, Arc<PathGrid>) {
     let mut sim = if water {
         crate::sim::arena_fixture::rival_water_arena(rules, 0xE3B, 32)
     } else {
@@ -52,38 +55,45 @@ fn scene(rules: &RuleSet, water: bool) -> (Simulation, Arc<PathGrid>) {
     (sim, grid)
 }
 
-fn spawn(sim: &mut Simulation, rules: &RuleSet, kind: &str, owner: &str, rx: u16, ry: u16) -> u64 {
+pub(super) fn spawn(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    kind: &str,
+    owner: &str,
+    rx: u16,
+    ry: u16,
+) -> u64 {
     sim.spawn_object(kind, owner, rx, ry, 0, rules)
         .unwrap_or_else(|| panic!("{kind} spawns"))
 }
 
 /// The human Americans send every order: DoList skips a computer House's
 /// events, and the order's actor need not be the sender's.
-fn order(sim: &mut Simulation, command: Command) {
+pub(super) fn order(sim: &mut Simulation, command: Command) {
     let americans = sim.interner.intern("Americans");
     let tick = sim.session.tick() + 1;
     sim.queue_command(CommandEnvelope::new(americans, tick, command));
 }
 
-fn step(sim: &mut Simulation, rules: &RuleSet, grid: &PathGrid) {
+pub(super) fn step(sim: &mut Simulation, rules: &RuleSet, grid: &PathGrid) {
     let commands = sim.take_due_commands();
     sim.advance_tick(&commands, Some(rules), Some(grid), None, 33);
 }
 
-fn emp(sim: &Simulation, id: u64) -> i32 {
+pub(super) fn emp(sim: &Simulation, id: u64) -> i32 {
     sim.entities()
         .get(id)
         .map_or(0, |entity| entity.emp_remaining())
 }
 
-fn offline(sim: &Simulation, id: u64) -> bool {
+pub(super) fn offline(sim: &Simulation, id: u64) -> bool {
     sim.entities()
         .get(id)
         .is_some_and(|entity| entity.deactivated.is_offline())
 }
 
 /// Steps until `until` holds, at most `frames` frames; whether it held.
-fn run(
+pub(super) fn run(
     sim: &mut Simulation,
     rules: &RuleSet,
     grid: &PathGrid,
@@ -100,7 +110,7 @@ fn run(
 }
 
 /// `attacker` fires its EMP shell at `target`; true once `victim` is hit.
-fn fire(
+pub(super) fn fire(
     sim: &mut Simulation,
     rules: &RuleSet,
     grid: &PathGrid,
@@ -125,7 +135,7 @@ fn location(sim: &Simulation, id: u64) -> crate::sim::components::DriveCoord {
     )
 }
 
-fn missions(sim: &Simulation, id: u64) -> (Option<MissionType>, Option<MissionType>) {
+pub(super) fn missions(sim: &Simulation, id: u64) -> (Option<MissionType>, Option<MissionType>) {
     let entity = sim.entities().get(id).unwrap();
     (
         entity.mission.current().known(),

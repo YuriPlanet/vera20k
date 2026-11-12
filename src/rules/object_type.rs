@@ -3796,6 +3796,13 @@ impl ObjectType {
         self.unit_absorb || self.infantry_absorb
     }
 
+    /// Ares `Passengers.BySize=`, which the passenger pips also read
+    /// (TechnoExt::GetPassengerPips 10044C90).
+    #[cfg(feature = "ares")]
+    pub const fn ares_passengers_by_size(&self) -> bool {
+        self.ares_passengers_by_size
+    }
+
     pub const fn pips_draw_for_all(&self) -> bool {
         self.pips_draw_for_all
     }

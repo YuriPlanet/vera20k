@@ -671,43 +671,24 @@ fn build_limit(
 /// holds; with a positive one, once the
 /// tracked count (`owned_count`) and the factory's reach it. An infantry
 /// `VehicleThief=` adds the units that hold one (`0x0050B4C4..0x0050B506`).
+#[cfg(not(feature = "ares"))]
 pub(crate) fn check_build_limit(
     sim: &Simulation,
     rules: &RuleSet,
     owner: InternedId,
     obj: &ObjectType,
 ) -> bool {
-    let strip = match obj.category {
-        ObjectCategory::Building => super::ProductionCategory::Building,
-        _ => super::production_tech::production_category_for_object(obj),
-    };
-    let tracking = sim.houses.get(&owner).map(HouseState::tracking);
-    let in_factory = |type_id: Option<InternedId>| {
-        type_id.map_or(0, |type_id| {
-            sim.production
-                .factories()
-                .count_total(owner, strip, type_id)
-        })
-    };
+    let strip = build_limit_strip(obj);
     if obj.category == ObjectCategory::Aircraft && obj.airport_bound {
-        let pads = rules
-            .general
-            .pad_aircraft_types
-            .iter()
-            .filter_map(|name| rules.object_in_category(ObjectCategory::Aircraft, name))
-            .map(|pad| {
-                let type_id = sim.interner.get(&pad.id);
-                let on_map = type_id.zip(tracking).map_or(0, |(type_id, tracking)| {
-                    tracking.active_count(EntityCategory::Aircraft, type_id)
-                });
-                on_map.wrapping_add(in_factory(type_id))
-            })
-            .fold(0, i32::wrapping_add);
-        return pads >= tracking.map_or(0, HouseTracking::airport_docks);
+        return airport_docks_full(sim, rules, owner, strip);
     }
     let limit = obj.build_limit;
     let type_id = sim.interner.get(&obj.id);
-    let queued = in_factory(type_id);
+    let queued = type_id.map_or(0, |type_id| {
+        sim.production
+            .factories()
+            .count_total(owner, strip, type_id)
+    });
     if limit < 1 {
         // 50B405/48B/537/60B use the same retained produced item as
         // CanBuild, add Factory CountTotal with ADD32, then compare signed.
@@ -719,13 +700,102 @@ pub(crate) fn check_build_limit(
             });
         return produced.wrapping_add(queued) >= limit.wrapping_abs();
     }
-    let owned = type_id.zip(tracking).map_or(0, |(type_id, tracking)| {
-        tracking.owned_count(EntityCategory::from(obj.category), type_id)
-    });
+    let owned = type_id
+        .zip(sim.houses.get(&owner))
+        .map_or(0, |(type_id, house)| {
+            house
+                .tracking()
+                .owned_count(EntityCategory::from(obj.category), type_id)
+        });
     owned
         .wrapping_add(captured_vehicle_thief_count(sim, rules, owner, obj))
         .wrapping_add(queued)
         >= limit
+}
+
+/// With `ares`, hook `0x0050B370` (HouseClass_ShouldDisableCameo, Ares.dll
+/// `10024F80`) replaces the whole of CheckBuildLimit and returns at
+/// `0x0050B669`, for every caller. It counts what the house's primary factory
+/// for the type holds (GetPrimaryFactory `0x00500510` with BuildCat DontCare,
+/// the Buildings factory for every structure). An `AirportBound=` aircraft is
+/// still at its limit once the `[General] PadAircraft=` aircraft present and
+/// queued reach the AirportDocks, but otherwise goes on to its `BuildLimit=`.
+/// Under a positive limit the object that factory holds counts once less, as
+/// the house's counters hold it too. The type is at its limit when
+/// [`ares_build_limit_remaining`] less that count is not positive, and
+/// otherwise unless the shared search `10020D40`, with Ares CanBuild's
+/// arguments, finds a usable factory.
+#[cfg(feature = "ares")]
+pub(crate) fn check_build_limit(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    obj: &ObjectType,
+) -> bool {
+    let strip = build_limit_strip(obj);
+    if obj.category == ObjectCategory::Aircraft
+        && obj.airport_bound
+        && airport_docks_full(sim, rules, owner, strip)
+    {
+        return true;
+    }
+    let factories = sim.production.factories();
+    let queued = sim.interner.get(&obj.id).map_or(0, |type_id| {
+        let total = factories.count_total(owner, strip, type_id);
+        let held = obj.build_limit > 0
+            && factories
+                .view(owner, strip)
+                .and_then(|factory| factory.object)
+                .is_some_and(|object| object.type_id == type_id);
+        if held { total.wrapping_sub(1) } else { total }
+    });
+    ares_build_limit_remaining(sim, rules, owner, obj).wrapping_sub(queued) <= 0
+        || !matches!(
+            query_factory(sim, rules, owner, obj, true, true, false, true),
+            FactorySearch::Online(_) | FactorySearch::Primary(_)
+        )
+}
+
+/// The strip whose House factory CheckBuildLimit counts: both structure
+/// strips count the Buildings factory (`0x0050B3B9`; Ares' GetPrimaryFactory
+/// `0x00500510` with BuildCat DontCare answers the same one).
+fn build_limit_strip(obj: &ObjectType) -> super::ProductionCategory {
+    match obj.category {
+        ObjectCategory::Building => super::ProductionCategory::Building,
+        _ => super::production_tech::production_category_for_object(obj),
+    }
+}
+
+/// CheckBuildLimit's `AirportBound=` arm (`0x0050B570..0x0050B5EB`, kept by
+/// Ares `10024F80`): the `[General] PadAircraft=` aircraft on the map
+/// (`+0x558C`) and in the house's factory for `strip` have reached its
+/// AirportDocks ([`HouseTracking::airport_docks`]).
+fn airport_docks_full(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    strip: super::ProductionCategory,
+) -> bool {
+    let tracking = sim.houses.get(&owner).map(HouseState::tracking);
+    let pads = rules
+        .general
+        .pad_aircraft_types
+        .iter()
+        .filter_map(|name| rules.object_in_category(ObjectCategory::Aircraft, name))
+        .map(|pad| {
+            let type_id = sim.interner.get(&pad.id);
+            let on_map = type_id.zip(tracking).map_or(0, |(type_id, tracking)| {
+                tracking.active_count(EntityCategory::Aircraft, type_id)
+            });
+            let in_factory = type_id.map_or(0, |type_id| {
+                sim.production
+                    .factories()
+                    .count_total(owner, strip, type_id)
+            });
+            on_map.wrapping_add(in_factory)
+        })
+        .fold(0, i32::wrapping_add);
+    pads >= tracking.map_or(0, HouseTracking::airport_docks)
 }
 
 /// The shared Unit census in House::CanBuild4F80E6..4F8128 and

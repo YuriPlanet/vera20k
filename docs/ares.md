@@ -42,8 +42,9 @@ complete mission loading or all downstream campaign extensions.
 
 Supported extensions:
 
-- [Ground, airborne and powered-building EMP](ares-emp.md) (every Foot mover but Tunnel, human or AI,
-  miners, falling and mind-controlled victims, independent powered buildings with Radar and SpySat,
+- [Ground, airborne and building EMP](ares-emp.md) (every Foot mover but Tunnel, human or AI,
+  miners, falling and mind-controlled victims, every EMP-prone building with its factory, gap,
+  superweapon, PowersUnit, clone, Prism and undeploy effects, the Tank Bunker exemption,
   and the player's miner and base warnings; team members and spawners in
   [warhead residuals](ares-warhead-residuals.md))
 - [Water and land type conversion](../src/sim/game_entity/type_conversion.rs):

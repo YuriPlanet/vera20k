@@ -1266,7 +1266,9 @@ fn a_warped_superweapon_building_holds_its_super() {
 /// The online test asks for any online provider (`0x0050B04F`): with two
 /// silos, warping one leaves the Nuke charging and warping both holds it. A
 /// Super that is not `IsPowered=` (`SuperClass::IsPowered @ 0x006CC2A0`)
-/// charges on though its only provider is warped.
+/// charges on though its only provider is warped; with Ares (hook
+/// `0x50AF10`, 10039450) it is held without a Charging provider, which a
+/// warped one is not (10038F10).
 #[test]
 fn a_super_holds_only_while_no_provider_is_online() {
     let rules = rules_from(
@@ -1308,7 +1310,11 @@ fn a_super_holds_only_while_no_provider_is_online() {
     );
     step(&mut sim);
     assert!(!held(&sim, nuke), "the other silo is online");
-    assert!(!held(&sim, spy_plane), "not IsPowered=");
+    assert_eq!(
+        held(&sim, spy_plane),
+        crate::rules::ARES_ENABLED,
+        "not IsPowered="
+    );
 
     sim.temporal_initiate_warp(
         clegs[1],
@@ -1319,7 +1325,11 @@ fn a_super_holds_only_while_no_provider_is_online() {
     );
     step(&mut sim);
     assert!(held(&sim, nuke), "no silo is online");
-    assert!(!held(&sim, spy_plane), "still charging");
+    assert_eq!(
+        held(&sim, spy_plane),
+        crate::rules::ARES_ENABLED,
+        "still charging"
+    );
 }
 
 /// Through the production fire path: a Chrono Legionnaire ordered to attack

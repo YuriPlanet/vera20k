@@ -287,6 +287,16 @@ pub(crate) struct AresSuperWeaponPresentation {
     pub(crate) eva: AresSuperWeaponEva,
     #[serde(default)]
     pub(crate) texts: AresSuperWeaponTexts,
+    /// `SW.TimerVisibility` (Valueable<SuperWeaponAffectedHouse> +0x1E9, 7 from
+    /// the SWTypeExt constructor 10031460): for whom TacticalClass::Draw writes
+    /// the Super's timer line (IsTimerVisible 10032E80, hook `0x6D49D1`).
+    #[serde(default = "all_houses")]
+    pub(crate) timer_visibility: crate::rules::superweapon_targeting::HouseMask,
+}
+
+#[cfg(feature = "ares")]
+fn all_houses() -> crate::rules::superweapon_targeting::HouseMask {
+    crate::rules::superweapon_targeting::HouseMask::ALL
 }
 
 /// Fixed-catalog references. The ordered SWType reader owns initialization and
@@ -621,6 +631,7 @@ impl Default for AresSuperWeaponPresentation {
             messages: AresSuperWeaponMessages::default(),
             eva: AresSuperWeaponEva::default(),
             texts: AresSuperWeaponTexts::default(),
+            timer_visibility: crate::rules::superweapon_targeting::HouseMask::ALL,
         }
     }
 }
@@ -636,6 +647,13 @@ impl AresSuperWeaponPresentation {
         animation: Option<Option<String>>,
         message_color: i32,
     ) {
+        // 10033370 reads SW.TimerVisibility after SW.AllowAI, before the
+        // Money keys; it shares no state with the reads below.
+        if let Some(mask) =
+            crate::rules::superweapon_targeting::HouseMask::read_ares(section, "SW.TimerVisibility")
+        {
+            self.timer_visibility = mask;
+        }
         if let Some(animation) = animation {
             self.animation = Some(animation);
         }

@@ -2315,6 +2315,33 @@ pub(crate) fn try_queue_context_order(
             _ => order_mode,
         };
 
+        #[cfg(feature = "ares")]
+        if let Some(release) = ares_deactivated_selection_click(
+            sim,
+            &resources.rules,
+            &current_objects,
+            hover.as_ref(),
+            (target_rx, target_ry),
+        ) {
+            return match release {
+                // Detonate passes the ClickedAction refusal (0x4D74EC).
+                Err(bombed) => {
+                    if let Some(record) = sim.encode_detonate_record(bombed) {
+                        queued.push(CommandEnvelope::new(
+                            owner_id,
+                            execute_tick,
+                            Command::SynchronizedRecord { record },
+                        ));
+                    }
+                    finish_order(state, queued, None, rally_announce, None)
+                }
+                Ok(LeftRelease::Dispatch) => {
+                    finish_order(state, queued, speaker_id, rally_announce, None)
+                }
+                Ok(LeftRelease::Nothing) => true,
+                Ok(LeftRelease::Select) => false,
+            };
+        }
         if selected_ids.is_empty() {
             return match berserk_selection_click(
                 sim,
@@ -3643,6 +3670,98 @@ pub(super) fn self_detonates(
         && sim.bomb_detonate_action(target, rules)
 }
 
+/// What a Deactivated (`+0x1C8`) object answers over an object.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum AresDeactivatedAction {
+    Detonate,
+    Select,
+    None,
+}
+
+/// Ares hooks at the head of each class What_Action over an object (Unit
+/// `0x73FD5A`, Infantry `0x51E440`, Aircraft `0x417CCB`, Building
+/// `0x447218`; Ares.dll `1004CF50`, `1004CC30`, `1004CB00`, `1004CB70`):
+/// a Deactivated `actor` answers `TechnoExt::GetDeactivatedAction @
+/// 10044AD0` alone, None when it is not Deactivated. Detonate over itself as
+/// the lone selection when its bomb may be set off ([`self_detonates`]),
+/// Select over an allied (`HouseClass::IsAlliedWith`) selectable object,
+/// else 0.
+#[cfg(feature = "ares")]
+pub(super) fn ares_deactivated_action(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    selected: &[u64],
+    actor: u64,
+    target: u64,
+) -> Option<AresDeactivatedAction> {
+    let actor = sim
+        .entities()
+        .get(actor)
+        .filter(|actor| actor.deactivated.is_offline())?;
+    Some(if self_detonates(sim, rules, selected, target) {
+        AresDeactivatedAction::Detonate
+    } else if sim.entities().get(target).is_some_and(|target| {
+        sim.house_alliances()
+            .is_allied(sim.interner(), actor.owner(), target.owner())
+    }) && sim.object_is_selectable(target, rules)
+    {
+        AresDeactivatedAction::Select
+    } else {
+        AresDeactivatedAction::None
+    })
+}
+
+/// The left release when the selection's cursor owner
+/// ([`crate::app::input::cursor::select_best_for_action`]) is Deactivated:
+/// DetermineAction takes its action for the whole selection (`0x00692634`,
+/// `0x00692655`), which is [`ares_deactivated_action`] over an object and 0
+/// over a Cell (`Simulation::cell_move_action`). Detonate is the caller's;
+/// the other two reach [`left_release`], so no object receives an order.
+#[cfg(feature = "ares")]
+fn ares_deactivated_selection_click(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    current_objects: &[u64],
+    hover: Option<&HoverTargetKindWithId>,
+    cell: (u16, u16),
+) -> Option<Result<LeftRelease, u64>> {
+    use crate::app::input::cursor::ActionDistanceTarget;
+    let target = hover.map_or(ActionDistanceTarget::CellCentre(cell.0, cell.1), |target| {
+        ActionDistanceTarget::Object(target.stable_id)
+    });
+    let best = crate::app::input::cursor::select_best_for_action(
+        sim,
+        current_objects,
+        target,
+        Some(rules),
+    )?;
+    let Some(target) = hover else {
+        return sim
+            .entities()
+            .get(best)
+            .is_some_and(|best| best.deactivated.is_offline())
+            .then_some(Ok(LeftRelease::Nothing));
+    };
+    Some(
+        match ares_deactivated_action(sim, rules, current_objects, best, target.stable_id)? {
+            AresDeactivatedAction::Detonate => Err(target.stable_id),
+            AresDeactivatedAction::Select => Ok(left_release(
+                sim,
+                rules,
+                ReleaseAction::Select,
+                Some(target.stable_id),
+            )),
+            AresDeactivatedAction::None => Ok(left_release(
+                sim,
+                rules,
+                ReleaseAction::Zero,
+                Some(target.stable_id),
+            )),
+        },
+    )
+}
+
 /// The command a click on the one selected object issues when it clicks
 /// itself. `TechnoClass::What_Action_OnObject` returns ACTION_SELF only when
 /// the target is the acting object, exactly one object is selected
@@ -3681,6 +3800,18 @@ pub(super) fn self_click_command(
     let target = hover?;
     if planning_refuses_self(sim, local_owner, selected_ids, target, planning)
         || self_is_warped_out(sim, target)
+    {
+        return None;
+    }
+    // Ares hooks 0x73FD5A, 0x51E440, 0x417CCB and 0x447218 answer a
+    // Deactivated object's What_Action over itself with GetDeactivatedAction
+    // 10044AD0 (Detonate or Select), never Self, so it neither deploys nor
+    // repacks.
+    #[cfg(feature = "ares")]
+    if sim
+        .entities()
+        .get(target.stable_id)
+        .is_some_and(|entity| entity.deactivated.is_offline())
     {
         return None;
     }

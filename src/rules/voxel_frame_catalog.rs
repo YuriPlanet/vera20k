@@ -61,7 +61,10 @@ pub fn unit_atlas_variants(type_id: &str, rules: Option<&RuleSet>) -> Vec<String
     if object.is_some_and(|object| object.no_spawn_alt) {
         // Native stores the `%sWO` pair in the same AuxVoxel slot used by
         // turrets. Stock NoSpawnAlt types therefore render it as one
-        // composite body and cannot also own a turret.
+        // composite body and cannot also own a turret. Ares gives the pair
+        // its own slot (hooks 0x5F8277, 0x5F848C) and draws it as the body
+        // (UnitClass_DrawVXL_NoSpawnAlt 10041460, hook 0x73B6E3), so a
+        // Turret=yes type keeps its turret there; this composite omits it.
         variants.push(format!("{type_id}{NO_SPAWN_ALT_SUFFIX}"));
     }
 

@@ -64,7 +64,9 @@ pub(crate) struct TimerLine {
 /// (`scenario_left`, None while its start is -1), each Super of the list in
 /// its order, then each house with blackout time left, in `HouseClass::Array`
 /// order. In GameMode 0 (`campaign`) a held Super whose timer has all of
-/// `GetRechargeTime` left takes no line (`0x006D49D1..0x006D4A06`).
+/// `GetRechargeTime` left takes no line (`0x006D49D1..0x006D4A06`). With
+/// Ares, `supers` holds only the Supers whose `SW.TimerVisibility` admits
+/// the player (hook `0x6D49D1`, filtered by the caller).
 pub(crate) fn timer_lines(
     scenario_left: Option<i32>,
     supers: &[SuperTimerView],
@@ -401,13 +403,21 @@ pub(crate) fn build_super_timer_instances(
     {
         return (Vec::new(), Vec::new());
     }
-    let (Some(runtime), Some(rules)) = (state.match_state.sim_runtime.presentation(), state.rules())
+    let (Some(runtime), Some(rules)) =
+        (state.match_state.sim_runtime.presentation(), state.rules())
     else {
         return (Vec::new(), Vec::new());
     };
     let sim = &runtime.simulation;
     let frame = sim.session().binary_frame();
     let supers = crate::sim::superweapon::super_timer_views(sim, rules);
+    // Ares hook 0x6D49D1 (10035A80) asks SW.TimerVisibility at the head of
+    // each Super's line test; a hidden Super takes no line.
+    #[cfg(feature = "ares")]
+    let supers: Vec<_> = supers
+        .into_iter()
+        .filter(|view| crate::sim::superweapon::ares_timer_visible(sim, rules, *view))
+        .collect();
     let blackouts = sim.houses().order().iter().map(|&house| {
         let left = sim
             .power_states()
