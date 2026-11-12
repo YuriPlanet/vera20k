@@ -228,14 +228,57 @@ pub fn resolve_vera_urban(
             })
             .collect()
     };
+    // The farm buildings and monuments of the Countryside and Landmark
+    // Extras: the named types the Rules define whose body art exists on this
+    // theater, the test the town buildings above pass.
+    let named = |names: &[&str]| -> Vec<UrbanStructure> {
+        names
+            .iter()
+            .filter_map(|name| {
+                let id = rules
+                    .building_ids
+                    .iter()
+                    .find(|id| id.eq_ignore_ascii_case(name))?;
+                let object = rules.object(id)?;
+                let image_id = registry.resolve_effective_image_id(id, &object.image);
+                crate::rules::art_data::building_body_shp_candidates(
+                    Some(registry),
+                    &object.image,
+                    &image_id,
+                    theater_ext,
+                    theater_name,
+                )
+                .iter()
+                .any(|file| has_file(file))
+                .then(|| UrbanStructure {
+                    name: id.clone(),
+                    footprint: Some(footprint_for(art, id)),
+                })
+            })
+            .collect()
+    };
     UrbanCatalog {
         structures,
         infantry: feet(&INFANTRY),
         vehicles: feet(&VEHICLES),
         props,
         trees: street_trees(theater_name),
+        farms: named(&FARMS),
+        landmarks: named(&LANDMARKS),
     }
 }
+
+/// The farm buildings of the Countryside Extra: houses and barns (2x2),
+/// then the one-cell silo, outhouse and water tower.
+const FARMS: [&str; 7] = [
+    "CAFARM01", "CAFRMA", "CABARN02", "CATS01", "CAFARM02", "CAFRMB", "CAWT01",
+];
+
+/// The monuments of the Landmark Extra: none is capturable or a tech
+/// building, and each stands whole as one type.
+const LANDMARKS: [&str; 8] = [
+    "CAWSH12", "CAPARS11", "CAEURO05", "CASTL04", "CAWASH19", "CAWASH14", "CAWASH15", "CAMEX01",
+];
 
 /// The `TREExx` terrain objects authored towns of a theater stand along
 /// their streets (the same survey): temperate kinds, snow-laden ones on Snow
@@ -298,8 +341,7 @@ pub fn resolve_ares_urban(
             .collect(),
         infantry: feet(&settings.urban_infantry, UrbanTypeKind::Infantry),
         vehicles: feet(&settings.urban_vehicles, UrbanTypeKind::Vehicle),
-        props: Vec::new(),
-        trees: Vec::new(),
+        ..Default::default()
     }
 }
 

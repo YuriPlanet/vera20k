@@ -6,6 +6,7 @@
 
 pub mod build;
 mod description;
+pub mod embellish;
 pub mod emit;
 pub mod extras;
 pub mod fairness;

@@ -767,7 +767,7 @@ pub(super) fn prepare_random_map_generation(
     };
     // VERA: the theater's civilian buildings, for an opted-in Urban Presence;
     // the load resolves the same list from the same Rules and art.
-    if options.urban_enabled
+    if options.wants_vera_catalog()
         && let Some((owner, preview)) = native_rules.zip(preview_rules.as_ref())
     {
         settings.vera_urban = crate::map::rmg::tech_catalog::resolve_vera_urban(

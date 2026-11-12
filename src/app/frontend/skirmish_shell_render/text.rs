@@ -1269,6 +1269,14 @@ pub(super) fn push_random_map_setup_modal_text_draws(
         .replace("{expansion}", &readout.expansion.to_string())
         .replace("{room}", &readout.room.to_string())
         .replace("{spacing}", &readout.spacing.to_string());
+        // The water near the starts joins the line with Sea Access on.
+        let text = match readout.sea.filter(|_| report.sea_wanted) {
+            Some(sea) => {
+                text + &localized_label(state, "VERA:RandomMapFairnessSea", ", sea {sea}%")
+                    .replace("{sea}", &sea.to_string())
+            }
+            None => text,
+        };
         push_text_draw(
             out,
             state,

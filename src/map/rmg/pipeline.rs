@@ -117,6 +117,13 @@ pub struct PipelineInputs<'a> {
     /// stage draws what it drew before.
     pub ore_variant: u8,
     pub town_variant: u8,
+    /// VERA extension: the Extras that add to the finished map
+    /// (`embellish`), VERA's catalogue for their buildings, and the two the
+    /// fairness report's score follows (`Extra::SeaAccess`,
+    /// `Extra::BaseRoom`).
+    pub embellish: super::embellish::EmbellishArgs,
+    pub vera_catalog: &'a urban_areas::UrbanCatalog,
+    pub sea_access: bool,
     /// The presence the urban pass reads (`MapSeed+0x60`).
     pub urban_presence: i32,
     /// VERA extension: the opted-in Buildings value the urban pass fills the
@@ -640,14 +647,43 @@ pub fn run_pipeline(
     lat_fixup::run(grid, inputs.ids);
     observe(Stage::RecalcFinal, grid, &waypoints, &terrain);
 
-    // ---- VERA: fairness, after every native stage and draw ----------------
-    // Every map is measured (the dialog shows the report; measuring draws
-    // nothing and changes nothing); only Fair Starts evens the ore first.
+    // ---- VERA: Extras and fairness, after every native stage and draw -----
+    // The Extras that add to the map come first, each from its own stream.
+    // Then every map is measured (the dialog shows the report; measuring
+    // draws nothing and changes nothing); only Fair Starts evens the ore
+    // before that.
+    let starts: Vec<(i32, i32)> = waypoints
+        .iter()
+        .map(|&(_, x, y)| (i32::from(x), i32::from(y)))
+        .collect();
+    if inputs.embellish.any() {
+        let mut ctx = super::fairness::FairCtx {
+            grid: &mut *grid,
+            scratch: &*scratch,
+            ids: inputs.ids,
+            map_w,
+            local_rect,
+        };
+        let mut out = super::embellish::EmbellishOutput {
+            objects: &mut urban_area_objects,
+            trace: &mut construction_trace,
+            entity_base: structures.len() + tech_placements.len(),
+            terrain: &mut terrain,
+        };
+        let paved = super::embellish::run(
+            &mut ctx,
+            &inputs.embellish,
+            &starts,
+            inputs.vera_catalog,
+            inputs.tech_types,
+            &mut out,
+        );
+        // The recalc every stage that paves is followed by (`0x0047CA80`).
+        if paved {
+            lat_fixup::run(grid, inputs.ids);
+        }
+    }
     let fairness = {
-        let starts: Vec<(i32, i32)> = waypoints
-            .iter()
-            .map(|&(_, x, y)| (i32::from(x), i32::from(y)))
-            .collect();
         let mut ctx = super::fairness::FairCtx {
             grid: &mut *grid,
             scratch: &*scratch,
@@ -663,6 +699,7 @@ pub fn run_pipeline(
             &starts,
             inputs.num_players,
             unfilled_start_slots,
+            (inputs.sea_access, inputs.embellish.base_room != 0),
         ))
     };
 

@@ -61,14 +61,25 @@ pub enum ExtrasValue {
     Page(usize, usize),
 }
 
-/// Every entry, in view order: the tools, then the choices.
-const ENTRIES: [ExtrasRow; 6] = [
+/// Every entry, in view order: the tools and the variants on the first
+/// page, then the choices about the match, then the ones about the look.
+const ENTRIES: [ExtrasRow; 16] = [
     ExtrasRow::Action(ExtrasAction::CopyCode),
     ExtrasRow::Action(ExtrasAction::PasteCode),
     ExtrasRow::Action(ExtrasAction::PreviousMap),
     ExtrasRow::Action(ExtrasAction::SavePreset),
     ExtrasRow::Choice(Extra::OreVariant),
     ExtrasRow::Choice(Extra::TownVariant),
+    ExtrasRow::Choice(Extra::BaseRoom),
+    ExtrasRow::Choice(Extra::SeaAccess),
+    ExtrasRow::Choice(Extra::FairTech),
+    ExtrasRow::Choice(Extra::CentreGems),
+    ExtrasRow::Choice(Extra::Roads),
+    ExtrasRow::Choice(Extra::Mood),
+    ExtrasRow::Choice(Extra::Ruins),
+    ExtrasRow::Choice(Extra::Countryside),
+    ExtrasRow::Choice(Extra::Landmark),
+    ExtrasRow::Choice(Extra::Fences),
 ];
 
 /// Pages the view has.
@@ -92,6 +103,16 @@ impl ExtrasRow {
             Self::Action(ExtrasAction::SavePreset) => ("VERA:RandomMapExtraMyPreset", "My Preset"),
             Self::Choice(Extra::OreVariant) => ("VERA:RandomMapExtraOre", "Ore Fields"),
             Self::Choice(Extra::TownVariant) => ("VERA:RandomMapExtraTowns", "Towns"),
+            Self::Choice(Extra::Mood) => ("VERA:RandomMapExtraMood", "Mood"),
+            Self::Choice(Extra::Ruins) => ("VERA:RandomMapExtraRuins", "War Damage"),
+            Self::Choice(Extra::Countryside) => ("VERA:RandomMapExtraFarms", "Countryside"),
+            Self::Choice(Extra::Landmark) => ("VERA:RandomMapExtraLandmark", "Landmark"),
+            Self::Choice(Extra::Fences) => ("VERA:RandomMapExtraFences", "Town Fences"),
+            Self::Choice(Extra::CentreGems) => ("VERA:RandomMapExtraGems", "Centre Gems"),
+            Self::Choice(Extra::FairTech) => ("VERA:RandomMapExtraTech", "Fair Derricks"),
+            Self::Choice(Extra::Roads) => ("VERA:RandomMapExtraRoads", "Roads"),
+            Self::Choice(Extra::BaseRoom) => ("VERA:RandomMapExtraRoom", "Base Room"),
+            Self::Choice(Extra::SeaAccess) => ("VERA:RandomMapExtraSea", "Sea Access"),
             Self::Pager => ("VERA:RandomMapExtraPage", "More"),
         }
     }
@@ -105,6 +126,16 @@ impl ExtrasRow {
             Self::Action(ExtrasAction::SavePreset) => "VERA:RandomMapExtraMyPresetHelp",
             Self::Choice(Extra::OreVariant) => "VERA:RandomMapExtraOreHelp",
             Self::Choice(Extra::TownVariant) => "VERA:RandomMapExtraTownsHelp",
+            Self::Choice(Extra::Mood) => "VERA:RandomMapExtraMoodHelp",
+            Self::Choice(Extra::Ruins) => "VERA:RandomMapExtraRuinsHelp",
+            Self::Choice(Extra::Countryside) => "VERA:RandomMapExtraFarmsHelp",
+            Self::Choice(Extra::Landmark) => "VERA:RandomMapExtraLandmarkHelp",
+            Self::Choice(Extra::Fences) => "VERA:RandomMapExtraFencesHelp",
+            Self::Choice(Extra::CentreGems) => "VERA:RandomMapExtraGemsHelp",
+            Self::Choice(Extra::FairTech) => "VERA:RandomMapExtraTechHelp",
+            Self::Choice(Extra::Roads) => "VERA:RandomMapExtraRoadsHelp",
+            Self::Choice(Extra::BaseRoom) => "VERA:RandomMapExtraRoomHelp",
+            Self::Choice(Extra::SeaAccess) => "VERA:RandomMapExtraSeaHelp",
             Self::Pager => "VERA:RandomMapExtraPageHelp",
         }
     }
@@ -112,11 +143,33 @@ impl ExtrasRow {
 
 /// What a choice shows at `value`.
 fn choice_value(extra: Extra, value: u8) -> ExtrasValue {
+    const OFF: ExtrasValue = ExtrasValue::Label("VERA:RandomMapExtraOff", "Off");
+    const ORIGINAL: ExtrasValue = ExtrasValue::Label("VERA:RandomMapExtraOriginal", "Original");
     match (extra, value) {
-        (Extra::OreVariant | Extra::TownVariant, 0) => {
-            ExtrasValue::Label("VERA:RandomMapExtraOriginal", "Original")
-        }
+        (Extra::OreVariant | Extra::TownVariant | Extra::Mood, 0) => ORIGINAL,
         (Extra::OreVariant | Extra::TownVariant, variant) => ExtrasValue::Number(variant),
+        (Extra::Mood, 1) => ExtrasValue::Label("VERA:RandomMapExtraMoodGolden", "Golden Hour"),
+        (Extra::Mood, 2) => ExtrasValue::Label("VERA:RandomMapExtraMoodDusk", "Red Dusk"),
+        (Extra::Mood, 3) => ExtrasValue::Label("VERA:RandomMapExtraMoodMoon", "Moonlight"),
+        (Extra::Mood, 4) => ExtrasValue::Label("VERA:RandomMapExtraMoodOvercast", "Overcast"),
+        (Extra::Mood, _) => ExtrasValue::Label("VERA:RandomMapExtraMoodToxic", "Toxic Haze"),
+        (_, 0) => OFF,
+        (Extra::Ruins, 1) | (Extra::Countryside, 1) => {
+            ExtrasValue::Label("VERA:RandomMapExtraSome", "Some")
+        }
+        (Extra::Ruins, _) => ExtrasValue::Label("VERA:RandomMapExtraHeavy", "Heavy"),
+        (Extra::Countryside, _) => ExtrasValue::Label("VERA:RandomMapExtraMany", "Many"),
+        (Extra::CentreGems, 1) => ExtrasValue::Label("VERA:RandomMapExtraSmall", "Small"),
+        (Extra::CentreGems, _) => ExtrasValue::Label("VERA:RandomMapExtraLarge", "Large"),
+        (
+            Extra::Landmark
+            | Extra::Fences
+            | Extra::FairTech
+            | Extra::Roads
+            | Extra::BaseRoom
+            | Extra::SeaAccess,
+            _,
+        ) => ExtrasValue::Label("VERA:RandomMapExtraOn", "On"),
     }
 }
 
@@ -173,8 +226,9 @@ impl RandomMapSetupModalState {
     }
 
     /// A press released on row `row`: a choice steps to its next value, as
-    /// an option edit, and a variant choice asks for its map at once; the
-    /// pager turns the page; a tool is handed back for the app to carry out.
+    /// an option edit, and asks for its map at once (each redraws or adds to
+    /// the map of the seed on show); the pager turns the page; a tool is
+    /// handed back for the app to carry out.
     pub fn release_extras_row(&mut self, row: usize) -> Option<ExtrasOutcome> {
         match self.extras_row(row)? {
             // The way back is the dialog's own: the earlier options return
@@ -186,8 +240,7 @@ impl RandomMapSetupModalState {
             ExtrasRow::Choice(extra) => {
                 self.options.extras.cycle(extra);
                 self.note_option_edit();
-                matches!(extra, Extra::OreVariant | Extra::TownVariant)
-                    .then_some(ExtrasOutcome::Regenerate)
+                Some(ExtrasOutcome::Regenerate)
             }
             ExtrasRow::Pager => {
                 self.extras_page = self

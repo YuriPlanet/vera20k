@@ -2634,7 +2634,7 @@ pub(crate) fn load_map_initial_with_assets(
         );
         // VERA: the theater's civilian buildings, for an opted-in Urban
         // Presence; the same list the setup dialog's preview generated with.
-        if options.urban_enabled {
+        if options.wants_vera_catalog() {
             settings.vera_urban = crate::map::rmg::tech_catalog::resolve_vera_urban(
                 generated_rules.native.rules(),
                 owner.fixed_art(),

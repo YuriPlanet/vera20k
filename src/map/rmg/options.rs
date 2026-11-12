@@ -74,6 +74,17 @@ impl RmgOptions {
         }
         self.urban_enabled
     }
+
+    /// VERA extension: whether a generation reads VERA's catalogue of
+    /// civilian buildings (`RmgSettings::vera_urban`), which the app then
+    /// resolves: the opted-in Buildings slider, or an Extra that places
+    /// buildings from it.
+    pub fn wants_vera_catalog(&self) -> bool {
+        self.urban_enabled
+            || super::extras::Extra::ALL
+                .iter()
+                .any(|&extra| extra.needs_catalog() && self.extras.get(extra) != 0)
+    }
 }
 
 /// VERA's `.SED` key for [`RmgOptions::urban_enabled`].

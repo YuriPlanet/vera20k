@@ -69,6 +69,15 @@ fn tokenize_names(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// VERA extension (`Extra::Mood`): the mood the options light the map in,
+/// none at 0.
+fn mood(options: &RmgOptions) -> Option<(i32, [i32; 3])> {
+    use super::extras::{Extra, MOODS};
+    usize::from(options.extras.get(Extra::Mood))
+        .checked_sub(1)
+        .and_then(|index| MOODS.get(index).copied())
+}
+
 /// `MapSeedClass::InitDefaults @ 0x00595740`.
 impl Default for RmgSettings {
     fn default() -> Self {
@@ -153,7 +162,10 @@ impl RmgSettings {
         } else {
             &self.snow_ambient
         };
-        let ambient = TruncF64::from_f64(f64::from(*ambient.get(time)?))
+        // VERA extension: a mood's ambient stands in for the time's.
+        let ambient =
+            mood(options).map_or_else(|| ambient.get(time).copied(), |mood| Some(mood.0))?;
+        let ambient = TruncF64::from_f64(f64::from(ambient))
             .mul(TruncF64::from_f64(0.01))
             .to_f64();
         // 0059991D..0059993D divides signed integers before FILD, not /100.0.
@@ -180,10 +192,20 @@ impl RmgSettings {
         } else {
             (&self.snow_ambient, &self.snow_rgb)
         };
+        let level_units = *self.level_light.get(time)?;
+        // VERA extension: a mood's ambient and tint stand in for the time's;
+        // the level light stays the time's.
+        if let Some((ambient_percent, rgb_percent)) = mood(options) {
+            return Some(crate::map::construction_trace::GeneratedLightingOverride {
+                ambient_percent,
+                rgb_percent,
+                level_units,
+            });
+        }
         Some(crate::map::construction_trace::GeneratedLightingOverride {
             ambient_percent: *ambient.get(time)?,
             rgb_percent: [*rgb[0].get(time)?, *rgb[1].get(time)?, *rgb[2].get(time)?],
-            level_units: *self.level_light.get(time)?,
+            level_units,
         })
     }
 
@@ -416,5 +438,36 @@ mod tests {
         assert!(settings.temperate_ambient.is_empty());
         assert!(settings.snow_ambient.is_empty());
         assert!(settings.level_light.is_empty());
+    }
+
+    /// VERA extension: a mood lights the map in place of its time of day,
+    /// keeping the time's level light; with no mood the time's light stands.
+    #[test]
+    fn a_mood_stands_in_for_the_light_of_the_time_of_day() {
+        use crate::map::rmg::extras::{Extra, MOODS};
+        let mut settings = RmgSettings::default();
+        settings.apply(&IniFile::from_str(
+            "[General]\nTemperateAmbientLight=75,100\nRMGLevelLightSettings=3,4\n\
+             TemperateAmbientRed=109,108\nTemperateAmbientGreen=80,94\n\
+             TemperateAmbientBlue=49,68\n",
+        ));
+        let mut options = RmgOptions {
+            time: 1,
+            ..Default::default()
+        };
+        let plain = settings.generated_lighting_override(&options).unwrap();
+        assert_eq!(
+            (plain.ambient_percent, plain.rgb_percent, plain.level_units),
+            (100, [108, 94, 68], 4)
+        );
+        options.extras.set(Extra::Mood, 2);
+        let dusk = settings.generated_lighting_override(&options).unwrap();
+        assert_eq!((dusk.ambient_percent, dusk.rgb_percent), MOODS[1]);
+        assert_eq!(dusk.level_units, 4);
+        let ini = settings.generated_lighting_ini(&options).unwrap();
+        assert_eq!(
+            ini.section("Lighting").unwrap().get_for_test("Ambient"),
+            Some("0.620000")
+        );
     }
 }

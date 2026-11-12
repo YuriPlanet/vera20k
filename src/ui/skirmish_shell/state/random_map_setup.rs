@@ -239,6 +239,10 @@ pub enum RandomMapPreset {
     CityWar,
     /// Four players across an archipelago.
     Islands,
+    /// Eight players on Team Continents, the landform that gives each team
+    /// a continent; the Skirmish screen's Team Starts sets the teams on
+    /// them.
+    Teams,
     /// One of the player's own, by slot from 0: the options the Extras
     /// view's My Preset tool saved (`custom_presets`), all but the seed and
     /// the description.
@@ -251,7 +255,13 @@ pub const CUSTOM_PRESET_SLOTS: usize = 5;
 impl RandomMapPreset {
     /// The ready-made ones, in the order the button steps through them; the
     /// player's own follow.
-    pub const ALL: [Self; 4] = [Self::Duel, Self::Brawl, Self::CityWar, Self::Islands];
+    pub const ALL: [Self; 5] = [
+        Self::Duel,
+        Self::Brawl,
+        Self::CityWar,
+        Self::Islands,
+        Self::Teams,
+    ];
 
     /// The button caption while this preset stands. One of the player's own
     /// is "My Preset" with its number, which the caption's drawer fills in.
@@ -261,6 +271,7 @@ impl RandomMapPreset {
             Self::Brawl => ("VERA:RandomMapPresetBrawl", "30-Player Brawl"),
             Self::CityWar => ("VERA:RandomMapPresetCity", "City War"),
             Self::Islands => ("VERA:RandomMapPresetIslands", "Islands"),
+            Self::Teams => ("VERA:RandomMapPresetTeams", "Team Battle"),
             Self::Mine(_) => ("VERA:RandomMapPresetMine", "My Preset {number}"),
         }
     }
@@ -274,6 +285,7 @@ impl RandomMapPreset {
             Self::Brawl => (30, 3, 7, 2, None, [5, 20, 0, 30, 70, 50, 90]),
             Self::CityWar => (4, 3, 2, 1, Some(2), [5, 10, 100, 20, 50, 60, 90]),
             Self::Islands => (4, 0, 2, 2, Some(0), [60, 20, 0, 50, 60, 50, 50]),
+            Self::Teams => (8, 2, 4, 2, None, [35, 25, 0, 40, 60, 50, 70]),
             Self::Mine(_) => return None,
         })
     }
@@ -1131,6 +1143,12 @@ mod tests {
         );
         assert_eq!(offline.advanced_value(AdvancedField::Buildings), 100);
         offline.cycle_preset();
+        offline.cycle_preset();
+        assert_eq!(offline.preset, Some(RandomMapPreset::Teams));
+        assert_eq!(
+            (offline.options.num_players, offline.options.map_type),
+            (8, 2)
+        );
         offline.cycle_preset();
         assert_eq!(offline.preset, Some(RandomMapPreset::Duel), "round again");
         assert!(!offline.options.urban_enabled);
