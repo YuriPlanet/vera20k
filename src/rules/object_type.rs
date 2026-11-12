@@ -2001,6 +2001,10 @@ pub struct ObjectType {
     /// Whether this transport is open-topped — passengers can fire from inside.
     /// Parsed from `OpenTopped=yes` in rules.ini.
     pub open_topped: bool,
+    /// Ares `InitialPayload.Types` / `InitialPayload.Nums`: passengers created
+    /// together with this type and placed straight into its cargo hold, as
+    /// `(type name, count)` in list order. Stock YR keeps an empty list.
+    pub initial_payload: Vec<(String, i32)>,
 
     /// Whether this transport uses the Gunner system (IFV weapon swap).
     /// Parsed from `Gunner=yes` in rules.ini. When a passenger enters, the
@@ -4452,6 +4456,36 @@ impl ObjectType {
     /// owner (`native_processing`) reads keep their constructor values here;
     /// `RuleSet::from_processed_rules` publishes that owner's retained result.
     pub fn from_ini_section(id: &str, section: &IniSection, category: ObjectCategory) -> Self {
+        // Ares `InitialPayload.Types/Nums`: the two lists align by index. A
+        // missing or shorter Nums entry means one passenger, and a count that
+        // does not parse or is non-positive contributes no passenger. MO ships
+        // these in pairs, often alongside NoManualUnload/NoManualEnter.
+        let initial_payload = if crate::rules::ARES_ENABLED {
+            let types = section
+                .read_list("InitialPayload.Types", 0x800)
+                .unwrap_or_default();
+            let nums = section
+                .read_list("InitialPayload.Nums", 0x800)
+                .unwrap_or_default();
+            types
+                .iter()
+                .enumerate()
+                .filter_map(|(index, name)| {
+                    let name = name.trim();
+                    if name.is_empty() {
+                        return None;
+                    }
+                    let count = nums
+                        .get(index)
+                        .and_then(|raw| raw.trim().parse::<i32>().ok())
+                        .unwrap_or(1);
+                    (count > 0).then(|| (name.to_owned(), count))
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
         let armor = section.read_string("Armor", "none", 0x80);
         // BuildingType45FE50: Hospital, Armory460B03, then the three
         // barracks readers460B1D/37/51. Each starts at constructor0 and folds
@@ -5390,6 +5424,7 @@ impl ObjectType {
             size: section.read_double("Size", 1.0),
             size_limit: section.read_double("SizeLimit", 0.0),
             open_topped: section.read_bool("OpenTopped", false),
+            initial_payload,
             gunner: false, // Constructor byte; retained reader binds GunnerTurrets::is_gunner.
             ifv_mode: section.read_int("IFVMode", 0),
             // Constructor table; only the ordered Process owner reads it.

@@ -1249,6 +1249,8 @@ impl Simulation {
 
         let stable_id = Self::create_limbo(&mut self.substrate, &mut self.houses, ge);
         self.commit_constructor_owned_techno_children(stable_id, rules, frame_effects);
+        #[cfg(feature = "ares")]
+        self.populate_initial_payload(stable_id, obj, owner, rules, frame_effects);
         Self::register_house_base_building(
             &self.interner,
             &self.substrate,
@@ -1257,6 +1259,98 @@ impl Simulation {
             rules,
         );
         Ok(Some(stable_id))
+    }
+
+    /// Ares `InitialPayload.Types/Nums`: create the type's free passengers at
+    /// constructor time and put them straight into its cargo hold, the same
+    /// limbo passenger block SendParadropPlanes uses. A type that names itself
+    /// is skipped so the constructor funnel cannot recurse without bound.
+    /// `NoManualUnload=` / `NoManualEnter=` are read into ObjectType and gate
+    /// the Deploy/Unload admission in `sim::deploy` and `transport_unload`,
+    /// so MO's hidden crew cannot be released by the player.
+    /// RESIDUAL: `Passengers.Allowed=` admission is not modelled.
+    #[cfg(feature = "ares")]
+    fn populate_initial_payload(
+        &mut self,
+        carrier_id: u64,
+        carrier: &ObjectType,
+        owner: &str,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) {
+        if carrier.initial_payload.is_empty() || carrier.passengers <= 0 {
+            return;
+        }
+        for (type_name, count) in &carrier.initial_payload {
+            if type_name.eq_ignore_ascii_case(carrier.id.as_str()) {
+                continue;
+            }
+            let Some(payload_type) = rules.object(type_name) else {
+                continue;
+            };
+            for _ in 0..*count {
+                let Some(passenger) = self.construct_resolved_object_limbo_at_height(
+                    payload_type,
+                    owner,
+                    0,
+                    0,
+                    0,
+                    0,
+                    rules,
+                    effects,
+                ) else {
+                    continue;
+                };
+                if !self.substrate.entities.contains(carrier_id) {
+                    return;
+                }
+                if !carrier.open_topped {
+                    // Native leaves Transporter (`+0x11C`) alone on every
+                    // AddPassenger arrival that is not a transport's own
+                    // (a building's cargo, reinforcements, a paradrop), so
+                    // this arm keeps the bare hold attachment.
+                    if let Some(rider) = self.substrate.entities.get_mut(passenger) {
+                        rider.passenger_role.set_inside_transport(carrier_id, false);
+                    }
+                    let _ = self.add_cargo_passenger_chain(
+                        carrier_id,
+                        &[(passenger, payload_type.size)],
+                        crate::sim::world::UninitContext::with_rules(rules).with_effects(effects),
+                    );
+                    continue;
+                }
+                // An `OpenTopped=` hull carries its guns in the hold, so the
+                // constructor-time crew takes the transport arm a boarding
+                // passenger takes: put it on the hull's cell, AddPassenger to
+                // limbo the head, then Transporter and SetInOpenTransport,
+                // whose EnteredOpenTopped710470 returns the rider to the live
+                // order (`0x0073A740..0x0073A768`). Writing `open_topped: false`
+                // here instead left MO's `InitialPayload` crew (GBION's
+                // Cosmonauts, the Future Tank's riders) concealed with no carrier
+                // flag and no AI slot, so `in_open_transport()` stayed false and
+                // they never fired out of the transport that created them.
+                if let Some(carrier_entity) = self.substrate.entities.get(carrier_id) {
+                    let location = crate::sim::movement::ground_pose::position_world_coord(
+                        &carrier_entity.position,
+                    );
+                    crate::sim::movement::ground_pose::foot_set_location(
+                        &mut self.substrate.entities,
+                        passenger,
+                        location,
+                        rules,
+                        &self.interner,
+                    );
+                }
+                let _ = self.ares_abduct_into_hold(
+                    passenger,
+                    carrier_id,
+                    payload_type.size,
+                    true,
+                    false,
+                    crate::sim::world::UninitContext::with_rules(rules).with_effects(effects),
+                );
+            }
+        }
     }
 
     /// Compatibility name for constructing and accounting the Techno identity
@@ -3357,3 +3451,4 @@ mod techno_constructor_tests;
 #[cfg(test)]
 #[path = "failed_yard_repack_tests.rs"]
 mod failed_yard_repack_tests;
+
