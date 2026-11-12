@@ -141,6 +141,8 @@ const SETUP_EXPORT_Y: i32 = 257;
 /// VERA: the Fair Starts toggle, two slots below the Advanced toggle at the
 /// same pitch (the slot between is Export Map's).
 const SETUP_FAIR_Y: i32 = 284;
+/// VERA: the Presets button, the slot after Fair Starts at the same pitch.
+const SETUP_PRESET_Y: i32 = 311;
 /// VERA: the Advanced view's seven sliders, at the option rows' 24-unit pitch
 /// from the first row; the last ends above the progress widgets (217).
 const SETUP_ADVANCED_ROW_Y: [i32; 7] = [41, 65, 90, 114, 138, 163, 187];
@@ -398,6 +400,8 @@ pub enum RandomMapSetupControl {
     ExportMap,
     /// VERA: turns Fair Starts on or off (offline Skirmish only).
     FairStartsToggle,
+    /// VERA: applies the next ready-made option set (offline Skirmish only).
+    PresetCycle,
     /// Ares' Urban Areas box (`ARES_CHK_RMG_URBAN_AREAS`, Ares' dialog 261).
     #[cfg(feature = "ares")]
     UrbanAreas5000,
@@ -472,6 +476,8 @@ pub struct RandomMapSetupLayout {
     pub export: RectPx,
     /// VERA: the Fair Starts toggle in the right column.
     pub fair_starts: RectPx,
+    /// VERA: the Presets button below it.
+    pub preset: RectPx,
     /// VERA: the Advanced view's labels and slider windows, by
     /// [`AdvancedField::row`].
     pub advanced_label_rects: [RectPx; 7],
@@ -1061,6 +1067,7 @@ pub fn compute_random_map_setup_layout(screen_w: u32, screen_h: u32) -> RandomMa
         advanced: right_button(SETUP_ADVANCED_Y),
         export: right_button(SETUP_EXPORT_Y),
         fair_starts: right_button(SETUP_FAIR_Y),
+        preset: right_button(SETUP_PRESET_Y),
         advanced_label_rects: std::array::from_fn(|row| {
             dlu_rect(
                 SETUP_LABEL_X,
@@ -1160,6 +1167,9 @@ pub fn random_map_setup_control_at_view(
     }
     if extended && layout.fair_starts.contains(x, y) {
         return Some(RandomMapSetupControl::FairStartsToggle);
+    }
+    if extended && layout.preset.contains(x, y) {
+        return Some(RandomMapSetupControl::PresetCycle);
     }
     if !advanced {
         return random_map_setup_control_at(layout, x, y);
@@ -1524,6 +1534,7 @@ impl ScaledRects for RandomMapSetupLayout {
             advanced: self.advanced.scaled_rects(scale),
             export: self.export.scaled_rects(scale),
             fair_starts: self.fair_starts.scaled_rects(scale),
+            preset: self.preset.scaled_rects(scale),
             advanced_label_rects: self.advanced_label_rects.scaled_rects(scale),
             advanced_control_rects: self.advanced_control_rects.scaled_rects(scale),
             status_help: self.status_help.scaled_rects(scale),
@@ -1846,7 +1857,8 @@ mod tests {
         assert!(setup.export.y + setup.export.h <= setup.cancel.y);
         assert!(setup.advanced.y + setup.advanced.h <= setup.cancel.y);
         assert!(setup.fair_starts.y >= setup.advanced.y + 2 * setup.advanced.h);
-        assert!(setup.fair_starts.y + setup.fair_starts.h <= setup.cancel.y);
+        assert!(setup.fair_starts.y + setup.fair_starts.h <= setup.preset.y);
+        assert!(setup.preset.y + setup.preset.h <= setup.cancel.y);
 
         let water = sliders[AdvancedField::Water.row()];
         let (cx, cy) = (water.x + water.w / 2, water.y + water.h / 2);
