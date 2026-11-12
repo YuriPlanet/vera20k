@@ -818,8 +818,8 @@ pub trait SearchFootEntry {
     /// VERA-only, never native: asked after every [`PROGRESS_STRIDE`]
     /// expansions with the expansions this cell search has made. `false`
     /// stops it with [`PathSearchFailure::Stopped`], which no retry
-    /// follows. Going on changes nothing. The path batch stops an urgency-2
-    /// re-path whose answer its budget cuts whatever the search finds.
+    /// follows. Going on changes nothing. The path batch stops a code-2
+    /// re-path whose answer its turn's budget cuts whatever the search finds.
     fn keeps_searching(&self, _expanded: u32) -> bool {
         true
     }

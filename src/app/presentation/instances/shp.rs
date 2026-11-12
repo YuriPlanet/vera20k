@@ -257,6 +257,8 @@ pub(crate) fn shp_visitor<'a>(
         if super::helpers::drawn_type_uses_voxel(entity, type_str, sim.interner(), rules) {
             return;
         }
+        // The drawn type's rules record, found once for everything below.
+        let object_type = super::units::drawn_model_object(entity, type_str, sim.interner(), rules);
         // One fresh read for this read-only entity draw, reused for the
         // infantry direction and building gun. Never retain it across draws.
         let render_pose = entity.pose;
@@ -268,14 +270,8 @@ pub(crate) fn shp_visitor<'a>(
         // Wall buildings render as overlays (auto-tiled connectivity frames).
         // Their fixed-cell overlay pass owns the connected wall frame.
         // Skip them here to avoid drawing frame0 (an isolated pillar).
-        if entity.category() == EntityCategory::Structure {
-            let is_wall = rules
-                .and_then(|r| r.object(type_str))
-                .map(|o| o.wall)
-                .unwrap_or(false);
-            if is_wall {
-                return;
-            }
+        if entity.category() == EntityCategory::Structure && object_type.is_some_and(|o| o.wall) {
+            return;
         }
         let pos = &entity.position;
         let hc: HouseColorIndex = input
@@ -357,10 +353,19 @@ pub(crate) fn shp_visitor<'a>(
         let draws_buildup =
             image.is_some_and(|image| image != crate::sim::building_art::BuildingImage::Body);
         let unopened_buildup = draws_buildup && !is_building_up && !is_building_down;
-        let object_type = rules.and_then(|rules| rules.object(type_str));
+        // Its ART section, found once for the gate, door, light, Z and
+        // turret below. A building with no rules record reads its own
+        // section for light and Z (`structure_entry`), as with no `Image=`.
         let art_entry = object_type.and_then(|object| {
             art_reg.and_then(|registry| registry.resolve_metadata_entry(type_str, &object.image))
         });
+        let structure_entry = match object_type {
+            _ if entity.category() != EntityCategory::Structure => None,
+            Some(_) => art_entry,
+            None => {
+                art_reg.and_then(|registry| registry.resolve_metadata_entry(type_str, type_str))
+            }
+        };
         // `BuildingClass::GetCurrentFrame @ 0x0043EF90` reflects a gate's
         // BState-0 frame first, then reflects again for Selling. Pass the same
         // ART GateStages used by the completed-body path into the shared frame owner.
@@ -454,13 +459,9 @@ pub(crate) fn shp_visitor<'a>(
         let unload_art = (entity.category() == EntityCategory::Structure
             && !is_building_up
             && !is_building_down)
-            .then(|| rules.zip(art_reg))
+            .then(|| rules.zip(art_entry))
             .flatten()
-            .and_then(|(rules, art_reg)| {
-                let object = rules.object(type_str)?;
-                let art = art_reg.resolve_metadata_entry(type_str, &object.image)?;
-                factory_unload_art(sim, rules, entity, art)
-            });
+            .and_then(|(rules, art)| factory_unload_art(sim, rules, entity, art));
         // A loaded `DeployingAnim=` replaces the body image and its
         // NormalZAdjust; its frame is GetCurrentFrame, at most half the
         // image's frame count (`0x0043D7A7..0x0043D7F0`).
@@ -499,10 +500,7 @@ pub(crate) fn shp_visitor<'a>(
             Some(e) => (key.clone(), Some(e)),
             None if shp_frame != 0
                 && entity.category() == EntityCategory::Structure
-                && rules
-                    .and_then(|r| r.object(type_str))
-                    .map(|o| o.can_be_occupied)
-                    .unwrap_or(false) =>
+                && object_type.is_some_and(|o| o.can_be_occupied) =>
             {
                 let fallback_key = ShpSpriteKey {
                     palette_context: crate::render::sprite_atlas::ShpPaletteContext::Legacy,
@@ -578,9 +576,6 @@ pub(crate) fn shp_visitor<'a>(
             extra_light,
         );
         let palette_light = if entity.category() == EntityCategory::Structure {
-            let obj = rules.and_then(|r| r.object(type_str));
-            let image = obj.map_or(type_str, |o| o.image.as_str());
-            let art = rules.and_then(|r| r.art().resolve_metadata_entry(type_str, image));
             let [x, y] = entity.place.center_xy;
             let coords_cell = (
                 crate::util::lepton::lepton_to_cell(x) as u16,
@@ -590,7 +585,7 @@ pub(crate) fn shp_visitor<'a>(
                 input.lighting,
                 (pos.rx(), pos.ry()),
                 coords_cell,
-                art,
+                structure_entry,
                 gate_open_frame.is_some(),
             )
         } else {
@@ -632,62 +627,58 @@ pub(crate) fn shp_visitor<'a>(
         // ordinary sprites walk gradient 2. Infantry (`InfantryClass Draw_It`, flags 0x2E00) walks
         // entry 2 from `Get_Z_Adjust - 2`, whose base term also cancels the
         // lift, and never writes.
-        let (z_adjust, z_gradient, zshape_origin) = if entity.category()
-            == EntityCategory::Structure
-        {
-            let object_type = rules.and_then(|r| r.object(type_str));
-            let rules_image: &str = object_type.map_or(type_str, |o| o.image.as_str());
-            let art_entry = art_reg.and_then(|a| a.resolve_metadata_entry(type_str, rules_image));
-            let normal_z_adjust: i32 = match &door_body {
-                Some((_, _, z_adjust, _)) => *z_adjust,
-                None => art_entry.map_or(0, |a| a.normal_z_adjust),
+        let (z_adjust, z_gradient, zshape_origin) =
+            if entity.category() == EntityCategory::Structure {
+                let normal_z_adjust: i32 = match &door_body {
+                    Some((_, _, z_adjust, _)) => *z_adjust,
+                    None => structure_entry.map_or(0, |a| a.normal_z_adjust),
+                };
+                let point_move = building_zshape_point_move(entity, structure_entry);
+                let foundation: (u16, u16) = object_type
+                    .map(|o| o.foundation.dimensions())
+                    .unwrap_or((1, 1));
+                // The gate branch's DrawSHP (`0x0043D683`) passes a null z-shape
+                // (a12, pushed at `0x0043D633`); the ordinary body passes
+                // BUILDNGZ (`0x0043D806`).
+                let zshape = input.building_zshape
+                    && foundation.0 <= ZSHAPE_MAX_FOUNDATION_WIDTH
+                    && gate_open_frame.is_none();
+                let origin = native_z::zshape_origin(
+                    (sx.round() as i32, sy.round() as i32),
+                    foundation,
+                    point_move,
+                );
+                (
+                    lifted_z_adjust(lift_px, normal_z_adjust + SHP_DRAW_Z_ADJUST_PX),
+                    native_z::pack_building_z_gradient(
+                        zshape,
+                        entry.is_some_and(|entry| entry.extended),
+                    ),
+                    [origin.0 as f32, origin.1 as f32],
+                )
+            } else {
+                // Unit no-turret SHP branch 0x73CE0D..0x73CE7F, active for SQD:
+                // one complete draw with a7=-16, a8=0. Infantry is excluded by
+                // the adapter. This is distinct from VXL's two-region composite.
+                let world = super::foot_depth::DepthWorld {
+                    runtime: Some(runtime),
+                    frame: Some(input.frame),
+                };
+                let bridge_fudge = super::foot_depth::shp_unit_bridge_fudge(world, entity);
+                (
+                    super::foot_depth::shp_z_adjust(world, entity)
+                        - if bridge_fudge { 16.0 } else { 0.0 },
+                    pack_z_gradient(
+                        if bridge_fudge {
+                            ZGradient::Flat
+                        } else {
+                            ZGradient::Vertical
+                        },
+                        false,
+                    ),
+                    [0.0, 0.0],
+                )
             };
-            let point_move = building_zshape_point_move(entity, art_entry);
-            let foundation: (u16, u16) = object_type
-                .map(|o| o.foundation.dimensions())
-                .unwrap_or((1, 1));
-            // The gate branch's DrawSHP (`0x0043D683`) passes a null z-shape
-            // (a12, pushed at `0x0043D633`); the ordinary body passes
-            // BUILDNGZ (`0x0043D806`).
-            let zshape = input.building_zshape
-                && foundation.0 <= ZSHAPE_MAX_FOUNDATION_WIDTH
-                && gate_open_frame.is_none();
-            let origin = native_z::zshape_origin(
-                (sx.round() as i32, sy.round() as i32),
-                foundation,
-                point_move,
-            );
-            (
-                lifted_z_adjust(lift_px, normal_z_adjust + SHP_DRAW_Z_ADJUST_PX),
-                native_z::pack_building_z_gradient(
-                    zshape,
-                    entry.is_some_and(|entry| entry.extended),
-                ),
-                [origin.0 as f32, origin.1 as f32],
-            )
-        } else {
-            // Unit no-turret SHP branch 0x73CE0D..0x73CE7F, active for SQD:
-            // one complete draw with a7=-16, a8=0. Infantry is excluded by
-            // the adapter. This is distinct from VXL's two-region composite.
-            let world = super::foot_depth::DepthWorld {
-                runtime: Some(runtime),
-                frame: Some(input.frame),
-            };
-            let bridge_fudge = super::foot_depth::shp_unit_bridge_fudge(world, entity);
-            (
-                super::foot_depth::shp_z_adjust(world, entity)
-                    - if bridge_fudge { 16.0 } else { 0.0 },
-                pack_z_gradient(
-                    if bridge_fudge {
-                        ZGradient::Flat
-                    } else {
-                        ZGradient::Vertical
-                    },
-                    false,
-                ),
-                [0.0, 0.0],
-            )
-        };
         let Some(parent) = ground_order.object_draw(stable_id, SpriteEncoding::Plain) else {
             return;
         };
@@ -745,7 +736,7 @@ pub(crate) fn shp_visitor<'a>(
                 if let Some(body_entry) = entry
                     && let Some(shadow) = embedded_shp_shadow_piece(
                         atlas,
-                        rules.and_then(|rules| rules.object(type_str)),
+                        object_type,
                         entity,
                         cells.as_ref(),
                         &body_key,
@@ -811,18 +802,15 @@ pub(crate) fn shp_visitor<'a>(
         // Bibs and anims use the raw cell position (sy) — their own SHP offsets
         // (baked into the canvas) handle correct placement relative to the cell.
         if entity.category() == EntityCategory::Structure && !is_building_up && !is_building_down {
-            if let Some(art) = art_reg
-                && !null_image
-            {
+            if !null_image {
                 // Bib is drawn INSIDE BuildingClass_DrawBody in the original engine,
                 // right after the main body sprite, as part of the same object pass.
                 // It overwrites the body's terrain-colored pixels at the ramp area.
                 emit_building_bib(
                     &mut building_pieces,
                     atlas,
-                    art,
-                    rules,
-                    type_str,
+                    object_type,
+                    structure_entry,
                     BibDraw {
                         entity,
                         cells: cells.as_ref(),
@@ -847,7 +835,7 @@ pub(crate) fn shp_visitor<'a>(
                     &mut building_pieces,
                     atlas,
                     rules,
-                    rules.object(type_str),
+                    object_type,
                     entity,
                     ShpSpriteKey {
                         palette_context: unload_art.as_ref().map_or(
@@ -872,14 +860,12 @@ pub(crate) fn shp_visitor<'a>(
         }
         if entity.category() == EntityCategory::Structure {
             // Building voxel guns remain inside their SHP hull's draw call.
-            if let Some(rules_obj) = rules.and_then(|r| r.object(type_str))
+            if let Some(rules_obj) = object_type
                 && rules_obj.turret_anim_is_voxel
                 && building_voxel_turret_visible(entity, rules_obj.artillary)
                 && let Some(unit_atlas) = input.unit_atlas
             {
-                let turret_offset = art_reg
-                    .and_then(|art| art.resolve_metadata_entry(type_str, &rules_obj.image))
-                    .map_or(0, |art| art.turret_offset);
+                let turret_offset = art_entry.map_or(0, |art| art.turret_offset);
                 // TechnoClass::Draw's curtain arm (`0x0070678D..0x007067E2`)
                 // and BuildingClass::Draw's colour word (`0x0043DC1C..
                 // 0x0043DDF1`, DrawBody's) on the voxel cache blit.
@@ -1433,9 +1419,8 @@ struct BibDraw<'a> {
 fn emit_building_bib(
     pieces: &mut Vec<PlannedBuildingPieceInstance>,
     atlas: &crate::render::sprite_atlas::SpriteAtlas,
-    art_reg: &crate::rules::art_data::ArtRegistry,
-    rules: Option<&crate::rules::ruleset::RuleSet>,
-    building_type: &str,
+    object: Option<&crate::rules::object_type::ObjectType>,
+    art_entry: Option<&crate::rules::art_data::ArtEntry>,
     draw: BibDraw<'_>,
     house_color: HouseColorIndex,
     screen_x: f32,
@@ -1447,11 +1432,8 @@ fn emit_building_bib(
     colour_word: u16,
     draw_state: DrawState,
 ) {
-    let object = rules.and_then(|r| r.object(building_type));
-    let rules_image: &str = object.map_or(building_type, |o| o.image.as_str());
-    let art_entry = match art_reg.resolve_metadata_entry(building_type, rules_image) {
-        Some(e) => e,
-        None => return,
+    let Some(art_entry) = art_entry else {
+        return;
     };
     let bib_name: &str = match art_entry.bib_shape.as_deref() {
         Some(name) => name,
@@ -1713,9 +1695,9 @@ fn emit_building_anims(
     fade_ramp: u8,
     detail_level: i32,
 ) {
-    let rules_image: &str = rules
-        .and_then(|r| r.object(building_type))
-        .map_or(building_type, |o| o.image.as_str());
+    let rules_image: &str =
+        super::units::drawn_model_object(building, building_type, sim.interner(), rules)
+            .map_or(building_type, |o| o.image.as_str());
     let art_entry = match art_reg.resolve_metadata_entry(building_type, rules_image) {
         Some(e) => e,
         None => return,

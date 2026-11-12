@@ -2135,11 +2135,17 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                     crate::skirmish_launch::LaunchStartPosition::Position(u8::try_from(values[2])?)
                 };
                 choices.team = crate::skirmish_launch::LaunchTeam::from_shell_value(values[3]);
-                let change = state.match_state.session.accept_lan_peer_choices(
+                // A guest's own team pick keeps to the room's Teams.
+                let refused = state
+                    .match_state
+                    .session
+                    .admit_network_team(source, &mut choices);
+                let mut change = state.match_state.session.accept_lan_peer_choices(
                     source,
                     choices,
                     values[0] == -3,
                 )?;
+                change.options |= refused;
                 // A VERA room's guest who starts or stops watching changes
                 // rows: the roster, then the options, as WOL's R arm.
                 let mut deferred = Vec::new();

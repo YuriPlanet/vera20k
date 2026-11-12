@@ -153,8 +153,14 @@ pub enum WolTarget {
     ModernChangeCountry,
     /// The same, then OK: VERA's C2, whose Game Options toggles Crates.
     ModernRoomOptions,
+    /// VERA's C2 again, whose Teams box sets two teams: the Alamo's two
+    /// seats make one a team, the host on Team A and the guest on Team B.
+    /// Team Colors then gives Team A a warm colour and Team B a cool one.
+    ModernTeams,
     /// VERA's C2 opens two spectator rows past its players and the stand-in
-    /// guest moves to the first.
+    /// guest moves to the first; the host seats them, the join queue seats
+    /// them again, and the lobby's answer gives them a badge, which their
+    /// row draws and the status line names under the pointer.
     ModernSpectators,
     /// The same, then Create Game: C2 settled.
     TestServiceCreate,
@@ -542,6 +548,7 @@ impl WolTarget {
                     | Self::ModernPlayerCard
                     | Self::ModernChangeCountry
                     | Self::ModernRoomOptions
+                    | Self::ModernTeams
                     | Self::ModernSpectators
                     | Self::ModernOptions
                     | Self::ModernChatTranslation
@@ -728,6 +735,7 @@ pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-modern-player-card", WolTarget::ModernPlayerCard),
     ("wol-modern-change-country", WolTarget::ModernChangeCountry),
     ("wol-modern-room-options", WolTarget::ModernRoomOptions),
+    ("wol-modern-teams", WolTarget::ModernTeams),
     ("wol-modern-spectators", WolTarget::ModernSpectators),
     ("wol-test-service-create", WolTarget::TestServiceCreate),
     ("wol-test-service-join", WolTarget::TestServiceJoin),
@@ -1128,6 +1136,7 @@ impl WolCapture {
                     | WolTarget::ModernPlayerCard
                     | WolTarget::ModernChangeCountry
                     | WolTarget::ModernRoomOptions
+                    | WolTarget::ModernTeams
                     | WolTarget::ModernSpectators
                     | WolTarget::ModernOptions
                     | WolTarget::ModernChatTranslation
@@ -2165,6 +2174,7 @@ impl WolCapture {
                                     | WolTarget::ModernPlayerCard
                                     | WolTarget::ModernChangeCountry
                                     | WolTarget::ModernRoomOptions
+                                    | WolTarget::ModernTeams
                                     | WolTarget::ModernSpectators
                                     | WolTarget::ModernOptions
                                     | WolTarget::ModernChatTranslation
@@ -2359,6 +2369,7 @@ impl WolCapture {
                     self.target,
                     WolTarget::TestServiceCreate
                         | WolTarget::ModernRoomOptions
+                        | WolTarget::ModernTeams
                         | WolTarget::ModernSpectators
                         | WolTarget::SetupPage
                         | WolTarget::GuestChoices
@@ -2376,8 +2387,12 @@ impl WolCapture {
                         state.renderer.gpu.config.width as i32,
                         state.renderer.gpu.config.height as i32,
                     );
-                    let create =
-                        crate::ui::shell::modal::wol_create_game_layout(width, height, false);
+                    // VERA's online box puts OK a row lower.
+                    let create = crate::ui::shell::modal::wol_create_game_layout(
+                        width,
+                        height,
+                        Self::lobby(state)?.ui.is_modern(),
+                    );
                     if self.target.clan() {
                         // 0x78DF35: the clan box is enabled by the squad id.
                         ensure!(
@@ -2503,7 +2518,11 @@ impl WolCapture {
                     use crate::ui::multiplayer_setup::GAME_OPTIONS;
                     setup_button(state, GAME_OPTIONS)?;
                     let crates = setup_view(state)?.checks[2];
-                    ensure!(setup_view(state)?.options_open, "Game Options did not open");
+                    ensure!(
+                        setup_view(state)?.open_box
+                            == Some(crate::ui::multiplayer_setup::RoomBox::GameOptions),
+                        "Game Options did not open"
+                    );
                     let layout = crate::app::input::multiplayer_setup::layout(state);
                     setup_click(
                         state,
@@ -2536,15 +2555,122 @@ impl WolCapture {
                         .rules()
                         .and_then(|rules| rules.trigger_house_type_index("French"))
                         .map(|index| i32::from(index.0));
-                    let sides = crate::ui::multiplayer_setup::SetupColumn::Country.control(0);
+                    let view = setup_view(state)?;
                     ensure!(
-                        setup_view(state)?.combo(sides).is_some_and(|combo| {
-                            !combo.choices.is_empty()
-                                && combo.choices.iter().all(|item| Some(item.value) != french)
-                        }),
+                        row_combo(&view, crate::ui::multiplayer_setup::SetupColumn::Country, 0)
+                            .is_some_and(|(_, combo)| {
+                                !combo.choices.is_empty()
+                                    && combo.choices.iter().all(|item| Some(item.value) != french)
+                            }),
                         "France stayed in the host's Side list"
                     );
                     self.event(frame, "C2 Game Options: No France toggled");
+                }
+                if self.target == WolTarget::ModernTeams {
+                    use crate::ui::multiplayer_setup::{
+                        BALANCE, RoomBox, SetupAction, SetupColumn, TEAM_COUNT, TEAMS,
+                    };
+                    setup_button(state, TEAMS)?;
+                    ensure!(
+                        setup_view(state)?.open_box == Some(RoomBox::Teams),
+                        "Teams did not open"
+                    );
+                    crate::app::shell_network_setup::apply_action(
+                        state,
+                        SetupAction::Trackbar {
+                            control: TEAM_COUNT,
+                            value: 2,
+                        },
+                    );
+                    let session = &state.match_state.session;
+                    ensure!(
+                        session.network_teams() == Some(2)
+                            && session.network_team_seats() == Some(1)
+                            && (0..2).all(|team| session.network_team_players(team) == 1),
+                        "the Teams box did not seat the two players on two teams"
+                    );
+                    // Online, Teams turns Balance automatically on: the box
+                    // shows Balance and its tick, and the Team lists close.
+                    let view = setup_view(state)?;
+                    let team_list = row_combo(&view, SetupColumn::Team, 0)
+                        .is_some_and(|(_, combo)| combo.enabled);
+                    ensure!(
+                        session.network_auto_balance()
+                            && view.auto_balance
+                            && view.enabled(BALANCE)
+                            && !team_list,
+                        "setting Teams online did not turn Balance automatically on"
+                    );
+                    let captions: Vec<&str> = view
+                        .headers
+                        .iter()
+                        .flatten()
+                        .map(|header| header.caption.as_str())
+                        .collect();
+                    // Team Colors gives the host on Team A YR's Orange and
+                    // the guest on Team B its Blue: warm against cool.
+                    let rect = crate::app::input::multiplayer_setup::layout(state)
+                        .control_rect(crate::ui::multiplayer_setup::TEAM_COLORS)
+                        .context("Team Colors")?;
+                    setup_click(state, rect);
+                    let colors: Vec<(String, Option<u8>)> = state
+                        .match_state
+                        .session
+                        .network_setup()
+                        .context("room setup")?
+                        .humans
+                        .iter()
+                        .map(|human| {
+                            let random = human.slot.color_random;
+                            let color = (!random).then_some(human.slot.color_index);
+                            (human.name.clone(), color)
+                        })
+                        .collect();
+                    ensure!(
+                        colors == [("Tester".into(), Some(4)), ("Natasha".into(), Some(2))],
+                        "Team Colors gave {colors:?}"
+                    );
+                    // Teams goes up to 15: the Team list then runs from A
+                    // to O, and the headers name the teams past D too.
+                    crate::app::shell_network_setup::apply_action(
+                        state,
+                        SetupAction::Trackbar {
+                            control: TEAM_COUNT,
+                            value: 15,
+                        },
+                    );
+                    let wide = setup_view(state)?;
+                    let letters: Vec<&str> = row_combo(&wide, SetupColumn::Team, 0)
+                        .map(|(_, combo)| {
+                            combo
+                                .choices
+                                .iter()
+                                .map(|item| item.text.as_str())
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let wide_captions: Vec<&str> = wide
+                        .headers
+                        .iter()
+                        .flatten()
+                        .map(|header| header.caption.as_str())
+                        .collect();
+                    ensure!(
+                        state.match_state.session.network_teams() == Some(15)
+                            && letters.len() == 15
+                            && letters.first() == Some(&"A")
+                            && letters.last() == Some(&"O")
+                            && wide_captions.contains(&"Team E 0/1"),
+                        "Teams 15 gave the Team list {letters:?} and headers {wide_captions:?}"
+                    );
+                    self.event(
+                        frame,
+                        json!({
+                            "C2 Teams": captions,
+                            "Team Colors": colors,
+                            "Teams 15": wide_captions,
+                        }),
+                    );
                 }
                 MoviesCapture::restore_neutral_pointer(state);
                 crate::app::input::multiplayer_setup::cursor_moved(state);
@@ -4920,9 +5046,18 @@ impl WolCapture {
                         | WolTarget::IngamePageCancel
                 ) || revealed));
         }
+        // The guest's badge help types itself out in the room's own status
+        // line.
+        let room_line = self.target != WolTarget::ModernSpectators
+            || state
+                .frontend
+                .multiplayer_setup
+                .as_ref()
+                .is_some_and(|ui| ui.statics.is_terminal());
         Ok(self.phase == WolPhase::Settle(0)
             && state.frontend.shell_exit.is_none()
             && (backdrop || state.frontend.shell_status_line.is_terminal())
+            && room_line
             && state.frontend.shell_first_paint_slide.is_none())
     }
 
@@ -5349,6 +5484,20 @@ fn login_click(state: &mut AppState, rect: RectPx) {
 
 fn setup_view(state: &AppState) -> Result<crate::ui::multiplayer_setup::SetupView> {
     setup::view(state).context("C2/C9 view")
+}
+
+/// Row `row`'s combo in `column` and the page row it stands on: VERA's room
+/// lists its rows under team headers, so a page row is not a seat.
+fn row_combo(
+    view: &crate::ui::multiplayer_setup::SetupView,
+    column: crate::ui::multiplayer_setup::SetupColumn,
+    row: u8,
+) -> Option<(usize, &crate::ui::multiplayer_setup::SetupCombo)> {
+    view.combos.iter().find_map(|combo| {
+        crate::ui::multiplayer_setup::SetupColumn::decode(combo.id)
+            .filter(|(candidate, _)| *candidate == column && combo.row == row)
+            .map(|(_, page_row)| (page_row, combo))
+    })
 }
 
 /// The joined game's host options again, naming a version of its map this
@@ -5972,7 +6121,14 @@ impl WolCapture {
         let view = setup_view(state)?;
         let accepted = human
             .raw_slot_index
-            .and_then(|row| view.row_icons[usize::from(row)].as_ref())
+            .and_then(|row| {
+                row_combo(
+                    &view,
+                    crate::ui::multiplayer_setup::SetupColumn::Player,
+                    row,
+                )
+            })
+            .and_then(|(page_row, _)| view.row_icons[page_row].as_ref())
             .is_some_and(|icon| icon.accepted);
         ensure!(
             human.raw_slot_index == Some(1)
@@ -6114,9 +6270,9 @@ impl WolCapture {
                     "the guest takes the open spectator row {first:?}: \
                      {observer:?}, then {second:?} {requests:?}"
                 );
-                // The room lists only who is in it: the host, then the
-                // spectator, whom the host's menu kicks. Nobody adds an AI
-                // while anyone watches.
+                // The room lists the host, the seat the guest left, then the
+                // spectator, whom the host's menu seats again or kicks.
+                // Nobody adds an AI while anyone watches.
                 let listed: Vec<_> = setup_view(state)?
                     .combos
                     .iter()
@@ -6130,14 +6286,142 @@ impl WolCapture {
                         (combo.row, values)
                     })
                     .collect();
+                let seat = crate::ui::multiplayer_setup::GIVE_SEAT;
+                let spectator = first.context("spectator row")?;
                 ensure!(
-                    listed == [(0, vec![0]), (first.context("spectator row")?, vec![0, 2])],
+                    listed == [(0, vec![0]), (1, vec![2]), (spectator, vec![0, seat, 2])],
                     "the room lists {listed:?}"
                 );
                 self.event(
                     frame,
-                    json!({"spectator rows": [first, second], "guest observes": first, "listed": [0, first]}),
+                    json!({"spectator rows": [first, second], "guest observes": first, "listed": [0, 1, first]}),
                 );
+                // The host's Seat puts the spectator back in the free seat,
+                // as the guest's own side pick would.
+                let control = row_combo(&setup_view(state)?, SetupColumn::Player, spectator)
+                    .map(|(_, combo)| combo.id)
+                    .context("the spectator's Player list")?;
+                crate::app::shell_network_setup::apply_action(
+                    state,
+                    crate::ui::multiplayer_setup::SetupAction::Select {
+                        control,
+                        value: seat,
+                    },
+                );
+                let requests = setup_requests(state);
+                let (_, player) = guest(state).context("guest")?;
+                ensure!(
+                    !player.is_observer()
+                        && player.raw_slot_index == Some(1)
+                        && requests.contains(&NetworkSetupRequest::PublishOptions),
+                    "the host's Seat: {player:?} {requests:?}"
+                );
+                self.event(frame, json!({"host seats the spectator": {"row": 1}}));
+                // With no seat free, the spectator asking to play waits in
+                // the join queue, its place before its name, and the host's
+                // game seats it when a seat frees (`service::seat_queue`).
+                use crate::app::match_runtime::session::NetworkRowKind;
+                choices(state, player.slot.clone(), true);
+                let session = &mut state.match_state.session;
+                session.choose_network_row_kind(1, NetworkRowKind::Closed)?;
+                choices(state, player.slot.clone(), false);
+                let (index, waiting) = guest(state).context("guest")?;
+                let row = waiting.raw_slot_index.context("the spectator's row")?;
+                let name = crate::i18n::tr_fill(
+                    "VERA:QueuedName",
+                    &[("place", &1), ("name", &SERVICE_GUEST)],
+                );
+                let labelled = row_combo(&setup_view(state)?, SetupColumn::Player, row)
+                    .is_some_and(|(_, combo)| {
+                        combo
+                            .choices
+                            .iter()
+                            .any(|choice| choice.value == 0 && choice.text == name)
+                    });
+                let session = &state.match_state.session;
+                ensure!(
+                    waiting.is_observer()
+                        && session.network_queue() == [SERVICE_GUEST]
+                        && session.network_queue_place(index) == Some(1)
+                        && labelled,
+                    "the spectator did not wait first in the join queue: {waiting:?}"
+                );
+                self.event(
+                    frame,
+                    json!({"join queue": {"waiting": row, "label": name}}),
+                );
+                let session = &mut state.match_state.session;
+                session.choose_network_row_kind(1, NetworkRowKind::Open)?;
+                setup_requests(state);
+                crate::app::shell_network_setup::poll(state);
+                let requests = setup_requests(state);
+                let (_, seated) = guest(state).context("guest")?;
+                ensure!(
+                    !seated.is_observer()
+                        && seated.raw_slot_index == Some(1)
+                        && state.match_state.session.network_queue().is_empty()
+                        && requests.contains(&NetworkSetupRequest::PublishOptions),
+                    "the join queue did not seat the spectator: {seated:?} {requests:?}"
+                );
+                self.event(frame, json!({"join queue seats the spectator": {"row": 1}}));
+                // The lobby's answer gives the guest a Major's badge: the
+                // room draws it in their row, and the help of their name
+                // under the pointer names it, their rank and OS, as the
+                // lobby's player list does.
+                use crate::app::shell_wol::{WolHighScoreRecord, WolLadderRecord};
+                service_event(
+                    state,
+                    WolServiceEvent::Ladder(vec![WolLadderRecord {
+                        name: SERVICE_GUEST.into(),
+                        points: 31,
+                        os_hundredths: 3120,
+                        rank: 5,
+                        ..Default::default()
+                    }]),
+                );
+                service_event(
+                    state,
+                    WolServiceEvent::HighScores(Ok(vec![WolHighScoreRecord {
+                        name: SERVICE_GUEST.into(),
+                        points: 151,
+                        rank: 5,
+                        coop: 0,
+                    }])),
+                );
+                let view = setup_view(state)?;
+                let (page_row, combo) =
+                    row_combo(&view, SetupColumn::Player, 1).context("the guest's name")?;
+                let badge = view
+                    .row_icons
+                    .get(page_row)
+                    .and_then(Option::as_ref)
+                    .and_then(|icon| icon.badge);
+                let rect = crate::app::input::multiplayer_setup::layout(state)
+                    .control_rect(combo.id)
+                    .context("the guest's name")?;
+                set_window_pointer_to_rect_center(state, rect);
+                crate::app::input::multiplayer_setup::cursor_moved(state);
+                let help = setup::view::player_help(state, &view, combo.id);
+                let label = |key: &str| App::csf_label(state, key, key);
+                let expected = crate::i18n::fill(
+                    &label("VERA:PlayerHelp"),
+                    &[
+                        ("name", &SERVICE_GUEST),
+                        ("badge", &label("VERA:LobbyBadgeMajor")),
+                        ("rank", &5),
+                        ("os", &"31.20"),
+                    ],
+                );
+                ensure!(
+                    badge == Some("major.pcx") && help.as_deref() == Some(expected.as_str()),
+                    "the guest's badge {badge:?} and help {help:?}"
+                );
+                self.event(
+                    frame,
+                    json!({"player badge": {"row": 1, "badge": badge, "help": help}}),
+                );
+                self.settle();
+                return Ok(());
             }
             WolTarget::ClanLockout | WolTarget::ClanNoStart | WolTarget::ClanChooseMap => {
                 return self.clan_room(state, frame);

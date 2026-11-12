@@ -14,7 +14,8 @@ use crate::rules::ini_parser::IniFile;
 use crate::rules::retail_ini_fixture::{retail_assets, retail_battle_rules};
 use crate::rules::ruleset::RuleSet;
 use crate::rules::voxel_frame_catalog::{
-    detect_hva_frame_count, seed_layers_for, unit_atlas_variants, voxel_image_id,
+    detect_hva_frame_count, draws_turret_parts, seed_layers_for, unit_atlas_variants,
+    voxel_image_id,
 };
 use crate::sim::world::Simulation;
 
@@ -1225,4 +1226,31 @@ fn disguise_viewer_sees_through_per_disguise_blinking_visibility() {
     let none = rules_for("DisguiseBlinkingVisibility=none\n");
     assert!(!visible(&none, "Americans"));
     assert!(!visible(&none, "Russians"));
+}
+
+/// A tank drawn as its own type finds its record through the bound handle:
+/// its body draw (model, tilt and gun parts) looks no type up by name.
+#[test]
+fn a_tanks_body_draw_looks_no_type_up_by_name() {
+    let Some(retail) = retail_battle_rules() else {
+        return;
+    };
+    let mut sim = Simulation::new();
+    sim.resolve_type_handles(&retail.rules);
+    let tank = sim
+        .spawn_object("MTNK", "Americans", 10, 10, 0, &retail.rules)
+        .expect("construct stock Grizzly");
+    let entity = ObjectRecord::of_test_sim(&sim, &retail.rules, tank);
+    let before = RuleSet::type_name_lookups();
+    let (model, _) = unit_body_draw(
+        &entity,
+        sim.interner(),
+        Some(&retail.rules),
+        EntityDrawBand::Ground,
+        sim.session().binary_frame(),
+        crate::render::draw_state::ObserverDrawContext::default(),
+    )
+    .expect("a Grizzly draws a voxel body");
+    assert_eq!(model, "MTNK");
+    assert_eq!(RuleSet::type_name_lookups() - before, 0);
 }

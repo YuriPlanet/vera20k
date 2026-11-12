@@ -1799,24 +1799,27 @@ impl ArtRegistry {
     /// A TechnoType's `UseBuffer=`, from the ART section named by its exact
     /// type ID ([`ArtEntry::use_buffer`]); false without that section.
     pub fn use_buffer(&self, type_id: &str) -> bool {
-        self.entries
-            .get(type_id)
+        self.exact_entry(type_id)
             .is_some_and(|entry| entry.use_buffer)
     }
 
     /// A TechnoType's `DisableVoxelCache=`, from the ART section named by its
     /// exact type ID; false without that section.
     pub fn disable_voxel_cache(&self, type_id: &str) -> bool {
-        self.entries
-            .get(type_id)
+        self.exact_entry(type_id)
             .is_some_and(|entry| entry.disable_voxel_cache)
     }
 
     /// A TechnoType's `DisableShadowCache=`, read the same way.
     pub fn disable_shadow_cache(&self, type_id: &str) -> bool {
-        self.entries
-            .get(type_id)
+        self.exact_entry(type_id)
             .is_some_and(|entry| entry.disable_shadow_cache)
+    }
+
+    /// The ART section named by `type_id` exactly, with no case folding or
+    /// Image redirect: the section the flags above read.
+    pub fn exact_entry(&self, type_id: &str) -> Option<&ArtEntry> {
+        self.entries.get(type_id)
     }
 
     /// A TechnoType's `CanBeHidden=`, from the ART section named by its exact

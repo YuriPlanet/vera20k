@@ -78,8 +78,9 @@
 //! match does; `--serial-paths` searches and `--serial-scans` scans in native
 //! order instead. The `path_batch` line sums the batch's passes over the
 //! measured frames ([`PathBatchStats`]): registrations waiting and answered,
-//! the ones the cap or the urgency-2 budget left for a later pass, and the
-//! cells the searches expanded.
+//! the ones the cap or a re-path budget left for a later pass, and the
+//! cells the searches expanded, with the code-2 re-paths' share at each
+//! urgency.
 //!
 //! Beside each frame's wall time, the CSV's `cpu_ms` column and the
 //! `main_thread_cpu_*` line give the main thread's CPU time (Unix only). On a
@@ -528,6 +529,7 @@ struct PathTotals {
     peak_left_out: u32,
     steps: u64,
     urgency2_steps: u64,
+    urgency1_steps: u64,
     peak_pass_ms: f64,
 }
 
@@ -541,6 +543,7 @@ impl PathTotals {
         self.peak_left_out = self.peak_left_out.max(pass.left_out);
         self.steps += pass.steps;
         self.urgency2_steps += pass.urgency2_steps;
+        self.urgency1_steps += pass.urgency1_steps;
         self.peak_pass_ms = self.peak_pass_ms.max(pass.last_ms);
     }
 }
@@ -873,7 +876,8 @@ fn main() -> Result<(), String> {
     if paths.passes > 0 {
         println!(
             "path_batch passes={} waiting={} answered={} left_out={} left_out_passes={} \
-             peak_left_out={} steps={} urgency2_steps={} peak_pass_ms={:.2}",
+             peak_left_out={} steps={} urgency2_steps={} urgency1_steps={} \
+             peak_pass_ms={:.2}",
             paths.passes,
             paths.waiting,
             paths.answered,
@@ -882,6 +886,7 @@ fn main() -> Result<(), String> {
             paths.peak_left_out,
             paths.steps,
             paths.urgency2_steps,
+            paths.urgency1_steps,
             paths.peak_pass_ms,
         );
     }

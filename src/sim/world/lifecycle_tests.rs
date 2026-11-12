@@ -4620,6 +4620,9 @@ fn completed_empty_smoke_limbo_clears_every_matching_techno_before_late_drain() 
     );
 }
 
+// Ares simulates this Smoke system itself (hooks 0x62DF05, 0x62FD60) and
+// builds no ParticleClass children.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn particle_system_physical_disposal_removes_retained_child_air_entries() {
     let rules =

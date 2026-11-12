@@ -135,8 +135,10 @@ mod playfield_membership;
 mod rally_cell_input;
 mod rocket_flight;
 pub use frame_error::FrameAdvanceError;
+pub use world_orders::AresHeal;
 pub(crate) use world_orders::CapturedInfantryType;
 pub use world_orders::EngineerBuildingAction;
+pub use world_orders::HealArmKeys;
 #[cfg(feature = "ares")]
 pub use world_orders::InfiltrateAction;
 pub use world_orders::UnitRepairAction;

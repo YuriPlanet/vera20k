@@ -22,6 +22,10 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
                 | SetupAction::Select { .. }
                 | SetupAction::Toggle { .. }
                 | SetupAction::Trackbar { .. }
+                | SetupAction::Join { .. }
+                | SetupAction::TeamStarts
+                | SetupAction::TeamColors
+                | SetupAction::Balance
         )
     {
         return;
@@ -79,6 +83,7 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
         SetupAction::Toggle { control } => toggle(state, control),
         SetupAction::Trackbar { control, value } => trackbar(state, control, value),
         SetupAction::Select { control, value } => select(state, control, value),
+        SetupAction::Join { control } => join(state, control),
         SetupAction::Chat(text) if dialog.wol() => {
             super::wol::chat(state, text);
             Ok(())
@@ -97,9 +102,17 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
             }
             Ok(())
         }
-        SetupAction::GameOptions { open } => {
+        SetupAction::OpenBox(open) => {
             if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
-                ui.show_options(open);
+                ui.show_box(open);
+            }
+            Ok(())
+        }
+        SetupAction::TeamStarts => team_starts(state),
+        SetupAction::TeamColors => team_colors(state),
+        SetupAction::Balance => {
+            if super::view(state).is_some_and(|current| current.enabled(BALANCE)) {
+                super::teams::balance(state);
             }
             Ok(())
         }
@@ -159,6 +172,10 @@ pub(super) fn queue(state: &mut AppState, request: NetworkSetupRequest) {
 fn toggle(state: &mut AppState, control: u16) -> anyhow::Result<()> {
     let current = super::view(state).ok_or_else(|| anyhow::anyhow!("no setup"))?;
     anyhow::ensure!(current.enabled(control), "disabled checkbox");
+    if control == AUTO_BALANCE {
+        return super::teams::set_auto_balance(state, !current.auto_balance)
+            .and_then(|()| host_option_edited(state));
+    }
     let mut options = state
         .match_state
         .session
@@ -217,6 +234,18 @@ fn trackbar(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()
             .frontend
             .multiplayer_shell_runtime
             .set_cooperative_difficulty(value);
+    } else if control == TEAM_COUNT {
+        // 1 is Off.
+        let teams = u8::try_from(value).ok().filter(|teams| *teams >= 2);
+        if state
+            .match_state
+            .session
+            .network_setup()
+            .is_some_and(|launch| launch.options.teams == teams)
+        {
+            return Ok(());
+        }
+        return super::teams::set_teams(state, teams).and_then(|()| host_option_edited(state));
     } else {
         let mut options = state
             .match_state
@@ -261,9 +290,42 @@ fn select(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> 
         combo.choices.iter().any(|choice| choice.value == value),
         "selection no longer belongs to this popup"
     );
+    if let Some(page_row) = team_add_ai_row(control) {
+        let group = current.headers[page_row]
+            .as_ref()
+            .map(|header| header.group);
+        return add_ai(state, group, combo.row, value);
+    }
     let (column, _) =
         SetupColumn::decode(control).ok_or_else(|| anyhow::anyhow!("unknown setup combo"))?;
     let row = usize::from(combo.row);
+    // VERA's host moves a guest as the guest's own choices would: into a
+    // seat or to the spectators from its Player list, to another team from
+    // its Team list.
+    let guest = state.match_state.session.host().then(|| {
+        let launch = state.match_state.session.network_setup()?;
+        launch
+            .humans
+            .iter()
+            .enumerate()
+            .find(|(index, human)| {
+                *index != launch.local_player_index && human.raw_slot_index == Some(combo.row)
+            })
+            .map(|(index, human)| (index, human.slot.team))
+    });
+    if let Some((index, team)) = guest.flatten() {
+        let moved = match (column, value) {
+            (SetupColumn::Player, MOVE_TO_SPECTATORS) => Some((team, true)),
+            (SetupColumn::Player, GIVE_SEAT) => Some((team, false)),
+            (SetupColumn::Team, value) => Some((LaunchTeam::from_shell_value(value), false)),
+            _ => None,
+        };
+        if let Some((team, observer)) = moved {
+            let change = super::service::move_player(state, index, team, observer)?;
+            super::service::publish_choices(state, change);
+            return Ok(());
+        }
+    }
     if column == SetupColumn::Player {
         // 0x5EC9F0 returns at once when the row keeps its item.
         if value == 0 || combo.selected.map(|index| combo.choices[index].value) == Some(value) {
@@ -297,81 +359,196 @@ fn select(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> 
         if super::dialog(state).wol() {
             queue(state, NetworkSetupRequest::Advertise);
         }
-    } else {
-        let mut slot = state
-            .match_state
-            .session
-            .network_row_choices(row as u8)
-            .ok_or_else(|| anyhow::anyhow!("setup row has no choices"))?;
-        match column {
-            // Observer (-3) asks to watch and keeps the side.
-            SetupColumn::Country if value == -3 => {}
-            SetupColumn::Country => {
-                slot.country_random = value == -2;
-                if value >= 0 {
-                    slot.country = LaunchCountry::from_country_index(value as u32);
-                }
-            }
-            SetupColumn::Color => {
-                slot.color_random = value == -2;
-                if value >= 0 {
-                    slot.color_index = value as u8;
-                }
-            }
-            SetupColumn::Start => {
-                slot.start_position = if value < 0 {
-                    LaunchStartPosition::Auto
-                } else {
-                    LaunchStartPosition::Position(value as u8)
-                }
-            }
-            SetupColumn::Team => slot.team = LaunchTeam::from_shell_value(value),
-            SetupColumn::Player => unreachable!(),
-        }
-        state
-            .match_state
-            .session
-            .set_network_row_choices(row as u8, slot.clone())?;
-        let launch = state
-            .match_state
-            .session
-            .network_setup()
-            .expect("editable setup");
-        if launch.local_player().raw_slot_index == Some(row as u8) {
-            state
-                .frontend
-                .multiplayer_shell_runtime
-                .update_local_preferences(launch.local_player(), launch.mode.id);
-        }
-        if !state.match_state.session.host() {
-            let launch = state
-                .match_state
-                .session
-                .network_setup()
-                .expect("choices retain setup");
-            // A VERA room's guest watches with Observer and plays with a side.
-            let observer = if column == SetupColumn::Country {
-                value == -3
-            } else {
-                launch.local_player().is_observer()
-            };
-            queue(
-                state,
-                NetworkSetupRequest::PlayerChoices {
-                    row: row as u8,
-                    slot,
-                    observer,
-                },
-            );
-            return Ok(());
-        }
-    }
-    queue(state, NetworkSetupRequest::PublishOptions);
-    if column == SetupColumn::Player {
+        queue(state, NetworkSetupRequest::PublishOptions);
         //5EC9F0 ->5DAF30 publishes the changed row bindings independently
         //of the options' participant array, including kicked/unbound nodes.
         queue(state, NetworkSetupRequest::PublishRoster);
+        return Ok(());
     }
+    let mut slot = state
+        .match_state
+        .session
+        .network_row_choices(row as u8)
+        .ok_or_else(|| anyhow::anyhow!("setup row has no choices"))?;
+    match column {
+        // Observer (-3) asks to watch and keeps the side.
+        SetupColumn::Country if value == -3 => {}
+        SetupColumn::Country => {
+            slot.country_random = value == -2;
+            if value >= 0 {
+                slot.country = LaunchCountry::from_country_index(value as u32);
+            }
+        }
+        SetupColumn::Color => {
+            slot.color_random = value == -2;
+            if value >= 0 {
+                slot.color_index = value as u8;
+            }
+        }
+        SetupColumn::Start => {
+            slot.start_position = if value < 0 {
+                LaunchStartPosition::Auto
+            } else {
+                LaunchStartPosition::Position(value as u8)
+            }
+        }
+        SetupColumn::Team => slot.team = LaunchTeam::from_shell_value(value),
+        SetupColumn::Player => unreachable!(),
+    }
+    // A VERA room's guest watches with Observer and plays with a side.
+    let observer = if column == SetupColumn::Country {
+        value == -3
+    } else {
+        state
+            .match_state
+            .session
+            .network_setup()
+            .expect("view has setup")
+            .local_player()
+            .is_observer()
+    };
+    commit_row(state, row as u8, slot, observer)
+}
+
+/// Writes the choices of a row this player edits, then sends them: a
+/// guest's own to the host, which answers with its options; the host's in
+/// its options.
+fn commit_row(
+    state: &mut AppState,
+    row: u8,
+    slot: crate::skirmish_launch::SkirmishLocalSlot,
+    observer: bool,
+) -> anyhow::Result<()> {
+    state
+        .match_state
+        .session
+        .set_network_row_choices(row, slot.clone())?;
+    let launch = state
+        .match_state
+        .session
+        .network_setup()
+        .expect("editable setup");
+    if launch.local_player().raw_slot_index == Some(row) {
+        state
+            .frontend
+            .multiplayer_shell_runtime
+            .update_local_preferences(launch.local_player(), launch.mode.id);
+    }
+    if state.match_state.session.host() {
+        queue(state, NetworkSetupRequest::PublishOptions);
+        return Ok(());
+    }
+    if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
+        // The host's answer may put the guest here (`service::tell_moved`).
+        protocol.asked_place = Some((slot.team, observer));
+        protocol.requests.push(NetworkSetupRequest::PlayerChoices {
+            row,
+            slot,
+            observer,
+        });
+    }
+    Ok(())
+}
+
+/// The host's Team Starts in the Teams box: every player's start by team.
+fn team_starts(state: &mut AppState) -> anyhow::Result<()> {
+    let current = super::view(state).ok_or_else(|| anyhow::anyhow!("no setup"))?;
+    anyhow::ensure!(current.enabled(TEAM_STARTS), "Team Starts is not offered");
+    if super::teams::team_starts(state, false)? {
+        host_option_edited(state)?;
+        queue(state, NetworkSetupRequest::PublishOptions);
+    }
+    Ok(())
+}
+
+/// The host's Team Colors in the Teams box: every player's colour by team.
+fn team_colors(state: &mut AppState) -> anyhow::Result<()> {
+    let current = super::view(state).ok_or_else(|| anyhow::anyhow!("no setup"))?;
+    anyhow::ensure!(current.enabled(TEAM_COLORS), "Team Colors is not offered");
+    if super::teams::team_colors(state)? {
+        host_option_edited(state)?;
+        queue(state, NetworkSetupRequest::PublishOptions);
+    }
+    Ok(())
+}
+
+/// VERA's header Join: the player moves to the header's team as its Team
+/// list does, a spectator into a free seat on it as a side in its Side list
+/// does; the spectators' Watch asks to watch as Observer there does.
+fn join(state: &mut AppState, control: u16) -> anyhow::Result<()> {
+    let current = super::view(state).ok_or_else(|| anyhow::anyhow!("no setup"))?;
+    anyhow::ensure!(current.enabled(control), "Join is not offered");
+    let group = current
+        .header_button(control)
+        .ok_or_else(|| anyhow::anyhow!("no header Join"))?
+        .group;
+    let local = state
+        .match_state
+        .session
+        .network_setup()
+        .expect("view has setup")
+        .local_player();
+    let row = local
+        .raw_slot_index
+        .ok_or_else(|| anyhow::anyhow!("the local player has no row"))?;
+    let mut slot = local.slot.clone();
+    let observer = match group {
+        SetupGroup::Team(team) => {
+            slot.team = LaunchTeam::Team(team);
+            false
+        }
+        SetupGroup::NoTeam => {
+            slot.team = LaunchTeam::None;
+            false
+        }
+        SetupGroup::Spectators => true,
+        SetupGroup::OpenSeats => anyhow::bail!("open seats have no Join"),
+    };
+    commit_row(state, row, slot, observer)
+}
+
+/// The host's Add AI on a team header: an AI of the picked difficulty in
+/// the first free seat, the list's row, on the header's team. It publishes
+/// as the Player list's AI does.
+fn add_ai(
+    state: &mut AppState,
+    group: Option<SetupGroup>,
+    row: u8,
+    value: i32,
+) -> anyhow::Result<()> {
+    let Some(SetupGroup::Team(team)) = group else {
+        anyhow::bail!("Add AI belongs to a team header");
+    };
+    let difficulty = match value {
+        0 => return Ok(()),
+        4 => AiDifficulty::Easy,
+        5 => AiDifficulty::Normal,
+        6 => AiDifficulty::Hard,
+        _ => anyhow::bail!("unknown AI difficulty"),
+    };
+    anyhow::ensure!(
+        state.match_state.session.network_vacancy(row) == Some(NetworkVacancy::Open),
+        "Add AI's seat is no longer free"
+    );
+    state
+        .match_state
+        .session
+        .choose_network_row_kind(row, NetworkRowKind::Ai(difficulty))?;
+    let mut slot = state
+        .match_state
+        .session
+        .network_row_choices(row)
+        .ok_or_else(|| anyhow::anyhow!("the AI's row has no choices"))?;
+    slot.team = LaunchTeam::Team(team);
+    state
+        .match_state
+        .session
+        .set_network_row_choices(row, slot)?;
+    if super::dialog(state).wol() {
+        queue(state, NetworkSetupRequest::Advertise);
+    }
+    queue(state, NetworkSetupRequest::PublishOptions);
+    queue(state, NetworkSetupRequest::PublishRoster);
     Ok(())
 }
 

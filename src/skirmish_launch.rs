@@ -426,7 +426,32 @@ pub struct SkirmishLaunchOptions {
     /// the same options as before them.
     #[serde(default, skip_serializing_if = "RoomBans::is_empty")]
     pub bans: RoomBans,
+    /// VERA's room Teams setting: how many teams the room seats its players
+    /// on ([`ROOM_TEAMS`]), or `None` for Off. Only the room reads it; the
+    /// match does not. Left out while Off, as the bans are.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub teams: Option<u8>,
+    /// VERA's room Balance automatically: with Teams set online, the
+    /// host's game has the lobby balance the teams after each change of who
+    /// plays, and nobody picks a team. Only the room reads it. Left out while
+    /// off; LAN never sets it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub auto_balance: bool,
+    /// VERA's room join queue: the spectators who asked to play while no
+    /// seat was free, by name, first first. The host's game seats the first
+    /// when a seat frees. Only the room reads it. Left out while nobody
+    /// waits.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub queue: Vec<String>,
 }
+
+/// The Teams counts a VERA room offers besides Off: up to 15, two seats a
+/// team at 30 seats, as the lobby takes them.
+pub const ROOM_TEAMS: std::ops::RangeInclusive<u8> = 2..=15;
+
+/// The teams gamemd's Team list holds, A to D (`team_choices`). Skirmish and
+/// a VERA room with Teams Off keep it.
+pub const NATIVE_TEAMS: u8 = 4;
 
 impl Default for SkirmishLaunchOptions {
     fn default() -> Self {
@@ -451,6 +476,9 @@ impl Default for SkirmishLaunchOptions {
             harvester_truce: defaults.harvester_truce,
             ally_change_allowed: defaults.ally_change_allowed,
             bans: RoomBans::default(),
+            teams: None,
+            auto_balance: false,
+            queue: Vec::new(),
         }
     }
 }
@@ -484,6 +512,9 @@ impl SkirmishLaunchOptions {
             harvester_truce: options.harvester_truce,
             ally_change_allowed: options.ally_change_allowed,
             bans: options.bans,
+            teams: None,
+            auto_balance: false,
+            queue: Vec::new(),
         }
     }
 
@@ -514,15 +545,23 @@ impl SkirmishLaunchOptions {
 }
 
 /// The options VERA's game room adds to gamemd's: Destroyable Bridges,
-/// In-game Allying and the bans. LAN carries them beside the native options
-/// text, which has no field for them, and the room keeps them for its next
-/// game.
+/// In-game Allying, the bans, Teams and Balance automatically. LAN carries
+/// them beside the native options text, which has no field for them, and the
+/// room keeps them for its next game.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RoomOptions {
     pub bridges_destroyable: bool,
     pub ally_change_allowed: bool,
     pub bans: RoomBans,
+    /// LAN carries Teams in a field of its own: a game that does not know a
+    /// field here refuses the whole options before it can say the host's
+    /// build differs.
+    #[serde(skip)]
+    pub teams: Option<u8>,
+    /// Online only, so LAN never carries it.
+    #[serde(skip)]
+    pub auto_balance: bool,
 }
 
 impl SkirmishLaunchOptions {
@@ -531,6 +570,8 @@ impl SkirmishLaunchOptions {
             bridges_destroyable: self.bridges_destroyable,
             ally_change_allowed: self.ally_change_allowed,
             bans: self.bans,
+            teams: self.teams,
+            auto_balance: self.auto_balance,
         }
     }
 
@@ -538,6 +579,8 @@ impl SkirmishLaunchOptions {
         self.bridges_destroyable = room.bridges_destroyable;
         self.ally_change_allowed = room.ally_change_allowed;
         self.bans = room.bans;
+        self.teams = room.teams;
+        self.auto_balance = room.auto_balance;
     }
 }
 

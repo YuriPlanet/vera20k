@@ -439,11 +439,16 @@ const BADGES: [(u32, &str, &str); 10] = [
 ];
 
 /// `0x00783B80`: the badge of the high-score points.
-fn badge(points: u32) -> &'static str {
+pub(crate) fn badge(points: u32) -> &'static str {
     BADGES
         .iter()
         .find(|(from, ..)| points >= *from)
         .map_or("private.pcx", |(_, file, _)| file)
+}
+
+/// Every badge's PCX, highest first.
+pub(crate) fn badge_files() -> impl Iterator<Item = &'static str> {
+    BADGES.iter().map(|(_, file, _)| *file)
 }
 
 /// The text key of the badge drawn from `file`.
