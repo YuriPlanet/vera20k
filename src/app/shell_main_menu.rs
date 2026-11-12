@@ -576,10 +576,7 @@ impl App {
             .frontend
             .multiplayer_shell_runtime
             .read_multiplayer_settings(&mut state.process_assets);
-        let main = crate::app::state::process_main_draws(
-            state.match_state.sim_runtime.runtime(),
-            &state.frontend.frontend_main_rng,
-        );
+        let main = crate::app::state::process_main_draws(&state.frontend.frontend_main_rng);
         state
             .match_state
             .session

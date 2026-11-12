@@ -8466,7 +8466,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
         )
     };
     assert_eq!(
-        remote_bridge_route(sim.zone_grid.as_deref().unwrap()),
+        remote_bridge_route(sim.zone_grid.as_ref().unwrap()),
         (true, true)
     );
     let without_bridge_records = crate::sim::pathfinding::zone_map::ZoneGrid::build_with_terrain(
@@ -8575,11 +8575,11 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
     // Check before any later frame repair: native cliff collapse rebuilds
     // connectivity synchronously with the retained global bridge vector.
     assert_eq!(
-        remote_bridge_route(sim.zone_grid.as_deref().unwrap()),
+        remote_bridge_route(sim.zone_grid.as_ref().unwrap()),
         (true, true)
     );
     assert_eq!(
-        sim.zone_grid.as_deref().unwrap().bridge_records(),
+        sim.zone_grid.as_ref().unwrap().bridge_records(),
         bridge_records
     );
     let canonical_path = crate::sim::pathfinding::PathGrid::from_resolved_terrain_with_bridges(
@@ -8660,7 +8660,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
     // history, so this compares exact saved authority without normalizing a
     // live graph merely to make its hash agree with ordinary load.
     let expected_authority = save_codec::serialize(&sim).unwrap();
-    let expected_base = save_codec::serialize(sim.zone_grid.as_deref().unwrap()).unwrap();
+    let expected_base = save_codec::serialize(sim.zone_grid.as_ref().unwrap()).unwrap();
     let bytes = GameSnapshot::save(&sim, 0, 0, "collapsed-dcliff", 0);
     let mut restored = GameSnapshot::load(&bytes)
         .expect("collapsed cliff snapshot")
@@ -8671,7 +8671,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
     assert!(
         restored
             .zone_grid
-            .as_deref()
+            .as_ref()
             .unwrap()
             .is_native_load_pending()
     );
@@ -8680,7 +8680,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
         expected_authority
     );
     assert_eq!(
-        save_codec::serialize(restored.zone_grid.as_deref().unwrap()).unwrap(),
+        save_codec::serialize(restored.zone_grid.as_ref().unwrap()).unwrap(),
         expected_base
     );
     restored.rebuild_caches_after_load(pristine_terrain, Default::default(), &rules);
@@ -8691,7 +8691,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
     assert!(
         !restored
             .zone_grid
-            .as_deref()
+            .as_ref()
             .unwrap()
             .is_native_load_pending()
     );
@@ -8700,14 +8700,14 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
         expected_authority
     );
     assert_eq!(
-        save_codec::serialize(restored.zone_grid.as_deref().unwrap()).unwrap(),
+        save_codec::serialize(restored.zone_grid.as_ref().unwrap()).unwrap(),
         expected_base
     );
     // Native LoadContent67E8CD ->581F50 clears the incremental hierarchy
     // and rebuilds it from this saved base. The physical Anytown restore
     // packet establishes that its history-sensitive live hash may change.
     assert_eq!(
-        remote_bridge_route(restored.zone_grid.as_deref().unwrap()),
+        remote_bridge_route(restored.zone_grid.as_ref().unwrap()),
         (true, true)
     );
     let restored_terrain = restored.resolved_terrain.as_ref().unwrap();

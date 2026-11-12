@@ -49,7 +49,7 @@ pub mod retail_trig;
 pub mod save_codec;
 pub(crate) mod sha1;
 pub mod sha256;
-pub mod shared;
+pub mod synced;
 pub mod single_instance;
 pub mod sparse;
 pub mod version;

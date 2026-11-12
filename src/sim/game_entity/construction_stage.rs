@@ -160,11 +160,17 @@ impl GameEntity {
             .map_or(0, |leaf| leaf.ready_latch())
     }
     pub fn building_construction_control(&self) -> [i32; 3] {
+        self.built_construction_control()
+            .expect("building control requires Structure")
+    }
+
+    /// [`Self::building_construction_control`], `None` for an object with no
+    /// building body.
+    pub fn built_construction_control(&self) -> Option<[i32; 3]> {
         self.building
             .building_body
             .as_ref()
-            .expect("building control requires Structure")
-            .construction_control()
+            .map(|body| body.construction_control())
     }
     pub(crate) fn hash_building_body<H: std::hash::Hasher>(&self, hasher: &mut H) {
         use std::hash::Hash;

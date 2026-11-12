@@ -21,6 +21,19 @@ use crate::ui::sidebar::{
 };
 use crate::util::save_codec;
 
+/// The presentation frame of `sim` as `owner` sees it: the sidebar reads its
+/// cameo answers from the frame's local player.
+fn frame_for(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+) -> crate::app::presentation::frame::PresentationFrame {
+    let mut sim = sim.clone();
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(owner));
+    crate::app::presentation::frame::PresentationFrame::of_test(&sim, rules)
+}
+
 impl SidebarProjectionState {
     /// Strip/projection fixtures below supply their admitted identities;
     /// real Building admission is exercised separately through production.
@@ -121,7 +134,14 @@ fn superweapon_money_cameo_refresh_tracks_wallet_without_membership_rebuild() {
         .economy_mut_for_test()
         .add_credits(1);
     let before = sim.state_hash();
-    projection.apply_cameo_draw_state(&mut view, &sim, &rules, owner, None);
+    projection.apply_cameo_draw_state(
+        &mut view,
+        &sim,
+        &frame_for(&sim, &rules, owner),
+        &rules,
+        owner,
+        None,
+    );
     assert!(view.items[0].enabled);
     assert!(view.items[0].is_ready);
     assert_eq!(sim.state_hash(), before);
@@ -130,7 +150,14 @@ fn superweapon_money_cameo_refresh_tracks_wallet_without_membership_rebuild() {
         .unwrap()
         .economy_mut_for_test()
         .add_credits(-1);
-    projection.apply_cameo_draw_state(&mut view, &sim, &rules, owner, None);
+    projection.apply_cameo_draw_state(
+        &mut view,
+        &sim,
+        &frame_for(&sim, &rules, owner),
+        &rules,
+        owner,
+        None,
+    );
     assert!(!view.items[0].enabled);
     assert!(view.items[0].is_ready);
     assert_eq!(projection.cameo_strips().saved_identities(), order);
@@ -308,7 +335,14 @@ fn retail_ready_buildings_flash_retained_tabs_and_stop_after_cancel() {
         projection.apply_lifecycle_output(&output, Some(owner), crate::rules::ARES_BUILD);
     }
     projection.reconcile_factory_links(&sim, owner);
-    assert_eq!(projection.ready_building_tabs(&sim, owner), [false; 2]);
+    assert_eq!(
+        projection.ready_building_tabs(
+            &sim,
+            &frame_for(&sim, RuleSet::empty_for_test(), owner),
+            owner
+        ),
+        [false; 2]
+    );
     for category in [ProductionCategory::Building, ProductionCategory::Defense] {
         assert!(
             sim.production_mut_for_test()
@@ -316,15 +350,27 @@ fn retail_ready_buildings_flash_retained_tabs_and_stop_after_cancel() {
                 .test_arm_ready(owner, category)
         );
     }
-    let ready = projection.ready_building_tabs(&sim, owner);
+    let ready = projection.ready_building_tabs(
+        &sim,
+        &frame_for(&sim, RuleSet::empty_for_test(), owner),
+        owner,
+    );
     assert_eq!(ready, [true; 2]);
     assert_eq!(
-        SidebarProjectionState::default().ready_building_tabs(&sim, owner),
+        SidebarProjectionState::default().ready_building_tabs(
+            &sim,
+            &frame_for(&sim, RuleSet::empty_for_test(), owner),
+            owner
+        ),
         [false; 2]
     );
     let foreign_owner = sim.intern("Russians");
     assert_eq!(
-        projection.ready_building_tabs(&sim, foreign_owner),
+        projection.ready_building_tabs(
+            &sim,
+            &frame_for(&sim, RuleSet::empty_for_test(), foreign_owner),
+            foreign_owner
+        ),
         [false; 2]
     );
 
@@ -376,7 +422,14 @@ fn retail_ready_buildings_flash_retained_tabs_and_stop_after_cancel() {
             false,
             crate::sim::world::FrameEffects::default()
         ));
-        assert_eq!(projection.ready_building_tabs(&sim, owner), expected);
+        assert_eq!(
+            projection.ready_building_tabs(
+                &sim,
+                &frame_for(&sim, RuleSet::empty_for_test(), owner),
+                owner
+            ),
+            expected
+        );
     }
     gadgets.update_tab_flashes(30, 30, [false; 4]);
     assert!(!gadgets.tab_flashes[0].is_active());
@@ -1100,7 +1153,7 @@ fn building_production_darkens_other_cameos_until_cancelled() {
         projection.apply_lifecycle_output(&output, Some(owner), crate::rules::ARES_BUILD);
     }
     projection.reconcile_factory_links(&sim, owner);
-    projection.refresh_cameo_draw_state(&sim, &rules, owner, None);
+    projection.refresh_cameo_draw_state(&sim, &frame_for(&sim, &rules, owner), &rules, owner, None);
     let items = &projection.view().unwrap().items;
     assert!(
         items
@@ -1121,7 +1174,7 @@ fn building_production_darkens_other_cameos_until_cancelled() {
         "Americans",
         crate::sim::production::ProductionCategory::Building,
     ));
-    projection.refresh_cameo_draw_state(&sim, &rules, owner, None);
+    projection.refresh_cameo_draw_state(&sim, &frame_for(&sim, &rules, owner), &rules, owner, None);
     assert!(
         projection
             .view()
@@ -1164,7 +1217,13 @@ fn building_production_darkens_other_cameos_until_cancelled() {
         for output in &frame.lifecycle_outputs {
             projection.apply_lifecycle_output(output, Some(owner), crate::rules::ARES_BUILD);
         }
-        projection.refresh_cameo_draw_state(&sim, &rules, owner, None);
+        projection.refresh_cameo_draw_state(
+            &sim,
+            &frame_for(&sim, &rules, owner),
+            &rules,
+            owner,
+            None,
+        );
         if projection
             .view()
             .unwrap()
@@ -1201,7 +1260,7 @@ fn building_production_darkens_other_cameos_until_cancelled() {
         projection.apply_lifecycle_output(&output, Some(owner), crate::rules::ARES_BUILD);
     }
     projection.reconcile_factory_links(&sim, owner);
-    projection.refresh_cameo_draw_state(&sim, &rules, owner, None);
+    projection.refresh_cameo_draw_state(&sim, &frame_for(&sim, &rules, owner), &rules, owner, None);
     assert!(
         projection
             .view()
@@ -1330,7 +1389,13 @@ fn busy_strip_draw_matches_native_pending_and_linked_controls() {
         let tab = SidebarTab::all()[control["tab"].as_u64().unwrap() as usize];
         let drawn = view(&sim, &options, &projection, tab, 2400.0);
         projection.replace_view(Some(drawn));
-        projection.refresh_cameo_draw_state(&sim, &rules, owner, None);
+        projection.refresh_cameo_draw_state(
+            &sim,
+            &frame_for(&sim, &rules, owner),
+            &rules,
+            owner,
+            None,
+        );
         for expected in control["entries"].as_array().unwrap() {
             let name = expected["type"].as_str().unwrap();
             let item = projection
@@ -1350,7 +1415,13 @@ fn busy_strip_draw_matches_native_pending_and_linked_controls() {
         if tab == SidebarTab::Building && state != "idle" {
             let drawn = view(&sim, &options, &projection, SidebarTab::Defense, 2400.0);
             projection.replace_view(Some(drawn));
-            projection.refresh_cameo_draw_state(&sim, &rules, owner, None);
+            projection.refresh_cameo_draw_state(
+                &sim,
+                &frame_for(&sim, &rules, owner),
+                &rules,
+                owner,
+                None,
+            );
             assert!(
                 projection
                     .view()
@@ -1398,13 +1469,13 @@ fn a_retained_cameo_darkens_on_the_frame_its_restriction_appears() {
     };
     let drawn = view(&sim, &options, &projection, SidebarTab::Defense, 2400.0);
     projection.replace_view(Some(drawn));
-    projection.refresh_cameo_draw_state(&sim, &rules, owner, None);
+    projection.refresh_cameo_draw_state(&sim, &frame_for(&sim, &rules, owner), &rules, owner, None);
     assert_eq!(drawn_state(&projection, "GACSPH"), (true, false));
 
     // The house builds the one Chronosphere its `BuildLimit=1` allows.
     sim.spawn_object("GACSPH", "Americans", 30, 4, 0, &rules)
         .expect("place the Chronosphere");
-    projection.refresh_cameo_draw_state(&sim, &rules, owner, None);
+    projection.refresh_cameo_draw_state(&sim, &frame_for(&sim, &rules, owner), &rules, owner, None);
     assert_eq!(
         drawn_state(&projection, "GACSPH"),
         (false, true),
@@ -1413,11 +1484,11 @@ fn a_retained_cameo_darkens_on_the_frame_its_restriction_appears() {
 
     let drawn = view(&sim, &options, &projection, SidebarTab::Infantry, 2400.0);
     projection.replace_view(Some(drawn));
-    projection.refresh_cameo_draw_state(&sim, &rules, owner, None);
+    projection.refresh_cameo_draw_state(&sim, &frame_for(&sim, &rules, owner), &rules, owner, None);
     assert_eq!(drawn_state(&projection, "TANY"), (true, false));
     sim.spawn_object("TANY", "Americans", 4, 20, 0, &rules)
         .expect("place Tanya");
-    projection.refresh_cameo_draw_state(&sim, &rules, owner, None);
+    projection.refresh_cameo_draw_state(&sim, &frame_for(&sim, &rules, owner), &rules, owner, None);
     assert_eq!(
         drawn_state(&projection, "TANY"),
         (false, true),
@@ -1549,7 +1620,14 @@ fn superweapon_retained_cameo_keeps_identity_through_hold_and_recovery() {
         // The per-frame receiver must restore the live Super display without
         // rebuilding membership; drain transitions use this same receiver.
         sidebar.items[0].super_weapon_display = None;
-        projection.apply_cameo_draw_state(&mut sidebar, sim, rules, owner, None);
+        projection.apply_cameo_draw_state(
+            &mut sidebar,
+            sim,
+            &frame_for(sim, rules, owner),
+            rules,
+            owner,
+            None,
+        );
         assert_eq!(
             sidebar.items[0].super_weapon_display,
             Some(sw_views[0].display)

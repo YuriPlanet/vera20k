@@ -231,7 +231,7 @@ fn generated_connector_uses_native_slope_piece_tileset() {
         })
         .expect("a generated native ramp end survives later stages into the emitted playable map");
     let main_rng = crate::sim::rng::MainRng::new(0x0401_599d);
-    let mut main = crate::app::state::process_main_draws(None, &main_rng);
+    let mut main = crate::app::state::process_main_draws(&main_rng);
     let mut selector = crate::map::tile_variant_selector::TileVariantSelectorCache::default();
     let resolved = build_random_map_preview_grid(
         &generated.map_file,

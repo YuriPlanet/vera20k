@@ -44,10 +44,10 @@ pub struct Planes {
 struct Grids {
     width: u16,
     height: u16,
-    cells: crate::util::shared::ChunkedVec<u8>,
-    ground_flags: crate::util::shared::ChunkedVec<u8>,
-    shroud_knowledge: crate::util::shared::ChunkedVec<ShroudKnowledge>,
-    map_cell_edge_cache: crate::util::shared::ChunkedVec<MapCellEdgeCache>,
+    cells: Vec<u8>,
+    ground_flags: Vec<u8>,
+    shroud_knowledge: Vec<ShroudKnowledge>,
+    map_cell_edge_cache: Vec<MapCellEdgeCache>,
     dummy_visibility: DummyVisibility,
 }
 

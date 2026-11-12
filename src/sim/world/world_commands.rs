@@ -1348,7 +1348,7 @@ impl Simulation {
     /// path view and the retained base movement-class topology. Zone ID
     /// assignment remains owned by the ordered native repair callback.
     fn refresh_wall_sale_recalc_prefix(
-        world_zone_grid: &mut Option<crate::util::shared::Shared<ZoneGrid>>,
+        world_zone_grid: &mut Option<ZoneGrid>,
         resolved_terrain: &Option<ResolvedTerrainGrid>,
         overlay_grid: &Option<OverlayGrid>,
         tail_grid: &mut Option<PathGrid>,
@@ -1371,7 +1371,7 @@ impl Simulation {
             }
         }
 
-        if let Some(zone_grid) = world_zone_grid.as_deref_mut() {
+        if let Some(zone_grid) = world_zone_grid.as_mut() {
             let _ = zone_grid.refresh_base_cell_attributes_at(terrain, rx, ry);
         }
     }
@@ -1391,7 +1391,7 @@ impl Simulation {
         };
         #[cfg(not(any(test, feature = "test-support")))]
         let _ = sold_cell;
-        let Some(_zone_grid) = self.zone_grid.as_deref_mut() else {
+        let Some(_zone_grid) = self.zone_grid.as_mut() else {
             return;
         };
         #[cfg(any(test, feature = "test-support"))]

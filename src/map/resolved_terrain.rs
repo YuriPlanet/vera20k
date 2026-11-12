@@ -775,14 +775,13 @@ pub struct ResolvedTerrainGrid {
     /// type through the live `CellClass+0x44` identity (`OverlayGrid` for a
     /// real cell, the shared Dummy's own). Bound beside `land_speed_costs`
     /// from the same scenario's registry; empty when no registry was bound.
-    overlay_passability: crate::util::shared::Shared<Vec<OverlayPassability>>,
+    overlay_passability: crate::util::synced::Synced<Vec<OverlayPassability>>,
     /// Pristine TMP dimensions used by Techno draw depth (0x547150/0x704350).
     /// Derived asset data, keyed by tile identity rather than mutable cell:
     /// never serialized or included in simulation hashes. Every drawn object
     /// asks it each frame and nothing walks it, so it takes the lookup hasher.
-    native_tmp_draw_heights: crate::util::shared::Shared<LookupMap<u16, PristineTmpHeader>>,
-    /// Copy-on-write ([`cow_cells::CowCells`]): the presentation frame
-    /// shares them until a real change copies them.
+    native_tmp_draw_heights: crate::util::synced::Synced<LookupMap<u16, PristineTmpHeader>>,
+    /// Synced in chunks into the presentation copy ([`cow_cells::CowCells`]).
     cells: cow_cells::CowCells,
     /// Derived bound on the signed levels in `cells`, always holding 0 (the
     /// level presentation assumes for a cell the grid lacks). Every
@@ -805,16 +804,17 @@ pub struct ResolvedTerrainGrid {
     mutation_epoch: u64,
     /// Production-only membership for native Size-diamond CellClass slots.
     /// `None` keeps synthetic/from_cells grids rectangular for focused tests.
-    native_allocated: Option<crate::util::shared::Shared<Vec<bool>>>,
+    native_allocated: Option<crate::util::synced::Synced<Vec<bool>>>,
     /// Selected TMP subimage-pointer validity, aligned with `cells`. Black
     /// header RGB remains valid and therefore cannot be used as the sentinel.
-    radar_color_valid: crate::util::shared::Shared<Vec<bool>>,
+    radar_color_valid: crate::util::synced::Synced<Vec<bool>>,
     /// Parsed first sibling TMP radar metadata for pristine cells whose
     /// subimage advertises damaged data. `None` means native VariantCount is
     /// below two (or the sibling could not be loaded), so bit 0x2000 wraps to
     /// the pristine chain head instead of inventing a damaged color.
-    damaged_radar_metadata:
-        crate::util::shared::Shared<Vec<Option<Result<RadarColorMetadata, BridgeRecalcCatalogError>>>>,
+    damaged_radar_metadata: crate::util::synced::Synced<
+        Vec<Option<Result<RadarColorMetadata, BridgeRecalcCatalogError>>>,
+    >,
     tube_facts: Vec<TubeFact>,
     /// Exact signed `CellClass+0x116` authority aligned with `cells`.
     native_tube_indices: Vec<NativeTubeCellIndex>,
@@ -1104,6 +1104,86 @@ fn overlay_passability_flags(registry: Option<&OverlayTypeRegistry>) -> Vec<Over
             crushable: flags.crushable,
         })
         .collect()
+}
+
+/// The parts of a [`ResolvedTerrainGrid`] its presentation copy takes only
+/// where they changed ([`ResolvedTerrainGrid::sync_into`]).
+#[derive(Default)]
+struct SyncedTerrain {
+    cells: cow_cells::CowCells,
+    overlay_passability: crate::util::synced::Synced<Vec<OverlayPassability>>,
+    native_tmp_draw_heights: crate::util::synced::Synced<LookupMap<u16, PristineTmpHeader>>,
+    native_allocated: Option<crate::util::synced::Synced<Vec<bool>>>,
+    radar_color_valid: crate::util::synced::Synced<Vec<bool>>,
+    damaged_radar_metadata: crate::util::synced::Synced<
+        Vec<Option<Result<RadarColorMetadata, BridgeRecalcCatalogError>>>,
+    >,
+}
+
+impl ResolvedTerrainGrid {
+    fn take_synced(&mut self) -> SyncedTerrain {
+        SyncedTerrain {
+            cells: std::mem::take(&mut self.cells),
+            overlay_passability: std::mem::take(&mut self.overlay_passability),
+            native_tmp_draw_heights: std::mem::take(&mut self.native_tmp_draw_heights),
+            native_allocated: self.native_allocated.take(),
+            radar_color_valid: std::mem::take(&mut self.radar_color_valid),
+            damaged_radar_metadata: std::mem::take(&mut self.damaged_radar_metadata),
+        }
+    }
+
+    fn put_synced(&mut self, parts: SyncedTerrain) {
+        self.cells = parts.cells;
+        self.overlay_passability = parts.overlay_passability;
+        self.native_tmp_draw_heights = parts.native_tmp_draw_heights;
+        self.native_allocated = parts.native_allocated;
+        self.radar_color_valid = parts.radar_color_valid;
+        self.damaged_radar_metadata = parts.damaged_radar_metadata;
+    }
+
+    /// Bring `mirror`, the presentation copy of the live grid, up to this
+    /// one (docs/sim-thread.md): the cell chunks and per-cell tables written
+    /// since the last sync, and the rest whole. The copy keeps a Dummy of
+    /// its own, a copy of this grid's, which the simulation stamps.
+    pub(crate) fn sync_into(&mut self, mirror: &mut Self) {
+        let mut theirs = mirror.take_synced();
+        let mut mine = self.take_synced();
+        // The copy builds its own allocation caches and keeps its own copy
+        // of the bridge catalog: both are fixed once the terrain exists.
+        let caches = std::mem::take(&mut mirror.allocation_caches);
+        let catalog = mirror.bridge_recalc_catalog.take();
+        *mirror = self.clone();
+        mirror.allocation_caches = caches;
+        // A grid binds its catalog once, before its first sync.
+        mirror.bridge_recalc_catalog = match (catalog, self.bridge_recalc_catalog.as_ref()) {
+            (Some(own), Some(_)) => Some(own),
+            (_, live) => live.map(|live| Arc::new((**live).clone())),
+        };
+        mine.cells.sync_into(&mut theirs.cells);
+        mine.overlay_passability
+            .sync_into(&mut theirs.overlay_passability);
+        mine.native_tmp_draw_heights
+            .sync_into(&mut theirs.native_tmp_draw_heights);
+        theirs.native_allocated = match (mine.native_allocated.as_mut(), theirs.native_allocated) {
+            (Some(own), Some(mut copy)) => {
+                own.sync_into(&mut copy);
+                Some(copy)
+            }
+            (Some(own), None) => {
+                let mut copy = crate::util::synced::Synced::default();
+                own.sync_into(&mut copy);
+                Some(copy)
+            }
+            (None, _) => None,
+        };
+        mine.radar_color_valid
+            .sync_into(&mut theirs.radar_color_valid);
+        mine.damaged_radar_metadata
+            .sync_into(&mut theirs.damaged_radar_metadata);
+        self.put_synced(mine);
+        mirror.put_synced(theirs);
+        mirror.fork_cell_dummy();
+    }
 }
 
 impl ResolvedTerrainGrid {
@@ -1429,7 +1509,7 @@ impl ResolvedTerrainGrid {
 
     /// Immutable cells in the grid's established storage order.
     /// Shared in chunks with presentation frames (see `cow_cells`).
-    pub fn cells(&self) -> &crate::util::shared::ChunkedVec<ResolvedTerrainCell> {
+    pub fn cells(&self) -> &crate::util::synced::ChunkedVec<ResolvedTerrainCell> {
         self.cells.all()
     }
 
@@ -1464,7 +1544,7 @@ impl ResolvedTerrainGrid {
     #[cfg(any(test, feature = "test-support"))]
     pub fn cells_mut_for_test(
         &mut self,
-    ) -> &mut crate::util::shared::ChunkedVec<ResolvedTerrainCell> {
+    ) -> &mut crate::util::synced::ChunkedVec<ResolvedTerrainCell> {
         self.level_span = LevelSpan::FULL;
         self.cells.all_mut()
     }

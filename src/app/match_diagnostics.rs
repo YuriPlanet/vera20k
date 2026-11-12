@@ -77,26 +77,49 @@ impl ActorMotionObservation {
         sim: &crate::sim::world::Simulation,
         entity: &crate::sim::game_entity::GameEntity,
     ) -> Self {
+        Self::of_parts(
+            sim.interner().resolve(entity.type_ref()),
+            entity.locomotor.as_ref(),
+            entity.foot_speed.native_applied_fraction().bits(),
+            crate::sim::movement::motion_query::is_moving(entity),
+            &entity.mission,
+        )
+    }
+
+    /// [`Self::read`] of an object's presentation record.
+    pub(crate) fn of_record(
+        sim: &crate::sim::world::Simulation,
+        entity: &crate::app::presentation::frame::ObjectRecord,
+    ) -> Self {
+        Self::of_parts(
+            sim.interner().resolve(entity.type_ref()),
+            entity.locomotor.as_ref(),
+            entity.applied_fraction.bits(),
+            entity.place.moving,
+            &entity.mission,
+        )
+    }
+
+    fn of_parts(
+        actor_type: &str,
+        locomotor: Option<&crate::sim::movement::locomotor::LocomotorState>,
+        bits: u64,
+        moving: Option<bool>,
+        mission: &crate::sim::mission::MissionCom,
+    ) -> Self {
         use crate::sim::movement::track_process::TrackFamily;
-        let drive = entity.locomotor.as_ref().filter(|loco| {
+        let drive = locomotor.filter(|loco| {
             loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Drive
         });
-        let bits = entity.foot_speed.native_applied_fraction().bits();
         Self {
-            actor_type: sim.interner().resolve(entity.type_ref()).to_owned(),
-            locomotor: entity
-                .locomotor
-                .as_ref()
-                .map(|loco| format!("{:?}", loco.active_kind())),
+            actor_type: actor_type.to_owned(),
+            locomotor: locomotor.map(|loco| format!("{:?}", loco.active_kind())),
             applied_fraction: f64::from_bits(bits),
             applied_fraction_bits: bits,
-            moving: crate::sim::movement::motion_query::is_moving(entity),
+            moving,
             drive_destination: drive.and_then(|loco| loco.track_destination(TrackFamily::Drive)),
             drive_head: drive.and_then(|loco| loco.track_head(TrackFamily::Drive)),
-            mission: (
-                entity.mission.current().raw(),
-                entity.mission.queued().raw(),
-            ),
+            mission: (mission.current().raw(), mission.queued().raw()),
         }
     }
 }
@@ -236,7 +259,7 @@ impl MatchDiagnosticsState {
     pub(crate) fn record_actor_draw(
         &self,
         sim: &crate::sim::world::Simulation,
-        entity: &crate::sim::game_entity::GameEntity,
+        entity: &crate::app::presentation::frame::ObjectRecord,
         frame: u32,
         screen: [f32; 2],
         body: u16,
@@ -248,7 +271,7 @@ impl MatchDiagnosticsState {
                 frame,
                 screen,
                 body,
-                ActorMotionObservation::read(sim, entity),
+                ActorMotionObservation::of_record(sim, entity),
             ));
         }
     }

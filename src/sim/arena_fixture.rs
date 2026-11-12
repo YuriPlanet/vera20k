@@ -176,7 +176,7 @@ fn flat_ground_with_size(sim: &mut Simulation, rules: &RuleSet, size: u16) -> Pa
 /// arena that already holds objects, bridges or navigation builds its own.
 fn install_empty_arena_navigation(
     substrate: &ObjectSubstrate,
-    zone_grid: &mut Option<crate::util::shared::Shared<ZoneGrid>>,
+    zone_grid: &mut Option<ZoneGrid>,
     path_grid: &mut Option<Arc<PathGrid>>,
     resolved_terrain: &Option<ResolvedTerrainGrid>,
     bridge_state: &Option<BridgeRuntimeState>,

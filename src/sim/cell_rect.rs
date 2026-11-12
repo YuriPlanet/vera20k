@@ -227,7 +227,7 @@ impl crate::sim::world::Simulation {
         CellPassabilityMap {
             terrain: self.resolved_terrain.as_ref(),
             overlays: self.overlay_grid.as_ref(),
-            zones: self.zone_grid.as_deref(),
+            zones: self.zone_grid.as_ref(),
             native_cells: None,
             raw_occupation: Some(&self.substrate.raw_cell_occupation),
             listed_occupancy: None,

@@ -55,7 +55,7 @@ pub(crate) fn resolve_debug_speed_type(state: &AppState) -> SpeedType {
     state
         .match_state
         .sim_runtime
-        .runtime()
+        .home_runtime()
         .map(|rt| &rt.simulation)
         .and_then(|sim| {
             sim.entities()
@@ -91,7 +91,7 @@ pub(crate) fn build_terrain_cost_overlay_instances(
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .runtime()
+        .home_runtime()
         .map(|rt| &rt.simulation)
     else {
         log::warn!("Terrain cost overlay: no simulation");
@@ -321,7 +321,7 @@ pub(crate) fn build_path_overlay_instances(
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .runtime()
+        .home_runtime()
         .map(|rt| &rt.simulation)
     else {
         return Vec::new();
@@ -657,7 +657,7 @@ pub(crate) fn build_foot_path_overlay_instances(
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .runtime()
+        .home_runtime()
         .map(|rt| &rt.simulation)
     else {
         return FootPathInstances {

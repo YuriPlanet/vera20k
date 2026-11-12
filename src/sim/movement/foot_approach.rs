@@ -1196,7 +1196,7 @@ impl Simulation {
         let object = self
             .object_type(actor.type_ref(), rules)
             .ok_or("Approach mover type absent")?;
-        let zones = self.zone_grid.as_deref().ok_or("Approach requires zones")?;
+        let zones = self.zone_grid.as_ref().ok_or("Approach requires zones")?;
         let source = coord_cell(self.foot_navigation_coordinate(id)?);
         let zone = zones
             .get_zone_id_native_in_query(
@@ -1267,7 +1267,7 @@ impl Simulation {
         let source = coord_cell(source);
         let zone = self
             .zone_grid
-            .as_deref()
+            .as_ref()
             .ok_or("Approach requires zones")?
             .get_zone_id_native_in_query(
                 cells.terrain(),

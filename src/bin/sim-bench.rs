@@ -65,9 +65,9 @@
 //! --client-timing --frame-profile`. The map's `MaxPlayers=30` lets the
 //! lobby seat them all.
 //!
-//! `--presentation-frame` keeps a copy of the world after every frame, as the
-//! client's simulation thread does for drawing (docs/sim-thread.md), and
-//! counts the copy and the drop of the previous one in the frame's time.
+//! `--presentation-frame` brings the copy of the world without its objects
+//! up to date after every frame, as the client's simulation host does for
+//! drawing (docs/sim-thread.md), and counts it in the frame's time.
 //!
 //! Idle objects sleep as in a real match (`sim::world::idle_sleep`):
 //! `--no-sleep` runs every turn, which must give the same hashes, and
@@ -563,9 +563,13 @@ impl Frames for Bench<'_> {
             .advance_frame_for_tooling(commands, self.tick_ms)
             .map_err(|error| error.to_string())?;
         if self.keep_frame {
-            // As the client's simulation host does: the new copy replaces
-            // the previous tick's, inside the frame's time.
-            self.frame = Some(self.runtime.clone());
+            // As the client's simulation host does when it lends a tick: the
+            // world without its objects, with the local player's fog, replaces
+            // the previous tick's copy, inside the frame's time. The objects'
+            // draw records are the client's and are not counted here.
+            let viewer = self.runtime.simulation.session().current_house();
+            let reuse = self.frame.take().map(|frame| frame.simulation);
+            self.frame = Some(self.runtime.presentation_copy(viewer, reuse));
         }
         Ok(checksum)
     }
@@ -769,8 +773,14 @@ fn main() -> Result<(), String> {
     if !args.serial_scans {
         scenario.runtime.simulation.batch_target_scans();
     }
-    scenario.runtime.simulation.sleep_idle_objects(!args.no_sleep);
-    scenario.runtime.simulation.check_idle_sleep(args.sleep_check);
+    scenario
+        .runtime
+        .simulation
+        .sleep_idle_objects(!args.no_sleep);
+    scenario
+        .runtime
+        .simulation
+        .check_idle_sleep(args.sleep_check);
     scenario
         .runtime
         .simulation

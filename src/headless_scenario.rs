@@ -1065,7 +1065,7 @@ mod retail_construction_tests {
         let terrain = loaded.resolved_terrain().unwrap();
         assert!(terrain.native_fixed_cell_index(26, 101).is_none());
         assert!(terrain.native_fixed_cell_index(101, 96).is_some());
-        let zones = loaded.zone_grid.as_deref_mut().unwrap();
+        let zones = loaded.zone_grid.as_mut().unwrap();
         let width = usize::from(zones.width());
         let target = 96 * width + 101;
         let base = zones.base_topology_mut_for_test();
@@ -1083,7 +1083,7 @@ mod retail_construction_tests {
         assert_eq!(
             loaded
                 .zone_grid
-                .as_deref_mut()
+                .as_mut()
                 .unwrap()
                 .base_topology_mut_for_test()
                 .zone_ids()[target],

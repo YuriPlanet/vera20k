@@ -16,7 +16,7 @@ use crate::rules::ruleset::{RuleSet, TypeHandle};
 use crate::sim::type_handle_table::TypeHandleTable;
 use crate::util::lookup_hash::LookupMap;
 use crate::util::native_string::with_ascii_uppercase;
-use crate::util::shared::Shared;
+use crate::util::synced::Synced;
 
 /// Interned string handle — `Copy`, `Eq`, `Ord`, `Hash`. Zero-cost clones.
 #[derive(
@@ -62,13 +62,13 @@ pub struct StringInterner {
     /// takes the lookup hasher.
     /// Shared copy-on-write with presentation frames (docs/sim-thread.md);
     /// [`Self::intern`] writes only for a new string.
-    to_id: Shared<LookupMap<String, InternedId>>,
+    to_id: Synced<LookupMap<String, InternedId>>,
     /// ID (index) → display string (first-seen casing).
-    to_str: Shared<Vec<String>>,
+    to_str: Synced<Vec<String>>,
     /// Derived: each id's object, projectile and warhead handles in the
     /// bound rules ([`Self::bind_types`], [`Self::cover_types`]). Never
     /// serialized; a load binds again.
-    types: Shared<TypeHandleTable>,
+    types: Synced<TypeHandleTable>,
     /// [`Self::serial`]; never serialized.
     serial: u64,
 }
@@ -82,9 +82,9 @@ impl StringInterner {
     /// Create an empty interner.
     pub fn new() -> Self {
         Self {
-            to_id: Shared::default(),
-            to_str: Shared::default(),
-            types: Shared::default(),
+            to_id: Synced::default(),
+            to_str: Synced::default(),
+            types: Synced::default(),
             serial: next_interner_serial(),
         }
     }
@@ -301,7 +301,7 @@ impl<'de> serde::Deserialize<'de> for StringInterner {
         Ok(StringInterner {
             to_id: to_id.into(),
             to_str: strings.into(),
-            types: Shared::default(),
+            types: Synced::default(),
             serial: next_interner_serial(),
         })
     }
@@ -344,6 +344,23 @@ pub fn test_intern(s: &str) -> InternedId {
 #[doc(hidden)]
 pub fn test_interner() -> StringInterner {
     TEST_INTERNER.with(|cell| cell.borrow().clone())
+}
+
+impl StringInterner {
+    /// Bring `mirror`, the presentation copy of the world's interner, up to
+    /// this one (docs/sim-thread.md).
+    pub(crate) fn sync_into(&mut self, mirror: &mut Self) {
+        let Self {
+            to_id,
+            to_str,
+            types,
+            serial,
+        } = self;
+        to_id.sync_into(&mut mirror.to_id);
+        to_str.sync_into(&mut mirror.to_str);
+        types.sync_into(&mut mirror.types);
+        mirror.serial = *serial;
+    }
 }
 
 #[cfg(test)]

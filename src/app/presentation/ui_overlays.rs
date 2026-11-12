@@ -9,6 +9,7 @@ use crate::app::input::cursor::{
     software_cursor_frame_index,
 };
 use crate::app::input::entity_pick::HoverObject;
+use crate::app::presentation::frame::{ObjectRecord, PresentationFrame};
 use crate::app::presentation::instances::in_view;
 use crate::app::types::{CursorId, HoverTargetKind, SoftwareCursorSequence};
 use crate::assets::csf_file::{CsfArg, format_csf};
@@ -18,10 +19,233 @@ use crate::render::batch::{BatchTexture, SpriteInstance};
 use crate::render::bit_font::BitFont;
 use crate::rules::house_colors::{HouseColorRamps, NO_REMAP};
 use crate::rules::ruleset::RuleSet;
-use crate::sim::components::Position;
+use crate::sim::components::{DriveCoord, Position};
 use crate::ui::main_menu_dialogs::options::HealthBarMode;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
+
+/// What the HUD drawers (status strips, group and building labels, radial
+/// rings, mind-control links, digital displays) read of the world beside
+/// an object, captured into its presentation record (`presentation::frame`)
+/// for the frame's local player by the functions a draw used to call.
+#[derive(Clone, Debug)]
+pub(crate) struct HudFacts {
+    /// `ground_pose::object_get_coords` on the live map.
+    pub(crate) get_coords: DriveCoord,
+    /// `ground_pose::object_location` on the live map.
+    pub(crate) location: DriveCoord,
+    /// A Structure's part.
+    structure: Option<StructureHud>,
+    /// What few objects have; `None` for an object with none of it.
+    more: Option<Box<HudMore>>,
+}
+
+/// What the HUD reads of a Structure.
+#[derive(Clone, Copy, Debug)]
+struct StructureHud {
+    /// `ObjectType::building_sensor_range` with its current weapon
+    /// (`combat_weapon::current_weapon`): its radial ring's range.
+    sensor_range: i32,
+    /// Its stamped foundation, `type_facts.foundation().dimensions_leptons()`.
+    foundation_leptons: [i32; 2],
+    /// `GameEntity::ares_toggled_off`.
+    #[cfg(feature = "ares")]
+    toggled_off: bool,
+    /// `GameEntity::shows_production_to` the local player.
+    #[cfg(feature = "ares")]
+    shows_production_to_observer: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+struct HudMore {
+    /// [`scale_pip_rows`]: its pip-scale rows before the draw's admission.
+    scale_pips: Vec<ScalePipDraw>,
+    /// `MindControlLink::controller`.
+    controller: Option<u64>,
+    /// `Simulation::capture_link_coordinates`, for a capture manager.
+    capture_links: Vec<crate::sim::capture_manager::CaptureLinkCoordinates>,
+    bomb: Option<HudBomb>,
+    /// `sim::digital_display::values_for_display` for the local player, one
+    /// per `RuleSet::digital_display_indices` entry of its type.
+    digital_values: Vec<Option<(i32, i32)>>,
+}
+
+impl HudMore {
+    fn is_empty(&self) -> bool {
+        self.scale_pips.is_empty()
+            && self.controller.is_none()
+            && self.capture_links.is_empty()
+            && self.bomb.is_none()
+            && self.digital_values.is_empty()
+    }
+}
+
+/// What the bomb clock reads of a carrier's bomb.
+#[derive(Clone, Debug)]
+struct HudBomb {
+    /// `Simulation::bomb_seen_by` the local player.
+    seen_by_observer: bool,
+    /// `Simulation::bomb_clock_frame`; stock GetClockFrame reads no frame
+    /// count.
+    #[cfg(not(feature = "ares"))]
+    clock_frame: Option<i32>,
+    /// `Simulation::bomb_clock`, which the Ares frame asks with its image's
+    /// frame count.
+    #[cfg(feature = "ares")]
+    clock: Option<crate::sim::bomb::BombClock>,
+    /// `Simulation::bomb_images`.
+    #[cfg(feature = "ares")]
+    images: Vec<String>,
+}
+
+impl HudBomb {
+    /// `Simulation::bomb_clock_frame` at `binary_frame`, the captured one,
+    /// over an image of `frames` frames.
+    fn clock_frame(&self, binary_frame: i32, frames: usize) -> Option<i32> {
+        #[cfg(feature = "ares")]
+        return self.clock?.frame(binary_frame, frames);
+        #[cfg(not(feature = "ares"))]
+        {
+            let _ = (binary_frame, frames);
+            self.clock_frame
+        }
+    }
+}
+
+impl HudFacts {
+    pub(crate) fn capture(
+        entity: &crate::sim::game_entity::GameEntity,
+        at: &crate::app::presentation::frame::Capture<'_>,
+    ) -> Self {
+        let sim = at.sim;
+        let rules = at.rules();
+        let terrain = sim.resolved_terrain();
+        let object = at.object_type(entity);
+        let id = entity.stable_id();
+        let structure = (entity.category() == EntityCategory::Structure).then(|| StructureHud {
+            sensor_range: object.map_or(0, |object| {
+                object.building_sensor_range(
+                    entity.gap_supercharged(),
+                    crate::sim::combat::combat_weapon::current_weapon(
+                        entity,
+                        object,
+                        sim.entities(),
+                        rules,
+                        sim.interner(),
+                    )
+                    .map(|weapon| weapon.range_leptons),
+                    rules.ares(),
+                )
+            }),
+            foundation_leptons: entity.type_facts.foundation().dimensions_leptons(),
+            #[cfg(feature = "ares")]
+            toggled_off: entity.ares_toggled_off(),
+            #[cfg(feature = "ares")]
+            shows_production_to_observer: at
+                .observer_id
+                .is_some_and(|viewer| entity.shows_production_to(viewer)),
+        });
+        let more = HudMore {
+            scale_pips: scale_pip_rows(sim, entity, rules),
+            controller: entity.mind_control.controller(),
+            capture_links: if entity.capture_manager.is_some() {
+                sim.capture_link_coordinates(id, rules)
+            } else {
+                Vec::new()
+            },
+            bomb: entity.bomb.is_some().then(|| HudBomb {
+                seen_by_observer: at
+                    .observer_id
+                    .is_some_and(|viewer| sim.bomb_seen_by(id, viewer)),
+                #[cfg(not(feature = "ares"))]
+                clock_frame: sim.bomb_clock_frame(id, rules, 0),
+                #[cfg(feature = "ares")]
+                clock: sim.bomb_clock(id, rules),
+                #[cfg(feature = "ares")]
+                images: sim.bomb_images(id, rules).to_vec(),
+            }),
+            #[cfg(feature = "phobos")]
+            digital_values: object
+                .filter(|object| !object.digital_display_disable())
+                .map_or_else(Vec::new, |object| {
+                    rules
+                        .digital_display_indices(object)
+                        .map(|index| {
+                            let display = &rules.digital_display_types().types()[index];
+                            crate::sim::digital_display::values_for_display(
+                                sim,
+                                entity,
+                                object,
+                                rules,
+                                display.info_type,
+                                display.info_index,
+                                at.observer_id,
+                            )
+                        })
+                        .collect()
+                }),
+            #[cfg(not(feature = "phobos"))]
+            digital_values: Vec::new(),
+        };
+        Self {
+            get_coords: crate::sim::movement::ground_pose::object_get_coords(entity, terrain),
+            location: crate::sim::movement::ground_pose::object_location(entity, terrain),
+            structure,
+            more: (!more.is_empty()).then(|| Box::new(more)),
+        }
+    }
+
+    fn more(&self) -> Option<&HudMore> {
+        self.more.as_deref()
+    }
+
+    /// Its pip-scale rows ([`scale_pip_rows`]).
+    pub(crate) fn scale_pips(&self) -> &[ScalePipDraw] {
+        self.more().map_or(&[], |more| &more.scale_pips)
+    }
+
+    /// The object that mind-controls it.
+    pub(crate) fn controller(&self) -> Option<u64> {
+        self.more().and_then(|more| more.controller)
+    }
+
+    /// Its capture manager's link coordinates.
+    pub(crate) fn capture_links(&self) -> &[crate::sim::capture_manager::CaptureLinkCoordinates] {
+        self.more().map_or(&[], |more| &more.capture_links)
+    }
+
+    /// A Structure's radial-ring range; 0 for other objects.
+    pub(crate) fn sensor_range(&self) -> i32 {
+        self.structure.map_or(0, |structure| structure.sensor_range)
+    }
+
+    /// A Structure's stamped foundation in leptons; zero for other objects.
+    fn foundation_leptons(&self) -> [i32; 2] {
+        self.structure
+            .map_or([0, 0], |structure| structure.foundation_leptons)
+    }
+
+    fn bomb(&self) -> Option<&HudBomb> {
+        self.more().and_then(|more| more.bomb.as_ref())
+    }
+
+    /// Its digital displays' values, in `digital_display_indices` order.
+    pub(crate) fn digital_values(&self) -> &[Option<(i32, i32)>] {
+        self.more().map_or(&[], |more| &more.digital_values)
+    }
+
+    #[cfg(feature = "ares")]
+    fn toggled_off(&self) -> bool {
+        self.structure
+            .is_some_and(|structure| structure.toggled_off)
+    }
+
+    #[cfg(feature = "ares")]
+    fn shows_production_to_observer(&self) -> bool {
+        self.structure
+            .is_some_and(|structure| structure.shows_production_to_observer)
+    }
+}
 /// Authentic pip counts for unit health bars.
 const UNIT_PIPS_VEHICLE: u32 = 17; // vehicles + aircraft
 const UNIT_PIPS_INFANTRY: u32 = 8;
@@ -79,7 +303,7 @@ pub(crate) fn status_visibility(selected: bool, hovered: bool) -> (bool, bool) {
 /// scenery, not one of the players' objects.
 fn health_strip_widened(
     sim: &crate::sim::world::Simulation,
-    entity: &crate::sim::game_entity::GameEntity,
+    entity: &ObjectRecord,
     mode: HealthBarMode,
     full: bool,
     player: Option<crate::sim::intern::InternedId>,
@@ -126,14 +350,13 @@ fn health_strip_widened(
 /// fog interpretation here. Native dispatch controls: health_hover.json.
 pub(crate) fn health_bar_drawable(
     sim: &crate::sim::world::Simulation,
-    entity: &crate::sim::game_entity::GameEntity,
+    entity: &ObjectRecord,
     hovered_id: Option<u64>,
     local_owner: Option<&str>,
-    rules: Option<&RuleSet>,
 ) -> bool {
     let player = local_owner.and_then(|owner| sim.interner().get(owner));
     let (_, draw_pips) = health_strip_visibility(sim, entity, hovered_id, player, false);
-    draw_pips && admitted_techno_observer(sim, entity, local_owner, rules).is_some()
+    draw_pips && admitted_techno_observer(sim, entity, local_owner).is_some()
 }
 
 /// DrawExtras' health dispatch: [`status_visibility`], except that a hovered,
@@ -143,7 +366,7 @@ pub(crate) fn health_bar_drawable(
 /// hovered, so VERA's modes cannot give that Mirage away either.
 fn health_strip_visibility(
     sim: &crate::sim::world::Simulation,
-    entity: &crate::sim::game_entity::GameEntity,
+    entity: &ObjectRecord,
     hovered_id: Option<u64>,
     player: Option<crate::sim::intern::InternedId>,
     widened: bool,
@@ -155,26 +378,16 @@ fn health_strip_visibility(
     #[cfg(feature = "ares")]
     let selected = selected
         || (entity.category() != crate::map::entities::EntityCategory::Aircraft
-            && crate::sim::movement::air_movement::queried_flight_height(
-                entity,
-                sim.resolved_terrain()
-                    .map(crate::map::resolved_terrain::NativeCellQuery::isolated)
-                    .as_ref(),
-            ) <= -20
+            && entity.place.flight_height <= -20
             && player.is_some_and(|player| {
                 sim.fog()
                     .has_sensor_for_house(player, entity.position.rx(), entity.position.ry())
             }));
+    #[cfg(not(feature = "ares"))]
+    let _ = sim;
+    // `player` is the frame's local player, whom `seen` answers for.
     let hovered = (widened || hovered_id == Some(entity.stable_id()))
-        && (selected
-            || !player.is_some_and(|player| {
-                entity.disguise_hides_house_from(
-                    player,
-                    Some(sim.fog()),
-                    Some(sim.house_alliances()),
-                    sim.interner(),
-                )
-            }));
+        && (selected || !(player.is_some() && entity.seen.disguise_hides_house));
     status_visibility(selected, hovered)
 }
 
@@ -239,19 +452,13 @@ pub(crate) fn foot_select_bracket(sx: f32, sy: f32, infantry: bool) -> [f32; 4] 
 /// Return the already derived observer facts for native Extras queries.
 fn admitted_techno_observer(
     sim: &crate::sim::world::Simulation,
-    entity: &crate::sim::game_entity::GameEntity,
+    entity: &ObjectRecord,
     local_owner: Option<&str>,
-    rules: Option<&RuleSet>,
 ) -> Option<crate::render::draw_state::ObserverDrawContext> {
     sim.display_layers().layer_of(entity.stable_id())?;
     let local_owner_id = local_owner.and_then(|owner| sim.interner().get(owner));
-    let observer = crate::app::presentation::instances::observer_draw_context(
-        sim,
-        entity,
-        local_owner,
-        local_owner_id,
-        rules,
-    );
+    // `observer_draw_context` for the frame's local player, `local_owner`.
+    let observer = entity.seen.observer;
     crate::app::presentation::instances::tactical_entity_admission(
         crate::app::presentation::instances::TacticalEntityPurpose::Drawing,
         entity,
@@ -282,7 +489,7 @@ fn admitted_techno_observer(
 /// Source: procedural_drawing_oracle/absorber_pips.
 fn entity_status_pips_drawable(
     sim: &crate::sim::world::Simulation,
-    entity: &crate::sim::game_entity::GameEntity,
+    entity: &ObjectRecord,
     hovered_entity_id: Option<u64>,
     current_house_id: Option<crate::sim::intern::InternedId>,
     rules: Option<&RuleSet>,
@@ -295,7 +502,6 @@ fn entity_status_pips_drawable(
         entity,
         hovered_entity_id,
         Some(sim.interner().resolve(current_house_id)),
-        rules,
     ) {
         return false;
     }
@@ -332,6 +538,7 @@ fn entity_status_pips_drawable(
 /// policy. Stale stable IDs and concealed bodies naturally produce no label.
 pub(crate) fn control_group_status_labels(
     sim: &crate::sim::world::Simulation,
+    frame: &PresentationFrame,
     control_groups: &[Vec<u64>],
     hovered_entity_id: Option<u64>,
     current_house_id: Option<crate::sim::intern::InternedId>,
@@ -357,7 +564,7 @@ pub(crate) fn control_group_status_labels(
         .ordered_ids()
         .filter_map(|&stable_id| {
             let slot = *slot_by_id.get(&stable_id)?;
-            let entity = sim.entities().get(stable_id)?;
+            let entity = frame.object(stable_id)?;
             if entity.sinking.is_active()
                 || entity.passenger_role.is_inside_transport()
                 || !entity_status_pips_drawable(
@@ -424,7 +631,7 @@ impl BuildingStatusTextInstances {
 
 fn status_text_tint(
     sim: &crate::sim::world::Simulation,
-    entity: &crate::sim::game_entity::GameEntity,
+    entity: &ObjectRecord,
     house_color_map: &HouseColorMap,
     house_color_ramps: &HouseColorRamps,
 ) -> [f32; 3] {
@@ -512,6 +719,7 @@ fn status_text_instances(
 /// selection-bracket delta is not part of the native group-number tail.
 pub(crate) fn build_control_group_status_render_instances(
     sim: &crate::sim::world::Simulation,
+    frame: &PresentationFrame,
     control_groups: &[Vec<u64>],
     hovered_entity_id: Option<u64>,
     current_house_id: Option<crate::sim::intern::InternedId>,
@@ -527,6 +735,7 @@ pub(crate) fn build_control_group_status_render_instances(
 ) -> BTreeMap<u64, StatusTextOverlayInstances> {
     let labels = control_group_status_labels(
         sim,
+        frame,
         control_groups,
         hovered_entity_id,
         current_house_id,
@@ -535,13 +744,12 @@ pub(crate) fn build_control_group_status_render_instances(
     );
     let mut parents = BTreeMap::new();
     for (stable_id, digit) in labels {
-        let Some(entity) = sim.entities().get(stable_id) else {
+        let Some(entity) = frame.object(stable_id) else {
             continue;
         };
         // Tactical6D9676/6D9691 uses GetCoords and integer XYZ projection,
         // shared with this parent's health/rank producer.
-        let coord =
-            crate::sim::movement::ground_pose::object_get_coords(entity, sim.resolved_terrain());
+        let coord = entity.hud.get_coords;
         let (mut screen_x, mut screen_y) =
             crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
         let building = entity.category() == EntityCategory::Structure;
@@ -558,7 +766,7 @@ pub(crate) fn build_control_group_status_render_instances(
                             [width, height]
                         })
                 })
-                .unwrap_or_else(|| entity.type_facts.foundation().dimensions_leptons());
+                .unwrap_or_else(|| entity.hud.foundation_leptons());
             let (foundation_x, foundation_y) = crate::util::lepton::project_absolute_lepton_xy(
                 -(width - width / 2),
                 height - height / 2,
@@ -615,45 +823,22 @@ pub(crate) fn build_control_group_status_render_instances(
     parents
 }
 
-/// The control groups a draw's digits read. [`control_group_status_labels`]
-/// draws a digit only on an object the health strip admits, and without Ares
-/// that is a selected or hovered one ([`health_strip_visibility`] unwidened:
-/// `DrawHealthBar` `0x006F64A0` runs for those alone). So while `selected`
-/// lists exactly the selected objects (`selection_exact`: the frame's
-/// [`crate::app::input::dispatch::selected_in_order`] with no input pending),
-/// only they and the hovered object are projected, not every object
-/// (VERA-only; the same digits). Ares's submerged arm admits others, so an
-/// Ares build projects every object.
-pub(crate) fn label_control_groups(
-    sim: &crate::sim::world::Simulation,
-    selected: &[u64],
-    selection_exact: bool,
-    hovered_entity_id: Option<u64>,
-) -> [Vec<u64>; 10] {
-    if cfg!(feature = "ares") || !selection_exact {
-        return sim.projected_control_groups();
-    }
-    let hovered = hovered_entity_id.filter(|id| !selected.contains(id));
-    sim.projected_control_groups_of(selected.iter().copied().chain(hovered))
-}
-
 /// AppState adapter for the production tactical UI build. `hovered_entity_id`
-/// is this draw's [`health_hover_target`] for `local_owner`, and `selected`
-/// the draw's selection in order.
+/// is this draw's [`health_hover_target`] for `local_owner`.
 pub(crate) fn build_control_group_status_instances(
     state: &AppState,
     local_owner: Option<&str>,
     hovered_entity_id: Option<u64>,
-    selected: &[u64],
     sw: f32,
     sh: f32,
 ) -> BTreeMap<u64, StatusTextOverlayInstances> {
-    let (Some(sim), Some(rules)) = (
+    let (Some(sim), Some(frame), Some(rules)) = (
         state
             .match_state
             .sim_runtime
             .presentation()
             .map(|runtime| &runtime.simulation),
+        state.match_state.sim_runtime.frame(),
         state.rules(),
     ) else {
         return BTreeMap::new();
@@ -670,12 +855,8 @@ pub(crate) fn build_control_group_status_instances(
     ];
     build_control_group_status_render_instances(
         sim,
-        &label_control_groups(
-            sim,
-            selected,
-            !state.match_state.input.selection_order_pending,
-            hovered_entity_id,
-        ),
+        frame,
+        &frame.scene.control_groups,
         hovered_entity_id,
         local_owner_id,
         state.match_state.sandbox_full_visibility,
@@ -702,6 +883,7 @@ pub(crate) fn build_control_group_status_instances(
 /// primary_factory_status.json under tools/procedural_drawing_oracle.
 pub(crate) fn build_building_status_render_instances(
     sim: &crate::sim::world::Simulation,
+    frame: &PresentationFrame,
     body_opportunities: &BTreeSet<u64>,
     current_house_id: crate::sim::intern::InternedId,
     house_color_map: &HouseColorMap,
@@ -715,7 +897,12 @@ pub(crate) fn build_building_status_render_instances(
 ) -> BuildingStatusTextInstances {
     let mut labels = BuildingStatusTextInstances::default();
     let current_house = sim.interner().resolve(current_house_id);
-    for entity in sim.entities().values_of_category(EntityCategory::Structure) {
+    // `current_house_id` is the frame's local player, whom its records answer
+    // for.
+    let structures = frame
+        .objects()
+        .filter(|entity| entity.category() == EntityCategory::Structure);
+    for entity in structures {
         //6D944D/9458 tests Mark+74 and body-opportunity+99.43E7C7
         //requires selected, including when the object is also hovered.
         if !body_opportunities.contains(&entity.stable_id())
@@ -756,7 +943,7 @@ pub(crate) fn build_building_status_render_instances(
         #[cfg(feature = "ares")]
         let text = {
             let revealed =
-                object.spy_reveals_production() && entity.shows_production_to(current_house_id);
+                object.spy_reveals_production() && entity.hud.shows_production_to_observer();
             if !(allied || revealed) {
                 continue;
             }
@@ -772,8 +959,7 @@ pub(crate) fn build_building_status_render_instances(
                 continue;
             }
         };
-        let location =
-            crate::sim::movement::ground_pose::object_location(entity, sim.resolved_terrain());
+        let location = entity.hud.location;
         //6D9472 calls virtual+AC=459EF0, not GetCoords447AC0. Neither
         //foundation half-dimensions nor the group tail's offsets apply.
         let (render, _) =
@@ -879,6 +1065,9 @@ pub(crate) fn build_building_status_instances(
         return BuildingStatusTextInstances::default();
     };
     let sim = &runtime.simulation;
+    let Some(frame) = state.match_state.sim_runtime.frame() else {
+        return BuildingStatusTextInstances::default();
+    };
     let Some(current_house) = preferred_local_owner_name(state)
         .as_deref()
         .and_then(|name| sim.interner().get(name))
@@ -889,6 +1078,7 @@ pub(crate) fn build_building_status_instances(
     let zoom = state.match_state.input.zoom_level;
     build_building_status_render_instances(
         sim,
+        frame,
         body_opportunities,
         current_house,
         &state.match_state.match_presentation.house_color_map,
@@ -1125,7 +1315,7 @@ fn shield_pip_frame(
 #[cfg(feature = "phobos")]
 #[allow(clippy::too_many_arguments)]
 fn shield_bar_instances(
-    entity: &crate::sim::game_entity::GameEntity,
+    entity: &ObjectRecord,
     rules: &RuleSet,
     shape: &crate::render::selection_overlay::CenteredShapeStrip,
     pip_board: Option<&crate::render::selection_overlay::CenteredShapeStrip>,
@@ -1225,7 +1415,7 @@ fn shield_bar_instances(
 #[allow(clippy::too_many_arguments)]
 fn phobos_insignia_draw<'a>(
     sim: &crate::sim::world::Simulation,
-    entity: &crate::sim::game_entity::GameEntity,
+    entity: &ObjectRecord,
     rules: &RuleSet,
     overlay: &'a crate::render::selection_overlay::SelectionOverlay,
     observer_id: Option<crate::sim::intern::InternedId>,
@@ -1349,7 +1539,7 @@ fn phobos_insignia_draw<'a>(
         EntityCategory::Structure => {
             if let Some(anchor) = globals.buildings_anchor {
                 (x, y) = crate::app::presentation::digital_display::building_bracket(
-                    sim, entity, object, rules, anchor,
+                    entity, object, rules, anchor,
                 );
             }
             x += globals.adjust_buildings[0] as f32;
@@ -1374,12 +1564,11 @@ fn phobos_insignia_draw<'a>(
 /// hook's power-off marker is [`power_off_marker_admitted`].
 fn repair_wrench_admitted(
     sim: &crate::sim::world::Simulation,
-    entity: &crate::sim::game_entity::GameEntity,
+    entity: &ObjectRecord,
     rules: Option<&RuleSet>,
     local_owner: Option<&str>,
 ) -> bool {
-    let repairing =
-        entity.category() == EntityCategory::Structure && entity.building.repairing.is_on();
+    let repairing = entity.category() == EntityCategory::Structure && entity.repairing.is_on();
     #[cfg(feature = "ares")]
     let repairing = repairing
         && !entity.is_warped_out()
@@ -1403,13 +1592,10 @@ fn repair_wrench_admitted(
 /// `0x452393` and GoOnline `0x452287`), shown when its owner is the player's
 /// (HouseClass::IsHumanPlayer `0x50B6F0`) or the player is an observer.
 #[cfg(feature = "ares")]
-fn power_off_marker_admitted(
-    sim: &crate::sim::world::Simulation,
-    entity: &crate::sim::game_entity::GameEntity,
-) -> bool {
+fn power_off_marker_admitted(sim: &crate::sim::world::Simulation, entity: &ObjectRecord) -> bool {
     let session = sim.session();
     entity.category() == EntityCategory::Structure
-        && entity.ares_toggled_off()
+        && entity.hud.toggled_off()
         && (sim.house_is_human_player(entity.owner())
             || session
                 .current_house()
@@ -1448,7 +1634,7 @@ fn ares_status_marker_frame(
 /// No RNG, timer, detach or retained presentation state changes here.
 pub(crate) fn techno_extras_for_parent(
     sim: &crate::sim::world::Simulation,
-    entity: &crate::sim::game_entity::GameEntity,
+    entity: &ObjectRecord,
     rules: Option<&RuleSet>,
     overlay: &crate::render::selection_overlay::SelectionOverlay,
     hovered_id: Option<u64>,
@@ -1465,11 +1651,11 @@ pub(crate) fn techno_extras_for_parent(
     //6F519B..524E clock and6F5253..5345 wrench precede observer/selection
     // admission. Both use the existing per-parent MOUSEPAL N1 material; the
     // clock's886FA0 clip is the tactical viewport, not a sprite's body bounds.
-    let bomb_visible = entity.bomb.is_some()
-        && (viewport.ignore_visibility
-            || local_owner
-                .and_then(|name| sim.interner().get(name))
-                .is_some_and(|viewer| sim.bomb_seen_by(entity.stable_id(), viewer)));
+    // `local_owner` is the frame's local player, whom `hud` answers for.
+    let bomb = entity.hud.bomb();
+    let bomb_visible = bomb.is_some_and(|bomb| {
+        viewport.ignore_visibility || (local_owner.is_some() && bomb.seen_by_observer)
+    });
     let repairing = repair_wrench_admitted(sim, entity, rules, local_owner);
     // Ares 10049FE0 replaces the wrench block (hook 0x6F526C, resuming at
     // 0x6F5347): each marker needs its loaded SHP, and the power-off marker
@@ -1499,11 +1685,14 @@ pub(crate) fn techno_extras_for_parent(
         // mobile5F65A0 uses its existing GetCoords owner. Tactical6D2140
         // projects integer XYZ, independently of the status caller's point.
         let render = if entity.category() == EntityCategory::Structure {
-            let location =
-                crate::sim::movement::ground_pose::object_location(entity, sim.resolved_terrain());
-            crate::sim::movement::ground_pose::building_render_order_parts(location, false, false).0
+            crate::sim::movement::ground_pose::building_render_order_parts(
+                entity.hud.location,
+                false,
+                false,
+            )
+            .0
         } else {
-            crate::sim::movement::ground_pose::object_get_coords(entity, sim.resolved_terrain())
+            entity.hud.get_coords
         };
         let point = crate::util::lepton::absolute_leptons_to_screen(render.x, render.y, render.z);
         let prefix = |shape: &crate::render::selection_overlay::CenteredShapeStrip,
@@ -1530,13 +1719,14 @@ pub(crate) fn techno_extras_for_parent(
         // `IvanBomb.Image` in place of BOMBCURS.SHP, and hook 0x438A00
         // (100568C0) counts the frame over that image.
         #[cfg(feature = "ares")]
-        let images = rules.map_or(&[][..], |rules| sim.bomb_images(entity.stable_id(), rules));
+        let images = bomb.map_or(&[][..], |bomb| &bomb.images[..]);
         #[cfg(not(feature = "ares"))]
         let images: &[String] = &[];
         if bomb_visible
-            && let (Some(rules), Some(shape)) = (rules, overlay.bomb_image(images))
+            && rules.is_some()
+            && let (Some(bomb), Some(shape)) = (bomb, overlay.bomb_image(images))
             && let Some(frame) =
-                sim.bomb_clock_frame(entity.stable_id(), rules, shape.frame_count())
+                bomb.clock_frame(sim.session().binary_frame() as i32, shape.frame_count())
             && let Ok(frame) = usize::try_from(frame)
         {
             strip.bomb_clock = prefix(shape, frame, 0.0);
@@ -1569,13 +1759,14 @@ pub(crate) fn techno_extras_for_parent(
             strip.power_off = prefix(shape, frame, if repairing { 18.0 } else { 0.0 });
         }
     }
-    let Some(observer) = admitted_techno_observer(sim, entity, local_owner, rules) else {
+    let Some(observer) = admitted_techno_observer(sim, entity, local_owner) else {
         return strip;
     };
+    #[cfg(not(feature = "phobos"))]
+    let _ = observer;
     // Tactical6D9676 dispatches Object5F65A0/Building447AC0 GetCoords;
     //6D9691..9726 projects integer XYZ before subtracting the camera.
-    let coord =
-        crate::sim::movement::ground_pose::object_get_coords(entity, sim.resolved_terrain());
+    let coord = entity.hud.get_coords;
     let (sx, sy) = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
     let object = rules.and_then(|rules| sim.interner().object_type(entity.type_ref(), rules));
     let instance = |shape: &crate::render::selection_overlay::CenteredShapeStrip,
@@ -1591,28 +1782,10 @@ pub(crate) fn techno_extras_for_parent(
     //6F534E..5382: +C8's canonical observer-disguise query is distinct
     // from drawing disguise art; +68 uses VisualCharacter's screen(0,NULL)
     // query. The first screen argument means graphical client, not force_sensor.
+    // Both are captured for the frame's local player, `local_owner`.
     let observer_id = local_owner.and_then(|owner| sim.interner().get(owner));
-    let disguised = observer_id.is_some_and(|viewer| {
-        entity.is_disguised_to(
-            viewer,
-            Some(sim.fog()),
-            Some(sim.house_alliances()),
-            sim.interner(),
-        )
-    });
-    let character = entity.visual_character(
-        observer.cloaking_stages,
-        observer.invisible,
-        entity.discovery.owned_by_current_house(),
-        crate::sim::cloak_disguise::VisualCharacterQuery::screen(
-            true,
-            observer.observer_present,
-            observer.detects_cloak,
-            observer.owner_is_mutually_allied,
-            observer.is_campaign,
-            false,
-        ),
-    );
+    let disguised = observer_id.is_some() && entity.seen.disguised_to_observer;
+    let character = entity.seen.visual_character;
     #[cfg(not(feature = "phobos"))]
     if !disguised && character != 5 {
         use crate::sim::combat::veterancy::{raw_is_elite, raw_is_negative, raw_is_veteran};
@@ -2013,20 +2186,20 @@ fn ares_passenger_pip_frames(
 }
 
 /// Building6F682C/mobile6F6A58 ->709A90 after shared health/tail admission.
-/// This one owner emits spawn, garrison and passenger/PipScale rows.
+/// The rows are [`scale_pip_rows`], captured with the record.
 /// Rendering only reads retained state; it never advances timers or RNG.
-pub(crate) fn scale_pip_draws(
+pub(crate) fn scale_pip_draws<'a>(
     sim: &crate::sim::world::Simulation,
-    entity: &crate::sim::game_entity::GameEntity,
+    entity: &'a ObjectRecord,
     hovered_id: Option<u64>,
     local_owner: Option<&str>,
     rules: &RuleSet,
-) -> Vec<ScalePipDraw> {
+) -> &'a [ScalePipDraw] {
     // Ares6F6A58 ->1004A260 skips mobile scale pips to6F6AB6. The health
     // strip itself still draws; it has a separate admission path.
     #[cfg(feature = "ares")]
     if entity.driver_killed() {
-        return Vec::new();
+        return &[];
     }
     if entity.sinking.is_active()
         || entity.passenger_role.is_inside_transport()
@@ -2038,8 +2211,20 @@ pub(crate) fn scale_pip_draws(
             Some(rules),
         )
     {
-        return Vec::new();
+        return &[];
     }
+    entity.hud.scale_pips()
+}
+
+/// The 709A90 spawn, garrison and passenger/PipScale rows of `entity`, which
+/// [`scale_pip_draws`] admits. They read the live world (its passengers,
+/// mind-control count, pip fill), so the record captures them
+/// ([`HudFacts::capture`]).
+fn scale_pip_rows(
+    sim: &crate::sim::world::Simulation,
+    entity: &crate::sim::game_entity::GameEntity,
+    rules: &RuleSet,
+) -> Vec<ScalePipDraw> {
     let Some(object) = sim.interner().object_type(entity.type_ref(), rules) else {
         return Vec::new();
     };
@@ -2421,48 +2606,6 @@ mod mind_control_pip_tests;
 
 #[cfg(test)]
 mod tests {
-    /// A draw's group digits project the selected and hovered objects alone
-    /// while the frame's selection is exact, and every object while input is
-    /// pending.
-    #[cfg(not(feature = "ares"))]
-    #[test]
-    fn group_digits_project_only_the_selected_and_hovered_objects() {
-        use crate::map::entities::EntityCategory;
-        use crate::sim::combat::Health;
-        use crate::sim::game_entity::GameEntity;
-
-        let mut sim = crate::sim::world::Simulation::new();
-        let owner = sim.intern("Americans");
-        let tank = sim.intern("MTNK");
-        for id in 1..=3 {
-            let mut entity = GameEntity::new_at_frame_zero_for_test(
-                id,
-                10 + id as u16,
-                10,
-                0,
-                0,
-                owner,
-                Health::new(100),
-                tank,
-                EntityCategory::Unit,
-                0,
-                5,
-                false,
-            );
-            entity.set_object_group_for_test(0);
-            sim.entities_mut_for_test().insert(entity);
-        }
-        // Tank 1 is selected, tank 2 hovered and tank 3 neither.
-        assert_eq!(
-            super::label_control_groups(&sim, &[1], true, Some(2))[1],
-            [1, 2]
-        );
-        assert_eq!(
-            super::label_control_groups(&sim, &[1], false, Some(2))[1],
-            [1, 2, 3]
-        );
-    }
-
     /// Ares TechnoClass_DrawExtras_PowerOff (10049FE0, hook 0x6F526C): the
     /// owner sees its repairing building's wrench, an enemy only with
     /// `EnemyWrench=yes` (the default).
@@ -2483,9 +2626,10 @@ mod tests {
                 sim.entities_mut_for_test().get_mut(id).unwrap(),
                 true,
             );
-            let entity = sim.entities().get(id).unwrap();
+            let record =
+                crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &rules, id);
             ["Americans", "Russians"].map(|viewer| {
-                super::repair_wrench_admitted(&sim, entity, Some(&rules), Some(viewer))
+                super::repair_wrench_admitted(&sim, &record, Some(&rules), Some(viewer))
             })
         };
         assert_eq!(shown(""), [true, true]);
@@ -2525,8 +2669,12 @@ mod tests {
         toggle("Americans", own, false);
         toggle("Russians", theirs, false);
         let shown = |sim: &crate::sim::world::Simulation| {
-            [own, theirs]
-                .map(|id| super::power_off_marker_admitted(sim, sim.entities().get(id).unwrap()))
+            [own, theirs].map(|id| {
+                super::power_off_marker_admitted(
+                    sim,
+                    &crate::app::presentation::frame::ObjectRecord::of_test_sim(sim, &rules, id),
+                )
+            })
         };
         assert_eq!(shown(&sim), [true, false]);
         assert!(sim.apply_command(
@@ -2610,6 +2758,12 @@ mod tests {
     }
 
     use super::*;
+    use crate::app::presentation::frame::PresentationFrame;
+
+    /// The drawn snapshot of `sim`, whose local player is its current house.
+    fn frame_of(sim: &crate::sim::world::Simulation) -> PresentationFrame {
+        PresentationFrame::of_test(sim, crate::rules::ruleset::RuleSet::empty_for_test())
+    }
 
     #[test]
     fn status_tail_asks_owner_alliance_and_shares_selected_hover_body_admission() {
@@ -2636,10 +2790,12 @@ mod tests {
         actor.selection.set_selected_for_test(true);
         sim.entities_mut_for_test().insert(actor);
         sim.resubmit_entity_display_for_test(1);
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(viewer));
         let admitted = |sim: &Simulation, hover| {
             entity_status_pips_drawable(
                 sim,
-                sim.entities().get(1).unwrap(),
+                frame_of(sim).object(1).unwrap(),
                 hover,
                 Some(viewer),
                 None,
@@ -2648,10 +2804,9 @@ mod tests {
         assert!(
             health_bar_drawable(
                 &sim,
-                sim.entities().get(1).unwrap(),
+                frame_of(&sim).object(1).unwrap(),
                 None,
                 Some("Viewer"),
-                None
             ),
             "enemy health strip has independent admission"
         );
@@ -2759,15 +2914,16 @@ mod tests {
                 );
                 sim.entities_mut_for_test().insert(entity);
                 sim.resubmit_entity_display_for_test(1);
+                sim.session_mut_for_test()
+                    .set_current_house_for_test(Some(player));
                 let hovered = input["hovered"].as_bool().unwrap().then_some(1);
                 let expected = row["draw_health_bar"].as_bool().unwrap();
                 assert_eq!(
                     health_bar_drawable(
                         &sim,
-                        sim.entities().get(1).unwrap(),
+                        frame_of(&sim).object(1).unwrap(),
                         hovered,
                         Some("Player"),
-                        None
                     ),
                     expected,
                     "{} {category:?}",
@@ -2783,10 +2939,9 @@ mod tests {
                         .set_in_limbo_for_test(true);
                     assert!(!health_bar_drawable(
                         &sim,
-                        sim.entities().get(1).unwrap(),
+                        frame_of(&sim).object(1).unwrap(),
                         hovered,
                         Some("Player"),
-                        None
                     ));
                 }
                 compared += 1;
@@ -2808,7 +2963,9 @@ mod tests {
         use crate::sim::{combat::Health, game_entity::GameEntity, world::Simulation};
         let drawable = |category, allied: bool, selected: bool| {
             let mut sim = Simulation::new();
-            sim.intern("Player");
+            let player = sim.intern("Player");
+            sim.session_mut_for_test()
+                .set_current_house_for_test(Some(player));
             let owner = sim.intern("Enemy");
             if allied {
                 for (from, to) in [("PLAYER", "ENEMY"), ("ENEMY", "PLAYER")] {
@@ -2842,10 +2999,9 @@ mod tests {
             sim.resubmit_entity_display_for_test(1);
             health_bar_drawable(
                 &sim,
-                sim.entities().get(1).unwrap(),
+                frame_of(&sim).object(1).unwrap(),
                 Some(1),
                 Some("Player"),
-                None,
             )
         };
         assert!(!drawable(EntityCategory::Unit, false, false));
@@ -2884,7 +3040,10 @@ mod tests {
             );
             entity.position.set_exact_z_leptons_for_test(Some(depth));
             sim.entities_mut_for_test().insert(entity);
-            let entity = sim.entities().get(1).unwrap();
+            sim.session_mut_for_test()
+                .set_current_house_for_test(Some(player));
+            let frame = frame_of(&sim);
+            let entity = frame.object(1).unwrap();
             health_strip_visibility(&sim, entity, None, Some(player), false).1
         };
         assert!(draws(-20, true));
@@ -2932,7 +3091,10 @@ mod tests {
         );
         entity.lifecycle.set_in_limbo_for_test(false);
         sim.entities_mut_for_test().insert(entity);
-        let entity = sim.entities().get(1).unwrap();
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(viewer));
+        let frame = frame_of(&sim);
+        let entity = frame.object(1).unwrap();
         let widened = health_strip_widened(&sim, entity, Always, true, Some(viewer), false);
         health_strip_visibility(&sim, entity, None, Some(viewer), widened).1
     }
@@ -2993,7 +3155,10 @@ mod tests {
                 entity.disguise = Some(disguise);
             }
             sim.entities_mut_for_test().insert(entity);
-            let entity = sim.entities().get(1).unwrap();
+            sim.session_mut_for_test()
+                .set_current_house_for_test(Some(player));
+            let frame = frame_of(&sim);
+            let entity = frame.object(1).unwrap();
             let full = entity.health.is_full(100);
             let widened = health_strip_widened(&sim, entity, mode, full, Some(player), false);
             health_strip_visibility(&sim, entity, hovered.then_some(1), Some(player), widened).1
@@ -3056,20 +3221,15 @@ mod tests {
             sim.fog()
                 .is_cell_revealed(viewer, target.position.rx(), target.position.ry())
         );
+        let frame = PresentationFrame::of_test(sim, rules);
+        let record = frame.object(id).unwrap();
         assert!(health_bar_drawable(
             sim,
-            target,
+            record,
             Some(hover.stable_id),
             Some(&viewer_name),
-            Some(rules)
         ));
-        assert!(!health_bar_drawable(
-            sim,
-            target,
-            None,
-            Some(&viewer_name),
-            Some(rules)
-        ));
+        assert!(!health_bar_drawable(sim, record, None, Some(&viewer_name),));
     }
 
     /// The clause the old damage gate broke: an unselected, unhovered object

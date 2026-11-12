@@ -19,10 +19,17 @@ fn frames(sim: &Simulation, rules: &RuleSet, reactor: u64, hover: Option<u64>) -
             .cargo()
             .map(|cargo| (cargo.passengers().to_vec(), cargo.total_size())),
     );
-    let result = super::ui_overlays::scale_pip_draws(sim, entity, hover, Some(OWNER), rules)
-        .into_iter()
-        .map(|pip| pip.frame)
-        .collect();
+    let frame = crate::app::presentation::frame::PresentationFrame::of_test(sim, rules);
+    let result = super::ui_overlays::scale_pip_draws(
+        sim,
+        frame.object(reactor).unwrap(),
+        hover,
+        Some(OWNER),
+        rules,
+    )
+    .into_iter()
+    .map(|pip| pip.frame)
+    .collect();
     assert_eq!(
         before,
         (

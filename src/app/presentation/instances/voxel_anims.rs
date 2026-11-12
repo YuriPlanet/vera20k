@@ -229,7 +229,7 @@ fn voxel_anim_draw_instance(
 ) -> Option<PlannedObjectInstance> {
     let parent = order.object_draw(id, SpriteEncoding::Voxel)?;
     let location = piece.world_coord();
-    let (ground_z, bridge) = super::foot_depth::floor_probe(view.terrain, location.x, location.y);
+    let (ground_z, bridge) = super::foot_depth::floor_probe(view.terrain, location.x, location.y)?;
     let geometry = geometry(location, ground_z, bridge);
     // Object6D2140's padded projection admission precedes DrawIt.
     if !projection_admitted(geometry.body.point, view.camera, view.viewport) {

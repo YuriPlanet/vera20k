@@ -135,7 +135,8 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
         let atlas = SpriteAtlas::from_test_entries(entries);
         let before = (sim.state_hash(), sim.rng_state());
         let mut prepared = Vec::new();
-        let building = sim.entities().get(plant).unwrap();
+        let frame = crate::app::presentation::frame::PresentationFrame::of_test(&sim, &rules);
+        let building = frame.object(plant).unwrap();
         emit_building_anims(
             &mut prepared,
             &order,
@@ -149,11 +150,13 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
             &lighting,
             (building.position.rx(), building.position.ry()),
             &sim,
+            &frame,
             Some(building.owner()),
             building,
             &|anim| {
                 super::super::overlays::slot_anim_admissible(
                     &sim,
+                    &frame,
                     anim,
                     camera,
                     [size[0] as f32, size[1] as f32],
@@ -187,6 +190,7 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
         build_display_effect_instances(
             &DisplayEffectInputs {
                 sim: &sim,
+                frame: &frame,
                 rules: &rules,
                 camera,
                 render_size: size,

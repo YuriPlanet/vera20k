@@ -971,7 +971,7 @@ impl Simulation {
             &self.substrate.entities,
             super::PathfindingContext {
                 path_grid: Some(grid),
-                zone_grid: self.zone_grid.as_deref(),
+                zone_grid: self.zone_grid.as_ref(),
                 resolved_terrain: self.resolved_terrain.as_ref(),
                 playfield_bounds: self.playfield_bounds(),
                 blocker_neighbor_counts: Some(counts),
@@ -1301,7 +1301,7 @@ impl Simulation {
             .ok_or("Find_Path FNPC requires map cells")?;
         let zones = self
             .zone_grid
-            .as_deref()
+            .as_ref()
             .ok_or("Find_Path FNPC requires zone topology")?;
         self.map_size_diamond()
             .ok_or("Find_Path FNPC requires original Map Size")?;
@@ -1416,7 +1416,7 @@ impl Simulation {
             .ok_or("EstimateZoneCost requires map cells")?;
         let zones = self
             .zone_grid
-            .as_deref()
+            .as_ref()
             .ok_or("EstimateZoneCost requires zone topology")?;
         let cells = NativeCellQuery::canonical(terrain);
         let start_cell = cells.lookup(start.coord(&cells)); //42D1A1
@@ -1664,7 +1664,7 @@ impl Simulation {
         let cells = NativeCellQuery::canonical(terrain);
         let zones = self
             .zone_grid
-            .as_deref()
+            .as_ref()
             .ok_or("Foot precheck requires zone topology")?;
         let bounds = self
             .playfield_bounds()

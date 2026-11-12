@@ -96,14 +96,12 @@ pub(crate) struct ObjectGroupCopy {
 /// (for example `building_art`, `veterancy`); other code reads it through
 /// getters and changes it through that module's functions.
 ///
-/// Every object's turn walks this record, and an object written while a
-/// presentation frame shares it is copied (docs/sim-thread.md). The record
-/// therefore holds only what a turn reads each step. State read less often is
-/// the [`Seldom`] part, stored apart and copied only when it is written
-/// itself. State that few objects hold sits behind a pointer: a [`Sparse`]
-/// for a Building's own state ([`BuildingPart`]), its art and its damage
-/// fires, a `Box` for a manager only some types construct. A new field goes
-/// in this record only if an object's own turn reads or writes it each step;
+/// Every object's turn walks this record, so it holds only what a turn reads
+/// each step. State read less often is the [`Seldom`] part, stored apart.
+/// State that few objects hold sits behind a pointer: a [`Sparse`] for a
+/// Building's own state ([`BuildingPart`]), its art and its damage fires, a
+/// `Box` for a manager only some types construct. A new field goes in this
+/// record only if an object's own turn reads or writes it each step;
 /// otherwise in `Seldom`. A `BuildingClass` field goes in `BuildingPart`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GameEntity {
@@ -462,7 +460,7 @@ pub struct GameEntity {
     #[serde(default)]
     pub(crate) cached_spatial_threat: crate::sim::house_threat::SpatialThreat,
     /// The state this object's turn does not read each step, stored apart.
-    seldom: crate::util::shared::Shared<Seldom>,
+    seldom: Box<Seldom>,
 }
 
 /// The `BuildingClass` state. A [`Sparse`] in [`GameEntity::building`] holds
@@ -602,10 +600,9 @@ impl crate::util::sparse::SparseDefault for BuildingPart {
 
 /// The part of an object's record its own turn does not read each step:
 /// state read on orders, on events, by other objects or when drawing. It is
-/// stored apart from [`GameEntity`] and shared with a presentation frame
-/// until written, so a turn that writes only the main part copies only that
-/// (docs/sim-thread.md). `GameEntity` derefs to it, so a field here reads and
-/// writes as `entity.field`; a write copies this part if a frame shares it.
+/// stored apart from [`GameEntity`], so a turn's walk of the main part stays
+/// small. `GameEntity` derefs to it, so a field here reads and writes as
+/// `entity.field`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Seldom {
     /// Bounded optional observations; absent from saves and normal builds.
@@ -1099,15 +1096,6 @@ pub struct Seldom {
     /// [`UnloadKeep`]: crate::sim::transport_unload::UnloadKeep
     #[serde(default)]
     pub(crate) transport_unload_keep_count: crate::sim::transport_unload::UnloadKeep,
-}
-
-impl GameEntity {
-    /// Whether this record's seldom part is still the one `other` holds:
-    /// nothing has written it since one was copied from the other.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn shares_seldom_with(&self, other: &Self) -> bool {
-        self.seldom.shares_storage_with(&other.seldom)
-    }
 }
 
 impl std::ops::Deref for GameEntity {
@@ -2416,7 +2404,7 @@ impl GameEntity {
             parasite: crate::sim::combat::parasite::FootParasite::new(construction_frame),
             cached_spatial_threat: Default::default(),
             turret_anim_frame: Default::default(),
-            seldom: crate::util::shared::Shared::new(Seldom {
+            seldom: Box::new(Seldom {
                 tracking_facts: Default::default(),
                 house_tracking_latches: Default::default(),
                 #[cfg(feature = "phobos")]

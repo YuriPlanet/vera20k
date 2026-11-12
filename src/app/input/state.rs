@@ -191,6 +191,12 @@ pub(crate) struct MatchInputState {
     /// The cursor the last drawn frame showed. Native's SetCursor writes are
     /// retained state, and over the sidebar only a LEFTUP dispatch writes one.
     shown_cursor: std::cell::Cell<Option<crate::app::types::CursorFeedbackKind>>,
+    /// The cursor's targets and feedback as last read with the world home
+    /// (`sim_host::home_answer`): both walk the live objects, which a draw
+    /// beside a lent tick may not read.
+    pub(crate) cursor_targets_seen: std::cell::RefCell<crate::app::input::cursor::CursorTargets>,
+    pub(crate) cursor_feedback_seen:
+        std::cell::RefCell<Option<crate::app::types::CursorFeedbackKind>>,
     pub(crate) camera_x: f32,
     pub(crate) camera_y: f32,
     /// Camera-owned requests awaiting Tactical__AI's next single commit.
@@ -466,6 +472,8 @@ impl MatchInputState {
         Self {
             cursor_visibility: Default::default(),
             shown_cursor: Default::default(),
+            cursor_targets_seen: Default::default(),
+            cursor_feedback_seen: Default::default(),
             minimap_press_button: None,
             touch_mapper: crate::app::input::touch::TouchMouseMapper::new(),
             cursor_from_touch: false,

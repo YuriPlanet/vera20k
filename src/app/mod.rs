@@ -193,15 +193,14 @@ pub struct App {
     /// (`input::touch`). A synthetic `CursorMoved` must not pass for the OS
     /// pointer, which is what clears the touch-parked cursor.
     dispatching_touch: bool,
-    /// docs/sim-thread.md, "The browser": window events that came while a
-    /// tick was on the simulation worker, in order, for the pass that finds
-    /// it back ([`Self::release_held_events`]).
-    #[cfg(all(
-        feature = "wasm-threads",
-        target_arch = "wasm32",
-        target_os = "unknown"
-    ))]
+    /// docs/sim-thread.md: window events that came while a tick was on the
+    /// simulation thread, in order, for the pass that finds it back
+    /// ([`Self::release_held_events`]).
     held_window_events: Vec<(winit::window::WindowId, winit::event::WindowEvent)>,
+    /// Wakes the event loop when a tick on the simulation thread ends
+    /// ([`Self::set_sim_wake`]).
+    #[cfg(not(target_arch = "wasm32"))]
+    sim_wake: Option<winit::event_loop::EventLoopProxy<()>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -255,12 +254,9 @@ impl App {
             mod_switch: None,
             ask_for_game_folder: false,
             dispatching_touch: false,
-            #[cfg(all(
-                feature = "wasm-threads",
-                target_arch = "wasm32",
-                target_os = "unknown"
-            ))]
             held_window_events: Vec::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            sim_wake: None,
         }
     }
 
@@ -283,12 +279,9 @@ impl App {
             mod_switch: None,
             ask_for_game_folder: false,
             dispatching_touch: false,
-            #[cfg(all(
-                feature = "wasm-threads",
-                target_arch = "wasm32",
-                target_os = "unknown"
-            ))]
             held_window_events: Vec::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            sim_wake: None,
         }
     }
 
@@ -313,12 +306,9 @@ impl App {
             mod_switch: None,
             ask_for_game_folder: false,
             dispatching_touch: false,
-            #[cfg(all(
-                feature = "wasm-threads",
-                target_arch = "wasm32",
-                target_os = "unknown"
-            ))]
             held_window_events: Vec::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            sim_wake: None,
         }
     }
 
@@ -343,12 +333,9 @@ impl App {
             mod_switch: None,
             ask_for_game_folder: false,
             dispatching_touch: false,
-            #[cfg(all(
-                feature = "wasm-threads",
-                target_arch = "wasm32",
-                target_os = "unknown"
-            ))]
             held_window_events: Vec::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            sim_wake: None,
         }
     }
 
@@ -363,6 +350,32 @@ impl App {
     /// opens.
     pub(crate) fn set_mod_switch(&mut self, switch: Option<mods::ModSwitch>) {
         self.mod_switch = switch;
+    }
+
+    /// The event loop's proxy, which a tick on the simulation thread wakes
+    /// when it ends (docs/sim-thread.md).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn set_sim_wake(&mut self, proxy: winit::event_loop::EventLoopProxy<()>) {
+        self.sim_wake = Some(proxy);
+    }
+
+    /// Hand the simulation host the wake once the match state exists. The
+    /// browser has none: its frame loop runs every animation frame.
+    fn install_sim_wake(&mut self) {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let (Some(state), Some(proxy)) = (self.state.as_mut(), self.sim_wake.as_ref())
+            && !state.match_state.sim_runtime.has_wake()
+        {
+            let proxy = std::sync::Mutex::new(proxy.clone());
+            state
+                .match_state
+                .sim_runtime
+                .set_wake(std::sync::Arc::new(move || {
+                    if let Ok(proxy) = proxy.lock() {
+                        let _ = proxy.send_event(());
+                    }
+                }));
+        }
     }
 
     pub fn new_replay(request: crate::app::frontend::launch::ReplayLaunchRequest) -> Self {

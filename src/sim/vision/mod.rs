@@ -203,19 +203,16 @@ pub(crate) fn conceal_area_cells(coord: [i32; 3], radius: i32) -> Vec<(u16, u16)
 /// with the previous BTreeSet design.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct OwnerVisibility {
-    /// The per-cell planes are shared copy-on-write in chunks with the
-    /// presentation frame (docs/sim-thread.md): a tick copies only the
-    /// chunks its sight changes.
-    cells: crate::util::shared::ChunkedVec<u8>,
+    cells: Vec<u8>,
     width: u16,
     height: u16,
     /// [`GROUND_VISIBLE`] / [`GROUND_OPEN`] per cell, aligned with `cells`.
-    ground_flags: crate::util::shared::ChunkedVec<u8>,
-    shroud_knowledge: crate::util::shared::ChunkedVec<ShroudKnowledge>,
-    map_cell_edge_cache: crate::util::shared::ChunkedVec<MapCellEdgeCache>,
+    ground_flags: Vec<u8>,
+    shroud_knowledge: Vec<ShroudKnowledge>,
+    map_cell_edge_cache: Vec<MapCellEdgeCache>,
     /// Packed ground/fog inputs for Tactical6D8700; rebuilt after loading.
     #[serde(skip)]
-    edge_inputs_cache: crate::util::shared::DerivedCache<Vec<u16>>,
+    edge_inputs_cache: crate::util::synced::DerivedCache<Vec<u16>>,
     dummy_visibility: DummyVisibility,
     /// The cells the per-frame passes must visit; never saved or hashed.
     #[serde(skip)]
@@ -274,12 +271,12 @@ impl OwnerVisibility {
     pub fn new(width: u16, height: u16) -> Self {
         let len: usize = (width as usize) * (height as usize);
         Self {
-            cells: crate::util::shared::ChunkedVec::filled(0u8, len),
+            cells: vec![0u8; len],
             width,
             height,
-            ground_flags: crate::util::shared::ChunkedVec::filled(0, len),
-            shroud_knowledge: crate::util::shared::ChunkedVec::filled(ShroudKnowledge::default(), len),
-            map_cell_edge_cache: crate::util::shared::ChunkedVec::filled(MapCellEdgeCache::default(), len),
+            ground_flags: vec![0; len],
+            shroud_knowledge: vec![ShroudKnowledge::default(); len],
+            map_cell_edge_cache: vec![MapCellEdgeCache::default(); len],
             edge_inputs_cache: Default::default(),
             dummy_visibility: DummyVisibility::default(),
             // Every zeroed cell already matches its default knowledge.
@@ -798,6 +795,66 @@ pub struct FogState {
 }
 
 impl FogState {
+    /// What drawing reads of the fog, for the presentation copy of the world
+    /// (`Simulation::presentation_copy`): `viewer`'s plane, fogged objects,
+    /// sensors and disguise detection, the cloak words and the reveal guard.
+    /// The other houses' planes and the sight sources stay with the live
+    /// world. A copy for no viewer holds no plane.
+    pub(crate) fn presentation_copy(&self, viewer: Option<InternedId>) -> Self {
+        let mine = |house: &InternedId| Some(*house) == viewer;
+        let mut by_owner = Planes::default();
+        if let Some(viewer) = viewer
+            && let Some(view) = self.by_owner.get(&viewer)
+        {
+            by_owner.insert(viewer, view.clone());
+        }
+        Self {
+            width: self.width,
+            height: self.height,
+            by_owner,
+            whole_map_revealed_owners: self
+                .whole_map_revealed_owners
+                .iter()
+                .copied()
+                .filter(mine)
+                .collect(),
+            view_generation: self.view_generation,
+            fogged_object_cells: self
+                .fogged_object_cells
+                .iter()
+                .filter(|((house, _, _), _)| mine(house))
+                .map(|(key, ids)| (*key, ids.clone()))
+                .collect(),
+            fogged_objects: self
+                .fogged_objects
+                .iter()
+                .filter(|(_, record)| mine(&record.viewer))
+                .map(|(id, record)| (*id, record.clone()))
+                .collect(),
+            fogged_live_objects: self
+                .fogged_live_objects
+                .iter()
+                .copied()
+                .filter(|(house, _)| mine(house))
+                .collect(),
+            next_fogged_object_id: self.next_fogged_object_id,
+            sensors_by_house: self
+                .sensors_by_house
+                .iter()
+                .filter(|(house, _)| mine(house))
+                .map(|(house, counts)| (*house, counts.clone()))
+                .collect(),
+            disguise_detect_by_house: self
+                .disguise_detect_by_house
+                .iter()
+                .filter(|(house, _)| mine(house))
+                .map(|(house, counts)| (*house, counts.clone()))
+                .collect(),
+            cloaked_by_houses: self.cloaked_by_houses.clone(),
+            ..Self::default()
+        }
+    }
+
     /// An empty viewer domain with the allocated map dimensions. Reveal and
     /// gap admission always initialize their own private House+240 state.
     pub fn new(width: u16, height: u16) -> Self {

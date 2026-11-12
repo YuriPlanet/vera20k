@@ -5238,6 +5238,21 @@ mod control_group_tests {
     };
     use std::time::Duration;
 
+    /// The presentation frame of `sim` as `observer` sees it: the drawers
+    /// read their records' observer answers from the frame's local player.
+    fn frame_for(
+        sim: &crate::sim::world::Simulation,
+        observer: Option<crate::sim::intern::InternedId>,
+    ) -> crate::app::presentation::frame::PresentationFrame {
+        let mut sim = sim.clone();
+        sim.session_mut_for_test()
+            .set_current_house_for_test(observer);
+        crate::app::presentation::frame::PresentationFrame::of_test(
+            &sim,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+        )
+    }
+
     fn mods(shift: bool, ctrl: bool, alt: bool) -> KeyModifiers {
         KeyModifiers { shift, ctrl, alt }
     }
@@ -6063,6 +6078,7 @@ mod control_group_tests {
         assert_eq!(
             crate::app::presentation::ui_overlays::control_group_status_labels(
                 &sim,
+                &frame_for(&sim, Some(owner)),
                 &groups,
                 None,
                 Some(owner),
@@ -6132,6 +6148,7 @@ mod control_group_tests {
         let render = |sim: &Simulation, groups: &[Vec<u64>], hovered| {
             crate::app::presentation::ui_overlays::build_control_group_status_render_instances(
                 sim,
+                &frame_for(sim, Some(owner)),
                 groups,
                 hovered,
                 Some(owner),
@@ -6147,7 +6164,7 @@ mod control_group_tests {
             )
         };
 
-        let ground_anchor = crate::app::presentation::instances::entity_screen_position(
+        let ground_anchor = crate::render::locomotor_visual::screen_position(
             sim.entities().get(27).expect("retained ORCA"),
         );
         let selected_ground = render(&sim, &groups, None);
@@ -6166,7 +6183,7 @@ mod control_group_tests {
             aircraft.selection.set_selected_for_test(false);
             aircraft.position.set_exact_z_leptons_for_test(Some(1500));
         }
-        let airborne_anchor = crate::app::presentation::instances::entity_screen_position(
+        let airborne_anchor = crate::render::locomotor_visual::screen_position(
             sim.entities().get(27).expect("retained ORCA"),
         );
         let hovered_airborne = render(&sim, &groups, Some(27));
@@ -6189,6 +6206,7 @@ mod control_group_tests {
         assert_eq!(
             crate::app::presentation::ui_overlays::control_group_status_labels(
                 &sim,
+                &frame_for(&sim, Some(owner)),
                 &groups,
                 Some(27),
                 Some(owner),
@@ -6288,6 +6306,7 @@ mod control_group_tests {
         ) -> Vec<(u64, char)> {
             crate::app::presentation::ui_overlays::control_group_status_labels(
                 sim,
+                &frame_for(sim, Some(current_house)),
                 groups,
                 hovered,
                 Some(current_house),
@@ -6438,6 +6457,7 @@ mod control_group_tests {
             |groups: &[Vec<u64>], hovered_unit_id, ignore_visibility| {
                 crate::app::presentation::ui_overlays::control_group_status_labels(
                     &sim,
+                    &frame_for(&sim, Some(owner)),
                     groups,
                     hovered_unit_id,
                     Some(owner),
@@ -6454,7 +6474,7 @@ mod control_group_tests {
         );
         let house_colors = crate::map::houses::HouseColorMap::new();
         let house_color_ramps = crate::rules::house_colors::HouseColorRamps::default();
-        let group_member_anchor = crate::app::presentation::instances::entity_screen_position(
+        let group_member_anchor = crate::render::locomotor_visual::screen_position(
             sim.entities().get(17).expect("assigned test unit"),
         );
         let fixture_clip = [
@@ -6475,6 +6495,7 @@ mod control_group_tests {
         let group_overlay = |groups: &[Vec<u64>], hovered_unit_id| {
             crate::app::presentation::ui_overlays::build_control_group_status_render_instances(
                 &sim,
+                &frame_for(&sim, Some(owner)),
                 groups,
                 hovered_unit_id,
                 Some(owner),
@@ -6570,6 +6591,7 @@ mod control_group_tests {
         assert!(
             crate::app::presentation::ui_overlays::control_group_status_labels(
                 &sim,
+                &frame_for(&sim, Some(owner)),
                 &groups,
                 None,
                 Some(owner),
@@ -6581,6 +6603,7 @@ mod control_group_tests {
         assert!(
             crate::app::presentation::ui_overlays::build_control_group_status_render_instances(
                 &sim,
+                &frame_for(&sim, Some(owner)),
                 &groups,
                 None,
                 Some(owner),
@@ -6613,6 +6636,7 @@ mod control_group_tests {
         ) -> Vec<(u64, char)> {
             crate::app::presentation::ui_overlays::control_group_status_labels(
                 sim,
+                &frame_for(sim, Some(current_house)),
                 groups,
                 None,
                 Some(current_house),
@@ -6871,6 +6895,7 @@ mod control_group_tests {
             assert_eq!(
                 crate::app::presentation::ui_overlays::control_group_status_labels(
                     &sim,
+                    &frame_for(&sim, Some(owner)),
                     &groups,
                     None,
                     Some(owner),
@@ -6898,6 +6923,7 @@ mod control_group_tests {
             let overlay_instances =
                 crate::app::presentation::ui_overlays::build_control_group_status_render_instances(
                     &sim,
+                    &frame_for(&sim, Some(owner)),
                     &groups,
                     None,
                     Some(owner),

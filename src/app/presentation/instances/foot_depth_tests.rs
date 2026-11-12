@@ -1,9 +1,8 @@
 //! Runtime-adapter regressions. Native arithmetic vectors live in
 //! render::foot_depth; these tests exercise which live state reaches it.
 
-use super::{
-    depth_cell, shp_z_adjust_in_runtime, unit_bridge_split_in_runtime, unit_z_adjust_in_runtime,
-};
+use super::{DepthWorld, depth_cell};
+use crate::app::presentation::frame::{ObjectRecord, PresentationFrame};
 use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
@@ -11,6 +10,60 @@ use crate::sim::combat::Health;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::runtime::{SimResources, SimRuntime};
 use crate::sim::world::Simulation;
+
+/// `entity` drawn from its record in `runtime`'s world, as the draw reads it.
+fn with_record<R>(
+    runtime: Option<&SimRuntime>,
+    entity: &GameEntity,
+    ask: impl FnOnce(DepthWorld<'_>, &ObjectRecord) -> R,
+) -> R {
+    let runtime = runtime.expect("a runtime");
+    let mut world = SimRuntime {
+        simulation: runtime.simulation.clone(),
+        resources: runtime.resources.clone(),
+    };
+    let store = world.simulation.entities_mut_for_test();
+    store.remove(entity.stable_id());
+    store.insert(entity.clone());
+    let frame = PresentationFrame::capture(&world);
+    let record = frame.object(entity.stable_id()).expect("a record");
+    ask(
+        DepthWorld {
+            runtime: Some(&world),
+            frame: Some(&frame),
+        },
+        record,
+    )
+}
+
+fn unit_z_adjust_in_runtime(
+    runtime: Option<&SimRuntime>,
+    entity: &GameEntity,
+    unloading_body: bool,
+    world_z: Option<i32>,
+) -> i32 {
+    with_record(runtime, entity, |world, record| {
+        super::unit_z_adjust_in(world, record, unloading_body, world_z)
+    })
+}
+
+fn shp_z_adjust_in_runtime(runtime: Option<&SimRuntime>, entity: &GameEntity) -> f32 {
+    with_record(runtime, entity, super::shp_z_adjust)
+}
+
+fn unit_bridge_split_in_runtime(
+    runtime: Option<&SimRuntime>,
+    entity: &GameEntity,
+    unloading_body: bool,
+) -> bool {
+    with_record(runtime, entity, |world, record| {
+        super::unit_bridge_condition(world, record, unloading_body, true)
+    })
+}
+
+fn shp_unit_bridge_fudge_in_runtime(runtime: Option<&SimRuntime>, entity: &GameEntity) -> bool {
+    with_record(runtime, entity, super::shp_unit_bridge_fudge)
+}
 
 const RULES: &str = "\
 [VehicleTypes]
@@ -244,7 +297,7 @@ fn composite_factory_split_requires_navcom_and_slot_zero_weapons_factory() {
     tank.navigation
         .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::cell(3, 3)));
     assert!(
-        !super::shp_unit_bridge_fudge_in_runtime(Some(&runtime), &tank),
+        !shp_unit_bridge_fudge_in_runtime(Some(&runtime), &tank),
         "direct SHP has no weapons-factory alternative"
     );
     assert!(

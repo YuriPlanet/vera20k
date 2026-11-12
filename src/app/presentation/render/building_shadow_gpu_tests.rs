@@ -71,6 +71,8 @@ fn assert_retail_embedded_shadow(expected_type: &str, expected_frame_count: u16)
     let sim = scene.sim();
     let rules = &scene.runtime.resources.rules;
     let entity = sim.entities().get(actor_id).expect("spawned SHP entity");
+    let presented = crate::app::presentation::frame::PresentationFrame::capture(&scene.runtime);
+    let record = presented.object(actor_id).unwrap();
     let type_id = sim.interner().resolve(entity.type_ref());
     let owner = sim.interner().resolve(entity.owner());
     assert_eq!(type_id, expected_type);
@@ -177,7 +179,7 @@ fn assert_retail_embedded_shadow(expected_type: &str, expected_frame_count: u16)
     observer.drawn_voxel = Some(false);
     let decision = tactical_entity_admission(
         TacticalEntityPurpose::Drawing,
-        entity,
+        record,
         owner_name,
         Some(owner_name),
         Some(owner_id),
@@ -229,7 +231,7 @@ fn assert_retail_embedded_shadow(expected_type: &str, expected_frame_count: u16)
     let shadow = embedded_shp_shadow_piece(
         &atlas,
         Some(object),
-        entity,
+        record,
         cells.as_ref(),
         &body_key,
         &body_entry,

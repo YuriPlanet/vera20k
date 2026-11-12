@@ -234,6 +234,7 @@ fn run_with(
         }
     };
     app.set_mod_switch(mod_switch);
+    app.set_sim_wake(event_loop.create_proxy());
     // A panic skips `exiting`, where the match replay is saved. winit stops
     // its loop and hands the panic back here (macOS and Windows catch it in
     // their callbacks; elsewhere it unwinds straight out), with `app` intact.
