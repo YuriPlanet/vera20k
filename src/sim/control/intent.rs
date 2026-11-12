@@ -53,6 +53,9 @@ pub enum Intent {
     },
     /// Sell a standing building.
     SellBuilding { entity_id: u64 },
+    /// Pack a deployed yard back into its maker (`Command::UndeployBuilding`),
+    /// so a captured construction yard can be driven home instead of abandoned.
+    UndeployBuilding { entity_id: u64 },
     /// Fire a charged superweapon or house power at a cell: the click on the
     /// sidebar's superweapon button followed by the target. `HouseClass::
     /// Fire_SW` is the owner; a house with no charge, no grant or no warhead
@@ -79,6 +82,7 @@ impl Intent {
                 ry: cell.1,
             },
             Self::SellBuilding { entity_id } => Command::SellBuilding { entity_id },
+            Self::UndeployBuilding { entity_id } => Command::UndeployBuilding { entity_id },
             Self::LaunchSuperWeapon { sw_type_id, cell } => Command::LaunchSuperWeapon {
                 sw_type_id,
                 target_rx: cell.0,

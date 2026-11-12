@@ -161,6 +161,42 @@ pub(super) fn deploy_yard_maker(
     // is the second base. It walks out and deploys where the house has ground
     // of its own.
     if yard_stands(&brain.census) {
+        // But it walks home first, whatever it is standing on. A maker that came
+        // out of a factory is near home and safe; a maker that was *captured*
+        // is standing in the enemy's ground, and deploying there would be a
+        // second base inside their guns. The wishlist's "pack it, drive it
+        // home, cover the withdrawal" is this one condition.
+        let space = super::terrain::Space::read(
+            obs,
+            rules,
+            &brain.census.home_cells,
+            brain.census.base_cell,
+        );
+        let home = brain.census.base_cell;
+        let exposed = !space.ground_at(cell).buildable();
+        let far = home.is_some_and(|home| {
+            cell_distance(cell, home) > EXPAND_MIN_CELLS * EXPAND_MIN_CELLS * 4
+        });
+        if (exposed || far) && obs.destination(entity_id).is_none() {
+            let Some(target) =
+                super::census::rally_near(obs, home.unwrap_or(cell), &brain.census.home_cells)
+            else {
+                return;
+            };
+            if target != cell
+                && !super::orders::issue(
+                    brain,
+                    out,
+                    rules,
+                    obs,
+                    entity_id,
+                    Goal::Move { cell: target },
+                )
+            {
+                brain.expansion_probe = None;
+            }
+            return;
+        }
         deploy_second_yard(brain, rules, obs, out, entity_id, cell, yard);
         return;
     }

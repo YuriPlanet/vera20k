@@ -450,12 +450,19 @@ pub(super) fn garrison(
 /// and a radar its map; a barracks or a war factory makes its army veteran; a
 /// lab is worth the walk and little more.
 fn infiltration_value(rules: &RuleSet, ty: &ObjectType) -> u8 {
-    if rules.build_power_types.iter().any(|name| *name == ty.id)
+    // The refinery first, and above everything else. A spy in a bay takes the
+    // enemy's own bank, which is the one infiltration that pays for the walk in
+    // the same minute it lands; a radar or a lab is worth more in kind but only
+    // once the house has an army to use it with. It used to share value 3 with
+    // the radar, and the spy walked to whichever came first.
+    if ty.resource_destination {
+        5
+    } else if rules.build_power_types.iter().any(|name| *name == ty.id)
         || ty.super_weapon.is_some()
         || ty.super_weapon2.is_some()
     {
         4
-    } else if ty.resource_destination || ty.radar {
+    } else if ty.radar {
         3
     } else if rules.build_weapons_types.iter().any(|name| *name == ty.id)
         || rules.build_barracks_types.iter().any(|name| *name == ty.id)
@@ -1168,6 +1175,105 @@ pub(super) fn harvesters(
         }
     }
 }
+
+/// How far from the house's own base a captured building may stand before it
+/// is sold rather than held, in cells.
+///
+/// Past this the building is behind the enemy's line: the house cannot walk a
+/// wrench or a defender to it, and every frame it stands is a frame it can be
+/// taken back. Inside it the same building is worth keeping and garrisoning.
+const HOLDLESS_CELLS: i32 = 36;
+
+/// How hurt a building may be before it is sold, in permille.
+///
+/// A captured plant at a sliver of health is a repair bill the house pays under
+/// fire; the refund is most of what it cost and the ground is not worth the
+/// wrench.
+const HOLDLESS_HEALTH: i32 = 250;
+
+/// Sell the buildings this house cannot hold.
+///
+/// A captured building is a building the house holds but did not make, and the
+/// two facts that matter are that the yard cannot replace it and that it is
+/// standing where the house cannot defend it. Held, it is worth keeping: it is
+/// power, income or a factory the enemy paid for. Behind the enemy's line it is
+/// a hostage, and the refund is worth more than the building.
+///
+/// The test for "did not make it" is the house's own build list: a type this
+/// house's yards could produce is one the house built, and a type they could not
+/// is one the house took. The yards themselves are never sold — they are the
+/// house — and a yard maker building is left alone, because it is worth packing
+/// and driving home rather than refunding.
+pub(super) fn sell_hard_to_hold(
+    brain: &mut RetailBrain,
+    rules: &RuleSet,
+    obs: &Observation<'_>,
+    out: &mut Outbox,
+) {
+    let tick = obs.tick();
+    if tick < brain.sale_at {
+        return;
+    }
+    let Some(home) = brain.census.base_cell else {
+        return;
+    };
+    // What this house's yards could make: the yard itself is `BuildConst=` and
+    // is in this list, so it is excluded by name below as well.
+    let buildable: BTreeSet<crate::sim::intern::InternedId> =
+        super::build::class_types(rules, obs, ObjectCategory::Building)
+            .map(|(_, id)| id)
+            .collect();
+    let space = super::terrain::Space::read(obs, rules, &brain.census.home_cells, Some(home));
+    for unit in &brain.census.units {
+        let Some(ty) = obs.object_type(rules, unit.type_id) else {
+            continue;
+        };
+        if ty.category != ObjectCategory::Building || buildable.contains(&unit.type_id) {
+            continue;
+        }
+        // The yard: the house, not a hostage. And a maker building is worth
+        // packing and driving home, which is a different errand.
+        if super::expand::makes_a_yard(rules, ty) {
+            continue;
+        }
+        let far = squared_distance(home, unit.cell) > HOLDLESS_CELLS * HOLDLESS_CELLS;
+        let hurt = unit.health_permille <= HOLDLESS_HEALTH as u16;
+        let exposed = !space.ground_at(unit.cell).buildable();
+        if !(far || hurt || exposed) {
+            continue;
+        }
+        // A captured yard is not sold, it is packed. It is the one building that
+        // is worth more as a unit: the maker drives home and becomes a second
+        // base, while the refund is a fraction of what a second yard is worth.
+        if ty.build_const_eligible {
+            log::info!(
+                "auto play: pack the captured yard {} at {:?} for the drive home",
+                ty.id,
+                unit.cell
+            );
+            out.intent(Intent::UndeployBuilding {
+                entity_id: unit.entity_id,
+            });
+            brain.sale_at = tick.saturating_add(SALE_GAP_FRAMES);
+            return;
+        }
+        log::info!(
+            "auto play: sell {} at {:?} (far={far} hurt={hurt} exposed={exposed})",
+            ty.id,
+            unit.cell
+        );
+        out.intent(Intent::SellBuilding {
+            entity_id: unit.entity_id,
+        });
+        // One at a time: a dozen refunds in a frame is a windfall, and the next
+        // one is a frame away.
+        brain.sale_at = tick.saturating_add(SALE_GAP_FRAMES);
+        return;
+    }
+}
+
+/// How many frames between two sales.
+const SALE_GAP_FRAMES: u64 = 60;
 
 /// How near a crate has to be for it to be a detour, in cells.
 ///

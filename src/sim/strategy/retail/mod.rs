@@ -330,6 +330,13 @@ pub struct RetailBrain {
     /// "why is the army standing in its yard" is otherwise unanswerable from a
     /// log that only counts what the house has.
     pub(super) push_gate: &'static str,
+    /// The frame the next sale may be made on.
+    ///
+    /// A building that cannot be held is sold once and is then gone, so the
+    /// sale cannot repeat itself; what needs a floor is the *rate*, because a
+    /// base that lost its ground can qualify a dozen buildings in one frame and
+    /// a dozen refunds at once is a windfall the wishlist did not ask for.
+    pub(super) sale_at: u64,
     /// The structure the fist committed to, and the frame the commitment may be
     /// re-made: `(entity, until)`. Seven bases make "the nearest structure" a
     /// different answer every time the army moves, and an army that re-picks
@@ -414,6 +421,7 @@ impl RetailBrain {
             engineers: composition::EngineerLedger::default(),
             capturable_last: BTreeSet::new(),
             push_gate: "none",
+            sale_at: 0,
             push_target: None,
             issued: [0; 5],
             last_tick: 0,
@@ -694,6 +702,8 @@ impl Brain for RetailBrain {
         // harvester that rolled out of a factory sits on its birth posture
         // until something puts it on the ore.
         orders::harvesters(self, rules, obs, out);
+        // A building the house holds but cannot make, and cannot hold: sell it.
+        orders::sell_hard_to_hold(self, rules, obs, out);
         // A carrier with passengers takes them where the army is going and
         // opens there: the Transport pilot dispatch.
         orders::transports(self, rules, obs, out);
