@@ -605,6 +605,30 @@ mod tests {
         assert_eq!((anims.fx_flags, anims.fx_params[0]), (0, 1.0));
     }
 
+    /// The record of `entity`, an enemy's, captured for a local player whose
+    /// sensor covers its cell (`TechnoClass::IsSensorVisibleToPlayer`), the
+    /// observer the capture asks.
+    fn sensed_by_the_player(entity: &GameEntity) -> ObjectRecord {
+        let mut sim = crate::sim::world::Simulation::new();
+        *sim.interner_mut_for_test() = crate::sim::intern::test_interner();
+        let viewer = sim.interner_mut_for_test().intern("SENSING-PLAYER");
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(viewer));
+        *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(8, 8);
+        let [x, y] = crate::sim::movement::ground_pose::object_center_xy(entity);
+        let cell = |v| crate::util::lepton::lepton_to_cell(v) as u16;
+        sim.fog_mut_for_test()
+            .increment_sensor_at(viewer, cell(x), cell(y));
+        sim.entities_mut_for_test().insert(entity.clone());
+        crate::app::presentation::frame::PresentationFrame::of_test(
+            &sim,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+        )
+        .object(entity.stable_id())
+        .cloned()
+        .expect("the building has a record")
+    }
+
     /// A fading building's body follows its GetVisualState (`0x004544A0`)
     /// while its slot anims draw as at stage zero and fade only through the
     /// `+0x178` it writes them (`0x00454E3A..0x00454E70`): at stage 11 an
@@ -615,18 +639,19 @@ mod tests {
         let mut building = entity();
         building.set_category_for_test(EntityCategory::Structure);
         let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
-        let sensed = ObserverDrawContext {
-            detects_cloak: true,
-            ..ObserverDrawContext::default()
-        };
-        for (stage, observer, body_visible, ramp) in [
-            (11, ObserverDrawContext::default(), false, 11),
-            (15, ObserverDrawContext::default(), false, 16),
-            (15, sensed, true, 15),
+        let observer = ObserverDrawContext::default();
+        for (stage, sensed, body_visible, ramp) in [
+            (11, false, false, 11),
+            (15, false, false, 16),
+            (15, true, true, 15),
         ] {
             cloak.set_building_stage_for_test(stage);
             building.cloak = Some(Box::new(cloak));
-            let building = ObjectRecord::of_test(&building);
+            let building = if sensed {
+                sensed_by_the_player(&building)
+            } else {
+                ObjectRecord::of_test(&building)
+            };
             let body = DrawState::for_entity(&building, 0, 3, observer);
             let anims = DrawState::for_building_slot_anims(&building, 0, 3, observer);
             assert_eq!(body.visible, body_visible, "stage {stage} body");

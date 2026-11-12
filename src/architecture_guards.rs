@@ -508,7 +508,8 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/world/shroud_refresh.rs", 2),
                 ("sim/world/techno_ai.rs", 1),
                 ("sim/world/world_commands.rs", 2),
-                ("sim/world/world_orders.rs", 12),
+                // The clicked actions, with Ares' infantry heal arm (0x0051E710).
+                ("sim/world/world_orders.rs", 13),
             ],
         ),
         (

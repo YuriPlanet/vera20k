@@ -979,8 +979,9 @@ fn mirage_radar_house_and_null_pixel_match_original_executable() {
     assert_eq!(null_row["rng_before"], null_row["rng_after"]);
     let mut entity =
         crate::sim::game_entity::GameEntity::test_default(1, "MGTK", "Americans", 0, 0);
-    let interner = crate::sim::intern::test_interner();
+    // The capture resolves the viewer's name, so intern it before the copy.
     let observer = test_intern("Soviet");
+    let interner = crate::sim::intern::test_interner();
     let colors = HouseColorMap::from([("Americans".to_owned(), HouseColorIndex(1))]);
     let ramps = test_ramps();
     for row in corpus["observer"].as_array().unwrap() {

@@ -967,7 +967,11 @@ mod tests {
         let mut projection = visibility_projection();
         projection.native_surface = Some(surface);
         let update = build_radar_object_update(
-            &crate::app::presentation::frame::ObjectRecord::of_test(&entity),
+            &crate::app::presentation::frame::ObjectRecord::of_test_in(
+                &entity,
+                Some(&terrain),
+                crate::rules::ruleset::RuleSet::empty_for_test(),
+            ),
             &crate::sim::houses::Houses::default(),
             None,
             &FogState::default(),
@@ -1074,7 +1078,11 @@ mod tests {
                 fog.mark_visible_for_owner(local, rx, ry);
             }
             build_radar_object_update(
-                &crate::app::presentation::frame::ObjectRecord::of_test(entity),
+                &crate::app::presentation::frame::ObjectRecord::of_test_in(
+                    entity,
+                    Some(&terrain),
+                    crate::rules::ruleset::RuleSet::empty_for_test(),
+                ),
                 &crate::sim::houses::Houses::default(),
                 Some(local),
                 &fog,
