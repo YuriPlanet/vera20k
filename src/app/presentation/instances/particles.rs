@@ -410,6 +410,11 @@ pub(super) fn build_ares_particle_draws(
     };
     use crate::render::tactical_draw_plan::{ObjectDraw, TacticalLayer};
 
+    // Without the game's Ares switch no system has records, and the hook's
+    // Detail query below must not touch the stock Detail latch.
+    if !input.rules.ares() {
+        return;
+    }
     let sim = input.sim;
     let systems = sim.particle_systems();
     if systems.is_empty() || input.detail_level == 0 {
