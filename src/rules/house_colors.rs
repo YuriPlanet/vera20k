@@ -57,12 +57,32 @@ fn build_relation_ramps() -> [[Color; RAMP_SIZE]; 3] {
     RELATION_HUES.map(|hsv| build_scheme_ramp(hsv))
 }
 
+/// The fixed HSV of a relation band, for call sites that colour from a scheme
+/// (`house_text_rgb`) rather than from a ramp. `None` for every ordinary entry.
+fn relation_hue(index: HouseColorIndex) -> Option<[u8; 3]> {
+    if index == RELATION_SELF {
+        Some(RELATION_HUES[0])
+    } else if index == RELATION_ALLY {
+        Some(RELATION_HUES[1])
+    } else if index == RELATION_ENEMY {
+        Some(RELATION_HUES[2])
+    } else {
+        None
+    }
+}
+
 /// The colour gamemd prints a house's text in: `HSV_To_RGB` of its colour
 /// scheme's base HSV (scheme `+0x308`, its `[Colors]` entry), as
 /// Fancy_Text_Print_Wide (`0x004A61C0`) does for the timer lines and the
 /// score dialog for its rows (`0x005C9E0C`). White for an entry `[Colors]`
 /// lacks.
 pub fn house_text_rgb(schemes: &[ColorSchemeEntry], color: HouseColorIndex) -> [u8; 3] {
+    // Relation bands are fixed and have no `[Colors]` entry to read, so they
+    // colour their own text rather than falling through to the white a missing
+    // entry gives.
+    if let Some(hsv) = relation_hue(color) {
+        return hsv_to_rgb(hsv);
+    }
     crate::rules::color_scheme::scheme_hsv_by_entry(schemes, usize::from(color.0))
         .map_or([0xFF; 3], hsv_to_rgb)
 }
@@ -534,5 +554,30 @@ mod tests {
         assert_eq!(table.ramp(RELATION_SELF), &build_relation_ramps()[0]);
         assert_eq!(table.ramp(RELATION_ALLY), &build_relation_ramps()[1]);
         assert_eq!(table.ramp(RELATION_ENEMY), &build_relation_ramps()[2]);
+    }
+
+    /// Text colouring reads a `[Colors]` entry, which the relation bands do not
+    /// have: `house_text_rgb` must give each band its own hue instead of the
+    /// white a missing entry falls back to (messages, sidebar names, timers).
+    #[test]
+    fn relation_indices_colour_their_text() {
+        let schemes: Vec<ColorSchemeEntry> = Vec::new();
+        for (index, name) in [
+            (RELATION_SELF, "self"),
+            (RELATION_ALLY, "ally"),
+            (RELATION_ENEMY, "enemy"),
+        ] {
+            let rgb = house_text_rgb(&schemes, index);
+            assert_ne!(rgb, [0xFF; 3], "{name} must not fall back to white");
+            assert_eq!(rgb, hsv_to_rgb(relation_hue(index).unwrap()));
+        }
+        let [self_rgb, ally_rgb, enemy_rgb] = [
+            house_text_rgb(&schemes, RELATION_SELF),
+            house_text_rgb(&schemes, RELATION_ALLY),
+            house_text_rgb(&schemes, RELATION_ENEMY),
+        ];
+        assert!(self_rgb[2] >= self_rgb[0] && self_rgb[2] >= self_rgb[1]);
+        assert!(ally_rgb[1] >= ally_rgb[0] && ally_rgb[1] >= ally_rgb[2]);
+        assert!(enemy_rgb[0] >= enemy_rgb[1] && enemy_rgb[0] >= enemy_rgb[2]);
     }
 }
