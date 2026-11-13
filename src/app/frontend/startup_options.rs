@@ -68,12 +68,27 @@ pub struct ScreenSize {
     pub height: u32,
 }
 
+/// A switch that ends the launch before a window opens. Both kinds print one
+/// text through the shared tail of Parse_Command_Line (`0x0052FB52..
+/// 0x0052FB69`: StringTable::LoadString, `_putws`, return 0), and WinMain
+/// (`0x006BC093`) then shuts down at `0x006BE0EB`. The parser returns at the
+/// first one, so the first in argument order is the one printed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StartupExit {
+    /// A help form: the usage text.
+    Usage,
+    /// `-X` followed by anything but `Q`s (`0x0052FB08` jumps to
+    /// `0x0052FB41`): TXT_INVALID.
+    InvalidSwitch,
+}
+
 /// Everything the native pre-window command-line pass decides. The retained
 /// profile applies `VERA.INI` later, using these screen fields as defaults.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RetailStartupOptions {
-    /// A help form was passed: print usage and terminate before a window opens.
-    pub usage_requested: bool,
+    /// A help form or an invalid `-X` tail was passed: print its text and
+    /// terminate before a window opens.
+    pub exit: Option<StartupExit>,
     /// The one parsed archive policy, retained by the process asset owner.
     /// Parse_Command_Line52F620 writes 0x89E3A0; Init_Mix_Files530460
     /// consumes it at 0x53079E. See tools/media_policy.md.
@@ -100,7 +115,7 @@ pub struct RetailStartupOptions {
 impl Default for RetailStartupOptions {
     fn default() -> Self {
         Self {
-            usage_requested: false,
+            exit: None,
             media_archive_mode: MediaArchiveMode::STOCK_DIGITAL,
             windowed: false,
             audio_enabled: true,
@@ -115,7 +130,9 @@ impl Default for RetailStartupOptions {
 impl RetailStartupOptions {
     fn apply(&mut self, recognized: RecognizedSwitch) {
         match recognized {
-            RecognizedSwitch::Usage => self.usage_requested = true,
+            RecognizedSwitch::Exit(exit) => {
+                self.exit.get_or_insert(exit);
+            }
             RecognizedSwitch::CdMedia => self.media_archive_mode = MediaArchiveMode::CdWildcard,
             RecognizedSwitch::Windowed => self.windowed = true,
             RecognizedSwitch::NoAudio => self.audio_enabled = false,
@@ -135,7 +152,7 @@ impl RetailStartupOptions {
 /// What one argument matched in the native switch chain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RecognizedSwitch {
-    Usage,
+    Exit(StartupExit),
     CdMedia,
     Windowed,
     NoAudio,
@@ -183,7 +200,7 @@ fn classify(normalized: &str) -> Option<RecognizedSwitch> {
         return Some(RecognizedSwitch::NoLocalEffect);
     }
     if USAGE_SWITCHES.contains(&normalized) {
-        return Some(RecognizedSwitch::Usage);
+        return Some(RecognizedSwitch::Exit(StartupExit::Usage));
     }
     if normalized.contains(CD_MEDIA_SWITCH) {
         return Some(RecognizedSwitch::CdMedia);
@@ -212,18 +229,17 @@ fn classify(normalized: &str) -> Option<RecognizedSwitch> {
         return Some(RecognizedSwitch::Windowed);
     }
     // `-X…` (strncmp at 0x0052FAD7): each following `Q` sets 0xA8ED64 at
-    // 0x0052FB0A; a bare `-X` sets nothing. Recorded divergence: on any other
-    // trailing character native jumps to 0x0052FB41 and aborts the launch,
-    // where this accepts the argument without effect — refusing to start
-    // over a debug switch would be the worse failure.
+    // 0x0052FB0A; a bare `-X` sets nothing. Any other character after it
+    // jumps to 0x0052FB41, which prints TXT_INVALID and ends the launch, even
+    // when Qs before it already set the flag.
     if let Some(rest) = normalized.strip_prefix("-X") {
-        return Some(
-            if !rest.is_empty() && rest.bytes().all(|byte| byte == b'Q') {
-                RecognizedSwitch::ThemeAndEvaQuiet
-            } else {
-                RecognizedSwitch::NoLocalEffect
-            },
-        );
+        return Some(if rest.is_empty() {
+            RecognizedSwitch::NoLocalEffect
+        } else if rest.bytes().all(|byte| byte == b'Q') {
+            RecognizedSwitch::ThemeAndEvaQuiet
+        } else {
+            RecognizedSwitch::Exit(StartupExit::InvalidSwitch)
+        });
     }
     None
 }
@@ -286,6 +302,17 @@ pub fn usage_text() -> String {
     .join("\n")
 }
 
+/// The text a [`StartupExit`] prints. For an invalid switch native loads
+/// TXT_INVALID from the string table at `0x0052FB41`; none is loaded this
+/// early here, so this is retail `ra2md.csf`'s English value. RESIDUAL: a
+/// translated or modded table's wording is not used (stdout only, no window).
+pub fn exit_text(exit: StartupExit) -> String {
+    match exit {
+        StartupExit::Usage => usage_text(),
+        StartupExit::InvalidSwitch => "Invalid option switch.".to_owned(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -306,7 +333,11 @@ mod tests {
     fn every_help_form_requests_usage_in_either_case() {
         for form in ["/?", "-?", "-h", "/h", "-H", "/H"] {
             let (options, rest) = consume(&[form]);
-            assert!(options.usage_requested, "{form} must request usage");
+            assert_eq!(
+                options.exit,
+                Some(StartupExit::Usage),
+                "{form} must request usage"
+            );
             assert!(rest.is_empty(), "{form} must be consumed");
         }
     }
@@ -391,7 +422,6 @@ mod tests {
             "-DESTNET",
             "-O",
             "-X",
-            "-XQA",
         ]);
         assert!(rest.is_empty(), "every native switch must be consumed");
         assert_eq!(options, RetailStartupOptions::default());
@@ -402,6 +432,20 @@ mod tests {
         assert!(consume(&["-xq"]).0.theme_and_eva_quiet);
         assert!(consume(&["-XQQQ"]).0.theme_and_eva_quiet);
         assert!(!consume(&["-X"]).0.theme_and_eva_quiet);
+    }
+
+    #[test]
+    fn x_with_anything_but_qs_ends_the_launch_and_the_first_exit_wins() {
+        // 0x0052FB08: Qs, then any other character, still jump to the exit.
+        assert_eq!(consume(&["-XQA"]).0.exit, Some(StartupExit::InvalidSwitch));
+        assert_eq!(consume(&["-x1"]).0.exit, Some(StartupExit::InvalidSwitch));
+        assert_eq!(consume(&["-X"]).0.exit, None);
+        // Parse_Command_Line returns at the first exit it meets.
+        assert_eq!(consume(&["-?", "-XA"]).0.exit, Some(StartupExit::Usage));
+        assert_eq!(
+            consume(&["-XA", "-?"]).0.exit,
+            Some(StartupExit::InvalidSwitch)
+        );
     }
 
     #[test]

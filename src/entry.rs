@@ -104,10 +104,11 @@ fn run_with_args(app_bundle: bool, args: impl IntoIterator<Item = OsString>) -> 
     let (mod_switch, args) = crate::app::mods::take_switch(args.into_iter().collect())?;
     let launch_mode = parse_launch_args(args)?;
 
-    // Help must work without a display server or an OS event loop, including
-    // when called from a non-main thread by a headless command-line tool.
-    if matches!(launch_mode, AppLaunchMode::Usage) {
-        return Ok(print_usage());
+    // Help and an invalid switch must work without a display server or an OS
+    // event loop, including when called from a non-main thread by a headless
+    // command-line tool.
+    if let AppLaunchMode::Exit(exit) = launch_mode {
+        return Ok(print_exit(exit));
     }
 
     // gamemd's 1 ms Windows timer period, until the event loop returns.
@@ -131,8 +132,9 @@ fn run_with_args(app_bundle: bool, args: impl IntoIterator<Item = OsString>) -> 
     run_with(launch_mode, app_bundle, event_loop, mod_switch)
 }
 
-fn print_usage() -> i32 {
-    println!("{}", crate::app::frontend::startup_options::usage_text());
+/// Both exits leave through the same WinMain shutdown (`0x006BE0EB`).
+fn print_exit(exit: crate::app::frontend::startup_options::StartupExit) -> i32 {
+    println!("{}", crate::app::frontend::startup_options::exit_text(exit));
     0
 }
 
@@ -164,10 +166,10 @@ fn run_with(
         crate::i18n::init(None, None);
     }
 
-    // Callers supplying their own loop share the same help output. Desktop
+    // Callers supplying their own loop share the same exit output. Desktop
     // startup handles this before creating its event loop.
-    if matches!(launch_mode, AppLaunchMode::Usage) {
-        return Ok(print_usage());
+    if let AppLaunchMode::Exit(exit) = launch_mode {
+        return Ok(print_exit(exit));
     }
 
     // Native claims its single-instance gate before it creates a window: a
@@ -203,8 +205,8 @@ fn run_with(
     // Create the app and hand control to the event loop.
     // This blocks until the window is closed.
     let mut app: crate::app::App = match launch_mode {
-        AppLaunchMode::Usage => {
-            unreachable!("usage returned above")
+        AppLaunchMode::Exit(_) => {
+            unreachable!("a startup exit returned above")
         }
         AppLaunchMode::Interactive(options) => {
             // Pass the parsed process policy to its consumers: options,
@@ -288,5 +290,7 @@ mod tests {
         // The test runs off the main thread, where constructing an OS event
         // loop would fail even on a machine with a display server.
         assert_eq!(run_with_args(false, [OsString::from("-h")]).unwrap(), 0);
+        // An invalid `-X` tail leaves the same way (0x0052FB41).
+        assert_eq!(run_with_args(false, [OsString::from("-XA")]).unwrap(), 0);
     }
 }
