@@ -83,7 +83,7 @@ pub(crate) struct ObjectRecord {
     pub(crate) deactivated: Deactivated,
     pub(crate) repairing: Repairing,
     pub(crate) lifecycle: crate::sim::world::ObjectLifecycle,
-    pub(crate) locomotor: Option<crate::sim::movement::locomotor::LocomotorState>,
+    pub(crate) locomotor: Option<LocomotorView>,
     pub(crate) navigation: Navigation,
     pub(crate) attack_target: crate::sim::combat::TarCom,
     pub(crate) last_fire_frame: crate::sim::combat::world_fire::LastFireFrame,
@@ -97,8 +97,6 @@ pub(crate) struct ObjectRecord {
         Option<crate::sim::superweapon::invulnerability::InvulnerabilityState>,
     pub(crate) airstrike_tint: crate::sim::superweapon::airstrike_tint::AirstrikeTintState,
     pub(crate) temporal: crate::sim::temporal::TemporalState,
-    /// Whether it carries a bomb (`GameEntity::bomb`).
-    pub(crate) bomb: Option<()>,
     pub(crate) berserk: Berserk,
     pub(crate) crash: Crash,
     pub(crate) sinking: Sinking,
@@ -110,7 +108,6 @@ pub(crate) struct ObjectRecord {
     pub(crate) disguise: Option<crate::sim::cloak_disguise::DisguiseRuntime>,
     pub(crate) display_type_override: DisplayTypeOverride,
     pub(crate) selection: crate::sim::selection::Selection,
-    pub(crate) discovery: crate::sim::world::TechnoDiscoveryHistory,
     /// `GameEntity::foot_speed`'s applied fraction.
     pub(crate) applied_fraction: crate::util::native_x87::NativeF64Bits,
     /// The cargo a Carryall draws inside its own draw
@@ -149,12 +146,10 @@ struct Answers {
     building_down: bool,
     in_construction_bstate: bool,
     infantry_sprite_pose: Option<(i32, i32)>,
-    gap_supercharged: bool,
     building_online: bool,
     has_airstrike_marker: bool,
     building_cloak_stage: u8,
     native_cloak_offset_words: i32,
-    storage_bales: Vec<crate::sim::miner::CargoBale>,
     #[cfg(feature = "ares")]
     driver_killed: bool,
     #[cfg(feature = "phobos")]
@@ -183,12 +178,10 @@ impl Answers {
             building_down: entity.building_down(),
             in_construction_bstate: entity.in_construction_bstate(),
             infantry_sprite_pose: entity.infantry_sprite_pose(),
-            gap_supercharged: entity.gap_supercharged(),
             building_online: entity.building_online(),
             has_airstrike_marker: entity.has_airstrike_marker(),
             building_cloak_stage: entity.building_cloak_stage(),
             native_cloak_offset_words: entity.native_cloak_offset_words(),
-            storage_bales: entity.storage_bales().to_vec(),
             #[cfg(feature = "ares")]
             driver_killed: entity.driver_killed(),
             #[cfg(feature = "phobos")]
@@ -200,6 +193,92 @@ impl Answers {
             #[cfg(feature = "phobos")]
             phobos_attach_effects: entity.phobos_attach_effects().clone(),
         }
+    }
+}
+
+/// What drawing reads of an object's locomotor, without its runtime
+/// payload, which most kinds keep on the heap.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct LocomotorView {
+    kind: crate::rules::locomotor_type::LocomotorKind,
+    fly_phase_callbacks: Option<(bool, bool)>,
+    current_fly_speed: Option<crate::util::native_x87::NativeF64Bits>,
+    rocket: Option<RocketDraw>,
+    /// A Tunnel locomotor's `Is_To_Have_Shadow`.
+    tunnel_has_shadow: Option<bool>,
+    speed_type: crate::rules::locomotor_type::SpeedType,
+    /// A Drive locomotor's track destination and head.
+    drive_track: Option<[Option<crate::sim::components::DriveCoord>; 2]>,
+}
+
+/// What a Rocket's draw reads of its `RocketLocomotionClass`.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct RocketDraw {
+    /// `RocketRuntime::draw_pitch`.
+    pub(crate) pitch: f32,
+    /// `RocketRuntime::draw_key_bits` with its type's block
+    /// (`RuleSet::rocket_block`).
+    pub(crate) key_bits: Option<u32>,
+}
+
+impl LocomotorView {
+    /// `rocket_block` gives a Rocket's block (`RuleSet::rocket_block`); a
+    /// view without one keys no draw.
+    pub(crate) fn of<'r>(
+        locomotor: &crate::sim::movement::locomotor::LocomotorState,
+        rocket_block: impl FnOnce() -> Option<&'r crate::rules::missile_spawn::MissileSpawnParams>,
+    ) -> Self {
+        use crate::sim::movement::track_process::TrackFamily;
+        let kind = locomotor.active_kind();
+        Self {
+            kind,
+            fly_phase_callbacks: locomotor.fly_phase_callbacks(),
+            current_fly_speed: locomotor.current_fly_speed(),
+            rocket: locomotor.rocket_runtime().map(|rocket| RocketDraw {
+                pitch: rocket.draw_pitch(),
+                key_bits: rocket_block().and_then(|block| rocket.draw_key_bits(block)),
+            }),
+            tunnel_has_shadow: locomotor
+                .tunnel_runtime()
+                .map(crate::sim::movement::tunnel_movement::TunnelRuntime::has_shadow),
+            speed_type: locomotor.speed_type(),
+            drive_track: (kind == crate::rules::locomotor_type::LocomotorKind::Drive).then(|| {
+                [
+                    locomotor.track_destination(TrackFamily::Drive),
+                    locomotor.track_head(TrackFamily::Drive),
+                ]
+            }),
+        }
+    }
+
+    pub(crate) fn active_kind(&self) -> crate::rules::locomotor_type::LocomotorKind {
+        self.kind
+    }
+
+    pub(crate) fn fly_phase_callbacks(&self) -> Option<(bool, bool)> {
+        self.fly_phase_callbacks
+    }
+
+    pub(crate) fn current_fly_speed(&self) -> Option<crate::util::native_x87::NativeF64Bits> {
+        self.current_fly_speed
+    }
+
+    pub(crate) fn rocket(&self) -> Option<RocketDraw> {
+        self.rocket
+    }
+
+    /// A Tunnel locomotor's `Is_To_Have_Shadow`; `None` for other kinds.
+    pub(crate) fn tunnel_has_shadow(&self) -> Option<bool> {
+        self.tunnel_has_shadow
+    }
+
+    pub(crate) fn speed_type(&self) -> crate::rules::locomotor_type::SpeedType {
+        self.speed_type
+    }
+
+    /// A Drive locomotor's track destination and head.
+    pub(crate) fn drive_track(&self) -> Option<[Option<crate::sim::components::DriveCoord>; 2]> {
+        self.drive_track
     }
 }
 
@@ -445,11 +524,6 @@ pub(crate) struct Seen {
     pub(crate) disguised_to_observer: bool,
     /// `GameEntity::disguise_hides_house_from` the local player.
     pub(crate) disguise_hides_house: bool,
-    /// `GameEntity::techno_pip_fill_level` without a controlled count, and
-    /// with the mind-control count (`Simulation::capture_effective_count`).
-    pub(crate) pip_fill_level: i32,
-    pub(crate) controlled_count: Option<i32>,
-    pub(crate) controlled_pip_fill_level: i32,
 }
 
 impl Seen {
@@ -492,25 +566,11 @@ impl Seen {
                 sim.interner(),
             )
         };
-        let object = at.object_type(entity);
-        // Only a controller with a capture manager has a count.
-        let controlled_count = entity
-            .capture_manager
-            .is_some()
-            .then(|| sim.capture_effective_count(entity.stable_id(), rules))
-            .flatten();
         Self {
             observer,
             visual_character,
             disguised_to_observer: at.observer_id.is_some_and(disguised_to),
             disguise_hides_house: at.observer_id.is_some_and(hides_house),
-            pip_fill_level: object.map_or(0, |object| {
-                entity.techno_pip_fill_level(object, rules, None)
-            }),
-            controlled_count,
-            controlled_pip_fill_level: object.map_or(0, |object| {
-                entity.techno_pip_fill_level(object, rules, controlled_count)
-            }),
         }
     }
 }
@@ -552,7 +612,12 @@ impl ObjectRecord {
                 on: entity.building.repairing.is_on(),
             },
             lifecycle: entity.lifecycle.clone(),
-            locomotor: entity.locomotor.clone(),
+            locomotor: entity.locomotor.as_ref().map(|locomotor| {
+                LocomotorView::of(locomotor, || {
+                    let type_name = at.sim.interner().resolve(entity.type_ref());
+                    Some(at.rules().rocket_block(type_name).0)
+                })
+            }),
             navigation: Navigation {
                 nav_com: entity.navigation.nav_com(),
                 nav_queue: entity.navigation.nav_queue().to_vec(),
@@ -568,7 +633,6 @@ impl ObjectRecord {
             invulnerability: entity.invulnerability.clone(),
             airstrike_tint: entity.airstrike_tint.clone(),
             temporal: entity.temporal.clone(),
-            bomb: entity.bomb.as_ref().map(|_| ()),
             berserk: Berserk {
                 active: entity.berserk.is_active(),
             },
@@ -588,7 +652,6 @@ impl ObjectRecord {
                 image: entity.display_type_override.image(),
             },
             selection: entity.selection.clone(),
-            discovery: entity.discovery.clone(),
             applied_fraction: entity.foot_speed.native_applied_fraction(),
             // Only an Aircraft can be a Carryall.
             drawn_cargo: (entity.category() == EntityCategory::Aircraft)
@@ -704,10 +767,6 @@ impl ObjectRecord {
         self.answers.infantry_sprite_pose
     }
 
-    pub(crate) fn gap_supercharged(&self) -> bool {
-        self.answers.gap_supercharged
-    }
-
     pub(crate) fn building_online(&self) -> bool {
         self.answers.building_online
     }
@@ -722,10 +781,6 @@ impl ObjectRecord {
 
     pub(crate) fn native_cloak_offset_words(&self) -> i32 {
         self.answers.native_cloak_offset_words
-    }
-
-    pub(crate) fn storage_bales(&self) -> &[crate::sim::miner::CargoBale] {
-        &self.answers.storage_bales
     }
 
     #[cfg(feature = "ares")]

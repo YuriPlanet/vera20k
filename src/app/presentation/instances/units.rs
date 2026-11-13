@@ -840,7 +840,7 @@ pub(crate) fn unit_visitor<'a>(
                             Some(u32::from(pitch != 0.0) << 2 | roll)
                         }
                         crate::render::unit_atlas::PoseTilt::Rocket(_) => {
-                            rocket_draw_key_bits(state, sim, entity)
+                            rocket_draw_key_bits(entity)
                         }
                         _ => None,
                     };
@@ -1354,8 +1354,8 @@ fn body_pose(
     let pitch = entity
         .locomotor
         .as_ref()
-        .and_then(|l| l.rocket_runtime())
-        .map_or(0., |r| r.draw_pitch());
+        .and_then(crate::app::presentation::frame::LocomotorView::rocket)
+        .map_or(0., |rocket| rocket.pitch);
     body_pose_with_angles(entity, band, tilt_crash_jumpjet, angles, pitch, None, None)
 }
 
@@ -1416,7 +1416,7 @@ fn body_pose_with_angles(
         return Some(tilt);
     }
     let locomotor = entity.locomotor.as_ref()?;
-    if locomotor.rocket_runtime().is_some() {
+    if locomotor.rocket().is_some() {
         return (pitch != 0.0).then_some(PoseTilt::Rocket(pitch));
     }
     entity.rocking.as_ref()?;
@@ -1487,16 +1487,8 @@ fn ground_pose_with_angles(
 
 /// The Rocket Draw_Matrix key bits of this rocket's pitch (`0x00663470`),
 /// from its owner type's block.
-fn rocket_draw_key_bits(
-    state: &AppState,
-    sim: &crate::sim::world::Simulation,
-    entity: &crate::app::presentation::frame::ObjectRecord,
-) -> Option<u32> {
-    let rocket = entity.locomotor.as_ref()?.rocket_runtime()?;
-    let (block, _) = state
-        .rules()?
-        .rocket_block(sim.interner().resolve(entity.type_ref()));
-    rocket.draw_key_bits(block)
+fn rocket_draw_key_bits(entity: &crate::app::presentation::frame::ObjectRecord) -> Option<u32> {
+    entity.locomotor.as_ref()?.rocket()?.key_bits
 }
 
 /// One posed body drawn on this frame's pose page. It joins its display
@@ -1884,8 +1876,8 @@ fn unit_shadow_admitted(
         && entity
             .locomotor
             .as_ref()
-            .and_then(|locomotor| locomotor.tunnel_runtime())
-            .is_none_or(crate::sim::movement::tunnel_movement::TunnelRuntime::has_shadow)
+            .and_then(crate::app::presentation::frame::LocomotorView::tunnel_has_shadow)
+            .is_none_or(|has_shadow| has_shadow)
         && techno_shadow_admitted(entity, no_shadow)
 }
 

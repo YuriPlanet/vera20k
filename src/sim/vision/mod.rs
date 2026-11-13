@@ -201,7 +201,7 @@ pub(crate) fn conceal_area_cells(coord: [i32; 3], radius: i32) -> Vec<(u16, u16)
 /// Indexed by `ry * width + rx`. Each byte holds public visibility plus
 /// sustained-sight, current hostile coverage and pending-conceal provenance. This gives O(1) per-cell lookups instead of O(log n)
 /// with the previous BTreeSet design.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct OwnerVisibility {
     cells: Vec<u8>,
     width: u16,
@@ -225,6 +225,43 @@ pub struct OwnerVisibility {
     /// saved or hashed.
     #[serde(skip)]
     stale_frames: StaleFrames,
+}
+
+// `clone_from` keeps the target's arrays: the presentation copy of the world
+// (`FogState::presentation_copy`) copies a plane into the previous copy's.
+impl Clone for OwnerVisibility {
+    fn clone(&self) -> Self {
+        let mut copy = Self::default();
+        copy.clone_from(self);
+        copy
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        let Self {
+            cells,
+            width,
+            height,
+            ground_flags,
+            shroud_knowledge,
+            map_cell_edge_cache,
+            edge_inputs_cache,
+            dummy_visibility,
+            tracked,
+            edge_cells,
+            stale_frames,
+        } = source;
+        self.cells.clone_from(cells);
+        self.width = *width;
+        self.height = *height;
+        self.ground_flags.clone_from(ground_flags);
+        self.shroud_knowledge.clone_from(shroud_knowledge);
+        self.map_cell_edge_cache.clone_from(map_cell_edge_cache);
+        self.edge_inputs_cache.clone_from(edge_inputs_cache);
+        self.dummy_visibility.clone_from(dummy_visibility);
+        self.tracked.clone_from(tracked);
+        self.edge_cells.clone_from(edge_cells);
+        self.stale_frames.clone_from(stale_frames);
+    }
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -799,14 +836,24 @@ impl FogState {
     /// (`Simulation::presentation_copy`): `viewer`'s plane, fogged objects,
     /// sensors and disguise detection, the cloak words and the reveal guard.
     /// The other houses' planes and the sight sources stay with the live
-    /// world. A copy for no viewer holds no plane.
-    pub(crate) fn presentation_copy(&self, viewer: Option<InternedId>) -> Self {
+    /// world. A copy for no viewer holds no plane. `reuse`, the previous
+    /// copy, lends its plane's arrays when it was copied for `viewer`.
+    pub(crate) fn presentation_copy(&self, viewer: Option<InternedId>, reuse: Self) -> Self {
         let mine = |house: &InternedId| Some(*house) == viewer;
         let mut by_owner = Planes::default();
         if let Some(viewer) = viewer
             && let Some(view) = self.by_owner.get(&viewer)
         {
-            by_owner.insert(viewer, view.clone());
+            let old = reuse.by_owner;
+            if old.keys().eq([&viewer]) {
+                by_owner = old;
+                by_owner
+                    .get_mut(&viewer)
+                    .expect("the previous copy's plane")
+                    .clone_from(view);
+            } else {
+                by_owner.insert(viewer, view.clone());
+            }
         }
         Self {
             width: self.width,

@@ -24,7 +24,10 @@ pub(crate) struct RenderPose {
 /// point elsewhere while the plane turns. Other locomotors keep their owner.
 pub(crate) fn body_draw_facing(entity: &GameEntity, binary_frame: u32) -> u16 {
     draw_facing(
-        entity.locomotor.as_ref(),
+        entity
+            .locomotor
+            .as_ref()
+            .map(crate::sim::movement::locomotor::LocomotorState::active_kind),
         entity.barrel_facing.as_ref(),
         &entity.body_facing,
         binary_frame,
@@ -37,7 +40,10 @@ pub(crate) fn record_body_draw_facing(
     binary_frame: u32,
 ) -> u16 {
     draw_facing(
-        entity.locomotor.as_ref(),
+        entity
+            .locomotor
+            .as_ref()
+            .map(crate::app::presentation::frame::LocomotorView::active_kind),
         entity.barrel_facing.as_ref(),
         &entity.body_facing,
         binary_frame,
@@ -45,14 +51,12 @@ pub(crate) fn record_body_draw_facing(
 }
 
 fn draw_facing(
-    locomotor: Option<&crate::sim::movement::locomotor::LocomotorState>,
+    locomotor: Option<crate::rules::locomotor_type::LocomotorKind>,
     barrel: Option<&crate::sim::movement::FacingClass>,
     body: &crate::sim::movement::FacingClass,
     binary_frame: u32,
 ) -> u16 {
-    if locomotor
-        .is_some_and(|loco| loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Fly)
-    {
+    if locomotor == Some(crate::rules::locomotor_type::LocomotorKind::Fly) {
         barrel.map_or_else(
             || body.current(binary_frame),
             |facing| facing.current(binary_frame),

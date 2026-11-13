@@ -4888,16 +4888,17 @@ impl Simulation {
         // What it syncs. The previous copy's other parts are freed on the
         // pool, and the syncs run there beside the clone of the rest.
         let mut synced = SyncedWorld::take(self);
-        let mut theirs = reuse.map_or_else(SyncedWorld::default, |mut old| {
+        let (mut theirs, old_fog) = reuse.map_or_else(Default::default, |mut old| {
             let theirs = SyncedWorld::take(&mut old);
+            let old_fog = std::mem::take(&mut old.fog);
             crate::sim::parallel::drop_on_pool(old);
-            theirs
+            (theirs, old_fog)
         });
         let mut rest = None;
         let this = &*self;
         crate::sim::parallel::alongside(
             || synced.sync_into(&mut theirs),
-            || rest = Some((this.clone(), fog.presentation_copy(viewer))),
+            || rest = Some((this.clone(), fog.presentation_copy(viewer, old_fog))),
         );
         let (mut copy, fog_copy) = rest.expect("cloned beside the syncs");
         synced.put(self);
