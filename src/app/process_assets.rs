@@ -492,7 +492,14 @@ impl ProcessAssets {
         use crate::rules::ini_parser::IniFile;
         use crate::rules::retail_sources::{select_ini, select_mode_ini};
         let roots = assets.ini_roots();
-        let mut compared = vec![roots.rules(), roots.art(), roots.ai(), "langrule.ini"];
+        // MPModesMD.ini is the mode roster: which mode INIs the hash adds.
+        let mut compared = vec![
+            roots.rules(),
+            roots.art(),
+            roots.ai(),
+            "langrule.ini",
+            "MPModesMD.ini",
+        ];
         compared.extend(modes.iter().map(|mode| mode.override_file.as_str()));
         compared
             .push(crate::app::frontend::skirmish_session::cooperative::COOPERATIVE_CAMPAIGN_INI);
