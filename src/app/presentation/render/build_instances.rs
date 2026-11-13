@@ -224,14 +224,26 @@ pub(super) fn build_world_instances(
     // Map overlays and walls remain in the fixed per-cell draw plan. Terrain
     // objects join live Ground registrations below; low bridges (LOBRDG*) ride
     // in `overlay`, while high bridge bodies use instances::bridges.
-    let display_order = state
-        .match_state
-        .sim_runtime
-        .presentation()
-        .map(|rt| {
-            super::draw_plan_lowering::NativeDisplayOrder::from_display(rt.view().display_layers())
-        })
-        .unwrap_or_default();
+    // The frame keeps the order for all its draws; without a frame it is
+    // built for this one.
+    let own_order;
+    let display_order = match state.match_state.sim_runtime.presentation() {
+        Some(rt) => {
+            let display = rt.view().display_layers();
+            match state.match_state.sim_runtime.frame() {
+                Some(frame) => frame.display_order(display),
+                None => {
+                    own_order =
+                        super::draw_plan_lowering::NativeDisplayOrder::from_display(display);
+                    &own_order
+                }
+            }
+        }
+        None => {
+            own_order = super::draw_plan_lowering::NativeDisplayOrder::default();
+            &own_order
+        }
+    };
     let mut planned_objects = Vec::new();
     let mut bodies = Vec::new();
     instances::build_overlay_instances(
@@ -240,7 +252,7 @@ pub(super) fn build_world_instances(
         sh,
         &mut bodies,
         &mut planned_objects,
-        &display_order,
+        display_order,
     );
     // High-bridge bodies read live CellClass bridge fields post-tick (NOT
     // OverlayGrid), then join the ordinary bodies in one native sweep.
@@ -281,12 +293,12 @@ pub(super) fn build_world_instances(
     ) {
         let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
         let shp_inputs = instances::shp_inputs(state, local_owner.as_deref());
-        let mut units = instances::unit_visitor(state, &display_order);
-        let mut debris = instances::voxel_anim_visitor(state, &display_order);
+        let mut units = instances::unit_visitor(state, display_order);
+        let mut debris = instances::voxel_anim_visitor(state, display_order);
         let mut shp = shp_inputs
             .as_ref()
-            .map(|input| instances::shp_visitor(input, &display_order));
-        let mut bullets = instances::projectile_visitor(state, &display_order);
+            .map(|input| instances::shp_visitor(input, display_order));
+        let mut bullets = instances::projectile_visitor(state, display_order);
         let view = runtime.view();
         for (layer, id) in view.display_layers().members_in_order() {
             let objects = &mut planned_objects;
@@ -358,7 +370,7 @@ pub(super) fn build_world_instances(
             input.camera,
             input.projection_viewport(),
             &mut building_anim_instances,
-            &display_order,
+            display_order,
         );
         let prepared_building_anims = building_anim_instances
             .into_iter()
@@ -367,7 +379,7 @@ pub(super) fn build_world_instances(
         particle_draws = instances::build_display_effect_instances(
             input,
             &mut planned_objects,
-            &display_order,
+            display_order,
             prepared_building_anims,
         );
     }
@@ -490,7 +502,7 @@ pub(super) fn build_world_instances(
             });
         }
     }
-    instances::build_weapon_wave_instances(state, &mut planned_objects, &display_order);
+    instances::build_weapon_wave_instances(state, &mut planned_objects, display_order);
     if let Some(frame) = state.match_state.sim_runtime.frame() {
         instances::assign_tether_redraws(frame, &mut planned_objects);
     }
