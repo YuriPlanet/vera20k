@@ -2518,6 +2518,7 @@ mod tests {
         let obs = Observation::new(&sim, owner);
         let mut brain = RetailBrain::new(0xA17);
         let mut out = Outbox::default();
+        brain.rebuild_census(&rules, &obs);
         captures(&mut brain, &rules, &obs, &mut out);
 
         assert!(
@@ -2567,6 +2568,7 @@ mod tests {
         let obs = Observation::new(&sim, owner);
         let mut brain = RetailBrain::new(0xA17);
         let mut out = Outbox::default();
+        brain.rebuild_census(&rules, &obs);
         captures(&mut brain, &rules, &obs, &mut out);
 
         let target = out
@@ -2579,11 +2581,14 @@ mod tests {
             })
             .expect("the spy is given a target");
         assert_eq!(
-            target, power,
-            "the power plant blacks the enemy out; the derrick and the refinery are nearer"
+            target, refinery,
+            "the refinery pays in the minute it lands; the plant only blacks the enemy out"
         );
-        assert_ne!(target, derrick);
-        assert_ne!(target, refinery);
+        assert_ne!(
+            target, derrick,
+            "a derrick is `Capturable=`, not `Spyable=`"
+        );
+        assert_ne!(target, power);
     }
 
     /// The garrison order is the Capture click, and the click's own admission
@@ -2869,6 +2874,7 @@ mod tests {
         let obs = Observation::new(&sim, owner);
         let mut brain = RetailBrain::new(0xA17);
         let mut out = Outbox::default();
+        brain.rebuild_census(&rules, &obs);
         garrison(&mut brain, &rules, &obs, &mut out);
 
         assert!(
